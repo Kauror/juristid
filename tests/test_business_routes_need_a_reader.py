@@ -58,6 +58,15 @@ PUBLIC = {
     "accounts:activate": "a one-time activation link (dormant)",
     "accounts:forgot_password": "a reset request (dormant)",
     "accounts:reset_password": "a one-time reset link (dormant)",
+    # The MCP authorization server's machine endpoints (docs/adr/0185 §4): exempt
+    # from the gate by exact path, they authenticate the *client* themselves and
+    # answer only OAuth metadata or token JSON — never business content. Every
+    # one is a 404 unless MCP_ENABLED. `/oauth/authorize` and the enrolment page
+    # are not here: they refuse a caller with no reader like any other route
+    # (tests/test_mcp_access_authorize.py).
+    "mcp_access:authorization_server_metadata": "RFC 8414 metadata built from settings only",
+    "mcp_access:token": "OAuth token endpoint; authenticates the client, issues opaque tokens",
+    "mcp_access:revoke": "OAuth revocation endpoint (RFC 7009); answers 200 with no body",
 }
 
 #: Ending or switching the session mid-sweep would change the caller under test.

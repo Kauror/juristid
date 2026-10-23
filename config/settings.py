@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import tempfile
 from pathlib import Path
+from typing import cast
+from urllib.parse import urlsplit
 
 from config.env import (
     database_config_from_url,
@@ -71,6 +73,8 @@ LOCAL_APPS = [
     "app.reporting",
     "app.intelligence",
     "app.related_materials",
+    "app.mcp_access",
+    "app.mcp_server",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
@@ -164,6 +168,38 @@ else:
     }
 _database["CONN_MAX_AGE"] = env_int("DJANGO_DB_CONN_MAX_AGE", 60)
 _database["OPTIONS"] = {"sslmode": env("POSTGRES_SSLMODE", "prefer")}
+
+# -- process role: the read-only MCP server (docs/adr/0185 §1) ---------------
+#
+# Which kind of process this is. Empty — the default, and what every service
+# but one runs as — is the browser application and its workers, unchanged.
+# `mcp` is the MCP server (`manage.py run_mcp_server`), and in that role:
+#
+# - every database session starts read-only (`default_transaction_read_only`),
+#   so an INSERT, UPDATE or DELETE from this process — a future mistake, the
+#   cache table, a `last_login` stamp — fails with ReadOnlySqlTransaction
+#   instead of changing a row;
+# - every statement is bounded by the tool-call timeout, so a call the runtime
+#   has given up on does not keep its query running;
+# - connections are not kept between requests: each tool call opens its own in
+#   a worker thread and closes it before the thread is reused
+#   (app/mcp_server/runtime.py).
+#
+# The system checks know the role too: they stop asking this process for the
+# browser's secrets and start asking for the MCP configuration
+# (app/core/checks.py, juristid.E040–E046). Any other value is refused.
+JURISTID_PROCESS_ROLE = env("JURISTID_PROCESS_ROLE", "").strip().lower()
+MCP_PROCESS_ROLE = "mcp"
+if JURISTID_PROCESS_ROLE == MCP_PROCESS_ROLE:
+    _statement_timeout_ms = max(1, env_int("MCP_CALL_TIMEOUT_SECONDS", 60)) * 1000
+    _role_options = (
+        f"-c default_transaction_read_only=on -c statement_timeout={_statement_timeout_ms}"
+    )
+    _connection_options = dict(cast(dict[str, object], _database["OPTIONS"]))
+    _existing_options = str(_connection_options.get("options") or "").strip()
+    _connection_options["options"] = f"{_existing_options} {_role_options}".strip()
+    _database["OPTIONS"] = _connection_options
+    _database["CONN_MAX_AGE"] = 0
 
 DATABASES = {"default": _database}
 
@@ -990,6 +1026,111 @@ EVIDENCE_PILOT_ENABLED = env_bool("JURISTID_EVIDENCE_PILOT", default=False)
 CF_ACCESS_TEAM_DOMAIN = env("CF_ACCESS_TEAM_DOMAIN", "")
 CF_ACCESS_AUDIENCE = env("CF_ACCESS_AUDIENCE", "")
 
+# -- Read-only MCP server for AI clients (docs/adr/0185) ---------------------
+#
+# Off unless a deployment turns it on. With it off the OAuth routes answer 404,
+# no grant can be made and the `mcp` process refuses to start, so a release
+# that carries this code changes nothing until an operator decides otherwise.
+MCP_ENABLED = env_bool("MCP_ENABLED", False)
+# The origin colleagues open Juristid at. Every link the MCP server returns and
+# the OAuth issuer are built from it, never from a request's Host header.
+JURISTID_PUBLIC_ORIGIN = env("JURISTID_PUBLIC_ORIGIN", "").rstrip("/")
+# The resource (audience) values a token may be issued for and accepted at:
+# the public MCP URL and/or the Secure MCP Tunnel URL OpenAI rewrites
+# discovery to. A token for any other resource is refused.
+MCP_RESOURCE_URLS = env_list("MCP_RESOURCE_URLS")
+MCP_SCOPE = "juristid.read"
+MCP_ACCESS_TOKEN_SECONDS = env_int("MCP_ACCESS_TOKEN_SECONDS", 3600)
+MCP_REFRESH_TOKEN_SECONDS = env_int("MCP_REFRESH_TOKEN_SECONDS", 30 * 24 * 3600)
+# The absolute lifetime of a token family: however often it is refreshed, a
+# connection ends this long after the person typed their authenticator code,
+# and they authorize again (MCPSEC-08).
+MCP_REFRESH_FAMILY_MAX_SECONDS = env_int("MCP_REFRESH_FAMILY_MAX_SECONDS", 90 * 24 * 3600)
+# How long after a rotation the same client may present the just-rotated
+# refresh token again — a retry after a timeout, or two refreshes in flight —
+# and get the same new pair instead of a revoked family (MCPSEC-09).
+MCP_REFRESH_GRACE_SECONDS = env_int("MCP_REFRESH_GRACE_SECONDS", 30)
+MCP_AUTHORIZATION_CODE_SECONDS = 60
+MCP_ENROLMENT_LINK_SECONDS = env_int("MCP_ENROLMENT_LINK_SECONDS", 30 * 60)
+# The key the personal MCP authenticators' TOTP secrets are sealed under, on
+# `web` only (MCPSEC-07). Unset, they fall back to the MFA key derivation —
+# `LOCAL_AUTH_MFA_ENCRYPTION_KEY or SECRET_KEY` — which on the shared-gate
+# stack is SECRET_KEY: rotating that would make every authenticator
+# unreadable. mcp_access.E004 requires it on real data; the `mcp` process must
+# not hold it (juristid.E046). Changing it means everybody enrols again.
+MCP_AUTHENTICATOR_KEY = env("MCP_AUTHENTICATOR_KEY", "")
+# The key a rotated refresh token's successor is derived under, on `web` only
+# (NEW-01). Unset, SECRET_KEY stands in — tests and laptops only:
+# mcp_access.E005 requires it on real data, and the `mcp` process must not
+# hold it (juristid.E046). Changing it costs at most a retry inside the
+# refresh grace window; nobody re-enrols.
+MCP_TOKEN_DERIVATION_KEY = env("MCP_TOKEN_DERIVATION_KEY", "")
+# Wrong authenticator codes one gate session, and one client address, may type
+# at `/oauth/authorize` in a window, whichever personas they try (MCPSEC-01).
+# The per-grant lock is in app/mcp_access/services.py; this stops one session
+# guessing a little at everybody's. The address limit is higher because the
+# office shares one address.
+MCP_AUTHORIZE_THROTTLE_SECONDS = env_int("MCP_AUTHORIZE_THROTTLE_SECONDS", 15 * 60)
+MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION = env_int("MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION", 10)
+MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS = env_int("MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS", 30)
+# Pre-registered OAuth clients, by client id (a client metadata document URL).
+# Only ChatGPT's own metadata document by default; there is no open dynamic
+# client registration.
+MCP_OAUTH_CLIENTS: dict[str, dict[str, object]] = {
+    "https://chatgpt.com/oauth/client.json": {
+        "client_name": "ChatGPT",
+        "redirect_uris": ["https://chatgpt.com/connector_platform_oauth_redirect"],
+        # ChatGPT's client metadata document declares private_key_jwt, and
+        # with `none` beside it a leaked refresh token could be rotated by
+        # anybody, from anywhere (MCPSEC-08). Signed assertions only.
+        "token_endpoint_auth_methods": ["private_key_jwt"],
+        "jwks_uri": "https://chatgpt.com/oauth/jwks.json",
+    },
+}
+# The `mcp` process: where it listens inside the container network, how much
+# it does at once and how much it returns.
+# Loopback by default; the Compose service sets the container-network address,
+# and it publishes no host port (deploy/unraid-main/compose.yml).
+MCP_LISTEN_HOST = env("MCP_LISTEN_HOST", "127.0.0.1")
+MCP_LISTEN_PORT = env_int("MCP_LISTEN_PORT", 8001)
+MCP_MAX_CONCURRENT_CALLS = env_int("MCP_MAX_CONCURRENT_CALLS", 4)
+MCP_CALL_TIMEOUT_SECONDS = env_int("MCP_CALL_TIMEOUT_SECONDS", 60)
+MCP_FETCH_MAX_CHARS = env_int("MCP_FETCH_MAX_CHARS", 20_000)
+MCP_MAX_REQUEST_BYTES = env_int("MCP_MAX_REQUEST_BYTES", 64 * 1024)
+
+# -- the `mcp` process's transport (workstream B, docs/adr/0185 §6) ----------
+#
+# The Host headers the MCP server answers. A request naming any other host is
+# refused before anything reads it (421), which is what stops a DNS-rebinding
+# page from talking to the server through somebody's browser. By default: the
+# hosts of MCP_RESOURCE_URLS (the public and/or tunnel URL a client was given),
+# the Compose service name the tunnel client dials (`mcp`, `mcp:<port>`), and
+# loopback for the container's own healthcheck. `host:*` matches any port.
+_MCP_DEFAULT_ALLOWED_HOSTS = [
+    *dict.fromkeys(
+        urlsplit(url).netloc.lower() for url in MCP_RESOURCE_URLS if urlsplit(url).netloc
+    ),
+    "mcp",
+    f"mcp:{MCP_LISTEN_PORT}",
+    "localhost",
+    "localhost:*",
+    "127.0.0.1",
+    "127.0.0.1:*",
+]
+MCP_ALLOWED_HOSTS = env_list("MCP_ALLOWED_HOSTS") or _MCP_DEFAULT_ALLOWED_HOSTS
+# The Origin headers it accepts when a request carries one. A server-to-server
+# client sends none and is not affected; a browser page always sends its own,
+# and only these may reach the endpoint. Bearer tokens are never ambient, so
+# this is defence in depth rather than the control.
+MCP_ALLOWED_ORIGINS = env_list("MCP_ALLOWED_ORIGINS") or [
+    *dict.fromkeys(
+        f"{urlsplit(url).scheme}://{urlsplit(url).netloc}".lower()
+        for url in [*MCP_RESOURCE_URLS, JURISTID_PUBLIC_ORIGIN]
+        if urlsplit(url).netloc
+    ),
+    "https://chatgpt.com",
+]
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -1002,5 +1143,10 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": env("DJANGO_LOG_LEVEL", "INFO")},
     "loggers": {
         "django.db.backends": {"level": "WARNING", "handlers": ["console"], "propagate": False},
+        # The MCP SDK's INFO lines quote what the caller sent — a resource URI,
+        # a prompt or tool name, up to the request body limit (NEW-10). The
+        # `mcp` process logs each call itself, by tool name and outcome only
+        # (`app.mcp_server.calls`); the SDK's warnings and errors still show.
+        "mcp": {"level": "WARNING"},
     },
 }

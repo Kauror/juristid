@@ -222,6 +222,85 @@ if [ -n "$ENV_FILE" ]; then
   fi
 fi
 
+# AI access (docs/adr/0185): the MCP server's and the tunnel client's own
+# environment files, beside the application's. Optional — a host where AI
+# access was never set up has neither, and that is not a problem — so they are
+# checked only where they exist: root's and 600, and holding none of the keys
+# the other files keep to themselves. Key NAMES are read, never a value.
+mcp_env_problems() {
+  local label="$1" path="$2"
+  shift 2
+  local mode key
+  mode="$(stat -c '%a' "$path" 2>/dev/null || stat -f '%Lp' "$path" 2>/dev/null || echo '')"
+  case "$mode" in
+    600 | 400) pass "the $label environment file exists and is mode $mode" ;;
+    '') printf 'WARN %s\n' "could not read the $label environment file's permissions" ;;
+    *) fail "the $label environment file is mode $mode. It holds a secret; it should be 600." ;;
+  esac
+  for key in "$@"; do
+    if grep -qE "^[[:space:]]*${key}=" "$path"; then
+      fail "the $label environment file names $key, which it must not hold (docs/mcp/OPERATIONS.md)."
+    fi
+  done
+}
+
+if [ -n "$ENV_FILE" ]; then
+  config_dir="$(dirname -- "$ENV_FILE")"
+  MCP_ENV="$config_dir/juristid-mcp.env"
+  MCP_TUNNEL_ENV="$config_dir/juristid-mcp-tunnel.env"
+  if [ -f "$MCP_ENV" ]; then
+    mcp_env_problems "MCP server" "$MCP_ENV" \
+      JURISTID_SHARED_GATE_PASSWORD LOCAL_AUTH_MFA_ENCRYPTION_KEY DJANGO_EMAIL_HOST_PASSWORD \
+      CONTROL_PLANE_API_KEY MCP_AUTHENTICATOR_KEY MCP_TOKEN_DERIVATION_KEY
+  else
+    note "  AI access is not set up here ($MCP_ENV absent); mcp and mcp-tunnel are not checked"
+  fi
+  if [ -f "$MCP_TUNNEL_ENV" ]; then
+    mcp_env_problems "MCP tunnel" "$MCP_TUNNEL_ENV" \
+      DJANGO_SECRET_KEY POSTGRES_PASSWORD JURISTID_SHARED_GATE_PASSWORD LOCAL_AUTH_MFA_ENCRYPTION_KEY
+    [ -f "$MCP_ENV" ] ||
+      fail "the MCP tunnel environment file exists without the MCP server's. The tunnel has nothing to carry requests to."
+  fi
+
+  # AI access switched on in web's file without the keys web then requires
+  # stops `web` itself on real data (mcp_access.E004, NEW-09) — all of
+  # Juristid, not only AI access. Key names and states only, never a value.
+  if mcp_enabled_in "$ENV_FILE"; then
+    not_ready="$(mcp_web_keys_not_ready "$ENV_FILE")"
+    if [ -n "$not_ready" ]; then
+      while read -r key state; do
+        fail "juristid.env has MCP_ENABLED on and $key is $state: web would refuse to start. Run scripts/deploy/juristid-mcp-web-keys.sh --env-file $ENV_FILE first (docs/mcp/OPERATIONS.md, step 3)."
+      done <<<"$not_ready"
+    else
+      pass "MCP_ENABLED is on and web's AI-access keys are in place (${MCP_WEB_KEYS[*]})"
+    fi
+  fi
+
+  # The resolution above left both services out: they are behind the `mcp`
+  # profile. Naming them enables it for this one command, so they are resolved
+  # — and held to the same no-port rule — only where their files exist.
+  # Captured, never printed: `config` inlines every value of every env_file.
+  mcp_services=()
+  [ -f "$MCP_ENV" ] && mcp_services+=(mcp)
+  [ -f "$MCP_ENV" ] && [ -f "$MCP_TUNNEL_ENV" ] && mcp_services+=(mcp-tunnel)
+  if [ "${#mcp_services[@]}" -gt 0 ]; then
+    if mcp_config="$(JURISTID_MCP_ENV_FILE="$MCP_ENV" JURISTID_MCP_TUNNEL_ENV_FILE="$MCP_TUNNEL_ENV" \
+      docker compose -p "$JURISTID_PROJECT" -f "$JURISTID_COMPOSE_FILE" config "${mcp_services[@]}" 2>&1)"; then
+      pass "the AI-access services resolve (${mcp_services[*]})"
+      if grep -qE '^[[:space:]]*published:' <<<"$mcp_config"; then
+        fail "an AI-access service publishes a host port. Both are reachable only from the internal network."
+      fi
+      if grep -q 'network_mode: host' <<<"$mcp_config"; then
+        fail "an AI-access service uses host networking"
+      fi
+    else
+      # The error only: on failure Compose prints what it could not resolve.
+      fail "the AI-access services do not resolve: $(head -n 3 <<<"$mcp_config")"
+    fi
+    mcp_config=""
+  fi
+fi
+
 # The file Compose interpolates from is the one beside the Compose file, not the
 # one the services read. A secret copied there would be read by Compose, echoed
 # into `config` output, and — since it sits in the checkout — be one `git add`
@@ -261,7 +340,8 @@ Ready. Nothing has been changed yet. The deployment, in order:
 
 NEXT
 
-deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET"
+deployment_plan "$JURISTID_PROJECT" "$JURISTID_COMPOSE_FILE" "$REPO" "$TARGET" \
+  "$(mcp_container_state "$JURISTID_PROJECT")"
 
 cat <<'NEXT'
 

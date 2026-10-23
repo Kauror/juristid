@@ -23,7 +23,7 @@ import importlib.util
 import re
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, NamedTuple
 
 import pytest
 import yaml
@@ -88,10 +88,21 @@ def _walk(node: Any, env: dict[str, str]) -> Any:
     return node
 
 
-def resolve(compose: dict[str, Any], interpolation: dict[str, str]) -> dict[str, Any]:
-    """What `docker compose config` would print for each service's environment."""
+def resolve(
+    compose: dict[str, Any], interpolation: dict[str, str], profiles: tuple[str, ...] = ()
+) -> dict[str, Any]:
+    """What `docker compose [--profile …] config` would print for each service's environment.
+
+    A service behind a profile is in the model only when one of its profiles
+    is active, as in Compose: `mcp` and `mcp-tunnel` (docs/adr/0185) appear
+    with `profiles=("mcp",)` and not otherwise, so their environment files are
+    read only then — exactly why a host without them still resolves.
+    """
     services: dict[str, Any] = {}
     for name, raw in compose["services"].items():
+        gated = raw.get("profiles") or []
+        if gated and not set(gated) & set(profiles):
+            continue
         service = _walk(copy.deepcopy(raw), interpolation)
         environment: dict[str, str] = {}
         entries = service.pop("env_file", None) or []
@@ -134,6 +145,64 @@ def _initialising(
 ) -> dict[str, Any]:
     """`… --env-file <the environment file> up -d db`, RECOVERY.md's empty-cluster step."""
     return resolve(compose, {**values, "JURISTID_ENV_FILE": str(env_file)})
+
+
+class McpFiles(NamedTuple):
+    """The two environment files ADR 0185 added, as synthetic sentinel files."""
+
+    mcp_path: Path
+    mcp: dict[str, str]
+    tunnel_path: Path
+    tunnel: dict[str, str]
+
+
+@pytest.fixture
+def mcp_files(tmp_path: Path) -> McpFiles:
+    written: list[tuple[Path, dict[str, str]]] = []
+    for name, template, tag in (
+        ("juristid-mcp.env", checker.MCP_ENV_EXAMPLE, "m"),
+        ("juristid-mcp-tunnel.env", checker.MCP_TUNNEL_ENV_EXAMPLE, "t"),
+    ):
+        values = checker.sentinel_values(checker.template_keys(template), tag)
+        path = tmp_path / name
+        path.write_text("".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8")
+        written.append((path, values))
+    (mcp_path, mcp), (tunnel_path, tunnel) = written
+    return McpFiles(mcp_path, mcp, tunnel_path, tunnel)
+
+
+def _with_mcp(
+    compose: dict[str, Any],
+    env_file: Path,
+    files: McpFiles,
+    values: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """`docker compose --profile mcp …`, routine or (with `values`) initialising."""
+    interpolation = {
+        **(values or {}),
+        "JURISTID_ENV_FILE": str(env_file),
+        "JURISTID_MCP_ENV_FILE": str(files.mcp_path),
+        "JURISTID_MCP_TUNNEL_ENV_FILE": str(files.tunnel_path),
+    }
+    return resolve(compose, interpolation, profiles=("mcp",))
+
+
+def _mcp_violations(
+    services: dict[str, Any],
+    values: dict[str, str],
+    files: McpFiles,
+    *,
+    initialising: bool = False,
+    main_file: Path | None = None,
+) -> list[str]:
+    return checker.violations(
+        services,
+        values,
+        initialising=initialising,
+        mcp_sentinels=files.mcp,
+        mcp_tunnel_sentinels=files.tunnel,
+        main_file=str(main_file) if main_file else None,
+    )
 
 
 # -- the sentinel file is a fair test ---------------------------------------
@@ -278,6 +347,175 @@ def test_the_check_refuses_a_password_that_does_not_match_the_shape(
     )
 
 
+# -- the MCP server and its tunnel (docs/adr/0185) --------------------------
+
+
+def test_the_mcp_services_read_only_their_own_files_day_to_day(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    services = _with_mcp(compose, path, mcp_files)
+    assert {"mcp", "mcp-tunnel"} <= set(services)
+    assert _mcp_violations(services, values, mcp_files, main_file=path) == []
+    # The positive controls, stated here as well as inside the checker.
+    assert services["mcp"]["environment"]["DJANGO_SECRET_KEY"] == mcp_files.mcp["DJANGO_SECRET_KEY"]
+    tunnel_id = services["mcp-tunnel"]["environment"]["CONTROL_PLANE_TUNNEL_ID"]
+    assert tunnel_id == mcp_files.tunnel["CONTROL_PLANE_TUNNEL_ID"]
+
+
+def test_initialising_a_cluster_hands_the_mcp_services_nothing_either(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    """`--env-file juristid.env` feeds interpolation; neither new service interpolates from it."""
+    path, values = sentinels
+    services = _with_mcp(compose, path, mcp_files, values)
+    assert _mcp_violations(services, values, mcp_files, initialising=True, main_file=path) == []
+
+
+def test_the_mcp_server_holds_none_of_the_browsers_secrets(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    """Named one by one: the four ADR 0185 §6 says the process is not given."""
+    path, values = sentinels
+    rendered = repr(_with_mcp(compose, path, mcp_files)["mcp"])
+    for key in (
+        "JURISTID_SHARED_GATE_PASSWORD",
+        "LOCAL_AUTH_MFA_ENCRYPTION_KEY",
+        "DJANGO_EMAIL_HOST_PASSWORD",
+        "DJANGO_SECRET_KEY",
+        "POSTGRES_PASSWORD",
+    ):
+        assert values[key] not in rendered, f"mcp receives juristid.env's {key}"
+    for key in ("JURISTID_SHARED_GATE_PASSWORD", "LOCAL_AUTH_MFA_ENCRYPTION_KEY"):
+        assert key not in rendered, f"mcp is handed {key} at all"
+
+
+def test_the_mcp_services_declare_their_own_files_and_never_the_applications(
+    compose: dict[str, Any],
+) -> None:
+    services = compose["services"]
+    assert services["mcp"]["env_file"] == [
+        "${JURISTID_MCP_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp.env}"
+    ]
+    assert services["mcp-tunnel"]["env_file"] == [
+        "${JURISTID_MCP_TUNNEL_ENV_FILE:-"
+        "/mnt/user/appdata/juristid-main/config/juristid-mcp-tunnel.env}"
+    ]
+    for name in ("mcp", "mcp-tunnel"):
+        assert "JURISTID_ENV_FILE" not in str(services[name]), name
+        assert "juristid.env" not in str(services[name]), name
+
+
+def test_the_allowlists_are_what_the_templates_name_and_no_more() -> None:
+    """The templates cannot quietly widen what a service receives.
+
+    Every key the MCP template names is on the MCP allowlist, and none of the
+    browser's; the tunnel template is exactly three keys. The allowlists are
+    literal in the checker, so this is where a new key is noticed.
+    """
+    assert not checker.MCP_ALLOWED & checker.BROWSER_ONLY
+    mcp_keys = set(checker.template_keys(checker.MCP_ENV_EXAMPLE))
+    assert mcp_keys <= checker.MCP_ALLOWED, sorted(mcp_keys - checker.MCP_ALLOWED)
+    assert not mcp_keys & checker.BROWSER_ONLY
+    assert set(checker.template_keys(checker.MCP_TUNNEL_ENV_EXAMPLE)) == {
+        "CONTROL_PLANE_API_KEY",
+        "CONTROL_PLANE_TUNNEL_ID",
+        "MCP_OAUTH_TRUSTED_ORIGINS",
+    }
+    assert set(checker.template_keys(checker.MCP_TUNNEL_ENV_EXAMPLE)) <= (
+        checker.MCP_TUNNEL_ALLOWED
+    )
+    # And the application template names none of the tunnel's.
+    assert not set(checker.template_keys()) & {"CONTROL_PLANE_API_KEY", "CONTROL_PLANE_TUNNEL_ID"}
+
+
+def test_the_sentinels_of_the_three_files_never_contain_each_other(
+    sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    _, values = sentinels
+    everything = [*values.values(), *mcp_files.mcp.values(), *mcp_files.tunnel.values()]
+    for value in everything:
+        assert sum(value in other for other in everything) == 1, value
+
+
+def test_the_check_refuses_an_mcp_server_given_the_application_file(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    """The mistake this whole arrangement is against: the one-line `env_file` copy."""
+    path, values = sentinels
+    leaky = copy.deepcopy(compose)
+    leaky["services"]["mcp"]["env_file"] = [
+        "${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}",
+        *leaky["services"]["mcp"]["env_file"],
+    ]
+    found = _mcp_violations(_with_mcp(leaky, path, mcp_files), values, mcp_files, main_file=path)
+    assert (
+        "mcp: receives JURISTID_SHARED_GATE_PASSWORD, a secret of the browser's that it must "
+        "never hold"
+    ) in found
+    assert (
+        "mcp: the value of JURISTID_SHARED_GATE_PASSWORD from the environment file reaches it"
+    ) in found
+
+
+def test_the_check_refuses_a_tunnel_client_given_an_application_value(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    leaky = copy.deepcopy(compose)
+    leaky["services"]["mcp-tunnel"]["environment"]["EXTRA"] = "${DJANGO_SECRET_KEY:-}"
+    services = _with_mcp(leaky, path, mcp_files, values)
+    found = _mcp_violations(services, values, mcp_files, initialising=True, main_file=path)
+    assert "mcp-tunnel: receives EXTRA, which is not on its allowlist" in found
+    assert (
+        "mcp-tunnel: the value of DJANGO_SECRET_KEY from the environment file reaches it" in found
+    )
+
+
+def test_the_check_refuses_the_runtime_key_anywhere_but_the_tunnel_client(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    leaky = copy.deepcopy(compose)
+    leaky["services"]["web"]["env_file"].append(
+        "${JURISTID_MCP_TUNNEL_ENV_FILE:-/mnt/user/appdata/juristid-main/config/x.env}"
+    )
+    found = _mcp_violations(_with_mcp(leaky, path, mcp_files), values, mcp_files, main_file=path)
+    assert (
+        "web: the value of CONTROL_PLANE_API_KEY from juristid-mcp-tunnel.env reaches it" in found
+    )
+
+
+def test_the_check_refuses_an_mcp_file_that_was_never_read(
+    compose: dict[str, Any],
+    sentinels: tuple[Path, dict[str, str]],
+    mcp_files: McpFiles,
+    tmp_path: Path,
+) -> None:
+    path, values = sentinels
+    empty = tmp_path / "empty-mcp.env"
+    empty.write_text("", encoding="utf-8")
+    services = _with_mcp(compose, path, mcp_files._replace(mcp_path=empty))
+    found = _mcp_violations(services, values, mcp_files, main_file=path)
+    control = "mcp: does not hold the sentinel DJANGO_SECRET_KEY"
+    assert any(line.startswith(control) for line in found), found
+
+
+def test_the_check_does_not_pass_over_services_it_was_not_told_about(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    """Either half without the other is a check that checked nothing."""
+    path, values = sentinels
+    with_profile = _with_mcp(compose, path, mcp_files)
+    found = checker.violations(with_profile, values, initialising=False)
+    assert found and found[0].startswith("mcp, mcp-tunnel: in the resolved model"), found
+
+    without_profile = _routine(compose, path)
+    assert "mcp" not in without_profile, "a resolution without --profile mcp includes it"
+    found = _mcp_violations(without_profile, values, mcp_files, main_file=path)
+    assert any(line.startswith("mcp: not in the resolved model") for line in found), found
+
+
 # -- the runbook and CI keep their half ------------------------------------
 
 
@@ -301,5 +539,11 @@ def test_ci_resolves_both_shapes_with_compose_itself() -> None:
     scripts = [step.get("run", "") for step in steps]
     joined = "\n".join(scripts)
     assert "assert_service_env_isolation.py --write-sentinels" in joined
-    assert re.search(r"assert_service_env_isolation\.py \S+ \"\$SENTINELS\"\n", joined)
-    assert re.search(r"assert_service_env_isolation\.py \S+ \"\$SENTINELS\" --initialising", joined)
+    # Both shapes with the MCP files (docs/adr/0185): resolved with
+    # `--profile mcp`, so the two new services are in the model to be checked.
+    mcp = r"--mcp \"\$MCP_SENTINELS\" --mcp-tunnel \"\$TUNNEL_SENTINELS\""
+    assert re.search(rf"assert_service_env_isolation\.py {mcp} \S+ \"\$SENTINELS\"\n", joined)
+    assert re.search(
+        rf"assert_service_env_isolation\.py {mcp} \S+ \"\$SENTINELS\" --initialising", joined
+    )
+    assert re.search(r"resolve\(\) \{ docker compose \"\$@\" --profile mcp ", joined)

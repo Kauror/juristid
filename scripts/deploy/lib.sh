@@ -105,9 +105,22 @@ juristid_compose() {
 # about the process now serving, which by then is the new image. The rule is
 # that the command is aimed at whichever image the question is about.
 #
+# AI access (docs/adr/0185) is the one service the plain `up -d --no-build`
+# leaves alone: `mcp` is behind a profile, so a running one stayed on the
+# previous image, against a migrated schema, unless the operator remembered a
+# README line (MCPSEC-13). The fifth argument says what the preflight found:
+#
+#   running  the plan names `mcp` in its own `up -d --no-build --no-deps mcp`
+#            (never recreating `db` or `tunnel`), then asserts that it and `web`
+#            both run the release tag;
+#   stopped  the plan says to leave it stopped — naming a profiled service
+#            starts it, and AI access somebody stopped stays stopped;
+#   absent   (the default) nothing: AI access is not set up here.
+#
 # Printed, never run. This function emits text; the operator runs it.
 deployment_plan() {
-  local project="$1" compose_file="$2" repo="$3" target="$4"
+  local project="$1" compose_file="$2" repo="$3" target="$4" mcp_state="${5:-absent}"
+  local tag="${target:0:12}"
 
   # One command per line. A printed backslash continuation is consumed by the
   # heredoc itself rather than reaching the terminal, so it produced a joined
@@ -128,9 +141,97 @@ deployment_plan() {
   scripts/deploy/juristid-backup.sh --project $project --compose-file $compose_file ...
   docker compose -p $project -f $compose_file run --rm web python manage.py migrate
   docker compose -p $project -f $compose_file up -d --no-build
+PLAN
+  case "$mcp_state" in
+    running)
+      cat <<PLAN
+  # AI access is running here (juristid-main-mcp): the line above left it on the
+  # previous image, so it moves too — by name, --no-deps, nothing else recreated.
+  docker compose -p $project -f $compose_file up -d --no-build --no-deps mcp
+  # Must print "mcp and web run juristid-main-web:$tag", or stop and replace mcp again.
+  test "\$(docker inspect --format '{{.Config.Image}}' juristid-main-mcp)" = "juristid-main-web:$tag" && test "\$(docker inspect --format '{{.Config.Image}}' juristid-main-web)" = "juristid-main-web:$tag" && echo "mcp and web run juristid-main-web:$tag" || echo "STOP: mcp and web are not both on juristid-main-web:$tag"
+PLAN
+      ;;
+    stopped)
+      cat <<PLAN
+  # AI access exists here but is stopped (juristid-main-mcp): leave it stopped.
+  # Naming it would start it; whoever starts it again recreates it on this release
+  # (docs/mcp/OPERATIONS.md, "Starting and restarting only the MCP component").
+PLAN
+      ;;
+  esac
+  cat <<PLAN
   docker compose -p $project -f $compose_file exec -T web python manage.py deployment_readiness
   curl -s https://juristid.orgusaar.ee/healthz   # revision must equal $target
 PLAN
+}
+
+# What `deployment_plan` is told about AI access: running, stopped or absent.
+#
+# Reads one container's state by its fixed name and nothing else; prints
+# nothing about its configuration. Only the production project has one.
+mcp_container_state() {
+  local project="$1" state
+  [ "$project" = "$JURISTID_PRODUCTION_PROJECT" ] || { printf 'absent\n'; return 0; }
+  state="$(docker ps -a --filter "name=^juristid-main-mcp\$" --format '{{.State}}' 2>/dev/null | head -n 1)"
+  case "$state" in
+    "") printf 'absent\n' ;;
+    running) printf 'running\n' ;;
+    *) printf 'stopped\n' ;;
+  esac
+}
+
+# The keys `web` must hold in juristid.env before MCP_ENABLED=1 (NEW-09).
+#
+# With AI access on and one of these missing or weak, `web` refuses to start on
+# real data (mcp_access.E004) — fail-closed, but the blast radius is all of
+# Juristid, not just AI access. So `juristid-mcp-web-keys.sh` generates them,
+# verified, before the operator switches anything on, and the preflight refuses
+# a juristid.env that switches AI access on without them. Never a value: only
+# key names and states are printed.
+MCP_WEB_KEYS=(MCP_AUTHENTICATOR_KEY MCP_TOKEN_DERIVATION_KEY)
+MCP_WEB_KEY_MIN_LENGTH=40
+
+# Whether an environment file switches AI access on, read the way
+# config/env.py reads MCP_ENABLED (1, true, yes, on; the last line wins).
+mcp_enabled_in() {
+  local value
+  value="$(sed -n 's/^[[:space:]]*MCP_ENABLED=//p' "$1" | tail -n 1 | tr -d "\"' \t\r" | tr '[:upper:]' '[:lower:]')"
+  case "$value" in
+    1 | true | yes | on) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# One key's state in an environment file: ok, missing, duplicated or weak.
+#
+# ok is exactly one line naming the key, as `KEY=` at the start of the line,
+# with at least MCP_WEB_KEY_MIN_LENGTH characters and no placeholder. A
+# commented template line does not name it. `grep -c` prints 0 and exits 1 on
+# no match, hence `|| true` inside the substitutions.
+mcp_web_key_state() {
+  local file="$1" key="$2" named strong placeholder
+  named="$(grep -cE "^[[:space:]]*${key}=" "$file" || true)"
+  strong="$(grep -cE "^${key}=.{${MCP_WEB_KEY_MIN_LENGTH},}" "$file" || true)"
+  placeholder="$(grep -cE "^${key}=replace-me" "$file" || true)"
+  if [ "$named" = 0 ]; then
+    printf 'missing\n'
+  elif [ "$named" != 1 ]; then
+    printf 'duplicated\n'
+  elif [ "$strong" != 1 ] || [ "$placeholder" != 0 ]; then
+    printf 'weak\n'
+  else
+    printf 'ok\n'
+  fi
+}
+
+# Every web key that is not ok, one `KEY state` per line; nothing when all are.
+mcp_web_keys_not_ready() {
+  local file="$1" key state
+  for key in "${MCP_WEB_KEYS[@]}"; do
+    state="$(mcp_web_key_state "$file" "$key")"
+    [ "$state" = ok ] || printf '%s %s\n' "$key" "$state"
+  done
 }
 
 # How many files a tree holds, and how many bytes they add up to.

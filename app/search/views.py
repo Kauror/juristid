@@ -24,6 +24,7 @@ from django.urls import reverse
 
 from app.matters.models import Matter
 from app.matters.selectors import current_action_of, open_action_prefetch
+from app.search.links import target_path
 from app.search.models import SearchSourceKind
 from app.search.services import (
     MATCH_REFERENCE,
@@ -33,7 +34,6 @@ from app.search.services import (
     search_matters,
     search_page,
 )
-from app.submissions.opinions import opinions_url
 
 
 @login_required
@@ -98,46 +98,10 @@ def search_view(request: HttpRequest) -> HttpResponse:
     )
 
 
-def _target_url(result: object) -> str:
-    """Where clicking this result goes — as close to the source as practical.
-
-    Server-rendered URLs and anchors, not a client-side router: the timeline is
-    already one page with one anchor per entry, and a document already has a
-    detail page. Building a navigation layer to get a few hundred pixels closer
-    would be a large amount of machinery for a scroll position
-    (Stage-2B brief 77).
-    """
-    kind = result.source_kind  # type: ignore[attr-defined]
-    matter_url = reverse("matters:matter_detail", kwargs={"pk": result.matter.pk})  # type: ignore[attr-defined]
-
-    if (
-        kind in (SearchSourceKind.DOCUMENT_FRAGMENT, SearchSourceKind.DOCUMENT)
-        and result.document_id  # type: ignore[attr-defined]
-    ):
-        return reverse("documents:document_detail", kwargs={"pk": result.document_id})  # type: ignore[attr-defined]
-    if kind == SearchSourceKind.ENTRY and result.entry_id:  # type: ignore[attr-defined]
-        return f"{matter_url}#sissekanne-{result.entry_id}"  # type: ignore[attr-defined]
-    if kind == SearchSourceKind.LEGACY_SOURCE_PAGE and result.source_page_id:  # type: ignore[attr-defined]
-        return reverse(
-            "legacy_import:source_page",
-            kwargs={"pk": result.source_page_id},  # type: ignore[attr-defined]
-        )
-    if kind == SearchSourceKind.SUBMISSION and result.submission_id:  # type: ignore[attr-defined]
-        # The Matter's own opinion material, which is Dokumendid filtered to
-        # `Arvamus` since the per-Matter Arvamused page was retired — an address
-        # this used to point at and which would now only redirect here anyway
-        # (docs/adr/0061).
-        #
-        # Filtered rather than anchored on the opinion file itself. The
-        # projection carries `submission_id` and no document identity, and
-        # resolving one per result would be a query per row *and* an
-        # authorization decision per row: a Submission a reader may find can
-        # point at a Document restricted below it, so an anchor built from the
-        # submission alone would name a file the page then refuses to render.
-        # The filtered list answers the same question and cannot leak — every
-        # row on it went through `Document.objects.visible_to` (AUTH-003 §21).
-        return opinions_url(result.matter)  # type: ignore[attr-defined]
-    return matter_url
+#: Where clicking a result goes. The rule lives in `app.search.links` since the
+#: MCP server became its second reader (docs/adr/0185); the name stays because
+#: tests and this page's row building have always called it this.
+_target_url = target_path
 
 
 # -- live suggestions in the header -------------------------------------------

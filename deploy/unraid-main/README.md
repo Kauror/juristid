@@ -1501,6 +1501,34 @@ it: `web`, `intake-reader`, `searchindex` and `intake-sweeper` all run the
 release image and all move together, and a fourth application service added later moves with them
 without anybody editing a list.
 
+**The one exception is AI access.** `mcp`, the read-only MCP server ChatGPT
+reaches (docs/adr/0185), runs the release image too, but it is behind the `mcp`
+profile, so neither form above touches it: a running `mcp` stays on the
+previous image. The preflight looks for you (MCPSEC-13): where
+`juristid-main-mcp` is running, the plan it prints carries the `mcp` line below
+and then a `test …` line that must print `mcp and web run
+juristid-main-web:<tag>`; where it is stopped, the plan says to leave it
+stopped. To look yourself:
+
+```bash
+docker ps -a --filter label=com.docker.compose.project=juristid-main --filter 'name=^juristid-main-mcp$' --format '{{.Names}} {{.Image}} {{.Status}}'
+```
+
+If `juristid-main-mcp` is listed as running, replace it as well — in the same
+shell, so it resolves the same exported tag:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp
+```
+
+If it is not listed, or listed as `Exited`, **do not run it**: naming a profiled
+service starts it, and AI access that somebody stopped stays stopped until
+somebody decides otherwise ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md)).
+`mcp-tunnel` is never part of a code release: it runs a pinned upstream image,
+like `tunnel`, and a release has no reason to move it. The first release that
+carries AI access has its own steps in
+[`docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md`](../../docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md).
+
 Migrations are a deliberate step, never container start-up work: on boot they
 would run on every restart, including the restart that happens at three in the
 morning because the host rebooted.
@@ -1657,7 +1685,9 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml ps
 ```
 
 Nothing should be owed, and `ps` should show `juristid-main-searchindex`
-running beside the other five. From here on the worker keeps the index fresh on
+running beside the other five (and, where AI access is on, `ps mcp mcp-tunnel`
+— named, because they are behind a profile — shows those two healthy as well).
+From here on the worker keeps the index fresh on
 its own, and this step is not part of an ordinary release again until something
 changes `INDEX_VERSION` a second time.
 
@@ -1739,6 +1769,21 @@ rebuildable, how a set is produced and verified, the restore order for a fresh
 host, the rollback decision tree, and — stated plainly there — the fact that the
 current backups are a local recovery copy rather than off-host disaster
 recovery.
+
+## AI access (MCP)
+
+A colleague can ask Juristid from the Chamber's ChatGPT workspace through a
+read-only MCP server (docs/adr/0185). It is two services behind the `mcp`
+profile — `mcp`, which runs the release image with its own environment file
+and read-only database transactions, and `mcp-tunnel`, OpenAI's Secure MCP
+Tunnel client — plus OAuth routes on `web` that are off until `MCP_ENABLED=1`.
+Neither service publishes a port, mounts a volume or reads `juristid.env`, and
+neither starts unless it is named.
+
+Everything about it is in [`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md):
+first-time enablement, granting and revoking a person, health checks, and how
+to switch AI access off in one command without touching the rest of Juristid.
+What a release has to do about it is in step 9 above.
 
 ## What must not happen here
 
