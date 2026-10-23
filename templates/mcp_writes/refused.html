@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Muudatust ei saa kinnitada · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The one answer for every approval link that is not this persona's own
+  pending business (docs/adr/0189): no such proposal, somebody else's, a grant
+  that cannot write. It does not say which.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Muudatust ei saa kinnitada</h1>
+  <div class="formerror" role="alert"><p>{{ message }}</p></div>
+</div>
+{% endblock %}

@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}Kinnita muudatus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The approval of one change an AI client prepared (docs/adr/0189). Everything
+  shown is the stored preview, autoescaped, exactly as it was prepared; the
+  page re-checked the record before offering «Kinnita» and offers no button
+  for a stale or finished proposal. The persona says whose page this is; the
+  code from «Juristidi MCP autentija» is what approves.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Kinnita muudatus</h1>
+
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+  {% if done %}
+    <p class="message message--success" role="status">{{ done }}</p>
+  {% endif %}
+  {% if notice %}
+    <div class="notice notice--warning" role="status"><p>{{ notice }}</p></div>
+  {% endif %}
+
+  <section class="panel acctenrol">
+    <p><strong>{{ operation_label }}</strong></p>
+    {% if preview.summary %}<p>{{ preview.summary }}</p>{% endif %}
+    {% if preview.target %}
+      <p>
+        {% if preview.target.url %}
+          <a href="{{ preview.target.url }}">{{ preview.target.reference }} {{ preview.target.title }}</a>
+        {% else %}
+          {{ preview.target.reference }} {{ preview.target.title }}
+        {% endif %}
+        {% if preview.target.record_label %}· {{ preview.target.record_label }}{% endif %}
+      </p>
+    {% endif %}
+    <p class="acctnote">Muudatuse valmistas ette sinu ChatGPT ühendus. Tegutsed kasutajana <strong>{{ persona.display_name }}</strong>. Kinnitamise aeg lõpeb {{ proposal.expires_at|date:"d.m.Y H:i" }}.</p>
+  </section>
+
+  {% if preview.changes %}
+    <h2 class="acctsection__title">Mis muutub</h2>
+    <div class="tablewrap">
+      <table class="table">
+        <thead>
+          <tr><th scope="col">Väli</th><th scope="col">Praegu</th><th scope="col">Pärast kinnitamist</th></tr>
+        </thead>
+        <tbody>
+          {% for change in preview.changes %}
+            <tr><th scope="row">{{ change.label }}</th><td>{{ change.current }}</td><td>{{ change.proposed }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if preview.consequences %}
+    <h2 class="acctsection__title">Tagajärjed</h2>
+    <ul>{% for line in preview.consequences %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if preview.unchanged %}
+    <h2 class="acctsection__title">Mis ei muutu</h2>
+    <ul>{% for line in preview.unchanged %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if preview.warnings %}
+    <div class="notice notice--warning" role="note">
+      <ul>{% for line in preview.warnings %}<li>{{ line }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  {% if can_approve or can_decline %}
+    <form method="post" class="card card--form form" novalidate>
+      {% csrf_token %}
+      {% if can_approve %}
+        {% if recent %}
+          <p class="acctnote">Sisestasid autentija koodi selles seansis äsja. Kinnitamiseks vajuta «Kinnita».</p>
+        {% else %}
+          <label class="field">
+            <span class="field__label">Kood rakendusest «Juristidi MCP autentija»</span>
+            <input class="field__input mono"
+                   type="text"
+                   name="kood"
+                   inputmode="numeric"
+                   autocomplete="one-time-code"
+                   pattern="[0-9]{6}"
+                   maxlength="6"
+                   autocapitalize="off"
+                   spellcheck="false"
+                   autofocus>
+          </label>
+        {% endif %}
+        <p class="acctnote">Kinnita ainult siis, kui palusid selle muudatuse ise ja just praegu. Iga kinnitus kehtib ainult sellele ühele muudatusele.</p>
+      {% endif %}
+      <div class="form__actions">
+        {% if can_approve %}<button type="submit" name="otsus" value="kinnita" class="button button--primary">Kinnita</button>{% endif %}
+        <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Lükka tagasi</button>
+      </div>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}
