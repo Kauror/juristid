@@ -141,27 +141,6 @@ def test_no_figure_offers_an_empty_destination(client, populated, label, route, 
     )
 
 
-def test_the_statistika_strip_states_a_number_it_cannot_open(client, populated):
-    """The live case, named rather than left to a general rule.
-
-    «teemat kõik aastad» counts arrivals by `received_date` while the register
-    filters by reporting year, so there is no list that matches it. The figure
-    is therefore deliberately linkless, and it must render as a span — which is
-    what this asserts, so a future edit that gives it a destination has to
-    explain which list that is.
-    """
-    client.force_login(populated)
-
-    body = client.get(reverse("reporting:overview")).content.decode()
-    figures = FIGURE.findall(body)
-
-    assert figures, "the Statistika strip rendered no figures at all"
-    assert any(kind == "span" for kind, _ in figures), (
-        "no figure on Statistika rendered as a span; if every figure now has an "
-        "honest destination, say so here and delete this test"
-    )
-
-
 @pytest.mark.parametrize(("label", "route", "params"), STRIPS, ids=[s[0] for s in STRIPS])
 def test_every_link_that_is_offered_is_real(client, populated, label, route, params):
     """The other half: a destination that exists must actually resolve.

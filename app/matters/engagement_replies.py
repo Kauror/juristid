@@ -32,6 +32,7 @@ import hashlib
 from collections.abc import Iterable
 from typing import Any
 
+from django.db import transaction
 from django.db.models import QuerySet
 
 from app.core.errors import DomainError
@@ -115,6 +116,7 @@ def finish_wait_on_reply(
 WAIT_REOPENED_REPLY_REMOVED = "reply_removed"
 
 
+@transaction.atomic
 def reopen_wait_after_reply_removed(*, position: Any, matter: Matter, actor: Any = None) -> bool:
     """Reopen the wait an answer finished, when that answer is removed as a mistake.
 
