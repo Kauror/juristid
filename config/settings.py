@@ -75,6 +75,7 @@ LOCAL_APPS = [
     "app.related_materials",
     "app.mcp_access",
     "app.mcp_server",
+    "app.notifications",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + LOCAL_APPS
