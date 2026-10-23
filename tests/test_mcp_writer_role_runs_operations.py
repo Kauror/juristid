@@ -4,18 +4,25 @@ Agent B's tests (`tests/test_mcp_write_operations_*.py`) drive every operation
 through prepare → lock → state → execute; agent C's (`test_mcp_write_proposals`,
 `test_mcp_write_commit`, `test_mcp_write_gateway`, `test_mcp_writes_e2e`) drive
 the gateway's prepare and commit — proposals, events, security audit rows —
-end to end. Here the same test functions are collected a second time, with one
+end to end. Their test functions are collected a second time, with one
 difference: every call into an operation's `prepare`, `lock`, `state` and
 `execute`, and into the gateway's `proposals.prepare` and `commit.commit`, runs
-under
-`SET ROLE juristid_mcp_writer_<random>`, a role created by
-`app.mcp_writes.db_role.role_sql` inside the test's own transaction (roles are
-transactional in PostgreSQL, so it never outlives the test). PostgreSQL then
-refuses any write, row lock or read the role does not hold — so a green run
-proves the allow-list suffices for every case those tests cover, and a new
-table a canonical service starts writing fails here by name.
+under `SET ROLE juristid_mcp_writer_<random>`, a role made by
+`app.mcp_writes.db_role.role_sql`. PostgreSQL then refuses any write, row lock
+or read the role does not hold — so a green run proves the allow-list suffices
+for every case those tests cover, and a table a canonical service starts
+writing fails here by name.
 
-Skipped where the operations or their tests are not on the branch.
+This module re-collects B's four operation suites (they share no fixtures).
+Each of C's suites has its own module (`test_mcp_writer_role_runs_<suite>.py`),
+because their autouse fixtures — stand-in verifiers, a deployment's settings —
+must apply to their own tests only. `collect_into` and `as_writer_role` are the
+shared machinery.
+
+In a non-transactional test the role is created inside the test's transaction
+and rolled back with it; in a transactional one (the e2e suite, whose gateway
+runs in a worker thread on its own connection) it is committed under a random
+name and dropped afterwards — the local cluster is shared.
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ from __future__ import annotations
 import functools
 import importlib
 import secrets
+import sys
 import threading
 from collections.abc import Callable, Iterator
 from typing import Any
@@ -32,67 +40,68 @@ from django.db import connection
 
 from app.mcp_writes import db_role
 
-_SUITES = (
-    "tests.test_mcp_write_operations_actions",
-    "tests.test_mcp_write_operations_dates",
-    "tests.test_mcp_write_operations_entries",
-    "tests.test_mcp_write_operations_matters",
-    "tests.test_mcp_write_proposals",
-    "tests.test_mcp_write_commit",
-    "tests.test_mcp_write_gateway",
-    "tests.test_mcp_writes_e2e",
-)
+#: The gateway's two entry points (agent C). The gateway calls them through
+#: the module (`proposals.prepare`, `commits.commit`), so patching the
+#: attribute reaches every caller.
+GATEWAY_ENTRIES = (("app.mcp_writes.proposals", "prepare"), ("app.mcp_writes.commit", "commit"))
 
-#: The gateway's two entry points (agent C), by module and function. The
-#: gateway calls them through the module (`proposals.prepare`,
-#: `commits.commit`), so patching the attribute reaches every caller.
-_GATEWAY_ENTRIES = (("app.mcp_writes.proposals", "prepare"), ("app.mcp_writes.commit", "commit"))
-
-_loaded = []
-for _name in _SUITES:
-    try:
-        _module = importlib.import_module(_name)
-    except ImportError:
-        continue
-    _loaded.append(_name)
-    _short = _name.rsplit(".", 1)[1].removeprefix("test_")
-    for _attr, _value in vars(_module).items():
-        if _attr.startswith("test_") and callable(_value):
-            globals()[f"{_attr}__{_short}__as_writer_role"] = _value
-        elif not _attr.startswith("__") and _attr not in globals():
-            # The suite's own fixtures and helpers, so its tests resolve here.
-            globals()[_attr] = _value
-
-#: How many calls ran under the role; the last test asserts it is not zero.
+#: How many calls ran under the role, by "<test module>:<entry point>".
 CALLS: dict[str, int] = {}
 
 
-@pytest.fixture(autouse=True)
-def _operations_run_as_the_writer_role(request: Any, monkeypatch: Any) -> Iterator[None]:
-    if not request.node.get_closest_marker("django_db") and "db" not in str(request.fixturenames):
+def calls(module: str, label: str) -> int:
+    return CALLS.get(f"{module}:{label}", 0)
+
+
+def collect_into(namespace: dict[str, Any], *suites: str) -> list[str]:
+    """Copy the suites' tests (renamed) and their fixtures and helpers into ``namespace``."""
+    loaded = []
+    for name in suites:
+        try:
+            module = importlib.import_module(name)
+        except ImportError:
+            continue
+        loaded.append(name)
+        short = name.rsplit(".", 1)[1].removeprefix("test_")
+        for attr, value in vars(module).items():
+            if attr.startswith("test_") and callable(value):
+                namespace[f"{attr}__{short}__as_writer_role"] = value
+            elif not attr.startswith("__") and attr not in namespace:
+                namespace[attr] = value
+    return loaded
+
+
+@pytest.fixture
+def as_writer_role(request: Any, monkeypatch: Any) -> Iterator[None]:
+    """Every operation method and gateway entry runs as a fresh writer role."""
+    if not request.node.get_closest_marker("django_db"):
         yield
         return
     from app.mcp_writes.operations import REGISTRY
 
+    here = request.module.__name__
     created: dict[str, str] = {}
+    lock = threading.Lock()
     depth = threading.local()
 
     def role() -> str:
-        if "name" not in created:
-            name = f"juristid_mcp_writer_o{secrets.token_hex(4)}"
-            with connection.cursor() as cursor:
-                for statement in db_role.role_sql(
-                    role=name,
-                    owner=connection.settings_dict["USER"],
-                    database=connection.settings_dict["NAME"],
-                    allowlist=db_role.existing_allowlist(cursor),
-                    withheld=db_role.withheld_existing(cursor),
-                ):
-                    cursor.execute(statement)
-            created["name"] = name
-        return created["name"]
+        with lock:
+            if "name" not in created:
+                name = f"juristid_mcp_writer_o{secrets.token_hex(4)}"
+                with connection.cursor() as cursor:
+                    for statement in db_role.role_sql(
+                        role=name,
+                        owner=connection.settings_dict["USER"],
+                        database=connection.settings_dict["NAME"],
+                        allowlist=db_role.existing_allowlist(cursor),
+                        withheld=db_role.withheld_existing(cursor),
+                    ):
+                        cursor.execute(statement)
+                created["name"] = name
+                created["committed"] = "" if connection.in_atomic_block else "yes"
+            return created["name"]
 
-    def as_role(function: Callable[..., Any], label: str) -> Callable[..., Any]:
+    def wrap(function: Callable[..., Any], label: str) -> Callable[..., Any]:
         @functools.wraps(function)
         def run(*args: Any, **kwargs: Any) -> Any:
             outermost = not getattr(depth, "n", 0)
@@ -101,7 +110,8 @@ def _operations_run_as_the_writer_role(request: Any, monkeypatch: Any) -> Iterat
                 with connection.cursor() as cursor:
                     cursor.execute(f'SET ROLE "{name}"')
             depth.n = getattr(depth, "n", 0) + 1
-            CALLS[label] = CALLS.get(label, 0) + 1
+            key = f"{here}:{label}"
+            CALLS[key] = CALLS.get(key, 0) + 1
             try:
                 return function(*args, **kwargs)
             finally:
@@ -124,28 +134,49 @@ def _operations_run_as_the_writer_role(request: Any, monkeypatch: Any) -> Iterat
             continue
         seen.add(cls)
         for method in ("prepare", "lock", "state", "execute"):
-            monkeypatch.setattr(cls, method, as_role(getattr(cls, method), method))
-    for module_name, function_name in _GATEWAY_ENTRIES:
+            monkeypatch.setattr(cls, method, wrap(getattr(cls, method), method))
+    for module_name, function_name in GATEWAY_ENTRIES:
         try:
             module = importlib.import_module(module_name)
         except ImportError:
             continue
-        if callable(getattr(module, function_name, None)):
-            label = f"gateway.{function_name}"
-            monkeypatch.setattr(
-                module, function_name, as_role(getattr(module, function_name), label)
-            )
+        original = getattr(module, function_name, None)
+        if callable(original):
+            wrapped = wrap(original, f"gateway.{function_name}")
+            monkeypatch.setattr(module, function_name, wrapped)
+            # A test module that imported the function by name holds its own
+            # reference (`from app.mcp_writes.commit import commit`).
+            for loaded in list(sys.modules.values()):
+                name = getattr(loaded, "__name__", "")
+                if name.startswith("tests.") and getattr(loaded, function_name, None) is original:
+                    monkeypatch.setattr(loaded, function_name, wrapped)
     yield
-    if "name" in created and not connection.in_atomic_block:
-        # A transactional test committed the role; drop it (the cluster is shared).
-        with connection.cursor() as cursor:
-            cursor.execute(f'DROP OWNED BY "{created["name"]}"')
-            cursor.execute(f'DROP ROLE "{created["name"]}"')
+    if created.get("committed"):
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute(f'DROP OWNED BY "{created["name"]}"')
+                cursor.execute(f'DROP ROLE "{created["name"]}"')
+        except Exception:  # noqa: S110 - a role still in use is dropped by a later run
+            pass
+
+
+# -- B's operation suites --------------------------------------------------------
+
+LOADED = collect_into(
+    globals(),
+    "tests.test_mcp_write_operations_actions",
+    "tests.test_mcp_write_operations_dates",
+    "tests.test_mcp_write_operations_entries",
+    "tests.test_mcp_write_operations_matters",
+)
+
+
+@pytest.fixture(autouse=True)
+def _as_writer_role(as_writer_role: None) -> None:
+    return None
 
 
 def test_zz_the_operations_really_ran_as_the_writer_role() -> None:
-    if not _loaded:
-        pytest.skip("INTEGRATION: the operation and gateway suites are not on this branch")
-    assert CALLS.get("execute", 0) > 0 and CALLS.get("prepare", 0) > 0, CALLS
-    if "tests.test_mcp_write_commit" in _loaded:
-        assert CALLS.get("gateway.commit", 0) > 0, CALLS
+    if not LOADED:
+        pytest.skip("INTEGRATION: agent B's operation suites are not on this branch")
+    assert calls(__name__, "execute") > 0 and calls(__name__, "prepare") > 0, CALLS
