@@ -9,7 +9,7 @@
   A merged tag is frozen; nothing here deletes a tag.
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">{{ tag.name_et }}</h1>
   {% if tag.merged_into %}
@@ -21,6 +21,9 @@
   {% endif %}
   <span class="pagehead__context"><a href="{% url 'reference_data:tags' %}">Sildid</a></span>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 {% include "reference_data/_nav.html" with current="sildid" %}
 
 <section class="panel" aria-labelledby="silt-andmed">

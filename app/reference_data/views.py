@@ -34,6 +34,7 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 
 from app.core.authorization import may_read_business_content
 from app.core.errors import DomainError
+from app.haldus.sections import visible_sections
 from app.organisations import administration as catalogue
 from app.organisations.duplicates import identity_report
 from app.organisations.models import AliasType, Organisation, OrganisationAlias
@@ -50,15 +51,29 @@ SECTION = "klassifikaatorid"
 def reference_data_required[R: HttpResponseBase](
     view: Callable[..., R],
 ) -> Callable[..., R | HttpResponseBase]:
-    """Sign-in first, then the capability; every refusal past sign-in is a 404."""
+    """The capability first, then sign-in; every refusal past sign-in is a 404.
+
+    The actor is asked before `login_required`, because a verified
+    administrator under the shared gate may have chosen no persona at all — a
+    technical administrator has no persona to choose — and must not be sent to
+    the persona list to reach a page their own session already opens
+    (docs/adr/0186). Anybody else without an actor meets the ordinary sign-in.
+    """
+
+    uncached = never_cache(view)
+    signed_in = login_required(uncached)
 
     @functools.wraps(view)
     def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R | HttpResponseBase:
-        if reference_actor(request) is None:
-            raise Http404(NOT_HERE)
-        return view(request, *args, **kwargs)
+        if reference_actor(request) is not None:
+            return uncached(request, *args, **kwargs)
+        user = getattr(request, "user", None)
+        if user is None or not user.is_authenticated:
+            # Never reaches the view: `login_required` redirects first.
+            return signed_in(request, *args, **kwargs)
+        raise Http404(NOT_HERE)
 
-    return login_required(never_cache(wrapper))
+    return wrapper
 
 
 def _render(request: HttpRequest, template: str, context: dict[str, Any], status: int = 200):
@@ -67,6 +82,7 @@ def _render(request: HttpRequest, template: str, context: dict[str, Any], status
         template,
         {
             "haldus_active": SECTION,
+            "haldus_sections": visible_sections(request),
             "shows_usage": may_read_business_content(request.user),
             **context,
         },

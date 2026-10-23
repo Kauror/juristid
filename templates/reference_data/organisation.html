@@ -12,12 +12,15 @@
   A reviewed baseline institution keeps its name and its reviewed spellings.
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">{{ organisation.name }}</h1>
   {% if is_reviewed %}<span class="badge badge--quiet">kinnitatud alusandmestik</span>{% endif %}
   <span class="pagehead__context"><a href="{% url 'reference_data:organisations' %}">Organisatsioonid</a></span>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 {% include "reference_data/_nav.html" with current="organisatsioonid" %}
 
 <section class="panel" aria-labelledby="org-andmed">

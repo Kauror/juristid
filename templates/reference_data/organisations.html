@@ -7,7 +7,7 @@
   and says which row it is (app/organisations/administration.py).
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">Organisatsioonid</h1>
   <span class="pagehead__context"><a href="{% url 'reference_data:index' %}">Klassifikaatorid</a></span>
@@ -15,6 +15,9 @@
     <a class="button button--secondary" href="{% url 'reference_data:organisation_duplicates' %}">Võimalikud topeltkirjed</a>
   </div>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 {% include "reference_data/_nav.html" with current="organisatsioonid" %}
 
 <form method="get" class="filterbar" role="search" action="{% url 'reference_data:organisations' %}">

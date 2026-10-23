@@ -8,11 +8,14 @@
   read them.
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">Sildid</h1>
   <span class="pagehead__context"><a href="{% url 'reference_data:index' %}">Klassifikaatorid</a></span>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 {% include "reference_data/_nav.html" with current="sildid" %}
 
 <form method="get" class="filterbar" role="search" action="{% url 'reference_data:tags' %}">

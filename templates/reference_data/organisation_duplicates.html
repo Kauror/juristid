@@ -7,11 +7,14 @@
   is a decision about years of filing and needs a reviewed change.
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">Võimalikud topeltkirjed</h1>
   <span class="pagehead__context"><a href="{% url 'reference_data:organisations' %}">Organisatsioonid</a></span>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 {% include "reference_data/_nav.html" with current="organisatsioonid" %}
 
 <p class="notice" role="note">Siin ei liideta midagi. Kumb rida on õige asutus, otsustab inimene; liitmine vajab arendaja kaudu ülevaadatud muudatust, sest sellest sõltuvad teemade saatjad, adressaadid ja arvamuste saajad.</p>

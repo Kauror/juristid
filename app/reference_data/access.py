@@ -31,12 +31,21 @@ def may_manage_reference_data(user: object | None) -> bool:
 def reference_actor(request: HttpRequest) -> User | None:
     """The person a reference-data change in this request is made by, or nobody.
 
-    `request.user` when it is a real account holding the capability. The
-    integrator adds the verified-administrator fallback once Haldus has one
-    (Admin & Workflow R1 contract); until then a request without a capable
-    account has no actor, and every route answers it with a 404.
+    `request.user` when it is a real account holding the capability. Failing
+    that, the session's verified administrator (docs/adr/0186) when *that*
+    account holds it: a technical administrator granted `reference.manage`
+    picks no lawyer persona to do this work. Acting through the verified
+    principal marks the request, so the audit rows it writes record that
+    principal and `administrator_session` rather than the persona. Nobody
+    else has an actor, and every route answers them with a 404.
     """
+    from app.accounts import admin_session
+
     user = getattr(request, "user", None)
     if isinstance(user, User) and may_manage_reference_data(user):
         return user
-    return None
+    principal = admin_session.verified_administrator(request)
+    if principal is None or not may_manage_reference_data(principal):
+        return None
+    actor = admin_session.administrator_actor(request)
+    return actor.user if actor is not None else None

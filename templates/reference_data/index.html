@@ -8,11 +8,14 @@
   `app.reference_data.inventory` so the page and the record agree.
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">Klassifikaatorid</h1>
   <span class="pagehead__context">Haldus</span>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 {% include "reference_data/_nav.html" with current="ulevaade" %}
 
 <p class="acctnote">Organisatsioone ja silte saab siin hallata. Valdkonnad, õigusakti liigid ja hetkeseisud on kinnitatud sõnastikud: neid saab vaadata, aga muuta ainult arendaja kaudu ülevaadatud muudatusega.</p>

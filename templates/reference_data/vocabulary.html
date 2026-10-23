@@ -9,11 +9,14 @@
   to somebody who may read them.
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">{{ vocabulary.label }}</h1>
   <span class="pagehead__context"><a href="{% url 'reference_data:index' %}">Klassifikaatorid</a></span>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 {% include "reference_data/_nav.html" with current=vocabulary.key %}
 
 <p class="notice" role="note">{{ explanation }}</p>

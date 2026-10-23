@@ -9,11 +9,14 @@
   meantime is refused as stale (app/reference_data/views.py `tag_merge`).
 {% endcomment %}
 
-{% block haldus_content %}
+{% block haldus_head %}
 <div class="pagehead">
   <h1 class="pagehead__title">Liida silt</h1>
   <span class="pagehead__context"><a href="{% url 'reference_data:tag' tag.pk %}">{{ tag.name_et }}</a></span>
 </div>
+{% endblock %}
+
+{% block haldus_content %}
 
 <section class="panel" aria-labelledby="liitmine-heading">
   <h2 class="acctsection__title" id="liitmine-heading">Mis juhtub</h2>
