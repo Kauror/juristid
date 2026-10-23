@@ -99,6 +99,11 @@ def test_the_rule_is_asked_in_exactly_one_place():
     raising its own refusal, because that is how nine different sentences
     happened.
     """
+    #: Not views: the MCP write path has no request to decorate. The grant's
+    #: eligibility (`mcp_access grant-write`) and every write operation's
+    #: prepare and execute ask the same predicate and answer in their own
+    #: refusal type (docs/adr/0189). Nothing here raises an HTTP refusal.
+    not_views = {"app/mcp_access/services.py", "app/mcp_writes/operations/common.py"}
     offenders = []
     for path in sorted(APP_ROOT.rglob("*.py")):
         if "migrations" in path.parts:
@@ -106,7 +111,7 @@ def test_the_rule_is_asked_in_exactly_one_place():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
             if re.search(r"if not may_write_business_content", line):
                 relative = path.relative_to(APP_ROOT.parent).as_posix()
-                if relative != "app/core/decorators.py":
+                if relative != "app/core/decorators.py" and relative not in not_views:
                     offenders.append(f"{relative}:{number}")
 
     assert offenders == [], (

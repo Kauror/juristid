@@ -165,7 +165,12 @@ def test_oversized_arguments_are_refused_before_validation(world, settings):
 
 @pytest.mark.parametrize(
     ("title", "matter", "code"),
-    [("PUUDU", None, "missing_information"), ("Uus", str(uuid.uuid4()), "not_found")],
+    [
+        ("PUUDU", None, "missing_information"),
+        # A fixed id nobody has: a random one changes the test's name on every
+        # collection, and the shard plan then finds it in no shard.
+        ("Uus", "00000000-0000-4000-8000-00000000dead", "not_found"),
+    ],
 )
 def test_an_operation_refusal_stores_no_proposal_and_says_why(world, title, matter, code):
     arguments = {"title": title}
