@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% comment %}
+  The Haldus shell (docs/adr/0186). One heading and one sub-navigation built
+  from `app.haldus.sections.visible_sections` — the same predicates every
+  route asks again — so the strip never offers a section that would refuse.
+  Pages fill `haldus_content`; `haldus_active` names the current section. A
+  page with a heading of its own replaces `haldus_head` whole, so there is
+  only ever one h1.
+  The strip reuses Statistika's `tabs`, which scrolls itself at phone width
+  rather than the page.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  {% block haldus_head %}
+  <div class="pagehead">
+    <h1 class="pagehead__title">{% block haldus_title %}Haldus{% endblock %}</h1>
+    {% block haldus_context %}{% endblock %}
+    <div class="pagehead__actions">{% block haldus_actions %}{% endblock %}</div>
+  </div>
+  {% endblock %}
+
+  {% if haldus_sections %}
+    <nav class="tabs" aria-label="Halduse osad">
+      {% for section in haldus_sections %}
+        <a class="tabs__tab {% if haldus_active == section.key %}is-active{% endif %}"
+           {% if haldus_active == section.key %}aria-current="page"{% endif %}
+           href="{{ section.url }}">{{ section.label }}</a>
+      {% endfor %}
+    </nav>
+  {% endif %}
+
+  {% block haldus_content %}{% endblock %}
+</div>
+{% endblock %}

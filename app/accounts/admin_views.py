@@ -1,17 +1,20 @@
 """Haldus → Kasutajad: the account administration pages.
 
-**One gate in front of all of them:** `local_auth.may_administer_accounts`. It
-is false in every mode but `local_password`, false for any session not signed
-in there, false without a proved second factor, and false without
-`accounts.manage`. A refused request is a 404 — the same answer whether the
-reader is anonymous, a shared-gate persona of any role, or a colleague without
-the capability — so the pages do not confirm that they exist (docs/adr/0145
-§12, docs/adr/0037 on why 404).
+**One gate in front of all of them:** a *verified administrator* holding
+`accounts.manage` (`admin_session.may_administer_accounts`). Under the shared
+gate that is the administrator session — the person's own e-mail, personal
+password and TOTP, bound to that person and never to the chosen persona
+(docs/adr/0186); under `local_password` it is the personal sign-in with a
+proved second factor, as before (docs/adr/0145 §12). Every other request is a
+404 — the same answer whether the reader is anonymous, a shared-gate persona of
+any role, or a colleague without the capability — so the pages do not confirm
+that they exist (docs/adr/0037 on why 404).
 
 Every change is a POST that additionally needs a **recent** proof of identity,
 and every change is made by one function in `app.accounts.administration`,
-which checks the actor's own authority again. A view that forgot its gate
-would still be refused below it.
+handed a `VerifiedActor` — which the services require under the shared gate and
+re-check under their lock. A view that forgot its gate would still be refused
+below it.
 """
 
 from __future__ import annotations
@@ -30,7 +33,9 @@ from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
-from app.accounts import administration, capabilities, local_auth, mail, mfa
+from app.accounts import admin_session, administration, capabilities, mail, mfa
+from app.accounts.admin_session import VerifiedActor
+from app.accounts.admin_session_views import reauthenticate_url
 from app.accounts.enums import AccountStatus, Capability, ProvisioningState
 from app.accounts.forms import (
     AccountForm,
@@ -39,7 +44,6 @@ from app.accounts.forms import (
     DeactivateForm,
     field_name,
 )
-from app.accounts.local_views import _reauthenticate_then
 from app.accounts.models import User
 from app.audit.enums import SecurityEventType
 from app.audit.models import SecurityAuditEvent
@@ -53,8 +57,10 @@ NOT_HERE = "Lehte ei leitud."
 def account_admin_required[R: HttpResponseBase](view: Callable[..., R]) -> Callable[..., R]:
     @functools.wraps(view)
     def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R:
-        if not local_auth.may_administer_accounts(request):
+        if not admin_session.may_administer_accounts(request):
             raise Http404(NOT_HERE)
+        # Administration is the activity that keeps the session alive.
+        admin_session.note_activity(request)
         return view(request, *args, **kwargs)
 
     return wrapper
@@ -67,7 +73,7 @@ def fresh_proof_required[R: HttpResponseBase](
 
     @functools.wraps(view)
     def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R | HttpResponseBase:
-        if local_auth.needs_reauthentication(request):
+        if admin_session.needs_fresh_proof(request):
             pk = kwargs.get("pk")
             back = (
                 reverse("account_admin:detail", kwargs={"pk": pk})
@@ -75,7 +81,7 @@ def fresh_proof_required[R: HttpResponseBase](
                 else reverse("account_admin:list")
             )
             messages.info(request, "Kinnita enne muutmist uuesti oma isik.")
-            return HttpResponseRedirect(_reauthenticate_then(back))
+            return HttpResponseRedirect(reauthenticate_url(back))
         return view(request, *args, **kwargs)
 
     return wrapper
@@ -83,14 +89,22 @@ def fresh_proof_required[R: HttpResponseBase](
 
 def _refused(request: HttpRequest, error: administration.AdministrationRefused) -> None:
     if isinstance(error, administration.PrivilegeRefused):
+        # The verified administrator, never the persona: under the shared gate
+        # `request.user` is whoever was picked from the list.
         administration.record_refusal(
-            actor=request.user, error=error, ip_address=client_ip(request)
+            actor=admin_session.verified_administrator(request),
+            error=error,
+            ip_address=client_ip(request),
         )
     messages.error(request, str(error))
 
 
-def _actor(request: HttpRequest) -> User:
-    return local_auth.person(request)
+def _actor(request: HttpRequest) -> VerifiedActor:
+    """The verified administrator this request acts as — never `request.user`."""
+    actor = admin_session.administrator_actor(request)
+    if actor is None:
+        raise Http404(NOT_HERE)
+    return actor
 
 
 # -- the list -------------------------------------------------------------------------------
@@ -156,8 +170,16 @@ def user_list(request: HttpRequest) -> HttpResponse:
                 ("valjas", AccountStatus.DISABLED.label),
             ],
             "nav_active": "haldus",
+            **_shell(request),
         },
     )
+
+
+def _shell(request: HttpRequest) -> dict[str, Any]:
+    """The Haldus shell's sub-navigation, for the pages that sit inside it."""
+    from app.haldus.sections import visible_sections
+
+    return {"haldus_sections": visible_sections(request), "haldus_active": "kasutajad"}
 
 
 # -- creating ---------------------------------------------------------------------------------
@@ -168,11 +190,11 @@ def user_list(request: HttpRequest) -> HttpResponse:
 @require_http_methods(["GET", "POST"])
 def user_create(request: HttpRequest) -> HttpResponse | HttpResponseBase:
     actor = _actor(request)
-    may_delegate = has_capability(actor, Capability.DELEGATE_ADMINISTRATION)
+    may_delegate = has_capability(actor.user, Capability.DELEGATE_ADMINISTRATION)
     if request.method == "POST":
-        if local_auth.needs_reauthentication(request):
+        if admin_session.needs_fresh_proof(request):
             messages.info(request, "Kinnita enne konto loomist uuesti oma isik.")
-            return HttpResponseRedirect(_reauthenticate_then(reverse("account_admin:create")))
+            return HttpResponseRedirect(reauthenticate_url(reverse("account_admin:create")))
         form = CreateAccountForm(request.POST, include_technical=may_delegate)
         if form.is_valid():
             try:
@@ -308,8 +330,8 @@ class Authority:
         return self.may_change_power
 
 
-def _authority(actor: User, person: User) -> Authority:
-    may_delegate = has_capability(actor, Capability.DELEGATE_ADMINISTRATION)
+def _authority(actor: VerifiedActor, person: User) -> Authority:
+    may_delegate = has_capability(actor.user, Capability.DELEGATE_ADMINISTRATION)
     is_self = actor.pk == person.pk
     touches_administration = bool(
         account_capabilities(person) & set(capabilities.ADMINISTRATIVE_CAPABILITIES)
@@ -321,7 +343,7 @@ def _authority(actor: User, person: User) -> Authority:
     )
 
 
-def _account_form(actor: User, person: User, data: Any = None) -> AccountForm:
+def _account_form(actor: VerifiedActor, person: User, data: Any = None) -> AccountForm:
     """The account form, with every control the reader may not change disabled.
 
     A disabled field is ignored in the POST and keeps its initial value, which
@@ -391,10 +413,10 @@ def user_detail(request: HttpRequest, pk: Any) -> HttpResponse | HttpResponseBas
     if request.method == "GET":
         return render(request, "accounts/admin/detail.html", _context(request, person))
 
-    if local_auth.needs_reauthentication(request):
+    if admin_session.needs_fresh_proof(request):
         messages.info(request, "Kinnita enne muutmist uuesti oma isik.")
         return HttpResponseRedirect(
-            _reauthenticate_then(reverse("account_admin:detail", kwargs={"pk": person.pk}))
+            reauthenticate_url(reverse("account_admin:detail", kwargs={"pk": person.pk}))
         )
     actor = _actor(request)
     form = _account_form(actor, person, request.POST)
@@ -424,7 +446,7 @@ def user_detail(request: HttpRequest, pk: Any) -> HttpResponse | HttpResponseBas
 
 
 def _account_action(
-    perform: Callable[[User, User, HttpRequest], str],
+    perform: Callable[[VerifiedActor, User, HttpRequest], str],
 ) -> Callable[..., HttpResponseBase]:
     """A POST-only change on one account, refused or confirmed with a message."""
 
@@ -446,31 +468,40 @@ def _account_action(
     return view
 
 
-def _send_link(actor: User, person: User, request: HttpRequest) -> str:
+def _send_link(actor: VerifiedActor, person: User, request: HttpRequest) -> str:
     outcome = administration.send_setup_link(actor=actor, user=person)
     if outcome.delivery.delivered:
         return "Link saadeti konto aadressile."
-    raise administration.AdministrationRefused(outcome.delivery.message_et)
+    message = outcome.delivery.message_et
+    if admin_session.is_available() and admin_session.may_receive_administrator_link(person):
+        # Behind the shared gate account e-mail stays off (juristid.E036): the
+        # decision is recorded, and the operator hands the link over in person
+        # (docs/adr/0186).
+        message += (
+            " Otsus on salvestatud. Halduri lingi väljastab operaator serveris käsuga "
+            "issue_administrator_link ja annab selle inimesele üle."
+        )
+    raise administration.AdministrationRefused(message)
 
 
-def _cancel_invitation(actor: User, person: User, request: HttpRequest) -> str:
+def _cancel_invitation(actor: VerifiedActor, person: User, request: HttpRequest) -> str:
     administration.cancel_invitation(actor=actor, user=person)
     return "Kutse on tühistatud. Konto ootab uuesti kinnitust."
 
 
-def _deactivate(actor: User, person: User, request: HttpRequest) -> str:
+def _deactivate(actor: VerifiedActor, person: User, request: HttpRequest) -> str:
     form = DeactivateForm(request.POST)
     reason = form.cleaned_data["reason"] if form.is_valid() else ""
     administration.deactivate_account(actor=actor, user=person, reason=reason)
     return "Konto on välja lülitatud. Selle seansid lõpetati."
 
 
-def _reactivate(actor: User, person: User, request: HttpRequest) -> str:
+def _reactivate(actor: VerifiedActor, person: User, request: HttpRequest) -> str:
     administration.reactivate_account(actor=actor, user=person)
     return "Konto on uuesti sisse lülitatud."
 
 
-def _reset_second_factor(actor: User, person: User, request: HttpRequest) -> str:
+def _reset_second_factor(actor: VerifiedActor, person: User, request: HttpRequest) -> str:
     administration.reset_second_factor(actor=actor, user=person)
     return "Teine tegur on eemaldatud. Inimene seadistab uue järgmisel sisselogimisel."
 
@@ -489,7 +520,7 @@ def change_email(request: HttpRequest, pk: Any) -> HttpResponse | HttpResponseBa
     """Correct the sign-in address. Delegating administrators only."""
     person = get_object_or_404(User, pk=pk)
     actor = _actor(request)
-    if not has_capability(actor, Capability.DELEGATE_ADMINISTRATION):
+    if not has_capability(actor.user, Capability.DELEGATE_ADMINISTRATION):
         raise Http404(NOT_HERE)
     if request.method == "GET":
         return render(
@@ -497,10 +528,10 @@ def change_email(request: HttpRequest, pk: Any) -> HttpResponse | HttpResponseBa
             "accounts/admin/change_email.html",
             {"person": person, "form": ChangeEmailForm(), "nav_active": "haldus"},
         )
-    if local_auth.needs_reauthentication(request):
+    if admin_session.needs_fresh_proof(request):
         messages.info(request, "Kinnita enne muutmist uuesti oma isik.")
         return HttpResponseRedirect(
-            _reauthenticate_then(reverse("account_admin:change_email", kwargs={"pk": person.pk}))
+            reauthenticate_url(reverse("account_admin:change_email", kwargs={"pk": person.pk}))
         )
     form = ChangeEmailForm(request.POST)
     if form.is_valid():

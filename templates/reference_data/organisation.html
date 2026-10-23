@@ -1,0 +1,128 @@
+{% extends "haldus/base.html" %}
+{% block title %}{{ organisation.name }} · Organisatsioonid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  One institution: its name and spellings, what points at it, and the two
+  edits the catalogue supports — correcting the name (the old one stays as a
+  historical spelling unless it was a typo) and recording another spelling.
+
+  Merging and switching an institution off are not offered: the catalogue has
+  no supported semantics for either, so the references are shown for the
+  person deciding, and the change itself is a reviewed one (docs/adr/0187 §5).
+  A reviewed baseline institution keeps its name and its reviewed spellings.
+{% endcomment %}
+
+{% block haldus_head %}
+<div class="pagehead">
+  <h1 class="pagehead__title">{{ organisation.name }}</h1>
+  {% if is_reviewed %}<span class="badge badge--quiet">kinnitatud alusandmestik</span>{% endif %}
+  <span class="pagehead__context"><a href="{% url 'reference_data:organisations' %}">Organisatsioonid</a></span>
+</div>
+{% endblock %}
+
+{% block haldus_content %}
+{% include "reference_data/_nav.html" with current="organisatsioonid" %}
+
+<section class="panel" aria-labelledby="org-andmed">
+  <h2 class="acctsection__title" id="org-andmed">Andmed</h2>
+  <dl class="detailgrid">
+    <dt>Tüüp</dt><dd>{{ organisation.get_organisation_type_display }}</dd>
+    <dt>Registrikood</dt><dd class="mono">{{ organisation.registry_code|default:"—" }}</dd>
+    <dt>Kehtivus</dt>
+    <dd>{% if organisation.valid_from or organisation.valid_to %}{{ organisation.valid_from|date:"j.n.Y"|default:"…" }} – {{ organisation.valid_to|date:"j.n.Y"|default:"…" }}{% else %}—{% endif %}</dd>
+    {% if continuity.predecessor %}
+      <dt>Eelkäija</dt><dd><a href="{% url 'reference_data:organisation' continuity.predecessor.pk %}">{{ continuity.predecessor.name }}</a></dd>
+    {% endif %}
+    {% for successor in continuity.successors %}
+      <dt>Järglane</dt><dd><a href="{% url 'reference_data:organisation' successor.pk %}">{{ successor.name }}</a></dd>
+    {% endfor %}
+    <dt>Muudetud</dt><dd>{{ organisation.updated_at|date:"j.n.Y H:i" }}</dd>
+  </dl>
+</section>
+
+<section class="panel" aria-labelledby="org-nimekujud">
+  <h2 class="acctsection__title" id="org-nimekujud">Nimekujud</h2>
+  {% if aliases %}
+    <div class="accttable">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Nimekuju</th>
+            <th scope="col">Liik</th>
+            <th scope="col"><span class="visually-hidden">Tegevused</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in aliases %}
+            <tr>
+              <td>{{ item.row.alias }}</td>
+              <td>{{ item.row.get_alias_type_display }}</td>
+              <td>
+                {% if item.removable %}
+                  <form method="post" action="{% url 'reference_data:organisation_alias_remove' organisation.pk item.row.pk %}" class="acctinline">
+                    {% csrf_token %}
+                    <input type="hidden" name="revision" value="{{ revision }}">
+                    <button type="submit" class="button button--quiet button--tiny">Eemalda<span class="visually-hidden"> nimekuju {{ item.row.alias }}</span></button>
+                  </form>
+                {% else %}
+                  <span class="acctnote">jääb alles</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p class="acctnote">Nimekujusid pole.</p>
+  {% endif %}
+
+  <form method="post" action="{% url 'reference_data:organisation_alias_add' organisation.pk %}" class="form" novalidate>
+    {% csrf_token %}
+    <input type="hidden" name="revision" value="{{ revision }}">
+    {% include "accounts/partials/field.html" with field=alias_form.alias %}
+    {% include "accounts/partials/field.html" with field=alias_form.alias_type %}
+    <div class="form__actions">
+      <button type="submit" class="button button--secondary">Lisa nimekuju</button>
+    </div>
+  </form>
+</section>
+
+<section class="panel" aria-labelledby="org-nimi">
+  <h2 class="acctsection__title" id="org-nimi">Paranda nime</h2>
+  {% if is_reviewed %}
+    <p class="notice" role="note">See on kinnitatud alusandmestiku organisatsioon. Nime muutmine vajab arendaja kaudu ülevaadatud muudatust. Ümberkorraldus (uus nimi, uus asutus) kirjendatakse eelkäija ja järglase seosena, mitte ümbernimetamisena.</p>
+  {% else %}
+    <form method="post" action="{% url 'reference_data:organisation_rename' organisation.pk %}" class="form" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="revision" value="{{ revision }}">
+      {% include "accounts/partials/field.html" with field=rename_form.name %}
+      <div class="field">
+        <label class="checkitem">{{ rename_form.keep_old_name }} {{ rename_form.keep_old_name.label }}</label>
+        <p class="field__help" id="{{ rename_form.keep_old_name.auto_id }}_helptext">{{ rename_form.keep_old_name.help_text }}</p>
+      </div>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Salvesta nimi</button>
+      </div>
+    </form>
+  {% endif %}
+</section>
+
+<section class="panel" aria-labelledby="org-viited">
+  <h2 class="acctsection__title" id="org-viited">Viited</h2>
+  {% if shows_usage %}
+    {% if references.by_relation %}
+      <dl class="detailgrid">
+        {% for label, count in references.labelled %}
+          <dt>{{ label }}</dt><dd>{{ count }}</dd>
+        {% endfor %}
+      </dl>
+    {% else %}
+      <p class="acctnote">Sellele organisatsioonile ei viita ükski kirje.</p>
+    {% endif %}
+  {% else %}
+    <p class="acctnote">Viidete arv on nähtav ainult kasutajale, kes tohib teemasid lugeda.</p>
+  {% endif %}
+  <p class="acctnote">Organisatsioone siin ei liideta ega kustutata. Topeltkirjete liitmine vajab arendaja kaudu ülevaadatud muudatust; nimekirja leiad lehelt «Võimalikud topeltkirjed».</p>
+</section>
+{% endblock %}

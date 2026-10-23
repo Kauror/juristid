@@ -1,0 +1,123 @@
+{% extends "haldus/base.html" %}
+{% block title %}{{ tag.name_et }} · Sildid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  One tag: its guidance, spellings, usage and lifecycle. Merging and retiring
+  use the model's own semantics (`merged_into`, `is_active`) and move no
+  assignment: every record keeps the word it was classified with and is
+  found through the tag that replaced it (app/taxonomy/administration.py).
+  A merged tag is frozen; nothing here deletes a tag.
+{% endcomment %}
+
+{% block haldus_head %}
+<div class="pagehead">
+  <h1 class="pagehead__title">{{ tag.name_et }}</h1>
+  {% if tag.merged_into %}
+    <span class="badge badge--inactive">liidetud</span>
+  {% elif tag.is_active %}
+    <span class="badge badge--active">kasutusel</span>
+  {% else %}
+    <span class="badge badge--inactive">aegunud</span>
+  {% endif %}
+  <span class="pagehead__context"><a href="{% url 'reference_data:tags' %}">Sildid</a></span>
+</div>
+{% endblock %}
+
+{% block haldus_content %}
+{% include "reference_data/_nav.html" with current="sildid" %}
+
+<section class="panel" aria-labelledby="silt-andmed">
+  <h2 class="acctsection__title" id="silt-andmed">Andmed</h2>
+  <dl class="detailgrid">
+    <dt>Võti</dt><dd class="mono">{{ tag.key }}</dd>
+    {% if tag.merged_into %}
+      <dt>Liidetud sildiga</dt><dd><a href="{% url 'reference_data:tag' canonical.pk %}">{{ canonical.name_et }}</a></dd>
+    {% endif %}
+    {% if tag.deprecated_at %}<dt>Aegunud</dt><dd>{{ tag.deprecated_at|date:"j.n.Y" }}</dd>{% endif %}
+    {% if merged_from %}
+      <dt>Sellega liidetud</dt>
+      <dd>{% for other in merged_from %}<a href="{% url 'reference_data:tag' other.pk %}">{{ other.name_et }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+    {% endif %}
+    {% if shows_usage %}
+      <dt>Teemasid</dt><dd>{{ usage.matters }}</dd>
+      <dt>Arvamusi</dt><dd>{{ usage.submissions }}</dd>
+    {% endif %}
+  </dl>
+</section>
+
+{% if tag.merged_into %}
+  <p class="notice" role="note">Liidetud silti ei muudeta. Kirjed, millel see silt on, jäävad selle juurde ja leitakse otsingus ka sildi «{{ canonical.name_et }}» kaudu. Liitmise tagasivõtmine vajab arendaja kaudu ülevaadatud muudatust.</p>
+{% else %}
+  <form method="post" action="{% url 'reference_data:tag_edit' tag.pk %}" class="card card--form form" novalidate>
+    {% csrf_token %}
+    <h2 class="acctsection__title">Muuda silti</h2>
+    <input type="hidden" name="revision" value="{{ revision }}">
+    {% include "accounts/partials/field.html" with field=edit_form.name %}
+    {% include "accounts/partials/field.html" with field=edit_form.definition %}
+    <div class="field">
+      <label class="checkitem">{{ edit_form.keep_old_name }} {{ edit_form.keep_old_name.label }}</label>
+      <p class="field__help" id="{{ edit_form.keep_old_name.auto_id }}_helptext">{{ edit_form.keep_old_name.help_text }}</p>
+    </div>
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Salvesta</button>
+    </div>
+  </form>
+{% endif %}
+
+<section class="panel" aria-labelledby="silt-nimekujud">
+  <h2 class="acctsection__title" id="silt-nimekujud">Nimekujud</h2>
+  {% if aliases %}
+    <ul>
+      {% for alias in aliases %}
+        <li>
+          {{ alias.alias }}
+          {% if not tag.merged_into %}
+            <form method="post" action="{% url 'reference_data:tag_alias_remove' tag.pk alias.pk %}" class="acctinline">
+              {% csrf_token %}
+              <input type="hidden" name="revision" value="{{ revision }}">
+              <button type="submit" class="button button--quiet button--tiny">Eemalda<span class="visually-hidden"> nimekuju {{ alias.alias }}</span></button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="acctnote">Nimekujusid pole.</p>
+  {% endif %}
+  {% if not tag.merged_into %}
+    <form method="post" action="{% url 'reference_data:tag_alias_add' tag.pk %}" class="form" novalidate>
+      {% csrf_token %}
+      <input type="hidden" name="revision" value="{{ revision }}">
+      {% include "accounts/partials/field.html" with field=alias_form.alias %}
+      <div class="form__actions">
+        <button type="submit" class="button button--secondary">Lisa nimekuju</button>
+      </div>
+    </form>
+  {% endif %}
+</section>
+
+{% if not tag.merged_into %}
+  <section class="panel" aria-labelledby="silt-elukaar">
+    <h2 class="acctsection__title" id="silt-elukaar">Liitmine ja aegumine</h2>
+    <p class="acctnote">Liitmine märgib selle sildi aegunuks ja suunab selle teise sildi juurde. Kirjetelt silti ei eemaldata. Silte ei kustutata.</p>
+    <form method="get" action="{% url 'reference_data:tag_merge' tag.pk %}" class="form" novalidate>
+      <input type="hidden" name="revision" value="{{ revision }}">
+      {% include "accounts/partials/field.html" with field=merge_form.into %}
+      <div class="form__actions">
+        <button type="submit" class="button button--secondary">Liida…</button>
+      </div>
+    </form>
+    <form method="post" action="{% url 'reference_data:tag_status' tag.pk %}" class="acctinline">
+      {% csrf_token %}
+      <input type="hidden" name="revision" value="{{ revision }}">
+      {% if tag.is_active %}
+        <input type="hidden" name="tegevus" value="aegunuks">
+        <button type="submit" class="button button--secondary">Märgi aegunuks</button>
+      {% else %}
+        <input type="hidden" name="tegevus" value="kasutusele">
+        <button type="submit" class="button button--secondary">Võta taas kasutusele</button>
+      {% endif %}
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

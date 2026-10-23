@@ -58,6 +58,15 @@ PUBLIC = {
     "accounts:activate": "a one-time activation link (dormant)",
     "accounts:forgot_password": "a reset request (dormant)",
     "accounts:reset_password": "a one-time reset link (dormant)",
+    # The verified administrator session's own pages (docs/adr/0186): behind
+    # the gate, 404 in every other mode, and they show a sign-in, code or
+    # enrolment form — never business content. What they open is Haldus
+    # administration, which refuses by itself (tests/test_admin_session*.py).
+    "haldus:sign_in": "the administrator step-up's own sign-in form",
+    "haldus:sign_in_code": "the step-up's code form; else back to its sign-in",
+    "haldus:enrol": "the step-up's authenticator enrolment; back to the sign-in without one",
+    "haldus:reauthenticate": "the step-up's fresh proof; back to the sign-in without a session",
+    "haldus:sign_out": "ends the administrator session only",
     # The MCP authorization server's machine endpoints (docs/adr/0185 §4): exempt
     # from the gate by exact path, they authenticate the *client* themselves and
     # answer only OAuth metadata or token JSON — never business content. Every

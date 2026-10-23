@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Taastekoodid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Shown once, in the response that created them, and never again: only
+  salted digests are kept (app/accounts/mfa.py). The administrator session is
+  already open when this renders.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Taastekoodid</h1>
+  <p class="message message--warning" role="status">
+    Autentimisrakendus on seadistatud ja halduri seanss on avatud. Salvesta need koodid kohe
+    turvalisse kohta — neid näidatakse ainult üks kord. Iga kood töötab ühe korra, kui telefon ei
+    ole käepärast.
+  </p>
+  <ul class="acctcodes">
+    {% for code in codes %}<li class="acctcodes__code mono">{{ code }}</li>{% endfor %}
+  </ul>
+  <div class="form__actions">
+    <a class="button button--primary" href="{% url 'haldus:index' %}">Olen koodid salvestanud</a>
+  </div>
+</div>
+{% endblock %}

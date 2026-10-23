@@ -165,12 +165,17 @@ def test_no_raw_permission_identifier_reaches_the_page(client):
 
 
 def test_the_bar_offers_haldus_only_to_an_administrator(client):
+    # The bar's one «Haldus» item leads to the Haldus shell, whose
+    # sub-navigation holds Kasutajad (docs/adr/0186).
+    haldus = f'href="{reverse("haldus:index")}"'
     administrator(client)
-    assert reverse(LIST) in client.get(reverse("matters:my_work")).content.decode()
+    assert haldus in client.get(reverse("matters:my_work")).content.decode()
+    assert reverse(LIST) in client.get(reverse("haldus:index")).content.decode()
 
     colleague = Client()
     user, _ = person()
     sign_in(colleague, user)
+    assert haldus not in colleague.get(reverse("matters:my_work")).content.decode()
     assert reverse(LIST) not in colleague.get(reverse("matters:my_work")).content.decode()
 
 

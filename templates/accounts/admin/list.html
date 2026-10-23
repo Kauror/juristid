@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Kasutajad · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -11,15 +11,11 @@
   for this address (app/accounts/admin_views.py).
 {% endcomment %}
 
-{% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Kasutajad</h1>
-    <span class="pagehead__context">Haldus</span>
-    <div class="pagehead__actions">
-      <a class="button button--primary" href="{% url 'account_admin:create' %}">+ Uus kasutaja</a>
-    </div>
-  </div>
+{% block haldus_title %}Kasutajad{% endblock %}
+{% block haldus_context %}<span class="pagehead__context">Haldus</span>{% endblock %}
+{% block haldus_actions %}<a class="button button--primary" href="{% url 'account_admin:create' %}">+ Uus kasutaja</a>{% endblock %}
+
+{% block haldus_content %}
 
   <form method="get" class="filterbar" role="search">
     <label class="visually-hidden" for="kasutaja-otsing">Otsi nime või e-posti järgi</label>
@@ -69,5 +65,4 @@
   {% else %}
     <div class="empty"><p>Ühtegi kontot ei leitud.</p></div>
   {% endif %}
-</div>
 {% endblock %}

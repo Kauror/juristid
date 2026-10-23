@@ -48,6 +48,12 @@ class Capability(models.TextChoices):
     #: colleague may be granted it individually; nobody inherits it from a
     #: technical or an account-administration role.
     DELETE_MATTERS = "matter.delete_permanently", "Teema jäädav kustutamine"
+    #: Haldus → Klassifikaatorid: the institution catalogue and the tag
+    #: vocabulary (docs/adr/0187). The department head's by default; a
+    #: specialist or a technical administrator may be granted it by name. It
+    #: changes reference rows and nothing on a Teema, so it is deliberately not
+    #: a business-write capability and grants no authorship.
+    MANAGE_REFERENCE_DATA = "reference.manage", "Klassifikaatorite haldus"
     # -- administrative ----------------------------------------------------
     MANAGE_ACCOUNTS = "accounts.manage", "Kasutajakontode haldus"
     DELEGATE_ADMINISTRATION = "accounts.delegate", "Haldusõiguste andmine"

@@ -13922,3 +13922,131 @@ a.jcal__daynum {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
 }
+
+/* ====================================================================
+ * «Kontrolli jõustumist» — commencement-review reminders (docs/adr/0188)
+ *
+ * A bell on the bar, a compact list at /teavitused/ and a rail block on Minu
+ * asjad. Tokens only; the count uses the established warning colour rather
+ * than danger red, because a check to do is not a failure.
+ * ==================================================================== */
+.notifbell {
+  position: relative;
+  gap: var(--spacing-1);
+}
+
+.notifbell__icon {
+  flex: none;
+}
+
+.notifbell__slot {
+  display: inline-flex;
+}
+
+.notifbell__count {
+  min-width: 18px;
+  padding: 0 var(--spacing-1);
+  border-radius: var(--radius-chip);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  line-height: 18px;
+  text-align: center;
+  color: var(--status-warning);
+  background: var(--status-warning-soft);
+  border: 1px solid var(--status-warning-border);
+}
+
+.notifsection {
+  margin-top: var(--spacing-5);
+}
+
+.notiflist {
+  list-style: none;
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+}
+
+.notiflist--rail {
+  margin-top: 0;
+}
+
+.notifrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-2) var(--spacing-4);
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.notifrow:last-child {
+  border-bottom: none;
+}
+
+.notifrow__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 280px;
+}
+
+.notifrow__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--status-warning);
+}
+
+.notifrow__matter {
+  font-size: var(--typography-size-base);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.notifrow__matter:hover {
+  color: var(--accent-link);
+}
+
+.notifrow__what {
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+}
+
+.notifrow__date,
+.notifrow__source {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.notifrow__source a {
+  color: var(--accent-link);
+}
+
+.notifrow__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-1);
+}
+
+.notifrow__more > summary {
+  list-style: none;
+}
+
+.notifrow__more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.notifrow__panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-1);
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+}

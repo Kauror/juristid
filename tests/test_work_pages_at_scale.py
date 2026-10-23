@@ -58,7 +58,9 @@ from tests import factories
 pytestmark = pytest.mark.django_db
 
 #: PERFORMANCE-AUDIT.md §10, query counts (deterministic, so CI holds them).
-OSAKOND_BUDGET = 45
+#: Osakond +1 since docs/adr/0188: the rail asks once for commencement checks on
+#: Teemad with no Vastutaja, for the holder of the management view.
+OSAKOND_BUDGET = 46
 MINU_ASJAD_BUDGET = 30
 STATISTIKA_BUDGET = 33
 

@@ -9,7 +9,7 @@ to it, in one system. This is the environment that holds the real thing.
 | Auth mode | `shared_gate` (temporary; see below) |
 | Public URL | `https://juristid.orgusaar.ee` — behind the shared gate |
 | Compose project | `juristid-main` |
-| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-tunnel` |
+| Containers | `juristid-main-web`, `juristid-main-db`, `juristid-main-intake-reader`, `juristid-main-searchindex`, `juristid-main-intake-sweeper`, `juristid-main-notifications`, `juristid-main-tunnel` |
 | Network | `juristid-main-internal` (its own bridge) |
 | Appdata | `/mnt/user/appdata/juristid-main/` |
 | Evidence | `…/evidence` — **back this up** |
@@ -67,7 +67,17 @@ session cookie that is not `Secure` (E013), a gate idle limit outside 300
 seconds–the absolute limit (E021), and — on real data — a template
 `replace-me…` value left in any secret (E016), a `DJANGO_SECRET_KEY` under 50
 characters (E017), a gate password under 16 (E018), a `POSTGRES_PASSWORD`
-under 16 (E019) and a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020).
+under 16 (E019), a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020) and a missing or
+short `LOCAL_AUTH_MFA_ENCRYPTION_KEY` (E048).
+
+**`LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required here** (docs/adr/0186 §7). The
+administrators' authenticators for Haldus are sealed under it; without it they
+would be sealed under a key derived from `DJANGO_SECRET_KEY`, and rotating that
+would lock both administrators out. Generate it in the release kit before the
+swap — `openssl rand -base64 48` into `juristid.env` — back it up apart from the
+database dump, and keep it out of `juristid-mcp.env` (E046). Set
+`ACCOUNT_LINK_BASE_URL` to the public `https://` origin as well, so the links
+`issue_administrator_link` prints are absolute.
 
 **`DJANGO_BEHIND_TLS_PROXY=1` is required here.** It is what lets the
 application believe `CF-Connecting-IP`, the address Cloudflare saw. Without it
@@ -1485,11 +1495,11 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 
 If it would recreate `db` or `tunnel`, name the services that run the release
 image instead — every one of them, read off `compose.yml` (today `web`,
-`intake-reader`, `searchindex` and `intake-sweeper`), so none is left on the
+`intake-reader`, `searchindex`, `intake-sweeper` and `notifications`), so none is left on the
 old image:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
 ```
 
 `--no-build` is not decoration. `compose.yml` has a `build:` stanza, and a plain
@@ -1497,7 +1507,7 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 happen — would build the image on this host, silently, from whatever the
 checkout holds. With `--no-build` the same mistake is an error naming the
 missing image, which is the honest outcome. Unqualified when the dry run allows
-it: `web`, `intake-reader`, `searchindex` and `intake-sweeper` all run the
+it: `web`, `intake-reader`, `searchindex`, `intake-sweeper` and `notifications` all run the
 release image and all move together, and a fourth application service added later moves with them
 without anybody editing a list.
 

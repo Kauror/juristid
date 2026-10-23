@@ -1,0 +1,23 @@
+{% comment %}
+«Kontrolli jõustumist» on Minu asjad: the reader's own open prompts, as a rail
+block beside «Uus asi» (docs/adr/0188 §6).
+
+Rendered only when there is something in it — no heading, no empty state, no
+zero — like «Uus asi». Personal: `commencement_reminders_block` reads the
+signed-in reader's own desk, so it belongs inside Minu asjad's `is_self` branch
+and is never drawn on a colleague's page.
+{% endcomment %}
+{% if rows %}
+  <section class="railblock" aria-labelledby="notif-minu-heading">
+    <h2 class="railblock__label" id="notif-minu-heading">
+      Kontrolli jõustumist
+      <span class="railblock__count">{{ rows|length }}</span>
+    </h2>
+    <ul class="notiflist notiflist--rail">
+      {% for row in rows %}
+        {% include "notifications/_reminder_row.html" with row=row can_answer=can_answer tagasi=tagasi %}
+      {% endfor %}
+    </ul>
+    <a class="railblock__more" href="{% url 'notifications:list' %}">Kõik meeldetuletused</a>
+  </section>
+{% endif %}

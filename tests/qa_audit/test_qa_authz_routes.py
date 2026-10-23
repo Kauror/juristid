@@ -210,6 +210,9 @@ def test_department_viewer_reads_no_business_page_and_writes_nothing(client, set
             "accounts:shared_gate",
             "core:release_notes",
             "core:design_tokens",
+            # The administrator sign-in (docs/adr/0186): an address and a
+            # password field, before any persona — the step-up is not one.
+            "haldus:sign_in",
         }
     )
     assert unexpected_reads == set()
@@ -217,7 +220,13 @@ def test_department_viewer_reads_no_business_page_and_writes_nothing(client, set
     # persona chooser and the gate's own form are the only forms they may post.
     assert (
         set(wrote)
-        - {"accounts:shared_gate", "accounts:choose_persona", "core:release_notes"}
+        # The administrator sign-in re-renders its one refusal; it writes nothing.
+        - {
+            "accounts:shared_gate",
+            "accounts:choose_persona",
+            "core:release_notes",
+            "haldus:sign_in",
+        }
         - PUBLIC
         - (GATE_READABLE)
         == set()

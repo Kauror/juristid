@@ -39,12 +39,22 @@ urlpatterns = [
     ),
     path("konto/", include(("app.accounts.urls", "accounts"), namespace="accounts")),
     # Haldus → Kasutajad. Under `/haldus/` with the other internal tooling, and
-    # unreachable — 404 for everybody — in every mode but `local_password`
-    # (docs/adr/0145).
+    # 404 for everybody without a verified administrator: a personal sign-in
+    # under `local_password`, or the administrator session under the shared
+    # gate (docs/adr/0145, docs/adr/0186).
     path(
         "haldus/kasutajad/",
         include(("app.accounts.admin_urls", "account_admin"), namespace="account_admin"),
     ),
+    # Haldus → Klassifikaatorid: the institution catalogue and the tag
+    # vocabulary, behind `reference.manage` (docs/adr/0187).
+    path(
+        "haldus/klassifikaatorid/",
+        include(("app.reference_data.urls", "reference_data"), namespace="reference_data"),
+    ),
+    # The Haldus shell: landing, Osakonna töökorraldus, Süsteemi seis and the
+    # verified administrator session's pages. Exact paths only (docs/adr/0186).
+    path("haldus/", include(("app.haldus.urls", "haldus"), namespace="haldus")),
     path(
         "organisatsioonid/",
         include(("app.organisations.urls", "organisations"), namespace="organisations"),
@@ -53,5 +63,9 @@ urlpatterns = [
     # OAuth endpoints and the authenticator enrolment page. Exact paths that no
     # other app claims; every one is a 404 unless MCP_ENABLED (docs/adr/0185).
     path("", include(("app.mcp_access.urls", "mcp_access"), namespace="mcp_access")),
+    path(
+        "teavitused/",
+        include(("app.notifications.urls", "notifications"), namespace="notifications"),
+    ),
     path("admin/", admin.site.urls),
 ]

@@ -25,7 +25,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from app.accounts import cloudflare_access, local_auth, shared_gate
+from app.accounts import admin_session, cloudflare_access, local_auth, shared_gate
 from app.accounts.enums import AuthMode
 from app.accounts.models import User
 from app.accounts.selectors import persona_candidates, persona_from_id
@@ -245,6 +245,9 @@ def sign_out(request: HttpRequest) -> HttpResponse:
     (`cloudflare_access.logout_url`, docs/adr/0183).
     """
     actor = request.user if request.user.is_authenticated else None
+    # An administrator session open in this browser ends with everything else,
+    # and says so in its own row (docs/adr/0186).
+    admin_session.note_session_closing(request, reason="signed_out")
     if shared_gate.is_shared_gate():
         record_security_event(
             event_type=SecurityEventType.SHARED_GATE_CLOSED,
@@ -424,12 +427,18 @@ def act_as(request: HttpRequest) -> HttpResponse:
     # against, carried across `login` / `logout` so a persona change neither
     # restarts the 12-hour absolute limit nor escapes a password rotation.
     carried = shared_gate.current_pass(request)
+    # A verified administrator session is bound to its principal and to this
+    # pass of the gate, never to the persona: it survives the change exactly
+    # as it was — same administrator, same clocks — and the persona chosen
+    # changes nothing about who administers (docs/adr/0186).
+    administrator = admin_session.carry(request)
 
     if raw == "":
         # Stepping back to the department view. Worth having: it is the only way
         # to see what a page looks like to somebody with no persona selected.
         logout(request)
         shared_gate.open_gate(request, carried=carried)
+        admin_session.restore(request, administrator)
         _record_persona_change(request, previous=previous, chosen=None)
         # The same safe target a named choice gets. Switching from the top bar
         # has to leave somebody where they were reading, and "somewhere else
@@ -454,6 +463,7 @@ def act_as(request: HttpRequest) -> HttpResponse:
     # `login` cycles the session key and would otherwise drop the gate state
     # with it, sending somebody back to the password form for changing persona.
     shared_gate.open_gate(request, carried=carried)
+    admin_session.restore(request, administrator)
     shared_gate.note_persona_chosen(request)
     _record_persona_change(request, previous=previous, chosen=person)
     messages.success(request, f"Vaatad rakendust nüüd kasutajana {person.display_name}.")

@@ -1,0 +1,58 @@
+{% extends "haldus/base.html" %}
+{% block title %}{{ vocabulary.label }} · Klassifikaatorid · {{ application_name }}{% endblock %}
+
+{% comment %}
+  A controlled vocabulary, read-only. No form on purpose: these values are
+  reviewed in code and migrations, statistics are cut along them and history
+  refers to them, so the page says how a change is made instead of offering
+  one (docs/adr/0187 §6). The usage column counts Teemad and is shown only
+  to somebody who may read them.
+{% endcomment %}
+
+{% block haldus_head %}
+<div class="pagehead">
+  <h1 class="pagehead__title">{{ vocabulary.label }}</h1>
+  <span class="pagehead__context"><a href="{% url 'reference_data:index' %}">Klassifikaatorid</a></span>
+</div>
+{% endblock %}
+
+{% block haldus_content %}
+{% include "reference_data/_nav.html" with current=vocabulary.key %}
+
+<p class="notice" role="note">{{ explanation }}</p>
+<p class="acctnote">Päritolu: {{ vocabulary.source }} Aruandlus: {{ vocabulary.reporting }}</p>
+
+{% if rows %}
+  <div class="accttable">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Nimetus</th>
+          <th scope="col">Võti</th>
+          <th scope="col">Seis</th>
+          {% if shows_usage %}<th scope="col">Teemasid</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row }}</td>
+            <td class="mono">{{ row.key }}</td>
+            <td>
+              {% if row.is_active %}
+                <span class="badge badge--active">kasutusel</span>
+              {% else %}
+                <span class="badge badge--inactive">kasutusest väljas</span>
+              {% endif %}
+              {% if row.is_provisional %}<span class="badge badge--quiet">esialgne</span>{% endif %}
+            </td>
+            {% if shows_usage %}<td>{{ row.usage }}</td>{% endif %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% else %}
+  <div class="empty"><p>Sõnastik on tühi.</p></div>
+{% endif %}
+{% endblock %}

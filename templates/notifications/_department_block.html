@@ -1,0 +1,26 @@
+{% comment %}
+Open «Kontrolli jõustumist» prompts on Teemad with nobody responsible, for the
+Osakond management view (docs/adr/0188 §5). `department_commencement_reminders`
+returns nothing for a reader without `department.view_management`, so this
+renders nothing for them. A summary with a link, not a second list to act in:
+the answers live on `/teavitused/`.
+{% endcomment %}
+{% if rows %}
+  <section class="railblock" aria-labelledby="notif-osakond-heading">
+    <h2 class="railblock__label" id="notif-osakond-heading">
+      Jõustumise kontroll — vastutaja puudub
+      <span class="railblock__count">{{ rows|length }}</span>
+    </h2>
+    <ul class="notiflist notiflist--rail">
+      {% for row in rows|slice:":5" %}
+        <li class="notifrow">
+          <div class="notifrow__main">
+            <a class="notifrow__matter" href="{{ row.matter_url }}">{{ row.matter_title }}</a>
+            <span class="notifrow__date">Kirjas olev jõustumise kuupäev {{ row.date_label }} · {{ row.stage_label }}</span>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+    <a class="railblock__more" href="{% url 'notifications:list' %}#vastutajata">Ava meeldetuletused</a>
+  </section>
+{% endif %}

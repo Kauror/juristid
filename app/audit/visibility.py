@@ -149,6 +149,11 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
                 ChangeEventType.EFFECTIVE_DATE_CHANGED,
                 ChangeEventType.EFFECTIVE_DATE_CANCELLED,
                 ChangeEventType.EFFECTIVE_DATE_REMOVED,
+                # The answers to «Kontrolli jõustumist» name the commencement
+                # as their subject (docs/adr/0188).
+                ChangeEventType.COMMENCEMENT_CHECK_ACKNOWLEDGED,
+                ChangeEventType.COMMENCEMENT_CHECK_DEFERRED,
+                ChangeEventType.COMMENCEMENT_CHECK_DISMISSED,
             ),
             MatterEffectiveDate,
             direct,

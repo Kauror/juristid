@@ -14,7 +14,8 @@ the audit's own probe (`test_b10_idor_sweep.py`):
   `tests/test_read_side_existence_oracles.py` builds — a RESTRICTED Matter with
   every kind of child, and every kind of child RESTRICTED under a visible
   Matter — plus what those children do not cover: an opinion follow-up and its
-  check, a suggested plan step, an assignment notice and a thumbnail. Every
+  check, a suggested plan step, an assignment notice, a thumbnail and a
+  commencement reminder (docs/adr/0188). Every
   route gets the object of the kind it acts on; `remove_record` and
   `update_field` are swept once per kind and once per field.
 * **The ids are proved real** (`test_the_sweep_ids_reach_their_records`): the
@@ -43,6 +44,7 @@ from __future__ import annotations
 import contextlib
 import uuid
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -118,6 +120,20 @@ NOT_MATTER_DATA = {
     "matters:person_work": "person",
     # A metric slug, not an id (tests/test_reporting_*).
     "reporting:export": "metric",
+    # Reference data: an institution, a tag or a vocabulary key — rows with no
+    # visibility of their own, behind `reference.manage`, 404 for everybody
+    # without it (docs/adr/0187, tests/test_reference_data_views.py).
+    "reference_data:organisation": "reference data",
+    "reference_data:organisation_rename": "reference data",
+    "reference_data:organisation_alias_add": "reference data",
+    "reference_data:organisation_alias_remove": "reference data",
+    "reference_data:tag": "reference data",
+    "reference_data:tag_edit": "reference data",
+    "reference_data:tag_alias_add": "reference data",
+    "reference_data:tag_alias_remove": "reference data",
+    "reference_data:tag_merge": "reference data",
+    "reference_data:tag_status": "reference data",
+    "reference_data:vocabulary": "reference data",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.
@@ -223,6 +239,10 @@ def _key_for(route: str, param: str) -> str | None:
         return "version"
     if route == "documents:thumbnail":
         return "thumbnail"
+    if namespace == "notifications":
+        # «Kontrolli jõustumist» (docs/adr/0188): a reminder is derived from a
+        # commencement and is exactly as visible as it.
+        return "reminder"
     if namespace == "documents":
         return "document"
     return None
@@ -314,6 +334,15 @@ def _objects(matter: Any, made: dict[str, Any], world: dict[str, Any], *, restri
         type(sent).objects.filter(pk=sent.pk).update(visibility_override=restricted)
         NextAction.objects.filter(pk=check.pk).update(visibility_override=restricted)
     model = apps.get_model
+    effective_date = model("intelligence", "MatterEffectiveDate").objects.get(matter=matter)
+    # An open seven-day prompt for the hidden commencement, as the generator
+    # would have written it (docs/adr/0188).
+    reminder = model("notifications", "CommencementReminder").objects.create(
+        effective_date=effective_date,
+        source_date=effective_date.date_value,
+        stage="SEVEN_DAYS",
+        due_on=effective_date.date_value - timedelta(days=7),
+    )
     return {
         "restricted_matter": not restrict,
         "matter": matter,
@@ -340,7 +369,8 @@ def _objects(matter: Any, made: dict[str, Any], world: dict[str, Any], *, restri
         "important_date": model("intelligence", "MatterImportantDate").objects.get(
             matter=matter, title=HIDDEN_PHRASE
         ),
-        "effective_date": model("intelligence", "MatterEffectiveDate").objects.get(matter=matter),
+        "effective_date": effective_date,
+        "reminder": reminder,
         "work_victory": model("intelligence", "MatterWorkVictory").objects.get(
             matter=matter, title=HIDDEN_PHRASE
         ),
@@ -380,6 +410,7 @@ WATCHED = (
     "intelligence.MatterImportantDate",
     "intelligence.MatterEffectiveDate",
     "intelligence.MatterWorkVictory",
+    "notifications.CommencementReminder",
     "audit.ChangeEvent",
 )
 

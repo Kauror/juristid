@@ -223,7 +223,7 @@ read them.
 ## What a release replaces, and what it leaves alone
 
 The services that run the release image move together: `web`,
-`intake-reader`, `searchindex` and `intake-sweeper`. The replacement command names none of
+`intake-reader`, `searchindex`, `intake-sweeper` and `notifications`. The replacement command names none of
 them when it can — it is
 unqualified, so Compose starts what the file defines and a fourth application
 service added later moves with the other three rather than being forgotten.

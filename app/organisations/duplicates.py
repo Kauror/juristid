@@ -86,7 +86,7 @@ def visible(text: str) -> str:
     return "".join(f"<U+{ord(ch):04X}>" if unicodedata.category(ch) == "Cf" else ch for ch in text)
 
 
-def _references(pks: set[Any]) -> dict[Any, dict[str, int]]:
+def references_to(pks: set[Any]) -> dict[Any, dict[str, int]]:
     """How many rows of every other table point at each institution.
 
     Read from the model graph rather than listed by hand, so a relation added
@@ -120,7 +120,7 @@ def _references(pks: set[Any]) -> dict[Any, dict[str, int]]:
 
 def _collisions(groups: dict[str, set[Any]], names: dict[Any, str]) -> list[Collision]:
     colliding = {key: pks for key, pks in groups.items() if len(pks) > 1}
-    references = _references({pk for pks in colliding.values() for pk in pks})
+    references = references_to({pk for pks in colliding.values() for pk in pks})
     return [
         Collision(
             key=key,

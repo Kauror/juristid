@@ -1077,6 +1077,15 @@
     if (!target || !target.querySelector) {
       return;
     }
+    /* **A swap nobody asked for moves no focus.** A fragment the page fetches
+     * on its own after loading (the commencement bell's count, docs/adr/0188)
+     * settles while focus is still on `body` — which reads as "lost" below —
+     * and focusing it would make the bell, not the skip link, the first
+     * thing a keyboard reaches. Such a target says so with
+     * `data-background-swap`. */
+    if (target.closest && target.closest("[data-background-swap]")) {
+      return;
+    }
     /* Focus counts as lost when it is on nothing, on the document, or on an
      * element the swap has just detached. The last case is the common one and
      * was missed at first: the browser moves focus to `body` only *after* the

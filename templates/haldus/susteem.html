@@ -1,0 +1,72 @@
+{% extends "haldus/base.html" %}
+{% block title %}Süsteemi seis · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Süsteemi seis, for a verified technical administrator. Counts and
+  verdicts only — the same aggregate answers `manage.py production_status`
+  prints — never a record, a file name, a person, a setting's value or a
+  secret, and nothing here runs anything (docs/adr/0186).
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="versioon">
+    <h2 class="acctsection__title" id="versioon">Versioon</h2>
+    <dl class="detailgrid">
+      <dt>Redaktsioon</dt>
+      <dd class="mono">{{ revision|default:"—" }}</dd>
+      <dt>Ehitatud</dt>
+      <dd>{% if application_built_at %}{{ application_built_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+      <dt>Keskkond</dt>
+      <dd>{{ environment|default:"—" }} · {{ stage|default:"—" }}</dd>
+      <dt>Autentimine</dt>
+      <dd>{{ auth_mode }}</dd>
+    </dl>
+  </section>
+
+  <section class="panel" aria-labelledby="otsing-ja-valmidus">
+    <h2 class="acctsection__title" id="otsing-ja-valmidus">Otsing ja valmisolek</h2>
+    <dl class="detailgrid">
+      <dt>Otsinguindeksi värskus</dt>
+      <dd>
+        {% if freshness is None %}
+          <span class="statechip statechip--problem">Ei õnnestunud lugeda</span>
+        {% elif freshness.clear %}
+          <span class="statechip statechip--ok">Ajakohane</span>
+        {% elif freshness.ok %}
+          <span class="statechip statechip--waiting">Uuendamine ootel</span> {{ freshness.owed }} uuendust ootab ({{ freshness.minutes_owed }} min)
+        {% else %}
+          <span class="statechip statechip--problem">Vajab tähelepanu</span> {{ freshness.owed }} uuendust ootab {{ freshness.minutes_owed }} min{% if freshness.failed_attempts %}, {{ freshness.failed_attempts }} ebaõnnestunud katset{% endif %}
+        {% endif %}
+      </dd>
+      <dt>Paigalduse valmisolek</dt>
+      <dd>
+        {% if readiness is None %}
+          <span class="statechip statechip--problem">Ei õnnestunud lugeda</span>
+        {% elif readiness.ok %}
+          <span class="statechip statechip--ok">Korras</span>
+        {% else %}
+          <span class="statechip statechip--problem">Probleeme: {{ readiness.problems }}</span>
+        {% endif %}
+      </dd>
+    </dl>
+    <p class="acctnote">Täielik vastus: <span class="mono">manage.py production_status</span> serveris.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="tootlemise-vead">
+    <h2 class="acctsection__title" id="tootlemise-vead">Failide ja impordi töötlemise vead</h2>
+    <dl class="detailgrid">
+      <dt>Teksti eraldamine ebaõnnestus</dt>
+      <dd>{% if errors.extraction_failed is None %}—{% else %}{{ errors.extraction_failed }} failiversiooni{% endif %}</dd>
+      <dt>OneNote'i sisu import ebaõnnestus</dt>
+      <dd>{% if errors.onenote_failed is None %}—{% else %}{{ errors.onenote_failed }} viidet{% endif %}</dd>
+    </dl>
+  </section>
+
+  <section class="panel" aria-labelledby="susteemi-jarjepidevus">
+    <h2 class="acctsection__title" id="susteemi-jarjepidevus">Halduse järjepidevus</h2>
+    <p>
+      {% if continuity.satisfied %}<span class="statechip statechip--ok">Tagatud</span>{% else %}<span class="statechip statechip--problem">Seadistusjärk</span>{% endif %}
+      {{ continuity.summary }}
+    </p>
+  </section>
+{% endblock %}

@@ -445,6 +445,51 @@ class ChangeEventType(models.TextChoices):
     # (`MatterResponseDeadline`). Matter-level: the deadline is a fact about
     # the file, and the payload names no restricted record.
     RESPONSE_DEADLINE_ENDED = "RESPONSE_DEADLINE_ENDED", "Arvamuse tähtaeg lõppes"
+    # -- Haldus → Klassifikaatorid (docs/adr/0187) ---------------------------
+    #
+    # Changes to the department's reference vocabulary: the institution
+    # catalogue and the tag vocabulary. One type per act, for the reason every
+    # other family here has one — «who renamed this ministry» and «who merged
+    # these two tags» are different questions. They name no Matter (the row is
+    # about a vocabulary entry, `obj`), so no Teema chronology and no `Kõik
+    # muudatused` page shows them; the payload carries identifiers and the
+    # before/after names, which are reference text rather than business content.
+    ORGANISATION_CREATED = "ORGANISATION_CREATED", "Organisatsioon lisatud"
+    ORGANISATION_RENAMED = "ORGANISATION_RENAMED", "Organisatsiooni nimi parandatud"
+    ORGANISATION_ALIAS_ADDED = "ORGANISATION_ALIAS_ADDED", "Organisatsiooni nimekuju lisatud"
+    ORGANISATION_ALIAS_REMOVED = (
+        "ORGANISATION_ALIAS_REMOVED",
+        "Organisatsiooni nimekuju eemaldatud",
+    )
+    TAG_CREATED = "TAG_CREATED", "Silt lisatud sõnastikku"
+    TAG_CHANGED = "TAG_CHANGED", "Silti muudetud"
+    TAG_ALIAS_ADDED = "TAG_ALIAS_ADDED", "Sildi nimekuju lisatud"
+    TAG_ALIAS_REMOVED = "TAG_ALIAS_REMOVED", "Sildi nimekuju eemaldatud"
+    TAG_MERGED = "TAG_MERGED", "Silt liidetud teisega"
+    TAG_DEACTIVATED = "TAG_DEACTIVATED", "Silt aegunuks märgitud"
+    TAG_REACTIVATED = "TAG_REACTIVATED", "Silt taas kasutusel"
+
+    # -- «Kontrolli jõustumist» (docs/adr/0188) ------------------------------
+    #
+    # A person's answer to a commencement-review reminder. **Audit, never
+    # chronology**: absent from `matters.timeline.TIMELINE_EVENT_TYPES`, because
+    # checking a date is not something that happened to the file. The subject is
+    # the `MatterEffectiveDate`, so these are scoped with its family in
+    # `app.audit.visibility` and a restricted commencement's check is exactly as
+    # visible as the commencement. «Tehtud» means somebody *checked*; it never
+    # says the act entered into force.
+    COMMENCEMENT_CHECK_ACKNOWLEDGED = (
+        "COMMENCEMENT_CHECK_ACKNOWLEDGED",
+        "Jõustumise kontroll tehtud",
+    )
+    COMMENCEMENT_CHECK_DEFERRED = (
+        "COMMENCEMENT_CHECK_DEFERRED",
+        "Jõustumise kontroll edasi lükatud",
+    )
+    COMMENCEMENT_CHECK_DISMISSED = (
+        "COMMENCEMENT_CHECK_DISMISSED",
+        "Jõustumise meeldetuletus suletud",
+    )
 
 
 class SecurityEventType(models.TextChoices):
@@ -509,6 +554,25 @@ class SecurityEventType(models.TextChoices):
     # a final-administrator removal, a delegation beyond the actor's own
     # authority. Recorded so that somebody probing the boundary leaves a trace.
     ACCESS_REFUSED = "ACCESS_REFUSED", "Turvatundlik toiming keelati"
+    # -- the verified administrator session under the shared gate (docs/adr/0186)
+    #
+    # A step-up beside the shared gate, never a sign-in to the application: it
+    # opens Haldus administration for one individually verified person and
+    # changes nothing about the persona. Its own types, so the trail cannot
+    # confuse "an administrator proved who they are" with a persona choice or a
+    # personal sign-in. Failed attempts reuse AUTHENTICATION_FAILED with
+    # `detail.path = "administrator_session"`.
+    ADMINISTRATOR_SESSION_STARTED = (
+        "ADMINISTRATOR_SESSION_STARTED",
+        "Halduri seanss algas",
+    )
+    ADMINISTRATOR_SESSION_ENDED = "ADMINISTRATOR_SESSION_ENDED", "Halduri seanss lõppes"
+    # The operator's host-side emergency route: an account switched off with a
+    # mandatory reason, even where that breaks the two-administrator rule.
+    EMERGENCY_ACCOUNT_DISABLED = (
+        "EMERGENCY_ACCOUNT_DISABLED",
+        "Konto lülitati hädaolukorras välja",
+    )
     # -- permanent deletion of a Teema (docs/adr/0165) ---------------------
     #
     # The one trace a deleted Teema leaves in the access trail: who, when,
@@ -538,6 +602,14 @@ class AuthMethod(models.TextChoices):
     SHARED_GATE = "shared_gate", "Ühisparool ja valitud kasutaja"
     #: A personal password signed in here (docs/adr/0145; dormant).
     LOCAL_PASSWORD = "local_password", "Isiklik parool"
+    #: Behind the shared gate, an administrator's own verified session: their
+    #: personal password and their own TOTP, for Haldus administration only
+    #: (docs/adr/0186). The principal is that administrator; the persona, if
+    #: any, is recorded beside it and proves nothing.
+    ADMINISTRATOR_SESSION = (
+        "administrator_session",
+        "Halduri isiklik kinnitus ühisparooli taga",
+    )
     #: An individual identity Cloudflare Access proved and signed.
     CLOUDFLARE_ACCESS = "cloudflare_access", "Cloudflare Access"
     #: `AUTH_MODE=none`: a developer laptop or CI, the synthetic sign-in.

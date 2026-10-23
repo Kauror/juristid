@@ -1,0 +1,44 @@
+{% extends "haldus/base.html" %}
+{% block title %}Liida silt · {{ tag.name_et }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Merging a tag is its own page and its own decision: it cannot be undone
+  here. The page names both tags and, for somebody who may read Teemad, how
+  many records carry the one being retired; the button does one thing, and
+  the revision from the tag page travels with it, so a tag changed in the
+  meantime is refused as stale (app/reference_data/views.py `tag_merge`).
+{% endcomment %}
+
+{% block haldus_head %}
+<div class="pagehead">
+  <h1 class="pagehead__title">Liida silt</h1>
+  <span class="pagehead__context"><a href="{% url 'reference_data:tag' tag.pk %}">{{ tag.name_et }}</a></span>
+</div>
+{% endblock %}
+
+{% block haldus_content %}
+
+<section class="panel" aria-labelledby="liitmine-heading">
+  <h2 class="acctsection__title" id="liitmine-heading">Mis juhtub</h2>
+  <dl class="detailgrid">
+    <dt>Aegub</dt><dd>{{ tag.name_et }} <span class="mono">{{ tag.key }}</span></dd>
+    <dt>Jääb kasutusse</dt><dd>{{ into.name_et }} <span class="mono">{{ into.key }}</span></dd>
+    {% if shows_usage %}
+      <dt>Teemasid sildiga «{{ tag.name_et }}»</dt><dd>{{ usage.matters }}</dd>
+      <dt>Arvamusi sildiga «{{ tag.name_et }}»</dt><dd>{{ usage.submissions }}</dd>
+    {% endif %}
+  </dl>
+</section>
+
+<p class="notice notice--warning" role="note">Liitmist ei saa siin tagasi võtta. «{{ tag.name_et }}» märgitakse aegunuks ja suunatakse sildi «{{ into.name_et }}» juurde; kirjed, millel see silt on, jäävad selle juurde ja leitakse otsingus ka sildi «{{ into.name_et }}» kaudu.</p>
+
+<form class="form" method="post" action="{% url 'reference_data:tag_merge' tag.pk %}">
+  {% csrf_token %}
+  <input type="hidden" name="into" value="{{ into.pk }}">
+  <input type="hidden" name="revision" value="{{ revision }}">
+  <div class="form__actions">
+    <button class="button button--danger" type="submit">Liida «{{ tag.name_et }}» sildiga «{{ into.name_et }}»</button>
+    <a class="button button--quiet" href="{% url 'reference_data:tag' tag.pk %}">Loobu</a>
+  </div>
+</form>
+{% endblock %}

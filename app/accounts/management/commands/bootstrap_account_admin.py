@@ -11,9 +11,11 @@ administrator appointing them (docs/adr/0145 §11). Everything about it is
 deliberate friction, because it is the one place where nobody already trusted
 vouches for the result:
 
-* **Only under `AUTH_MODE=local_password`.** Under the shared gate an
-  administrator would be a capability nobody can exercise and a persona could
-  never prove; the service refuses and so does this.
+* **Only under `AUTH_MODE=local_password` or `shared_gate`** — the modes in
+  which the person can set their own password through the link and then prove
+  themselves: the personal sign-in, or behind the shared gate the verified
+  administrator session (`/haldus/sisene/`, docs/adr/0186). A persona never
+  administers, whatever its account holds.
 * **Only when there is no administrator at all.** After the first, the
   administration page appoints administrators, with its own audit trail.
 * **The address typed twice**, and a note on who ran it and why, which the
@@ -38,7 +40,10 @@ from app.accounts.enums import UserRole
 
 
 class Command(BaseCommand):
-    help = "Appoint the first account administrator (local_password mode, once, no password)."
+    help = (
+        "Appoint the first account administrator (local_password or shared_gate, once, "
+        "no password)."
+    )
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument("--email", required=True, help="The administrator's sign-in address.")
@@ -58,6 +63,15 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--note", required=True, help="Who is running this, and why. Kept in the audit."
+        )
+        parser.add_argument(
+            "--external-address-reason",
+            default="",
+            help=(
+                "Required for an address outside ACCOUNT_ALLOWED_EMAIL_DOMAINS: why this "
+                "external address is the administrator's sign-in address. Recorded on the "
+                "account as its exception and kept in the audit."
+            ),
         )
         parser.add_argument(
             "--print-activation-link",
@@ -89,6 +103,7 @@ class Command(BaseCommand):
                 role=options["role"],
                 operator_note=options["note"],
                 print_link=print_link,
+                external_reason=options["external_address_reason"],
             )
         except AdministrationRefused as error:
             raise CommandError(str(error)) from error
@@ -111,5 +126,6 @@ class Command(BaseCommand):
             self.stdout.write(result.printable_link)
         self.stdout.write(
             "They must enrol an authenticator app at their first sign-in before they can "
-            "administer anything."
+            "administer anything — under the shared gate, at /haldus/sisene/ after setting "
+            "their password through the link."
         )

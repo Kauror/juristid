@@ -702,9 +702,14 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     _matter(
         RESPONSE_DEADLINES_OPEN,
         "Arvamuse tähtaegu ees",
-        "Avatud täielikud teemad, mille arvamuse tähtaeg on veel tulemas.",
-        population="Avatud teemad, kirje liik FULL, arvamuse tähtajaga",
+        "Avatud täielikud teemad, mille arvamuse tähtaeg on veel tulemas ja "
+        "millele Koda ei ole veel vastanud.",
+        population="Avatud teemad, kirje liik FULL, vastamata arvamuse tähtajaga",
         time_basis=TimeBasis.POINT_IN_TIME,
+        # 2: an answered deadline is no longer counted — the one definition of
+        # an outstanding `Arvamuse tähtaeg` (`work_items.response_obligation_
+        # outstanding_q`), not «a date on the field» (admin & workflow R1, D3).
+        version=2,
         eligible_record_modes=(RecordMode.FULL.value,),
         respects_period=False,
     ),

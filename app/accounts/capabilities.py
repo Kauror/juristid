@@ -46,6 +46,12 @@ BUSINESS_CAPABILITIES: tuple[str, ...] = (
     Capability.ASSIGN_WORK.value,
     Capability.REVIEW_WORK_VICTORIES.value,
     Capability.DELETE_MATTERS.value,
+    # Department vocabulary rather than account administration: it is listed
+    # with the work permissions, granted without `accounts.delegate`, and needs
+    # no administrator session. Not in REQUIRES_BUSINESS_WRITE, so a technical
+    # administrator granted it by name holds it — and still writes no Teema
+    # (docs/adr/0187).
+    Capability.MANAGE_REFERENCE_DATA.value,
 )
 
 ADMINISTRATIVE_CAPABILITIES: tuple[str, ...] = (
@@ -78,6 +84,9 @@ DEFAULT_HOLDERS: dict[str, frozenset[str]] = {
     ),
     Capability.REVIEW_WORK_VICTORIES.value: frozenset({UserRole.DEPARTMENT_HEAD.value}),
     Capability.DELETE_MATTERS.value: frozenset({UserRole.DEPARTMENT_HEAD.value}),
+    # New with docs/adr/0187 and replacing no earlier rule: the catalogue was
+    # edited only through Django's admin before, which no role reaches.
+    Capability.MANAGE_REFERENCE_DATA.value: frozenset({UserRole.DEPARTMENT_HEAD.value}),
     Capability.MANAGE_ACCOUNTS.value: frozenset(),
     Capability.DELEGATE_ADMINISTRATION.value: frozenset(),
 }
@@ -127,6 +136,16 @@ GRANTABLE_TO_ROLES: dict[str, frozenset[str]] = {
     Capability.DELETE_MATTERS.value: frozenset(
         {UserRole.SPECIALIST.value, UserRole.DEPARTMENT_HEAD.value}
     ),
+    # The catalogue's keeper may be a lawyer or the technical administrator;
+    # a READER keeps the vocabulary they read and does not change it
+    # (docs/adr/0187).
+    Capability.MANAGE_REFERENCE_DATA.value: frozenset(
+        {
+            UserRole.SPECIALIST.value,
+            UserRole.DEPARTMENT_HEAD.value,
+            UserRole.ADMINISTRATOR.value,
+        }
+    ),
     # Any role may administer accounts — the point of the separation is that
     # doing so changes nothing about what that role may read.
     Capability.MANAGE_ACCOUNTS.value: frozenset(UserRole.values),
@@ -160,6 +179,10 @@ TEXT: dict[str, CapabilityText] = {
     Capability.DELETE_MATTERS.value: CapabilityText(
         "Teema jäädav kustutamine",
         "Teema kustutamine koos kogu sisuga, ka välja saadetud arvamuste ja nende failidega.",
+    ),
+    Capability.MANAGE_REFERENCE_DATA.value: CapabilityText(
+        "Klassifikaatorite haldus",
+        "Organisatsioonide nimekujud ja siltide sõnastik; teemade sisu see ei muuda.",
     ),
     Capability.MANAGE_ACCOUNTS.value: CapabilityText(
         "Kasutajate haldus",

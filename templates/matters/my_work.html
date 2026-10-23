@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load register_source people %}
+{% load register_source people notifications %}
 {% block title %}{% if is_self %}Minu asjad{% else %}{{ subject.display_name }} · asjad{% endif %} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -348,6 +348,11 @@ The rail holds only what has no honest place on a timeline.
           through «Uus asi», and a bare exclamation point announced once per
           row would only be punctuation read aloud.
         {% endcomment %}
+        {% comment %}
+          R1-C (docs/adr/0188): the reader's own «Kontrolli jõustumist»
+          prompts. Inside `is_self`, so a colleague's page never carries it.
+        {% endcomment %}
+        {% commencement_reminders_block tagasi="minu_asjad" %}
         {% if assignment_notices %}
           <section class="railblock" aria-label="Uus asi">
             <h2 class="railblock__label">Uus asi</h2>

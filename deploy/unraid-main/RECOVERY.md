@@ -162,7 +162,7 @@ usual dry run (README, "Deploying a release" — `db` and `tunnel` must not move
 the named form now lists four services:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
 ```
 
 That starts no extractor — this stack has none — and does not touch `db` or
@@ -916,7 +916,7 @@ helps against a database dump forged to match.
 ### Then verify, before anything is published
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web intake-reader searchindex intake-sweeper
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build web intake-reader searchindex intake-sweeper notifications
 ```
 
 Named rather than unqualified, unlike a redeploy: the tunnel is not behind a
