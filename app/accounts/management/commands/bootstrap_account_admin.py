@@ -65,6 +65,15 @@ class Command(BaseCommand):
             "--note", required=True, help="Who is running this, and why. Kept in the audit."
         )
         parser.add_argument(
+            "--external-address-reason",
+            default="",
+            help=(
+                "Required for an address outside ACCOUNT_ALLOWED_EMAIL_DOMAINS: why this "
+                "external address is the administrator's sign-in address. Recorded on the "
+                "account as its exception and kept in the audit."
+            ),
+        )
+        parser.add_argument(
             "--print-activation-link",
             action="store_true",
             help=(
@@ -94,6 +103,7 @@ class Command(BaseCommand):
                 role=options["role"],
                 operator_note=options["note"],
                 print_link=print_link,
+                external_reason=options["external_address_reason"],
             )
         except AdministrationRefused as error:
             raise CommandError(str(error)) from error

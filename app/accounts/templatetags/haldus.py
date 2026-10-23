@@ -3,10 +3,14 @@
 One item on the bar, never several: the Haldus shell has its own
 sub-navigation. Offered to anybody with at least one Haldus section they may
 open — a department head's work management, a verified administrator's account
-administration or system status — and, under the shared gate, to a persona
-whose account has administrative standing, as a way to the administrator
-sign-in. That last one is a hint, not a grant: the sign-in asks the person's
-own password and code, and every Haldus route asks its own question again.
+administration or system status — and to nobody else.
+
+**Never on administrative standing alone.** Showing the item to a persona
+whose account *holds* `accounts.manage` would let anybody with the shared
+password find out who the administrators are by switching personas. So a
+persona's administrative capabilities change nothing on the bar; the way to the
+administrator sign-in is the same quiet link for every reader, on the persona
+page and on Haldus → Ülevaade, and it asks the person's own password and code.
 """
 
 from __future__ import annotations
@@ -25,13 +29,6 @@ def haldus_link(context: Any) -> str:
     request = context.get("request")
     if request is None:
         return ""
-    from app.accounts import admin_session
     from app.haldus.sections import visible_sections
 
-    if visible_sections(request):
-        return reverse("haldus:index")
-    if admin_session.is_available() and admin_session.holds_administrative_standing(
-        getattr(request, "user", None)
-    ):
-        return reverse("haldus:sign_in")
-    return ""
+    return reverse("haldus:index") if visible_sections(request) else ""

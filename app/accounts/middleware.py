@@ -148,6 +148,17 @@ class AuthenticationModeMiddleware:
         local_auth.touch(request)
 
         if local_auth.enrolment_pending(request) and request.path not in enrolment_paths():
+            if request.headers.get("HX-Request") == "true":
+                # A fragment a page fetches after it has drawn — the top bar's
+                # reminder count, say — on the enrolment page itself. A redirect
+                # would be followed by `XMLHttpRequest` and the whole enrolment
+                # page swapped into the fragment's slot, which fetches again:
+                # a loop that never settles and a second code field on the
+                # page. Refused instead, with nothing to swap (htmx swaps 2xx
+                # only); the navigation that matters is already on that page.
+                refusal = HttpResponse(status=403)
+                add_never_cache_headers(refusal)
+                return refusal
             return redirect("accounts:security_enrol")
         return self.get_response(request)
 

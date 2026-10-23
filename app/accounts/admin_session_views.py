@@ -184,6 +184,7 @@ def reauthenticate(request: HttpRequest) -> HttpResponse | HttpResponseBase:
         if next_path:
             return redirect(f"{reverse('haldus:sign_in')}?{urlencode({'next': next_path})}")
         return redirect("haldus:sign_in")
+    admin_session.note_activity(request)
     context: dict[str, Any] = {"next_url": next_path}
     if request.method == "GET":
         return render(

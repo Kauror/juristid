@@ -36,13 +36,13 @@
     </section>
   {% elif step_up_offered %}
     <section class="panel" aria-labelledby="halduri-kinnitus">
-      <h2 class="acctsection__title" id="halduri-kinnitus">Kasutajate haldus vajab isiklikku kinnitust</h2>
+      <h2 class="acctsection__title" id="halduri-kinnitus">Halduri sisselogimine</h2>
       <p class="acctnote">
-        Kasutaja valimine ühisparooli taga ei tõenda, kes klaviatuuri taga on. Kontode ja õiguste
-        muutmiseks logi halduriks sisse oma e-posti, isikliku parooli ja autentimisrakenduse koodiga.
+        Kui haldad kasutajaid või süsteemi, logi halduriks sisse oma e-posti, isikliku parooli ja
+        autentimisrakenduse koodiga. Kasutaja valimine ühisparooli taga seda ei asenda.
       </p>
       <div class="form__actions">
-        <a class="button button--primary" href="{% url 'haldus:sign_in' %}">Halduri sisselogimine</a>
+        <a class="button button--secondary" href="{% url 'haldus:sign_in' %}">Halduri sisselogimine</a>
       </div>
     </section>
   {% endif %}

@@ -56,6 +56,9 @@ def real_data_gate(settings, monkeypatch):
     settings.SESSION_COOKIE_SECURE = True
     settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     settings.TRUST_CF_CONNECTING_IP = True
+    # Administrators' authenticators need their own key beside the gate
+    # (juristid.E048, docs/adr/0186).
+    settings.LOCAL_AUTH_MFA_ENCRYPTION_KEY = "mfa-" + "k" * 44
     monkeypatch.setitem(settings.DATABASES["default"], "PASSWORD", LONG_DATABASE_PASSWORD)
     return settings
 

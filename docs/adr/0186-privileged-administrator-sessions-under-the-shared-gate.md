@@ -53,6 +53,13 @@ technical ADMINISTRATOR role. Every refusal — unknown address, wrong password,
 administrative standing — is one sentence and one throttle count; the audit says
 which.
 
+**Activity.** Only Haldus and Haldus → Kasutajad requests and the session's
+own pages restart the idle clock (`admin_session.note_activity`).
+`verified_administrator` answers for every page — the top bar asks it — and
+never touches the session, so a colleague browsing business pages in the same
+browser does not keep an absent administrator's session open (security review
+P2).
+
 **How it ends:** idle `ADMIN_SESSION_IDLE_SECONDS` (default 900) and absolute
 `ADMIN_SESSION_ABSOLUTE_SECONDS` (default 7200, never more than 12 h), with safe
 defaults for unusable values; any change to the binding (password, address,
@@ -89,8 +96,11 @@ A pending (password-only) step-up does not survive a persona change.
 ### 2. The services accept only a verified actor (the second lock)
 
 `administration.*` take `actor: User | VerifiedActor`. A `VerifiedActor` is
-minted only by `admin_session.administrator_actor(request)` (a private seal; a
-hand-made one raises `TypeError`) and carries the epoch it was verified at.
+minted only by `admin_session.administrator_actor(request)` — constructing one
+anywhere else, `dataclasses.replace` included, raises `TypeError`, and the
+services accept only the very instance that was minted (a module-private
+registry by identity), never a copy — and carries the epoch it was verified
+at.
 Under the shared gate a bare account is refused (`NOT_VERIFIED`) before anything
 is read, so a view that forgot its gate administers nothing on the strength of a
 persona. Under the lock the actor is re-read and refused (`STALE_PROOF`) if its
@@ -117,6 +127,15 @@ bootstrap phase) only changes that do not reduce the count pass. The existing
 final-delegator guard stays as the floor. A second-factor reset by another
 administrator is **not** held to the rule: it is the lost-phone recovery the
 rule exists to keep possible (the person re-enrols at their next step-up).
+
+So that a reset cannot be the first of two steps round the rule (security
+review P1: reset B, then switch B off comparing one with one), the guard also
+counts *standing* full administrators — usable ones, plus one whose factor an
+administrator or the operator reset and who has not re-enrolled since (read
+from the trail: an `MFA_REMOVED` by somebody else with no `MFA_ENROLLED`
+after it). A change is refused when **either** count falls below two and below
+what it was. An administrator who set a password and never enrolled is not
+standing. The status display keeps the strict *usable* count.
 `administration.continuity_status()` feeds Haldus → Ülevaade and Süsteemi seis.
 
 ### 4. The emergency route
@@ -149,7 +168,33 @@ Account e-mail stays impossible beside the gate (`juristid.E036`, unchanged). So
   session and comes back to the bare page after the password; the secret never
   travels in the gate's `next`.
 
-### 6. How this amends 0016 and 0145
+- `bootstrap_account_admin` appoints an **existing** activated account too (it
+  keeps its role and `is_staff`; only the two administrative capabilities are
+  added). An address outside `ACCOUNT_ALLOWED_EMAIL_DOMAINS` needs
+  `--external-address-reason`, recorded on the account as its external-address
+  exception (approved by the operator, since no administrator exists yet) and
+  audited as `EMAIL_EXCEPTION_APPROVED`.
+- A placeholder sign-in address (the shared-gate period's `marko`) is corrected
+  by the first administrator on Haldus → Kasutajad («Muuda sisselogimise
+  aadressi»): allowed exactly because the account has no personal password or
+  second factor yet (0145 §4); after that the address is fixed.
+
+### 7. The keys and the link base on the real-data stack
+
+- **`LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required beside the gate on real data**
+  (`juristid.E048`, at least 32 characters; E033 kept covering personal sign-in
+  only). Without it administrators' TOTP secrets would be sealed under a key
+  derived from `SECRET_KEY`, and a routine `SECRET_KEY` rotation would lock both
+  administrators out. The release kit generates it on the host before the swap
+  (`openssl rand -base64 48` into `juristid.env`); the template carries a
+  `replace-me` placeholder that `juristid.E016` refuses until then. The `mcp`
+  process must not hold it (E046) and is not asked for it.
+- **`ACCOUNT_LINK_BASE_URL` should be `https://juristid.orgusaar.ee`** on the
+  production stack, so the link the operator prints is absolute; without it the
+  printed link is a bare path. (The template names it without the host: the
+  repository is public.)
+
+### 8. How this amends 0016 and 0145
 
 - *One mode in force* still holds: `AUTH_MODE` is unchanged and the step-up
   establishes nobody's identity for the application. It is a narrowly scoped
@@ -169,9 +214,11 @@ Account e-mail stays impossible beside the gate (`juristid.E036`, unchanged). So
 `/haldus/` (namespace `haldus`) is one shell — Ülevaade · Kasutajad ja õigused ·
 Klassifikaatorid · Osakonna töökorraldus · Süsteemi seis — built from
 `app/haldus/sections.py`; each route enforces its own predicate. The bar gets one
-«Haldus» item where a section opens (and, under the gate, for a persona whose
-account may administer, a way to the sign-in); the persona page carries a quiet
-link to the administrator sign-in. Süsteemi seis shows aggregate verdicts only
+«Haldus» item where a section opens, and nothing more: a persona's
+administrative capabilities change nothing visible, so switching personas does
+not reveal who the administrators are (security review P3b). The way to the
+administrator sign-in is the same quiet link for every reader — on the persona
+page, and on Haldus → Ülevaade for anybody without a verified session. Süsteemi seis shows aggregate verdicts only
 (version, search freshness, readiness, failed extraction/OneNote counts) — no
 record, file name, person, setting value or secret, and it runs nothing.
 
@@ -183,7 +230,19 @@ record, file name, person, setting value or secret, and it runs nothing.
 - Between a person setting their password and enrolling their authenticator,
   the password alone reaches enrolment (as in 0145 §8). The instruction is to do
   both in one sitting; the operator hands the link over in person.
+- **The same window reopens after a reset.** Once another administrator (or
+  the operator) resets B's factor, B's password alone reaches enrolment at
+  `/haldus/sisene/` until B re-enrols — whoever knows the gate password and B's
+  password can enrol their own authenticator as B. Reset only when B is ready
+  to re-enrol at once, and tell B to do so; the reset and the enrolment are
+  both in the trail.
 - An administrator session open in a browser is usable by whoever sits at it
-  until it idles out (15 min) — as any session is.
+  until it idles out (15 min of no administration) — as any session is.
+- Re-proving (password and code) re-binds the session to the account as it
+  then is, because `check_password` may upgrade and save the hash; a change
+  that already ended the session is not forgiven, since the re-proof first
+  asks `verified_administrator`.
+- Under the gate a link's holder is asked again, under its row lock, inside
+  the transaction that sets the password.
 - The two real administrators must enrol themselves; nothing here creates an
   account, sets a password or enrols a factor.

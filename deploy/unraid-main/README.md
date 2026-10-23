@@ -67,7 +67,17 @@ session cookie that is not `Secure` (E013), a gate idle limit outside 300
 seconds–the absolute limit (E021), and — on real data — a template
 `replace-me…` value left in any secret (E016), a `DJANGO_SECRET_KEY` under 50
 characters (E017), a gate password under 16 (E018), a `POSTGRES_PASSWORD`
-under 16 (E019) and a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020).
+under 16 (E019), a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020) and a missing or
+short `LOCAL_AUTH_MFA_ENCRYPTION_KEY` (E048).
+
+**`LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required here** (docs/adr/0186 §7). The
+administrators' authenticators for Haldus are sealed under it; without it they
+would be sealed under a key derived from `DJANGO_SECRET_KEY`, and rotating that
+would lock both administrators out. Generate it in the release kit before the
+swap — `openssl rand -base64 48` into `juristid.env` — back it up apart from the
+database dump, and keep it out of `juristid-mcp.env` (E046). Set
+`ACCOUNT_LINK_BASE_URL` to the public `https://` origin as well, so the links
+`issue_administrator_link` prints are absolute.
 
 **`DJANGO_BEHIND_TLS_PROXY=1` is required here.** It is what lets the
 application believe `CF-Connecting-IP`, the address Cloudflare saw. Without it
