@@ -41,7 +41,6 @@ from tests.gate import PASSWORD, apply_shared_gate
 pytestmark = pytest.mark.django_db(transaction=True, serialized_rollback=True)
 
 GATE = "/konto/varav/"
-SWITCH_PERSONA = "/konto/kasutaja/vaheta/"
 ENROL = "/mcp-ligipaas/liitu/"
 AUTHORIZE = "/oauth/authorize"
 TOKEN = "/oauth/token"  # noqa: S105 - a path, not a secret
@@ -55,10 +54,9 @@ def deployment(settings):
     w.apply_mcp_settings(settings)
 
 
-def _as(client: Client, user: Any) -> None:
-    """Pass the shared gate and act as ``user``'s persona."""
+def _through_the_gate(client: Client) -> None:
+    """Pass the shared gate and choose nobody: the MCP pages ask for the account (ADR 0185 §3)."""
     assert client.post(GATE, {"password": PASSWORD}).status_code == 302
-    assert client.post(SWITCH_PERSONA, {"user_id": str(user.pk)}).status_code == 302
 
 
 def _machine(path: str, params: dict[str, str]) -> Any:
@@ -74,12 +72,16 @@ def _grant(upn: str) -> str:
     return link
 
 
-def _enrol(client: Client, link: str, moment: Any, *, steps: int = 0) -> str:
-    """Follow the link in the persona's session, read the key off the page, confirm it."""
+def _enrol(client: Client, link: str, moment: Any, *, address: str, steps: int = 0) -> str:
+    """Follow the link behind the gate, name the account, read the key off the page, confirm it."""
     parts = urlsplit(link)
     assert f"{parts.scheme}://{parts.netloc}" == w.ORIGIN
     arrived = client.get(f"{parts.path}?{parts.query}")
     assert (arrived.status_code, arrived["Location"]) == (302, ENROL)
+    asked = client.get(ENROL)
+    assert asked.status_code == 200 and 'name="epost"' in asked.content.decode()
+    named = client.post(ENROL, {"epost": address})
+    assert (named.status_code, named["Location"]) == (302, ENROL)
     page = client.get(ENROL)
     assert page.status_code == 200
     [secret] = re.findall(r'class="mono acctsecret">([A-Z2-7]+)<', page.content.decode())
@@ -89,13 +91,15 @@ def _enrol(client: Client, link: str, moment: Any, *, steps: int = 0) -> str:
     return secret
 
 
-def _authorize(client: Client, code: str, **overrides: Any) -> dict[str, list[str]]:
-    """Open the consent page as ChatGPT sends the browser there, then «Luba» with ``code``."""
+def _authorize(client: Client, address: str, code: str, **overrides: Any) -> dict[str, list[str]]:
+    """Open the consent page as ChatGPT sends the browser there, then «Luba» as ``address``."""
     query = urlencode(w.authorize_params(**overrides))
     page = client.get(f"{AUTHORIZE}?{query}")
     assert page.status_code == 200, page.content.decode()[:500]
     assert "ChatGPT" in page.content.decode()
-    answered = client.post(f"{AUTHORIZE}?{query}", {"otsus": "luba", "kood": code})
+    answered = client.post(
+        f"{AUTHORIZE}?{query}", {"otsus": "luba", "epost": address, "kood": code}
+    )
     assert answered.status_code == 302, answered.content.decode()[:800]
     location = urlsplit(answered["Location"])
     assert f"{location.scheme}://{location.netloc}{location.path}" == w.CHATGPT_REDIRECT
@@ -192,9 +196,9 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     assert link.startswith(f"{w.ORIGIN}{ENROL}?kood=")
     assert McpAccessGrant.objects.get(user=mari).status == GrantStatus.PENDING_ENROLMENT
 
-    # Mari opens it behind the gate, as herself, and enrols her authenticator.
-    _as(client, mari)
-    secret = _enrol(client, link, moment)
+    # Mari opens it behind the gate — no persona — names her account, and enrols.
+    _through_the_gate(client)
+    secret = _enrol(client, link, moment, address="Mari.Maasikas@example.invalid")
     assert McpAccessGrant.objects.get(user=mari).status == GrantStatus.ACTIVE
 
     # ChatGPT discovers both halves.
@@ -220,7 +224,7 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     )
 
     # Consent: the next step's code, because the enrolment spent this one.
-    granted = _authorize(client, w.code_at(secret, moment, 1))
+    granted = _authorize(client, mari.upn, w.code_at(secret, moment, 1))
     assert granted["state"] == ["chatgpt-olek-7f3a"]
     assert granted["iss"] == [w.ORIGIN]
     [code] = granted["code"]
@@ -306,7 +310,7 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
 
     # Connect again, with a fresh code at a later step.
     later = w.freeze_totp(monkeypatch, moment + timedelta(seconds=90))
-    granted = _authorize(client, w.code_at(secret, later), state="teine-olek")
+    granted = _authorize(client, mari.upn, w.code_at(secret, later), state="teine-olek")
     assert granted["state"] == ["teine-olek"]
     signed = _exchange(granted["code"][0])
     assert _tools_listed(signed["access_token"]) == 200
@@ -426,7 +430,7 @@ def test_an_account_that_changes_is_refused_at_its_next_call(connected):
 def test_mcp_switched_off_answers_nothing(connected, settings, client):
     tunnel = connected["connections"]["tunnel"]
     settings.MCP_ENABLED = False
-    _as(client, connected["users"]["tunnel"])
+    _through_the_gate(client)
     for path in (
         "/.well-known/oauth-authorization-server",
         f"{AUTHORIZE}?{urlencode(w.authorize_params())}",
@@ -450,48 +454,62 @@ class TestConsent:
 
     pytestmark = pytest.mark.django_db(transaction=False)
 
-    def test_another_personas_code_cannot_authorize(self, client, monkeypatch):
+    def test_another_accounts_code_cannot_authorize(self, client, monkeypatch):
         moment = w.freeze_totp(monkeypatch)
         jaan, mari = factories.UserFactory(), factories.UserFactory()
         jaans = w.connect(jaan, moment)
         maris = w.connect(mari, moment)
-        _as(client, mari)
+        _through_the_gate(client)
         query = urlencode(w.authorize_params())
         refused = client.post(
-            f"{AUTHORIZE}?{query}", {"otsus": "luba", "kood": w.code_at(jaans.secret, moment, 1)}
+            f"{AUTHORIZE}?{query}",
+            {"otsus": "luba", "epost": mari.upn, "kood": w.code_at(jaans.secret, moment, 1)},
         )
         assert refused.status_code == 400
         assert refused.context["error"] == GENERIC_REFUSAL
         assert "Location" not in refused
-        granted = _authorize(client, w.code_at(maris.secret, moment, 1))
+        granted = _authorize(client, mari.upn, w.code_at(maris.secret, moment, 1))
         assert granted["code"]
 
-    def test_a_persona_without_a_grant_cannot_authorize(self, client, monkeypatch):
+    def test_an_account_without_a_grant_cannot_authorize(self, client, monkeypatch):
         moment = w.freeze_totp(monkeypatch)
         nobody = factories.UserFactory()
         enrolled = w.connect(factories.UserFactory(), moment)
-        _as(client, nobody)
+        _through_the_gate(client)
         query = urlencode(w.authorize_params())
         page = client.get(f"{AUTHORIZE}?{query}")
-        # The page says nothing about whether this persona has a grant (MCPSEC-01).
+        # The page says nothing about who has a grant (MCPSEC-01).
         assert page.status_code == 200
         assert "may_connect" not in page.context
         refused = client.post(
-            f"{AUTHORIZE}?{query}", {"otsus": "luba", "kood": w.code_at(enrolled.secret, moment, 1)}
+            f"{AUTHORIZE}?{query}",
+            {"otsus": "luba", "epost": nobody.upn, "kood": w.code_at(enrolled.secret, moment, 1)},
         )
         # The same answer as a wrong code: no grant cannot be told from a typo.
         assert refused.status_code == 400
         assert refused.context["error"] == GENERIC_REFUSAL
         assert "Location" not in refused
 
-    def test_a_gate_session_without_a_persona_is_sent_to_choose_one(self, client):
-        assert client.post(GATE, {"password": PASSWORD}).status_code == 302
+    def test_a_reader_connects_with_no_persona_at_all(self, client, monkeypatch):
+        """ADR 0181: a READER reads everything; ADR 0185 §3: it connects like anybody."""
+        moment = w.freeze_totp(monkeypatch)
+        reader = factories.ReaderFactory(upn="lugeja@example.invalid")
+        link = _grant(reader.upn)
+        _through_the_gate(client)
+        secret = _enrol(client, link, moment, address=reader.upn)
+        granted = _authorize(client, reader.upn, w.code_at(secret, moment, 1))
+        assert granted["code"]
+        assert not client.get(ENROL).wsgi_request.user.is_authenticated
+
+    def test_a_gate_less_request_never_reaches_the_form(self, client):
         query = urlencode(w.authorize_params())
         arrived = client.get(f"{AUTHORIZE}?{query}")
         assert arrived.status_code == 302
         target = urlsplit(arrived["Location"])
-        assert target.path == "/konto/kasutaja/"
+        assert target.path == GATE
         assert parse_qs(target.query)["next"] == [f"{AUTHORIZE}?{query}"]
-        posted = client.post(f"{AUTHORIZE}?{query}", {"otsus": "luba", "kood": "123456"})
-        assert posted.status_code == 302
+        posted = client.post(
+            f"{AUTHORIZE}?{query}", {"otsus": "luba", "epost": "x@example.invalid", "kood": "1"}
+        )
+        assert posted.status_code == 302 and posted["Location"].startswith(GATE)
         assert "code=" not in posted["Location"]

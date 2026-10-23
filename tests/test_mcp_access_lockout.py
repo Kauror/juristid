@@ -1,9 +1,10 @@
 """Wrong authenticator codes cannot be guessed at forever (MCPSEC-01, docs/adr/0185 §3).
 
 The personal authenticator is the only thing that makes an MCP connection
-individual: the gate password is shared and the persona is a choice. A colleague
-who knows the gate password could otherwise script five guesses every fifteen
-minutes against somebody else's grant for a year. So:
+individual: the gate password is shared, and the address typed on the consent
+page is no secret. A colleague who knows the gate password could otherwise
+script five guesses every fifteen minutes against somebody else's grant for a
+year. So:
 
 * consecutive locks escalate — 15 minutes, 1 hour, 4 hours — and the next one
   suspends the grant until an operator runs ``mcp_access unlock``;
@@ -11,9 +12,10 @@ minutes against somebody else's grant for a year. So:
 * every lock and every suspension writes an `McpAccessEvent` and a WARNING
   log line, neither carrying a code;
 * one gate session, and one client address, can only fail so many times in a
-  window, whichever personas it tries;
-* the consent page does not say whether a persona has a grant, is locked or is
-  suspended until that persona's own current code has been verified.
+  window, whichever accounts it names — an address nobody has included;
+* the consent page does not say whether an address names anybody, or whether
+  that account has a grant, is locked or is suspended, until the account's own
+  current code has been verified.
 """
 
 from __future__ import annotations
@@ -58,13 +60,12 @@ def _url(**overrides) -> str:
     return f"{AUTHORIZE}?{urlencode(support.authorize_params(**overrides))}"
 
 
-def _as(client: Client, user) -> None:
+def _through_the_gate(client: Client) -> None:
     assert client.post("/konto/varav/", {"password": PASSWORD}).status_code == 302
-    assert client.post("/konto/kasutaja/vaheta/", {"user_id": str(user.pk)}).status_code == 302
 
 
-def _switch(client: Client, user) -> None:
-    assert client.post("/konto/kasutaja/vaheta/", {"user_id": str(user.pk)}).status_code == 302
+def _as(user, code: str) -> dict[str, str]:
+    return support.consent(user, code)
 
 
 def _wrong(user, times: int) -> list[services.AuthorizationOutcome]:
@@ -213,10 +214,10 @@ def test_every_lock_and_suspension_is_logged_as_a_warning_without_the_code(momen
 # -- the page says nothing about a grant before the code is verified ---------------
 
 
-def test_the_page_offers_the_code_field_to_a_persona_without_a_grant(client):
-    user = factories.UserFactory()
-    _as(client, user)
+def test_the_page_offers_the_same_fields_to_everybody(client):
+    _through_the_gate(client)
     body = client.get(_url()).content.decode()
+    assert 'name="epost"' in body
     assert 'name="kood"' in body
     assert "ei ole MCP ligipääsu" not in body
 
@@ -227,12 +228,11 @@ def test_no_grant_and_a_wrong_code_get_the_same_answer(client, moment):
     pending = factories.UserFactory()
     services.grant_access(user=pending, provenance=support.OPERATOR)
     nobody = factories.UserFactory()
-    _as(client, granted)
+    _through_the_gate(client)
 
     answers = []
-    for persona in (granted, pending, nobody):
-        _switch(client, persona)
-        response = client.post(_url(), {"otsus": "luba", "kood": "000000"})
+    for address in (granted.upn, pending.upn, nobody.upn, "keegi.ei.ole@example.invalid"):
+        response = client.post(_url(), _as(address, "000000"))
         answers.append(
             (
                 response.status_code,
@@ -240,25 +240,25 @@ def test_no_grant_and_a_wrong_code_get_the_same_answer(client, moment):
                 'name="kood"' in response.content.decode(),
             )
         )
-    assert answers == [(400, True, True)] * 3
+    assert answers == [(400, True, True)] * 4
     assert not McpAuthorizationCode.objects.exists()
 
 
 def test_a_locked_grant_looks_like_any_other_until_its_own_code_is_typed(client, moment):
     user = factories.UserFactory()
     _, secret = support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
     for _ in range(services.MAX_FAILED_CODES):
-        response = client.post(_url(), {"otsus": "luba", "kood": "000000"})
+        response = client.post(_url(), _as(user, "000000"))
         assert response.status_code == 400 and GENERIC in response.content.decode()
 
     page = client.get(_url()).content.decode()
     assert "Liiga palju valesid koode" not in page and 'name="kood"' in page
-    wrong = client.post(_url(), {"otsus": "luba", "kood": "111111"})
+    wrong = client.post(_url(), _as(user, "111111"))
     assert wrong.status_code == 400 and GENERIC in wrong.content.decode()
     assert "Liiga palju valesid koode" not in wrong.content.decode()
 
-    right = client.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)})
+    right = client.post(_url(), _as(user, support.code_at(secret, moment)))
     assert right.status_code == 429
     assert "Liiga palju valesid koode" in right.content.decode()
 
@@ -267,32 +267,31 @@ def test_a_suspended_grant_says_so_only_to_its_own_code(client, moment):
     user = factories.UserFactory()
     grant, secret = support.enrolled(user, moment)
     McpAccessGrant.objects.filter(pk=grant.pk).update(suspended_at=timezone.now())
-    _as(client, user)
-    wrong = client.post(_url(), {"otsus": "luba", "kood": "000000"})
+    _through_the_gate(client)
+    wrong = client.post(_url(), _as(user, "000000"))
     assert wrong.status_code == 400 and GENERIC in wrong.content.decode()
-    right = client.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)})
+    right = client.post(_url(), _as(user, support.code_at(secret, moment)))
     assert right.status_code == 403
     assert "haldaja" in right.content.decode()
     assert not McpAuthorizationCode.objects.exists()
 
 
-# -- one session or one address cannot spray codes across personas -----------------
+# -- one session or one address cannot spray codes across accounts -----------------
 
 
-def test_one_gate_session_cannot_spray_codes_across_personas(client, moment, settings):
+def test_one_gate_session_cannot_spray_codes_across_accounts(client, moment, settings):
     settings.MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION = 4
     settings.MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS = 100
-    personas = [factories.UserFactory() for _ in range(3)]
-    for persona in personas:
-        support.enrolled(persona, moment)
+    colleagues = [factories.UserFactory() for _ in range(3)]
+    for colleague in colleagues:
+        support.enrolled(colleague, moment)
     target = factories.UserFactory()
     _, target_secret = support.enrolled(target, moment)
-    _as(client, personas[0])
+    _through_the_gate(client)
     tries = 0
-    for persona in personas:
-        _switch(client, persona)
+    for colleague in colleagues:
         for _ in range(2):
-            response = client.post(_url(), {"otsus": "luba", "kood": "000000"})
+            response = client.post(_url(), _as(colleague, "000000"))
             tries += 1
             if tries <= 4:
                 assert response.status_code == 400, tries
@@ -300,22 +299,18 @@ def test_one_gate_session_cannot_spray_codes_across_personas(client, moment, set
                 assert response.status_code == 429, tries
 
     # Even the target's right code is not checked from this session now.
-    _switch(client, target)
-    refused = client.post(_url(), {"otsus": "luba", "kood": support.code_at(target_secret, moment)})
+    refused = client.post(_url(), _as(target, support.code_at(target_secret, moment)))
     assert refused.status_code == 429
     assert "Liiga palju katseid" in refused.content.decode()
     assert not McpAuthorizationCode.objects.exists()
-    # ... and no persona's own counter was charged for the refused attempts.
+    # ... and no account's own counter was charged for the refused attempts.
     assert sum(McpAccessGrant.objects.values_list("total_failed_attempts", flat=True)) == 4
 
     # Another session from another address is not affected.
     other = Client(REMOTE_ADDR="192.0.2.77")
-    _as(other, target)
+    _through_the_gate(other)
     assert (
-        other.post(
-            _url(), {"otsus": "luba", "kood": support.code_at(target_secret, moment)}
-        ).status_code
-        == 302
+        other.post(_url(), _as(target, support.code_at(target_secret, moment))).status_code == 302
     )
 
 
@@ -327,12 +322,9 @@ def test_one_client_address_cannot_spray_codes_from_fresh_sessions(moment, setti
     statuses = []
     for _ in range(4):
         session = Client(REMOTE_ADDR="198.51.100.9")
-        _as(session, victim)
-        statuses.append(session.post(_url(), {"otsus": "luba", "kood": "000000"}).status_code)
+        _through_the_gate(session)
+        statuses.append(session.post(_url(), _as(victim, "000000")).status_code)
     assert statuses == [400, 400, 400, 429]
     fresh = Client(REMOTE_ADDR="198.51.100.9")
-    _as(fresh, victim)
-    assert (
-        fresh.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)}).status_code
-        == 429
-    )
+    _through_the_gate(fresh)
+    assert fresh.post(_url(), _as(victim, support.code_at(secret, moment))).status_code == 429
