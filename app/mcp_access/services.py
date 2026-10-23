@@ -170,6 +170,19 @@ def may_write(user: User | None, grant: McpAccessGrant | None) -> bool:
     return grant.write_is_enabled and may_write_business_content(user)
 
 
+def write_enablement_covers(grant: McpAccessGrant, started_at: datetime | None) -> bool:
+    """Whether a connection begun at ``started_at`` falls under the current write decision.
+
+    A write scope is honoured only for a token family (or an authorization
+    code) that began at or after ``write_enabled_at``. Without this, a token
+    minted under an earlier enablement — revoked by ``revoke-write`` and never
+    refreshed — would write again the moment ``grant-write`` was run a second
+    time (security review P3-5). A pure comparison: no query.
+    """
+    enabled_at = grant.write_enabled_at
+    return enabled_at is not None and started_at is not None and started_at >= enabled_at
+
+
 def write_scope() -> str:
     return str(getattr(settings, "MCP_WRITE_SCOPE", "juristid.write"))
 
@@ -1364,7 +1377,11 @@ def _exchange_code(
     family_id = uuid.uuid4()
     # Narrowed again: a write decision revoked between the consent and the
     # exchange is honoured here, and a code never yields more than it names.
-    scopes = narrow_scope(record_row.scope, write_allowed=may_write(user, grant))
+    scopes = narrow_scope(
+        record_row.scope,
+        write_allowed=may_write(user, grant)
+        and write_enablement_covers(grant, record_row.created_at),
+    )
     issued, _ = _issue_pair(
         grant=grant,
         user=user,
@@ -1517,7 +1534,8 @@ def _refresh(
     # account may do *now*: after `revoke_write` the write scope drops out of
     # the family for good — getting it back means connecting again.
     scopes = narrow_scope(
-        " ".join(sorted(requested or token.scope_set)), write_allowed=may_write(user, grant)
+        " ".join(sorted(requested or token.scope_set)),
+        write_allowed=may_write(user, grant) and write_enablement_covers(grant, family_started),
     )
     issued, new_refresh = _issue_pair(
         grant=grant,
