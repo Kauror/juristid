@@ -1690,6 +1690,14 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "account_admin:detail": "G: account administration, may_administer_accounts",
     "account_admin:deactivate": "G: account administration, may_administer_accounts",
     "account_admin:change_email": "G: account administration, delegation only",
+    # D — the verified administrator session under the shared gate
+    # (docs/adr/0186): the person's own password, code and authenticator, never
+    # business content (tests/test_admin_session.py).
+    "haldus:sign_in": "D: administrator step-up, the person's own password",
+    "haldus:sign_in_code": "D: administrator step-up, the person's own code",
+    "haldus:enrol": "D: administrator step-up, the person's own authenticator",
+    "haldus:reauthenticate": "D: administrator step-up, fresh proof",
+    "haldus:sign_out": "D: ends the administrator session",
 }
 
 

@@ -721,7 +721,12 @@ def test_an_ordinary_account_cannot_elevate_itself():
     assert specialist.capability_overrides == {}
 
 
-def test_the_last_delegating_administrator_cannot_be_removed(admin):
+def test_the_last_delegating_administrator_cannot_be_removed():
+    # Neither is a *usable* full administrator (no authenticator), so the
+    # two-administrator rule (docs/adr/0186, tests/test_admin_continuity.py)
+    # has nothing to protect here and the final-delegate floor is what is
+    # tested, as before.
+    admin, _ = person(manage=True, delegate=True)
     other, _ = person(manage=True, delegate=True)
 
     # Two of them: one may remove the other.
@@ -874,9 +879,11 @@ def _bootstrap(**options):
     return out.getvalue()
 
 
-def test_bootstrap_refuses_outside_local_password(settings):
-    settings.AUTH_MODE = "shared_gate"
-    with pytest.raises(CommandError, match=re.escape(administration.NOT_LOCAL_MODE)):
+@pytest.mark.parametrize("mode", ["none", "cloudflare_access"])
+def test_bootstrap_refuses_where_nobody_could_prove_themselves(settings, mode):
+    """Since docs/adr/0186 the shared gate is allowed too (tests/test_admin_session_operator.py)."""
+    settings.AUTH_MODE = mode
+    with pytest.raises(CommandError, match=re.escape(administration.BOOTSTRAP_WRONG_MODE)):
         _bootstrap(
             email="esimene@koda.ee",
             confirm_email="esimene@koda.ee",
