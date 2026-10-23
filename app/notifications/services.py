@@ -32,7 +32,7 @@ For a commencement on day *D*:
 * ``ON_DATE`` is due on *D* and is generated on any day from *D* to
   *D +* ``ON_DATE_CATCH_UP_DAYS`` — only while nobody has answered for that
   date. It replaces an unanswered seven-day row (``SUPERSEDED``, kept) and
-  inherits a deferral that still runs. The catch-up window is what makes a
+  starts undeferred: a seven-day deferral is capped at *D*. The catch-up window is what makes a
   generator that was down over the day still ask, without a first deployment
   flooding everybody with prompts for every historical commencement.
 
@@ -257,34 +257,36 @@ def _reconcile(day: date, *, dry_run: bool) -> ReconcileResult:
         stage = due_stage(record.date_value, day)
         if stage is None:
             continue
+        # OBSOLETE rows are history about a date that stopped being the
+        # commencement's. A date edited away and then restored (D1 -> D2 -> D1,
+        # or EXACT -> MONTH -> EXACT) is the live date again and is asked about
+        # again; the retired rows stay as they were, which is why the unique
+        # constraint is partial on non-OBSOLETE rows.
         existing = list(
             CommencementReminder.objects.filter(
                 effective_date=record, source_date=record.date_value
-            )
+            ).exclude(status=ReminderStatus.OBSOLETE)
         )
         if any(row.status in RESOLVED_STATUSES for row in existing):
             continue
         if any(row.stage == stage for row in existing):
             continue
-        carried_deferral = None
         if stage == ReminderStage.ON_DATE:
+            # The on-the-day prompt starts undeferred. A seven-day deferral is
+            # capped at the date itself (`defer_reminder`), so nothing it said
+            # can reach past the day this prompt exists for.
             for row in existing:
                 if row.stage == ReminderStage.SEVEN_DAYS and row.status == ReminderStatus.OPEN:
-                    if row.deferred_until is not None and row.deferred_until > day:
-                        carried_deferral = row.deferred_until
                     row.status = ReminderStatus.SUPERSEDED
                     row.save(update_fields=["status", "updated_at"])
                     superseded += 1
-        _, made = CommencementReminder.objects.get_or_create(
+        CommencementReminder.objects.create(
             effective_date=record,
             source_date=record.date_value,
             stage=stage,
-            defaults={
-                "due_on": due_on_for(stage, record.date_value),
-                "deferred_until": carried_deferral,
-            },
+            due_on=due_on_for(stage, record.date_value),
         )
-        created += int(made)
+        created += 1
 
     open_after = CommencementReminder.objects.open().count()
     return ReconcileResult(
@@ -411,13 +413,21 @@ def dismiss_reminder(
 def defer_reminder(
     *, reminder: CommencementReminder, actor: Any, until: date, today: date | None = None
 ) -> CommencementReminder:
-    """Hide the prompt until ``until`` (a Tallinn date). It stays open."""
+    """Hide the prompt until ``until`` (a Tallinn date). It stays open.
+
+    **A seven-day prompt is put off at most until the commencement date.** The
+    on-the-day prompt is the second ask the brief requires and must not be
+    swallowed by a deferral of the first: a later ``until`` is capped at the
+    date, and the caller reads the stored value back to say so.
+    """
     day = today or timezone.localdate()
+    locked = _lock_open_reminder(reminder)
+    if locked.stage == ReminderStage.SEVEN_DAYS and until > locked.source_date:
+        until = locked.source_date
     if until <= day:
         raise DomainError(DEFER_NOT_AHEAD)
     if until > day + timedelta(days=MAX_DEFER_DAYS):
         raise DomainError(DEFER_TOO_FAR)
-    locked = _lock_open_reminder(reminder)
     _siblings(locked).update(deferred_until=until, updated_at=timezone.now())
     record_change_event(
         event_type=ChangeEventType.COMMENCEMENT_CHECK_DEFERRED,

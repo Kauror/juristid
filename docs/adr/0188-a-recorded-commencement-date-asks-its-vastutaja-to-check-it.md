@@ -23,7 +23,9 @@ determination (brief §5).
 `app.notifications` holds `CommencementReminder`: the source commencement, the
 `source_date` it was generated for, the `stage`, `due_on`, `status`,
 `deferred_until`, who answered and when, a dismissal reason and an obsolescence
-reason. Unique on `(effective_date, source_date, stage)`. No recipient column, no
+reason. Unique on `(effective_date, source_date, stage)` among rows that are not
+`OBSOLETE`, so a date edited away and restored (D1 → D2 → D1, EXACT → MONTH →
+EXACT) is asked about again beside its retired history. No recipient column, no
 copy of any title or description, no generic event table, no channel, no
 preference, no frequency setting, no e-mail or push.
 
@@ -50,7 +52,7 @@ second source column, a one-of check constraint and its own label.
 For a commencement on day *D*: `SEVEN_DAYS`, due *D − 7*, generated on any day
 *D − 7 … D − 1*; `ON_DATE`, due *D*, generated *D … D + 7* only while nobody has
 answered that date. The on-the-day row replaces an unanswered seven-day row
-(`SUPERSEDED`, kept) and inherits a deferral that still runs. The seven-day
+(`SUPERSEDED`, kept) and starts undeferred. The seven-day
 catch-up makes a generator that was down over the day still ask, without the
 first deployment prompting for every historical commencement. «Today» is
 `timezone.localdate()` (Europe/Tallinn), never the UTC date.
@@ -64,7 +66,8 @@ its open rows (`NOT_ACTIVE`, `REMOVED`, `NOT_EXACT`). Nothing is deleted except 
 the permanent deletion of the whole Teema, which cascades.
 
 Defer: hides an open prompt until a Tallinn date, at most 30 days ahead; it stays
-`OPEN`.
+`OPEN`. A seven-day prompt is deferred at most until *D* (a later date is capped),
+so the on-the-day prompt is never swallowed.
 
 ### 5. Reminders follow current responsibility
 
@@ -72,7 +75,7 @@ The recipient is the Matter's *active* `owner`, resolved when a list is drawn.
 Reassigning the Matter moves its open reminders on the next request, with no
 write. No owner, or an inactive one: nobody is guessed; the prompt is listed for
 holders of `department.view_management` (`/teavitused/#vastutajata`, the bell's
-count, and `_department_block.html` for Osakond).
+count, and `_department_block.html` in the Osakond rail).
 
 Every list is also re-validated live (eligibility and `source_date = date_value`),
 so a moved or cancelled commencement disappears at once, before the generator

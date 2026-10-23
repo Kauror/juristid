@@ -19,10 +19,12 @@ commencement and the Matter and are read live, like `MatterAssignmentNotice`.
 
 Idempotence is the database's
 -----------------------------
-``(effective_date, source_date, stage)`` is unique. The generator inserts with
-``ON CONFLICT DO NOTHING`` semantics, so a restart, a second worker or a second
-run of the same day cannot produce a second row for the same prompt — whatever
-the Python above it believes (brief C5).
+``(effective_date, source_date, stage)`` is unique among the rows that are not
+``OBSOLETE``. The generator checks and inserts under one advisory lock and the
+constraint backs it, so a restart, a second worker or a second run of the same
+day cannot produce a second live row for the same prompt (brief C5). Retired
+rows stay beside a regenerated one, so a date edited away and back keeps the
+history of both.
 """
 
 from __future__ import annotations
@@ -95,8 +97,11 @@ class CommencementReminder(BaseModel):
         verbose_name_plural = "jõustumise meeldetuletused"
         ordering = ["due_on", "source_date", "id"]
         constraints = [
+            # Partial: an OBSOLETE row is history about a date the commencement
+            # left, and a date restored to it is asked about afresh.
             models.UniqueConstraint(
                 fields=["effective_date", "source_date", "stage"],
+                condition=~models.Q(status=ReminderStatus.OBSOLETE),
                 name="notifications_reminder_once_per_stage",
             ),
             models.CheckConstraint(
