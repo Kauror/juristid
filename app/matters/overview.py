@@ -358,8 +358,14 @@ def intervention_rows(
     # The capped slice first, then its annotations (`annotated_slice`): the
     # same sixty rows in the same order, without the correlated maxima for
     # every quiet file under the sort.
+    # With whether each file's `Arvamuse tähtaeg` is still owed, the rule
+    # `Eesolev` and every work surface read (`wi.annotate_response_obligation`),
+    # so the row below can say which day it is instead of «tähtaeg puudub».
     quiet = annotated_slice(
-        people.quiet.filter(owner__isnull=False).select_related("owner", "stage"),
+        wi.annotate_response_obligation(
+            people.quiet.filter(owner__isnull=False).select_related("owner", "stage"),
+            people.user,
+        ),
         people.user,
         "updated_at",
         limit=INTERVENTION_LIMIT,
@@ -371,6 +377,11 @@ def intervention_rows(
         # invents a number.
         activity = activity_of(matter)
         since = activity.occurred_on if activity else None
+        # An `Arvamuse tähtaeg` still owed. «tähtaeg puudub» is untrue of such a
+        # file — `tähtaeg` is that obligation's word (ADR 0054) — so the row
+        # names what is missing, the step, and shows the deadline the way this
+        # list shows one on its other rows: `ARVAMUSE TÄHTAEG 12.11`.
+        deadline = matter.response_deadline if not getattr(matter, wi.DISCHARGED, True) else None
         rows.append(
             InterventionRow(
                 reason=REASON_NO_ACTION,
@@ -378,7 +389,7 @@ def intervention_rows(
                 # about it. "sammuta" is this module's vocabulary, not the
                 # department's, and it read as an abbreviation of something
                 # (human QA §10).
-                value="tähtaeg puudub",
+                value="samm puudub" if deadline else "tähtaeg puudub",
                 # Deliberately blank. The row used to print "202 P VAIKUST"
                 # beside the reason, and a number nobody can act on is noise on
                 # the one list that exists to be acted on: the file has no next
@@ -388,7 +399,7 @@ def intervention_rows(
                 # `since` is still computed and still decides `sort_on`, so the
                 # quietest file is still the one at the top. What changed is
                 # what the row says, not which rows there are or in what order.
-                meaning="",
+                meaning=f"{wi.MEANING_RESPONSE} {_short(deadline)}" if deadline else "",
                 matter=matter,
                 detail="järgmine samm määramata",
                 owner=matter.owner,
