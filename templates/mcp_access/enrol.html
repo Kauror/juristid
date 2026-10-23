@@ -3,10 +3,13 @@
 
 {% comment %}
   Enrolling the personal «Juristidi MCP autentija» from a one-time link
-  (docs/adr/0185 §3). The QR code is inline SVG drawn on the server, and the
-  key is printed for an app that cannot scan. Nothing is stored until a code
-  from the phone is typed back. A link that is spent, expired or meant for
-  another persona reads the same, so the page says nothing about whose it is.
+  (docs/adr/0185 §3). Behind the shared gate, without a persona: the link is
+  the proof of possession, and the account's own e-mail address must match it
+  before any secret is drawn. The QR code is inline SVG drawn on the server,
+  and the key is printed for an app that cannot scan. Nothing is stored until
+  a code from the phone is typed back. A link that is spent, expired or no
+  longer usable reads the same for everybody, so the page says nothing about
+  whose it is; a wrong address gets one answer, whoever's it is.
 {% endcomment %}
 
 {% block content %}
@@ -15,20 +18,44 @@
 
   {% if invalid %}
     <div class="formerror" role="alert">
-      <p>See link ei kehti. See võib olla aegunud, juba kasutatud või mõeldud teisele kasutajale.</p>
+      <p>See link ei kehti. See võib olla aegunud, juba kasutatud või asendatud uuega.</p>
     </div>
-    <p class="acctnote">Kontrolli, kelle nimel tegutsed, ja ava link uuesti või küsi haldajalt uus link.</p>
+    <p class="acctnote">Ava link uuesti või küsi Juristidi haldajalt uus link.</p>
   {% elif done %}
     <p class="message message--success" role="status">
-      Autentija on seadistatud. Nüüd saad ChatGPT-s Juristidi ühendada; ühendamisel küsitakse selle autentija koodi.
+      Autentija on seadistatud. Nüüd saad ChatGPT-s Juristidi ühendada; ühendamisel küsitakse sinu e-posti aadressi ja selle autentija koodi.
     </p>
+  {% elif ask_address %}
+    {% if error %}
+      <div class="formerror" role="alert"><p>{{ error }}</p></div>
+    {% endif %}
+
+    <p class="acctnote">Kinnita, kelle jaoks see link on: sisesta oma Juristidi konto e-posti aadress.</p>
+    <form method="post" class="card card--form form" novalidate>
+      {% csrf_token %}
+      <label class="field">
+        <span class="field__label">Sinu konto e-posti aadress</span>
+        <input class="field__input"
+               type="email"
+               name="epost"
+               value="{{ address }}"
+               maxlength="320"
+               autocomplete="username"
+               autocapitalize="off"
+               spellcheck="false"
+               autofocus>
+      </label>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Jätka</button>
+      </div>
+    </form>
   {% else %}
     {% if error %}
       <div class="formerror" role="alert"><p>{{ error }}</p></div>
     {% endif %}
 
     <section class="panel acctenrol">
-      <p class="acctnote">Seadistad autentijat kasutajale <strong>{{ persona.display_name }}</strong>.</p>
+      <p class="acctnote">Seadistad autentijat kontole <strong>{{ account.display_name }}</strong>.</p>
       <ol class="acctsteps">
         <li>Ava telefonis autentimisrakendus (näiteks Microsoft Authenticator või Google Authenticator).</li>
         <li>Skaneeri kood või sisesta võti käsitsi. Rakendus näitab seda nimega «Juristid MCP».</li>

@@ -87,6 +87,43 @@ def enrolled(user: Any, moment: Any) -> tuple[Any, str]:
     return issued.grant, enrolment.secret
 
 
+GATE = "/konto/varav/"
+ENROL = "/mcp-ligipaas/liitu/"
+AUTHORIZE = "/oauth/authorize"
+
+
+def through_the_gate(client: Any) -> None:
+    """Pass the shared gate and choose nobody: the MCP pages need no persona (ADR 0185 §3)."""
+    from tests.gate import PASSWORD
+
+    assert client.post(GATE, {"password": PASSWORD}).status_code == 302
+
+
+def consent(user: Any, code: str, *, decision: str = "luba") -> dict[str, str]:
+    """The consent form as a person fills it in: their own address and their own code."""
+    address = user if isinstance(user, str) else user.upn
+    return {"otsus": decision, "epost": address, "kood": code}
+
+
+def page_body(response: Any) -> str:
+    """The page's own content, without the chrome (whose persona switcher names colleagues)."""
+    text = response.content.decode()
+    start = text.index('<div class="page page--narrow">')
+    return text[start : text.index("</main>", start)]
+
+
+def comparable(response: Any, typed: str) -> str:
+    """The page's own content with what this browser typed and its CSRF token taken out.
+
+    What is left is everything the server chose to say, so two refusals that
+    compare equal said exactly the same thing.
+    """
+    import re
+
+    body = re.sub(r'name="csrfmiddlewaretoken" value="[^"]+"', "", page_body(response))
+    return body.replace(typed, "<typed>") if typed else body
+
+
 def authorize_params(**overrides: Any) -> dict[str, str]:
     params = {
         "response_type": "code",

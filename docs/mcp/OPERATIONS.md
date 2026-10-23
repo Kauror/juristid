@@ -48,9 +48,12 @@ extracted fragments in PostgreSQL); run a query, a path, a URL or a model name a
 caller supplies; or act as anybody other than the person whose token it holds.
 
 **Nobody can connect** unless an operator granted that account, the account is
-active with a business role, the person enrolled their own authenticator, and at
-the moment of connecting they pass the shared gate, act as their own persona and
-type a current code. The gate password alone is never enough (ADR 0185 §3).
+active with a business role (SPECIALIST, DEPARTMENT_HEAD or READER) and is not a
+technical account, the person enrolled their own authenticator, and at the moment
+of connecting they pass the shared gate, type their own account's e-mail address
+and a current code from that authenticator. No persona is chosen or needed — a
+READER, who is never offered as one, connects like anybody else. The gate
+password alone is never enough (ADR 0185 §3).
 
 **What it holds.** No volume, no evidence mount, none of the browser's secrets.
 `mcp` has its own environment file; `mcp-tunnel` holds only OpenAI's runtime
@@ -239,11 +242,12 @@ scripts/deploy/juristid-deploy-preflight.sh --repo /mnt/user/appdata/juristid-ma
 
 It must say both MCP files are mode 600, that the AI-access services resolve
 and that web's AI-access keys are in place. Then recreate the application services with the new web environment
-— every service named, `--no-deps` so neither `db` nor `tunnel` moves,
+— every service that reads `juristid.env` named (`notifications` too, since
+ADR 0188), `--no-deps` so neither `db` nor `tunnel` moves,
 `--no-build` so a missing tag is an error and never a build:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
 ```
 
 **Create the MCP server's database role before it ever starts** (MCPSEC-03).
@@ -386,10 +390,11 @@ The grant is an explicit, audited, per-account decision (ADR 0185 §3), made in
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_access grant --user <upn>
 ```
 
-It refuses an account that is inactive or has no business role — an
-ADMINISTRATOR without one included. Then the person's one-time enrolment link,
-which lets them register their own authenticator (TOTP) inside their own gate
-session and persona:
+It refuses an account that is inactive, has no business role — an
+ADMINISTRATOR without one included — or is a technical account (`is_staff` /
+`is_superuser`) even with one. SPECIALIST, DEPARTMENT_HEAD and READER accounts
+may all be granted. It prints the person's one-time enrolment link; a new one,
+when that expires, comes from:
 
 ```bash
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python manage.py mcp_access enrolment-link --user <upn>
@@ -399,6 +404,22 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web py
 (30 minutes) and works once. Give it to that person directly — in person or in a
 private message to them — and never in a shared channel, a ticket or a report.
 If it expires, run the command again.
+
+**What the person does** (no persona at any step; tell them so — the command
+prints the same hint):
+
+1. *Enrol.* Open the link. The shared gate asks for the department password at
+   `/konto/varav/` and comes straight back to the link. The page asks for **their
+   own account's e-mail address** (the address the account signs in with; case
+   and surrounding spaces do not matter); only then does it show the QR code
+   and the key. They add it to an authenticator app («Juristid MCP») and type
+   the six-digit code back. A wrong address gets «See e-posti aadress ei sobi
+   selle lingiga» and shows nothing; it counts towards the same throttle as the
+   consent page.
+2. *Connect.* In ChatGPT, add the Juristid connector. ChatGPT opens
+   `/oauth/authorize` in the browser; behind the gate the page names the client
+   and asks for **their own e-mail address** and a current code from that
+   authenticator, then «Luba». Nothing on the page names any colleague.
 
 Ending one person's access ends the grant and every token issued under it at
 once; their next ChatGPT call is refused:
@@ -442,7 +463,7 @@ recreate the application services with the running release's exports from
 *First-time enablement* step 4:
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
 ```
 
 Order of strength: `stop` cuts the path, `revoke-all` voids the credentials,
@@ -501,13 +522,14 @@ every log here it stays on this host (OPERATOR.md).
 | --- | --- | --- | --- |
 | HTTP 401 on a tool call | `mcp` log; ChatGPT asks the person to reconnect | the bearer token is missing, unknown, expired (1 hour), revoked, or issued for a resource not in `MCP_RESOURCE_URLS`; or the grant ended, the account was deactivated or its security epoch moved | usually nothing — ChatGPT refreshes or re-authorizes. Repeated for everybody after a change: compare `MCP_RESOURCE_URLS` in both files |
 | HTTP 403 on a tool call | `mcp` log | the token is valid but lacks the `juristid.read` scope | a client asking for the wrong scope; reconnect the plugin |
-| A tool answers «not found» | ChatGPT | the id is unknown **or** not visible to that person — deliberately indistinguishable | check the record in the browser *as that person's persona* |
+| A tool answers «not found» | ChatGPT | the id is unknown **or** not visible to that person — deliberately indistinguishable | check the record in the browser as that person (for a SPECIALIST or DEPARTMENT_HEAD, their persona; a READER sees what every business role sees, ADR 0181) |
 | ChatGPT asks a colleague to reconnect every 90 days | ChatGPT | the token family's absolute lifetime (`MCP_REFRESH_FAMILY_MAX_SECONDS`, MCPSEC-08): the connection is as old as the authenticator code typed for it | nothing; it is the design. `McpAccessEvent` reason `family_expired` |
 | `invalid_grant` / `invalid_target` at `/oauth/token` | `web` log | an expired or reused code, a PKCE mismatch, or a `resource` not in `MCP_RESOURCE_URLS` | for a resource refusal, the log names the resource requested: that is the URL `MCP_RESOURCE_URLS` must list |
-| «Kood ei sobi või sellel kasutajal pole MCP ligipääsu» | browser | a wrong code, no grant, a pending grant (never enrolled), wrong persona, or no business role — deliberately one message, so the page does not reveal who holds a grant | `mcp_access list`; a new `enrolment-link` if they never enrolled |
+| «Kood ei sobi või sellel kasutajal pole MCP ligipääsu» | browser | a wrong code, an e-mail address that names no account (a typo), another colleague's address, no grant, a pending grant (never enrolled), a technical account, or no business role — deliberately one message, so the page does not reveal which addresses exist or who holds a grant | check the address they typed is their account's `upn`; `mcp_access list`; a new `enrolment-link` if they never enrolled |
+| «See e-posti aadress ei sobi selle lingiga» | browser, enrolment page | the address typed is not the account the link was issued to (or names nobody) | the person types their own account's address; if the link was handed to the wrong person, `mcp_access enrolment-link --user <upn>` for the right one |
 | «Liiga palju valesid koode» (after the person's own right code) | browser | the grant is locked: five wrong codes in a row; consecutive locks last 15 min, 1 h, 4 h | wait, or `mcp_access unlock --user <upn>` once you know the wrong codes were the person's own |
 | «Ligipääs on peatatud» | browser; `web` log WARNING `MCP grant … suspended` | the fourth consecutive lock — twenty wrong codes without a success. Treat it as somebody guessing at that colleague's code | talk to the person first; then `mcp_access unlock --user <upn>`. The wrong-code count stays in `mcp_access list` until their next success |
-| «Liiga palju katseid» | browser | this gate session or this address failed too often in 15 minutes, whichever personas it tried | wait; repeated, it is somebody spraying codes — the `web` log and `McpAccessEvent` rows with reason `throttled` show when |
+| «Liiga palju katseid» | browser | this gate session or this address failed too often in 15 minutes, whichever e-mail addresses it named (unknown ones count, and so do wrong addresses on the enrolment page) | wait; repeated, it is somebody spraying codes or addresses — the `web` log and `McpAccessEvent` rows with reason `throttled` or `unknown_account` show when |
 | `/readyz` says `503 oauth discovery failed` | `mcp-tunnel` | the client could not read `mcp`'s protected-resource metadata, or the metadata named an origin it does not trust | `MCP_OAUTH_TRUSTED_ORIGINS` must be exactly the public origin; `mcp` must be healthy |
 | `/readyz` says `503 mcp probe failed` | `mcp-tunnel` | the client cannot reach `http://mcp:8001/mcp` | `mcp` stopped or unhealthy |
 | `mcp-tunnel` log: 401/403 from the control plane | `mcp-tunnel` | the runtime key is wrong, expired or lacks Tunnels Read + Use, or the tunnel id is not the key's organisation's | a new restricted key in the tunnel file, then recreate `mcp-tunnel` |
@@ -561,13 +583,17 @@ fixed in code; these are not, and each says what holds instead.
   own ChatGPT and send the `/oauth/authorize?…` address to somebody else to
   approve. Whether that binds the approver's account to the sender's connector
   depends on how ChatGPT ties `state` to the browser, which Juristid cannot see.
-  What holds: the consent page names the client and the acting persona, and
-  says to continue only if you started this connection yourself, just now, and
-  to press «Keeldu» if somebody sent you the link. Tell colleagues the same
+  What holds: the consent page names the client, makes the approver type
+  their own address and their own code, and says to continue only if you
+  started this connection yourself, just now, and to press «Keeldu» if
+  somebody sent you the link. Tell colleagues the same
   when you grant them.
 - **The enrolment link is a bearer secret (MCPSEC-12).** For 30 minutes,
   whoever holds it and the gate password can enrol their own phone as that
-  person; the real person then only sees «link invalid». So: hand it over in
+  person — the page also asks for that person's e-mail address, but addresses
+  are not secret (they follow one pattern), so that step stops a link handed
+  to the wrong colleague by mistake, not a thief; the real person then only
+  sees «link invalid». So: hand it over in
   person or read it out by phone, never by e-mail, Teams or a ticket; and
   after `ENROLMENT_COMPLETED` appears (`mcp_access list` shows `autentija
   jah`), confirm with the person that it was them before they connect
@@ -617,9 +643,10 @@ fixed in code; these are not, and each says what holds instead.
   `mcp_access list` say who; talk to the person, then unlock.
 - **A timing difference between «no grant» and «wrong code» (NEW-06).** The
   no-grant answer skips one or two local database round trips that a wrong
-  code costs. Through Cloudflare that is hard to measure, every sample costs a
-  throttle unit, and it reveals only whether a persona holds an MCP grant —
-  the message and the status are identical.
+  code costs, and an address that names nobody skips a few more. Through
+  Cloudflare that is hard to measure, every sample costs a throttle unit, and
+  it reveals at most whether an address names an account, or one holding an
+  MCP grant — the message, the status and the page are identical.
 - **`mcp` could reach `web` and choose its own client address (NEW-07a).**
   `web` believes `CF-Connecting-IP` from any peer once `TRUST_CF_CONNECTING_IP`
   is on (`app/core/client_ip.py` checks the header, not where it came from),

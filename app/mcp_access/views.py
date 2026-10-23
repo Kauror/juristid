@@ -3,8 +3,13 @@
 Two kinds of endpoint, and the difference is the whole security model:
 
 * **Browser pages** — `/oauth/authorize` and the enrolment page under
-  `/mcp-ligipaas/`. Behind the shared gate *and* a persona, like every page,
-  and then behind the persona's own authenticator code. CSRF-protected.
+  `/mcp-ligipaas/`. Behind the shared gate like every page, but **not** behind a
+  persona: a persona is a choice, not a proof, and READER accounts are never
+  offered as one. Each page asks for the account's own sign-in address and
+  then proves it — the consent page with a current code from that account's
+  own authenticator, the enrolment page with the one-time link an operator
+  issued for that account (docs/adr/0185 §3). They render no business content.
+  CSRF-protected.
 * **Machine endpoints** — the RFC 8414 metadata, `/oauth/token` and
   `/oauth/revoke`. Called by the client's backend, never by a browser session,
   so they bypass the gate (an exact-path exemption in
@@ -35,7 +40,6 @@ from django.http import (
     QueryDict,
 )
 from django.shortcuts import redirect, render
-from django.urls import reverse
 from django.utils.cache import add_never_cache_headers
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_exempt
@@ -58,12 +62,19 @@ RATE_WINDOW = 60
 
 READ_ONLY_DESCRIPTION = "Ainult lugemine: otsing ja teemade, dokumentide ning ajaloo lugemine"
 
-#: The one answer to a wrong code *and* to a persona that cannot connect (no
-#: grant, a pending grant, no business role): until the persona's own current
-#: code is verified the page does not say which (MCPSEC-01).
+#: The one answer to a wrong code *and* to an address that cannot connect (no
+#: such account, no grant, a pending grant, no business role, a technical
+#: account): until that account's own current code is verified the page does
+#: not say which (MCPSEC-01).
 GENERIC_REFUSAL = (
     "Kood ei sobi või sellel kasutajal pole MCP ligipääsu. Sisesta autentija praegune kood; "
     "kui see ikka ei sobi, pöördu Juristidi haldaja poole."
+)
+#: The enrolment page's one answer to an address that is not the link's account
+#: — unknown, another colleague's, or the link stopped working meanwhile.
+ENROLMENT_ADDRESS_REFUSAL = (
+    "See e-posti aadress ei sobi selle lingiga. Sisesta oma konto e-posti aadress; "
+    "kui see ikka ei sobi, küsi Juristidi haldajalt uus link."
 )
 SUSPENDED_MESSAGE = (
     "Ligipääs on peatatud, sest valesid koode sisestati liiga palju. "
@@ -118,6 +129,31 @@ def authorization_server_metadata(request: HttpRequest) -> HttpResponse:
 # -- the authorization step ------------------------------------------------------------
 
 
+def _door_closed(request: HttpRequest) -> HttpResponse | None:
+    """The way back to the door, unless this request came through it; else None.
+
+    The door is the shared gate (the middleware stops anybody who has not
+    passed it, and brings them back here after the password). A persona is
+    neither required nor read. Under the other modes the middleware's own
+    sign-in is the door, and under `AUTH_MODE=none` — a laptop or CI, no door
+    at all — the development sign-in stands in for it.
+    """
+    if shared_gate.has_passed(request):
+        return None
+    if not shared_gate.is_shared_gate() and request.user.is_authenticated:
+        return None
+    return redirect_to_login(request.get_full_path())
+
+
+def _typed_address(request: HttpRequest) -> str:
+    return (request.POST.get("epost") or "").strip()[:320]
+
+
+def _too_many_attempts(wait: int) -> str:
+    minutes = max(1, round(wait / 60))
+    return f"Liiga palju katseid. Proovi umbes {minutes} minuti pärast uuesti."
+
+
 def _with_params(uri: str, params: dict[str, str | None]) -> str:
     query = urlencode({key: value for key, value in params.items() if value is not None})
     return f"{uri}{'&' if '?' in uri else '?'}{query}"
@@ -157,25 +193,20 @@ def _authorize_page(
     *,
     error: str = "",
     status: int = 200,
+    address: str = "",
 ) -> HttpResponse:
-    # Deliberately nothing about the persona's grant: whether it has one, is
-    # locked or is suspended is said only after its own current code has been
-    # verified (MCPSEC-01). Every persona sees the same page.
-    user: Any = request.user
-    switch_url = ""
-    if shared_gate.is_shared_gate():
-        switch_url = (
-            f"{reverse('accounts:choose_persona')}?{urlencode({'next': request.get_full_path()})}"
-        )
+    # Deliberately nothing about any account: which addresses exist, who holds
+    # a grant, and whether it is locked or suspended is said only after that
+    # account's own current code has been verified (MCPSEC-01). Everybody sees
+    # the same page; ``address`` is only what this browser has just typed.
     response = render(
         request,
         "mcp_access/authorize.html",
         {
             "client_name": parsed.client.name,
             "description": READ_ONLY_DESCRIPTION,
-            "persona": user,
             "error": error,
-            "switch_url": switch_url,
+            "address": address,
         },
         status=status,
     )
@@ -188,11 +219,12 @@ def _authorize_page(
 @never_cache
 @require_http_methods(["GET", "POST"])
 def authorize(request: HttpRequest) -> HttpResponse:
-    """The consent page: the persona's own authenticator code, then a one-time code back.
+    """The consent page: an account's address and its own authenticator code, then a code back.
 
     Parameters always come from the query string, on the POST too (the form
     posts back to the same address), so what is re-validated on «Luba» is
-    exactly what was shown.
+    exactly what was shown. The account is the one the typed address names,
+    never a persona this session may have chosen (docs/adr/0185 §3).
     """
     parsed = oauth.parse_authorization(request.GET)
     if isinstance(parsed, oauth.EarlyError):
@@ -202,17 +234,16 @@ def authorize(request: HttpRequest) -> HttpResponse:
             parsed.redirect_uri,
             {"error": parsed.error, "error_description": parsed.description, "state": parsed.state},
         )
-    user: Any = request.user
-    if not user.is_authenticated:
-        # No persona yet: choose one and come back here, query string and all.
-        return redirect_to_login(request.get_full_path())
+    closed = _door_closed(request)
+    if closed is not None:
+        return closed
     if request.method == "GET":
         return _authorize_page(request, parsed)
 
     ip = client_ip(request)
     decision = request.POST.get("otsus", "")
     if decision == "keeldu":
-        services.record_denied(user=user, request=parsed, ip_address=ip)
+        services.record_denied(user=None, request=parsed, ip_address=ip)
         return _redirect_back(
             parsed.redirect_uri,
             {
@@ -221,10 +252,13 @@ def authorize(request: HttpRequest) -> HttpResponse:
                 "state": parsed.state,
             },
         )
+    address = _typed_address(request)
     if decision != "luba":
-        return _authorize_page(request, parsed, error="Vali «Luba» või «Keeldu».", status=400)
+        return _authorize_page(
+            request, parsed, error="Vali «Luba» või «Keeldu».", status=400, address=address
+        )
     outcome = services.authorize_attempt(
-        user=user,
+        user=services.account_for_address(address),
         request=parsed,
         totp_code=request.POST.get("kood", ""),
         ip_address=ip,
@@ -235,32 +269,35 @@ def authorize(request: HttpRequest) -> HttpResponse:
     minutes = max(1, round(outcome.wait / 60))
     if outcome.status == "throttled":
         return _authorize_page(
-            request,
-            parsed,
-            error=f"Liiga palju katseid. Proovi umbes {minutes} minuti pärast uuesti.",
-            status=429,
+            request, parsed, error=_too_many_attempts(outcome.wait), status=429, address=address
         )
-    # Only the persona's own current code reaches these two.
+    # Only the account's own current code reaches these two.
     if outcome.status == "locked":
         return _authorize_page(
             request,
             parsed,
             error=f"Liiga palju valesid koode. Proovi umbes {minutes} minuti pärast uuesti.",
             status=429,
+            address=address,
         )
     if outcome.status == "suspended":
-        return _authorize_page(request, parsed, error=SUSPENDED_MESSAGE, status=403)
-    # No grant, a pending one, no business role, or a wrong code: one answer.
-    return _authorize_page(request, parsed, error=GENERIC_REFUSAL, status=400)
+        return _authorize_page(
+            request, parsed, error=SUSPENDED_MESSAGE, status=403, address=address
+        )
+    # No such account, no grant, a pending one, no business role, a technical
+    # account or a wrong code: one answer.
+    return _authorize_page(request, parsed, error=GENERIC_REFUSAL, status=400, address=address)
 
 
 def _throttle_keys(request: HttpRequest, ip: str | None) -> list[services.ThrottleKey]:
     """This gate session's and this address's counters (MCPSEC-01).
 
-    The session is named by its gate pass, which survives a persona change —
-    `login` gives the session a new identifier, the pass is carried — so
-    switching persona does not start a fresh count. Outside the shared gate the
-    session key stands in. Both are HMAC'd before they are stored.
+    Shared by the consent page and the enrolment page's address step, so a
+    session cannot try on one what it could not try on the other. The session
+    is named by its gate pass, which survives a persona change — `login` gives
+    the session a new identifier, the pass is carried — so neither switching
+    persona nor naming another address starts a fresh count. Outside the shared
+    gate the session key stands in. Both are HMAC'd before they are stored.
     """
     gate_pass = shared_gate.gate_passed_at(request) or request.session.session_key or "none"
     return [
@@ -422,44 +459,58 @@ def enrol(request: HttpRequest) -> HttpResponse:
     selector and the SHA-256 of the verifier — and the browser is sent to the
     bare address at once, so the link leaves the address bar, the history and
     any Referer before the page renders (the access log records paths, never
-    queries). The link opens only for the persona it was issued to; for anybody
-    else it reads exactly like an expired one, so it says nothing about whose
-    it is.
+    queries).
+
+    The link behind the gate is the proof of possession; no persona is asked
+    for or read (docs/adr/0185 §3). Before any secret is drawn the page asks
+    for the account's own sign-in address, and only the address of the account
+    the link was issued to opens it — any other, known or not, gets one answer,
+    counted by the consent page's throttle. A link that is spent, expired,
+    superseded or for an account that may no longer connect reads the same
+    whoever opens it, so it says nothing about whose it is.
     """
     raw = request.GET.get("kood")
     if raw is not None:
         request.session[SESSION_ENROLMENT] = {"proof": credentials.link_proof(raw[:200])}
         return redirect("mcp_access:enrol")
-    user: Any = request.user
-    if not user.is_authenticated:
-        return redirect_to_login(request.get_full_path())
+    closed = _door_closed(request)
+    if closed is not None:
+        return closed
 
     stored = request.session.get(SESSION_ENROLMENT) or {}
-    proof = stored.get("proof", "") if isinstance(stored, dict) else ""
-    link = services.link_for(proof, user) if proof else None
-    if link is None:
+    if not isinstance(stored, dict):
+        stored = {}
+    proof = str(stored.get("proof", "") or "")
+    account = services.enrolment_account(proof) if proof else None
+    if account is None:
         request.session.pop(SESSION_ENROLMENT, None)
         services.record(
             McpAccessEventType.ENROLMENT_REFUSED,
             succeeded=False,
-            user=user,
             ip_address=client_ip(request),
             reason="link_not_usable",
         )
         return _enrol_page(request, {"invalid": True}, status=400)
 
-    label = services.account_label(user)
+    if stored.get("account") != str(account.pk):
+        return _enrol_address_step(request, proof)
+
+    label = services.account_label(account)
     enrolment = credentials.resume_enrolment(stored.get("sealed"), label)
     if enrolment is None:
         enrolment = credentials.new_enrolment(label)
-        request.session[SESSION_ENROLMENT] = {"proof": proof, "sealed": enrolment.sealed}
+        request.session[SESSION_ENROLMENT] = {
+            "proof": proof,
+            "account": str(account.pk),
+            "sealed": enrolment.sealed,
+        }
 
     if request.method == "GET":
-        return _enrol_page(request, {"enrolment": enrolment, "persona": user})
+        return _enrol_page(request, {"enrolment": enrolment, "account": account})
 
     confirmed = services.confirm_enrolment(
         proof=proof,
-        user=user,
+        user=account,
         sealed=enrolment.sealed,
         code=request.POST.get("kood", ""),
         ip_address=client_ip(request),
@@ -469,10 +520,40 @@ def enrol(request: HttpRequest) -> HttpResponse:
             request,
             {
                 "enrolment": enrolment,
-                "persona": user,
+                "account": account,
                 "error": "Kood ei sobi. Sisesta autentija praegune kuuekohaline kood.",
             },
             status=400,
         )
     request.session.pop(SESSION_ENROLMENT, None)
-    return _enrol_page(request, {"done": True, "persona": user})
+    return _enrol_page(request, {"done": True})
+
+
+def _enrol_address_step(request: HttpRequest, proof: str) -> HttpResponse:
+    """«Sinu konto e-posti aadress»: the step before the secret is drawn.
+
+    A match is remembered in the session beside the link's proof — the
+    account's id, never the address — and the browser goes back to the bare
+    page, which then shows the authenticator.
+    """
+    if request.method == "GET":
+        return _enrol_page(request, {"ask_address": True})
+    ip = client_ip(request)
+    address = _typed_address(request)
+    outcome = services.check_enrolment_address(
+        proof=proof, address=address, ip_address=ip, throttle=_throttle_keys(request, ip)
+    )
+    if outcome.status == "throttled":
+        return _enrol_page(
+            request,
+            {"ask_address": True, "address": address, "error": _too_many_attempts(outcome.wait)},
+            status=429,
+        )
+    if outcome.status != "ok" or outcome.user is None:
+        return _enrol_page(
+            request,
+            {"ask_address": True, "address": address, "error": ENROLMENT_ADDRESS_REFUSAL},
+            status=400,
+        )
+    request.session[SESSION_ENROLMENT] = {"proof": proof, "account": str(outcome.user.pk)}
+    return redirect("mcp_access:enrol")

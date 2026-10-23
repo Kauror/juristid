@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import uuid
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import pytest
 from django.test import Client
@@ -71,8 +71,12 @@ PUBLIC = {
     # from the gate by exact path, they authenticate the *client* themselves and
     # answer only OAuth metadata or token JSON — never business content. Every
     # one is a 404 unless MCP_ENABLED. `/oauth/authorize` and the enrolment page
-    # are not here: they refuse a caller with no reader like any other route
-    # (tests/test_mcp_access_authorize.py).
+    # are not here: with MCP off they are a 404 like the rest, and with it on
+    # they answer a persona-less gate session — on purpose (docs/adr/0185 §3) —
+    # with a form that asks for the account's own address and renders no
+    # business content, which
+    # `test_the_mcp_browser_pages_ask_a_persona_less_gate_session_for_the_account`
+    # below proves. Anonymous callers are still refused.
     "mcp_access:authorization_server_metadata": "RFC 8414 metadata built from settings only",
     "mcp_access:token": "OAuth token endpoint; authenticates the client, issues opaque tokens",
     "mcp_access:revoke": "OAuth revocation endpoint (RFC 7009); answers 200 with no body",
@@ -303,3 +307,30 @@ def test_the_sweep_reaches_the_records_for_a_reader(client, ids):
         assert response.status_code == 200, name
     detail = client.get(reverse("matters:matter_detail", kwargs={"pk": ids["restricted"]}))
     assert RESTRICTED_TITLE in _body(detail)
+
+
+def test_the_mcp_browser_pages_ask_a_persona_less_gate_session_for_the_account(
+    client, settings, ids
+):
+    """docs/adr/0185 §3: behind the gate, no persona; the page asks who, and shows no record."""
+    from tests import mcp_access_support
+
+    apply_shared_gate(settings)
+    mcp_access_support.enable(settings)
+    authorize = (
+        f"{reverse('mcp_access:authorize')}?{urlencode(mcp_access_support.authorize_params())}"
+    )
+    enrol = reverse("mcp_access:enrol")
+    for path in (authorize, enrol):
+        anonymous = Client().get(path)
+        assert anonymous.status_code == 302, path
+        assert anonymous["Location"].startswith(reverse("accounts:shared_gate")), path
+
+    assert client.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
+    for path in (authorize, enrol):
+        for method in ("get", "post"):
+            response = getattr(client, method)(path)
+            assert response.status_code in (200, 400), (path, method, response.status_code)
+            assert not [token for token in TOKENS if token in _body(response)], (path, method)
+    assert 'name="epost"' in _body(client.get(authorize))
+    assert not client.get(authorize).wsgi_request.user.is_authenticated

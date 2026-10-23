@@ -7,6 +7,10 @@
   dormant), 0179 (pinned third-party code; least environment), 0180 (audit provenance),
   0181 (one internal read policy)
 - Amends: nothing. The browser keeps `AUTH_MODE=shared_gate` and every rule it had.
+- Revised 2026-10-23 (owner decision, MCP Phase 1.1): §3's identity no longer uses
+  the persona. The consent and enrolment pages stay behind the gate and ask for the
+  account's own e-mail address instead, proven by that account's authenticator code
+  or its one-time link, so a READER (0181) can connect.
 
 ## Context
 
@@ -113,15 +117,35 @@ A colleague can connect only when **all** of these hold:
 2. the account is active and `may_read_business_content` is true for it (0181) — so an
    ADMINISTRATOR without a business role, a pending or switched-off account is refused
    at grant, at authorization, at every token use and at every tool call;
-3. the person **enrolled a personal authenticator** (TOTP) through a one-time
-   enrolment link the grant produced, inside their own gate session and persona; and
-4. at the authorization step they pass the shared gate, act as **that** persona, and
-   type a current code from **that** authenticator.
+3. the person **enrolled a personal authenticator** (TOTP) through the one-time
+   enrolment link the grant produced: behind the shared gate, they open the link and
+   type **that account's** e-mail address (its `upn`, in the accounts app's normal
+   form: NFKC, trimmed, lower case) before any secret is drawn; and
+4. at the authorization step they pass the shared gate, type **that account's**
+   e-mail address and a current code from **that account's** authenticator.
+
+**The persona is not used** (owner decision, 2026-10-23). Neither page asks for one,
+reads one or offers to switch one; a gate session that chose nobody reaches both, and
+one that chose somebody connects as the account the address names, not as the
+persona. Two reasons. A persona is a choice anybody with the gate password makes — it
+was never evidence of who is at the keyboard (0016). And only SPECIALIST and
+DEPARTMENT_HEAD accounts are offered as personas, so a READER — who reads everything
+and writes nothing (0181) — could be granted access but could never enrol or
+authorize. Who connects is therefore: the operator's grant for that account, the
+gate, the account's own address, and the possession proof — the authenticator code
+at consent, the one-time link at enrolment. The address is not a secret and is not
+treated as one; it only names the account whose proof is asked for.
+
+Eligibility is the grant's, asked again at every step: an active account acting under
+a business role (SPECIALIST, DEPARTMENT_HEAD or READER), not a technical account
+(`is_staff` / `is_superuser`, refused like the persona list refuses them, now that the
+persona list no longer stands in front of the consent page), and not an administrator
+on the strength of a break-glass grant.
 
 The second factor is what makes the identity individual: the gate password is shared,
 the authenticator is not. Codes are single-use (the last accepted step is stored).
-Because anybody with the gate password can pick any persona and start guessing, wrong
-codes are bounded, not merely slowed (security review MCPSEC-01):
+Because anybody with the gate password can name any colleague's address and start
+guessing, wrong codes are bounded, not merely slowed (security review MCPSEC-01):
 
 - five wrong codes in a row lock *authorizing* on that grant; consecutive locks
   escalate — 15 minutes, 1 hour, 4 hours — and the next one **suspends** the grant
@@ -135,12 +159,16 @@ codes are bounded, not merely slowed (security review MCPSEC-01):
   neither carrying a code;
 - one gate session, and one client address, may fail only so often in a window
   (`MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION` / `…_PER_ADDRESS` per
-  `MCP_AUTHORIZE_THROTTLE_SECONDS`), whichever personas it tries; a refused attempt has
-  no code checked and charges no grant;
-- the consent page looks the same for every persona and answers a wrong code, no
-  grant, a pending grant and no business role with one message («Kood ei sobi või
-  sellel kasutajal pole MCP ligipääsu»). Only the persona's own current code learns
-  that its grant is locked or suspended.
+  `MCP_AUTHORIZE_THROTTLE_SECONDS`), whichever addresses it names — an address that
+  names nobody counts like a wrong code, and the enrolment page's address step counts
+  on the same counters; a refused attempt has no code checked and charges no grant;
+- the consent page looks the same for everybody, lists no account and no grant
+  holder, and answers an unknown address, a wrong code, no grant, a pending grant, a
+  technical account and no business role with one message and one status («Kood ei
+  sobi või sellel kasutajal pole MCP ligipääsu», 400). Only the account's own current
+  code learns that its grant is locked or suspended. The enrolment page answers an
+  address that is not the link's account — unknown or a colleague's — with one
+  message too, and draws no secret until it matches.
 
 A lock or suspension refuses authorizing, never a token already issued — otherwise
 typing wrong codes would disconnect a colleague. The TOTP secret is encrypted at rest
@@ -239,14 +267,19 @@ without the owner's explicit approval.
   codes, tokens) — no existing table changes, no data rewritten, no search rebuild.
 - New public routes on `web`: `/.well-known/oauth-authorization-server`,
   `/oauth/authorize` (behind the gate), `/oauth/token`, `/oauth/revoke`,
-  `/mcp-ligipaas/…` (enrolment, behind the gate and persona). None returns business
-  content; `tests/test_business_routes_need_a_reader.py` lists them.
+  `/mcp-ligipaas/…` (enrolment, behind the gate; neither browser page needs a
+  persona). None returns business content; `tests/test_business_routes_need_a_reader.py`
+  lists the machine endpoints and proves the two browser pages show a persona-less gate
+  session nothing but their own form.
 - New dependency: `mcp` (and through it `starlette`, `uvicorn`, `httpx`, `pydantic`),
   pinned in `uv.lock`, audited by the existing dependency job.
 - ChatGPT keeps a frozen snapshot of the tool list; changing a tool means refreshing
   and republishing the connector in the workspace admin console.
 - Residual risk: a person who knows the gate password **and** holds a colleague's
-  authenticator can connect as that colleague. That is the same assurance a second
-  factor gives anywhere; it is stated, not hidden.
+  authenticator — or, before that colleague enrols, their one-time link — can connect
+  as that colleague; the colleague's e-mail address adds nothing to stop them, because
+  addresses are not secret. That is the same assurance a second factor gives anywhere;
+  it is stated, not hidden. Dropping the persona removed no protection: anybody with
+  the gate password could always choose any persona.
 - Out of scope, by the brief: any write, notification or scheduling; raw evidence
   bytes; a public plugin.
