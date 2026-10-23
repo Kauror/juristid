@@ -20,6 +20,7 @@
   <section class="panel acctenrol">
     <p><strong>{{ client_name }}</strong> soovib ligipääsu Juristidile.</p>
     <p>{{ description }}.</p>
+    {% if write_note %}<p class="acctnote">{{ write_note }}</p>{% endif %}
     <p class="acctnote">Jätka ainult siis, kui alustasid selle ühendamise ise ja just praegu. Kui keegi saatis sulle selle lingi, vajuta «Keeldu».</p>
   </section>
 

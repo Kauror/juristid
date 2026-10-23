@@ -323,6 +323,7 @@ jobs:
       # own migrations, so forgetting is a red build rather than a quiet gap.
       - name: And forwards again from the state a deployment is in
         run: |
+          uv run python manage.py migrate mcp_writes zero --noinput
           uv run python manage.py migrate mcp_access zero --noinput
           uv run python manage.py migrate taxonomy 0003 --noinput
           uv run python manage.py migrate workflow 0005 --noinput
@@ -1997,7 +1998,9 @@ jobs:
           JURISTID_ENV_FILE="$(mktemp)"
           JURISTID_MCP_ENV_FILE="$(mktemp)"
           JURISTID_MCP_TUNNEL_ENV_FILE="$(mktemp)"
+          JURISTID_MCP_WRITER_ENV_FILE="$(mktemp)"
           export JURISTID_ENV_FILE JURISTID_MCP_ENV_FILE JURISTID_MCP_TUNNEL_ENV_FILE
+          export JURISTID_MCP_WRITER_ENV_FILE
           echo "POSTGRES_PASSWORD=x" > "$JURISTID_ENV_FILE"
           resolve() { docker compose -p juristid-main -f deploy/unraid-main/compose.yml --profile mcp config --format json; }
 
@@ -2030,16 +2033,18 @@ jobs:
           SENTINELS="$(mktemp)"
           MCP_SENTINELS="$(mktemp)"
           TUNNEL_SENTINELS="$(mktemp)"
-          python3 scripts/ci/assert_service_env_isolation.py --write-sentinels "$SENTINELS" "$MCP_SENTINELS" "$TUNNEL_SENTINELS"
+          WRITER_SENTINELS="$(mktemp)"
+          python3 scripts/ci/assert_service_env_isolation.py --write-sentinels "$SENTINELS" "$MCP_SENTINELS" "$TUNNEL_SENTINELS" "$WRITER_SENTINELS"
           export JURISTID_ENV_FILE="$SENTINELS"
           export JURISTID_MCP_ENV_FILE="$MCP_SENTINELS"
           export JURISTID_MCP_TUNNEL_ENV_FILE="$TUNNEL_SENTINELS"
+          export JURISTID_MCP_WRITER_ENV_FILE="$WRITER_SENTINELS"
           resolve() { docker compose "$@" --profile mcp -p juristid-main -f deploy/unraid-main/compose.yml config --format json; }
           resolve > routine.json
-          python3 scripts/ci/assert_service_env_isolation.py --mcp "$MCP_SENTINELS" --mcp-tunnel "$TUNNEL_SENTINELS" routine.json "$SENTINELS"
+          python3 scripts/ci/assert_service_env_isolation.py --mcp "$MCP_SENTINELS" --mcp-tunnel "$TUNNEL_SENTINELS" --mcp-writer "$WRITER_SENTINELS" routine.json "$SENTINELS"
           resolve --env-file "$SENTINELS" > initialising.json
-          python3 scripts/ci/assert_service_env_isolation.py --mcp "$MCP_SENTINELS" --mcp-tunnel "$TUNNEL_SENTINELS" initialising.json "$SENTINELS" --initialising
-          rm -f routine.json initialising.json "$SENTINELS" "$MCP_SENTINELS" "$TUNNEL_SENTINELS"
+          python3 scripts/ci/assert_service_env_isolation.py --mcp "$MCP_SENTINELS" --mcp-tunnel "$TUNNEL_SENTINELS" --mcp-writer "$WRITER_SENTINELS" initialising.json "$SENTINELS" --initialising
+          rm -f routine.json initialising.json "$SENTINELS" "$MCP_SENTINELS" "$TUNNEL_SENTINELS" "$WRITER_SENTINELS"
 
       # The two ADR 0185 services under their own hardening, started by
       # Compose from the production file so `read_only`, `tmpfs`, `user` and
@@ -2061,7 +2066,9 @@ jobs:
           JURISTID_ENV_FILE="$(mktemp)"
           JURISTID_MCP_ENV_FILE="$(mktemp)"
           JURISTID_MCP_TUNNEL_ENV_FILE="$(mktemp)"
+          JURISTID_MCP_WRITER_ENV_FILE="$(mktemp)"
           export JURISTID_ENV_FILE JURISTID_MCP_ENV_FILE JURISTID_MCP_TUNNEL_ENV_FILE
+          export JURISTID_MCP_WRITER_ENV_FILE
           printf '%s\n' \
             DJANGO_SECRET_KEY=ci-only-secret-not-used-anywhere-else-for-the-mcp-process \
             MCP_ENABLED=1 JURISTID_PUBLIC_ORIGIN=https://juristid.example.test \
@@ -2073,6 +2080,22 @@ jobs:
           compose run --rm --no-deps mcp python manage.py check --fail-level ERROR
           echo "--- mcp: nothing outside /tmp is writable"
           compose run --rm --no-deps --entrypoint sh mcp -c '
+            set -e
+            touch /tmp/probe
+            if touch /app/probe 2>/dev/null; then echo "/app is writable"; exit 1; fi
+            if touch /probe 2>/dev/null; then echo "/ is writable"; exit 1; fi
+          '
+
+          echo "--- mcp-writer: the system checks pass on a read-only root, in the mcp_writer role"
+          printf '%s\n' \
+            DJANGO_SECRET_KEY=ci-only-secret-not-used-anywhere-else-for-the-write-gateway \
+            MCP_ENABLED=1 MCP_WRITES_ENABLED=1 JURISTID_PUBLIC_ORIGIN=https://juristid.example.test \
+            MCP_RESOURCE_URLS=https://api.openai.com/v1/mcp/tunnel_ci \
+            MCP_WRITE_GATEWAY_KEY=ci-only-gateway-key-0123456789abcdefghijklmnop \
+            POSTGRES_USER=juristid_mcp_writer > "$JURISTID_MCP_WRITER_ENV_FILE"
+          compose run --rm --no-deps mcp-writer python manage.py check --fail-level ERROR
+          echo "--- mcp-writer: nothing outside /tmp is writable"
+          compose run --rm --no-deps --entrypoint sh mcp-writer -c '
             set -e
             touch /tmp/probe
             if touch /app/probe 2>/dev/null; then echo "/app is writable"; exit 1; fi

@@ -139,7 +139,9 @@ def test_a_missing_redirect_uri_gets_an_error_page(client):
         ({"code_challenge": "short"}, "invalid_request"),
         ({"resource": None}, "invalid_target"),
         ({"resource": "https://elsewhere.example.test/mcp"}, "invalid_target"),
-        ({"scope": "juristid.read juristid.write"}, "invalid_scope"),
+        # juristid.write is a known scope since MCP Phase 2 (narrowed, not refused:
+        # tests/test_mcp_access_write_scope.py); an unknown one is still refused.
+        ({"scope": "juristid.read juristid.admin"}, "invalid_scope"),
     ],
 )
 def test_a_bad_request_is_refused_at_the_redirect_uri_with_state_and_iss(client, overrides, error):

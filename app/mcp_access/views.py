@@ -61,6 +61,18 @@ RATE_LIMIT = 30
 RATE_WINDOW = 60
 
 READ_ONLY_DESCRIPTION = "Ainult lugemine: otsing ja teemade, dokumentide ning ajaloo lugemine"
+#: Shown when the request asks for ``juristid.write`` and writes are switched on.
+#: The same for every persona: whether *this* account may prepare changes is
+#: decided only once its own current code has been verified, and a persona
+#: without the write permission is given read alone (docs/mcp/OAUTH-SCOPES.md).
+READ_WRITE_DESCRIPTION = (
+    "Lugemine ja muudatuste ettevalmistamine: otsing ja teemade, dokumentide ning ajaloo "
+    "lugemine ning muudatuste ettepanekud — iga muudatus vajab eraldi kinnitust Juristidis"
+)
+READ_WRITE_NOTE = (
+    "Ükski muudatus ei jõustu ilma, et kinnitaksid selle ise Juristidis oma autentija koodiga. "
+    "Kui sinu ligipääsul muudatuste ettevalmistamise luba ei ole, antakse ainult lugemine."
+)
 
 #: The one answer to a wrong code *and* to an address that cannot connect (no
 #: such account, no grant, a pending grant, no business role, a technical
@@ -101,6 +113,14 @@ def mcp_enabled_only(view: Callable[..., HttpResponse]) -> Callable[..., HttpRes
 # -- discovery ---------------------------------------------------------------------
 
 
+def scopes_supported() -> list[str]:
+    """The read scope, and the write scope only while `MCP_WRITES_ENABLED` is on."""
+    scopes = [config.scope()]
+    if bool(getattr(settings, "MCP_WRITES_ENABLED", False)):
+        scopes.append(services.write_scope())
+    return scopes
+
+
 @mcp_enabled_only
 @require_GET
 def authorization_server_metadata(request: HttpRequest) -> HttpResponse:
@@ -117,7 +137,7 @@ def authorization_server_metadata(request: HttpRequest) -> HttpResponse:
         "token_endpoint_auth_methods_supported": config.advertised_auth_methods(),
         "token_endpoint_auth_signing_alg_values_supported": ["RS256"],
         "revocation_endpoint_auth_methods_supported": config.advertised_auth_methods(),
-        "scopes_supported": [config.scope()],
+        "scopes_supported": scopes_supported(),
         "client_id_metadata_document_supported": True,
         "authorization_response_iss_parameter_supported": True,
     }
@@ -199,12 +219,14 @@ def _authorize_page(
     # a grant, and whether it is locked or suspended is said only after that
     # account's own current code has been verified (MCPSEC-01). Everybody sees
     # the same page; ``address`` is only what this browser has just typed.
+    asks_for_write = oauth.asks_for_write(parsed.scope)
     response = render(
         request,
         "mcp_access/authorize.html",
         {
             "client_name": parsed.client.name,
-            "description": READ_ONLY_DESCRIPTION,
+            "description": READ_WRITE_DESCRIPTION if asks_for_write else READ_ONLY_DESCRIPTION,
+            "write_note": READ_WRITE_NOTE if asks_for_write else "",
             "error": error,
             "address": address,
         },
@@ -262,7 +284,7 @@ def authorize(request: HttpRequest) -> HttpResponse:
         request=parsed,
         totp_code=request.POST.get("kood", ""),
         ip_address=ip,
-        throttle=_throttle_keys(request, ip),
+        throttle=throttle_keys(request, ip),
     )
     if outcome.status == "ok":
         return _redirect_back(parsed.redirect_uri, {"code": outcome.code, "state": parsed.state})
@@ -289,15 +311,16 @@ def authorize(request: HttpRequest) -> HttpResponse:
     return _authorize_page(request, parsed, error=GENERIC_REFUSAL, status=400, address=address)
 
 
-def _throttle_keys(request: HttpRequest, ip: str | None) -> list[services.ThrottleKey]:
+def throttle_keys(request: HttpRequest, ip: str | None) -> list[services.ThrottleKey]:
     """This gate session's and this address's counters (MCPSEC-01).
 
-    Shared by the consent page and the enrolment page's address step, so a
-    session cannot try on one what it could not try on the other. The session
-    is named by its gate pass, which survives a persona change — `login` gives
-    the session a new identifier, the pass is carried — so neither switching
-    persona nor naming another address starts a fresh count. Outside the shared
-    gate the session key stands in. Both are HMAC'd before they are stored.
+    Shared by the consent page, the enrolment page's address step and the
+    write-approval page (`services.confirm_write_code`), so a session cannot try
+    on one what it could not try on another. The session is named by its gate
+    pass, which survives a persona change — `login` gives the session a new
+    identifier, the pass is carried — so neither switching persona nor naming
+    another address starts a fresh count. Outside the shared gate the session
+    key stands in. Both are HMAC'd before they are stored.
     """
     gate_pass = shared_gate.gate_passed_at(request) or request.session.session_key or "none"
     return [
@@ -541,7 +564,7 @@ def _enrol_address_step(request: HttpRequest, proof: str) -> HttpResponse:
     ip = client_ip(request)
     address = _typed_address(request)
     outcome = services.check_enrolment_address(
-        proof=proof, address=address, ip_address=ip, throttle=_throttle_keys(request, ip)
+        proof=proof, address=address, ip_address=ip, throttle=throttle_keys(request, ip)
     )
     if outcome.status == "throttled":
         return _enrol_page(

@@ -516,9 +516,10 @@ services:
     networks:
       - internal
 
-  # -- AI access: the read-only MCP server and its tunnel (docs/adr/0185) -----
+  # -- AI access: the MCP server, its tunnel (docs/adr/0185) and the write
+  # gateway (docs/adr/0189) ---------------------------------------------------
   #
-  # Both are behind the `mcp` profile, and that is the switch. Compose leaves a
+  # All three are behind the `mcp` profile, and that is the switch. Compose leaves a
   # profiled service out of every command that does not name it or activate
   # its profile, so `up -d --no-build` (a release), `up -d tunnel` (a restore)
   # and the backup scripts neither start, replace nor stop them. They start
@@ -586,6 +587,14 @@ services:
       MCP_LISTEN_HOST: 0.0.0.0
       MCP_LISTEN_PORT: "8001"
       SEED_DEV_DATA: "0"
+      # Where the write tools forward a prepare or a commit (docs/adr/0189):
+      # the gateway's fixed address on `mcp_write`, never its name. Both
+      # containers are on `internal` too, and Docker's DNS may answer
+      # `mcp-writer` with its `internal` address, where nothing listens; the
+      # address below exists only on `mcp_write` (and is in the gateway's Host
+      # allow-list). Not a secret, and unused while MCP_WRITES_ENABLED is off;
+      # the key that goes with it is in juristid-mcp.env.
+      MCP_WRITE_GATEWAY_URL: http://10.213.250.10:8002
     depends_on:
       db:
         condition: service_healthy
@@ -595,10 +604,13 @@ services:
     # token from a third party has no reason to reach a stored file.
     # `internal` for `db`, and `mcp_edge` — the one network the tunnel client
     # is on — so the tunnel reaches this service and nothing else of the stack
-    # (MCPSEC-02).
+    # (MCPSEC-02). `mcp_write`, which holds this service and the write gateway
+    # and nothing else, so `mcp` reaches `mcp-writer` and the tunnel client
+    # does not (docs/adr/0189).
     networks:
       - internal
       - mcp_edge
+      - mcp_write
     # Nothing in this container is written to: Python runs with
     # PYTHONDONTWRITEBYTECODE, logs go to stdout, sessions and caches are in
     # PostgreSQL (and read-only from here). `/tmp` is the one scratch
@@ -615,6 +627,91 @@ services:
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 128
+
+  # The MCP write gateway (docs/adr/0189): the one process that executes an AI
+  # client's proposed change, and only after the person approved it on
+  # Juristid's own page with their own authenticator. `mcp` forwards the
+  # client's prepare and commit here over `mcp_write`; this process verifies
+  # the forwarded bearer token itself, writes through the canonical services,
+  # and connects as `juristid_mcp_writer`, a role that writes only the tables
+  # those services need — never an account, a grant, a token or an approval
+  # (app/mcp_writes/db_role.py, juristid.E050).
+  #
+  # Behind the `mcp` profile like the other two, so a release, a restore and
+  # the backup scripts leave it alone, and it starts only when named:
+  #
+  #   docker compose -p juristid-main -f compose.yml up -d --no-build --no-deps mcp-writer
+  #
+  # **Stopping it is the kill switch for every AI write**, and reading goes on:
+  #
+  #   docker compose -p juristid-main -f compose.yml stop mcp-writer
+  mcp-writer:
+    # The release image, replaced by a release in the same step as `mcp`.
+    image: juristid-main-web:${JURISTID_IMAGE_TAG:-local}
+    container_name: juristid-main-mcp-writer
+    profiles: ["mcp"]
+    restart: unless-stopped
+    logging: *bounded-logs
+    # `manage.py` commands, so the system checks — E050–E056 among them — run
+    # before it listens and before every probe (JOPS-004).
+    command: ["python", "manage.py", "run_mcp_write_gateway"]
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "check_mcp_write_gateway", "--quiet"]
+      interval: 30s
+      timeout: 15s
+      start_period: 60s
+      retries: 3
+    # Its OWN environment file: its database role and password, its signing
+    # key, the gateway key it shares with `mcp`. Nothing of juristid.env — no
+    # gate password, no MFA or authenticator key, no mail credential
+    # (juristid.E056, tests/test_service_secret_isolation.py) — and nothing of
+    # juristid-mcp.env either: `mcp`'s database credentials are not its own.
+    env_file:
+      - ${JURISTID_MCP_WRITER_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env}
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+      # Bounded statements, no kept connection, the writer's own checks
+      # (config/settings.py, app/core/checks.py). Not read-only: writing is
+      # what it is for, and its role is what bounds the writing.
+      JURISTID_PROCESS_ROLE: mcp_writer
+      JURISTID_RUNTIME: deployed
+      # Its fixed address on `mcp_write` and nothing else: port 8002 is served
+      # on that network only, so the services it shares `internal` with (web,
+      # the workers, the Cloudflare tunnel) cannot even connect. `mcp` calls
+      # http://10.213.250.10:8002; the healthcheck asks the same address.
+      # No host port, ever.
+      MCP_WRITE_LISTEN_HOST: 10.213.250.10
+      MCP_WRITE_LISTEN_PORT: "8002"
+      SEED_DEV_DATA: "0"
+    depends_on:
+      db:
+        condition: service_healthy
+    # No volumes: no evidence, no derivatives, no staging. No file is uploaded
+    # through it and none is read (CONTRACT §0.7).
+    #
+    # `internal` for `db` — and only for `db`: nothing listens on its
+    # `internal` address. `mcp_write` for `mcp`, at the one fixed address the
+    # gateway listens on. NOT `mcp_edge`: the tunnel client — a third party's
+    # binary — cannot resolve or reach this service. `internal` is an ordinary
+    # bridge, so this container still has a route off the host
+    # (docs/mcp/OPERATIONS.md, *What AI writes leave open*).
+    networks:
+      internal: {}
+      mcp_write:
+        ipv4_address: 10.213.250.10
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # MCP_WRITE_MAX_CONCURRENT_CALLS (2) bounded threads, one Django process.
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 64
 
   # The OpenAI Secure MCP Tunnel client: an outbound-only HTTPS connection to
   # api.openai.com:443 that carries ChatGPT's MCP requests to `mcp` and nothing
@@ -703,6 +800,20 @@ networks:
   mcp_edge:
     name: juristid-main-mcp-edge
     driver: bridge
+  # `mcp` and `mcp-writer`, and nothing else (docs/adr/0189). `internal: true`:
+  # this network itself has no route off the host (the gateway still has one
+  # through `internal`, which it needs for `db`). The tunnel client is not on
+  # it, so it cannot reach the gateway. A fixed subnet, so the gateway can
+  # listen on one fixed address: 10.x is outside Docker's default address
+  # pools (172.17–172.31/16, 192.168/16), and a /28 is all two containers need.
+  # The deploy plan checks that no network on the host overlaps it.
+  mcp_write:
+    name: juristid-main-mcp-write
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.213.250.0/28
 
 volumes:
   # Temporary upload bytes, shared by `web`, `intake-reader` and `intake-sweeper`

@@ -251,7 +251,11 @@ leaves it on the previous image: where `juristid-main-mcp` is running, step 9
 replaces it with its own named `--no-deps` command, and where it is stopped
 nothing in a release may start it — naming a profiled service starts it.
 `mcp-tunnel` runs a pinned upstream image, like `tunnel`, and is left alone by
-every code release. Both are switched on, off and diagnosed by
+every code release. `mcp-writer`, the MCP write gateway (docs/adr/0189), is
+the same case as `mcp`: release image, `mcp` profile, so where
+`juristid-main-mcp-writer` is running step 9 replaces it by name with
+`--no-deps`, and where it is stopped — AI writes switched off — nothing in a
+release may start it. All three are switched on, off and diagnosed by
 [`../../docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md), never as a side
 effect of anything here.
 

@@ -134,6 +134,11 @@ NOT_MATTER_DATA = {
     "reference_data:tag_merge": "reference data",
     "reference_data:tag_status": "reference data",
     "reference_data:vocabulary": "reference data",
+    # An AI-prepared change's approval page (docs/adr/0189): a proposal belongs
+    # to one person's MCP grant, not to a Matter's visibility, and answers one
+    # generic 404 to every other persona, missing or not
+    # (tests/test_mcp_write_approval.py).
+    "mcp_writes:approve": "MCP proposal",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.

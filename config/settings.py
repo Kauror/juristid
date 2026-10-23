@@ -75,6 +75,7 @@ LOCAL_APPS = [
     "app.related_materials",
     "app.mcp_access",
     "app.mcp_server",
+    "app.mcp_writes",
     "app.notifications",
 ]
 
@@ -200,6 +201,22 @@ if JURISTID_PROCESS_ROLE == MCP_PROCESS_ROLE:
     _existing_options = str(_connection_options.get("options") or "").strip()
     _connection_options["options"] = f"{_existing_options} {_role_options}".strip()
     _database["OPTIONS"] = _connection_options
+    _database["CONN_MAX_AGE"] = 0
+# `mcp_writer` is the MCP write gateway (`manage.py run_mcp_write_gateway`,
+# docs/adr/0189): the one process that executes an approved MCP proposal
+# through the canonical services. It is *not* read-only — that is its whole
+# job — but it connects as its own least-privilege role, `juristid_mcp_writer`
+# (app/mcp_writes/db_role.py), every statement is bounded, and connections
+# are not kept between calls, exactly as for `mcp`.
+MCP_WRITER_PROCESS_ROLE = "mcp_writer"
+if JURISTID_PROCESS_ROLE == MCP_WRITER_PROCESS_ROLE:
+    _writer_timeout_ms = max(1, env_int("MCP_WRITE_CALL_TIMEOUT_SECONDS", 30)) * 1000
+    _writer_options = dict(cast(dict[str, object], _database["OPTIONS"]))
+    _writer_existing = str(_writer_options.get("options") or "").strip()
+    _writer_options["options"] = (
+        f"{_writer_existing} -c statement_timeout={_writer_timeout_ms}".strip()
+    )
+    _database["OPTIONS"] = _writer_options
     _database["CONN_MAX_AGE"] = 0
 
 DATABASES = {"default": _database}
@@ -1098,6 +1115,36 @@ MCP_MAX_CONCURRENT_CALLS = env_int("MCP_MAX_CONCURRENT_CALLS", 4)
 MCP_CALL_TIMEOUT_SECONDS = env_int("MCP_CALL_TIMEOUT_SECONDS", 60)
 MCP_FETCH_MAX_CHARS = env_int("MCP_FETCH_MAX_CHARS", 20_000)
 MCP_MAX_REQUEST_BYTES = env_int("MCP_MAX_REQUEST_BYTES", 64 * 1024)
+
+# -- MCP writes: prepare, approve in Juristid, commit (docs/adr/0189) ---------
+#
+# Off unless a deployment turns it on, on every process that reads it: with it
+# off no write tool is listed, the write scope is neither advertised nor
+# granted, the approval page answers 404 and the gateway refuses every call.
+# Reading is unaffected either way.
+MCP_WRITES_ENABLED = env_bool("MCP_WRITES_ENABLED", False)
+MCP_WRITE_SCOPE = "juristid.write"
+# Where the `mcp` process reaches the write gateway (`mcp-writer`), over the
+# internal `mcp_write` network only, and the key that proves to the gateway
+# that the caller is the `mcp` container. Held by `mcp` and `mcp-writer`,
+# never by `web`. The key is not authorization: the gateway verifies the
+# forwarded bearer token itself.
+MCP_WRITE_GATEWAY_URL = env("MCP_WRITE_GATEWAY_URL", "http://127.0.0.1:8002").rstrip("/")
+MCP_WRITE_GATEWAY_KEY = env("MCP_WRITE_GATEWAY_KEY", "")
+MCP_WRITE_LISTEN_HOST = env("MCP_WRITE_LISTEN_HOST", "127.0.0.1")
+MCP_WRITE_LISTEN_PORT = env_int("MCP_WRITE_LISTEN_PORT", 8002)
+MCP_WRITE_MAX_CONCURRENT_CALLS = env_int("MCP_WRITE_MAX_CONCURRENT_CALLS", 2)
+MCP_WRITE_CALL_TIMEOUT_SECONDS = env_int("MCP_WRITE_CALL_TIMEOUT_SECONDS", 30)
+MCP_WRITE_MAX_REQUEST_BYTES = env_int("MCP_WRITE_MAX_REQUEST_BYTES", 64 * 1024)
+# How long a prepared change waits for its person's approval, how long an
+# approval may wait for its commit, and how long one authenticator code in a
+# gate session spares the person typing another for the next approval. Each
+# approval is still its own button press for its own proposal.
+MCP_WRITE_PROPOSAL_SECONDS = env_int("MCP_WRITE_PROPOSAL_SECONDS", 15 * 60)
+MCP_WRITE_APPROVAL_SECONDS = env_int("MCP_WRITE_APPROVAL_SECONDS", 10 * 60)
+MCP_WRITE_REVERIFY_SECONDS = env_int("MCP_WRITE_REVERIFY_SECONDS", 5 * 60)
+# The longest free text one operation takes (a note, a meeting summary).
+MCP_WRITE_MAX_TEXT_CHARS = env_int("MCP_WRITE_MAX_TEXT_CHARS", 8000)
 
 # -- the `mcp` process's transport (workstream B, docs/adr/0185 §6) ----------
 #

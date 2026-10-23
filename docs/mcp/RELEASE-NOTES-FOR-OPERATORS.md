@@ -121,3 +121,39 @@ with one granted and one ungranted account. Any failure there is answered by
 - create `juristid-mcp.env` or `juristid-mcp-tunnel.env`, or set `MCP_ENABLED=1`;
 - grant anybody access;
 - recreate `db` or `tunnel` (the standing rule, unchanged).
+
+## Phase 2: the release that carries AI writes (docs/adr/0189)
+
+The same rule, one level up: **shipping the write code** and **switching AI
+writes on** are separate decisions, each with its own approval, and the release
+must change nothing anybody can see.
+
+What differs from an ordinary release:
+
+- **Migrations:** `mcp_access` 0002 (additive write fields on the grant, new
+  event types), `mcp_writes` 0001 (proposals, approvals, events — new, empty
+  tables) and an `audit` choices-only migration (the `mcp` auth method). None
+  rewrites a row. Take the release backup first, as always.
+- **Templates:** `juristid.env` gains one line, `MCP_WRITES_ENABLED=0` — add it
+  by hand or leave it unset (off is the default). `juristid-mcp.env` gains
+  `MCP_WRITES_ENABLED=0` and `MCP_WRITE_GATEWAY_KEY`; leave writes off. A new
+  template, `juristid-mcp-writer.env.example`, is **not** installed by the
+  release.
+- **Compose:** a new service, `mcp-writer`, behind the `mcp` profile, and a new
+  internal network, `mcp_write`, which `mcp` joins. So where `mcp` runs, step
+  9's `up -d --no-build --no-deps mcp` recreates it onto the new network (and
+  Compose creates `juristid-main-mcp-write`); `mcp-tunnel`, `db` and `tunnel`
+  are unchanged and must not move. `mcp-writer` does not exist yet on the host,
+  so the preflight reports it absent and the plan does not start it.
+- **The writer's database role** is not created by the release; it is
+  enablement step 3.
+
+**What this release must not do:** start `mcp-writer`; create
+`juristid-mcp-writer.env`; set `MCP_WRITES_ENABLED=1` anywhere; grant write to
+anybody; recreate `db`, `tunnel` or `mcp-tunnel`.
+
+**Then, separately, the activation:** [`OPERATIONS.md`](OPERATIONS.md)
+§"Phase 2: AI writes", *First-time enablement of writes*, steps 1–8 — writer
+file, secrets, role, gateway healthy and unreachable from the tunnel, flags on
+`mcp` then `web`, connector refresh, one person granted write. Any failure there
+is answered by `stop mcp-writer`, which leaves reading and the release in place.

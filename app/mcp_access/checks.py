@@ -29,13 +29,27 @@ def _is_https_origin(value: str, *, path_allowed: bool) -> bool:
 MIN_AUTHENTICATOR_KEY_LENGTH = 32
 
 
+def _holds_no_web_keys() -> bool:
+    """The `mcp` and `mcp-writer` processes: they must not hold `web`'s MCP keys.
+
+    Neither seals or opens an authenticator nor rotates a refresh token, and
+    both are refused those keys (juristid.E046 for `mcp`, juristid.E056 for
+    `mcp-writer`), so asking them for the keys here would make `manage.py
+    check` fail wherever the other check passes.
+    """
+    role = getattr(settings, "JURISTID_PROCESS_ROLE", "") or ""
+    writer = getattr(settings, "MCP_WRITER_PROCESS_ROLE", "mcp_writer") or "mcp_writer"
+    return role in {"mcp", writer}
+
+
 def _authenticator_key_problems() -> list[Error]:
     """mcp_access.E004: on real data, MCP authenticators have a key of their own (MCPSEC-07).
 
-    Only `web` seals and opens them; the `mcp` process never does and must not
-    hold the key (juristid.E046), so the check is skipped there.
+    Only `web` seals and opens them; the `mcp` and `mcp-writer` processes never
+    do and must not hold the key (juristid.E046, E056), so the check is
+    skipped there.
     """
-    if (getattr(settings, "JURISTID_PROCESS_ROLE", "") or "") == "mcp":
+    if _holds_no_web_keys():
         return []
     if not getattr(settings, "REAL_DATA_ALLOWED", False):
         return []
@@ -70,9 +84,10 @@ def _derivation_key_problems() -> list[Error]:
     from the presented token under this key. Under `SECRET_KEY` — the
     fallback off real data — that key and one refresh token would let
     somebody compute a family's every later token offline. Only `web`
-    rotates refresh tokens; the `mcp` process must not hold it (juristid.E046).
+    rotates refresh tokens; the `mcp` and `mcp-writer` processes must not hold
+    it (juristid.E046, E056).
     """
-    if (getattr(settings, "JURISTID_PROCESS_ROLE", "") or "") == "mcp":
+    if _holds_no_web_keys():
         return []
     if not getattr(settings, "REAL_DATA_ALLOWED", False):
         return []

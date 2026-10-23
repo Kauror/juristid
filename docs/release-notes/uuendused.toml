@@ -23,6 +23,10 @@ prs = [506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520
 # notifications); mitme konsultatsioonivooru tähtajad kontrolliti üle (testid).
 # Kui see väljalase ei jõua tootmisse 23.10, saavad viimased neli punkti oma
 # kirje väljalaske päeva kuupäevaga.
+# MCP 2. etapp (ADR 0189, mcp_access/0002, mcp_writes/0001, audit/0040, uus
+# teenus mcp-writer): muudatused ChatGPT kaudu koos kinnitusega Juristidis —
+# välja lülitatud (MCP_WRITES_ENABLED=0), kasutajale nähtamatu. Kasutajale
+# nähtav punkt lisatakse selle päeva kirjesse, mil muudatused sisse lülitatakse.
 changes = [
   "Kõik rakenduse kasutajad näevad kõiki teemasid ja dokumente; «Piiratud» märgib tundlikku sisu, kuid ei piira kolleegide ligipääsu.",
   "Sisu nägemiseks tuleb valida kasutaja; valikut «Ilma kasutajata» enam ei pakuta.",

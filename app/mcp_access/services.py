@@ -11,6 +11,11 @@ Three questions are asked again at every step — granting, enrolling,
 authorizing, issuing and refreshing a token — because any of them can change in
 between: is the grant ACTIVE, is the account active, and does
 `may_read_business_content` hold for it (docs/adr/0181).
+
+Writing through an AI client is a second, separate decision on the same grant
+(`grant_write`, `may_write`, docs/mcp/OAUTH-SCOPES.md): the ``juristid.write``
+scope is granted only when asked for and allowed at that moment, narrowed
+away at every later step where it no longer is, and never widened.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ import getpass
 import logging
 import socket
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -31,7 +36,12 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.models import User
-from app.core.authorization import ROLES_WITH_BUSINESS_READ, acting_role, may_read_business_content
+from app.core.authorization import (
+    ROLES_WITH_BUSINESS_READ,
+    acting_role,
+    may_read_business_content,
+    may_write_business_content,
+)
 from app.mcp_access import config, credentials
 from app.mcp_access.models import (
     GrantStatus,
@@ -148,6 +158,55 @@ def may_connect(user: User | None, grant: McpAccessGrant | None) -> bool:
         and may_read_business_content(user)
         and not grant_refusal(user)
     )
+
+
+def may_write(user: User | None, grant: McpAccessGrant | None) -> bool:
+    """May this grant's person *prepare changes* through an AI client right now?
+
+    Everything `may_connect` asks, and the operator's separate write decision
+    (``grant-write``, not ended by ``revoke-write``), and a business-write role
+    (`may_write_business_content` — never a READER, never a technical
+    ADMINISTRATOR without SPECIALIST or DEPARTMENT_HEAD), and
+    `MCP_WRITES_ENABLED` on this process. Read afresh at every step; nothing
+    caches it. A True here never writes anything by itself: every change still
+    needs the person's own approval in Juristid (docs/mcp/OAUTH-SCOPES.md).
+    """
+    if not bool(getattr(settings, "MCP_WRITES_ENABLED", False)):
+        return False
+    if grant is None or not may_connect(user, grant):
+        return False
+    return grant.write_is_enabled and may_write_business_content(user)
+
+
+def write_enablement_covers(grant: McpAccessGrant, started_at: datetime | None) -> bool:
+    """Whether a connection begun at ``started_at`` falls under the current write decision.
+
+    A write scope is honoured only for a token family (or an authorization
+    code) that began at or after ``write_enabled_at``. Without this, a token
+    minted under an earlier enablement — revoked by ``revoke-write`` and never
+    refreshed — would write again the moment ``grant-write`` was run a second
+    time (security review P3-5). A pure comparison: no query.
+    """
+    enabled_at = grant.write_enabled_at
+    return enabled_at is not None and started_at is not None and started_at >= enabled_at
+
+
+def write_scope() -> str:
+    return str(getattr(settings, "MCP_WRITE_SCOPE", "juristid.write"))
+
+
+def narrow_scope(requested: str, *, write_allowed: bool) -> str:
+    """The scope actually granted: always the read scope, plus write only if asked for and allowed.
+
+    RFC 6749 §3.3: the server may grant less than was asked for, and says so in
+    the token response. Never more: write is added only when ``requested``
+    names it.
+    """
+    parts = {part for part in (requested or "").split() if part}
+    granted = [config.scope()]
+    if write_allowed and write_scope() in parts:
+        granted.append(write_scope())
+    return " ".join(granted)
 
 
 def open_grant(user: User) -> McpAccessGrant | None:
@@ -372,6 +431,150 @@ def unlock(*, user: User, provenance: str) -> bool:
     return was_locked
 
 
+# -- the separate write decision (docs/mcp/OAUTH-SCOPES.md) ----------------------------
+
+
+def write_refusal(user: User, grant: McpAccessGrant | None) -> str:
+    """Why this account's grant may not be allowed to prepare changes, or "" if it may.
+
+    The business-*write* role is asked before anything else that would also
+    refuse, so a READER or a technical ADMINISTRATOR is told the reason that
+    matters for writing.
+    """
+    if not user.is_active:
+        return "konto ei ole aktiivne"
+    if not may_write_business_content(user):
+        return "kontol ei ole sisu muutmise rolli (SPECIALIST või DEPARTMENT_HEAD)"
+    reason = grant_refusal(user)
+    if reason:
+        return reason
+    if grant is None:
+        return "kontol ei ole kehtivat ligipääsu"
+    if grant.write_is_enabled:
+        return "muudatuste ettevalmistamine on juba lubatud"
+    return ""
+
+
+def grant_write(*, user: User, provenance: str) -> McpAccessGrant:
+    """Let this account's open grant prepare changes (``juristid.write``). Raises `GrantRefused`.
+
+    Reading is untouched. A token issued before this carries no write scope:
+    the person connects again to get one. The refusal is raised after the
+    transaction, so its audit row is kept.
+    """
+    with transaction.atomic():
+        outcome = _grant_write(user=user, provenance=provenance)
+    if isinstance(outcome, str):
+        raise GrantRefused(outcome)
+    return outcome
+
+
+def _grant_write(*, user: User, provenance: str) -> McpAccessGrant | str:
+    locked = _lock_user(user)
+    grant = (
+        McpAccessGrant.objects.select_for_update()
+        .filter(user=locked)
+        .exclude(status=GrantStatus.REVOKED)
+        .first()
+    )
+    reason = write_refusal(locked, grant)
+    if reason:
+        record(
+            McpAccessEventType.WRITE_REFUSED,
+            succeeded=False,
+            user=locked,
+            grant=grant,
+            provenance=provenance,
+            reason=reason,
+        )
+        return reason
+    if grant is None:  # pragma: no cover - write_refusal refuses a missing grant
+        return "kontol ei ole kehtivat ligipääsu"
+    now = timezone.now()
+    grant.write_enabled_at = now
+    grant.write_enabled_via = provenance[:300]
+    grant.write_revoked_at = None
+    grant.write_revoke_reason = ""
+    grant.save(
+        update_fields=[
+            "write_enabled_at",
+            "write_enabled_via",
+            "write_revoked_at",
+            "write_revoke_reason",
+            "updated_at",
+        ]
+    )
+    record(McpAccessEventType.WRITE_ENABLED, user=locked, grant=grant, provenance=provenance)
+    return grant
+
+
+def _end_write(grant: McpAccessGrant, *, reason: str, now: datetime) -> None:
+    grant.write_revoked_at = now
+    grant.write_revoke_reason = reason[:300]
+    grant.save(update_fields=["write_revoked_at", "write_revoke_reason", "updated_at"])
+
+
+@transaction.atomic
+def revoke_write(*, user: User, reason: str, provenance: str) -> None:
+    """End this account's write decision at once; reading and every token stay.
+
+    No token is revoked: a token that carries ``juristid.write`` keeps working
+    for reading, and `may_write` — asked at every write step, by the writer
+    and by the approval page — now answers False. A refresh drops the write
+    scope from the family for good.
+    """
+    if not reason.strip():
+        raise GrantRefused("põhjus on kohustuslik")
+    _lock_user(user)
+    grant = (
+        McpAccessGrant.objects.select_for_update()
+        .filter(user=user)
+        .exclude(status=GrantStatus.REVOKED)
+        .first()
+    )
+    if grant is None:
+        raise GrantRefused("kontol ei ole kehtivat ligipääsu")
+    if not grant.write_is_enabled:
+        raise GrantRefused("kontol ei ole muudatuste ettevalmistamise luba")
+    _end_write(grant, reason=reason, now=timezone.now())
+    record(
+        McpAccessEventType.WRITE_REVOKED,
+        user=user,
+        grant=grant,
+        provenance=provenance,
+        reason=reason[:300],
+    )
+
+
+@transaction.atomic
+def revoke_all_writes(*, reason: str, provenance: str) -> int:
+    """The write kill switch: every grant's write decision ends; reading is untouched.
+
+    Independent of `MCP_WRITES_ENABLED` and of ``revoke-all``: AI writing stops
+    for everybody while every read connection keeps working. Returns how many
+    grants had write.
+    """
+    if not reason.strip():
+        raise GrantRefused("põhjus on kohustuslik")
+    now = timezone.now()
+    grants = list(
+        McpAccessGrant.objects.select_for_update()
+        .filter(write_enabled_at__isnull=False, write_revoked_at__isnull=True)
+        .order_by("pk")
+    )
+    for grant in grants:
+        _end_write(grant, reason=reason, now=now)
+        record(
+            McpAccessEventType.WRITE_REVOKED,
+            user=grant.user,
+            grant=grant,
+            provenance=provenance,
+            reason=reason[:300],
+            revoke_all_writes=True,
+        )
+    return len(grants)
+
+
 @dataclass(frozen=True)
 class GrantRow:
     upn: str
@@ -382,6 +585,17 @@ class GrantRow:
     locked_until: datetime | None
     suspended: bool = False
     total_failed_attempts: int = 0
+    #: ``"jah"`` while the write decision stands, ``"tühistatud"`` after
+    #: ``revoke-write``, ``"ei"`` when it was never made.
+    write: str = "ei"
+
+
+def _write_state(grant: McpAccessGrant) -> str:
+    if grant.write_is_enabled:
+        return "jah"
+    if grant.write_revoked_at is not None:
+        return "tühistatud"
+    return "ei"
 
 
 def grant_rows() -> list[GrantRow]:
@@ -413,6 +627,7 @@ def grant_rows() -> list[GrantRow]:
                 locked_until=grant.locked_until if grant.is_locked_at(now) else None,
                 suspended=grant.is_suspended,
                 total_failed_attempts=grant.total_failed_attempts,
+                write=_write_state(grant),
             )
         )
     return result
@@ -574,13 +789,16 @@ def _count_wrong_code(
     client_id: str,
     ip_address: str | None,
     now: datetime,
+    refused_event: str = McpAccessEventType.AUTHORIZATION_REFUSED,
 ) -> AuthorizationOutcome:
     """One wrong code against a held grant: count it, and lock or suspend when due.
 
     Counted whether or not the grant is already locked: a lock refuses the
     *right* code, it is not a pause in which guesses are free. The answer is
     ``bad_code`` every time — the guess that trips a lock is told nothing the
-    other guesses were not.
+    other guesses were not. One ladder for both places a code is typed —
+    connecting (`authorize`) and approving a change (`confirm_write_code`);
+    ``refused_event`` only says which of the two it was.
     """
     grant.total_failed_attempts += 1
     if not grant.is_suspended:
@@ -607,7 +825,7 @@ def _count_wrong_code(
         ]
     )
     record(
-        McpAccessEventType.AUTHORIZATION_REFUSED,
+        refused_event,
         succeeded=False,
         user=user,
         grant=grant,
@@ -659,35 +877,38 @@ def _count_wrong_code(
     return AuthorizationOutcome(status="bad_code")
 
 
-@transaction.atomic
-def authorize(
-    *, user: User, request: AuthorizationRequest, totp_code: str, ip_address: str | None
-) -> AuthorizationOutcome:
-    """Check the persona's authenticator code and mint a one-time authorization code.
+def _check_personal_code(
+    *,
+    fresh: User | None,
+    grant: McpAccessGrant | None,
+    eligible: bool,
+    ineligible_reason: str,
+    totp_code: str,
+    client_id: str,
+    ip_address: str | None,
+    refused_event: str,
+) -> AuthorizationOutcome | datetime:
+    """The one check of the grant's personal authenticator code, for connecting and approving.
 
-    Under the grant's lock. A wrong code is counted (`_count_wrong_code`):
-    five in a row lock *authorizing*, consecutive locks escalate, and the
-    lock after the last rung suspends the grant until an operator unlocks it.
-    A right code is spent whatever follows (its time step is recorded), so the
-    same or an earlier code is refused afterwards, in any worker — and only a
+    The caller holds the grant under `select_for_update` and says whether the
+    persona may do what it asked (``eligible``). Returns the moment of success
+    — the step is spent, the wrong-code counters reset — or the refusal to
+    answer with. A wrong code is counted (`_count_wrong_code`): five in a row
+    lock, consecutive locks escalate, and the lock after the last rung
+    suspends the grant until an operator unlocks it. A right code is spent
+    whatever follows (its time step is recorded), so the same or an earlier
+    code is refused afterwards, in any worker and at either step — and only a
     right code learns that the grant is locked or suspended.
     """
-    client_id = request.client.client_id
-    fresh = User.objects.filter(pk=user.pk).first()
-    grant = (
-        McpAccessGrant.objects.select_for_update()
-        .filter(user_id=user.pk, status=GrantStatus.ACTIVE)
-        .first()
-    )
-    if fresh is None or grant is None or not may_connect(fresh, grant):
+    if fresh is None or grant is None or not eligible:
         record(
-            McpAccessEventType.AUTHORIZATION_REFUSED,
+            refused_event,
             succeeded=False,
             user=fresh,
             grant=grant,
             client_id=client_id,
             ip_address=ip_address,
-            reason="no_active_grant",
+            reason=ineligible_reason,
         )
         return AuthorizationOutcome(status="no_grant")
     now = timezone.now()
@@ -700,7 +921,7 @@ def authorize(
         # reason none of them caused. The answer is the generic one; the
         # operator sees why.
         record(
-            McpAccessEventType.AUTHORIZATION_REFUSED,
+            refused_event,
             succeeded=False,
             user=fresh,
             grant=grant,
@@ -722,14 +943,19 @@ def authorize(
     )
     if step is None or authenticator is None:
         return _count_wrong_code(
-            grant, user=fresh, client_id=client_id, ip_address=ip_address, now=now
+            grant,
+            user=fresh,
+            client_id=client_id,
+            ip_address=ip_address,
+            now=now,
+            refused_event=refused_event,
         )
 
     authenticator.last_used_step = step
     authenticator.save(update_fields=["last_used_step", "updated_at"])
     if grant.is_suspended or grant.is_locked_at(now):
         record(
-            McpAccessEventType.AUTHORIZATION_REFUSED,
+            refused_event,
             succeeded=False,
             user=fresh,
             grant=grant,
@@ -754,6 +980,44 @@ def authorize(
             "updated_at",
         ]
     )
+    return now
+
+
+@transaction.atomic
+def authorize(
+    *, user: User, request: AuthorizationRequest, totp_code: str, ip_address: str | None
+) -> AuthorizationOutcome:
+    """Check the persona's authenticator code and mint a one-time authorization code.
+
+    Under the grant's lock (`_check_personal_code`). The code's scope is the
+    read scope, plus ``juristid.write`` only when the request asked for it
+    *and* `may_write` holds now, under that same lock; otherwise it is
+    narrowed to read without an error (RFC 6749 §3.3) and the token response
+    says so.
+    """
+    client_id = request.client.client_id
+    fresh = User.objects.filter(pk=user.pk).first()
+    grant = (
+        McpAccessGrant.objects.select_for_update()
+        .filter(user_id=user.pk, status=GrantStatus.ACTIVE)
+        .first()
+    )
+    checked = _check_personal_code(
+        fresh=fresh,
+        grant=grant,
+        eligible=may_connect(fresh, grant),
+        ineligible_reason="no_active_grant",
+        totp_code=totp_code,
+        client_id=client_id,
+        ip_address=ip_address,
+        refused_event=McpAccessEventType.AUTHORIZATION_REFUSED,
+    )
+    if isinstance(checked, AuthorizationOutcome):
+        return checked
+    if fresh is None or grant is None:  # pragma: no cover - refused by the check above
+        return AuthorizationOutcome(status="no_grant")
+    now = checked
+    scope = narrow_scope(request.scope, write_allowed=may_write(fresh, grant))
     raw = credentials.new_opaque()
     McpAuthorizationCode.objects.create(
         digest=credentials.digest(raw),
@@ -762,21 +1026,85 @@ def authorize(
         client_id=client_id,
         redirect_uri=request.redirect_uri,
         code_challenge=request.code_challenge,
-        scope=request.scope,
+        scope=scope,
         resource=request.resource,
         user_epoch=fresh.security_epoch,
         expires_at=now + timedelta(seconds=int(settings.MCP_AUTHORIZATION_CODE_SECONDS)),
     )
+    detail: dict[str, Any] = {"resource": request.resource, "scope": scope}
+    if scope != request.scope:
+        detail["requested_scope"] = request.scope
     record(
         McpAccessEventType.AUTHORIZATION_GRANTED,
         user=fresh,
         grant=grant,
         client_id=client_id,
         ip_address=ip_address,
-        resource=request.resource,
-        scope=request.scope,
+        **detail,
     )
     return AuthorizationOutcome(status="ok", code=raw)
+
+
+@transaction.atomic
+def _confirm_write_code(
+    *, user: User, grant_id: Any, code: str, ip_address: str | None
+) -> AuthorizationOutcome:
+    fresh = User.objects.filter(pk=user.pk).first()
+    grant = (
+        McpAccessGrant.objects.select_for_update()
+        .filter(pk=grant_id, user_id=user.pk, status=GrantStatus.ACTIVE)
+        .first()
+    )
+    connects = may_connect(fresh, grant)
+    checked = _check_personal_code(
+        fresh=fresh,
+        grant=grant,
+        eligible=connects and may_write(fresh, grant),
+        ineligible_reason="write_not_allowed" if connects else "no_active_grant",
+        totp_code=code,
+        client_id="",
+        ip_address=ip_address,
+        refused_event=McpAccessEventType.WRITE_CONFIRMATION_REFUSED,
+    )
+    if isinstance(checked, AuthorizationOutcome):
+        return checked
+    record(McpAccessEventType.WRITE_CONFIRMED, user=fresh, grant=grant, ip_address=ip_address)
+    return AuthorizationOutcome(status="ok")
+
+
+def confirm_write_code(
+    *,
+    user: User,
+    grant_id: Any,
+    code: str,
+    ip_address: str | None,
+    throttle: Sequence[ThrottleKey],
+) -> AuthorizationOutcome:
+    """The grant's personal code, typed on the write-approval page to approve one change.
+
+    The same authenticator, the same single-use time step, the same lock
+    ladder and the same per-session and per-address throttle rows as
+    ``/oauth/authorize`` (`authorize_attempt`): a wrong code here counts
+    exactly like one there, and a code spent connecting cannot approve, nor
+    the other way round. ``grant_id`` is the proposal's grant; it must be this
+    persona's ACTIVE grant and `may_write` must hold, or the answer is
+    ``no_grant`` without a code being checked — which the page answers like
+    ``bad_code``. Statuses as `AuthorizationOutcome`; ``code`` stays empty.
+    Records ``WRITE_CONFIRMED`` or ``WRITE_CONFIRMATION_REFUSED``. Writes
+    only this app's own rows (step, counters, throttle, event); the approval
+    row is the caller's. Call it outside any transaction the caller might roll
+    back on a refusal, or the wrong-code count would be rolled back with it.
+    """
+    return _throttled(
+        user=user,
+        client_id="",
+        ip_address=ip_address,
+        throttle=throttle,
+        refused_event=McpAccessEventType.WRITE_CONFIRMATION_REFUSED,
+        attempt=lambda: _confirm_write_code(
+            user=user, grant_id=grant_id, code=code, ip_address=ip_address
+        ),
+    )
 
 
 # -- the per-session and per-address throttle ------------------------------------------
@@ -872,21 +1200,11 @@ def authorize_attempt(
     name (MCPSEC-01). A refused attempt has no code checked and charges no
     grant. The window is fixed (`MCP_AUTHORIZE_THROTTLE_SECONDS`) and a success
     resets nothing: a colleague's own right code must not buy another round of
-    guesses.
+    guesses. The rows are shared with approving a change (`confirm_write_code`):
+    a guesser does not get a second budget by switching pages.
     """
-    with transaction.atomic():
-        now = timezone.now()
-        rows, wait = _hold_throttles(throttle, now=now)
-        if wait:
-            record(
-                McpAccessEventType.AUTHORIZATION_REFUSED,
-                succeeded=False,
-                user=user,
-                client_id=request.client.client_id,
-                ip_address=ip_address,
-                reason="throttled",
-            )
-            return AuthorizationOutcome(status="throttled", wait=wait)
+
+    def attempt() -> AuthorizationOutcome:
         if user is None:
             # Nothing is said about which address was typed: the audit row is
             # not a list of guesses at colleagues' addresses.
@@ -897,11 +1215,49 @@ def authorize_attempt(
                 ip_address=ip_address,
                 reason="unknown_account",
             )
-            outcome = AuthorizationOutcome(status="no_grant")
-        else:
-            outcome = authorize(
-                user=user, request=request, totp_code=totp_code, ip_address=ip_address
+            return AuthorizationOutcome(status="no_grant")
+        return authorize(user=user, request=request, totp_code=totp_code, ip_address=ip_address)
+
+    return _throttled(
+        user=user,
+        client_id=request.client.client_id,
+        ip_address=ip_address,
+        throttle=throttle,
+        refused_event=McpAccessEventType.AUTHORIZATION_REFUSED,
+        attempt=attempt,
+    )
+
+
+def _throttled(
+    *,
+    user: User | None,
+    client_id: str,
+    ip_address: str | None,
+    throttle: Sequence[ThrottleKey],
+    refused_event: str,
+    attempt: Callable[[], AuthorizationOutcome],
+) -> AuthorizationOutcome:
+    """Run ``attempt`` unless a throttle row is over its limit; charge every row if it fails.
+
+    The rows are held (`_hold_throttles`) before anything is checked and
+    charged (`_charge_throttles`) in the same transaction, so parallel attempts
+    cannot all read "under the limit". Shared by `/oauth/authorize` and the
+    write-approval page.
+    """
+    with transaction.atomic():
+        now = timezone.now()
+        rows, wait = _hold_throttles(throttle, now=now)
+        if wait:
+            record(
+                refused_event,
+                succeeded=False,
+                user=user if user is not None and user.is_authenticated else None,
+                client_id=client_id,
+                ip_address=ip_address,
+                reason="throttled",
             )
+            return AuthorizationOutcome(status="throttled", wait=wait)
+        outcome = attempt()
         _charge_throttles(rows, failed=outcome.status != "ok")
         return outcome
 
@@ -1156,11 +1512,18 @@ def _exchange_code(
     if user is None:
         return refuse("account_not_eligible")
     family_id = uuid.uuid4()
+    # Narrowed again: a write decision revoked between the consent and the
+    # exchange is honoured here, and a code never yields more than it names.
+    scopes = narrow_scope(
+        record_row.scope,
+        write_allowed=may_write(user, grant)
+        and write_enablement_covers(grant, record_row.created_at),
+    )
     issued, _ = _issue_pair(
         grant=grant,
         user=user,
         client_id=record_row.client_id,
-        scopes=record_row.scope,
+        scopes=scopes,
         resource=record_row.resource,
         family_id=family_id,
         now=now,
@@ -1177,6 +1540,7 @@ def _exchange_code(
         ip_address=ip_address,
         family=str(family_id),
         resource=record_row.resource,
+        scope=scopes,
     )
     return issued
 
@@ -1303,11 +1667,18 @@ def _refresh(
             McpToken.objects.filter(family_id=token.family_id), reason="not_eligible", now=now
         )
         return refuse("account_not_eligible")
+    # Never wider than the token (checked above), and narrowed to what the
+    # account may do *now*: after `revoke_write` the write scope drops out of
+    # the family for good — getting it back means connecting again.
+    scopes = narrow_scope(
+        " ".join(sorted(requested or token.scope_set)),
+        write_allowed=may_write(user, grant) and write_enablement_covers(grant, family_started),
+    )
     issued, new_refresh = _issue_pair(
         grant=grant,
         user=user,
         client_id=token.client_id,
-        scopes=token.scopes,
+        scopes=scopes,
         resource=token.resource,
         family_id=token.family_id,
         now=now,
@@ -1331,6 +1702,7 @@ def _refresh(
         client_id=client_id,
         ip_address=ip_address,
         family=str(token.family_id),
+        scope=scopes,
     )
     return issued
 

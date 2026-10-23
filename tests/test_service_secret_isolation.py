@@ -148,12 +148,14 @@ def _initialising(
 
 
 class McpFiles(NamedTuple):
-    """The two environment files ADR 0185 added, as synthetic sentinel files."""
+    """The environment files ADR 0185 and ADR 0189 added, as synthetic sentinel files."""
 
     mcp_path: Path
     mcp: dict[str, str]
     tunnel_path: Path
     tunnel: dict[str, str]
+    writer_path: Path
+    writer: dict[str, str]
 
 
 @pytest.fixture
@@ -162,13 +164,14 @@ def mcp_files(tmp_path: Path) -> McpFiles:
     for name, template, tag in (
         ("juristid-mcp.env", checker.MCP_ENV_EXAMPLE, "m"),
         ("juristid-mcp-tunnel.env", checker.MCP_TUNNEL_ENV_EXAMPLE, "t"),
+        ("juristid-mcp-writer.env", checker.MCP_WRITER_ENV_EXAMPLE, "w"),
     ):
         values = checker.sentinel_values(checker.template_keys(template), tag)
         path = tmp_path / name
         path.write_text("".join(f"{k}={v}\n" for k, v in values.items()), encoding="utf-8")
         written.append((path, values))
-    (mcp_path, mcp), (tunnel_path, tunnel) = written
-    return McpFiles(mcp_path, mcp, tunnel_path, tunnel)
+    (mcp_path, mcp), (tunnel_path, tunnel), (writer_path, writer) = written
+    return McpFiles(mcp_path, mcp, tunnel_path, tunnel, writer_path, writer)
 
 
 def _with_mcp(
@@ -183,6 +186,7 @@ def _with_mcp(
         "JURISTID_ENV_FILE": str(env_file),
         "JURISTID_MCP_ENV_FILE": str(files.mcp_path),
         "JURISTID_MCP_TUNNEL_ENV_FILE": str(files.tunnel_path),
+        "JURISTID_MCP_WRITER_ENV_FILE": str(files.writer_path),
     }
     return resolve(compose, interpolation, profiles=("mcp",))
 
@@ -202,6 +206,7 @@ def _mcp_violations(
         mcp_sentinels=files.mcp,
         mcp_tunnel_sentinels=files.tunnel,
         main_file=str(main_file) if main_file else None,
+        mcp_writer_sentinels=files.writer,
     )
 
 
@@ -355,7 +360,7 @@ def test_the_mcp_services_read_only_their_own_files_day_to_day(
 ) -> None:
     path, values = sentinels
     services = _with_mcp(compose, path, mcp_files)
-    assert {"mcp", "mcp-tunnel"} <= set(services)
+    assert {"mcp", "mcp-tunnel", "mcp-writer"} <= set(services)
     assert _mcp_violations(services, values, mcp_files, main_file=path) == []
     # The positive controls, stated here as well as inside the checker.
     assert services["mcp"]["environment"]["DJANGO_SECRET_KEY"] == mcp_files.mcp["DJANGO_SECRET_KEY"]
@@ -433,7 +438,12 @@ def test_the_sentinels_of_the_three_files_never_contain_each_other(
     sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
 ) -> None:
     _, values = sentinels
-    everything = [*values.values(), *mcp_files.mcp.values(), *mcp_files.tunnel.values()]
+    everything = [
+        *values.values(),
+        *mcp_files.mcp.values(),
+        *mcp_files.tunnel.values(),
+        *mcp_files.writer.values(),
+    ]
     for value in everything:
         assert sum(value in other for other in everything) == 1, value
 
@@ -539,11 +549,168 @@ def test_ci_resolves_both_shapes_with_compose_itself() -> None:
     scripts = [step.get("run", "") for step in steps]
     joined = "\n".join(scripts)
     assert "assert_service_env_isolation.py --write-sentinels" in joined
+    assert '"$TUNNEL_SENTINELS" "$WRITER_SENTINELS"' in joined
     # Both shapes with the MCP files (docs/adr/0185): resolved with
     # `--profile mcp`, so the two new services are in the model to be checked.
-    mcp = r"--mcp \"\$MCP_SENTINELS\" --mcp-tunnel \"\$TUNNEL_SENTINELS\""
+    mcp = (
+        r"--mcp \"\$MCP_SENTINELS\" --mcp-tunnel \"\$TUNNEL_SENTINELS\""
+        r" --mcp-writer \"\$WRITER_SENTINELS\""
+    )
     assert re.search(rf"assert_service_env_isolation\.py {mcp} \S+ \"\$SENTINELS\"\n", joined)
     assert re.search(
         rf"assert_service_env_isolation\.py {mcp} \S+ \"\$SENTINELS\" --initialising", joined
     )
     assert re.search(r"resolve\(\) \{ docker compose \"\$@\" --profile mcp ", joined)
+
+
+# -- the write gateway (docs/adr/0189) -------------------------------------------
+
+#: The browser's secrets by name, as the CONTRACT (§7) lists what the writer
+#: must never hold: the gate password, the MFA, authenticator and derivation
+#: keys, the mail credentials.
+WRITER_NEVER = (
+    "JURISTID_SHARED_GATE_PASSWORD",
+    "LOCAL_AUTH_MFA_ENCRYPTION_KEY",
+    "MCP_AUTHENTICATOR_KEY",
+    "MCP_TOKEN_DERIVATION_KEY",
+    "DJANGO_EMAIL_HOST_PASSWORD",
+    "DJANGO_EMAIL_HOST_USER",
+)
+
+
+def test_the_writer_reads_only_its_own_file(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    services = _with_mcp(compose, path, mcp_files)
+    writer = services["mcp-writer"]["environment"]
+    # The positive controls: its own file was read, its own role and password.
+    assert writer["DJANGO_SECRET_KEY"] == mcp_files.writer["DJANGO_SECRET_KEY"]
+    assert writer["POSTGRES_PASSWORD"] == mcp_files.writer["POSTGRES_PASSWORD"]
+    assert writer["MCP_WRITE_GATEWAY_KEY"] == mcp_files.writer["MCP_WRITE_GATEWAY_KEY"]
+    rendered = repr(services["mcp-writer"])
+    for key in WRITER_NEVER:
+        assert key not in rendered, f"mcp-writer is handed {key} at all"
+    for source in (values, mcp_files.mcp, mcp_files.tunnel):
+        for key, value in source.items():
+            assert value not in rendered, f"mcp-writer receives another file's {key}"
+
+
+def test_initialising_a_cluster_hands_the_writer_nothing_either(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    services = _with_mcp(compose, path, mcp_files, values)
+    assert _mcp_violations(services, values, mcp_files, initialising=True, main_file=path) == []
+    assert values["POSTGRES_PASSWORD"] not in repr(services["mcp-writer"])
+
+
+def test_mcp_holds_no_writer_database_credential(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    """`mcp` shares the gateway key with the writer and nothing else of its file."""
+    path, _ = sentinels
+    services = _with_mcp(compose, path, mcp_files)
+    rendered = repr(services["mcp"])
+    for key, value in mcp_files.writer.items():
+        assert value not in rendered, f"mcp receives juristid-mcp-writer.env's {key}"
+    environment = services["mcp"]["environment"]
+    assert environment["POSTGRES_PASSWORD"] == mcp_files.mcp["POSTGRES_PASSWORD"]
+    assert environment["MCP_WRITE_GATEWAY_URL"] == "http://10.213.250.10:8002"
+    for name in ("web", "intake-reader", "searchindex", "intake-sweeper", "notifications"):
+        assert "MCP_WRITE_GATEWAY_KEY" not in services[name].get("environment", {}), name
+
+
+def test_the_writer_template_names_none_of_the_browsers_secrets() -> None:
+    keys = set(checker.template_keys(checker.MCP_WRITER_ENV_EXAMPLE))
+    assert keys <= checker.MCP_WRITER_ALLOWED, sorted(keys - checker.MCP_WRITER_ALLOWED)
+    assert not keys & checker.BROWSER_ONLY
+    assert not keys & set(WRITER_NEVER)
+    assert not checker.MCP_WRITER_ALLOWED & checker.BROWSER_ONLY
+    assert {"POSTGRES_USER", "POSTGRES_PASSWORD", "MCP_WRITE_GATEWAY_KEY"} <= keys
+    # The web template gets the switch and never the key.
+    web = set(checker.template_keys())
+    assert "MCP_WRITES_ENABLED" in web
+    assert "MCP_WRITE_GATEWAY_KEY" not in web
+
+
+def test_the_check_refuses_a_writer_given_another_services_file(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    for extra, expected in (
+        (
+            "${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}",
+            "mcp-writer: receives JURISTID_SHARED_GATE_PASSWORD, a secret of the browser's "
+            "that it must never hold",
+        ),
+        (
+            "${JURISTID_MCP_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp.env}",
+            "mcp-writer: the value of POSTGRES_PASSWORD from juristid-mcp.env reaches it",
+        ),
+    ):
+        leaky = copy.deepcopy(compose)
+        leaky["services"]["mcp-writer"]["env_file"] = [
+            *leaky["services"]["mcp-writer"]["env_file"],
+            extra,
+        ]
+        found = _mcp_violations(
+            _with_mcp(leaky, path, mcp_files), values, mcp_files, main_file=path
+        )
+        assert expected in found, found
+
+
+def test_the_check_refuses_mcp_given_the_writers_file(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    leaky = copy.deepcopy(compose)
+    leaky["services"]["mcp"]["env_file"] = [
+        *leaky["services"]["mcp"]["env_file"],
+        "${JURISTID_MCP_WRITER_ENV_FILE:-/x/juristid-mcp-writer.env}",
+    ]
+    found = _mcp_violations(_with_mcp(leaky, path, mcp_files), values, mcp_files, main_file=path)
+    assert "mcp: the value of POSTGRES_PASSWORD from juristid-mcp-writer.env reaches it" in found
+
+
+def test_the_check_does_not_pass_over_the_writer(
+    compose: dict[str, Any], sentinels: tuple[Path, dict[str, str]], mcp_files: McpFiles
+) -> None:
+    path, values = sentinels
+    services = _with_mcp(compose, path, mcp_files)
+    found = checker.violations(
+        services,
+        values,
+        initialising=False,
+        mcp_sentinels=mcp_files.mcp,
+        mcp_tunnel_sentinels=mcp_files.tunnel,
+        main_file=str(path),
+    )
+    assert any(line.startswith("mcp-writer: in the resolved model") for line in found), found
+
+
+# -- the db/tunnel drift trap ------------------------------------------------------
+#
+# An unqualified `up -d` recreates any service whose definition changed. The
+# database and the Cloudflare tunnel must never be recreated by a code release
+# (memory: juristid-db-tunnel-config-drift), so their definitions are pinned:
+# a change here is a deliberate, announced maintenance step — update the digest
+# in the same commit and say so in the release note.
+
+PINNED_DEFINITIONS = {
+    "db": "3de3b35aba9a70e560b3300cfa8d31715dcd5effec091f01dd4117615ad321df",
+    "tunnel": "19003e82ed68d4b37462f97d57f4268758fe1344bfd12426f3bfc5bc50856cc3",
+}
+
+
+@pytest.mark.parametrize("name", sorted(PINNED_DEFINITIONS))
+def test_the_database_and_tunnel_definitions_are_unchanged(
+    compose: dict[str, Any], name: str
+) -> None:
+    import hashlib
+    import json
+
+    rendered = json.dumps(compose["services"][name], sort_keys=True).encode("utf-8")
+    assert hashlib.sha256(rendered).hexdigest() == PINNED_DEFINITIONS[name], (
+        f"{name}'s Compose definition changed: a release would recreate it"
+    )

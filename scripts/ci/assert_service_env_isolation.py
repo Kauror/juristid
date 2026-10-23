@@ -14,6 +14,15 @@ tunnel client, reads `juristid-mcp-tunnel.env` — its runtime key, its tunnel i
 and the origin it may trust — and nothing of either application file. And no
 other service receives a value from either of the two new files.
 
+ADR 0189 added the write gateway, `mcp-writer`, reading
+`juristid-mcp-writer.env`: its own signing key and database role, the gateway
+key it shares with `mcp`, and nothing of `juristid.env`, `juristid-mcp.env` or
+`juristid-mcp-tunnel.env` — so no gate password, no MFA, authenticator or
+derivation key, no mail credential, and not `mcp`'s database password. `mcp`
+in turn receives nothing of the writer's file (its key is the same *setting*,
+generated into both files; the sentinel files keep the two values distinct, so
+a value that crosses is still seen), and no other service anything of it.
+
 Run against `docker compose --profile mcp config --format json` for
 `deploy/unraid-main/compose.yml` from the compose smoke job in CI, where Compose
 itself resolves `env_file:` and `${VAR}` interpolation; and imported by
@@ -38,7 +47,8 @@ file was actually read, so an absence elsewhere means something. `--mcp` and
 holds the two services — a resolution without `--profile mcp` leaves them out,
 and the check says so rather than passing over them.
 
-    assert_service_env_isolation.py --write-sentinels sentinels.env [mcp.env mcp-tunnel.env]
+    assert_service_env_isolation.py --write-sentinels sentinels.env \
+        [mcp.env mcp-tunnel.env [mcp-writer.env]]
         writes the synthetic files: every key `deploy/unraid-main/.env.example`
         (and, with three paths, `juristid-mcp.env.example` and
         `juristid-mcp-tunnel.env.example`) names, commented-out dormant ones
@@ -108,6 +118,53 @@ MCP_ALLOWED = frozenset(
         "MCP_CALL_TIMEOUT_SECONDS",
         "MCP_FETCH_MAX_CHARS",
         "MCP_MAX_REQUEST_BYTES",
+        # ADR 0189: the write tools forward to the gateway. The URL is set by
+        # compose.yml; the switch and the key are in juristid-mcp.env. The
+        # writer's database credentials are not (juristid.E058).
+        "MCP_WRITES_ENABLED",
+        "MCP_WRITE_GATEWAY_URL",
+        "MCP_WRITE_GATEWAY_KEY",
+    }
+)
+
+#: What the write gateway may hold (ADR 0189), listed for the same reason:
+#:
+#: * set on the service by compose.yml — the database, its process role, where
+#:   it listens;
+#: * read from `juristid-mcp-writer.env` — the real-data flag and the mode's
+#:   name, its own signing key, its own database role and password, the three
+#:   values token verification needs (MCP_ENABLED, the origin, the audiences),
+#:   the write switch, the gateway key and the write limits.
+MCP_WRITER_ALLOWED = frozenset(
+    {
+        # compose.yml
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_SSLMODE",
+        "JURISTID_PROCESS_ROLE",
+        "JURISTID_RUNTIME",
+        "MCP_WRITE_LISTEN_HOST",
+        "MCP_WRITE_LISTEN_PORT",
+        "SEED_DEV_DATA",
+        # juristid-mcp-writer.env
+        "REAL_DATA_ALLOWED",
+        "AUTH_MODE",
+        "DJANGO_SECRET_KEY",
+        "DJANGO_LOG_LEVEL",
+        "POSTGRES_DB",
+        "POSTGRES_USER",
+        "POSTGRES_PASSWORD",
+        "MCP_ENABLED",
+        "JURISTID_PUBLIC_ORIGIN",
+        "MCP_RESOURCE_URLS",
+        "MCP_WRITES_ENABLED",
+        "MCP_WRITE_GATEWAY_KEY",
+        "MCP_WRITE_MAX_CONCURRENT_CALLS",
+        "MCP_WRITE_CALL_TIMEOUT_SECONDS",
+        "MCP_WRITE_MAX_REQUEST_BYTES",
+        "MCP_WRITE_PROPOSAL_SECONDS",
+        "MCP_WRITE_APPROVAL_SECONDS",
+        "MCP_WRITE_MAX_TEXT_CHARS",
     }
 )
 
@@ -159,6 +216,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 ENV_EXAMPLE = _ROOT / "deploy" / "unraid-main" / ".env.example"
 MCP_ENV_EXAMPLE = _ROOT / "deploy" / "unraid-main" / "juristid-mcp.env.example"
 MCP_TUNNEL_ENV_EXAMPLE = _ROOT / "deploy" / "unraid-main" / "juristid-mcp-tunnel.env.example"
+MCP_WRITER_ENV_EXAMPLE = _ROOT / "deploy" / "unraid-main" / "juristid-mcp-writer.env.example"
 
 #: `KEY=value` and `# KEY=value` — the template names its dormant keys commented out.
 _TEMPLATE_KEY = re.compile(r"^#?\s*([A-Z][A-Z0-9_]*)=")
@@ -176,7 +234,7 @@ def template_keys(path: Path = ENV_EXAMPLE) -> list[str]:
 def sentinel_values(keys: list[str], tag: str = "") -> dict[str, str]:
     """One value per key, unique and not a substring of any other.
 
-    `tag` keeps the three files apart: `sentinel-000-…` and `sentinel-m000-…`
+    `tag` keeps the four files apart: `sentinel-000-…` and `sentinel-m000-…`
     differ at the character after the first dash, so neither is inside the
     other and a value found in a service names the file it came from.
     """
@@ -275,6 +333,7 @@ def violations(
     mcp_sentinels: dict[str, str] | None = None,
     mcp_tunnel_sentinels: dict[str, str] | None = None,
     main_file: str | None = None,
+    mcp_writer_sentinels: dict[str, str] | None = None,
 ) -> list[str]:
     """Every way the resolution breaks the rule, by key and service name only."""
     found: list[str] = []
@@ -292,6 +351,7 @@ def violations(
         for source, values in (
             ("juristid-mcp.env", mcp_sentinels or {}),
             ("juristid-mcp-tunnel.env", mcp_tunnel_sentinels or {}),
+            ("juristid-mcp-writer.env", mcp_writer_sentinels or {}),
         ):
             found.extend(_leaks(name, service, values, source=source))
 
@@ -310,7 +370,24 @@ def violations(
         )
 
     found.extend(
-        _mcp_violations(services, sentinels, mcp_sentinels, mcp_tunnel_sentinels, main_file)
+        _mcp_violations(
+            services,
+            sentinels,
+            mcp_sentinels,
+            mcp_tunnel_sentinels,
+            main_file,
+            mcp_writer_sentinels,
+        )
+    )
+    found.extend(
+        _mcp_writer_violations(
+            services,
+            sentinels,
+            mcp_sentinels,
+            mcp_tunnel_sentinels,
+            mcp_writer_sentinels,
+            main_file,
+        )
     )
     return found
 
@@ -321,6 +398,7 @@ def _mcp_violations(
     mcp_sentinels: dict[str, str] | None,
     mcp_tunnel_sentinels: dict[str, str] | None,
     main_file: str | None,
+    mcp_writer_sentinels: dict[str, str] | None = None,
 ) -> list[str]:
     """ADR 0185's two services, and the two new files reaching nobody else."""
     found: list[str] = []
@@ -351,6 +429,7 @@ def _mcp_violations(
                 {
                     "the environment file": sentinels,
                     "juristid-mcp-tunnel.env": mcp_tunnel_sentinels,
+                    "juristid-mcp-writer.env": mcp_writer_sentinels or {},
                 },
                 main_file,
             )
@@ -368,15 +447,65 @@ def _mcp_violations(
             )
         )
     for name, service in sorted(services.items()):
-        if name in ("mcp", "mcp-tunnel", *ALLOWED):
+        if name in ("mcp", "mcp-tunnel", "mcp-writer", *ALLOWED):
             continue
         found.extend(_leaks(name, service, mcp_sentinels, source="juristid-mcp.env"))
         found.extend(_leaks(name, service, mcp_tunnel_sentinels, source="juristid-mcp-tunnel.env"))
     return found
 
 
+def _mcp_writer_violations(
+    services: dict[str, Any],
+    sentinels: dict[str, str],
+    mcp_sentinels: dict[str, str] | None,
+    mcp_tunnel_sentinels: dict[str, str] | None,
+    mcp_writer_sentinels: dict[str, str] | None,
+    main_file: str | None,
+) -> list[str]:
+    """ADR 0189's write gateway: its own file only, and its file reaching nobody else."""
+    present = "mcp-writer" in services
+    if mcp_writer_sentinels is None:
+        if present:
+            return [
+                "mcp-writer: in the resolved model, but no sentinel file was given for it "
+                "(--mcp-writer), so nothing about it was checked"
+            ]
+        return []
+    if not present:
+        return [
+            "mcp-writer: not in the resolved model — resolve with `--profile mcp`, or the "
+            "check passes over the very service it was given a file for"
+        ]
+    found = _own_file_problems(
+        "mcp-writer",
+        services["mcp-writer"],
+        MCP_WRITER_ALLOWED,
+        mcp_writer_sentinels,
+        CONTROL_KEY,
+        {
+            "the environment file": sentinels,
+            "juristid-mcp.env": mcp_sentinels or {},
+            "juristid-mcp-tunnel.env": mcp_tunnel_sentinels or {},
+        },
+        main_file,
+    )
+    for path in _env_file_paths(services["mcp-writer"]):
+        if Path(path).name in ("juristid-mcp.env", "juristid-mcp-tunnel.env"):
+            found.append(f"mcp-writer: reads {Path(path).name}")
+    for name, service in sorted(services.items()):
+        if name == "mcp-writer" or name in ALLOWED:
+            continue
+        found.extend(_leaks(name, service, mcp_writer_sentinels, source="juristid-mcp-writer.env"))
+    return found
+
+
 def _write_sentinels(paths: list[str]) -> None:
-    templates = [(ENV_EXAMPLE, ""), (MCP_ENV_EXAMPLE, "m"), (MCP_TUNNEL_ENV_EXAMPLE, "t")]
+    templates = [
+        (ENV_EXAMPLE, ""),
+        (MCP_ENV_EXAMPLE, "m"),
+        (MCP_TUNNEL_ENV_EXAMPLE, "t"),
+        (MCP_WRITER_ENV_EXAMPLE, "w"),
+    ]
     for path, (template, tag) in zip(paths, templates, strict=False):
         values = sentinel_values(template_keys(template), tag)
         Path(path).write_text(
@@ -386,7 +515,7 @@ def _write_sentinels(paths: list[str]) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if argv and argv[0] == "--write-sentinels" and len(argv) in (2, 4):
+    if argv and argv[0] == "--write-sentinels" and len(argv) in (2, 4, 5):
         _write_sentinels(argv[1:])
         return 0
     arguments = list(argv)
@@ -394,7 +523,7 @@ def main(argv: list[str]) -> int:
     if initialising:
         arguments.remove("--initialising")
     options: dict[str, str] = {}
-    for flag in ("--mcp", "--mcp-tunnel"):
+    for flag in ("--mcp", "--mcp-tunnel", "--mcp-writer"):
         if flag in arguments:
             index = arguments.index(flag)
             if index + 1 >= len(arguments):
@@ -409,6 +538,7 @@ def main(argv: list[str]) -> int:
     sentinels = read_env_file(Path(arguments[1]))
     mcp = read_env_file(Path(options["--mcp"])) if "--mcp" in options else None
     tunnel = read_env_file(Path(options["--mcp-tunnel"])) if "--mcp-tunnel" in options else None
+    writer = read_env_file(Path(options["--mcp-writer"])) if "--mcp-writer" in options else None
     found = violations(
         services,
         sentinels,
@@ -416,6 +546,7 @@ def main(argv: list[str]) -> int:
         mcp_sentinels=mcp,
         mcp_tunnel_sentinels=tunnel,
         main_file=arguments[1],
+        mcp_writer_sentinels=writer,
     )
     for line in found:
         print(f"::error::{line}")
@@ -423,6 +554,8 @@ def main(argv: list[str]) -> int:
         return 1
     shape = "initialising" if initialising else "routine"
     extra = "; mcp and mcp-tunnel read only their own files" if mcp is not None else ""
+    if writer is not None:
+        extra += "; mcp-writer reads only its own file"
     print(
         f"{shape}: db receives only {', '.join(sorted(_environment(services['db'])))}; "
         f"tunnel receives nothing{extra}; {len(sentinels)} synthetic values checked"

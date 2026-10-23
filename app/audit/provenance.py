@@ -60,10 +60,22 @@ _current_correlation: ContextVar[uuid.UUID | None] = ContextVar(
     "audit_current_correlation", default=None
 )
 
+#: An approved MCP write being executed in this context (docs/adr/0189): the
+#: principal the bearer token was issued to and the proposal's correlation id.
+#: Set only by `mcp_write_context`, which the write gateway's commit wraps the
+#: canonical service call in.
+_current_mcp_write: ContextVar[tuple[Any, uuid.UUID] | None] = ContextVar(
+    "audit_current_mcp_write", default=None
+)
+
 #: What a history row adds after the name of a persona chosen behind the
 #: shared gate. Says what happened — the name was *chosen* behind the shared
 #: password — rather than claiming or denying who was at the keyboard.
 SHARED_GATE_QUALIFIER = "valitud ühisparooliga"
+
+#: What a history row adds after the name on a change an AI client prepared
+#: and the person approved with their own authenticator (docs/adr/0189).
+MCP_QUALIFIER = "ChatGPT kaudu, isiklikult kinnitatud"
 
 
 @dataclass(frozen=True)
@@ -102,6 +114,30 @@ def correlated(correlation_id: uuid.UUID | None) -> Iterator[None]:
         _current_correlation.reset(token)
 
 
+@contextmanager
+def mcp_write_context(principal: Any, correlation_id: uuid.UUID) -> Iterator[None]:
+    """Every audit row written inside is an approved MCP write by ``principal``.
+
+    The write gateway (`app.mcp_writes.commit`) wraps the canonical service
+    call of an approved proposal in this: there is no request and no session
+    in that process, and without it the rows would read as *system* work.
+    ``principal`` is the account the verified bearer token was issued to — the
+    person who approved the change with their own authenticator — and there
+    is no persona, because no session chose one. ``correlation_id`` is the
+    proposal's, so a reader can put the prepare, the approval, the commit and
+    the business rows back together.
+    """
+    if principal is None or getattr(principal, "pk", None) is None:
+        raise ValueError("An MCP write needs the verified principal.")
+    token = _current_mcp_write.set((principal, correlation_id))
+    correlation_token = _current_correlation.set(correlation_id)
+    try:
+        yield
+    finally:
+        _current_correlation.reset(correlation_token)
+        _current_mcp_write.reset(token)
+
+
 def current_correlation_id() -> uuid.UUID | None:
     """This request's correlation id, a job's inherited one, or the composer operation."""
     return _current_correlation.get() or current_operation_id()
@@ -134,6 +170,19 @@ def _authenticated_user(request: HttpRequest) -> Any:
 def current_provenance() -> Provenance:
     """What this moment's audit row records about how its actor arrived."""
     correlation = current_correlation_id()
+    mcp_write = _current_mcp_write.get()
+    if mcp_write is not None:
+        # Checked first: the gateway serves no request, and a request context
+        # is never open around an MCP commit — if one were, the approved
+        # write's principal is still who acted.
+        principal, mcp_correlation = mcp_write
+        return Provenance(
+            method=AuthMethod.MCP,
+            assurance=AuthAssurance.INDIVIDUAL_MFA,
+            principal=principal,
+            persona=None,
+            correlation_id=mcp_correlation,
+        )
     request = _current_request.get()
     if request is None:
         return Provenance(
@@ -218,11 +267,17 @@ def current_provenance() -> Provenance:
 def actor_qualifier(auth_method: str | None) -> str:
     """What a history row says after the actor's name, or "".
 
-    Only for the shared gate: there the name is a persona somebody chose, and
-    the row must not read as a personally verified act. Rows written before
-    provenance was recorded say nothing extra — exactly as they read before.
+    For the shared gate the name is a persona somebody chose, and the row must
+    not read as a personally verified act. For an MCP write the change came
+    through the person's AI client and they approved it themselves
+    (docs/adr/0189). Rows written before provenance was recorded say nothing
+    extra — exactly as they read before.
     """
-    return SHARED_GATE_QUALIFIER if auth_method == AuthMethod.SHARED_GATE else ""
+    if auth_method == AuthMethod.SHARED_GATE:
+        return SHARED_GATE_QUALIFIER
+    if auth_method == AuthMethod.MCP:
+        return MCP_QUALIFIER
+    return ""
 
 
 def actor_label(name: str, auth_method: str | None) -> str:

@@ -295,3 +295,72 @@ class ListMattersOutput(_ReaderAnswer):
 
 class UpcomingCommencementsOutput(_ReaderAnswer):
     """What enters into force in the window, and separately the planned or estimated dates."""
+
+
+# -- write tools (MCP Phase 2, docs/adr/0189; CONTRACT §6) --------------------------
+#
+# Only listed when MCP_WRITES_ENABLED. A `prepare_<operation>` tool's input is
+# the operation's own `arguments` model (app/mcp_writes/operations); the models
+# here are `commit_prepared_action`'s input and the write tools' outputs.
+
+UUID_PATTERN = r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+
+
+class CommitPreparedActionArguments(StrictArguments):
+    proposal_id: Annotated[
+        str,
+        Field(
+            min_length=36,
+            max_length=36,
+            pattern=UUID_PATTERN,
+            description=(
+                "The proposal_id a prepare_* tool returned. Commit it only after the user "
+                "says they approved it in Juristid."
+            ),
+        ),
+    ]
+
+
+class PreparedProposalOutput(BaseModel):
+    """A pending proposal: nothing is saved until the person approves it in Juristid."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["prepared"]
+    proposal_id: str = Field(description="Pass to commit_prepared_action after approval.")
+    operation: str
+    label: str = Field(description="The change, in Estonian.")
+    expires_at: str = Field(description="When the proposal lapses unapproved (ISO 8601).")
+    approval_url: str = Field(
+        description="Give this link to the user: they open it and approve in Juristid."
+    )
+    preview: dict[str, Any] = Field(
+        description=(
+            "What the user will approve, in Estonian: target, changes (current and proposed), "
+            "consequences, what stays unchanged, warnings."
+        )
+    )
+
+
+class CommitOutput(BaseModel):
+    """Either the saved change's receipt (executed) or a proposal still awaiting approval."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["executed", "awaiting_approval"]
+    proposal_id: str
+    replayed: bool | None = Field(
+        default=None,
+        description="executed only: true when this proposal had already been saved earlier.",
+    )
+    record_type: str | None = None
+    record_id: str | None = None
+    matter_reference: str | None = None
+    url: str | None = Field(default=None, description="The saved record in Juristid. Cite it.")
+    saved: dict[str, Any] | None = Field(
+        default=None, description="executed only: what was saved, as Juristid recorded it."
+    )
+    approval_url: str | None = Field(
+        default=None, description="awaiting_approval only: the link the user must still open."
+    )
+    expires_at: str | None = None
