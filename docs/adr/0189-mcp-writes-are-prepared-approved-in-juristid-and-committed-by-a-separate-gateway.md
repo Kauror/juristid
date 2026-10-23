@@ -3,7 +3,7 @@
 - Status: Proposed (owner's brief «JURISTID — MCP Phase 2: Secure Write Operations,
   Multi-Agent Delivery and Production Deployment», 2026-10-23)
 - Amends: 0185 §1 («no write tool exists») and §2 (the tool list), 0180 (one new
-  `auth_method`)
+  `auth_method`), 0052 (for MCP only: a person may state the kind of a new next step)
 - Related, unchanged: 0005 (authorization chokepoint), 0016 (the shared gate), 0042/0181
   (who may read and write), 0167 (save-once), 0186 (a personal factor behind the shared
   gate)
@@ -97,6 +97,20 @@ change the next action, complete the current action with the outcome its kind
 requires, request / move / correct an opinion-response deadline (three explicit modes),
 add an important date with its precision. Nothing deletes, uploads, fetches, sends,
 marks an opinion sent or touches the deferred participation workflow.
+
+Three choices the operations make deliberately, each shown in the preview:
+
+- **The kind of a step is stated.** The web form stopped asking for WAIT or MONITOR
+  (0052) and derives the kind; the owner's brief asks ChatGPT to set «waiting for the
+  Ministry of Finance's reply, review on 15 November» directly, so `set_next_action`
+  takes `do`/`wait`/`monitor` and the date's meaning. The service has always accepted
+  them. The preview still never prints the kind's own label (0054) — it says what the
+  date means. Changing the current step keeps its kind, meaning and precision unless
+  the person says otherwise, as «Muuda» does.
+- **A closed Matter takes no MCP change**, assignment included, although the page lets a
+  closed Matter change hands: reopening and handing on stay in the browser.
+- **No «correct» mode for a deadline.** No service rewrites a recorded deadline as if it
+  never existed; `move` keeps the request and its history, `new_request` opens a new one.
 
 ### 5. Provenance: the person, through ChatGPT
 
