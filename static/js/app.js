@@ -3311,6 +3311,62 @@
     document.querySelectorAll(".datepicker__panel").forEach(placePanel);
   });
 
+  /* ---- A header editor opens inside the window (2026-10-23 bounty, V-03) --
+   * Above 720px a Teema header editor hangs from its own fact (static/css/
+   * app.css `.inlineedit__form`, `left: 0`), and a fact near the end of the
+   * meta line ran its editor off the right edge: «Arvamuse tähtaeg» ended at
+   * 844–889px in a 768px window, its 📅 off-screen, and a long header did the
+   * same at 1024px. Where the line wraps (≤720px) the whole line is already
+   * the anchor and nothing moves. Which fact sits near the edge depends on the
+   * header's words, not on the width, so — as for the calendar above — the
+   * open form is measured and shifted back inside with the same 8px margin,
+   * by `transform`, so an editor that already fits does not move at all. Its
+   * calendar is re-placed after it. `Hetkeseis` places itself (`data-uxfloat`).
+   *
+   * `toggle` does not bubble, hence the capture; it also fires for an editor
+   * drawn open (a refused save comes back open, E-04). */
+  var HEADER_EDITOR = ".metaline details.inlineedit";
+
+  function placeHeaderEditor(details) {
+    var form = details.querySelector("form.inlineedit__form:not([data-uxfloat])");
+    if (!form) {
+      return;
+    }
+    form.style.transform = "";
+    if (!details.open) {
+      return;
+    }
+    var margin = 8;
+    var rect = form.getBoundingClientRect();
+    var viewport = document.documentElement.clientWidth;
+    var shift = 0;
+    if (rect.right > viewport - margin) {
+      shift = viewport - margin - rect.right;
+    }
+    if (rect.left + shift < margin) {
+      shift = margin - rect.left;
+    }
+    if (shift) {
+      form.style.transform = "translateX(" + Math.round(shift) + "px)";
+    }
+    form.querySelectorAll(".datepicker__panel").forEach(placePanel);
+  }
+
+  document.addEventListener(
+    "toggle",
+    function (event) {
+      var details = event.target;
+      if (details && details.matches && details.matches(HEADER_EDITOR)) {
+        placeHeaderEditor(details);
+      }
+    },
+    true
+  );
+
+  window.addEventListener("resize", function () {
+    document.querySelectorAll(HEADER_EDITOR + "[open]").forEach(placeHeaderEditor);
+  });
+
   /* Move the grid's one Tab stop to `date` and focus it, redrawing the month
      first when the date is in another one. */
   function focusDay(panel, input, visible, date) {
