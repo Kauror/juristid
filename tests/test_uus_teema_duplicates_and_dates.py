@@ -86,6 +86,40 @@ def test_a_fresh_form_with_the_title_just_filed_asks_first(specialist):
     assert Matter.objects.filter(title__icontains="uuesti").count() == 1
 
 
+def test_a_title_just_filed_through_saabunud_asks_first_on_uus_teema(specialist):
+    """Both doors leave the same record (`record_created_matter`), so both count.
+
+    «X» filed from `Saabunud → Lisa`, then «X» typed into a fresh `Uus teema`
+    form within `RECENT_WINDOW`, is the same accidental resubmission.
+    """
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    client = _client(specialist)
+    page = client.get(reverse("matters:intake")).content.decode()
+    drawn = re.search(r'name="intake" value="([0-9a-f-]{36})"', page)
+    assert drawn
+    filed = client.post(
+        reverse("matters:intake"),
+        {
+            "title": "Kahest uksest",
+            "intake": drawn.group(1),
+            "uploads": [SimpleUploadedFile("kiri.pdf", b"%PDF-1.4 synthetic incoming")],
+        },
+    )
+    assert filed.status_code == 302
+    (existing,) = _titled("Kahest uksest")
+
+    again = client.post(CREATE, _form("Kahest uksest", specialist, _token(client)))
+
+    assert again.status_code == 400
+    body = again.content.decode()
+    # The block's sentence (`RECENT_DUPLICATE`, drawn with the title it found).
+    assert again.context["recent_duplicate"] == existing
+    assert "Sama pealkirjaga teema loodi just: «Kahest uksest»" in body
+    assert reverse("matters:matter_detail", kwargs={"pk": existing.pk}) in body
+    assert len(_titled("Kahest uksest")) == 1
+
+
 def test_loo_siiski_uus_files_the_deliberate_second_teema(specialist):
     client = _client(specialist)
     client.post(CREATE, _form("Teadlikult kaks", specialist, _token(client)))
