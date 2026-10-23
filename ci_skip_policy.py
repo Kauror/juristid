@@ -50,6 +50,19 @@ EXPECTED_SKIPS: tuple[ExpectedSkip, ...] = (
         ),
     ),
     ExpectedSkip(
+        node="tests/test_restore_needs_the_dumps_roles.py::test_a_real_dump_names_the_roles_it_grants_to",
+        reason_starts_with="pg_dump on PATH is older than the PostgreSQL",
+        why=(
+            "A client-version skip. The unit shards reach the postgres:18 service with the "
+            "runner's own pg_dump (Ubuntu 24.04's, PostgreSQL 16), which refuses a newer "
+            "server. The same `dump_roles` parser runs on real PostgreSQL 18 dumps in the "
+            "`Backup and restore rehearsal` job — every `juristid-restore.sh` there passes "
+            "step 3 («every role the dump names exists in this cluster») — and the four "
+            "listing tests beside this one pin it without a client. It runs wherever the "
+            "client matches the server."
+        ),
+    ),
+    ExpectedSkip(
         node="tests/test_test_isolation.py::*",
         reason_starts_with="symlink creation needs a privilege on Windows",
         why="A platform skip. CI runs on Linux, where it never fires.",
