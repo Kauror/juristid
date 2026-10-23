@@ -120,6 +120,7 @@ juristid_compose() {
 # Printed, never run. This function emits text; the operator runs it.
 deployment_plan() {
   local project="$1" compose_file="$2" repo="$3" target="$4" mcp_state="${5:-absent}"
+  local writer_state="${6:-absent}"
   local tag="${target:0:12}"
 
   # One command per line. A printed backslash continuation is consumed by the
@@ -160,6 +161,25 @@ PLAN
 PLAN
       ;;
   esac
+  # The MCP write gateway (docs/adr/0189), the same rule: it runs the release
+  # image behind the `mcp` profile, so a running one moves by name and a stopped
+  # one — AI writes switched off — stays stopped.
+  case "$writer_state" in
+    running)
+      cat <<PLAN
+  # AI writes are running here (juristid-main-mcp-writer): it moves too, by name.
+  docker compose -p $project -f $compose_file up -d --no-build --no-deps mcp-writer
+  # Must print "mcp-writer runs juristid-main-web:$tag", or stop and replace it again.
+  test "\$(docker inspect --format '{{.Config.Image}}' juristid-main-mcp-writer)" = "juristid-main-web:$tag" && echo "mcp-writer runs juristid-main-web:$tag" || echo "STOP: mcp-writer is not on juristid-main-web:$tag"
+PLAN
+      ;;
+    stopped)
+      cat <<PLAN
+  # The MCP write gateway exists here but is stopped (juristid-main-mcp-writer):
+  # AI writes are switched off. Leave it stopped (docs/mcp/OPERATIONS.md, Phase 2).
+PLAN
+      ;;
+  esac
   cat <<PLAN
   docker compose -p $project -f $compose_file exec -T web python manage.py deployment_readiness
   curl -s https://juristid.orgusaar.ee/healthz   # revision must equal $target
@@ -169,11 +189,17 @@ PLAN
 # What `deployment_plan` is told about AI access: running, stopped or absent.
 #
 # Reads one container's state by its fixed name and nothing else; prints
-# nothing about its configuration. Only the production project has one.
+# nothing about its configuration. Only the production project has one. The
+# second argument names the container: `juristid-main-mcp` (the default) or
+# `juristid-main-mcp-writer`, the write gateway (docs/adr/0189).
 mcp_container_state() {
-  local project="$1" state
+  local project="$1" container="${2:-juristid-main-mcp}" state
+  case "$container" in
+    juristid-main-mcp | juristid-main-mcp-writer) ;;
+    *) die "mcp_container_state: unknown container '$container'" ;;
+  esac
   [ "$project" = "$JURISTID_PRODUCTION_PROJECT" ] || { printf 'absent\n'; return 0; }
-  state="$(docker ps -a --filter "name=^juristid-main-mcp\$" --format '{{.State}}' 2>/dev/null | head -n 1)"
+  state="$(docker ps -a --filter "name=^${container}\$" --format '{{.State}}' 2>/dev/null | head -n 1)"
   case "$state" in
     "") printf 'absent\n' ;;
     running) printf 'running\n' ;;

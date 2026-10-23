@@ -347,8 +347,18 @@ def _management_command(name: str) -> Any:
 #:
 #: `notifications` (docs/adr/0188) is the commencement-reminder reconcile loop,
 #: on the real-data stack only, like `mcp`: the rehearsal needs no reminders.
+#:
+#: `mcp-writer` (docs/adr/0189), the MCP write gateway, likewise: it changes
+#: records on a colleague's behalf, so a refused configuration must not serve.
 APPLICATION_WORKERS = {
-    "unraid-main": {"intake-reader", "searchindex", "intake-sweeper", "mcp", "notifications"},
+    "unraid-main": {
+        "intake-reader",
+        "searchindex",
+        "intake-sweeper",
+        "mcp",
+        "mcp-writer",
+        "notifications",
+    },
     "unraid-test": {"intake-reader", "searchindex", "intake-sweeper"},
 }
 

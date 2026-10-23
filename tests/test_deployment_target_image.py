@@ -633,10 +633,12 @@ def test_the_identity_guard_derives_exactly_this_stacks_application_services() -
     # replaces, profile or not: the raw file lists it, and CI resolves the
     # identity with `--profile mcp` so the resolved model lists it too. Its
     # tunnel runs a pinned upstream image and is not here, like `tunnel`.
+    # `mcp-writer` (docs/adr/0189) runs the release image too.
     assert guard.application_services(compose["services"]) == [
         "intake-reader",
         "intake-sweeper",
         "mcp",
+        "mcp-writer",
         "notifications",
         "searchindex",
         "web",
