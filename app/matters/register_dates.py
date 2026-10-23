@@ -23,6 +23,13 @@ So the choice lives here once, and is read two ways:
 * :func:`annotate_display_date` is the **database's** reading of the same rule,
   as one correlated subquery the ordering can be taken on.
 
+**The upcoming `Oluline tähtaeg` is the last fallback** (E-02). When no step is
+open and the Matter is open, the row's `Järgmiseks` names the milestone
+`app.matters.next_step` chooses (RULE-01, docs/adr/0120) and leaves its date to
+this column — which printed «—» and sorted the row with the undated ones. It
+now reads that milestone's date when neither a dated step nor an `Arvamuse
+tähtaeg` answers first: a fallback, so no row that already had a date changes.
+
 ``tests/test_register_interactive_columns.py`` holds the two against each other
 on the cases that distinguish them: a dated action, an action with no date, no
 action at all, and a Matter with neither.
@@ -52,11 +59,13 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from django.db.models import DateField, OuterRef, QuerySet, Subquery
+from django.db.models import Case, DateField, Exists, OuterRef, Q, QuerySet, Subquery, When
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 
 from app.core.dates import format_estonian_date
 from app.matters.models import Matter
+from app.matters.next_step import prefetched_upcoming_milestone, upcoming_milestones
 from app.workflow.enums import ActionStatus, DateSemantics
 from app.workflow.models import NextAction
 
@@ -70,6 +79,9 @@ DISPLAY_DATE = "register_display_date"
 #: the register's own word for it — the same one the Täpsem otsing panel's
 #: `?tahtaeg_alates=` pair narrows.
 RESPONSE_DEADLINE_LABEL = "Arvamuse tähtaeg"
+
+#: The milestone's own word, as the `Järgmiseks` cell beside it says it.
+MILESTONE_LABEL = "Oluline tähtaeg"
 
 
 @dataclass(frozen=True)
@@ -164,6 +176,20 @@ def register_date(matter: Matter, today: date | None = None) -> RegisterDate | N
             is_deadline=not settled,
             is_approximate=False,
         )
+    if action is None:
+        # Closed Matters get ``None`` from the reader itself (E-03).
+        milestone = prefetched_upcoming_milestone(matter, today)
+        if milestone is not None:
+            return RegisterDate(
+                value=milestone.date_value,
+                meaning=MILESTONE_LABEL,
+                display=milestone.display_date,
+                # Ahead of us by definition — its period has not ended — and an
+                # expectation about somebody else's work, not Koda's deadline.
+                is_overdue=False,
+                is_deadline=False,
+                is_approximate=milestone.is_approximate,
+            )
     return None
 
 
@@ -183,12 +209,39 @@ def open_action_target_date(user: Any) -> Subquery:
     )
 
 
+def upcoming_milestone_date(user: Any, today: Any = None) -> Case:
+    """The date of the milestone the row's `Järgmiseks` names, or NULL.
+
+    `next_step.upcoming_milestone`'s choice in SQL: the reader's upcoming
+    milestones, due first by the period's end, then the anchor, then the key —
+    and only where no open step is visible and the Matter is open, which is
+    when the cell names it at all.
+    """
+    day = today or timezone.localdate()
+    chosen = Subquery(
+        upcoming_milestones(user, day)
+        .filter(matter=OuterRef("pk"))
+        .order_by("period_end", "date_value", "pk")
+        .values("date_value")[:1],
+        output_field=DateField(),
+    )
+    open_step = NextAction.objects.visible_to(user).filter(
+        status=ActionStatus.OPEN, matter=OuterRef("pk")
+    )
+    return Case(
+        When(Q(is_open=True) & ~Exists(open_step), then=chosen),
+        default=None,
+        output_field=DateField(),
+    )
+
+
 def annotate_display_date(queryset: QuerySet[Matter], user: Any) -> QuerySet[Matter]:
     """Attach the date the row displays, so the database can order on it.
 
     ``Coalesce`` is the rule in :func:`register_date` stated in SQL: the open
-    step's date when there is one, ``response_deadline`` otherwise, NULL when
-    neither is known. An open step with **no** date falls through to the
+    step's date when there is one, ``response_deadline`` otherwise, then the
+    upcoming milestone's (:func:`upcoming_milestone_date`), NULL when none is
+    known. An open step with **no** date falls through to the
     deadline in both readings, which is the case a naive
     ``Case(When(has_action=True, ...))`` would get wrong.
 
@@ -200,6 +253,7 @@ def annotate_display_date(queryset: QuerySet[Matter], user: Any) -> QuerySet[Mat
             DISPLAY_DATE: Coalesce(
                 open_action_target_date(user),
                 "response_deadline",
+                upcoming_milestone_date(user),
                 output_field=DateField(),
             )
         }
