@@ -71,7 +71,7 @@ password **and** the code again (`/haldus/kinnita/`).
 and a guess at the dormant personal sign-in are the same guess. Failures reuse
 `AUTHENTICATION_FAILED` with `path = administrator_session`; new types
 `ADMINISTRATOR_SESSION_STARTED`, `ADMINISTRATOR_SESSION_ENDED` (migration
-`audit/0039_r1a_administrator_session`, choices only).
+`audit/0039_r1_admin_reference_reminder_events`, choices only).
 
 **Provenance (amends 0180).** A request that *acts* through the session — an
 administration view, the step-up itself — writes its rows with

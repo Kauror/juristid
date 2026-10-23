@@ -87,7 +87,7 @@ and any capability for this work.
    `ChangeEvent` (new types `ORGANISATION_CREATED`, `ORGANISATION_RENAMED`,
    `ORGANISATION_ALIAS_ADDED`, `ORGANISATION_ALIAS_REMOVED`, `TAG_CREATED`, `TAG_CHANGED`,
    `TAG_ALIAS_ADDED`, `TAG_ALIAS_REMOVED`, `TAG_MERGED`, `TAG_DEACTIVATED`,
-   `TAG_REACTIVATED`; migration `audit/0039_r1b_reference_data_events`, choices only) with no
+   `TAG_REACTIVATED`; migration `audit/0039_r1_admin_reference_reminder_events`, choices only) with no
    Matter, the vocabulary row as `obj`, and identifiers plus before/after names in the payload.
 9. **Usage counts are business information.** The number of Teemad and opinions carrying a
    value is shown only to somebody `may_read_business_content`; a technical administrator

@@ -137,7 +137,7 @@ date is recorded.
 ## Consequences
 
 - One additive table (`notifications/0001`), one AlterField on
-  `ChangeEvent.event_type` choices (`audit/0039_r1c_*`). No change to
+  `ChangeEvent.event_type` choices (`audit/0039_r1_admin_reference_reminder_events`). No change to
   `app/matters` or `app/intelligence` schema.
 - The bell costs one `COUNT` per page view in its own request; Minu asjad gains
   one or two statements.
