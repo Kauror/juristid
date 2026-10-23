@@ -376,15 +376,86 @@ def test_only_expired_or_consumed_staging_is_swept(specialist):
     _expire(expired)
     consumed = _stage(specialist, "consumed.pdf").session
     MatterIntakeSession.objects.filter(pk=consumed.pk).update(consumed_at=timezone.now())
+    long_consumed = _stage(specialist, "long-consumed.pdf").session
+    _consume_before_retention(long_consumed)
 
     report = intake_staging.sweep_stale_sessions()
 
     assert report.sessions == 2 and report.errors == () and report.remaining == 0
+    # The just-consumed form's files go, its row stays: it is a spent token
+    # (docs/adr/0112 amendment, 2026-10-24).
+    assert report.released == 1
     remaining = set(MatterIntakeSession.objects.values_list("pk", flat=True))
-    assert remaining == {live.pk, empty_live.pk}
+    assert remaining == {live.pk, empty_live.pk, consumed.pk}
+    assert not MatterIntakeFile.objects.filter(session=consumed).exists()
     assert len(list((_staging_root() / str(live.pk)).iterdir())) == 1
     assert not (_staging_root() / str(expired.pk)).exists()
     assert not (_staging_root() / str(consumed.pk)).exists()
+    assert not (_staging_root() / str(long_consumed.pk)).exists()
+
+
+# -- a saved form's token outlives the sweep (docs/adr/0112 amendment) --------
+
+
+def _consume_before_retention(session: Any, *, extra: timedelta = timedelta(minutes=1)) -> None:
+    """Consumed just past ``INTAKE_FORM_TOKEN_RETENTION_SECONDS`` ago."""
+    retention = timedelta(seconds=settings.INTAKE_FORM_TOKEN_RETENTION_SECONDS)
+    MatterIntakeSession.objects.filter(pk=session.pk).update(
+        consumed_at=timezone.now() - retention - extra,
+        expires_at=timezone.now() - retention,
+    )
+
+
+@pytest.mark.django_db
+def test_a_consumed_token_survives_sweeps_within_retention_and_holds_nothing(specialist):
+    """The row stays; its files, their bytes and their text do not."""
+    consumed = _stage(specialist, "kiri.pdf").session
+    # A day after the save, long past the form's own expiry and dozens of
+    # sweeper turns later.
+    MatterIntakeSession.objects.filter(pk=consumed.pk).update(
+        consumed_at=timezone.now() - timedelta(days=1),
+        expires_at=timezone.now() - timedelta(hours=12),
+    )
+    # The after-commit discard never ran: the bytes are still on the volume.
+    assert (_staging_root() / str(consumed.pk)).exists()
+
+    first = intake_staging.sweep_stale_sessions()
+    again = intake_staging.sweep_stale_sessions()
+
+    assert (first.sessions, first.released, first.files, first.objects) == (0, 1, 1, 1)
+    assert first.remaining == 0
+    assert again == intake_staging.SweepReport(sessions=0, files=0, objects=0)
+    assert MatterIntakeSession.objects.filter(pk=consumed.pk, consumed_at__isnull=False).exists()
+    assert not MatterIntakeFile.objects.filter(session=consumed).exists()
+    assert not (_staging_root() / str(consumed.pk)).exists()
+    # Nothing the probe should wait on.
+    assert intake_staging.oldest_stale_seconds() is None
+
+
+@pytest.mark.django_db
+def test_a_consumed_token_past_retention_is_swept_and_expired_forms_still_are(specialist):
+    old = intake_staging.open_session(owner=specialist)
+    _consume_before_retention(old)
+    abandoned = _stage(specialist, "jaetud.pdf").session
+    _expire(abandoned)
+    kept = intake_staging.open_session(owner=specialist)
+    MatterIntakeSession.objects.filter(pk=kept.pk).update(
+        consumed_at=timezone.now() - timedelta(days=13)
+    )
+
+    report = intake_staging.sweep_stale_sessions()
+
+    assert (report.sessions, report.released) == (2, 0)
+    assert set(MatterIntakeSession.objects.values_list("pk", flat=True)) == {kept.pk}
+    assert not (_staging_root() / str(abandoned.pk)).exists()
+
+
+def test_the_token_retention_outlasts_every_sign_in():
+    """A form can be posted only from a live sign-in, so this is the bound."""
+    retention = settings.INTAKE_FORM_TOKEN_RETENTION_SECONDS
+    assert retention >= settings.SESSION_COOKIE_AGE
+    assert retention >= settings.LOCAL_AUTH_SESSION_ABSOLUTE_SECONDS
+    assert retention >= settings.SHARED_GATE_SESSION_SECONDS
 
 
 @pytest.mark.django_db

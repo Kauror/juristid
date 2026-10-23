@@ -580,6 +580,17 @@ INTAKE_STAGING_SWEEP_MAX_SESSIONS = env_int("INTAKE_STAGING_SWEEP_MAX_SESSIONS",
 INTAKE_STAGING_SWEEP_MAX_BYTES = env_int("INTAKE_STAGING_SWEEP_MAX_BYTES", 5 * 1024**3)
 INTAKE_STAGING_SWEEP_INTERVAL_SECONDS = env_int("INTAKE_STAGING_SWEEP_INTERVAL_SECONDS", 900)
 INTAKE_STAGING_SWEEP_STALE_SECONDS = env_int("INTAKE_STAGING_SWEEP_STALE_SECONDS", 3600)
+# How long a saved `Uus teema` / `Saabunud → Lisa` form's spent token (its
+# consumed `MatterIntakeSession`, no files, no text) is kept, so that a retry or
+# a Back-restored page of that form is answered with the Teema it created rather
+# than filing a second one (docs/adr/0112, amendment 2026-10-24). A form can be
+# posted only from a live sign-in with that sign-in's CSRF token, so the bound is
+# the longest a sign-in can last: Django's SESSION_COOKIE_AGE, two weeks — the
+# cookie lifetime of any session not given a shorter expiry; the local (10 h),
+# gate (12 h) and Access (its token's `exp`) sign-ins all set shorter ones.
+INTAKE_FORM_TOKEN_RETENTION_SECONDS = env_int(
+    "INTAKE_FORM_TOKEN_RETENTION_SECONDS", 14 * 24 * 60 * 60
+)
 
 # Where the read-only historical source material lives on the server. The
 # importer reads from here and never writes to it (Stage-2D brief 54).
