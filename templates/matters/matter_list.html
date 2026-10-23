@@ -82,6 +82,9 @@ localStorage (Stage-2E.1 brief 12).
       twice and pushed the same address twice — the first Back went nowhere
       (2026-10-23 bug-bounty, B-04). `submit` is Enter and `Otsi`; the clear
       button and Escape in the box fire `input` too, so clearing still answers.
+      An Enter after the live answer asks for the address already shown; that
+      push becomes a replace (static/js/app.js, «One address, one place in the
+      history»), so it writes no second entry either.
     {% endcomment %}
     <form class="registersearch" method="get" role="search"
           action="{% url 'matters:matter_list' %}"

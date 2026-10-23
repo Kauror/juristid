@@ -76,6 +76,29 @@
     window.htmx.config.includeIndicatorStyles = false;
   }
 
+  /* ---- One address, one place in the history ---------------------------
+   * `hx-push-url` pushes whatever address the answer came from, also when it
+   * is the one already shown. The Teemad search answers while you type and
+   * pushes `?q=…`; an Enter pressed after that asks for the same address, and
+   * a second identical entry meant the first Back stayed where it was
+   * (2026-10-23 bug-bounty, B-04). htmx 2.0.x reads `history.type` after this
+   * event, so a push to the current address becomes a replace: the address
+   * bar and the page agree and the history gains nothing.
+   */
+  document.addEventListener("htmx:beforeHistoryUpdate", function (event) {
+    var update = event.detail && event.detail.history;
+    if (!update || update.type !== "push" || !update.path) {
+      return;
+    }
+    var target = new URL(update.path, window.location.href);
+    var here = new URL(window.location.href);
+    target.hash = "";
+    here.hash = "";
+    if (target.href === here.href) {
+      update.type = "replace";
+    }
+  });
+
   /* And whatever an earlier version left behind. A zero cache size removes
    * the key only the next time htmx would have saved one, so it is removed
    * here, on every page — including the one signing out lands on. */
