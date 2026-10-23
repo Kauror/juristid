@@ -355,6 +355,41 @@ def create_document(
     return document
 
 
+#: What a second save of the same drawn Dokumendid form is told. Not a
+#: failure: the document the first save added is on the page it lands on.
+DOCUMENT_FORM_ALREADY_SAVED = "See vorm on juba salvestatud — teist dokumenti ei lisatud."
+
+
+class DocumentFormAlreadySaved(DomainError):
+    """The drawn form's `salvestus` token was spent by an earlier save of it."""
+
+
+def spend_document_form(matter: Matter, token: Any, purpose: str) -> None:
+    """Spend a drawn Dokumendid form's one-time token, or refuse its second save.
+
+    The mechanism every compact door uses (`MatterSaveOnce`, docs/adr/0135,
+    docs/adr/0167 amendment of 2026-10-17): the token is inserted inside the
+    save's transaction before anything else is written, so a double click, a
+    retried request or a resubmit of `↑ Lae dokument` / `SharePointi viide`
+    finds it spent and writes no second Document. The primary key serialises
+    two concurrent presses even where no Matter lock is taken (a SharePoint
+    reference is outside the closed-Matter boundary). A refused save rolls the
+    token back with everything else. ``None`` — a POST with no token, which no
+    drawn form sends — is not guarded.
+    """
+    if token is None:
+        return
+    from django.db import IntegrityError
+
+    from app.matters.models import MatterSaveOnce
+
+    try:
+        with transaction.atomic():
+            MatterSaveOnce.objects.create(token=token, matter=matter, purpose=purpose)
+    except IntegrityError as error:
+        raise DocumentFormAlreadySaved(DOCUMENT_FORM_ALREADY_SAVED) from error
+
+
 @transaction.atomic
 def link_working_document(
     *,
@@ -364,6 +399,7 @@ def link_working_document(
     created_by: Any = None,
     item_id: str = "",
     site_path: str = "",
+    once_token: Any = None,
 ) -> Document:
     """Point at a living working file, without pretending it is evidence.
 
@@ -414,6 +450,9 @@ def link_working_document(
 
     identifier = (item_id or "").strip() or f"url:{hashlib.sha256(url.encode()).hexdigest()[:32]}"
 
+    # The drawn form, once (`spend_document_form`): after the refusals above,
+    # so a refused save spends nothing, and before the row.
+    spend_document_form(matter, once_token, "toodokument")
     return create_document(
         matter=matter,
         title=clean_title[:400],
@@ -868,6 +907,7 @@ def capture_evidence_on_open_matter(
     original_filename: str,
     mime_type: str,
     actor: Any = None,
+    once_token: Any = None,
 ) -> Document:
     """`↑ Lae dokument` — a new file on a Matter that is still open.
 
@@ -893,6 +933,8 @@ def capture_evidence_on_open_matter(
     if role in UPLOAD_REFUSED_ROLES:
         raise DomainError(OPINION_UPLOAD_REFUSAL)
     locked = lock_open_matter_for_business_write(matter.pk)
+    # The drawn form, once (`spend_document_form`), before any row or byte.
+    spend_document_form(locked, once_token, "dokument")
     document = create_document(
         matter=locked,
         title=title,

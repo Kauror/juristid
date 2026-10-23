@@ -249,6 +249,23 @@ def open_session(*, owner: Any) -> MatterIntakeSession:
     return MatterIntakeSession.objects.create(owner=owner, expires_at=_expiry())
 
 
+def kept_token(*, owner: Any, session_id: Any) -> MatterIntakeSession:
+    """The token a refused form is re-rendered with: the one it was posted with.
+
+    A refused save spends nothing (its claim rolled back), so the corrected save
+    is still protected by the same token; a form posted with no session of this
+    person's gets a fresh one (docs/adr/0112, «A refused save keeps its token»).
+    Consumed and expired sessions are kept too: they are still this form's
+    token, and a replay of an already saved form must keep finding it spent.
+    """
+    parsed = _as_uuid(session_id)
+    if parsed is not None:
+        mine = MatterIntakeSession.objects.owned_by(owner).filter(pk=parsed).first()
+        if mine is not None:
+            return mine
+    return open_session(owner=owner)
+
+
 @dataclass(frozen=True)
 class CreateClaim:
     """What `Loo teema` learned from the form token it was posted with.

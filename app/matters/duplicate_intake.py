@@ -82,10 +82,11 @@ def normalised_title(title: str) -> str:
 def recent_duplicate(*, actor: Any, title: str, earlier_tokens: list[str]) -> Matter | None:
     """The Teema this person just filed under the same title, if any.
 
-    Read through `MatterIntakeSession`, the record a successful `Uus teema`
-    save leaves (`record_created_matter`): only Teemad filed through this form
-    count, so an import, a seed or a Teema created by any other door is never
-    mistaken for an accidental resubmission. Only Matters the person may still
+    Read through `MatterIntakeSession`, the record a successful `Uus teema` or
+    `Saabunud → Lisa` save leaves (`record_created_matter`): only Teemad a
+    person filed through one of those two forms count, so an import, a seed or
+    a Teema created by any other door is never mistaken for an accidental
+    resubmission. Only Matters the person may still
     see, and not deleted ones.
     """
     wanted = normalised_title(title)

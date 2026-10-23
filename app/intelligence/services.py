@@ -236,6 +236,18 @@ def _lock_for_edit(record: Any, expected_revision: str | None) -> Any:
     return locked
 
 
+def _unchanged(record: Any, **proposed: Any) -> bool:
+    """Whether a correction would store exactly what the locked row holds.
+
+    Compared field by field on the values the save would write, after the
+    caller's own normalisation (stripped text, the form's period start, end and
+    precision), so an unchanged `Muuda` — the form drawn from the record and
+    saved as it was — is recognised as one. Every other correction in the
+    product returns early the same way (`workflow.services.change_planned_action`).
+    """
+    return all(getattr(record, field) == value for field, value in proposed.items())
+
+
 @transaction.atomic
 def update_important_date(
     *,
@@ -254,6 +266,10 @@ def update_important_date(
     become 01.11.2026 with nothing anywhere recording that it moved, which is
     precisely the failure the department has with a hand-kept list
     (Stage-2G brief 35).
+
+    **A save that changes nothing writes nothing** — no `IMPORTANT_DATE_CHANGED`
+    claiming a «muudetud» that did not happen, and no new `updated_at` making a
+    colleague's open form stale (`_unchanged`). The locked row comes back.
     """
     record = _lock_for_edit(record, expected_revision)
     if record.status != FactStatus.ACTIVE:
@@ -261,6 +277,15 @@ def update_important_date(
     title = _require_text(title, "Olulisel tähtajal peab olema kirjeldus.")
     _check_precision(date_precision)
     _check_bounds(date_value, period_end, date_precision)
+    if _unchanged(
+        record,
+        title=title,
+        date_value=date_value,
+        period_end=period_end,
+        date_precision=date_precision,
+        note=note.strip(),
+    ):
+        return record
 
     before = {
         "title": record.title,
@@ -417,12 +442,25 @@ def update_effective_date(
 
     Nothing is copied anywhere: *Jõustuvad aktid* reads this table, so changing
     the date here is the whole change (Stage-2G brief 16).
+
+    A save that changes nothing writes nothing (`_unchanged`).
     """
     record = _lock_for_edit(record, expected_revision)
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat jõustumist saab muuta.")
     _validate_effective_date(kind, date_value, period_end, date_precision)
     _refuse_new_credentialed_link(source_url, stored=record.source_url)
+    if _unchanged(
+        record,
+        kind=kind,
+        date_value=date_value,
+        period_end=period_end,
+        date_precision=date_precision,
+        description=description.strip(),
+        note=note.strip(),
+        source_url=source_url.strip(),
+    ):
+        return record
 
     before = {
         "kind": record.kind,
@@ -699,7 +737,7 @@ def update_work_victory(
     period_end: date | None = None,
     date_precision: str = DatePrecision.YEAR,
     source_url: str = "",
-    note: str = "",
+    note: str | None = None,
     actor: Any = None,
     expected_revision: str | None = None,
 ) -> MatterWorkVictory:
@@ -708,11 +746,28 @@ def update_work_victory(
     Status transitions have their own functions on purpose: editing a
     candidate's description must not be able to promote it
     (Stage-2G brief 53).
+
+    ``note`` ``None`` keeps the stored one: `Muuda` does not show a Töövõit's
+    `Märkus` (a candidate's proposer wrote it), so the form saying nothing about
+    it must not erase it. A save that changes nothing writes nothing
+    (`_unchanged`).
     """
     record = _lock_for_edit(record, expected_revision)
     title = _require_text(title, "Töövõidul peab olema kirjeldus.")
     _validate_period(period_date, period_end, date_precision)
     _refuse_new_credentialed_link(source_url, stored=record.source_url)
+    note = record.note if note is None else note.strip()
+    if _unchanged(
+        record,
+        title=title,
+        detail=detail.strip(),
+        period_date=period_date,
+        period_end=period_end,
+        date_precision=date_precision,
+        source_url=source_url.strip(),
+        note=note,
+    ):
+        return record
 
     before = {
         "title": record.title,
@@ -725,7 +780,7 @@ def update_work_victory(
     record.period_end = period_end
     record.date_precision = date_precision
     record.source_url = source_url.strip()
-    record.note = note.strip()
+    record.note = note
     record.save(
         update_fields=[
             "title",

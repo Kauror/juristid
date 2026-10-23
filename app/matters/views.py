@@ -80,6 +80,7 @@ from app.documents.filenames import NFC
 from app.documents.models import Document
 from app.documents.pending import human_size
 from app.documents.services import (
+    DocumentFormAlreadySaved,
     link_working_document,
     offered_document_roles,
 )
@@ -192,10 +193,12 @@ from app.matters.initiative import (
     names_koda_proposal,
 )
 from app.matters.intake import (
+    IncomingFormAlreadySubmitted,
+    check_incoming_batch,
     file_incoming,
     file_new_matter,
+    read_incoming_files,
     register_incoming,
-    validate_uploads,
 )
 from app.matters.intake_suggestions import (
     CurrentValues,
@@ -718,14 +721,29 @@ def intake(request: HttpRequest) -> HttpResponse:
 
     Every upload is validated *before* anything is written, so a rejected file
     cannot leave a half-made Matter behind looking like real work.
+
+    **A refusal keeps the files** (app/documents/pending.py), as on `Uus
+    teema`: a browser cannot put a file back into a file input, so the good
+    files of a refused save are held and the re-rendered form names them with
+    their `pending` keys. The corrected save files them without a re-pick.
     """
     form = IncomingIntakeForm(request.POST or None, viewer=request.user)
 
     if request.method == "POST":
-        files = request.FILES.getlist("uploads")
-        if form.is_valid():
+        # **This form, exactly once** (ENG-074, docs/adr/0112): the drawn
+        # form's `intake` token is claimed by `register_incoming` before any
+        # row or reference number is written. A refused save re-renders with
+        # the same token, so the corrected save is protected like the first.
+        posted_token = (request.POST.get("intake") or "").strip()
+        # What an earlier refusal is holding and this attempt still wants. A
+        # key this session is not holding is simply not there.
+        asked = [key for key in request.POST.getlist("pending") if key]
+        held_keys = [item.key for item in pending_uploads.describe(request.session, asked)]
+        chosen, refusals = read_incoming_files(request.FILES.getlist("uploads"))
+        if form.is_valid() and not refusals:
             try:
-                uploads = validate_uploads(files)
+                uploads = [*pending_uploads.resume(request.session, held_keys), *chosen]
+                check_incoming_batch(uploads)
                 data = form.cleaned_data
                 result = register_incoming(
                     uploads=uploads,
@@ -753,24 +771,53 @@ def intake(request: HttpRequest) -> HttpResponse:
                     # background sequence behind `Soovitatud järgmisena` is
                     # seeded, as on `Uus teema` (docs/adr/0133 §5, 0141).
                     seed_plan=True,
+                    form_token=posted_token,
                 )
+            except IncomingFormAlreadySubmitted as replay:
+                # The Teema the first submission filed, never a second one.
+                return _answer_repeated_create(request, replay.session)
             except DomainError as error:
-                messages.error(request, str(error))
+                refusals.append(str(error))
             else:
+                # The save survived, so the hold is over.
+                pending_uploads.release(request.session, held_keys)
                 messages.success(
                     request,
                     f"Teema „{result.matter.title}” loodud · {result.documents} faili lisatud.",
                 )
                 return redirect("matters:matter_detail", pk=result.matter.pk)
 
+        # Refused: the files that passed are held for the corrected save,
+        # unless the volume is full — then the person is told (docs/adr/0177).
+        hold_refusals: list[str] = []
+        newly_held = pending_uploads.hold(request.session, chosen, refusals=hold_refusals)
+        for refusal in [*refusals, *hold_refusals]:
+            messages.error(request, refusal)
+        held_keys = [*held_keys, *(item.key for item in newly_held)]
         return render(
             request,
             "matters/intake.html",
-            {"form": form, "nav_active": "saabunud"},
+            {
+                "form": form,
+                "nav_active": "saabunud",
+                "held_files": pending_uploads.describe(request.session, held_keys),
+                "intake_token": intake_staging.kept_token(
+                    owner=request.user, session_id=posted_token
+                ).pk,
+            },
             status=400,
         )
 
-    return render(request, "matters/intake.html", {"form": form, "nav_active": "saabunud"})
+    # Every rendered form carries its own one-time token (ENG-074).
+    return render(
+        request,
+        "matters/intake.html",
+        {
+            "form": form,
+            "nav_active": "saabunud",
+            "intake_token": intake_staging.open_session(owner=request.user).pk,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -4158,6 +4205,10 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
                 applied_filters, roll_labels=dict(_role_filter_choices())
             ),
             "working_document_form": WorkingDocumentForm(),
+            # Each add form's one-time token (`salvestus`): a replayed or
+            # double-sent save of the same drawn form adds no second Document
+            # (`documents.services.spend_document_form`).
+            "document_save_once_tokens": {"dokument": uuid.uuid4(), "toodokument": uuid.uuid4()},
             "can_write": may_write_business_content(request.user),
             # Two different questions, and this page has to ask both.
             #
@@ -6471,8 +6522,12 @@ def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
                 web_url=form.cleaned_data["web_url"],
                 site_path=form.cleaned_data.get("site_path") or "",
                 created_by=request.user,
+                # One drawn form, one reference (`spend_document_form`).
+                once_token=_posted_once_token(request),
             )
             messages.success(request, "Töödokumendi viide on lisatud.")
+        except DocumentFormAlreadySaved as replay:
+            messages.info(request, str(replay))
         except DomainError as error:
             messages.error(request, str(error))
     else:

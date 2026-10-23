@@ -125,6 +125,7 @@ finds again (§23.5).
             <form class="stackform" method="post" enctype="multipart/form-data"
                   action="{% url 'documents:upload_evidence' matter_id=matter.pk %}">
               {% csrf_token %}
+              {% include "matters/partials/add/save_once.html" with token=document_save_once_tokens.dokument %}
               <div class="formgrid">
                 <label class="field">
                   <span class="field__label">Fail</span>
@@ -172,6 +173,7 @@ finds again (§23.5).
           <form class="stackform" method="post"
                 action="{% url 'matters:add_working_document' pk=matter.pk %}">
             {% csrf_token %}
+            {% include "matters/partials/add/save_once.html" with token=document_save_once_tokens.toodokument %}
             <p class="field__help">
               Viide elavale failile. Baite ei salvestata ja see ei ole tõend selle kohta,
               mida Koda välja saatis — selleks lae fail üles ülalpool.

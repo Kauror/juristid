@@ -302,6 +302,12 @@ def remove_matter_record(
         obj=current,
         summary=removal_summary(kind, current),
     )
+    # An answer that finished a round's wait takes the finish with it when it
+    # goes, if it alone finished it (docs/adr/0102 §1, docs/adr/0167 §2).
+    if type(current) is MatterExternalPosition:
+        from app.matters.engagement_replies import reopen_wait_after_reply_removed
+
+        reopen_wait_after_reply_removed(position=current, matter=locked_matter, actor=actor)
     return current
 
 
