@@ -407,8 +407,12 @@ def complete_current_action(
         )
         # A written `Järgmine tegevus` becomes the current action itself, so the
         # earliest planned one is promoted only when none was written
-        # (docs/adr/0143).
-        complete_next_action(action=current, actor=author, promote=not next_text)
+        # (docs/adr/0143). Nor when this save's stage closes the Matter: the
+        # closure cancels every planned row on the way out (§A7), and promoting
+        # one first wrote a «→ Järgmine samm» under the save that ended the file.
+        complete_next_action(
+            action=current, actor=author, promote=not next_text and not move.closes
+        )
         result.action = (
             set_next_action_for_new_work(
                 matter=locked_matter, text=next_text, target_date=next_date, actor=author

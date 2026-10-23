@@ -12,13 +12,18 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
+from app.audit.enums import ChangeEventType
+from app.audit.models import ChangeEvent
+from app.matters.workspace import complete_current_action
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
 from app.workflow.services import (
     add_planned_action,
     change_planned_action,
+    set_next_action,
     set_next_action_for_new_work,
 )
+from tests.test_closure_confirms_live_work import filed, stage
 
 pytestmark = pytest.mark.django_db
 
@@ -120,3 +125,59 @@ def test_choosing_another_day_for_a_month_planned_action_makes_it_exact(
     )
 
     assert changed.date_precision == DatePrecision.EXACT
+
+
+# ---------------------------------------------------------------------------
+# A completion whose stage closes the Matter promotes no planned action
+# ---------------------------------------------------------------------------
+
+
+def test_a_closing_completion_does_not_promote_a_planned_action(client, specialist):
+    """`✓ Tehtud` with «Jõustunud» closes the file; the planned row is only cancelled.
+
+    Promoting it first wrote `NEXT_ACTION_SET` (``promoted``) inside the save,
+    and `Teema käik` drew «Järgmine samm – …» under the row that ended the
+    Matter, for a step that was cancelled in the same transaction.
+    """
+    matter = filed(specialist)
+    step = set_next_action(matter=matter, text="Viimane samm", actor=specialist)
+    planned = add_planned_action(
+        matter=matter, text="Hiljem tehtav samm", target_date=_day(4), actor=specialist
+    )
+
+    complete_current_action(
+        matter=matter,
+        author=specialist,
+        action_id=step.pk,
+        body="Määrus jõustus.",
+        stage=stage("in_force"),
+        follow_ups_confirmed=True,
+    )
+
+    matter.refresh_from_db()
+    planned.refresh_from_db()
+    assert not matter.is_open
+    assert planned.status == ActionStatus.CANCELLED
+    assert not ChangeEvent.objects.filter(
+        matter=matter,
+        event_type=ChangeEventType.NEXT_ACTION_SET,
+        payload__contains={"promoted": True},
+    ).exists()
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert '<span class="uxtl__nexttext">Hiljem tehtav samm</span>' not in body
+
+
+def test_a_completion_that_keeps_the_matter_open_still_promotes(specialist):
+    matter = filed(specialist)
+    step = set_next_action(matter=matter, text="Praegune samm", actor=specialist)
+    planned = add_planned_action(
+        matter=matter, text="Järgmine planeeritud", target_date=_day(4), actor=specialist
+    )
+
+    complete_current_action(
+        matter=matter, author=specialist, action_id=step.pk, body="Tehtud."
+    )
+
+    planned.refresh_from_db()
+    assert planned.status == ActionStatus.OPEN
