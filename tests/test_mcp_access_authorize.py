@@ -1,11 +1,13 @@
-"""`/oauth/authorize` behind the shared gate, a persona and that persona's own authenticator.
+"""`/oauth/authorize` behind the shared gate, then an account's address and its own authenticator.
 
-docs/adr/0185 §3: the gate password is shared and the persona is a choice, so
-neither alone may connect an AI client. These tests walk the real browser path
-— gate, persona chooser, consent page — and prove the code from one persona's
-authenticator opens nothing for another, five wrong codes lock the grant
-(tests/test_mcp_access_lockout.py has the escalation), and a
-refusal goes back to the client only once its redirect URI is known good.
+docs/adr/0185 §3: the gate password is shared and a persona is a choice, so
+neither may connect an AI client — and the consent page reads no persona at
+all. These tests walk the real browser path — gate, consent page — and prove
+the code from one account's authenticator opens nothing for another, five
+wrong codes lock the grant (tests/test_mcp_access_lockout.py has the
+escalation), and a refusal goes back to the client only once its redirect URI
+is known good. tests/test_mcp_access_consent_identity.py has the identity rule
+itself: READER accounts, unknown addresses, technical accounts, enumeration.
 """
 
 from __future__ import annotations
@@ -25,7 +27,6 @@ pytestmark = pytest.mark.django_db
 
 AUTHORIZE = "/oauth/authorize"
 GATE = "/konto/varav/"
-CHOOSER = "/konto/kasutaja/"
 
 
 @pytest.fixture(autouse=True)
@@ -44,12 +45,7 @@ def _url(**overrides) -> str:
 
 
 def _through_the_gate(client: Client) -> None:
-    assert client.post(GATE, {"password": PASSWORD}).status_code == 302
-
-
-def _as(client: Client, user) -> None:
-    _through_the_gate(client)
-    assert client.post("/konto/kasutaja/vaheta/", {"user_id": str(user.pk)}).status_code == 302
+    support.through_the_gate(client)
 
 
 def _query(response) -> dict[str, str]:
@@ -60,7 +56,7 @@ def _query(response) -> dict[str, str]:
 # -- the way in ---------------------------------------------------------------------
 
 
-def test_a_visitor_stopped_at_the_gate_comes_back_through_the_persona_chooser(client, moment):
+def test_a_visitor_stopped_at_the_gate_comes_straight_back_to_the_consent_page(client, moment):
     user = factories.UserFactory()
     support.enrolled(user, moment)
     url = _url()
@@ -72,24 +68,19 @@ def test_a_visitor_stopped_at_the_gate_comes_back_through_the_persona_chooser(cl
     passed = client.post(stopped["Location"], {"password": PASSWORD})
     assert passed.status_code == 302 and passed["Location"] == url
 
-    no_persona = client.get(url)
-    assert no_persona.status_code == 302
-    assert urlsplit(no_persona["Location"]).path == CHOOSER
-    assert parse_qs(urlsplit(no_persona["Location"]).query)["next"] == [url]
-
-    chose = client.post(
-        f"/konto/kasutaja/vaheta/?{urlencode({'next': url})}", {"user_id": str(user.pk)}
-    )
-    assert chose.status_code == 302 and chose["Location"] == url
-
+    # No persona chooser on the way: the page asks for the account itself.
     page = client.get(url)
     assert page.status_code == 200
-    body = page.content.decode()
+    assert not page.wsgi_request.user.is_authenticated
+    body = support.page_body(page)
     assert "Testklient" in body
     assert "Ainult lugemine: otsing ja teemade, dokumentide ning ajaloo lugemine" in body
-    assert user.display_name in body
+    assert 'name="epost"' in body and 'name="kood"' in body
     assert "Juristidi MCP autentija" in body
     assert "Luba" in body and "Keeldu" in body
+    # It names nobody: not the grant holder, not their address.
+    assert user.display_name not in body and user.upn not in body
+    assert "Vaheta kasutajat" not in body
     assert page["Cache-Control"].startswith("max-age=0") or "no-store" in page["Cache-Control"]
 
 
@@ -110,7 +101,7 @@ def test_the_gate_adds_no_next_for_an_ordinary_page(client):
 def test_the_page_lets_its_form_reach_the_clients_redirect_origin_and_nothing_else(client, moment):
     user = factories.UserFactory()
     support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
     policy = client.get(_url())["Content-Security-Policy"]
     assert "form-action 'self' https://client.example.test;" in policy
     assert "frame-ancestors 'none'" in policy
@@ -168,9 +159,9 @@ def test_a_bad_request_is_refused_at_the_redirect_uri_with_state_and_iss(client,
 def test_generic_scopes_are_ignored_and_juristid_read_is_granted(client, moment, scope):
     user = factories.UserFactory()
     _, secret = support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
     response = client.post(
-        _url(scope=scope), {"otsus": "luba", "kood": support.code_at(secret, moment)}
+        _url(scope=scope), support.consent(user, support.code_at(secret, moment))
     )
     assert response.status_code == 302
     assert McpAuthorizationCode.objects.get().scope == "juristid.read"
@@ -182,9 +173,9 @@ def test_generic_scopes_are_ignored_and_juristid_read_is_granted(client, moment,
 def test_the_right_code_returns_a_one_time_code_with_state_and_iss(client, moment):
     user = factories.UserFactory()
     _, secret = support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
 
-    response = client.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)})
+    response = client.post(_url(), support.consent(user, support.code_at(secret, moment)))
 
     assert response.status_code == 302
     assert response["Location"].startswith(support.PUBLIC_REDIRECT + "?")
@@ -200,51 +191,54 @@ def test_the_consent_post_needs_its_csrf_token(moment):
     user = factories.UserFactory()
     _, secret = support.enrolled(user, moment)
     lenient = Client()
-    _as(lenient, user)
+    _through_the_gate(lenient)
     strict = Client(enforce_csrf_checks=True)
     strict.cookies = lenient.cookies
     code = support.code_at(secret, moment)
-    response = strict.post(_url(), {"otsus": "luba", "kood": code})
+    response = strict.post(_url(), support.consent(user, code))
     assert response.status_code == 403
     assert not McpAuthorizationCode.objects.exists()
-    # The same session, code and grant were good: it was the missing token.
-    assert lenient.post(_url(), {"otsus": "luba", "kood": code}).status_code == 302
+    # The same session, address, code and grant were good: it was the missing token.
+    assert lenient.post(_url(), support.consent(user, code)).status_code == 302
 
 
-def test_another_personas_code_opens_nothing(client, moment):
+def test_another_accounts_code_opens_nothing(client, moment):
     owner = factories.UserFactory()
     _, owner_secret = support.enrolled(owner, moment)
     colleague = factories.UserFactory()
     support.enrolled(colleague, moment)
-    _as(client, colleague)
+    _through_the_gate(client)
 
-    response = client.post(_url(), {"otsus": "luba", "kood": support.code_at(owner_secret, moment)})
+    response = client.post(
+        _url(), support.consent(colleague, support.code_at(owner_secret, moment))
+    )
 
     assert response.status_code == 400
+    assert views.GENERIC_REFUSAL in response.content.decode()
     assert not McpAuthorizationCode.objects.exists()
 
 
 def test_a_spent_code_cannot_be_typed_again(client, moment):
     user = factories.UserFactory()
     _, secret = support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
     code = support.code_at(secret, moment)
-    assert client.post(_url(), {"otsus": "luba", "kood": code}).status_code == 302
-    again = client.post(_url(), {"otsus": "luba", "kood": code})
+    assert client.post(_url(), support.consent(user, code)).status_code == 302
+    again = client.post(_url(), support.consent(user, code))
     assert again.status_code == 400
     assert McpAuthorizationCode.objects.count() == 1
 
 
 def test_five_wrong_codes_lock_the_grant_and_then_even_the_right_one_waits(client, moment):
     """MCPSEC-01: the fifth wrong code is answered like the first four — the lock
-    is revealed only to the persona's own right code."""
+    is revealed only to the account's own right code."""
     user = factories.UserFactory()
     grant, secret = support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
     for attempt in range(5):
-        assert client.post(_url(), {"otsus": "luba", "kood": "000000"}).status_code == 400, attempt
+        assert client.post(_url(), support.consent(user, "000000")).status_code == 400, attempt
 
-    locked = client.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)})
+    locked = client.post(_url(), support.consent(user, support.code_at(secret, moment)))
 
     assert locked.status_code == 429
     assert "Liiga palju valesid koode" in locked.content.decode()
@@ -258,7 +252,7 @@ def test_five_wrong_codes_lock_the_grant_and_then_even_the_right_one_waits(clien
 def test_deny_returns_access_denied_with_state_and_iss(client, moment):
     user = factories.UserFactory()
     support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
     response = client.post(_url(), {"otsus": "keeldu"})
     query = _query(response)
     assert query == {
@@ -272,16 +266,15 @@ def test_deny_returns_access_denied_with_state_and_iss(client, moment):
     ).exists()
 
 
-def test_a_persona_without_a_grant_is_not_told_so_before_a_code_is_typed(client):
-    """MCPSEC-01: the page does not reveal which personas hold a grant."""
+def test_an_account_without_a_grant_is_not_told_so_before_a_code_is_typed(client):
+    """MCPSEC-01: the page does not reveal which accounts hold a grant."""
     user = factories.UserFactory()
-    _as(client, user)
+    _through_the_gate(client)
     page = client.get(_url())
     body = page.content.decode()
     assert page.status_code == 200
     assert "ei ole MCP ligipääsu" not in body and 'name="kood"' in body
-    assert "Vaheta kasutajat" in body
-    refused = client.post(_url(), {"otsus": "luba", "kood": "123456"})
+    refused = client.post(_url(), support.consent(user, "123456"))
     assert refused.status_code == 400
     assert views.GENERIC_REFUSAL in refused.content.decode()
     assert not McpAuthorizationCode.objects.exists()
@@ -292,12 +285,12 @@ def test_a_pending_grant_cannot_authorize(client):
 
     user = factories.UserFactory()
     services.grant_access(user=user, provenance=support.OPERATOR)
-    _as(client, user)
-    assert client.post(_url(), {"otsus": "luba", "kood": "123456"}).status_code == 400
+    _through_the_gate(client)
+    assert client.post(_url(), support.consent(user, "123456")).status_code == 400
 
 
 def test_an_account_that_lost_its_business_role_cannot_authorize(moment, settings):
-    """The persona chooser no longer offers it; under AUTH_MODE=none it signs in directly."""
+    """Under AUTH_MODE=none the development sign-in is the door; the address is its own."""
     from app.accounts.enums import UserRole
     from app.accounts.models import User
 
@@ -307,7 +300,7 @@ def test_an_account_that_lost_its_business_role_cannot_authorize(moment, setting
     User.objects.filter(pk=user.pk).update(role=UserRole.ADMINISTRATOR)
     signed_in = Client()
     signed_in.force_login(User.objects.get(pk=user.pk))
-    response = signed_in.post(_url(), {"otsus": "luba", "kood": support.code_at(secret, moment)})
+    response = signed_in.post(_url(), support.consent(user, support.code_at(secret, moment)))
     assert response.status_code == 400
     assert not McpAuthorizationCode.objects.exists()
 
@@ -315,7 +308,7 @@ def test_an_account_that_lost_its_business_role_cannot_authorize(moment, setting
 def test_an_unknown_decision_is_refused(client, moment):
     user = factories.UserFactory()
     support.enrolled(user, moment)
-    _as(client, user)
+    _through_the_gate(client)
     assert client.post(_url(), {"otsus": "x"}).status_code == 400
 
 
@@ -362,8 +355,7 @@ def test_with_mcp_off_the_machine_endpoints_are_behind_the_gate_like_everything(
 
 def test_with_mcp_off_every_route_is_a_404_behind_the_gate(client, settings):
     settings.MCP_ENABLED = False
-    user = factories.UserFactory()
-    _as(client, user)
+    _through_the_gate(client)
     for path in (
         "/.well-known/oauth-authorization-server",
         AUTHORIZE,
@@ -377,8 +369,7 @@ def test_with_mcp_off_every_route_is_a_404_behind_the_gate(client, settings):
 
 def test_with_mcp_on_but_no_public_origin_nothing_answers(client, settings):
     settings.JURISTID_PUBLIC_ORIGIN = ""
-    user = factories.UserFactory()
-    _as(client, user)
+    _through_the_gate(client)
     assert client.get(_url()).status_code == 404
 
 
@@ -426,9 +417,14 @@ def test_anonymous_in_mode_none_is_sent_to_sign_in(settings):
     assert not McpAuthorizationCode.objects.exists()
 
 
-def test_a_persona_less_gate_session_is_sent_to_choose_a_persona_for_both_pages(client):
+def test_a_persona_less_gate_session_reaches_both_pages_and_no_chooser(client):
+    """docs/adr/0185 §3: a persona is not asked for; the pages ask for the account."""
     _through_the_gate(client)
+    consent_page = client.get(_url())
+    assert consent_page.status_code == 200 and 'name="epost"' in consent_page.content.decode()
+    # The enrolment page without a link answers like a spent one — not a redirect.
+    enrol_page = client.get("/mcp-ligipaas/liitu/")
+    assert enrol_page.status_code == 400 and "See link ei kehti" in enrol_page.content.decode()
     for path in (_url(), "/mcp-ligipaas/liitu/"):
-        response = client.get(path)
-        assert response.status_code == 302 and response["Location"].startswith(CHOOSER), path
-        assert client.post(path, {}).status_code == 302, path
+        assert client.post(path, {}).status_code == 400, path
+    assert not McpAuthorizationCode.objects.exists()

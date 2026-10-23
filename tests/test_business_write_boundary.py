@@ -1678,9 +1678,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # D — the MCP authorization server's two browser forms (docs/adr/0185). They
     # write only the colleague's own OAuth state — an authorization code, a
     # confirmed personal authenticator — never business content, and each is
-    # gated by the gate, the persona, an operator's grant and a current
-    # authenticator code (tests/test_mcp_access_authorize.py,
-    # tests/test_mcp_access_enrolment.py).
+    # gated by the gate, an operator's grant, the account's own e-mail address
+    # and a current authenticator code or that account's one-time link — never
+    # by a persona (tests/test_mcp_access_authorize.py,
+    # tests/test_mcp_access_enrolment.py, tests/test_mcp_access_consent_identity.py).
     "mcp_access:authorize": "D: OAuth consent for an AI client; grant + personal code",
     "mcp_access:enrol": "D: confirms the person's own MCP authenticator",
     "mcp_writes:approve": (

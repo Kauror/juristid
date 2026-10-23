@@ -285,22 +285,15 @@ def _remember(request: HttpRequest, user: Any, grant: McpAccessGrant) -> None:
 
 
 def _throttle_keys(request: HttpRequest, ip: str | None) -> list[access_services.ThrottleKey]:
-    """The very counters `/oauth/authorize` charges (`app.mcp_access.views._throttle_keys`).
+    """The very counters `/oauth/authorize` charges (`app.mcp_access.views.throttle_keys`).
 
     A guess at the authenticator here and a guess there are the same guess, so
-    they share one budget per gate session and per address.
+    they share one budget per gate session and per address — built by the one
+    function both pages call, so the keys cannot drift apart.
     """
-    gate_pass = shared_gate.gate_passed_at(request) or request.session.session_key or "none"
-    return [
-        access_services.ThrottleKey(
-            key=shared_gate.key_for_address(f"mcp-authorize|session|{gate_pass}"),
-            limit=int(settings.MCP_AUTHORIZE_MAX_FAILURES_PER_SESSION),
-        ),
-        access_services.ThrottleKey(
-            key=shared_gate.key_for_address(f"mcp-authorize|address|{ip or 'unknown'}"),
-            limit=int(settings.MCP_AUTHORIZE_MAX_FAILURES_PER_ADDRESS),
-        ),
-    ]
+    from app.mcp_access.views import throttle_keys
+
+    return throttle_keys(request, ip)
 
 
 # -- the checks -------------------------------------------------------------------

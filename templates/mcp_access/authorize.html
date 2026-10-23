@@ -2,11 +2,11 @@
 {% block title %}Ühenda {{ client_name }} · {{ application_name }}{% endblock %}
 
 {% comment %}
-  The OAuth consent step (docs/adr/0185 §3). The shared gate and the persona
-  only say which work is being looked at; the code from this persona's own
-  «Juristidi MCP autentija» is what makes the connection personal. The form
-  posts back to this same address, query string included, so what «Luba»
-  re-validates is exactly what was shown.
+  The OAuth consent step (docs/adr/0185 §3). The shared gate is the door; no
+  persona is asked for or read. The person names their own account by its
+  e-mail address and proves it with a current code from that account's own
+  «Juristidi MCP autentija». The form posts back to this same address, query
+  string included, so what «Luba» re-validates is exactly what was shown.
 {% endcomment %}
 
 {% block content %}
@@ -21,18 +21,29 @@
     <p><strong>{{ client_name }}</strong> soovib ligipääsu Juristidile.</p>
     <p>{{ description }}.</p>
     {% if write_note %}<p class="acctnote">{{ write_note }}</p>{% endif %}
-    <p class="acctnote">Tegutsed kasutajana <strong>{{ persona.display_name }}</strong>.</p>
     <p class="acctnote">Jätka ainult siis, kui alustasid selle ühendamise ise ja just praegu. Kui keegi saatis sulle selle lingi, vajuta «Keeldu».</p>
   </section>
 
   {% comment %}
-    The same form for every persona. Whether this persona has a grant, is
-    locked or is suspended is said only after its own current code has been
-    verified (MCPSEC-01): until then a wrong code and «no access» get one and
-    the same answer.
+    The same form for everybody. Whether an address belongs to anybody, holds
+    a grant, or is locked or suspended is said only after that account's own
+    current code has been verified (MCPSEC-01): until then an unknown address,
+    a wrong code and «no access» get one and the same answer.
   {% endcomment %}
   <form method="post" class="card card--form form" novalidate>
     {% csrf_token %}
+    <label class="field">
+      <span class="field__label">Sinu konto e-posti aadress</span>
+      <input class="field__input"
+             type="email"
+             name="epost"
+             value="{{ address }}"
+             maxlength="320"
+             autocomplete="username"
+             autocapitalize="off"
+             spellcheck="false"
+             autofocus>
+    </label>
     <label class="field">
       <span class="field__label">Kood rakendusest «Juristidi MCP autentija»</span>
       <input class="field__input mono"
@@ -43,14 +54,12 @@
              pattern="[0-9]{6}"
              maxlength="6"
              autocapitalize="off"
-             spellcheck="false"
-             autofocus>
+             spellcheck="false">
     </label>
     <p class="acctnote">Mitu valet koodi järjest lukustab ühendamise ajutiselt. Ligipääsu annab Juristidi haldaja.</p>
     <div class="form__actions">
       <button type="submit" name="otsus" value="luba" class="button button--primary">Luba</button>
       <button type="submit" name="otsus" value="keeldu" class="button button--quiet">Keeldu</button>
-      {% if switch_url %}<a class="acctlink" href="{{ switch_url }}">Vaheta kasutajat</a>{% endif %}
     </div>
   </form>
 </div>

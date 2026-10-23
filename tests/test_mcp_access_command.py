@@ -62,10 +62,22 @@ def test_grant_creates_a_pending_grant_and_prints_a_one_time_link():
     assert "os-user=" in event.provenance and "host=" in event.provenance
 
 
-def test_a_reader_may_be_granted():
+def test_a_reader_may_be_granted_and_is_told_no_persona_is_needed():
     reader = factories.ReaderFactory()
-    run("grant", "--user", reader.upn)
+    output = run("grant", "--user", reader.upn)
     assert McpAccessGrant.objects.filter(user=reader).exists()
+    # docs/adr/0185 §3: a READER is never a persona, and needs none to enrol.
+    assert "jagatud värava taga" in output
+    assert "kasutajat (personat) valima ei pea" in output
+    assert "e-posti aadressi" in output
+    assert len([line for line in output.splitlines() if line.startswith("https://")]) == 1
+
+
+def test_a_technical_account_with_a_business_role_is_refused():
+    user = factories.UserFactory(is_staff=True)
+    with pytest.raises(CommandError, match="tehnilisele kontole"):
+        run("grant", "--user", user.upn)
+    assert not McpAccessGrant.objects.filter(user=user).exists()
 
 
 @pytest.mark.parametrize(
