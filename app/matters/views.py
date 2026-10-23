@@ -6052,7 +6052,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
-        if field in _REOPENED_ON_REFUSAL:
+        if _reopens_on_refusal(field, matter):
             _reopen_header_editor(context, request, editor=field, error=_first_error(form, field))
         return render(request, surface, context, status=400)
 
@@ -6115,7 +6115,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
-        if field in _REOPENED_ON_REFUSAL:
+        if _reopens_on_refusal(field, matter):
             _reopen_header_editor(context, request, editor=field, error=str(error))
         return render(request, surface, context, status=400)
 
@@ -6244,6 +6244,20 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
 #: refused is one more Salvesta rather than retyping everything. A conflict
 #: (409) still redraws from what is stored — there the stored value is the news.
 _REOPENED_ON_REFUSAL = frozenset({"received_date"})
+
+
+def _reopens_on_refusal(field: str, matter: Matter) -> bool:
+    """Whether ``field``'s header editor is drawn, and so can carry the refusal.
+
+    `Saabus` is not drawn on a Chamber initiative that holds no date
+    (docs/adr/0151 §3): there the refusal stays in the banner, or nobody would
+    see it.
+    """
+    if field not in _REOPENED_ON_REFUSAL:
+        return False
+    if field == "received_date":
+        return not is_koda_initiative(matter) or matter.received_date is not None
+    return True
 
 
 def _first_error(form: Any, field: str | None = None) -> str:
