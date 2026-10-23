@@ -54,7 +54,9 @@ deploy/unraid-main/compose.yml"` from the repo root.
 1. **Write smoke on the old world** (it is about to be discarded, so the
    smoke may write): the release round's smoke script, TEST data only.
 2. **Hold the writers:** `$C stop web intake-reader searchindex intake-sweeper notifications`
-   (db and tunnel stay up).
+   (db and tunnel stay up). Where AI access is set up, also `$C stop mcp-tunnel mcp mcp-writer`:
+   `mcp-writer` writes and both hold connections to `juristid`, which the rename below
+   refuses. Start them again only by `docs/mcp/OPERATIONS.md`, after the last check.
 3. **Re-prove the gate** read-only (counts only), then take the dedicated
    backup: `scripts/deploy/juristid-backup.sh --project juristid-main
    --compose-file deploy/unraid-main/compose.yml --data-root

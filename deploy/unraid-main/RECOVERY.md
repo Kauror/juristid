@@ -197,6 +197,13 @@ connections are read-only transactions, so a backup taken while it runs is the
 same backup. During a *restore* stop it anyway (`stop mcp-tunnel mcp`), so that
 nobody's ChatGPT is answered from a database that is being replaced.
 
+The MCP write gateway (`mcp-writer`, docs/adr/0189) **is** a writer: it commits
+approved AI changes as its own role, `juristid_mcp_writer`. Every runbook that
+holds the writers holds it too, and a restore stops it with the other two
+(`stop mcp-tunnel mcp mcp-writer`; stopping a service that is not running is a
+no-op). It stays stopped until somebody starts it by name
+(`docs/mcp/OPERATIONS.md`, "Switching AI writes off").
+
 ## Backing up
 
 **Every command in this file runs from the checkout.** The scripts are named
@@ -794,6 +801,25 @@ that starts `db` without `--env-file` recreates it once with the password
 empty, which is the day-to-day shape and harmless: the cluster already holds
 the password, and the data is on the bind mount.
 
+**On a fresh cluster, create the AI-access roles first.** Roles belong to the
+cluster, not the database, so a dump does not bring them back — but a dump
+taken after AI access was set up grants to `juristid_mcp` (and, after Phase 2,
+`juristid_mcp_writer`), and `pg_restore` in one transaction fails at the first
+grant to a role that does not exist. The restore script lists the roles the
+dump names and refuses, before it writes anything, when one is missing. Create
+each one it names bare — no privileges; the dump's own grants restore exactly
+what production had:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T db psql -U juristid -d postgres -c 'CREATE ROLE juristid_mcp LOGIN' -c 'CREATE ROLE juristid_mcp_writer LOGIN'
+```
+
+Their passwords are set after the restore, from the restored environment
+files, by `mcp_db_role` / `mcp_writer_db_role --apply --password-stdin`
+([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md)), and only if AI access
+is started again. A cluster that was kept (the database alone dropped and
+recreated) still has them.
+
 ```bash
 scripts/deploy/juristid-restore.sh --project juristid-main --compose-file deploy/unraid-main/compose.yml --set /mnt/user/backups/juristid-main/sets/20260822T190000Z --backup-root /mnt/user/backups/juristid-main --data-root /mnt/user/appdata/juristid-main
 ```
@@ -999,14 +1025,17 @@ Only then:
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d tunnel
 ```
 
-**AI access stays off through all of this** (docs/adr/0185). `mcp` and
-`mcp-tunnel` are behind the `mcp` profile, so nothing above starts them, and
-they hold no state of their own: there is nothing of theirs in a backup set and
-nothing to restore. Their two environment files live beside `juristid.env` in
-the config directory and come back, or are recreated, the same way. Start them
-— if they were running before — only after everything above has passed, by
+**AI access stays off through all of this** (docs/adr/0185, 0189). `mcp`,
+`mcp-writer` and `mcp-tunnel` are behind the `mcp` profile, so nothing above
+starts them, and they hold no state of their own: there is nothing of theirs in
+a backup set and nothing to restore. Their three environment files
+(`juristid-mcp.env`, `juristid-mcp-writer.env`, `juristid-mcp-tunnel.env`) live
+beside `juristid.env` in the config directory and come back, or are recreated,
+the same way (see [Secrets](#secrets)). Start them — if they were running
+before — only after everything above has passed, by
 [`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md) "Starting and
-restarting only the MCP component". The grants and tokens are rows in the
+restarting only the MCP component"; `mcp-writer` last, and only if AI writes
+were deliberately on before the loss. The grants and tokens are rows in the
 restored database: a token issued after the backup was taken is simply unknown
 now, and that colleague reconnects.
 
@@ -1040,9 +1069,15 @@ have two different answers:
 | `DJANGO_SECRET_KEY` | may be regenerated. Everyone is signed out, and nothing in the database depends on it. In a disaster that is an acceptable cost. |
 | `JURISTID_SHARED_GATE_PASSWORD` | may be regenerated, and the department told the new one. It is hashed at process start and stored nowhere. Regenerating it ends every open gate session at its next request (docs/adr/0183). |
 | Cloudflare tunnel credential | may be reissued — see below. |
+| `LOCAL_AUTH_MFA_ENCRYPTION_KEY` | **keep it; losing it costs every administrator their authenticator.** Required beside the gate on real data (`juristid.E048`, docs/adr/0186 §7): the administrators' TOTP secrets are sealed under it. A new key does not unenrol anybody — every device stays on record and no code from it is accepted again. Recovery codes still work (they are hashed, not sealed). The way back is one account at a time, on the host: `manage.py reset_second_factor --list-undecryptable`, then `reset_second_factor --email … --note …` for each administrator, who re-enrols at their next `/haldus/sisene/` ([`docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md`](../../docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md) §15). Never in a backup set, and not derived from `DJANGO_SECRET_KEY`. |
+| `MCP_AUTHENTICATOR_KEY`, `MCP_TOKEN_DERIVATION_KEY` (in `juristid.env`, only where AI access is set up) | may be regenerated, at a price: a new `MCP_AUTHENTICATOR_KEY` makes every colleague's AI-access authenticator unreadable, and each must be re-enrolled; a new `MCP_TOKEN_DERIVATION_KEY` costs at most one reconnect ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md), step 3). |
+| `juristid-mcp.env`, `juristid-mcp-writer.env`, `juristid-mcp-tunnel.env` | may be regenerated: the database roles' passwords (`juristid_mcp`, `juristid_mcp_writer`) are reset with `mcp_db_role` / `mcp_writer_db_role --apply --password-stdin`, `MCP_WRITE_GATEWAY_KEY` by `scripts/deploy/juristid-mcp-writer-keys.sh`, the OpenAI runtime key from OpenAI ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md)). |
 
-So the only secret whose loss is genuinely awkward is the database password, and
-even that is recoverable given superuser access to a restored cluster.
+So the secrets whose loss is genuinely awkward are the database password —
+recoverable given superuser access to a restored cluster — and
+`LOCAL_AUTH_MFA_ENCRYPTION_KEY`, whose loss is recoverable only by resetting and
+re-enrolling every administrator's authenticator. Back that key up with the
+same care as `POSTGRES_PASSWORD`, separately from the backup sets.
 
 Keep the environment file wherever the Chamber keeps its other credentials. That
 destination is a management decision, not a technical one, and it is recorded in
