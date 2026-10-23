@@ -25,6 +25,7 @@ persona-less gate session or a technical administrator gets nothing.
   <span class="notifbell__slot" data-background-swap
         hx-get="{% url 'notifications:bell' %}"
         hx-trigger="load"
+        hx-select="[data-bell-count]"
         hx-swap="innerHTML"></span>
 </a>
 {% endif %}

@@ -1,6 +1,8 @@
 {% comment %}
 The bell's number, swapped into `.notifbell__slot`. Nothing at all for zero.
 The visible digit is decoration for the words beside it, which a screen reader
-reads as part of the link.
+reads as part of the link. Wrapped in `data-bell-count`, which is all the bell
+selects from a response: a redirect to the gate, the persona list or an
+enrolment page swaps in nothing rather than a whole page.
 {% endcomment %}
-{% if count %}<span class="notifbell__count" aria-hidden="true">{{ count }}</span><span class="visually-hidden">: {{ count }} kontrollimata</span>{% endif %}
+<span data-bell-count>{% if count %}<span class="notifbell__count" aria-hidden="true">{{ count }}</span><span class="visually-hidden">: {{ count }} kontrollimata</span>{% endif %}</span>
