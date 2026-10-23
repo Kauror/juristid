@@ -351,7 +351,7 @@ def test_b_a_planned_action_opens_on_its_date(signed_in, specialist, normal_matt
     )
 
     zone = _zone(_detail(signed_in, normal_matter))
-    row = re.search(r'<li class="curact__plannedrow">(.*?)</li>', zone, re.S)
+    row = re.search(r'<li class="curact__plannedrow"[^>]*>(.*?)</li>', zone, re.S)
 
     assert _text(row.group(1)).startswith(f"{_et(_day(9))} Koosta vastus")
 
