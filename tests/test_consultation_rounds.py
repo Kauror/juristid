@@ -916,3 +916,38 @@ def test_d4_a_member_feedback_date_is_the_offices_wait_not_kodas_answer(speciali
     assert item.source_type == wi.SOURCE_FEEDBACK_WAIT
     assert item.source_type != wi.SOURCE_RESPONSE_DEADLINE
     assert matter.pk not in _owed(specialist)
+
+
+# ---------------------------------------------------------------------------
+# Statistika's «Arvamuse tähtaegu ees» reads the same obligation
+# ---------------------------------------------------------------------------
+
+
+def _deadlines_ahead(viewer: Any) -> int:
+    from app.reporting import metric_catalogue as keys
+    from app.reporting.services import compute
+
+    return compute(keys.RESPONSE_DEADLINES_OPEN, _ctx(viewer)).value
+
+
+def test_an_answered_future_legacy_deadline_is_not_a_deadline_ahead(specialist):
+    """A legacy deadline (no request time) a sent opinion already discharged reads
+    «lõpetatud» in the header; the figure used to count it because the date
+    was still to come. It now asks `response_obligation_outstanding_q`."""
+    matter = factories.MatterFactory(owner=specialist, response_deadline=_day(20))
+    assert matter.response_requested_at is None
+    assert _deadlines_ahead(specialist) == 1
+
+    _send(matter, specialist, title="Registri ajastu arvamus")
+
+    assert response_deadline_of(matter, specialist).settled == "lõpetatud"
+    assert _deadlines_ahead(specialist) == 0
+
+
+def test_a_new_request_after_an_answered_round_is_a_deadline_ahead(specialist):
+    matter, _first_opinion = _first_round_answered(specialist)
+    assert _deadlines_ahead(specialist) == 0
+
+    _asked(matter, specialist, _day(10), days_ago=SECOND_ASKED)
+
+    assert _deadlines_ahead(specialist) == 1
