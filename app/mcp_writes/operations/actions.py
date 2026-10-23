@@ -13,7 +13,6 @@ check with its typed outcome through `workspace.check_opinion_follow_up`
 
 from __future__ import annotations
 
-import html
 import uuid
 from typing import Any, ClassVar, Literal
 
@@ -33,7 +32,6 @@ from app.mcp_writes.operations.base import (
 STEP_TEXT_MAX = 2000
 
 KINDS = {"do": "DO", "wait": "WAIT", "monitor": "MONITOR"}
-KIND_LABELS = {"DO": "Teen", "WAIT": "Ootan", "MONITOR": "Jälgin"}
 MEANINGS = {
     "planned_day": "DEADLINE",
     "review_on": "REVIEW_ON",
@@ -42,7 +40,7 @@ MEANINGS = {
 MEANING_LABELS = {
     "DEADLINE": "Plaanis (päev, mil töö tehakse)",
     "REVIEW_ON": "Vaatan üle (ülevaatuse/meeldetuletuse päev)",
-    "EXPECTED_AROUND": "Oodatav umbes (teise poole hinnanguline aeg)",
+    "EXPECTED_AROUND": "Oodatav umbes (millal teine pool eeldatavasti tegutseb)",
 }
 OUTCOMES = {
     "response_received": "RESPONSE_RECEIVED",
@@ -52,8 +50,9 @@ OUTCOMES = {
 
 NO_CURRENT_ACTION = "The Teema has no current action to change or complete."
 CURRENT_ACTION_EXISTS = (
-    "The Teema already has a current action. Use mode 'change_current' to rewrite it, or "
-    "complete_action to finish it first; a new step never silently replaces another."
+    "The Teema already has a current action, and it stays as it is: a new step never replaces "
+    "it. A later (planned) step cannot be added through MCP; add it in Juristid, or finish the "
+    "current action first with complete_action."
 )
 NOT_THE_CURRENT_ACTION = (
     "That action is not the Teema's current action any more. Read the Teema again."
@@ -107,9 +106,9 @@ def _refuse_a_departed_owner(matter: Any) -> None:
 
 
 def _action_label(action: Any) -> str:
+    """The step as the page names it: its sentence and date, never a kind label (ADR 0054)."""
     when = action.display_date
-    kind = KIND_LABELS.get(action.kind, action.kind)
-    return f"{kind}: {action.text}" + (f" ({when})" if when else "")
+    return action.text + (f" ({when})" if when else "")
 
 
 def _resolve_current(user: Any, matter: Any, named: uuid.UUID | None) -> Any:
@@ -153,10 +152,10 @@ class SetNextActionArguments(common.Arguments):
     )
     mode: Literal["new", "change_current"] = Field(
         description=(
-            "'new' sets the Teema's current action when it has none (refused if one exists — "
-            "finish it with complete_action first). 'change_current' rewrites the existing "
-            "current action (same work, said differently or re-dated); the old version stays "
-            "in history."
+            "'new' sets the Teema's current action when it has none (refused if one exists). "
+            "'change_current' rewrites the existing current action: the same work, said "
+            "differently or re-dated; anything you omit keeps the current step's value, and the "
+            "old version stays in history."
         )
     )
     current_action_id: str | None = Field(
@@ -167,27 +166,39 @@ class SetNextActionArguments(common.Arguments):
             "no longer the current one."
         ),
     )
-    text: str = Field(
+    text: str | None = Field(
+        default=None,
         min_length=1,
         max_length=STEP_TEXT_MAX,
-        description="The step in the lawyer's own words, e.g. «Saata arvamus ministeeriumile».",
-    )
-    kind: Literal["do", "wait", "monitor"] = Field(
         description=(
-            "'do' — Koda does it ('Teen'); 'wait' — Koda waits for somebody else, name them in "
-            "waiting_for ('Ootan'); 'monitor' — Koda watches the process ('Jälgin')."
-        )
+            "The step in the lawyer's own words, e.g. «Saata arvamus ministeeriumile». Required "
+            "for 'new'; omit with 'change_current' to keep the current sentence."
+        ),
+    )
+    kind: Literal["do", "wait", "monitor"] | None = Field(
+        default=None,
+        description=(
+            "'do': Koda does the work itself; 'wait': Koda waits for somebody else (name them "
+            "in waiting_for); 'monitor': Koda watches the process. Required for 'new'; omit "
+            "with 'change_current' to keep the current step's kind."
+        ),
     )
     date: str | None = Field(
         default=None,
         max_length=10,
         description=(
             "Optional date, written at its precision: YYYY-MM-DD (exact), YYYY-MM (month), "
-            "YYYY-Qn (quarter), YYYY (year). Omit when no day is known — never guess one."
+            "YYYY-Qn (quarter), YYYY (year). Omit when no day is known; never guess one. With "
+            "'change_current', omitting it keeps the current date and its precision; use "
+            "clear_date to remove it."
         ),
     )
     date_precision: Literal["exact", "month", "quarter", "year"] | None = Field(
         default=None, description="Required with date: how precisely the date is known."
+    )
+    clear_date: bool = Field(
+        default=False,
+        description="'change_current' only: true removes the current step's date. Not with date.",
     )
     date_meaning: Literal["planned_day", "review_on", "expected_around"] | None = Field(
         default=None,
@@ -195,14 +206,17 @@ class SetNextActionArguments(common.Arguments):
             "What the date means. 'do' steps: 'planned_day' (the day the work gets done; the "
             "only date that can become overdue). 'wait'/'monitor' steps: 'review_on' (a "
             "reminder to look again) or 'expected_around' (when the other side is expected to "
-            "act). A WAIT/MONITOR date is NEVER Koda's opinion deadline — use response_deadline "
-            "for that."
+            "act). A WAIT/MONITOR date is NEVER Koda's opinion deadline; use response_deadline "
+            "for that. With 'change_current', omitting it keeps the current meaning."
         ),
     )
     waiting_for: str | None = Field(
         default=None,
         max_length=common.PERSON_NAME_MAX,
-        description="Required for 'wait': who Koda is waiting for (e.g. «Rahandusministeerium»).",
+        description=(
+            "Who Koda is waiting for (e.g. «Rahandusministeerium»). Required when the step "
+            "becomes a 'wait'; only for 'wait' steps."
+        ),
     )
 
     @model_validator(mode="after")
@@ -211,15 +225,57 @@ class SetNextActionArguments(common.Arguments):
             raise ValueError("date_precision is required with date.")
         if self.date is None and self.date_precision is not None:
             raise ValueError("date_precision without date: omit both when no date is known.")
-        if self.kind == "do" and self.date_meaning not in (None, "planned_day"):
-            raise ValueError("A 'do' step's date means 'planned_day'.")
-        if self.kind != "do" and self.date_meaning == "planned_day":
-            raise ValueError("A 'wait' or 'monitor' date means 'review_on' or 'expected_around'.")
-        if self.kind != "wait" and self.waiting_for:
+        if self.clear_date and self.date is not None:
+            raise ValueError("Give date or clear_date, not both.")
+        if self.mode == "new":
+            if self.current_action_id:
+                raise ValueError("current_action_id belongs to mode 'change_current'.")
+            if self.clear_date:
+                raise ValueError("clear_date belongs to mode 'change_current'.")
+            if self.text is None:
+                raise ValueError("mode 'new' needs text.")
+            if self.kind is None:
+                raise ValueError("mode 'new' needs kind.")
+        if self.kind is not None and self.kind != "wait" and self.waiting_for:
             raise ValueError("waiting_for belongs to a 'wait' step.")
-        if self.mode == "new" and self.current_action_id:
-            raise ValueError("current_action_id belongs to mode 'change_current'.")
         return self
+
+
+#: The date meanings each kind may take when a person chooses one now.
+ALLOWED_MEANINGS = {
+    "DO": ("DEADLINE",),
+    "WAIT": ("REVIEW_ON", "EXPECTED_AROUND"),
+    "MONITOR": ("REVIEW_ON", "EXPECTED_AROUND"),
+}
+
+
+def _date_consequence(kind: str, semantics: str, start: Any, precision: str) -> str:
+    """What the date will mean on the work surfaces, at the precision it is recorded."""
+    from app.workflow.dates import is_approximate
+
+    if start is None:
+        return "Kuupäeva ei ole: tegevus ei lähe «üle aja», kuni päev lisatakse."
+    when = common.at_precision(start, precision)
+    if kind == "DO" and semantics == "DEADLINE":
+        if is_approximate(precision):
+            return (
+                f"Kuupäev on periood, millal töö tehakse ({when}); tegevus on «üle aja» alles "
+                "pärast selle perioodi lõppu."
+            )
+        return (
+            f"Kuupäev on päev, mil töö tehakse ({when}); kui see päev möödub, on tegevus üle aja."
+        )
+    if semantics == "EXPECTED_AROUND":
+        return (
+            f"Kuupäev ({when}) on aeg, millal teine pool eeldatavasti tegutseb, mitte tähtaeg ega "
+            "arvamuse tähtaeg; selle möödumine ei tee tegevust hilinenuks."
+        )
+    if semantics == "REVIEW_ON":
+        return (
+            f"Kuupäev ({when}) on ülevaatuse päev, mitte tähtaeg ega arvamuse tähtaeg; selle "
+            "möödumine ei tee tegevust hilinenuks."
+        )
+    return f"Kuupäev ({when}) ei ole tähtaeg; selle möödumine ei tee tegevust hilinenuks."
 
 
 class SetNextAction:
@@ -228,42 +284,63 @@ class SetNextAction:
     arguments: ClassVar[type[BaseModel]] = SetNextActionArguments
     description: ClassVar[str] = (
         "Set the Teema's current action (one DO/WAIT/MONITOR step with optional date) when it "
-        "has none, or rewrite the existing current action. Choose 'wait' only when Koda waits "
-        "for a named party; a WAIT/MONITOR date is a review or expected date, NOT an opinion "
-        "deadline (that is response_deadline). Dates keep their precision; no day is invented. "
-        "It does NOT complete the current action (use complete_action), change the opinion "
-        "deadline, move the stage, plan a later step, or touch an opinion follow-up check."
+        "has none, or rewrite the existing current action (omitted fields keep their current "
+        "values). Choose 'wait' only when Koda waits for a named party; a WAIT/MONITOR date is a "
+        "review or expected date, NOT an opinion deadline (that is response_deadline). Dates "
+        "keep their precision; no day is invented. It does NOT complete the current action (use "
+        "complete_action), change the opinion deadline, move the stage, add a later (planned) "
+        "step, or touch an opinion follow-up check."
     )
 
-    def _semantics(self, args: SetNextActionArguments) -> str:
-        if args.kind == "do":
-            return MEANINGS["planned_day"]
-        if args.date_meaning is None:
-            if args.date is not None:
-                raise OperationRefused(
-                    "missing_information",
-                    "Say what the date of a 'wait' or 'monitor' step means: 'review_on' or "
-                    "'expected_around'.",
-                )
-            # Nothing is dated, so nothing is said about a date (docs/adr/0106).
-            return MEANINGS["review_on"]
-        return MEANINGS[args.date_meaning]
-
-    def _text(self, args: SetNextActionArguments) -> str:
-        text = " ".join(args.text.split())
-        if args.kind == "wait":
-            party = " ".join((args.waiting_for or "").split())
-            if not party:
-                raise OperationRefused(
-                    "missing_information", "Say who Koda is waiting for (waiting_for)."
-                )
-            if party.casefold() not in text.casefold():
-                text = f"{text} (ootame: {party})"
+    def _text(self, args: SetNextActionArguments, current: Any, kind: str) -> str:
+        source = args.text if args.text is not None else current.text
+        text = " ".join(source.split())
+        becomes_wait = kind == "WAIT" and (current is None or current.kind != "WAIT")
+        party = " ".join((args.waiting_for or "").split())
+        if becomes_wait and not party:
+            raise OperationRefused(
+                "missing_information", "Say who Koda is waiting for (waiting_for)."
+            )
+        if party and kind != "WAIT":
+            raise OperationRefused("invalid_argument", "waiting_for belongs to a 'wait' step.")
+        if party and party.casefold() not in text.casefold():
+            text = f"{text} (ootame: {party})"
+        if not text:
+            raise OperationRefused("missing_information", "Write the step (text).")
         if len(text) > STEP_TEXT_MAX:
             raise OperationRefused(
                 "invalid_argument", f"The step is longer than {STEP_TEXT_MAX} characters."
             )
         return text
+
+    def _semantics(
+        self, args: SetNextActionArguments, current: Any, kind: str, *, dated: bool
+    ) -> str:
+        """The date meaning: the one asked for, else the current one kept, else the kind's own."""
+        kept = str(current.date_semantics) if current is not None else None
+        if args.date_meaning is not None:
+            chosen = MEANINGS[args.date_meaning]
+            if chosen != kept and chosen not in ALLOWED_MEANINGS[kind]:
+                raise OperationRefused(
+                    "invalid_argument",
+                    "A 'do' step's date means 'planned_day'; a 'wait' or 'monitor' date means "
+                    "'review_on' or 'expected_around'.",
+                )
+            return chosen
+        if kept is not None and (current.kind == kind or kept in ALLOWED_MEANINGS[kind]):
+            # `Muuda` keeps the step's own meaning (ENG-021): an imported DO «Vaatan üle»
+            # is not turned into a deadline by a typo fix.
+            return kept
+        if kind == "DO":
+            return "DEADLINE"
+        if dated:
+            raise OperationRefused(
+                "missing_information",
+                "Say what the date of a 'wait' or 'monitor' step means: 'review_on' or "
+                "'expected_around'.",
+            )
+        # Nothing is dated, so nothing is said about a date (docs/adr/0106).
+        return "REVIEW_ON"
 
     def prepare(self, *, user: Any, arguments: Any) -> Prepared:
         args = common.coerce(SetNextActionArguments, arguments)
@@ -272,15 +349,6 @@ class SetNextAction:
         common.require_writable_matter(matter)
         _refuse_a_departed_owner(matter)
         named = common.uuid_or_refuse(args.current_action_id, "current_action_id")
-        text = self._text(args)
-        kind = KINDS[args.kind]
-        semantics = self._semantics(args)
-        start = None
-        precision = "EXACT"
-        if args.date is not None:
-            start, _end, precision = common.parse_period(
-                args.date, args.date_precision or "", "date"
-            )
 
         current = _current_action(matter)
         if args.mode == "new":
@@ -292,6 +360,23 @@ class SetNextAction:
                 from app.workflow.follow_ups import FOLLOW_UP_HAS_ITS_OWN_FORM
 
                 raise OperationRefused("domain_rule", FOLLOW_UP_HAS_ITS_OWN_FORM)
+
+        kind = KINDS[args.kind] if args.kind is not None else str(current.kind)
+        start: Any
+        if args.date is not None:
+            start, _end, precision = common.parse_period(
+                args.date, args.date_precision or "", "date"
+            )
+        elif args.clear_date or current is None:
+            start, precision = None, "EXACT"
+        else:
+            # Kept as stored, including a precision no control offers any more
+            # (`HALF_YEAR`, `INFERRED`): the form's «Muutmata» (docs/adr/0079 §9).
+            start, precision = current.target_date, str(current.date_precision)
+            if start is None:
+                precision = "EXACT"
+        text = self._text(args, current, kind)
+        semantics = self._semantics(args, current, kind, dated=start is not None)
 
         canonical = {
             "matter_id": str(matter.pk),
@@ -305,34 +390,22 @@ class SetNextAction:
         }
         when = common.at_precision(start, precision) or "kuupäev määramata"
         changes = [
-            Change(
-                "text",
-                "Järgmiseks",
-                current.text if current is not None else None,
-                text,
-            ),
-            Change(
-                "kind",
-                "Liik",
-                KIND_LABELS.get(current.kind) if current is not None else None,
-                KIND_LABELS[kind],
-            ),
+            Change("text", "Järgmiseks", current.text if current is not None else None, text),
             Change(
                 "date",
                 "Kuupäev",
                 (current.display_date or "kuupäev määramata") if current is not None else None,
                 when,
             ),
+            # Always listed: what the date means is the fact a reader acts on (ADR 0054),
+            # so a change of it is never silent.
+            Change(
+                "date_semantics",
+                "Kuupäeva tähendus",
+                MEANING_LABELS.get(current.date_semantics) if current is not None else None,
+                MEANING_LABELS.get(semantics, semantics),
+            ),
         ]
-        if start is not None:
-            changes.append(
-                Change(
-                    "date_semantics",
-                    "Kuupäeva tähendus",
-                    MEANING_LABELS.get(current.date_semantics) if current is not None else None,
-                    MEANING_LABELS[semantics],
-                )
-            )
         consequences = []
         if args.mode == "new":
             consequences.append("Sellest saab teema praegune tegevus.")
@@ -340,19 +413,16 @@ class SetNextAction:
             consequences.append(
                 "Praegune tegevus asendatakse uuega; vana jääb ajalukku («Asendatud»)."
             )
-            if current is not None and current.plan_step_id is not None:
+            if current.plan_step_id is not None:
                 consequences.append("Seos tööplaani sammuga säilib.")
-        if kind == "DO":
-            consequences.append(
-                "Kuupäev on päev, mil töö tehakse; kui see möödub, on tegevus üle aja."
-                if start is not None
-                else "Kuupäeva ei ole — tegevus ei ole kunagi «üle aja», kuni päev lisatakse."
-            )
-        else:
-            consequences.append(
-                "Ootamise/jälgimise kuupäev on ülevaatuse päev, mitte tähtaeg ega arvamuse "
-                "tähtaeg; selle möödumine ei tee tegevust hilinenuks."
-            )
+            if current.kind != kind:
+                consequences.append(
+                    "Tegevus on nüüd Koja enda töö."
+                    if kind == "DO"
+                    else "Tegevus ei ole enam Koja enda töö, vaid teise poole ootamine või "
+                    "menetluse jälgimine."
+                )
+        consequences.append(_date_consequence(kind, semantics, start, precision))
         if matter.response_deadline is not None:
             consequences.append(
                 f"Arvamuse tähtaeg {common.at_precision(matter.response_deadline, 'EXACT')} "
@@ -441,6 +511,57 @@ class SetNextAction:
 # ---------------------------------------------------------------------------
 
 
+def _planned_steps(matter: Any) -> list[Any]:
+    """The planned steps in the order the service promotes them — reader-blind, as it is.
+
+    `promote_next_planned_action` orders by ``(target_date, created_at, pk)``; the
+    preview and the state read the same order, so what the person approves is what
+    happens.
+    """
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    return list(
+        NextAction.objects.filter(matter=matter, status=ActionStatus.PLANNED).order_by(
+            "target_date", "created_at", "pk"
+        )
+    )
+
+
+#: Stands for the next check `complete_check` plans before it promotes.
+NEW_CHECK = object()
+
+
+def _promoted(planned: list[Any], *, new_check_on: Any) -> Any:
+    """Which step becomes current, exactly as the services decide it.
+
+    A `no_response` check first plans the next check (PLANNED, created now — so it is
+    last among steps of the same day) and then promotes the earliest planned step,
+    which is often that new check. Steps without a day sort last, as PostgreSQL's
+    ascending order puts NULLs.
+    """
+    first = planned[0] if planned else None
+    if new_check_on is None:
+        return first
+    if first is None or first.target_date is None or new_check_on < first.target_date:
+        return NEW_CHECK
+    return first
+
+
+def _promotion_sentence(planned: list[Any], *, new_check_on: Any) -> str:
+    promoted = _promoted(planned, new_check_on=new_check_on)
+    if promoted is NEW_CHECK:
+        return (
+            f"Järgmisest kontrollist ({common.at_precision(new_check_on, 'EXACT')}) saab kohe "
+            "teema praegune tegevus."
+        )
+    if promoted is not None:
+        return f"Praeguseks tegevuseks saab planeeritud tegevus «{_action_label(promoted)}»" + (
+            "; järgmine kontroll jääb planeerituks." if new_check_on is not None else "."
+        )
+    return "Teemal ei ole pärast seda praegust tegevust."
+
+
 class CompleteActionArguments(common.Arguments):
     matter: str = Field(
         max_length=common.MATTER_ARGUMENT_MAX, description=common.MATTER_ARGUMENT_DESCRIPTION
@@ -518,8 +639,6 @@ class CompleteAction:
     )
 
     def prepare(self, *, user: Any, arguments: Any) -> Prepared:
-        from app.matters.selectors import planned_actions_of
-
         args = common.coerce(CompleteActionArguments, arguments)
         common.require_writer(user)
         matter = common.resolve_matter(user, args.matter)
@@ -530,7 +649,7 @@ class CompleteAction:
         canonical: dict[str, Any] = {"matter_id": str(matter.pk), "action_id": str(current.pk)}
         changes = [Change("status", "Olek", "Kehtiv", "Tehtud")]
         consequences: list[str] = []
-        planned = planned_actions_of(matter, user)
+        planned = _planned_steps(matter)
 
         if current.follow_up_id is not None:
             if args.follow_up_outcome is None:
@@ -561,7 +680,7 @@ class CompleteAction:
                 {
                     "kind": "follow_up",
                     "outcome": outcome,
-                    "body": html.escape(said),
+                    "body": said,
                     "next_check_on": common.iso(next_check),
                 }
             )
@@ -587,10 +706,7 @@ class CompleteAction:
                 )
             else:
                 consequences.append("Arvamuse jälgimine lõpeb; uut kontrolli ei planeerita.")
-            if planned:
-                consequences.append(
-                    f"Praeguseks tegevuseks saab varaseim planeeritud tegevus: «{planned[0].text}»."
-                )
+            consequences.append(_promotion_sentence(planned, new_check_on=next_check))
         else:
             if args.follow_up_outcome is not None:
                 raise OperationRefused(
@@ -631,13 +747,12 @@ class CompleteAction:
                         + (f" ({common.at_precision(next_on, 'EXACT')})" if next_on else ""),
                     )
                 )
-                consequences.append("Järgmisest tegevusest saab teema praegune tegevus (Teen).")
-            elif planned:
                 consequences.append(
-                    f"Praeguseks tegevuseks saab varaseim planeeritud tegevus: «{planned[0].text}»."
+                    "Järgmisest tegevusest saab teema praegune tegevus; planeeritud tegevused "
+                    "jäävad planeerituks."
                 )
             else:
-                consequences.append("Teemal ei ole pärast seda praegust tegevust.")
+                consequences.append(_promotion_sentence(planned, new_check_on=None))
             if current.plan_step_id is not None:
                 consequences.append("Tööplaani vastav samm märgitakse tehtuks.")
 
@@ -670,21 +785,14 @@ class CompleteAction:
         common.lock_matter(canonical["matter_id"])
 
     def state(self, *, user: Any, canonical: dict[str, Any]) -> dict[str, Any]:
-        from app.workflow.enums import ActionStatus
-        from app.workflow.models import NextAction
-
         matter = common.state_matter(canonical["matter_id"])
-        first_planned = (
-            NextAction.objects.filter(matter=matter, status=ActionStatus.PLANNED)
-            .order_by("target_date", "created_at", "pk")
-            .values_list("pk", flat=True)
-            .first()
-        )
         return {
             **common.matter_core_state(user, matter),
             **_owner_state(matter),
             "current_action": _action_state(_current_action(matter)),
-            "first_planned_action": str(first_planned) if first_planned else None,
+            "planned_actions": [
+                [str(step.pk), common.iso(step.target_date)] for step in _planned_steps(matter)
+            ],
         }
 
     def execute(self, *, user: Any, canonical: dict[str, Any], once_token: uuid.UUID) -> Executed:

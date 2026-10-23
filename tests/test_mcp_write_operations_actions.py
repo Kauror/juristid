@@ -79,7 +79,7 @@ def test_new_do_step_previews_and_writes_through_the_native_service(specialist, 
         date_precision="exact",
     )
     assert prepared.state["current_action"] is None
-    assert change(prepared, "kind").proposed == "Teen"
+    assert change(prepared, "date_semantics").proposed.startswith("Plaanis")
     assert "üle aja" in preview_text(prepared)
     executed = commit("set_next_action", specialist, prepared)
     action = NextAction.objects.get(pk=executed.record_id)
@@ -226,12 +226,28 @@ def test_date_arguments_are_explicit(specialist, normal_matter):
     base = {"matter": "2026_1", "mode": "new", "text": "x", "kind": "do"}
     with pytest.raises(ValidationError):
         model.model_validate({**base, "date": "2026-11-01"})  # no precision
-    with pytest.raises(ValidationError):
-        model.model_validate(
-            {**base, "date": "2026-11-01", "date_precision": "exact", "date_meaning": "review_on"}
-        )
-    with pytest.raises(ValidationError):
-        model.model_validate({**base, "kind": "wait", "date_meaning": "planned_day"})
+    real = {**base, "matter": str(normal_matter.pk)}
+    assert (
+        refusal(
+            "set_next_action",
+            specialist,
+            **real,
+            date="2026-11-01",
+            date_precision="exact",
+            date_meaning="review_on",
+        ).code
+        == "invalid_argument"
+    )
+    assert (
+        refusal(
+            "set_next_action",
+            specialist,
+            **{**real, "kind": "wait"},
+            waiting_for="MKM",
+            date_meaning="planned_day",
+        ).code
+        == "invalid_argument"
+    )
     with pytest.raises(ValidationError):
         model.model_validate({**base, "kind": "sleep"})
     with pytest.raises(ValidationError):
@@ -406,7 +422,7 @@ def test_complete_previews_the_promotion_of_a_planned_step(specialist, normal_ma
     prepared = prepare(
         "complete_action", specialist, matter=str(normal_matter.pk), what_was_done="Tehtud nii."
     )
-    assert "«Hilisem»" in preview_text(prepared)
+    assert "«Hilisem" in preview_text(prepared)
     commit("complete_action", specialist, prepared)
     assert _current(normal_matter).text == "Hilisem"
 
