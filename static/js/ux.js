@@ -1618,7 +1618,21 @@
      nothing to submit. With scripting off the input simply does nothing and
      every row stays visible, which is the correct fallback for a control whose
      only job is to hide some of them (design handoff, Minu asjad §G).
+
+     Three things it owes the person typing (E-05):
+     - **Diacritics fold on both sides.** «zurii» finds «Žürii» and «tahtaeg»
+       finds «tähtaeg»: NFD, combining marks dropped, lower case.
+     - **A match behind «Näita veel» is shown.** The collapsed `.pw-more`
+       opens while the filter holds a match inside it, and returns to how the
+       person left it when the box is cleared.
+     - **Nothing matching says so** (`data-filter-empty` names the line), so
+       an empty list is never mistaken for a page that lost its rows.
      ------------------------------------------------------------------ */
+  function foldForFilter(text) {
+    var lowered = String(text || "").toLowerCase();
+    return lowered.normalize ? lowered.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : lowered;
+  }
+
   function bindRowFilter(root) {
     var inputs = root.querySelectorAll("[data-filter-rows]");
     Array.prototype.forEach.call(inputs, function (input) {
@@ -1627,15 +1641,39 @@
       }
       input.dataset.filterBound = "1";
       var selector = input.getAttribute("data-filter-rows");
+      var emptyId = input.getAttribute("data-filter-empty");
       input.addEventListener("input", function () {
-        var needle = input.value.trim().toLowerCase();
+        var needle = foldForFilter(input.value.trim());
         var groups = document.querySelectorAll(selector);
+        var shown = 0;
         Array.prototype.forEach.call(groups, function (group) {
+          var matchesHere = 0;
           Array.prototype.forEach.call(group.children, function (row) {
-            var text = (row.textContent || "").toLowerCase();
+            var text = foldForFilter(row.textContent);
             row.hidden = needle !== "" && text.indexOf(needle) === -1;
+            if (!row.hidden) {
+              matchesHere += 1;
+            }
           });
+          shown += matchesHere;
+          var more = group.closest("details.pw-more");
+          if (!more) {
+            return;
+          }
+          if (needle !== "") {
+            if (!("filterWasOpen" in more.dataset)) {
+              more.dataset.filterWasOpen = more.open ? "1" : "0";
+            }
+            more.open = matchesHere > 0 || more.dataset.filterWasOpen === "1";
+          } else if ("filterWasOpen" in more.dataset) {
+            more.open = more.dataset.filterWasOpen === "1";
+            delete more.dataset.filterWasOpen;
+          }
         });
+        var empty = emptyId ? document.getElementById(emptyId) : null;
+        if (empty) {
+          empty.hidden = needle === "" || shown > 0;
+        }
       });
     });
   }
