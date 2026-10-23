@@ -141,6 +141,39 @@ def _declared_too_large(request: Request) -> bool:
         return True
 
 
+#: The deepest nesting of objects and arrays a body may have. Every
+#: operation's arguments are a flat object; this leaves generous room.
+MAX_JSON_DEPTH = 32
+
+
+def too_deep(body: bytes, limit: int = MAX_JSON_DEPTH) -> bool:
+    """Whether the body nests ``[`` / ``{`` deeper than ``limit``, outside strings.
+
+    Scanned before parsing, without recursion, so a body of thirty thousand
+    ``[`` never reaches the parser's recursion limit.
+    """
+    depth = 0
+    in_string = False
+    escaped = False
+    for byte in body:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif byte == 0x5C:  # backslash
+                escaped = True
+            elif byte == 0x22:  # quote
+                in_string = False
+        elif byte == 0x22:
+            in_string = True
+        elif byte in (0x5B, 0x7B):
+            depth += 1
+            if depth > limit:
+                return True
+        elif byte in (0x5D, 0x7D):
+            depth -= 1
+    return False
+
+
 def _key_refusal(request: Request) -> Refusal | None:
     if not gateway_usable():
         return refusal("writes_disabled")
@@ -219,9 +252,12 @@ def build_app(*, runtime: ReaderRuntime | None = None) -> Starlette:
         body = await _read_body(request)
         if body is None:
             return done(_refused(refusal("too_large")), "too_large")
+        if too_deep(body):
+            answer = refusal("invalid_argument", "The body is nested too deeply.")
+            return done(_refused(answer), answer.code)
         try:
             payload = json.loads(body.decode("utf-8")) if body else None
-        except (UnicodeDecodeError, ValueError):
+        except (UnicodeDecodeError, ValueError, RecursionError):
             payload = None
         if not isinstance(payload, dict):
             answer = refusal("invalid_argument", "The body must be one JSON object.")

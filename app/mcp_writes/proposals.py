@@ -192,6 +192,29 @@ def _refused(answer: Refusal, *, user: Any, access: Any, operation: str, **detai
     return answer
 
 
+NUL = chr(0)
+
+
+def has_nul(value: Any) -> bool:
+    """A NUL character in any string, key or value, at any depth (no recursion).
+
+    PostgreSQL text and jsonb cannot hold U+0000, so such an argument would
+    pass validation and fail only when the proposal is stored.
+    """
+    pending = [value]
+    while pending:
+        item = pending.pop()
+        if isinstance(item, str):
+            if NUL in item:
+                return True
+        elif isinstance(item, dict):
+            pending.extend(item.keys())
+            pending.extend(item.values())
+        elif isinstance(item, list | tuple):
+            pending.extend(item)
+    return False
+
+
 def prepare(
     *, access: Any, user: Any, operation_name: Any, raw_arguments: Any
 ) -> dict[str, Any] | Refusal:
@@ -199,7 +222,30 @@ def prepare(
 
     ``access`` is the bearer token's `VerifiedAccess`; ``user`` the account
     `writer_for` answered for it. Neither comes from the request body.
+
+    Whatever goes wrong unexpectedly still leaves a `PREPARE_REFUSED` event
+    (``internal_error``), written after the failed work was rolled back.
     """
+    try:
+        return _prepare(
+            access=access, user=user, operation_name=operation_name, raw_arguments=raw_arguments
+        )
+    except Exception as error:
+        logger.error("MCP write prepare failed: %s", type(error).__name__)
+        op = operations.get(operation_name) if isinstance(operation_name, str) else None
+        with transaction.atomic():
+            return _refused(
+                refusal("internal_error"),
+                user=user,
+                access=access,
+                operation=op.name if op is not None else "",
+                error=type(error).__name__,
+            )
+
+
+def _prepare(
+    *, access: Any, user: Any, operation_name: Any, raw_arguments: Any
+) -> dict[str, Any] | Refusal:
     op = operations.get(operation_name) if isinstance(operation_name, str) else None
     if op is None:
         return _refused(
@@ -220,6 +266,14 @@ def prepare(
         )
     if _too_large(raw_arguments):
         return _refused(refusal("too_large"), user=user, access=access, operation=name)
+    if has_nul(raw_arguments):
+        return _refused(
+            refusal("invalid_argument", "Text may not contain NUL characters."),
+            user=user,
+            access=access,
+            operation=name,
+            reason="nul_character",
+        )
     try:
         arguments = op.arguments.model_validate(raw_arguments)
     except ValidationError as error:

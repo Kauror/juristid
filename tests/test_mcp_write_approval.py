@@ -406,3 +406,131 @@ def test_a_proposal_tampered_before_approval_is_failed_not_approved(client, worl
     assert not McpWriteApproval.objects.exists()
     proposal.refresh_from_db()
     assert proposal.status == ProposalStatus.FAILED
+
+
+# -- a real browser's same-origin POST (security review P1) -----------------------------
+
+PUBLIC_HOST = "juristid.example.test"
+
+
+def _browser(settings, world, proposal) -> tuple[Client, str]:
+    """A CSRF-enforcing client over https, its token taken from the page it was shown."""
+    settings.ALLOWED_HOSTS = [PUBLIC_HOST, "testserver"]
+    lenient = Client()
+    as_persona(lenient, world["user"])
+    strict = Client(enforce_csrf_checks=True)
+    strict.cookies = lenient.cookies
+    page = strict.get(url(proposal), secure=True, HTTP_HOST=PUBLIC_HOST)
+    assert page.status_code == 200
+    assert page.get("Referrer-Policy") != "no-referrer"
+    text = body(page)
+    marker = 'name="csrfmiddlewaretoken" value="'
+    token = text[text.index(marker) + len(marker) :].split('"', 1)[0]
+    return strict, token
+
+
+def _post(client: Client, proposal, data: dict, origin: str):
+    return client.post(url(proposal), data, secure=True, HTTP_HOST=PUBLIC_HOST, HTTP_ORIGIN=origin)
+
+
+def test_a_same_origin_browser_approves_with_csrf_enforced(settings, world):
+    proposal = prepared(world)
+    strict, token = _browser(settings, world, proposal)
+    response = _post(
+        strict,
+        proposal,
+        {"otsus": "kinnita", "kood": support.GOOD_CODE, "csrfmiddlewaretoken": token},
+        f"https://{PUBLIC_HOST}",
+    )
+    assert response.status_code == 200 and approval_views.DONE in body(response)
+    assert McpWriteApproval.objects.filter(proposal=proposal).exists()
+
+
+def test_a_same_origin_browser_declines_with_csrf_enforced(settings, world):
+    proposal = prepared(world)
+    strict, token = _browser(settings, world, proposal)
+    response = _post(
+        strict,
+        proposal,
+        {"otsus": "keeldu", "csrfmiddlewaretoken": token},
+        f"https://{PUBLIC_HOST}",
+    )
+    assert response.status_code == 200
+    proposal.refresh_from_db()
+    assert proposal.status == ProposalStatus.DECLINED
+
+
+def test_a_cross_origin_post_is_refused_even_with_a_token(settings, world):
+    proposal = prepared(world)
+    strict, token = _browser(settings, world, proposal)
+    for origin in ("https://evil.example.test", "null"):
+        response = _post(
+            strict,
+            proposal,
+            {"otsus": "kinnita", "kood": support.GOOD_CODE, "csrfmiddlewaretoken": token},
+            origin,
+        )
+        assert response.status_code == 403
+    assert not McpWriteApproval.objects.exists()
+
+
+# -- withdrawing an approval (security review P3-4) --------------------------------------
+
+
+def test_an_approval_can_be_withdrawn_before_commit_and_the_commit_is_declined(client, world):
+    from app.mcp_writes.commit import commit
+
+    proposal = prepared(world)
+    as_persona(client, world["user"])
+    approved = client.post(url(proposal), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    assert 'value="tuhista"' in body(approved)
+
+    page = client.post(url(proposal), {"otsus": "tuhista"})
+
+    assert page.status_code == 200 and approval_views.WITHDRAWN in body(page)
+    assert 'value="tuhista"' not in body(page)
+    proposal.refresh_from_db()
+    assert proposal.status == ProposalStatus.DECLINED and proposal.failure_code == "withdrawn"
+    event = McpWriteEvent.objects.filter(
+        proposal=proposal, event_type=McpWriteEventType.DECLINED
+    ).get()
+    assert event.detail == {"reason": "approval_withdrawn"}
+    answer = commit(access=world["access"], user=world["user"], proposal_id=str(proposal.pk))
+    assert answer.code == "declined"
+    world["matter"].refresh_from_db()
+    assert world["matter"].title == ORIGINAL
+
+
+def test_an_executed_change_cannot_be_withdrawn(client, world):
+    from app.mcp_writes.commit import commit
+
+    proposal = prepared(world)
+    as_persona(client, world["user"])
+    client.post(url(proposal), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    commit(access=world["access"], user=world["user"], proposal_id=str(proposal.pk))
+
+    page = client.post(url(proposal), {"otsus": "tuhista"})
+
+    assert page.status_code == 409
+    proposal.refresh_from_db()
+    assert proposal.status == ProposalStatus.EXECUTED
+
+
+def test_a_pending_proposal_has_nothing_to_withdraw(client, world):
+    proposal = prepared(world)
+    as_persona(client, world["user"])
+    assert 'value="tuhista"' not in body(client.get(url(proposal)))
+    assert client.post(url(proposal), {"otsus": "tuhista"}).status_code == 400
+    proposal.refresh_from_db()
+    assert proposal.status == ProposalStatus.PENDING
+
+
+def test_another_persona_cannot_withdraw(client, world):
+    proposal = prepared(world)
+    owner = Client()
+    as_persona(owner, world["user"])
+    owner.post(url(proposal), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    as_persona(client, factories.UserFactory())
+    assert _generic(client.post(url(proposal), {"otsus": "tuhista"}))
+    proposal.refresh_from_db()
+    assert proposal.status == ProposalStatus.APPROVED
