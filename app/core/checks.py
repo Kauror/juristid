@@ -14,8 +14,13 @@ from django.core.checks import Error, Tags, Warning, register
 
 #: The roles `JURISTID_PROCESS_ROLE` may name (config/settings.py). Empty is the
 #: browser application and its workers; `web` and `worker` say the same thing
-#: explicitly; `mcp` is the read-only MCP server (docs/adr/0185).
-KNOWN_PROCESS_ROLES = frozenset({"", "web", "worker", "mcp"})
+#: explicitly; `mcp` is the read-only MCP server (docs/adr/0185); `mcp_writer`
+#: is the MCP write gateway (docs/adr/0189), the one process that executes an
+#: approved MCP proposal.
+KNOWN_PROCESS_ROLES = frozenset({"", "web", "worker", "mcp", "mcp_writer"})
+
+#: The two processes that answer bearer tokens and serve no browser.
+MCP_PROCESS_ROLES = frozenset({"mcp", "mcp_writer"})
 
 
 def _process_role() -> str:
@@ -23,15 +28,17 @@ def _process_role() -> str:
 
 
 def _is_mcp_process() -> bool:
-    """The read-only MCP server, which serves no browser and holds no browser secret.
+    """An MCP process — the read-only server or the write gateway — which serves no browser.
 
     Only the checks about what the *browser* depends on — the gate password and
     its throttle, the second factor's key — are skipped for it, because it has
     neither a gate nor a sign-in page: it answers bearer tokens and nothing else.
     Every other check still applies, and `_process_role_problems` adds what this
-    process depends on instead (docs/adr/0185 §6).
+    process depends on instead (docs/adr/0185 §6). The write gateway
+    (`mcp_writer`, docs/adr/0189) is the same kind of process: bearer tokens
+    forwarded by `mcp`, no gate, no sign-in page, no second factor to open.
     """
-    return _process_role() == "mcp"
+    return _process_role() in MCP_PROCESS_ROLES
 
 
 @register()
@@ -731,12 +738,17 @@ def _process_role_problems() -> list[Error | Warning]:
         return [
             Error(
                 f"JURISTID_PROCESS_ROLE={role!r} is not a role this application has.",
-                hint="Leave it empty for the browser application and its workers, or set mcp.",
+                hint=(
+                    "Leave it empty for the browser application and its workers, or set mcp "
+                    "(the MCP server) or mcp_writer (the MCP write gateway)."
+                ),
                 id="juristid.E040",
             )
         ]
+    if role == "mcp_writer":
+        return _mcp_writer_problems()
     if role != "mcp":
-        return []
+        return _browser_side_write_problems()
 
     problems: list[Error | Warning] = []
     if not getattr(settings, "MCP_ENABLED", False):
@@ -811,6 +823,178 @@ def _process_role_problems() -> list[Error | Warning]:
                 id="juristid.E046",
             )
         )
+    if getattr(settings, "MCP_WRITES_ENABLED", False):
+        problems.extend(_gateway_key_problems("The MCP process"))
+    if _connects_as_the_writer_role():
+        problems.append(
+            Error(
+                "The MCP process connects to the database as the MCP writer role.",
+                hint=(
+                    "`mcp` holds only its own SELECT-only role (POSTGRES_USER=juristid_mcp in "
+                    "juristid-mcp.env); the writer's credentials belong to juristid-mcp-writer.env "
+                    "and the `mcp-writer` service alone (docs/mcp/OPERATIONS.md, Phase 2)."
+                ),
+                id="juristid.E058",
+            )
+        )
+    return problems
+
+
+# -- the MCP write gateway (`mcp_writer`, docs/adr/0189) ----------------------------
+
+#: The gateway key's floor: it is the one shared secret between `mcp` and
+#: `mcp-writer`, compared in constant time (the helper script generates 64).
+MINIMUM_GATEWAY_KEY_LENGTH = 32
+
+#: Everything `MCP_FORBIDDEN_SECRETS` keeps from `mcp`, the write gateway does
+#: not hold either: it opens no gate, seals no authenticator, rotates no refresh
+#: token and sends no mail. A grant's personal TOTP is checked by `web` on the
+#: approval page, never by the gateway.
+MCP_WRITER_FORBIDDEN_SECRETS = MCP_FORBIDDEN_SECRETS
+
+
+def _gateway_key_problems(process: str) -> list[Error | Warning]:
+    """juristid.E052: the key `mcp` presents to `mcp-writer` is a real one."""
+    key = str(getattr(settings, "MCP_WRITE_GATEWAY_KEY", "") or "")
+    weak = (
+        len(key) < MINIMUM_GATEWAY_KEY_LENGTH
+        or key.strip().lower().startswith(TEMPLATE_PLACEHOLDER_PREFIX)
+        or key == settings.SECRET_KEY
+    )
+    if not weak:
+        return []
+    return [
+        Error(
+            f"{process} needs MCP_WRITE_GATEWAY_KEY: at least {MINIMUM_GATEWAY_KEY_LENGTH} "
+            "characters, not a placeholder and not DJANGO_SECRET_KEY.",
+            hint=(
+                "Generate it into juristid-mcp.env and juristid-mcp-writer.env together with "
+                "scripts/deploy/juristid-mcp-writer-keys.sh; it never goes into juristid.env."
+            ),
+            id="juristid.E052",
+        )
+    ]
+
+
+def _connects_as_the_writer_role() -> bool:
+    from app.mcp_writes.db_role import DEFAULT_ROLE
+
+    user = str(settings.DATABASES["default"].get("USER") or "").strip().lower()
+    return user == DEFAULT_ROLE or user.startswith(f"{DEFAULT_ROLE}_")
+
+
+def _browser_side_write_problems() -> list[Error | Warning]:
+    """juristid.E057: `web` and its workers never hold the gateway key.
+
+    The key proves to the write gateway that a request comes from the `mcp`
+    container. `web` has no route to the gateway and no reason to call it —
+    approval is a row it writes — so holding the key there would only widen who
+    could forge that proof. Nor does it connect as the writer role.
+    """
+    problems: list[Error | Warning] = []
+    if str(getattr(settings, "MCP_WRITE_GATEWAY_KEY", "") or ""):
+        problems.append(
+            Error(
+                "The browser application or one of its workers holds MCP_WRITE_GATEWAY_KEY.",
+                hint=(
+                    "Only `mcp` and `mcp-writer` hold it (juristid-mcp.env and "
+                    "juristid-mcp-writer.env). Remove it from juristid.env; `web` needs only "
+                    "MCP_WRITES_ENABLED (docs/mcp/OPERATIONS.md, Phase 2)."
+                ),
+                id="juristid.E057",
+            )
+        )
+    if _connects_as_the_writer_role():
+        problems.append(
+            Error(
+                "The browser application connects to the database as the MCP writer role.",
+                hint="`web` and its workers use the owner role of juristid.env.",
+                id="juristid.E058",
+            )
+        )
+    return problems
+
+
+def _mcp_writer_problems() -> list[Error | Warning]:
+    """What the MCP write gateway depends on, refused before it listens (docs/adr/0189).
+
+    - E051: MCP_WRITES_ENABLED off — the gateway would refuse every call;
+    - E052: no strong MCP_WRITE_GATEWAY_KEY;
+    - E053: JURISTID_PUBLIC_ORIGIN, the base of every approval link, is not one
+      https origin;
+    - E054: MCP_ENABLED off or MCP_RESOURCE_URLS not https — the gateway verifies
+      the forwarded bearer token itself, and with either missing it would
+      refuse every token;
+    - E055: DEBUG;
+    - E056: a browser secret it has no use for;
+    - E050 (a database check, `check_mcp_writer_database_role`): its role.
+    """
+    problems: list[Error | Warning] = []
+    if not getattr(settings, "MCP_WRITES_ENABLED", False):
+        problems.append(
+            Error(
+                "The MCP write gateway is starting with MCP_WRITES_ENABLED off.",
+                hint=(
+                    "Set MCP_WRITES_ENABLED=1 in juristid-mcp-writer.env — or stop the "
+                    "`mcp-writer` service, which is the kill switch for AI writes. Off is the "
+                    "default (docs/adr/0189)."
+                ),
+                id="juristid.E051",
+            )
+        )
+    problems.extend(_gateway_key_problems("The MCP write gateway"))
+    if not _is_https_url(getattr(settings, "JURISTID_PUBLIC_ORIGIN", ""), origin_only=True):
+        problems.append(
+            Error(
+                "JURISTID_PUBLIC_ORIGIN is not an https origin.",
+                hint=(
+                    "Every approval link the gateway returns is built from it, never from a "
+                    "request's Host header: e.g. https://juristid.orgusaar.ee, no path."
+                ),
+                id="juristid.E053",
+            )
+        )
+    resources = list(getattr(settings, "MCP_RESOURCE_URLS", []) or [])
+    if (
+        not getattr(settings, "MCP_ENABLED", False)
+        or not resources
+        or not all(_is_https_url(url, origin_only=False) for url in resources)
+    ):
+        problems.append(
+            Error(
+                "The MCP write gateway needs MCP_ENABLED=1 and MCP_RESOURCE_URLS (https).",
+                hint=(
+                    "It verifies the forwarded bearer token itself, against the same audiences "
+                    "as `mcp`: copy both values from juristid-mcp.env."
+                ),
+                id="juristid.E054",
+            )
+        )
+    if settings.DEBUG:
+        problems.append(
+            Error(
+                "The MCP write gateway is starting with DJANGO_DEBUG on.",
+                hint="It changes records on a colleague's behalf; never in debug.",
+                id="juristid.E055",
+            )
+        )
+    held = sorted(
+        name
+        for name, setting in MCP_WRITER_FORBIDDEN_SECRETS.items()
+        if getattr(settings, setting, "")
+    )
+    if held:
+        problems.append(
+            Error(
+                "The MCP write gateway holds browser secrets it has no use for: "
+                f"{', '.join(held)}.",
+                hint=(
+                    "Give `mcp-writer` its own minimal environment file, "
+                    "juristid-mcp-writer.env — never juristid.env or juristid-mcp.env."
+                ),
+                id="juristid.E056",
+            )
+        )
     return problems
 
 
@@ -857,5 +1041,51 @@ def check_mcp_database_role(app_configs: Any = None, **kwargs: Any) -> list[Erro
                 "juristid-mcp.env; docs/mcp/OPERATIONS.md)."
             ),
             id="juristid.E047",
+        )
+    ]
+
+
+@register(Tags.database)
+def check_mcp_writer_database_role(app_configs: Any = None, **kwargs: Any) -> list[Error | Warning]:
+    """juristid.E050: the write gateway is connected as the least-privilege writer role.
+
+    In the `mcp_writer` role the connected role must be `juristid_mcp_writer`,
+    hold no superuser or role-creating attribute, belong to no other role, own
+    nothing, hold no CREATE, TRUNCATE, REFERENCES or TRIGGER privilege, write
+    only the tables `app.mcp_writes.db_role.WRITE_ALLOWLIST` names (never an
+    account, MCP grant, token or approval table), not read `django_session`,
+    and carry its bounds as role settings
+    (`app.mcp_writes.db_role.privilege_problems_writer`).
+
+    An error wherever real data is allowed; a warning elsewhere. A database
+    check: the gateway's commands run it before serving. Only the catalogue is
+    read.
+    """
+    if _process_role() != "mcp_writer":
+        return []
+    from django.db import connection
+
+    from app.mcp_writes.db_role import DEFAULT_ROLE, privilege_problems_writer
+
+    try:
+        with connection.cursor() as cursor:
+            problems = privilege_problems_writer(cursor, expected_role=DEFAULT_ROLE)
+    except Exception as error:  # pragma: no cover - the database is down: E050 cannot tell
+        problems = [f"the role's privileges could not be read ({type(error).__name__})"]
+    if not problems:
+        return []
+    kind = Error if getattr(settings, "REAL_DATA_ALLOWED", False) else Warning
+    return [
+        kind(
+            "The MCP write gateway's database role is not the least-privilege writer: "
+            + "; ".join(problems)
+            + ".",
+            hint=(
+                "Create the role from web with `manage.py mcp_writer_db_role --apply "
+                "--password-stdin` and give `mcp-writer` its name and password "
+                "(POSTGRES_USER=juristid_mcp_writer in juristid-mcp-writer.env; "
+                "docs/mcp/OPERATIONS.md, Phase 2)."
+            ),
+            id="juristid.E050",
         )
     ]
