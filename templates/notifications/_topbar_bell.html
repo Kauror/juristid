@@ -1,0 +1,29 @@
+{% comment %}
+«Kontrolli jõustumist» on the top bar (docs/adr/0188 §6).
+
+A link first: with scripting off, or before htmx runs, it is an ordinary link
+to the list, labelled in words for a screen reader. The number is a second,
+separate request (`notifications:bell`) made after the page has loaded, so the
+bar adds no query to the render of any page it is drawn on. Include it once per
+page — beside the theme toggle in `base.html` — or each copy asks once.
+
+The count element is empty at rest and stays empty for zero: no «0», no badge,
+nothing to read past on the days there is nothing to check.
+
+Rendered only for an authorized internal reader (`commencement_bell`); a
+persona-less gate session or a technical administrator gets nothing.
+{% endcomment %}
+{% if show %}
+<a class="topnav__link notifbell" href="{% url 'notifications:list' %}"
+   title="Jõustumise meeldetuletused">
+  <svg class="notifbell__icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
+    <path d="M12 3a6 6 0 0 0-6 6v3.6L4.3 15.4A1 1 0 0 0 5.2 17h13.6a1 1 0 0 0 .9-1.6L18 12.6V9a6 6 0 0 0-6-6Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+    <path d="M9.5 19.5a2.5 2.5 0 0 0 5 0" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+  <span class="visually-hidden">Jõustumise meeldetuletused</span>
+  <span class="notifbell__slot"
+        hx-get="{% url 'notifications:bell' %}"
+        hx-trigger="load"
+        hx-swap="innerHTML"></span>
+</a>
+{% endif %}

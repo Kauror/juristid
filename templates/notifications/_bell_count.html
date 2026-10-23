@@ -1,0 +1,6 @@
+{% comment %}
+The bell's number, swapped into `.notifbell__slot`. Nothing at all for zero.
+The visible digit is decoration for the words beside it, which a screen reader
+reads as part of the link.
+{% endcomment %}
+{% if count %}<span class="notifbell__count" aria-hidden="true">{{ count }}</span><span class="visually-hidden">: {{ count }} kontrollimata</span>{% endif %}

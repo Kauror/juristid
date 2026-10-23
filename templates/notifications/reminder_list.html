@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Jõustumise meeldetuletused · {{ application_name }}{% endblock %}
+
+{% comment %}
+`/teavitused/` — the compact list behind the bell (docs/adr/0188 §6).
+
+Three sections, each drawn only when it has rows: what the reader is asked to
+check now; what they put off (quiet, so it stays findable); and — for
+`department.view_management` only — prompts on Teemad with nobody responsible,
+which nobody else would ever be shown. The unowned section is absent from
+everybody else's response, not hidden in it.
+
+The page states, once and in words, what a reminder is: a request to check,
+never a statement that anything entered into force.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Kontrolli jõustumist</h1>
+    <span class="pagehead__context">
+      Meeldetuletus tuleb 7 päeva enne teemale kirjutatud täpset jõustumise kuupäeva ja
+      jõustumise päeval, kui kontroll on veel tegemata. See palub kontrollida, kas akt või säte
+      jõustub nii, nagu on kirjas — see ei tähenda, et jõustumine oleks toimunud.
+    </span>
+  </div>
+
+  <section class="notifsection" aria-labelledby="notif-own-heading">
+    <h2 class="sectionlabel" id="notif-own-heading">Minu kontrollida</h2>
+    {% if rows %}
+      <ul class="notiflist">
+        {% for row in rows %}
+          {% include "notifications/_reminder_row.html" with row=row can_answer=can_answer tagasi=tagasi %}
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Praegu ei ole ühtegi jõustumist, mida kontrollida.</p>
+    {% endif %}
+  </section>
+
+  {% if deferred_rows %}
+    <section class="notifsection" aria-labelledby="notif-deferred-heading">
+      <h2 class="sectionlabel" id="notif-deferred-heading">Edasi lükatud</h2>
+      <ul class="notiflist">
+        {% for row in deferred_rows %}
+          <li class="notifrow">
+            <div class="notifrow__main">
+              <a class="notifrow__matter" href="{{ row.matter_url }}">{{ row.matter_title }}</a>
+              <span class="notifrow__what">{{ row.description|default:"Jõustumine" }}</span>
+              <span class="notifrow__date">
+                Kirjas olev jõustumise kuupäev {{ row.date_label }} · tuleb tagasi {{ row.deferred_label }}
+              </span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if shows_unowned %}
+    <section class="notifsection" id="vastutajata" aria-labelledby="notif-unowned-heading">
+      <h2 class="sectionlabel" id="notif-unowned-heading">Vastutaja puudub</h2>
+      {% if unowned_rows %}
+        <ul class="notiflist">
+          {% for row in unowned_rows %}
+            {% include "notifications/_reminder_row.html" with row=row can_answer=can_answer tagasi=tagasi show_owner=True %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Vastutajata teemadel ei ole kontrollimata jõustumisi.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

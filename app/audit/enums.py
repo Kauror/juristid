@@ -469,6 +469,28 @@ class ChangeEventType(models.TextChoices):
     TAG_DEACTIVATED = "TAG_DEACTIVATED", "Silt aegunuks märgitud"
     TAG_REACTIVATED = "TAG_REACTIVATED", "Silt taas kasutusel"
 
+    # -- «Kontrolli jõustumist» (docs/adr/0188) ------------------------------
+    #
+    # A person's answer to a commencement-review reminder. **Audit, never
+    # chronology**: absent from `matters.timeline.TIMELINE_EVENT_TYPES`, because
+    # checking a date is not something that happened to the file. The subject is
+    # the `MatterEffectiveDate`, so these are scoped with its family in
+    # `app.audit.visibility` and a restricted commencement's check is exactly as
+    # visible as the commencement. «Tehtud» means somebody *checked*; it never
+    # says the act entered into force.
+    COMMENCEMENT_CHECK_ACKNOWLEDGED = (
+        "COMMENCEMENT_CHECK_ACKNOWLEDGED",
+        "Jõustumise kontroll tehtud",
+    )
+    COMMENCEMENT_CHECK_DEFERRED = (
+        "COMMENCEMENT_CHECK_DEFERRED",
+        "Jõustumise kontroll edasi lükatud",
+    )
+    COMMENCEMENT_CHECK_DISMISSED = (
+        "COMMENCEMENT_CHECK_DISMISSED",
+        "Jõustumise meeldetuletus suletud",
+    )
+
 
 class SecurityEventType(models.TextChoices):
     """Access, permission and administrative trace, separate from the timeline."""

@@ -59,5 +59,9 @@ urlpatterns = [
     # OAuth endpoints and the authenticator enrolment page. Exact paths that no
     # other app claims; every one is a 404 unless MCP_ENABLED (docs/adr/0185).
     path("", include(("app.mcp_access.urls", "mcp_access"), namespace="mcp_access")),
+    path(
+        "teavitused/",
+        include(("app.notifications.urls", "notifications"), namespace="notifications"),
+    ),
     path("admin/", admin.site.urls),
 ]
