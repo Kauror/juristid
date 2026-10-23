@@ -10,6 +10,10 @@ emptied box withdraws it unless an outcome is chosen.
 
 `prefix` is the id prefix for the two doors on one page.
 
+`reopen.values` is what the header posted, when a refused save draws its editor
+again (`app/matters/views.py` `_reopen_header_editor`, E-04): the choice, the
+outcome, the opinion and the note survive the refusal with the date.
+
 On a Chamber initiative «Uus arvamuse küsimine» is not offered: nobody asked
 Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
 2026-10-13). Its own deadline is moved or cleared.
@@ -17,12 +21,12 @@ Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
 <fieldset class="field">
   <legend class="field__label field__label--plain">Kui kuupäev muutub</legend>
   <label class="cx-check" for="{{ prefix }}-change-moved">
-    <input type="radio" name="change" value="MOVED" id="{{ prefix }}-change-moved">
+    <input type="radio" name="change" value="MOVED" id="{{ prefix }}-change-moved"{% if reopen.values.change == "MOVED" %} checked{% endif %}>
     <span>Sama küsimise tähtaeg muutus</span>
   </label>
   {% if not koda_initiative %}
   <label class="cx-check" for="{{ prefix }}-change-replaced">
-    <input type="radio" name="change" value="REPLACED" id="{{ prefix }}-change-replaced">
+    <input type="radio" name="change" value="REPLACED" id="{{ prefix }}-change-replaced"{% if reopen.values.change == "REPLACED" %} checked{% endif %}>
     <span>Uus arvamuse küsimine</span>
   </label>
   {% endif %}
@@ -31,10 +35,10 @@ Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
   <span class="field__label field__label--plain">Mis sai tähtajast {{ matter.response_deadline|date:"j.n.Y" }} (uue küsimise, tühjendamise või lõpetamise korral)</span>
   <select class="field__input field__input--compact" name="previous_outcome" id="{{ prefix }}-previous-outcome">
     <option value="">— vali —</option>
-    <option value="ANSWERED">Vastatud</option>
-    <option value="NOT_ANSWERING">Otsustati mitte vastata</option>
-    <option value="SUPERSEDED">Jääb vastamata (asendub uue küsimisega)</option>
-    <option value="CANCELLED">Tühistatud</option>
+    <option value="ANSWERED"{% if reopen.values.previous_outcome == "ANSWERED" %} selected{% endif %}>Vastatud</option>
+    <option value="NOT_ANSWERING"{% if reopen.values.previous_outcome == "NOT_ANSWERING" %} selected{% endif %}>Otsustati mitte vastata</option>
+    <option value="SUPERSEDED"{% if reopen.values.previous_outcome == "SUPERSEDED" %} selected{% endif %}>Jääb vastamata (asendub uue küsimisega)</option>
+    <option value="CANCELLED"{% if reopen.values.previous_outcome == "CANCELLED" %} selected{% endif %}>Tühistatud</option>
   </select>
 </label>
 {% with options=answerable_submissions %}
@@ -44,7 +48,7 @@ Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
       <select class="field__input field__input--compact" name="previous_submission" id="{{ prefix }}-previous-submission">
         <option value="">— ei vali —</option>
         {% for submission in options %}
-          <option value="{{ submission.pk }}">Koja arvamus {{ submission.sent_at|date:"j.n.Y" }}{% for recipient in submission.recipients.all %}{% if forloop.first %} · {% else %}, {% endif %}{{ recipient.name }}{% endfor %}</option>
+          <option value="{{ submission.pk }}"{% if reopen.values.previous_submission == submission.pk|stringformat:"s" %} selected{% endif %}>Koja arvamus {{ submission.sent_at|date:"j.n.Y" }}{% for recipient in submission.recipients.all %}{% if forloop.first %} · {% else %}, {% endif %}{{ recipient.name }}{% endfor %}</option>
         {% endfor %}
       </select>
     </label>
@@ -52,5 +56,5 @@ Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
 {% endwith %}
 <label class="field" for="{{ prefix }}-previous-note">
   <span class="field__label field__label--plain">Selgitus või allikas (kui vastati mujal)</span>
-  <input class="field__input field__input--compact" type="text" name="previous_note" id="{{ prefix }}-previous-note" maxlength="2000">
+  <input class="field__input field__input--compact" type="text" name="previous_note" id="{{ prefix }}-previous-note" maxlength="2000"{% if reopen.values.previous_note %} value="{{ reopen.values.previous_note }}"{% endif %}>
 </label>

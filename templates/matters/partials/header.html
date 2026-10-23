@@ -148,7 +148,11 @@ rather than read.
     {% endif %}
   </h1>
 
-  {% if field_error %}
+  {% comment %}
+    A refused header editor that comes back open (`reopen`, E-04) says why
+    inside itself, beside the field; the banner is for every other refusal.
+  {% endcomment %}
+  {% if field_error and not reopen %}
     <p class="formerror" role="alert">{{ field_error }}</p>
   {% endif %}
   {% if follow_up_closure_stage and can_write %}
@@ -370,7 +374,12 @@ rather than read.
     <span class="metaline__item">
       <span class="metaline__label">Saabus</span>
       {% if can_write %}
-        <details class="inlineedit">
+        {% comment %}
+          Open again after a refusal, with what was typed and the reason beside
+          it (`update_field` → `reopen`, E-04): reverting to the stored date
+          and closing lost the input the message asked to correct.
+        {% endcomment %}
+        <details class="inlineedit"{% if reopen.editor == "received_date" %} open{% endif %}>
           <summary class="inlineedit__trigger">
             {% if matter.received_date %}
               <span class="metaline__value">{{ matter.received_date|date:"j.n.Y" }}</span>
@@ -394,7 +403,11 @@ rather than read.
               <input class="field__input field__input--compact dateinput" type="text"
                      inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
                      data-datepicker="true" name="received_date"{% if not matter.received_date and not received_prefill_today %} required{% endif %}
-                     value="{% if matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% elif received_prefill_today %}{{ today|date:'j.n.Y' }}{% endif %}">
+                     {% if reopen.editor == "received_date" %}aria-invalid="true" aria-describedby="paise-saabus-error"
+                     value="{{ reopen.values.received_date }}"{% else %}value="{% if matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% elif received_prefill_today %}{{ today|date:'j.n.Y' }}{% endif %}"{% endif %}>
+              {% if reopen.editor == "received_date" %}
+                <span class="field__error" id="paise-saabus-error" role="alert">{{ reopen.error }}</span>
+              {% endif %}
             </label>
             <button class="button button--quiet button--tiny" type="submit"
                     aria-label="Salvesta saabumise kuupäeva muudatus">Salvesta</button>
@@ -449,7 +462,7 @@ rather than read.
       <span class="metaline__item metaline__item--deadline">
         <span class="metaline__label">Arvamuse tähtaeg</span>
         {% if can_write %}
-        <details class="inlineedit" data-deadline-editor>
+        <details class="inlineedit" data-deadline-editor{% if reopen.editor == "response_deadline" %} open{% endif %}>
           <summary class="inlineedit__trigger">
             <span class="metaline__value metaline__value--deadline{% if response_deadline.settled %} metaline__value--settled{% endif %}"
                   title="{{ response_deadline.label }}">{{ response_deadline.display }}{% if response_deadline.settled %} · {{ response_deadline.settled }}{% elif not response_deadline.is_active %}{% elif response_deadline.is_today %} · täna{% elif response_deadline.is_overdue %} · {{ response_deadline.days_late }} p üle{% elif not response_deadline.is_past and response_deadline.days_remaining <= 60 %} · {{ response_deadline.days_remaining }} p{% endif %}</span>
@@ -471,7 +484,11 @@ rather than read.
                 <input class="field__input field__input--compact dateinput" type="text"
                        inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
                        data-datepicker="true" name="response_deadline"
-                       value="{{ matter.response_deadline|date:'j.n.Y' }}">
+                       {% if reopen.editor == "response_deadline" %}aria-invalid="true" aria-describedby="paise-tahtaeg-error"
+                       value="{{ reopen.values.response_deadline }}"{% else %}value="{{ matter.response_deadline|date:'j.n.Y' }}"{% endif %}>
+                {% if reopen.editor == "response_deadline" %}
+                  <span class="field__error" id="paise-tahtaeg-error" role="alert">{{ reopen.error }}</span>
+                {% endif %}
               </label>
               {% include "matters/partials/response_deadline_fields.html" with prefix="paise-tahtaeg" %}
               <button class="button button--quiet button--tiny" type="submit" name="tegevus" value="muuda"
@@ -512,7 +529,7 @@ rather than read.
           old band read as a data-quality report (Teema redesign §5.5, §24).
         {% endcomment %}
         <span class="metaline__item">
-          <details class="inlineedit">
+          <details class="inlineedit"{% if reopen.editor == "response_deadline" %} open{% endif %}>
             <summary class="inlineedit__trigger">
               <span class="metaline__add">+ Arvamuse tähtaeg</span>
             </summary>
@@ -536,7 +553,12 @@ rather than read.
                 {% endcomment %}
                 <input class="field__input field__input--compact dateinput" type="text"
                        inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                       data-datepicker="true" name="response_deadline" value="">
+                       data-datepicker="true" name="response_deadline"
+                       {% if reopen.editor == "response_deadline" %}aria-invalid="true" aria-describedby="paise-uus-tahtaeg-error"
+                       value="{{ reopen.values.response_deadline }}"{% else %}value=""{% endif %}>
+                {% if reopen.editor == "response_deadline" %}
+                  <span class="field__error" id="paise-uus-tahtaeg-error" role="alert">{{ reopen.error }}</span>
+                {% endif %}
               </label>
               <button class="button button--quiet button--tiny" type="submit"
                       aria-label="Salvesta tähtaeg">Salvesta</button>

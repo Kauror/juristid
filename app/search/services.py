@@ -384,6 +384,9 @@ PREFIX_MINIMUM = 4
 #: second-guess them.
 _WEBSEARCH_SYNTAX = re.compile(r'"|(?:^|\s)-\w|(?:^|\s)or(?:\s|$)', re.IGNORECASE)
 _WORD = re.compile(r"\w+")
+#: A word the query excludes: ``-maks`` at the start or after whitespace, the
+#: way `websearch_to_tsquery` reads it.
+_EXCLUDED_WORD = re.compile(r"(?:^|\s)-(\w+)")
 
 #: The longest query this module will act on.
 #:
@@ -623,6 +626,21 @@ def _plain_words(term: str) -> tuple[str, ...]:
     return tuple(_WORD.findall(term))
 
 
+def _excluded(term: str) -> Q | None:
+    """Rows holding a word the query excludes, or ``None`` when it excludes none.
+
+    The full-text tiers obey ``-maks`` because `websearch_to_tsquery` does. The
+    title-phrase and fuzzy tiers read the term another way — `phraseto_tsquery`
+    drops the minus, trigram similarity never sees it — so without this a title
+    *containing* the excluded word was ranked first, as a title phrase. Stemmed,
+    like the Estonian full-text tier that defines what "excluded" means.
+    """
+    words = tuple(dict.fromkeys(_EXCLUDED_WORD.findall(term)))
+    if not words:
+        return None
+    return Q(search_estonian=tsquery_of(" | ".join(words), config="estonian"))
+
+
 def _tsquery_text(words: tuple[str, ...], *, prefix: bool = False) -> str:
     """``word & word``, or ``word:* & word:*`` — the only tsquery text built here.
 
@@ -703,6 +721,11 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     # identifiers and aliases, so a phrase query against it would report an
     # organisation-name hit as a title match.
     title_phrase = is_matter & Q(search_title=phrase)
+    excluded = _excluded(term)
+    if excluded is not None:
+        # An excluded word is never matched back in by a tier that cannot read
+        # the minus (E-01).
+        title_phrase &= ~excluded
     alias = Q(source_kind__in=ALIAS_KINDS) & _any_case(term, normalized, "alias_text")
     child_title = Q(source_kind__in=CHILD_KINDS) & (
         Q(title__contains_any_case=term)
@@ -766,6 +789,8 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
         & (Q(title__trigram_word_similar=term) | Q(identifiers__trigram_word_similar=term))
         & Q(title_similarity__gte=TRIGRAM_THRESHOLD)
     )
+    if excluded is not None:
+        fuzzy &= ~excluded
 
     matched = (
         title_exact

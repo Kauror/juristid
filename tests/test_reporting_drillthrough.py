@@ -217,8 +217,6 @@ def test_a_metric_that_cannot_link_honestly_carries_no_link(world, reporting_con
         keys.SOURCE_PAGE_TEXT_LENGTH,
         keys.READING_ORDER_AMBIGUOUS,
         keys.ENTRY_COUNT,
-        keys.NEW_NATIVE_FULL_MATTERS,
-        keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH,
         keys.NEW_NATIVE_MATTERS_BY_RESPONSIBILITY_MONTH,
         keys.NEW_NATIVE_MATTERS_YOY_CHANGE,
         keys.MATTERS_BY_YEAR_AND_RESPONSIBILITY,

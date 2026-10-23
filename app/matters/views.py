@@ -1732,7 +1732,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
 
     # Applied first, so everything below narrows an already-searched population
     # and the count beside the box is the count of the list under it.
-    query = (params.get("q") or "").strip()
+    # Through the search module's own gate (E-07): a query it refuses — longer
+    # than `MAX_QUERY_CHARACTERS` — is never run, and the page says so in the
+    # words `/otsing/` uses rather than «0 teemat … ei andnud tulemusi», which
+    # would claim the register holds nothing for a question nobody asked it.
+    raw_query = params.get("q") or ""
+    query = search_services.clean_query(raw_query)
+    query_was_refused = bool(raw_query.strip()) and not query
+    if query_was_refused:
+        queryset = queryset.none()
     if query:
         # **Searched once per request** (QRY-06). Composed as a subquery, the
         # search ran inside every statement that read the register — the rows,
@@ -1807,6 +1815,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "paginator": paginator,
         "total": paginator.count,
         "query": query,
+        "query_was_refused": query_was_refused,
+        "max_query_characters": search_services.MAX_QUERY_CHARACTERS,
         "query_string": query_without_page.urlencode(),
         "cleared_query": cleared.urlencode(),
         # The free-text chip's own `×`, built like every sibling chip's rather
@@ -6042,6 +6052,8 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
+        if field in _REOPENED_ON_REFUSAL:
+            _reopen_header_editor(context, request, editor=field, error=_first_error(form, field))
         return render(request, surface, context, status=400)
 
     value = form.cleaned_data.get(field)
@@ -6103,6 +6115,8 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
+        if field in _REOPENED_ON_REFUSAL:
+            _reopen_header_editor(context, request, editor=field, error=str(error))
         return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
@@ -6155,6 +6169,9 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
+        _reopen_header_editor(
+            context, request, editor="response_deadline", error=_first_error(form)
+        )
         return render(request, "matters/partials/header.html", context, status=400)
     data = form.cleaned_data
     if (
@@ -6196,6 +6213,7 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
+        _reopen_header_editor(context, request, editor="response_deadline", error=str(error))
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
     if _on_documents_tab(request):
@@ -6206,6 +6224,37 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
     response["HX-Retarget"] = "#teema-vaade"
     response["HX-Reswap"] = "outerHTML"
     return response
+
+
+#: `update_field` fields whose header editor reopens on a refusal (E-04).
+#:
+#: A refusal used to redraw the header from the stored values: the editor
+#: closed, the typed date reverted, and the message stood detached above a band
+#: that no longer showed what it was about. These editors come back open, with
+#: what was posted and the reason beside the field, so correcting the one thing
+#: refused is one more Salvesta rather than retyping everything. A conflict
+#: (409) still redraws from what is stored — there the stored value is the news.
+_REOPENED_ON_REFUSAL = frozenset({"received_date"})
+
+
+def _first_error(form: Any, field: str | None = None) -> str:
+    """The form's own words for what it refused, or the generic refusal."""
+    errors = form.errors.get(field, []) if field else [e for v in form.errors.values() for e in v]
+    return str(errors[0]) if errors else "Vigane väärtus."
+
+
+def _reopen_header_editor(
+    context: dict[str, Any], request: HttpRequest, *, editor: str, error: str
+) -> None:
+    """Draw ``editor`` open again, filled with what was posted, the error beside it.
+
+    `templates/matters/partials/header.html` reads ``reopen``: the editor named
+    here renders ``<details open>`` with ``reopen.values`` (the POST) in its
+    controls — the date, and for `Arvamuse tähtaeg` the change, outcome,
+    opinion and note too — and the reason inside the form instead of the
+    detached banner above the band.
+    """
+    context["reopen"] = {"editor": editor, "error": error, "values": request.POST}
 
 
 def _apply_inline_field(

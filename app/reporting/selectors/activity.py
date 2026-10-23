@@ -34,6 +34,7 @@ from app.reporting.selectors.base import (
     eligible_matters,
     grouped_count,
     population_for,
+    received_span_url,
     simple_result,
     visible_matters,
 )
@@ -74,7 +75,8 @@ def new_native_full_matters(context: ReportingContext) -> MetricResult:
     eligible = eligible_matters(context, spec)
     population_count = count(eligible)
     dated = count(eligible.filter(received_date__isnull=False))
-    value = count(population_for(context, spec).filter(received_date__isnull=False))
+    counted = population_for(context, spec).filter(received_date__isnull=False)
+    value = count(counted)
 
     return simple_result(
         spec,
@@ -84,14 +86,11 @@ def new_native_full_matters(context: ReportingContext) -> MetricResult:
         eligible_count=value,
         coverage_count=dated,
         coverage_denominator=population_count,
-        # Measured on `received_date`; the register filters on reporting year.
-        # Linking there would open a population selected on a different column,
-        # so this card is deliberately unlinked and says why.
-        url="",
-        notes=(
-            "Mõõdetud saabumise kuupäeva järgi. Registris saab filtreerida "
-            "aruandlusaasta järgi, mis ei ole sama veerg.",
-        ),
+        # Measured on `received_date`, and opened on it: `?saabus_alates=` /
+        # `?saabus_kuni=` over the counted rows, FULL and NATIVE, never the
+        # register's reporting year (E-06).
+        url=received_span_url(context, spec, counted),
+        notes=("Mõõdetud saabumise kuupäeva järgi.",),
     )
 
 

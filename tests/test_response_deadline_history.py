@@ -494,6 +494,70 @@ def test_the_header_refuses_a_changed_date_with_no_meaning(signed_in, specialist
     assert matter.response_deadline == _days(3)
 
 
+def _deadline_editor(body: str) -> str:
+    """The header's `Arvamuse tähtaeg` editor, from its `<details>` to its form's end."""
+    start = body.index('<details class="inlineedit" data-deadline-editor')
+    return body[start : body.index("</form>", start)]
+
+
+def test_a_refused_header_deadline_keeps_everything_that_was_posted(signed_in, specialist):
+    """E-04: the date, the choice and the note survive; the outcome is what is asked."""
+    matter = _requested(specialist, _days(3))
+    new_date = _days(30).strftime("%d.%m.%Y")
+
+    response = signed_in.post(
+        reverse("matters:response_deadline", kwargs={"pk": matter.pk}),
+        {
+            "tegevus": "muuda",
+            "revision": deadline_revision(matter),
+            "response_deadline": new_date,
+            "change": ResponseDeadlineChange.REPLACED,
+            "previous_note": "Ministeerium saatis uue kirja",
+        },
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
+    body = response.content.decode()
+    editor = _deadline_editor(body)
+    assert editor.startswith('<details class="inlineedit" data-deadline-editor open>')
+    assert f'value="{new_date}"' in editor
+    assert 'value="REPLACED" id="paise-tahtaeg-change-replaced" checked' in editor
+    assert 'value="MOVED" id="paise-tahtaeg-change-moved">' in editor
+    assert 'value="Ministeerium saatis uue kirja"' in editor
+    assert f'role="alert">{REPLACED_NEEDS_AN_OUTCOME}</span>' in editor
+    assert 'class="formerror"' not in body
+    matter.refresh_from_db()
+    assert matter.response_deadline == _days(3)
+
+
+def test_a_header_deadline_refused_for_its_meaning_offers_the_choice_open(signed_in, specialist):
+    matter = _requested(specialist, _days(3))
+    new_date = _days(30).strftime("%d.%m.%Y")
+
+    response = signed_in.post(
+        reverse("matters:response_deadline", kwargs={"pk": matter.pk}),
+        {"tegevus": "muuda", "revision": deadline_revision(matter), "response_deadline": new_date},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
+    editor = _deadline_editor(response.content.decode())
+    assert editor.startswith('<details class="inlineedit" data-deadline-editor open>')
+    assert f'value="{new_date}"' in editor
+    assert 'name="change" value="MOVED"' in editor
+    assert f'role="alert">{CHANGE_NEEDS_A_MEANING}</span>' in editor
+
+
+def test_the_header_deadline_editor_is_drawn_closed_and_unchosen(signed_in, specialist):
+    matter = _requested(specialist, _days(3))
+    body = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content
+    editor = _deadline_editor(body.decode())
+    assert editor.startswith('<details class="inlineedit" data-deadline-editor>')
+    assert " checked" not in editor
+    assert " selected" not in editor
+
+
 def test_the_register_draws_a_settled_deadline_without_the_warning(signed_in, specialist):
     matter = _requested(specialist, _days(-5))
     close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)

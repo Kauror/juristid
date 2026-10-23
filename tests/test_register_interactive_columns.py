@@ -544,6 +544,63 @@ def test_kuupaev_descending_is_exact_and_still_puts_the_undated_last(signed_in, 
     assert dates_rendered(response)[-1] == "—"
 
 
+def test_a_milestone_next_step_dates_its_row_and_sorts_by_that_date(signed_in, specialist):
+    """E-02: «Oluline tähtaeg» in Järgmiseks leaves its date to Kuupäev (RULE-01).
+
+    The cell printed «—» and the ordering put the row with the undated ones. A
+    fallback: a dated step and an `Arvamuse tähtaeg` still answer first, and a
+    closed Matter's milestone is not its next step (E-03).
+    """
+    from app.matters.selectors import matter_list_queryset
+
+    early = matter(owner=specialist, title="Varane")
+    open_action(early, target_date=TODAY + timedelta(days=1))
+    waiting = matter(owner=specialist, title="Ootab lugemist")
+    factories.ImportantDateFactory(
+        matter=waiting,
+        title="Riigikogu teine lugemine",
+        date_value=TODAY + timedelta(days=5),
+        period_end=TODAY + timedelta(days=5),
+    )
+    late = matter(owner=specialist, title="Hiline", response_deadline=TODAY + timedelta(days=30))
+    # The deadline still answers before a milestone on the same row.
+    both = matter(owner=specialist, title="Mõlemaga", response_deadline=TODAY + timedelta(days=20))
+    factories.ImportantDateFactory(
+        matter=both,
+        title="Varasem lugemine",
+        date_value=TODAY + timedelta(days=2),
+        period_end=TODAY + timedelta(days=2),
+    )
+    undated = matter(owner=specialist, title="Kuupäevata")
+
+    response = signed_in.get(REGISTER, {"jarjestus": views.DATE_SORT_ASC})
+
+    assert titles_on(response) == [
+        early.title,
+        waiting.title,
+        both.title,
+        late.title,
+        undated.title,
+    ]
+    assert dates_rendered(response) == [
+        estonian(TODAY + timedelta(days=1)),
+        estonian(TODAY + timedelta(days=5)),
+        estonian(TODAY + timedelta(days=20)),
+        estonian(TODAY + timedelta(days=30)),
+        "—",
+    ]
+
+    # The two readings agree on every row, the milestone's included.
+    rows = register_dates.annotate_display_date(matter_list_queryset(specialist), specialist)
+    for row in rows:
+        read = register_dates.register_date(row)
+        assert (read.value if read else None) == getattr(row, register_dates.DISPLAY_DATE)
+        if row.pk == waiting.pk:
+            assert read is not None
+            assert read.meaning == register_dates.MILESTONE_LABEL
+            assert not read.is_deadline
+
+
 def _a_day_only_the_restricted_step_can_print():
     """Three weeks back, stepped off any day the register prints by itself.
 
