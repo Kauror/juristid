@@ -428,6 +428,65 @@ def test_switching_persona_keeps_the_administrator_and_the_actor(client):
     assert client.get(reverse(LIST)).status_code == 200
 
 
+@pytest.mark.parametrize(
+    ("before", "after"),
+    [("nobody", "persona"), ("persona", "persona"), ("persona", "nobody")],
+    ids=["first-persona", "switch", "drop"],
+)
+def test_a_pending_step_up_does_not_survive_a_persona_change(client, before, after):
+    """ADR 0186 §1 «Persona changes»; bounty H-05 was the first choice.
+
+    `login` keeps the session's data when the session had no user yet, so the
+    password-only step was carried into the first persona and a code then
+    opened the administrator session. Every change now starts it again from
+    the password — the code page and the enrolment page alike.
+    """
+    admin, secret = full_admin()
+    pass_gate(client)
+    if before == "persona":
+        choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+    password_only = client.post(
+        reverse("haldus:sign_in"), {"email": admin.upn, "password": PASSWORD}
+    )
+    assert password_only["Location"] == reverse("haldus:sign_in_code")
+
+    if after == "persona":
+        choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+    else:
+        client.post(reverse("accounts:act_as"), {"user_id": ""})
+
+    assert client.get(reverse("haldus:sign_in_code"))["Location"] == reverse("haldus:sign_in")
+    client.post(reverse("haldus:sign_in_code"), {"code": code(secret, admin)})
+    assert admin_session.SESSION_STATE not in client.session
+    assert client.get(reverse(LIST)).status_code == 404
+
+
+def test_a_password_waiting_for_enrolment_does_not_survive_the_first_persona(client):
+    unenrolled, _ = person(manage=True, delegate=True)
+    pass_gate(client)
+    client.post(reverse("haldus:sign_in"), {"email": unenrolled.upn, "password": PASSWORD})
+    assert client.get(reverse("haldus:enrol")).status_code == 200
+    assert admin_session.SESSION_SEALED_ENROLMENT in client.session
+
+    choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+
+    assert client.get(reverse("haldus:enrol"))["Location"] == reverse("haldus:sign_in")
+    assert admin_session.SESSION_PENDING not in client.session
+    assert admin_session.SESSION_SEALED_ENROLMENT not in client.session
+
+
+def test_choosing_a_first_persona_keeps_an_open_administrator_session(client):
+    """Defined: only the pending step goes; an open session carries on unchanged."""
+    admin, secret = full_admin()
+    verified(client, admin, secret)
+    state = client.session[admin_session.SESSION_STATE]
+
+    choose(client, factories.UserFactory(role=UserRole.SPECIALIST))
+
+    assert client.session[admin_session.SESSION_STATE] == state
+    assert client.get(reverse(LIST)).status_code == 200
+
+
 def test_choosing_the_head_persona_is_not_verification(client):
     head = factories.DepartmentHeadFactory(
         capability_overrides={"accounts.manage": "allow", "accounts.delegate": "allow"}
