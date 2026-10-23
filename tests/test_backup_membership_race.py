@@ -166,9 +166,14 @@ def test_the_append_only_premise_is_no_longer_claimed_for_the_source_tree() -> N
 # -- the restore is one transaction ------------------------------------------
 
 
+#: The restore itself — written across lines — and not the schema-only read
+#: step 3 makes first to list the roles the dump grants to (`dump_roles`).
+RESTORE_COMMAND = "juristid_compose exec -T db pg_restore \\\n"
+
+
 def test_the_database_is_restored_in_one_transaction() -> None:
     text = RESTORE.read_text(encoding="utf-8")
-    command = text[text.index("juristid_compose exec -T db pg_restore") :]
+    command = text[text.index(RESTORE_COMMAND) :]
     command = command[: command.index('"$CONTAINER_PATH"')]
 
     assert "--single-transaction" in command
@@ -179,9 +184,7 @@ def test_a_failed_restore_names_the_storage_it_already_filled() -> None:
     """The rerun is refused over non-empty storage, so the first message has to
     say so — not leave the operator to meet that refusal second."""
     text = RESTORE.read_text(encoding="utf-8")
-    body = text[
-        text.index("restore_failed() {") : text.index("juristid_compose exec -T db pg_restore")
-    ]
+    body = text[text.index("restore_failed() {") : text.index(RESTORE_COMMAND)]
 
     assert "$DATA_ROOT/evidence" in body
     assert "$DATA_ROOT/legacy-source" in body

@@ -104,7 +104,7 @@ def test_the_restore_asks_before_it_writes_anything():
     assert script.index('juristid_compose cp "$SET_DIR/database.dump"') < role_check
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 @pytest.mark.skipif(
     not (shutil.which("pg_dump") and shutil.which("pg_restore")),
     reason="needs the PostgreSQL client tools on PATH",
