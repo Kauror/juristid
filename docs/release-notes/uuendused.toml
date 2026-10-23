@@ -10,19 +10,29 @@
 [[day]]
 date = 2026-10-23
 basis = "deployment"
-prs = [506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521]
+prs = [506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522]
 # Turvaparanduste kaks vooru üheks väljalaskeks: 1. voor #506–#513 (ühendatud
 # #514, audit/0038 + accounts/0005, uus teenus intake-sweeper) ja 2. voor
 # #515–#518 (ühendatud #519, ADR 0181–0184, migratsioonideta). Otsinguindeksit
 # uuesti ei ehitata. Kui väljalase ei jõua tootmisse 23.10 (Tallinna aja järgi),
 # liigub see kirje väljalaske päeva kuupäevale. Samas väljalaskes on MCP
 # (#521, ADR 0185, mcp_access/0001) — välja lülitatud, kasutajale nähtamatu.
+# Samal päeval teine väljalase #522 (Admin & Workflow R1, ADR 0186–0188):
+# Haldus ja halduri isiklik kinnitus ühisparooli taga, klassifikaatorid,
+# «Kontrolli jõustumist» (notifications/0001, audit/0039, uus teenus
+# notifications); mitme konsultatsioonivooru tähtajad kontrolliti üle (testid).
+# Kui see väljalase ei jõua tootmisse 23.10, saavad viimased neli punkti oma
+# kirje väljalaske päeva kuupäevaga.
 changes = [
   "Kõik rakenduse kasutajad näevad kõiki teemasid ja dokumente; «Piiratud» märgib tundlikku sisu, kuid ei piira kolleegide ligipääsu.",
   "Sisu nägemiseks tuleb valida kasutaja; valikut «Ilma kasutajata» enam ei pakuta.",
   "Pärast seda uuendust küsitakse ühisparooli üks kord uuesti; ühisparooli vahetamine lõpetab kõik avatud sessioonid.",
   "Muudatuste ajaloos on ühisparooliga valitud kasutaja nimi tähistatud «(valitud ühisparooliga)».",
   "Liiga suured failid lükatakse tagasi enne üleslaadimise lõppu, Uus teema ajutised failid koristatakse automaatselt ning väga suur või vigane tabel või kiri märgitakse loetamatuks, originaal jääb alles.",
+  "Uus «Haldus» koondab kasutajate halduse, klassifikaatorid, osakonna töökorralduse ja süsteemi seisu; igaüks näeb sealt ainult endale avatud osi.",
+  "Kasutajaid ja õigusi saab muuta ainult halduri isikliku sisselogimisega (oma parool ja autentimisrakenduse kood); ühisparooliga valitud kasutajast selleks ei piisa.",
+  "Osakonnajuht saab «Haldus» → «Klassifikaatorid» all lisada organisatsioone, parandada nende nimesid ja nimekujusid ning hallata silte; ümbernimetatud organisatsioon leitakse ka vana nime järgi.",
+  "Kui teemale on kirjutatud täpne jõustumise kuupäev, palub Juristid vastutajal 7 päeva enne ja jõustumise päeval «Kontrolli jõustumist»; meeldetuletuse saab märkida kontrollituks, edasi lükata või sulgeda, ja see ei tähenda, et jõustumine oleks toimunud.",
 ]
 
 [[day]]
