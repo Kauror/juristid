@@ -23,6 +23,7 @@ from app.matters.models import Entry, Matter
 from app.matters.next_step import without_next_step
 from app.matters.selectors import MISSING
 from app.matters.selectors import REVIEW_DUE as REVIEW_DUE_FILTER
+from app.matters.work_items import response_obligation_outstanding_q
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
@@ -151,7 +152,13 @@ def active_without_stage(context: ReportingContext) -> MetricResult:
 def response_deadlines_open(context: ReportingContext) -> MetricResult:
     spec = definition(keys.RESPONSE_DEADLINES_OPEN)
     active = active_full_for(context, keys.RESPONSE_DEADLINES_OPEN)
-    ahead = active.filter(response_deadline__gte=context.today)
+    # Owed, not merely dated: the response obligation as every work surface
+    # reads it, so a deadline a sent opinion or the register's VÄLJA already
+    # discharged is not counted as ahead (docs/adr/0135 §3, ADR 0059).
+    ahead = active.filter(
+        response_obligation_outstanding_q(context.viewer),
+        response_deadline__gte=context.today,
+    )
     return simple_result(
         spec,
         context=context,
