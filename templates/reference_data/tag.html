@@ -97,12 +97,11 @@
   <section class="panel" aria-labelledby="silt-elukaar">
     <h2 class="acctsection__title" id="silt-elukaar">Liitmine ja aegumine</h2>
     <p class="acctnote">Liitmine märgib selle sildi aegunuks ja suunab selle teise sildi juurde. Kirjetelt silti ei eemaldata. Silte ei kustutata.</p>
-    <form method="post" action="{% url 'reference_data:tag_merge' tag.pk %}" class="form" novalidate>
-      {% csrf_token %}
+    <form method="get" action="{% url 'reference_data:tag_merge' tag.pk %}" class="form" novalidate>
       <input type="hidden" name="revision" value="{{ revision }}">
       {% include "accounts/partials/field.html" with field=merge_form.into %}
       <div class="form__actions">
-        <button type="submit" class="button button--danger">Liida</button>
+        <button type="submit" class="button button--secondary">Liida…</button>
       </div>
     </form>
     <form method="post" action="{% url 'reference_data:tag_status' tag.pk %}" class="acctinline">

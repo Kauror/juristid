@@ -30,7 +30,7 @@ from django.http import Http404, HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from app.core.authorization import may_read_business_content
 from app.core.errors import DomainError
@@ -398,9 +398,37 @@ def tag_alias_remove(request: HttpRequest, pk: Any, alias_pk: Any) -> HttpRespon
 
 
 @reference_data_required
-@require_POST
+@require_http_methods(["GET", "POST"])
 def tag_merge(request: HttpRequest, pk: Any) -> HttpResponse:
+    """Liitmine — its own page and its own decision.
+
+    A merge cannot be undone here, so choosing the target on the tag page only
+    opens this page (GET). It names both tags and, for a reader of Teemad, how
+    many records carry the retiring one; the button on it is the POST. The
+    revision travels from the tag page through this one, so a tag changed in
+    between is refused as stale rather than merged unseen — the
+    `confirm_work_victory` convention.
+    """
     current = _tag(pk)
+    if request.method == "GET":
+        chosen = forms.TagMergeForm(request.GET, tag=current)
+        if not chosen.is_valid():
+            return _render(
+                request,
+                "reference_data/tag.html",
+                _tag_context(current, merge_form=chosen),
+                status=400,
+            )
+        return _render(
+            request,
+            "reference_data/confirm_tag_merge.html",
+            {
+                "tag": current,
+                "into": chosen.cleaned_data["into"],
+                "revision": chosen.revision_token(),
+                "usage": vocabulary.tag_usage(current),
+            },
+        )
     form = forms.TagMergeForm(request.POST, tag=current)
     if form.is_valid():
         try:
