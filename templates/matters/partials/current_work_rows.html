@@ -24,7 +24,10 @@ planned action are sent as a read-only line marked `hx-preserve`, and htmx keeps
 the element already on the page — with whatever is typed in it — in the new
 position. The read-only line is shown only where the page has no such element
 (somebody else changed the file since it was drawn); the next full render
-brings its controls. The id stays `praegune-ootused`, the box's name since the
+brings its controls. **A follow-up check the save itself changed** — a
+corrected `Koja arvamus` moves its day, its words and the line naming its
+opinion — is named in `redraw_rows` and sent drawn in full instead, controls
+and all, so the page does not keep the stale element. The id stays `praegune-ootused`, the box's name since the
 waits were its only rows.
 
 Nothing renders on a closed Matter: `close_matter` ends every open wait and the
@@ -38,8 +41,8 @@ zone draws no work there (docs/adr/0086 §7).
     {% for row in work_rows %}
       {% if row.is_current %}
         {% with current_action=row.record %}
-          <li id="{{ row.dom_id }}"{% if oob %} hx-preserve{% endif %} data-work-row="current">
-            {% if oob %}
+          <li id="{{ row.dom_id }}"{% if oob and current_action.pk not in redraw_rows %} hx-preserve{% endif %} data-work-row="current">
+            {% if oob and current_action.pk not in redraw_rows %}
               <div class="curact__task">
                 <span class="curact__date{% if current_action.is_overdue %} curact__date--overdue{% elif not current_action.target_date %} curact__date--unset{% endif %}">{{ current_action.date_display }}</span>
                 <span class="curact__text">{{ current_action.text }}</span>
@@ -108,10 +111,10 @@ zone draws no work there (docs/adr/0086 §7).
             passed reads late, as the current action does; any other planned
             row does not (docs/adr/0143).
           {% endcomment %}
-          <li class="curact__plannedrow" id="{{ row.dom_id }}"{% if oob %} hx-preserve{% endif %} data-work-row="planned">
+          <li class="curact__plannedrow" id="{{ row.dom_id }}"{% if oob and planned.pk not in redraw_rows %} hx-preserve{% endif %} data-work-row="planned">
             <span class="curact__planneddate{% if planned.is_overdue %} curact__planneddate--overdue{% endif %}">{{ planned.date_display }}{% if planned.is_overdue %} · {{ planned.days_late }} p{% endif %}</span>
             <span class="curact__plannedtext">{{ planned.text }}</span>
-            {% if oob %}
+            {% if oob and planned.pk not in redraw_rows %}
             {% elif planned.follow_up_id %}
               {% if can_write %}
                 <details class="cx-panel curact__edit" id="jarelkontroll-tehtud-{{ planned.pk }}" data-addpanel{% if planned.open_check %} open{% endif %}>
