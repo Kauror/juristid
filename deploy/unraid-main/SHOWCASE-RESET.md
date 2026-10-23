@@ -53,7 +53,7 @@ deploy/unraid-main/compose.yml"` from the repo root.
 
 1. **Write smoke on the old world** (it is about to be discarded, so the
    smoke may write): the release round's smoke script, TEST data only.
-2. **Hold the writers:** `$C stop web intake-reader searchindex intake-sweeper`
+2. **Hold the writers:** `$C stop web intake-reader searchindex intake-sweeper notifications`
    (db and tunnel stay up).
 3. **Re-prove the gate** read-only (counts only), then take the dedicated
    backup: `scripts/deploy/juristid-backup.sh --project juristid-main
@@ -90,7 +90,7 @@ deploy/unraid-main/compose.yml"` from the repo root.
    `deployment_readiness` (expect `shared_gate`, real data yes, debug off),
    `check_evidence_integrity --verify-sha`, counts (7 Matters, all TEST,
    1 RESTRICTED, 0 REAL).
-10. **Serve:** `$C up -d --no-build --no-deps web intake-reader searchindex intake-sweeper`
+10. **Serve:** `$C up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications`
     (dry-run first; db and tunnel must not move), then the ordinary
     post-flight: healthz revision, gate page, persona list, pages, search.
 11. **Last verification is read-only.** No write smoke against the seeded
@@ -99,9 +99,9 @@ deploy/unraid-main/compose.yml"` from the repo root.
 
 ## Rollback
 
-`$C stop web intake-reader searchindex intake-sweeper`; rename the fresh database aside and
+`$C stop web intake-reader searchindex intake-sweeper notifications`; rename the fresh database aside and
 the old one back; move the evidence trees back; `up -d --no-build --no-deps
-web intake-reader searchindex intake-sweeper`. The dedicated backup set from step 3 is the
+web intake-reader searchindex intake-sweeper notifications`. The dedicated backup set from step 3 is the
 second line of defence; `juristid-restore.sh` is the third.
 
 ## Notes
