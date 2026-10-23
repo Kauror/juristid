@@ -19,11 +19,24 @@ Each request carries
 - ``X-Correlation-Id``, which ties the tool call's log line to the writer's
   proposal and audit rows.
 
-The client follows no redirect, ignores proxy environment variables, waits at
-most MCP_WRITE_CALL_TIMEOUT_SECONDS and reads at most
+The client follows no redirect, ignores proxy environment variables, waits
+MCP_WRITE_CALL_TIMEOUT_SECONDS plus `TIMEOUT_MARGIN_SECONDS` (so the
+gateway's own timeout answer normally arrives first) and reads at most
 `MAX_RESPONSE_BYTES` of an answer. A refusal (``{"status": "refused", "code",
 "message"}``) becomes `GatewayRefused` with a safe text; anything else that
-goes wrong becomes `GatewayUnavailable` with a fixed one. Nothing is logged
+goes wrong becomes `GatewayUnavailable` with a fixed one.
+
+**What a failure may claim.** «Nothing was saved» is said only where it is
+certain: a refusal the gateway gives before anything executes, or a request
+that never reached it. Once a request was sent, a timeout, a broken
+connection, the gateway's own ``timeout`` or ``internal_error``, an unknown
+code or an unreadable answer leave the outcome *unknown* — the gateway's
+worker may still finish a commit a second later. A commit then says so, and
+that calling commit_prepared_action again with the same proposal_id is safe
+(it is idempotent: a saved proposal answers its stored receipt); a prepare
+says a proposal may exist but nothing changes until it is approved and
+committed. «Nothing was saved» there would have the model prepare the change
+again and the person approve it twice. Nothing is logged
 but the operation's kind, the outcome and exception *types* — never the
 token, the key, the arguments or the answer's text.
 """
@@ -48,6 +61,9 @@ CORRELATION_HEADER = "X-Correlation-Id"
 #: The gateway's answers are a preview or a receipt: small. Anything larger is
 #: refused unread past this point.
 MAX_RESPONSE_BYTES = 256 * 1024
+
+#: The client waits this much longer than the gateway's own call timeout.
+TIMEOUT_MARGIN_SECONDS = 5
 
 #: A gateway message is safe English text (CONTRACT §5); it is still cut short.
 MAX_MESSAGE_CHARS = 300
@@ -78,17 +94,35 @@ REFUSAL_TEXT: dict[str, str] = {
     "declined": "The user declined this proposal in Juristid. Nothing was saved.",
     "approval_mismatch": "This proposal's approval does not match it. Nothing was saved.",
     "already_failed": "This proposal already failed and cannot be committed. Nothing was saved.",
-    "too_large": "The change is too large for Juristid to accept.",
+    "too_large": "The change is too large for Juristid to accept. Nothing was saved.",
+    "method_not_allowed": "Juristid's change service refused the request. Nothing was saved.",
 }
-REFUSED_DEFAULT_TEXT = "Juristid refused this change. Nothing was saved."
+
+#: Gateway codes after which the outcome is not known: the work may have run.
+UNKNOWN_OUTCOME_CODES = frozenset({"timeout", "internal_error"})
+
+PREPARE = "prepare"
+COMMIT = "commit"
 
 NOT_CONFIGURED_TEXT = "Changes through ChatGPT are not configured on this Juristid server."
-TIMEOUT_TEXT = (
-    "Juristid took too long to answer. Nothing may have been saved: check the proposal in "
-    "Juristid before trying again."
+#: Only for a request that never reached the gateway, where it is certain.
+UNREACHABLE_TEXT = "Juristid's change service could not be reached. Nothing was saved."
+COMMIT_UNKNOWN_TEXT = (
+    "Juristid did not confirm whether the change was saved: the outcome is unknown. Do not "
+    "prepare the change again. Calling commit_prepared_action again with the same proposal_id "
+    "is safe: if the change was saved it answers the stored receipt and saves nothing twice, "
+    "and if not it says what is still needed."
 )
-UNAVAILABLE_TEXT = "Juristid's change service could not be reached. Nothing was saved."
-BAD_ANSWER_TEXT = "Juristid's change service gave an answer that could not be read."
+PREPARE_UNKNOWN_TEXT = (
+    "Juristid did not confirm the proposal. A proposal may exist, but nothing in Juristid "
+    "changes until the user approves it in Juristid and commit_prepared_action saves it. "
+    "Ask the user before preparing the change again."
+)
+
+
+def unknown_outcome_text(action: str) -> str:
+    """What the assistant is told when a sent request's outcome is not known."""
+    return COMMIT_UNKNOWN_TEXT if action == COMMIT else PREPARE_UNKNOWN_TEXT
 
 
 class GatewayRefused(Exception):
@@ -115,10 +149,15 @@ def _one_line(value: Any) -> str:
     return " ".join(value.split())[:MAX_MESSAGE_CHARS]
 
 
-def refusal(code: Any, message: Any) -> GatewayRefused:
-    """A gateway refusal as a safe text: the code's own sentence, then the gateway's words."""
+def refusal(code: Any, message: Any, *, action: str) -> GatewayRefused | GatewayUnavailable:
+    """A gateway refusal as a safe text: the code's own sentence, then the gateway's words.
+
+    A code after which the work may have run (`UNKNOWN_OUTCOME_CODES`), or one
+    this client does not know, is an unknown outcome — never «nothing saved».
+    """
     if not isinstance(code, str) or code not in REFUSAL_TEXT:
-        return GatewayRefused("refused", REFUSED_DEFAULT_TEXT)
+        kind = code if isinstance(code, str) and code in UNKNOWN_OUTCOME_CODES else "unknown_code"
+        return GatewayUnavailable(kind, unknown_outcome_text(action))
     detail = _one_line(message)
     text = REFUSAL_TEXT[code]
     if detail and detail != text:
@@ -126,17 +165,27 @@ def refusal(code: Any, message: Any) -> GatewayRefused:
     return GatewayRefused(code, text)
 
 
-async def _read_bounded(response: httpx2.Response) -> bytes:
+async def _read_bounded(response: httpx2.Response, action: str) -> bytes:
     body = bytearray()
     async for chunk in response.aiter_bytes():
         body.extend(chunk)
         if len(body) > MAX_RESPONSE_BYTES:
-            raise GatewayUnavailable("too_large", BAD_ANSWER_TEXT)
+            raise GatewayUnavailable("too_large", unknown_outcome_text(action))
     return bytes(body)
 
 
+#: Failures that mean the request never reached the gateway, so nothing ran.
+NOT_SENT_ERRORS: tuple[type[Exception], ...] = (
+    httpx2.ConnectError,
+    httpx2.ConnectTimeout,
+    httpx2.PoolTimeout,
+    httpx2.UnsupportedProtocol,
+    httpx2.InvalidURL,
+)
+
+
 async def _post(
-    path: str, payload: dict[str, Any], *, authorization: str, correlation_id: str
+    path: str, payload: dict[str, Any], *, action: str, authorization: str, correlation_id: str
 ) -> dict[str, Any]:
     key = str(settings.MCP_WRITE_GATEWAY_KEY or "")
     base = str(settings.MCP_WRITE_GATEWAY_URL or "").rstrip("/")
@@ -150,7 +199,7 @@ async def _post(
         "Accept": "application/json",
     }
     content = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
-    timeout = float(settings.MCP_WRITE_CALL_TIMEOUT_SECONDS)
+    timeout = float(settings.MCP_WRITE_CALL_TIMEOUT_SECONDS) + TIMEOUT_MARGIN_SECONDS
     try:
         async with httpx2.AsyncClient(
             transport=TRANSPORT,
@@ -162,29 +211,33 @@ async def _post(
                 "POST", base + path, content=content, headers=headers
             ) as response:
                 status_code = response.status_code
-                body = await _read_bounded(response)
+                body = await _read_bounded(response, action)
     except GatewayUnavailable as exc:
         logger.warning("MCP write gateway %s: %s", path, exc.kind)
         raise
+    except NOT_SENT_ERRORS as exc:
+        logger.warning("MCP write gateway %s: not reached (%s)", path, type(exc).__name__)
+        raise GatewayUnavailable("unreachable", UNREACHABLE_TEXT) from None
     except httpx2.TimeoutException as exc:
         logger.warning("MCP write gateway %s: timeout (%s)", path, type(exc).__name__)
-        raise GatewayUnavailable("timeout", TIMEOUT_TEXT) from None
+        raise GatewayUnavailable("timeout", unknown_outcome_text(action)) from None
     except httpx2.HTTPError as exc:
-        logger.warning("MCP write gateway %s: unavailable (%s)", path, type(exc).__name__)
-        raise GatewayUnavailable("unavailable", UNAVAILABLE_TEXT) from None
+        logger.warning("MCP write gateway %s: failed after sending (%s)", path, type(exc).__name__)
+        raise GatewayUnavailable("unavailable", unknown_outcome_text(action)) from None
 
     try:
         answer = json.loads(body)
     except ValueError:
         answer = None
     if isinstance(answer, dict) and answer.get("status") == "refused":
-        raise refusal(answer.get("code"), answer.get("message"))
+        failure = refusal(answer.get("code"), answer.get("message"), action=action)
+        if isinstance(failure, GatewayUnavailable):
+            logger.warning("MCP write gateway %s: %s (HTTP %s)", path, failure.kind, status_code)
+        raise failure
     if status_code != 200 or not isinstance(answer, dict):
         kind = "unavailable" if status_code >= 500 else "bad_answer"
         logger.warning("MCP write gateway %s: HTTP %s without a usable answer", path, status_code)
-        raise GatewayUnavailable(
-            kind, UNAVAILABLE_TEXT if kind == "unavailable" else BAD_ANSWER_TEXT
-        )
+        raise GatewayUnavailable(kind, unknown_outcome_text(action))
     return answer
 
 
@@ -195,6 +248,7 @@ async def prepare(
     return await _post(
         PREPARE_PATH,
         {"operation": operation, "arguments": arguments},
+        action=PREPARE,
         authorization=authorization,
         correlation_id=correlation_id,
     )
@@ -205,6 +259,7 @@ async def commit(*, authorization: str, proposal_id: str, correlation_id: str) -
     return await _post(
         COMMIT_PATH,
         {"proposal_id": proposal_id},
+        action=COMMIT,
         authorization=authorization,
         correlation_id=correlation_id,
     )

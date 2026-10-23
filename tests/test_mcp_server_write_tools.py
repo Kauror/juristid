@@ -191,8 +191,11 @@ def gateway(monkeypatch) -> Gateway:
 
 @pytest.fixture
 def operations(monkeypatch) -> None:
-    monkeypatch.setitem(REGISTRY, AddNote.name, AddNote())
-    monkeypatch.setitem(REGISTRY, ResponseDeadline.name, ResponseDeadline())
+    # Only the fakes: the real operations are covered by the registry tests below.
+    import app.mcp_writes.operations as registry_module
+
+    fakes = {AddNote.name: AddNote(), ResponseDeadline.name: ResponseDeadline()}
+    monkeypatch.setattr(registry_module, "REGISTRY", fakes)
 
 
 @pytest.fixture
@@ -565,6 +568,7 @@ def test_a_gateway_refusal_is_a_safe_tool_error(writes_on, gateway, code):
     assert text.startswith(write_client.REFUSAL_TEXT[code])
     assert text.endswith("The opinion deadline cannot be in the past.")
     assert "_meta" not in result or not result["_meta"]
+    assert "unknown" not in text
 
 
 def test_a_gateway_insufficient_scope_is_the_step_up(writes_on, gateway):
@@ -584,11 +588,66 @@ def test_a_gateway_unauthorized_is_the_authentication_challenge(writes_on, gatew
     assert 'error="invalid_token"' in value
 
 
-def test_an_unknown_refusal_code_says_only_the_generic_text(writes_on, gateway):
-    gateway.answer = refused(MARKER, MARKER)
-    result = _call("prepare_add_matter_note", NOTE)
+NOTHING_SAVED = "Nothing was saved"
+COMMIT_ARGS = {"proposal_id": PROPOSAL_ID}
+BOTH_TOOLS = [
+    ("prepare_add_matter_note", NOTE, write_client.PREPARE_UNKNOWN_TEXT),
+    ("commit_prepared_action", COMMIT_ARGS, write_client.COMMIT_UNKNOWN_TEXT),
+]
+
+
+def test_the_refusals_before_execution_are_the_only_ones_mapped_as_refusals():
+    assert set(write_client.REFUSAL_TEXT) == {
+        "unauthorized",
+        "insufficient_scope",
+        "writes_disabled",
+        "forbidden",
+        "not_found",
+        "invalid_argument",
+        "missing_information",
+        "domain_rule",
+        "stale",
+        "expired",
+        "declined",
+        "approval_mismatch",
+        "already_failed",
+        "too_large",
+        "method_not_allowed",
+    }
+    assert not set(write_client.REFUSAL_TEXT) & write_client.UNKNOWN_OUTCOME_CODES
+
+
+@pytest.mark.parametrize(("tool", "arguments", "expected"), BOTH_TOOLS)
+@pytest.mark.parametrize(
+    "code", ["timeout", "internal_error", MARKER], ids=["timeout", "internal", "unknown"]
+)
+def test_a_gateway_timeout_internal_error_or_unknown_code_is_an_unknown_outcome(
+    writes_on, gateway, tool, arguments, expected, code
+):
+    gateway.answer = refused(code, MARKER, status=504 if code == "timeout" else 500)
+    result = _call(tool, arguments)
     assert result["isError"] is True
-    assert result["content"][0]["text"] == write_client.REFUSED_DEFAULT_TEXT
+    text = result["content"][0]["text"]
+    assert text == expected
+    assert NOTHING_SAVED not in text
+    assert MARKER not in text
+
+
+def test_the_commit_unknown_outcome_says_a_retry_with_the_same_id_is_safe():
+    text = write_client.COMMIT_UNKNOWN_TEXT
+    assert "outcome is unknown" in text
+    assert "commit_prepared_action again with the same proposal_id is safe" in text
+    assert "Do not prepare the change again" in text
+    assert NOTHING_SAVED.lower() not in text.lower()
+    prepare = write_client.PREPARE_UNKNOWN_TEXT
+    assert "A proposal may exist" in prepare
+    assert "nothing in Juristid changes until the user approves it" in prepare
+
+
+def test_the_gateway_method_not_allowed_is_mapped(writes_on, gateway):
+    gateway.answer = refused("method_not_allowed", status=405)
+    result = _call("commit_prepared_action", COMMIT_ARGS)
+    assert result["content"][0]["text"] == write_client.REFUSAL_TEXT["method_not_allowed"]
 
 
 def _raise(exc: Exception) -> Callable[[httpx2.Request], httpx2.Response]:
@@ -598,33 +657,67 @@ def _raise(exc: Exception) -> Callable[[httpx2.Request], httpx2.Response]:
     return answer
 
 
-@pytest.mark.parametrize(
-    ("answer", "text"),
-    [
-        (_raise(httpx2.ReadTimeout("slow " + WRITE_TOKEN)), write_client.TIMEOUT_TEXT),
-        (_raise(httpx2.ConnectError("refused " + WRITE_TOKEN)), write_client.UNAVAILABLE_TEXT),
-        (lambda r: httpx2.Response(502, text="<html>" + MARKER), write_client.UNAVAILABLE_TEXT),
-        (lambda r: httpx2.Response(200, text="not json " + MARKER), write_client.BAD_ANSWER_TEXT),
-        (lambda r: httpx2.Response(200, json={"status": MARKER}), write_client.BAD_ANSWER_TEXT),
-        (
-            lambda r: httpx2.Response(200, content=b'{"x": "' + b"a" * (300 * 1024) + b'"}'),
-            write_client.BAD_ANSWER_TEXT,
-        ),
-        (
-            lambda r: httpx2.Response(307, headers={"Location": "https://elsewhere.example/v1"}),
-            write_client.BAD_ANSWER_TEXT,
-        ),
-    ],
-)
-def test_a_gateway_failure_is_a_fixed_safe_error(writes_on, gateway, caplog, answer, text):
-    gateway.answer = answer
+SENT_FAILURES = {
+    "read_timeout": _raise(httpx2.ReadTimeout("slow " + WRITE_TOKEN)),
+    "write_timeout": _raise(httpx2.WriteTimeout("slow " + WRITE_TOKEN)),
+    "protocol": _raise(httpx2.RemoteProtocolError("cut " + WRITE_TOKEN)),
+    "read_error": _raise(httpx2.ReadError("cut " + WRITE_TOKEN)),
+    "502": lambda r: httpx2.Response(502, text="<html>" + MARKER),
+    "not_json": lambda r: httpx2.Response(200, text="not json " + MARKER),
+    "odd_status": lambda r: httpx2.Response(200, json={"status": MARKER}),
+    "oversized": lambda r: httpx2.Response(200, content=b'{"x": "' + b"a" * (300 * 1024) + b'"}'),
+    "redirect": lambda r: httpx2.Response(307, headers={"Location": "https://elsewhere.example/"}),
+}
+
+
+@pytest.mark.parametrize(("tool", "arguments", "expected"), BOTH_TOOLS)
+@pytest.mark.parametrize("failure", sorted(SENT_FAILURES))
+def test_a_failure_after_sending_is_an_unknown_outcome_never_nothing_saved(
+    writes_on, gateway, caplog, failure, tool, arguments, expected
+):
+    gateway.answer = SENT_FAILURES[failure]
     with caplog.at_level(logging.DEBUG):
-        result = _call("prepare_add_matter_note", NOTE)
+        result = _call(tool, arguments)
     assert result["isError"] is True
-    assert result["content"][0]["text"] == text
+    assert result["content"][0]["text"] == expected
     assert len(gateway.requests) == 1  # no retry, no redirect followed
     for secret in (WRITE_TOKEN, GATEWAY_KEY, MARKER, NOTE["text"]):
         assert secret not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "exc", [httpx2.ConnectError("refused " + WRITE_TOKEN), httpx2.ConnectTimeout("slow")]
+)
+def test_a_request_that_never_reached_the_gateway_says_nothing_was_saved(writes_on, gateway, exc):
+    gateway.answer = _raise(exc)
+    result = _call("commit_prepared_action", COMMIT_ARGS)
+    assert result["content"][0]["text"] == write_client.UNREACHABLE_TEXT
+    assert WRITE_TOKEN not in json.dumps(result)
+
+
+def test_the_client_waits_longer_than_the_gateway(writes_on, gateway, settings):
+    seen: list[Any] = []
+
+    def answer(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request.extensions["timeout"])
+        return httpx2.Response(200, json=executed_answer(replayed=False))
+
+    gateway.answer = answer
+    _call("commit_prepared_action", COMMIT_ARGS)
+    expected = settings.MCP_WRITE_CALL_TIMEOUT_SECONDS + write_client.TIMEOUT_MARGIN_SECONDS
+    assert write_client.TIMEOUT_MARGIN_SECONDS >= 5
+    assert seen == [{"connect": expected, "read": expected, "write": expected, "pool": expected}]
+
+
+@pytest.mark.parametrize(
+    "receipt_url", ["https://phish.example/teemad/1/", None], ids=["foreign", "missing"]
+)
+def test_an_unusable_commit_receipt_is_an_unknown_outcome(writes_on, gateway, receipt_url):
+    answer = executed_answer(replayed=False)
+    answer["result"]["url"] = receipt_url
+    gateway.answer = lambda request: httpx2.Response(200, json=answer)
+    result = _call("commit_prepared_action", COMMIT_ARGS)
+    assert result["content"][0]["text"] == write_client.COMMIT_UNKNOWN_TEXT
 
 
 def test_an_approval_link_outside_juristid_is_not_passed_on(writes_on, gateway):
@@ -633,7 +726,7 @@ def test_an_approval_link_outside_juristid_is_not_passed_on(writes_on, gateway):
     gateway.answer = lambda request: httpx2.Response(200, json=answer)
     result = _call("prepare_add_matter_note", NOTE)
     assert result["isError"] is True
-    assert result["content"][0]["text"] == write_client.BAD_ANSWER_TEXT
+    assert result["content"][0]["text"] == write_client.PREPARE_UNKNOWN_TEXT
     assert "phish" not in json.dumps(result)
 
 
@@ -694,3 +787,37 @@ def test_the_generated_argument_model_validates_like_the_operations_own():
     with pytest.raises(ValueError):
         spec.arguments.model_validate({**NOTE, "text": "x" * 401})
     assert spec.arguments.model_validate(NOTE).model_dump(mode="json") == NOTE
+
+
+# -- the real registry -------------------------------------------------------------------
+
+
+def test_every_registered_operation_builds_a_valid_write_tool():
+    """On the integration branch REGISTRY holds the real operations (agent B)."""
+    specs = write_tools.write_tool_specs()
+    names = [spec.name for spec in specs]
+    assert names[-1] == write_tools.COMMIT_TOOL_NAME
+    assert len(names) == len(set(names)) == len(REGISTRY) + 1
+    for spec in specs:
+        assert len(spec.name) <= 64
+        assert spec.parameters.get("type") == "object"
+        assert spec.parameters.get("additionalProperties") is False, spec.name
+        assert len(spec.invoking) <= 64
+        assert len(spec.invoked) <= 64
+        assert spec.description.strip()
+        if spec.operation is not None:
+            operation = REGISTRY[spec.operation]
+            assert spec.parameters == operation.arguments.model_json_schema(by_alias=True)
+            assert write_tools.APPROVAL_PARAGRAPH in spec.description
+            assert spec.annotations.read_only_hint is False
+            assert spec.annotations.destructive_hint is False
+
+
+def test_the_real_tools_are_listed_with_writes_on(settings, monkeypatch, gateway):
+    _configure(settings, writes=True)
+    _install(monkeypatch)
+    tools = _tools()
+    assert set(tools) == READ_TOOL_NAMES | {f"prepare_{name}" for name in REGISTRY} | {
+        write_tools.COMMIT_TOOL_NAME
+    }
+    assert _read_tools_digest(tools) == READ_TOOLS_SHA256

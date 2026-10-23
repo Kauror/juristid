@@ -291,20 +291,25 @@ def _answer(structured: dict[str, Any], instruction: str) -> CallToolResult:
     )
 
 
+class _BadAnswer(Exception):
+    """The gateway answered 200 with something this client cannot use. It was sent: the
+    outcome is unknown, not «nothing saved»."""
+
+
 def _uuid_text(value: Any) -> str:
     if not isinstance(value, str):
-        raise GatewayUnavailable("bad_answer", write_client.BAD_ANSWER_TEXT)
+        raise _BadAnswer()
     try:
         return str(uuid.UUID(value))
     except ValueError:
-        raise GatewayUnavailable("bad_answer", write_client.BAD_ANSWER_TEXT) from None
+        raise _BadAnswer() from None
 
 
 def _juristid_link(value: Any) -> str:
     """A link the gateway answered must point into Juristid itself, nowhere else."""
     origin = str(settings.JURISTID_PUBLIC_ORIGIN or "").rstrip("/")
     if not isinstance(value, str) or not origin or not value.startswith(origin + "/"):
-        raise GatewayUnavailable("bad_answer", write_client.BAD_ANSWER_TEXT)
+        raise _BadAnswer()
     return value
 
 
@@ -315,7 +320,7 @@ def _text(value: Any) -> str:
 def _prepared(answer: Mapping[str, Any]) -> CallToolResult:
     proposal = answer.get("proposal")
     if answer.get("status") != "prepared" or not isinstance(proposal, Mapping):
-        raise GatewayUnavailable("bad_answer", write_client.BAD_ANSWER_TEXT)
+        raise _BadAnswer()
     preview = proposal.get("preview")
     structured = {
         "status": "prepared",
@@ -341,7 +346,7 @@ def _committed(answer: Mapping[str, Any], proposal_id: str) -> CallToolResult:
         return _answer(structured, AWAITING_INSTRUCTION)
     result = answer.get("result")
     if status != "executed" or not isinstance(result, Mapping):
-        raise GatewayUnavailable("bad_answer", write_client.BAD_ANSWER_TEXT)
+        raise _BadAnswer()
     saved = result.get("saved")
     replayed = answer.get("replayed") is True
     structured = {
@@ -411,6 +416,11 @@ async def call_write_tool(
         except GatewayUnavailable as exc:
             outcome = exc.kind
             return _error(exc.text)
+        except _BadAnswer:
+            outcome = "bad_answer"
+            logger.warning("MCP write tool %s: unusable gateway answer", spec.name)
+            action = write_client.PREPARE if spec.kind == "prepare" else write_client.COMMIT
+            return _error(write_client.unknown_outcome_text(action))
         structured = result.structured_content or {}
         outcome = str(structured.get("status") or "ok")
         if structured.get("replayed") is True:
