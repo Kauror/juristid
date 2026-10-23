@@ -19,7 +19,7 @@ import functools
 import unicodedata
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, date, timedelta
+from datetime import date, timedelta
 from typing import Any, cast
 
 from django import forms
@@ -4127,11 +4127,12 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             # Only the years this Matter actually has files from. A dropdown
             # offering ten empty years is a dropdown that teaches people the
             # filter does not work.
-            # Asked of the database, as the year each row's stored moment has
-            # in UTC — which is what `created_at.year` on the loaded rows used
-            # to answer.
+            # Asked of the database, in the active zone (Europe/Tallinn) — the
+            # same year `created_at__year` filters on above and the row's date
+            # prints. In UTC a file uploaded 1.01 at 00:30 was offered as the
+            # year before and then filtered out of it (bounty A-03).
             "document_years": list(
-                documents.annotate(created_year=ExtractYear("created_at", tzinfo=UTC))
+                documents.annotate(created_year=ExtractYear("created_at"))
                 .order_by("-created_year")
                 .values_list("created_year", flat=True)
                 .distinct()
