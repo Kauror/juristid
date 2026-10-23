@@ -47,5 +47,8 @@ def reference_actor(request: HttpRequest) -> User | None:
     principal = admin_session.verified_administrator(request)
     if principal is None or not may_manage_reference_data(principal):
         return None
+    # Haldus administration done through the verified principal, so it keeps
+    # the administrator session's idle clock running like any Haldus page.
+    admin_session.note_activity(request)
     actor = admin_session.administrator_actor(request)
     return actor.user if actor is not None else None

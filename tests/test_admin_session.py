@@ -676,6 +676,34 @@ def test_reauthentication_survives_a_password_hash_upgrade(client):
     assert client.get(reverse(LIST)).status_code == 200
 
 
+def test_reauthentication_does_not_absorb_a_concurrent_epoch_change(client, monkeypatch):
+    """Somebody else's change landing during the re-proof ends the session.
+
+    The re-binding after a hash upgrade must not swallow it: another
+    administrator's «Lähtesta teine tegur», or a password set by link,
+    commits between the page's check and the re-read, moving the epoch.
+    """
+    admin, secret = full_admin()
+    verified(client, admin, secret)
+    _age(client, strong_at=timedelta(seconds=601))
+    real_verify = mfa.verify_totp
+
+    def verify_then_somebody_resets(user, code_value):
+        accepted = real_verify(user, code_value)
+        User.objects.filter(pk=user.pk).update(security_epoch=user.security_epoch + 1)
+        return accepted
+
+    monkeypatch.setattr(mfa, "verify_totp", verify_then_somebody_resets)
+
+    client.post(
+        reverse("haldus:reauthenticate"),
+        {"password": PASSWORD, "code": code(secret, admin), "next": reverse(LIST)},
+    )
+
+    assert admin_session.SESSION_STATE not in client.session
+    assert client.get(reverse(LIST)).status_code == 404
+
+
 def test_the_link_holder_is_asked_again_inside_the_transaction():
     from app.accounts import credentials, tokens
     from app.accounts.enums import CredentialTokenPurpose

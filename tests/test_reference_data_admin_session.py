@@ -9,13 +9,15 @@ principal. Without the grant, or without the session, nothing opens.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 import pytest
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
-from app.accounts import capabilities
+from app.accounts import admin_session, capabilities
 from app.accounts.enums import Capability, UserRole
 from app.audit.enums import AuthMethod, ChangeEventType
 from app.audit.models import ChangeEvent
@@ -124,3 +126,35 @@ def test_a_granted_administrator_sees_no_usage_counts() -> None:
 
     assert response.status_code == 200
     assert response.context["shows_usage"] is False
+
+
+def _idle_for(client: Client, seconds: int) -> None:
+    session = client.session
+    state = dict(session[admin_session.SESSION_STATE])
+    state["last_seen"] = (timezone.now() - timedelta(seconds=seconds)).isoformat()
+    session[admin_session.SESSION_STATE] = state
+    session.save()
+
+
+def test_reference_work_keeps_the_administrator_session_alive() -> None:
+    """Klassifikaatorid is Haldus work: it restarts the idle clock like any Haldus page."""
+    admin, secret = technical_admin()
+    _grant_reference(admin)
+    client = verified(Client(), admin, secret)
+
+    for _ in range(3):
+        _idle_for(client, 600)
+        assert client.get(reverse("reference_data:index")).status_code == 200
+
+
+def test_a_business_page_does_not_keep_it_alive() -> None:
+    """Browsing past the session refreshes nothing; it still idles out."""
+    admin, secret = technical_admin()
+    _grant_reference(admin)
+    client = verified(Client(), admin, secret)
+    _idle_for(client, 600)
+
+    client.get(reverse("core:home"))
+
+    seen = client.session[admin_session.SESSION_STATE]["last_seen"]
+    assert timezone.now() - timezone.datetime.fromisoformat(seen) > timedelta(seconds=590)

@@ -185,8 +185,15 @@ def test_manage_check_fails_on_the_unfilled_template():
     assert "replace-me-with" not in output
 
 
-def test_manage_check_passes_on_the_filled_template():
-    values = _template(REAL_DATA_TEMPLATES[0])
+@pytest.mark.parametrize("template", REAL_DATA_TEMPLATES, ids=lambda path: path.parent.name)
+def test_manage_check_passes_on_the_filled_template(template):
+    """Every real-data template, filled, passes — the rehearsal's included.
+
+    Only the production template was checked once, and a new required secret
+    (juristid.E048) then broke every `run --rm` in the recovery rehearsal
+    without CI noticing.
+    """
+    values = _template(template)
     values.update(
         DJANGO_SECRET_KEY=LONG_SECRET_KEY,
         JURISTID_SHARED_GATE_PASSWORD=LONG_GATE_PASSWORD,

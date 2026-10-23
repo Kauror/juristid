@@ -868,10 +868,16 @@ def reauthenticate(request: HttpRequest, *, password: str, code: str) -> ReauthO
     # which changes the credential stamp this session is bound to. The person
     # has just proved the password *and* the code, so the session is re-bound
     # to the account as it is now — read afresh, and only while it is still
-    # eligible; anything else ends it as usual.
+    # eligible; anything else ends it as usual. A hash upgrade moves only the
+    # credential stamp: a security epoch that moved meanwhile is somebody
+    # else's change — a reset second factor, a password set by link — and ends
+    # the session rather than being absorbed by the re-binding.
     fresh = User.objects.filter(pk=user.pk).first()
     if fresh is None or not eligible(fresh):
         end(request, reason="no_longer_eligible", principal=user)
+        return ReauthOutcome(False)
+    if fresh.security_epoch != user.security_epoch:
+        end(request, reason="credentials_changed", principal=user)
         return ReauthOutcome(False)
     state = _state(request) or {}
     request.session[SESSION_STATE] = {
