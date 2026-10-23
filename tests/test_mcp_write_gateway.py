@@ -323,3 +323,14 @@ def test_the_healthcheck_fails_when_nothing_listens(settings, capsys):
         call_command("check_mcp_write_gateway", "--quiet")
     assert stopped.value.code == 1
     assert "did not answer" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("raw", [b"[" * 30000, b'{"a":' * 40 + b"1" + b"}" * 40])
+def test_a_deeply_nested_body_is_a_safe_400(raw):
+    refused(call("POST", "/v1/prepare", raw=raw), 400, "invalid_argument")
+
+
+def test_brackets_inside_strings_do_not_count_as_nesting():
+    assert not gateway.too_deep(b'{"text": "' + b"[" * 100 + b'\\" ]"}')
+    assert gateway.too_deep(b"[" * 33)
+    assert not gateway.too_deep(b"[" * 32 + b"]" * 32)

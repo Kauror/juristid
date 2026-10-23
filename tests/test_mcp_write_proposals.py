@@ -219,3 +219,30 @@ def test_the_digest_binds_operation_arguments_user_and_grant():
         ("grant_id", uuid.UUID(int=4)),
     ):
         assert proposals.arguments_digest(**{**base, key: value}) != digest
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [{"title": "Uus\x00pealkiri"}, {"title": "Uus", "x\x00": "y"}, {"title": ["a", {"b": "\x00"}]}],
+)
+def test_a_nul_character_anywhere_is_refused_with_an_event(world, arguments):
+    answer = _prepare(world, **arguments)
+    assert isinstance(answer, Refusal) and answer.code == "invalid_argument"
+    assert not McpWriteProposal.objects.exists()
+    [event] = McpWriteEvent.objects.all()
+    assert event.event_type == McpWriteEventType.PREPARE_REFUSED
+    assert event.detail == {"code": "invalid_argument", "reason": "nul_character"}
+
+
+def test_an_unexpected_failure_in_prepare_still_records_a_refusal(world, op, monkeypatch):
+    def broken(*, user, arguments):
+        raise RuntimeError(SECRET_VALUE)
+
+    monkeypatch.setattr(op, "prepare", broken)
+    answer = _prepare(world)
+    assert isinstance(answer, Refusal) and answer.code == "internal_error"
+    assert SECRET_VALUE not in str(answer.as_json())
+    assert not McpWriteProposal.objects.exists()
+    [event] = McpWriteEvent.objects.all()
+    assert event.event_type == McpWriteEventType.PREPARE_REFUSED
+    assert event.detail == {"code": "internal_error", "error": "RuntimeError"}

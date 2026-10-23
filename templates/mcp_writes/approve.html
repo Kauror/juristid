@@ -71,6 +71,16 @@
     </div>
   {% endif %}
 
+  {% if can_withdraw %}
+    <form method="post" class="card card--form form" novalidate>
+      {% csrf_token %}
+      <p class="acctnote">Kui sa ei soovi seda muudatust enam, tühista kinnitus enne, kui ChatGPT selle salvestab.</p>
+      <div class="form__actions">
+        <button type="submit" name="otsus" value="tuhista" class="button button--quiet">Tühista kinnitus</button>
+      </div>
+    </form>
+  {% endif %}
+
   {% if can_approve or can_decline %}
     <form method="post" class="card card--form form" novalidate>
       {% csrf_token %}

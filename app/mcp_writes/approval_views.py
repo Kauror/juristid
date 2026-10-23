@@ -104,6 +104,7 @@ STALE = (
     "Kirje on pärast selle muudatuse ettevalmistamist muutunud, seega seda ei saa enam "
     "kinnitada. Palu ChatGPT-l muudatus uuesti ette valmistada."
 )
+WITHDRAWN = "Tühistasid kinnituse. Muudatust ei salvestata."
 EXPIRED = "Selle muudatuse kinnitamise aeg on läbi. Palu ChatGPT-l see uuesti ette valmistada."
 
 #: What a proposal that is no longer waiting says to its own person.
@@ -138,7 +139,11 @@ def _harden(response: HttpResponse) -> HttpResponse:
     response["Pragma"] = "no-cache"
     response["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
     response["X-Frame-Options"] = "DENY"
-    response["Referrer-Policy"] = "no-referrer"
+    # Deliberately no `Referrer-Policy: no-referrer` here: with it a browser
+    # sends `Origin: null` (or no Origin and no Referer) on this page's own
+    # same-origin POST and CSRF refuses «Kinnita». The global
+    # SECURE_REFERRER_POLICY = "same-origin" already keeps the address off
+    # every other site.
     return response
 
 
@@ -226,6 +231,7 @@ def _page(
         "persona": user,
         "can_approve": can_approve,
         "can_decline": proposal.status == ProposalStatus.PENDING and not done,
+        "can_withdraw": proposal.status == ProposalStatus.APPROVED,
         "recent": can_approve and _recent_holds(request, user, grant),
         "notice": notice,
         "error": error,
@@ -370,6 +376,8 @@ def approve(request: HttpRequest, proposal_id: Any) -> HttpResponse:
                 record(McpWriteEventType.EXPIRED, succeeded=False, proposal=locked, code="expired")
         proposal.refresh_from_db()
 
+    if request.method == "POST" and request.POST.get("otsus", "") == "tuhista":
+        return _withdraw(request, proposal)
     if proposal.status != ProposalStatus.PENDING:
         return _page(request, proposal, can_approve=False, done=STATUS_TEXT[proposal.status])
 
@@ -402,6 +410,38 @@ def _decline(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
             )
     locked.refresh_from_db()
     return _page(request, locked, can_approve=False, done=STATUS_TEXT[locked.status])
+
+
+def _withdraw(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
+    """«Tühista kinnitus»: an APPROVED proposal not yet committed is declined after all.
+
+    No code is asked: withdrawing makes nothing happen. Under the proposal's
+    row lock, which the commit takes first, so a withdrawal and a commit take
+    turns — the commit then answers ``declined``, or the withdrawal finds the
+    change already saved and says so. The approval row stays as it was
+    (append-only); the proposal's status is what the commit reads.
+    """
+    with transaction.atomic():
+        locked = McpWriteProposal.objects.select_for_update().get(pk=proposal.pk)
+        if locked.status == ProposalStatus.APPROVED:
+            locked.status = ProposalStatus.DECLINED
+            locked.failure_code = "withdrawn"
+            locked.save(update_fields=["status", "failure_code", "updated_at"])
+            record(
+                McpWriteEventType.DECLINED,
+                succeeded=False,
+                proposal=locked,
+                reason="approval_withdrawn",
+            )
+            withdrawn = True
+        else:
+            withdrawn = False
+    locked.refresh_from_db()
+    if withdrawn:
+        return _page(request, locked, can_approve=False, done=WITHDRAWN)
+    if locked.status == ProposalStatus.PENDING:
+        return _page(request, locked, can_approve=False, error=CHOOSE, status=400)
+    return _page(request, locked, can_approve=False, done=STATUS_TEXT[locked.status], status=409)
 
 
 def _code_refused(
