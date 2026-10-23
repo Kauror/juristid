@@ -537,9 +537,9 @@ dump_roles() {
   local ident='("[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)' sql
   sql="$(tr -d '\r')"
   {
-    sed -nE "/^(GRANT|REVOKE|ALTER) / s/.*[[:space:]](TO|FROM)[[:space:]]+$ident([[:space:]]+WITH GRANT OPTION)?([[:space:]]+GRANTED BY .*)?;\$/\2/p" <<<"$sql"
-    sed -nE "/^(GRANT|REVOKE) / s/.*[[:space:]]GRANTED BY[[:space:]]+$ident;\$/\1/p" <<<"$sql"
-    sed -nE "s/^ALTER DEFAULT PRIVILEGES FOR ROLE[[:space:]]+$ident[[:space:]].*/\1/p" <<<"$sql"
+    sed -nE "/^(GRANT|REVOKE|ALTER) / s/.*[[:space:]](TO|FROM)[[:space:]]+${ident}([[:space:]]+WITH GRANT OPTION)?([[:space:]]+GRANTED BY .*)?;\$/\2/p" <<<"$sql"
+    sed -nE "/^(GRANT|REVOKE) / s/.*[[:space:]]GRANTED BY[[:space:]]+${ident};\$/\1/p" <<<"$sql"
+    sed -nE "s/^ALTER DEFAULT PRIVILEGES FOR ROLE[[:space:]]+${ident}[[:space:]].*/\1/p" <<<"$sql"
   } |
     sed -E 's/^"(.*)"$/\1/' |
     grep -vix 'public' |
