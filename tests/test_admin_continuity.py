@@ -259,3 +259,64 @@ def test_after_an_emergency_the_operator_may_bootstrap_again():
     )
 
     assert result.printable_link
+
+
+# -- a reset is recovery, not a way round the rule (security review P1) -----------------------
+
+
+def test_a_reset_then_a_switch_off_is_refused():
+    first, _ = full_admin()
+    second, _ = full_admin()
+    administration.reset_second_factor(actor=_actor(first), user=second)
+    second.refresh_from_db()
+    assert administration.is_standing_full_administrator(second)
+    assert len(administration.standing_full_administrators()) == 2
+
+    with refused(administration.CONTINUITY):
+        administration.deactivate_account(actor=_actor(first), user=second)
+
+    second.refresh_from_db()
+    assert second.is_active
+
+
+def test_a_reset_then_a_withdrawal_is_refused():
+    first, _ = full_admin()
+    second, _ = full_admin()
+    administration.reset_second_factor(actor=_actor(first), user=second)
+    second.refresh_from_db()
+
+    with refused(administration.CONTINUITY):
+        _withdraw(first, second, Capability.MANAGE_ACCOUNTS.value)
+    with refused(administration.CONTINUITY):
+        _withdraw(first, second, Capability.DELEGATE_ADMINISTRATION.value)
+
+
+def test_re_enrolling_after_a_reset_makes_the_administrator_usable_again(client):
+    import pyotp
+    from django.urls import reverse
+
+    from tests.admin_session import pass_gate
+    from tests.local_auth import PASSWORD
+
+    first, _ = full_admin()
+    second, _ = full_admin()
+    administration.reset_second_factor(actor=_actor(first), user=second)
+    pass_gate(client)
+    client.post(reverse("haldus:sign_in"), {"email": second.upn, "password": PASSWORD})
+    client.get(reverse("haldus:enrol"))
+    sealed = client.session[admin_session.SESSION_SEALED_ENROLMENT]
+    secret = mfa.resume_enrolment(second, sealed).secret
+    client.post(reverse("haldus:enrol"), {"code": pyotp.TOTP(secret).now()})
+
+    second.refresh_from_db()
+    assert administration.is_usable_full_administrator(second)
+    assert not administration._awaiting_re_enrolment(second)
+
+
+def test_an_administrator_who_never_enrolled_is_not_standing():
+    """Only a reset's absence of a factor counts; a bootstrap that never finished does not."""
+    first, _ = full_admin()
+    never, _ = person(manage=True, delegate=True)
+
+    assert not administration.is_standing_full_administrator(never)
+    _withdraw(first, never, Capability.DELEGATE_ADMINISTRATION.value)  # allowed: 1 -> 1

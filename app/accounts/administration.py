@@ -389,17 +389,103 @@ def continuity_status() -> ContinuityStatus:
     return ContinuityStatus(usable=tuple(usable_full_administrators()))
 
 
-def _guard_continuity(before: int, *, subject: Any, action: str) -> None:
-    """Refuse a change that leaves fewer usable full administrators than both before and two.
+def _awaiting_re_enrolment(user: User) -> bool:
+    """Whether this account's authenticator was removed by a reset and not replaced yet.
+
+    An administrator's «Lähtesta teine tegur» (or the operator's
+    `reset_second_factor`) is the lost-phone recovery: it leaves the person
+    without a factor until their next step-up enrols one. The security trail
+    says so — an `MFA_REMOVED` by somebody else with no `MFA_ENROLLED` since —
+    and no stored flag is needed.
+    """
+    from app.audit.models import SecurityAuditEvent
+
+    if mfa.has_second_factor(user):
+        return False
+    removed = (
+        SecurityAuditEvent.objects.filter(
+            event_type=SecurityEventType.MFA_REMOVED,
+            subject_id=user.pk,
+            detail__by__in=["administrator", "operator"],
+        )
+        .order_by("-occurred_at", "-created_at")
+        .first()
+    )
+    if removed is None:
+        return False
+    return not SecurityAuditEvent.objects.filter(
+        event_type=SecurityEventType.MFA_ENROLLED,
+        subject_id=user.pk,
+        occurred_at__gte=removed.occurred_at,
+    ).exists()
+
+
+def is_standing_full_administrator(user: Any) -> bool:
+    """A usable full administrator — or one whose factor a reset removed, until they re-enrol.
+
+    The count the two-administrator rule protects alongside `usable`. Without
+    it, a reset (allowed: it is recovery) would drop the other administrator
+    from the usable count, and switching them off afterwards would compare one
+    with one and pass — the rule bypassed in two steps.
+    """
+    if is_usable_full_administrator(user):
+        return True
+    if not isinstance(user, User):
+        return False
+    if not user.is_active or user.provisioning_state != ProvisioningState.ACTIVATED:
+        return False
+    if not user.has_local_password or (user.is_synthetic and settings.REAL_DATA_ALLOWED):
+        return False
+    if not (
+        _has(user, Capability.MANAGE_ACCOUNTS) and _has(user, Capability.DELEGATE_ADMINISTRATION)
+    ):
+        return False
+    return _awaiting_re_enrolment(user)
+
+
+def standing_full_administrators() -> list[User]:
+    """Usable full administrators, and those a reset left waiting to re-enrol."""
+    candidates = User.objects.filter(
+        is_active=True,
+        provisioning_state=ProvisioningState.ACTIVATED,
+        local_password_set_at__isnull=False,
+        capability_overrides__contains={
+            Capability.MANAGE_ACCOUNTS.value: capabilities.ALLOW,
+            Capability.DELEGATE_ADMINISTRATION.value: capabilities.ALLOW,
+        },
+    ).order_by("display_name", "upn")
+    return [user for user in candidates if is_standing_full_administrator(user)]
+
+
+@dataclass(frozen=True)
+class ContinuityCounts:
+    usable: int
+    standing: int
+
+
+def _continuity_counts() -> ContinuityCounts:
+    return ContinuityCounts(
+        usable=len(usable_full_administrators()), standing=len(standing_full_administrators())
+    )
+
+
+def _guard_continuity(before: ContinuityCounts, *, subject: Any, action: str) -> None:
+    """Refuse a change that leaves fewer full administrators than both before and two.
+
+    Asked of both counts: the *usable* ones (who can verify themselves today)
+    and the *standing* ones (usable, or waiting to re-enrol after a reset).
+    Either falling below two and below what it was refuses the change.
 
     Called after the change is written and before its transaction commits, under
-    the administration lock: the count is the database's after the change, and a
-    refusal rolls the change back. Two administrators removing each other at the
-    same moment take turns at the lock, and the second sees the first's result.
+    the administration lock: the counts are the database's after the change, and
+    a refusal rolls the change back. Two administrators removing each other at
+    the same moment take turns at the lock, and the second sees the first's
+    result.
     """
-    after = len(usable_full_administrators())
-    if after < before and after < MINIMUM_FULL_ADMINISTRATORS:
-        raise PrivilegeRefused(CONTINUITY, action=action, subject=subject)
+    after = _continuity_counts()
+    for was, now in ((before.usable, after.usable), (before.standing, after.standing)):
+        if now < was and now < MINIMUM_FULL_ADMINISTRATORS:
+            raise PrivilegeRefused(CONTINUITY, action=action, subject=subject)
 
 
 def _bump_epoch(user: User) -> None:
@@ -796,7 +882,7 @@ def update_account(
 
     changed: list[str] = []
     delegates_before = len(_delegating_administrators())
-    usable_before = len(usable_full_administrators())
+    usable_before = _continuity_counts()
     if name != user.display_name:
         record_security_event(
             event_type=SecurityEventType.ACCOUNT_UPDATED,
@@ -872,7 +958,7 @@ def deactivate_account(*, actor: Actor, user: User, reason: str = "") -> User:
             actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="deactivate_account"
         )
     delegates_before = len(_delegating_administrators())
-    usable_before = len(usable_full_administrators())
+    usable_before = _continuity_counts()
     user.is_active = False
     user.save(update_fields=["is_active", "updated_at"])
     _guard_final_administrator(

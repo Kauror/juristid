@@ -102,12 +102,33 @@ def test_the_bar_offers_one_haldus_item_where_something_opens(client):
     assert 'href="/haldus/"' in client.get(reverse("matters:my_work")).content.decode()
 
 
-def test_the_bar_leads_an_administrator_persona_to_the_sign_in(client):
-    manager, _ = person(manage=True, totp=True)  # no section opens for this persona
+def test_the_bar_does_not_say_who_the_administrators_are(client):
+    """Security review P3b: a persona's administrative standing changes nothing visible."""
+    manager, _ = person(manage=True, delegate=True, totp=True)
+    colleague, _ = person()
     pass_gate(client)
-    choose(client, manager)
-    body = client.get(reverse("matters:my_work")).content.decode()
-    assert f'href="{reverse("haldus:sign_in")}"' in body
+
+    def bar(persona):
+        choose(client, persona)
+        body = client.get(reverse("matters:my_work")).content.decode()
+        start = body.index('<nav class="topnav"')
+        return body[start : body.index("</nav>", start)]
+
+    assert bar(manager) == bar(colleague)
+    assert "/haldus/" not in bar(manager)
+
+
+def test_the_landing_offers_the_sign_in_to_every_head_alike(client):
+    plain = factories.DepartmentHeadFactory()
+    admin, _ = full_admin(role=UserRole.DEPARTMENT_HEAD)
+    pass_gate(client)
+    choose(client, plain)
+    plain_page = client.get(reverse("haldus:index")).content.decode()
+    choose(client, admin)
+    admin_page = client.get(reverse("haldus:index")).content.decode()
+
+    assert reverse("haldus:sign_in") in plain_page
+    assert reverse("haldus:sign_in") in admin_page
 
 
 def test_the_persona_page_offers_the_administrator_sign_in(client):

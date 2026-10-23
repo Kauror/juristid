@@ -59,6 +59,8 @@ def account_admin_required[R: HttpResponseBase](view: Callable[..., R]) -> Calla
     def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R:
         if not admin_session.may_administer_accounts(request):
             raise Http404(NOT_HERE)
+        # Administration is the activity that keeps the session alive.
+        admin_session.note_activity(request)
         return view(request, *args, **kwargs)
 
     return wrapper

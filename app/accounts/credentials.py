@@ -74,12 +74,23 @@ def check_new_password(password: str, user: User) -> None:
 
 
 @transaction.atomic
-def set_password_with_link(*, proof: str, purpose: str, password: str) -> User | None:
+def set_password_with_link(
+    *,
+    proof: str,
+    purpose: str,
+    password: str,
+    holder_may: Callable[[User], bool] | None = None,
+) -> User | None:
     """Spend a one-time link on a new password. ``None`` if the link is no good.
 
     Validation first, spending second, all in one transaction: a password the
     validators refuse leaves the link usable for the next try, and a link
     spent is a password set — never one without the other.
+
+    ``holder_may``, when given, is asked again of the holder **under its row
+    lock, inside this transaction** — under the shared gate, whether the
+    holder may still administer (docs/adr/0186). A power withdrawn between the
+    page and the save refuses the save and leaves the link unspent.
     """
     preview = tokens.peek(proof, purpose=purpose)
     holder = link_holder(preview)
@@ -87,11 +98,18 @@ def set_password_with_link(*, proof: str, purpose: str, password: str) -> User |
         return None
     check_new_password(password, holder)
 
+    if holder_may is not None:
+        locked = User.objects.select_for_update().get(pk=holder.pk)
+        if not holder_may(locked):
+            return None
     record = tokens.consume(proof, purpose=purpose)
     user = link_holder(record)
     if user is None:
         return None
     user = User.objects.select_for_update().get(pk=user.pk)
+    if holder_may is not None and not holder_may(user):
+        transaction.set_rollback(True)
+        return None
     now = timezone.now()
     user.set_password(passwords.normalise(password))
     user.local_password_set_at = now

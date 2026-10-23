@@ -47,6 +47,8 @@ cannot administer anything on the strength of a persona (the second lock).
 from __future__ import annotations
 
 import hmac
+import threading
+import weakref
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any
@@ -175,12 +177,15 @@ def may_receive_administrator_link(user: Any) -> bool:
     The link pages exist under the shared gate for this one purpose: an
     administrator setting their own password before their first step-up. So the
     holder must be somebody an administrator (or the operator's bootstrap)
-    already made one — `accounts.manage` stored on the account, or the
-    ADMINISTRATOR role — read from what the account will hold once active,
-    because a first administrator is still INVITED when they follow the link.
+    already made one: `accounts.manage` stored on the account, read from what
+    the account will hold once active — a first administrator is still INVITED
+    when they follow the link — or, for an account already active, the
+    technical ADMINISTRATOR role through `acting_role` (the one place role
+    questions are answered, ENG-128). An invited technical administrator
+    therefore needs `accounts.manage` granted, which the bootstrap always does.
     Never a switched-off account; never a synthetic one on real data.
     """
-    from app.core.authorization import account_capabilities
+    from app.core.authorization import account_capabilities, acting_role
 
     if not isinstance(user, User):
         return False
@@ -190,7 +195,7 @@ def may_receive_administrator_link(user: Any) -> bool:
         return False
     return (
         Capability.MANAGE_ACCOUNTS.value in account_capabilities(user)
-        or user.role == UserRole.ADMINISTRATOR
+        or acting_role(user) == UserRole.ADMINISTRATOR
     )
 
 
@@ -215,17 +220,23 @@ def _binding_holds(stored: Any, user: User) -> bool:
 
 # -- the actor the services accept --------------------------------------------------
 
-_SEAL = object()
+#: Every actor `_mint` made, by identity, for as long as it is referenced. A
+#: copy — `dataclasses.replace(actor, user=somebody_else)`, `copy.copy`, a
+#: pickle round trip — is a different object and is in none of these.
+_MINTED: weakref.WeakValueDictionary[int, VerifiedActor] = weakref.WeakValueDictionary()
+_minting = threading.local()
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class VerifiedActor:
     """An administrator whose own proof this request has just re-checked.
 
     The only form in which `app.accounts.administration` accepts an actor under
-    the shared gate. Minted by `administrator_actor` and nowhere else: the seal
-    is a private module object, so constructing one elsewhere fails loudly
-    rather than quietly producing an actor nobody verified.
+    the shared gate. Minted by `administrator_actor` and nowhere else:
+    constructing one anywhere else — `dataclasses.replace` included, which
+    calls the constructor — raises `TypeError`, and `is_verified_actor` accepts
+    only the very instance `_mint` registered, never an equal-looking copy.
+    Identity, not equality (`eq=False`), so no two actors compare alike.
 
     ``epoch`` is the account's `security_epoch` when the proof was checked. The
     services re-read the account under the administration lock and refuse if
@@ -236,10 +247,9 @@ class VerifiedActor:
     user: User
     via: str
     epoch: int
-    seal: object = field(repr=False, compare=False, default=None)
 
     def __post_init__(self) -> None:
-        if self.seal is not _SEAL:
+        if not getattr(_minting, "active", False):
             raise TypeError("A VerifiedActor is minted by app.accounts.admin_session only.")
 
     @property
@@ -248,11 +258,18 @@ class VerifiedActor:
 
 
 def _mint(user: User, *, via: str) -> VerifiedActor:
-    return VerifiedActor(user=user, via=via, epoch=int(user.security_epoch or 0), seal=_SEAL)
+    _minting.active = True
+    try:
+        actor = VerifiedActor(user=user, via=via, epoch=int(user.security_epoch or 0))
+    finally:
+        _minting.active = False
+    _MINTED[id(actor)] = actor
+    return actor
 
 
 def is_verified_actor(actor: Any) -> bool:
-    return isinstance(actor, VerifiedActor) and actor.seal is _SEAL
+    """True only for an actor `_mint` made — the same object, not a copy of one."""
+    return isinstance(actor, VerifiedActor) and _MINTED.get(id(actor)) is actor
 
 
 # -- reading the session ------------------------------------------------------------
@@ -335,7 +352,10 @@ def _shared_gate_principal(request: HttpRequest) -> User | None:
     if reason:
         end(request, reason=reason, principal=user)
         return None
-    _touch(request, state)
+    # Deliberately no `_touch` here: this answers for every page, business
+    # pages and the top bar included, and a colleague reading Teemad must not
+    # keep an absent administrator's session alive. Only Haldus administration
+    # itself counts as activity (`note_activity`).
     return user
 
 
@@ -344,6 +364,19 @@ def _touch(request: HttpRequest, state: dict[str, Any]) -> None:
     now = timezone.now()
     if seen is None or now - seen >= LAST_SEEN_RESOLUTION:
         request.session[SESSION_STATE] = {**state, "last_seen": now.isoformat()}
+
+
+def note_activity(request: HttpRequest) -> None:
+    """A Haldus administration request: restart the administrator session's idle clock.
+
+    Called by the Haldus and Haldus → Kasutajad views and the session's own
+    pages — never by `verified_administrator`, which every page asks.
+    """
+    if shared_gate.current_mode() != AuthMode.SHARED_GATE:
+        return
+    state = _state(request)
+    if state is not None and verified_administrator(request) is not None:
+        _touch(request, _state(request) or state)
 
 
 def _local_principal(request: HttpRequest) -> User | None:
@@ -831,9 +864,24 @@ def reauthenticate(request: HttpRequest, *, password: str, code: str) -> ReauthO
             )
             return ReauthOutcome(False, wait=wait)
         held.succeed()
+    # `check_password` upgrades a hash whose parameters have moved and saves it,
+    # which changes the credential stamp this session is bound to. The person
+    # has just proved the password *and* the code, so the session is re-bound
+    # to the account as it is now — read afresh, and only while it is still
+    # eligible; anything else ends it as usual.
+    fresh = User.objects.filter(pk=user.pk).first()
+    if fresh is None or not eligible(fresh):
+        end(request, reason="no_longer_eligible", principal=user)
+        return ReauthOutcome(False)
     state = _state(request) or {}
-    request.session[SESSION_STATE] = {**state, "strong_at": timezone.now().isoformat()}
-    setattr(request, _ACTING, user)
+    request.session[SESSION_STATE] = {
+        **state,
+        "binding": binding(fresh),
+        "strong_at": timezone.now().isoformat(),
+        "last_seen": timezone.now().isoformat(),
+    }
+    setattr(request, _CHECKED, fresh)
+    setattr(request, _ACTING, fresh)
     record_security_event(
         event_type=SecurityEventType.REAUTHENTICATED,
         actor=user,

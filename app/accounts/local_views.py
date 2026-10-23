@@ -314,7 +314,10 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
         return render(request, template, {"form": form, "holder": holder}, status=400)
     try:
         user = credentials.set_password_with_link(
-            proof=proof, purpose=purpose, password=form.cleaned_data["password"]
+            proof=proof,
+            purpose=purpose,
+            password=form.cleaned_data["password"],
+            holder_may=admin_session.may_receive_administrator_link if gate else None,
         )
     except ValidationError as error:
         form.add_error("password", error)

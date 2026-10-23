@@ -594,3 +594,104 @@ def test_nobody_grants_themselves_anything_through_the_session(client):
     assert capabilities.clean_overrides(manager.capability_overrides) == {
         Capability.MANAGE_ACCOUNTS.value: capabilities.ALLOW
     }
+
+
+# -- security review round (P2, P3a, P3c, P3d) --------------------------------------------
+
+
+def test_business_pages_do_not_keep_the_administrator_session_alive(client):
+    admin, secret = full_admin(role=UserRole.DEPARTMENT_HEAD)
+    pass_gate(client)
+    choose(client, admin)
+    step_up(client, admin, secret)
+    _age(client, last_seen=timedelta(seconds=600))
+    before = client.session[admin_session.SESSION_STATE]["last_seen"]
+
+    for name in ("matters:matter_list", "matters:my_work", "matters:department"):
+        assert client.get(reverse(name)).status_code == 200
+    assert client.session[admin_session.SESSION_STATE]["last_seen"] == before
+
+    _age(client, last_seen=timedelta(seconds=901))
+    client.get(reverse("matters:matter_list"))
+    assert client.get(reverse(LIST)).status_code == 404  # idled out despite the browsing
+
+
+def test_a_haldus_view_keeps_it_alive(client):
+    admin, secret = full_admin()
+    verified(client, admin, secret)
+    _age(client, last_seen=timedelta(seconds=600))
+    before = client.session[admin_session.SESSION_STATE]["last_seen"]
+
+    assert client.get(reverse(LIST)).status_code == 200
+
+    assert client.session[admin_session.SESSION_STATE]["last_seen"] != before
+    _age(client, last_seen=timedelta(seconds=400))
+    assert client.get(reverse(INDEX)).status_code == 200
+
+
+def test_a_verified_actor_cannot_be_transplanted():
+    import copy
+    import dataclasses
+
+    admin, _ = full_admin()
+    victim, _ = full_admin()
+    actor = admin_session._mint(admin, via=admin_session.PATH)
+    assert admin_session.is_verified_actor(actor)
+
+    with pytest.raises(TypeError):
+        dataclasses.replace(actor, user=victim)
+    clone = copy.copy(actor)
+    assert not admin_session.is_verified_actor(clone)
+    with refused(administration.NOT_VERIFIED):
+        administration.create_account(
+            actor=clone, email="x@koda.ee", display_name="X", role="SPECIALIST"
+        )
+
+
+def test_reauthentication_survives_a_password_hash_upgrade(client):
+    from django.contrib.auth.hashers import make_password
+
+    admin, secret = full_admin()
+    verified(client, admin, secret)
+    # A hash under an older algorithm, which `check_password` upgrades and
+    # saves — moving the credential stamp the session is bound to. The session
+    # is first re-bound to that hash, as if it had been opened under it.
+    User.objects.filter(pk=admin.pk).update(
+        password=make_password(PASSWORD, hasher="pbkdf2_sha256")
+    )
+    session = client.session
+    state = dict(session[admin_session.SESSION_STATE])
+    state["binding"] = admin_session.binding(User.objects.get(pk=admin.pk))
+    session[admin_session.SESSION_STATE] = state
+    session.save()
+    _age(client, strong_at=timedelta(seconds=601))
+
+    accepted = client.post(
+        reverse("haldus:reauthenticate"),
+        {"password": PASSWORD, "code": code(secret, admin), "next": reverse(LIST)},
+    )
+
+    assert accepted["Location"] == reverse(LIST)
+    assert not User.objects.get(pk=admin.pk).password.startswith("pbkdf2_sha256$")
+    assert client.get(reverse(LIST)).status_code == 200
+
+
+def test_the_link_holder_is_asked_again_inside_the_transaction():
+    from app.accounts import credentials, tokens
+    from app.accounts.enums import CredentialTokenPurpose
+
+    holder, _ = person(manage=True, delegate=True, password=None)
+    issued = tokens.issue(user=holder, purpose=CredentialTokenPurpose.ACTIVATION)
+    proof = tokens.proof_of(issued.token)
+
+    result = credentials.set_password_with_link(
+        proof=proof,
+        purpose=CredentialTokenPurpose.ACTIVATION,
+        password=PASSWORD,
+        holder_may=lambda user: False,
+    )
+
+    assert result is None
+    holder.refresh_from_db()
+    assert not holder.has_local_password
+    assert tokens.is_live(issued.record)  # the link was not spent

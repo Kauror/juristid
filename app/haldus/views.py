@@ -44,6 +44,9 @@ def _require(request: HttpRequest, key: str) -> Section:
     found = section(key)
     if not found.visible(request):
         raise Http404(NOT_HERE)
+    # A Haldus page is administration activity; business pages are not
+    # (`admin_session.note_activity`).
+    admin_session.note_activity(request)
     return found
 
 
@@ -70,15 +73,15 @@ def _session_summary(request: HttpRequest) -> dict[str, Any] | None:
 def _step_up_offered(request: HttpRequest) -> bool:
     """Whether to offer «Halduri sisselogimine» on the landing page.
 
-    Under the shared gate, to a reader with no verified session whose chosen
-    persona's account has administrative standing — a hint, never a grant: the
-    step-up asks that person's own password and code.
+    Under the shared gate, to **every** reader without a verified session, the
+    same way whatever persona is chosen: offering it only to personas whose
+    accounts hold administration would tell anybody with the shared password
+    who the administrators are. The step-up asks the person's own password and
+    code either way.
     """
     if not admin_session.is_available():
         return False
-    if admin_session.verified_administrator(request) is not None:
-        return False
-    return admin_session.holds_administrative_standing(getattr(request, "user", None))
+    return admin_session.verified_administrator(request) is None
 
 
 @never_cache
