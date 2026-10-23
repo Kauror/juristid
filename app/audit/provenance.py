@@ -150,6 +150,23 @@ def current_provenance() -> Provenance:
     user = _authenticated_user(request)
     mode = shared_gate.current_mode()
     if mode == AuthMode.SHARED_GATE:
+        # A Haldus administration request acting through a verified
+        # administrator session (docs/adr/0186): the principal is the person
+        # who proved their own password and code, re-checked for this request;
+        # the persona, if one is chosen, is recorded beside it and proves
+        # nothing. Only requests that *act* through the session carry it — a
+        # business page viewed while one is open stays a persona's row.
+        from app.accounts import admin_session
+
+        principal = admin_session.acting_principal(request)
+        if principal is not None:
+            return Provenance(
+                method=AuthMethod.ADMINISTRATOR_SESSION,
+                assurance=AuthAssurance.INDIVIDUAL_MFA,
+                principal=principal,
+                persona=user,
+                correlation_id=correlation,
+            )
         # The persona is recorded; a principal never is. Passing the gate
         # proves the shared password was known, not by whom.
         passed = hasattr(request, "session") and shared_gate.has_passed(request)
