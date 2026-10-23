@@ -167,6 +167,36 @@ def test_applying_again_narrows_a_role_somebody_widened(mcp_role):
         assert db_role.privilege_problems(cursor) == []
 
 
+@pytest.mark.parametrize(
+    ("grant", "named"),
+    [
+        ('GRANT UPDATE (is_active) ON accounts_user TO "{role}"', "owns or may write"),
+        ('GRANT INSERT (id) ON mcp_access_mcpaccessgrant TO "{role}"', "owns or may write"),
+        ('GRANT REFERENCES (id) ON matters_matter TO "{role}"', "owns or may write"),
+        ('GRANT SELECT (session_key) ON django_session TO "{role}"', "may SELECT django_session"),
+    ],
+    ids=["update-column", "insert-column", "references-column", "session-column"],
+)
+def test_a_column_level_grant_is_seen_and_applying_again_revokes_it(mcp_role, grant, named):
+    """has_table_privilege misses a grant on one column; the check must not (security re-review)."""
+    role, password = mcp_role
+    with connection.cursor() as cursor:
+        cursor.execute(grant.format(role=role))
+    with _connect(role, password) as conn, conn.cursor() as cursor:
+        problems = db_role.privilege_problems(cursor)
+    assert any(named in problem for problem in problems), problems
+
+    _apply(role, None)
+    with _connect(role, password) as conn, conn.cursor() as cursor:
+        assert db_role.privilege_problems(cursor) == []
+        cursor.execute(
+            "SELECT count(*) FROM information_schema.column_privileges "
+            "WHERE grantee = %s AND privilege_type <> 'SELECT'",
+            [role],
+        )
+        assert cursor.fetchone()[0] == 0, "a column-level write grant survived --apply"
+
+
 # -- the password ---------------------------------------------------------------
 
 

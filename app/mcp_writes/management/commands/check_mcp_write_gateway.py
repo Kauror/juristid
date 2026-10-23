@@ -1,10 +1,10 @@
 """Is the MCP write gateway answering? The `mcp-writer` service's container healthcheck.
 
 `["CMD", "python", "manage.py", "check_mcp_write_gateway", "--quiet"]`. Asks the
-process's own `/healthz` on loopback at MCP_WRITE_LISTEN_PORT, with a
-three-second timeout, and exits 0 when it says `{"status": "ok"}` and 1
-otherwise, saying why on stderr. No key and no token: `/healthz` needs
-neither and answers nothing but its status.
+process's own `/healthz` at MCP_WRITE_LISTEN_HOST (loopback for a wildcard
+bind) and MCP_WRITE_LISTEN_PORT, with a three-second timeout, and exits 0
+when it says `{"status": "ok"}` and 1 otherwise, saying why on stderr. No key
+and no token: `/healthz` needs neither and answers nothing but its status.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ TIMEOUT_SECONDS = 3
 
 
 class Command(BaseCommand):
-    help = "Exit non-zero unless the MCP write gateway's /healthz answers on loopback."
+    help = "Exit non-zero unless the MCP write gateway's /healthz answers where it listens."
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
@@ -31,7 +31,11 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         port = int(settings.MCP_WRITE_LISTEN_PORT)
-        connection = http.client.HTTPConnection("127.0.0.1", port, timeout=TIMEOUT_SECONDS)
+        # The address the gateway listens on (its fixed `mcp_write` address in
+        # production), or loopback when it binds every interface.
+        from app.mcp_writes.gateway import probe_host
+
+        connection = http.client.HTTPConnection(probe_host(), port, timeout=TIMEOUT_SECONDS)
         try:
             connection.request("GET", "/healthz", headers={"Accept": "application/json"})
             response = connection.getresponse()

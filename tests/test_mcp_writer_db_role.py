@@ -357,6 +357,13 @@ def test_the_role_the_command_made_has_no_privilege_problem(writer_role):
         ('GRANT DELETE ON matters_entry TO "{role}"', "beyond its allow-list"),
         ('GRANT INSERT ON matters_matterengagement TO "{role}"', "beyond its allow-list"),
         ('GRANT TRUNCATE ON matters_entry TO "{role}"', "TRUNCATE"),
+        # Column-level grants, which has_table_privilege does not see.
+        ('GRANT UPDATE (is_active) ON accounts_user TO "{role}"', "must never write"),
+        ('GRANT INSERT (id) ON mcp_writes_mcpwriteapproval TO "{role}"', "must never write"),
+        ('GRANT UPDATE (id) ON mcp_access_mcpaccessgrant TO "{role}"', "must never write"),
+        ('GRANT INSERT (id) ON matters_matterengagement TO "{role}"', "beyond its allow-list"),
+        ('GRANT REFERENCES (id) ON matters_entry TO "{role}"', "REFERENCE"),
+        ('GRANT SELECT (session_key) ON django_session TO "{role}"', "may SELECT django_session"),
         ('GRANT SELECT ON django_session TO "{role}"', "may SELECT django_session"),
         ('REVOKE SELECT ON accounts_user FROM "{role}"', "cannot SELECT accounts_user"),
         ('ALTER ROLE "{role}" CREATEDB', "CREATEDB"),

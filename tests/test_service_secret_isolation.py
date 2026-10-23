@@ -616,7 +616,7 @@ def test_mcp_holds_no_writer_database_credential(
         assert value not in rendered, f"mcp receives juristid-mcp-writer.env's {key}"
     environment = services["mcp"]["environment"]
     assert environment["POSTGRES_PASSWORD"] == mcp_files.mcp["POSTGRES_PASSWORD"]
-    assert environment["MCP_WRITE_GATEWAY_URL"] == "http://mcp-writer:8002"
+    assert environment["MCP_WRITE_GATEWAY_URL"] == "http://10.213.250.10:8002"
     for name in ("web", "intake-reader", "searchindex", "intake-sweeper", "notifications"):
         assert "MCP_WRITE_GATEWAY_KEY" not in services[name].get("environment", {}), name
 

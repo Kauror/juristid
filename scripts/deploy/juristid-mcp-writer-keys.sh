@@ -90,6 +90,21 @@ done
   "$(cd -- "$(dirname -- "$MCP_ENV")" && pwd)/$(basename -- "$MCP_ENV")" ] ||
   die "--writer-env-file and --mcp-env-file are the same file"
 
+# Root's and 600 (or 400), as the runbook installs them: these files hold a
+# database password and the gateway key, and a group- or world-readable one is
+# refused before anything is written into it (security re-review P3-2).
+file_mode() {
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null || echo ''
+}
+for file in "$WRITER_ENV" "$MCP_ENV"; do
+  mode="$(file_mode "$file")"
+  case "$mode" in
+    600 | 400) ;;
+    "") die "cannot read the permissions of $file" ;;
+    *) die "$file is mode $mode: group or others may read it. Run: chmod 600 $file (owner root), then this again. Nothing was changed." ;;
+  esac
+done
+
 case "$(basename -- "$WRITER_ENV")" in
   juristid.env | juristid-mcp.env | juristid-mcp-tunnel.env)
     die "$WRITER_ENV is not the write gateway's file (juristid-mcp-writer.env)."

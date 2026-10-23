@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -36,11 +37,40 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _mode_seen_by_bash(path: Path) -> str:
+    return subprocess.run(  # noqa: S603 - a fixed interpreter, a fixed command
+        [BASH, "-c", 'stat -c %a "$1"', "stat", path.as_posix()],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    ).stdout.strip()
+
+
+def _chmod_works() -> bool:
+    """Whether this filesystem keeps a 600 (NTFS under Git Bash shows every file as 644)."""
+    probe = Path(tempfile.mkdtemp()) / "probe.env"
+    probe.write_text("x", encoding="utf-8")
+    probe.chmod(0o600)
+    try:
+        return _mode_seen_by_bash(probe) == "600"
+    finally:
+        shutil.rmtree(probe.parent, ignore_errors=True)
+
+
+CHMOD_WORKS = _chmod_works()
+needs_modes = pytest.mark.skipif(
+    not CHMOD_WORKS, reason="this filesystem cannot hold mode 600 (runs on Linux CI)"
+)
+
+
 def _files(tmp_path: Path) -> tuple[Path, Path]:
     writer = tmp_path / "juristid-mcp-writer.env"
     mcp = tmp_path / "juristid-mcp.env"
     shutil.copyfile(DEPLOY / "juristid-mcp-writer.env.example", writer)
     shutil.copyfile(DEPLOY / "juristid-mcp.env.example", mcp)
+    writer.chmod(0o600)
+    mcp.chmod(0o600)
     return writer, mcp
 
 
@@ -52,6 +82,7 @@ def _values(path: Path, key: str) -> list[str]:
     return re.findall(rf"(?m)^{key}=(.*)$", path.read_text(encoding="utf-8"))
 
 
+@needs_modes
 def test_the_templates_get_every_secret_generated_and_the_gateway_key_shared(tmp_path):
     writer, mcp = _files(tmp_path)
     result = _helper(writer, mcp)
@@ -71,6 +102,7 @@ def test_the_templates_get_every_secret_generated_and_the_gateway_key_shared(tmp
     assert _values(writer, "POSTGRES_USER") == ["juristid_mcp_writer"]
 
 
+@needs_modes
 def test_running_it_twice_changes_nothing_the_second_time(tmp_path):
     writer, mcp = _files(tmp_path)
     assert _helper(writer, mcp).returncode == 0
@@ -81,6 +113,7 @@ def test_running_it_twice_changes_nothing_the_second_time(tmp_path):
     assert "kept" in result.stdout
 
 
+@needs_modes
 def test_one_good_gateway_key_is_copied_to_the_other_file(tmp_path):
     writer, mcp = _files(tmp_path)
     text = mcp.read_text(encoding="utf-8").replace(
@@ -95,6 +128,7 @@ def test_one_good_gateway_key_is_copied_to_the_other_file(tmp_path):
     assert STRONG not in result.stdout + result.stderr
 
 
+@needs_modes
 def test_two_different_good_keys_are_refused_and_nothing_changes(tmp_path):
     writer, mcp = _files(tmp_path)
     assert _helper(writer, mcp).returncode == 0
@@ -134,6 +168,7 @@ def test_the_wrong_files_are_refused_untouched(tmp_path, writer_name, mcp_name):
     assert mcp.read_text(encoding="utf-8") == "POSTGRES_USER=juristid_mcp\n"
 
 
+@needs_modes
 def test_the_writer_file_must_name_the_writer_role(tmp_path):
     writer, mcp = _files(tmp_path)
     writer.write_text(
@@ -147,6 +182,7 @@ def test_the_writer_file_must_name_the_writer_role(tmp_path):
     assert "juristid_mcp_writer" in result.stderr
 
 
+@needs_modes
 def test_the_mcp_file_must_not_name_the_writer_role(tmp_path):
     writer, mcp = _files(tmp_path)
     mcp.write_text(
@@ -160,6 +196,7 @@ def test_the_mcp_file_must_not_name_the_writer_role(tmp_path):
     assert "E058" in result.stderr
 
 
+@needs_modes
 def test_a_web_file_holding_the_gateway_key_is_refused(tmp_path):
     writer, mcp = _files(tmp_path)
     web = tmp_path / "juristid.env"
@@ -170,6 +207,18 @@ def test_a_web_file_holding_the_gateway_key_is_refused(tmp_path):
     assert STRONG not in result.stdout + result.stderr
     web.write_text("MCP_WRITES_ENABLED=1\n", encoding="utf-8")
     assert _helper(writer, mcp, "--web-env-file", web.as_posix()).returncode == 0
+
+
+@pytest.mark.parametrize("readable", ["writer", "mcp"])
+def test_a_group_or_world_readable_file_is_refused_and_left_alone(tmp_path, readable):
+    writer, mcp = _files(tmp_path)
+    loose = writer if readable == "writer" else mcp
+    loose.chmod(0o644)
+    before = (writer.read_bytes(), mcp.read_bytes())
+    result = _helper(writer, mcp)
+    assert result.returncode != 0
+    assert "group or others may read it" in result.stderr and "chmod 600" in result.stderr
+    assert (writer.read_bytes(), mcp.read_bytes()) == before
 
 
 def test_a_missing_file_or_unknown_argument_stops_it(tmp_path):

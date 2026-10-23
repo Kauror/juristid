@@ -73,9 +73,28 @@ MIN_KEY_LENGTH = 32
 NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
 
+#: Listen addresses that mean "every interface", which are no Host anybody sends.
+WILDCARD_LISTEN_HOSTS = frozenset({"", "0.0.0.0", "::"})  # noqa: S104 - names, not a bind
+
+
+def listen_host() -> str:
+    """The address the gateway serves on: in production its fixed `mcp_write` address."""
+    return str(getattr(settings, "MCP_WRITE_LISTEN_HOST", "") or "").strip()
+
+
+def probe_host() -> str:
+    """Where the healthcheck asks: the listen address, or loopback for a wildcard bind."""
+    host = listen_host()
+    return "127.0.0.1" if host in WILDCARD_LISTEN_HOSTS else host
+
+
 def allowed_hosts() -> frozenset[str]:
     port = int(settings.MCP_WRITE_LISTEN_PORT)
-    names = ("localhost", "127.0.0.1", "mcp-writer")
+    names = ["localhost", "127.0.0.1", "mcp-writer"]
+    # `mcp` calls the fixed address on `mcp_write` (deploy/unraid-main/compose.yml),
+    # so that address is a Host it sends.
+    if listen_host() not in WILDCARD_LISTEN_HOSTS and listen_host() not in names:
+        names.append(listen_host())
     return frozenset({*names, *(f"{name}:{port}" for name in names)})
 
 

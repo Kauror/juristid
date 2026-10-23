@@ -15,7 +15,8 @@ and runs uvicorn in this process exactly as `run_mcp_server` does: one worker,
 no proxy headers believed, no `Server` header, no access log, a short
 keep-alive and a ceiling on concurrent connections. It listens on
 `MCP_WRITE_LISTEN_HOST:MCP_WRITE_LISTEN_PORT` (default 127.0.0.1:8002; the
-container sets 0.0.0.0 on the internal `mcp_write` network, no host port).
+container sets its fixed address on the internal `mcp_write` network, no host
+port).
 """
 
 from __future__ import annotations

@@ -145,7 +145,7 @@ def test_the_stack_uses_its_own_networks_and_joins_no_other(compose: dict[str, A
     for network in networks.values():
         assert network.get("external") is not True
     for name, service in compose["services"].items():
-        assert service["networks"] == EXPECTED_NETWORKS.get(name, ["internal"]), name
+        assert list(service["networks"]) == EXPECTED_NETWORKS.get(name, ["internal"]), name
 
 
 def test_only_mcp_shares_a_network_with_the_tunnel_client(compose: dict[str, Any]) -> None:
@@ -1213,10 +1213,10 @@ def test_the_write_gateway_has_its_own_file_and_no_port_mount_or_edge(
     assert environment["JURISTID_RUNTIME"] == "deployed"
     assert environment["SEED_DEV_DATA"] == "0"
     assert environment["POSTGRES_HOST"] == "db"
-    assert environment["MCP_WRITE_LISTEN_HOST"] == "0.0.0.0"  # noqa: S104 - the container network
+    assert environment["MCP_WRITE_LISTEN_HOST"] == WRITER_ADDRESS
     assert str(environment["MCP_WRITE_LISTEN_PORT"]) == "8002"
     assert writer["depends_on"] == {"db": {"condition": "service_healthy"}}
-    assert writer["networks"] == ["internal", "mcp_write"]
+    assert list(writer["networks"]) == ["internal", "mcp_write"]
     for absent in ("ports", "expose", "volumes", "network_mode", "cap_add", "privileged"):
         assert absent not in writer, absent
 
@@ -1226,7 +1226,7 @@ def test_mcp_reaches_the_gateway_by_name_and_nothing_depends_on_it(
 ) -> None:
     """Stopping `mcp-writer` must leave reading untouched: nobody waits for it."""
     services = compose["services"]
-    assert services[MCP]["environment"]["MCP_WRITE_GATEWAY_URL"] == "http://mcp-writer:8002"
+    assert services[MCP]["environment"]["MCP_WRITE_GATEWAY_URL"] == f"http://{WRITER_ADDRESS}:8002"
     for name, service in services.items():
         assert MCP_WRITER not in (service.get("depends_on") or {}), name
 
@@ -1265,3 +1265,49 @@ def test_the_web_template_keeps_ai_writes_off_and_holds_no_gateway_key(
 ) -> None:
     assert env_example["MCP_WRITES_ENABLED"] == "0"
     assert "MCP_WRITE_GATEWAY_KEY=" not in ENV_EXAMPLE.read_text(encoding="utf-8")
+
+
+#: The gateway's one fixed address, on `mcp_write` only (security re-review P2-B).
+WRITER_ADDRESS = "10.213.250.10"
+
+
+def test_the_gateway_listens_only_on_its_fixed_write_network_address(
+    compose: dict[str, Any],
+) -> None:
+    """Not 0.0.0.0: web, the workers and the Cloudflare tunnel share `internal` with it."""
+    import ipaddress
+
+    services = compose["services"]
+    writer = services[MCP_WRITER]
+    listen = writer["environment"]["MCP_WRITE_LISTEN_HOST"]
+    assert listen == WRITER_ADDRESS
+    assert listen not in ("0.0.0.0", "::", "")  # noqa: S104 - asserting it is NOT the wildcard
+    assert writer["networks"]["mcp_write"]["ipv4_address"] == listen
+    assert not (writer["networks"].get("internal") or {}).get("ipv4_address")
+    [config] = compose["networks"]["mcp_write"]["ipam"]["config"]
+    subnet = ipaddress.ip_network(config["subnet"])
+    address = ipaddress.ip_address(listen)
+    assert address in subnet and address not in (subnet.network_address, subnet.broadcast_address)
+    assert subnet.is_private and subnet.prefixlen >= 28
+    # Outside Docker's default address pools, so no auto-assigned network collides.
+    for pool in ("172.16.0.0/12", "192.168.0.0/16"):
+        assert not subnet.overlaps(ipaddress.ip_network(pool)), pool
+    # `mcp` calls that address, never the name (which may resolve on `internal`).
+    assert services[MCP]["environment"]["MCP_WRITE_GATEWAY_URL"] == f"http://{listen}:8002"
+    # No other network of this file has an address plan that could overlap.
+    for name, network in compose["networks"].items():
+        for other in (network.get("ipam") or {}).get("config", []) if name != "mcp_write" else []:
+            assert not subnet.overlaps(ipaddress.ip_network(other["subnet"])), name
+
+
+def test_the_gateway_answers_its_healthcheck_and_mcp_at_its_listen_address(settings) -> None:
+    """The healthcheck asks the listen address, and that address is a Host it accepts."""
+    from app.mcp_writes import gateway
+
+    settings.MCP_WRITE_LISTEN_HOST = WRITER_ADDRESS
+    settings.MCP_WRITE_LISTEN_PORT = 8002
+    assert gateway.probe_host() == WRITER_ADDRESS
+    assert f"{WRITER_ADDRESS}:8002" in gateway.allowed_hosts()
+    settings.MCP_WRITE_LISTEN_HOST = "0.0.0.0"  # noqa: S104 - the wildcard case
+    assert gateway.probe_host() == "127.0.0.1"
+    assert not any(host.startswith("0.0.0.0") for host in gateway.allowed_hosts())  # noqa: S104

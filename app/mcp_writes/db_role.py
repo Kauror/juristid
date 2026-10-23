@@ -368,10 +368,14 @@ def privilege_problems_writer(cursor: Any, *, expected_role: str | None = None) 
 
     cursor.execute(
         "SELECT c.relname, pg_get_userbyid(c.relowner) = current_user, "
-        "has_table_privilege(current_user, c.oid, 'INSERT'), "
-        "has_table_privilege(current_user, c.oid, 'UPDATE'), "
+        # INSERT and UPDATE may also be granted per column, which
+        # has_table_privilege does not see: has_any_column_privilege does
+        # (table-level grants included). REFERENCES likewise.
+        "has_any_column_privilege(current_user, c.oid, 'INSERT'), "
+        "has_any_column_privilege(current_user, c.oid, 'UPDATE'), "
         "has_table_privilege(current_user, c.oid, 'DELETE'), "
-        "has_table_privilege(current_user, c.oid, 'TRUNCATE,REFERENCES,TRIGGER') "
+        "has_table_privilege(current_user, c.oid, 'TRUNCATE,TRIGGER') "
+        "OR has_any_column_privilege(current_user, c.oid, 'REFERENCES') "
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
         "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm') "
         "ORDER BY c.relname"
@@ -435,14 +439,15 @@ def privilege_problems_writer(cursor: Any, *, expected_role: str | None = None) 
 
 def _readability_problems(cursor: Any, name: str) -> list[str]:
     cursor.execute(
-        "SELECT c.relname, has_table_privilege(current_user, c.oid, 'SELECT') "
+        "SELECT c.relname, has_table_privilege(current_user, c.oid, 'SELECT'), "
+        "has_any_column_privilege(current_user, c.oid, 'SELECT') "
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
         "WHERE n.nspname = 'public' AND c.relname = ANY(%s)",
         [[*REQUIRED_READABLE, *WITHHELD_TABLES]],
     )
     problems = []
-    for table, readable in cursor.fetchall():
-        if table in WITHHELD_TABLES and readable:
+    for table, readable, any_column in cursor.fetchall():
+        if table in WITHHELD_TABLES and any_column:
             problems.append(f"role {name} may SELECT {table}, which it never needs")
         elif table not in WITHHELD_TABLES and not readable:
             problems.append(f"role {name} cannot SELECT {table}")

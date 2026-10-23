@@ -582,12 +582,17 @@ administrator without a business role never writes, whatever a token says.
 | Service | Container | Environment | Database role | Networks | Reaches |
 | --- | --- | --- | --- | --- | --- |
 | `web` | `juristid-main-web` | `juristid.env` + `MCP_WRITES_ENABLED` (nothing else new) | owner | `internal` | serves the approval page; never calls the gateway |
-| `mcp` | `juristid-main-mcp` | `juristid-mcp.env` + `MCP_WRITES_ENABLED`, `MCP_WRITE_GATEWAY_KEY`; `MCP_WRITE_GATEWAY_URL=http://mcp-writer:8002` from compose.yml | `juristid_mcp`, SELECT only, read-only sessions — unchanged | `internal`, `mcp_edge`, `mcp_write` | `db`; the gateway over `mcp_write` |
-| `mcp-writer` | `juristid-main-mcp-writer` | `juristid-mcp-writer.env` only | `juristid_mcp_writer` (least privilege, below) | `internal`, `mcp_write` | `db`; listens on `mcp-writer:8002`, no host port |
+| `mcp` | `juristid-main-mcp` | `juristid-mcp.env` + `MCP_WRITES_ENABLED`, `MCP_WRITE_GATEWAY_KEY`; `MCP_WRITE_GATEWAY_URL=http://10.213.250.10:8002` from compose.yml | `juristid_mcp`, SELECT only, read-only sessions — unchanged | `internal`, `mcp_edge`, `mcp_write` | `db`; the gateway over `mcp_write` |
+| `mcp-writer` | `juristid-main-mcp-writer` | `juristid-mcp-writer.env` only | `juristid_mcp_writer` (least privilege, below) | `internal`, `mcp_write` | `db`; listens on `10.213.250.10:8002` — its fixed `mcp_write` address — and nowhere else; no host port |
 | `mcp-tunnel` | `juristid-main-mcp-tunnel` | unchanged | — | `mcp_edge` only | `mcp` — **not** `mcp-writer`: the two share no network |
 
 `mcp_write` (`juristid-main-mcp-write`) is `internal: true` — no route off the
-host — and holds `mcp` and `mcp-writer` only. `mcp-writer` is behind the `mcp`
+host — and holds `mcp` and `mcp-writer` only. Its subnet is fixed,
+`10.213.250.0/28` (outside Docker's default pools), so the gateway can listen on
+one fixed address, `10.213.250.10`, and **only there**: the services it shares
+`internal` with — `web`, the workers, the Cloudflare `tunnel` — cannot even open
+a connection to port 8002. `mcp` calls that address, not the name `mcp-writer`,
+which Docker may answer with the `internal` address. `mcp-writer` is behind the `mcp`
 profile, runs the release image with a read-only root, every capability
 dropped, `no-new-privileges`, bounded memory/CPU/processes, and mounts nothing.
 Its checks refuse it: writes off (E051), no strong gateway key (E052), no https
@@ -714,7 +719,7 @@ docker exec juristid-main-mcp-tunnel nslookup mcp-writer
 ```
 
 ```bash
-docker exec juristid-main-mcp-tunnel wget -q -T 3 -O /dev/null http://mcp-writer:8002/healthz
+docker exec juristid-main-mcp-tunnel wget -q -T 3 -O /dev/null http://10.213.250.10:8002/healthz
 ```
 
 Both must fail (`can't resolve` / `bad address`). If either succeeds, stop the
@@ -756,11 +761,19 @@ On the host, after step 6, nothing changing any record:
   Phase 1);
 - `mcp-writer` is `healthy` and `check_mcp_write_gateway` passes;
 - step 5's two commands fail from `juristid-main-mcp-tunnel`;
-- from `juristid-main-web`, which holds no key, a gateway call is refused —
-  the key, not the network, is what `internal` neighbours lack:
+- from `juristid-main-web`, which shares `internal` with the gateway, port 8002
+  cannot be reached at all — neither its fixed address (not on `web`'s
+  networks) nor its `internal` address (nothing listens there):
 
 ```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python -c "import urllib.request as u; r=u.Request('http://mcp-writer:8002/v1/prepare', data=b'{}', method='POST'); print(u.urlopen(r).status)"
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T web python -c "import socket; print([socket.socket().connect_ex((h, 8002)) for h in ('10.213.250.10', 'mcp-writer')])"
+```
+
+  must print two non-zero numbers (refused or unreachable) — never a `0`;
+- from `mcp`, the gateway answers, and without the key refuses:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp python -c "import urllib.request as u; r=u.Request('http://10.213.250.10:8002/v1/prepare', data=b'{}', method='POST'); print(u.urlopen(r).status)"
 ```
 
   must end in `HTTP Error 401` — never a 2xx.
@@ -803,11 +816,17 @@ then the flags. Pending proposals simply expire (`MCP_WRITE_PROPOSAL_SECONDS`).
 
 ### What AI writes leave open
 
-- **The gateway shares `internal` with `web`, the workers and `tunnel`**, because
-  it needs `db` and `db` is on `internal` only (moving `db` is the deliberate
-  change *db/tunnel* pinning forbids). Anything on `internal` can open a TCP
-  connection to `mcp-writer:8002`; without the gateway key and a write-scoped
-  token of a real person it is refused. `web` cannot hold the key (E057).
+- **The gateway is on `internal` for `db`**, because `db` is on `internal`
+  only (moving `db` is the deliberate change *db/tunnel* pinning forbids). It
+  listens only on its `mcp_write` address, so its `internal` neighbours cannot
+  connect to it; but **it keeps the egress of an ordinary bridge**: code
+  running inside `mcp-writer` could reach `web`, the workers, the host and the
+  internet through `internal`. Nothing in it fetches or sends (the AST guard in
+  `tests/test_mcp_writes_adversarial.py`), so this needs a compromise of that
+  process. **Possible later step**, at a planned and announced `db` restart: a
+  `db_writer` network with `internal: true` that `db` and `mcp-writer` join,
+  and `mcp-writer` leaving `internal` — it then has no route off the host at
+  all. Not done in this release, because it changes `db`'s definition.
 - **Code running inside `mcp` holds the gateway key.** It still needs a
   person's token with `juristid.write` and, for any effect, that person's
   approval on Juristid's page with their authenticator.

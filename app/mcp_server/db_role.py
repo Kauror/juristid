@@ -265,8 +265,10 @@ def privilege_problems(cursor: Any) -> list[str]:
         "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
         "WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p', 'v', 'm') "
         "AND (pg_get_userbyid(c.relowner) = current_user "
-        "OR has_table_privilege(current_user, c.oid, "
-        "'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')) "
+        "OR has_table_privilege(current_user, c.oid, 'DELETE,TRUNCATE,TRIGGER') "
+        # INSERT, UPDATE and REFERENCES can also be granted per column, which
+        # has_table_privilege does not see; this does, table-level included.
+        "OR has_any_column_privilege(current_user, c.oid, 'INSERT,UPDATE,REFERENCES')) "
         "ORDER BY c.relname"
     )
     writable = [row[0] for row in cursor.fetchall()]
@@ -342,16 +344,19 @@ def _milliseconds(value: str | None) -> int | None:
 def _readability_problems(
     cursor: Any, name: str, tables: Sequence[str], *, must_read: bool
 ) -> list[str]:
+    # Must read: the whole table. Must not read: not even one column — a
+    # column-level SELECT on django_session.session_key is a gate session.
     cursor.execute(
-        "SELECT c.relname, has_table_privilege(current_user, c.oid, 'SELECT') "
+        "SELECT c.relname, has_table_privilege(current_user, c.oid, 'SELECT'), "
+        "has_any_column_privilege(current_user, c.oid, 'SELECT') "
         "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
         "WHERE n.nspname = 'public' AND c.relname = ANY(%s)",
         [list(tables)],
     )
     problems = []
-    for table, readable in cursor.fetchall():
+    for table, readable, any_column in cursor.fetchall():
         if must_read and not readable:
             problems.append(f"role {name} cannot SELECT {table}")
-        if not must_read and readable:
+        if not must_read and any_column:
             problems.append(f"role {name} may SELECT {table}, which it never needs")
     return problems

@@ -1814,7 +1814,8 @@ approved it on Juristid's own page with their own authenticator. It has its
 own environment file (`juristid-mcp-writer.env`) and its own least-privilege
 database role (`juristid_mcp_writer`), sits on `internal` and the internal-only
 `mcp_write` network (never `mcp_edge`, so the tunnel client cannot reach it),
-and publishes no port. `docker compose -p juristid-main -f
+listens only on its fixed `mcp_write` address (set in `compose.yml`, so its
+`internal` neighbours cannot connect either), and publishes no port. `docker compose -p juristid-main -f
 deploy/unraid-main/compose.yml stop mcp-writer` switches every AI write off
 while reading goes on.
 
