@@ -147,3 +147,35 @@ for the follow-up that removes the route. Pinned by
 
 `matters:update_position` (docs/adr/0061) is removed by the same decision. A
 stale POST to it is a 404 (`tests/test_retired_write_doors.py`).
+
+## Amendment of 2026-10-23 — `PRAEGUNE TEGEVUS` reads earliest day first (#525)
+
+The owner's rule: an earlier day comes before a later one, whatever the row is.
+The zone drew three blocks in a fixed order — the current action, the rounds
+waiting for feedback (docs/adr/0086 §3), then the planned actions — each sorted
+only within itself, so `02.11 — Ootame tagasisidet` read under
+`04.11 — Koostan arvamuse`. That "current action first" order is superseded.
+
+- The three are one list (`templates/matters/partials/current_work_rows.html`),
+  ordered once in `app/matters/current_work.py`: by the day each row shows — a
+  step's `target_date` (for a period, its stored anchor, the value
+  `NextActionQuerySet.planned` already orders by, docs/adr/0079), a round's
+  `feedback_deadline`. Undated rows follow every dated one and keep their
+  «Kuupäev määramata» / «Tähtaeg määramata». On an equal day the current action
+  comes first, then the rounds, then the planned actions — the former block
+  order — and within one kind the source's own order stands.
+- **Display only.** Which action is current, promotion of the earliest planned
+  action, lateness, waits, completion and every row's controls are unchanged;
+  each source is read through its own visibility exactly as before.
+- The order is the DOM's, not a CSS `order`. A round's own answer
+  (`Lõpeta kaasamine`, `Ootan tagasisidet`, a round's `Muuda`) still swaps only
+  its chronology row and carries the list out of band, re-sorted; the current
+  action and the planned rows ride in it as read-only lines marked
+  `hx-preserve`, so the page keeps their elements — and anything typed in their
+  forms — and only their position changes. The box keeps the id
+  `praegune-ootused`.
+- `+ Lisa tegevus` stays after the list, outside it. No schema, no migration.
+
+Pinned by `tests/test_current_work_chronology.py`,
+`tests/test_current_work_refreshes_after_round_answer.py` and
+`e2e/test_current_work_chronology.py`.

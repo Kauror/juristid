@@ -104,8 +104,9 @@ def test_planned_rows_render_under_the_control_without_a_heading(client, special
 
     assert "Planeeritud tegevused</h3>" not in zone
     assert "curact__plannedhead" not in zone
-    # The list keeps its name for assistive technology.
-    assert 'aria-label="Planeeritud tegevused"' in zone
+    # The list keeps a name for assistive technology — since #525 it holds the
+    # zone's rows in date order, the planned ones among them.
+    assert 'aria-label="Tegevused kuupäeva järgi"' in zone
     rows = re.findall(r'<span class="curact__plannedtext">([^<]+)</span>', zone)
     assert rows == ["Helista ministeeriumile", "Kontrolli uut versiooni"]
     # The planned rows come before `+ Lisa tegevus`, which is last (2026-10-07).

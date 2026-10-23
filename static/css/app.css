@@ -12634,11 +12634,22 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-bottom: var(--spacing-15);
 }
 
-/* The waiting rounds' lines, in one box a round's own answer can replace out
- * of band (matters/partials/feedback_waits.html). `display: contents`, so the
- * lines keep exactly the geometry they had as direct children. */
-.curact__waits {
-  display: contents;
+/* The zone's work — the current step, the waiting rounds and the planned
+ * actions — as one list in date order (#525,
+ * matters/partials/current_work_rows.html). A plain list with no geometry of
+ * its own: each row keeps the margins it had as a block of its own, which
+ * collapse through the bare `<li>` exactly as they did between the blocks. */
+.curact__rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* The gap the planned rows' own box used to open above the first of them,
+ * now above any planned row that follows a row of another kind. */
+.curact__rows > .curact__plannedrow:first-child,
+.curact__rows > :not(.curact__plannedrow) + .curact__plannedrow {
+  margin-top: var(--spacing-1);
 }
 
 .curact__oweddate {
