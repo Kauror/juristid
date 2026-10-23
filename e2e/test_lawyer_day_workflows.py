@@ -59,6 +59,11 @@ def _upload(name: str) -> dict:
     return {"name": name, "mimeType": "application/pdf", "buffer": PDF}
 
 
+def _settled_deadline(page):
+    """The header's quiet `Arvamuse tähtaeg` value: ended or settled, never owed."""
+    return page.locator("#teema-pais .metaline__value--settled").first
+
+
 def _zone(page):
     return page.locator("#praegune-tegevus")
 
@@ -174,8 +179,10 @@ def test_journey_consultation_to_repeat_opinion_and_closure(page, base_url, tmp_
 
     # The first opinion goes out and answers the committee's deadline.
     _register_opinion(page, file_name="koja-arvamus-1.pdf", answers_deadline=True)
-    header = page.locator("#teema-pais")
-    expect(header).to_contain_text(re.compile("vastatud", re.IGNORECASE))
+    # On the settled metaline value itself: «Vastatud» is also an option of the
+    # header editor's outcome select, so a check on the whole header passed
+    # even while the deadline was still owed.
+    expect(_settled_deadline(page)).to_contain_text(f"{_et(5)} · vastatud")
 
     # The committee asks again: a NEW deadline, which the old opinion must not
     # answer.
@@ -191,7 +198,7 @@ def test_journey_consultation_to_repeat_opinion_and_closure(page, base_url, tmp_
 
     # The second opinion answers the second request.
     _register_opinion(page, file_name="koja-arvamus-2.pdf", answers_deadline=True)
-    expect(page.locator("#teema-pais")).to_contain_text(re.compile("vastatud", re.IGNORECASE))
+    expect(_settled_deadline(page)).to_contain_text(f"{_et(30)} · vastatud")
 
     # The file moves on, then closes — and owes nothing afterwards.
     control = page.locator("#teema-hetkeseis details[data-stagepick]")
