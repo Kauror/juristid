@@ -45,8 +45,10 @@ from dataclasses import dataclass
 from functools import cache
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q, QuerySet
+from django.utils.text import capfirst
 
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
@@ -64,6 +66,7 @@ from app.organisations.services import find_matches, lock_identities
 
 NAME_REQUIRED = "Organisatsioon vajab nime."
 ALIAS_REQUIRED = "Nimekuju ei tohi olla tühi."
+ALIAS_NOT_FOUND = "Nimekuju ei leitud."
 UNKNOWN_TYPE = "Tundmatu organisatsiooni tüüp."
 STALE = "Seda organisatsiooni muudeti vahepeal. Ava leht uuesti ja vaata muudatus üle."
 NAME_UNCHANGED = "Nimi on juba selline."
@@ -163,11 +166,44 @@ def is_reviewed_alias(alias: OrganisationAlias) -> bool:
 class OrganisationReferences:
     """What points at one institution, by relation, for the page and the decision."""
 
+    #: ``"Model.field" -> count``, the model graph's own keys.
     by_relation: dict[str, int]
 
     @property
     def total(self) -> int:
         return sum(self.by_relation.values())
+
+    @property
+    def labelled(self) -> list[tuple[str, int]]:
+        """``(Estonian label, count)`` per relation — what the page prints."""
+        return sorted(
+            ((relation_label(key), count) for key, count in self.by_relation.items()),
+            key=lambda row: row[0],
+        )
+
+
+#: The relations a person reads by name. Explicit where the model's own
+#: verbose names would read oddly; anything added later falls back to them.
+RELATION_LABELS: dict[str, str] = {
+    "Organisation.predecessor": "Järglased (selle asutuse eelkäijana)",
+    "Matter.addressee_organisation": "Teemad, kus see on adressaat",
+    "MatterSourceOrganisation.organisation": "Teemad, kus see on saatja",
+    "Entry.organisation": "Sissekanded",
+    "MatterExternalPosition.organisation": "Välised seisukohad",
+    "SubmissionRecipient.organisation": "Arvamused, mille saaja see on",
+    "SubmissionJointSubmitter.organisation": "Arvamused, mille kaasesitaja see on",
+}
+
+
+def relation_label(key: str) -> str:
+    """The Estonian label of one model-graph key; never the key itself."""
+    if key in RELATION_LABELS:
+        return RELATION_LABELS[key]
+    for relation in Organisation._meta.related_objects:
+        if f"{relation.related_model.__name__}.{relation.field.name}" == key:
+            plural = str(relation.related_model._meta.verbose_name_plural)
+            return f"{capfirst(plural)}: {relation.field.verbose_name}"
+    return "Muud kirjed"
 
 
 def organisation_references(organisation: Organisation) -> OrganisationReferences:
@@ -399,13 +435,20 @@ def remove_organisation_alias(
     baseline carries. Deleting the row through the model records the
     `ORGANISATION_ALIAS_CHANGED` rebuild obligation (`app.search.signals`).
     """
+    alias_pk = getattr(alias, "pk", alias)
     try:
-        row = OrganisationAlias.objects.select_related("organisation").get(
-            pk=getattr(alias, "pk", alias)
+        organisation_id = OrganisationAlias.objects.values_list("organisation_id", flat=True).get(
+            pk=alias_pk
         )
-    except OrganisationAlias.DoesNotExist:
-        raise DomainError("Nimekuju ei leitud.") from None
-    locked = _locked(row.organisation)
+    except (OrganisationAlias.DoesNotExist, ValueError, ValidationError):
+        raise DomainError(ALIAS_NOT_FOUND) from None
+    # The institution first, then the spelling read again under its lock: two
+    # removals of one spelling are serialised here, and the second finds it
+    # gone instead of deleting nothing and auditing a removal anyway.
+    locked = _locked(organisation_id)
+    row = OrganisationAlias.objects.filter(pk=alias_pk, organisation=locked).first()
+    if row is None:
+        raise DomainError(ALIAS_NOT_FOUND)
     _check_revision(locked, expected_revision)
     if row.alias_type == AliasType.HISTORICAL_NAME:
         raise DomainError(HISTORICAL_NAME_KEPT)

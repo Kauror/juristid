@@ -461,7 +461,9 @@ def test_a_merge_retires_the_tag_and_moves_no_assignment(department_head, specia
     assert {r.matter.pk for r in search(query="Halduskoormus", user=specialist)} == {matter.pk}
     (event,) = _events(ChangeEventType.TAG_MERGED)
     assert event.payload["into"] == str(new.pk)
-    assert event.payload["matters"] == 1
+    # Counts of Teemad are business information the pages hide from a
+    # technical administrator; the audit row does not carry them either.
+    assert "matters" not in event.payload and "submissions" not in event.payload
 
 
 def test_a_merged_tag_is_frozen(department_head):
@@ -547,7 +549,7 @@ def test_deactivating_keeps_every_classification_and_can_be_undone(department_he
     assert list(matter.tags.all()) == [tag]
     assert SubmissionTagAssignment.objects.filter(tag=tag).count() == 1
     (event,) = _events(ChangeEventType.TAG_DEACTIVATED)
-    assert event.payload["matters"] == 1 and event.payload["submissions"] == 1
+    assert set(event.payload) == {"tag", "key"}
 
     with refused(vocabulary.ALREADY_INACTIVE):
         vocabulary.deactivate_tag(
@@ -559,6 +561,80 @@ def test_deactivating_keeps_every_classification_and_can_be_undone(department_he
     tag.refresh_from_db()
     assert tag.is_active and tag.deprecated_at is None
     assert _events(ChangeEventType.TAG_REACTIVATED)
+
+
+def test_a_tag_others_were_merged_into_cannot_be_retired(department_head):
+    old = factories.TagFactory(name_et="Liidetud sõna")
+    canonical = factories.TagFactory(name_et="Kanooniline sõna")
+    vocabulary.merge_tag(
+        actor=department_head,
+        tag=old,
+        into=canonical,
+        expected_revision=vocabulary.tag_revision(old),
+    )
+    canonical.refresh_from_db()
+
+    with refused(vocabulary.CANONICAL_STAYS_ACTIVE):
+        vocabulary.deactivate_tag(
+            actor=department_head,
+            tag=canonical,
+            expected_revision=vocabulary.tag_revision(canonical),
+        )
+
+    canonical.refresh_from_db()
+    assert canonical.is_active
+    assert _events(ChangeEventType.TAG_DEACTIVATED) == []
+
+
+def test_a_removal_of_a_spelling_already_gone_is_refused_and_audits_nothing(department_head):
+    body = factories.OrganisationFactory(name="Kaks korda amet")
+    alias = OrganisationAlias.objects.create(organisation=body, alias="KKA")
+    catalogue.remove_organisation_alias(actor=department_head, alias=alias, expected_revision=None)
+
+    with refused(catalogue.ALIAS_NOT_FOUND):
+        catalogue.remove_organisation_alias(
+            actor=department_head, alias=alias, expected_revision=None
+        )
+
+    assert len(_events(ChangeEventType.ORGANISATION_ALIAS_REMOVED)) == 1
+
+
+def test_reference_labels_are_estonian_and_never_model_keys(specialist):
+    body = factories.OrganisationFactory(name="Sildistatud viidetega amet")
+    factories.MatterFactory(owner=specialist, addressee_organisation=body)
+    successor = factories.OrganisationFactory(name="Järglasamet", predecessor=body)
+    assert successor.predecessor == body
+
+    labelled = catalogue.organisation_references(body).labelled
+
+    assert ("Teemad, kus see on adressaat", 1) in labelled
+    assert ("Järglased (selle asutuse eelkäijana)", 1) in labelled
+    for relation in Organisation._meta.related_objects:
+        key = f"{relation.related_model.__name__}.{relation.field.name}"
+        assert "." not in catalogue.relation_label(key), key
+
+
+def test_advisory_lock_namespaces_are_unique_across_the_application():
+    """Every subsystem's first lock key is its own (24601 search, 24602 identity, …).
+
+    Read from the source rather than listed, so a new lock that reuses a
+    number fails here the day it is written.
+    """
+    import pathlib
+    import re
+
+    app_dir = pathlib.Path(__file__).resolve().parent.parent / "app"
+    pattern = re.compile(r"^_?[A-Z_]*LOCK[A-Z_]*(?:\s*:[^=]*)?\s*=\s*\(?\s*(\d{5})\b", re.MULTILINE)
+    owners: dict[str, list[str]] = {}
+    for path in sorted(app_dir.rglob("*.py")):
+        if "migrations" in path.parts:
+            continue
+        for match in pattern.finditer(path.read_text(encoding="utf-8")):
+            owners.setdefault(match.group(1), []).append(path.relative_to(app_dir).as_posix())
+
+    assert "24606" in owners, "the vocabulary lock was not found by the scan"
+    shared = {number: files for number, files in owners.items() if len(files) > 1}
+    assert not shared, shared
 
 
 def test_no_service_deletes_a_tag(department_head):

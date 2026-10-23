@@ -110,8 +110,8 @@
   {% if shows_usage %}
     {% if references.by_relation %}
       <dl class="detailgrid">
-        {% for relation, count in references.by_relation.items %}
-          <dt class="mono">{{ relation }}</dt><dd>{{ count }}</dd>
+        {% for label, count in references.labelled %}
+          <dt>{{ label }}</dt><dd>{{ count }}</dd>
         {% endfor %}
       </dl>
     {% else %}

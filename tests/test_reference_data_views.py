@@ -339,6 +339,53 @@ def test_a_stale_page_is_a_400_and_writes_nothing(client, department_head):
     assert tag.name_et == "Sõnastikusõna"
 
 
+def test_choosing_a_merge_target_opens_a_confirmation_and_merges_nothing(client):
+    old = factories.TagFactory(name_et="Kinnitatav")
+    new = factories.TagFactory(name_et="Sihtsõna")
+    factories.MatterFactory().tags.add(old)
+    url = reverse("reference_data:tag_merge", kwargs={"pk": old.pk})
+    query = {"into": str(new.pk), "revision": vocabulary.tag_revision(old)}
+
+    client.force_login(factories.DepartmentHeadFactory())
+    page = client.get(url, query)
+
+    body = page.content.decode()
+    assert page.status_code == 200
+    assert "Liida «Kinnitatav» sildiga «Sihtsõna»" in body
+    assert "Teemasid sildiga «Kinnitatav»" in body
+    old.refresh_from_db()
+    assert old.merged_into is None and old.is_active
+
+    client.force_login(factories.AdministratorFactory(capability_overrides={MANAGE: "allow"}))
+    hidden = client.get(url, query).content.decode()
+    assert "Liida «Kinnitatav» sildiga «Sihtsõna»" in hidden
+    assert "Teemasid sildiga" not in hidden
+
+
+def test_the_tag_page_no_longer_merges_in_one_click(client, department_head):
+    tag = factories.TagFactory(name_et="Ühe klõpsuga")
+    client.force_login(department_head)
+
+    body = client.get(reverse("reference_data:tag", kwargs={"pk": tag.pk})).content.decode()
+
+    action = reverse("reference_data:tag_merge", kwargs={"pk": tag.pk})
+    assert f'method="get" action="{action}"' in body
+    assert f'method="post" action="{action}"' not in body
+
+
+def test_the_references_panel_prints_no_model_keys(client, department_head, specialist):
+    body = factories.OrganisationFactory(name="Viidete amet")
+    factories.MatterFactory(owner=specialist, addressee_organisation=body)
+    client.force_login(department_head)
+
+    page = client.get(reverse("reference_data:organisation", kwargs={"pk": body.pk}))
+
+    html = page.content.decode()
+    assert "Teemad, kus see on adressaat" in html
+    assert "Matter.addressee_organisation" not in html
+    assert "app." not in html.split('id="org-viited"')[1].split("</section>")[0]
+
+
 def test_a_merge_through_the_page_retires_the_tag(client, department_head):
     old = factories.TagFactory(name_et="Vananenud")
     new = factories.TagFactory(name_et="Kehtiv")

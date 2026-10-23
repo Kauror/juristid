@@ -58,6 +58,10 @@ MERGED_IS_FROZEN = (
 MERGE_INTO_ITSELF = "Silti ei saa liita iseendaga."
 MERGE_TARGET_RETIRED = "Sihtsilt peab olema kasutusel ja mitte ise liidetud."
 ALREADY_INACTIVE = "Silt on juba aegunuks märgitud."
+CANONICAL_STAYS_ACTIVE = (
+    "Seda silti ei saa aegunuks märkida: sellega on liidetud teisi silte, mis "
+    "elavad edasi selle sildi kaudu."
+)
 ALREADY_ACTIVE = "Silt on juba kasutusel."
 
 _KEY = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -143,9 +147,12 @@ def _check_revision(locked: Tag, expected_revision: str | None) -> None:
         raise DomainError(STALE)
 
 
-#: The advisory-lock namespace for vocabulary decisions: beside institution
-#: identity (24602) and search (24601), never sharing either's keys.
-VOCABULARY_LOCK_NAMESPACE = 24603
+#: The advisory-lock namespace for vocabulary decisions. Its own number: 24601
+#: search, 24602 institution identity, 24603 duplicate-intake titles, 24604
+#: storage quotas, 24605 notifications (R1 workstream C) — a shared namespace
+#: would make unrelated writers wait on each other, or worse, on a key they
+#: never meant (tests/test_reference_data_services.py checks they stay apart).
+VOCABULARY_LOCK_NAMESPACE = 24606
 
 
 def _vocabulary_lock() -> None:
@@ -346,7 +353,6 @@ def merge_tag(*, actor: Any, tag: Any, into: Any, expected_revision: str | None)
     if target.merged_into_id is not None or not target.is_active:
         raise DomainError(MERGE_TARGET_RETIRED)
 
-    usage = tag_usage(source)
     source.merged_into = target
     source.is_active = False
     source.deprecated_at = source.deprecated_at or timezone.now()
@@ -363,8 +369,6 @@ def merge_tag(*, actor: Any, tag: Any, into: Any, expected_revision: str | None)
             "key": source.key,
             "into": str(target.pk),
             "into_key": target.key,
-            "matters": usage.matters,
-            "submissions": usage.submissions,
         },
     )
     return source
@@ -378,21 +382,21 @@ def deactivate_tag(*, actor: Any, tag: Any, expected_revision: str | None) -> Ta
     _check_revision(locked, expected_revision)
     if not locked.is_active:
         raise DomainError(ALREADY_INACTIVE)
+    if locked.merged_from.exists():
+        # Every tag merged into this one resolves to it (`Tag.canonical`), and
+        # a retired canonical would leave all of them pointing at a word nobody
+        # may choose. Checked under the vocabulary lock, so a merge into this
+        # tag cannot land between the check and the save.
+        raise DomainError(CANONICAL_STAYS_ACTIVE)
     locked.is_active = False
     locked.deprecated_at = timezone.now()
     locked.save(update_fields=["is_active", "deprecated_at", "updated_at"])
-    usage = tag_usage(locked)
     record_change_event(
         event_type=ChangeEventType.TAG_DEACTIVATED,
         actor=actor,
         obj=locked,
         summary=locked.name_et[:200],
-        payload={
-            "tag": str(locked.pk),
-            "key": locked.key,
-            "matters": usage.matters,
-            "submissions": usage.submissions,
-        },
+        payload={"tag": str(locked.pk), "key": locked.key},
     )
     return locked
 
