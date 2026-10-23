@@ -484,9 +484,9 @@ rather than read.
                 <input class="field__input field__input--compact dateinput" type="text"
                        inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
                        data-datepicker="true" name="response_deadline"
-                       {% if reopen.editor == "response_deadline" %}aria-invalid="true" aria-describedby="paise-tahtaeg-error"
-                       value="{{ reopen.values.response_deadline }}"{% else %}value="{{ matter.response_deadline|date:'j.n.Y' }}"{% endif %}>
-                {% if reopen.editor == "response_deadline" %}
+                       {% if reopen.editor == "response_deadline" %}{% if reopen.about != "outcome" %}aria-invalid="true" aria-describedby="paise-tahtaeg-error"
+                       {% endif %}value="{{ reopen.values.response_deadline }}"{% else %}value="{{ matter.response_deadline|date:'j.n.Y' }}"{% endif %}>
+                {% if reopen.editor == "response_deadline" and reopen.about != "outcome" %}
                   <span class="field__error" id="paise-tahtaeg-error" role="alert">{{ reopen.error }}</span>
                 {% endif %}
               </label>

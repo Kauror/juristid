@@ -79,6 +79,12 @@ FOREIGN_SUBMISSION = "Valitud arvamus ei kuulu sellele teemale."
 UNSENT_SUBMISSION = "Vastuseks saab valida ainult välja saadetud Koja arvamuse."
 UNKNOWN_OUTCOME = "Tundmatu tulemus."
 
+#: Refusals about «Mis sai tähtajast», not about the date: the header puts their
+#: words beside the outcome control rather than beside the date box.
+OUTCOME_REFUSALS: frozenset[str] = frozenset(
+    {REPLACED_NEEDS_AN_OUTCOME, RESOLVE_NEEDS_AN_OUTCOME, UNKNOWN_OUTCOME}
+)
+
 
 class StaleDeadline(DomainError):
     """The deadline changed after the form was drawn (`STALE_DEADLINE_REFUSAL`).

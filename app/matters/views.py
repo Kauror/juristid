@@ -239,6 +239,7 @@ from app.matters.removal import (
     remove_matter_record,
 )
 from app.matters.response_deadlines import (
+    OUTCOME_REFUSALS,
     StaleDeadline,
     answerable_submissions,
     change_response_deadline,
@@ -6222,7 +6223,13 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
-        _reopen_header_editor(context, request, editor="response_deadline", error=str(error))
+        _reopen_header_editor(
+            context,
+            request,
+            editor="response_deadline",
+            error=str(error),
+            about="outcome" if str(error) in OUTCOME_REFUSALS else "date",
+        )
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
     if _on_documents_tab(request):
@@ -6267,7 +6274,12 @@ def _first_error(form: Any, field: str | None = None) -> str:
 
 
 def _reopen_header_editor(
-    context: dict[str, Any], request: HttpRequest, *, editor: str, error: str
+    context: dict[str, Any],
+    request: HttpRequest,
+    *,
+    editor: str,
+    error: str,
+    about: str = "date",
 ) -> None:
     """Draw ``editor`` open again, filled with what was posted, the error beside it.
 
@@ -6275,9 +6287,11 @@ def _reopen_header_editor(
     here renders ``<details open>`` with ``reopen.values`` (the POST) in its
     controls — the date, and for `Arvamuse tähtaeg` the change, outcome,
     opinion and note too — and the reason inside the form instead of the
-    detached banner above the band.
+    detached banner above the band. ``about`` names the control the reason is
+    about: ``"date"``, or ``"outcome"`` for a refusal of «Mis sai tähtajast»,
+    which then carries the error and ``aria-invalid`` instead of the date box.
     """
-    context["reopen"] = {"editor": editor, "error": error, "values": request.POST}
+    context["reopen"] = {"editor": editor, "error": error, "values": request.POST, "about": about}
 
 
 def _apply_inline_field(

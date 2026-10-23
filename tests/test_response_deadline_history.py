@@ -27,6 +27,7 @@ What is protected here:
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import pytest
 from django.urls import reverse
@@ -42,6 +43,7 @@ from app.matters.response_deadlines import (
     CHANGE_NEEDS_A_MEANING,
     FOREIGN_SUBMISSION,
     REPLACED_NEEDS_AN_OUTCOME,
+    RESOLVE_NEEDS_AN_OUTCOME,
     STALE_DEADLINE_REFUSAL,
     UNSENT_SUBMISSION,
     change_response_deadline,
@@ -547,6 +549,46 @@ def test_a_header_deadline_refused_for_its_meaning_offers_the_choice_open(signed
     assert f'value="{new_date}"' in editor
     assert 'name="change" value="MOVED"' in editor
     assert f'role="alert">{CHANGE_NEEDS_A_MEANING}</span>' in editor
+
+
+@pytest.mark.parametrize(
+    ("posted", "refusal"),
+    [
+        (
+            {
+                "tegevus": "muuda",
+                "change": ResponseDeadlineChange.REPLACED,
+                "response_deadline": "NEW",
+            },
+            REPLACED_NEEDS_AN_OUTCOME,
+        ),
+        ({"tegevus": "lopeta"}, RESOLVE_NEEDS_AN_OUTCOME),
+    ],
+)
+def test_an_outcome_refusal_is_wired_to_the_outcome_not_the_date(
+    signed_in, specialist, posted, refusal
+):
+    """The reason, and `aria-invalid`, sit on «Mis sai tähtajast» — what is missing."""
+    matter = _requested(specialist, _days(3))
+    data = {**posted, "revision": deadline_revision(matter)}
+    if data.get("response_deadline") == "NEW":
+        data["response_deadline"] = _days(30).strftime("%d.%m.%Y")
+
+    response = signed_in.post(
+        reverse("matters:response_deadline", kwargs={"pk": matter.pk}),
+        data,
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 400
+    editor = _deadline_editor(response.content.decode())
+    outcome = re.search(r'<select[^>]*name="previous_outcome"[^>]*>', editor).group(0)
+    date_box = re.search(r'<input[^>]*name="response_deadline"[^>]*>', editor, re.S).group(0)
+    assert 'aria-invalid="true"' in outcome
+    assert 'aria-describedby="paise-tahtaeg-outcome-error"' in outcome
+    assert f'id="paise-tahtaeg-outcome-error" role="alert">{refusal}</span>' in editor
+    assert "aria-invalid" not in date_box
+    assert "paise-tahtaeg-error" not in editor
 
 
 @pytest.mark.parametrize("act", ["replace", "resolve"])
