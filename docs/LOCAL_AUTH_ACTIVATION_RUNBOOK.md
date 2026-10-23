@@ -10,6 +10,19 @@ without the owner's explicit approval for the activation itself.
 
 ## 0. The exact inactive state after the 2026-10-08 release
 
+> **Changed by ADR 0186 (#522, deployed 2026-10-23 as `6e195631`).** Personal
+> sign-in is still dormant and `AUTH_MODE` is still `shared_gate`, but four rows
+> below no longer describe production: Haldus → Kasutajad answers under the gate
+> to a *verified administrator session* (`/haldus/sisene/`: own e-mail, own
+> password, own TOTP) and is still 404 to every persona; `/konto/aktiveeri/` and
+> `/konto/parool/taasta/` answer under the gate for a link whose holder may
+> administer, and are 404 for everybody else; `bootstrap_account_admin` and
+> `issue_administrator_link` run under `shared_gate`; and once administrators
+> have been bootstrapped the read-only check below no longer prints `0 0 0`
+> (their capability overrides, passwords and epochs are expected).
+> `LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required beside the gate on real data too
+> (`juristid.E048`). The table is kept as the record of the 2026-10-08 state.
+
 | | state |
 | --- | --- |
 | `AUTH_MODE` | `shared_gate` in `/mnt/user/appdata/juristid-main/config/juristid.env` — unchanged |
