@@ -278,11 +278,11 @@ def test_a_reason_is_stored_as_plain_text(specialist, normal_matter):
         specialist,
         matter=str(normal_matter.pk),
         follow_up_outcome="monitoring_ended",
-        what_was_done="Eelnõu < võeti tagasi & menetlus lõppes",
+        what_was_done="Eelnõu «võeti» tagasi & menetlus lõppes",
     )
     commit("complete_action", specialist, prepared)
     follow_up = OpinionFollowUp.objects.get(pk=check.follow_up_id)
-    assert follow_up.end_reason == "Eelnõu < võeti tagasi & menetlus lõppes"
+    assert follow_up.end_reason == "Eelnõu «võeti» tagasi & menetlus lõppes"
 
 
 def test_a_move_says_which_way_and_uses_the_stored_label(specialist, normal_matter):
@@ -466,3 +466,73 @@ def test_a_nul_is_refused_in_every_operation(name):
         REGISTRY[name].arguments.model_validate(
             {"matter": "2026_1", "title": "a\x00b", "text": "a\x00"}
         )
+
+
+# ---------------------------------------------------------------------------
+# Re-review P3-A..C
+# ---------------------------------------------------------------------------
+
+
+def test_a_change_that_changes_nothing_is_refused(specialist, normal_matter):
+    _imported(
+        normal_matter,
+        text="Ootame MKM vastust",
+        kind="WAIT",
+        date_semantics="EXPECTED_AROUND",
+        target_date=date(2027, 7, 1),
+        date_precision="HALF_YEAR",
+    )
+    base = {"matter": str(normal_matter.pk), "mode": "change_current"}
+    assert refusal("set_next_action", specialist, **base).code == "invalid_argument"
+    same = refusal(
+        "set_next_action",
+        specialist,
+        **base,
+        text="Ootame  MKM vastust",
+        kind="wait",
+        date_meaning="expected_around",
+    )
+    assert same.code == "invalid_argument"
+    assert NextAction.objects.filter(matter=normal_matter).count() == 1
+
+
+def test_a_kept_meaning_does_not_survive_a_kind_change(specialist, normal_matter):
+    _imported(
+        normal_matter,
+        text="Ootame MKM vastust",
+        kind="WAIT",
+        date_semantics="EXPECTED_AROUND",
+        target_date=_in(20),
+    )
+    assert (
+        refusal(
+            "set_next_action",
+            specialist,
+            matter=str(normal_matter.pk),
+            mode="change_current",
+            kind="do",
+            date_meaning="expected_around",
+        ).code
+        == "invalid_argument"
+    )
+    to_do = prepare(
+        "set_next_action",
+        specialist,
+        matter=str(normal_matter.pk),
+        mode="change_current",
+        kind="do",
+    )
+    assert to_do.canonical["date_semantics"] == "DEADLINE"
+
+
+def test_markup_is_refused_in_a_follow_up_reason(specialist, normal_matter):
+    _check(normal_matter, specialist)
+    refused = refusal(
+        "complete_action",
+        specialist,
+        matter=str(normal_matter.pk),
+        follow_up_outcome="response_received",
+        what_was_done='Vastus <a href="https://example.org">siin</a>',
+    )
+    assert refused.code == "invalid_argument"
+    assert "example.org" not in refused.message and "what_was_done" in refused.message

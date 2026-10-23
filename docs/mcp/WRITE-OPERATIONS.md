@@ -24,7 +24,7 @@ the operations live in `app/mcp_writes/operations/` and are registered in
 | No echo | A refusal never repeats the caller's input (a person's name, a URL, a value); database values such as a Matter's reference, or the candidate colleagues of an ambiguous name, may appear. |
 | No kind labels | The preview never prints «Teen»/«Ootan»/«Jälgin» (ADR 0054); it shows what the date means. |
 | Canonical services only | `execute` calls the service the web door calls; a `DomainError` becomes `OperationRefused("domain_rule", <the service's own sentence>)`. Save-once services receive the proposal id as `once_token` (docs/adr/0167). |
-| Plain text in, escaped | Chronology text is HTML-escaped and turned into `<p>`/`<br>` (`common.text_to_entry_html`) before `add_entry` sanitises it, so a `<script>` in the text is stored as words. |
+| Plain text in, escaped | Chronology text is HTML-escaped and turned into `<p>`/`<br>` (`common.text_to_entry_html`) before `add_entry` sanitises it, so a `<script>` in the text is stored as words. The one exception is an opinion follow-up check's `what_was_done`, which is also the plain `end_reason`: there `<` and `>` are refused instead. |
 | Dates | `exact` `YYYY-MM-DD`, `month` `YYYY-MM`, `quarter` `YYYY-Qn`, `year` `YYYY`. A value written at another precision is refused (a month is never read out of a day). The stored anchor is the period's first day, as the forms store it; the range is 1990–2100. `HALF_YEAR` and `INFERRED` are not offered for new input (docs/adr/0079). |
 
 ## The operations
@@ -109,7 +109,7 @@ the operations live in `app/mcp_writes/operations/` and are registered in
   (`do` → `planned_day` = `DEADLINE`; `wait`/`monitor` → `review_on` = `REVIEW_ON`
   or `expected_around` = `EXPECTED_AROUND`, required when dated), `waiting_for`
   (required for `wait`).
-- **`change_current` keeps what it is not told** (the web «Muuda», ENG-021): an omitted `text`, `kind`, date or meaning keeps the current step's value — including a stored precision no control offers (`HALF_YEAR`, `INFERRED`); `clear_date` removes the date. A DO step's meaning (e.g. an imported «Vaatan üle») changes only when `date_meaning` is given. The meaning row is always in `changes`, so a change of it is never silent. A kind change that needs a fact (who is waited for, what a kept date now means) is `missing_information`.
+- **`change_current` keeps what it is not told** (the web «Muuda», ENG-021): an omitted `text`, `kind`, date or meaning keeps the current step's value — including a stored precision no control offers (`HALF_YEAR`, `INFERRED`); `clear_date` removes the date. A DO step's meaning (e.g. an imported «Vaatan üle») changes only when `date_meaning` is given. The meaning row is always in `changes`, so a change of it is never silent. A kind change that needs a fact (who is waited for, what a kept date now means) is `missing_information`. A change that changes nothing (text, kind, date, precision and meaning all equal) is `invalid_argument`; a kept meaning survives only while the kind is unchanged — a new kind takes one of its own meanings.
 - **Lateness wording** follows the precision: a month/quarter/year DO date is late only after the period ends; `expected_around` is «when the other side is expected to act», never a review day.
 - **Who is waited for:** `NextAction` has no column for it, so it is carried in
   the step's sentence: when the sentence does not already name the party,
@@ -146,7 +146,7 @@ the operations live in `app/mcp_writes/operations/` and are registered in
   `monitoring_ended` needs the reason in `what_was_done`; no next step. Service
   `workspace.check_opinion_follow_up`.
 - **Promotion previewed exactly as the services do it:** the planned steps are read reader-blind in the service's order `(target_date, created_at, pk)`; for `no_response` the new check (created now, so last on a tie) joins them, and the preview says either «Järgmisest kontrollist (<päev>) saab kohe teema praegune tegevus» or names the planned step that is promoted.
-- **Reasons are plain text:** `what_was_done` reaches `check_opinion_follow_up` unescaped (it becomes `OpinionFollowUp.end_reason`; `add_entry` sanitises the note itself).
+- **Reasons are plain text, without markup:** `what_was_done` reaches `check_opinion_follow_up` as plain text (it becomes `OpinionFollowUp.end_reason` and the note's body), so `<` and `>` are refused there (`invalid_argument`) — no tag can become live markup in Teema käik.
 - **State:** `current_action`, `planned_actions` (every planned step's id and date), owner.
 - **Never:** a stage move or closure (the web form's `Uus hetkeseis` is not
   offered), a consultation round's feedback wait (that is not a `NextAction`),

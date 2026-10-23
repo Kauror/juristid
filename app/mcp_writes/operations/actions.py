@@ -320,7 +320,8 @@ class SetNextAction:
         kept = str(current.date_semantics) if current is not None else None
         if args.date_meaning is not None:
             chosen = MEANINGS[args.date_meaning]
-            if chosen != kept and chosen not in ALLOWED_MEANINGS[kind]:
+            same_kind = current is not None and current.kind == kind
+            if not (same_kind and chosen == kept) and chosen not in ALLOWED_MEANINGS[kind]:
                 raise OperationRefused(
                     "invalid_argument",
                     "A 'do' step's date means 'planned_day'; a 'wait' or 'monitor' date means "
@@ -377,6 +378,23 @@ class SetNextAction:
                 precision = "EXACT"
         text = self._text(args, current, kind)
         semantics = self._semantics(args, current, kind, dated=start is not None)
+        if current is not None and (
+            text,
+            kind,
+            common.iso(start),
+            precision,
+            semantics,
+        ) == (
+            current.text,
+            current.kind,
+            common.iso(current.target_date),
+            str(current.date_precision) if current.target_date is not None else "EXACT",
+            current.date_semantics,
+        ):
+            raise OperationRefused(
+                "invalid_argument",
+                "The proposed step equals the current one; nothing would change.",
+            )
 
         canonical = {
             "matter_id": str(matter.pk),
@@ -671,6 +689,13 @@ class CompleteAction:
                     from app.workflow.follow_ups import FOLLOW_UP_DATE_IN_THE_PAST
 
                     raise OperationRefused("domain_rule", FOLLOW_UP_DATE_IN_THE_PAST)
+            if "<" in said or ">" in said:
+                # The same words are the follow-up's plain `end_reason` and the note's
+                # HTML body, so they may hold no markup at all.
+                raise OperationRefused(
+                    "invalid_argument",
+                    "what_was_done may not contain < or > for an opinion follow-up check.",
+                )
             if outcome == "MONITORING_ENDED" and not said:
                 raise OperationRefused(
                     "missing_information",
