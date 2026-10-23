@@ -612,6 +612,11 @@ class AuthMethod(models.TextChoices):
     )
     #: An individual identity Cloudflare Access proved and signed.
     CLOUDFLARE_ACCESS = "cloudflare_access", "Cloudflare Access"
+    #: A change an AI client prepared over MCP and the person approved on
+    #: Juristid's own page with their personal authenticator (docs/adr/0189).
+    #: The principal is the account the bearer token was issued to; there is
+    #: no persona — no session chose one.
+    MCP = "mcp", "AI-klient (MCP), isiklikult kinnitatud"
     #: `AUTH_MODE=none`: a developer laptop or CI, the synthetic sign-in.
     DEV_LOGIN = "dev_login", "Arenduse sisselogimine"
     #: Outside any request: a management command, an import, a background job.
