@@ -71,7 +71,12 @@ which ends only it. A copied state is worthless behind another pass of the gate.
 
 **Fresh proof.** Every administrative change older than
 `ADMIN_SESSION_REAUTH_SECONDS` (default 600) since the last proof asks for the
-password **and** the code again (`/haldus/kinnita/`).
+password **and** the code again (`/haldus/kinnita/`). The proof gates the
+change, it does not make it: the request that asked is never replayed. The page
+the administrator comes back to says «Muudatust ei salvestatud. Kinnitasid oma
+isiku — tee muudatus uuesti.» and offers the non-secret values typed into it
+again — once, for that page and that verified principal, and only once the
+proof is fresh (bounty H-01, both modes).
 
 **Throttling and audit.** The existing `AuthenticationThrottle` counters
 (sign-in pair/account/network, second factor, re-authentication) — a guess here

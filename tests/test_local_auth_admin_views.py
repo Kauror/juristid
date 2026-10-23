@@ -16,6 +16,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts import local_auth
+from app.accounts.admin_views import UNSAVED_NOTICE
 from app.accounts.enums import Capability, ProvisioningState, UserRole
 from app.accounts.forms import field_name
 from app.accounts.models import User
@@ -293,6 +294,9 @@ def test_changes_need_a_recent_proof_of_identity(client, settings):
         {"password": PASSWORD, "code": code(secret, admin), "next": _detail(specialist)},
     )
     assert proved["Location"] == _detail(specialist)
+    assert UNSAVED_NOTICE in client.get(_detail(specialist)).content.decode()
+    specialist.refresh_from_db()
+    assert specialist.capability_overrides == {}
     client.post(
         _detail(specialist),
         _form(specialist, **{field_name(Capability.VIEW_DEPARTMENT_MANAGEMENT): "on"}),
@@ -484,6 +488,13 @@ def test_every_change_needs_a_recent_proof_of_identity(
         {"password": PASSWORD, "code": code(secret, admin), "next": back},
     )
     assert proved["Location"] == back
+    # The proof did not make the change, and the page the person lands on
+    # says so rather than looking as if it had (bounty H-01).
+    landing = client.get(back)
+    assert landing.status_code == 200
+    assert UNSAVED_NOTICE in landing.content.decode()
+    assert _everything_an_action_could_change() == before
+    assert not changed(target)
     done = client.post(url, data)
 
     assert done.status_code == 302
