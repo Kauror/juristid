@@ -6041,6 +6041,8 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
+        if field in _REOPENED_ON_REFUSAL:
+            _reopen_header_editor(context, request, editor=field, error=_first_error(form, field))
         return render(request, surface, context, status=400)
 
     value = form.cleaned_data.get(field)
@@ -6102,6 +6104,8 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
+        if field in _REOPENED_ON_REFUSAL:
+            _reopen_header_editor(context, request, editor=field, error=str(error))
         return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
@@ -6154,6 +6158,9 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
+        _reopen_header_editor(
+            context, request, editor="response_deadline", error=_first_error(form)
+        )
         return render(request, "matters/partials/header.html", context, status=400)
     data = form.cleaned_data
     if (
@@ -6195,6 +6202,7 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
+        _reopen_header_editor(context, request, editor="response_deadline", error=str(error))
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
     if _on_documents_tab(request):
@@ -6205,6 +6213,37 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
     response["HX-Retarget"] = "#teema-vaade"
     response["HX-Reswap"] = "outerHTML"
     return response
+
+
+#: `update_field` fields whose header editor reopens on a refusal (E-04).
+#:
+#: A refusal used to redraw the header from the stored values: the editor
+#: closed, the typed date reverted, and the message stood detached above a band
+#: that no longer showed what it was about. These editors come back open, with
+#: what was posted and the reason beside the field, so correcting the one thing
+#: refused is one more Salvesta rather than retyping everything. A conflict
+#: (409) still redraws from what is stored — there the stored value is the news.
+_REOPENED_ON_REFUSAL = frozenset({"received_date"})
+
+
+def _first_error(form: Any, field: str | None = None) -> str:
+    """The form's own words for what it refused, or the generic refusal."""
+    errors = form.errors.get(field, []) if field else [e for v in form.errors.values() for e in v]
+    return str(errors[0]) if errors else "Vigane väärtus."
+
+
+def _reopen_header_editor(
+    context: dict[str, Any], request: HttpRequest, *, editor: str, error: str
+) -> None:
+    """Draw ``editor`` open again, filled with what was posted, the error beside it.
+
+    `templates/matters/partials/header.html` reads ``reopen``: the editor named
+    here renders ``<details open>`` with ``reopen.values`` (the POST) in its
+    controls — the date, and for `Arvamuse tähtaeg` the change, outcome,
+    opinion and note too — and the reason inside the form instead of the
+    detached banner above the band.
+    """
+    context["reopen"] = {"editor": editor, "error": error, "values": request.POST}
 
 
 def _apply_inline_field(

@@ -460,3 +460,69 @@ def test_marking_an_existing_teema_keeps_its_saabus_on_muuda_teemat(page, base_u
     meta = page.locator(".metaline")
     expect(meta).to_contain_text("Koja ettepanek või pöördumine")
     expect(meta).to_contain_text(received)
+
+
+# ---------------------------------------------------------------------------
+# A refused header date keeps what was typed (E-04)
+# ---------------------------------------------------------------------------
+
+
+def test_a_refused_header_deadline_is_corrected_without_retyping(page, base_url):
+    """«Uus arvamuse küsimine» without «Mis sai tähtajast»: refused, and then one choice.
+
+    The refusal used to redraw the header from the stored values — editor shut,
+    the new date and the note gone, the radios the message asks about hidden.
+    """
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    page.fill("#id_title", unique_title("Päise tähtaja parandus"))
+    page.fill("#id_response_deadline", typed(10))
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+
+    editor = page.locator("#teema-pais details[data-deadline-editor]")
+    editor.locator("summary").click()
+    form = editor.locator("form")
+    form.locator("input[name=response_deadline]").fill(typed(40))
+    form.locator("#paise-tahtaeg-change-replaced").check(force=True)
+    form.locator("input[name=previous_note]").fill("Ministeerium saatis uue kirja")
+    form.locator("button[name=tegevus][value=muuda]").click()
+    page.wait_for_load_state("networkidle")
+
+    editor = page.locator("#teema-pais details[data-deadline-editor]")
+    form = editor.locator("form")
+    expect(form.locator(".field__error")).to_contain_text("Vali, mis sai praegusest")
+    expect(form.locator("input[name=response_deadline]")).to_have_value(typed(40))
+    expect(form.locator("#paise-tahtaeg-change-replaced")).to_be_checked()
+    expect(form.locator("input[name=previous_note]")).to_have_value("Ministeerium saatis uue kirja")
+    expect(page.locator("#teema-pais .formerror")).to_have_count(0)
+
+    form.locator("select[name=previous_outcome]").select_option("SUPERSEDED")
+    form.locator("button[name=tegevus][value=muuda]").click()
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#teema-pais .metaline__value--deadline").first).to_contain_text(typed(40))
+
+
+def test_an_impossible_saabus_in_the_header_stays_open_to_correct(page, base_url):
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    page.fill("#id_title", unique_title("Päise saabumise parandus"))
+    page.get_by_role("button", name="Salvesta", exact=True).click()
+    page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
+    start_first_step(page)
+
+    saabus = "#teema-pais form[hx-post$='/vali/received_date/']"
+    page.locator(saabus).locator("xpath=ancestor::details[1]/summary").click()
+    page.locator(f"{saabus} input[name=received_date]").fill("31.02.2026")
+    page.locator(f"{saabus} input[name=received_date]").press("Enter")
+    page.wait_for_load_state("networkidle")
+
+    expect(page.locator(f"{saabus} .field__error")).to_contain_text("7.9.2026")
+    expect(page.locator(f"{saabus} input[name=received_date]")).to_have_value("31.02.2026")
+    expect(page.locator(f"{saabus} input[name=received_date]")).to_be_focused()
+
+    page.locator(f"{saabus} input[name=received_date]").fill("3.9.2026")
+    page.locator(f"{saabus} input[name=received_date]").press("Enter")
+    page.wait_for_load_state("networkidle")
+    expect(page.locator("#teema-pais .metaline")).to_contain_text("3.9.2026")

@@ -264,3 +264,46 @@ def test_an_explicit_historical_saabus_is_saved(signed_in):
     assert response.status_code == 200
     matter.refresh_from_db()
     assert matter.received_date == dt.date(2018, 4, 3)
+
+
+# ---------------------------------------------------------------------------
+# A refused `Saabus` comes back open, with what was typed (E-04)
+# ---------------------------------------------------------------------------
+
+
+def _saabus_details(body: str, matter) -> str:
+    """The `<details>` opening tag around the `Saabus` editor."""
+    editor_at = body.index(_field_url(matter, "received_date"))
+    return body[:editor_at].rsplit("<details", 1)[1].split(">", 1)[0]
+
+
+def test_a_refused_saabus_keeps_its_editor_open_with_the_typed_date(signed_in, normal_matter):
+    from app.core.dates import ESTONIAN_DATE_ERROR
+
+    before = normal_matter.received_date
+    response = signed_in.post(
+        _field_url(normal_matter, "received_date"),
+        {
+            "received_date": "31.02.2026",
+            "revision": matter_field_revision(normal_matter, "received_date"),
+        },
+        HTTP_HX_REQUEST="true",
+    )
+
+    assert response.status_code == 400
+    body = response.content.decode()
+    assert " open" in _saabus_details(body, normal_matter)
+    field = _saabus_input(body, normal_matter)
+    assert 'value="31.02.2026"' in field
+    assert 'aria-invalid="true"' in field
+    # The reason stands beside the field it is about, not detached above the band.
+    assert f'id="paise-saabus-error" role="alert">{ESTONIAN_DATE_ERROR}</span>' in body
+    assert 'class="formerror"' not in body
+    normal_matter.refresh_from_db()
+    assert normal_matter.received_date == before
+
+
+def test_an_ordinary_saabus_editor_is_drawn_closed(signed_in, normal_matter):
+    body = _detail(signed_in, normal_matter)
+    assert " open" not in _saabus_details(body, normal_matter)
+    assert "paise-saabus-error" not in body
