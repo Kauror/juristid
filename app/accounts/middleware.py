@@ -49,7 +49,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.cache import add_never_cache_headers
 
-from app.accounts import cloudflare_access, local_auth, shared_gate
+from app.accounts import admin_session, cloudflare_access, local_auth, shared_gate
 from app.accounts.enums import AuthMode
 from app.accounts.models import User
 from app.accounts.selectors import is_persona_candidate
@@ -174,6 +174,17 @@ class AuthenticationModeMiddleware:
             self._drop_an_ineligible_persona(request)
             return self.get_response(request)
 
+        # The gate is closed for this session — expired, idle, or opened under
+        # a shared password no longer configured. An administrator session
+        # behind it ends with it, recorded as such (docs/adr/0186).
+        admin_session.note_session_closing(
+            request,
+            reason=(
+                "shared_password_changed"
+                if shared_gate.opened_under_another_password(request)
+                else "gate_closed"
+            ),
+        )
         if shared_gate.opened_under_another_password(request):
             self._end_a_superseded_gate(request)
 
@@ -187,12 +198,37 @@ class AuthenticationModeMiddleware:
 
         if request.path == gate_url:
             return self.get_response(request)
+        link_page = self._arriving_link(request)
+        if link_page:
+            # An administrator's one-time link, followed from outside before
+            # the gate: keep its proof (never the secret), and come back to
+            # the bare page after the password (docs/adr/0186).
+            return redirect(f"{gate_url}?{urlencode({'next': link_page})}")
         back = shared_gate.gate_return_target(request)
         if back:
             # An MCP consent or enrolment page reached from outside: come back
             # to it after the password (docs/adr/0185). Only those pages.
             return redirect(f"{gate_url}?{urlencode({'next': back})}")
         return redirect(gate_url)
+
+    def _arriving_link(self, request: HttpRequest) -> str:
+        """The bare path of a one-time link page this GET arrives at with its `?kood=`, or "".
+
+        The link's secret goes no further than this request: its proof is kept
+        in the session, which survives the gate (`open_gate` rotates the
+        identifier and keeps the contents), and the gate's `next` is the bare
+        path. Whether the link is any good, and whether its holder may use it
+        here, the page decides after the password, as it always does.
+        """
+        from app.accounts.local_views import LINK_ROUTES, keep_link_proof
+
+        if request.method != "GET":
+            return ""
+        for route, purpose in LINK_ROUTES.items():
+            path = reverse(route)
+            if request.path == path:
+                return path if keep_link_proof(request, purpose=purpose) else ""
+        return ""
 
     def _end_a_superseded_gate(self, request: HttpRequest) -> None:
         """End a session opened under a shared password that is no longer configured.
@@ -238,6 +274,7 @@ class AuthenticationModeMiddleware:
         if user is None or not user.is_authenticated or is_persona_candidate(user):
             return
         carried = shared_gate.current_pass(request)
+        administrator = admin_session.carry(request)
 
         record_security_event(
             event_type=SecurityEventType.PERSONA_SELECTED,
@@ -258,6 +295,8 @@ class AuthenticationModeMiddleware:
         # the original pass time and password version, so the 12-hour clock
         # keeps counting and a later rotation still ends this session.
         shared_gate.open_gate(request, carried=carried)
+        # The persona went; the administrator session is not the persona's.
+        admin_session.restore(request, administrator)
 
     # -- cloudflare access -------------------------------------------------
 

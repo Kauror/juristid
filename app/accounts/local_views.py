@@ -26,7 +26,7 @@ from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
-from app.accounts import capabilities, credentials, local_auth, mail, mfa, tokens
+from app.accounts import admin_session, capabilities, credentials, local_auth, mail, mfa, tokens
 from app.accounts.enums import CredentialTokenPurpose
 from app.accounts.forms import (
     ChangePasswordForm,
@@ -40,6 +40,27 @@ from app.accounts.forms import (
 from app.core.request_params import safe_local_path
 
 # -- the boundary -------------------------------------------------------------------
+
+
+def local_mode_or_administrator_link[R: HttpResponseBase](
+    view: Callable[..., R],
+) -> Callable[..., R]:
+    """The one-time link pages: personal sign-in, or an administrator's link behind the gate.
+
+    Under the shared gate an administrator sets their own password through the
+    same activation and reset links before their first verified administrator
+    session (docs/adr/0186). The page answers there **only for a link whose
+    holder may administer** (`admin_session.may_receive_administrator_link`);
+    for anybody else, and with no link at all, it is the 404 it always was.
+    """
+
+    @functools.wraps(view)
+    def wrapper(request: HttpRequest, *args: Any, **kwargs: Any) -> R:
+        if not (local_auth.is_local_password() or admin_session.is_available()):
+            raise Http404("Isiklik sisselogimine ei ole selles keskkonnas kasutusel.")
+        return view(request, *args, **kwargs)
+
+    return wrapper
 
 
 def local_mode_only[R: HttpResponseBase](view: Callable[..., R]) -> Callable[..., R]:
@@ -232,6 +253,31 @@ def sign_in_second_factor(request: HttpRequest) -> HttpResponse:
 # -- one-time links ------------------------------------------------------------------------
 
 
+#: The link routes and the purpose each one carries.
+LINK_ROUTES = {
+    "accounts:activate": CredentialTokenPurpose.ACTIVATION,
+    "accounts:reset_password": CredentialTokenPurpose.PASSWORD_RESET,
+}
+
+
+def keep_link_proof(request: HttpRequest, *, purpose: str) -> bool:
+    """Keep what the session may keep of an arriving `?kood=…` link. True if there was one.
+
+    A *proof* — the selector and the SHA-256 of the secret, never the secret
+    itself. Also called by the middleware for a link that arrives in front of
+    the shared gate, so the link survives the gate's password without its
+    secret ever travelling in the gate's `next` (app/accounts/middleware.py).
+    """
+    raw = request.GET.get(mail.LINK_PARAMETER)
+    if raw is None:
+        return False
+    request.session[local_auth.SESSION_LINK] = {
+        "purpose": str(purpose),
+        "proof": tokens.proof_of(raw[:200]),
+    }
+    return True
+
+
 def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str) -> HttpResponse:
     """Activation and reset share one shape.
 
@@ -240,20 +286,24 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
     the browser is redirected to the bare address at once, so the link leaves
     the address bar, the history and any Referer before the page that uses it
     renders. The production access log records paths, never queries (ENG-071).
+
+    Under the shared gate (docs/adr/0186) the same page sets an
+    *administrator's* own password and nobody else's: a link whose holder may
+    not administer is answered exactly like no link at all — a 404.
     """
-    raw = request.GET.get(mail.LINK_PARAMETER)
-    if raw is not None:
-        request.session[local_auth.SESSION_LINK] = {
-            "purpose": str(purpose),
-            "proof": tokens.proof_of(raw[:200]),
-        }
+    if keep_link_proof(request, purpose=purpose):
         return redirect(route)
 
+    gate = not local_auth.is_local_password()
     stored = request.session.get(local_auth.SESSION_LINK) or {}
     proof = stored.get("proof", "") if stored.get("purpose") == str(purpose) else ""
     holder = credentials.link_holder(tokens.peek(proof, purpose=purpose)) if proof else None
+    if gate and holder is not None and not admin_session.may_receive_administrator_link(holder):
+        holder = None
     if holder is None:
         request.session.pop(local_auth.SESSION_LINK, None)
+        if gate:
+            raise Http404("Lehte ei leitud.")
         return render(request, template, {"invalid": True}, status=400)
 
     if request.method == "GET":
@@ -271,12 +321,30 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
         return render(request, template, {"form": form, "holder": holder}, status=400)
     request.session.pop(local_auth.SESSION_LINK, None)
     if user is None:
+        if gate:
+            raise Http404("Lehte ei leitud.")
         return render(request, template, {"invalid": True}, status=400)
+    if gate:
+        # Setting the password moved the account's epoch. If this session had
+        # chosen that very account as its persona, it keeps it — the person
+        # just proved to be its owner — as a password change keeps its own
+        # session; nothing else about the persona changes.
+        current = getattr(request, "user", None)
+        if getattr(current, "pk", None) == user.pk:
+            from django.contrib.auth import update_session_auth_hash
+
+            update_session_auth_hash(request, user)
+        messages.success(
+            request,
+            "Parool on seatud. Logi nüüd halduriks sisse oma e-posti, parooli ja "
+            "autentimisrakendusega.",
+        )
+        return redirect("haldus:sign_in")
     return redirect(f"{reverse('accounts:sign_in')}?olek=parool-seatud")
 
 
 @never_cache
-@local_mode_only
+@local_mode_or_administrator_link
 @require_http_methods(["GET", "POST"])
 def activate(request: HttpRequest) -> HttpResponse:
     return _link_view(
@@ -288,7 +356,7 @@ def activate(request: HttpRequest) -> HttpResponse:
 
 
 @never_cache
-@local_mode_only
+@local_mode_or_administrator_link
 @require_http_methods(["GET", "POST"])
 def reset_password(request: HttpRequest) -> HttpResponse:
     return _link_view(

@@ -4,9 +4,17 @@ Every change an account administrator can make is one function here, and every
 function holds the same rules whichever view — or management command, or test,
 or shell session — calls it (docs/adr/0145):
 
-* **Local-password mode only.** Under the shared gate, `none` or Cloudflare
-  Access every function refuses before it reads anything. The pages are
-  unreachable in those modes too; this is the second lock on the same door.
+* **A verified actor only.** Under the shared gate the actor must be a
+  `admin_session.VerifiedActor` — minted only from a request whose verified
+  administrator session (the person's own password and TOTP, docs/adr/0186)
+  was just re-checked — and its `security_epoch` must still be the one it was
+  verified at when the account is re-read under the lock. A bare account, a
+  persona, refuses before anything is read. Under `local_password` the
+  personal sign-in is the proof: the views pass a `VerifiedActor` there too,
+  and a bare account is still accepted, as it always was, from code that runs
+  inside that mode (tests, a shell). `none` and Cloudflare Access administer
+  nothing. The pages are unreachable without the same proof; this is the
+  second lock on the same door.
 * **The actor's own authority, resolved centrally.** `accounts.manage` for any
   change; `accounts.delegate` for anything that grants, withdraws or touches
   administrative power — including changing an account that already holds it.
@@ -20,6 +28,13 @@ or shell session — calls it (docs/adr/0145):
   off the final active account that can still hand out administration is
   refused, under one advisory lock so two administrators removing each other at
   the same moment cannot both succeed.
+* **Two usable full administrators stay** (docs/adr/0186). An ordinary change
+  that would leave fewer than `MINIMUM_FULL_ADMINISTRATORS` usable ones —
+  active, activated, a personal password, a confirmed and readable TOTP, both
+  administrative capabilities — and fewer than there were is refused, under the
+  same lock and inside the change's transaction. While fewer than two exist (the
+  bootstrap phase) only changes that do not reduce the count further pass. The
+  operator's `emergency_disable_account` is the one route past it.
 * **Every change is audited** with the actor, the subject, the before and the
   after, and **every change to power ends the subject's open sessions** through
   the security epoch.
@@ -40,8 +55,10 @@ from django.db import connection, transaction
 from django.db.models import F
 from django.utils import timezone
 
-from app.accounts import capabilities, email_policy, mail, mfa, tokens
+from app.accounts import admin_session, capabilities, email_policy, mail, mfa, tokens
+from app.accounts.admin_session import VerifiedActor
 from app.accounts.enums import (
+    AuthMode,
     Capability,
     CredentialTokenPurpose,
     ProvisioningState,
@@ -55,7 +72,36 @@ from app.core.errors import DomainError
 
 # -- refusals, named so tests can name them (tests/refusals.py) ------------------
 
-NOT_LOCAL_MODE = "Kasutajate haldus on kasutusel ainult isikliku sisselogimisega."
+NOT_VERIFIED = (
+    "Kasutajate halduseks on vaja halduri isiklikku kinnitust: oma e-posti aadress, parool ja "
+    "autentimisrakenduse kood."
+)
+#: The name this refusal had while only personal sign-in could administer.
+NOT_LOCAL_MODE = NOT_VERIFIED
+STALE_PROOF = (
+    "Sinu halduri kinnitus ei kehti enam, sest konto õigusi või turvaseadeid muudeti. Kinnita "
+    "uuesti."
+)
+CONTINUITY = (
+    "Seda muudatust ei saa teha: pärast seda jääks alles vähem kui kaks kasutatavat täishaldurit "
+    "(aktiivne konto, isiklik parool, autentimisrakendus ning mõlemad haldusõigused). Määra "
+    "kõigepealt uus täishaldur ja lase tal kinnitus seadistada."
+)
+EMERGENCY_REASON_REQUIRED = "Põhjus on kohustuslik. See jääb turvalogisse. Midagi ei muudetud."
+EMERGENCY_UNKNOWN_ACCOUNT = "Sellise aadressiga kontot ei ole. Midagi ei muudetud."
+EMERGENCY_ALREADY_OFF = "Konto on juba välja lülitatud. Midagi ei muudetud."
+LINK_NOT_AN_ADMINISTRATOR = (
+    "Sellele kontole ei saa halduri linki väljastada: tal ei ole kasutajate halduse õigust ega "
+    "tehnilise halduri rolli, või konto on välja lülitatud. Midagi ei muudetud."
+)
+LINK_NOT_APPROVED = (
+    "Konto ootab veel halduri kinnitust (Haldus → Kasutajad → «Kinnita ja saada kutse»). "
+    "Midagi ei muudetud."
+)
+LINK_WRONG_MODE = (
+    "Halduri linke saab väljastada ainult ühisparooli või isikliku sisselogimise režiimis. "
+    "Midagi ei muudetud."
+)
 NOT_AN_ADMINISTRATOR = "Selleks on vaja kasutajate halduse õigust."
 NOT_A_DELEGATE = (
     "Haldusõigusi ja teiste haldurite kontosid saab muuta ainult haldusõiguste andmise "
@@ -116,6 +162,8 @@ class PrivilegeRefused(AdministrationRefused):
 
 def record_refusal(*, actor: Any, error: PrivilegeRefused, ip_address: str | None = None) -> None:
     """Write the ACCESS_REFUSED row for a refused privilege change, after its rollback."""
+    if admin_session.is_verified_actor(actor):
+        actor = actor.user
     record_security_event(
         event_type=SecurityEventType.ACCESS_REFUSED,
         actor=actor if isinstance(actor, User) else None,
@@ -134,11 +182,46 @@ _ADMINISTRATION_LOCK = (31338, 1)
 # -- the preconditions every change shares ---------------------------------------
 
 
-def _require_local_mode() -> None:
-    from app.accounts.local_auth import is_local_password
+#: Anything a service accepts as the acting administrator.
+Actor = User | VerifiedActor
 
-    if not is_local_password():
-        raise AdministrationRefused(NOT_LOCAL_MODE)
+
+def _mode() -> str:
+    from app.accounts.shared_gate import current_mode
+
+    return current_mode()
+
+
+def _require_verified(actor: Any) -> User:
+    """The account behind ``actor``, if this mode accepts it as proof; refused otherwise.
+
+    * shared gate — a `VerifiedActor` minted by the administrator session;
+      nothing else, so a persona (a bare `User`) never administers;
+    * `local_password` — a `VerifiedActor` from the personal sign-in, or a bare
+      account from code running inside that mode, as before;
+    * any other mode — nothing.
+    """
+    mode = _mode()
+    if admin_session.is_verified_actor(actor):
+        expected = admin_session.PATH if mode == AuthMode.SHARED_GATE else "local_password"
+        if mode in (AuthMode.SHARED_GATE, AuthMode.LOCAL_PASSWORD) and actor.via == expected:
+            return cast(User, actor.user)
+        raise AdministrationRefused(NOT_VERIFIED)
+    if mode == AuthMode.LOCAL_PASSWORD and isinstance(actor, User):
+        return actor
+    raise AdministrationRefused(NOT_VERIFIED)
+
+
+BOOTSTRAP_WRONG_MODE = (
+    "Esimest haldurit saab määrata ainult ühisparooli või isikliku sisselogimise režiimis. "
+    "Midagi ei muudetud."
+)
+
+
+def _require_mode_for_operator(message: str) -> None:
+    """The operator's appointment and link commands: wherever the link pages exist."""
+    if _mode() not in (AuthMode.SHARED_GATE, AuthMode.LOCAL_PASSWORD):
+        raise AdministrationRefused(message)
 
 
 def _has(user: Any, capability: str) -> bool:
@@ -160,15 +243,26 @@ def _require_actor(actor: Any, capability: str, *, subject: Any = None, action: 
 def _begin(actor: Any, capability: str, *, action: str, subject: Any = None) -> User:
     """Every administration change starts here, in this order.
 
-    Local mode first; then the advisory lock that serialises privilege changes;
-    then the actor **re-read under that lock** and their authority asked of the
-    fresh row. Checking the instance the request loaded would let an
-    administrator whose rights were withdrawn a moment ago by a concurrent
-    request still complete one change on the strength of a stale copy.
+    The proof first (`_require_verified`); then the advisory lock that
+    serialises privilege changes; then the actor **re-read under that lock** and
+    their authority asked of the fresh row. Checking the instance the request
+    loaded would let an administrator whose rights were withdrawn a moment ago
+    by a concurrent request still complete one change on the strength of a
+    stale copy. For a `VerifiedActor` the fresh row must also still carry the
+    `security_epoch` it was verified at: any power or credential change since
+    the proof — committed by another request while this one waited for the
+    lock — refuses the change.
     """
-    _require_local_mode()
+    account = _require_verified(actor)
     _lock_administration()
-    fresh = User.objects.filter(pk=actor.pk).first() if isinstance(actor, User) else None
+    fresh = User.objects.filter(pk=account.pk).first()
+    if admin_session.is_verified_actor(actor) and (
+        fresh is None
+        or int(fresh.security_epoch or 0) != actor.epoch
+        or not fresh.is_active
+        or fresh.provisioning_state != ProvisioningState.ACTIVATED
+    ):
+        raise PrivilegeRefused(STALE_PROOF, action=action, subject=subject)
     _require_actor(fresh, capability, subject=subject, action=action)
     return cast(User, fresh)
 
@@ -202,6 +296,110 @@ def administrators() -> list[User]:
         capability_overrides__contains={Capability.MANAGE_ACCOUNTS.value: capabilities.ALLOW},
     )
     return [user for user in candidates if _has(user, Capability.MANAGE_ACCOUNTS)]
+
+
+# -- continuity: at least two usable full administrators (docs/adr/0186) -----------------
+
+#: How many usable full administrators ordinary changes must leave in place.
+MINIMUM_FULL_ADMINISTRATORS = 2
+
+
+def is_usable_full_administrator(user: Any) -> bool:
+    """Somebody who could, today, verify themselves and do any administration.
+
+    Every condition is about whether the person can actually *use* the power,
+    not about stored flags: active and activated; a personal password set here;
+    a confirmed authenticator whose secret the current key still opens (a
+    device that can never produce an accepted code is no backup); both
+    administrative capabilities, resolved centrally by `has_capability`; and
+    not a synthetic account where real data is.
+    """
+    if not isinstance(user, User):
+        return False
+    if not user.is_active or user.provisioning_state != ProvisioningState.ACTIVATED:
+        return False
+    if not user.has_local_password:
+        return False
+    if user.is_synthetic and settings.REAL_DATA_ALLOWED:
+        return False
+    if not (
+        _has(user, Capability.MANAGE_ACCOUNTS) and _has(user, Capability.DELEGATE_ADMINISTRATION)
+    ):
+        return False
+    device = mfa.confirmed_device(user)
+    return device is not None and mfa.secret_is_readable(device)
+
+
+def usable_full_administrators() -> list[User]:
+    """Every usable full administrator, by name. A handful of rows at most.
+
+    Administrative capabilities have no role default, so a full administrator
+    has an *allow* override for both — the JSON containment query narrows to
+    them, and `is_usable_full_administrator` decides each one.
+    """
+    candidates = User.objects.filter(
+        is_active=True,
+        provisioning_state=ProvisioningState.ACTIVATED,
+        local_password_set_at__isnull=False,
+        capability_overrides__contains={
+            Capability.MANAGE_ACCOUNTS.value: capabilities.ALLOW,
+            Capability.DELEGATE_ADMINISTRATION.value: capabilities.ALLOW,
+        },
+    ).order_by("display_name", "upn")
+    return [user for user in candidates if is_usable_full_administrator(user)]
+
+
+@dataclass(frozen=True)
+class ContinuityStatus:
+    """Whether the department has the two independent administrators it needs."""
+
+    usable: tuple[User, ...]
+    required: int = MINIMUM_FULL_ADMINISTRATORS
+
+    @property
+    def count(self) -> int:
+        return len(self.usable)
+
+    @property
+    def satisfied(self) -> bool:
+        return self.count >= self.required
+
+    @property
+    def bootstrap_phase(self) -> bool:
+        """Fewer than required: only changes that do not reduce the count further pass."""
+        return not self.satisfied
+
+    @property
+    def summary(self) -> str:
+        if self.satisfied:
+            return f"Kasutatavaid täishaldureid: {self.count} (nõutud vähemalt {self.required})."
+        if self.count == 0:
+            return (
+                "Ühtegi kasutatavat täishaldurit ei ole. Esimese määrab operaator käsuga "
+                "bootstrap_account_admin."
+            )
+        return (
+            f"Kasutatavaid täishaldureid: {self.count}, nõutud vähemalt {self.required}. "
+            "Seadistusjärk: määra teine täishaldur ja lase tal kinnitus seadistada. Seni ei saa "
+            "ühtegi täishaldurit eemaldada."
+        )
+
+
+def continuity_status() -> ContinuityStatus:
+    return ContinuityStatus(usable=tuple(usable_full_administrators()))
+
+
+def _guard_continuity(before: int, *, subject: Any, action: str) -> None:
+    """Refuse a change that leaves fewer usable full administrators than both before and two.
+
+    Called after the change is written and before its transaction commits, under
+    the administration lock: the count is the database's after the change, and a
+    refusal rolls the change back. Two administrators removing each other at the
+    same moment take turns at the lock, and the second sees the first's result.
+    """
+    after = len(usable_full_administrators())
+    if after < before and after < MINIMUM_FULL_ADMINISTRATORS:
+        raise PrivilegeRefused(CONTINUITY, action=action, subject=subject)
 
 
 def _bump_epoch(user: User) -> None:
@@ -275,7 +473,7 @@ def _clean_role(role: str, *, actor: User, subject: Any, action: str) -> str:
 
 @transaction.atomic
 def create_account(
-    *, actor: User, email: str, display_name: str, role: str, external_reason: str = ""
+    *, actor: Actor, email: str, display_name: str, role: str, external_reason: str = ""
 ) -> User:
     """A new account, PENDING: inactive, password-less, and nobody's seat yet.
 
@@ -375,7 +573,7 @@ def _mail_issued(
     return delivery
 
 
-def send_setup_link(*, actor: User, user: User) -> LinkOutcome:
+def send_setup_link(*, actor: Actor, user: User) -> LinkOutcome:
     """Approve and invite a pending account, or send a password-setting link.
 
     One action on the page, three cases underneath:
@@ -454,7 +652,7 @@ def send_setup_link(*, actor: User, user: User) -> LinkOutcome:
 
 
 @transaction.atomic
-def cancel_invitation(*, actor: User, user: User) -> User:
+def cancel_invitation(*, actor: Actor, user: User) -> User:
     """Withdraw an invitation: the link stops working and the account waits again."""
     actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="cancel_invitation")
     user = User.objects.select_for_update().get(pk=user.pk)
@@ -538,7 +736,7 @@ def overrides_after(
 @transaction.atomic
 def update_account(
     *,
-    actor: User,
+    actor: Actor,
     user: User,
     display_name: str,
     role: str,
@@ -598,6 +796,7 @@ def update_account(
 
     changed: list[str] = []
     delegates_before = len(_delegating_administrators())
+    usable_before = len(usable_full_administrators())
     if name != user.display_name:
         record_security_event(
             event_type=SecurityEventType.ACCOUNT_UPDATED,
@@ -619,6 +818,7 @@ def update_account(
         _guard_final_administrator(
             delegates_before, actor=actor, subject=user, action="update_account"
         )
+        _guard_continuity(usable_before, subject=user, action="update_account")
         new_effective = _effective(user)
         if role != old_role:
             record_security_event(
@@ -652,7 +852,7 @@ def update_account(
 
 
 @transaction.atomic
-def deactivate_account(*, actor: User, user: User, reason: str = "") -> User:
+def deactivate_account(*, actor: Actor, user: User, reason: str = "") -> User:
     """Switch an account off. Never a deletion.
 
     The register goes on naming the person on the work they did; their links
@@ -672,11 +872,13 @@ def deactivate_account(*, actor: User, user: User, reason: str = "") -> User:
             actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="deactivate_account"
         )
     delegates_before = len(_delegating_administrators())
+    usable_before = len(usable_full_administrators())
     user.is_active = False
     user.save(update_fields=["is_active", "updated_at"])
     _guard_final_administrator(
         delegates_before, actor=actor, subject=user, action="deactivate_account"
     )
+    _guard_continuity(usable_before, subject=user, action="deactivate_account")
     tokens.invalidate_outstanding(user=user, reason="account_deactivated")
     _bump_epoch(user)
     record_security_event(
@@ -689,7 +891,7 @@ def deactivate_account(*, actor: User, user: User, reason: str = "") -> User:
 
 
 @transaction.atomic
-def reactivate_account(*, actor: User, user: User) -> User:
+def reactivate_account(*, actor: Actor, user: User) -> User:
     """Switch an account back on. Its password and second factor are as they were."""
     actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="reactivate_account")
     user = User.objects.select_for_update().get(pk=user.pk)
@@ -713,7 +915,7 @@ def reactivate_account(*, actor: User, user: User) -> User:
 
 
 @transaction.atomic
-def reset_second_factor(*, actor: User, user: User) -> User:
+def reset_second_factor(*, actor: Actor, user: User) -> User:
     """Remove somebody's authenticator and recovery codes — the lost-phone path.
 
     Their sessions end; if they must use a second factor they are asked to
@@ -728,6 +930,11 @@ def reset_second_factor(*, actor: User, user: User) -> User:
         _require_actor(
             actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="reset_second_factor"
         )
+    # Not held to the two-administrator rule, deliberately: this is the
+    # lost-phone *recovery* the rule exists to keep possible. The person keeps
+    # their password and enrols a new authenticator at their next step-up, so
+    # nobody's power is withdrawn; refusing it would leave an administrator who
+    # lost their phone locked out until an operator came (docs/adr/0186).
     removed = mfa.remove_second_factor(user)
     _bump_epoch(user)
     record_security_event(
@@ -740,7 +947,7 @@ def reset_second_factor(*, actor: User, user: User) -> User:
 
 
 @transaction.atomic
-def change_login_email(*, actor: User, user: User, email: str, external_reason: str = "") -> User:
+def change_login_email(*, actor: Actor, user: User, email: str, external_reason: str = "") -> User:
     """Correct the address an account signs in with. A delegation decision.
 
     The account keeps its identifier, its work, its history and its Entra
@@ -838,7 +1045,7 @@ def bootstrap_first_administrator(
     password (it sets its own through the link), no `is_staff`, no
     `is_superuser`, and its business role is whatever the operator states.
     """
-    _require_local_mode()
+    _require_mode_for_operator(BOOTSTRAP_WRONG_MODE)
     _lock_administration()
     try:
         address = email_policy.clean(email)
@@ -851,6 +1058,12 @@ def bootstrap_first_administrator(
     # the page.
     holders = User.objects.filter(
         capability_overrides__contains={Capability.MANAGE_ACCOUNTS.value: capabilities.ALLOW}
+    ).exclude(
+        # A switched-off administrator — `emergency_disable_account`'s result —
+        # administers nothing and waits for nothing; it must not stop the
+        # operator appointing a first administrator again once nobody is left.
+        provisioning_state=ProvisioningState.ACTIVATED,
+        is_active=False,
     )
     if (
         _delegating_administrators()
@@ -941,4 +1154,150 @@ def bootstrap_first_administrator(
         created=created,
         link=None,
         printable_link=mail.build_link(purpose, issued.token),
+    )
+
+
+# -- the operator's routes --------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class OperatorLink:
+    """A one-time link an operator issued for an administrator, to print once."""
+
+    user: User
+    purpose: str
+    link: str
+    expires_at: Any
+
+
+@transaction.atomic
+def issue_administrator_link(*, email: str, operator_note: str) -> OperatorLink:
+    """A one-time link for an administrator to set their own password. By an operator.
+
+    Under the shared gate account e-mail cannot be switched on
+    (`juristid.E036`), so «Kinnita ja saada kutse» on the page records the
+    administrator's decision and sends nothing. This is how the decided link
+    reaches the person: `manage.py issue_administrator_link`, on the host, to an
+    interactive terminal only, handed over by the operator in person.
+
+    Only for an account an administrator (or the bootstrap) already made one —
+    `accounts.manage` stored on it, or the ADMINISTRATOR role
+    (`admin_session.may_receive_administrator_link`) — never a switched-off or,
+    on real data, synthetic one. A PENDING account must have been approved on
+    the page first, and becomes INVITED. An account that already has a password
+    gets a reset link; otherwise an activation link. Any older link of the same
+    purpose stops working (`tokens.issue`). Audited with the operator's note;
+    the link itself is never stored or logged.
+    """
+    _require_mode_for_operator(LINK_WRONG_MODE)
+    if not (operator_note or "").strip():
+        raise AdministrationRefused(EMERGENCY_REASON_REQUIRED)
+    _lock_administration()
+    address = email_policy.normalise(email)
+    user = User.objects.select_for_update().filter(upn__iexact=address).first()
+    if user is None:
+        raise AdministrationRefused(EMERGENCY_UNKNOWN_ACCOUNT)
+    if not admin_session.may_receive_administrator_link(user):
+        raise AdministrationRefused(LINK_NOT_AN_ADMINISTRATOR)
+    if user.provisioning_state == ProvisioningState.PENDING:
+        if user.approved_at is None:
+            raise AdministrationRefused(LINK_NOT_APPROVED)
+        user.provisioning_state = ProvisioningState.INVITED
+        user.save(update_fields=["provisioning_state", "updated_at"])
+    purpose = (
+        CredentialTokenPurpose.PASSWORD_RESET
+        if user.provisioning_state == ProvisioningState.ACTIVATED and user.has_local_password
+        else CredentialTokenPurpose.ACTIVATION
+    )
+    issued = tokens.issue(user=user, purpose=purpose, issued_by=None)
+    record_security_event(
+        event_type=SecurityEventType.CREDENTIAL_LINK_ISSUED,
+        subject=user,
+        detail={
+            "purpose": str(purpose),
+            "expires_at": issued.record.expires_at.isoformat(),
+            "channel": "operator_terminal",
+            "via": "manage.py issue_administrator_link",
+            "note": operator_note.strip()[:500],
+        },
+    )
+    return OperatorLink(
+        user=user,
+        purpose=str(purpose),
+        link=mail.build_link(purpose, issued.token),
+        expires_at=issued.record.expires_at,
+    )
+
+
+@dataclass(frozen=True)
+class EmergencyOutcome:
+    user: User
+    applied: bool
+    was_active: bool
+    links_invalidated: int
+    administrators_before: int
+    administrators_after: int
+
+
+def emergency_disable_account(
+    *, email: str, reason: str, dry_run: bool = False
+) -> EmergencyOutcome:
+    """Switch a compromised account off at once, past the two-administrator rule.
+
+    The independently verified recovery route the continuity rule must not make
+    impossible (docs/adr/0186): an operator on the host, with a mandatory reason,
+    audited as `EMERGENCY_ACCOUNT_DISABLED` with `by: operator`. Not a web
+    route — no persona, no administrator session and no request can reach it.
+
+    It does exactly what switching off does — `is_active` false, every
+    outstanding link invalidated, every session (the administrator session
+    included) ended through the security epoch — and nothing else: the account
+    keeps its role, its capabilities, its password and its history, so the
+    record of what it was is intact and a later reactivation (by a delegating
+    administrator, through the page) is an ordinary, audited decision. Works in
+    every mode. ``dry_run`` reports and writes nothing.
+    """
+    if not (reason or "").strip():
+        raise AdministrationRefused(EMERGENCY_REASON_REQUIRED)
+    address = email_policy.normalise(email)
+    with transaction.atomic():
+        _lock_administration()
+        user = User.objects.select_for_update().filter(upn__iexact=address).first()
+        if user is None:
+            raise AdministrationRefused(EMERGENCY_UNKNOWN_ACCOUNT)
+        before = len(usable_full_administrators())
+        was_active = user.is_active
+        if not was_active and not _has_live_links(user):
+            raise AdministrationRefused(EMERGENCY_ALREADY_OFF)
+        if dry_run:
+            after = before - (1 if is_usable_full_administrator(user) else 0)
+            return EmergencyOutcome(user, False, was_active, 0, before, after)
+        if was_active:
+            user.is_active = False
+            user.save(update_fields=["is_active", "updated_at"])
+        invalidated = tokens.invalidate_outstanding(user=user, reason="emergency_disabled")
+        _bump_epoch(user)
+        after = len(usable_full_administrators())
+        record_security_event(
+            event_type=SecurityEventType.EMERGENCY_ACCOUNT_DISABLED,
+            subject=user,
+            succeeded=True,
+            detail={
+                "by": "operator",
+                "via": "manage.py emergency_disable_account",
+                "reason": reason.strip()[:500],
+                "was_active": was_active,
+                "links_invalidated": invalidated,
+                "usable_full_administrators_before": before,
+                "usable_full_administrators_after": after,
+            },
+        )
+    return EmergencyOutcome(user, True, was_active, invalidated, before, after)
+
+
+def _has_live_links(user: User) -> bool:
+    """Whether any one-time link of this account is still live."""
+    return any(
+        tokens.has_outstanding(user=user, purpose=purpose)
+        for purpose in CredentialTokenPurpose.values
     )

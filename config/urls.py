@@ -39,12 +39,16 @@ urlpatterns = [
     ),
     path("konto/", include(("app.accounts.urls", "accounts"), namespace="accounts")),
     # Haldus → Kasutajad. Under `/haldus/` with the other internal tooling, and
-    # unreachable — 404 for everybody — in every mode but `local_password`
-    # (docs/adr/0145).
+    # 404 for everybody without a verified administrator: a personal sign-in
+    # under `local_password`, or the administrator session under the shared
+    # gate (docs/adr/0145, docs/adr/0186).
     path(
         "haldus/kasutajad/",
         include(("app.accounts.admin_urls", "account_admin"), namespace="account_admin"),
     ),
+    # The Haldus shell: landing, Osakonna töökorraldus, Süsteemi seis and the
+    # verified administrator session's pages. Exact paths only (docs/adr/0186).
+    path("haldus/", include(("app.haldus.urls", "haldus"), namespace="haldus")),
     path(
         "organisatsioonid/",
         include(("app.organisations.urls", "organisations"), namespace="organisations"),

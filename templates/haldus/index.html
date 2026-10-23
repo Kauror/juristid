@@ -1,0 +1,89 @@
+{% extends "haldus/base.html" %}
+{% block title %}Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Ülevaade. What the reader can do here, in a few lines: the
+  verified administrator session (whose it is, what it may do, how long it
+  lasts), whether the two-administrator rule holds, and the sections this
+  reader may open. Not a dashboard: the work lists live on their own pages
+  (docs/adr/0186).
+{% endcomment %}
+
+{% block haldus_content %}
+  {% if session %}
+    <section class="panel" aria-labelledby="halduri-seanss">
+      <h2 class="acctsection__title" id="halduri-seanss">Halduri seanss</h2>
+      <dl class="detailgrid">
+        <dt>Kinnitatud isik</dt>
+        <dd>{{ session.principal.display_name }} · <span class="mono">{{ session.principal.upn }}</span></dd>
+        <dt>Haldusõigused</dt>
+        <dd>{% if session.capabilities %}{{ session.capabilities|join:", " }}{% else %}—{% endif %}{% if session.technical %} · tehniline haldur{% endif %}</dd>
+        {% if session.shared_gate %}
+          <dt>Kehtivus</dt>
+          <dd>Lõpeb {{ session.idle_minutes }} minutit pärast viimast halduse päringut, hiljemalt {{ session.absolute_minutes }} minutit pärast kinnitamist, ja koos ühisparooli seansiga.</dd>
+        {% endif %}
+      </dl>
+      <p class="acctnote">
+        Halduri seanss ei muuda valitud kasutajat ega anna ligipääsu teemadele. Muudatused
+        salvestatakse auditisse sinu nimel.
+      </p>
+      {% if session.shared_gate %}
+        <form method="post" action="{% url 'haldus:sign_out' %}" class="form__actions">
+          {% csrf_token %}
+          <button type="submit" class="button button--secondary">Lõpeta halduri seanss</button>
+        </form>
+      {% endif %}
+    </section>
+  {% elif step_up_offered %}
+    <section class="panel" aria-labelledby="halduri-kinnitus">
+      <h2 class="acctsection__title" id="halduri-kinnitus">Kasutajate haldus vajab isiklikku kinnitust</h2>
+      <p class="acctnote">
+        Kasutaja valimine ühisparooli taga ei tõenda, kes klaviatuuri taga on. Kontode ja õiguste
+        muutmiseks logi halduriks sisse oma e-posti, isikliku parooli ja autentimisrakenduse koodiga.
+      </p>
+      <div class="form__actions">
+        <a class="button button--primary" href="{% url 'haldus:sign_in' %}">Halduri sisselogimine</a>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if continuity %}
+    <section class="panel" aria-labelledby="halduse-jarjepidevus">
+      <h2 class="acctsection__title" id="halduse-jarjepidevus">Halduse järjepidevus</h2>
+      <p>
+        {% if continuity.satisfied %}
+          <span class="statechip statechip--ok">Tagatud</span>
+        {% else %}
+          <span class="statechip statechip--problem">Seadistusjärk</span>
+        {% endif %}
+        {{ continuity.summary }}
+      </p>
+      {% if continuity.usable %}
+        <ul class="linklist">
+          {% for admin in continuity.usable %}
+            <li class="linklist__item">{{ admin.display_name }} <span class="linklist__meta">{{ admin.upn }}</span></li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+      <p class="acctnote">
+        Täishaldur on aktiivne konto, millel on isiklik parool, kinnitatud autentimisrakendus ning
+        nii kasutajate halduse kui ka haldusõiguste andmise õigus. Tavalist muudatust, mis jätaks
+        neid alla kahe, ei saa teha.
+      </p>
+    </section>
+  {% endif %}
+
+  {% if others %}
+    <section class="panel" aria-labelledby="halduse-osad">
+      <h2 class="acctsection__title" id="halduse-osad">Sulle avatud osad</h2>
+      <ul class="linklist">
+        {% for section in others %}
+          <li class="linklist__item">
+            <a href="{{ section.url }}">{{ section.label }}</a>
+            <span class="linklist__meta">{{ section.description }}</span>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+{% endblock %}

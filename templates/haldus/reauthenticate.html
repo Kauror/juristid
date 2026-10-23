@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Kinnita oma isik · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  A fresh proof before an administrative change, once the last one is older
+  than ADMIN_SESSION_REAUTH_SECONDS: the personal password and a code from the
+  authenticator, both, every time (app/accounts/admin_session.py).
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Kinnita oma isik</h1>
+  <p class="acctnote">Selle muudatuse jaoks sisesta uuesti oma isiklik parool ja autentimisrakenduse kood.</p>
+
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+    {% include "accounts/partials/field.html" with field=form.password %}
+    {% include "accounts/partials/field.html" with field=form.code %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Kinnita</button>
+    </div>
+  </form>
+</div>
+{% endblock %}
