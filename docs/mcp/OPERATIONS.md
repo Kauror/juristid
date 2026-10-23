@@ -817,7 +817,7 @@ untouched, nothing depends on the gateway. It stays stopped through releases,
 restores and reboots until somebody starts it by name.
 
 - **One person:** `… exec -T web python manage.py mcp_access revoke-write --user <upn> --reason "<why>"` — their read access stays; their next token refresh drops the write scope, and the gateway refuses their current token at once (it re-checks the grant on every call).
-- **Everybody's write grants:** `… exec -T web python manage.py mcp_access revoke-all-writes` — reading untouched.
+- **Everybody's write grants:** `… exec -T web python manage.py mcp_access revoke-all-writes --reason "<why>"` — reading untouched (`--reason` is required; without it the command stops with a usage error).
 - **A process:** `MCP_WRITES_ENABLED=0` on any one of `web` (no approval page, no write scope), `mcp` (no write tools listed) or `mcp-writer` (refuses to start, E051), then recreate that service.
 
 In an incident: `stop mcp-writer` first, `revoke-all-writes` straight after,

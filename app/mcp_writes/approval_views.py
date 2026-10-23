@@ -259,6 +259,15 @@ def reverify_seconds() -> int:
 
 
 def _recent_holds(request: HttpRequest, user: Any, grant: McpAccessGrant) -> bool:
+    """A code this gate session typed for this grant moments ago — and the grant is not on hold.
+
+    A lock or a suspension that began after the code was typed ends the
+    shortcut: a right code is refused while the grant is locked or suspended
+    (`services.confirm_write_code`), so a remembered one must not approve
+    either. The page then asks for a code, which the lock ladder answers.
+    """
+    if grant.is_suspended or grant.is_locked_at(timezone.now()):
+        return False
     stored = request.session.get(SESSION_RECENT)
     if not isinstance(stored, dict) or not reverify_seconds():
         return False
