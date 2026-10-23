@@ -176,6 +176,42 @@ def validate_uploads(files: list[Any]) -> list[AcceptedUpload]:
     return [read_upload(handle) for handle in files]
 
 
+def read_incoming_files(files: list[Any]) -> tuple[list[AcceptedUpload], list[str]]:
+    """Read every newly chosen file, keeping the good ones and naming the bad.
+
+    The `Saabunud → Lisa` twin of `views._read_new_matter_files`: the same
+    `read_upload` validator, but every file is read and each refusal names its
+    file, so the good half of a batch can be held across the refusal
+    (`app.documents.pending`) instead of being dropped with it. The batch
+    limits are checked first, from the sizes the upload handler counted, before
+    any file is opened (docs/adr/0182); over them, nothing is read.
+    """
+    chosen = [handle for handle in files if handle]
+    if len(chosen) > MAX_INTAKE_FILES:
+        return [], [f"Korraga saab lisada kuni {MAX_INTAKE_FILES} faili."]
+    try:
+        check_upload_batch([int(getattr(handle, "size", 0) or 0) for handle in chosen])
+    except DomainError as error:
+        return [], [str(error)]
+    accepted: list[AcceptedUpload] = []
+    refusals: list[str] = []
+    for handle in chosen:
+        try:
+            accepted.append(read_upload(handle))
+        except DomainError as error:
+            refusals.append(f"{handle.name} — {error}")
+    return accepted, refusals
+
+
+def check_incoming_batch(uploads: list[AcceptedUpload]) -> None:
+    """Held and newly chosen files together are one save, under one policy."""
+    if not uploads:
+        raise DomainError("Vali vähemalt üks fail.")
+    if len(uploads) > MAX_INTAKE_FILES:
+        raise DomainError(f"Korraga saab lisada kuni {MAX_INTAKE_FILES} faili.")
+    check_upload_batch([upload.size for upload in uploads])
+
+
 #: A step the caller hands to :func:`file_new_matter`, run on the new Matter.
 MatterStep = Callable[[Matter], object]
 

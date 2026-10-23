@@ -55,10 +55,32 @@ decides it, not a field every filer meets (docs/adr/0096 §3).
             file chooser natively, so hiding the box costs nothing a keyboard or
             a screen reader had.
           {% endcomment %}
-          <input class="visually-hidden" type="file" name="uploads" id="id_intake_files" multiple required
-                 accept="{% upload_accept %}">
+          <input class="visually-hidden" type="file" name="uploads" id="id_intake_files" multiple
+                 {% if not held_files %}required{% endif %} accept="{% upload_accept %}">
           <label class="dropzone__choose" for="id_intake_files">Vali failid</label>
           <span class="dropzone__hint">või lohista need siia — e-kirja manused saab lisada koos kirjaga</span>
+          {% comment %}
+            The files an earlier refusal received — validated and held by the
+            server (app/documents/pending.py), because no page can put a file
+            back into a file input. Each is posted back by its `pending` key and
+            filed by the next save without a re-pick; unticking one leaves it
+            out. A checkbox rather than a scripted `×`, so it works with
+            scripting off. While anything is held the file input is not
+            `required`: the held files are the files.
+          {% endcomment %}
+          {% if held_files %}
+            <ul class="dropzone__list" id="hoitud-saabunud-failid">
+              {% for file in held_files %}
+                <li class="dropzone__file">
+                  <label>
+                    <input type="checkbox" name="pending" value="{{ file.key }}" checked>
+                    <span class="dropzone__name">{{ file.filename }}</span>
+                  </label>
+                  <span class="dropzone__size">{{ file.human_size }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          {% endif %}
           <ul class="dropzone__list" id="valitud-saabunud-failid" hidden></ul>
         </div>
       </fieldset>

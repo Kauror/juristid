@@ -8,6 +8,8 @@ what was supposed to be there.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
@@ -342,8 +344,6 @@ def test_the_seeded_factories_are_untouched_by_intake(client, specialist) -> Non
 
 
 def _drawn_token(response) -> str:
-    import re
-
     match = re.search(r'name="intake" value="([0-9a-f-]{36})"', response.content.decode())
     assert match, "every rendered Saabunud form carries its one-time token"
     return match.group(1)
@@ -402,3 +402,62 @@ def test_two_drawn_saabunud_forms_file_two_teemad(client, specialist) -> None:
             _post(client, [_file("kiri.pdf", PDF)], title="Kaks", intake=token).status_code == 302
         )
     assert Matter.objects.filter(title="Kaks").count() == 2
+
+
+# -- a refusal keeps the files (app/documents/pending.py) ---------------------
+
+
+def test_a_refused_saabunud_save_holds_its_files_for_the_corrected_save(client, specialist) -> None:
+    """An impossible date refuses the save; the PDF is not thrown away with it.
+
+    The refused page names the held file and carries its `pending` key, the
+    file input is no longer `required` (the held file is the file), and the
+    corrected save files the document without the file being chosen again.
+    """
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+
+    refused_save = _post(
+        client,
+        [_file("ministeeriumi-kiri.pdf", PDF)],
+        title="Hoitud fail",
+        response_deadline="31.02.2026",
+        intake=token,
+    )
+    assert refused_save.status_code == 400
+    assert not Matter.objects.filter(title="Hoitud fail").exists()
+    held = refused_save.context["held_files"]
+    assert [item.filename for item in held] == ["ministeeriumi-kiri.pdf"]
+    body = refused_save.content.decode()
+    assert "ministeeriumi-kiri.pdf" in body
+    assert f'name="pending" value="{held[0].key}"' in body
+    file_input = re.search(r'<input[^>]*id="id_intake_files"[^>]*>', body)
+    assert file_input is not None
+    assert "required" not in file_input.group(0)
+
+    saved = client.post(
+        reverse("matters:intake"),
+        {
+            "title": "Hoitud fail",
+            "response_deadline": "28.02.2026",
+            "intake": token,
+            "pending": [held[0].key],
+        },
+    )
+    assert saved.status_code == 302
+    matter = Matter.objects.get(title="Hoitud fail")
+    documents = Document.objects.filter(matter=matter)
+    assert documents.count() == 1
+    assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
+    assert "ministeeriumi-kiri" in documents.get().title
+
+
+def test_a_refused_file_is_named_and_the_good_one_is_held(client, specialist) -> None:
+    """One bad file among good ones: the bad one is named, the good one is kept."""
+    client.force_login(specialist)
+    response = _post(client, [_file("hea.pdf", PDF), _file("virus.exe", b"MZ")])
+
+    assert response.status_code == 400
+    assert [item.filename for item in response.context["held_files"]] == ["hea.pdf"]
+    assert any("virus.exe" in str(m) for m in response.context["messages"])
+    assert Matter.objects.count() == 0
