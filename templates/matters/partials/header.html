@@ -403,8 +403,7 @@ rather than read.
               <input class="field__input field__input--compact dateinput" type="text"
                      inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
                      data-datepicker="true" name="received_date"{% if not matter.received_date and not received_prefill_today %} required{% endif %}
-                     {% if reopen.editor == "received_date" %}aria-invalid="true" aria-describedby="paise-saabus-error"
-                     value="{{ reopen.values.received_date }}"{% else %}value="{% if matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% elif received_prefill_today %}{{ today|date:'j.n.Y' }}{% endif %}"{% endif %}>
+                     value="{% if reopen.editor == "received_date" %}{{ reopen.values.received_date }}{% elif matter.received_date %}{{ matter.received_date|date:'j.n.Y' }}{% elif received_prefill_today %}{{ today|date:'j.n.Y' }}{% endif %}"{% if reopen.editor == "received_date" %} aria-invalid="true" aria-describedby="paise-saabus-error"{% endif %}>
               {% if reopen.editor == "received_date" %}
                 <span class="field__error" id="paise-saabus-error" role="alert">{{ reopen.error }}</span>
               {% endif %}
@@ -484,8 +483,7 @@ rather than read.
                 <input class="field__input field__input--compact dateinput" type="text"
                        inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
                        data-datepicker="true" name="response_deadline"
-                       {% if reopen.editor == "response_deadline" %}{% if reopen.about != "outcome" %}aria-invalid="true" aria-describedby="paise-tahtaeg-error"
-                       {% endif %}value="{{ reopen.values.response_deadline }}"{% else %}value="{{ matter.response_deadline|date:'j.n.Y' }}"{% endif %}>
+                       value="{% if reopen.editor == "response_deadline" %}{{ reopen.values.response_deadline }}{% else %}{{ matter.response_deadline|date:'j.n.Y' }}{% endif %}"{% if reopen.editor == "response_deadline" and reopen.about != "outcome" %} aria-invalid="true" aria-describedby="paise-tahtaeg-error"{% endif %}>
                 {% if reopen.editor == "response_deadline" and reopen.about != "outcome" %}
                   <span class="field__error" id="paise-tahtaeg-error" role="alert">{{ reopen.error }}</span>
                 {% endif %}
@@ -553,9 +551,7 @@ rather than read.
                 {% endcomment %}
                 <input class="field__input field__input--compact dateinput" type="text"
                        inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                       data-datepicker="true" name="response_deadline"
-                       {% if reopen.editor == "response_deadline" %}aria-invalid="true" aria-describedby="paise-uus-tahtaeg-error"
-                       value="{{ reopen.values.response_deadline }}"{% else %}value=""{% endif %}>
+                       data-datepicker="true" name="response_deadline" value="{% if reopen.editor == "response_deadline" %}{{ reopen.values.response_deadline }}{% endif %}"{% if reopen.editor == "response_deadline" %} aria-invalid="true" aria-describedby="paise-uus-tahtaeg-error"{% endif %}>
                 {% if reopen.editor == "response_deadline" %}
                   <span class="field__error" id="paise-uus-tahtaeg-error" role="alert">{{ reopen.error }}</span>
                 {% endif %}
