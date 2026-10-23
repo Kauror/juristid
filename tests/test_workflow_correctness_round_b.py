@@ -23,6 +23,7 @@ from app.workflow.services import (
     set_next_action,
     set_next_action_for_new_work,
 )
+from tests.follow_ups import send_koja_arvamus
 from tests.test_closure_confirms_live_work import filed, stage
 
 pytestmark = pytest.mark.django_db
@@ -164,6 +165,63 @@ def test_a_closing_completion_does_not_promote_a_planned_action(client, speciali
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
     assert '<span class="uxtl__nexttext">Hiljem tehtav samm</span>' not in body
+
+
+def test_a_closing_koja_arvamus_that_finishes_the_step_does_not_promote(
+    client, specialist, organisation
+):
+    """`+ Koja arvamus` with `Märgi praegune tegevus tehtuks` and a closing stage.
+
+    The same rule as `✓ Tehtud` above, on the opinion's own save path: it
+    promoted the earliest planned row and the closure then cancelled it,
+    leaving a `NEXT_ACTION_SET` (``promoted``) and «Järgmine samm – …» in
+    `Tegevused` under the save that ended the Matter (bounty A-02).
+    """
+    matter = filed(specialist)
+    step = set_next_action(matter=matter, text="Koostan arvamuse", actor=specialist)
+    planned = add_planned_action(
+        matter=matter, text="Kohtumine liikmetega", target_date=_day(4), actor=specialist
+    )
+
+    send_koja_arvamus(
+        matter,
+        specialist,
+        [organisation],
+        timezone.localdate(),
+        complete_action_id=step.pk,
+        stage=stage("in_force"),
+        follow_ups_confirmed=True,
+    )
+
+    matter.refresh_from_db()
+    step.refresh_from_db()
+    planned.refresh_from_db()
+    assert not matter.is_open
+    assert step.status == ActionStatus.COMPLETED
+    assert planned.status == ActionStatus.CANCELLED
+    assert not ChangeEvent.objects.filter(
+        matter=matter,
+        event_type=ChangeEventType.NEXT_ACTION_SET,
+        payload__contains={"promoted": True},
+    ).exists()
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert '<span class="uxtl__nexttext">Kohtumine liikmetega</span>' not in body
+
+
+def test_a_koja_arvamus_that_keeps_the_matter_open_still_promotes(specialist, organisation):
+    matter = filed(specialist)
+    step = set_next_action(matter=matter, text="Koostan arvamuse", actor=specialist)
+    planned = add_planned_action(
+        matter=matter, text="Kohtumine liikmetega", target_date=_day(4), actor=specialist
+    )
+
+    send_koja_arvamus(
+        matter, specialist, [organisation], timezone.localdate(), complete_action_id=step.pk
+    )
+
+    planned.refresh_from_db()
+    assert planned.status == ActionStatus.OPEN
 
 
 def test_a_completion_that_keeps_the_matter_open_still_promotes(specialist):
