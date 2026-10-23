@@ -632,8 +632,10 @@ def _excluded(term: str) -> Q | None:
     The full-text tiers obey ``-maks`` because `websearch_to_tsquery` does. The
     title-phrase and fuzzy tiers read the term another way — `phraseto_tsquery`
     drops the minus, trigram similarity never sees it — so without this a title
-    *containing* the excluded word was ranked first, as a title phrase. Stemmed,
-    like the Estonian full-text tier that defines what "excluded" means.
+    *containing* the excluded word was ranked first, as a title phrase; the
+    `simple` word tier obeys the minus only for the word exactly as typed.
+    Stemmed, like the Estonian full-text tier that defines what "excluded"
+    means, and applied by `_build` to every tier but the exact title.
     """
     words = tuple(dict.fromkeys(_EXCLUDED_WORD.findall(term)))
     if not words:
@@ -721,11 +723,6 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
     # identifiers and aliases, so a phrase query against it would report an
     # organisation-name hit as a title match.
     title_phrase = is_matter & Q(search_title=phrase)
-    excluded = _excluded(term)
-    if excluded is not None:
-        # An excluded word is never matched back in by a tier that cannot read
-        # the minus (E-01).
-        title_phrase &= ~excluded
     alias = Q(source_kind__in=ALIAS_KINDS) & _any_case(term, normalized, "alias_text")
     child_title = Q(source_kind__in=CHILD_KINDS) & (
         Q(title__contains_any_case=term)
@@ -789,12 +786,9 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
         & (Q(title__trigram_word_similar=term) | Q(identifiers__trigram_word_similar=term))
         & Q(title_similarity__gte=TRIGRAM_THRESHOLD)
     )
-    if excluded is not None:
-        fuzzy &= ~excluded
 
     matched = (
-        title_exact
-        | title_phrase
+        title_phrase
         | alias
         | person
         | child_title
@@ -804,6 +798,17 @@ def _build(term: str) -> tuple[Q, Combinable, Combinable]:
         | folded_any
         | fuzzy
     )
+    excluded = _excluded(term)
+    if excluded is not None:
+        # **An excluded word is never matched back in** (E-01, V-04), by any
+        # tier: the title phrase drops the minus, trigram similarity never sees
+        # it, and the `simple` word tier reads it unstemmed — `-teemad` there
+        # does not exclude «teema», which the Estonian tier, the one that
+        # defines "excluded", does. One stemmed exclusion over all of them
+        # rather than one per tier, so a tier added later cannot leak again.
+        # Only the exact title is exempt: that query names its row outright.
+        matched &= ~excluded
+    matched = title_exact | matched
 
     tier = Case(
         When(title_exact, then=Value(TIER_TITLE_EXACT)),

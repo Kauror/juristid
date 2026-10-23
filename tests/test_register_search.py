@@ -966,6 +966,27 @@ def test_an_excluded_word_is_never_matched_back_in(signed_in, specialist):
     quoted = search_matters(query='"alfa beeta"', user=specialist)
     assert [result.matter.pk for result in quoted] == [excluded.pk]
 
+    # **In another inflection too** (V-04). The Estonian stemmer reads
+    # `-teemad` as `teema`, which is what excludes «Alfa teema» from full text;
+    # the `simple` word tier read the minus unstemmed and matched it back in, as
+    # «sõnaotsing», everywhere the search answers.
+    inflected = indexed(factories.MatterFactory(title="Alfa teema"))
+    assert inflected.pk in {
+        result.matter.pk for result in search_matters(query="alfa", user=specialist)
+    }
+    assert {
+        result.matter.pk for result in search_matters(query="alfa -teemad", user=specialist)
+    } == {wanted.pk, excluded.pk}
+    assert inflected.pk not in {
+        result.matter.pk for result in search(query="alfa -teemad", user=specialist)
+    }
+    payload = json.loads(
+        signed_in.get(reverse("search:suggestions"), {"q": "alfa -teemad"}).content
+    )
+    assert "Alfa teema" not in [row["title"] for row in payload["results"]]
+    response = signed_in.get(REGISTER, {"q": "alfa -teemad", "olek": "koik"})
+    assert "Alfa teema" not in titles_on(response)
+
 
 # ---------------------------------------------------------------------------
 # A query the search refuses is said to be refused (E-07)
