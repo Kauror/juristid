@@ -373,7 +373,11 @@ def test_the_next_action_heading_filters_by_work_state(page, base_url):
     steps = column_text(page, "Järgmiseks")
     assert steps, "no rows have no next step"
     for step in steps:
-        assert "Järgmine samm puudub" in step or "Excelist" in step, step
+        assert (
+            "Järgmine samm puudub" in step
+            or "Puudub — teema on suletud" in step
+            or "Excelist" in step
+        ), step
 
 
 # ---------------------------------------------------------------------------

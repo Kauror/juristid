@@ -143,12 +143,19 @@ def upcoming_milestone_prefetch(user: Any, today: date | None = None) -> Prefetc
     )
 
 
-def prefetched_upcoming_milestone(matter: Any) -> MatterImportantDate | None:
+def prefetched_upcoming_milestone(
+    matter: Any, today: date | None = None
+) -> MatterImportantDate | None:
     """`upcoming_milestone` over what `upcoming_milestone_prefetch` attached.
 
     **The prefetch is required, not preferred**, like the other derived values a
     register row reads: falling back to a query here would be one per row, and
     a list that forgot the prefetch would quietly pay it on every page.
+
+    **A closed Matter has no next step**, whatever milestone is still ahead on
+    it: the Teema page says «Puudub — teema on suletud», and a register row that
+    named the milestone as `Järgmiseks` contradicted it (E-03). Checked after
+    the prefetch, so a list that forgot it still fails on a closed row.
     """
     records = getattr(matter, UPCOMING_MILESTONES, None)
     if records is None:
@@ -156,7 +163,9 @@ def prefetched_upcoming_milestone(matter: Any) -> MatterImportantDate | None:
             "prefetched_upcoming_milestone needs next_step.upcoming_milestone_prefetch "
             "on the queryset; selectors.matter_list_queryset applies it."
         )
-    return upcoming_milestone(records)
+    if not matter.is_open:
+        return None
+    return upcoming_milestone(records, today)
 
 
 def without_next_step(
@@ -183,7 +192,9 @@ def without_next_step(
     open_action = NextAction.objects.visible_to(user).filter(
         matter=OuterRef("pk"), status__in=(ActionStatus.OPEN, ActionStatus.PLANNED)
     )
-    milestone = upcoming_milestones(user, day).filter(matter=OuterRef("pk"))
+    # Only on an open Matter: a closed file has no next step, and its row says
+    # «Puudub — teema on suletud» (`prefetched_upcoming_milestone`, E-03).
+    milestone = upcoming_milestones(user, day).filter(matter=OuterRef("pk"), matter__is_open=True)
     waiting = MatterEngagement.objects.visible_to(user).open_waits().filter(matter=OuterRef("pk"))
     return queryset.annotate(
         next_step_action=Exists(open_action),

@@ -104,6 +104,25 @@ def test_a_matter_waiting_on_a_milestone_is_not_called_stepless(signed_in, speci
     assert not NextAction.objects.filter(matter=matter).exists()
 
 
+def test_a_closed_matter_names_no_milestone_as_its_next_step(signed_in, specialist):
+    """E-03: the row reads the way the Teema page does — «Puudub — teema on suletud»."""
+    from app.matters.services import close_matter
+    from app.workflow.enums import Disposition
+
+    matter = factories.MatterFactory(owner=specialist, title="Suletud tähtajaga teema")
+    _milestone(matter, "Riigikogu teine lugemine")
+    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist, reason="QA")
+
+    cell = _cell(signed_in, matter)
+
+    assert "Riigikogu teine lugemine" not in cell
+    assert LABEL not in cell
+    assert "Puudub — teema on suletud" in cell
+    assert MISSING not in cell
+    # And `?tegevus=puudub` agrees with the row it lists.
+    assert _listed_without_next_step(signed_in, matter)
+
+
 # -- B. an explicit step wins ---------------------------------------------------
 
 
