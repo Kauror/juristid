@@ -302,6 +302,9 @@ def test_the_web_process_still_needs_the_mfa_key_under_personal_sign_in(web_proc
 def test_the_web_process_may_hold_its_own_secrets(web_process, role):
     web_process.JURISTID_PROCESS_ROLE = role
     web_process.SHARED_GATE_PASSWORD = "g" * 32
+    # The browser holds the administrators' MFA key (juristid.E048); the MCP
+    # process must not (juristid.E046).
+    web_process.LOCAL_AUTH_MFA_ENCRYPTION_KEY = "mfa-" + "k" * 44
     web_process.TRUST_CF_CONNECTING_IP = True
     web_process.SESSION_COOKIE_SECURE = True
     web_process.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")

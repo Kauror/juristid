@@ -528,6 +528,9 @@ def test_the_shared_gate_counts_as_an_authenticator_for_real_data(settings, monk
     # Secrets of real length, which real data has required since JOPS-003
     # (juristid.E017, E019); the gate password above is already long enough.
     settings.SECRET_KEY = "a-real-secret-" + "s" * 50
+    # Administrators' authenticators need their own key beside the gate
+    # (juristid.E048, docs/adr/0186).
+    settings.LOCAL_AUTH_MFA_ENCRYPTION_KEY = "mfa-" + "k" * 44
     monkeypatch.setitem(settings.DATABASES["default"], "PASSWORD", "d" * 48)
     settings.REAL_DATA_ALLOWED = True
     settings.SESSION_COOKIE_SECURE = True

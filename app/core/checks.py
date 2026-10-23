@@ -565,6 +565,11 @@ MINIMUM_SHARED_GATE_LENGTH = 12
 MINIMUM_SHARED_GATE_IDLE_SECONDS = 300
 
 
+#: The dedicated MFA key's floor beside the shared gate (juristid.E048): the
+#: same 32 the MCP authenticator key needs (mcp_access.E004).
+MINIMUM_MFA_KEY_LENGTH = 32
+
+
 def _shared_gate_problems() -> list[Error | Warning]:
     from app.accounts import shared_gate
     from app.accounts.enums import AuthMode
@@ -604,6 +609,28 @@ def _shared_gate_problems() -> list[Error | Warning]:
                 "The shared gate is configured with no working rate limit.",
                 hint="SHARED_GATE_MAX_ATTEMPTS and SHARED_GATE_LOCKOUT_SECONDS must be positive.",
                 id="juristid.E012",
+            )
+        )
+
+    # The verified administrator session (docs/adr/0186) seals administrators'
+    # TOTP secrets under this key. Without it they fall back to a key derived
+    # from SECRET_KEY, and a routine SECRET_KEY rotation would silently leave
+    # both administrators unable to step up — the same reason juristid.E033
+    # gives under personal sign-in, now true beside the gate too.
+    mfa_key = getattr(settings, "LOCAL_AUTH_MFA_ENCRYPTION_KEY", "") or ""
+    if settings.REAL_DATA_ALLOWED and len(mfa_key) < MINIMUM_MFA_KEY_LENGTH:
+        problems.append(
+            Error(
+                "LOCAL_AUTH_MFA_ENCRYPTION_KEY is empty or shorter than "
+                f"{MINIMUM_MFA_KEY_LENGTH} characters on a real-data shared-gate deployment.",
+                hint=(
+                    "Administrator authenticators (Haldus → Halduri sisselogimine) would be "
+                    "sealed under a key derived from SECRET_KEY, and rotating SECRET_KEY would "
+                    "lock both administrators out. Generate a dedicated host-side value in the "
+                    "release kit before the swap (`openssl rand -base64 48` into the "
+                    "environment file, docs/adr/0186 §7); never reuse DJANGO_SECRET_KEY."
+                ),
+                id="juristid.E048",
             )
         )
 
