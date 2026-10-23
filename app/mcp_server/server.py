@@ -2,7 +2,11 @@
 
 `build_server()` is the `MCPServer` (the official SDK, `mcp` 2.x) with the
 eight tools of docs/adr/0185 §2 and nothing else — no resources, prompts or
-subscriptions. `build_app()` is what `manage.py run_mcp_server` serves:
+subscriptions. With MCP_WRITES_ENABLED it also lists the write tools of
+`app.mcp_server.write_tools` (docs/adr/0189): they only *prepare* proposals
+and *commit* ones the person approved in Juristid, through the separate write
+gateway; this process still writes nothing. `build_app()` is what
+`manage.py run_mcp_server` serves:
 
     GET  /healthz                                       {"status": "ok"}, no token, no data
     GET  /.well-known/oauth-protected-resource[/mcp]    RFC 9728 metadata, no token
@@ -93,7 +97,7 @@ from app.mcp_server.auth import (
     verification_module,
     verified_access,
 )
-from app.mcp_server.instructions import INSTRUCTIONS
+from app.mcp_server.instructions import instructions_for
 from app.mcp_server.runtime import CallTimedOut, ReaderRuntime
 
 logger = logging.getLogger(__name__)
@@ -583,9 +587,15 @@ class JuristidMCPServer(MCPServer):
     so a name that is not on it is refused here, before the SDK can quote it.
     """
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, juristid_tool_names: frozenset[str] | None = None, **kwargs: Any
+    ) -> None:
         super().__init__(*args, **kwargs)
-        self._juristid_tools = frozenset(spec.name for spec in tool_specs())
+        self._juristid_tools = (
+            juristid_tool_names
+            if juristid_tool_names is not None
+            else frozenset(spec.name for spec in tool_specs())
+        )
 
     async def call_tool(
         self, name: str, arguments: dict[str, Any], context: Context[Any, Any] | None = None
@@ -595,23 +605,43 @@ class JuristidMCPServer(MCPServer):
         return await super().call_tool(name, arguments, context)
 
 
+READ_ONLY_DESCRIPTION = "The Estonian Chamber of Commerce's legal-policy register, read-only."
+WRITES_DESCRIPTION = (
+    "The Estonian Chamber of Commerce's legal-policy register. Reading is direct; a change is "
+    "only prepared here and is saved after the person approves it in Juristid."
+)
+
+
 def build_server(
     *, runtime: ReaderRuntime | None = None, token_verifier: TokenVerifier | None = None
 ) -> MCPServer:
-    """The MCP server with Juristid's eight read-only tools."""
+    """The MCP server with Juristid's eight read-only tools, and the write tools when enabled.
+
+    MCP_WRITES_ENABLED is read here, once: ``tools/list`` names the write tools
+    exactly when the server was built with writes on, and a call to one of
+    their names on a server built without them is an unknown tool.
+    """
     runtime = runtime or ReaderRuntime.from_settings()
     verifier = token_verifier or JuristidTokenVerifier(runtime)
+    writes_enabled = bool(settings.MCP_WRITES_ENABLED)
+    tools = [_make_tool(spec, runtime) for spec in tool_specs()]
+    if writes_enabled:
+        # Imported only when needed: the write tools read the operation registry.
+        from app.mcp_server.write_tools import build_write_tools
+
+        tools.extend(build_write_tools())
     server = JuristidMCPServer(
         name=SERVER_NAME,
         title="Juristid",
-        description="The Estonian Chamber of Commerce's legal-policy register, read-only.",
-        instructions=INSTRUCTIONS,
+        description=WRITES_DESCRIPTION if writes_enabled else READ_ONLY_DESCRIPTION,
+        instructions=instructions_for(writes_enabled=writes_enabled),
         website_url=settings.JURISTID_PUBLIC_ORIGIN or None,
         version=str(settings.APPLICATION_REVISION),
         token_verifier=verifier,
         auth=auth_settings(),
-        tools=[_make_tool(spec, runtime) for spec in tool_specs()],
+        tools=tools,
         subscriptions=False,
+        juristid_tool_names=frozenset(tool.name for tool in tools),
     )
     _advertise_tools_only(server)
     _refuse_resource_and_prompt_reads(server)
