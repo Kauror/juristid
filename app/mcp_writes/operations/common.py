@@ -24,7 +24,7 @@ from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
 from app.core.authorization import may_read_business_content, may_write_business_content
 from app.core.errors import DomainError
@@ -73,10 +73,31 @@ ARCHIVED = (
 DELETED = "The Matter no longer exists."
 
 
+def _has_nul(value: Any) -> bool:
+    if isinstance(value, str):
+        return "\x00" in value
+    if isinstance(value, dict):
+        return any(_has_nul(key) or _has_nul(item) for key, item in value.items())
+    if isinstance(value, (list, tuple)):
+        return any(_has_nul(item) for item in value)
+    return False
+
+
 class Arguments(BaseModel):
-    """Every operation's argument model: closed, stripped, and nothing implicit."""
+    """Every operation's argument model: closed, stripped, and nothing implicit.
+
+    A NUL character is refused in any string: PostgreSQL text cannot hold it, and
+    no person types one.
+    """
 
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True, frozen=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_nul(cls, data: Any) -> Any:
+        if _has_nul(data):
+            raise ValueError("Arguments may not contain a NUL character.")
+        return data
 
 
 def coerce[ArgsT: BaseModel](model: type[ArgsT], arguments: Any) -> ArgsT:
@@ -257,11 +278,11 @@ def find_assignable_person(name: str) -> Any:
         names = ", ".join(sorted(person.display_name for person in candidates))
         raise OperationRefused(
             "missing_information",
-            f"More than one colleague answers to «{name}»: {names}. Give the full name.",
+            f"More than one colleague answers to that name: {names}. Give the full name.",
         )
     raise OperationRefused(
         "invalid_argument",
-        f"No active department colleague to whom work may be assigned is called «{name}».",
+        "No active department colleague to whom work may be assigned has that name.",
     )
 
 
@@ -319,7 +340,7 @@ def parse_period(value: str, precision: str, name: str) -> tuple[date, date, str
     period's first day, as the forms store it.
     """
     if precision not in PRECISIONS:
-        raise OperationRefused("invalid_argument", f"Unknown precision {precision!r}.")
+        raise OperationRefused("invalid_argument", "Unknown date precision.")
     text = (value or "").strip()
     try:
         if precision == "exact":

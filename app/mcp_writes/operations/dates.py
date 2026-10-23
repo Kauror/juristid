@@ -55,6 +55,7 @@ def _day(value: Any) -> str:
 def _deadline_state(user: Any, matter: Any) -> dict[str, Any]:
     from app.matters.models import MatterResponseDeadline
     from app.matters.response_deadlines import deadline_revision
+    from app.matters.work_items import response_obligation_of
 
     last = (
         MatterResponseDeadline.objects.filter(matter_id=matter.pk)
@@ -69,6 +70,12 @@ def _deadline_state(user: Any, matter: Any) -> dict[str, Any]:
         "response_requested_at": common.iso(matter.response_requested_at),
         "deadline_revision": deadline_revision(matter),
         "last_history_row": str(last) if last else None,
+        # An old-style deadline discharged between prepare and commit (a sent opinion,
+        # the register's VÄLJA) changes what a new request or a move means.
+        "outstanding": bool(
+            matter.response_deadline is not None
+            and response_obligation_of(matter, user).is_outstanding
+        ),
     }
 
 
@@ -132,6 +139,7 @@ class ResponseDeadline:
 
     def prepare(self, *, user: Any, arguments: Any) -> Prepared:
         from app.matters import date_order
+        from app.matters.enums import ResponseDeadlineOutcome
         from app.matters.initiative import INITIATIVE_HAS_NO_NEW_REQUEST, is_koda_initiative
         from app.matters.response_deadlines import (
             ACTIVE_DEADLINE_EXISTS,
@@ -234,13 +242,24 @@ class ResponseDeadline:
                     "invalid_argument", "That is already the deadline; nothing would change."
                 )
             canonical.update({"service": "move", "previous_note": note})
+            direction = "lükatakse edasi" if deadline > current else "tuuakse ettepoole"
             consequences.append(
-                f"Sama küsimine jätkub; endine tähtaeg {_day(current)} jääb "
-                "ajalukku «edasi lükatud»."
+                f"Sama küsimise tähtaeg {direction}: {_day(current)} → {_day(deadline)}. Endine "
+                f"tähtaeg jääb ajalukku märkega «{ResponseDeadlineOutcome.MOVED.label}»."
             )
             unchanged.append("Uut arvamuse küsimist ei avata.")
 
         warnings = []
+        if (
+            args.mode == "move"
+            and matter.response_requested_at is None
+            and not response_obligation_of(matter, user).is_outstanding
+        ):
+            warnings.append(
+                "Praegune tähtaeg on vanema arvestuse järgi juba vastatud (saadetud arvamus või "
+                "registri VÄLJA). Kui Kojalt küsiti arvamust uuesti, on see uus küsimine "
+                "(mode 'new_request'), mitte tähtaja muutmine."
+            )
         if date_order.deadline_precedes_received(received=matter.received_date, deadline=deadline):
             warnings.append(date_order.DEADLINE_BEFORE_RECEIVED)
         if deadline < timezone.localdate():
@@ -267,7 +286,7 @@ class ResponseDeadline:
             summary=(
                 f"Uus arvamuse küsimine teemal {matter.display_reference}, tähtaeg {_day(deadline)}"
                 if args.mode == "new_request"
-                else f"Lükka teema {matter.display_reference} arvamuse tähtaeg {_day(deadline)}"
+                else f"Muuda teema {matter.display_reference} arvamuse tähtaeg: {_day(deadline)}"
             ),
             target=common.matter_target(matter),
             changes=changes,
@@ -446,7 +465,19 @@ class AddImportantDate:
             )
         if is_informational_milestone(kind):
             consequences.append(
-                "See on teave: ei ole järgmine tegevus ega muutu kunagi hilinenuks."
+                "See on teave: see ei ole kunagi järgmine tegevus ega muutu hilinenuks."
+            )
+        else:
+            # docs/adr/0120 §2: a milestone of these kinds may stand in for a missing
+            # `Järgmiseks` and reads as dated work.
+            consequences.append(
+                "Kui teemal ei ole praegust tegevust, võib see tähtaeg (kui see on lähim "
+                "eelseisev) olla teema järgmine samm teemal, «Minu asjad» lehel ja registris."
+            )
+        if kind == "TRANSPOSITION_DEADLINE":
+            consequences.append(
+                "ELi õiguse ülevõtmise tähtajana näidatakse seda «Menetluse kulg» real "
+                "ülevõtmise etapi juures."
             )
         preview = Preview(
             summary=f"Lisa teemale {matter.display_reference} oluline tähtaeg",

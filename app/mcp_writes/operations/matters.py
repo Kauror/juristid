@@ -380,6 +380,48 @@ class UpdateMatter:
 # ---------------------------------------------------------------------------
 
 
+CLOSED_ASSIGNMENT = (
+    common.CLOSED
+    + " Juristid's own Teema page does allow giving a closed Matter another Vastutaja; "
+    "do it there."
+)
+
+
+def _require_assignable(matter: Any) -> None:
+    if matter.record_mode == "FULL" and not matter.is_open and matter.deleted_at is None:
+        raise OperationRefused("domain_rule", CLOSED_ASSIGNMENT)
+    common.require_writable_matter(matter)
+
+
+def _following_steps(matter: Any) -> list[Any]:
+    """The open and planned steps `assign_matter` moves: those following the previous owner."""
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    following = NextAction.objects.filter(
+        matter_id=matter.pk, status__in=(ActionStatus.OPEN, ActionStatus.PLANNED)
+    )
+    if matter.owner_id is not None:
+        following = following.filter(responsible_id=matter.owner_id)
+    else:
+        following = following.filter(responsible__isnull=True)
+    return list(following.order_by("pk"))
+
+
+def _following_sentence(matter: Any, person: Any) -> str:
+    steps = _following_steps(matter)
+    if not steps:
+        return "Ühegi tegevuse vastutaja ei muutu."
+    count = f"{len(steps)} tegevus" if len(steps) == 1 else f"{len(steps)} tegevust"
+    to = f"vastutajaks saab {person.display_name}" if person is not None else "jääb vastutajata"
+    if matter.owner is not None:
+        return (
+            f"Praegune või planeeritud tegevus, mille vastutaja on {matter.owner.display_name} "
+            f"({count}), liigub teemaga kaasa: {to}."
+        )
+    return f"Vastutajata praegune või planeeritud tegevus ({count}): {to}."
+
+
 class AssignMatterArguments(common.Arguments):
     matter: str = Field(
         max_length=common.MATTER_ARGUMENT_MAX, description=common.MATTER_ARGUMENT_DESCRIPTION
@@ -423,7 +465,7 @@ class AssignMatter:
         args = common.coerce(AssignMatterArguments, arguments)
         common.require_writer(user)
         matter = common.resolve_matter(user, args.matter)
-        common.require_writable_matter(matter)
+        _require_assignable(matter)
         if not _may_assign(user):
             raise OperationRefused("forbidden", ASSIGN_REFUSED)
         person = (
@@ -444,10 +486,7 @@ class AssignMatter:
             consequences.append(
                 f"{person.display_name} näeb teemat oma «Minu asjad» lehel uue asjana."
             )
-        consequences.append(
-            "Praegune ja planeeritud tegevused, mis järgisid eelmist vastutajat, liiguvad "
-            + ("uuele vastutajale." if person is not None else "vastutajata teemaga kaasa.")
-        )
+        consequences.append(_following_sentence(matter, person))
         preview = Preview(
             summary=(
                 f"Määra teema {matter.display_reference} vastutajaks {person.display_name}"
@@ -487,6 +526,7 @@ class AssignMatter:
             "may_assign_work": _may_assign(user),
             "owner_id": str(matter.owner_id) if matter.owner_id else None,
             "proposed_owner_assignable": person is None or _is_assignable(person),
+            "following_steps": [str(step.pk) for step in _following_steps(matter)],
         }
 
     def execute(self, *, user: Any, canonical: dict[str, Any], once_token: uuid.UUID) -> Executed:
@@ -503,8 +543,8 @@ class AssignMatter:
                 "domain_rule", "The chosen Vastutaja is no longer an active colleague."
             )
         with common.domain_refusals():
+            _require_assignable(common.lock_matter(canonical["matter_id"]))
             matter = lock_open_matter_for_business_write(canonical["matter_id"])
-            common.require_writable_matter(matter)
             assign_matter(matter=matter, owner=person, actor=user)
         return Executed(
             record_type="matter",

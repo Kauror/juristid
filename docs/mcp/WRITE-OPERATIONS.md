@@ -17,10 +17,12 @@ the operations live in `app/mcp_writes/operations/` and are registered in
 | Only a business writer | `may_write_business_content` in `prepare` **and** again in `execute`: READER, ADMINISTRATOR and a superuser without a business role get `forbidden`. |
 | Invisible == not found | The Matter is resolved through the read tools' resolver (`app.mcp_server.readers.resolve_matter`: reference `2026_225`, UUID, or `matter:<uuid>`) over `Matter.objects.visible_to(user)`; `execute` re-reads it through `visible_to`. |
 | Closed or archived Matter | Refused as `domain_rule` before anything is prepared, and again under the Matter lock at execute (`lock_open_matter_for_business_write`). This is stricter than the web in at least one place (`assign_matter` lets a closed Matter change hands): MCP writes only open `FULL` Matters. |
-| Arguments | `extra="forbid"`, every string bounded (free text by `MCP_WRITE_MAX_TEXT_CHARS`, others by the column/form limit), explicit enums, dates as ISO strings at an explicit precision. Malformed input is `invalid_argument`. |
+| Arguments | `extra="forbid"`, a NUL character refused anywhere, every string bounded (free text by `MCP_WRITE_MAX_TEXT_CHARS`, others by the column/form limit), explicit enums, dates as ISO strings at an explicit precision. Malformed input is `invalid_argument`. |
 | Nothing invented | A missing fact is `missing_information` naming what is missing; no day, outcome, deadline, stage or person is defaulted except where the web door defaults it (create: you are the Vastutaja when you name nobody). |
 | `prepare` writes nothing | Proven by the SQL it sends (`no_writes` in `tests/test_mcp_write_operations_support.py`), not only by row counts. |
 | Staleness | `state` is recomputed under the canonical Matter lock at commit and must equal the stored one. Every state carries the Matter's visibility to the user, the user's write right, `is_open`, `record_mode`, deletion, plus the operation's own facts below. |
+| No echo | A refusal never repeats the caller's input (a person's name, a URL, a value); database values such as a Matter's reference, or the candidate colleagues of an ambiguous name, may appear. |
+| No kind labels | The preview never prints «Teen»/«Ootan»/«Jälgin» (ADR 0054); it shows what the date means. |
 | Canonical services only | `execute` calls the service the web door calls; a `DomainError` becomes `OperationRefused("domain_rule", <the service's own sentence>)`. Save-once services receive the proposal id as `once_token` (docs/adr/0167). |
 | Plain text in, escaped | Chronology text is HTML-escaped and turned into `<p>`/`<br>` (`common.text_to_entry_html`) before `add_entry` sanitises it, so a `<script>` in the text is stored as words. |
 | Dates | `exact` `YYYY-MM-DD`, `month` `YYYY-MM`, `quarter` `YYYY-Qn`, `year` `YYYY`. A value written at another precision is refused (a month is never read out of a day). The stored anchor is the period's first day, as the forms store it; the range is 1990–2100. `HALF_YEAR` and `INFERRED` are not offered for new input (docs/adr/0079). |
@@ -65,7 +67,8 @@ the operations live in `app/mcp_writes/operations/` and are registered in
   following the previous owner; raises the «Uus asi» notice for somebody else).
 - **Permission:** writer + `may_assign_work`, also when the person is oneself
   (the service refuses any change without it).
-- **State:** `owner_id`, `may_assign_work`, `proposed_owner_assignable`.
+- **State:** `owner_id`, `may_assign_work`, `proposed_owner_assignable`, `following_steps` (the open/planned steps the service will move — those held by the previous owner, or by nobody on an unowned Matter); the preview counts them and says «Ühegi tegevuse vastutaja ei muutu» when there are none.
+- **Closed Matter:** refused like every MCP write, with a sentence saying Juristid's own Teema page does allow reassigning a closed Matter.
 - **Never:** step text or dates, stage, deadlines.
 
 ### `add_matter_note` — shared chronology «Muu»
@@ -100,18 +103,20 @@ the operations live in `app/mcp_writes/operations/` and are registered in
 ### `set_next_action` — the current step
 
 - **Arguments:** `matter`, `mode` `new`|`change_current`, `current_action_id`
-  (optional, `change_current` only), `text` (≤ 2000), `kind` `do`|`wait`|`monitor`,
+  (optional, `change_current` only), `text` (≤ 2000), `kind` `do`|`wait`|`monitor`
+  (`text` and `kind` required for `new`), `clear_date` (`change_current` only),
   `date` + `date_precision` (both or neither), `date_meaning`
   (`do` → `planned_day` = `DEADLINE`; `wait`/`monitor` → `review_on` = `REVIEW_ON`
   or `expected_around` = `EXPECTED_AROUND`, required when dated), `waiting_for`
   (required for `wait`).
+- **`change_current` keeps what it is not told** (the web «Muuda», ENG-021): an omitted `text`, `kind`, date or meaning keeps the current step's value — including a stored precision no control offers (`HALF_YEAR`, `INFERRED`); `clear_date` removes the date. A DO step's meaning (e.g. an imported «Vaatan üle») changes only when `date_meaning` is given. The meaning row is always in `changes`, so a change of it is never silent. A kind change that needs a fact (who is waited for, what a kept date now means) is `missing_information`.
+- **Lateness wording** follows the precision: a month/quarter/year DO date is late only after the period ends; `expected_around` is «when the other side is expected to act», never a review day.
 - **Who is waited for:** `NextAction` has no column for it, so it is carried in
   the step's sentence: when the sentence does not already name the party,
   « (ootame: <party>)» is appended — shown verbatim in the preview.
 - **Service:** `new` → `set_next_action_for_new_work` under
   `lock_open_matter_for_business_write`, refused when a current step exists
-  (never a silent supersession, unlike `+ Määra järgmine tegevus` which files a
-  dated step as planned — not offered here). `change_current` →
+  (never a silent supersession; the refusal says the current step stays and a later planned step cannot be added through MCP). `change_current` →
   `workspace.change_current_action` (named step, re-read under lock; plan step
   and restriction carried; an opinion follow-up check is refused with
   `FOLLOW_UP_HAS_ITS_OWN_FORM`).
@@ -140,7 +145,9 @@ the operations live in `app/mcp_writes/operations/` and are registered in
   required; `no_response` needs `next_check_on` (not in the past);
   `monitoring_ended` needs the reason in `what_was_done`; no next step. Service
   `workspace.check_opinion_follow_up`.
-- **State:** `current_action`, `first_planned_action`, owner.
+- **Promotion previewed exactly as the services do it:** the planned steps are read reader-blind in the service's order `(target_date, created_at, pk)`; for `no_response` the new check (created now, so last on a tie) joins them, and the preview says either «Järgmisest kontrollist (<päev>) saab kohe teema praegune tegevus» or names the planned step that is promoted.
+- **Reasons are plain text:** `what_was_done` reaches `check_opinion_follow_up` unescaped (it becomes `OpinionFollowUp.end_reason`; `add_entry` sanitises the note itself).
+- **State:** `current_action`, `planned_actions` (every planned step's id and date), owner.
 - **Never:** a stage move or closure (the web form's `Uus hetkeseis` is not
   offered), a consultation round's feedback wait (that is not a `NextAction`),
   a planned step, the opinion deadline.
@@ -159,11 +166,11 @@ the operations live in `app/mcp_writes/operations/` and are registered in
   the user says what happened to it, then `change_response_deadline(change=REPLACED,
   previous_outcome, previous_note)`. A Koja algatus has no new request.
 - **`move`:** `change_response_deadline(change=MOVED)` — same request, the old
-  date in history as `MOVED`; needs a current deadline and a different date.
+  date in history as «Tähtaeg muudetud»; needs a current deadline and a different date. The preview says whether it is postponed («lükatakse edasi») or brought forward («tuuakse ettepoole»). Moving an old-style deadline that already reads as answered is warned about, with the advice that a renewed request is `new_request`.
 - **`correct`:** **not offered.** No service rewrites a recorded deadline as if it
   never was; a wrong date is moved (history kept) or ended in Juristid's header.
 - **Stale guard twice:** state (`response_deadline`, `response_requested_at`,
-  `deadline_revision`, `last_history_row`, `track`) and the service's own
+  `deadline_revision`, `last_history_row`, `track`, `outstanding` — so an old-style deadline discharged between prepare and commit is stale) and the service's own
   `expected_revision` from prepare.
 - **Warnings:** deadline before `Saabus` (`DEADLINE_BEFORE_RECEIVED` — the web
   asks for a confirmation; here the approval is the confirmation), a past date.
@@ -178,6 +185,7 @@ the operations live in `app/mcp_writes/operations/` and are registered in
   `_check_bounds` precision validation under the open-Matter lock). The workspace
   door does not pass `kind`; the service does, and an estimated commencement must
   be stored as one.
+- **Per-kind consequence in the preview:** `other` and `transposition_deadline` may stand in for a missing `Järgmiseks` as the Teema's next step (ADR 0120 §2); `transposition_deadline` is shown on «Menetluse kulg» beside the transposition phase; the two commencement kinds only inform (never the next step, never late).
 - **Notifications:** none. Commencement reminders (ADR 0188) are generated only
   from `MatterEffectiveDate` («Jõustumine») and exclude planned/estimated
   commencements; no `CommencementReminder`, no `NextAction`, no `MatterEffectiveDate`
