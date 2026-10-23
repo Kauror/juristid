@@ -168,8 +168,10 @@ def test_the_first_administrator_activates_and_must_enrol(
     page.wait_for_load_state("networkidle")
     # Offered now, and only now: an administrator with a second-factor session.
     # Read from the bar's hrefs, because at 1440px the item sits inside the
-    # collapsed «Veel» menu (e2e/conftest.py `navigation_targets`).
-    assert "/haldus/kasutajad/" in navigation_targets(page)
+    # collapsed «Veel» menu (e2e/conftest.py `navigation_targets`). The item
+    # leads to the Haldus shell, whose sub-navigation holds Kasutajad
+    # (docs/adr/0186).
+    assert "/haldus/" in navigation_targets(page)
 
 
 def test_the_user_list_and_creating_an_account(page, local_base_url, first_administrator):

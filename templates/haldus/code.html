@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Halduri kinnituskood · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The second step. Nothing is open yet: the session holds only a short-lived
+  marker that the password was right, bound to the account's credential state
+  (app/accounts/admin_session.py). The field takes the authenticator's six
+  digits or, on the day the phone is lost, a recovery code.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Halduri kinnituskood</h1>
+
+  {% if error %}
+    <div class="formerror" role="alert"><p>{{ error }}</p></div>
+  {% endif %}
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% include "accounts/partials/field.html" with field=form.code %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Kinnita</button>
+      <a class="acctlink" href="{% url 'haldus:sign_in' %}">Alusta uuesti</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

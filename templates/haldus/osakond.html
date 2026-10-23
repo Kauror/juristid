@@ -1,0 +1,45 @@
+{% extends "haldus/base.html" %}
+{% load people %}
+{% block title %}Osakonna töökorraldus · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Osakonna töökorraldus. The ways into the Osakond surfaces the
+  department management view opens, and one count — not a second Osakond
+  dashboard. Everything linked asks its own question again
+  (`may_view_department_management`, `may_review_work_victory`).
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="osakonna-vaated">
+    <h2 class="acctsection__title" id="osakonna-vaated">Osakonna vaated</h2>
+    <ul class="linklist">
+      <li class="linklist__item">
+        <a href="{% url 'matters:department' %}">Osakond</a>
+        <span class="linklist__meta">Meeskond, Tehtud ja osakonna lahtised tööd</span>
+      </li>
+      <li class="linklist__item">
+        <a href="{% url 'matters:department_changes' %}">Kõik muudatused</a>
+        <span class="linklist__meta">Mida osakonnas viimati muudeti</span>
+      </li>
+      {% if candidate_victories is not None %}
+        <li class="linklist__item">
+          <a href="{% url 'intelligence:work_victories' %}">Töövõidud</a>
+          <span class="linklist__meta">{% if candidate_victories %}{{ candidate_victories }} ootab ülevaatust{% else %}ülevaatust ootavaid ei ole{% endif %}</span>
+        </li>
+      {% endif %}
+    </ul>
+  </section>
+
+  {% if colleagues %}
+    <section class="panel" aria-labelledby="kolleegide-toolauad">
+      <h2 class="acctsection__title" id="kolleegide-toolauad">Kolleegide töölauad</h2>
+      <ul class="linklist">
+        {% for colleague in colleagues %}
+          <li class="linklist__item">
+            <a href="{% url 'matters:person_work' pk=colleague.pk %}">{{ colleague|name_among:colleagues }}</a>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+{% endblock %}

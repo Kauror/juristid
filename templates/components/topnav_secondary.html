@@ -80,15 +80,18 @@ and the two sections that were genuinely the head's are decided on the page
   docs/adr/0028).
 {% endcomment %}
 {% comment %}
-  Haldus — account administration — and only for a reader the pages behind it
-  would answer: personal sign-in, a second-factor session and the
-  `accounts.manage` capability (app/accounts/local_auth.py
-  `may_administer_accounts`). In every other mode the flag is false and this
-  renders nothing, so the shared gate's bar is exactly what it was. The pages
-  ask the same question again and 404 when the answer is no (docs/adr/0145).
+  Haldus — one item, leading to the Haldus shell, whose own sub-navigation
+  holds Kasutajad ja õigused, Klassifikaatorid, Osakonna töökorraldus and
+  Süsteemi seis. Offered only where at least one section would open for this
+  reader, or — under the shared gate — to a persona whose account may verify
+  itself as an administrator, as the way to that sign-in
+  (app/accounts/templatetags/haldus.py). Every route asks its own question
+  again and 404s when the answer is no (docs/adr/0186).
 {% endcomment %}
-{% if may_administer_accounts %}
+{% load haldus %}
+{% haldus_link as haldus_href %}
+{% if haldus_href %}
 <a class="topnav__link {% if nav_active == 'haldus' %}is-active{% endif %}"
    {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
-   href="{% url 'account_admin:list' %}">Haldus</a>
+   href="{{ haldus_href }}">Haldus</a>
 {% endif %}

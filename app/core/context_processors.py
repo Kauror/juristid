@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from django.utils.functional import SimpleLazyObject
 
-from app.accounts import local_auth, shared_gate
+from app.accounts import admin_session, local_auth, shared_gate
 from app.accounts.selectors import department_workers, persona_candidates
 from app.core.authorization import (
     is_department_head,
@@ -98,13 +98,16 @@ def application(request: HttpRequest) -> dict[str, Any]:
         "may_view_department_management": may_view_department_management(
             getattr(request, "user", None)
         ),
-        # Personal sign-in (docs/adr/0145). Both false in every mode but
-        # `local_password`, so the shared gate's bar renders exactly as before;
-        # the administration link is offered only where the pages behind it
-        # would answer, and those pages ask the same question again.
+        # Personal sign-in (docs/adr/0145): false in every mode but
+        # `local_password`, so the shared gate's bar renders exactly as before.
         "local_password_mode": local_auth.is_local_password(),
-        "may_administer_accounts": (
-            local_auth.is_local_password() and local_auth.may_administer_accounts(request)
+        # Whether this request has a verified administrator holding
+        # `accounts.manage` — the personal sign-in under `local_password`, the
+        # administrator session under the shared gate, never a persona
+        # (docs/adr/0186). Lazy: asked only by a template that reads it, and the
+        # pages behind it ask the same question again.
+        "may_administer_accounts": SimpleLazyObject(
+            lambda: admin_session.may_administer_accounts(request)
         ),
         # `can_read_opinion_archive` used to live here, for the second bar item
         # that opened the administrative archive browse. That item is gone —

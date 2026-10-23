@@ -98,6 +98,16 @@
       the department is shown, so it is not a view to choose. The heading above
       still says «Praegu: Ilma kasutajata» while nobody is chosen.
     {% endcomment %}
+    {% comment %}
+      The way in for an administrator — the technical one included, who is no
+      persona at all. Quiet and below the list, because it is not a persona: it
+      asks that person's own password and code and changes nothing about whose
+      work is shown (docs/adr/0186).
+    {% endcomment %}
+    <p class="acctnote">
+      Haldad kasutajaid või süsteemi? <a class="acctlink" href="{% url 'haldus:sign_in' %}">Halduri sisselogimine</a>
+      isikliku parooli ja koodiga.
+    </p>
   </div>
 </div>
 {% endblock %}

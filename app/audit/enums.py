@@ -554,6 +554,25 @@ class SecurityEventType(models.TextChoices):
     # a final-administrator removal, a delegation beyond the actor's own
     # authority. Recorded so that somebody probing the boundary leaves a trace.
     ACCESS_REFUSED = "ACCESS_REFUSED", "Turvatundlik toiming keelati"
+    # -- the verified administrator session under the shared gate (docs/adr/0186)
+    #
+    # A step-up beside the shared gate, never a sign-in to the application: it
+    # opens Haldus administration for one individually verified person and
+    # changes nothing about the persona. Its own types, so the trail cannot
+    # confuse "an administrator proved who they are" with a persona choice or a
+    # personal sign-in. Failed attempts reuse AUTHENTICATION_FAILED with
+    # `detail.path = "administrator_session"`.
+    ADMINISTRATOR_SESSION_STARTED = (
+        "ADMINISTRATOR_SESSION_STARTED",
+        "Halduri seanss algas",
+    )
+    ADMINISTRATOR_SESSION_ENDED = "ADMINISTRATOR_SESSION_ENDED", "Halduri seanss lõppes"
+    # The operator's host-side emergency route: an account switched off with a
+    # mandatory reason, even where that breaks the two-administrator rule.
+    EMERGENCY_ACCOUNT_DISABLED = (
+        "EMERGENCY_ACCOUNT_DISABLED",
+        "Konto lülitati hädaolukorras välja",
+    )
     # -- permanent deletion of a Teema (docs/adr/0165) ---------------------
     #
     # The one trace a deleted Teema leaves in the access trail: who, when,
@@ -583,6 +602,14 @@ class AuthMethod(models.TextChoices):
     SHARED_GATE = "shared_gate", "Ühisparool ja valitud kasutaja"
     #: A personal password signed in here (docs/adr/0145; dormant).
     LOCAL_PASSWORD = "local_password", "Isiklik parool"
+    #: Behind the shared gate, an administrator's own verified session: their
+    #: personal password and their own TOTP, for Haldus administration only
+    #: (docs/adr/0186). The principal is that administrator; the persona, if
+    #: any, is recorded beside it and proves nothing.
+    ADMINISTRATOR_SESSION = (
+        "administrator_session",
+        "Halduri isiklik kinnitus ühisparooli taga",
+    )
     #: An individual identity Cloudflare Access proved and signed.
     CLOUDFLARE_ACCESS = "cloudflare_access", "Cloudflare Access"
     #: `AUTH_MODE=none`: a developer laptop or CI, the synthetic sign-in.

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Autentimisrakendus · Halduri sisselogimine · {{ application_name }}{% endblock %}
+
+{% comment %}
+  An administrator's first step-up, after a correct password, when the
+  account has no authenticator yet: set one up — the existing enrolment
+  (app/accounts/mfa.py), inline-SVG QR code and a typed key. Nothing is stored
+  until a code from the phone is typed back. Mandatory for every
+  administrator; there is no way past this page but a confirmed code.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <h1>Seadista autentimisrakendus</h1>
+  <p class="message message--warning" role="status">
+    Halduril on autentimisrakendus kohustuslik. Seadista see oma telefonis — mitte kellegi teise
+    oma.
+  </p>
+
+  <section class="panel acctenrol">
+    <ol class="acctsteps">
+      <li>Ava telefonis autentimisrakendus (näiteks Microsoft Authenticator või Google Authenticator).</li>
+      <li>Skaneeri kood või sisesta võti käsitsi.</li>
+      <li>Sisesta rakenduse näidatud kuuekohaline kood.</li>
+    </ol>
+    <div class="acctqr" role="img" aria-label="Autentimisrakenduse QR-kood">{{ enrolment.qr_svg|safe }}</div>
+    <p class="acctnote">Võti: <span class="mono acctsecret" data-totp-secret>{{ enrolment.secret }}</span></p>
+  </section>
+
+  <form method="post" class="card card--form form" novalidate>
+    {% csrf_token %}
+    {% include "accounts/partials/field.html" with field=form.code %}
+    <div class="form__actions">
+      <button type="submit" class="button button--primary">Kinnita</button>
+      <a class="acctlink" href="{% url 'haldus:sign_in' %}">Alusta uuesti</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
