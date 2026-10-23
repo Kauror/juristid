@@ -16,7 +16,7 @@ connects as, `juristid_mcp_writer`:
   table, each with the reason. The list is what the canonical services of the
   approved operations actually write, proven by running every one of them
   under this very role (tests/test_mcp_writer_allowlist.py) — plus the
-  gateway's own two tables (`GATEWAY_WRITES`);
+  gateway's own tables and its security audit rows (`GATEWAY_WRITES`);
 * **no write, ever**, on the tables `DENIED_WRITE_PREFIXES` and
   `DENIED_WRITE_TABLES` name: accounts and their credentials and second
   factors, every MCP grant, token, authenticator, code, throttle and event,

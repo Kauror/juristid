@@ -629,6 +629,7 @@ every table but `django_session`. Writes only:
 | `search_searchdocument` | INSERT, UPDATE, DELETE | the search projection's synchronous refresh — **the one DELETE**: stale projection rows are replaced; derived data, rebuilt by `rebuild_search_index` |
 | `mcp_writes_mcpwriteproposal` | INSERT, UPDATE | the gateway's proposals |
 | `mcp_writes_mcpwriteevent` | INSERT | the gateway's append-only events |
+| `audit_securityauditevent` | INSERT | the gateway's security audit rows (append-only) |
 
 **Never** any write on `accounts_*`, `mcp_access_*`, `django_*`, `auth_*` or
 `mcp_writes_mcpwriteapproval` (SELECT only: only `web` approves) — the command
@@ -680,7 +681,7 @@ sed -n 's/^POSTGRES_PASSWORD=//p' /mnt/user/appdata/juristid-main/config/juristi
 ```
 
 It answers `Role juristid_mcp_writer: SELECT on schema public (owner …) except
-1 withheld table(s); writes on 15 allow-listed table(s); statement_timeout 30s,
+1 withheld table(s); writes on 16 allow-listed table(s); statement_timeout 30s,
 temp files at most 64MB; password set.` A line `Not yet in this database` means
 the release's migrations have not run — stop. To read the SQL first,
 `… exec -T web python manage.py mcp_writer_db_role --print-sql` changes
