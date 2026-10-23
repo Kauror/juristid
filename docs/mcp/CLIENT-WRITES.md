@@ -102,9 +102,23 @@ gateway's own safe message (bounded, one line): `forbidden`, `not_found`,
 `invalid_argument`, `missing_information` (ask the user — nothing is
 invented), `domain_rule`, `stale` (the record moved on: prepare again),
 `expired`, `declined`, `approval_mismatch`, `already_failed`, `too_large`,
-`writes_disabled`. A timeout, an unreachable gateway or an unreadable answer
-gets a fixed text and nothing from the answer. A schema violation names the
+`method_not_allowed`, `writes_disabled`. These all come before anything
+executes, so only they (and a request that never reached the gateway — a
+refused connection) may say «Nothing was saved». A schema violation names the
 field and the rule, never the value.
+
+**Unknown outcome.** Once a request was sent, a client-side timeout, a broken
+connection, the gateway's own `timeout` (504) or `internal_error` (500), an
+unknown code or an unreadable answer do **not** prove that nothing happened: the
+gateway's worker thread runs on after its timeout and may commit a moment
+later. Such a commit answers that the outcome is unknown, that the change must
+not be prepared again, and that calling `commit_prepared_action` again with the
+same `proposal_id` is safe — it is idempotent, so a saved proposal answers its
+stored receipt (`replayed: true`) and an unsaved one says what is still needed.
+Such a prepare answers that a proposal may exist but nothing in Juristid
+changes until it is approved and committed. The client waits
+`MCP_WRITE_CALL_TIMEOUT_SECONDS` + 5 s, so the gateway's own timeout answer
+normally arrives first.
 
 ## Scope step-up
 
