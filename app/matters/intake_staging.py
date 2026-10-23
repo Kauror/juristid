@@ -278,6 +278,26 @@ def kept_token(*, owner: Any, session_id: Any) -> MatterIntakeSession:
     return open_session(owner=owner)
 
 
+def spent_token(*, owner: Any, session_id: Any) -> MatterIntakeSession | None:
+    """This person's form token if an earlier submission already consumed it.
+
+    Read only, and only a hint: `claim_for_create` stays the one atomic answer
+    for a submission that gets that far. It lets a door answer a replay with
+    the Teema it filed before checking what the replay carries — a corrected
+    save whose only files were held finds them released by the first save, and
+    must not be refused for naming none (2026-10-23 bug-bounty, V-02). Owner
+    scoped like every other read here, so a stranger's token is no token.
+    """
+    parsed = _as_uuid(session_id)
+    if parsed is None:
+        return None
+    return (
+        MatterIntakeSession.objects.owned_by(owner)
+        .filter(pk=parsed, consumed_at__isnull=False)
+        .first()
+    )
+
+
 @dataclass(frozen=True)
 class CreateClaim:
     """What `Loo teema` learned from the form token it was posted with.
