@@ -272,6 +272,23 @@ def _retry_form(form: Any, request: HttpRequest, conflict: Any) -> Any:
     return again
 
 
+#: What an unchanged `Muuda` is told: nothing was saved, so nothing «muudetud».
+NOTHING_CHANGED = "Muudatusi ei olnud."
+
+
+def _say_saved(request: HttpRequest, saved: Any, form: Any, changed: str) -> None:
+    """«…muudetud» only when the save changed the record.
+
+    A correction that changes nothing writes nothing and keeps the record's
+    version (`services._unchanged`), so the version the form was drawn from is
+    still the stored one — and the page must not claim a change either.
+    """
+    if services.fact_revision(saved) == (form.cleaned_data.get("revision") or ""):
+        messages.info(request, NOTHING_CHANGED)
+    else:
+        messages.success(request, changed)
+
+
 @login_required
 @business_write_required
 @require_http_methods(["GET", "POST"])
@@ -288,7 +305,7 @@ def edit_important_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
         form = ImportantDateForm(request.POST)
         if form.is_valid():
             try:
-                services.update_important_date(
+                saved = services.update_important_date(
                     record=record,
                     actor=request.user,
                     expected_revision=form.cleaned_data.get("revision") or "",
@@ -311,7 +328,7 @@ def edit_important_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
             except DomainError as error:
                 form.add_error(None, str(error))
             else:
-                messages.success(request, "Oluline tähtaeg muudetud.")
+                _say_saved(request, saved, form, "Oluline tähtaeg muudetud.")
                 return redirect(_matter_anchor(matter, "olulised-tahtajad"))
         return _render_form(
             request,
@@ -477,7 +494,7 @@ def edit_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
         form = EffectiveDateForm(request.POST, stored_source_url=record.source_url)
         if form.is_valid():
             try:
-                services.update_effective_date(
+                saved = services.update_effective_date(
                     record=record,
                     actor=request.user,
                     expected_revision=form.cleaned_data.get("revision") or "",
@@ -500,7 +517,7 @@ def edit_effective_date(request: HttpRequest, matter_id: Any, pk: Any) -> HttpRe
             except DomainError as error:
                 form.add_error(None, str(error))
             else:
-                messages.success(request, "Jõustumine muudetud.")
+                _say_saved(request, saved, form, "Jõustumine muudetud.")
                 return redirect(_matter_anchor(matter, "joustumine"))
         return _render_form(
             request,
@@ -666,7 +683,7 @@ def edit_work_victory(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResp
         form = WorkVictoryForm(request.POST, stored_source_url=record.source_url)
         if form.is_valid():
             try:
-                services.update_work_victory(
+                saved = services.update_work_victory(
                     record=record,
                     actor=request.user,
                     expected_revision=form.cleaned_data.get("revision") or "",
@@ -689,7 +706,7 @@ def edit_work_victory(request: HttpRequest, matter_id: Any, pk: Any) -> HttpResp
             except DomainError as error:
                 form.add_error(None, str(error))
             else:
-                messages.success(request, "Töövõidu kirje muudetud.")
+                _say_saved(request, saved, form, "Töövõidu kirje muudetud.")
                 return redirect(_matter_anchor(matter, "toovoidud"))
         return _render_form(
             request,
