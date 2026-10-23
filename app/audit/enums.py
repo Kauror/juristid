@@ -445,6 +445,29 @@ class ChangeEventType(models.TextChoices):
     # (`MatterResponseDeadline`). Matter-level: the deadline is a fact about
     # the file, and the payload names no restricted record.
     RESPONSE_DEADLINE_ENDED = "RESPONSE_DEADLINE_ENDED", "Arvamuse tähtaeg lõppes"
+    # -- Haldus → Klassifikaatorid (docs/adr/0187) ---------------------------
+    #
+    # Changes to the department's reference vocabulary: the institution
+    # catalogue and the tag vocabulary. One type per act, for the reason every
+    # other family here has one — «who renamed this ministry» and «who merged
+    # these two tags» are different questions. They name no Matter (the row is
+    # about a vocabulary entry, `obj`), so no Teema chronology and no `Kõik
+    # muudatused` page shows them; the payload carries identifiers and the
+    # before/after names, which are reference text rather than business content.
+    ORGANISATION_CREATED = "ORGANISATION_CREATED", "Organisatsioon lisatud"
+    ORGANISATION_RENAMED = "ORGANISATION_RENAMED", "Organisatsiooni nimi parandatud"
+    ORGANISATION_ALIAS_ADDED = "ORGANISATION_ALIAS_ADDED", "Organisatsiooni nimekuju lisatud"
+    ORGANISATION_ALIAS_REMOVED = (
+        "ORGANISATION_ALIAS_REMOVED",
+        "Organisatsiooni nimekuju eemaldatud",
+    )
+    TAG_CREATED = "TAG_CREATED", "Silt lisatud sõnastikku"
+    TAG_CHANGED = "TAG_CHANGED", "Silti muudetud"
+    TAG_ALIAS_ADDED = "TAG_ALIAS_ADDED", "Sildi nimekuju lisatud"
+    TAG_ALIAS_REMOVED = "TAG_ALIAS_REMOVED", "Sildi nimekuju eemaldatud"
+    TAG_MERGED = "TAG_MERGED", "Silt liidetud teisega"
+    TAG_DEACTIVATED = "TAG_DEACTIVATED", "Silt aegunuks märgitud"
+    TAG_REACTIVATED = "TAG_REACTIVATED", "Silt taas kasutusel"
 
 
 class SecurityEventType(models.TextChoices):
