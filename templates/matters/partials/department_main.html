@@ -249,12 +249,26 @@ control that promised one of them would be lying about what it does
            {% if option.active %}aria-current="true"{% endif %}
            href="?{{ option.query }}">{{ option.label }}</a>
       {% endfor %}
+      {% comment %}
+        A typed range that cannot be used — `31.02.2026`, or an end before its
+        start — opens the control again on what was typed and says why, above
+        the boxes; the section shows the default window meanwhile, and no chip
+        claims the reader chose it. It used to refill the boxes with the
+        fallback's dates and close, so the typing vanished without a word
+        (2026-10-23 bug-bounty, B-06). Muudatused' words, from the same parser
+        (`department_dashboard.custom_range_refusal`).
+      {% endcomment %}
       <details class="uxdg__period" data-uxpopover
-               {% if page.digest.period.is_custom %}open{% endif %}>
+               {% if page.digest.period.is_custom or page.digest.period.refused %}open{% endif %}>
         <summary class="uxchip uxchip--dashed{% if page.digest.period.is_custom %} is-selected{% endif %}">
           {% if page.digest.period.is_custom %}{{ page.digest.period.label }}{% else %}Vali periood…{% endif %}
         </summary>
         <div class="uxdg__periodbody">
+          {% if page.digest.period.refused %}
+            <p class="notice notice--warning uxdg__periodnote" role="alert" data-period-error>
+              {{ page.digest.period.refused }} Näitan vaikimisi perioodi.
+            </p>
+          {% endif %}
           <form method="get">
             <input type="hidden" name="periood" value="vahemik">
             <input type="hidden" name="liik" value="{{ page.digest.kind }}">
@@ -262,13 +276,13 @@ control that promised one of them would be lying about what it does
               <span class="field__label field__label--plain">Alates</span>
               <input class="field__input field__input--compact dateinput" type="text"
                      inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                     name="alates" value="{{ page.digest.period.start|date:'j.n.Y' }}">
+                     name="alates" value="{% if page.digest.period.refused %}{{ page.digest.period.typed_start }}{% else %}{{ page.digest.period.start|date:'j.n.Y' }}{% endif %}">
             </label>
             <label class="field">
               <span class="field__label field__label--plain">Kuni</span>
               <input class="field__input field__input--compact dateinput" type="text"
                      inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
-                     name="kuni" value="{{ page.digest.period.end|date:'j.n.Y' }}">
+                     name="kuni" value="{% if page.digest.period.refused %}{{ page.digest.period.typed_end }}{% else %}{{ page.digest.period.end|date:'j.n.Y' }}{% endif %}">
             </label>
             <button class="button button--quiet button--tiny" type="submit">Näita</button>
           </form>
