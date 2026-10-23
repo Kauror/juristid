@@ -866,6 +866,28 @@ def add_planned_action(
     locked_matter = lock_matter_for_write(matter.pk)
     if not locked_matter.is_open:
         raise DomainError("Suletud teemale ei saa järgmist tegevust määrata.")
+    # **A repeated save files nothing twice.** A double-pressed `Salvesta`, a
+    # network retry or a second tab of the same form arrives here after the
+    # first save, under the same lock: with no step open the first became the
+    # current step, so the second used to be filed as a planned copy of it —
+    # and with a step open, as a second identical planned row. The same
+    # sentence on the same day at the same precision, current or planned, is
+    # that one step; it is returned and nothing is written — the equivalence
+    # `establish_opinion_preparation_action` keeps for the creation flow.
+    equivalent = (
+        NextAction.objects.filter(
+            matter=locked_matter,
+            status__in=(ActionStatus.OPEN, ActionStatus.PLANNED),
+            text=text,
+            target_date=target_date,
+            date_precision=date_precision,
+            follow_up__isnull=True,
+        )
+        .order_by("created_at", "pk")
+        .first()
+    )
+    if equivalent is not None:
+        return equivalent
     action = NextAction.objects.create(
         matter=locked_matter,
         text=text,

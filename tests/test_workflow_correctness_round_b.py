@@ -181,3 +181,63 @@ def test_a_completion_that_keeps_the_matter_open_still_promotes(specialist):
 
     planned.refresh_from_db()
     assert planned.status == ActionStatus.OPEN
+
+
+# ---------------------------------------------------------------------------
+# A repeated `+ Määra järgmine tegevus` save files the step once
+# ---------------------------------------------------------------------------
+
+
+def _add_step(client, matter, text: str, day: date):
+    return client.post(
+        reverse("matters:add_planned_action", kwargs={"pk": matter.pk}),
+        {"text": text, "target_date": day.isoformat()},
+        headers={"HX-Request": "true"},
+    )
+
+
+def _live(matter) -> list[tuple[str, str]]:
+    return list(
+        NextAction.objects.filter(
+            matter=matter, status__in=(ActionStatus.OPEN, ActionStatus.PLANNED)
+        )
+        .order_by("created_at", "pk")
+        .values_list("text", "status")
+    )
+
+
+def test_a_double_submitted_first_step_is_not_also_planned(client, specialist, normal_matter):
+    """The second POST used to find the first one's step open and plan a copy."""
+    client.force_login(specialist)
+
+    first = _add_step(client, normal_matter, "Helista ministeeriumi", _day(5))
+    second = _add_step(client, normal_matter, "Helista ministeeriumi", _day(5))
+
+    assert (first.status_code, second.status_code) == (200, 200)
+    assert _live(normal_matter) == [("Helista ministeeriumi", ActionStatus.OPEN)]
+
+
+def test_a_double_submitted_planned_step_is_planned_once(client, specialist, with_current):
+    client.force_login(specialist)
+
+    _add_step(client, with_current, "Koonda tagasiside", _day(9))
+    _add_step(client, with_current, "Koonda tagasiside", _day(9))
+
+    assert _live(with_current) == [
+        ("Loe eelnõu läbi", ActionStatus.OPEN),
+        ("Koonda tagasiside", ActionStatus.PLANNED),
+    ]
+
+
+def test_a_different_day_or_sentence_is_another_planned_step(specialist, with_current):
+    add_planned_action(
+        matter=with_current, text="Koonda tagasiside", target_date=_day(9), actor=specialist
+    )
+    add_planned_action(
+        matter=with_current, text="Koonda tagasiside", target_date=_day(16), actor=specialist
+    )
+    add_planned_action(
+        matter=with_current, text="Saada kokkuvõte", target_date=_day(9), actor=specialist
+    )
+
+    assert len(_live(with_current)) == 4
