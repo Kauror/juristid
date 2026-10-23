@@ -101,6 +101,7 @@ def test_the_allow_list_never_names_a_denied_table_and_says_why_for_each():
     assert db_role.GATEWAY_WRITES == {
         "mcp_writes_mcpwriteproposal": ("INSERT", "UPDATE"),
         "mcp_writes_mcpwriteevent": ("INSERT",),
+        "audit_securityauditevent": ("INSERT",),
     }
 
 

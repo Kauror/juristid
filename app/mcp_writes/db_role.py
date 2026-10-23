@@ -86,6 +86,9 @@ WITHHELD_TABLES = ("django_session",)
 GATEWAY_WRITES: dict[str, tuple[str, ...]] = {
     "mcp_writes_mcpwriteproposal": ("INSERT", "UPDATE"),
     "mcp_writes_mcpwriteevent": ("INSERT",),
+    # The gateway's security audit rows (a refused token, a refused commit),
+    # append-only like the change history: INSERT alone.
+    "audit_securityauditevent": ("INSERT",),
 }
 
 #: Table → the write privileges the role holds on it, and nothing else.
