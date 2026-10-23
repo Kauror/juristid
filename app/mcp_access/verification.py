@@ -21,7 +21,12 @@ from django.utils import timezone
 from app.accounts.models import User
 from app.mcp_access import config, credentials
 from app.mcp_access.models import GrantStatus, McpAccessGrant, McpToken, TokenKind
-from app.mcp_access.services import may_connect, may_write, write_scope
+from app.mcp_access.services import (
+    may_connect,
+    may_write,
+    write_enablement_covers,
+    write_scope,
+)
 
 #: What `VerifiedAccess.family_id` holds when a caller built one by hand
 #: (test fakes): no token has it, so `writer_for` refuses such an access.
@@ -132,7 +137,8 @@ def writer_for(access: VerifiedAccess) -> User | None:
     one `access` names, the token itself carries `MCP_WRITE_SCOPE` (granted only
     at consent, never widened), and `services.may_write` holds — the grant's
     write decision stands, the account has a business-write role, and
-    `MCP_WRITES_ENABLED` is on in *this* process. Nothing is cached, so
+    `MCP_WRITES_ENABLED` is on in *this* process — and the token's family
+    began at or after the grant's current ``write_enabled_at``. Nothing is cached, so
     ``revoke-write``, ``revoke-all-writes``, a revoked grant, a deactivation,
     a role change or a security-epoch bump answer None at the very next call.
     """
@@ -145,5 +151,9 @@ def writer_for(access: VerifiedAccess) -> User | None:
     if write_scope() not in token.scope_set:
         return None
     if not may_write(user, grant):
+        return None
+    # A family begun under an earlier write enablement is not honoured after
+    # revoke-write and a later grant-write (P3-5): the person connects again.
+    if not write_enablement_covers(grant, token.family_started_at or token.issued_at):
         return None
     return user

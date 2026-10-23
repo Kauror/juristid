@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import uuid
+from datetime import timedelta
 
 import pytest
 from django.db import connection
@@ -204,3 +205,45 @@ def test_the_fakes_default_family_is_never_a_real_one():
     )
     assert built.family_id == NO_FAMILY
     assert writer_for(built) is None
+
+
+# -- one write enablement (security review P3-5) ---------------------------------------
+
+
+def test_a_token_from_before_revoke_write_does_not_write_after_a_new_grant_write(writer, moment):
+    user, _, old = writer
+    services.revoke_write(user=user, reason="test", provenance=support.OPERATOR)
+    services.grant_write(user=user, provenance=support.OPERATOR)
+
+    assert McpToken.objects.get(pk=old.token_id).scope_set >= {"juristid.write"}
+    assert writer_for(old) is None
+    assert reader_for(old) == user
+
+
+def test_a_new_connection_after_a_new_grant_write_writes(moment):
+    user = factories.UserFactory()
+    _, secret = support.enrolled(user, moment)
+    services.grant_write(user=user, provenance=support.OPERATOR)
+    old = verify_access_token(support.tokens_for(user, secret, moment, scope=BOTH).access_token)
+    services.revoke_write(user=user, reason="test", provenance=support.OPERATOR)
+    services.grant_write(user=user, provenance=support.OPERATOR)
+
+    fresh = support.tokens_for(user, secret, moment, steps=1, scope=BOTH)
+    new = verify_access_token(fresh.access_token)
+
+    assert old is not None and writer_for(old) is None
+    assert new is not None and fresh.scope == BOTH and writer_for(new) == user
+
+
+def test_a_family_started_before_write_was_ever_enabled_does_not_write(moment):
+    user = factories.UserFactory()
+    _, secret = support.enrolled(user, moment)
+    services.grant_write(user=user, provenance=support.OPERATOR)
+    access = verify_access_token(support.tokens_for(user, secret, moment, scope=BOTH).access_token)
+    assert access is not None
+    grant = McpAccessGrant.objects.get(user=user)
+    token = McpToken.objects.get(pk=access.token_id)
+    McpAccessGrant.objects.filter(pk=grant.pk).update(
+        write_enabled_at=token.family_started_at + timedelta(seconds=1)
+    )
+    assert writer_for(access) is None

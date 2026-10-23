@@ -38,6 +38,14 @@ shrink.
    to what `may_write` allows *now*. After `revoke-write` the write scope
    drops out of the family for good; getting it back means connecting again.
    Nothing ever widens a family.
+5. **Write belongs to one enablement.** A write scope is honoured only for a
+   token family — or, at the exchange, an authorization code — that began at or
+   after the grant's current `write_enabled_at`
+   (`services.write_enablement_covers`). So after `revoke-write` and a later
+   `grant-write`, an access token from before the revoke that still names
+   `juristid.write` does not write again (`writer_for` → None), and its
+   refresh comes back read-only; only a new connection gets write (security
+   review P3-5).
 
 ### `may_write(user, grant)` — asked afresh at every step
 
@@ -92,7 +100,8 @@ read connection; the client learns that from the token response.
   no token has.
 - `verification.writer_for(access) -> User | None`: everything `reader_for`
   re-reads, plus the token row's family equals `access.family_id`, the token
-  row's scope contains `juristid.write`, and `may_write`. Pure reads.
+  row's scope contains `juristid.write`, `may_write`, and the token's family
+  began at or after the grant's current `write_enabled_at`. Pure reads.
 - `services.confirm_write_code(*, user, grant_id, code, ip_address, throttle)
   -> AuthorizationOutcome`: the approval page's code check. Same
   authenticator, same single-use TOTP step (a code spent connecting cannot
@@ -132,7 +141,8 @@ off.
 revoked: the next write call is refused (`writer_for` → None), the approval
 page refuses (`confirm_write_code` → `no_grant`), the next refresh drops the
 scope, and reading continues. Granting write again later needs a new
-connection.
+connection: no token from before the new `grant-write` is honoured for
+writing, even one still carrying `juristid.write`.
 
 **revoke-all-writes** is the write kill switch: every grant's write permission
 ends, every read connection keeps working.

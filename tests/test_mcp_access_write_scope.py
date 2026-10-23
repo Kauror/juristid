@@ -345,3 +345,32 @@ def test_the_request_object_holds_at_most_what_may_be_granted():
     query.update(support.authorize_params(scope=BOTH))
     parsed = oauth.parse_authorization(query)
     assert isinstance(parsed, services.AuthorizationRequest) and parsed.scope == BOTH
+
+
+def test_a_refresh_of_a_family_from_an_earlier_enablement_comes_back_read_only(moment):
+    """revoke-write, then grant-write: the old family stays read-only (security review P3-5)."""
+    user, _, secret = _person(moment)
+    first = support.tokens_for(user, secret, moment, scope=BOTH)
+    services.revoke_write(user=user, reason="test", provenance=support.OPERATOR)
+    services.grant_write(user=user, provenance=support.OPERATOR)
+    second = _refresh(first)
+    assert isinstance(second, services.IssuedTokens) and second.scope == READ
+    # A new connection gets write again.
+    fresh = support.tokens_for(user, secret, moment, steps=1, scope=BOTH)
+    assert fresh.scope == BOTH
+
+
+def test_a_code_minted_under_an_earlier_enablement_exchanges_for_read(moment):
+    user, _, secret = _person(moment)
+    code = support.code_for(user, secret, moment, scope=BOTH)
+    services.revoke_write(user=user, reason="test", provenance=support.OPERATOR)
+    services.grant_write(user=user, provenance=support.OPERATOR)
+    issued = services.exchange_code(
+        client_id=support.PUBLIC_CLIENT,
+        code=code,
+        redirect_uri=support.PUBLIC_REDIRECT,
+        code_verifier=support.VERIFIER,
+        resource=support.RESOURCE,
+        ip_address=None,
+    )
+    assert isinstance(issued, services.IssuedTokens) and issued.scope == READ
