@@ -324,6 +324,40 @@ def test_a_duplicate_through_the_page_is_a_400_naming_the_existing_row(client, d
     assert Organisation.objects.filter(normalized_name="olemasolev amet").count() == 1
 
 
+def test_a_refused_organisation_keeps_the_catalogue_listed(client, department_head):
+    """A refused «Lisa organisatsioon» redraws the list the page showed, not an empty one."""
+    factories.OrganisationFactory(name="Näidisministeerium")
+    factories.OrganisationFactory(name="Teine Loetletud Amet")
+    client.force_login(department_head)
+
+    response = client.post(
+        reverse("reference_data:organisation_create"), {"name": "NÄIDISMINISTEERIUM"}
+    )
+
+    body = response.content.decode()
+    assert response.status_code == 400
+    assert "«Näidisministeerium»" in body
+    assert "Teine Loetletud Amet" in body
+
+
+def test_a_refused_tag_keeps_the_vocabulary_listed(client, department_head):
+    """A duplicate «Lisa silt» in any case is a 400 over the tags that exist (bounty H-04)."""
+    existing = factories.TagFactory(name_et="Olemasolev silt", key="olemasolev")
+    factories.TagFactory(name_et="Teine loetletud silt", key="teine-loetletud")
+    client.force_login(department_head)
+
+    response = client.post(
+        reverse("reference_data:tag_create"), {"name": "OLEMASOLEV SILT", "key": "uus-voti"}
+    )
+
+    body = response.content.decode()
+    assert response.status_code == 400
+    assert vocabulary.duplicate_refusal(existing) in body
+    assert "Teine loetletud silt" in body
+    assert "Sõnastikus pole veel ühtegi silti." not in body
+    assert Tag.objects.filter(key="uus-voti").count() == 0
+
+
 def test_a_stale_page_is_a_400_and_writes_nothing(client, department_head):
     tag = factories.TagFactory(name_et="Sõnastikusõna")
     client.force_login(department_head)
