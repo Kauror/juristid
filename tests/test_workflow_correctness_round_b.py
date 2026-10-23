@@ -104,9 +104,7 @@ def test_rewording_through_the_teema_form_keeps_the_month(client, specialist, wi
     assert replacement.date_precision == DatePrecision.MONTH
 
 
-def test_choosing_another_day_for_a_month_planned_action_makes_it_exact(
-    specialist, with_current
-):
+def test_choosing_another_day_for_a_month_planned_action_makes_it_exact(specialist, with_current):
     anchor = _month_anchor()
     planned = add_planned_action(
         matter=with_current,
@@ -175,9 +173,7 @@ def test_a_completion_that_keeps_the_matter_open_still_promotes(specialist):
         matter=matter, text="Järgmine planeeritud", target_date=_day(4), actor=specialist
     )
 
-    complete_current_action(
-        matter=matter, author=specialist, action_id=step.pk, body="Tehtud."
-    )
+    complete_current_action(matter=matter, author=specialist, action_id=step.pk, body="Tehtud.")
 
     planned.refresh_from_db()
     assert planned.status == ActionStatus.OPEN
