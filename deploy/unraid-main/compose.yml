@@ -271,11 +271,21 @@ services:
     # worker's thirty. A staged file is bounded by MAX_EVIDENCE_UPLOAD_BYTES and
     # finishes in seconds, so a loop that has not turned in five minutes has
     # stopped — and waiting half an hour to say so would outlast the form.
+    #
+    # Every probe here is a full Django start: a second of one core at full
+    # clock. Every 30 s across six workers that kept the host out of deep idle
+    # (Tctl sawtooth, idle power 10 W -> 15 W on KOCORP). Nothing acts on the
+    # status while running (no autoheal; the host watchdog does not read it),
+    # so the probes run every 6 h. Only startup needs them quickly, for the
+    # tunnels gated on `service_healthy`: `start_interval` probes every 5 s
+    # until the first pass, inside a start_period long enough for a cold
+    # start; past it, a container still unhealthy waits for the 6 h probe.
     healthcheck:
       test: ["CMD", "python", "manage.py", "check_intake_reader", "--quiet"]
-      interval: 30s
+      interval: 6h
       timeout: 15s
-      start_period: 60s
+      start_period: 300s
+      start_interval: 5s
       retries: 3
     command:
       - python
@@ -342,9 +352,10 @@ services:
     # it fails to pick up (app/search/management/commands/check_search_freshness.py).
     healthcheck:
       test: ["CMD", "python", "manage.py", "check_search_freshness", "--quiet"]
-      interval: 60s
+      interval: 6h
       timeout: 15s
-      start_period: 60s
+      start_period: 300s
+      start_interval: 5s
       retries: 3
     command:
       - python
@@ -400,9 +411,10 @@ services:
     logging: *bounded-logs
     healthcheck:
       test: ["CMD", "python", "manage.py", "check_intake_staging", "--quiet"]
-      interval: 300s
+      interval: 6h
       timeout: 15s
-      start_period: 60s
+      start_period: 300s
+      start_interval: 5s
       retries: 3
     command:
       - python
@@ -439,9 +451,10 @@ services:
     logging: *bounded-logs
     healthcheck:
       test: ["CMD", "python", "manage.py", "generate_commencement_reminders", "--check", "--quiet"]
-      interval: 600s
+      interval: 6h
       timeout: 30s
-      start_period: 120s
+      start_period: 300s
+      start_interval: 5s
       retries: 3
     command:
       - python
@@ -562,9 +575,10 @@ services:
     # does not have, so it is replaced: inherited, it could only ever be red.
     healthcheck:
       test: ["CMD", "python", "manage.py", "check_mcp_server", "--quiet"]
-      interval: 30s
+      interval: 6h
       timeout: 15s
-      start_period: 60s
+      start_period: 300s
+      start_interval: 5s
       retries: 3
     # Its OWN environment file, not `juristid.env`. That one holds the shared
     # gate password, the MFA key and the mail credentials; this process
@@ -658,9 +672,10 @@ services:
     command: ["python", "manage.py", "run_mcp_write_gateway"]
     healthcheck:
       test: ["CMD", "python", "manage.py", "check_mcp_write_gateway", "--quiet"]
-      interval: 30s
+      interval: 6h
       timeout: 15s
-      start_period: 60s
+      start_period: 300s
+      start_interval: 5s
       retries: 3
     # Its OWN environment file: its database role and password, its signing
     # key, the gateway key it shares with `mcp`. Nothing of juristid.env — no

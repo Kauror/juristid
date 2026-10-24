@@ -153,7 +153,11 @@ USER juristid
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
+# Probed every 6 h, not every 15 s: each probe starts a Python interpreter,
+# and nothing acts on the status while the container runs. `--start-interval`
+# probes every 5 s until the first pass, so a stack gated on `service_healthy`
+# still comes up in seconds (deploy/unraid-main/compose.yml says more).
+HEALTHCHECK --interval=6h --timeout=5s --start-period=300s --start-interval=5s --retries=5 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4).status == 200 else 1)"
 
 # Migrations are applied as a controlled deployment step, not on container
