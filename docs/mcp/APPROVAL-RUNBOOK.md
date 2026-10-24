@@ -93,7 +93,8 @@ proposal id.
   and the gateway refuses every call. Stopping only `mcp-writer` has the same
   effect for commits and prepares (the `mcp` process gets no answer).
 * **Every grant's write right, keeping the setting:** `manage.py mcp_access
-  revoke-all-writes` (agent A's kill switch); read access stays.
+  revoke-all-writes --reason "…"` (the write kill switch; `--reason` is
+  required); read access stays.
 * **One person:** `manage.py mcp_access revoke-write --user <upn> --reason "…"`.
   Their next prepare or commit is refused, including a proposal they already
   approved.

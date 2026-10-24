@@ -523,3 +523,25 @@ inventory_selected_bytes() {
   ( cd -- "$tree" && xargs -0 -r ls -ln ) <"$inventory" |
     awk '$5 ~ /^[0-9]+$/ { total += $5 } END { print total + 0 }'
 }
+
+# The roles a plain-SQL schema listing (`pg_restore --schema-only --file=-`)
+# names: every grantee, revokee and object owner, the grantor of a
+# `GRANTED BY`, and the role an `ALTER DEFAULT PRIVILEGES FOR ROLE` is for —
+# one per line, quotes removed, sorted, PUBLIC left out (it is not a role).
+#
+# Roles are cluster-wide and a database dump does not create them, so each of
+# these must exist before `pg_restore` runs, or its first GRANT to a missing
+# one fails the single-transaction restore (juristid-restore.sh, step 3).
+# Reads stdin; writes stdout.
+dump_roles() {
+  local ident='("[^"]+"|[A-Za-z_][A-Za-z0-9_$]*)' sql
+  sql="$(tr -d '\r')"
+  {
+    sed -nE "/^(GRANT|REVOKE|ALTER) / s/.*[[:space:]](TO|FROM)[[:space:]]+${ident}([[:space:]]+WITH GRANT OPTION)?([[:space:]]+GRANTED BY .*)?;\$/\2/p" <<<"$sql"
+    sed -nE "/^(GRANT|REVOKE) / s/.*[[:space:]]GRANTED BY[[:space:]]+${ident};\$/\1/p" <<<"$sql"
+    sed -nE "s/^ALTER DEFAULT PRIVILEGES FOR ROLE[[:space:]]+${ident}[[:space:]].*/\1/p" <<<"$sql"
+  } |
+    sed -E 's/^"(.*)"$/\1/' |
+    grep -vix 'public' |
+    LC_ALL=C sort -u || true
+}

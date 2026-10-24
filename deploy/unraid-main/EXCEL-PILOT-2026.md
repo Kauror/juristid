@@ -46,7 +46,9 @@ is the same folder as the container sees it (mounted read-only).
    origin and mode; Submissions; follow-ups; documents; every `accounts_*`
    table's row count. Record it beside the backup.
 2. **Hold the writers:** `$C stop web intake-reader searchindex intake-sweeper notifications`
-   (db and tunnel stay up).
+   (db and tunnel stay up). Where AI access is set up, also `$C stop mcp-tunnel mcp mcp-writer`:
+   `mcp-writer` writes and both hold connections to `juristid`, which the rename below
+   refuses. Start them again only by `docs/mcp/OPERATIONS.md`, after the last check.
 3. **The dedicated backup**, writers held:
    `scripts/deploy/juristid-backup.sh --project juristid-main --compose-file
    deploy/unraid-main/compose.yml --data-root /mnt/user/appdata/juristid-main
