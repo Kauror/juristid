@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 import pytest
 from django.urls import reverse
@@ -26,6 +27,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import scope_change_events
+from app.core.dates import format_estonian_date
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document
@@ -40,12 +42,13 @@ from app.workflow.follow_ups import (
     FOLLOW_UP_CLOSURE_WARNING,
     FOLLOW_UP_DATE_IN_THE_PAST,
     FOLLOW_UP_NEEDS_OUTCOME,
+    FOLLOW_UP_TEXT_MANY,
     FOLLOW_UP_TEXT_ONE,
     NEXT_CHECK_NEEDS_DATE,
     reschedule_check,
 )
 from app.workflow.models import NextAction, StageVocabulary
-from app.workflow.services import set_next_action_for_new_work
+from app.workflow.services import add_planned_action, set_next_action_for_new_work
 from tests import factories
 from tests.follow_ups import (
     PDF,
@@ -691,3 +694,95 @@ def test_a_moved_day_is_in_the_change_log_and_not_a_chronology_row(
         if item.event is not None
         and item.event.event_type == ChangeEventType.NEXT_ACTION_RESCHEDULED
     ]
+
+
+# ---------------------------------------------------------------------------
+# A corrected opinion redraws its check in PRAEGUNE TEGEVUS (bounty H-02)
+# ---------------------------------------------------------------------------
+
+
+def _correct_on_the_page(client, opinion, **changes):
+    """`Muuda` on «Arvamus välja» → Salvesta, the form as the page draws it."""
+    from tests.test_admin_is_not_a_back_door import _form
+
+    url = reverse(
+        "matters:update_sent_opinion",
+        kwargs={"pk": opinion.matter_id, "submission_id": opinion.pk},
+    )
+    data = {
+        key: value[0] if len(value) == 1 else value for key, value in _form(client, url).items()
+    }
+    return client.post(url, {**data, **changes}, headers={"HX-Request": "true"})
+
+
+def _oob_list(response) -> str:
+    body = response.content.decode()
+    match = re.search(r'<ul id="praegune-ootused"[^>]*hx-swap-oob="true"[^>]*>.*?</ul>', body, re.S)
+    assert match is not None, "the answer carries no out-of-band list"
+    return match.group(0)
+
+
+def test_a_corrected_sending_date_redraws_the_planned_check_without_a_reload(
+    signed_in, normal_matter, specialist, ministry
+):
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-10))
+    check = active_check(opinion)
+    assert check.target_date == day(20)
+    other = add_planned_action(
+        matter=normal_matter, text="Koondan vastused", target_date=day(40), actor=specialist
+    )
+
+    response = _correct_on_the_page(signed_in, opinion, sent_on=et(day(-5)))
+
+    assert response.status_code == 200
+    check.refresh_from_db()
+    assert check.target_date == day(25)
+    oob = _oob_list(response)
+    row = _row(oob, check)
+    # The check's own row comes drawn afresh — its new day, its own controls
+    # and the opinion's corrected line — and not as a placeholder the page
+    # would answer with the element it already holds.
+    assert "hx-preserve" not in row.split(">", 1)[0]
+    assert format_estonian_date(day(25)) in row
+    assert not re.search(rf"(?<!\d){re.escape(format_estonian_date(day(20)))}", row)
+    assert f'id="jarelkontroll-kuupaev-{check.pk}"' in row
+    assert f"Koja arvamus {format_estonian_date(day(-5))}" in row
+    # Every other row keeps what is typed in it.
+    assert f'id="tegevus-{other.pk}" hx-preserve' in oob
+
+
+def test_a_corrected_summary_alone_leaves_the_check_row_to_the_page(
+    signed_in, normal_matter, specialist, ministry
+):
+    """Nothing on the check row comes from the summary, so the row stays the page's.
+
+    Redrawing it would close its open `✓ Tehtud` and drop what is typed there.
+    """
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-10))
+    check = active_check(opinion)
+
+    response = _correct_on_the_page(signed_in, opinion, summary="Parandatud kokkuvõte.")
+
+    assert response.status_code == 200
+    opinion.refresh_from_db()
+    assert opinion.summary == "Parandatud kokkuvõte."
+    row = _row(_oob_list(response), check)
+    assert f'id="jarelkontroll-kuupaev-{check.pk}"' not in row
+
+
+def test_a_corrected_addressee_list_rewords_the_current_check_on_the_page(
+    signed_in, normal_matter, specialist, ministry
+):
+    committee = factories.OrganisationFactory(name="Sünteetiline komisjon")
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-3))
+    check = _current(active_check(opinion))
+
+    response = _correct_on_the_page(
+        signed_in, opinion, recipients=[str(ministry.pk), str(committee.pk)]
+    )
+
+    assert response.status_code == 200
+    row = _row(_oob_list(response), check)
+    assert FOLLOW_UP_TEXT_MANY in row
+    assert "Sünteetiline komisjon" in row
+    assert f'id="jarelkontroll-tehtud-{check.pk}"' in row

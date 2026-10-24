@@ -19,7 +19,7 @@ import functools
 import unicodedata
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, date, timedelta
+from datetime import date, timedelta
 from typing import Any, cast
 
 from django import forms
@@ -80,6 +80,7 @@ from app.documents.filenames import NFC
 from app.documents.models import Document
 from app.documents.pending import human_size
 from app.documents.services import (
+    DocumentFormAlreadySaved,
     link_working_document,
     offered_document_roles,
 )
@@ -192,10 +193,12 @@ from app.matters.initiative import (
     names_koda_proposal,
 )
 from app.matters.intake import (
+    IncomingFormAlreadySubmitted,
+    check_incoming_batch,
     file_incoming,
     file_new_matter,
+    read_incoming_files,
     register_incoming,
-    validate_uploads,
 )
 from app.matters.intake_suggestions import (
     CurrentValues,
@@ -239,6 +242,8 @@ from app.matters.removal import (
     remove_matter_record,
 )
 from app.matters.response_deadlines import (
+    OUTCOME_REFUSALS,
+    StaleDeadline,
     answerable_submissions,
     change_response_deadline,
     deadline_revision,
@@ -330,7 +335,7 @@ from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.consistency import current_work_alerts
 from app.workflow.enums import PlanStepOperation, Track
-from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed
+from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed, pending_checks
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.selectors import stages_including
 from app.workflow.services import acknowledge_review
@@ -718,14 +723,36 @@ def intake(request: HttpRequest) -> HttpResponse:
 
     Every upload is validated *before* anything is written, so a rejected file
     cannot leave a half-made Matter behind looking like real work.
+
+    **A refusal keeps the files** (app/documents/pending.py), as on `Uus
+    teema`: a browser cannot put a file back into a file input, so the good
+    files of a refused save are held and the re-rendered form names them with
+    their `pending` keys. The corrected save files them without a re-pick.
     """
     form = IncomingIntakeForm(request.POST or None, viewer=request.user)
 
     if request.method == "POST":
-        files = request.FILES.getlist("uploads")
-        if form.is_valid():
+        # **This form, exactly once** (ENG-074, docs/adr/0112): the drawn
+        # form's `intake` token is claimed by `register_incoming` before any
+        # row or reference number is written. A refused save re-renders with
+        # the same token, so the corrected save is protected like the first.
+        posted_token = (request.POST.get("intake") or "").strip()
+        # A form already saved is answered with its Teema before anything it
+        # carries is checked: the first save released the files it held, so a
+        # replay of a corrected save names none and would otherwise be refused
+        # «Vali vähemalt üks fail.» right after the Teema was filed (V-02).
+        spent = intake_staging.spent_token(owner=request.user, session_id=posted_token)
+        if spent is not None:
+            return _answer_repeated_create(request, spent)
+        # What an earlier refusal is holding and this attempt still wants. A
+        # key this session is not holding is simply not there.
+        asked = [key for key in request.POST.getlist("pending") if key]
+        held_keys = [item.key for item in pending_uploads.describe(request.session, asked)]
+        chosen, refusals = read_incoming_files(request.FILES.getlist("uploads"))
+        if form.is_valid() and not refusals:
             try:
-                uploads = validate_uploads(files)
+                uploads = [*pending_uploads.resume(request.session, held_keys), *chosen]
+                check_incoming_batch(uploads)
                 data = form.cleaned_data
                 result = register_incoming(
                     uploads=uploads,
@@ -753,24 +780,53 @@ def intake(request: HttpRequest) -> HttpResponse:
                     # background sequence behind `Soovitatud järgmisena` is
                     # seeded, as on `Uus teema` (docs/adr/0133 §5, 0141).
                     seed_plan=True,
+                    form_token=posted_token,
                 )
+            except IncomingFormAlreadySubmitted as replay:
+                # The Teema the first submission filed, never a second one.
+                return _answer_repeated_create(request, replay.session)
             except DomainError as error:
-                messages.error(request, str(error))
+                refusals.append(str(error))
             else:
+                # The save survived, so the hold is over.
+                pending_uploads.release(request.session, held_keys)
                 messages.success(
                     request,
                     f"Teema „{result.matter.title}” loodud · {result.documents} faili lisatud.",
                 )
                 return redirect("matters:matter_detail", pk=result.matter.pk)
 
+        # Refused: the files that passed are held for the corrected save,
+        # unless the volume is full — then the person is told (docs/adr/0177).
+        hold_refusals: list[str] = []
+        newly_held = pending_uploads.hold(request.session, chosen, refusals=hold_refusals)
+        for refusal in [*refusals, *hold_refusals]:
+            messages.error(request, refusal)
+        held_keys = [*held_keys, *(item.key for item in newly_held)]
         return render(
             request,
             "matters/intake.html",
-            {"form": form, "nav_active": "saabunud"},
+            {
+                "form": form,
+                "nav_active": "saabunud",
+                "held_files": pending_uploads.describe(request.session, held_keys),
+                "intake_token": intake_staging.kept_token(
+                    owner=request.user, session_id=posted_token
+                ).pk,
+            },
             status=400,
         )
 
-    return render(request, "matters/intake.html", {"form": form, "nav_active": "saabunud"})
+    # Every rendered form carries its own one-time token (ENG-074).
+    return render(
+        request,
+        "matters/intake.html",
+        {
+            "form": form,
+            "nav_active": "saabunud",
+            "intake_token": intake_staging.open_session(owner=request.user).pk,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1732,7 +1788,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
 
     # Applied first, so everything below narrows an already-searched population
     # and the count beside the box is the count of the list under it.
-    query = (params.get("q") or "").strip()
+    # Through the search module's own gate (E-07): a query it refuses — longer
+    # than `MAX_QUERY_CHARACTERS` — is never run, and the page says so in the
+    # words `/otsing/` uses rather than «0 teemat … ei andnud tulemusi», which
+    # would claim the register holds nothing for a question nobody asked it.
+    raw_query = params.get("q") or ""
+    query = search_services.clean_query(raw_query)
+    query_was_refused = bool(raw_query.strip()) and not query
+    if query_was_refused:
+        queryset = queryset.none()
     if query:
         # **Searched once per request** (QRY-06). Composed as a subquery, the
         # search ran inside every statement that read the register — the rows,
@@ -1807,6 +1871,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "paginator": paginator,
         "total": paginator.count,
         "query": query,
+        "query_was_refused": query_was_refused,
+        "max_query_characters": search_services.MAX_QUERY_CHARACTERS,
         "query_string": query_without_page.urlencode(),
         "cleared_query": cleared.urlencode(),
         # The free-text chip's own `×`, built like every sibling chip's rather
@@ -4127,11 +4193,12 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             # Only the years this Matter actually has files from. A dropdown
             # offering ten empty years is a dropdown that teaches people the
             # filter does not work.
-            # Asked of the database, as the year each row's stored moment has
-            # in UTC — which is what `created_at.year` on the loaded rows used
-            # to answer.
+            # Asked of the database, in the active zone (Europe/Tallinn) — the
+            # same year `created_at__year` filters on above and the row's date
+            # prints. In UTC a file uploaded 1.01 at 00:30 was offered as the
+            # year before and then filtered out of it (bounty A-03).
             "document_years": list(
-                documents.annotate(created_year=ExtractYear("created_at", tzinfo=UTC))
+                documents.annotate(created_year=ExtractYear("created_at"))
                 .order_by("-created_year")
                 .values_list("created_year", flat=True)
                 .distinct()
@@ -4147,6 +4214,10 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
                 applied_filters, roll_labels=dict(_role_filter_choices())
             ),
             "working_document_form": WorkingDocumentForm(),
+            # Each add form's one-time token (`salvestus`): a replayed or
+            # double-sent save of the same drawn form adds no second Document
+            # (`documents.services.spend_document_form`).
+            "document_save_once_tokens": {"dokument": uuid.uuid4(), "toodokument": uuid.uuid4()},
             "can_write": may_write_business_content(request.user),
             # Two different questions, and this page has to ask both.
             #
@@ -4531,6 +4602,24 @@ def _engagement_row(
         },
         status=status,
     )
+    return _with_current_work_rows(request, matter, response)
+
+
+def _with_current_work_rows(
+    request: HttpRequest,
+    matter: Matter,
+    response: HttpResponse,
+    *,
+    redraw: Sequence[Any] = (),
+) -> HttpResponse:
+    """`response` with `PRAEGUNE TEGEVUS`'s date-ordered list out of band.
+
+    ``redraw`` names follow-up checks (`NextAction` ids) whose rows the save
+    itself changed, so the page's own element would be the stale one: they
+    are sent drawn in full — day, words, controls, the opinion's line — and
+    without `hx-preserve`. Every other row keeps the page's element, with
+    whatever is typed in it.
+    """
     # The round's answer changes what `PRAEGUNE TEGEVUS` says it is waiting on:
     # finished, given a reply-by day, or a deadline moved or cleared. Only the
     # row is swapped, so the zone's date-ordered list rides along out of band
@@ -4542,18 +4631,37 @@ def _engagement_row(
     # anything typed in them included, and only their position is new. A closed
     # file draws no such list, so nothing is sent for one.
     if matter.is_open and request.headers.get("HX-Request"):
+        current_action = selectors.current_action_of(matter, request.user)
+        planned_actions = selectors.planned_actions_of(matter, request.user)
+        # Only rows this reader is drawn anyway: `redraw` narrows the
+        # preservation and never adds a row the scoped reads left out.
+        named = set(redraw)
+        fresh = [
+            action
+            for action in (current_action, *planned_actions)
+            if action is not None and action.follow_up_id and action.pk in named
+        ]
+        _attach_follow_up_forms(fresh, request.user)
         response.content += render_to_string(
             "matters/partials/current_work_rows.html",
             {
                 "matter": matter,
                 "work_rows": chronological_rows(
-                    current_action=selectors.current_action_of(matter, request.user),
+                    current_action=current_action,
                     feedback_waits=_feedback_waits_of(request, matter),
-                    planned_actions=selectors.planned_actions_of(matter, request.user),
+                    planned_actions=planned_actions,
                 ),
                 # `Tehtud` on each waiting line is a write control.
                 "can_write": may_write_business_content(request.user),
                 "oob": True,
+                "redraw_rows": {action.pk for action in fresh},
+                # A redrawn current check brings the read-only alerts drawn
+                # under the step, as the page render does (docs/adr/0161).
+                "consistency_alerts": (
+                    current_work_alerts(matter, current_action, request.user)
+                    if current_action is not None and current_action in fresh
+                    else []
+                ),
             },
             request=request,
         ).encode(response.charset or "utf-8")
@@ -6041,6 +6149,8 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
+        if _reopens_on_refusal(field, matter):
+            _reopen_header_editor(context, request, editor=field, error=_first_error(form, field))
         return render(request, surface, context, status=400)
 
     value = form.cleaned_data.get(field)
@@ -6102,6 +6212,8 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
+        if _reopens_on_refusal(field, matter):
+            _reopen_header_editor(context, request, editor=field, error=str(error))
         return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
@@ -6154,6 +6266,9 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
     if not form.is_valid():
         context = _header_context(request, matter)
         context["field_error"] = "Vigane väärtus."
+        _reopen_header_editor(
+            context, request, editor="response_deadline", error=_first_error(form)
+        )
         return render(request, "matters/partials/header.html", context, status=400)
     data = form.cleaned_data
     if (
@@ -6191,10 +6306,26 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
                 previous_note=data.get("previous_note") or "",
                 expected_revision=data.get("revision") or None,
             )
+    except StaleDeadline as error:
+        # The deadline moved under this form. Redrawn from what is stored, the
+        # editor closed and nothing posted echoed: reopening it with the choices
+        # made about the old deadline, under a fresh revision, would let one more
+        # click apply them to a deadline this person never saw.
+        matter.refresh_from_db()
+        context = _header_context(request, matter)
+        context["field_error"] = str(error)
+        return render(request, "matters/partials/header.html", context, status=400)
     except DomainError as error:
         matter.refresh_from_db()
         context = _header_context(request, matter)
         context["field_error"] = str(error)
+        _reopen_header_editor(
+            context,
+            request,
+            editor="response_deadline",
+            error=str(error),
+            about="outcome" if str(error) in OUTCOME_REFUSALS else "date",
+        )
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
     if _on_documents_tab(request):
@@ -6205,6 +6336,58 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
     response["HX-Retarget"] = "#teema-vaade"
     response["HX-Reswap"] = "outerHTML"
     return response
+
+
+#: `update_field` fields whose header editor reopens on a refusal (E-04).
+#:
+#: A refusal used to redraw the header from the stored values: the editor
+#: closed, the typed date reverted, and the message stood detached above a band
+#: that no longer showed what it was about. These editors come back open, with
+#: what was posted and the reason beside the field, so correcting the one thing
+#: refused is one more Salvesta rather than retyping everything. A conflict
+#: (409) still redraws from what is stored — there the stored value is the news.
+_REOPENED_ON_REFUSAL = frozenset({"received_date"})
+
+
+def _reopens_on_refusal(field: str, matter: Matter) -> bool:
+    """Whether ``field``'s header editor is drawn, and so can carry the refusal.
+
+    `Saabus` is not drawn on a Chamber initiative that holds no date
+    (docs/adr/0151 §3): there the refusal stays in the banner, or nobody would
+    see it.
+    """
+    if field not in _REOPENED_ON_REFUSAL:
+        return False
+    if field == "received_date":
+        return not is_koda_initiative(matter) or matter.received_date is not None
+    return True
+
+
+def _first_error(form: Any, field: str | None = None) -> str:
+    """The form's own words for what it refused, or the generic refusal."""
+    errors = form.errors.get(field, []) if field else [e for v in form.errors.values() for e in v]
+    return str(errors[0]) if errors else "Vigane väärtus."
+
+
+def _reopen_header_editor(
+    context: dict[str, Any],
+    request: HttpRequest,
+    *,
+    editor: str,
+    error: str,
+    about: str = "date",
+) -> None:
+    """Draw ``editor`` open again, filled with what was posted, the error beside it.
+
+    `templates/matters/partials/header.html` reads ``reopen``: the editor named
+    here renders ``<details open>`` with ``reopen.values`` (the POST) in its
+    controls — the date, and for `Arvamuse tähtaeg` the change, outcome,
+    opinion and note too — and the reason inside the form instead of the
+    detached banner above the band. ``about`` names the control the reason is
+    about: ``"date"``, or ``"outcome"`` for a refusal of «Mis sai tähtajast»,
+    which then carries the error and ``aria-invalid`` instead of the date box.
+    """
+    context["reopen"] = {"editor": editor, "error": error, "values": request.POST, "about": about}
 
 
 def _apply_inline_field(
@@ -6421,8 +6604,12 @@ def add_working_document(request: HttpRequest, pk: Any) -> HttpResponse:
                 web_url=form.cleaned_data["web_url"],
                 site_path=form.cleaned_data.get("site_path") or "",
                 created_by=request.user,
+                # One drawn form, one reference (`spend_document_form`).
+                once_token=_posted_once_token(request),
             )
             messages.success(request, "Töödokumendi viide on lisatud.")
+        except DocumentFormAlreadySaved as replay:
+            messages.info(request, str(replay))
         except DomainError as error:
             messages.error(request, str(error))
     else:
@@ -8698,7 +8885,13 @@ def update_external_position_view(request: HttpRequest, pk: Any, position_id: An
             request, matter, position, form=form, error=str(error), status=400
         )
 
-    return _external_position_row(request, matter, corrected)
+    # A correction can move the answer that finished a round's wait off that
+    # round, which reopens it (docs/adr/0167, amendment of 2026-10-24), or onto
+    # an open one, which finishes it — so the zone's list rides along exactly
+    # as it does for the round's own row.
+    return _with_current_work_rows(
+        request, matter, _external_position_row(request, matter, corrected)
+    )
 
 
 def _koda_opinion_recipients(form: Any) -> list[Any]:
@@ -9604,6 +9797,9 @@ def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) 
         )
 
     form = _sent_opinion_edit_form(request, submission, request.POST)
+    # What the opinion's check reads from it, before the correction: its day,
+    # its words and the line naming the opinion under it (docs/adr/0146 §6).
+    check_inputs_before = _check_inputs_of(submission)
     if not form.is_valid():
         return _sent_opinion_row(request, matter, submission, form=form, status=400)
 
@@ -9653,7 +9849,35 @@ def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) 
         )
 
     submission.refresh_from_db()
-    return _sent_opinion_row(request, matter, submission)
+    # A corrected day or addressee list moves the opinion's check — its day
+    # while nobody chose one, its words with the addressees, and always the
+    # line naming the opinion under it (docs/adr/0146 §6). Only the row is
+    # swapped, so `PRAEGUNE TEGEVUS` rides along with this opinion's live
+    # checks drawn afresh; every other row keeps what is typed in it.
+    # A correction of the summary alone changes nothing a check row shows, and
+    # redrawing it would drop what is typed in its open `✓ Tehtud`.
+    redraw = (
+        list(
+            pending_checks(matter)
+            .filter(follow_up__submission=submission)
+            .values_list("pk", flat=True)
+        )
+        if _check_inputs_of(submission) != check_inputs_before
+        else []
+    )
+    return _with_current_work_rows(
+        request, matter, _sent_opinion_row(request, matter, submission), redraw=redraw
+    )
+
+
+def _check_inputs_of(submission: Any) -> tuple[Any, ...]:
+    """The parts of a sent opinion its follow-up check row is drawn from."""
+    return (
+        submission.sent_at,
+        submission.sent_at_precision,
+        submission.kind,
+        frozenset(submission.recipients.values_list("pk", flat=True)),
+    )
 
 
 @login_required

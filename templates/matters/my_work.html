@@ -222,7 +222,7 @@ The rail holds only what has no honest place on a timeline.
               {% if is_self %}Otsi minu asjadest{% else %}Otsi {{ subject|name_among:colleagues }} asjadest{% endif %}
             </label>
             <input id="pw-search" type="search" autocomplete="off"
-                   data-filter-rows=".pw-matters"
+                   data-filter-rows=".pw-matters" data-filter-empty="pw-search-empty"
                    placeholder="{% if is_self %}Otsi minu asjadest…{% else %}Otsi asjadest…{% endif %}">
           </div>
         </div>
@@ -253,6 +253,8 @@ The rail holds only what has no honest place on a timeline.
             </div>
           </details>
         {% endif %}
+        {# Shown by the filter above when no row on the page matches it (static/js/ux.js). #}
+        <p class="workempty" id="pw-search-empty" role="status" hidden>Ükski teema ei vasta otsingule.</p>
         {% if work.portfolio.beyond_cap %}
           {% comment %}
             Past the render cap (`PORTFOLIO_LIMIT`, 2026-10-17 audit JPERF-005):

@@ -217,3 +217,35 @@ step-launched `Alusta kaasamist`). `test_lisa_muu.py`'s
 `test_a_repeated_identical_post_writes_its_own_row` and
 `test_lisa_tagasiside_unified.py`'s `test_standalone_positions_may_repeat`
 encoded the earlier rule and were changed to this one.
+
+## Amendment of 2026-10-23 — removing the answer that finished the wait (bug-bounty C-02)
+
+§2.2's «never reopened» is about a *later answer*. A removed answer is a
+record that «never belonged on this file» (docs/adr/0102 §1), so the finish its
+recording caused goes with it: `Kustuta` on a `Lisa tagasiside` answer reopens
+the round's wait (`feedback_closed_at`/`_by` cleared, one `ENGAGEMENT_CHANGED`
+with `wait_reopened` and `reason: reply_removed`) when the round's latest
+`ENGAGEMENT_FEEDBACK_CLOSED` row names that answer as its `closing_reply` — a
+key `finish_wait_on_reply` now writes on the closure it causes — the named
+answer is removed, and no live answer is left on the round
+(`engagement_replies.reopen_wait_after_reply_removed`, under the Matter's lock
+the removal holds). A round a person finished with `Lõpeta kaasamine`, one the
+Matter's closure ended, one that still has a live answer, and one closed before
+this amendment (whose closure names no answer) are left as they are. **No
+migration**: the key lives in the existing audit payload.
+
+## Amendment of 2026-10-24 — moving the answer that finished the wait (bug-bounty R2-02)
+
+`Muuda` on an answer may change `Seotud kaasamine` to another round or to «Ei
+ole seotud kaasamisega». Seen from the round it left that is the same as the
+removal above, so it has the same effect: when the round's latest closure names
+an answer (`closing_reply`) that is no longer a live answer on the round —
+removed **or moved** — and no live answer is left there, the wait is reopened
+(`ENGAGEMENT_CHANGED`, `wait_reopened`, `reason: reply_moved`;
+`engagement_replies.reopen_wait_after_reply_moved`, called by
+`correct_external_position` under the Matter's lock it holds). The round the
+answer now names is treated as §2.2 treats any recorded answer to it: if it is
+open, this is its first answer and finishes its wait through
+`finish_wait_on_reply` (the closure naming this answer, so moving it back
+reopens it); a finished round keeps its closure. A round a person finished,
+and one with another live answer, are left as they are. No migration.

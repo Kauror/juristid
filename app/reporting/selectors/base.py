@@ -30,14 +30,16 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 
 from django.core.exceptions import EmptyResultSet
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Max, Min, Q, QuerySet
 from django.urls import reverse
 
 from app.core.authorization import scoped_count
+from app.core.dates import format_estonian_date
 from app.matters.enums import REGISTER_YEAR_ORIGINS, RecordMode
 from app.matters.models import Matter
 from app.matters.selectors import DATA_CLASS_REAL, UNKNOWN_YEAR, register_year_q
@@ -391,6 +393,50 @@ def merge_chip_params(params: dict[str, str], overrides: dict[str, str]) -> dict
             return None
         merged[key] = chip
     return merged
+
+
+def received_url(
+    context: ReportingContext, definition: MetricDefinition, start: date, end: date
+) -> str:
+    """A register link for an intake figure measured on ``received_date`` (E-06).
+
+    `?saabus_alates=` / `?saabus_kuni=` select on the same column the figure was
+    counted on, both ends included, and a date range admits only rows that have
+    a date — which is what «saabumise kuupäev on teada» asked. `aasta` is
+    dropped: the register's year is the reporting year, another column. The
+    record mode and origin are the definition's own eligibility, so the list
+    and the figure are one population.
+    """
+    overrides = {
+        "aasta": "",
+        "saabus_alates": format_estonian_date(start),
+        "saabus_kuni": format_estonian_date(end),
+    }
+    if definition.eligible_record_modes:
+        overrides["liik"] = ",".join(definition.eligible_record_modes)
+    if definition.eligible_origins:
+        overrides["paritolu"] = ",".join(definition.eligible_origins)
+    return register_url(context, **overrides)
+
+
+def received_span_url(
+    context: ReportingContext, definition: MetricDefinition, counted: QuerySet[Matter]
+) -> str:
+    """`received_url` over the period ``counted`` was narrowed to.
+
+    A bounded period is its own range, with no query: every row counted lies
+    inside it and no row outside the count can (the Statistika page's query
+    budget, tests/test_work_pages_at_scale.py). «Kogu aeg» has no bounds, so
+    there the range is the first and last measured arrival day, one aggregate;
+    empty when nothing was counted.
+    """
+    start, end = context.period.start_date, context.period.end_date
+    if not context.period.is_all and start is not None and end is not None:
+        return received_url(context, definition, start, end)
+    span = counted.order_by().aggregate(first=Min("received_date"), last=Max("received_date"))
+    if span["first"] is None or span["last"] is None:
+        return ""
+    return received_url(context, definition, span["first"], span["last"])
 
 
 def unknown_year_url(context: ReportingContext) -> str:

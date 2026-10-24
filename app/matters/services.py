@@ -2818,6 +2818,7 @@ def _close_one_feedback_wait(
     actor: Any,
     reason: str,
     feedback_received: Any = _UNSET,
+    closing_reply: Any = None,
 ) -> MatterEngagement:
     """Write the closure on one already-locked row, and audit it.
 
@@ -2834,6 +2835,12 @@ def _close_one_feedback_wait(
     ``feedback_received`` is `_UNSET` for the Matter-closure path, which writes
     no words of anybody's: a file being shut is not a statement about what came
     back (docs/adr/0086 §7).
+
+    ``closing_reply`` is the `Lisa tagasiside` answer whose recording finished
+    the wait (docs/adr/0167 §2.2), named in the payload by identifier. It is
+    what lets removing that answer as a mistake reopen the wait it alone
+    finished (`engagement_replies.reopen_wait_after_reply_removed`, docs/adr/0102
+    §1) without ever reopening a round a person finished.
     """
     engagement.feedback_closed_at = timezone.now()
     engagement.feedback_closed_by = actor
@@ -2860,6 +2867,7 @@ def _close_one_feedback_wait(
             "closed_at": engagement.feedback_closed_at.isoformat(),
             # Whether anything was written down, never what it said.
             "has_feedback_received": bool(engagement.feedback_received),
+            **({"closing_reply": str(closing_reply.pk)} if closing_reply is not None else {}),
         },
     )
     return engagement
@@ -2872,6 +2880,7 @@ def complete_engagement_feedback(
     feedback_received: Any = _UNSET,
     actor: Any = None,
     expected_revision: str | None = None,
+    closing_reply: Any = None,
 ) -> MatterEngagement:
     """`Lõpeta kaasamine` — a person says this consultation round is finished.
 
@@ -2918,6 +2927,10 @@ def complete_engagement_feedback(
       :data:`ENGAGEMENT_FEEDBACK_ALREADY_CLOSED`. A second press writes no
       second audit row and does not move the timestamp, so «who ended this round
       and when» keeps one answer.
+
+    ``closing_reply`` is set only by `engagement_replies.finish_wait_on_reply`:
+    the answer whose recording finished the wait, recorded on the closure's
+    audit row (`_close_one_feedback_wait`).
     """
     locked_matter = lock_open_matter_for_business_write(engagement.matter_id)
     try:
@@ -2945,6 +2958,7 @@ def complete_engagement_feedback(
         actor=actor,
         reason=FEEDBACK_CLOSED_BY_PERSON,
         feedback_received=feedback_received,
+        closing_reply=closing_reply,
     )
     # The caller's own instance, kept in step with the row — the discipline
     # :func:`update_engagement` keeps, and for the same reason: a view that goes
@@ -4673,6 +4687,7 @@ def correct_external_position(
         payload["engagement_to"] = str(related.pk) if related is not None else None
 
     url_from = current.url
+    engagement_from_id = current.engagement_id
     # `Allikas` and `Juristi märkus` are in `fields` by name and nowhere else in
     # this payload, deliberately. The first is short enough to copy and is still
     # the record's to correct; the second is this office's own words, and an
@@ -4706,6 +4721,25 @@ def correct_external_position(
             summary=current.link_label[:200],
             payload={"url_from": url_from or None, "url_to": current.url or None},
         )
+    if "engagement_id" in changed:
+        # **An answer moved between rounds takes its effect on the waits with
+        # it** (bug-bounty R2-02, docs/adr/0167 §2 and its 2026-10-23
+        # amendment). The round it left is reopened exactly as `Kustuta` would
+        # reopen it — only if this answer (or one that left earlier) finished
+        # it and no live answer is left there. The round it now answers is
+        # treated as `Lisa tagasiside` treats it: the first answer to an open
+        # round finishes its wait; a finished one keeps its closure. Under the
+        # Matter's lock taken above, then the round rows: the removal's order.
+        from app.matters import engagement_replies
+
+        engagement_replies.reopen_wait_after_reply_moved(
+            position=current,
+            from_engagement_id=engagement_from_id,
+            matter=locked_matter,
+            actor=actor,
+        )
+        if related is not None and current.removed_at is None:
+            engagement_replies.finish_wait_on_reply(engagement=related, actor=actor, reply=current)
     return current
 
 

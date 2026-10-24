@@ -299,3 +299,97 @@ def test_every_next_step_fragment_is_one_the_arrival_handler_opens():
     # tegevus` inside it — and never `+ Lisa`, whose default is a deadline.
     assert {"praegune-tegevus", "lisa-jargmine"} <= known, known
     assert "lisa-marge" not in known, known
+
+
+# ---------------------------------------------------------------------------
+# A planned row's menu opens that planned row, never the current step
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("surface", ["my_work", "person_work"])
+def test_a_planned_rows_menu_opens_its_own_forms_and_not_the_current_steps(
+    client, specialist, department_head, today, surface
+):
+    """`Lisa tulemus…` / `Muuda` on a planned row name that row's own panels.
+
+    A planned action is not the current step (docs/adr/0143). Its result is
+    recorded with its own `✓ Tehtud` and its words changed with its own `Muuda`
+    (docs/adr/0144 §1) — `planeeritud-tehtud-<pk>` and `planeeritud-<pk>` on the
+    Teema page. The menu linked both to the current step's forms
+    (`#praegune-tegevus`, `#lisa-jargmine`), so recording the planned call's
+    result finished the current step instead and promoted the planned one
+    (bounty A-01). Minu asjad and a person's work list share the row.
+    """
+    from app.workflow.services import add_planned_action
+
+    matter = create_matter(title="Plaaniga teema", owner=specialist, reference_year=2026)
+    set_next_action(
+        matter=matter,
+        text="Kohtumine ministeeriumiga",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=today + timedelta(days=6),
+        actor=specialist,
+    )
+    planned = add_planned_action(
+        matter=matter,
+        text="Helistan ministeeriumi",
+        target_date=today + timedelta(days=3),
+        actor=specialist,
+    )
+
+    if surface == "my_work":
+        client.force_login(specialist)
+        url = reverse("matters:my_work")
+    else:
+        client.force_login(department_head)
+        url = reverse("matters:person_work", kwargs={"pk": specialist.pk})
+    body = _body(client, url)
+
+    rows = {
+        text: chunk
+        for chunk in body.split('<div class="workrow2')[1:]
+        for text in ("Helistan ministeeriumi", "Kohtumine ministeeriumiga")
+        if f'<span class="workrow2__action">{text}</span>' in chunk
+    }
+    assert set(rows) == {"Helistan ministeeriumi", "Kohtumine ministeeriumiga"}, rows.keys()
+
+    matter_path = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    planned_row = rows["Helistan ministeeriumi"]
+    assert f'href="{matter_path}#planeeritud-tehtud-{planned.pk}">Lisa tulemus…<' in planned_row
+    assert f'href="{matter_path}#planeeritud-{planned.pk}">Muuda<' in planned_row
+    assert "#praegune-tegevus" not in planned_row
+    assert "#lisa-jargmine" not in planned_row
+
+    # The current step's row still names the current step's forms.
+    current_row = rows["Kohtumine ministeeriumiga"]
+    assert f'href="{matter_path}#praegune-tegevus">Lisa tulemus…<' in current_row
+    assert f'href="{matter_path}#lisa-jargmine">Muuda<' in current_row
+
+    # And the Teema page draws both planned panels, each posting to this
+    # planned action and nothing else.
+    client.force_login(specialist)
+    detail = _body(client, matter_path)
+    done_url = reverse(
+        "matters:complete_planned_action", kwargs={"pk": matter.pk, "action_id": planned.pk}
+    )
+    after_done_id = detail.split(f'id="planeeritud-tehtud-{planned.pk}"', 1)[1]
+    done_panel = after_done_id.split("</details>", 1)[0]
+    assert f'hx-post="{done_url}"' in done_panel
+    assert f'id="planeeritud-{planned.pk}"' in detail
+
+
+def test_the_arrival_handler_opens_a_planned_rows_panels():
+    """`ux.js` opens the planned panels the row menu now names (bounty A-01)."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    source = (Path(settings.BASE_DIR) / "static" / "js" / "ux.js").read_text(encoding="utf-8")
+    declaration = re.search(r"PLANNED_TARGET\s*=\s*/(.*?)/;", source)
+    assert declaration, "ux.js no longer recognises a planned row's arrival"
+    pattern = re.compile(declaration.group(1))
+    pk = "0b7b7f2e-4b1a-4c55-9d7e-0d4f0e6b1c2a"
+    assert pattern.match(f"planeeritud-tehtud-{pk}")
+    assert pattern.match(f"planeeritud-{pk}")
+    assert not pattern.match(f"jarelkontroll-{pk}")

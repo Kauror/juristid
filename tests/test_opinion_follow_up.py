@@ -735,6 +735,105 @@ def test_correcting_title_recipients_or_kind_schedules_no_second_check(
     assert active_check(opinion).target_date == day(27)
 
 
+def _correct_addressees(opinion, actor, addressees, **changes):
+    opinion.refresh_from_db()
+    return correct_sent_opinion(
+        submission=opinion,
+        sent_at=opinion.sent_at,
+        sent_at_precision=opinion.sent_at_precision,
+        summary=opinion.summary,
+        kind=changes.pop("kind", opinion.kind),
+        addressees=addressees,
+        actor=actor,
+        expected_revision=sent_opinion_revision(opinion),
+    )
+
+
+def test_a_second_addressee_corrected_in_rewords_the_check_in_the_plural(
+    normal_matter, specialist, ministry, committee
+):
+    """Bounty H-03: the sentence followed the send's count, not the corrected one."""
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-3))
+    check = active_check(opinion)
+    assert check.text == FOLLOW_UP_TEXT_ONE
+
+    _correct_addressees(opinion, specialist, [ministry, committee])
+
+    check.refresh_from_db()
+    assert check.text == FOLLOW_UP_TEXT_MANY
+    # The same check, in place: its day and status are what they were.
+    assert (check.pk, check.target_date, check.status) == (
+        active_check(opinion).pk,
+        day(27),
+        ActionStatus.PLANNED,
+    )
+    event = ChangeEvent.objects.get(
+        event_type=ChangeEventType.SUBMISSION_RECIPIENTS_CHANGED, object_id=opinion.pk
+    )
+    assert event.payload["follow_up_checks"] == [
+        {
+            "id": str(check.pk),
+            "from": FOLLOW_UP_TEXT_ONE,
+            "to": FOLLOW_UP_TEXT_MANY,
+            "follow_up": str(check.follow_up_id),
+        }
+    ]
+
+    _correct_addressees(opinion, specialist, [committee])
+
+    check.refresh_from_db()
+    assert check.text == FOLLOW_UP_TEXT_ONE
+
+
+def test_a_corrected_kind_rewords_the_check_for_a_proposal(normal_matter, specialist, ministry):
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-3))
+    check = active_check(opinion)
+
+    _correct_addressees(opinion, specialist, [ministry], kind=SubmissionKind.KODA_PROPOSAL)
+
+    check.refresh_from_db()
+    assert check.text == follow_ups.FOLLOW_UP_PROPOSAL_TEXT
+    event = ChangeEvent.objects.get(
+        event_type=ChangeEventType.SUBMISSION_CORRECTED, object_id=opinion.pk
+    )
+    assert event.payload["follow_up_checks"][0]["to"] == follow_ups.FOLLOW_UP_PROPOSAL_TEXT
+
+
+def test_a_check_worded_by_a_person_keeps_its_words_through_a_recipient_correction(
+    normal_matter, specialist, ministry, committee
+):
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-3))
+    check = active_check(opinion)
+    own_words = "Helista ministeeriumi nõunikule ja küsi vastuse kohta"
+    NextAction.objects.filter(pk=check.pk).update(text=own_words)
+
+    _correct_addressees(opinion, specialist, [ministry, committee])
+
+    check.refresh_from_db()
+    assert check.text == own_words
+    event = ChangeEvent.objects.get(
+        event_type=ChangeEventType.SUBMISSION_RECIPIENTS_CHANGED, object_id=opinion.pk
+    )
+    assert "follow_up_checks" not in event.payload
+
+
+def test_a_completed_check_keeps_its_words_and_only_the_live_one_is_reworded(
+    normal_matter, specialist, ministry, committee
+):
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-3))
+    first = active_check(opinion)
+    _complete(first, FollowUpOutcome.NO_RESPONSE, specialist, next_check_on=day(10))
+    second = active_check(opinion)
+    assert second.text == FOLLOW_UP_TEXT_ONE
+
+    _correct_addressees(opinion, specialist, [ministry, committee])
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert (first.status, first.text) == (ActionStatus.COMPLETED, FOLLOW_UP_TEXT_ONE)
+    assert (second.status, second.text) == (ActionStatus.PLANNED, FOLLOW_UP_TEXT_MANY)
+
+
 # ---------------------------------------------------------------------------
 # Completion
 # ---------------------------------------------------------------------------

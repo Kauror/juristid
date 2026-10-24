@@ -4,7 +4,9 @@ Two kinds of thing, and one answer for both: a session past its expiry is a
 form somebody walked away from, and one a Matter has already consumed is
 material that is now evidence somewhere else. Neither will ever be read again
 (app/matters/intake_staging.py, docs/adr/0064). A form still open and not yet
-expired is never touched.
+expired is never touched. A consumed session's files go on the next run, but
+its row is the saved form's spent token and stays for
+``INTAKE_FORM_TOKEN_RETENTION_SECONDS`` (docs/adr/0112 amendment, 2026-10-24).
 
 **It cannot touch evidence.** It reads `MatterIntakeSession`, deletes objects
 under the staging prefix of the held-uploads store, and deletes those rows. The
@@ -116,6 +118,7 @@ class Command(BaseCommand):
         return (
             f"Kustutatud {report.sessions} ettevalmistust, {report.files} faili, "
             f"{report.objects} objekti ({report.bytes} baiti). "
+            f"Salvestatud vorme, mille failid vabastati: {report.released}. "
             f"Alles jäi: {report.remaining}. Vigu: {len(report.errors)}."
         )
 

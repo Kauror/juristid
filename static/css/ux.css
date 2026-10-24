@@ -1165,6 +1165,16 @@ a.uxstat__row:hover {
   width: 118px;
 }
 
+/* Tehtud's refused range: the reason above the boxes, on a line of its own.
+   A measure wide enough to read in two or three lines rather than seven, and
+   never wider than the popover, which the window bounds on a phone. */
+.uxdg__periodnote {
+  flex: 1 0 100%;
+  width: 16rem;
+  max-width: 100%;
+  margin: 0;
+}
+
 /* ====================================================================
  * Narrower viewports
  *

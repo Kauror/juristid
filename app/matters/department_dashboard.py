@@ -69,7 +69,7 @@ Nothing that was dropped lost its path:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
@@ -81,9 +81,10 @@ from django.utils import timezone
 from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import department_workers
 from app.core.dates import (
+    DateReading,
     end_of_month,
     format_estonian_date,
-    parse_flexible_date,
+    read_flexible_date,
     short_day_month,
     short_range,
     start_of_local_day,
@@ -1177,13 +1178,41 @@ def kind_from(params: Any) -> str:
     return value if value in {key for key, _, _ in DIGEST_KINDS} else KIND_ALL
 
 
+#: Why a typed custom range was refused — Tehtud's and Muudatused' words, one
+#: set, so the two sections of Osakond say the same thing about the same mistake.
+CUSTOM_RANGE_INCOMPLETE = "Vali vahemiku algus- ja lõppkuupäev."
+CUSTOM_RANGE_UNREADABLE = "Vahemiku kuupäev ei ole loetav. Kasuta kuju pp.kk.aaaa."
+CUSTOM_RANGE_REVERSED = "Vahemiku algus on pärast selle lõppu."
+
+
+def custom_range_refusal(start: DateReading, end: DateReading) -> str:
+    """Why the two typed ends of a custom range are not a window, or ``""``."""
+    if start.invalid or end.invalid:
+        return CUSTOM_RANGE_UNREADABLE
+    if start.value is None or end.value is None:
+        return CUSTOM_RANGE_INCOMPLETE
+    if start.value > end.value:
+        return CUSTOM_RANGE_REVERSED
+    return ""
+
+
 @dataclass(frozen=True)
 class Period:
-    """The window Tehtud is reporting on, and how it was chosen."""
+    """The window Tehtud is reporting on, and how it was chosen.
+
+    ``refused`` is set when the reader typed a custom range that could not be
+    used: the window is then the default one, and ``typed_start`` /
+    ``typed_end`` are what was typed, so the control can show them again with
+    the reason instead of quietly refilling the boxes with the fallback's dates
+    (2026-10-23 bug-bounty, B-06).
+    """
 
     key: str
     start: date
     end: date
+    refused: str = ""
+    typed_start: str = ""
+    typed_end: str = ""
 
     @property
     def is_custom(self) -> bool:
@@ -1229,18 +1258,27 @@ def last_days(today: date, days: int) -> date:
 def period_from(params: Any, today: date | None = None) -> Period:
     """Which window the reader asked for, or the default fortnight-equivalent.
 
-    An unreadable custom range falls back to the default rather than to nothing:
-    a hand-edited URL should show something honest, and the control redisplays
-    the dates so the reader can see what was refused.
+    An unreadable, incomplete or reversed custom range falls back to the default
+    rather than to nothing: a hand-edited URL should show something honest. The
+    fallback carries the reason and the two strings as typed (`Period.refused`),
+    so the control redisplays the dates and says what was refused.
     """
     today = today or timezone.localdate()
     key = (params.get(PERIOD_PARAM) or PERIOD_7).strip()
     if key == PERIOD_CUSTOM:
-        start = parse_flexible_date((params.get(PERIOD_START_PARAM) or "").strip())
-        end = parse_flexible_date((params.get(PERIOD_END_PARAM) or "").strip())
-        if start is not None and end is not None and start <= end:
-            return Period(PERIOD_CUSTOM, start, end)
-        key = PERIOD_7
+        typed_start = (params.get(PERIOD_START_PARAM) or "").strip()
+        typed_end = (params.get(PERIOD_END_PARAM) or "").strip()
+        start = read_flexible_date(typed_start)
+        end = read_flexible_date(typed_end)
+        refused = custom_range_refusal(start, end)
+        if not refused and start.value is not None and end.value is not None:
+            return Period(PERIOD_CUSTOM, start.value, end.value)
+        return replace(
+            period_from({}, today),
+            refused=refused or CUSTOM_RANGE_INCOMPLETE,
+            typed_start=typed_start,
+            typed_end=typed_end,
+        )
     if key == PERIOD_YEAR:
         return Period(PERIOD_YEAR, date(today.year, 1, 1), today)
     if key not in ROLLING_DAYS:
@@ -1253,7 +1291,9 @@ def period_options(period: Period, kind: str = KIND_ALL) -> list[PeriodOption]:
         PeriodOption(
             key=key,
             label=label,
-            active=period.key == key,
+            # None while a typed range was refused: the reader did not choose
+            # the fallback, and the page should not say they did.
+            active=period.key == key and not period.refused,
             query=urlencode(_page_params(period_key=key, kind=kind)),
         )
         for key, label in PERIOD_LABELS

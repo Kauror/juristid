@@ -166,6 +166,9 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
               title="{{ source_instructions|get_item:matter.pk }}">
           {{ source_instructions|get_item:matter.pk }}
         </span>
+      {% elif not matter.is_open %}
+        {# A closed file reads as the Teema page reads it, and names no milestone (E-03). #}
+        <span class="table__missing">Puudub — teema on suletud</span>
       {% else %}
         <span class="table__missing">Järgmine samm puudub</span>
       {% endif %}{% endwith %}{% endif %}

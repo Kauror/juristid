@@ -960,5 +960,14 @@ def carry(request: HttpRequest) -> Carried:
 
 
 def restore(request: HttpRequest, carried: Carried) -> None:
+    """Hand the administrator state back after `login` / `logout` — and only it.
+
+    The pending step-up is dropped here, whatever `login` did to the session:
+    a session that had no user yet keeps its data through `login` (only its
+    key cycles), so the first persona chosen would otherwise carry a
+    password-only step into the persona and a code would then open the
+    administrator session (docs/adr/0186 §1, «Persona changes»).
+    """
+    _drop_pending(request)
     if carried.state is not None:
         request.session[SESSION_STATE] = carried.state

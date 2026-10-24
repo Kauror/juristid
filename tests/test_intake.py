@@ -8,17 +8,23 @@ what was supposed to be there.
 
 from __future__ import annotations
 
+import re
+from datetime import timedelta
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
 from app.documents.enums import DocumentRole
 from app.documents.models import Document, DocumentVersion
+from app.matters import intake_staging
 from app.matters.intake import register_incoming, role_for, title_from_filename, validate_uploads
 from app.matters.models import Matter
 from app.matters.services import set_matter_visibility
+from app.matters.staging import MatterIntakeSession
 from app.organisations.models import Organisation, OrganisationType
 from app.search.services import search_matters
 from tests import factories
@@ -336,3 +342,230 @@ def test_the_seeded_factories_are_untouched_by_intake(client, specialist) -> Non
     _post(client, [_file("x.pdf", PDF)], title="Uus")
     existing.refresh_from_db()
     assert existing.title
+
+
+# -- one drawn form files one Teema (ENG-074, docs/adr/0112) ------------------
+
+
+def _drawn_token(response) -> str:
+    match = re.search(r'name="intake" value="([0-9a-f-]{36})"', response.content.decode())
+    assert match, "every rendered Saabunud form carries its one-time token"
+    return match.group(1)
+
+
+def test_the_same_saabunud_form_posted_twice_files_one_teema(client, specialist) -> None:
+    """A replayed, retried or double-sent POST is not a second arrival.
+
+    The second submission of the same drawn form writes nothing — no second
+    Teema, no second register number, no second document — and lands on the
+    Teema the first one filed, saying why.
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+
+    first = _post(client, [_file("kiri.pdf", PDF)], title="Saabunud kord", intake=token)
+    second = _post(client, [_file("kiri.pdf", PDF)], title="Saabunud kord", intake=token)
+
+    matter = Matter.objects.get(title="Saabunud kord")
+    assert first.status_code == 302
+    assert second.status_code == 302
+    assert second["Location"] == first["Location"]
+    assert second["Location"] == reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    assert Matter.objects.filter(title="Saabunud kord").count() == 1
+    assert Matter.objects.filter(reference_number__isnull=False).count() == 1
+    assert Document.objects.filter(matter=matter).count() == 1
+    shown = [str(m) for m in client.get(second["Location"]).context["messages"]]
+    assert CREATE_FORM_ALREADY_SUBMITTED in shown
+
+
+def test_a_saved_saabunud_form_replayed_after_the_sweeper_ran_files_nothing(
+    client, specialist
+) -> None:
+    """The spent token outlives the scheduled sweep (docs/adr/0112 amendment).
+
+    Before, the intake-sweeper deleted the consumed session within fifteen
+    minutes, and the same drawn form posted again — Back, a retry — filed a
+    second Teema with a second register number.
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+    first = _post(client, [_file("kiri.pdf", PDF)], title="Hiljem uuesti", intake=token)
+    MatterIntakeSession.objects.filter(pk=token).update(
+        consumed_at=timezone.now() - timedelta(days=1),
+        expires_at=timezone.now() - timedelta(hours=12),
+    )
+    intake_staging.sweep_stale_sessions()
+
+    second = _post(client, [_file("kiri.pdf", PDF)], title="Hiljem uuesti", intake=token)
+
+    assert second.status_code == 302
+    assert second["Location"] == first["Location"]
+    assert Matter.objects.filter(title="Hiljem uuesti").count() == 1
+    assert Matter.objects.filter(reference_number__isnull=False).count() == 1
+    shown = [str(m) for m in client.get(second["Location"]).context["messages"]]
+    assert CREATE_FORM_ALREADY_SUBMITTED in shown
+
+
+def test_another_persons_saabunud_token_reveals_nothing(
+    client, specialist, other_specialist
+) -> None:
+    """A token is claimed only by its owner (`owned_by`), so a stranger's is no token.
+
+    Posting somebody else's spent token neither lands on their Teema nor
+    names it: it files the poster's own Teema, as a POST with no token would.
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+    theirs = _post(client, [_file("kiri.pdf", PDF)], title="Sandra salajane", intake=token)
+    their_matter = Matter.objects.get(title="Sandra salajane")
+    assert theirs["Location"] == reverse("matters:matter_detail", kwargs={"pk": their_matter.pk})
+
+    stranger = Client()
+    stranger.force_login(other_specialist)
+    mine = _post(stranger, [_file("kiri.pdf", PDF)], title="Minu oma", intake=token)
+
+    assert mine.status_code == 302
+    assert mine["Location"] != theirs["Location"]
+    my_matter = Matter.objects.get(title="Minu oma")
+    assert mine["Location"] == reverse("matters:matter_detail", kwargs={"pk": my_matter.pk})
+    shown = stranger.get(mine["Location"])
+    page = shown.content.decode()
+    assert "Sandra salajane" not in page
+    assert their_matter.display_reference not in page
+    assert str(their_matter.pk) not in page
+    assert CREATE_FORM_ALREADY_SUBMITTED not in [str(m) for m in shown.context["messages"]]
+    # Their token is untouched: still consumed by their Teema.
+    assert MatterIntakeSession.objects.get(pk=token).matter_id == their_matter.pk
+
+
+def test_a_refused_saabunud_save_keeps_its_token(client, specialist) -> None:
+    """The corrected save is protected by the same token, and still saves once."""
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+
+    refused_save = _post(client, [_file("virus.exe", b"MZ")], title="Parandatud", intake=token)
+    assert refused_save.status_code == 400
+    assert _drawn_token(refused_save) == token
+    assert Matter.objects.count() == 0
+
+    saved = _post(client, [_file("kiri.pdf", PDF)], title="Parandatud", intake=token)
+    again = _post(client, [_file("kiri.pdf", PDF)], title="Parandatud", intake=token)
+    assert saved.status_code == 302
+    assert again["Location"] == saved["Location"]
+    assert Matter.objects.filter(title="Parandatud").count() == 1
+
+
+def test_two_drawn_saabunud_forms_file_two_teemad(client, specialist) -> None:
+    """Per form, not per content: the same words from a new form are a new Teema."""
+    client.force_login(specialist)
+    for _ in range(2):
+        token = _drawn_token(client.get(reverse("matters:intake")))
+        assert (
+            _post(client, [_file("kiri.pdf", PDF)], title="Kaks", intake=token).status_code == 302
+        )
+    assert Matter.objects.filter(title="Kaks").count() == 2
+
+
+# -- a refusal keeps the files (app/documents/pending.py) ---------------------
+
+
+def test_a_refused_saabunud_save_holds_its_files_for_the_corrected_save(client, specialist) -> None:
+    """An impossible date refuses the save; the PDF is not thrown away with it.
+
+    The refused page names the held file and carries its `pending` key, the
+    file input is no longer `required` (the held file is the file), and the
+    corrected save files the document without the file being chosen again.
+    """
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+
+    refused_save = _post(
+        client,
+        [_file("ministeeriumi-kiri.pdf", PDF)],
+        title="Hoitud fail",
+        response_deadline="31.02.2026",
+        intake=token,
+    )
+    assert refused_save.status_code == 400
+    assert not Matter.objects.filter(title="Hoitud fail").exists()
+    held = refused_save.context["held_files"]
+    assert [item.filename for item in held] == ["ministeeriumi-kiri.pdf"]
+    body = refused_save.content.decode()
+    assert "ministeeriumi-kiri.pdf" in body
+    assert f'name="pending" value="{held[0].key}"' in body
+    file_input = re.search(r'<input[^>]*id="id_intake_files"[^>]*>', body)
+    assert file_input is not None
+    assert "required" not in file_input.group(0)
+
+    saved = client.post(
+        reverse("matters:intake"),
+        {
+            "title": "Hoitud fail",
+            "response_deadline": "28.02.2026",
+            "intake": token,
+            "pending": [held[0].key],
+        },
+    )
+    assert saved.status_code == 302
+    matter = Matter.objects.get(title="Hoitud fail")
+    documents = Document.objects.filter(matter=matter)
+    assert documents.count() == 1
+    assert DocumentVersion.objects.filter(document__matter=matter).count() == 1
+    assert "ministeeriumi-kiri" in documents.get().title
+
+
+def test_a_corrected_save_of_held_files_replayed_lands_on_its_teema(client, specialist) -> None:
+    """The corrected save, posted again, is a replay — not «Vali vähemalt üks fail.».
+
+    Its only files were the held ones, and the first save released them; the
+    replay then named no file it could still have, and the file-count check
+    refused it before the spent token was ever read, right after the Teema
+    had been filed (2026-10-23 bug-bounty, V-02).
+    """
+    from app.matters.views import CREATE_FORM_ALREADY_SUBMITTED
+
+    client.force_login(specialist)
+    token = _drawn_token(client.get(reverse("matters:intake")))
+    refused_save = _post(
+        client,
+        [_file("kiri.pdf", PDF)],
+        title="Hoitud ja kaks korda",
+        response_deadline="31.02.2026",
+        intake=token,
+    )
+    assert refused_save.status_code == 400
+    corrected = {
+        "title": "Hoitud ja kaks korda",
+        "response_deadline": "28.02.2026",
+        "intake": token,
+        "pending": [item.key for item in refused_save.context["held_files"]],
+    }
+
+    saved = client.post(reverse("matters:intake"), corrected)
+    again = client.post(reverse("matters:intake"), corrected)
+
+    assert saved.status_code == 302
+    assert again.status_code == 302
+    assert again["Location"] == saved["Location"]
+    matter = Matter.objects.get(title="Hoitud ja kaks korda")
+    assert Document.objects.filter(matter=matter).count() == 1
+    shown = [str(m) for m in client.get(again["Location"]).context["messages"]]
+    assert CREATE_FORM_ALREADY_SUBMITTED in shown
+    assert "Vali vähemalt üks fail." not in shown
+
+
+def test_a_refused_file_is_named_and_the_good_one_is_held(client, specialist) -> None:
+    """One bad file among good ones: the bad one is named, the good one is kept."""
+    client.force_login(specialist)
+    response = _post(client, [_file("hea.pdf", PDF), _file("virus.exe", b"MZ")])
+
+    assert response.status_code == 400
+    assert [item.filename for item in response.context["held_files"]] == ["hea.pdf"]
+    assert any("virus.exe" in str(m) for m in response.context["messages"])
+    assert Matter.objects.count() == 0

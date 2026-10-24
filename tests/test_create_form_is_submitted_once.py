@@ -20,6 +20,7 @@ from __future__ import annotations
 import re
 import threading
 import time
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -27,6 +28,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test import Client
 from django.urls import reverse
+from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
@@ -98,6 +100,38 @@ def test_the_same_form_posted_twice_creates_one_teema(specialist):
         ChangeEvent.objects.filter(matter=matter, event_type=ChangeEventType.MATTER_CREATED).count()
         == 1
     )
+
+
+@pytest.mark.django_db
+def test_a_saved_form_replayed_after_the_sweeper_ran_still_files_nothing(specialist):
+    """Browser Back a day later, or a retry, still finds the door closed.
+
+    The intake-sweeper runs every fifteen minutes (docs/adr/0177) and used to
+    delete every consumed session — the token itself — so the same form posted
+    after one sweep found no token and filed a second Teema with a second
+    register number. A consumed token is kept for its retention
+    (docs/adr/0112 amendment, 2026-10-24).
+    """
+    client = _signed_in(specialist)
+    token = _form_token(client)
+    data = _fields("Tagasi-nupuga teema", specialist, token)
+    first = client.post(CREATE, data)
+    assert first.status_code == 302
+    # A day later: past the form's own expiry, and well outside the «just
+    # filed» window of docs/adr/0166 §2.
+    MatterIntakeSession.objects.filter(pk=token).update(
+        consumed_at=timezone.now() - timedelta(days=1),
+        expires_at=timezone.now() - timedelta(hours=12),
+    )
+    intake_staging.sweep_stale_sessions()
+    numbers = _numbers_used()
+
+    second = client.post(CREATE, data, follow=True)
+
+    assert len(_created("Tagasi-nupuga teema")) == 1
+    assert second.redirect_chain[-1][0] == first["Location"]
+    assert CREATE_FORM_ALREADY_SUBMITTED in second.content.decode()
+    assert _numbers_used() == numbers
 
 
 @pytest.mark.django_db

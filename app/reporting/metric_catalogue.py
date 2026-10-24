@@ -565,6 +565,10 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
         required_fields=("received_date",),
         coverage_description_et="Teemad, millel on saabumise kuupäev",
         minimum_coverage=0.0,
+        drillthrough_et=(
+            "Teemade register: kirje liik FULL, päritolu NATIVE, saabumise "
+            "kuupäev mõõdetud vahemikus."
+        ),
     ),
     _matter(
         NEW_NATIVE_FULL_MATTERS_BY_MONTH,
@@ -587,9 +591,9 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
             "tühi kuu on mõõdetud null; akna taha tulpa ei joonistata."
         ),
         drillthrough_et=(
-            "Loendit ei avata. Registril on aasta-, mitte kuufilter, ja "
-            "„saabumise kuupäev on teada“ ei ole filter — avanev loend oleks "
-            "pikem kui number selle kohal."
+            "Teemade register: kirje liik FULL, päritolu NATIVE, saabumise "
+            "kuupäev tulba kuus (perioodi piires). Pealkiri avab kogu mõõdetud "
+            "vahemiku."
         ),
     ),
     _matter(

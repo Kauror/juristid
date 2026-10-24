@@ -150,6 +150,64 @@ def test_back_returns_to_the_previous_search(page, base_url):
     expect(rows(page)).to_have_count(1)
 
 
+def test_enter_writes_one_history_entry(page, base_url):
+    """One Enter, one place in the history (2026-10-23 bug-bounty, B-04).
+
+    Chromium fires both `submit` and the search box's own `search` event on
+    Enter, and the form listened for both — so a search written and sent with
+    Enter pushed the same address twice, and the first Back went nowhere.
+    """
+    sign_in(page, base_url, MARTIN)
+    open_register(page, base_url)
+    unfiltered_url = page.url
+    before = page.evaluate("history.length")
+
+    box = page.locator("#teemad-otsing")
+    box.fill("Tavaline")
+    box.press("Enter")
+    page.wait_for_url(re.compile(r"[?&]q=Tavaline"))
+    expect(rows(page)).to_have_count(1)
+    # Long enough for a second request to answer and push, had one been sent.
+    page.wait_for_timeout(800)
+    assert page.evaluate("history.length") == before + 1
+
+    page.go_back()
+    expect(page).to_have_url(unfiltered_url)
+    expect(box).to_have_value("")
+
+
+def test_enter_after_the_live_answer_writes_no_second_entry(page, base_url):
+    """Typing, waiting for the answer, then Enter: still one place in history.
+
+    The live search pushes `?q=…` after its 250 ms pause; an Enter pressed after
+    that asks for the very same address, and pushing it again left two
+    identical entries — the first Back stayed on the same search (2026-10-23
+    bug-bounty, B-04 residue found by the verifier).
+    """
+    sign_in(page, base_url, MARTIN)
+    open_register(page, base_url)
+    unfiltered_url = page.url
+    before = page.evaluate("history.length")
+
+    box = page.locator("#teemad-otsing")
+    box.press_sequentially("Tavaline", delay=40)
+    page.wait_for_url(re.compile(r"[?&]q=Tavaline"))
+    expect(rows(page)).to_have_count(1)
+    assert page.evaluate("history.length") == before + 1
+    searched_url = page.url
+
+    with page.expect_response(lambda r: "q=Tavaline" in r.url):
+        box.press("Enter")
+    page.wait_for_load_state("networkidle")
+    expect(page).to_have_url(searched_url)
+    expect(rows(page)).to_have_count(1)
+    assert page.evaluate("history.length") == before + 1
+
+    page.go_back()
+    expect(page).to_have_url(unfiltered_url)
+    expect(box).to_have_value("")
+
+
 def test_clearing_the_search_restores_the_register(page, base_url):
     sign_in(page, base_url, MARTIN)
     # Measured where `Tühjenda kõik` actually lands: it clears every register

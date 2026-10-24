@@ -76,6 +76,15 @@ localStorage (Stage-2E.1 brief 12).
       an arrow key or a repeated value; the 250 ms delay is inside the 200–350
       window the brief asks for. `hx-push-url` writes the address the answer
       came from, so refresh, Back, Forward and a pasted link all agree.
+
+      **No `search` trigger.** Chromium fires the box's `search` event on Enter
+      as well as the form's `submit`, so listening to both sent every Enter
+      twice and pushed the same address twice — the first Back went nowhere
+      (2026-10-23 bug-bounty, B-04). `submit` is Enter and `Otsi`; the clear
+      button and Escape in the box fire `input` too, so clearing still answers.
+      An Enter after the live answer asks for the address already shown; that
+      push becomes a replace (static/js/app.js, «One address, one place in the
+      history»), so it writes no second entry either.
     {% endcomment %}
     <form class="registersearch" method="get" role="search"
           action="{% url 'matters:matter_list' %}"
@@ -83,7 +92,7 @@ localStorage (Stage-2E.1 brief 12).
           hx-target="#teemad-tulemused"
           hx-swap="outerHTML"
           hx-push-url="true"
-          hx-trigger="input changed delay:250ms from:#teemad-otsing, search from:#teemad-otsing, submit"
+          hx-trigger="input changed delay:250ms from:#teemad-otsing, submit"
           hx-indicator=".registersearch__spinner">
       <label class="registersearch__field">
         <span class="visually-hidden">Otsi teemadest</span>
@@ -92,6 +101,7 @@ localStorage (Stage-2E.1 brief 12).
                name="q"
                id="teemad-otsing"
                value="{{ query }}"
+               maxlength="{{ max_query_characters }}"
                autocomplete="off"
                placeholder="Otsi teemadest — pealkiri või sisu">
       </label>

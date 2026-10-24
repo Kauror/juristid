@@ -76,6 +76,29 @@
     window.htmx.config.includeIndicatorStyles = false;
   }
 
+  /* ---- One address, one place in the history ---------------------------
+   * `hx-push-url` pushes whatever address the answer came from, also when it
+   * is the one already shown. The Teemad search answers while you type and
+   * pushes `?q=…`; an Enter pressed after that asks for the same address, and
+   * a second identical entry meant the first Back stayed where it was
+   * (2026-10-23 bug-bounty, B-04). htmx 2.0.x reads `history.type` after this
+   * event, so a push to the current address becomes a replace: the address
+   * bar and the page agree and the history gains nothing.
+   */
+  document.addEventListener("htmx:beforeHistoryUpdate", function (event) {
+    var update = event.detail && event.detail.history;
+    if (!update || update.type !== "push" || !update.path) {
+      return;
+    }
+    var target = new URL(update.path, window.location.href);
+    var here = new URL(window.location.href);
+    target.hash = "";
+    here.hash = "";
+    if (target.href === here.href) {
+      update.type = "replace";
+    }
+  });
+
   /* And whatever an earlier version left behind. A zero cache size removes
    * the key only the next time htmx would have saved one, so it is removed
    * here, on every page — including the one signing out lands on. */
@@ -2770,12 +2793,31 @@
     });
   });
 
+  /* Escape closes the disclosure the focus is in — and the floating menus
+     from anywhere — and puts the focus on its trigger.
+
+     The inline editors' handler above answers Escape only from inside their
+     form, so a disclosure opened with Enter, the focus still on its
+     `<summary>`, stayed open: the header's inline editors, its ⋯ menu (missing
+     here although the click-outside above closes it) and `Täpsem otsing`,
+     which had no handler at all (2026-10-23 bug-bounty, B-05).
+
+     Only the innermost open `<details>` around the focus, and only when it is
+     one of these: Escape inside something else open in them — a calendar, a
+     nested editor — belongs to that, and a key something closer already
+     handled is left alone (JUX-007). */
+  var ESCAPABLE = "details.topnav__more, details.headmenu, details.inlineedit, details.filterpanel";
+
   document.addEventListener("keydown", function (event) {
-    if (event.key !== "Escape") {
+    if (event.key !== "Escape" || event.defaultPrevented) {
       return;
     }
-    var open = document.querySelector("details.topnav__more[open]");
+    var inner = event.target.closest ? event.target.closest("details[open]") : null;
+    var open = inner && inner.matches(ESCAPABLE)
+      ? inner
+      : document.querySelector("details.topnav__more[open], details.headmenu[open]");
     if (open) {
+      event.preventDefault();
       open.open = false;
       var trigger = open.querySelector("summary");
       if (trigger) {
@@ -3226,7 +3268,104 @@
       legend.appendChild(document.createTextNode(markLabel + " " + formatEstonian(mark)));
       panel.appendChild(legend);
     }
+    /* A month with a longer name or a legend is a slightly different box. */
+    placePanel(panel);
   }
+
+  /* ---- The calendar stays inside the window (2026-10-23 bounty, B-01) ----
+   * The stylesheet can anchor the panel to one side of its date box only:
+   * `left: 0`, or `right: 0` under 40rem. Which side is right depends on where
+   * the box sits, not on the window's width — a narrow box at the left of a
+   * phone (`Millal?`, `Muuda teemat`, the header's dates) pushed a right-
+   * anchored panel up to 98px off the left edge, hiding «Eelmine kuu» and the
+   * Monday and Tuesday columns, and the register's «Kuni» at 768px ran a
+   * left-anchored one off the right edge and scrolled the whole page sideways.
+   *
+   * So the open panel is measured and shifted back inside the window with an
+   * 8px margin, the same margin the floating menus keep (ux.js `place`). A
+   * `transform`, not `left`: it moves the box without changing the width the
+   * stylesheet gave it, and the CSS anchor stays the starting point, so a panel
+   * that already fits does not move at all. Measured from scratch each time —
+   * on opening, on a redrawn month and on a resize while open. */
+  function placePanel(panel) {
+    if (panel.hidden) {
+      return;
+    }
+    var margin = 8;
+    panel.style.transform = "";
+    var rect = panel.getBoundingClientRect();
+    var viewport = document.documentElement.clientWidth;
+    var shift = 0;
+    if (rect.right > viewport - margin) {
+      shift = viewport - margin - rect.right;
+    }
+    if (rect.left + shift < margin) {
+      shift = margin - rect.left;
+    }
+    if (shift) {
+      panel.style.transform = "translateX(" + Math.round(shift) + "px)";
+    }
+  }
+
+  window.addEventListener("resize", function () {
+    document.querySelectorAll(".datepicker__panel").forEach(placePanel);
+  });
+
+  /* ---- A header editor opens inside the window (2026-10-23 bounty, V-03) --
+   * Above 720px a Teema header editor hangs from its own fact (static/css/
+   * app.css `.inlineedit__form`, `left: 0`), and a fact near the end of the
+   * meta line ran its editor off the right edge: «Arvamuse tähtaeg» ended at
+   * 844–889px in a 768px window, its 📅 off-screen, and a long header did the
+   * same at 1024px. Where the line wraps (≤720px) the whole line is already
+   * the anchor and nothing moves. Which fact sits near the edge depends on the
+   * header's words, not on the width, so — as for the calendar above — the
+   * open form is measured and shifted back inside with the same 8px margin,
+   * by `transform`, so an editor that already fits does not move at all. Its
+   * calendar is re-placed after it. `Hetkeseis` places itself (`data-uxfloat`).
+   *
+   * `toggle` does not bubble, hence the capture; it also fires for an editor
+   * drawn open (a refused save comes back open, E-04). */
+  var HEADER_EDITOR = ".metaline details.inlineedit";
+
+  function placeHeaderEditor(details) {
+    var form = details.querySelector("form.inlineedit__form:not([data-uxfloat])");
+    if (!form) {
+      return;
+    }
+    form.style.transform = "";
+    if (!details.open) {
+      return;
+    }
+    var margin = 8;
+    var rect = form.getBoundingClientRect();
+    var viewport = document.documentElement.clientWidth;
+    var shift = 0;
+    if (rect.right > viewport - margin) {
+      shift = viewport - margin - rect.right;
+    }
+    if (rect.left + shift < margin) {
+      shift = margin - rect.left;
+    }
+    if (shift) {
+      form.style.transform = "translateX(" + Math.round(shift) + "px)";
+    }
+    form.querySelectorAll(".datepicker__panel").forEach(placePanel);
+  }
+
+  document.addEventListener(
+    "toggle",
+    function (event) {
+      var details = event.target;
+      if (details && details.matches && details.matches(HEADER_EDITOR)) {
+        placeHeaderEditor(details);
+      }
+    },
+    true
+  );
+
+  window.addEventListener("resize", function () {
+    document.querySelectorAll(HEADER_EDITOR + "[open]").forEach(placeHeaderEditor);
+  });
 
   /* Move the grid's one Tab stop to `date` and focus it, redrawing the month
      first when the date is in another one. */
@@ -3430,6 +3569,7 @@
         if (panel.hidden) {
           buildCalendar(panel, input, parseEstonian(input.value) || new Date());
           panel.hidden = false;
+          placePanel(panel);
           trigger.setAttribute("aria-expanded", "true");
           focusActiveDay(panel);
         } else {

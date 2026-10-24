@@ -60,7 +60,8 @@ which clients may create Teemas.
 The session row holds an owner, an expiry, a consumption stamp and the created
 Teema — no form text. An unsubmitted render leaves a row that expires and is
 removed by `sweep_stale_sessions` with every other stale session. That sweep is
-still an operator command, as ADR 0064 decided.
+still an operator command, as ADR 0064 decided. (ADR 0177 scheduled it; a
+consumed session is kept as a spent token — see the 2026-10-24 amendment.)
 
 ### Not covered
 
@@ -81,3 +82,34 @@ is left for a separate decision.
 * **Rollback:** reversing the migration drops the column with nothing else
   depending on it.
 * No data migration and no backfill.
+
+## Amendment, 2026-10-24 — a spent token outlives the sweep (R2-01)
+
+ADR 0177 put `sweep_stale_sessions` on a timer (`intake-sweeper`, every
+`INTAKE_STAGING_SWEEP_INTERVAL_SECONDS` = 900 s), and `stale()` still counted
+every consumed session as stale. So the token this ADR relies on was deleted
+within fifteen minutes of the save: a Back-restored page or a retry of the same
+`Uus teema` or `Saabunud → Lisa` form then named no session, `claim_for_create`
+returned no claim, and the form filed a second Teema with a second register
+number. The same horizon cut short `duplicate_intake.recent_duplicate`'s
+reading of a form's earlier tokens (ADR 0166 §2).
+
+**A consumed session is kept for `INTAKE_FORM_TOKEN_RETENTION_SECONDS`** after
+its consumption (default 1 209 600 s, fourteen days), then swept. The bound is
+the longest a sign-in can last — Django's `SESSION_COOKIE_AGE`; the local,
+gate and Access sign-ins all set shorter expiries — because a form can only be
+posted from a live sign-in carrying that sign-in's CSRF token. A replay after
+that is answered by the sign-in page, not by this guard.
+
+**It holds nothing while it waits.** Its files are evidence since the commit;
+`consume_session` already deletes their bytes and text after it, and the next
+sweep deletes the file rows and anything that discard missed, leaving the
+session row: an owner, two stamps and the created Teema. Unconsumed sessions
+are swept at their expiry exactly as before.
+
+`MatterIntakeSession.objects.stale()` now means *deleted whole by the sweep*
+(unconsumed and expired, or consumed before the retention); `finished()` is the
+old meaning (expired or consumed — no form may use its files) and is what the
+reader's text clear reads; `retained()` names the kept tokens. The health probe
+measures a kept token's files from its consumption and the token itself from
+the end of its retention. No migration.

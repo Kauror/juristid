@@ -318,6 +318,13 @@ class WorkItem:
     #: the opinion gets ``""`` (`app.matters.follow_up_display`).
     is_follow_up: bool = False
     follow_up_label: str = ""
+    #: Whether this row is a `PLANNED` action rather than the Matter's current
+    #: one (docs/adr/0143). Its `Lisa tulemus…` and `Muuda` open that planned
+    #: row's own `✓ Tehtud` and `Muuda` on the Teema page — never the current
+    #: step's forms, which would finish or rewrite a different step
+    #: (docs/adr/0144 §1). An `Arvamuse järelkontroll` is planned too and keeps
+    #: its own `record_url`.
+    is_planned: bool = False
     #: Whether this row is an informational `Oluline tähtaeg` (a commencement a
     #: draft proposes, `INFORMATIONAL_IMPORTANT_DATE_KINDS`): a date the file
     #: watches, never its next step and never late (docs/adr/0120, amendment of
@@ -371,7 +378,16 @@ class WorkItem:
             # The check's own row in `PRAEGUNE TEGEVUS`, where its `✓ Tehtud`
             # and its day are (docs/adr/0146 §7).
             return f"{self.matter_url}#jarelkontroll-{self.object_id}"
+        if self.is_planned and self.is_action:
+            # The planned row's own `✓ Tehtud` in `PRAEGUNE TEGEVUS`
+            # (docs/adr/0144 §1), which `ux.js` opens on arrival.
+            return f"{self.matter_url}#planeeritud-tehtud-{self.object_id}"
         return self.matter_url
+
+    @property
+    def planned_edit_url(self) -> str:
+        """A planned row's own `Muuda` on the Teema page (docs/adr/0143 §A3)."""
+        return f"{self.matter_url}#planeeritud-{self.object_id}"
 
     @property
     def matter_url(self) -> str:
@@ -694,6 +710,7 @@ def action_item(action: NextAction, today: date, *, subject: Any = None) -> Work
         today=today,
         is_follow_up=action.follow_up_id is not None,
         follow_up_label=subject.label if subject is not None else "",
+        is_planned=action.is_planned,
     )
 
 

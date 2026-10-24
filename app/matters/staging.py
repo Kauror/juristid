@@ -46,6 +46,9 @@ Three things this deliberately does **not** do, each of which was considered:
 
 from __future__ import annotations
 
+from datetime import timedelta
+from typing import Any
+
 from django.conf import settings
 from django.db import models
 from django.utils import timezone
@@ -75,18 +78,50 @@ class MatterIntakeSessionQuerySet(models.QuerySet):
         """Sessions a form may still resume: not consumed, not expired."""
         return self.filter(consumed_at__isnull=True, expires_at__gt=timezone.now())
 
-    def stale(self) -> MatterIntakeSessionQuerySet:
-        """Sessions nobody is coming back for, whatever became of them.
+    def finished(self) -> MatterIntakeSessionQuerySet:
+        """Sessions no form may use any more: expired, or consumed by a Teema.
 
-        A session somebody abandoned an hour past its expiry and one that was
-        consumed by a Matter that has already been created are the same thing
-        to a sweeper: material no form will ever ask for again. They are kept
-        apart in the *model* because the difference explains what happened;
-        they are swept together because the answer is the same.
+        What their staged files offer is over — `get_session` refuses them —
+        so their extracted text has no reader left (`clear_expired_intake_text`).
+        This is not what the sweeper deletes: a consumed session is still a
+        saved form's spent token for `token_retention_start` (`stale`).
         """
         return self.filter(
             models.Q(expires_at__lte=timezone.now()) | models.Q(consumed_at__isnull=False)
         )
+
+    def retained(self) -> MatterIntakeSessionQuerySet:
+        """Consumed sessions still kept as a saved form's spent token.
+
+        The «one drawn form saves once» guard (docs/adr/0112) is this row: a
+        Back-restored page or a retried POST of a form that was saved finds it
+        consumed and is answered with the Teema the first save created. Deleted
+        any sooner, the same POST finds no token and files a second Teema with
+        a second register number. Kept for
+        ``INTAKE_FORM_TOKEN_RETENTION_SECONDS`` after the consumption, holding
+        no files (the sweeper releases them, `sweep_stale_sessions`).
+        """
+        return self.filter(consumed_at__gt=token_retention_start())
+
+    def stale(self) -> MatterIntakeSessionQuerySet:
+        """Sessions the sweeper deletes whole: nobody will ever post them again.
+
+        An unconsumed session past its expiry — an abandoned form, whose
+        staged files are offered to nothing — and a consumed one past its token
+        retention. A consumed session inside that retention is *not* stale: its
+        files are released by the sweep, but the row stays so that a repeated
+        submission of that form still finds a closed door (docs/adr/0112
+        amendment, 2026-10-24).
+        """
+        return self.filter(
+            models.Q(consumed_at__isnull=True, expires_at__lte=timezone.now())
+            | models.Q(consumed_at__lte=token_retention_start())
+        )
+
+
+def token_retention_start() -> Any:
+    """Consumed before this, a session is no longer any form's spent token."""
+    return timezone.now() - timedelta(seconds=settings.INTAKE_FORM_TOKEN_RETENTION_SECONDS)
 
 
 class MatterIntakeSession(BaseModel):
@@ -103,15 +138,16 @@ class MatterIntakeSession(BaseModel):
     #: staging that is already open on somebody's screen.
     expires_at = models.DateTimeField(db_index=True, verbose_name="aegub")
     #: When `Loo teema` succeeded and these files became evidence. A consumed
-    #: session is finished: it can no longer be added to, read or promoted, and
-    #: it is kept only until the sweeper comes past, so that a double submit
-    #: finds a closed door rather than an empty one.
+    #: session is finished: it can no longer be added to, read or promoted. Its
+    #: row is kept for ``INTAKE_FORM_TOKEN_RETENTION_SECONDS`` (its files are
+    #: released sooner), so that a double submit, a retry or a Back-restored
+    #: page finds a closed door rather than an empty one (`retained`).
     consumed_at = models.DateTimeField(null=True, blank=True, verbose_name="kasutatud")
     #: The Teema this form created, set in the same transaction that consumed it.
     #: Read by a repeated submission of the same form, which is answered with
     #: that Teema rather than with a second one (ENG-074). `SET_NULL` because a
     #: session outlives nothing it points at: deleting the Teema must not be
-    #: refused by a row that exists only until the sweeper comes past.
+    #: refused by a row that is only a spent token.
     matter = models.ForeignKey(
         "matters.Matter",
         on_delete=models.SET_NULL,

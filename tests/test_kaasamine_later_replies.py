@@ -549,3 +549,264 @@ def test_every_answer_reads_on_the_round_row_in_the_order_stated(
 
     assert "Seotud seisukohti 2" in row
     assert row.index("Varasem vastus") < row.index("Hilisem vastus")
+
+
+# ---------------------------------------------------------------------------
+# Removing the answer that finished the wait (docs/adr/0102 §1, bug-bounty C-02)
+# ---------------------------------------------------------------------------
+
+
+def _remove_answer(position, matter, actor):
+    remove_matter_record(
+        matter_id=matter.pk, kind_key="seisukoht", record_id=position.pk, actor=actor
+    )
+
+
+def _waiting_on(client, matter, round_) -> bool:
+    """`PRAEGUNE TEGEVUS` draws the round's «Ootame tagasisidet» line."""
+    return f'data-feedback-wait="{round_.pk}"' in _detail(client, matter)
+
+
+def test_removing_the_answer_that_finished_the_wait_reopens_it(
+    signed_in, normal_matter, specialist
+):
+    """The answer «never belonged on this file», so nothing came back: still waiting."""
+    round_ = _round(normal_matter, specialist)
+    _reply(signed_in, normal_matter, round_, "Toetame.")
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is not None
+    assert not _waiting_on(signed_in, normal_matter, round_)
+
+    _remove_answer(MatterExternalPosition.objects.get(engagement=round_), normal_matter, specialist)
+
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is None
+    assert round_.feedback_closed_by is None
+    assert round_.has_open_feedback_wait
+    assert round_ in open_feedback_waits(specialist)
+    assert _waiting_on(signed_in, normal_matter, round_)
+    reopened = ChangeEvent.objects.get(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED, object_id=round_.pk
+    )
+    assert reopened.payload["wait_reopened"] is True
+    assert reopened.payload["reason"] == "reply_removed"
+    # The next answer finishes it again, as the first answer to an open round.
+    _reply(signed_in, normal_matter, round_, "Toetame siiski.")
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is not None
+    assert _closed_events(round_) == 2
+
+
+def test_removing_an_answer_keeps_the_wait_finished_while_another_answer_remains(
+    signed_in, normal_matter, specialist
+):
+    round_ = _round(normal_matter, specialist)
+    _reply(signed_in, normal_matter, round_, "Esimene vastus.")
+    _reply(signed_in, normal_matter, round_, "Teine vastus.")
+    first = MatterExternalPosition.objects.get(engagement=round_, summary="Esimene vastus.")
+
+    _remove_answer(first, normal_matter, specialist)
+
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is not None
+    assert not _waiting_on(signed_in, normal_matter, round_)
+    assert not ChangeEvent.objects.filter(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED, object_id=round_.pk
+    ).exists()
+
+
+def test_removing_a_later_answer_to_a_round_a_person_finished_does_not_reopen_it(
+    signed_in, normal_matter, specialist
+):
+    """`Lõpeta kaasamine` is a person's decision; an answer recorded after it is not its cause."""
+    round_ = _round(normal_matter, specialist)
+    complete_engagement_feedback(engagement=round_, actor=specialist)
+    closed_at = MatterEngagement.objects.get(pk=round_.pk).feedback_closed_at
+    _reply(signed_in, normal_matter, round_, "Hiline vastus.")
+
+    _remove_answer(MatterExternalPosition.objects.get(engagement=round_), normal_matter, specialist)
+
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at == closed_at
+    assert round_.feedback_closed_by == specialist
+    assert not _waiting_on(signed_in, normal_matter, round_)
+
+
+def test_removing_every_answer_in_either_order_reopens_the_wait(
+    signed_in, normal_matter, specialist
+):
+    """The answer that finished it went first, the later one last: nothing came back."""
+    round_ = _round(normal_matter, specialist)
+    _reply(signed_in, normal_matter, round_, "Esimene vastus.")
+    _reply(signed_in, normal_matter, round_, "Teine vastus.")
+    first = MatterExternalPosition.objects.get(engagement=round_, summary="Esimene vastus.")
+    second = MatterExternalPosition.objects.get(engagement=round_, summary="Teine vastus.")
+
+    _remove_answer(first, normal_matter, specialist)
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is not None
+
+    _remove_answer(second, normal_matter, specialist)
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is None
+    assert _waiting_on(signed_in, normal_matter, round_)
+
+
+# ---------------------------------------------------------------------------
+# Moving the answer that finished the wait to another round (bug-bounty R2-02)
+# ---------------------------------------------------------------------------
+
+
+def _move_answer(client, matter, position, to_round):
+    """`Muuda` on the answer, changing only `Seotud kaasamine`."""
+    from app.matters.services import external_position_revision
+
+    position.refresh_from_db()
+    response = client.post(
+        reverse(
+            "matters:update_external_position",
+            kwargs={"pk": matter.pk, "position_id": position.pk},
+        ),
+        {
+            "organisation": "",
+            "organisation_name": "",
+            "url": position.url,
+            "summary": position.summary,
+            "stated_on": et(position.stated_on) if position.stated_on else "",
+            "position_precision": "EXACT",
+            "source_label": position.source_label,
+            "engagement": str(to_round.pk) if to_round is not None else "",
+            "revision": external_position_revision(position),
+        },
+        headers={"HX-Request": "true"},
+    )
+    assert response.status_code == 200, response.content.decode()[:2000]
+    position.refresh_from_db()
+    assert position.engagement_id == (to_round.pk if to_round is not None else None)
+    return response
+
+
+def test_moving_the_answer_that_finished_the_wait_off_its_round_reopens_it(
+    signed_in, normal_matter, specialist
+):
+    """The answer now answers nothing here, so round E has nothing to show: still waiting."""
+    round_ = _round(normal_matter, specialist)
+    _reply(signed_in, normal_matter, round_, "Toetame.")
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is not None
+    answer = MatterExternalPosition.objects.get(engagement=round_)
+
+    _move_answer(signed_in, normal_matter, answer, None)
+
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is None
+    assert round_.feedback_closed_by is None
+    assert round_ in open_feedback_waits(specialist)
+    assert _waiting_on(signed_in, normal_matter, round_)
+    reopened = ChangeEvent.objects.get(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED, object_id=round_.pk
+    )
+    assert reopened.payload["wait_reopened"] is True
+    assert reopened.payload["reason"] == "reply_moved"
+    assert reopened.payload["reply"] == str(answer.pk)
+
+
+def test_the_correction_redraws_praegune_tegevus_with_the_reopened_wait(
+    signed_in, normal_matter, specialist
+):
+    """Only the answer's row is swapped, so the zone's list rides along out of band.
+
+    Without it the reopened «Ootame tagasisidet» appeared only on the next page
+    load, though the round was already waiting again — the list the round's own
+    row sends out of band for the same reason (#525).
+    """
+    round_ = _round(normal_matter, specialist)
+    _reply(signed_in, normal_matter, round_, "Toetame.")
+    answer = MatterExternalPosition.objects.get(engagement=round_)
+
+    body = _move_answer(signed_in, normal_matter, answer, None).content.decode()
+
+    assert 'id="praegune-ootused"' in body
+    oob = body[body.index('id="praegune-ootused"') :]
+    assert oob.split(">", 1)[0].count('hx-swap-oob="true"') == 1
+    assert "Ootame tagasisidet" in oob
+
+
+def test_moving_it_to_another_open_round_reopens_the_first_and_finishes_the_second(
+    signed_in, normal_matter, specialist
+):
+    """Onto an open round it is that round's first answer, as `Lisa tagasiside` makes it."""
+    first = _round(normal_matter, specialist, title="Esimene ring")
+    second = _round(normal_matter, specialist, title="Teine ring")
+    _reply(signed_in, normal_matter, first, "Vastus valele ringile.")
+    answer = MatterExternalPosition.objects.get(engagement=first)
+
+    _move_answer(signed_in, normal_matter, answer, second)
+
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.feedback_closed_at is None
+    assert first.has_open_feedback_wait
+    assert second.feedback_closed_at is not None
+    assert second.feedback_closed_by == specialist
+    assert _closed_events(second) == 1
+    # And moving it back undoes that too, exactly: the closure names it.
+    _move_answer(signed_in, normal_matter, answer, first)
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert second.feedback_closed_at is None
+    assert first.feedback_closed_at is not None
+
+
+def test_moving_it_to_a_finished_round_keeps_that_closure(signed_in, normal_matter, specialist):
+    first = _round(normal_matter, specialist, title="Esimene ring")
+    done = _round(normal_matter, specialist, title="Lõpetatud ring")
+    complete_engagement_feedback(engagement=done, actor=specialist)
+    closed_at = MatterEngagement.objects.get(pk=done.pk).feedback_closed_at
+    _reply(signed_in, normal_matter, first, "Hiline vastus.")
+    answer = MatterExternalPosition.objects.get(engagement=first)
+
+    _move_answer(signed_in, normal_matter, answer, done)
+
+    done.refresh_from_db()
+    assert done.feedback_closed_at == closed_at
+    assert _closed_events(done) == 1
+    first.refresh_from_db()
+    assert first.feedback_closed_at is None
+
+
+def test_moving_the_closing_answer_off_keeps_the_wait_finished_while_another_remains(
+    signed_in, normal_matter, specialist
+):
+    round_ = _round(normal_matter, specialist)
+    _reply(signed_in, normal_matter, round_, "Esimene vastus.")
+    _reply(signed_in, normal_matter, round_, "Teine vastus.")
+    first = MatterExternalPosition.objects.get(engagement=round_, summary="Esimene vastus.")
+
+    _move_answer(signed_in, normal_matter, first, None)
+
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at is not None
+    assert not _waiting_on(signed_in, normal_matter, round_)
+    assert not ChangeEvent.objects.filter(
+        event_type=ChangeEventType.ENGAGEMENT_CHANGED, object_id=round_.pk
+    ).exists()
+
+
+def test_moving_a_later_answer_off_a_round_a_person_finished_does_not_reopen_it(
+    signed_in, normal_matter, specialist
+):
+    """`Lõpeta kaasamine` is a person's decision; an answer recorded after it is not its cause."""
+    round_ = _round(normal_matter, specialist)
+    complete_engagement_feedback(engagement=round_, actor=specialist)
+    closed_at = MatterEngagement.objects.get(pk=round_.pk).feedback_closed_at
+    _reply(signed_in, normal_matter, round_, "Hiline vastus.")
+
+    _move_answer(
+        signed_in, normal_matter, MatterExternalPosition.objects.get(engagement=round_), None
+    )
+
+    round_.refresh_from_db()
+    assert round_.feedback_closed_at == closed_at
+    assert round_.feedback_closed_by == specialist
+    assert not _waiting_on(signed_in, normal_matter, round_)

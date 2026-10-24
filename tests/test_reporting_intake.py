@@ -120,17 +120,57 @@ def test_a_quiet_month_inside_the_window_is_a_measured_zero(world, reporting_con
     assert "Juuni" not in by_month
 
 
-def test_no_month_bar_carries_a_link_it_could_not_honour(world, reporting_context):
-    """The register filters by year, and has no "has an arrival date" filter.
+def _register_total(client, url: str) -> int:
+    from urllib.parse import parse_qsl, urlparse
 
-    So neither a bar nor the metric itself links: every list either surface
-    could open would be longer than the number above it, which is the one thing
-    a drill-through must never be (brief 58).
+    parsed = urlparse(url)
+    assert parsed.path == "/teemad/", url
+    response = client.get(parsed.path, dict(parse_qsl(parsed.query, keep_blank_values=True)))
+    assert response.status_code == 200, url
+    return int(response.context["total"])
+
+
+@pytest.mark.parametrize("period", ["koik", "kaesolev"])
+def test_every_intake_figure_opens_exactly_the_rows_it_counted(
+    period, client, world, reporting_context
+):
+    """E-06: the card, the chart's headline and every month bar drill through.
+
+    On `?saabus_alates=` / `?saabus_kuni=` — the column the figures are counted
+    on — never on the register's reporting year, which is another column. A
+    quiet month inside the window opens an empty list beside its 0.
     """
-    result = compute(keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH, reporting_context(world.martin))
-    assert all(segment.url == "" for segment in result.segments)
-    assert result.drillthrough_url == ""
-    assert result.definition.drillthrough_et
+    from urllib.parse import parse_qs, urlparse
+
+    Matter.objects.create(
+        title="Mais saabunud teema",
+        record_mode=RecordMode.FULL,
+        origin=MatterOrigin.NATIVE,
+        reference_year=world.current_year,
+        reference_number=75,
+        reporting_year=world.current_year,
+        owner=world.martin,
+        received_date=date(world.current_year, 6, 5),
+    )
+    client.force_login(world.head)
+    context = reporting_context(world.head, period=period)
+
+    card = compute(keys.NEW_NATIVE_FULL_MATTERS, context)
+    chart = compute(keys.NEW_NATIVE_FULL_MATTERS_BY_MONTH, context)
+    assert card.value > 0
+    assert card.drillthrough_url and chart.drillthrough_url
+    assert _register_total(client, card.drillthrough_url) == card.value
+    assert _register_total(client, chart.drillthrough_url) == chart.value == card.value
+    assert len(chart.segments) >= 5
+    for segment in chart.segments:
+        assert segment.url, segment.label
+        assert _register_total(client, segment.url) == segment.value, segment.label
+        query = parse_qs(urlparse(segment.url).query)
+        assert query["liik"] == [RecordMode.FULL.value]
+        assert query["paritolu"] == [MatterOrigin.NATIVE.value]
+        assert query["andmed"] == ["paris"]
+        assert "aasta" not in query
+        assert query["saabus_alates"] and query["saabus_kuni"]
 
 
 def test_intake_declines_when_nothing_carries_an_arrival_date(world, reporting_context):

@@ -15,6 +15,7 @@ import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils import timezone
 
 from app.documents.models import Document
 from app.matters.views import DOCUMENT_PAGE_SIZE
@@ -79,11 +80,37 @@ def test_the_year_filter_offers_the_years_the_rows_have(client, specialist, dens
     client.force_login(specialist)
     response = _page(client, dense)
 
+    # In the active zone, the year the filter applies and the row prints: the
+    # fixture's UTC new-year edge (31.12.2023 23:30 UTC) is 2024 in Tallinn.
     expected = sorted(
-        {document.created_at.year for document in Document.objects.filter(matter=dense)},
+        {
+            timezone.localtime(document.created_at).year
+            for document in Document.objects.filter(matter=dense)
+        },
         reverse=True,
     )
     assert response.context["document_years"] == expected
+    assert 2024 in expected
+
+
+def test_the_year_offered_is_the_year_the_filter_finds(client, specialist):
+    """A file uploaded 1.01.2026 at 00:30 in Tallinn is a 2026 file, offered and found.
+
+    The options were read in UTC (2025) while `?aasta=` filters in Tallinn
+    (2026): the offered year found nothing and the file's own year was not
+    offered (bounty A-03).
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    document = factories.DocumentFactory(matter=matter, title="Uusaasta öö dokument")
+    Document.objects.filter(pk=document.pk).update(
+        created_at=datetime(2025, 12, 31, 22, 30, tzinfo=UTC)
+    )
+    client.force_login(specialist)
+
+    assert _page(client, matter).context["document_years"] == [2026]
+    found = _page(client, matter, aasta="2026").context["evidence_documents"]
+    assert [row.pk for row in found] == [document.pk]
+    assert list(_page(client, matter, aasta="2025").context["evidence_documents"]) == []
 
 
 def test_the_default_page_does_not_load_every_document(client, specialist, dense):

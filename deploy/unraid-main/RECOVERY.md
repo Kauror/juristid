@@ -136,6 +136,7 @@ limits are environment variables with defaults; set them in
 | `INTAKE_STAGING_SWEEP_MAX_BYTES` | 5368709120 (5 GiB) | staged bytes one sweep removes |
 | `INTAKE_STAGING_SWEEP_INTERVAL_SECONDS` | 900 | pause between sweeps |
 | `INTAKE_STAGING_SWEEP_STALE_SECONDS` | 3600 | how long a stale session may wait before the probe is red |
+| `INTAKE_FORM_TOKEN_RETENTION_SECONDS` | 1209600 (14 days) | how long a saved form's spent token (no files) is kept, so a retry or Back cannot file it twice |
 
 The free space is that of the filesystem under `/app/pending-uploads` — on this
 host Docker's own storage, which every container shares. Before the first

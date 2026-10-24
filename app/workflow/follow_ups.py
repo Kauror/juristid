@@ -70,6 +70,12 @@ FOLLOW_UP_TEXT_MANY = "Kontrolli, kas adressaadid on Koja arvamusele vastanud"
 #: sentence names no addressee, so one wording serves one body and several.
 #: Checks scheduled before keep the words they were written with.
 FOLLOW_UP_PROPOSAL_TEXT = "Kontrolli, mis on pöördumisest saanud"
+#: Every sentence `follow_up_text` writes. A live check still reading one of
+#: these is in the system's words and follows a correction of what they were
+#: chosen from; any other sentence is a person's, and is never rewritten.
+AUTOMATIC_FOLLOW_UP_TEXTS = frozenset(
+    {FOLLOW_UP_TEXT_ONE, FOLLOW_UP_TEXT_MANY, FOLLOW_UP_PROPOSAL_TEXT}
+)
 
 #: A form named a check that is no longer planned or current (stale tab).
 FOLLOW_UP_CHANGED = "See järelkontroll on vahepeal muutunud. Värskenda lehte ja vaata uuesti."
@@ -715,6 +721,47 @@ def cancel_checks_of_submission(*, submission: Any, actor: Any = None, reason: s
     if was_current:
         promote_next_planned_action(matter=submission.matter, actor=actor)
     return cancelled
+
+
+@transaction.atomic
+def follow_recipient_correction(*, submission: Any) -> list[dict[str, str]]:
+    """Corrected addressees or `Liik` reword the live check — unless a person wrote its words.
+
+    The sentence is chosen once, at the send, from how many addressees the
+    letter had and what kind of letter it was (`follow_up_text`), and copied
+    onto every later check. A correction from one addressee to two left
+    «Kontrolli, kas adressaat …» on a letter to several, against the plural
+    docs/adr/0146 §3 asks for. So, the way `follow_sent_date_correction`
+    follows a corrected day: only the planned or current check, only while the
+    opinion is still watched, only while its words are still one of the
+    automatic sentences, and in place — the same check, its id, day and
+    history kept. A completed check is history and is never touched.
+
+    Returns what changed, ``{"id", "from", "to", "follow_up"}`` per check, for
+    the caller to record on the event of the correction that caused it: there
+    is no event of its own for a check's words (the audit stays on the events
+    docs/adr/0146 §10 lists). The caller holds the Matter's and the
+    submission's locks.
+    """
+    follow_up = OpinionFollowUp.objects.filter(submission=submission).first()
+    if follow_up is None or not follow_up.is_monitoring:
+        return []
+    wanted = follow_up_text(_addressee_count(submission), submission.kind)
+    reworded: list[dict[str, str]] = []
+    checks = (
+        NextAction.objects.select_for_update(no_key=True)
+        .filter(follow_up=follow_up, status__in=ACTIVE)
+        .order_by("pk")
+    )
+    for check in checks:
+        if check.text == wanted or check.text not in AUTOMATIC_FOLLOW_UP_TEXTS:
+            continue
+        reworded.append(
+            {"id": str(check.pk), "from": check.text, "to": wanted, "follow_up": str(follow_up.pk)}
+        )
+        check.text = wanted
+        check.save(update_fields=["text", "updated_at"])
+    return reworded
 
 
 @transaction.atomic

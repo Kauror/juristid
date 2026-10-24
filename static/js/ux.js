@@ -86,6 +86,15 @@
      to `PRAEGUNE TEGEVUS` like the others (ENG-021). */
   var NEXT_STEP_TARGETS = ["praegune-tegevus", "lisa-jargmine", "vaatasin-ule"];
 
+  /* A planned action's own `✓ Tehtud` (`planeeritud-tehtud-<pk>`) and `Muuda`
+     (`planeeritud-<pk>`) in `PRAEGUNE TEGEVUS` — Minu asjad's `Lisa tulemus…`
+     and `Muuda` on a planned row (docs/adr/0143, 0144 §1). Opened and focused
+     like the others; where the panel is not drawn (the action has since been
+     finished, or the reader may not write) arrival lands on the zone and opens
+     nothing, because the current step's `✓ Tehtud` would finish a different
+     step. */
+  var PLANNED_TARGET = /^planeeritud-(?:tehtud-)?[0-9a-f-]{36}$/;
+
   /* Open whatever kind of disclosure this destination is, and say whether it
    * was one.
    *
@@ -137,11 +146,17 @@
 
   function arriveAtNextStep() {
     var wanted = (window.location.hash || "").slice(1);
-    if (NEXT_STEP_TARGETS.indexOf(wanted) === -1) {
+    var planned = PLANNED_TARGET.test(wanted);
+    if (!planned && NEXT_STEP_TARGETS.indexOf(wanted) === -1) {
       return;
     }
     var target = document.getElementById(wanted) || document.getElementById("praegune-tegevus");
     if (!target) {
+      return;
+    }
+    if (planned && target.id !== wanted) {
+      target.scrollIntoView({ block: "center", behavior: "auto" });
+      focusQuietly(target);
       return;
     }
     if (revealDisclosure(target)) {
@@ -1618,7 +1633,21 @@
      nothing to submit. With scripting off the input simply does nothing and
      every row stays visible, which is the correct fallback for a control whose
      only job is to hide some of them (design handoff, Minu asjad §G).
+
+     Three things it owes the person typing (E-05):
+     - **Diacritics fold on both sides.** «zurii» finds «Žürii» and «tahtaeg»
+       finds «tähtaeg»: NFD, combining marks dropped, lower case.
+     - **A match behind «Näita veel» is shown.** The collapsed `.pw-more`
+       opens while the filter holds a match inside it, and returns to how the
+       person left it when the box is cleared.
+     - **Nothing matching says so** (`data-filter-empty` names the line), so
+       an empty list is never mistaken for a page that lost its rows.
      ------------------------------------------------------------------ */
+  function foldForFilter(text) {
+    var lowered = String(text || "").toLowerCase();
+    return lowered.normalize ? lowered.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : lowered;
+  }
+
   function bindRowFilter(root) {
     var inputs = root.querySelectorAll("[data-filter-rows]");
     Array.prototype.forEach.call(inputs, function (input) {
@@ -1627,15 +1656,39 @@
       }
       input.dataset.filterBound = "1";
       var selector = input.getAttribute("data-filter-rows");
+      var emptyId = input.getAttribute("data-filter-empty");
       input.addEventListener("input", function () {
-        var needle = input.value.trim().toLowerCase();
+        var needle = foldForFilter(input.value.trim());
         var groups = document.querySelectorAll(selector);
+        var shown = 0;
         Array.prototype.forEach.call(groups, function (group) {
+          var matchesHere = 0;
           Array.prototype.forEach.call(group.children, function (row) {
-            var text = (row.textContent || "").toLowerCase();
+            var text = foldForFilter(row.textContent);
             row.hidden = needle !== "" && text.indexOf(needle) === -1;
+            if (!row.hidden) {
+              matchesHere += 1;
+            }
           });
+          shown += matchesHere;
+          var more = group.closest("details.pw-more");
+          if (!more) {
+            return;
+          }
+          if (needle !== "") {
+            if (!("filterWasOpen" in more.dataset)) {
+              more.dataset.filterWasOpen = more.open ? "1" : "0";
+            }
+            more.open = matchesHere > 0 || more.dataset.filterWasOpen === "1";
+          } else if ("filterWasOpen" in more.dataset) {
+            more.open = more.dataset.filterWasOpen === "1";
+            delete more.dataset.filterWasOpen;
+          }
         });
+        var empty = emptyId ? document.getElementById(emptyId) : null;
+        if (empty) {
+          empty.hidden = needle === "" || shown > 0;
+        }
       });
     });
   }

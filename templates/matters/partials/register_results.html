@@ -103,6 +103,16 @@ somebody is typing into would move the caret on every keystroke.
     {% endcomment %}
     {% include "matters/partials/matter_table.html" with matters=page.object_list register_interactive=register_interactive %}
     {% include "components/pagination.html" with page=page query_string=query_string %}
+  {% elif query_was_refused %}
+    {% comment %}
+      Not «ei andnud tulemusi»: the query was never run, and the sentence is
+      the one `/otsing/` gives for the same refusal (E-07).
+    {% endcomment %}
+    <p class="empty">
+      Otsingusõna on liiga pikk või sisaldab märke, mida otsing ei kasuta.
+      Päringut ei tehtud. Proovi kuni {{ max_query_characters }} tähemärgiga otsingut.
+      <a href="?{{ cleared_query }}">Tühjenda otsing ja filtrid</a>
+    </p>
   {% elif query %}
   {% comment %}
     Where the matches actually are, when they are not here.
