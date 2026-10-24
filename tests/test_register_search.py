@@ -987,6 +987,13 @@ def test_an_excluded_word_is_never_matched_back_in(signed_in, specialist):
     response = signed_in.get(REGISTER, {"q": "alfa -teemad", "olek": "koik"})
     assert "Alfa teema" not in titles_on(response)
 
+    # A minus inside quotes is part of the phrase, as `websearch_to_tsquery`
+    # reads it (``"alfa -beeta"`` is ``'alfa' <-> 'beeta'``), so it excludes
+    # nothing: the phrase still finds its title.
+    assert excluded.pk in {
+        result.matter.pk for result in search_matters(query='"alfa -beeta"', user=specialist)
+    }
+
 
 # ---------------------------------------------------------------------------
 # A query the search refuses is said to be refused (E-07)

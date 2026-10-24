@@ -385,8 +385,11 @@ PREFIX_MINIMUM = 4
 _WEBSEARCH_SYNTAX = re.compile(r'"|(?:^|\s)-\w|(?:^|\s)or(?:\s|$)', re.IGNORECASE)
 _WORD = re.compile(r"\w+")
 #: A word the query excludes: ``-maks`` at the start or after whitespace, the
-#: way `websearch_to_tsquery` reads it.
+#: way `websearch_to_tsquery` reads it — outside quotes only, since a minus
+#: inside a quoted phrase is part of the phrase there (``"maks -tulu"`` is
+#: ``'maks' <-> 'tulu'``), so `_excluded` drops quoted segments first.
 _EXCLUDED_WORD = re.compile(r"(?:^|\s)-(\w+)")
+_QUOTED = re.compile(r'"[^"]*"?')
 
 #: The longest query this module will act on.
 #:
@@ -637,7 +640,7 @@ def _excluded(term: str) -> Q | None:
     Stemmed, like the Estonian full-text tier that defines what "excluded"
     means, and applied by `_build` to every tier but the exact title.
     """
-    words = tuple(dict.fromkeys(_EXCLUDED_WORD.findall(term)))
+    words = tuple(dict.fromkeys(_EXCLUDED_WORD.findall(_QUOTED.sub(" ", term))))
     if not words:
         return None
     return Q(search_estonian=tsquery_of(" | ".join(words), config="estonian"))

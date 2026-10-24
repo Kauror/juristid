@@ -751,6 +751,25 @@ def test_a_corrected_sending_date_redraws_the_planned_check_without_a_reload(
     assert f'id="tegevus-{other.pk}" hx-preserve' in oob
 
 
+def test_a_corrected_summary_alone_leaves_the_check_row_to_the_page(
+    signed_in, normal_matter, specialist, ministry
+):
+    """Nothing on the check row comes from the summary, so the row stays the page's.
+
+    Redrawing it would close its open `✓ Tehtud` and drop what is typed there.
+    """
+    opinion = register_sent(normal_matter, specialist, [ministry], day(-10))
+    check = active_check(opinion)
+
+    response = _correct_on_the_page(signed_in, opinion, summary="Parandatud kokkuvõte.")
+
+    assert response.status_code == 200
+    opinion.refresh_from_db()
+    assert opinion.summary == "Parandatud kokkuvõte."
+    row = _row(_oob_list(response), check)
+    assert f'id="jarelkontroll-kuupaev-{check.pk}"' not in row
+
+
 def test_a_corrected_addressee_list_rewords_the_current_check_on_the_page(
     signed_in, normal_matter, specialist, ministry
 ):

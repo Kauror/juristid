@@ -9797,6 +9797,9 @@ def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) 
         )
 
     form = _sent_opinion_edit_form(request, submission, request.POST)
+    # What the opinion's check reads from it, before the correction: its day,
+    # its words and the line naming the opinion under it (docs/adr/0146 §6).
+    check_inputs_before = _check_inputs_of(submission)
     if not form.is_valid():
         return _sent_opinion_row(request, matter, submission, form=form, status=400)
 
@@ -9851,15 +9854,29 @@ def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) 
     # line naming the opinion under it (docs/adr/0146 §6). Only the row is
     # swapped, so `PRAEGUNE TEGEVUS` rides along with this opinion's live
     # checks drawn afresh; every other row keeps what is typed in it.
-    return _with_current_work_rows(
-        request,
-        matter,
-        _sent_opinion_row(request, matter, submission),
-        redraw=list(
+    # A correction of the summary alone changes nothing a check row shows, and
+    # redrawing it would drop what is typed in its open `✓ Tehtud`.
+    redraw = (
+        list(
             pending_checks(matter)
             .filter(follow_up__submission=submission)
             .values_list("pk", flat=True)
-        ),
+        )
+        if _check_inputs_of(submission) != check_inputs_before
+        else []
+    )
+    return _with_current_work_rows(
+        request, matter, _sent_opinion_row(request, matter, submission), redraw=redraw
+    )
+
+
+def _check_inputs_of(submission: Any) -> tuple[Any, ...]:
+    """The parts of a sent opinion its follow-up check row is drawn from."""
+    return (
+        submission.sent_at,
+        submission.sent_at_precision,
+        submission.kind,
+        frozenset(submission.recipients.values_list("pk", flat=True)),
     )
 
 
