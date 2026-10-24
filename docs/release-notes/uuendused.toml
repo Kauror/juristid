@@ -8,6 +8,30 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-24
+basis = "deployment"
+prs = [526, 527, 528, 529, 530, 531]
+# Koordinaatori voor (#526–#529, ühendatud #530) ja vigade jahi voor (#531):
+# migratsioonideta, otsinguindeksit uuesti ei ehitata. Uus seadistus
+# INTAKE_FORM_TOKEN_RETENTION_SECONDS (vaikimisi 14 päeva). MCP 2. etapi
+# sõltumatu kontroll (#527) ja taastamise eelkontroll (#528) on kasutajale
+# nähtamatud. Kui väljalase ei jõua tootmisse 24.10 (Tallinna aja järgi),
+# liigub see kirje väljalaske päeva kuupäevale.
+changes = [
+  "«Praegune tegevus» näitab tegevusi, tagasiside ootamisi ja planeeritud tegevusi ühes loendis kuupäeva järgi, varaseim eespool.",
+  "«Minu asjad» planeeritud tegevuse menüü «Lisa tulemus…» ja «Muuda» avavad selle sama tegevuse, mitte praeguse tegevuse vormi.",
+  "Kui salvestamine tagasi lükatakse, jäävad sisestatud kuupäevad, valikud ja lisatud failid alles ning veateade on selle välja juures, mida parandada.",
+  "Sama vormi korduv saatmine ei loo teist teemat ega lisa sama dokumenti teist korda.",
+  "Kui vale konsultatsioonivooru tagasiside kustutatakse või tõstetakse teise vooru, ootab Juristid selle vooru tagasisidet uuesti.",
+  "Muudatusteta salvestamine ei kirjuta ajalukku muudatust ning töövõidu märkus ei kao enam muutmisel.",
+  "Koja arvamuse saatmiskuupäeva või adressaatide parandamine muudab kohe ka järelkontrolli kuupäeva ja sõnastust.",
+  "Kuupäevavalija ja päise muutmisvaated jäävad kitsal ekraanil nähtavale ning Esc sulgeb päise menüü, muutmisvaated ja «Täpsem otsing».",
+  "Otsingus välistatud sõna (näiteks «-maks») ei too selle sõnaga teemasid tagasi, ka teises käändes; «Otsi minu asjadest» leiab ka täpitähtedeta.",
+  "Statistika «Uusi teemasid perioodil» ja kuude kaupa arvud avavad registris just need teemad.",
+  "Haldus: kui muudatus vajab uut isikukinnitust, öeldakse pärast kinnitust selgelt, et muudatust ei salvestatud, ja sisestatud väärtused pakutakse uuesti.",
+]
+
+[[day]]
 date = 2026-10-23
 basis = "deployment"
 prs = [506, 507, 508, 509, 510, 511, 512, 513, 514, 515, 516, 517, 518, 519, 520, 521, 522, 524]
