@@ -116,16 +116,28 @@ def controlled_vocabulary(request: HttpRequest, key: str) -> HttpResponse:
 # -- organisations ---------------------------------------------------------------------
 
 
-@reference_data_required
-@require_GET
-def organisations(request: HttpRequest) -> HttpResponse:
-    query = (request.GET.get("q") or "").strip()[:200]
+def _organisations_page(
+    request: HttpRequest, form: forms.OrganisationCreateForm, *, query: str = "", status: int = 200
+) -> HttpResponse:
+    """The catalogue list with its create form — the GET page and a refused create alike.
+
+    A refused «Lisa organisatsioon» shows the same rows the list does: an empty
+    table under the error would read as an empty catalogue.
+    """
     rows = list(catalogue.search_organisations(query, limit=100).prefetch_related("aliases"))
     return _render(
         request,
         "reference_data/organisations.html",
-        {"query": query, "rows": rows, "form": forms.OrganisationCreateForm()},
+        {"query": query, "rows": rows, "form": form},
+        status=status,
     )
+
+
+@reference_data_required
+@require_GET
+def organisations(request: HttpRequest) -> HttpResponse:
+    query = (request.GET.get("q") or "").strip()[:200]
+    return _organisations_page(request, forms.OrganisationCreateForm(), query=query)
 
 
 @reference_data_required
@@ -154,12 +166,7 @@ def organisation_create(request: HttpRequest) -> HttpResponse:
         else:
             messages.success(request, f"Lisatud: {created.name}.")
             return redirect("reference_data:organisation", pk=created.pk)
-    return _render(
-        request,
-        "reference_data/organisations.html",
-        {"query": "", "rows": [], "form": form},
-        status=400,
-    )
+    return _organisations_page(request, form, status=400)
 
 
 def _organisation_context(organisation: Organisation, **forms_in: Any) -> dict[str, Any]:
@@ -279,16 +286,24 @@ def organisation_alias_remove(request: HttpRequest, pk: Any, alias_pk: Any) -> H
 # -- tags ------------------------------------------------------------------------------
 
 
-@reference_data_required
-@require_GET
-def tags(request: HttpRequest) -> HttpResponse:
-    query = (request.GET.get("q") or "").strip()[:200]
+def _tags_page(
+    request: HttpRequest, form: forms.TagCreateForm, *, query: str = "", status: int = 200
+) -> HttpResponse:
+    """The tag list with its create form — the GET page and a refused «Lisa silt» alike."""
     rows = list(vocabulary.search_tags(query).prefetch_related("aliases"))
     return _render(
         request,
         "reference_data/tags.html",
-        {"query": query, "rows": rows, "form": forms.TagCreateForm()},
+        {"query": query, "rows": rows, "form": form},
+        status=status,
     )
+
+
+@reference_data_required
+@require_GET
+def tags(request: HttpRequest) -> HttpResponse:
+    query = (request.GET.get("q") or "").strip()[:200]
+    return _tags_page(request, forms.TagCreateForm(), query=query)
 
 
 @reference_data_required
@@ -311,9 +326,7 @@ def tag_create(request: HttpRequest) -> HttpResponse:
         else:
             messages.success(request, f"Silt lisatud: {created.name_et}.")
             return redirect("reference_data:tag", pk=created.pk)
-    return _render(
-        request, "reference_data/tags.html", {"query": "", "rows": [], "form": form}, status=400
-    )
+    return _tags_page(request, form, status=400)
 
 
 def _tag(pk: Any) -> Tag:

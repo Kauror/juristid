@@ -163,7 +163,13 @@ the corrected date + 30, but only while all of these hold:
 - the check still stands on its automatic day.
 
 A day a lawyer chose is never silently overwritten. Correcting the title, kind,
-summary or recipients creates no second check. A completed check's completion
+summary or recipients creates no second check. Corrected addressees or a
+corrected kind do reword the planned or current check in place — one addressee
+or several, an opinion or a Chamber proposal (§3) — but only while its words
+are still one of the automatic sentences; a completed check and words a person
+wrote are left as they are. What changed rides on the correction's own event
+(`SUBMISSION_RECIPIENTS_CHANGED` or `SUBMISSION_CORRECTED`, `follow_up_checks`)
+(`follow_recipient_correction`, 2026-10-24). A completed check's completion
 time is history, not a scheduling field.
 
 ## 7. Where a check is seen

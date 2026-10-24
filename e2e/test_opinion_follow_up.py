@@ -21,6 +21,7 @@ from e2e.conftest import (
     create_matter,
     document_overflows,
     open_add_panel,
+    open_kaik_row,
     sign_in,
     wait_for_htmx,
 )
@@ -177,6 +178,63 @@ def test_a_second_opinion_keeps_its_own_check_and_ending_asks_why(page, base_url
     expect(page.locator(_links_to_checks_of(url))).to_have_count(1)
     page.goto(url)
     expect(_check_rows(page)).to_have_count(1)
+
+
+def test_correcting_the_sent_opinion_redraws_its_check_without_a_reload(page, base_url):
+    """Bounty H-02: `Muuda` on «Arvamus välja» swapped only its row, so the
+    check kept the old day and the old opinion line until the page was loaded
+    again."""
+    sign_in(page, base_url, SANDRA)
+    create_matter(
+        page,
+        base_url,
+        unique_title("Parandatud saatmine"),
+        owner=SANDRA,
+        sender="Näidisministeerium",
+    )
+    open_add_panel(page, "arvamus-koja")
+    form = page.locator("#arvamus-koja")
+    form.locator("input[name=upload]").set_input_files(
+        [{"name": "parandus.pdf", "mimeType": "application/pdf", "buffer": PDF + b"parandus"}]
+    )
+    form.locator("input[name=sent_on]").fill(_et(-10))
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    wait_for_htmx(page)
+    row = _check_rows(page).first
+    expect(row).to_contain_text(_et(20))
+
+    region = page.locator("[id^=koja-arvamus-][id$=-sisu]").first
+    opinion_id = (region.get_attribute("id") or "")[len("koja-arvamus-") : -len("-sisu")]
+    open_kaik_row(region)
+    region.locator(f"button[hx-get*='/koja-arvamus/{opinion_id}/muuda/']").click()
+    wait_for_htmx(page)
+    editor = page.locator(f"#koja-arvamus-{opinion_id}-sisu form")
+    editor.locator("input[name=sent_on]").fill(_et(-5))
+    editor.locator("select[name=recipients]").select_option(
+        label=["Näidisministeerium", "Näidisettevõtete liit"]
+    )
+    with page.expect_response(
+        lambda r: (
+            r.url.endswith(f"/koja-arvamus/{opinion_id}/muuda/") and r.request.method == "POST"
+        )
+    ) as caught:
+        editor.get_by_role("button", name="Salvesta").click()
+    assert caught.value.status == 200, caught.value.status
+    wait_for_htmx(page)
+
+    # No reload: the check moved with the corrected day, speaks of both
+    # addressees, and names the opinion as it now reads.
+    row = _check_rows(page).first
+    expect(row).to_contain_text(_et(25))
+    expect(row).not_to_contain_text(_et(20))
+    expect(row).to_contain_text("Kontrolli, kas adressaadid on Koja arvamusele vastanud")
+    expect(row.locator(".followup__subject")).to_contain_text(f"Koja arvamus {_et(-5)}")
+    expect(row.locator(".followup__subject")).to_contain_text("Näidisettevõtete liit")
+    # Its own controls came with it and still work.
+    row.locator("details > summary", has_text="Muuda").click()
+    row.locator("input[name=target_date]").fill(_et(26))
+    _save(page, row, "kuupaev")
+    expect(_check_rows(page).first).to_contain_text(_et(26))
 
 
 def test_the_check_row_fits_a_phone(page, base_url):

@@ -602,21 +602,33 @@ def correct_sent_opinion(
             ),
             actor=actor,
         )
+    # A Chamber proposal's check asks what became of it, an opinion's whether
+    # the addressees answered: a corrected `Liik` rewords a check still in the
+    # system's words. Recipients that moved have already reworded it, under
+    # their own event, and then this finds nothing left to do.
+    reworded: list[dict[str, str]] = []
+    if "kind" in changed:
+        from app.workflow.follow_ups import follow_recipient_correction
+
+        reworded = follow_recipient_correction(submission=locked)
 
     if changed:
         # Only when a value actually moved. An audit row for a save that changed
         # nothing would be a history of somebody pressing a button — and the
         # recipients, when they moved, have already written their own event.
+        payload: dict[str, Any] = {
+            "from": {field: _audit_value(before[field]) for field in changed},
+            "to": {field: _audit_value(after[field]) for field in changed},
+        }
+        if reworded:
+            payload["follow_up_checks"] = reworded
         record_change_event(
             event_type=ChangeEventType.SUBMISSION_CORRECTED,
             matter=locked.matter,
             actor=actor,
             obj=locked,
             summary=locked.title[:200],
-            payload={
-                "from": {field: _audit_value(before[field]) for field in changed},
-                "to": {field: _audit_value(after[field]) for field in changed},
-            },
+            payload=payload,
         )
 
     submission.refresh_from_db()
@@ -797,18 +809,26 @@ def set_recipients(
     # `updated_at` to reach a signal would be a lie in the audit trail
     # (app/search/indexing.py).
     reindex_submission(submission)
+    # A sent letter's live check is worded for its addressees: one, or several
+    # (docs/adr/0146 §3). A draft has no check, so this finds nothing for one.
+    from app.workflow.follow_ups import follow_recipient_correction
+
+    reworded = follow_recipient_correction(submission=submission)
 
     if audit and rows:
+        payload: dict[str, Any] = {
+            "addressees": [organisation.name for organisation in addressees],
+            "for_information": [organisation.name for organisation in for_information],
+        }
+        if reworded:
+            payload["follow_up_checks"] = reworded
         record_change_event(
             event_type=ChangeEventType.SUBMISSION_RECIPIENTS_CHANGED,
             matter=submission.matter,
             actor=actor,
             obj=submission,
             summary=submission.title[:200],
-            payload={
-                "addressees": [organisation.name for organisation in addressees],
-                "for_information": [organisation.name for organisation in for_information],
-            },
+            payload=payload,
         )
     return submission
 

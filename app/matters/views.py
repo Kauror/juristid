@@ -335,7 +335,7 @@ from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.consistency import current_work_alerts
 from app.workflow.enums import PlanStepOperation, Track
-from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed
+from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed, pending_checks
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.selectors import stages_including
 from app.workflow.services import acknowledge_review
@@ -4606,9 +4606,20 @@ def _engagement_row(
 
 
 def _with_current_work_rows(
-    request: HttpRequest, matter: Matter, response: HttpResponse
+    request: HttpRequest,
+    matter: Matter,
+    response: HttpResponse,
+    *,
+    redraw: Sequence[Any] = (),
 ) -> HttpResponse:
-    """`response` with `PRAEGUNE TEGEVUS`'s date-ordered list out of band."""
+    """`response` with `PRAEGUNE TEGEVUS`'s date-ordered list out of band.
+
+    ``redraw`` names follow-up checks (`NextAction` ids) whose rows the save
+    itself changed, so the page's own element would be the stale one: they
+    are sent drawn in full — day, words, controls, the opinion's line — and
+    without `hx-preserve`. Every other row keeps the page's element, with
+    whatever is typed in it.
+    """
     # The round's answer changes what `PRAEGUNE TEGEVUS` says it is waiting on:
     # finished, given a reply-by day, or a deadline moved or cleared. Only the
     # row is swapped, so the zone's date-ordered list rides along out of band
@@ -4620,18 +4631,37 @@ def _with_current_work_rows(
     # anything typed in them included, and only their position is new. A closed
     # file draws no such list, so nothing is sent for one.
     if matter.is_open and request.headers.get("HX-Request"):
+        current_action = selectors.current_action_of(matter, request.user)
+        planned_actions = selectors.planned_actions_of(matter, request.user)
+        # Only rows this reader is drawn anyway: `redraw` narrows the
+        # preservation and never adds a row the scoped reads left out.
+        named = set(redraw)
+        fresh = [
+            action
+            for action in (current_action, *planned_actions)
+            if action is not None and action.follow_up_id and action.pk in named
+        ]
+        _attach_follow_up_forms(fresh, request.user)
         response.content += render_to_string(
             "matters/partials/current_work_rows.html",
             {
                 "matter": matter,
                 "work_rows": chronological_rows(
-                    current_action=selectors.current_action_of(matter, request.user),
+                    current_action=current_action,
                     feedback_waits=_feedback_waits_of(request, matter),
-                    planned_actions=selectors.planned_actions_of(matter, request.user),
+                    planned_actions=planned_actions,
                 ),
                 # `Tehtud` on each waiting line is a write control.
                 "can_write": may_write_business_content(request.user),
                 "oob": True,
+                "redraw_rows": {action.pk for action in fresh},
+                # A redrawn current check brings the read-only alerts drawn
+                # under the step, as the page render does (docs/adr/0161).
+                "consistency_alerts": (
+                    current_work_alerts(matter, current_action, request.user)
+                    if current_action is not None and current_action in fresh
+                    else []
+                ),
             },
             request=request,
         ).encode(response.charset or "utf-8")
@@ -9816,7 +9846,21 @@ def update_sent_opinion_view(request: HttpRequest, pk: Any, submission_id: Any) 
         )
 
     submission.refresh_from_db()
-    return _sent_opinion_row(request, matter, submission)
+    # A corrected day or addressee list moves the opinion's check — its day
+    # while nobody chose one, its words with the addressees, and always the
+    # line naming the opinion under it (docs/adr/0146 §6). Only the row is
+    # swapped, so `PRAEGUNE TEGEVUS` rides along with this opinion's live
+    # checks drawn afresh; every other row keeps what is typed in it.
+    return _with_current_work_rows(
+        request,
+        matter,
+        _sent_opinion_row(request, matter, submission),
+        redraw=list(
+            pending_checks(matter)
+            .filter(follow_up__submission=submission)
+            .values_list("pk", flat=True)
+        ),
+    )
 
 
 @login_required
