@@ -13,6 +13,7 @@ from django.templatetags.static import static
 
 from app.core.authorization import is_department_head
 from app.core.development_status import ITEMS as DEVELOPMENT_STATUS_ITEMS
+from app.core.keyboard_shortcuts import GROUPS as KEYBOARD_SHORTCUT_GROUPS
 from app.core.middleware import FAILURE_HEADER, NO_STORE, is_htmx
 from app.core.release_notes import load_release_notes
 
@@ -113,6 +114,26 @@ def release_notes(request: HttpRequest) -> HttpResponse:
         request,
         "core/release_notes.html",
         {"release_days": load_release_notes()},
+    )
+
+
+def keyboard_shortcuts(request: HttpRequest) -> HttpResponse:
+    """Kiirklahvid: every keyboard shortcut Juristid has, on one page.
+
+    The same door as Uuendused and for the same reason: no business data, so no
+    persona is needed and none is asked for. The shared gate still stands in
+    front of it like every other path; nothing is exempted
+    (`tests/test_business_routes_need_a_reader.py`).
+
+    The rows are `app/core/keyboard_shortcuts.py`, where each names the script
+    that answers its key — the screens no longer carry hint strips, so this is
+    the one place the keys are written down and it must not promise one that
+    is gone.
+    """
+    return render(
+        request,
+        "core/keyboard_shortcuts.html",
+        {"shortcut_groups": KEYBOARD_SHORTCUT_GROUPS},
     )
 
 
