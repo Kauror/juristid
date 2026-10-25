@@ -497,3 +497,18 @@ direct way to finish the work.
 - `Ava uuesti` still names the stage the file reopens in (§12).
 - `SUPERSEDED` and `DUPLICATE` are still not offered (`CLOSURE_CHOICES`).
 - No MCP write operation closes a Matter.
+
+### Release review, 2026-10-25 — «Jõustus või töö lõppes» is not offered
+
+Before the first production release of `Lõpeta teema`, `COMPLETED` was
+withdrawn from `CLOSURE_CHOICES`. Its label joined two different facts: a law
+in force is a `Hetkeseis` («Jõustunud», §10), and Koda's work being done is
+«Koda ei tegele edasi». A lawyer choosing it from the panel would have recorded
+the first while meaning the second. The panel now offers «Koda ei tegele
+edasi», «Eelnõu või algatus lõpetati», «Seisukohta ei kujundatud», «Vastus
+esitatud ja järeltegevus tehtud» and «Muu»; a post naming `COMPLETED` is
+refused like any reason the panel lacks.
+
+`Disposition.COMPLETED`, its `CLOSURE_REASON_LABELS` words, the stored
+closures and «Jõustunud» closing with it are unchanged — no migration, and a
+file already closed that way reads exactly as before.

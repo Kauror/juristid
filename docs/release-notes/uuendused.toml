@@ -8,6 +8,21 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-25
+basis = "deployment"
+prs = [540]
+# «Lõpeta teema» (#540, ADR 0131 täiendus 25.10) koos väljalaske-eelse
+# ülevaatusega, mis eemaldas valiku «Jõustus või töö lõppes».
+# Migratsioonideta, otsinguindeksit uuesti ei ehitata. Sama päeva varasem
+# väljalase (r26, ee7863ce) oli kasutajale nähtamatu ja jäi kirjeta.
+# Kui väljalase ei jõua tootmisse 25.10 (Tallinna aja järgi), liigub see
+# kirje väljalaske päeva kuupäevale.
+changes = [
+  "Teema saab nüüd lõpetada ka ilma Koja kirjalikku arvamust saatmata või hetkeseisu muutmata.",
+  "Lõpetamisel saab valida põhjuse ja lisada selgituse, mis jääb teema ajalukku.",
+]
+
+[[day]]
 date = 2026-10-24
 basis = "deployment"
 prs = [526, 527, 528, 529, 530, 531]

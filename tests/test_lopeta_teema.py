@@ -45,7 +45,7 @@ from app.matters.enums import EngagementKind
 from app.matters.forms import CLOSURE_CHOICES, CLOSURE_EXPLANATION_MAX_LENGTH
 from app.matters.models import Entry, Matter, MatterResponseDeadline, MatterStageEpisode
 from app.matters.response_deadlines import change_response_deadline
-from app.matters.services import add_engagement, change_stage, create_matter
+from app.matters.services import add_engagement, change_stage, close_matter, create_matter
 from app.matters.views import CLOSURE_DIGEST_HEADER
 from app.matters.workspace import add_matter_meeting, close_matter_from_workspace
 from app.submissions.enums import SubmissionStatus
@@ -147,6 +147,38 @@ def test_the_successor_and_duplicate_reasons_are_not_offered_or_accepted(signed_
         assert response.status_code == 400
     matter.refresh_from_db()
     assert matter.is_open and _closures(matter) == 0
+
+
+def test_jo_ustus_voi_too_loppes_is_not_offered_or_accepted(signed_in, specialist):
+    """«Jõustus või töö lõppes» joined a law in force (a `Hetkeseis`) and Koda
+    being done («Koda ei tegele edasi»), so the panel no longer offers it
+    (docs/adr/0131, release review of 2026-10-25). The disposition stays: a
+    hand-built post with it is refused like any reason the panel lacks."""
+    offered = {value for value, _label in CLOSURE_CHOICES}
+    assert Disposition.COMPLETED.value not in offered
+
+    matter = _matter(specialist)
+    panel = _page(signed_in, matter)
+    panel = panel[panel.index('id="teema-lopeta"') :].split("</form>")[0]
+    assert "Jõustus või töö lõppes" not in panel
+    assert f'value="{Disposition.COMPLETED.value}"' not in panel
+
+    response = _close(signed_in, matter, disposition=Disposition.COMPLETED.value)
+    assert response.status_code == 400
+    assert "Vali, miks teema lõpetatakse." in response.content.decode()
+    matter.refresh_from_db()
+    assert matter.is_open and _closures(matter) == 0
+
+
+def test_a_file_closed_as_completed_still_reads_as_before(signed_in, specialist):
+    """Existing `COMPLETED` closures — every «Jõustunud» and every earlier
+    direct one — keep their words on the banner and in `Teema käik`."""
+    matter = _matter(specialist)
+    close_matter(matter=matter, disposition=Disposition.COMPLETED, actor=specialist)
+
+    matter.refresh_from_db()
+    assert matter.closure_reason_label == "Jõustus või töö lõppes"
+    assert "Jõustus või töö lõppes" in _page(signed_in, matter)
 
 
 def test_no_panel_on_a_closed_file_or_for_a_reader(client, signed_in, specialist, reader):
