@@ -131,8 +131,9 @@ def test_the_panel_is_on_an_open_file_and_defaults_to_koda_ei_tegele_edasi(signe
     for _value, label in CLOSURE_CHOICES:
         assert label in panel
     assert 'name="explanation"' in panel
-    # No date, participant, institution, file, stage or opinion field.
-    for retired in ("occurred_on", "attachments", "organisation", "stage", "recipients"):
+    # No date, participant, institution, stage or opinion field; files are
+    # optional (tests/test_lopeta_teema_files.py).
+    for retired in ("occurred_on", "organisation", "stage", "recipients"):
         assert f'name="{retired}"' not in panel.split("</form>")[0]
 
 
@@ -400,7 +401,7 @@ def test_a_pending_opinion_follow_up_needs_its_own_confirmation(
     done = _close(
         signed_in,
         matter,
-        disposition=Disposition.RESPONSE_COMPLETE.value,
+        disposition=Disposition.NO_POSITION_FORMED.value,
         confirm_follow_up_closure=first[CLOSURE_DIGEST_HEADER],
     )
 

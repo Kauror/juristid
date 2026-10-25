@@ -562,6 +562,12 @@ class TimelineItem:
     #: How many imported historical files this row stands for, on the one row
     #: per import (`HISTORICAL_IMPORT_ITEM`); 0 on every other row.
     imported_documents: int = 0
+    #: The files a `Lõpeta teema` brought, on its «Teema suletud» row and on no
+    #: other: the `EVIDENCE_VERSION_ADDED` events written in the closing's own
+    #: operation (`CLOSURE_FILES`). Apart from ``events`` on purpose — those
+    #: say what a row *is* (grouped, its marker, its verbs), and a closure with
+    #: a letter under it is still the closure.
+    closure_evidence: tuple[ChangeEvent, ...] = ()
 
     @property
     def is_milestone(self) -> bool:
@@ -1138,6 +1144,23 @@ WITHDRAWAL_REASON_LABEL = "Põhjus"
 
 #: The label of a closure's `Selgitus` on its `Teema käik` row.
 CLOSURE_EXPLANATION_LABEL = "Selgitus"
+
+#: **The files a `Lõpeta teema` brought read on its «Teema suletud» row**
+#: (docs/adr/0131, closure files amendment).
+#:
+#: A closure is not a record a `DocumentLink` can name — it is a state of the
+#: Matter and the `MATTER_CLOSED` event that recorded it — so its evidence is
+#: tied to it the way every act on this page is tied together: the
+#: `operation_id` that `close_matter_from_workspace` stamped on the closing and
+#: on each file's `EVIDENCE_VERSION_ADDED`, in one transaction. Never a time, a
+#: filename, the Matter's current state or an order (docs/adr/0092 §6).
+#:
+#: A Matter closed, reopened and closed again has two closings and two
+#: operations, so each row keeps exactly the files of its own closing. The
+#: files are ordinary `Document`s: listed on `Dokumendid`, searchable, opened
+#: through the usual authorized routes, and attached here through the same
+#: `Document.visible_to` filter as every other file on this page (`_with_files`).
+CLOSURE_FILES = "closure_evidence"
 
 
 @dataclass(frozen=True)
@@ -2885,6 +2908,34 @@ def _assemble_timeline(
     # (docs/adr/0074 §14).
     milestone_events = [event for event in renderable if event.event_type in MILESTONE_EVENT_TYPES]
     renderable = [event for event in renderable if event.event_type not in MILESTONE_EVENT_TYPES]
+
+    # **A closure's own files read under it** (`CLOSURE_FILES`). Only a closing
+    # that was the whole act — no note and no record written in its operation —
+    # takes the files of that operation; a save that wrote a note keeps its
+    # files on the note's row, as it always has.
+    acts_with_records = set(entry_operations.values()) | {
+        operation for tied in record_operations.values() for operation, _a, _t in tied
+    }
+    closing_operations = {
+        event.operation_id
+        for event in milestone_events
+        if event.event_type == ChangeEventType.MATTER_CLOSED
+        and event.operation_id is not None
+        and event.operation_id not in acts_with_records
+    }
+    closure_files: dict[uuid.UUID, list[ChangeEvent]] = {}
+    if closing_operations:
+        not_closure_files: list[ChangeEvent] = []
+        for event in renderable:
+            if (
+                event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+                and event.operation_id in closing_operations
+            ):
+                closure_files.setdefault(event.operation_id, []).append(event)
+                continue
+            not_closure_files.append(event)
+        renderable = not_closure_files
+
     for event in milestone_events:
         items.append(
             TimelineItem(
@@ -2895,6 +2946,14 @@ def _assemble_timeline(
                 event=event,
                 events=(event,),
                 milestone=_milestone_for_event(event),
+                # Oldest first, in the order they were chosen: the stream is
+                # newest first.
+                closure_evidence=(
+                    tuple(reversed(closure_files.get(event.operation_id, [])))
+                    if event.operation_id is not None
+                    and event.event_type == ChangeEventType.MATTER_CLOSED
+                    else ()
+                ),
             )
         )
 
@@ -3057,7 +3116,7 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
             return [submission.final_version_id] if submission.final_version_id else []
         return [
             event.object_id
-            for event in item.events
+            for event in (*item.events, *item.closure_evidence)
             if event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED and event.object_id
         ]
 

@@ -1198,6 +1198,12 @@ def add_matter_meeting(
     )
 
 
+#: What `Lõpeta teema` posting a reason the panel does not offer is told — the
+#: form's own words, because the form refuses it first and this is the same
+#: refusal for a caller that skipped the form.
+CLOSURE_REASON_NOT_OFFERED = "Vali, miks teema lõpetatakse."
+
+
 @transaction.atomic
 def close_matter_from_workspace(
     *,
@@ -1206,6 +1212,8 @@ def close_matter_from_workspace(
     disposition: str,
     explanation: str = "",
     follow_ups_confirmed: bool | str = False,
+    uploads: Sequence[Any] = (),
+    once_token: Any = None,
 ) -> WorkspaceResult:
     """`Lõpeta teema` — Koda is finished with this file, whatever the process does next.
 
@@ -1223,16 +1231,55 @@ def close_matter_from_workspace(
 
     **No closed-Matter guard here**, as before §11 (R2-02): this is the act that
     produces the closed state, so a second press is `close_matter`'s refusal.
+
+    **Only the reasons the panel offers** (`CLOSURE_CHOICES`). Every other
+    disposition stays `close_matter`'s to write for the callers that mean it —
+    «Jõustunud» closing with `COMPLETED`, an import, a successor — and a post
+    naming one of them here is refused before anything is locked.
+
+    **The files are this closure's evidence** (docs/adr/0131, closure files
+    amendment): the ministry's letter saying the draft was dropped. In order,
+    so that nothing irreversible happens before every question is answered:
+
+    1. every file is validated (`read_uploads`) — one unusable file refuses
+       the whole closure, and no byte has been stored;
+    2. the Matter is locked and the drawn form's token spent (``once_token``,
+       docs/adr/0167) — a double press or a second tab is refused;
+    3. `close_matter` asks its own questions under that lock — already closed,
+       live work unconfirmed — and closes;
+    4. only then are the bytes stored, each as a `Document` with its immutable
+       version, written inside the same `composer_operation` as the closure.
+
+    That shared `operation_id` is the whole association: `MATTER_CLOSED` and
+    each file's `EVIDENCE_VERSION_ADDED` are append-only rows naming the same
+    act, written in one transaction, so `Teema käik` reads the files under the
+    closing they came with and under no other — after a reopening and a second
+    closing too, which is a second operation. No `Entry`, no `DocumentLink`
+    and no other record is invented to hold them. A refusal at any step rolls
+    everything back; the closure and its files stand or fall together.
     """
+    from app.documents.services import capture_closure_evidence, read_uploads
+    from app.matters.forms import CLOSURE_CHOICES
+    from app.matters.locks import lock_matter_for_write
+
+    if disposition not in {value for value, _label in CLOSURE_CHOICES}:
+        raise DomainError(CLOSURE_REASON_NOT_OFFERED)
+    accepted = read_uploads(_uploads(uploads))
+    locked_matter = lock_matter_for_write(matter.pk)
+    _spend_once(locked_matter, once_token, "lopeta")
     with composer_operation() as operation_id:
         close_matter(
-            matter=matter,
+            matter=locked_matter,
             disposition=disposition,
             actor=author,
             reason=explanation.strip(),
             follow_ups_confirmed=follow_ups_confirmed,
         )
-        return WorkspaceResult(operation_id=operation_id, closed=True)
+        result = WorkspaceResult(operation_id=operation_id, closed=True)
+        result.documents = capture_closure_evidence(
+            matter=locked_matter, accepted=accepted, actor=author
+        )
+        return result
 
 
 @transaction.atomic

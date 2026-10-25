@@ -49,6 +49,9 @@ class Disposition(models.TextChoices):
 #: disposition the panel does not offer reads its own label. `COMPLETED` is
 #: not offered (`CLOSURE_CHOICES`) but keeps its words here, because
 #: «Jõustunud» still closes with it and those files must read as before.
+#: `RESPONSE_COMPLETE` is no longer offered either (closure files amendment)
+#: and keeps its words for the same reason: a file closed with it reads as it
+#: was closed.
 CLOSURE_REASON_LABELS: dict[str, str] = {
     Disposition.MONITORING_STOPPED.value: "Koda ei tegele edasi",
     Disposition.INITIATIVE_WITHDRAWN.value: "Eelnõu või algatus lõpetati",

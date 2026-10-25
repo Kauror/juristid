@@ -874,6 +874,61 @@ def capture_supporting_evidence(
     )
 
 
+#: Refused when closure files are stored outside the closing act that owns them.
+CLOSURE_EVIDENCE_NEEDS_ITS_CLOSURE = "Lõpetamise failid salvestatakse ainult koos lõpetamisega."
+
+
+@transaction.atomic
+def capture_closure_evidence(
+    *,
+    matter: Matter,
+    accepted: Sequence[Any],
+    actor: Any = None,
+) -> list[Document]:
+    """Store files :func:`read_uploads` accepted as the evidence of a `Lõpeta teema`.
+
+    The same two primitives every capture uses — a ``Document`` and its
+    immutable ``DocumentVersion``, each writing its own change event — and
+    **no `DocumentLink`**, because a closure is not a record a link can name:
+    it is a state of the Matter and the `MATTER_CLOSED` event that recorded it
+    (docs/adr/0131, closure files amendment). What ties these bytes to that
+    closing is the `operation_id` the caller's `composer_operation` stamps on
+    both the closure's event and each file's `EVIDENCE_VERSION_ADDED`, in one
+    transaction — an explicit identifier, never a time, a name or an order.
+
+    Called only from `workspace.close_matter_from_workspace`, after
+    `close_matter` succeeded under the Matter's lock, so a refused closure
+    stores nothing. The Matter is closed by then, which these primitives allow
+    on purpose (see the interactive boundary below). The files take the
+    Matter's visibility, as every unrestricted record's files do
+    (:func:`evidence_visibility_override`): a closure carries no restriction
+    of its own.
+    """
+    from app.audit.operations import current_operation_id
+    from app.documents.uploads import document_title_for
+
+    if accepted and current_operation_id() is None:
+        # Without an operation nothing would say which closing these belong to.
+        raise DomainError(CLOSURE_EVIDENCE_NEEDS_ITS_CLOSURE)
+    captured: list[Document] = []
+    for file in accepted:
+        document = create_document(
+            matter=matter,
+            title=document_title_for(file),
+            role=DocumentRole.OTHER,
+            created_by=actor,
+        )
+        add_evidence_version(
+            document=document,
+            content=file.body,
+            original_filename=file.filename,
+            mime_type=file.mime_type,
+            uploaded_by=actor,
+        )
+        captured.append(document)
+    return captured
+
+
 # ---------------------------------------------------------------------------
 # The interactive boundary
 # ---------------------------------------------------------------------------

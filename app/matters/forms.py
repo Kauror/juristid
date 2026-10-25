@@ -2915,7 +2915,12 @@ CLOSURE_CHOICES: tuple[tuple[str, str], ...] = tuple(
         Disposition.MONITORING_STOPPED.value,
         Disposition.INITIATIVE_WITHDRAWN.value,
         Disposition.NO_POSITION_FORMED.value,
-        Disposition.RESPONSE_COMPLETE.value,
+        # **`RESPONSE_COMPLETE` is not offered** (docs/adr/0131, closure files
+        # amendment): «Vastus esitatud ja järeltegevus tehtud» describes a sent
+        # opinion and its follow-up, which `Koja arvamus` and its check record
+        # as facts of their own. The disposition, its label and every stored
+        # closure are untouched, and a forged post of it is refused as an
+        # invalid choice.
         # **`COMPLETED` is not offered** (docs/adr/0131, release review of
         # 2026-10-25): «Jõustus või töö lõppes» joined two different facts — a
         # law in force, which is a `Hetkeseis`, and Koda's work being done,
@@ -7454,14 +7459,18 @@ class CompactClosureForm(forms.Form):
       lawyer finishing a file would say (`CLOSURE_CHOICES`).
     * `Selgitus` — optional, plain text: what happened and why Koda is done.
       It is `Matter.disposition_reason`, and `Teema käik` reads it in full.
+    * `Lisa failid` — optional, any number: the evidence for *this* closure —
+      the ministry's letter saying the draft was dropped. Validated, stored
+      and tied to the closing act together with it (docs/adr/0131, closure
+      files amendment; `workspace.close_matter_from_workspace`).
     * `confirm_follow_up_closure` — drawn only after a refusal that names the
       live work this closure would end (docs/adr/0152).
 
-    **No date, participant, institution, attachment, stage or opinion field**,
-    and no `Märgi töövõiduks`: closing records that Koda stopped, never that an
+    **No date, participant, institution, stage or opinion field**, and no
+    `Märgi töövõiduks`: closing records that Koda stopped, never that an
     opinion went out, that a win was won or who caused what. A ministry's
-    withdrawal is the lawyer's sentence in `Selgitus`, not a claim this form
-    derives from the reason chosen.
+    withdrawal is the lawyer's sentence in `Selgitus` and the letter it sent,
+    not a claim this form derives from the reason chosen.
     """
 
     use_required_attribute = False
@@ -7494,6 +7503,7 @@ class CompactClosureForm(forms.Form):
             ),
         },
     )
+    attachments = workspace_attachments("id_lopeta_failid")
     #: `Sulge teema ja lõpeta pooleli töö`, drawn after a refused closure (docs/adr/0152).
     confirm_follow_up_closure = follow_up_closure_field()
 
