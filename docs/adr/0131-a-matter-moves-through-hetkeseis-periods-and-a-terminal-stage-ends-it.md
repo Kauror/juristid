@@ -512,3 +512,68 @@ refused like any reason the panel lacks.
 `Disposition.COMPLETED`, its `CLOSURE_REASON_LABELS` words, the stored
 closures and «Jõustunud» closing with it are unchanged — no migration, and a
 file already closed that way reads exactly as before.
+
+### Amendment — closure files, and «Vastus esitatud ja järeltegevus tehtud» is not offered
+
+**Requested by the owner after the first production release of `Lõpeta
+teema`.** Two changes to the direct closure; everything else above stands.
+
+1. **`RESPONSE_COMPLETE` is not offered.** «Vastus esitatud ja järeltegevus
+   tehtud» describes a sent opinion and its follow-up, which `Koja arvamus`
+   and its `Arvamuse järelkontroll` record as facts of their own. The panel
+   offers four reasons, in this order: «Koda ei tegele edasi» (chosen),
+   «Eelnõu või algatus lõpetati», «Seisukohta ei kujundatud», «Muu». A post
+   naming any other disposition is refused by the form and, for a caller that
+   skips the form, by `close_matter_from_workspace` itself
+   (`CLOSURE_REASON_NOT_OFFERED`). `Disposition.RESPONSE_COMPLETE`, its
+   `CLOSURE_REASON_LABELS` words, stored closures, audit payloads and every
+   internal caller of `close_matter` are unchanged — no migration.
+2. **`Lisa failid` — the closing's own evidence.** Optional, any number, one
+   drop zone for every reason, the same control, queue, title rule and
+   validation (`read_uploads`: format allow-list, size limits, content
+   signature) as every other panel. The ministry's letter saying a draft was
+   dropped is the typical file.
+
+   **How a file belongs to its closing.** A closure is not a record a
+   `DocumentLink` can name (docs/adr/0075 §5): it is a state of the Matter and
+   the append-only `MATTER_CLOSED` event that recorded it. The smallest
+   durable association is the one this page already groups by — the
+   `operation_id` (docs/adr/0092 §6). `close_matter_from_workspace` writes the
+   closure and each file's `Document` + immutable `DocumentVersion` inside one
+   `composer_operation` and one transaction, so `MATTER_CLOSED` and every
+   file's `EVIDENCE_VERSION_ADDED` carry the same identifier. `Teema käik`
+   reads the files on the «Teema suletud» row of that operation and nowhere
+   else (`timeline.CLOSURE_FILES`); a Matter closed, reopened and closed again
+   has two operations, and each row keeps its own files. Never a timestamp, a
+   filename, the Matter's current status or an order. No `Entry`, `Märge`,
+   `Submission`, `Töövõit`, deadline answer or stage change is written to hold
+   them, and no column or table is added.
+
+   A file of the closing's operation that is linked to a note (a `Märge`
+   closing through «Jõustunud») keeps its place on the note's row, as before;
+   one linked to any other record already reads on that record. The rule is
+   decided by what is stored — the operation and the link — never by which
+   other events a reader may see, so every reader sees the files in the same
+   place. The «Teema suletud» row also names who closed the file.
+
+   The files are ordinary documents of the Matter, role `OTHER`, at the
+   Matter's visibility: listed on `Dokumendid`, indexed for search, opened
+   through `documents:download` / `documents:open` behind the usual
+   authorization, each once under its closing.
+3. **Order of the save — nothing irreversible before every question.**
+   (a) every file is validated, so one unusable file refuses the whole
+   closure before a byte is stored; (b) the Matter row is locked and the
+   drawn form's one-time token spent (docs/adr/0167), so a double press or a
+   second tab is refused; (c) `close_matter` asks its questions under the
+   lock — already closed, live work unconfirmed (docs/adr/0152); (d) only then
+   are the bytes stored. Any refusal rolls the whole transaction back: the
+   closure and its files stand or fall together, and a refused closure leaves
+   no document and no stored object. (A storage or COMMIT failure after the
+   first file's bytes were written is the residual case every capture door
+   shares: `check_evidence_integrity` reports the orphan and
+   `prune_orphaned_evidence` removes it.)
+4. **The confirmation round trip.** A browser cannot carry chosen files
+   through a refused save, so the panel comes back with the live-work box and
+   the existing notice naming the files to choose again («Fail tuleb uuesti
+   valida: …», with «Vali failid uuesti» / «Salvesta ilma failita»), as every
+   panel with files does. Nothing is silently dropped.
