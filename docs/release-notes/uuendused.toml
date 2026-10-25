@@ -25,9 +25,9 @@ changes = [
   "Otsingutulemusest saab dokumendi avada või alla laadida otse, ilma dokumendi lehele minemata.",
   "Vaates «Dokumendid» saab faili lohistada üleslaadimise kasti.",
   "Filtreeritud või otsitud teemade loendist avatud teemal on rida «Tagasi tulemustesse», mis viib samade filtrite ja lehekülje juurde.",
-  "Teema käigu kirjel on «Kopeeri link»: kolleeg jõuab lingiga otse sellele kirjele, ka siis, kui see on varasem kui esimesel lehel näidatud.",
+  "Jaotise «Tegevused» kirjel on «Kopeeri link»: kolleeg jõuab lingiga otse sellele kirjele, ka siis, kui see on varasem kui esimesel lehel näidatud.",
   "Kui lahkud lehelt salvestamata tekstiga, ka pärast tagasi lükatud salvestamist, küsib brauser enne lahkumist kinnitust.",
-  "Äsja salvestatud või parandatud kirje tõstetakse teema käigus hetkeks esile.",
+  "Äsja salvestatud või parandatud kirje tõstetakse jaotises «Tegevused» hetkeks esile.",
   "Uus leht «Kiirklahvid» (lehe jaluses «Uuenduste» kõrval) kirjeldab Juristidi kiirklahve; otsinguvälja «Ctrl K» vihje on eemaldatud ja lühikokkuvõtte muutmisel on nupp «Loobu».",
 ]
 
