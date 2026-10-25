@@ -8,6 +8,30 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-26
+basis = "deployment"
+prs = [543, 544, 545, 546]
+# Kasutusmugavuse voor: lõpetamise failid ja nelja põhjusega «Lõpeta teema»
+# (#543, ADR 0131 täiendus), dokumendilingid (#545), navigeerimine ja
+# salvestamata teksti kaitse (#546, ADR 0190), «Kiirklahvid» (#544).
+# Migratsioonideta, otsinguindeksit uuesti ei ehitata. Kui väljalase ei jõua
+# tootmisse 26.10 (Tallinna aja järgi), liigub see kirje väljalaske päeva
+# kuupäevale.
+changes = [
+  "Teemat lõpetades saab lisada faile, näiteks ministeeriumi kirja. Need on teema ajaloos kirje «Teema suletud» all ja vaates «Dokumendid».",
+  "«Lõpeta teema» pakub nüüd nelja põhjust; valik «Vastus esitatud ja järeltegevus tehtud» on eemaldatud.",
+  "PDF-, pildi- ja tekstifailid avanevad uuel vahelehel; teised failid laaditakse alla nagu varem. Dokumendi lehel on ka «Laadi alla».",
+  "Dokumendi lehel ja vaate «Dokumendid» menüüs on «Kopeeri link», mis kopeerib lingi täpselt sellele dokumendi versioonile.",
+  "Otsingutulemusest saab dokumendi avada või alla laadida otse, ilma dokumendi lehele minemata.",
+  "Vaates «Dokumendid» saab faili lohistada üleslaadimise kasti.",
+  "Filtreeritud või otsitud teemade loendist avatud teemal on rida «Tagasi tulemustesse», mis viib samade filtrite ja lehekülje juurde.",
+  "Jaotise «Tegevused» kirjel on «Kopeeri link»: kolleeg jõuab lingiga otse sellele kirjele, ka siis, kui see on varasem kui esimesel lehel näidatud.",
+  "Kui lahkud lehelt salvestamata tekstiga, ka pärast tagasi lükatud salvestamist, küsib brauser enne lahkumist kinnitust.",
+  "Äsja salvestatud või parandatud kirje tõstetakse jaotises «Tegevused» hetkeks esile.",
+  "Uus leht «Kiirklahvid» (lehe jaluses «Uuenduste» kõrval) kirjeldab Juristidi kiirklahve; otsinguvälja «Ctrl K» vihje on eemaldatud ja lühikokkuvõtte muutmisel on nupp «Loobu».",
+]
+
+[[day]]
 date = 2026-10-25
 basis = "deployment"
 prs = [540]
