@@ -52,6 +52,10 @@ def test_a_clean_production_configuration_passes(settings, monkeypatch):
 
     And, since JOPS-003, secrets of real length: a SECRET_KEY of at least 50
     characters and a database password of at least 16 (juristid.E017, E019).
+
+    And the proxy flag: real data behind Cloudflare Access without
+    DJANGO_BEHIND_TLS_PROXY sends no HSTS and records the tunnel's address
+    (juristid.E022).
     """
     settings.DEBUG = False
     settings.SECRET_KEY = "a-real-secret-" + "s" * 50
@@ -61,6 +65,8 @@ def test_a_clean_production_configuration_passes(settings, monkeypatch):
     settings.AUTH_MODE = "cloudflare_access"
     settings.CF_ACCESS_TEAM_DOMAIN = "naidiskoda.cloudflareaccess.invalid"
     settings.CF_ACCESS_AUDIENCE = "a" * 64
+    settings.SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    settings.TRUST_CF_CONNECTING_IP = True
     assert _ids(settings) == set()
 
 
