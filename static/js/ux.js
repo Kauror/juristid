@@ -1346,9 +1346,18 @@
       return;
     }
     var row = rows[index];
-    /* Enter on the row link is the browser's own behaviour; this only matters
-       when the focus ring sits somewhere else in the row. */
-    if (event.target.closest && event.target.closest("a")) {
+    /* Only inside the selected row, and only on something that has no Enter
+       of its own. Enter on the row link is the browser's own behaviour; on
+       the row's ⋯ it opens that menu; on the bell, the theme toggle or any
+       other control elsewhere it belongs to that control. A selection left
+       behind by an earlier J/K must not turn every later Enter on the page
+       into «open that row» (2026-10-25 review, S2). */
+    var target = event.target;
+    if (!target || !target.closest || !row.contains(target)) {
+      return;
+    }
+    var own = target.closest("a, button, summary, input, select, textarea, [role=button]");
+    if (own && own !== row && row.contains(own)) {
       return;
     }
     var open = row.querySelector("a[href]");

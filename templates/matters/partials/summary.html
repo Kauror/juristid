@@ -32,6 +32,14 @@ Matter nobody has summarised yet should look short, not unfinished.
         {{ summary_form.brief_summary }}
         <div class="summary__foot">
           <button class="button button--primary button--tiny" type="submit">Salvesta</button>
+          {% comment %}
+            The click half of `Esc`. The trigger is hidden while the box is
+            open (`.summary__edit[open] .summary__trigger`), so without this
+            the only way out was a key nobody is told about on this screen
+            (/kiirklahvid/ lists it). The delegated handler in app.js closes
+            the disclosure and returns focus to its summary; nothing is posted.
+          {% endcomment %}
+          <button class="button button--tiny" type="button" data-close-disclosure>Loobu</button>
         </div>
       </form>
     </details>

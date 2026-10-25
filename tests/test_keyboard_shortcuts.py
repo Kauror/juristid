@@ -267,3 +267,26 @@ def test_no_everyday_template_spells_a_key_out() -> None:
         if "<kbd" in text or "keyhint" in text:
             offenders.append(str(path.relative_to(TEMPLATE_DIR)))
     assert offenders == []
+
+
+@pytest.mark.django_db
+def test_the_summary_editor_offers_loobu_where_its_caption_used_to_name_esc(
+    client: Client,
+) -> None:
+    """The click half of `Esc`, now that no caption on the screen names the key.
+
+    The editor's own trigger is hidden while it is open, so without this button
+    a mouse user who opened the box had no visible way out of it.
+    """
+    specialist = factories.UserFactory()
+    matter = factories.MatterFactory(owner=specialist)
+    client.force_login(specialist)
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    start = body.index('id="teema-luhikokkuvote"')
+    block = body[start : body.index("</details>", start)]
+    foot = block[block.index('class="summary__foot"') :]
+    assert re.search(r'<button[^>]*type="submit"[^>]*>Salvesta</button>', foot)
+    assert re.search(
+        r'<button[^>]*type="button"[^>]*data-close-disclosure[^>]*>Loobu</button>', foot
+    )
+    assert "Ctrl" not in block and "<kbd" not in block

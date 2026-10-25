@@ -87,11 +87,15 @@ GROUPS: tuple[ShortcutGroup, ...] = (
             Shortcut(
                 keys=(("Esc",),),
                 action=(
-                    "Sulgeb avatud menüü: päise «Veel», teema «⋯ Rohkem tegevusi», "
-                    "«Täpsem otsing» ja tabelite valikumenüüd. Kursor läheb tagasi "
-                    "nupule, millega menüü avasid."
+                    "Sulgeb avatud menüü ja viib kursori tagasi nupule, millega selle "
+                    "avasid. Päise «Veel» ja teema «⋯ Rohkem tegevusi» sulguvad alati; "
+                    "«Täpsem otsing» ja tabelite valikumenüüd siis, kui kursor on "
+                    "menüüs."
                 ),
-                note="Sama teeb klõps menüüst väljas.",
+                note=(
+                    "«Veel», «⋯» ja tabelite valikumenüüd sulgeb ka klõps menüüst "
+                    "väljas; «Täpsem otsing» sulgub uue klõpsuga oma nimel."
+                ),
                 evidence=(
                     (
                         "app.js",
@@ -132,8 +136,9 @@ GROUPS: tuple[ShortcutGroup, ...] = (
         slug="teema",
         title="Teema leht ja kohapeal avanevad vormid",
         lead=(
-            "Teema lehel avanevad muutmisvormid otse väärtuse juures — kokkuvõte, "
-            "päise väljad, «Praegune tegevus», «Lisa teemale» vormid."
+            "Vormid, mis avanevad lehe sees otse väärtuse juures: teema "
+            "kokkuvõte, päise väljad, «Praegune tegevus», «Lisa teemale» vormid, "
+            "aga ka näiteks teemade «Täpsem otsing» ja Statistika «+ Filter»."
         ),
         shortcuts=(
             Shortcut(
@@ -157,8 +162,8 @@ GROUPS: tuple[ShortcutGroup, ...] = (
                 keys=((MOD, "Enter"),),
                 action="Salvestab avatud vormi.",
                 note=(
-                    "Kursor peab olema vormi sees. Töötab ka teemade loendi "
-                    "«Täpsem otsing» paneelis. Sama teeb vormi nupp «Salvesta»."
+                    "Kursor peab olema vormi sees. Sama teeb vormi salvestamise või "
+                    "rakendamise nupp."
                 ),
                 evidence=(
                     ("app.js", 'event.target.closest("details form, form[data-addform]")'),
@@ -175,8 +180,8 @@ GROUPS: tuple[ShortcutGroup, ...] = (
                 ),
                 note=(
                     "Kui vormis on avatud kalender või soovituste loend, sulgeb esimene "
-                    "Esc ainult selle ja teine Esc vormi. "
-                    "Sama teeb vormi nupp «Loobu» või «Tühista»."
+                    "Esc ainult selle ja teine Esc vormi. Sama teeb uus klõps välja "
+                    "nimel või vormi nupp «Loobu», kus see on."
                 ),
                 evidence=(
                     ("app.js", 'if (event.key !== "Escape" || event.defaultPrevented) {'),
@@ -204,8 +209,11 @@ GROUPS: tuple[ShortcutGroup, ...] = (
             ),
             Shortcut(
                 keys=(("Enter",),),
-                action="Avab valitud töö teema.",
-                note="Sama teeb klõps töö pealkirjal.",
+                action="Avab valitud töö.",
+                note=(
+                    "Ainult siis, kui kursor on valitud töö real ega ole real oleval "
+                    "nupul või menüül. Sama teeb klõps töö pealkirjal."
+                ),
                 evidence=(("ux.js", "open.click();"),),
             ),
         ),
