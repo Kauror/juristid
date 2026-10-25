@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Kiirklahvid · {{ application_name }}{% endblock %}
+
+{% comment %}
+Every keyboard shortcut Juristid has, in one place, so the everyday screens do
+not have to carry hint strips (the owner's brief, 2026-10-25). Reached from the
+footer beside Uuendused and from nowhere else: it is something somebody looks
+up, not a destination in the daily rotation.
+
+The rows are app/core/keyboard_shortcuts.py, each tied to the script that
+answers it (tests/test_keyboard_shortcuts.py). The template only lays them out.
+
+One table per area, with real column headers, under an `h2` that names it: a
+screen reader can jump by heading to «Minu asjad» and hear the table's headers
+on every cell. `<kbd>` for every key, in the `.key` style the inline editors
+already used, so the page adds no visual language of its own. Where the macOS
+chord differs it is written beside the Windows one in words, not left to a
+footnote, because the modifier is the part people get wrong. A chord never
+breaks across lines; the alternatives between chords may, which is what lets
+the key column narrow on a phone instead of scrolling the table sideways.
+{% endcomment %}
+
+{% block content %}
+<div class="page page--narrow">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Kiirklahvid</h1>
+    <span class="pagehead__context">
+      Sagedasi toiminguid saab teha ka klaviatuurilt. Iga kiirklahvi jaoks on ekraanil
+      olemas ka nupp või link. Windowsis ja Linuxis kasuta klahvi
+      <kbd class="key">Ctrl</kbd>, macOSis selle asemel klahvi <kbd class="key">⌘</kbd>
+      (Command). Tähtedega kiirklahvid ei tööta, kui kursor on tekstiväljas — siis
+      kirjutad lihtsalt teksti.
+    </span>
+  </div>
+
+  {% for group in shortcut_groups %}
+    <section class="shortcuts" aria-labelledby="kiirklahvid-{{ group.slug }}">
+      <h2 class="sectionlabel shortcuts__title" id="kiirklahvid-{{ group.slug }}">{{ group.title }}</h2>
+      <p class="cardnote shortcuts__lead">{{ group.lead }}</p>
+      <div class="tablewrap">
+        <table class="table shortcuts__table">
+          <caption class="visually-hidden">Kiirklahvid: {{ group.title }}</caption>
+          <thead>
+            <tr>
+              <th scope="col" class="shortcuts__keycol">Klahv</th>
+              <th scope="col">Mida teeb</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for shortcut in group.shortcuts %}
+              <tr>
+                <td>
+                  {% for chord in shortcut.windows %}<span class="shortcuts__chord">{% for key in chord %}<kbd class="key">{{ key }}</kbd>{% if not forloop.last %} + {% endif %}{% endfor %}</span>{% if not forloop.last %} <span class="muted">või</span> {% endif %}{% endfor %}
+                  {% if shortcut.uses_modifier %}
+                    <span class="shortcuts__mac">macOS:
+                      {% for chord in shortcut.mac %}<span class="shortcuts__chord">{% for key in chord %}<kbd class="key">{{ key }}</kbd>{% if not forloop.last %} + {% endif %}{% endfor %}</span>{% if not forloop.last %} <span class="muted">või</span> {% endif %}{% endfor %}
+                    </span>
+                  {% endif %}
+                </td>
+                <td>
+                  {{ shortcut.action }}
+                  {% if shortcut.note %}<span class="muted shortcuts__note">{{ shortcut.note }}</span>{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1652,6 +1652,19 @@ def test_release_notes(page, base_url):
     compare("uuendused", capture(page, "uuendused"))
 
 
+def test_keyboard_shortcuts(page, base_url):
+    """Kiirklahvid: one short table per area, every key drawn as a key.
+
+    The composition is the decision worth a picture: a section heading per
+    area, the key column that never wraps a chord, the macOS line under a
+    `Ctrl` chord, and the note under a description. Static content from
+    `app/core/keyboard_shortcuts.py`, so nothing here moves but the footer's
+    build stamp, which the mask already covers.
+    """
+    signed_in(page, base_url, "/kiirklahvid/")
+    compare("kiirklahvid", capture(page, "kiirklahvid"))
+
+
 def test_dashboard(page, base_url):
     """Osakond: the department page a specialist reads.
 

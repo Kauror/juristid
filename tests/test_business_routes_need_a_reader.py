@@ -48,6 +48,7 @@ PUBLIC = {
     "core:favicon": "a redirect to a static brand image",
     "core:home": "a redirect to sign in, to the persona chooser or to Minu asjad",
     "core:release_notes": "Uuendused: product release notes, no business data",
+    "core:keyboard_shortcuts": "Kiirklahvid: the keyboard-shortcut reference, no business data",
     "accounts:shared_gate": "the gate's own password form",
     "accounts:choose_persona": "the persona chooser itself",
     "accounts:act_as": "choosing a persona; refuses anybody not behind the gate",
@@ -281,6 +282,7 @@ def test_the_persona_chooser_and_the_release_notes_stay_open_behind_the_gate(cli
     assert client.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
     assert client.get(reverse("accounts:choose_persona")).status_code == 200
     assert client.get(reverse("core:release_notes")).status_code == 200
+    assert client.get(reverse("core:keyboard_shortcuts")).status_code == 200
     assert client.get(reverse("core:healthz")).status_code == 200
 
 
