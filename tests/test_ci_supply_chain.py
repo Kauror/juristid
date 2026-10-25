@@ -209,3 +209,49 @@ def test_the_scan_is_not_a_new_long_pole(workflow: dict[str, Any]) -> None:
         if name != "container" and "aquasec/trivy" in yaml.safe_dump(job.get("steps", []))
     ]
     assert not elsewhere, f"Trivy runs outside the container job: {elsewhere}"
+
+
+def test_the_full_scan_report_is_not_kept_for_a_month(workflow: dict[str, Any]) -> None:
+    """The repository is public, and the report lists every unfixed CVE in the image."""
+    reports = [
+        step
+        for step in _steps(workflow, "container")
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@")
+        and "image-scan" in str(step.get("with", {}).get("path", ""))
+    ]
+    assert len(reports) == 1
+    assert int(reports[0]["with"]["retention-days"]) <= 3
+
+
+WORKFLOWS = ROOT / ".github" / "workflows"
+
+#: The one checkout that keeps its token: `release-image.yml` runs
+#: `git fetch origin main` after it, to judge the release against main.
+CHECKOUTS_THAT_NEED_THE_TOKEN = {("release-image.yml", "build")}
+
+
+def test_a_checkout_does_not_leave_its_token_behind() -> None:
+    """`persist-credentials: false` wherever nothing later talks to the remote with git."""
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
+        for name, job in jobs.items():
+            for step in job.get("steps", []):
+                if not str(step.get("uses", "")).startswith("actions/checkout@"):
+                    continue
+                if (path.name, name) in CHECKOUTS_THAT_NEED_THE_TOKEN:
+                    continue
+                assert (step.get("with") or {}).get("persist-credentials") is False, (
+                    f"{path.name}: job {name!r} leaves the checkout's token in .git/config"
+                )
+
+
+def test_no_workflow_input_is_interpolated_into_a_script() -> None:
+    """Inputs reach a `run:` through `env:`, so their text cannot become shell syntax."""
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
+        for name, job in jobs.items():
+            for step in job.get("steps", []):
+                script = str(step.get("run", ""))
+                assert not re.search(r"\$\{\{\s*(inputs|github\.event)\.", script), (
+                    f"{path.name}: job {name!r} step {step.get('name')!r} interpolates an input"
+                )
