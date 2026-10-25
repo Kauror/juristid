@@ -674,8 +674,11 @@ plan would still be the larger lever.
 
 ### 2026-10-25: a week-old table, and the PostgreSQL shards set the round
 
-Re-measured on the 52 green pull-request runs of 2026-10-20 to 2026-10-25
-(raw table in the pull request). Median wall clock **597 s**, and in 44 of
+Re-measured on the 52 green pull-request runs of 2026-10-20 to 2026-10-25,
+from each run's job and step timings in the GitHub API; the summary numbers
+are in the pull request's description, and the table itself is reproducible
+with `scripts/ci/update_shard_timings.py --latest 5` and
+`scripts/ci/report_shard_health.py`. Median wall clock **597 s**, and in 44 of
 them the job that finished last was a PostgreSQL runner — not a browser one,
 as on 2026-10-11. The PostgreSQL runners ran 240–410 s at their fastest and
 410–840 s at their slowest in the same run; browser runners stayed at
