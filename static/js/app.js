@@ -954,7 +954,7 @@
    * tab closed inside the delay, or a note whose last save failed. One
    * listener for the page, asking whichever note is there now — it used to be
    * one more listener per swap, each holding a box that no longer existed. */
-  window.addEventListener("beforeunload", function () {
+  window.addEventListener("beforeunload", function (event) {
     document.querySelectorAll("form[data-autosave]").forEach(function (form) {
       var box = autosaveBox(form);
       if (!box || !autosaved.has(box) || box.value === autosaved.get(box)) {
@@ -965,7 +965,245 @@
         navigator.sendBeacon(url, new FormData(form));
       }
     });
+    /* And the drafts nothing saves by itself (below). */
+    askBeforeLeaving(event);
   });
+
+  /* ---- Leaving with text that was never saved --------------------------
+   * A swap carries every draft host across (above), but nothing carried one
+   * across *leaving the page*: text typed into the composer, a `LISA TEEMALE`
+   * panel or a row's `Muuda`, and then a click on `Teemad`, a tab or any other
+   * link, was gone without a word — and nothing is kept in browser storage to
+   * bring it back (docs/adr/0107 §2). So the page asks the browser's own
+   * «leave this page?» question, and only then:
+   *
+   *   - a draft host (`data-draft-host`) holds input that differs from what the
+   *     server rendered into it — the same test the swap uses, so a clean page
+   *     never asks;
+   *   - or a draft host the server answered with a **refusal** still holds
+   *     typed text. A refused save re-renders the form with the text in its
+   *     `value`, so the swap's test sees nothing changed — but none of it was
+   *     saved. The host is marked `data-draft-refused` when a 4xx answer
+   *     settles, and the mark goes with the first 2xx answer to the same host
+   *     (or with the host itself, when a save replaces it);
+   *   - not the note, which saves itself and flushes on leaving (above);
+   *   - not the hosts of a form being submitted the ordinary way, which is the
+   *     person sending that text rather than leaving it — every other host
+   *     still counts;
+   *   - not the one unload a same-tab click on a file download starts
+   *     (`…/tõend/<id>/`, `data-download`): the browser asks before it knows
+   *     the answer is a file, and the page stays where it is. The excuse is
+   *     used up by that unload, so the next link still asks;
+   *   - not the host whose own save answered by reloading or redirecting the
+   *     page (`HX-Refresh`, `HX-Redirect`): that text is what was just saved.
+   *
+   * A successful save replaces its host with an empty one, so it stops
+   * counting by itself; Back, a tab switch or a link on a page with nothing
+   * typed are untouched. The browser decides the wording; nothing is stored.
+   *
+   * **For browser tests:** Playwright accepts a `beforeunload` dialog when no
+   * `dialog` listener is registered. A test that registers one for another
+   * reason, and then leaves a page with typed text, must answer it
+   * (`page.on("dialog", lambda d: d.accept())`, `e2e/conftest.py`
+   * `accept_leave_prompts`). */
+  var submittedNatively = { at: 0, form: null };
+  var downloadClickedAt = 0;
+  var leavingAfterSave = null;
+  var requestHosts = new WeakMap();
+
+  /* htmx cancels the submits it sends itself on the form, before this
+     listener on the document hears them, so only a real navigation is left.
+     Remembered for a moment only: a submit that answers with a download
+     leaves the page where it is, and the guard must still stand after it. */
+  document.addEventListener("submit", function (event) {
+    if (!event.defaultPrevented) {
+      submittedNatively = { at: Date.now(), form: event.target };
+    }
+  });
+
+  /* A same-tab link to a file's bytes (`…/tõend/<id>/`, or one marked
+     `data-download`). A link with `download`, or one opening another tab,
+     never unloads this page, so it needs no exemption. */
+  function isDownloadLink(link) {
+    if (link.hasAttribute("download") || (link.target && link.target !== "_self")) {
+      return false;
+    }
+    if (link.hasAttribute("data-download")) {
+      return true;
+    }
+    var path = "";
+    try {
+      path = decodeURIComponent(new URL(link.href, window.location.href).pathname);
+    } catch (error) {
+      return false;
+    }
+    return /\/tõend\/[0-9a-f-]{36}\/$/i.test(path);
+  }
+
+  /* Bubbling, so a click another listener cancelled is seen as cancelled; a
+     modified click opens elsewhere and leaves this page alone. */
+  document.addEventListener("click", function (event) {
+    if (event.defaultPrevented || event.button !== 0) {
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+      return;
+    }
+    var link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
+    if (link && isDownloadLink(link)) {
+      downloadClickedAt = Date.now();
+    }
+  });
+
+  window.addEventListener("pageshow", function () {
+    submittedNatively = { at: 0, form: null };
+    downloadClickedAt = 0;
+    leavingAfterSave = null;
+  });
+
+  document.body.addEventListener("htmx:beforeOnLoad", function (event) {
+    var xhr = event.detail && event.detail.xhr;
+    if (!xhr) {
+      return;
+    }
+    if (xhr.getResponseHeader("HX-Refresh") === "true" || xhr.getResponseHeader("HX-Redirect")) {
+      var elt = event.detail.elt;
+      leavingAfterSave = elt && elt.closest ? elt.closest("[data-draft-host][id]") || elt : null;
+    }
+  });
+
+  /* The choices a person made in a host — a select, a radio, a checkbox set
+     differently from how the server drew it — as name, value and state. A
+     refusal re-renders them as the new defaults, so they are written down as
+     the request leaves and read again against the re-rendered host. */
+  function changedChoices(host) {
+    var made = [];
+    host.querySelectorAll('select, input[type="radio"], input[type="checkbox"]').forEach(function (control) {
+      if (control.disabled || !controlChanged(control)) {
+        return;
+      }
+      if (control.tagName === "SELECT") {
+        made.push({ name: control.name, select: control.value });
+      } else {
+        made.push({ name: control.name, value: control.value, checked: control.checked });
+      }
+    });
+    return made;
+  }
+
+  /* Which draft host sent each request, by id: the answer replaces the
+     element, so the host is found again by its id once the answer is in. */
+  document.body.addEventListener("htmx:beforeRequest", function (event) {
+    var detail = event.detail || {};
+    var elt = detail.elt;
+    var host = elt && elt.closest ? elt.closest("[data-draft-host][id]") : null;
+    if (host && detail.xhr) {
+      requestHosts.set(detail.xhr, {
+        id: host.id,
+        choices: changedChoices(host).concat(host.refusedChoices || []),
+      });
+    }
+  });
+
+  document.body.addEventListener("htmx:afterSettle", function (event) {
+    var xhr = event.detail && event.detail.xhr;
+    var sent = xhr ? requestHosts.get(xhr) : null;
+    var host = sent ? document.getElementById(sent.id) : null;
+    if (!host) {
+      return;
+    }
+    if (xhr.status >= 400) {
+      host.setAttribute("data-draft-refused", "");
+      host.refusedChoices = sent.choices;
+    } else {
+      host.removeAttribute("data-draft-refused");
+      host.refusedChoices = null;
+    }
+  });
+
+  function stillChosen(place, choice) {
+    return Array.prototype.some.call(place.querySelectorAll("select, input"), function (control) {
+      if (control.disabled || control.name !== choice.name) {
+        return false;
+      }
+      if (Object.prototype.hasOwnProperty.call(choice, "select")) {
+        return control.tagName === "SELECT" && control.value === choice.select;
+      }
+      return control.value === choice.value && control.checked === choice.checked;
+    });
+  }
+
+  /* What a refused host still holds of the person's own: words in a box (not
+     a date the form fills in by itself, a hidden token or a read-only line),
+     a chosen file, or a choice they made before the save that is still made. */
+  function holdsRefusedText(host) {
+    var refused = host.hasAttribute("data-draft-refused")
+      ? [host]
+      : Array.prototype.slice.call(host.querySelectorAll("[data-draft-refused]"));
+    return refused.some(function (place) {
+      var controls = place.querySelectorAll(
+        "textarea, input:not([type]), " +
+          'input[type="text"], input[type="search"], input[type="number"], input[type="tel"], ' +
+          'input[type="url"], input[type="email"], input[type="file"]'
+      );
+      var typed = Array.prototype.some.call(controls, function (control) {
+        if (control.disabled || control.readOnly) {
+          return false;
+        }
+        if (control.type === "file") {
+          return !!(control.files && control.files.length);
+        }
+        if (control.hasAttribute("data-datepicker") || control.classList.contains("dateinput")) {
+          return false;
+        }
+        return control.value.trim() !== "";
+      });
+      return (
+        typed ||
+        (place.refusedChoices || []).some(function (choice) {
+          return stillChosen(place, choice);
+        })
+      );
+    });
+  }
+
+  function holdsTextNobodySaved() {
+    var recent = Date.now() - submittedNatively.at < 2000 ? submittedNatively.form : null;
+    var hosts = document.querySelectorAll("[data-draft-host][id]");
+    for (var i = 0; i < hosts.length; i += 1) {
+      var host = hosts[i];
+      if (host.hasAttribute("data-autosave")) {
+        continue;
+      }
+      if (leavingAfterSave && (host === leavingAfterSave || host.contains(leavingAfterSave))) {
+        continue;
+      }
+      if (recent && (host.contains(recent) || recent.contains(host))) {
+        continue;
+      }
+      /* A host inside another is asked once, as part of the outer one. */
+      if (host.parentElement && host.parentElement.closest("[data-draft-host][id]")) {
+        continue;
+      }
+      if (holdsUnsavedInput(host) || holdsRefusedText(host)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* Asked from the page's one `beforeunload` listener, below the note's flush. */
+  function askBeforeLeaving(event) {
+    /* A download click excuses the one unload it starts, and only that one. */
+    var downloading = Date.now() - downloadClickedAt < 2000;
+    downloadClickedAt = 0;
+    if (downloading || !holdsTextNobodySaved()) {
+      return;
+    }
+    event.preventDefault();
+    /* Older engines ask for a value; the text itself is never shown. */
+    event.returnValue = "";
+  }
 
   /* ---- A save must not throw the keyboard back to the top ---------------
    * Every capture on a Teema is an htmx swap, and a swap destroys the element
@@ -5739,6 +5977,44 @@
     }
   });
 
+  /* ---- «Here it is»: the row a save wrote, or a link opened ---------------
+   * The server marks the rows its answer to a successful save wrote
+   * (`data-salvestatud`, `app.matters.timeline_links.saved_row_keys`) — the
+   * column's rows, or the one row a `Muuda` corrected in place; a refusal
+   * marks nothing, so nothing lights up for a save that did not happen. The
+   * mark is read once and taken off, and the row carries a quiet panel for a
+   * couple of seconds. Focus is not moved and the page is not scrolled — the
+   * focus rule below already decides where a save leaves the keyboard — and
+   * the row's accordion state is the one `syncKaik` gave it. */
+  var KAIK_SAVED = "uxtl__item--saved";
+  var KAIK_SAVED_MS = 2400;
+
+  function flashKaikRow(row) {
+    row.classList.add(KAIK_SAVED);
+    window.setTimeout(function () {
+      row.classList.remove(KAIK_SAVED);
+    }, KAIK_SAVED_MS);
+  }
+
+  function flashSavedRows(scope) {
+    var root = scope && scope.querySelectorAll ? scope : document;
+    /* On the row itself after a column save; on the row's own correction
+       element after an in-place `Muuda` (`_row_saved`), which is inside it. */
+    root.querySelectorAll("[data-salvestatud]").forEach(function (marked) {
+      marked.removeAttribute("data-salvestatud");
+      var row = marked.closest ? marked.closest("article.uxtl__item") : null;
+      if (row) {
+        flashKaikRow(row);
+      }
+    });
+  }
+
+  document.body.addEventListener("htmx:afterSettle", function () {
+    safeInit("flashSavedRows", function () {
+      flashSavedRows(document);
+    });
+  });
+
   function openKaikTarget() {
     var id = window.location.hash.slice(1);
     var node = null;
@@ -5755,6 +6031,11 @@
     }
     if (row && !row.classList.contains(KAIK_OPEN)) {
       openKaikRow(row, true);
+    }
+    /* A row's own link (`?kirje=`, «Kopeeri link») — shown, as a save is. */
+    var linked = (new URLSearchParams(window.location.search).get("kirje") || "").toLowerCase();
+    if (row && linked && linked === (row.getAttribute("data-kaik-rida") || "").toLowerCase()) {
+      flashKaikRow(row);
     }
   }
 
