@@ -22,6 +22,16 @@ without the owner's explicit approval for the activation itself.
 > (their capability overrides, passwords and epochs are expected).
 > `LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required beside the gate on real data too
 > (`juristid.E048`). The table is kept as the record of the 2026-10-08 state.
+>
+> **Verified 25.10.2026:** still `shared_gate`, personal sign-in still dormant.
+> Exactly one usable full administrator exists, by the owner's deliberate
+> decision (ADR 0186, status update 2026-10-25). `MINIMUM_FULL_ADMINISTRATORS`
+> is still 2 and Haldus keeps showing the setup-phase notice. Until a second
+> administrator exists, §9's «reset by *another* delegating administrator» has
+> nobody to do it: that administrator's lost factor or password is recovered on
+> the host only (`reset_second_factor`, `issue_administrator_link`,
+> `emergency_disable_account`; the table in ADR 0186's status update, including
+> why re-bootstrap is refused while a leftover `accounts.manage` override exists).
 
 | | state |
 | --- | --- |

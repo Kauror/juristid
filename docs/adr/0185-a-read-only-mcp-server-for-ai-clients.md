@@ -283,3 +283,14 @@ without the owner's explicit approval.
   the gate password could always choose any persona.
 - Out of scope, by the brief: any write, notification or scheduling; raw evidence
   bytes; a public plugin.
+
+## Status update 2026-10-25 — Phase 1 in production
+
+Verified 25.10.2026: the read-only server is deployed and enabled on production
+(`MCP_ENABLED=1`, main `c32608155e05`). It was proven end to end through the
+Chamber's ChatGPT workspace for one granted READER business account: the eight
+tools were listed; `list_matters`, `get_matter`, `search_records` and
+`get_matter_activity` answered; the record links they returned opened in
+Juristid; and an invalid bearer token was refused with 401. Exactly one account
+holds a grant. The decision's status is unchanged. Writes are ADR 0189 and are a
+separate state (its status update of the same date).
