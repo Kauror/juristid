@@ -49,16 +49,26 @@ def _pdf(name: str = "Koja_arvamus.pdf") -> SimpleUploadedFile:
 # ---------------------------------------------------------------------------
 
 
-def test_the_lopeta_teema_route_is_gone(signed_in, normal_matter):
-    """`+ Lõpeta teema` and its endpoint went together (docs/adr/0131 §11)."""
+def test_the_lopeta_teema_route_stores_exactly_what_it_was_given(signed_in, normal_matter):
+    """F-02 for the restored `Lõpeta teema` (docs/adr/0131, amendment of 2026-10-25).
+
+    What the panel asks is what is stored: the reason and the explanation, and
+    nothing a retired field (`closing_words`) posted.
+    """
     response = signed_in.post(
         f"/teemad/{normal_matter.pk}/lisa/lopeta/",
-        {"disposition": "COMPLETED", "closing_words": "Menetlus lõppes."},
+        {
+            "disposition": "COMPLETED",
+            "explanation": "Menetlus lõppes.",
+            "closing_words": "Vana väli.",
+        },
         headers={"HX-Request": "true"},
     )
-    assert response.status_code == 404
+    assert response.status_code == 200
     normal_matter.refresh_from_db()
-    assert normal_matter.is_open
+    assert not normal_matter.is_open
+    assert normal_matter.disposition == "COMPLETED"
+    assert normal_matter.disposition_reason == "Menetlus lõppes."
 
 
 # ---------------------------------------------------------------------------

@@ -18,11 +18,12 @@ from django.utils import timezone
 
 from app.intelligence.enums import EffectiveDateKind, FactStatus, ImportantDateKind
 from app.matters.models import MatterProceduralDevelopment
+from app.matters.services import close_matter
 from app.mcp_server import readers
 from app.mcp_server.readers import InvalidArgument, NotFound
 from app.submissions.enums import SubmissionKind
 from app.submissions.services import attach_final_evidence, create_submission, mark_submission_sent
-from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
+from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
 from app.workflow.services import add_planned_action, set_next_action
 from tests import factories
 
@@ -174,6 +175,21 @@ def test_a_sent_opinion_and_a_no_comments_reply_are_counted_apart(matter, specia
     assert snapshot["counts"]["no_comments_replies_sent"] == 1
     text = readers.fetch_source(specialist, f"matter:{matter.pk}")["text"]
     assert "official no-comments reply, not an opinion" in text
+
+
+def test_a_closed_matters_disposition_reads_as_the_teema_page_does(matter, specialist) -> None:
+    # ADR 0131 amendment 2026-10-25 §8: the banner, the rail and the MCP
+    # snapshot say why the file closed in the same words; the key stays stored.
+    close_matter(matter=matter, disposition=Disposition.INITIATIVE_WITHDRAWN, actor=specialist)
+    matter.refresh_from_db()
+
+    snapshot = readers.matter_snapshot(specialist, matter.display_reference)
+
+    assert snapshot["disposition"] == {
+        "key": Disposition.INITIATIVE_WITHDRAWN.value,
+        "label": matter.closure_reason_label,
+    }
+    assert snapshot["disposition"]["label"] == "Eelnõu või algatus lõpetati"
 
 
 def test_commencement_facts_are_labelled(matter, specialist, today) -> None:

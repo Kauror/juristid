@@ -420,3 +420,80 @@ re-renders.
 ## Amendment, 2026-10-19 — see docs/adr/0172
 
 The owner's acceptance fixes of 2026-10-19 amend this record: §13 — a watched `Oluline tähtaeg` and a `Töövõit` are drawn on `Menetluse kulg` again, as event markers (`KIND_EVENT`), never as stages (0172 §6).
+
+## Amendment, 2026-10-25 — `Lõpeta teema` is restored as a direct closure
+
+- Status: accepted (explicit product-owner requirement of 2026-10-25)
+- Scope: supersedes §11 and the summary's point 11; amends §14 for the
+  closure reason's words. §10 (terminal stages close), §12 (reopening) and
+  docs/adr/0152 (confirming the live work a closure ends) are unchanged.
+- No migration.
+
+### What was decided before
+
+§11 removed `+ Lõpeta teema`: a Matter ended only when its `Hetkeseis` said so,
+through «Jõustunud» or «Rohkem ei tegele». The Reversibility section kept the
+way back open: `close_matter`, `Disposition`, `MATTER_CLOSED` and the closed
+banner were untouched, and restoring the action was "a template, a form and a
+route".
+
+### Why it is superseded
+
+A Matter is Koda's work on an issue, and that work can end independently of
+the external process. Koda meets a ministry several times and the ministry
+drops its proposal; an informal discussion needs nothing further; no common
+position forms; an opinion's follow-up is finished. None of these is a
+`Hetkeseis`, and choosing «Rohkem ei tegele» to close such a file would record
+a statement about the external process that nobody made. The owner asked for a
+direct way to finish the work.
+
+### What is decided now
+
+1. **`Lõpeta teema` is the launcher's last chip**, after the four capture
+   families, pushed to the end of the row (`disclosure-chip--last`) because it
+   ends Koda's work rather than adding to it. It renders, like the whole
+   launcher, only for a business writer on an open Matter.
+2. **Two questions.** `Põhjus` — one of `CLOSURE_CHOICES`, with
+   «Koda ei tegele edasi» (`MONITORING_STOPPED`) first and already chosen — and
+   an optional `Selgitus` of up to 2,000 characters. No date, participants,
+   institution, attachment, stage or opinion field, and no `Märgi töövõiduks`.
+   A meeting or discussion is recorded first through `Kohtumine / arutelu` or
+   `+ Lisa · Muu`, or summed up in `Selgitus`.
+3. **One closure service.** `close_from_workspace` →
+   `workspace.close_matter_from_workspace` → `close_matter`, in one
+   `composer_operation`. Nothing else is written: `is_open`, `disposition`,
+   `disposition_reason`, `closed_at` and `closed_by` on the Matter, the live
+   work's own cancellations, and one `MATTER_CLOSED` in the current period.
+4. **What closing does not do.** `Hetkeseis` does not move (no new period). No
+   `Submission`, `Entry`, `Töövõit` or follow-up check is created; an opinion
+   deadline is not marked answered (it ends as «lõppes teema sulgemisega» only
+   if the file is later reopened without keeping it, §12). A reason such as
+   «Eelnõu või algatus lõpetati» states what happened to the initiative and
+   attributes nothing to Koda; any such claim is the person's own `Selgitus`.
+   Recording a meeting never closes a Matter.
+5. **Live work is confirmed as everywhere else** (docs/adr/0152): a current
+   step, planned steps or checks, a planned overview or an open feedback wait
+   refuses the first press with the sentence that names them and the box whose
+   value is their digest; the second press closes, or is refused again if the
+   work changed meanwhile.
+6. **Concurrency.** `close_matter` locks the Matter row and refuses one already
+   closed («Teema on juba suletud.»): a second tab, a double press or a
+   concurrent terminal-stage save closes once and writes one `MATTER_CLOSED`.
+   The Matter is read through `visible_to`, behind `business_write_required`.
+7. **The closure reads in full.** `MATTER_CLOSED.payload.reason` now carries
+   the whole explanation (the event's `summary` keeps 200 characters, and
+   `reopen_matter` clears `disposition_reason`). Its `Teema käik` row reads
+   «Teema suletud», the reason, and the explanation under «Selgitus».
+8. **One fact, one word** (amends §14). The closed banner, the rail's `Põhjus`
+   and the `Teema käik` row read the reason in the panel's words
+   (`CLOSURE_REASON_LABELS`: «Koda ei tegele edasi», not «Koda lõpetas
+   jälgimise»). The stored values and the `Disposition` labels reports use are
+   unchanged.
+
+### What this amendment does not change
+
+- «Jõustunud» and «Rohkem ei tegele» still close the Matter wherever a stage is
+  chosen (§10), and «Jõustumise ootel» still does not.
+- `Ava uuesti` still names the stage the file reopens in (§12).
+- `SUPERSEDED` and `DUPLICATE` are still not offered (`CLOSURE_CHOICES`).
+- No MCP write operation closes a Matter.

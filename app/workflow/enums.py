@@ -41,6 +41,31 @@ class Disposition(models.TextChoices):
     OTHER = "OTHER", "Muu"
 
 
+#: **How a closure reads on the Teema page**, in the words `Lõpeta teema`
+#: offers (docs/adr/0131, amendment of 2026-10-25). The lawyer picks
+#: «Koda ei tegele edasi»; the closed banner, the rail and the `Teema käik` row
+#: say «Koda ei tegele edasi» back — one fact, one word (0131 §14). The stored
+#: value and the `Disposition` labels every report reads are unchanged; a
+#: disposition the panel does not offer reads its own label.
+CLOSURE_REASON_LABELS: dict[str, str] = {
+    Disposition.MONITORING_STOPPED.value: "Koda ei tegele edasi",
+    Disposition.INITIATIVE_WITHDRAWN.value: "Eelnõu või algatus lõpetati",
+    Disposition.NO_POSITION_FORMED.value: "Seisukohta ei kujundatud",
+    Disposition.RESPONSE_COMPLETE.value: "Vastus esitatud ja järeltegevus tehtud",
+    Disposition.COMPLETED.value: "Jõustus või töö lõppes",
+    Disposition.OTHER.value: "Muu",
+}
+
+
+def closure_reason_label(disposition: str) -> str:
+    """`CLOSURE_REASON_LABELS`, or the disposition's own label, or ``""``."""
+    if disposition in CLOSURE_REASON_LABELS:
+        return CLOSURE_REASON_LABELS[disposition]
+    if disposition in Disposition.values:
+        return str(Disposition(disposition).label)
+    return ""
+
+
 class ActionKind(models.TextChoices):
     """What Koda is doing about this Matter right now.
 

@@ -9,7 +9,7 @@ The brief's matrix, each item where it is decided:
   Matter with no stage yet, where it belongs to the first period;
 * **closure** — «Jõustunud» and «Rohkem ei tegele» close an open Matter in the
   same transaction, «Jõustumise ootel» does not, and the open step goes the way
-  every closure ends it; `Lõpeta teema` is gone;
+  every closure ends it; `Lõpeta teema` closes directly and moves no stage;
 * **reopening** — into a named stage, as a new period, the closing one kept;
 * **the next-stage order** — likely forward first, backward last, the bridge
   from «ELi õiguse ülevõtmise ootel» to «Idee», history never impossible;
@@ -29,7 +29,7 @@ import pytest
 from django.apps import apps as django_apps
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
-from django.urls import NoReverseMatch, reverse
+from django.urls import reverse
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
@@ -630,18 +630,30 @@ def test_a_closed_matter_is_offered_reopening_into_a_stage(signed_in, specialist
     assert "Määramata" not in banner and "lõpetab teema" not in banner
 
 
-def test_lopeta_teema_is_gone_from_every_ordinary_surface(signed_in, specialist):
+def test_lopeta_teema_is_on_the_teema_page_and_leaves_the_stage_alone(signed_in, specialist):
+    """§11 is superseded by the amendment of 2026-10-25: a direct closure, which
+    is not a `Hetkeseis` — the period stays open and no new one begins."""
     matter = _matter(specialist, stage="idea")
+    episodes = MatterStageEpisode.objects.filter(matter=matter).count()
 
-    with pytest.raises(NoReverseMatch):
-        reverse("matters:close_from_workspace", kwargs={"pk": matter.pk})
     body = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})
     ).content.decode()
     edit = signed_in.get(reverse("matters:matter_edit", kwargs={"pk": matter.pk})).content.decode()
-    for page in (body, edit):
-        assert "+ Lõpeta teema" not in page
-        assert 'id="teema-lopeta"' not in page
+    assert 'id="teema-lopeta"' in body
+    # The edit page corrects the record; it does not finish the work.
+    assert 'id="teema-lopeta"' not in edit
+
+    signed_in.post(
+        reverse("matters:close_from_workspace", kwargs={"pk": matter.pk}),
+        {"disposition": "MONITORING_STOPPED"},
+        headers={"HX-Request": "true"},
+    )
+    matter.refresh_from_db()
+    assert not matter.is_open
+    assert matter.stage.key == "idea"
+    assert MatterStageEpisode.objects.filter(matter=matter).count() == episodes
+    assert _current(matter).stage.key == "idea"
 
 
 def test_historical_rohkem_pole_tegevusi_plaanis_is_still_a_disposition():

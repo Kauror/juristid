@@ -443,9 +443,9 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     sub-choices inside two of them do not, and nothing is open until somebody
     chooses.
 
-    `+ Lõpeta teema` stood at the end of the row until docs/adr/0131 §11: a
-    file ends through its `Hetkeseis` now, so the row is the four and nothing
-    else.
+    `Lõpeta teema` stands at the end of the row, apart: retired by
+    docs/adr/0131 §11 and restored by its amendment of 2026-10-25, because Koda
+    can finish a file whatever its `Hetkeseis`.
     """
     body = _detail(signed_in, normal_matter)
     zone = body[
@@ -477,9 +477,10 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     for gone in ("+ Järgmine tegevus", "+ Menetluse areng", "+ Menetluse link"):
         assert gone not in zone, gone
 
-    # No closing chip: «Jõustunud» and «Rohkem ei tegele» end the file.
+    # The closing chip, last and without a `+`: it ends rather than adds.
     assert "+ Lõpeta teema" not in zone
-    assert "disclosure-chip--last" not in zone
+    assert ">Lõpeta teema</label>" in zone
+    assert zone.index(">Lõpeta teema</label>") > zone.index("+ Ülevaade / uudis")
 
     assert 'cx-panel" open' not in zone
     # Eight capture operations, eight saves. Nine until docs/adr/0170: the two
@@ -495,8 +496,9 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     # (docs/adr/0073, `organisation_picker.html`).
     # Nine: `+ Lisa · Muu` joined (docs/adr/0097) and docs/adr/0170 removed two
     # feedback saves and made `Lisa tagasiside` always a form. Ten since
-    # `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17).
-    assert zone.count('type="submit"') == 10
+    # `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17), and
+    # eleven with `Lõpeta teema`'s own (docs/adr/0131, amendment of 2026-10-25).
+    assert zone.count('type="submit"') == 11
     assert "composer__actions" not in zone
 
 
@@ -1145,8 +1147,8 @@ def _close_elsewhere(matter, actor):
 
 
 #: Every `LISA TEEMALE` operation, as (route, payload, what it would have
-#: written). `+ Lõpeta teema` is deliberately absent: closing is the act, and
-#: `close_matter` answers a second attempt itself.
+#: written). `Lõpeta teema` is deliberately absent: closing is the act, and
+#: `close_matter` answers a second attempt itself (tests/test_lopeta_teema.py).
 STALE_WORKSPACE_WRITES = [
     (
         "matters:add_note",

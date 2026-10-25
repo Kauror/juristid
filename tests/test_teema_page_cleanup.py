@@ -296,17 +296,25 @@ def test_the_compact_date_rule_is_a_cap_not_a_width():
 
 
 # ---------------------------------------------------------------------------
-# C — `+ Lõpeta teema`, retired by docs/adr/0131 §11
+# C — `Lõpeta teema`, retired by docs/adr/0131 §11 and restored on 2026-10-25
 # ---------------------------------------------------------------------------
 
 
-def test_there_is_no_closing_panel_and_the_stage_says_how_a_file_ends(signed_in, normal_matter):
-    """C16–C21 described a panel that is gone: a file ends through `Hetkeseis`."""
+def test_the_closing_panel_asks_two_questions_and_the_stage_still_ends_a_file(
+    signed_in, normal_matter
+):
+    """C16–C21's three chips and `Lõppsõna` stay gone; the restored panel asks
+    `Põhjus` and `Selgitus` (docs/adr/0131, amendment of 2026-10-25), and a
+    terminal `Hetkeseis` still says it ends the file."""
     body = signed_in.get(_teema(normal_matter)).content.decode()
 
-    assert 'id="teema-lopeta"' not in body
+    assert 'id="teema-lopeta"' in body
     assert "+ Lõpeta teema" not in body
     assert 'name="closing_words"' not in body
+    assert 'name="mark_work_victory"' not in body
+    panel = body[body.index('id="teema-lopeta"') :]
+    panel = panel[: panel.index("</form>")]
+    assert "Põhjus" in panel and 'name="explanation"' in panel
     assert "Jõustunud — lõpetab teema" in body
     assert "Rohkem ei tegele — lõpetab teema" in body
 

@@ -1111,7 +1111,7 @@ def _snapshot_body(
         "is_open": matter.is_open,
         "work_status": {"key": work_status.key, "label": work_status.label},
         "disposition": (
-            {"key": matter.disposition, "label": str(matter.get_disposition_display())}
+            {"key": matter.disposition, "label": matter.closure_reason_label}
             if matter.disposition
             else None
         ),

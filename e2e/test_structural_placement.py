@@ -193,16 +193,16 @@ def test_kustuta_is_not_rendered_anywhere_below_the_page(page, base_url: str):
 
 
 # ---------------------------------------------------------------------------
-# 2 — the launcher is four capture chips; `Lõpeta teema` is retired
+# 2 — the launcher is four capture chips and `Lõpeta teema`, last
 # ---------------------------------------------------------------------------
 
 
 def test_the_launcher_is_four_capture_chips_in_one_group(page, base_url: str):
-    """One row of choices, one radio group — and no closure chip in it.
+    """One row of choices, one radio group — and the closure chip last in it.
 
-    `+ Lõpeta teema` stood last in this row until docs/adr/0131 §11: a Matter
-    ends through its `Hetkeseis` now. What stays is the row's own contract — one
-    exclusive group, so it is a choice until one is picked.
+    `Lõpeta teema` was retired by docs/adr/0131 §11 and restored, last and
+    apart, by its amendment of 2026-10-25. The row's own contract is unchanged —
+    one exclusive group, so it is a choice until one is picked.
     """
     sign_in(page, base_url, MARTIN)
     _matter(page, base_url)
@@ -213,8 +213,9 @@ def test_the_launcher_is_four_capture_chips_in_one_group(page, base_url: str):
         expect(
             row.locator("label.disclosure-chip", has_text=re.compile(rf"^{re.escape(chip)}$"))
         ).to_have_count(1)
-    expect(row.locator("label.disclosure-chip--last")).to_have_count(0)
-    expect(page.locator("#teema-lopeta-valik")).to_have_count(0)
+    expect(row.locator("label.disclosure-chip--last")).to_have_count(1)
+    expect(row.locator("label.disclosure-chip--last")).to_have_text("Lõpeta teema")
+    expect(page.locator("#teema-lopeta-valik")).to_have_count(1)
 
     # **Direct children of the outer row only.** `Märke liik` and
     # `Kelle arvamus` are `.cx-panels` too — the same construction one level in

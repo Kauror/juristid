@@ -83,6 +83,7 @@ from app.workflow.dates import (
     format_at_precision,
 )
 from app.workflow.enums import (
+    CLOSURE_REASON_LABELS,
     ActionKind,
     DatePrecision,
     DateSemantics,
@@ -2892,7 +2893,7 @@ def kept_precision_choice(value: date | None, precision: str) -> tuple[str, str]
 #: somebody would actually say about a finished file. `DUPLICATE` is deliberately
 #: absent: merging two records is data management and belongs to whoever is
 #: cleaning up, not to the lawyer finishing the work (Teema redesign §15.1).
-#: What `Põhjus` offers when a Matter is closed from the composer.
+#: What `Põhjus` offers when a Matter is closed with `Lõpeta teema`.
 #:
 #: **`SUPERSEDED` is deliberately absent, and no domain capability was removed
 #: to achieve that.** `Jätkub teise teema all` is the one disposition whose
@@ -2905,13 +2906,19 @@ def kept_precision_choice(value: date | None, precision: str) -> tuple[str, str]
 #: `Disposition.SUPERSEDED` are all untouched and still enforce their invariant,
 #: ready for the dedicated "work continues under another Matter" operation that
 #: would ask the question properly (Teema closing redesign §3).
-CLOSURE_CHOICES: tuple[tuple[str, str], ...] = (
-    (Disposition.COMPLETED.value, "Jõustus või töö lõppes"),
-    (Disposition.INITIATIVE_WITHDRAWN.value, "Eelnõu või algatus lõpetati"),
-    (Disposition.RESPONSE_COMPLETE.value, "Vastus esitatud ja järeltegevus tehtud"),
-    (Disposition.MONITORING_STOPPED.value, "Koda ei tegele edasi"),
-    (Disposition.NO_POSITION_FORMED.value, "Seisukohta ei kujundatud"),
-    (Disposition.OTHER.value, "Muu"),
+CLOSURE_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    (value, CLOSURE_REASON_LABELS[value])
+    for value in (
+        # **«Koda ei tegele edasi» first, and chosen** (docs/adr/0131, amendment
+        # of 2026-10-25): the ordinary file ends because Koda is done with it,
+        # and finishing one should take one press, not a classification.
+        Disposition.MONITORING_STOPPED.value,
+        Disposition.INITIATIVE_WITHDRAWN.value,
+        Disposition.NO_POSITION_FORMED.value,
+        Disposition.RESPONSE_COMPLETE.value,
+        Disposition.COMPLETED.value,
+        Disposition.OTHER.value,
+    )
 )
 
 
@@ -7423,13 +7430,78 @@ class OpinionWorkingDocumentsForm(RecordEvidenceForm):
     slug = "koja_arvamus"
 
 
-#: **No `CompactClosureForm` since docs/adr/0131 §11.** `+ Lõpeta teema` asked
-#: how the file ended and for a last word; a Matter now ends when its
-#: `Hetkeseis` says so — «Jõustunud» or «Rohkem ei tegele» — through the
-#: `Uus hetkeseis` control every stage surface already has. The closure
-#: vocabulary (`CLOSURE_CHOICES`, `Disposition`) and `close_matter` behind it
-#: are unchanged; only the separate panel went. A `Töövõit` is recorded from
-#: `+ Märge → Töövõit`, which is what this panel's own box handed it to.
+#: The longest `Selgitus` a closure takes: a short account, not a document.
+CLOSURE_EXPLANATION_MAX_LENGTH = 2000
+
+
+class CompactClosureForm(forms.Form):
+    """`Lõpeta teema` — why Koda is finished with this file, and optionally what happened.
+
+    **Restored by docs/adr/0131's amendment of 2026-10-25**, after §11 retired
+    it: a Matter is Koda's work on an issue, and that work can end while the
+    external process stands anywhere — a ministry dropping its draft after
+    meetings, an informal discussion that needs nothing more, no common
+    position. A terminal `Hetkeseis` still closes too; this is the direct door.
+
+    Two questions and the confirmation every closing door asks:
+
+    * `Põhjus` — **required, and chosen already**: «Koda ei tegele edasi», so a
+      straightforward file closes with one press. Only the dispositions a
+      lawyer finishing a file would say (`CLOSURE_CHOICES`).
+    * `Selgitus` — optional, plain text: what happened and why Koda is done.
+      It is `Matter.disposition_reason`, and `Teema käik` reads it in full.
+    * `confirm_follow_up_closure` — drawn only after a refusal that names the
+      live work this closure would end (docs/adr/0152).
+
+    **No date, participant, institution, attachment, stage or opinion field**,
+    and no `Märgi töövõiduks`: closing records that Koda stopped, never that an
+    opinion went out, that a win was won or who caused what. A ministry's
+    withdrawal is the lawyer's sentence in `Selgitus`, not a claim this form
+    derives from the reason chosen.
+    """
+
+    use_required_attribute = False
+
+    disposition = forms.ChoiceField(
+        label="Põhjus",
+        choices=CLOSURE_CHOICES,
+        initial=Disposition.MONITORING_STOPPED.value,
+        widget=forms.RadioSelect(attrs={"class": "chip__input"}),
+        error_messages={
+            "required": "Vali, miks teema lõpetatakse.",
+            "invalid_choice": "Vali, miks teema lõpetatakse.",
+        },
+    )
+    explanation = forms.CharField(
+        label="Selgitus",
+        required=False,
+        max_length=CLOSURE_EXPLANATION_MAX_LENGTH,
+        widget=forms.Textarea(
+            attrs={
+                "class": "field__input",
+                "rows": "3",
+                "placeholder": "Mis juhtus ja miks Koda selle teemaga edasi ei tegele.",
+            }
+        ),
+        error_messages={
+            "max_length": (
+                f"Selgitus võib olla kuni {CLOSURE_EXPLANATION_MAX_LENGTH} tähemärki. "
+                "Pikema käigu kirjelda märkena enne lõpetamist."
+            ),
+        },
+    )
+    #: `Sulge teema ja lõpeta pooleli töö`, drawn after a refused closure (docs/adr/0152).
+    confirm_follow_up_closure = follow_up_closure_field()
+
+    def clean_explanation(self) -> str:
+        return (self.cleaned_data.get("explanation") or "").strip()
+
+    @property
+    def shown_disposition(self) -> str:
+        """The chip drawn chosen: what was posted, or «Koda ei tegele edasi»."""
+        if self.is_bound:
+            return str(self.data.get(self.add_prefix("disposition")) or "")
+        return str(self.fields["disposition"].initial)
 
 
 class EntryEditForm(forms.Form):

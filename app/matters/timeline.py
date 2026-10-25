@@ -57,6 +57,7 @@ from app.submissions.enums import RecipientRole
 from app.submissions.links import linked_submissions_by_overview
 from app.submissions.models import Submission, SubmissionRecipient
 from app.workflow.dates import format_at_precision, period_starts_after
+from app.workflow.enums import closure_reason_label
 from app.workflow.lateness import is_past_period
 
 #: Events worth a line in the chronology. Field-level noise is deliberately
@@ -1110,19 +1111,33 @@ def _milestone_for_event(event: ChangeEvent) -> ChronologyMilestone:
     # (owner decision D7, 2026-10-14: the reason is required). Older withdrawals
     # recorded none and draw no line.
     reason = ""
+    note_label = WITHDRAWAL_REASON_LABEL
     if event.event_type == ChangeEventType.SUBMISSION_WITHDRAWN:
         reason = str((event.payload or {}).get("reason") or "").strip()
+    elif event.event_type == ChangeEventType.MATTER_CLOSED:
+        # **Why Koda finished, and what the person said happened**
+        # (docs/adr/0131, amendment of 2026-10-25): the reason in the words
+        # `Lõpeta teema` offered, and the whole `Selgitus` under its own label.
+        # The payload keeps the whole of it since that amendment; an older
+        # closure's 200-character summary is all there is.
+        payload = event.payload or {}
+        sub = closure_reason_label(str(payload.get("disposition") or ""))
+        reason = str(payload.get("reason") or event.summary or "").strip()
+        note_label = CLOSURE_EXPLANATION_LABEL
     return ChronologyMilestone(
         what=what,
         display_date=format_estonian_date(_local_day(event.occurred_at)),
         sub=sub,
         own_note=reason,
-        own_note_label=WITHDRAWAL_REASON_LABEL if reason else "",
+        own_note_label=note_label if reason else "",
     )
 
 
 #: The label of a withdrawal's reason on its `Teema käik` row.
 WITHDRAWAL_REASON_LABEL = "Põhjus"
+
+#: The label of a closure's `Selgitus` on its `Teema käik` row.
+CLOSURE_EXPLANATION_LABEL = "Selgitus"
 
 
 @dataclass(frozen=True)

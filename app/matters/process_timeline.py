@@ -739,7 +739,9 @@ def process_steps(
             ProcessStep(
                 label=CLOSED_LABEL,
                 display=format_estonian_date(closed_on),
-                detail=matter.get_disposition_display() if matter.disposition else "",
+                # The banner's and the rail's words (`CLOSURE_REASON_LABELS`,
+                # docs/adr/0131, amendment of 2026-10-25).
+                detail=matter.closure_reason_label,
                 sort_on=closed_on,
                 phase=PHASE_CLOSED,
             )

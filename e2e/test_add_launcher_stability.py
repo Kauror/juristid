@@ -51,6 +51,9 @@ CANONICAL = [  # the owner's order of 2026-10-07
     # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
     "+ Koja arvamus / kohtumine",
     "+ Lisa",
+    # Last and apart: retired by docs/adr/0131 §11, restored by its amendment
+    # of 2026-10-25.
+    "Lõpeta teema",
 ]
 
 #: The top-level panels, which is what the chips above open.
@@ -59,6 +62,7 @@ PANEL_IDS = [
     "lisa-kaasamine",
     "lisa-arvamus",
     "lisa-koduleht",
+    "teema-lopeta",
 ]
 
 #: The sub-choices, and which family each is inside. Opening one of these is the
@@ -173,7 +177,9 @@ def test_no_launcher_control_moves_when_a_form_is_opened(page, base_url):
     the first — not merely where it was before *that* click, which a launcher
     that drifted one row at a time would also satisfy.
 
-    `+ Lõpeta teema` was among them until docs/adr/0131 §11 retired it.
+    `Lõpeta teema` is among them again (docs/adr/0131, amendment of
+    2026-10-25): its `margin-inline-start: auto` is a resting position, and
+    opening a form must not change it either.
     """
     sign_in(page, base_url, SANDRA)
     a_new_matter(page, base_url)

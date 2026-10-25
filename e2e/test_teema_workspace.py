@@ -131,9 +131,9 @@ def test_a_marge_while_a_task_is_open_leaves_the_task_alone(page, base_url):
 
 #: One panel per operation this zone offers, families and sub-choices alike.
 #:
-#: `teema-lopeta` is gone with `+ Lõpeta teema` (docs/adr/0131 §11), and
-#: `marge-tavaline` with `Tavaline` (2026-10-07, docs/adr/0143) — `Arvamuse
-#: tähtaeg` is `+ Lisa`'s first choice now.
+#: `teema-lopeta` is `Lõpeta teema`, restored by docs/adr/0131's amendment of
+#: 2026-10-25; `marge-tavaline` left with `Tavaline` (2026-10-07,
+#: docs/adr/0143) — `Arvamuse tähtaeg` is `+ Lisa`'s first choice now.
 PANELS = (
     "marge-arvamuse-tahtaeg",
     "marge-tahtaeg",
@@ -144,6 +144,7 @@ PANELS = (
     "kaasamine-tagasiside",
     "arvamus-koja",
     "lisa-koduleht",
+    "teema-lopeta",
 )
 
 
@@ -159,7 +160,7 @@ def test_opening_one_panel_closes_whichever_was_open(page, base_url):
     for group in (
         ("marge-arvamuse-tahtaeg", "marge-tahtaeg", "marge-joustumine", "marge-toovoit"),
         ("kaasamine-alusta", "kaasamine-tagasiside"),
-        ("lisa-kaasamine", "lisa-koduleht"),
+        ("lisa-kaasamine", "lisa-koduleht", "teema-lopeta"),
     ):
         previous = ""
         for panel_id in group:

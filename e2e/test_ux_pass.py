@@ -181,9 +181,10 @@ def test_every_advanced_composer_field_is_still_reachable(page, base_url):
         )
     expect(page.locator("#marge-tahtaeg").get_by_text("Poolaasta")).to_have_count(0)
 
-    # `+ Lõpeta teema` is retired (docs/adr/0131 §11); one form at a time across
-    # the four capture chips is what remains.
-    expect(page.locator("#teema-lopeta")).to_have_count(0)
+    # One form at a time across the row, `Lõpeta teema` included
+    # (docs/adr/0131, amendment of 2026-10-25): it is there and closed.
+    expect(page.locator("#teema-lopeta")).to_have_count(1)
+    expect(page.locator("#teema-lopeta")).to_be_hidden()
 
     # And the rule holds in the other direction too.
     open_add_panel(page, "lisa-kaasamine")

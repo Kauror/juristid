@@ -1,7 +1,8 @@
 """What closing a Teema no longer asks, and the canonical rules it never relaxed.
 
-`Lõpeta teema` and the closing composer are gone: a Matter ends through a
-terminal `Hetkeseis` (docs/adr/0131 §10–11, `tests/test_stage_episodes.py`), and
+The closing composer is gone. A Matter ends through a terminal `Hetkeseis`
+(docs/adr/0131 §10, `tests/test_stage_episodes.py`) or the restored two-question
+`Lõpeta teema` (0131, amendment of 2026-10-25, `tests/test_lopeta_teema.py`), and
 the composer that once carried a closure, its opinion, a victory and a
 commencement in one save was retired with ENG-050A2 (docs/adr/0075, amended).
 Each of those is its own operation now — `+ Koja arvamus`, `+ Töövõit`,
