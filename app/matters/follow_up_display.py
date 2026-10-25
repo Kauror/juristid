@@ -27,6 +27,8 @@ from typing import Any
 from django.urls import reverse
 from django.utils import timezone
 
+from app.documents.inline import FileLink, file_link
+
 #: The label the line opens with. «Koja arvamus» is what the rail, the
 #: launcher and the chronology already call a sent opinion of the Chamber.
 SUBJECT_LABEL = "Koja arvamus"
@@ -42,6 +44,9 @@ class FollowUpSubject:
     addressees: tuple[str, ...]
     #: The `DocumentVersion` that went out, when the reader may open it.
     letter_version_id: Any = None
+    #: Where the letter's link goes — open in a new tab or download — decided by
+    #: `app.documents.inline.file_link` from the version already joined here.
+    letter: FileLink | None = None
 
     @property
     def sent_label(self) -> str:
@@ -61,9 +66,15 @@ class FollowUpSubject:
 
     @property
     def letter_url(self) -> str:
+        if self.letter is not None:
+            return self.letter.href
         if self.letter_version_id is None:
             return ""
         return reverse("documents:download", kwargs={"pk": self.letter_version_id})
+
+    @property
+    def letter_opens_inline(self) -> bool:
+        return self.letter is not None and self.letter.opens_inline
 
 
 def follow_up_subjects(actions: Iterable[Any], viewer: Any) -> dict[Any, FollowUpSubject]:
@@ -103,6 +114,7 @@ def follow_up_subjects(actions: Iterable[Any], viewer: Any) -> dict[Any, FollowU
         if submission is None:
             continue
         version = submission.final_version
+        readable = version is not None and version.document_id in openable
         subjects[follow_up_id] = FollowUpSubject(
             submission_id=submission.pk,
             title=submission.title,
@@ -110,9 +122,8 @@ def follow_up_subjects(actions: Iterable[Any], viewer: Any) -> dict[Any, FollowU
             addressees=tuple(
                 row.organisation.name for row in getattr(submission, ADDRESSEE_ROWS, [])
             ),
-            letter_version_id=(
-                version.pk if version is not None and version.document_id in openable else None
-            ),
+            letter_version_id=version.pk if readable else None,
+            letter=file_link(version) if readable else None,
         )
     return subjects
 

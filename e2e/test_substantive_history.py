@@ -453,7 +453,8 @@ def test_a_documents_row_is_under_the_act_it_evidences(page, base_url):
         .filter(has_text="Ministeerium saatis eelnõu uue versiooni")
     )
     expect(row).to_have_count(1)
-    expect(row.locator(".uxtl__file")).to_have_text("eelnou-v2.pdf")
+    # A PDF opens in a new tab and says so to a screen reader (app/documents/inline.py).
+    expect(row.locator(".uxtl__file")).to_have_text("eelnou-v2.pdf — avaneb uues aknas")
     expect(history(page)).not_to_contain_text("Tõendiversioon lisatud")
 
 

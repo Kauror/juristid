@@ -124,7 +124,8 @@
                 {% if block.opens_inline %}
                   <a class="casefile__name"
                      href="{% url 'documents:open' pk=block.version.pk %}"
-                     target="_blank" rel="noopener">{{ block.filename }}</a>
+                     target="_blank" rel="noopener noreferrer">{{ block.filename }}<span
+                     class="visually-hidden"> — avaneb uues aknas</span></a>
                 {% else %}
                   <a class="casefile__name"
                      href="{% url 'documents:download' pk=block.version.pk %}"

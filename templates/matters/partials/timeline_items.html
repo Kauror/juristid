@@ -50,7 +50,7 @@ record, not professional chronology (master specification 16.5).
   whole name as the `title`; a first name two colleagues share is lengthened
   (`colleagues`, app/core/context_processors.py).
 {% endcomment %}
-{% load people %}
+{% load document_files people %}
 {% for item in timeline_items %}
   {% comment %}
     The id is what a search result for an entry scrolls to. Server-rendered
@@ -363,16 +363,16 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__filegroup">
               <span class="uxtl__filegrouplabel">Saadetud</span>
               {% for file in item.opinion_sent_files %}
-                <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
-                  class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
+                <a class="uxtl__file" href="{{ file.url }}"{% new_tab_attrs file.opens_inline %}>{{ file.label }}{% if file.detail %}<span
+                  class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}{% new_tab_note file.opens_inline %}</a>
               {% endfor %}
             </span>
           {% endif %}
           <span class="uxtl__filegroup">
             <span class="uxtl__filegrouplabel">Töödokumendid</span>
             {% for file in item.opinion_working_files %}
-              <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
-                class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
+              <a class="uxtl__file" href="{{ file.url }}"{% new_tab_attrs file.opens_inline %}>{{ file.label }}{% if file.detail %}<span
+                class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}{% new_tab_note file.opens_inline %}</a>
             {% endfor %}
           </span>
         {% else %}
@@ -384,8 +384,8 @@ record, not professional chronology (master specification 16.5).
               papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
               (QA-016, `_disambiguate_files`).
             {% endcomment %}
-            <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
-              class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
+            <a class="uxtl__file" href="{{ file.url }}"{% new_tab_attrs file.opens_inline %}>{{ file.label }}{% if file.detail %}<span
+              class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}{% new_tab_note file.opens_inline %}</a>
           {% endfor %}
         {% endif %}
       {% else %}
@@ -526,8 +526,8 @@ record, not professional chronology (master specification 16.5).
             papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
             (QA-016, `_disambiguate_files`).
           {% endcomment %}
-          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
-            class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
+          <a class="uxtl__file" href="{{ file.url }}"{% new_tab_attrs file.opens_inline %}>{{ file.label }}{% if file.detail %}<span
+            class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}{% new_tab_note file.opens_inline %}</a>
         {% endfor %}
       {% endif %}
       {% comment %}

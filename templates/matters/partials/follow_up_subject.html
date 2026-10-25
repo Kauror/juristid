@@ -7,8 +7,9 @@ not see the opinion gets no line at all.
 
     subject  a `FollowUpSubject`, or nothing
 {% endcomment %}
+{% load document_files %}
 {% if subject %}
   <p class="followup__subject">
-    {% if subject.letter_url %}<a href="{{ subject.letter_url }}">{{ subject.label }} ↗</a>{% else %}{{ subject.label }}{% endif %}
+    {% if subject.letter_url %}<a href="{{ subject.letter_url }}"{% new_tab_attrs subject.letter_opens_inline %}>{{ subject.label }} ↗{% new_tab_note subject.letter_opens_inline %}</a>{% else %}{{ subject.label }}{% endif %}
   </p>
 {% endif %}

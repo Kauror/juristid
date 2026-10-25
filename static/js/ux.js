@@ -1584,20 +1584,52 @@
    * value is plain text rather than a box (header.html, docs/adr/0150 §4): a
    * field is selected and its value copied, anything else has its text
    * selected and copied, so Ctrl+C works on the selection either way.
+   *
+   * «Kopeeri link» on a document (`data-copy-href`) copies an address the
+   * page already links to — the exact version, through the same authorized
+   * route — made absolute against the address the reader is using, so a
+   * colleague gets the host and path that work for them too. Nothing is
+   * selected: there is no box to select it in.
    */
+  /* «Kopeeritud» said aloud as well as shown: the button's new text is not
+     announced by itself, so one polite status region, shared by every copy
+     control on the page, carries the same word. */
+  function announceCopy(said) {
+    var region = document.getElementById("kopeeri-teade");
+    if (!region) {
+      region = document.createElement("span");
+      region.id = "kopeeri-teade";
+      region.className = "visually-hidden";
+      region.setAttribute("role", "status");
+      region.setAttribute("aria-live", "polite");
+      document.body.appendChild(region);
+    }
+    region.textContent = "";
+    window.setTimeout(function () {
+      region.textContent = said;
+    }, 50);
+  }
+
   function bindCopyLink(scope) {
-    scope.querySelectorAll("[data-copy-from]").forEach(function (button) {
+    scope.querySelectorAll("[data-copy-from], [data-copy-href]").forEach(function (button) {
       if (!once(button, "Copy")) {
         return;
       }
       button.addEventListener("click", function () {
-        var field = document.getElementById(button.getAttribute("data-copy-from"));
-        if (!field) {
+        var href = button.getAttribute("data-copy-href");
+        var field = href ? null : document.getElementById(button.getAttribute("data-copy-from"));
+        if (!href && !field) {
           return;
         }
-        var isField = typeof field.select === "function" && "value" in field;
-        var text = isField ? field.value : (field.textContent || "").trim();
-        if (isField) {
+        var isField = !!field && typeof field.select === "function" && "value" in field;
+        var text = href
+          ? new URL(href, document.baseURI).href
+          : isField
+            ? field.value
+            : (field.textContent || "").trim();
+        if (href) {
+          /* Nothing on the page holds the address to select. */
+        } else if (isField) {
           field.select();
           field.setSelectionRange(0, field.value.length);
         } else {
@@ -1612,25 +1644,57 @@
           if (!said) {
             return;
           }
-          var before = button.textContent;
+          /* The label to come back to is read once, before the first change:
+             a second press inside the two seconds would otherwise take
+             «Kopeeritud» for the label and leave it there for good. */
+          if (!button.hasAttribute("data-label-idle")) {
+            button.setAttribute("data-label-idle", button.textContent);
+          }
+          window.clearTimeout(button.copyLabelTimer);
           button.textContent = said;
-          window.setTimeout(function () {
-            button.textContent = before;
+          announceCopy(said);
+          button.copyLabelTimer = window.setTimeout(function () {
+            button.textContent = button.getAttribute("data-label-idle");
           }, 2000);
         };
+        /* Older engines, and any context where the async API is refused. The
+           text is selected either way, so Ctrl+C still works — and an address
+           with no box of its own gets a momentary one to be selected in. If
+           even that copies nothing, the address is shown in a prompt to copy
+           by hand: a button that does nothing and says nothing is the one
+           outcome this must not have. */
+        var legacy = function () {
+          var scratch = null;
+          var copied = false;
+          if (href) {
+            scratch = document.createElement("textarea");
+            scratch.value = text;
+            scratch.setAttribute("readonly", "");
+            scratch.style.position = "fixed";
+            scratch.style.opacity = "0";
+            document.body.appendChild(scratch);
+            scratch.select();
+          }
+          try {
+            copied = document.execCommand("copy");
+          } catch (error) {
+            copied = false;
+          }
+          if (scratch) {
+            scratch.remove();
+            button.focus();
+          }
+          if (copied) {
+            done();
+          } else if (href) {
+            window.prompt("Kopeeri link", text);
+          }
+        };
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(done, function () {});
+          navigator.clipboard.writeText(text).then(done, href ? legacy : function () {});
           return;
         }
-        /* Older engines, and any context where the async API is refused. The
-           text is selected either way, so Ctrl+C still works. */
-        try {
-          if (document.execCommand("copy")) {
-            done();
-          }
-        } catch (error) {
-          /* Selected and visible is a working fallback. */
-        }
+        legacy();
       });
     });
   }

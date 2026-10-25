@@ -2280,8 +2280,29 @@ th[aria-sort="descending"] .colhead__mark::after {
   flex-direction: column;
 }
 
-.searchresults > .result + .result {
+.searchresults > .resultrow + .resultrow {
   border-top: 1px solid var(--border-subtle);
+}
+
+/* A result and, for a row that is one document's text, its file beside it:
+   two links side by side, never one inside the other (QoL round 2026-10-25).
+   The result keeps the whole width it had; the file action takes only its
+   word, aligned with the row's first line. */
+.resultrow {
+  display: flex;
+  align-items: flex-start;
+}
+
+.resultrow > .result {
+  flex: 1;
+  min-width: 0;
+}
+
+.resultrow__file {
+  flex: none;
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--typography-size-meta-sm);
+  white-space: nowrap;
 }
 
 .result {
@@ -7407,6 +7428,15 @@ button.accordion__action:focus-visible {
   display: none;
 }
 
+/* `Kopeeri link` is a button among links and summaries: the same row, with
+   the button's own box taken off so it reads as one more command. */
+button.opinionmenu__item {
+  width: calc(100% + var(--spacing-2) * 2);
+  border: 0;
+  background: none;
+  text-align: left;
+}
+
 .opinionmenu__item:hover {
   background: var(--surface-overlay-hover);
 }
@@ -11051,7 +11081,8 @@ section:has(.pw-more[open]) tbody.uxextra {
  * The whole box is a `<label>` over a visually hidden file input, so it works
  * as a picker with no script at all. */
 
-#teema-vaade-wrap .cx-drop {
+#teema-vaade-wrap .cx-drop,
+.uploadpanel .cx-drop {
   display: inline-flex;
   align-items: center;
   padding: 7px var(--spacing-35);
@@ -11062,15 +11093,19 @@ section:has(.pw-more[open]) tbody.uxextra {
 
 
 #teema-vaade-wrap .cx-drop:hover,
+.uploadpanel .cx-drop:hover,
 #teema-vaade-wrap .cx-drop:focus-within,
-#teema-vaade-wrap .cx-drop.is-dragover {
+.uploadpanel .cx-drop:focus-within,
+#teema-vaade-wrap .cx-drop.is-dragover,
+.uploadpanel .cx-drop.is-dragover {
   border-color: var(--accent-border);
 }
 
 /* The input is reachable by keyboard and invisible to the layout: the label
  * around it is the control a person sees. Not `display: none`, which would take
  * it out of the tab order and out of the form on some browsers. */
-#teema-vaade-wrap .cx-drop input[type="file"] {
+#teema-vaade-wrap .cx-drop input[type="file"],
+.uploadpanel .cx-drop input[type="file"] {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -11078,7 +11113,8 @@ section:has(.pw-more[open]) tbody.uxextra {
   pointer-events: none;
 }
 
-#teema-vaade-wrap .cx-drop__text {
+#teema-vaade-wrap .cx-drop__text,
+.uploadpanel .cx-drop__text {
   font-size: 13px;
   line-height: 1.4;
   color: var(--text-muted);
@@ -11090,17 +11126,29 @@ section:has(.pw-more[open]) tbody.uxextra {
   overflow-wrap: anywhere;
 }
 
-#teema-vaade-wrap .cx-drop__pick {
+#teema-vaade-wrap .cx-drop__pick,
+.uploadpanel .cx-drop__pick {
   color: var(--accent-link);
 }
 
-#teema-vaade-wrap .cx-drop:hover .cx-drop__pick {
+#teema-vaade-wrap .cx-drop:hover .cx-drop__pick,
+.uploadpanel .cx-drop:hover .cx-drop__pick {
   text-decoration: underline;
 }
 
 /* Once a file is chosen the box says which one, in the accent the link wore. */
-#teema-vaade-wrap .cx-drop.is-chosen .cx-drop__text {
+#teema-vaade-wrap .cx-drop.is-chosen .cx-drop__text,
+.uploadpanel .cx-drop.is-chosen .cx-drop__text {
   color: var(--accent-link);
+}
+
+/* The same box on `Dokumendid`'s «Lae dokument» panel (QoL round 2026-10-25),
+ * sharing every rule above: one file, dropped or picked, beside its `Roll` and
+ * `Pealkiri`. The width of its grid cell rather than a corner affordance,
+ * because there the file is the whole point of the form. */
+.uploadpanel .cx-drop {
+  display: flex;
+  min-height: 34px;
 }
 
 /* -- zone C: the chronology ------------------------------------------------

@@ -495,6 +495,33 @@ class ChronologyFile:
     #: (:data:`OPINION_WORKING_FILE`). Empty on every other file, whose row
     #: already says what it is (docs/adr/0129 §8).
     kind: str = ""
+    #: Whether ``url`` renders the file in a new tab (`documents:open`) rather
+    #: than saving it. Decided by `app.documents.inline.file_link` alone, so a
+    #: file attached under any row — a step, a note, a closure — behaves the
+    #: same way wherever it is printed.
+    opens_inline: bool = False
+    #: The attachment route, always: the explicit download beside a preview.
+    download_url: str = ""
+
+    @classmethod
+    def of_version(cls, version: Any, *, detail: str = "", kind: str = "") -> ChronologyFile:
+        """The one way a timeline file is built from a `DocumentVersion`.
+
+        Every caller goes through here, so the open-or-download decision is
+        never made twice — and a new kind of row that attaches files inherits
+        it without knowing it exists.
+        """
+        from app.documents.inline import file_link
+
+        link = file_link(version)
+        return cls(
+            label=version.original_filename,
+            url=link.href,
+            detail=detail,
+            kind=kind,
+            opens_inline=link.opens_inline,
+            download_url=link.download_url,
+        )
 
 
 #: A sent opinion's own letter — `Submission.final_version`, the exact bytes.
@@ -3126,8 +3153,6 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
     version whose document is restricted below this Matter contributes no link
     and no line, exactly as its evidence event contributes no clause.
     """
-    from django.urls import reverse
-
     from app.documents.models import Document, DocumentVersion
 
     def versions_of(item: TimelineItem) -> list[Any]:
@@ -3154,11 +3179,7 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
         return page
 
     found = {
-        version.pk: ChronologyFile(
-            label=version.original_filename,
-            url=reverse("documents:download", kwargs={"pk": version.pk}),
-            detail=_file_size(version),
-        )
+        version.pk: ChronologyFile.of_version(version, detail=_file_size(version))
         for version in DocumentVersion.objects.filter(
             pk__in=wanted, document__in=Document.objects.visible_to(user)
         )
@@ -3467,8 +3488,6 @@ def _with_linked_files(page: list[TimelineItem], user: Any) -> list[TimelineItem
     operation and a link to the note, and printing it twice under one line is
     the defect that would look like a double upload.
     """
-    from django.urls import reverse
-
     from app.documents.links import DocumentLink
     from app.documents.services import LINK_FIELD_BY_MODEL
 
@@ -3502,9 +3521,8 @@ def _with_linked_files(page: list[TimelineItem], user: Any) -> list[TimelineItem
         if version is None or not field:
             continue
         found.setdefault((field, getattr(link, f"{field}_id")), []).append(
-            ChronologyFile(
-                label=version.original_filename,
-                url=reverse("documents:download", kwargs={"pk": version.pk}),
+            ChronologyFile.of_version(
+                version,
                 detail=_file_size(version),
                 # A link to a sent opinion is one of its working documents, and
                 # never the letter: that is `final_version`, which `_with_files`
