@@ -10641,6 +10641,14 @@ section:has(.pw-more[open]) tbody.uxextra {
   flex: none;
 }
 
+/* `Lõpeta teema` — the launcher's last chip, which ends the file rather than
+ * adding to it: pushed to the end of its line, so it reads apart from the four
+ * capture chips without a heading of its own (docs/adr/0131, amendment of
+ * 2026-10-25). A margin, not a size: the chip itself never changes. */
+#teema-vaade-wrap .cx-panels > .disclosure-chip--last {
+  margin-inline-start: auto;
+}
+
 /* The focus ring belongs on the thing you can see. */
 #teema-vaade-wrap .addpick:focus-visible + .disclosure-chip {
   outline: 2px solid var(--accent-border);

@@ -47,7 +47,7 @@ from app.matters.enums import (
 )
 from app.matters.process_phases import PHASE_KEYS
 from app.workflow.dates import format_at_precision, is_approximate
-from app.workflow.enums import DatePrecision, Disposition, Track
+from app.workflow.enums import DatePrecision, Disposition, Track, closure_reason_label
 
 
 class MatterQuerySet(models.QuerySet):
@@ -569,6 +569,11 @@ class Matter(BaseModel):
     @property
     def is_restricted(self) -> bool:
         return self.visibility == Visibility.RESTRICTED
+
+    @property
+    def closure_reason_label(self) -> str:
+        """Why the file closed, in the words `Lõpeta teema` offered (`CLOSURE_REASON_LABELS`)."""
+        return closure_reason_label(self.disposition)
 
     @property
     def work_status(self) -> Any:

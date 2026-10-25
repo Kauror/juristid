@@ -166,8 +166,11 @@ def test_the_panels_are_compact_and_fit(page, base_url, width):
     assert geometry["sameRow"] and geometry["inside"], geometry
     assert_no_sideways_scroll(page)
 
-    # `+ Lõpeta teema` is retired (docs/adr/0131 §11): no third panel to fit.
-    expect(page.locator("#teema-lopeta")).to_have_count(0)
+    # `Lõpeta teema` (docs/adr/0131, amendment of 2026-10-25) fits too: its
+    # reasons wrap inside the panel and nothing scrolls sideways.
+    open_add_panel(page, "teema-lopeta")
+    expect(page.locator("#teema-lopeta [name=explanation]")).to_be_visible()
+    assert_no_sideways_scroll(page)
 
 
 # ---------------------------------------------------------------------------

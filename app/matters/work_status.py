@@ -25,8 +25,9 @@ The four answers, and what decides each:
 * **Jätkub mujal** — closed because the work continues under another Matter:
   `SUPERSEDED`, which `close_matter` only accepts with a successor.
 * **Mitteaktiivne** — closed without the Chamber deciding to conclude: the act
-  came into force (`COMPLETED`, which only «Jõustunud» records now), the
-  initiator withdrew (`INITIATIVE_WITHDRAWN`), or an archive record closed with
+  came into force (`COMPLETED` — «Jõustunud», or `Lõpeta teema`'s «Jõustus või
+  töö lõppes»), the initiative was dropped (`INITIATIVE_WITHDRAWN`, «Eelnõu või
+  algatus lõpetati» — what happened, not who caused it), or an archive record closed with
   no reason at all. Nothing here asserts a Chamber closure that did not happen.
 * **Lõpetatud** — every other closure: the Chamber stopped monitoring, formed
   no position, finished its response, or closed it for a stated other reason.

@@ -279,7 +279,7 @@ whose addressee nobody recorded should look short, not incomplete.
       {% if matter.disposition %}
         <div class="railcard__row">
           <span class="railcard__key">Põhjus</span>
-          <span>{{ matter.get_disposition_display }}</span>
+          <span>{{ matter.closure_reason_label }}</span>
         </div>
       {% endif %}
       {% if matter.closed_by %}

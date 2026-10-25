@@ -1,0 +1,65 @@
+{% load form_labels %}
+    {% comment %}
+      `Lõpeta teema` — Koda is finished with this file, whatever the external
+      process does next (docs/adr/0131, amendment of 2026-10-25, restoring what
+      §11 retired).
+
+      **The launcher's last chip, and visibly apart from the four before it.**
+      Those add something to the file; this ends Koda's work on it. Same radio
+      group (`lisa-valik`), so opening it closes whichever panel was open and
+      the row stays one choice; outside the `lisa-` id prefix, and pushed to the
+      end of the row by `disclosure-chip--last`.
+
+      Two questions: `Põhjus`, chosen already as «Koda ei tegele edasi», and an
+      optional `Selgitus`. No date, participants, institution, file, stage or
+      opinion — meetings and discussions are recorded as they happened through
+      `Kohtumine / arutelu` or `+ Lisa · Muu` first, if at all.
+
+      A file with live work is refused once with the sentence naming what would
+      end and the box confirming exactly that work
+      (`follow_up_closure_confirm.html`, docs/adr/0152); nothing is ended unseen.
+    {% endcomment %}
+    <input class="addpick" type="radio" name="lisa-valik" id="teema-lopeta-valik"
+           data-addpick aria-controls="teema-lopeta"
+           {% if open_panel == "teema-lopeta" %}checked{% endif %}>
+    <label class="disclosure-chip disclosure-chip--last" for="teema-lopeta-valik">Lõpeta teema</label>
+    <div class="cx-panel" id="teema-lopeta" data-addpanel data-draft-host>
+      <div class="cx-panel__body">
+        {% if open_panel == "teema-lopeta" and workspace_error %}
+          <p class="formerror" role="alert">{{ workspace_error }}</p>
+        {% endif %}
+        <form class="addform" data-addform
+              hx-post="{% url 'matters:close_from_workspace' pk=matter.pk %}"
+              hx-target="#teema-vaade" hx-swap="outerHTML">
+          {% csrf_token %}
+          <fieldset class="cx-fieldset"
+                    {% if closure_form.disposition.errors %}aria-describedby="{{ closure_form.disposition.auto_id }}_error"{% endif %}>
+            <legend class="cx-f__lab">{% field_label closure_form.disposition %}</legend>
+            <div class="chiprow">
+              {% for radio in closure_form.disposition %}
+                <label class="chip">
+                  <input type="radio" class="chip__input" name="{{ closure_form.disposition.html_name }}"
+                         id="{{ radio.id_for_label }}" value="{{ radio.data.value }}"
+                         {% if radio.data.value == closure_form.shown_disposition %}checked{% endif %}>
+                  <span class="chip__name">{{ radio.choice_label }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          </fieldset>
+          {% if closure_form.disposition.errors %}
+            <p class="field__error" id="{{ closure_form.disposition.auto_id }}_error">{{ closure_form.disposition.errors|first }}</p>
+          {% endif %}
+          <label class="cx-f" for="{{ closure_form.explanation.id_for_label }}">
+            <span class="cx-f__lab">{% field_label closure_form.explanation %}</span>
+            {{ closure_form.explanation }}
+          </label>
+          {% if closure_form.explanation.errors %}
+            <p class="field__error" id="{{ closure_form.explanation.auto_id }}_error">{{ closure_form.explanation.errors|first }}</p>
+          {% endif %}
+          {% include "matters/partials/follow_up_closure_confirm.html" with form=closure_form %}
+          <div class="addform__actions">
+            <button class="button button--primary" type="submit">Lõpeta teema</button>
+          </div>
+        </form>
+      </div>
+    </div>

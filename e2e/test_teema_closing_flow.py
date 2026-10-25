@@ -3,8 +3,9 @@
 The domain suite proves the rules (`tests/test_stage_episodes.py`); this proves
 that a person can perform them.
 
-**There is no `+ Lõpeta teema` any more.** A file ends when its `Hetkeseis`
-says so: «Jõustunud» or «Rohkem ei tegele», chosen in the header's `Hetkeseis`
+**A file ends when its `Hetkeseis` says so** — or when Koda finishes it with the
+restored `Lõpeta teema` (docs/adr/0131, amendment of 2026-10-25,
+`e2e/test_lopeta_teema.py`): «Jõustunud» or «Rohkem ei tegele», chosen in the header's `Hetkeseis`
 or as `Uus hetkeseis` in `✓ Tehtud` — where the option says so in its own words,
 «… — lõpetab teema». «Jõustumise ootel» does not end it. (`Uus hetkeseis` was
 also in `+ Lisa · Tavaline` until that panel left on 2026-10-07.) A closed file
@@ -56,11 +57,12 @@ def finish_step_moving_stage(page, result: str, label: str) -> None:
     expect(page.locator("#teema-hetkeseis .metaline__value")).to_have_text(label)
 
 
-def test_there_is_no_closing_panel_and_the_stage_says_what_ends_the_file(page, base_url):
+def test_the_stage_still_says_what_ends_the_file(page, base_url):
     sign_in(page, base_url, MARTIN)
     create_matter(page, base_url, "Lõpetamise brauserikatse: valikud", stage="Riigikogus")
 
-    expect(page.locator("#teema-lopeta")).to_have_count(0)
+    # Beside the direct `Lõpeta teema`, closed until chosen.
+    expect(page.locator("#teema-lopeta")).to_be_hidden()
     expect(page.get_by_text("+ Lõpeta teema", exact=True)).to_have_count(0)
     # `✓ Tehtud`'s `Uus hetkeseis` — the one `Uus hetkeseis` on the page since
     # `+ Lisa · Tavaline`, which offered the same list, left on 2026-10-07.
@@ -87,7 +89,7 @@ def test_joustumise_ootel_keeps_the_file_open_and_joustunud_closes_it(page, base
 
     close_through_stage(page, "Jõustunud")
     expect(page.locator(".badge--state")).to_contain_text("Mitteaktiivne")
-    expect(page.locator(".banner--closed")).to_contain_text("Lõpetatud või jõustunud")
+    expect(page.locator(".banner--closed")).to_contain_text("Jõustus või töö lõppes")
     expect(page.locator("#lisa-teemale")).to_have_count(0)
     # The work from before stays in its period.
     expect(page.locator("#ajalugu-loend")).to_contain_text("Riigikogu võttis seaduse vastu.")
@@ -100,7 +102,7 @@ def test_rohkem_ei_tegele_closes_with_koda_stopping(page, base_url):
 
     close_through_stage(page, "Rohkem ei tegele", title="Koda otsustas mitte sekkuda.")
 
-    expect(page.locator(".banner--closed")).to_contain_text("Koda lõpetas jälgimise")
+    expect(page.locator(".banner--closed")).to_contain_text("Koda ei tegele edasi")
     current = page.locator(f"{KAIK_PERIOD}.kaikstage--current")
     expect(current.locator(".kaikstage__stage")).to_have_text("Rohkem ei tegele")
 

@@ -18,6 +18,7 @@ What is being protected:
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 
 import pytest
@@ -117,8 +118,12 @@ def test_kustuta_sits_beside_muuda_in_the_header(client, department_head, specia
     assert "hx-confirm" not in head
 
 
-def test_lopeta_is_retired_from_the_row(signed_in, specialist):
-    """§B stood until docs/adr/0131 §11: a file ends through its `Hetkeseis` now."""
+def test_lopeta_is_the_last_chip_of_the_row(signed_in, specialist):
+    """§B: retired by docs/adr/0131 §11, restored by its amendment of 2026-10-25.
+
+    Back as the row's last chip, without a `+` — it ends rather than adds — and
+    with no `TEEMA TOIMINGUD` heading over it.
+    """
     matter = _matter(specialist)
     page = _page(signed_in, matter)
     # The zone ends at `Menetluse kulg` where there is one and at `Teema käik`
@@ -132,8 +137,9 @@ def test_lopeta_is_retired_from_the_row(signed_in, specialist):
     zone = page[page.index('id="lisa-teemale"') : end]
 
     assert "+ Lõpeta teema" not in zone
-    assert 'id="teema-lopeta-valik"' not in zone
-    assert "disclosure-chip--last" not in zone
+    assert 'id="teema-lopeta-valik"' in zone
+    chips = re.findall(r'<label class="(disclosure-chip[^"]*)" for="([a-z-]+)-valik"', zone)
+    assert chips[-1] == ("disclosure-chip disclosure-chip--last", "teema-lopeta")
 
 
 def test_the_teema_toimingud_section_is_gone(signed_in, specialist):

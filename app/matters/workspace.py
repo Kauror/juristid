@@ -88,6 +88,7 @@ from app.matters.services import (
     add_engagement,
     add_entry,
     cancel_website_overview,
+    close_matter,
     complete_engagement_feedback,
     correct_website_overview_link,
     plan_website_overview,
@@ -1195,6 +1196,43 @@ def add_matter_meeting(
         once_token=once_token,
         once_purpose="kohtumine",
     )
+
+
+@transaction.atomic
+def close_matter_from_workspace(
+    *,
+    matter: Matter,
+    author: Any,
+    disposition: str,
+    explanation: str = "",
+    follow_ups_confirmed: bool | str = False,
+) -> WorkspaceResult:
+    """`Lõpeta teema` — Koda is finished with this file, whatever the process does next.
+
+    Restored by docs/adr/0131's amendment of 2026-10-25, and **nothing but
+    `close_matter`**: the one closure service, which locks the Matter, refuses
+    one that is already closed («Teema on juba suletud.»), asks the digest-bound
+    confirmation of any live work under that lock (docs/adr/0152), ends that
+    work, and writes `MATTER_CLOSED` in the period that is current.
+
+    What it does **not** do is the point of the round: `Hetkeseis` stays where
+    the external process stands, no `Submission` and no `Entry` are written, no
+    opinion deadline is marked answered, no follow-up check is planned and no
+    `Töövõit` is recorded. The person's explanation is stored as written and
+    claims nothing the person did not say.
+
+    **No closed-Matter guard here**, as before §11 (R2-02): this is the act that
+    produces the closed state, so a second press is `close_matter`'s refusal.
+    """
+    with composer_operation() as operation_id:
+        close_matter(
+            matter=matter,
+            disposition=disposition,
+            actor=author,
+            reason=explanation.strip(),
+            follow_ups_confirmed=follow_ups_confirmed,
+        )
+        return WorkspaceResult(operation_id=operation_id, closed=True)
 
 
 @transaction.atomic

@@ -5,8 +5,10 @@
 
     + Lisa   + Kaasamine   + Koja arvamus / kohtumine   + Ülevaade / uudis
 
-and nothing else is a peer of those four (docs/adr/0097 §8). `+ Lõpeta teema`
-stood after them until docs/adr/0131 §11; closing is a `Hetkeseis` now.
+and nothing else is a peer of those four (docs/adr/0097 §8). `Lõpeta teema`
+stands after them, apart: retired by docs/adr/0131 §11 and restored by its
+amendment of 2026-10-25, because Koda can finish a file whatever its
+`Hetkeseis` — a terminal stage still closes it too.
 
 There were twelve. Twelve chips on one row, each of which was a *record type*
 this application happens to keep: `Märge`, `Järgmine tegevus`, `Kaasamine`,
@@ -280,11 +282,10 @@ row of controls that refuse (brief §30, §31).
 
 
     {% comment %}
-      **No fifth chip** (docs/adr/0131 §11). `+ Lõpeta teema` was here; a file
-      now ends when its `Hetkeseis` says so — «Jõustunud» or «Rohkem ei tegele»,
-      chosen as `Uus hetkeseis` in `+ Märge` or `+ Koja arvamus`, or on
-      `Muuda teemat` — and a second, parallel way to end it would be two
-      answers to one question.
+      5 — `Lõpeta teema`. Koda is finished with this file (docs/adr/0131,
+      amendment of 2026-10-25). Last and apart, because it ends rather than
+      adds; this whole section renders only for a writer on an open Matter.
     {% endcomment %}
+    {% include "matters/partials/add/lopeta.html" %}
   </div>
 </section>

@@ -201,10 +201,11 @@ def test_closing_through_hetkeseis_leaves_a_readable_past(page, base_url):
     status = record_marge(page, "Menetlus lõppes; töö on tehtud.")
     assert status == 200, f"the Märge was refused: {status}"
 
-    # Closing is a `Hetkeseis` since docs/adr/0131 §11 — not a box in the rail
-    # and not a panel of its own: the header's `Hetkeseis` editor.
+    # Not a box in the rail. A terminal `Hetkeseis` still closes the file
+    # (docs/adr/0131 §10) — this test closes through it — beside the restored
+    # `Lõpeta teema` panel (0131, amendment of 2026-10-25).
     expect(page.locator(".rail").get_by_text("Sulge teema")).to_have_count(0)
-    expect(page.locator("#teema-lopeta")).to_have_count(0)
+    expect(page.locator("#teema-lopeta")).to_have_count(1)
     close_through_stage(page, "Jõustunud")
     expect(page.locator(".formerror")).to_have_count(0)
     expect(page.locator(".addzone .field__error")).to_have_count(0)
@@ -219,7 +220,7 @@ def test_closing_through_hetkeseis_leaves_a_readable_past(page, base_url):
     # -- E. the closed Matter -------------------------------------------
     page.goto(url)
     expect(page.locator(".badge--state.badge--inactive")).to_have_text("Mitteaktiivne")
-    expect(page.locator(".banner--closed")).to_contain_text("Lõpetatud või jõustunud")
+    expect(page.locator(".banner--closed")).to_contain_text("Jõustus või töö lõppes")
     expect(page.locator("#praegune-tegevus")).to_contain_text("teema on suletud")
     # No writable next step and no workspace at all (docs/adr/0075, brief §31).
     expect(page.locator("#lisa-teemale")).to_have_count(0)

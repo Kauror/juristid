@@ -400,13 +400,13 @@ def test_a_closed_matter_draws_two_columns(page, base_url, width):
     assert labels(page) == ["Lõpetatud"]
     for outcome in ("Menetlus lõppes", "Jõustus", "Loobuti"):
         expect(page.locator(".tl-step__what", has_text=outcome)).to_have_count(0)
-    # The `title` carries the **stored** vocabulary's own label, which is what
-    # `matter_banner.html` and `rail.html` already print for a closure. The stage
-    # a person chooses says «Rohkem ei tegele»; the `Disposition` it writes is
-    # `MONITORING_STOPPED`, whose canonical label is `Koda lõpetas jälgimise`
-    # (docs/adr/0131 §10). One reading of a closure, not a strip-local second
-    # one.
-    expect(page.locator('.tl-step[title="Koda lõpetas jälgimise"]')).to_have_count(1)
+    # The `title` carries what `matter_banner.html` and `rail.html` print for a
+    # closure: the stored `Disposition` in `Lõpeta teema`'s words. The stage a
+    # person chooses says «Rohkem ei tegele»; the `Disposition` it writes is
+    # `MONITORING_STOPPED`, which reads «Koda ei tegele edasi» (docs/adr/0131 §10,
+    # amendment of 2026-10-25). One reading of a closure, not a strip-local
+    # second one.
+    expect(page.locator('.tl-step[title="Koda ei tegele edasi"]')).to_have_count(1)
     assert_fits(page, width)
 
 

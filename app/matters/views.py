@@ -136,6 +136,7 @@ from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
     FOLLOW_UP_CLOSURE_FIELD,
     BriefSummaryForm,
+    CompactClosureForm,
     CompactEffectiveDateForm,
     CompactEngagementForm,
     CompactImportantDateForm,
@@ -7437,6 +7438,10 @@ WORKSPACE_PANELS: dict[str, tuple[str, str]] = {
     "meeting_form": ("lisa-arvamus", "arvamus-kohtumine"),
     # `+ Ülevaade / uudis` — one question, no sub-choice.
     "website_overview_form": ("lisa-koduleht", ""),
+    # `Lõpeta teema` — the launcher's last chip, outside the `lisa-` prefix
+    # because it ends the file rather than adding to it (docs/adr/0131,
+    # amendment of 2026-10-25).
+    "closure_form": ("teema-lopeta", ""),
     # `PRAEGUNE TEGEVUS` → `Muuda`, which is not in the launcher.
     "action_form": ("lisa-jargmine", ""),
     # `PRAEGUNE TEGEVUS` → `Vaatasin üle`, beside a step that waits (ENG-021).
@@ -7625,6 +7630,10 @@ def workspace_forms(
         # the other seven so that a refusal comes back through the same
         # machinery.
         "website_overview_form": CompactWebsiteOverviewForm(),
+        # `Lõpeta teema` (docs/adr/0131, amendment of 2026-10-25). Static
+        # choices and no query: the live work it would end is counted by
+        # `close_matter` under the lock and named only if there is any.
+        "closure_form": CompactClosureForm(),
         # `Menetluse link` is **not** built here any more, because it is not a
         # thing that happened to this Matter. It is where the proceeding the
         # Matter is about is taking place — a fact about the file, in the same
@@ -8409,6 +8418,50 @@ def add_meeting(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as error:
         return _workspace_refusal(request, matter, key="meeting_form", form=form, error=str(error))
     return _render_overview(request, matter)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
+    """`Lõpeta teema` — Koda is finished with this file (docs/adr/0131, amendment of 2026-10-25).
+
+    `Põhjus`, an optional `Selgitus`, and `close_matter` behind them. The
+    Matter is read through `visible_to` (404 otherwise) by somebody who may
+    write business content (404 otherwise); `close_matter` locks it and refuses
+    one closed in the meantime — a second tab, a double press — with «Teema on
+    juba suletud.», answered with the column as it now stands.
+
+    **Live work is never ended unseen.** A file with a current step, planned
+    steps or checks, a planned overview or an open feedback wait is refused the
+    first time with the sentence naming what would end and the box that
+    confirms exactly that work (docs/adr/0152); the person ticks it and presses
+    again, or leaves the file open.
+
+    The header rides along out of band, as it does on every save that closes a
+    Matter: its state badge is the one fact the column swap cannot reach
+    (docs/adr/0074 §10).
+    """
+    matter = get_visible_matter(request, pk)
+    form = CompactClosureForm(request.POST)
+    if not form.is_valid():
+        return _workspace_refusal(request, matter, key="closure_form", form=form)
+    try:
+        workspace.close_matter_from_workspace(
+            matter=matter,
+            author=request.user,
+            disposition=form.cleaned_data["disposition"],
+            explanation=form.cleaned_data["explanation"],
+            follow_ups_confirmed=form.cleaned_data.get(FOLLOW_UP_CLOSURE_FIELD, False),
+        )
+    except FollowUpClosureUnconfirmed as refusal:
+        return _closure_needs_confirmation(
+            request, matter, key="closure_form", form=form, refusal=refusal
+        )
+    except DomainError as error:
+        return _workspace_refusal(request, matter, key="closure_form", form=form, error=str(error))
+    matter.refresh_from_db()
+    return _render_overview(request, matter, header_out_of_band=True)
 
 
 # ---------------------------------------------------------------------------

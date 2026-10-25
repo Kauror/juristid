@@ -418,11 +418,10 @@ urlpatterns = [
         views.correct_procedural_link_view,
         name="correct_procedural_link",
     ),
-    # No `lisa/lopeta/` route any more (docs/adr/0131 §11). A Matter ends when
-    # its `Hetkeseis` says so — «Jõustunud» or «Rohkem ei tegele» through
-    # `+ Märge`, `+ Koja arvamus`, `Muuda teemat` or the header — and a stale
-    # page posting to the old address gets a 404 rather than a second way to
-    # close a file.
+    # `Lõpeta teema` — retired by docs/adr/0131 §11 and restored at the same
+    # address by its amendment of 2026-10-25: Koda can finish a file whatever
+    # its `Hetkeseis`, through `close_matter` and nothing beside it.
+    path("teemad/<uuid:pk>/lisa/lopeta/", views.close_from_workspace, name="close_from_workspace"),
     # `+ Järgmine tegevus` and `Muuda` both post here — one endpoint, because
     # setting a step and replacing one are the same canonical act and
     # `set_next_action_for_new_work` already supersedes whatever it replaces.

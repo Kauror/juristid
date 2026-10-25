@@ -73,8 +73,8 @@ SUBCHOICES = {
 
 #: Every panel in the zone: family and sub-choice alike.
 #:
-#: `teema-lopeta` is gone: `+ Lõpeta teema` was retired by docs/adr/0131 §11,
-#: and a file ends through its `Hetkeseis`.
+#: `teema-lopeta` is `Lõpeta teema` — retired by docs/adr/0131 §11 and
+#: restored, last and apart, by its amendment of 2026-10-25.
 #:
 #: `lisa-jargmine` is **not** among them: `+ Järgmine tegevus` left the row, and
 #: ordinary work is `PRAEGUNE TEGEVUS → + Lisa tegevus` — since `Tavaline` left
@@ -95,14 +95,15 @@ PANEL_IDS = [
     "arvamus-koja",
     "arvamus-kohtumine",
     "lisa-koduleht",
+    "teema-lopeta",
 ]
 
 #: The four kinds of thing a file can have **added** to it.
 FAMILY_IDS = ["lisa-marge", "lisa-kaasamine", "lisa-arvamus", "lisa-koduleht"]
 
-#: Everything in `name="lisa-valik"`: the four families. One group, so the
-#: browser enforces one-open-at-a-time across the whole row.
-EXCLUSIVE_IDS = [*FAMILY_IDS]
+#: Everything in `name="lisa-valik"`: the four families and `Lõpeta teema`. One
+#: group, so the browser enforces one-open-at-a-time across the whole row.
+EXCLUSIVE_IDS = [*FAMILY_IDS, "teema-lopeta"]
 
 
 def _zone(client, matter) -> str:
@@ -196,13 +197,14 @@ def test_the_open_step_control_is_not_in_the_launcher(signed_in, specialist):
     assert "lisa-jargmine" not in zone
 
 
-def test_there_is_no_closing_chip_and_deletion_is_in_the_header(
+def test_the_closing_chip_is_last_and_deletion_is_in_the_header(
     signed_in, specialist, client, department_head
 ):
-    """`TEEMA TOIMINGUD` is retired, and so is `+ Lõpeta teema` (docs/adr/0131 §11).
+    """`TEEMA TOIMINGUD` is retired; `Lõpeta teema` is the launcher's last chip.
 
-    A file ends through its `Hetkeseis`; deletion is beside `Muuda teemat` in the
-    header, where «this record is wrong» is answered.
+    Retired by docs/adr/0131 §11 and restored, after the four families and apart
+    from them, by its amendment of 2026-10-25. Deletion is beside `Muuda
+    teemat` in the header, where «this record is wrong» is answered.
     """
     matter = factories.MatterFactory(owner=specialist)
     body = signed_in.get(
@@ -211,9 +213,10 @@ def test_there_is_no_closing_chip_and_deletion_is_in_the_header(
     zone = _zone(signed_in, matter)
 
     assert 'id="teema-toimingud"' not in body
-    assert "teema-lopeta" not in zone
-    assert "disclosure-chip--last" not in zone
     assert _family_chips(zone) == CANONICAL
+    assert _chip_ids(zone)[-1] == "teema-lopeta"
+    assert _chips(zone)[-1] == "Lõpeta teema"
+    assert 'class="disclosure-chip disclosure-chip--last" for="teema-lopeta-valik"' in zone
 
     # Deletion left the launcher and did not come back to it.
     assert "Kustuta" not in zone
@@ -326,7 +329,7 @@ def test_each_group_is_its_own_radio_group_so_only_one_form_can_be_open(signed_i
 
     The four families share `lisa-valik`, so the browser enforces
     one-open-at-a-time across the whole row with scripting off. `Lõpeta teema`
-    shared it too until docs/adr/0131 §11 retired it.
+    shares it (docs/adr/0131, amendment of 2026-10-25).
 
     Each family's sub-choices are a group of their **own** — `marke-liik`,
     `arvamuse-liik` — because putting them in `lisa-valik` would make choosing

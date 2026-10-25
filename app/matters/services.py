@@ -5614,6 +5614,11 @@ def close_matter(
         summary=reason[:200],
         payload={
             "disposition": disposition,
+            # **The whole explanation**, where `summary` keeps 200 characters
+            # (docs/adr/0131, amendment of 2026-10-25). `disposition_reason` is
+            # cleared by `reopen_matter`, so this is what `Teema käik` reads it
+            # back from for as long as the closure is history.
+            "reason": reason,
             "successor": str(successor.pk) if successor is not None else None,
             # **What this one closure ended**, by id (QA-WORKFLOW-02, docs/adr/0152
             # §7): each row still writes its own cancellation event, and this is
