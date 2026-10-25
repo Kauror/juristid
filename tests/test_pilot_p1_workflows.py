@@ -58,7 +58,7 @@ def test_the_lopeta_teema_route_stores_exactly_what_it_was_given(signed_in, norm
     response = signed_in.post(
         f"/teemad/{normal_matter.pk}/lisa/lopeta/",
         {
-            "disposition": "COMPLETED",
+            "disposition": "INITIATIVE_WITHDRAWN",
             "explanation": "Menetlus lõppes.",
             "closing_words": "Vana väli.",
         },
@@ -67,7 +67,7 @@ def test_the_lopeta_teema_route_stores_exactly_what_it_was_given(signed_in, norm
     assert response.status_code == 200
     normal_matter.refresh_from_db()
     assert not normal_matter.is_open
-    assert normal_matter.disposition == "COMPLETED"
+    assert normal_matter.disposition == "INITIATIVE_WITHDRAWN"
     assert normal_matter.disposition_reason == "Menetlus lõppes."
 
 
