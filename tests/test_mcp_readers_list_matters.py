@@ -255,6 +255,76 @@ def test_the_page_says_what_the_matter_page_says_about_each_deadline(people):
     assert owed.display_reference in _references(answer)
 
 
+@pytest.mark.parametrize("viewer", ["reader", "other_specialist"])
+def test_restricted_records_closed_files_and_today_read_as_the_matter_page_reads_them(
+    people, viewer, request
+):
+    """The same equivalence for the rows where the reader and the record matter.
+
+    Read by somebody who owns none of these files — a READER and a colleague —
+    so a restricted record decides each row only as far as `visible_to` lets it
+    for *that* person (docs/adr/0181): a restricted open DO step on an owed
+    deadline, and a restricted SENT opinion on an untracked one. Beside them a
+    closed file whose deadline passed (a closed file owes nothing by a date,
+    QA-011) and a deadline that is today's Tallinn business date (not yet past).
+    """
+    from app.core.enums import Visibility
+    from app.matters.models import Matter
+    from app.matters.selectors import response_deadline_of
+    from app.workflow.models import NextAction
+
+    marko, _ = people
+    user = request.getfixturevalue(viewer)
+    today = timezone.localdate()
+
+    hidden_step = _owed_and_late(marko, "Salajane samm", days_late=4)
+    step = set_next_action(matter=hidden_step, text="Salajane samm", actor=marko)
+    NextAction.objects.filter(pk=step.pk).update(visibility_override=Visibility.RESTRICTED)
+
+    hidden_opinion = _owed_and_late(marko, "Salajane arvamus", days_late=4)
+    Matter.objects.filter(pk=hidden_opinion.pk).update(response_requested_at=None)
+    version = add_evidence_version(
+        document=factories.DocumentFactory(
+            matter=hidden_opinion, visibility_override=Visibility.RESTRICTED
+        ),
+        content=b"%PDF-1.4\nSalajane arvamus",
+        original_filename="salajane.pdf",
+        mime_type="application/pdf",
+    )
+    factories.SubmissionFactory(
+        matter=hidden_opinion,
+        status=SubmissionStatus.SENT,
+        sent_at=timezone.now(),
+        final_version=version,
+        visibility_override=Visibility.RESTRICTED,
+    )
+
+    closed = _owed_and_late(marko, "Suletud", days_late=4)
+    close_matter(matter=closed, disposition=Disposition.COMPLETED, actor=marko)
+
+    factories.MatterFactory(
+        owner=marko,
+        title="Tähtaeg täna",
+        response_deadline=today,
+        response_requested_at=timezone.now() - timedelta(days=10),
+    )
+
+    answer = readers.list_matters(user, is_open=None)
+    seen = {}
+    for row in answer["matters"]:
+        alone = response_deadline_of(Matter.objects.get(pk=row["id"].split(":")[1]), user, today)
+        assert row["opinion_deadline"]["is_overdue"] == alone.is_overdue, row["title"]
+        assert row["opinion_deadline"]["still_owed"] == alone.is_active, row["title"]
+        seen[row["title"]] = (
+            row["opinion_deadline"]["is_overdue"],
+            row["opinion_deadline"]["still_owed"],
+        )
+
+    assert set(seen) == {"Salajane samm", "Salajane arvamus", "Suletud", "Tähtaeg täna"}
+    assert seen["Suletud"] == (False, False)
+    assert seen["Tähtaeg täna"] == (False, True)
+
+
 def test_an_administrator_without_a_business_role_reads_nothing(administrator):
     with pytest.raises(NotFound, match="No such record"):
         readers.list_matters(administrator)
