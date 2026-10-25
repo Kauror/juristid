@@ -701,6 +701,13 @@ Nothing else changed: same 7+9 runners, same 14+18 shards, same
 completeness proofs. Combining nine runs instead of five scored 377 s, within
 the spread of one runner's CPU, so the documented `--latest 5` stays.
 
+Measured on the refreshed table (run 40189653921, four of seven PostgreSQL
+runners on the slow EPYC 7763, as in the baseline run 40180382406): the
+PostgreSQL shards went from 232–492 s (slowest/median 1.51) to 235–406 s
+(1.13), and the slowest PostgreSQL runner job from 559 s to 473 s. What
+spread is left follows the CPU: the four 7763 runners took 440–473 s, the
+9V74 and Xeon ones 341–413 s.
+
 ### The slow files, and why none of them were touched
 
 The ten slowest files in each suite were read. Nothing in them is a defect:
