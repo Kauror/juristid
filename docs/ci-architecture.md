@@ -701,12 +701,15 @@ Nothing else changed: same 7+9 runners, same 14+18 shards, same
 completeness proofs. Combining nine runs instead of five scored 377 s, within
 the spread of one runner's CPU, so the documented `--latest 5` stays.
 
-Measured on the refreshed table (run 40189653921, four of seven PostgreSQL
-runners on the slow EPYC 7763, as in the baseline run 40180382406): the
-PostgreSQL shards went from 232–492 s (slowest/median 1.51) to 235–406 s
-(1.13), and the slowest PostgreSQL runner job from 559 s to 473 s. What
-spread is left follows the CPU: the four 7763 runners took 440–473 s, the
-9V74 and Xeon ones 341–413 s.
+Measured on the refreshed table, the balance is fixed and the round gains
+less than the simulation said, because the CPU a runner draws now decides
+most of what is left. Shard slowest/median went from 1.51 (run 40180382406)
+to 1.13 and 1.21 (runs 40189653921 and 40191011828). The slowest PostgreSQL
+runner job took 473 s and 512 s, against a median of 530 s (451–608 s) over
+the nine runs of 2026-10-22..25 that, like these two, drew four or more of
+their seven PostgreSQL runners on an AMD EPYC 7763 — about 40 s, not 88 s.
+On those two runs the 7763 runners took 411–512 s and the others 291–413 s,
+for the same predicted 322 s a shard.
 
 ### The slow files, and why none of them were touched
 
