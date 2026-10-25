@@ -46,7 +46,9 @@ class Disposition(models.TextChoices):
 #: «Koda ei tegele edasi»; the closed banner, the rail and the `Teema käik` row
 #: say «Koda ei tegele edasi» back — one fact, one word (0131 §14). The stored
 #: value and the `Disposition` labels every report reads are unchanged; a
-#: disposition the panel does not offer reads its own label.
+#: disposition the panel does not offer reads its own label. `COMPLETED` is
+#: not offered (`CLOSURE_CHOICES`) but keeps its words here, because
+#: «Jõustunud» still closes with it and those files must read as before.
 CLOSURE_REASON_LABELS: dict[str, str] = {
     Disposition.MONITORING_STOPPED.value: "Koda ei tegele edasi",
     Disposition.INITIATIVE_WITHDRAWN.value: "Eelnõu või algatus lõpetati",

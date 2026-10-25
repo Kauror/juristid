@@ -2916,7 +2916,11 @@ CLOSURE_CHOICES: tuple[tuple[str, str], ...] = tuple(
         Disposition.INITIATIVE_WITHDRAWN.value,
         Disposition.NO_POSITION_FORMED.value,
         Disposition.RESPONSE_COMPLETE.value,
-        Disposition.COMPLETED.value,
+        # **`COMPLETED` is not offered** (docs/adr/0131, release review of
+        # 2026-10-25): «Jõustus või töö lõppes» joined two different facts — a
+        # law in force, which is a `Hetkeseis`, and Koda's work being done,
+        # which is «Koda ei tegele edasi». The disposition, its label and every
+        # stored closure are untouched; «Jõustunud» still closes with it (§10).
         Disposition.OTHER.value,
     )
 )

@@ -73,7 +73,9 @@ def test_the_disposition_that_needs_a_successor_is_not_offered():
     offered = {value for value, _label in CLOSURE_CHOICES}
 
     assert Disposition.SUPERSEDED.value not in offered
-    assert Disposition.COMPLETED.value in offered
+    # Nor `COMPLETED` (docs/adr/0131, release review of 2026-10-25): it is the
+    # terminal stage's disposition, offered there, not here.
+    assert Disposition.COMPLETED.value not in offered
     # And the domain capability is untouched, ready for an operation that asks.
     assert hasattr(factories.MatterFactory.build(), "superseded_by")
 
