@@ -90,11 +90,11 @@ def test_past_the_gate_it_needs_no_persona(client, settings) -> None:
 def test_a_named_persona_past_the_gate_reads_it_too(client, settings) -> None:
     apply_shared_gate(settings)
     client.post(reverse("accounts:shared_gate"), {"password": PASSWORD})
-    reader = factories.ReaderFactory()
-    client.force_login(reader)
+    marko = factories.UserFactory(display_name="Marko Näidisjurist")
+    client.post(reverse("accounts:act_as"), {"user_id": str(marko.pk)})
     response = client.get(URL)
     assert response.status_code == 200
-    assert response.wsgi_request.user.pk == reader.pk
+    assert response.wsgi_request.user.pk == marko.pk
 
 
 @pytest.mark.django_db
