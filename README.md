@@ -40,7 +40,7 @@ sharded; and a remediation programme has been closing what a full-codebase
 review found.
 
 **[`docs/adr/README.md`](docs/adr/README.md) is the record, not this section.**
-Fifty-seven decisions, each with its status, context, alternatives and
+More than 180 decisions, each with its status, context, alternatives and
 consequences. A hand-maintained prose list of stages is a thing that goes stale
 between releases; the ADR index is written as part of the change it describes.
 
@@ -55,6 +55,20 @@ separately approved activation
 ([ADR 0145](docs/adr/0145-local-password-authentication-and-account-administration.md),
 [activation runbook](docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md)). Cloudflare Access
 stays implemented and supported beside it.
+
+**Two narrowly scoped personal proofs sit beside the gate** without changing
+`AUTH_MODE`. Haldus administration needs a verified administrator session —
+own e-mail address, personal password and authenticator code
+([ADR 0186](docs/adr/0186-privileged-administrator-sessions-under-the-shared-gate.md));
+production has one usable full administrator by the owner's decision, so the
+two-administrator guard keeps showing its setup-phase notice. AI access from the
+Chamber's ChatGPT workspace: reading is enabled for individually granted
+accounts ([ADR 0185](docs/adr/0185-a-read-only-mcp-server-for-ai-clients.md));
+the write path is deployed and its gateway switched on, but no grant holds the
+write scope and no write has ever been made through it
+([ADR 0189](docs/adr/0189-mcp-writes-are-prepared-approved-in-juristid-and-committed-by-a-separate-gateway.md)).
+Both as verified on 25.10.2026; the ADRs' dated status updates are the record.
+
 [`docs/production-readiness.md`](docs/production-readiness.md) is the gate
 sequence for anything that changes production.
 

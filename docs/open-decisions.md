@@ -43,7 +43,7 @@ because a decision register people trust is one that shows its own history.
 | RPO — how much work the Chamber is willing to lose | Department head + management | Before production go-live |
 | RTO — how long the system may take to come back | Department head + management | Before production go-live |
 | Whether `/mnt/user/juristid-main/source` is the only copy of the import corpus | IT | Cheap to fix now, expensive later |
-| Support/absence cover and second administrator | Management | Before production go-live |
+| Support/absence cover and second administrator | Management | Before production go-live — **still open.** Status 2026-10-25: production runs with one usable full administrator by the owner's deliberate decision, and the resulting single point of failure (that administrator's recovery is host-only, through shell access held by the same person) is **accepted by the owner for now**; the two-administrator guard is unchanged and keeps showing its setup-phase notice (ADR 0186, status update 2026-10-25). A leftover stored capability on one non-administrator account is pending an owner decision; it matters because, while it stays, `bootstrap_account_admin` refuses (`BOOTSTRAP_ALREADY_DONE`) to appoint a new first administrator if the current one is lost or switched off. |
 | Metric catalogue owner and coverage thresholds | Department head + reporting owner | Stage 4 |
 | Whether multi-year objectives justify a PolicyThread UI | Department + pilot evidence | Phase 2 |
 

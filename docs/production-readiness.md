@@ -137,10 +137,16 @@ to be inferred.
 is why 3.6's row names it. Use it for 3.6 *after* the review, not as the way to
 reach 3.5: doing that files letters before anybody has read them.
 
-Between 3.5 and 3.6 sits the part no command performs. The review queue needs an
-identified administrator, and `may_read_archive` refuses under
-`AUTH_MODE=shared_gate` — so 3.4 and 3.5 can run on the current deployment while
-3.6 cannot honestly be reached on it (ADR 0016, ADR 0019).
+Between 3.5 and 3.6 sits the part no command performs. The review queue asks
+two questions since ADR 0181: who works it (`may_use_opinion_queue` — an
+account acting as ADMINISTRATOR, unchanged) and whether they may read business
+content (`may_read_business_content`). An ADMINISTRATOR without a business role
+reads it only through an audited break-glass grant; without one the queue
+answers 403 (`QUEUE_NEEDS_A_READER`). Behind the shared gate nobody acts as
+ADMINISTRATOR — the persona list offers SPECIALIST and DEPARTMENT_HEAD only
+(`PERSONA_ROLES`), and Haldus's verified administrator session grants no
+business role (ADR 0186 §1) — so 3.4 and 3.5 can run on the current deployment
+while 3.6 is still not reachable on it (ADR 0016, ADR 0019).
 
 ### A schema change to a derived table
 
