@@ -1171,3 +1171,16 @@ def choose_organisation(page, picker: str, name: str = "Näidisministeerium") ->
     box.fill("")
     box.type(name[:8], delay=20)
     page.locator(f"#{picker}-tulemused").get_by_role("option", name=name, exact=True).click()
+
+
+def accept_leave_prompts(page) -> None:
+    """Answer every dialog on ``page`` with OK, the leave-page prompt included.
+
+    The Teema page asks the browser's «leave this page?» when a draft host
+    holds unsaved or refused text (static/js/app.js, docs/adr/0190 §4).
+    Playwright accepts that prompt by itself only while *no* `dialog` listener
+    is registered; a test that registers one for another reason and then leaves
+    a page with typed text must answer it, or the navigation stays put. This is
+    `page.on("dialog", lambda d: d.accept())`, named.
+    """
+    page.on("dialog", lambda dialog: dialog.accept())

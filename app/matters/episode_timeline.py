@@ -191,6 +191,15 @@ def _is_boundary(item: TimelineItem) -> bool:
     return False
 
 
+def is_period_boundary(item: TimelineItem) -> bool:
+    """Whether the grouped chronology draws no row for ``item`` (`_is_boundary`).
+
+    For `app.matters.timeline_links`: a link to such a row has nothing to land
+    on in the grouped list, so widening the read for it would be work for no row.
+    """
+    return _is_boundary(item)
+
+
 def _opened_at(episode: MatterStageEpisode) -> datetime:
     """When a period began, as far as this system knows — for placing work with none."""
     return episode.started_at or episode.created_at
@@ -205,6 +214,7 @@ def matter_episode_timeline(
     current_action: Any = _ASK,
     episodes: list[MatterStageEpisode] | None = None,
     whole_history: bool = False,
+    window: int | None = None,
 ) -> EpisodeTimeline | None:
     """The chronology grouped by period, or ``None`` for a Matter that has never had one.
 
@@ -214,6 +224,9 @@ def matter_episode_timeline(
     began before it is marked ``partial`` and ``has_more`` says older rows
     exist; ``whole_history`` reads every row, for «Näita kõik tegevused»
     («Näita kogu käik» until docs/adr/0172 §2).
+
+    ``window`` widens the bounded read for a link to an older row
+    (`app.matters.timeline_links`): still bounded, still grouped the same way.
 
     ``None`` keeps a Matter with no periods — one that has never held a
     `Hetkeseis` since periods exist — on the flat, paged chronology it always
@@ -231,7 +244,7 @@ def matter_episode_timeline(
     items, more = matter_timeline(
         matter=matter,
         user=user,
-        limit=WHOLE_HISTORY if whole_history else GROUPED_WINDOW,
+        limit=WHOLE_HISTORY if whole_history else max(window or 0, GROUPED_WINDOW),
         only=only,
         intelligence=intelligence,
         **extra,

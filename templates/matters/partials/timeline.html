@@ -127,7 +127,7 @@ here and everything older comes from `timeline_page` when somebody asks for it.
           <p class="uxtl__audit"><a class="button button--quiet button--tiny" href="?{{ timeline_history_param }}=koik#ajajoon">Näita kõik tegevused</a></p>
         {% endif %}
     {% else %}
-        {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=30 matter=matter timeline_only=timeline_only %}
+        {% include "matters/partials/timeline_items.html" with timeline_items=timeline_items timeline_has_more=timeline_has_more next_offset=timeline_next_offset matter=matter timeline_only=timeline_only %}
     {% endif %}
     </div>
 
