@@ -2294,8 +2294,29 @@ th[aria-sort="descending"] .colhead__mark::after {
   flex-direction: column;
 }
 
-.searchresults > .result + .result {
+.searchresults > .resultrow + .resultrow {
   border-top: 1px solid var(--border-subtle);
+}
+
+/* A result and, for a row that is one document's text, its file beside it:
+   two links side by side, never one inside the other (QoL round 2026-10-25).
+   The result keeps the whole width it had; the file action takes only its
+   word, aligned with the row's first line. */
+.resultrow {
+  display: flex;
+  align-items: flex-start;
+}
+
+.resultrow > .result {
+  flex: 1;
+  min-width: 0;
+}
+
+.resultrow__file {
+  flex: none;
+  padding: var(--spacing-2) var(--spacing-3);
+  font-size: var(--typography-size-meta-sm);
+  white-space: nowrap;
 }
 
 .result {
