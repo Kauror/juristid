@@ -205,11 +205,11 @@ def test_the_panel_has_one_optional_multi_file_drop_zone_below_the_explanation(
     assert 'hx-encoding="multipart/form-data"' in panel
     assert 'name="salvestus"' in panel
     assert panel.count('type="file"') == 1
-    assert panel.count("data-filedrop") == 1
+    assert panel.count('class="cx-drop" data-filedrop>') == 1
     assert 'id="id_lopeta_failid"' in panel and "multiple" in panel
     assert "Lisa failid" in panel
     explanation = panel.index('name="explanation"')
-    drop = panel.index("data-filedrop")
+    drop = panel.index('class="cx-drop" data-filedrop>')
     button = panel.index(">Lõpeta teema</button>")
     assert explanation < drop < button
 
@@ -349,7 +349,10 @@ def test_a_restricted_matters_closure_files_reach_no_outsider(
     outsider = factories.AdministratorFactory()
     client.force_login(outsider)
     assert client.get(reverse("documents:download", kwargs={"pk": version.pk})).status_code == 404
-    assert _closing_rows(matter, outsider) == []
+    detail = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
+    assert client.get(detail).status_code == 404
+    # Even asked directly, the projection names no file the reader may not open.
+    assert all(row.files == () for row in _closing_rows(matter, outsider))
 
 
 # ---------------------------------------------------------------------------
@@ -564,3 +567,55 @@ def test_two_concurrent_closures_with_files_close_once_with_one_set_of_files(
     assert _closures(matter) == 1
     (version,) = DocumentVersion.objects.filter(document__matter=matter)
     assert version.original_filename == f"{winners[0]}.pdf"
+
+
+def test_a_closing_that_ends_a_feedback_wait_keeps_its_files_on_its_row(
+    signed_in, specialist, reader, evidence_root
+):
+    """The closure ends an open `Kaasamine` wait in its own operation, which
+    writes a record event there too; the files still read under «Teema
+    suletud», once, for every reader — never as a «lisas dokumendi» row."""
+    from django.utils import timezone
+
+    from app.matters.enums import EngagementKind
+    from app.matters.services import add_engagement
+    from app.matters.views import CLOSURE_DIGEST_HEADER
+
+    matter = _matter(specialist)
+    add_engagement(
+        matter=matter,
+        kind=EngagementKind.values[0],
+        title="Liikmete küsitlus",
+        occurred_on=timezone.localdate(),
+        actor=specialist,
+    )
+    first = _close(signed_in, matter, files=[_pdf()])
+    assert first.status_code == 400
+    done = _close(
+        signed_in,
+        matter,
+        files=[_pdf()],
+        confirm_follow_up_closure=first[CLOSURE_DIGEST_HEADER],
+    )
+    assert done.status_code == 200
+    closing = ChangeEvent.objects.get(matter=matter, event_type=ChangeEventType.MATTER_CLOSED)
+    assert ChangeEvent.objects.filter(
+        operation_id=closing.operation_id,
+        event_type=ChangeEventType.ENGAGEMENT_FEEDBACK_CLOSED,
+    ).exists()
+
+    for user in (specialist, reader):
+        (row,) = _closing_rows(matter, user)
+        assert [file.label for file in row.files] == ["ministeeriumi_kiri.pdf"]
+        assert _all_file_labels(matter, user) == ["ministeeriumi_kiri.pdf"]
+
+
+def test_the_closing_row_names_who_closed_the_file(signed_in, specialist, evidence_root):
+    matter = _matter(specialist)
+    _close(signed_in, matter, files=[_pdf()])
+
+    (row,) = _closing_rows(matter, specialist)
+    assert row.closed_by == specialist
+    page = _page(signed_in, matter)
+    history = page[page.index('id="ajalugu-loend"') :]
+    assert f'title="{specialist.display_name}' in history

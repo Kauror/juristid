@@ -549,9 +549,12 @@ teema`.** Two changes to the direct closure; everything else above stands.
    `Submission`, `Töövõit`, deadline answer or stage change is written to hold
    them, and no column or table is added.
 
-   Only a closing that was the whole act takes its operation's files: a save
-   that wrote a note or a record in the same operation (a `Märge` closing
-   through «Jõustunud») keeps its files on that row, as before.
+   A file of the closing's operation that is linked to a note (a `Märge`
+   closing through «Jõustunud») keeps its place on the note's row, as before;
+   one linked to any other record already reads on that record. The rule is
+   decided by what is stored — the operation and the link — never by which
+   other events a reader may see, so every reader sees the files in the same
+   place. The «Teema suletud» row also names who closed the file.
 
    The files are ordinary documents of the Matter, role `OTHER`, at the
    Matter's visibility: listed on `Dokumendid`, indexed for search, opened
@@ -565,7 +568,10 @@ teema`.** Two changes to the direct closure; everything else above stands.
    lock — already closed, live work unconfirmed (docs/adr/0152); (d) only then
    are the bytes stored. Any refusal rolls the whole transaction back: the
    closure and its files stand or fall together, and a refused closure leaves
-   no document and no stored object.
+   no document and no stored object. (A storage or COMMIT failure after the
+   first file's bytes were written is the residual case every capture door
+   shares: `check_evidence_integrity` reports the orphan and
+   `prune_orphaned_evidence` removes it.)
 4. **The confirmation round trip.** A browser cannot carry chosen files
    through a refused save, so the panel comes back with the live-work box and
    the existing notice naming the files to choose again («Fail tuleb uuesti

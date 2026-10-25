@@ -831,6 +831,14 @@ class TimelineItem:
         return self.entry.body if self.entry is not None else ""
 
     @property
+    def closed_by(self) -> Any:
+        """Who pressed `Lõpeta teema` (or chose the stage that closed the file),
+        on the «Teema suletud» row — the files under it are theirs too."""
+        if self.event is not None and self.event.event_type == ChangeEventType.MATTER_CLOSED:
+            return self.event.actor
+        return None
+
+    @property
     def is_grouped(self) -> bool:
         """Whether this line stands for more than one canonical record."""
         return len(self.events) > 1 or bool(self.entry and self.events)
@@ -2376,6 +2384,9 @@ def matter_timeline(
     # second line, and a second dot, for one act (brief §25). Asked of the whole
     # Matter, because it decides whether an event is a row at all.
     shown_on_their_record = _versions_shown_on_their_record(matter, user=user, day=day)
+    # Files that read on a note's row, which a closing's operation never takes
+    # from it (`CLOSURE_FILES`).
+    entry_linked_versions = frozenset(_entry_linked_versions(matter))
     # Files an import brought, read as one row per import rather than one
     # «lisas dokumendi» per file (`HISTORICAL_IMPORT_ITEM`).
     imported_versions = imported_document_versions(matter, user)
@@ -2399,6 +2410,7 @@ def matter_timeline(
         only=only,
         imported_versions=frozenset(imported_versions),
         imported_anchors=imported_row_anchors(imported_versions),
+        entry_linked_versions=entry_linked_versions,
     )
     batch = window
     while True:
@@ -2412,6 +2424,7 @@ def matter_timeline(
             open_action_pk=open_action_pk,
             only=only,
             imported_versions=imported_versions,
+            entry_linked_versions=entry_linked_versions,
         )
         if bound is not None:
             items = [item for item in items if item.occurred_at >= bound]
@@ -2474,6 +2487,8 @@ class _ChronologySources:
     #: The import's own events are not anchors: their moment is the import's,
     #: and a row dated 2021 must not be bounded as if it happened today.
     imported_anchors: tuple[datetime, ...] = ()
+    #: Versions whose document is linked to a note (`_entry_linked_versions`).
+    entry_linked_versions: frozenset[Any] = frozenset()
     anchor_q: models.Q = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2496,6 +2511,18 @@ class _ChronologySources:
                 actor=None,
                 object_id__in=self.imported_versions,
             )
+        # A closure's own files read on its row (`CLOSURE_FILES`), exactly as
+        # `_assemble_timeline` folds them: in a closing's operation, linked to
+        # no note.
+        closure_files = models.Q(
+            event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
+            operation_id__in=self.event_scope.filter(event_type=ChangeEventType.MATTER_CLOSED)
+            .exclude(operation_id=None)
+            .values("operation_id"),
+        )
+        if self.entry_linked_versions:
+            closure_files &= ~models.Q(object_id__in=self.entry_linked_versions)
+        anchor &= ~closure_files
         if self.only != TIMELINE_FILTER_ENTRIES:
             folded = self._folded_effects()
             if folded is not None:
@@ -2780,6 +2807,7 @@ def _assemble_timeline(
     open_action_pk: Any,
     only: str,
     imported_versions: dict[Any, ImportedVersion] | None = None,
+    entry_linked_versions: Any = None,
 ) -> list[TimelineItem]:
     """The chronology rows these sources make, in the one order.
 
@@ -2909,19 +2937,16 @@ def _assemble_timeline(
     milestone_events = [event for event in renderable if event.event_type in MILESTONE_EVENT_TYPES]
     renderable = [event for event in renderable if event.event_type not in MILESTONE_EVENT_TYPES]
 
-    # **A closure's own files read under it** (`CLOSURE_FILES`). Only a closing
-    # that was the whole act — no note and no record written in its operation —
-    # takes the files of that operation; a save that wrote a note keeps its
-    # files on the note's row, as it always has.
-    acts_with_records = set(entry_operations.values()) | {
-        operation for tied in record_operations.values() for operation, _a, _t in tied
-    }
+    # **A closure's own files read under it** (`CLOSURE_FILES`): every file of
+    # the closing's operation that is linked to no record. A file linked to a
+    # note keeps its place on the note's row, as it always has; a file linked
+    # to any other record was already taken off the stream above
+    # (`shown_on_their_record`). Decided by what is stored — the operation and
+    # the link — and never by which other events this reader may see.
     closing_operations = {
         event.operation_id
         for event in milestone_events
-        if event.event_type == ChangeEventType.MATTER_CLOSED
-        and event.operation_id is not None
-        and event.operation_id not in acts_with_records
+        if event.event_type == ChangeEventType.MATTER_CLOSED and event.operation_id is not None
     }
     closure_files: dict[uuid.UUID, list[ChangeEvent]] = {}
     if closing_operations:
@@ -2930,6 +2955,7 @@ def _assemble_timeline(
             if (
                 event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
                 and event.operation_id in closing_operations
+                and event.object_id not in (entry_linked_versions or ())
             ):
                 closure_files.setdefault(event.operation_id, []).append(event)
                 continue
@@ -3316,6 +3342,24 @@ def _step_is_the_activity(record: Any, action: Any) -> bool:
         and record.occurred_on is not None
         and record.occurred_on == action.target_date
     )
+
+
+def _entry_linked_versions(matter: Matter) -> set[Any]:
+    """Versions whose document is linked to a note (`Entry`) on this Matter.
+
+    What a closing's operation never takes onto its «Teema suletud» row
+    (`CLOSURE_FILES`): a note's file reads on the note. Unscoped, like
+    `_versions_shown_on_their_record`, because it decides *where* a file
+    reads and never *whether* — and because it must not change with what the
+    reader may see. One query.
+    """
+    from app.documents.links import DocumentLink
+    from app.documents.models import DocumentVersion
+
+    linked = DocumentLink.objects.filter(document__matter=matter, entry__isnull=False).values(
+        "document_id"
+    )
+    return set(DocumentVersion.objects.filter(document_id__in=linked).values_list("id", flat=True))
 
 
 def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> set[Any]:

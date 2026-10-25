@@ -2662,8 +2662,9 @@ def correct_matter_procedural_link(
         return result
 
 
-# **No `close_matter_from_workspace` since docs/adr/0131 §11.** `+ Lõpeta teema`
-# was its only caller. A Matter ends when its `Hetkeseis` says so: `+ Märge` and
+# **`close_matter_from_workspace` was retired by docs/adr/0131 §11 and restored
+# by its amendment of 2026-10-25** as `Lõpeta teema`, the direct door. A Matter
+# also ends when its `Hetkeseis` says so: `+ Märge` and
 # `+ Koja arvamus` move the stage through `stage_transition`, which closes the
 # Matter through `close_matter_for_terminal_stage` after the act it was saved
 # with — the order this use case kept (the win first, the closure last).
