@@ -622,10 +622,23 @@ services:
     # (MCPSEC-02). `mcp_write`, which holds this service and the write gateway
     # and nothing else, so `mcp` reaches `mcp-writer` and the tunnel client
     # does not (docs/adr/0189).
+    #
+    # The alias `mcp` on `mcp_edge` is explicit because it is what the tunnel
+    # client dials (MCP_SERVER_URL=http://mcp:8001/mcp) and Docker answers DNS
+    # per network. On 2026-10-25 a `up -d --no-deps mcp` left the container
+    # with the alias on `mcp_write` only; the tunnel client got NXDOMAIN for
+    # `mcp`, logged "startup catalog failed; control-plane polling disabled"
+    # and never retried, so ChatGPT could not connect. Naming it here means
+    # every recreate attaches it (tests/test_deployment_unraid_main.py).
+    # `mcp_write` needs none: `mcp` dials the gateway by its fixed address and
+    # the gateway never calls back. `internal` needs none: nothing there
+    # calls `mcp`.
     networks:
-      - internal
-      - mcp_edge
-      - mcp_write
+      internal: {}
+      mcp_edge:
+        aliases:
+          - mcp
+      mcp_write: {}
     # Nothing in this container is written to: Python runs with
     # PYTHONDONTWRITEBYTECODE, logs go to stdout, sessions and caches are in
     # PostgreSQL (and read-only from here). `/tmp` is the one scratch
