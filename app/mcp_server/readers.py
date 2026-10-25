@@ -2609,6 +2609,7 @@ def list_matters(
     of all of them, so the client can tell the reader which they meant.
     """
     from app.matters import register_filters, selectors
+    from app.matters.work_items import annotate_response_deadline_outstanding
 
     _require_reader(user)
     number = _page_number(page, maximum=MAX_MATTER_PAGES)
@@ -2667,10 +2668,13 @@ def list_matters(
 
     total = queryset.count()
     first = (number - 1) * MATTERS_PER_PAGE
+    # `opinion_deadline.is_overdue` asks `response_deadline_is_outstanding` per
+    # row; annotated on the page's own statement it is answered there, not by
+    # one more query for every row whose deadline has passed.
     rows = list(
-        queryset.order_by("-reference_year", "-reference_number", "pk")[
-            first : first + MATTERS_PER_PAGE
-        ]
+        annotate_response_deadline_outstanding(queryset, user).order_by(
+            "-reference_year", "-reference_number", "pk"
+        )[first : first + MATTERS_PER_PAGE]
     )
     return {
         "filters": {

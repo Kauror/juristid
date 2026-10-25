@@ -155,6 +155,44 @@ def test_a_bad_request_is_refused_at_the_redirect_uri_with_state_and_iss(client,
     assert query["iss"] == support.ORIGIN
 
 
+def test_a_refused_resource_is_named_in_one_warning_and_nothing_private_is(client, caplog):
+    """The operator learns which URL to add to MCP_RESOURCE_URLS (the 2026-10-25 incident).
+
+    ChatGPT began sending its tunnel URL as `resource`; the refusal went back
+    to ChatGPT and left nothing in the `web` log. Now one WARNING names it —
+    and never the `state` or the `code_challenge` of that sign-in.
+    """
+    _through_the_gate(client)
+    asked = "https://tunnel.example.test/v1/mcp/tunnel_0123"
+    params = support.authorize_params(resource=asked)
+    with caplog.at_level("WARNING", logger="app.mcp_access"):
+        response = client.get(f"{AUTHORIZE}?{urlencode(params)}")
+    assert _query(response)["error"] == "invalid_target"
+    [line] = [r.getMessage() for r in caplog.records if r.name == "app.mcp_access"]
+    assert asked in line and "MCP_RESOURCE_URLS" in line
+    assert params["client_id"] in line
+    assert params["state"] not in line
+    assert params["code_challenge"] not in line
+
+
+def test_the_refused_resource_cannot_break_or_flood_the_log_line(client, caplog):
+    _through_the_gate(client)
+    forged = "https://x.example.test/\nFAKE log line" + "a" * 1000
+    with caplog.at_level("WARNING", logger="app.mcp_access"):
+        client.get(_url(resource=forged))
+    [line] = [r.getMessage() for r in caplog.records if r.name == "app.mcp_access"]
+    assert "\n" not in line
+    assert len(line) < 1000
+
+
+def test_an_accepted_request_logs_no_resource_warning(client, caplog):
+    _through_the_gate(client)
+    with caplog.at_level("WARNING", logger="app.mcp_access"):
+        response = client.get(_url())
+    assert response.status_code == 200
+    assert not [r for r in caplog.records if r.name == "app.mcp_access"]
+
+
 @pytest.mark.parametrize("scope", ["", "offline_access", "openid profile email juristid.read"])
 def test_generic_scopes_are_ignored_and_juristid_read_is_granted(client, moment, scope):
     user = factories.UserFactory()

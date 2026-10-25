@@ -158,6 +158,13 @@ SOURCE_FEEDBACK_WAIT = "FEEDBACK_WAIT"
 #: :data:`app.matters.register_dates.DISPLAY_DATE` already takes.
 DISCHARGED = "response_obligation_discharged"
 
+#: The annotation :func:`annotate_response_deadline_outstanding` writes: whether
+#: this Matter is in :func:`outstanding_response_deadlines` for the reader the
+#: rows were read for — the answer :func:`response_deadline_is_outstanding`
+#: would otherwise fetch once per row. Prefixed for the reason
+#: :data:`DISCHARGED` is.
+OUTSTANDING = "response_deadline_outstanding"
+
 #: What the date on a row means, in the words the department agreed.
 #:
 #: ``OODATAV AEG`` rather than the stored enum's *Oodatav umbes*: the label a
@@ -1322,10 +1329,34 @@ def response_deadline_is_outstanding(matter: Matter, user: Any) -> bool:
     ``False`` for a Matter with no deadline, for a closed or ``ARCHIVE`` record,
     and for one this reader may not see — each because the population it is
     drawn from already says so.
+
+    It reads :data:`OUTSTANDING` when the row already carries it
+    (:func:`annotate_response_deadline_outstanding`), so a list of Matters pays
+    one query for the page rather than one per row whose deadline has passed.
     """
     if matter.response_deadline is None:
         return False
+    known = getattr(matter, OUTSTANDING, None)
+    if known is not None:
+        return bool(known)
     return outstanding_response_deadlines(user).filter(pk=matter.pk).exists()
+
+
+def annotate_response_deadline_outstanding(
+    queryset: QuerySet[Matter], user: Any
+) -> QuerySet[Matter]:
+    """Attach :data:`OUTSTANDING` to each row: :func:`response_deadline_is_outstanding`, in SQL.
+
+    The same population asked the same question — membership of
+    :func:`outstanding_response_deadlines` for this reader — as one correlated
+    ``Exists`` per row of the statement instead of one ``.exists()`` round trip
+    per row read afterwards. ``user`` must be the reader the rows are rendered
+    for: the population is reader-scoped, and an annotation made for somebody
+    else would answer their question.
+    """
+    return queryset.annotate(
+        **{OUTSTANDING: Exists(outstanding_response_deadlines(user).filter(pk=OuterRef("pk")))}
+    )
 
 
 def work_items(
