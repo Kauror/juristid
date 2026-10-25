@@ -1399,7 +1399,7 @@ def test_the_attachment_is_still_a_plain_link_on_its_filename(signed_in, normal_
     # A PDF also says it opens in a new tab (app/documents/inline.py).
     anchor = re.search(
         r'<a class="uxtl__file" href="([^"]+)" target="_blank" rel="noopener noreferrer">'
-        r"toend\.pdf</a>",
+        r'toend\.pdf<span class="visually-hidden"> — avaneb uues aknas</span></a>',
         chronology,
     )
     assert anchor, "the attachment is no longer a bare `a.uxtl__file` around its filename"

@@ -170,7 +170,7 @@ def test_the_chronology_opens_a_pdf_in_a_new_tab_and_downloads_a_word_file(
     pdf, docx = two_files
     body = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
     files = [a for a in _anchors(body.content.decode()).anchors if a.get("class") == "uxtl__file"]
-    by_name = {a["text"].strip(): a for a in files}
+    by_name = {a["text"].split(" — ")[0].strip(): a for a in files}
 
     assert by_name["kaaskiri.pdf"]["href"] == reverse("documents:open", kwargs={"pk": pdf.pk})
     assert by_name["kaaskiri.pdf"]["target"] == "_blank"
@@ -189,7 +189,7 @@ def test_the_document_page_names_open_download_and_copy_link(signed_in, two_file
     download_url = reverse("documents:download", kwargs={"pk": pdf.pk})
     actions = html[html.index('aria-label="Faili toimingud"') :]
     actions = actions[: actions.index("</div>")]
-    assert f'href="{open_url}"' in actions and NEW_TAB in actions and ">Ava</a>" in actions
+    assert f'href="{open_url}"' in actions and NEW_TAB in actions and ">Ava<span" in actions
     assert f'href="{download_url}">Laadi alla</a>' in actions
     assert f'data-copy-href="{open_url}"' in actions and ">Kopeeri link</button>" in actions
     heading = html[html.index('class="pagehead__title"') :]
@@ -200,7 +200,7 @@ def test_the_document_page_names_open_download_and_copy_link(signed_in, two_file
     download_url = reverse("documents:download", kwargs={"pk": docx.pk})
     actions = html[html.index('aria-label="Faili toimingud"') :]
     actions = actions[: actions.index("</div>")]
-    assert ">Ava</a>" not in actions and "target=" not in actions
+    assert ">Ava" not in actions and "target=" not in actions
     assert f'href="{download_url}">Laadi alla</a>' in actions
     assert f'data-copy-href="{download_url}"' in actions
     assert reverse("documents:open", kwargs={"pk": docx.pk}) not in html
@@ -221,7 +221,7 @@ def test_the_version_list_links_each_version_by_the_same_rule(signed_in, two_fil
         reverse("documents:document_detail", kwargs={"pk": pdf.document_id})
     ).content.decode()
     table = html[html.index('id="versioonid-heading"') :]
-    rows = {a["text"].strip(): a for a in _anchors(table).anchors}
+    rows = {a["text"].split(" — ")[0].strip(): a for a in _anchors(table).anchors}
 
     for version in (older, newer):
         assert rows[version.original_filename]["href"] == reverse(
@@ -242,8 +242,10 @@ def test_dokumendid_opens_previewable_rows_in_a_new_tab_and_offers_copy_link(
     anchors = _anchors(html).anchors
     ava = {a["aria-label"]: a for a in anchors if a.get("text", "").strip() == "Ava"}
 
-    assert ava["Ava kaaskiri.pdf"]["href"] == reverse("documents:open", kwargs={"pk": pdf.pk})
-    assert ava["Ava kaaskiri.pdf"]["target"] == "_blank"
+    assert ava["Ava kaaskiri.pdf — avaneb uues aknas"]["href"] == reverse(
+        "documents:open", kwargs={"pk": pdf.pk}
+    )
+    assert ava["Ava kaaskiri.pdf — avaneb uues aknas"]["target"] == "_blank"
     assert ava["Ava eelnou.docx"]["href"] == reverse("documents:download", kwargs={"pk": docx.pk})
     assert "target" not in ava["Ava eelnou.docx"]
     for version in (pdf, docx):
@@ -341,8 +343,10 @@ def test_a_document_result_offers_its_file_beside_the_row_not_inside_it(
 
     assert not parsed.nested, "a link inside a result link"
     files = {a["aria-label"]: a for a in parsed.anchors if a.get("class") == "resultrow__file"}
-    assert files["Ava fail otsing.pdf"]["href"] == reverse("documents:open", kwargs={"pk": pdf.pk})
-    assert files["Ava fail otsing.pdf"]["target"] == "_blank"
+    assert files["Ava fail otsing.pdf — avaneb uues aknas"]["href"] == reverse(
+        "documents:open", kwargs={"pk": pdf.pk}
+    )
+    assert files["Ava fail otsing.pdf — avaneb uues aknas"]["target"] == "_blank"
     assert files["Laadi alla otsing.docx"]["href"] == reverse(
         "documents:download", kwargs={"pk": docx.pk}
     )
@@ -381,3 +385,153 @@ def test_the_file_actions_cost_the_results_page_no_query(signed_in, normal_matte
 
     assert four == one
     assert _search(signed_in, "Pihlakaotsing").content.decode().count("resultrow__file") == 4
+
+
+# -- review round: what must never open, and what a screen reader hears ------
+
+#: Formats that download however they arrive — active content, and names whose
+#: stored MIME type says otherwise. SVG is here only by the rule
+#: (`test_everything_else_downloads`): evidence storage refuses it outright
+#: (app/documents/services.py), so no SVG version can reach a page to render.
+NEVER_INLINE = (
+    ("leht.html", "text/html"),
+    ("aruanne.pdf", "text/html"),
+    ("pilt.png", "image/jpeg"),
+)
+
+NEW_TAB_NOTE = "avaneb uues aknas"
+
+
+def _capture(matter, actor, filename: str, mime_type: str, title: str = ""):
+    """Stored below the upload form's own format check.
+
+    Through the storage primitive, as an import or an e-mail attachment
+    stores a file, so the stored MIME type is whatever arrived with it."""
+    document = create_document(
+        matter=matter, title=title or filename, role=DocumentRole.INCOMING_AUTHORITY
+    )
+    return add_evidence_version(
+        document=document,
+        content=b"<html><body>synthetic</body></html> " + filename.encode(),
+        original_filename=filename,
+        mime_type=mime_type,
+        uploaded_by=actor,
+    )
+
+
+@pytest.mark.django_db
+def test_active_or_mismatched_files_never_open_a_new_tab_in_the_chronology(
+    signed_in, normal_matter, specialist, evidence_root
+):
+    versions = [_capture(normal_matter, specialist, name, mime) for name, mime in NEVER_INLINE]
+
+    body = signed_in.get(reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk}))
+    files = {
+        a["text"].split(" — ")[0].strip(): a
+        for a in _anchors(body.content.decode()).anchors
+        if a.get("class") == "uxtl__file"
+    }
+
+    for version in versions:
+        link = files[version.original_filename]
+        assert link["href"] == reverse("documents:download", kwargs={"pk": version.pk})
+        assert "target" not in link and "rel" not in link
+        assert "/ava/" not in link["href"]
+
+
+@pytest.mark.django_db
+def test_active_or_mismatched_files_never_open_a_new_tab_from_search(
+    signed_in, normal_matter, specialist, evidence_root
+):
+    versions = [
+        _capture(normal_matter, specialist, name, mime, f"Kuuseotsing {index}")
+        for index, (name, mime) in enumerate(NEVER_INLINE)
+    ]
+
+    html = _search(signed_in, "Kuuseotsing").content.decode()
+    files = {
+        a["aria-label"]: a for a in _anchors(html).anchors if a.get("class") == "resultrow__file"
+    }
+
+    assert len(files) == len(versions)
+    for version in versions:
+        link = files[f"Laadi alla {version.original_filename}"]
+        assert link["href"] == reverse("documents:download", kwargs={"pk": version.pk})
+        assert "target" not in link
+    assert NEW_TAB_NOTE not in html
+
+
+@pytest.mark.django_db
+def test_only_a_link_that_opens_a_new_tab_says_so(signed_in, normal_matter, two_files):
+    """The hidden «avaneb uues aknas», on inline links and nowhere else."""
+    pdf, docx = two_files
+
+    body = signed_in.get(
+        reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+    files = [a for a in _anchors(body).anchors if a.get("class") == "uxtl__file"]
+    by_name = {a["text"].split(" — ")[0].strip(): a for a in files}
+
+    assert by_name["kaaskiri.pdf"]["text"].strip() == f"kaaskiri.pdf — {NEW_TAB_NOTE}"
+    assert NEW_TAB_NOTE not in by_name["eelnou.docx"]["text"]
+    assert f'<span class="visually-hidden"> — {NEW_TAB_NOTE}</span></a>' in body
+
+    listing = signed_in.get(
+        reverse("matters:matter_documents", kwargs={"pk": normal_matter.pk})
+    ).content.decode()
+    assert f'aria-label="Ava kaaskiri.pdf — {NEW_TAB_NOTE}"' in listing
+    assert 'aria-label="Ava eelnou.docx"' in listing
+
+    detail = signed_in.get(
+        reverse("documents:document_detail", kwargs={"pk": docx.document_id})
+    ).content.decode()
+    assert NEW_TAB_NOTE not in detail
+    detail = signed_in.get(
+        reverse("documents:document_detail", kwargs={"pk": pdf.document_id})
+    ).content.decode()
+    assert detail.count(NEW_TAB_NOTE) >= 2  # the heading and «Ava»
+
+
+@pytest.mark.django_db
+def test_search_names_the_new_tab_in_the_accessible_name(signed_in, normal_matter, evidence_root):
+    _upload(signed_in, normal_matter, "kask.pdf", PDF, corpus.government_pdf(), "Kaseotsing kiri")
+    html = _search(signed_in, "Kaseotsing").content.decode()
+    files = [a for a in _anchors(html).anchors if a.get("class") == "resultrow__file"]
+    assert [a["aria-label"] for a in files] == [f"Ava fail kask.pdf — {NEW_TAB_NOTE}"]
+    assert "title" not in files[0]
+
+
+@pytest.mark.django_db
+def test_plain_text_opens_with_its_charset_named(signed_in, normal_matter, evidence_root):
+    version = _upload(signed_in, normal_matter, "markmed.txt", "text/plain", "Märkmed".encode())
+    response = signed_in.get(reverse("documents:open", kwargs={"pk": version.pk}))
+    assert response.status_code == 200
+    assert response["Content-Type"] == "text/plain; charset=utf-8"
+    assert response["X-Content-Type-Options"] == "nosniff"
+
+
+def test_a_follow_up_letter_links_by_the_same_rule():
+    from app.matters.follow_up_display import FollowUpSubject
+
+    pdf, docx = _version("kiri.pdf", PDF), _version("kiri.docx", DOCX)
+    opened = FollowUpSubject(
+        submission_id=uuid.uuid4(),
+        title="",
+        sent_on=None,
+        addressees=(),
+        letter_version_id=pdf.pk,
+        letter=file_link(pdf),
+    )
+    saved = FollowUpSubject(
+        submission_id=uuid.uuid4(),
+        title="",
+        sent_on=None,
+        addressees=(),
+        letter_version_id=docx.pk,
+        letter=file_link(docx),
+    )
+
+    assert opened.letter_url == reverse("documents:open", kwargs={"pk": pdf.pk})
+    assert opened.letter_opens_inline
+    assert saved.letter_url == reverse("documents:download", kwargs={"pk": docx.pk})
+    assert not saved.letter_opens_inline

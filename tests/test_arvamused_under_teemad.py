@@ -998,7 +998,8 @@ def test_the_file_carries_no_version_and_no_size(signed_in, opinion_on_a_matter)
     # A PDF opens in a new tab (app/documents/inline.py `file_link`); the
     # line is still one anchor around the filename and nothing else.
     assert re.fullmatch(
-        r'<a href="[^"]+" target="_blank" rel="noopener noreferrer">arvamus\.pdf</a>',
+        r'<a href="[^"]+" target="_blank" rel="noopener noreferrer">arvamus\.pdf'
+        r'<span class="visually-hidden"> — avaneb uues aknas</span></a>',
         rendered.strip(),
     ), rendered
     assert f"v{version.version_number}" not in cell

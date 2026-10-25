@@ -66,7 +66,7 @@ def test_a_text_file_opens_in_a_new_tab_and_a_word_file_downloads(page, base_url
     )
     _documents(page, url)
 
-    text = page.get_by_role("link", name="Ava markmed.txt", exact=True)
+    text = page.get_by_role("link", name="Ava markmed.txt — avaneb uues aknas", exact=True)
     expect(text).to_have_attribute("target", "_blank")
     expect(text).to_have_attribute("rel", "noopener noreferrer")
     with page.expect_popup() as popup_info:
@@ -96,16 +96,58 @@ def test_copy_link_puts_the_versions_absolute_address_on_the_clipboard(page, bas
     page.wait_for_load_state("networkidle")
 
     actions = page.get_by_role("group", name="Faili toimingud")
-    expected = actions.get_by_role("link", name="Ava", exact=True).evaluate("a => a.href")
+    opener = actions.get_by_role("link", name="Ava — avaneb uues aknas", exact=True)
+    expected = opener.evaluate("a => a.href")
     # By its hook, not its name: the name is what the click changes.
     button = actions.locator("button[data-copy-href]")
     expect(button).to_have_accessible_name("Kopeeri link")
     button.click()
 
     expect(button).to_have_text("Kopeeritud")
+    # Said, not only shown: one polite status region carries the same word.
+    expect(page.locator("#kopeeri-teade[role=status]")).to_have_text("Kopeeritud")
+    # A second press inside the two seconds must not make «Kopeeritud» the label.
+    button.click()
+    expect(button).to_have_text("Kopeeri link", timeout=5_000)
+
     copied = page.evaluate("navigator.clipboard.readText()")
     assert copied == expected
     assert copied.startswith(base_url) and copied.endswith("/ava/")
+
+
+def test_copy_link_shows_the_address_when_the_clipboard_refuses(page, base_url):
+    """Refused by the async API *and* by `execCommand`: the address is shown to copy."""
+    sign_in(page, base_url, MARTIN)
+    url = create_matter(page, base_url, unique_title("Kopeeri link keeldub"))
+    _upload(page, url, "keeld.pdf", "application/pdf", PDF, "Keelatud kiri")
+    _documents(page, url)
+    detail = page.locator("a.opinionmenu__item", has_text="Dokumendi leht").first
+    page.goto(f"{base_url}{detail.get_attribute('href')}")
+    page.wait_for_load_state("networkidle")
+    page.evaluate(
+        """() => {
+          navigator.clipboard.writeText = () => Promise.reject(new Error("keelatud"));
+          document.execCommand = () => false;
+        }"""
+    )
+    shown: list[tuple[str, str, str]] = []
+
+    def answer(dialog) -> None:
+        shown.append((dialog.type, dialog.message, dialog.default_value))
+        dialog.dismiss()
+
+    page.on("dialog", answer)
+    button = page.locator("button[data-copy-href]")
+    expected = button.evaluate("b => new URL(b.dataset.copyHref, document.baseURI).href")
+    button.click()
+
+    # The prompt follows a rejected promise, so it is a task or two later.
+    for _ in range(50):
+        if shown:
+            break
+        page.wait_for_timeout(100)
+    assert shown == [("prompt", "Kopeeri link", expected)]
+    expect(button).to_have_text("Kopeeri link")
 
 
 def test_dokumendid_takes_one_dropped_file_with_its_role_and_title(page, base_url):
@@ -143,7 +185,7 @@ def test_search_offers_the_file_beside_its_result(page, base_url):
     row = page.locator(".resultrow", has=page.locator(".resultrow__file")).first
     expect(row.locator("a.result")).to_have_count(1)
     expect(row.locator("a a")).to_have_count(0)
-    file = row.get_by_role("link", name="Ava fail toom.pdf")
+    file = row.get_by_role("link", name="Ava fail toom.pdf — avaneb uues aknas", exact=True)
     expect(file).to_have_attribute("target", "_blank")
     expect(file).to_have_attribute("href", re.compile(r"/ava/$"))
     expect(row.locator("a.result")).to_have_attribute(
