@@ -91,6 +91,8 @@ def test_the_panel_opens_and_saves_from_the_keyboard(page, base_url):
     with page.expect_response(lambda r: "/lisa/lopeta/" in r.url) as answer:
         panel.locator("[name=explanation]").focus()
         page.keyboard.press("Tab")
+        # «Lisa failid» sits between «Selgitus» and the button.
+        page.keyboard.press("Tab")
         page.keyboard.press("Enter")
     assert answer.value.status == 200
     wait_for_htmx(page)
@@ -157,7 +159,7 @@ def test_files_close_with_the_matter_and_read_under_the_closing(page, base_url):
 
     assert _press_close(page) == 200
 
-    expect(page.locator(".badge--state")).to_contain_text("Lõpetatud")
+    expect(page.locator(".banner--closed")).to_contain_text("Eelnõu või algatus lõpetati")
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Teema suletud")
     expect(row).to_have_count(1)
     row.locator(".uxtl__toggle").click()
