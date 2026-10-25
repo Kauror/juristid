@@ -40,7 +40,10 @@ environment side is actually checked.
 
 - MFA and Conditional Access as required by Koda.
 - Offboarding drill.
-- A second break-glass administrator and continuity path.
+- A second break-glass administrator and continuity path. *Status 2026-10-25:*
+  not met — production has one usable full administrator by owner decision;
+  the risk is recorded and accepted by the owner (ADR 0186, status update
+  2026-10-25), which is not a sign-off of this gate.
 - Monitoring, security review and recovery runbooks.
 - An independent security/penetration assessment appropriate to exposure.
 

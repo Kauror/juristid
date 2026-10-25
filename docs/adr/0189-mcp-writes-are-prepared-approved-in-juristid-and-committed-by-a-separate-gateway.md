@@ -136,3 +136,21 @@ refuses. Writing can be stopped without touching reading by any one of: the flag
 - ChatGPT keeps a frozen tool list; enabling writes means refreshing the connector.
 - Residual risk: a person who knows the gate password **and** holds a colleague's
   authenticator can approve as that colleague — the same assurance 0185 states.
+
+## Status update 2026-10-25 — where AI writes stand
+
+Four different things are easy to collapse into «writes are on». They are
+recorded separately here (verified 25.10.2026, read-only checks of production):
+
+| | State | What it means |
+| --- | --- | --- |
+| 1. Code deployed | **Yes** — since `156b9800` (23.10.2026); production now runs `c32608155e05`, migrations current | `app.mcp_writes`, `mcp_access/0002` and the audit choices are on the host |
+| 2. Gateway activated | **Yes** — `mcp-writer` runs and is healthy; `MCP_WRITES_ENABLED=1` on `web`, `mcp` and `mcp-writer`; the server lists the write tools | §6's first switch is on. Any of §6's switches still turns writing off without touching reading |
+| 3. Write scope granted | **No** — no grant has `juristid.write` | The only granted account is a READER, which §3 refuses write by design (`mcp_access grant-write` names SPECIALIST/DEPARTMENT_HEAD only). Every token in use is `juristid.read` |
+| 4. Successful end-to-end write | **None** — 0 proposals have ever been prepared | Prepare → approve → commit has never run against production data; only the test suite (CI) has exercised it |
+
+So nothing has been written to Juristid through MCP. Moving to state 3 needs an
+operator's `grant-write` for a SPECIALIST or DEPARTMENT_HEAD account and that
+person's new connection (docs/mcp/OAUTH-SCOPES.md); state 4 is that person's first
+approved change. Neither is a deployment step, and neither is implied by state 2.
+Reading (ADR 0185) is enabled and was verified end to end on 25.10.2026.
