@@ -2152,6 +2152,15 @@ jobs:
             if touch /probe 2>/dev/null; then echo "/ is writable"; exit 1; fi
           '
 
+      # 2026-10-25: a recreate of `mcp` left it without the alias `mcp` on
+      # `mcp_edge`, and the tunnel client, which resolves it there and nowhere
+      # else, disabled itself. The static test reads the alias off compose.yml;
+      # this recreates `mcp` the way the runbook does and asks the tunnel
+      # client's own service definition what it can reach: `mcp`, and never
+      # `mcp-writer`.
+      - name: The tunnel client finds mcp after a recreate, and never mcp-writer
+        run: bash scripts/check-mcp-edge-alias.sh juristid:ci
+
       # Two containers, one set of bytes — the property `Uus teema` staging
       # actually needs, proved by crossing the boundary rather than by reading
       # the Compose file (which `tests/test_deployment_unraid_main.py` does).

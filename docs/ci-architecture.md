@@ -672,6 +672,48 @@ What is left on the critical path is a runner's fixed cost — ~70 s for a
 browser runner, ~35 s for a PostgreSQL one — and which CPU it draws. A 40-job
 plan would still be the larger lever.
 
+### 2026-10-25: a week-old table, and the PostgreSQL shards set the round
+
+Re-measured on the 52 green pull-request runs of 2026-10-20 to 2026-10-25,
+from each run's job and step timings in the GitHub API; the summary numbers
+are in the pull request's description, and the table itself is reproducible
+with `scripts/ci/update_shard_timings.py --latest 5` and
+`scripts/ci/report_shard_health.py`. Median wall clock **597 s**, and in 44 of
+them the job that finished last was a PostgreSQL runner — not a browser one,
+as on 2026-10-11. The PostgreSQL runners ran 240–410 s at their fastest and
+410–840 s at their slowest in the same run; browser runners stayed at
+335 s median (361 s p90), ~70 s of it outside the test step (39 s of
+that building the worlds).
+Setup was not where the time went: checkout, `uv sync`, the OCR runtime and
+the Playwright binary are 1–4 s each on cache hits, `Initialize containers`
+15 s.
+
+The table was the cause. Measured 2026-10-18, it held none of the 142 files
+the MCP and security rounds had added since (`tests/test_evidence_pilot.py`,
+`tests/test_mcp_*` and more; the health report named them in every run), and
+it weighed `tests/qa_audit/test_qa_authz_oracles.py` at 403 s where it now
+takes ~206 s, so one shard was cut around a file half that size. Run
+40180382406 shows it: predicted 425 s for shard 1 and 298 s for the rest;
+actual 232–492 s (slowest/fastest 2.12).
+
+Held-out, as on 2026-10-02 — partition with a table built from five other
+green runs, score with one run's own JUnit seconds, over ten runs — a
+refreshed table brings the slowest PostgreSQL shard from a median **473 s
+to 385 s** (−88 s) and the slowest browser shard from 284 s to 276 s.
+Nothing else changed: same 7+9 runners, same 14+18 shards, same
+completeness proofs. Combining nine runs instead of five scored 377 s, within
+the spread of one runner's CPU, so the documented `--latest 5` stays.
+
+Measured on the refreshed table, the balance is fixed and the round gains
+less than the simulation said, because the CPU a runner draws now decides
+most of what is left. Shard slowest/median went from 1.51 (run 40180382406)
+to 1.13 and 1.21 (runs 40189653921 and 40191011828). The slowest PostgreSQL
+runner job took 473 s and 512 s, against a median of 530 s (451–608 s) over
+the nine runs of 2026-10-22..25 that, like these two, drew four or more of
+their seven PostgreSQL runners on an AMD EPYC 7763 — about 40 s, not 88 s.
+On those two runs the 7763 runners took 411–512 s and the others 291–413 s,
+for the same predicted 322 s a shard.
+
 ### The slow files, and why none of them were touched
 
 The ten slowest files in each suite were read. Nothing in them is a defect:
