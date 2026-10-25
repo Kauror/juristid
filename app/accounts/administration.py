@@ -502,6 +502,17 @@ def _effective(user: User) -> list[str]:
 
 
 def _touches_administration(user: User) -> bool:
+    """Whether acting on this account is acting on an administrator (`accounts.delegate`).
+
+    An account administrator — `accounts.manage` held, or any administrative
+    override stored — and, by its stored role whether or not it is active now,
+    the technical ADMINISTRATOR: handing that role out is already a delegation
+    decision (`_clean_role`), and switching such an account back on, resetting
+    its factor or sending it a password link gives the same power back
+    (security review 2026-10-25).
+    """
+    if user.role == UserRole.ADMINISTRATOR:
+        return True
     return _has(user, Capability.MANAGE_ACCOUNTS) or bool(
         set(capabilities.clean_overrides(user.capability_overrides))
         & set(capabilities.ADMINISTRATIVE_CAPABILITIES)

@@ -40,7 +40,7 @@ from django.views.decorators.http import require_http_methods
 from app.accounts import admin_session, administration, capabilities, mail, mfa
 from app.accounts.admin_session import VerifiedActor
 from app.accounts.admin_session_views import reauthenticate_url
-from app.accounts.enums import AccountStatus, Capability, ProvisioningState
+from app.accounts.enums import AccountStatus, Capability, ProvisioningState, UserRole
 from app.accounts.forms import (
     AccountForm,
     ChangeEmailForm,
@@ -376,8 +376,6 @@ def _labels(names: list[str] | None) -> str:
 
 def _summary(event: SecurityAuditEvent) -> str:
     """One readable line per history row. Never a raw identifier."""
-    from app.accounts.enums import UserRole
-
     detail = event.detail or {}
     kind = event.event_type
     if kind == SecurityEventType.CAPABILITIES_CHANGED:
@@ -429,7 +427,9 @@ class Authority:
 def _authority(actor: VerifiedActor, person: User) -> Authority:
     may_delegate = has_capability(actor.user, Capability.DELEGATE_ADMINISTRATION)
     is_self = actor.pk == person.pk
-    touches_administration = bool(
+    # The technical ADMINISTRATOR counts as an administrator here, as it does in
+    # `administration._touches_administration` (security review 2026-10-25).
+    touches_administration = person.role == UserRole.ADMINISTRATOR or bool(
         account_capabilities(person) & set(capabilities.ADMINISTRATIVE_CAPABILITIES)
     )
     return Authority(
