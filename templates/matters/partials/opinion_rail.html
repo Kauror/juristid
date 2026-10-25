@@ -63,8 +63,8 @@ without the rail becoming a second file list.
       {% if line.document.current_version %}
         {% with link=line.document.current_version|file_link %}
           <a class="railcard__file"
-             href="{{ link.href }}"{% if link.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>
-            {{ line.document.current_version.original_filename }} ↗
+             href="{{ link.href }}"{% new_tab_attrs link.opens_inline %}>
+            {{ line.document.current_version.original_filename }} ↗{% new_tab_note link.opens_inline %}
           </a>
         {% endwith %}
       {% else %}
@@ -78,8 +78,8 @@ without the rail becoming a second file list.
         {% if sent.current_version %}
           {% with link=sent.current_version|file_link %}
             <a class="railcard__file"
-               href="{{ link.href }}"{% if link.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>
-              {{ sent.current_version.original_filename }} ↗
+               href="{{ link.href }}"{% new_tab_attrs link.opens_inline %}>
+              {{ sent.current_version.original_filename }} ↗{% new_tab_note link.opens_inline %}
             </a>
           {% endwith %}
         {% endif %}
@@ -91,7 +91,7 @@ without the rail becoming a second file list.
             alone — what a screen reader announces and what is underlined.
           {% endcomment %}
           <span class="railcard__file"><span class="railcard__filekind">Töödokument</span>
-            {% with link=working.current_version|file_link %}<a href="{{ link.href }}"{% if link.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ working.current_version.original_filename }} ↗</a>{% endwith %}</span>
+            {% with link=working.current_version|file_link %}<a href="{{ link.href }}"{% new_tab_attrs link.opens_inline %}>{{ working.current_version.original_filename }} ↗{% new_tab_note link.opens_inline %}</a>{% endwith %}</span>
         {% endif %}
       {% endfor %}
     </div>

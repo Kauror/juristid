@@ -152,7 +152,7 @@ register and is resolved on the detail page instead (docs/adr/0028).
                   the Teema's own page, where the evidence block states them
                   properly.
                 {% endcomment %}
-                {% with link=submission.final_version|file_link %}<a href="{{ link.href }}"{% if link.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ submission.final_version.original_filename }}</a>{% endwith %}
+                {% with link=submission.final_version|file_link %}<a href="{{ link.href }}"{% new_tab_attrs link.opens_inline %}>{{ submission.final_version.original_filename }}{% new_tab_note link.opens_inline %}</a>{% endwith %}
               {% else %}
                 <span class="muted">Fail puudub</span>
               {% endif %}

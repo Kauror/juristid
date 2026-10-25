@@ -35,7 +35,7 @@
     {% with file=version|file_link %}
     <h1 class="pagehead__title">
       {% if version %}
-        <a href="{{ file.href }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{% if document.title %}{{ document.title }}{% else %}{{ version.original_filename }}{% endif %}</a>
+        <a href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}>{% if document.title %}{{ document.title }}{% else %}{{ version.original_filename }}{% endif %}{% new_tab_note file.opens_inline %}</a>
       {% else %}{{ document.title }}{% endif %}
     </h1>
     <span class="pagehead__context">
@@ -54,8 +54,7 @@
     {% if file %}
       <div class="pagehead__actions" role="group" aria-label="Faili toimingud">
         {% if file.opens_inline %}
-          <a class="button button--secondary button--tiny" href="{{ file.open_url }}"
-             target="_blank" rel="noopener noreferrer">Ava</a>
+          <a class="button button--secondary button--tiny" href="{{ file.open_url }}"{% new_tab_attrs True %}>Ava{% new_tab_note True %}</a>
         {% endif %}
         <a class="button button--quiet button--tiny" href="{{ file.download_url }}">Laadi alla</a>
         <button class="button button--quiet button--tiny" type="button"
@@ -246,7 +245,7 @@
                   <td>{{ row.version_number }}{% if row.pk == version.pk %} <span class="badge">kehtiv</span>{% endif %}</td>
                   {% with file=row|file_link %}
                     <td>
-                      <a href="{{ file.href }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ row.original_filename }}</a>
+                      <a href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}>{{ row.original_filename }}{% new_tab_note file.opens_inline %}</a>
                       {% if file.opens_inline %}
                         <a class="quietlink" href="{{ file.download_url }}" title="Laadi alla"
                            aria-label="Laadi alla {{ row.original_filename }}, versioon {{ row.version_number }}">↓</a>

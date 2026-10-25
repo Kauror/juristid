@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load people %}
+{% load document_files people %}
 {% block title %}Otsing · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -121,8 +121,13 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
             {% with file=row.result.document_file %}
               {% if file %}
                 {% if file.opens_inline %}
-                  <a class="resultrow__file" href="{{ file.open_url }}" target="_blank" rel="noopener noreferrer"
-                     aria-label="Ava fail {{ file.filename }}" title="Avaneb uuel vahelehel">Ava</a>
+                  {% comment %}
+                    The new tab is in the accessible name, not a tooltip: the
+                    aria-label replaces the link's text, so a hidden span
+                    inside it would never be read.
+                  {% endcomment %}
+                  <a class="resultrow__file" href="{{ file.open_url }}"{% new_tab_attrs True %}
+                     aria-label="Ava fail {{ file.filename }} — avaneb uues aknas">Ava</a>
                 {% else %}
                   <a class="resultrow__file" href="{{ file.download_url }}"
                      aria-label="Laadi alla {{ file.filename }}">Laadi alla</a>

@@ -495,8 +495,8 @@ finds again (§23.5).
                             {% endcomment %}
                             {% with file=document.current_version|file_link %}
                               <a class="button button--secondary button--tiny"
-                                 href="{{ file.href }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}
-                                 aria-label="Ava {{ document.title }}">Ava</a>
+                                 href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}
+                                 aria-label="Ava {{ document.title }}{% if file.opens_inline %} — avaneb uues aknas{% endif %}">Ava</a>
                               <a class="quietlink"
                                  href="{{ file.download_url }}"
                                  title="Tõmba alla" aria-label="Tõmba alla {{ document.title }}">↓</a>
