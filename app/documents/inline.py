@@ -24,8 +24,11 @@ When the two disagree, or anything is unrecognised: download.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from django.urls import reverse
 
 from app.core.http import content_disposition
 
@@ -68,6 +71,62 @@ def may_open_inline(*, filename: str, mime_type: str) -> bool:
         return False
     declared = (mime_type or "").split(";", 1)[0].strip().lower()
     return declared == expected
+
+
+@dataclass(frozen=True)
+class FileLink:
+    """Where a link to one stored version goes, decided once for every surface.
+
+    Clicking a filename should do the useful thing (module docstring): a PDF
+    opens in a new tab through `documents:open`, a Word file downloads through
+    `documents:download`. Every template that prints a filename used to pick a
+    route on its own, and all but two picked the download. This is the one
+    place that decides, from the allow-list above and nothing else — the open
+    route checks the same rule again on its own, so a link built here can never
+    widen what renders inline.
+
+    Built from the version row the caller already holds: the filename and the
+    stored MIME type are columns on it, so deciding costs no query.
+    """
+
+    version_id: Any
+    filename: str
+    opens_inline: bool
+
+    @property
+    def download_url(self) -> str:
+        """Always the attachment route: the explicit «Laadi alla»."""
+        return reverse("documents:download", kwargs={"pk": self.version_id})
+
+    @property
+    def open_url(self) -> str:
+        """The inline route, or empty when this file must download."""
+        if not self.opens_inline:
+            return ""
+        return reverse("documents:open", kwargs={"pk": self.version_id})
+
+    @property
+    def href(self) -> str:
+        """What the filename itself links to: open when it may, else download."""
+        return self.open_url or self.download_url
+
+
+def file_link(version: Any) -> FileLink:
+    """The link for one `DocumentVersion` (or anything with its three fields)."""
+    return file_link_for(
+        version_id=version.pk,
+        filename=version.original_filename,
+        mime_type=version.mime_type,
+    )
+
+
+def file_link_for(*, version_id: Any, filename: str, mime_type: str) -> FileLink:
+    """The same decision, from the values alone — for a row that is not a version."""
+    return FileLink(
+        version_id=version_id,
+        filename=filename or "",
+        opens_inline=may_open_inline(filename=filename, mime_type=mime_type),
+    )
 
 
 def inline_mime_for(filename: str) -> str:

@@ -362,7 +362,7 @@ record, not professional chronology (master specification 16.5).
             <span class="uxtl__filegroup">
               <span class="uxtl__filegrouplabel">Saadetud</span>
               {% for file in item.opinion_sent_files %}
-                <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+                <a class="uxtl__file" href="{{ file.url }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ file.label }}{% if file.detail %}<span
                   class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
               {% endfor %}
             </span>
@@ -370,7 +370,7 @@ record, not professional chronology (master specification 16.5).
           <span class="uxtl__filegroup">
             <span class="uxtl__filegrouplabel">Töödokumendid</span>
             {% for file in item.opinion_working_files %}
-              <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+              <a class="uxtl__file" href="{{ file.url }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ file.label }}{% if file.detail %}<span
                 class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
             {% endfor %}
           </span>
@@ -383,7 +383,7 @@ record, not professional chronology (master specification 16.5).
               papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
               (QA-016, `_disambiguate_files`).
             {% endcomment %}
-            <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+            <a class="uxtl__file" href="{{ file.url }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ file.label }}{% if file.detail %}<span
               class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
           {% endfor %}
         {% endif %}
@@ -525,7 +525,7 @@ record, not professional chronology (master specification 16.5).
             papers both called `lisa.pdf` rendered as `lisa.pdf lisa.pdf`
             (QA-016, `_disambiguate_files`).
           {% endcomment %}
-          <a class="uxtl__file" href="{{ file.url }}">{{ file.label }}{% if file.detail %}<span
+          <a class="uxtl__file" href="{{ file.url }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ file.label }}{% if file.detail %}<span
             class="uxtl__filedetail"> · {{ file.detail }}</span>{% endif %}</a>
         {% endfor %}
       {% endif %}

@@ -1,3 +1,4 @@
+{% load document_files %}
 {% comment %}
 The Arvamused section's answer: how many, which rows, and the way out to the
 full workspace.
@@ -151,7 +152,7 @@ register and is resolved on the detail page instead (docs/adr/0028).
                   the Teema's own page, where the evidence block states them
                   properly.
                 {% endcomment %}
-                <a href="{% url 'documents:download' pk=submission.final_version.pk %}">{{ submission.final_version.original_filename }}</a>
+                {% with link=submission.final_version|file_link %}<a href="{{ link.href }}"{% if link.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ submission.final_version.original_filename }}</a>{% endwith %}
               {% else %}
                 <span class="muted">Fail puudub</span>
               {% endif %}
