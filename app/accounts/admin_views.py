@@ -51,7 +51,12 @@ from app.accounts.forms import (
 from app.accounts.models import User
 from app.audit.enums import SecurityEventType
 from app.audit.models import SecurityAuditEvent
-from app.core.authorization import account_capabilities, capability_overrides, has_capability
+from app.core.authorization import (
+    account_capabilities,
+    capability_overrides,
+    has_capability,
+    is_technical_administrator_account,
+)
 from app.core.client_ip import client_ip
 
 #: The answer every refused administration request gets.
@@ -429,7 +434,7 @@ def _authority(actor: VerifiedActor, person: User) -> Authority:
     is_self = actor.pk == person.pk
     # The technical ADMINISTRATOR counts as an administrator here, as it does in
     # `administration._touches_administration` (security review 2026-10-25).
-    touches_administration = person.role == UserRole.ADMINISTRATOR or bool(
+    touches_administration = is_technical_administrator_account(person) or bool(
         account_capabilities(person) & set(capabilities.ADMINISTRATIVE_CAPABILITIES)
     )
     return Authority(

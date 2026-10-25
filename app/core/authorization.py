@@ -278,6 +278,19 @@ def account_capabilities(user: object | None) -> frozenset[str]:
     )
 
 
+def is_technical_administrator_account(user: object | None) -> bool:
+    """Whether this *account* is stored under the technical ADMINISTRATOR role, active or not.
+
+    For account administration only, like `account_capabilities`: acting on
+    such an account is a delegation decision (`administration._touches_administration`,
+    security review 2026-10-25), and a switched-off one is no less a technical
+    administrator. Never an authorization answer for somebody acting — that is
+    `acting_role`, which answers nothing for an inactive account.
+    """
+    stored = str(getattr(user, "role", "") or "") if user is not None else ""
+    return stored == UserRole.ADMINISTRATOR.value
+
+
 def may_view_department_management(user: object | None) -> bool:
     """The Osakond page's *Meeskond* and *Tehtud*, and a colleague's Minu asjad.
 

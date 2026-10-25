@@ -67,7 +67,11 @@ from app.accounts.enums import (
 from app.accounts.models import User
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
-from app.core.authorization import account_capabilities, resolve_capability
+from app.core.authorization import (
+    account_capabilities,
+    is_technical_administrator_account,
+    resolve_capability,
+)
 from app.core.errors import DomainError
 
 # -- refusals, named so tests can name them (tests/refusals.py) ------------------
@@ -511,7 +515,7 @@ def _touches_administration(user: User) -> bool:
     its factor or sending it a password link gives the same power back
     (security review 2026-10-25).
     """
-    if user.role == UserRole.ADMINISTRATOR:
+    if is_technical_administrator_account(user):
         return True
     return _has(user, Capability.MANAGE_ACCOUNTS) or bool(
         set(capabilities.clean_overrides(user.capability_overrides))
