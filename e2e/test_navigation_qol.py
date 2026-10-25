@@ -41,6 +41,8 @@ from e2e.titles import unique_title
 
 pytestmark = pytest.mark.e2e
 
+DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
 #: Plants `E2E_BUSY_ROWS` notes in «Idee» and a third of that in
 #: «Kooskõlastus» on `E2E_BUSY_MATTER`, through the services — the same
 #: history `e2e/test_bounded_teema_history.py` reads.
@@ -334,15 +336,19 @@ def test_leaving_after_a_refused_save_asks_first(page, base_url):
     assert seen == ["beforeunload"]
 
 
-def test_downloading_a_file_does_not_ask(page, base_url):
+def test_a_download_does_not_ask_and_the_next_link_still_does(page, base_url):
+    """A same-tab download starts an unload the browser asks about before it
+    knows the answer is a file; that one is excused, and only that one."""
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Fail ja mustand"))
     seen = _dialogs(page)
 
     form = _open_muu(page)
     form.locator('[name="description"]').fill("Taust failiga.")
+    # Not a PDF: a PDF opens `…/ava/` in a new tab, which never unloads this
+    # page. A Word file is downloaded in place (#545).
     form.locator('input[type="file"]').set_input_files(
-        [{"name": "taust.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 taust"}]
+        [{"name": "taust.docx", "mimeType": DOCX_MIME, "buffer": b"PKsynthetic taust"}]
     )
     form.get_by_role("button", name="Salvesta", exact=True).click()
     wait_for_htmx(page)
@@ -350,10 +356,24 @@ def test_downloading_a_file_does_not_ask(page, base_url):
     form.locator('[name="description"]').fill("Pooleli järgmine kirje")
     row = chronology(page).locator("article.uxtl__item").filter(has_text="Taust failiga.")
     open_kaik_row(row)
+    link = row.locator("a.uxtl__file", has_text="taust.docx")
+    assert link.get_attribute("target") in (None, "", "_self")
+    href = link.get_attribute("href")
+    assert not href.endswith("/ava/"), href
+
     with page.expect_download():
-        row.locator("a.uxtl__file", has_text="taust.pdf").click()
+        link.click()
+    page.wait_for_timeout(300)
 
     assert seen == []
+    expect(page.locator("#marge-muu form [name='description']")).to_have_value(
+        "Pooleli järgmine kirje"
+    )
+
+    # The excuse was used up: an ordinary link right after still asks.
+    _go_to_minu_asjad(page)
+    page.wait_for_timeout(500)
+    assert seen == ["beforeunload"]
     expect(page.locator("#marge-muu form [name='description']")).to_have_value(
         "Pooleli järgmine kirje"
     )

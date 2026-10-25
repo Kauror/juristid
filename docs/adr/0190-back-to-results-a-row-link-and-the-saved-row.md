@@ -91,11 +91,15 @@ browser's own «leave this page?» question when a draft host holds input that
 differs from what the server rendered — the same test the swap uses — **or**
 when a host the server answered with a refusal (4xx) still holds typed text: a
 refused save re-renders the text into `value`, which the swap's test reads as
-unchanged. That host is marked `data-draft-refused` until a 2xx answer to it;
-dates the form fills in, hidden and read-only fields do not count. Not for the
+unchanged. That host is marked `data-draft-refused` until a 2xx answer to it.
+What counts in it: words in a text, search, number, tel, url or email box or a
+textarea (not dates the form fills in, hidden or read-only fields), a chosen
+file, and a select, radio or checkbox the person had set before the save and
+that is still set so. Not for the
 note (it saves itself), not for the hosts of a form submitted natively in the
-last two seconds, not after a click on a file download (`…/tõend/<id>/`,
-`download`, `data-download` — the page stays), not for the host whose own save
+last two seconds, not for the one unload a plain same-tab click on a file
+download starts (`…/tõend/<id>/`, `data-download` — the page stays; the excuse
+is used up by that unload), not for the host whose own save
 answered with `HX-Refresh` / `HX-Redirect`. A successful save replaces its host
 with an empty one, so it stops counting; a clean page asks nothing on a link,
 Back or reload. Nothing is stored. A browser test that registers a `dialog`

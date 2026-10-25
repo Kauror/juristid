@@ -281,7 +281,9 @@ def test_an_entry_hidden_from_this_reader_reads_as_no_key_at_all(
     `tests/test_child_projection_visibility.py` reads through). The hidden row
     is not in this reader's chronology, so its key finds nothing and changes
     nothing."""
-    hidden = add_entry(matter=long_flat, author=specialist, body="Piiratud sisu märge")
+    # The oldest note, behind the first page: a key the page *would* widen
+    # for, were the row this reader's.
+    hidden = _entry(long_flat, "Lame märge 000")
     Entry.objects.filter(pk=hidden.pk).update(visibility_override=Visibility.RESTRICTED)
     real = authorization.scope_for_user
 
@@ -303,7 +305,9 @@ def test_an_entry_hidden_from_this_reader_reads_as_no_key_at_all(
     linked = client.get(_detail(long_flat), {"kirje": str(hidden.pk)}).content.decode()
 
     assert "Lame märge 039" in plain  # the reader does read the Teema
-    assert "Piiratud sisu märge" not in plain
+    # A widen would draw the rows behind the first page; nothing here does.
+    assert "Lame märge 001" not in plain
+    assert "Lame märge 000" not in linked
     assert _normalized(linked) == _normalized(plain)
 
 

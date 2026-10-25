@@ -990,9 +990,10 @@
    *   - not the hosts of a form being submitted the ordinary way, which is the
    *     person sending that text rather than leaving it — every other host
    *     still counts;
-   *   - not a click on a file download (`…/tõend/<id>/`, `download`,
-   *     `data-download`): the browser asks before it knows the answer is a
-   *     file, and the page stays where it is;
+   *   - not the one unload a same-tab click on a file download starts
+   *     (`…/tõend/<id>/`, `data-download`): the browser asks before it knows
+   *     the answer is a file, and the page stays where it is. The excuse is
+   *     used up by that unload, so the next link still asks;
    *   - not the host whose own save answered by reloading or redirecting the
    *     page (`HX-Refresh`, `HX-Redirect`): that text is what was just saved.
    *
@@ -1020,8 +1021,14 @@
     }
   });
 
+  /* A same-tab link to a file's bytes (`…/tõend/<id>/`, or one marked
+     `data-download`). A link with `download`, or one opening another tab,
+     never unloads this page, so it needs no exemption. */
   function isDownloadLink(link) {
-    if (link.hasAttribute("download") || link.hasAttribute("data-download")) {
+    if (link.hasAttribute("download") || (link.target && link.target !== "_self")) {
+      return false;
+    }
+    if (link.hasAttribute("data-download")) {
       return true;
     }
     var path = "";
@@ -1033,7 +1040,15 @@
     return /\/tõend\/[0-9a-f-]{36}\/$/i.test(path);
   }
 
+  /* Bubbling, so a click another listener cancelled is seen as cancelled; a
+     modified click opens elsewhere and leaves this page alone. */
   document.addEventListener("click", function (event) {
+    if (event.defaultPrevented || event.button !== 0) {
+      return;
+    }
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+      return;
+    }
     var link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
     if (link && isDownloadLink(link)) {
       downloadClickedAt = Date.now();
@@ -1057,6 +1072,25 @@
     }
   });
 
+  /* The choices a person made in a host — a select, a radio, a checkbox set
+     differently from how the server drew it — as name, value and state. A
+     refusal re-renders them as the new defaults, so they are written down as
+     the request leaves and read again against the re-rendered host. */
+  function changedChoices(host) {
+    var made = [];
+    host.querySelectorAll('select, input[type="radio"], input[type="checkbox"]').forEach(function (control) {
+      if (control.disabled || !controlChanged(control)) {
+        return;
+      }
+      if (control.tagName === "SELECT") {
+        made.push({ name: control.name, select: control.value });
+      } else {
+        made.push({ name: control.name, value: control.value, checked: control.checked });
+      }
+    });
+    return made;
+  }
+
   /* Which draft host sent each request, by id: the answer replaces the
      element, so the host is found again by its id once the answer is in. */
   document.body.addEventListener("htmx:beforeRequest", function (event) {
@@ -1064,36 +1098,55 @@
     var elt = detail.elt;
     var host = elt && elt.closest ? elt.closest("[data-draft-host][id]") : null;
     if (host && detail.xhr) {
-      requestHosts.set(detail.xhr, host.id);
+      requestHosts.set(detail.xhr, {
+        id: host.id,
+        choices: changedChoices(host).concat(host.refusedChoices || []),
+      });
     }
   });
 
   document.body.addEventListener("htmx:afterSettle", function (event) {
     var xhr = event.detail && event.detail.xhr;
-    var id = xhr ? requestHosts.get(xhr) : "";
-    var host = id ? document.getElementById(id) : null;
+    var sent = xhr ? requestHosts.get(xhr) : null;
+    var host = sent ? document.getElementById(sent.id) : null;
     if (!host) {
       return;
     }
     if (xhr.status >= 400) {
       host.setAttribute("data-draft-refused", "");
+      host.refusedChoices = sent.choices;
     } else {
       host.removeAttribute("data-draft-refused");
+      host.refusedChoices = null;
     }
   });
 
-  /* Typed text in a refused host: words in a box, or a chosen file. A date
-     the form fills in by itself, a hidden token and a read-only line are not
-     somebody's unsaved work. */
+  function stillChosen(place, choice) {
+    return Array.prototype.some.call(place.querySelectorAll("select, input"), function (control) {
+      if (control.disabled || control.name !== choice.name) {
+        return false;
+      }
+      if (Object.prototype.hasOwnProperty.call(choice, "select")) {
+        return control.tagName === "SELECT" && control.value === choice.select;
+      }
+      return control.value === choice.value && control.checked === choice.checked;
+    });
+  }
+
+  /* What a refused host still holds of the person's own: words in a box (not
+     a date the form fills in by itself, a hidden token or a read-only line),
+     a chosen file, or a choice they made before the save that is still made. */
   function holdsRefusedText(host) {
     var refused = host.hasAttribute("data-draft-refused")
       ? [host]
       : Array.prototype.slice.call(host.querySelectorAll("[data-draft-refused]"));
     return refused.some(function (place) {
       var controls = place.querySelectorAll(
-        'textarea, input[type="text"], input[type="url"], input[type="email"], input:not([type]), input[type="file"]'
+        "textarea, input:not([type]), " +
+          'input[type="text"], input[type="search"], input[type="number"], input[type="tel"], ' +
+          'input[type="url"], input[type="email"], input[type="file"]'
       );
-      return Array.prototype.some.call(controls, function (control) {
+      var typed = Array.prototype.some.call(controls, function (control) {
         if (control.disabled || control.readOnly) {
           return false;
         }
@@ -1105,6 +1158,12 @@
         }
         return control.value.trim() !== "";
       });
+      return (
+        typed ||
+        (place.refusedChoices || []).some(function (choice) {
+          return stillChosen(place, choice);
+        })
+      );
     });
   }
 
@@ -1135,7 +1194,10 @@
 
   /* Asked from the page's one `beforeunload` listener, below the note's flush. */
   function askBeforeLeaving(event) {
-    if (Date.now() - downloadClickedAt < 2000 || !holdsTextNobodySaved()) {
+    /* A download click excuses the one unload it starts, and only that one. */
+    var downloading = Date.now() - downloadClickedAt < 2000;
+    downloadClickedAt = 0;
+    if (downloading || !holdsTextNobodySaved()) {
       return;
     }
     event.preventDefault();
