@@ -40,6 +40,9 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 2
+          # The proof reads local history and calls the API with GH_TOKEN;
+          # no git command needs the checkout's token.
+          persist-credentials: false
 
       - name: The pull request's run tested this exact tree, or CI runs on main now
         env:
