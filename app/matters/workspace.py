@@ -1232,7 +1232,7 @@ def close_matter_from_workspace(
     **No closed-Matter guard here**, as before §11 (R2-02): this is the act that
     produces the closed state, so a second press is `close_matter`'s refusal.
 
-    **Only the reasons the panel offers** (`CLOSURE_CHOICES`). Every other
+    **Only the reasons the panel offers** (`DIRECT_CLOSURE_DISPOSITIONS`). Every other
     disposition stays `close_matter`'s to write for the callers that mean it —
     «Jõustunud» closing with `COMPLETED`, an import, a successor — and a post
     naming one of them here is refused before anything is locked.
@@ -1259,10 +1259,10 @@ def close_matter_from_workspace(
     everything back; the closure and its files stand or fall together.
     """
     from app.documents.services import capture_closure_evidence, read_uploads
-    from app.matters.forms import CLOSURE_CHOICES
     from app.matters.locks import lock_matter_for_write
+    from app.workflow.enums import DIRECT_CLOSURE_DISPOSITIONS
 
-    if disposition not in {value for value, _label in CLOSURE_CHOICES}:
+    if disposition not in DIRECT_CLOSURE_DISPOSITIONS:
         raise DomainError(CLOSURE_REASON_NOT_OFFERED)
     accepted = read_uploads(_uploads(uploads))
     locked_matter = lock_matter_for_write(matter.pk)

@@ -62,6 +62,22 @@ CLOSURE_REASON_LABELS: dict[str, str] = {
 }
 
 
+#: **What `Lõpeta teema` offers, in order** — `CLOSURE_CHOICES` is built from
+#: this, and `close_matter_from_workspace` refuses anything else. «Koda ei
+#: tegele edasi» first and chosen (docs/adr/0131, amendment of 2026-10-25).
+#: Not offered, each with its words kept above for the files closed with it:
+#: `COMPLETED` (release review of 2026-10-25 — a law in force is a
+#: `Hetkeseis`), `RESPONSE_COMPLETE` (closure files amendment — a sent opinion
+#: and its follow-up are facts of their own), `SUPERSEDED` and `DUPLICATE`
+#: (each needs a second record the panel does not ask for).
+DIRECT_CLOSURE_DISPOSITIONS: tuple[str, ...] = (
+    Disposition.MONITORING_STOPPED.value,
+    Disposition.INITIATIVE_WITHDRAWN.value,
+    Disposition.NO_POSITION_FORMED.value,
+    Disposition.OTHER.value,
+)
+
+
 def closure_reason_label(disposition: str) -> str:
     """`CLOSURE_REASON_LABELS`, or the disposition's own label, or ``""``."""
     if disposition in CLOSURE_REASON_LABELS:

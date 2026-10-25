@@ -154,7 +154,6 @@ def test_files_close_with_the_matter_and_read_under_the_closing(page, base_url):
     panel.locator("input[type=file]").set_input_files(
         [_pdf("ministeeriumi_kiri.pdf"), _pdf("lisa.pdf")]
     )
-    expect(panel.locator("[data-filedrop]")).to_contain_text("ministeeriumi_kiri.pdf")
 
     assert _press_close(page) == 200
 

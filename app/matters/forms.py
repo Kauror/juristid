@@ -84,6 +84,7 @@ from app.workflow.dates import (
 )
 from app.workflow.enums import (
     CLOSURE_REASON_LABELS,
+    DIRECT_CLOSURE_DISPOSITIONS,
     ActionKind,
     DatePrecision,
     DateSemantics,
@@ -2907,27 +2908,9 @@ def kept_precision_choice(value: date | None, precision: str) -> tuple[str, str]
 #: ready for the dedicated "work continues under another Matter" operation that
 #: would ask the question properly (Teema closing redesign §3).
 CLOSURE_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    # The list and why each absent reason is absent: `DIRECT_CLOSURE_DISPOSITIONS`.
     (value, CLOSURE_REASON_LABELS[value])
-    for value in (
-        # **«Koda ei tegele edasi» first, and chosen** (docs/adr/0131, amendment
-        # of 2026-10-25): the ordinary file ends because Koda is done with it,
-        # and finishing one should take one press, not a classification.
-        Disposition.MONITORING_STOPPED.value,
-        Disposition.INITIATIVE_WITHDRAWN.value,
-        Disposition.NO_POSITION_FORMED.value,
-        # **`RESPONSE_COMPLETE` is not offered** (docs/adr/0131, closure files
-        # amendment): «Vastus esitatud ja järeltegevus tehtud» describes a sent
-        # opinion and its follow-up, which `Koja arvamus` and its check record
-        # as facts of their own. The disposition, its label and every stored
-        # closure are untouched, and a forged post of it is refused as an
-        # invalid choice.
-        # **`COMPLETED` is not offered** (docs/adr/0131, release review of
-        # 2026-10-25): «Jõustus või töö lõppes» joined two different facts — a
-        # law in force, which is a `Hetkeseis`, and Koda's work being done,
-        # which is «Koda ei tegele edasi». The disposition, its label and every
-        # stored closure are untouched; «Jõustunud» still closes with it (§10).
-        Disposition.OTHER.value,
-    )
+    for value in DIRECT_CLOSURE_DISPOSITIONS
 )
 
 
