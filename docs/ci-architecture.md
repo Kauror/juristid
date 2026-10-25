@@ -672,6 +672,35 @@ What is left on the critical path is a runner's fixed cost — ~70 s for a
 browser runner, ~35 s for a PostgreSQL one — and which CPU it draws. A 40-job
 plan would still be the larger lever.
 
+### 2026-10-25: a week-old table, and the PostgreSQL shards set the round
+
+Re-measured on the 52 green pull-request runs of 2026-10-20 to 2026-10-25
+(raw table in the pull request). Median wall clock **597 s**, and in 44 of
+them the job that finished last was a PostgreSQL runner — not a browser one,
+as on 2026-10-11. The PostgreSQL runners ran 240–410 s at their fastest and
+410–840 s at their slowest in the same run; browser runners stayed at
+335 s median (361 s p90), ~70 s of it outside the test step (39 s of
+that building the worlds).
+Setup was not where the time went: checkout, `uv sync`, the OCR runtime and
+the Playwright binary are 1–4 s each on cache hits, `Initialize containers`
+15 s.
+
+The table was the cause. Measured 2026-10-18, it held none of the 142 files
+the MCP and security rounds had added since (`tests/test_evidence_pilot.py`,
+`tests/test_mcp_*` and more; the health report named them in every run), and
+it weighed `tests/qa_audit/test_qa_authz_oracles.py` at 403 s where it now
+takes ~206 s, so one shard was cut around a file half that size. Run
+40180382406 shows it: predicted 425 s for shard 1 and 298 s for the rest;
+actual 232–492 s (slowest/fastest 2.12).
+
+Held-out, as on 2026-10-02 — partition with a table built from five other
+green runs, score with one run's own JUnit seconds, over ten runs — a
+refreshed table brings the slowest PostgreSQL shard from a median **473 s
+to 385 s** (−88 s) and the slowest browser shard from 284 s to 276 s.
+Nothing else changed: same 7+9 runners, same 14+18 shards, same
+completeness proofs. Combining nine runs instead of five scored 377 s, within
+the spread of one runner's CPU, so the documented `--latest 5` stays.
+
 ### The slow files, and why none of them were touched
 
 The ten slowest files in each suite were read. Nothing in them is a defect:
