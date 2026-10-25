@@ -91,12 +91,64 @@ def test_the_dormant_personal_sign_in_throttles_by_address_too(real_data_gate):
     assert PROXY_TRUST not in _problems()
 
 
+def _cloudflare_access(settings) -> None:
+    settings.AUTH_MODE = "cloudflare_access"
+    settings.CF_ACCESS_TEAM_DOMAIN = "naidiskoda.cloudflareaccess.invalid"
+    settings.CF_ACCESS_AUDIENCE = "a" * 64
+
+
 def test_cloudflare_access_has_no_password_throttle_to_share(real_data_gate):
-    real_data_gate.AUTH_MODE = "cloudflare_access"
-    real_data_gate.CF_ACCESS_TEAM_DOMAIN = "naidiskoda.cloudflareaccess.invalid"
-    real_data_gate.CF_ACCESS_AUDIENCE = "a" * 64
+    _cloudflare_access(real_data_gate)
     _without_proxy_trust(real_data_gate)
     assert PROXY_TRUST not in _problems()
+
+
+# -- juristid.E022: real data behind Cloudflare Access needs the flag too ------------------
+#
+# No throttle to share, but without the flag Django believes every request
+# arrived in clear: no HSTS, `request.is_secure()` False, CSRF without its
+# referer check, and audit rows naming the tunnel. Both real-data templates set
+# DJANGO_SECURE_SSL_REDIRECT=0, so no redirect loop would show it either.
+
+TLS_PROXY = "juristid.E022"
+
+
+def test_real_data_behind_cloudflare_access_without_the_flag_refuses(real_data_gate):
+    _cloudflare_access(real_data_gate)
+    _without_proxy_trust(real_data_gate)
+    problems = _problems()
+    assert TLS_PROXY in problems
+    assert isinstance(problems[TLS_PROXY], Error)
+    assert "DJANGO_BEHIND_TLS_PROXY" in (problems[TLS_PROXY].hint or "")
+
+
+def test_real_data_behind_cloudflare_access_with_the_flag_is_clean(real_data_gate):
+    _cloudflare_access(real_data_gate)
+    assert check_runtime_safety(None) == []
+
+
+def test_synthetic_data_behind_cloudflare_access_is_not_refused(real_data_gate):
+    _cloudflare_access(real_data_gate)
+    real_data_gate.REAL_DATA_ALLOWED = False
+    _without_proxy_trust(real_data_gate)
+    assert TLS_PROXY not in _problems()
+
+
+def test_the_gate_says_it_once_as_e020(real_data_gate):
+    """Behind the shared gate the same missing flag is E020; E022 is not added."""
+    _without_proxy_trust(real_data_gate)
+    problems = _problems()
+    assert PROXY_TRUST in problems
+    assert TLS_PROXY not in problems
+
+
+def test_the_mcp_processes_do_not_need_the_flag(real_data_gate):
+    """`mcp` and `mcp-writer` serve no browser; the client-address checks skip them."""
+    _cloudflare_access(real_data_gate)
+    _without_proxy_trust(real_data_gate)
+    for role in ("mcp", "mcp_writer"):
+        real_data_gate.JURISTID_PROCESS_ROLE = role
+        assert TLS_PROXY not in _problems()
 
 
 def test_a_synthetic_gate_without_a_proxy_only_warns(real_data_gate):

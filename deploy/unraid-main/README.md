@@ -67,7 +67,8 @@ session cookie that is not `Secure` (E013), a gate idle limit outside 300
 seconds–the absolute limit (E021), and — on real data — a template
 `replace-me…` value left in any secret (E016), a `DJANGO_SECRET_KEY` under 50
 characters (E017), a gate password under 16 (E018), a `POSTGRES_PASSWORD`
-under 16 (E019), a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020) and a missing or
+under 16 (E019), a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020 behind a password,
+E022 behind Cloudflare Access) and a missing or
 short `LOCAL_AUTH_MFA_ENCRYPTION_KEY` (E048).
 
 **`LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required here** (docs/adr/0186 §7). The
