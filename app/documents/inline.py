@@ -129,9 +129,16 @@ def file_link_for(*, version_id: Any, filename: str, mime_type: str) -> FileLink
     )
 
 
+#: The `Content-Type` an inline response sends, where it is more than the bare
+#: type. Plain text names its charset, so a browser never guesses one — and an
+#: Estonian note does not open as `MÃ¤rkmed`. Nothing else is widened.
+INLINE_CONTENT_TYPES: dict[str, str] = {"text/plain": "text/plain; charset=utf-8"}
+
+
 def inline_mime_for(filename: str) -> str:
     """The MIME type an inline response may claim: ours, never the upload's."""
-    return INLINE_SAFE.get(extension_of(filename), "application/octet-stream")
+    mime = INLINE_SAFE.get(extension_of(filename), "application/octet-stream")
+    return INLINE_CONTENT_TYPES.get(mime, mime)
 
 
 def apply_inline_headers(response: Any, *, filename: str) -> Any:

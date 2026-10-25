@@ -1581,6 +1581,25 @@
    * colleague gets the host and path that work for them too. Nothing is
    * selected: there is no box to select it in.
    */
+  /* «Kopeeritud» said aloud as well as shown: the button's new text is not
+     announced by itself, so one polite status region, shared by every copy
+     control on the page, carries the same word. */
+  function announceCopy(said) {
+    var region = document.getElementById("kopeeri-teade");
+    if (!region) {
+      region = document.createElement("span");
+      region.id = "kopeeri-teade";
+      region.className = "visually-hidden";
+      region.setAttribute("role", "status");
+      region.setAttribute("aria-live", "polite");
+      document.body.appendChild(region);
+    }
+    region.textContent = "";
+    window.setTimeout(function () {
+      region.textContent = said;
+    }, 50);
+  }
+
   function bindCopyLink(scope) {
     scope.querySelectorAll("[data-copy-from], [data-copy-href]").forEach(function (button) {
       if (!once(button, "Copy")) {
@@ -1615,17 +1634,28 @@
           if (!said) {
             return;
           }
-          var before = button.textContent;
+          /* The label to come back to is read once, before the first change:
+             a second press inside the two seconds would otherwise take
+             «Kopeeritud» for the label and leave it there for good. */
+          if (!button.hasAttribute("data-label-idle")) {
+            button.setAttribute("data-label-idle", button.textContent);
+          }
+          window.clearTimeout(button.copyLabelTimer);
           button.textContent = said;
-          window.setTimeout(function () {
-            button.textContent = before;
+          announceCopy(said);
+          button.copyLabelTimer = window.setTimeout(function () {
+            button.textContent = button.getAttribute("data-label-idle");
           }, 2000);
         };
         /* Older engines, and any context where the async API is refused. The
            text is selected either way, so Ctrl+C still works — and an address
-           with no box of its own gets a momentary one to be selected in. */
+           with no box of its own gets a momentary one to be selected in. If
+           even that copies nothing, the address is shown in a prompt to copy
+           by hand: a button that does nothing and says nothing is the one
+           outcome this must not have. */
         var legacy = function () {
           var scratch = null;
+          var copied = false;
           if (href) {
             scratch = document.createElement("textarea");
             scratch.value = text;
@@ -1636,15 +1666,18 @@
             scratch.select();
           }
           try {
-            if (document.execCommand("copy")) {
-              done();
-            }
+            copied = document.execCommand("copy");
           } catch (error) {
-            /* Selected and visible is a working fallback. */
+            copied = false;
           }
           if (scratch) {
             scratch.remove();
             button.focus();
+          }
+          if (copied) {
+            done();
+          } else if (href) {
+            window.prompt("Kopeeri link", text);
           }
         };
         if (navigator.clipboard && navigator.clipboard.writeText) {
