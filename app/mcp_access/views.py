@@ -24,6 +24,7 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import logging
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode, urlsplit
@@ -51,6 +52,11 @@ from app.core.client_ip import client_ip
 from app.mcp_access import config, credentials, oauth, services
 from app.mcp_access.models import McpAccessEventType
 from app.mcp_access.services import AuthorizationRequest, OAuthError
+
+logger = logging.getLogger("app.mcp_access")
+
+#: How much of a refused `resource` the authorize WARNING quotes.
+LOGGED_RESOURCE_LENGTH = 300
 
 #: What the enrolment page keeps in the session between its GET and its POST:
 #: the link's proof (never the verifier) and the provisional secret, sealed.
@@ -201,6 +207,25 @@ def _form_action_policy(redirect_uri: str) -> str:
     return "; ".join(f"{name} {sources}" for name, sources in directives)
 
 
+def _log_refused_resource(request: HttpRequest) -> None:
+    """One WARNING naming the `resource` the authorize step refused (`invalid_target`).
+
+    The operator's only way to learn which URL a client now asks for, and so
+    which one `MCP_RESOURCE_URLS` must list: on 2026-10-25 ChatGPT began
+    sending its tunnel URL and the refusal left no trace. A redirect error
+    comes only after the client and redirect URI were validated, so the
+    client id is a registered one. Quoted with `repr` and capped, so a line
+    break or a long value cannot forge or flood a log line; never `state` or
+    `code_challenge`, which belong to one person's sign-in.
+    """
+    logger.warning(
+        "MCP authorize refused resource %r for client %r (invalid_target); "
+        "MCP_RESOURCE_URLS in juristid.env and juristid-mcp.env must list it to allow it",
+        request.GET.get("resource", "")[:LOGGED_RESOURCE_LENGTH],
+        request.GET.get("client_id", "")[:LOGGED_RESOURCE_LENGTH],
+    )
+
+
 def _error_page(request: HttpRequest, message: str, *, status: int = 400) -> HttpResponse:
     response = render(request, "mcp_access/error.html", {"message": message}, status=status)
     add_never_cache_headers(response)
@@ -252,6 +277,8 @@ def authorize(request: HttpRequest) -> HttpResponse:
     if isinstance(parsed, oauth.EarlyError):
         return _error_page(request, parsed.message)
     if isinstance(parsed, oauth.RedirectError):
+        if parsed.error == "invalid_target":
+            _log_refused_resource(request)
         return _redirect_back(
             parsed.redirect_uri,
             {"error": parsed.error, "error_description": parsed.description, "state": parsed.state},
