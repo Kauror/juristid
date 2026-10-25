@@ -108,6 +108,7 @@ from app.matters import (
     register_filters,
     selectors,
     step_launch,
+    timeline_links,
     work_items,
     workspace,
 )
@@ -130,7 +131,7 @@ from app.matters.enums import (
     MatterOrigin,
     RecordMode,
 )
-from app.matters.episode_timeline import matter_episode_timeline
+from app.matters.episode_timeline import GROUPED_WINDOW, matter_episode_timeline
 from app.matters.follow_up_restart import restart_offers
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
@@ -252,6 +253,7 @@ from app.matters.response_deadlines import (
     request_response_deadline,
     resolve_response_deadline,
 )
+from app.matters.return_link import results_return_url
 from app.matters.services import (
     GUARDED_MATTER_FIELDS,
     REOPEN_NEEDS_A_STAGE,
@@ -3289,6 +3291,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # **Bounded unless the whole history is asked for** (AUD-008, D-2): the
     # newest rows on every page view and every column re-render, every row on
     # `?kaik=koik` — «Näita kogu käik» in the section.
+    whole_history = request.GET.get(TIMELINE_HISTORY_PARAM) == TIMELINE_HISTORY_ALL
     episode_timeline = matter_episode_timeline(
         matter=matter,
         user=request.user,
@@ -3296,7 +3299,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         intelligence=intelligence,
         current_action=current_action,
         episodes=episodes,
-        whole_history=request.GET.get(TIMELINE_HISTORY_PARAM) == TIMELINE_HISTORY_ALL,
+        whole_history=whole_history,
     )
     if episode_timeline is None:
         items, has_more = matter_timeline(
@@ -3310,6 +3313,47 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     else:
         items = [item for group in episode_timeline.groups for item in group.items]
         has_more = episode_timeline.has_more
+    # «Näita varasemaid» continues after the rows drawn — 30, or more where a
+    # link to an older row asked for them.
+    next_offset = TIMELINE_PAGE_SIZE
+    # **A link to one row** (`?kirje=`, `app.matters.timeline_links`). Where the
+    # row is not among the newest rows drawn, the page reads — once, bounded,
+    # through the same reader-scoped chronology — where it stands and draws
+    # enough rows to include it. An unknown key and one this reader may not see
+    # both find nothing and leave the page exactly as it is without a key.
+    linked_row = timeline_links.requested_row(request)
+    if linked_row and has_more and not any(item.row_key == linked_row for item in items):
+        located, located_more, index = timeline_links.locate_row(
+            matter=matter,
+            user=request.user,
+            key=linked_row,
+            only=timeline_only,
+            intelligence=intelligence,
+            current_action=current_action,
+        )
+        if index is not None and episode_timeline is None:
+            next_offset = timeline_links.window_reaching(index, TIMELINE_PAGE_SIZE)
+            items = located[:next_offset]
+            has_more = len(located) > next_offset or located_more
+        elif index is not None:
+            episode_timeline = matter_episode_timeline(
+                matter=matter,
+                user=request.user,
+                only=timeline_only,
+                intelligence=intelligence,
+                current_action=current_action,
+                episodes=episodes,
+                window=timeline_links.window_reaching(index, GROUPED_WINDOW),
+            )
+            if episode_timeline is not None:
+                items = [item for group in episode_timeline.groups for item in group.items]
+                has_more = episode_timeline.has_more
+    if linked_row and episode_timeline is not None:
+        # The period holding the linked row is drawn open, so the row is in view
+        # without scripting too.
+        for group in episode_timeline.groups:
+            if any(item.row_key == linked_row for item in group.items):
+                group.is_open = True
     # Each `Kaasamine` row on the chronology gets its own `Lõpeta kaasamine`
     # form, with its own ids and its own revision token. Here rather than in the
     # template because a template must not build a form, and on the record
@@ -3420,6 +3464,7 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # label and the count — the preview sentence and the duplicated current
         # step are gone from it (docs/adr/0074 §16).
         "timeline_has_more": has_more,
+        "timeline_next_offset": next_offset,
         "timeline_count": len(items) + (1 if has_more else 0),
         "timeline_only": timeline_only,
         "timeline_filters": TIMELINE_FILTERS,
@@ -3581,6 +3626,9 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     step_launch.apply_open_request(request, matter, context)
     context["tab"] = "teema"
     context["nav_active"] = "teemad"
+    # «Tagasi tulemustesse», only when this page was opened from a narrowed
+    # Teemad list (`app.matters.return_link`).
+    context["results_return_url"] = results_return_url(request)
     return render(request, "matters/matter_detail.html", context)
 
 
@@ -4312,6 +4360,10 @@ def _render_overview(
     # QA-BROWSER-01, so a save sending the whole header out of band drew a tab
     # bar with neither tab marked.
     context["tab"] = "teema"
+    # The rows this save wrote, marked so the page can show — briefly, and only
+    # now that the server has confirmed it — where the saved record landed
+    # (`app.matters.timeline_links.saved_row_keys`).
+    context["timeline_saved_keys"] = timeline_links.saved_row_keys(request, matter, status)
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if header_out_of_band:
         context["header_out_of_band"] = True

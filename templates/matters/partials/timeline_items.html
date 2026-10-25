@@ -66,7 +66,7 @@ record, not professional chronology (master specification 16.5).
     article stays.
   {% endcomment %}
   <article class="uxtl__item {% if item.is_primary %}uxtl__item--primary{% else %}uxtl__item--secondary{% endif %}{% if item.completion_text %} uxtl__item--done{% endif %}"
-           data-kaik-rida="{{ item.row_key }}"
+           data-kaik-rida="{{ item.row_key }}"{% if item.row_key in timeline_saved_keys %} data-salvestatud{% endif %}
            {% if item.is_entry %}id="sissekanne-{{ item.entry.pk }}"{% endif %}>
     <span class="uxtl__rail" aria-hidden="true">
       <span class="uxtl__dot {% if item.is_primary %}uxtl__dot--primary{% endif %}"></span>
@@ -603,6 +603,20 @@ record, not professional chronology (master specification 16.5).
           {% endif %}
         </span>
       {% endif %}
+      {% comment %}
+        **A link to this one row**, for a colleague or a note elsewhere. The
+        row's own key — a record's, an entry's or an event's id — and its
+        line's anchor, so the link still names this row after any amount of
+        new activity, and the page draws enough rows to include it even when it
+        is behind «Näita varasemaid» (`app.matters.timeline_links`). Last in
+        the open row and quiet: it is looked for, not scanned past. A reader
+        who may not see the row is shown the page as if the link named nothing.
+      {% endcomment %}
+      <div class="uxtl__permalink">
+        <button type="button" class="button button--quiet button--tiny"
+                data-copy-href="{% url 'matters:matter_detail' pk=matter.pk %}?kirje={{ item.row_key|urlencode:'' }}#kaik-{{ item.row_key }}-rida"
+                data-label-done="Link kopeeritud">Kopeeri link</button>
+      </div>
     </div>
   </article>
 {% empty %}

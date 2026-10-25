@@ -19,6 +19,18 @@ a gutter would turn a workspace back into a dashboard (Teema redesign §4).
   (static/css/app.css, TEEMA_TARGET.html).
 {% endcomment %}
 <div class="teema" id="teema-vaade-wrap">
+  {% comment %}
+    «Tagasi tulemustesse» — to the Teemad list this page was opened from, with
+    its search, filters, order and page. Drawn only when the page was opened
+    from a narrowed list (`app.matters.return_link`); an ordinary link to a
+    Teema has none. On the full page only, outside the header and the column,
+    so no save re-renders it away.
+  {% endcomment %}
+  {% if results_return_url %}
+    <nav class="teema__return" aria-label="Tulemused">
+      <a class="quietlink" href="{{ results_return_url }}">← Tagasi tulemustesse</a>
+    </nav>
+  {% endif %}
   {% include "matters/partials/header.html" %}
   {% include "matters/partials/overview.html" %}
 </div>
