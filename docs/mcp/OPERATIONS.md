@@ -529,10 +529,10 @@ that the next recreate loses:
 `docker network connect --alias mcp juristid-main-mcp-edge juristid-main-mcp`
 (disconnect it first if it is already attached without the alias).
 
-Then the tunnel client's readiness:
+Then the tunnel client's readiness, which must print `ready`:
 
 ```bash
-docker exec juristid-main-mcp-tunnel wget -q -O - http://127.0.0.1:8080/readyz
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp-tunnel wget -q -O - http://127.0.0.1:8080/readyz
 ```
 
 If it does not say `ready`, restart it:

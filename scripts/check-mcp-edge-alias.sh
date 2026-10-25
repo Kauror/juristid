@@ -27,6 +27,20 @@
 # here touches /mnt/user. Usage: scripts/check-mcp-edge-alias.sh IMAGE
 set -euo pipefail
 
+# CI only. compose.yml fixes the container and network names
+# (`juristid-main-mcp*`, `juristid-main-mcp-edge`, ...), so `-p` is no
+# namespace: on the production host this would detach the real `mcp` from its
+# network and restart the Docker daemon. It refuses anywhere but a GitHub
+# Actions runner, and wherever a `juristid-main` stack exists at all.
+if [ "${GITHUB_ACTIONS:-}" != "true" ]; then
+  echo "refused: CI only (GITHUB_ACTIONS is not true); this script recreates and detaches containers" >&2
+  exit 2
+fi
+if [ -n "$(docker ps -aq --filter label=com.docker.compose.project=juristid-main)" ]; then
+  echo "refused: a juristid-main stack exists on this Docker host" >&2
+  exit 2
+fi
+
 image="${1:?usage: $0 IMAGE (the release image, e.g. juristid:ci)}"
 project=juristid-mcp-alias-ci
 edge=juristid-main-mcp-edge
