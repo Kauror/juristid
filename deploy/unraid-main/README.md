@@ -1540,13 +1540,10 @@ docker exec juristid-main-mcp-tunnel nslookup mcp
 ```
 
 It must print an address; NXDOMAIN means `mcp` lacks the alias on `mcp_edge`
-(recreate it from the current `compose.yml`). Then:
-
-```bash
-docker exec juristid-main-mcp-tunnel wget -q -O - http://127.0.0.1:8080/readyz
-```
-
-If that is not `ready`, restart the tunnel client — it probes `mcp` only at its
+(recreate it from the current `compose.yml`). Then the tunnel client's
+`/readyz` — the readiness command under *Health* in
+[`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md) — must say `ready`.
+If it does not, restart the tunnel client — it probes `mcp` only at its
 own start-up and, on failure, logs `startup catalog failed; control-plane
 polling disabled` and never retries (2026-10-25):
 
