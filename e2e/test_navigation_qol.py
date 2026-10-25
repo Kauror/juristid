@@ -104,7 +104,9 @@ def test_back_returns_to_the_same_search_and_page(page, base_url):
     expect(page).to_have_url(re.compile(r"leht=2"))
     list_url = page.url
     page.mouse.wheel(0, 400)
-    page.wait_for_function("window.scrollY > 0")
+    # A function, as everywhere in this suite: a bare expression string is
+    # evaluated with eval() once it has to poll, which the CSP refuses.
+    page.wait_for_function("() => window.scrollY > 0")
 
     row = results.locator("a[href^='/teemad/']").filter(has_text="Tagasitee").first
     row.click()
