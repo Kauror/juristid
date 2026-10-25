@@ -1531,6 +1531,32 @@ shell, so it resolves the same exported tag:
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp
 ```
 
+Then prove the tunnel client can still find it. Docker answers DNS per network,
+and `mcp-tunnel` resolves `mcp` on `mcp_edge` alone; `compose.yml` gives `mcp`
+that alias explicitly, but check it after every recreate:
+
+```bash
+docker exec juristid-main-mcp-tunnel nslookup mcp
+```
+
+It must print an address; NXDOMAIN means `mcp` lacks the alias on `mcp_edge`
+(recreate it from the current `compose.yml`). Then:
+
+```bash
+docker exec juristid-main-mcp-tunnel wget -q -O - http://127.0.0.1:8080/readyz
+```
+
+If that is not `ready`, restart the tunnel client — it probes `mcp` only at its
+own start-up and, on failure, logs `startup catalog failed; control-plane
+polling disabled` and never retries (2026-10-25):
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml restart mcp-tunnel
+```
+
+[`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md), *After recreating
+`mcp`*, has the detail.
+
 If it is not listed, or listed as `Exited`, **do not run it**: naming a profiled
 service starts it, and AI access that somebody stopped stays stopped until
 somebody decides otherwise ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md)).

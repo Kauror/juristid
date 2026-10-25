@@ -319,7 +319,10 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp-tu
 ```
 
 `ready` is the answer to wait for (the first minute may say `503 oauth discovery
-pending`). What else it can say is under *Diagnosing* below. The client's own
+pending`). What else it can say is under *Diagnosing* below. If it never gets
+there, `docker exec juristid-main-mcp-tunnel nslookup mcp` must resolve
+(*After recreating `mcp`*, under *Starting and restarting only the MCP
+component*). The client's own
 log shows it polling OpenAI:
 
 ```bash
@@ -343,8 +346,11 @@ By a workspace admin of **Kaubanduskoda** who has Tunnels **Read** + **Use**
 4. Complete the sign-in (step 8 must have been done for the admin's own account
    first, or this step is refused — correctly). ChatGPT then lists the eight
    tools; every one should show as read-only.
-5. **Confirm the resource.** If the token step fails with a resource refusal,
-   the `web` log names the resource ChatGPT asked for (step *Diagnosing*); put
+5. **Confirm the resource.** If the sign-in fails with a resource refusal
+   (`invalid_target`), the `web` log has one WARNING
+   `MCP authorize refused resource '…'` naming the resource ChatGPT asked for
+   (*Diagnosing*). It is logged at `/oauth/authorize`, where an unknown
+   resource is refused; `/oauth/token` only records an `McpAccessEvent`. Put
    exactly that URL in `MCP_RESOURCE_URLS` in **both** files, recreate `web` and
    `mcp` (*Restarting only the MCP component* and the step 5 command), and try
    again.
@@ -493,7 +499,50 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp-tunnel
 ```
 
-Start them again after `stop` the same way. Then the checks under *Health*.
+Start them again after `stop` the same way. Then the checks under *Health*,
+and — after any recreate of `mcp` — the check below.
+
+### After recreating `mcp`: can the tunnel client still find it?
+
+The tunnel client dials `http://mcp:8001/mcp`, and Docker answers DNS **per
+network**: `mcp` must carry the alias `mcp` on `mcp_edge`, the one network the
+tunnel client is on. `compose.yml` names that alias explicitly
+(`networks: mcp_edge: aliases: [mcp]`), so a recreate from the current file
+attaches it. Check it anyway, every time `mcp` is recreated — a release, an
+environment-file change, a host-side `docker network` change:
+
+```bash
+docker exec juristid-main-mcp-tunnel nslookup mcp
+```
+
+It must print an address. `can't resolve` / `NXDOMAIN` means the container
+lacks the alias on `mcp_edge` — the compose file on the host predates the
+explicit alias, or the container was created some other way. Recreate `mcp`
+from the current file (the command above) and check again. Only as a stopgap
+that the next recreate loses:
+`docker network connect --alias mcp juristid-main-mcp-edge juristid-main-mcp`
+(disconnect it first if it is already attached without the alias).
+
+Then the tunnel client's readiness:
+
+```bash
+docker exec juristid-main-mcp-tunnel wget -q -O - http://127.0.0.1:8080/readyz
+```
+
+If it does not say `ready`, restart it:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml restart mcp-tunnel
+```
+
+**The tunnel client probes `mcp` only at its own start-up and never retries.**
+If `mcp` cannot be resolved or reached at that moment, it logs
+`startup catalog failed; control-plane polling disabled` and then sits idle,
+running and apparently healthy, while ChatGPT cannot connect. Fixing `mcp`
+afterwards does not wake it; only a restart of `mcp-tunnel` does. This is what
+happened on 2026-10-25: a `up -d --no-deps mcp` left the alias on `mcp_write`
+only, the tunnel client got NXDOMAIN for `mcp`, and the connector failed until
+the alias was attached and the client restarted.
 
 ## Diagnosing a failed search or a refused connection
 
@@ -527,7 +576,8 @@ every log here it stays on this host (OPERATOR.md).
 | HTTP 403 on a tool call | `mcp` log | the token is valid but lacks the `juristid.read` scope | a client asking for the wrong scope; reconnect the plugin |
 | A tool answers «not found» | ChatGPT | the id is unknown **or** not visible to that person — deliberately indistinguishable | check the record in the browser as that person (for a SPECIALIST or DEPARTMENT_HEAD, their persona; a READER sees what every business role sees, ADR 0181) |
 | ChatGPT asks a colleague to reconnect every 90 days | ChatGPT | the token family's absolute lifetime (`MCP_REFRESH_FAMILY_MAX_SECONDS`, MCPSEC-08): the connection is as old as the authenticator code typed for it | nothing; it is the design. `McpAccessEvent` reason `family_expired` |
-| `invalid_grant` / `invalid_target` at `/oauth/token` | `web` log | an expired or reused code, a PKCE mismatch, or a `resource` not in `MCP_RESOURCE_URLS` | for a resource refusal, the log names the resource requested: that is the URL `MCP_RESOURCE_URLS` must list |
+| `invalid_target` at `/oauth/authorize` | `web` log WARNING `MCP authorize refused resource '…' for client '…'` | the client asked for a `resource` that is not in `MCP_RESOURCE_URLS` — on 2026-10-25 ChatGPT began sending its tunnel URL (`https://tunnel-service.…/v1/mcp/tunnel_…`) | the quoted resource is the URL `MCP_RESOURCE_URLS` must list, in **both** files; recreate `web` and `mcp`. The line never carries `state` or `code_challenge` |
+| `invalid_grant` / `invalid_target` at `/oauth/token` | `McpAccessEvent` (`token_refused`, its `reason`); **not** the `web` log | an expired or reused code, a PKCE mismatch, or a `resource` that differs from the one authorized (`resource_mismatch`) or was dropped from `MCP_RESOURCE_URLS` since (`resource_not_allowed`) | a new resource is refused at `/oauth/authorize` first, where the WARNING above names it; here look at the event's reason |
 | «Kood ei sobi või sellel kasutajal pole MCP ligipääsu» | browser | a wrong code, an e-mail address that names no account (a typo), another colleague's address, no grant, a pending grant (never enrolled), a technical account, or no business role — deliberately one message, so the page does not reveal which addresses exist or who holds a grant | check the address they typed is their account's `upn`; `mcp_access list`; a new `enrolment-link` if they never enrolled |
 | «See e-posti aadress ei sobi selle lingiga» | browser, enrolment page | the address typed is not the account the link was issued to (or names nobody) | the person types their own account's address; if the link was handed to the wrong person, `mcp_access enrolment-link --user <upn>` for the right one |
 | «Liiga palju valesid koode» (after the person's own right code) | browser | the grant is locked: five wrong codes in a row; consecutive locks last 15 min, 1 h, 4 h | wait, or `mcp_access unlock --user <upn>` once you know the wrong codes were the person's own |
@@ -535,6 +585,7 @@ every log here it stays on this host (OPERATOR.md).
 | «Liiga palju katseid» | browser | this gate session or this address failed too often in 15 minutes, whichever e-mail addresses it named (unknown ones count, and so do wrong addresses on the enrolment page) | wait; repeated, it is somebody spraying codes or addresses — the `web` log and `McpAccessEvent` rows with reason `throttled` or `unknown_account` show when |
 | `/readyz` says `503 oauth discovery failed` | `mcp-tunnel` | the client could not read `mcp`'s protected-resource metadata, or the metadata named an origin it does not trust | `MCP_OAUTH_TRUSTED_ORIGINS` must be exactly the public origin; `mcp` must be healthy |
 | `/readyz` says `503 mcp probe failed` | `mcp-tunnel` | the client cannot reach `http://mcp:8001/mcp` | `mcp` stopped or unhealthy |
+| `mcp-tunnel` log: `startup catalog failed; control-plane polling disabled` | `mcp-tunnel` | at its start-up the client could not resolve or reach `http://mcp:8001/mcp` — `mcp` not yet up, or (2026-10-25) `mcp` without the alias `mcp` on `mcp_edge`, so `nslookup mcp` gives NXDOMAIN. It never retries: the container stays running and ChatGPT cannot connect | `docker exec juristid-main-mcp-tunnel nslookup mcp` must resolve (*After recreating `mcp`*); then `restart mcp-tunnel` and wait for `/readyz` `ready` |
 | `mcp-tunnel` log: 401/403 from the control plane | `mcp-tunnel` | the runtime key is wrong, expired or lacks Tunnels Read + Use, or the tunnel id is not the key's organisation's | a new restricted key in the tunnel file, then recreate `mcp-tunnel` |
 | The tunnel is not offered in ChatGPT | ChatGPT | the tunnel lacks the workspace scope, the admin lacks Tunnels Use, or `mcp-tunnel` is not ready | Platform → Tunnels; `/readyz` |
 | `mcp` restarts in a loop | `docker inspect`, `mcp` log | a system check refused its configuration (`SystemCheckError`, `juristid.E0xx`) | the message names the variable; fix the file, never the check |
@@ -758,6 +809,9 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-bui
 ```bash
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
 ```
+
+Recreating `mcp` is followed, as always, by *After recreating `mcp`*:
+`nslookup mcp` from the tunnel client, then its `/readyz`.
 
 **7. Refresh the connector** (*Updating the tools and refreshing the
 connector*): the write tools are new tools, and ChatGPT shows them only after
