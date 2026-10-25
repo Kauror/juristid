@@ -29,6 +29,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       # What this run is testing, named by the tree it checked out.
       #
@@ -234,6 +238,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
@@ -451,6 +459,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
@@ -577,6 +589,10 @@ jobs:
           echo "all 14 shards (7 runners) and the safety checks passed"
 
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
@@ -651,6 +667,10 @@ jobs:
       PIP_AUDIT: pip-audit==2.9.0
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
@@ -754,6 +774,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
@@ -910,6 +934,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
@@ -1080,6 +1108,10 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
           enable-cache: true
@@ -1170,6 +1202,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
         with:
@@ -1872,6 +1908,10 @@ jobs:
     if: ${{ !cancelled() }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
 
       - name: Build the production image
         id: build
@@ -2112,6 +2152,15 @@ jobs:
             if touch /probe 2>/dev/null; then echo "/ is writable"; exit 1; fi
           '
 
+      # 2026-10-25: a recreate of `mcp` left it without the alias `mcp` on
+      # `mcp_edge`, and the tunnel client, which resolves it there and nowhere
+      # else, disabled itself. The static test reads the alias off compose.yml;
+      # this recreates `mcp` the way the runbook does and asks the tunnel
+      # client's own service definition what it can reach: `mcp`, and never
+      # `mcp-writer`.
+      - name: The tunnel client finds mcp after a recreate, and never mcp-writer
+        run: bash scripts/check-mcp-edge-alias.sh juristid:ci
+
       # Two containers, one set of bytes — the property `Uus teema` staging
       # actually needs, proved by crossing the boundary rather than by reading
       # the Compose file (which `tests/test_deployment_unraid_main.py` does).
@@ -2292,7 +2341,11 @@ jobs:
           name: image-scan
           path: image-scan/
           if-no-files-found: warn
-          retention-days: 30
+          # The full report lists every CVE in the production image, unfixed
+          # ones included, and this repository is public. Three days is enough
+          # to read a red run's report and keeps no month-deep catalogue of
+          # what each image was exposed to.
+          retention-days: 3
 
       - name: Container logs on failure
         if: failure()

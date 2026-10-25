@@ -1056,7 +1056,7 @@ def test_the_mcp_server_reaches_no_file_at_all(compose: dict[str, Any]) -> None:
     """No evidence, no derivatives, no corpus, no staging volume — no volume."""
     server = compose["services"][MCP]
     assert "volumes" not in server
-    assert server["networks"] == ["internal", "mcp_edge", "mcp_write"]
+    assert list(server["networks"]) == ["internal", "mcp_edge", "mcp_write"]
     assert "ports" not in server
     assert "expose" not in server
 
@@ -1109,6 +1109,32 @@ def test_the_tunnel_client_reaches_the_server_on_the_edge_network_only(
     assert probe[:2] == ["CMD", "wget"]
     assert probe[-1] == "http://127.0.0.1:8080/readyz"
     assert environment["HEALTH_LISTEN_ADDR"] == "127.0.0.1:8080", "the probe asks this port"
+
+
+def test_the_server_answers_to_its_dialled_name_on_the_edge_network(
+    compose: dict[str, Any],
+) -> None:
+    """`mcp` is an explicit alias on `mcp_edge`, the network the tunnel client resolves on.
+
+    Docker answers DNS per network. On 2026-10-25 a `up -d --no-deps mcp`
+    left the container with the alias `mcp` on `mcp_write` only; the tunnel
+    client, on `mcp_edge` alone, got NXDOMAIN for MCP_SERVER_URL's host, logged
+    "startup catalog failed; control-plane polling disabled" and never
+    retried. Named in the compose file, every recreate attaches it.
+    """
+    from urllib.parse import urlsplit
+
+    client = compose["services"][MCP_TUNNEL]
+    dialled = urlsplit(client["environment"]["MCP_SERVER_URL"]).hostname
+    [network] = client["networks"]
+    assert network == "mcp_edge"
+    server_networks = compose["services"][MCP]["networks"]
+    assert isinstance(server_networks, dict), "the list form cannot carry an alias"
+    assert dialled in (server_networks[network] or {}).get("aliases", [])
+    # Only that network: on `mcp_write` the gateway is dialled by address and
+    # never calls back, and nothing on `internal` calls `mcp`.
+    for other in ("internal", "mcp_write"):
+        assert not (server_networks[other] or {}).get("aliases"), other
 
 
 def test_the_server_accepts_the_host_the_tunnel_client_dials() -> None:

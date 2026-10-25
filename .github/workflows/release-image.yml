@@ -89,13 +89,19 @@ jobs:
           ref: ${{ inputs.sha }}
           fetch-depth: 0
 
+      # The input reaches the shell through the environment, never by
+      # interpolating the expression into the script, so its text cannot
+      # become shell syntax.
       - name: The checkout is the commit that was asked for, and is clean
+        env:
+          INPUT_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
+          [[ "$INPUT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "sha must be a full 40-character commit: $INPUT_SHA"; exit 1; }
           head="$(git rev-parse HEAD)"
-          echo "requested: ${{ inputs.sha }}"
+          echo "requested: $INPUT_SHA"
           echo "checked out: $head"
-          test "$head" = "${{ inputs.sha }}" || { echo "checkout is not the requested commit"; exit 1; }
+          test "$head" = "$INPUT_SHA" || { echo "checkout is not the requested commit"; exit 1; }
           test -z "$(git status --porcelain)" || { echo "the tree is dirty"; git status --porcelain; exit 1; }
           echo "SHORT=${head:0:12}" >> "$GITHUB_ENV"
           echo "FULL=$head" >> "$GITHUB_ENV"
