@@ -142,7 +142,15 @@ def test_a_deep_link_to_a_teema_shows_no_way_back(signed_in, specialist):
 
 @pytest.mark.parametrize(
     "value",
-    ["", "x", "1 OR 1=1", "../", "onenote:", "onenote:<b>", str(uuid.uuid4()) + "x"],
+    [
+        "",
+        "x",
+        "1 OR 1=1",
+        "../",
+        "onenote:",
+        "onenote:<b>",
+        "01a17406-6a72-747e-aae8-b6827e767618x",
+    ],
 )
 def test_a_value_that_is_no_row_key_is_ignored_before_any_query(value):
     request = RequestFactory().get("/teemad/x/", {"kirje": value})
