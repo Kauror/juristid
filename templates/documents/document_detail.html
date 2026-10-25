@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load document_state evidence_uploads form_labels %}
+{% load document_files document_state evidence_uploads form_labels %}
 {% block title %}{{ document.title }} · {{ matter.title }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -32,15 +32,37 @@
       so following a row does not land on a page named after something else
       (adversarial QA 2026-09-12, QA-05).
     {% endcomment %}
+    {% with file=version|file_link %}
     <h1 class="pagehead__title">
       {% if version %}
-        <a href="{% url 'documents:download' pk=version.pk %}">{% if document.title %}{{ document.title }}{% else %}{{ version.original_filename }}{% endif %}</a>
+        <a href="{{ file.href }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{% if document.title %}{{ document.title }}{% else %}{{ version.original_filename }}{% endif %}</a>
       {% else %}{{ document.title }}{% endif %}
     </h1>
     <span class="pagehead__context">
       {{ document.get_role_display }}
       {% if document.is_restricted %}<span class="badge badge--restricted">Piiratud</span>{% endif %}
     </span>
+    {% comment %}
+      **What can be done with the file, each by its own name** (QoL round
+      2026-10-25). `Ava` only where the browser may render it — PDF, image,
+      plain text, by `app/documents/inline.py` — and then in a new tab, so this
+      page stays where it was. `Laadi alla` always. `Kopeeri link` copies the
+      address of this exact version through the same authorized route the
+      heading links to: a colleague who follows it is asked who they are and
+      what they may read exactly as the reader was, and nobody else gets in.
+    {% endcomment %}
+    {% if file %}
+      <div class="pagehead__actions" role="group" aria-label="Faili toimingud">
+        {% if file.opens_inline %}
+          <a class="button button--secondary button--tiny" href="{{ file.open_url }}"
+             target="_blank" rel="noopener noreferrer">Ava</a>
+        {% endif %}
+        <a class="button button--quiet button--tiny" href="{{ file.download_url }}">Laadi alla</a>
+        <button class="button button--quiet button--tiny" type="button"
+                data-copy-href="{{ file.href }}" data-label-done="Kopeeritud">Kopeeri link</button>
+      </div>
+    {% endif %}
+    {% endwith %}
   </header>
 
   {% comment %}
@@ -222,7 +244,15 @@
               {% for row in versions %}
                 <tr>
                   <td>{{ row.version_number }}{% if row.pk == version.pk %} <span class="badge">kehtiv</span>{% endif %}</td>
-                  <td><a href="{% url 'documents:download' pk=row.pk %}">{{ row.original_filename }}</a></td>
+                  {% with file=row|file_link %}
+                    <td>
+                      <a href="{{ file.href }}"{% if file.opens_inline %} target="_blank" rel="noopener noreferrer"{% endif %}>{{ row.original_filename }}</a>
+                      {% if file.opens_inline %}
+                        <a class="quietlink" href="{{ file.download_url }}" title="Laadi alla"
+                           aria-label="Laadi alla {{ row.original_filename }}, versioon {{ row.version_number }}">↓</a>
+                      {% endif %}
+                    </td>
+                  {% endwith %}
                   <td>{{ row.size_bytes|filesizeformat }}</td>
                   <td class="table__date">{{ row.acquired_at|date:"j.n.Y" }}</td>
                   <td>

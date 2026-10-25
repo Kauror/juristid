@@ -1574,20 +1574,33 @@
    * value is plain text rather than a box (header.html, docs/adr/0150 §4): a
    * field is selected and its value copied, anything else has its text
    * selected and copied, so Ctrl+C works on the selection either way.
+   *
+   * «Kopeeri link» on a document (`data-copy-href`) copies an address the
+   * page already links to — the exact version, through the same authorized
+   * route — made absolute against the address the reader is using, so a
+   * colleague gets the host and path that work for them too. Nothing is
+   * selected: there is no box to select it in.
    */
   function bindCopyLink(scope) {
-    scope.querySelectorAll("[data-copy-from]").forEach(function (button) {
+    scope.querySelectorAll("[data-copy-from], [data-copy-href]").forEach(function (button) {
       if (!once(button, "Copy")) {
         return;
       }
       button.addEventListener("click", function () {
-        var field = document.getElementById(button.getAttribute("data-copy-from"));
-        if (!field) {
+        var href = button.getAttribute("data-copy-href");
+        var field = href ? null : document.getElementById(button.getAttribute("data-copy-from"));
+        if (!href && !field) {
           return;
         }
-        var isField = typeof field.select === "function" && "value" in field;
-        var text = isField ? field.value : (field.textContent || "").trim();
-        if (isField) {
+        var isField = !!field && typeof field.select === "function" && "value" in field;
+        var text = href
+          ? new URL(href, document.baseURI).href
+          : isField
+            ? field.value
+            : (field.textContent || "").trim();
+        if (href) {
+          /* Nothing on the page holds the address to select. */
+        } else if (isField) {
           field.select();
           field.setSelectionRange(0, field.value.length);
         } else {
@@ -1608,19 +1621,37 @@
             button.textContent = before;
           }, 2000);
         };
+        /* Older engines, and any context where the async API is refused. The
+           text is selected either way, so Ctrl+C still works — and an address
+           with no box of its own gets a momentary one to be selected in. */
+        var legacy = function () {
+          var scratch = null;
+          if (href) {
+            scratch = document.createElement("textarea");
+            scratch.value = text;
+            scratch.setAttribute("readonly", "");
+            scratch.style.position = "fixed";
+            scratch.style.opacity = "0";
+            document.body.appendChild(scratch);
+            scratch.select();
+          }
+          try {
+            if (document.execCommand("copy")) {
+              done();
+            }
+          } catch (error) {
+            /* Selected and visible is a working fallback. */
+          }
+          if (scratch) {
+            scratch.remove();
+            button.focus();
+          }
+        };
         if (navigator.clipboard && navigator.clipboard.writeText) {
-          navigator.clipboard.writeText(text).then(done, function () {});
+          navigator.clipboard.writeText(text).then(done, href ? legacy : function () {});
           return;
         }
-        /* Older engines, and any context where the async API is refused. The
-           text is selected either way, so Ctrl+C still works. */
-        try {
-          if (document.execCommand("copy")) {
-            done();
-          }
-        } catch (error) {
-          /* Selected and visible is a working fallback. */
-        }
+        legacy();
       });
     });
   }
