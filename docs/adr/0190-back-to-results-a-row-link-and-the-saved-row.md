@@ -70,7 +70,8 @@ being drawn, and the matching rows carry `data-salvestatud`. A refusal, a page
 view and a GET carry none; the ids are never printed. The script reads the mark
 once, removes it, and gives the row the accent panel (`--surface-selected`,
 `--accent-border`) for 2.4 s. No toast, no focus move, no scroll, no change to
-the accordion; under `prefers-reduced-motion` the fade is off.
+the accordion, and no transition — it appears and goes in one step, the same
+under `prefers-reduced-motion`.
 
 Row corrections that swap one row in place (`Muuda`) keep their existing
 landing (focus on the swapped row) and are not marked.

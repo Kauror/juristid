@@ -12266,14 +12266,9 @@ section:has(.pw-more[open]) tbody.uxextra {
  * answer marks the row (`data-salvestatud`) — and takes it off again after a
  * couple of seconds. A panel's background and edge, not a colour on the text:
  * nothing moves, nothing takes focus, and the row reads exactly as before when
- * it goes. Under reduced motion the global `prefers-reduced-motion` rule
- * takes the fade away, so it simply appears and goes. */
-#teema-vaade-wrap .uxtl__item > .uxtl__body {
-  transition:
-    background-color calc(var(--motion-duration-base) * 4) var(--motion-easing-standard),
-    border-color calc(var(--motion-duration-base) * 4) var(--motion-easing-standard);
-}
-
+ * it goes. No transition: it appears and goes in one step, which is the
+ * same with or without `prefers-reduced-motion`, and an opening row's own
+ * panel is never drawn half-way. */
 #teema-vaade-wrap .uxtl__item.uxtl__item--saved > .uxtl__body {
   border-color: var(--accent-border);
   background-color: var(--surface-selected);
