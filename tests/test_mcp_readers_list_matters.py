@@ -14,9 +14,11 @@ from datetime import timedelta
 import pytest
 from django.utils import timezone
 
+from app.documents.services import add_evidence_version
 from app.matters.services import close_matter
 from app.mcp_server import readers
 from app.mcp_server.readers import InvalidArgument, NotFound
+from app.submissions.enums import SubmissionStatus
 from app.workflow.enums import ActionKind, DateSemantics, Disposition
 from app.workflow.services import set_next_action
 from tests import factories
@@ -139,6 +141,188 @@ def test_a_page_costs_a_bounded_number_of_queries(people, django_assert_max_num_
     with django_assert_max_num_queries(40):
         answer = readers.list_matters(marko, responsible="Marko", organisation="rahandus")
     assert len(answer["matters"]) == 20
+
+
+def _owed_and_late(owner, title, days_late):
+    """An open Matter whose requested `Arvamuse tähtaeg` passed and nobody has answered."""
+    return factories.MatterFactory(
+        owner=owner,
+        title=title,
+        response_deadline=timezone.localdate() - timedelta(days=days_late),
+        response_requested_at=timezone.now() - timedelta(days=days_late + 30),
+    )
+
+
+def _count_queries(call):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as captured:
+        answer = call()
+    return len(captured), answer
+
+
+@pytest.mark.parametrize("role", ["specialist", "reader"])
+def test_overdue_rows_do_not_cost_a_query_each(people, role, request):
+    """PERF (2026-10-25): `is_overdue` was one `.exists()` per row with a passed deadline.
+
+    `response_deadline_of` asks `response_deadline_is_outstanding` for every open
+    row whose deadline has passed and is still owed, and the page read that
+    answer one round trip per row: a page of twenty overdue files cost 26
+    queries where one with none cost 6. The page's own statement now carries the
+    answer, so the count is the same however many rows are late.
+    """
+    marko, _ = people
+    reader = request.getfixturevalue(role)
+    _owed_and_late(marko, "Hilinenud 0", days_late=1)
+    one_late, answer = _count_queries(lambda: readers.list_matters(reader))
+    assert [row["opinion_deadline"]["is_overdue"] for row in answer["matters"]] == [True]
+
+    for n in range(1, 20):
+        _owed_and_late(marko, f"Hilinenud {n}", days_late=n + 1)
+    twenty_late, answer = _count_queries(lambda: readers.list_matters(reader))
+
+    assert len(answer["matters"]) == 20
+    assert all(row["opinion_deadline"]["is_overdue"] for row in answer["matters"])
+    assert twenty_late == one_late
+
+
+def test_the_page_says_what_the_matter_page_says_about_each_deadline(people):
+    """Answered on the page's statement, `is_overdue` is still the one-Matter rule's answer.
+
+    Every way a passed deadline stops being operational work is on the page —
+    a DO step outranks it, a WAIT does not (docs/adr/0050), a SENT opinion
+    discharges an untracked one — beside one still owed and one not yet due; each row must
+    say exactly what `response_deadline_of` says about that Matter read alone.
+    """
+    from app.matters.models import Matter
+    from app.matters.selectors import response_deadline_of
+
+    marko, _ = people
+    owed = _owed_and_late(marko, "Võlgu", days_late=3)
+    instructed = _owed_and_late(marko, "Järgmine samm on", days_late=3)
+    set_next_action(matter=instructed, text="Koosta arvamus", actor=marko)
+    waiting = _owed_and_late(marko, "Ootame", days_late=3)
+    set_next_action(
+        matter=waiting,
+        text="Ootame ministeeriumi vastust",
+        kind=ActionKind.WAIT,
+        date_semantics=DateSemantics.REVIEW_ON,
+        target_date=timezone.localdate() + timedelta(days=7),
+        actor=marko,
+    )
+    # A deadline from before requests were tracked: a sent opinion discharges
+    # it; without one it stays owed (`_discharge_exists`).
+    untracked = _owed_and_late(marko, "Vana tähtaeg", days_late=3)
+    answered = _owed_and_late(marko, "Vastatud", days_late=3)
+    Matter.objects.filter(pk__in=[untracked.pk, answered.pk]).update(response_requested_at=None)
+    version = add_evidence_version(
+        document=factories.DocumentFactory(matter=answered),
+        content=b"%PDF-1.4\nArvamus",
+        original_filename="arvamus.pdf",
+        mime_type="application/pdf",
+    )
+    factories.SubmissionFactory(
+        matter=answered,
+        status=SubmissionStatus.SENT,
+        sent_at=timezone.now(),
+        final_version=version,
+    )
+    factories.MatterFactory(
+        owner=marko,
+        title="Veel aega",
+        response_deadline=timezone.localdate() + timedelta(days=5),
+        response_requested_at=timezone.now(),
+    )
+
+    answer = readers.list_matters(marko)
+    today = timezone.localdate()
+    seen = {}
+    for row in answer["matters"]:
+        alone = response_deadline_of(Matter.objects.get(pk=row["id"].split(":")[1]), marko, today)
+        assert row["opinion_deadline"]["is_overdue"] == alone.is_overdue, row["title"]
+        assert row["opinion_deadline"]["still_owed"] == alone.is_active, row["title"]
+        seen[row["title"]] = row["opinion_deadline"]["is_overdue"]
+
+    assert seen == {
+        "Võlgu": True,
+        "Järgmine samm on": False,
+        "Ootame": True,
+        "Vana tähtaeg": True,
+        "Vastatud": False,
+        "Veel aega": False,
+    }
+    assert owed.display_reference in _references(answer)
+
+
+@pytest.mark.parametrize("viewer", ["reader", "other_specialist"])
+def test_restricted_records_closed_files_and_today_read_as_the_matter_page_reads_them(
+    people, viewer, request
+):
+    """The same equivalence for the rows where the reader and the record matter.
+
+    Read by somebody who owns none of these files — a READER and a colleague —
+    so a restricted record decides each row only as far as `visible_to` lets it
+    for *that* person (docs/adr/0181): a restricted open DO step on an owed
+    deadline, and a restricted SENT opinion on an untracked one. Beside them a
+    closed file whose deadline passed (a closed file owes nothing by a date,
+    QA-011) and a deadline that is today's Tallinn business date (not yet past).
+    """
+    from app.core.enums import Visibility
+    from app.matters.models import Matter
+    from app.matters.selectors import response_deadline_of
+    from app.workflow.models import NextAction
+
+    marko, _ = people
+    user = request.getfixturevalue(viewer)
+    today = timezone.localdate()
+
+    hidden_step = _owed_and_late(marko, "Salajane samm", days_late=4)
+    step = set_next_action(matter=hidden_step, text="Salajane samm", actor=marko)
+    NextAction.objects.filter(pk=step.pk).update(visibility_override=Visibility.RESTRICTED)
+
+    hidden_opinion = _owed_and_late(marko, "Salajane arvamus", days_late=4)
+    Matter.objects.filter(pk=hidden_opinion.pk).update(response_requested_at=None)
+    version = add_evidence_version(
+        document=factories.DocumentFactory(
+            matter=hidden_opinion, visibility_override=Visibility.RESTRICTED
+        ),
+        content=b"%PDF-1.4\nSalajane arvamus",
+        original_filename="salajane.pdf",
+        mime_type="application/pdf",
+    )
+    factories.SubmissionFactory(
+        matter=hidden_opinion,
+        status=SubmissionStatus.SENT,
+        sent_at=timezone.now(),
+        final_version=version,
+        visibility_override=Visibility.RESTRICTED,
+    )
+
+    closed = _owed_and_late(marko, "Suletud", days_late=4)
+    close_matter(matter=closed, disposition=Disposition.COMPLETED, actor=marko)
+
+    factories.MatterFactory(
+        owner=marko,
+        title="Tähtaeg täna",
+        response_deadline=today,
+        response_requested_at=timezone.now() - timedelta(days=10),
+    )
+
+    answer = readers.list_matters(user, is_open=None)
+    seen = {}
+    for row in answer["matters"]:
+        alone = response_deadline_of(Matter.objects.get(pk=row["id"].split(":")[1]), user, today)
+        assert row["opinion_deadline"]["is_overdue"] == alone.is_overdue, row["title"]
+        assert row["opinion_deadline"]["still_owed"] == alone.is_active, row["title"]
+        seen[row["title"]] = (
+            row["opinion_deadline"]["is_overdue"],
+            row["opinion_deadline"]["still_owed"],
+        )
+
+    assert set(seen) == {"Salajane samm", "Salajane arvamus", "Suletud", "Tähtaeg täna"}
+    assert seen["Suletud"] == (False, False)
+    assert seen["Tähtaeg täna"] == (False, True)
 
 
 def test_an_administrator_without_a_business_role_reads_nothing(administrator):

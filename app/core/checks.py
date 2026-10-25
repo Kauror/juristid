@@ -348,8 +348,38 @@ def _client_address_problems(mode: str) -> list[Error | Warning]:
     everybody out. On real data that is refused rather than warned about, so
     release step 6 (`run --rm web … migration_plan`) stops on it before the
     backup and the swap. Elsewhere `juristid.E014` still warns.
+
+    Real data in the one other mode it may sit behind, `cloudflare_access`, has
+    no password throttle to share but needs the same flag for everything else
+    it does: `juristid.E022`. Without it Django believes every request arrived
+    in clear — no `Strict-Transport-Security` header, `request.is_secure()`
+    False, CSRF without its referer check — and every audit row records the
+    tunnel's address. Both real-data templates set
+    `DJANGO_SECURE_SSL_REDIRECT=0`, so no redirect loop would make the missing
+    flag visible, and the README's switch to Cloudflare Access is "set AUTH_MODE
+    and restart".
     """
+    from app.accounts.enums import AuthMode
+
     if not _throttle_needs_the_client_address(mode):
+        if (
+            mode == AuthMode.CLOUDFLARE_ACCESS
+            and settings.REAL_DATA_ALLOWED
+            and not settings.DEBUG
+            and not getattr(settings, "SECURE_PROXY_SSL_HEADER", None)
+        ):
+            return [
+                Error(
+                    "Real data is served and nothing tells Django the connection is secure.",
+                    hint=(
+                        "Set DJANGO_BEHIND_TLS_PROXY=1 (the tunnel is the only way in). "
+                        "Without it no HSTS header is sent, request.is_secure() is False, "
+                        "CSRF skips its referer check, and audit rows record the tunnel's "
+                        "address instead of the client's (app/core/client_ip.py)."
+                    ),
+                    id="juristid.E022",
+                )
+            ]
         return []
     if getattr(settings, "TRUST_CF_CONNECTING_IP", False):
         return []

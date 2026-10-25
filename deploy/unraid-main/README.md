@@ -67,7 +67,8 @@ session cookie that is not `Secure` (E013), a gate idle limit outside 300
 seconds–the absolute limit (E021), and — on real data — a template
 `replace-me…` value left in any secret (E016), a `DJANGO_SECRET_KEY` under 50
 characters (E017), a gate password under 16 (E018), a `POSTGRES_PASSWORD`
-under 16 (E019), a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020) and a missing or
+under 16 (E019), a missing `DJANGO_BEHIND_TLS_PROXY=1` (E020 behind a password,
+E022 behind Cloudflare Access) and a missing or
 short `LOCAL_AUTH_MFA_ENCRYPTION_KEY` (E048).
 
 **`LOCAL_AUTH_MFA_ENCRYPTION_KEY` is required here** (docs/adr/0186 §7). The
@@ -1524,13 +1525,6 @@ stopped. To look yourself:
 docker ps -a --filter label=com.docker.compose.project=juristid-main --filter 'name=^juristid-main-mcp$' --format '{{.Names}} {{.Image}} {{.Status}}'
 ```
 
-If `juristid-main-mcp` is listed as running, replace it as well — in the same
-shell, so it resolves the same exported tag:
-
-```bash
-docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp
-```
-
 If it is not listed, or listed as `Exited`, **do not run it**: naming a profiled
 service starts it, and AI access that somebody stopped stays stopped until
 somebody decides otherwise ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md)).
@@ -1538,6 +1532,36 @@ somebody decides otherwise ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS
 like `tunnel`, and a release has no reason to move it. The first release that
 carries AI access has its own steps in
 [`docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md`](../../docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md).
+
+If `juristid-main-mcp` is listed as running, replace it as well — in the same
+shell, so it resolves the same exported tag:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps mcp
+```
+
+Then prove the tunnel client can still find it. Docker answers DNS per network,
+and `mcp-tunnel` resolves `mcp` on `mcp_edge` alone; `compose.yml` gives `mcp`
+that alias explicitly, but check it after every recreate:
+
+```bash
+docker exec juristid-main-mcp-tunnel nslookup mcp
+```
+
+It must print an address; NXDOMAIN means `mcp` lacks the alias on `mcp_edge`
+(recreate it from the current `compose.yml`). Then the tunnel client's
+`/readyz` — the readiness command under *Health* in
+[`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md) — must say `ready`.
+If it does not, restart the tunnel client — it probes `mcp` only at its
+own start-up and, on failure, logs `startup catalog failed; control-plane
+polling disabled` and never retries (2026-10-25):
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml restart mcp-tunnel
+```
+
+[`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md), *After recreating
+`mcp`*, has the detail.
 
 **The MCP write gateway follows the same rule** (docs/adr/0189). `mcp-writer`
 runs the release image behind the `mcp` profile; the preflight reads

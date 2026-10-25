@@ -187,3 +187,20 @@ unchanged.
 - Tests that asserted the old internal secrecy (READER or a gate visitor
   refused RESTRICTED work; restricted children hidden from a reader) assert the
   new policy; every test of the external perimeter stays.
+
+## Consistency note 2026-10-25
+
+Re-checked against `app/core/authorization.py` at main `c32608155e05`: the
+policy above is what the code does. `may_read_business_content` answers yes
+for an acting role in `ROLES_WITH_BUSINESS_READ` (SPECIALIST, DEPARTMENT_HEAD,
+READER) or an active break-glass grant, and no for every other case through
+`acting_role`; READER is still outside `ROLES_WITH_BUSINESS_WRITE`.
+
+One reading of §1's table needs a qualifier: a READER is never *offered* as a
+persona behind the shared gate — the persona list is SPECIALIST and
+DEPARTMENT_HEAD only (`PERSONA_ROLES`, `app/accounts/selectors.py`). Behind the
+gate a READER account reads through its own individually verified MCP grant
+(ADR 0185 as revised 2026-10-23), or in a mode that authenticates the person.
+Technical administration still grants no business read: the verified
+administrator session of ADR 0186 changes neither `request.user` nor the
+persona, so it opens Haldus and nothing of the business.

@@ -251,3 +251,61 @@ record, file name, person, setting value or secret, and it runs nothing.
   the transaction that sets the password.
 - The two real administrators must enrol themselves; nothing here creates an
   account, sets a password or enrols a factor.
+
+## Status update 2026-10-25 — one administrator, by owner decision
+
+This section records an operational choice made after the decision above was
+deployed. It does not amend the Decision sections: the rule, the guard and every safeguard stay
+exactly as written, and the decision's status is unchanged.
+
+**What production runs (verified 25.10.2026, read-only).** Main `c32608155e05`
+under `AUTH_MODE=shared_gate`. Exactly **one** usable full administrator exists
+(§3's definition). That is a deliberate owner decision, not an unfinished
+bootstrap: the owner, who is also the person administering the server and its
+infrastructure, has chosen not to appoint a second administrator for now.
+Separately, one non-administrator account still holds a leftover stored
+`accounts.manage` override, with no personal password and no factor; it is not
+usable (stored flags alone never count, §3) and what happens to it is pending an
+owner decision. It still matters: `bootstrap_first_administrator` refuses while
+any other account holds a stored `accounts.manage` override, so as long as it
+stays, the host cannot appoint a new first administrator if the current one is
+lost or switched off.
+
+**What does not change.**
+
+- `MINIMUM_FULL_ADMINISTRATORS = 2` (`app/accounts/administration.py`) is not
+  lowered and no exception is configured. `continuity_status()` keeps reporting
+  the setup-phase notice on Haldus → Ülevaade and Süsteemi seis («Seadistusjärk:
+  määra teine täishaldur …»); the notice is accurate and is meant to stay
+  visible until a second administrator exists.
+- The `CONTINUITY` guard keeps applying: in the setup phase only changes that do
+  not reduce the usable or standing count pass, so the one administrator cannot
+  be removed, demoted or switched off through Haldus, and the final-delegator
+  guard stays the floor.
+- The step-up (personal password and mandatory TOTP), the `VerifiedActor` lock,
+  the session limits, throttles and audit are unchanged. Nothing was weakened to
+  make one administrator workable.
+
+**What it means for recovery.** §3 relies on a second administrator for the
+lost-phone case («Lähtesta teine tegur» by somebody else), and an administrator
+cannot change themselves. With one, every recovery of the administrator is
+**host-only**:
+
+| The administrator lost | First | Then, on the host |
+| --- | --- | --- |
+| their phone / authenticator | a stored recovery code at `/haldus/sisene/` | `manage.py reset_second_factor --email … --note …`; they re-enrol at the next step-up (the §Consequences enrolment window applies — reset only when they are ready to enrol at once) |
+| their password | — | `manage.py issue_administrator_link --email … --confirm-email … --note …` prints a one-time reset link to an interactive terminal |
+| the account must be stopped | — | `manage.py emergency_disable_account --email … --confirm-email … --reason …` (§4). Appointing a first administrator again with `bootstrap_account_admin` is **refused** (`BOOTSTRAP_ALREADY_DONE`) while any other account still holds a stored `accounts.manage` override, which the leftover non-administrator account does; that override has to be resolved first |
+
+Every one of those needs shell access to the host, which is held by the same
+person. Losing that person's access to both the application factor and the host
+therefore leaves no administrator path at all: a **single point of failure,
+accepted by the owner** for this period. Business reading and writing are not
+affected by it — they never depended on an administrator (ADR 0181).
+
+**What would end this state:** a second usable full administrator appointed on
+Haldus → Kasutajad and enrolled (§5), after which the setup-phase notice
+disappears on its own. The Secure Pilot Gate's «second break-glass administrator
+and continuity path» (`docs/secure-pilot-gate.md`) and the open decision
+«Support/absence cover and second administrator» (`docs/open-decisions.md`) stay
+open; this section records the accepted risk, not their sign-off.
