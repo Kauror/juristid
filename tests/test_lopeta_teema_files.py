@@ -619,3 +619,75 @@ def test_the_closing_row_names_who_closed_the_file(signed_in, specialist, eviden
     page = _page(signed_in, matter)
     history = page[page.index('id="ajalugu-loend"') :]
     assert f'title="{specialist.display_name}' in history
+
+
+# ---------------------------------------------------------------------------
+# What a closing's operation never takes: files some record owns
+# ---------------------------------------------------------------------------
+
+
+def test_a_notes_file_in_a_closing_save_stays_on_the_note(specialist, evidence_root):
+    """«✓ Tehtud» with a file and «Jõustunud»: the note, its file and the
+    closure are one operation, and the file is the note's (`_owned_versions`)."""
+    from app.matters.timeline import TIMELINE_FILTER_ENTRIES
+    from app.matters.workspace import complete_current_action
+
+    matter = _matter(specialist)
+    step = set_next_action(matter=matter, text="Viimane samm", actor=specialist)
+    complete_current_action(
+        matter=matter,
+        author=specialist,
+        action_id=step.pk,
+        body="Seadus jõustus.",
+        uploads=[_pdf("teade.pdf")],
+        stage=_stage("in_force"),
+    )
+    matter.refresh_from_db()
+    assert not matter.is_open
+
+    (row,) = _closing_rows(matter, specialist)
+    assert row.files == ()
+    items, _more = matter_timeline(matter=matter, user=specialist, limit=200)
+    holders = [item for item in items if any(f.label == "teade.pdf" for f in item.files)]
+    assert len(holders) == 1 and holders[0].entry is not None
+    entries, _more = matter_timeline(
+        matter=matter, user=specialist, limit=200, only=TIMELINE_FILTER_ENTRIES
+    )
+    assert [f.label for item in entries for f in item.files] == ["teade.pdf"]
+
+
+def test_an_opinions_sent_files_in_a_closing_save_are_not_closure_evidence(
+    specialist, organisation, evidence_root
+):
+    """`+ Koja arvamus` with two sent files and «Jõustunud»: both files are the
+    opinion's (`final_version`, `SubmissionSentFile`), never the closure's."""
+    from django.utils import timezone
+
+    from app.matters.workspace import add_matter_koda_opinion
+    from app.workflow.follow_ups import FollowUpClosureUnconfirmed
+
+    matter = _matter(specialist)
+
+    def send(confirmed: str = "") -> None:
+        add_matter_koda_opinion(
+            matter=Matter.objects.get(pk=matter.pk),
+            author=specialist,
+            uploads=[_pdf("arvamus.pdf", b"a"), _pdf("Selgitus.pdf", b"s")],
+            recipients=[organisation],
+            sent_on=timezone.localdate(),
+            stage=_stage("in_force"),
+            follow_ups_confirmed=confirmed,
+        )
+
+    # The opinion plans its follow-up check, which the closing asks about once.
+    with pytest.raises(FollowUpClosureUnconfirmed) as asked:
+        send()
+    send(asked.value.digest)
+    matter.refresh_from_db()
+    assert not matter.is_open
+
+    (row,) = _closing_rows(matter, specialist)
+    assert row.files == ()
+    labels = _all_file_labels(matter, specialist)
+    assert labels.count("Selgitus.pdf") == 1
+    assert labels.count("arvamus.pdf") == 1

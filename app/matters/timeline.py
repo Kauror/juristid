@@ -2384,9 +2384,9 @@ def matter_timeline(
     # second line, and a second dot, for one act (brief §25). Asked of the whole
     # Matter, because it decides whether an event is a row at all.
     shown_on_their_record = _versions_shown_on_their_record(matter, user=user, day=day)
-    # Files that read on a note's row, which a closing's operation never takes
-    # from it (`CLOSURE_FILES`).
-    entry_linked_versions = frozenset(_entry_linked_versions(matter))
+    # Files some record owns, which a closing's operation never takes from it
+    # (`CLOSURE_FILES`).
+    owned_versions = frozenset(_owned_versions(matter))
     # Files an import brought, read as one row per import rather than one
     # «lisas dokumendi» per file (`HISTORICAL_IMPORT_ITEM`).
     imported_versions = imported_document_versions(matter, user)
@@ -2410,7 +2410,7 @@ def matter_timeline(
         only=only,
         imported_versions=frozenset(imported_versions),
         imported_anchors=imported_row_anchors(imported_versions),
-        entry_linked_versions=entry_linked_versions,
+        owned_versions=owned_versions,
     )
     batch = window
     while True:
@@ -2424,7 +2424,7 @@ def matter_timeline(
             open_action_pk=open_action_pk,
             only=only,
             imported_versions=imported_versions,
-            entry_linked_versions=entry_linked_versions,
+            owned_versions=owned_versions,
         )
         if bound is not None:
             items = [item for item in items if item.occurred_at >= bound]
@@ -2487,8 +2487,8 @@ class _ChronologySources:
     #: The import's own events are not anchors: their moment is the import's,
     #: and a row dated 2021 must not be bounded as if it happened today.
     imported_anchors: tuple[datetime, ...] = ()
-    #: Versions whose document is linked to a note (`_entry_linked_versions`).
-    entry_linked_versions: frozenset[Any] = frozenset()
+    #: Versions some record owns (`_owned_versions`).
+    owned_versions: frozenset[Any] = frozenset()
     anchor_q: models.Q = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2514,15 +2514,19 @@ class _ChronologySources:
         # A closure's own files read on its row (`CLOSURE_FILES`), exactly as
         # `_assemble_timeline` folds them: in a closing's operation, linked to
         # no note.
-        closure_files = models.Q(
-            event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
-            operation_id__in=self.event_scope.filter(event_type=ChangeEventType.MATTER_CLOSED)
+        closing_operations = list(
+            self.event_scope.filter(event_type=ChangeEventType.MATTER_CLOSED)
             .exclude(operation_id=None)
-            .values("operation_id"),
+            .values_list("operation_id", flat=True)
         )
-        if self.entry_linked_versions:
-            closure_files &= ~models.Q(object_id__in=self.entry_linked_versions)
-        anchor &= ~closure_files
+        if closing_operations:
+            closure_files = models.Q(
+                event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
+                operation_id__in=closing_operations,
+            )
+            if self.owned_versions:
+                closure_files &= ~models.Q(object_id__in=self.owned_versions)
+            anchor &= ~closure_files
         if self.only != TIMELINE_FILTER_ENTRIES:
             folded = self._folded_effects()
             if folded is not None:
@@ -2807,7 +2811,7 @@ def _assemble_timeline(
     open_action_pk: Any,
     only: str,
     imported_versions: dict[Any, ImportedVersion] | None = None,
-    entry_linked_versions: Any = None,
+    owned_versions: Any = None,
 ) -> list[TimelineItem]:
     """The chronology rows these sources make, in the one order.
 
@@ -2938,10 +2942,9 @@ def _assemble_timeline(
     renderable = [event for event in renderable if event.event_type not in MILESTONE_EVENT_TYPES]
 
     # **A closure's own files read under it** (`CLOSURE_FILES`): every file of
-    # the closing's operation that is linked to no record. A file linked to a
-    # note keeps its place on the note's row, as it always has; a file linked
-    # to any other record was already taken off the stream above
-    # (`shown_on_their_record`). Decided by what is stored — the operation and
+    # the closing's operation that no record owns (`_owned_versions`). A note's
+    # file keeps its place on the note's row and an opinion's sent file on the
+    # opinion's, as they always have. Decided by what is stored — the operation and
     # the link — and never by which other events this reader may see.
     closing_operations = {
         event.operation_id
@@ -2955,7 +2958,7 @@ def _assemble_timeline(
             if (
                 event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
                 and event.operation_id in closing_operations
-                and event.object_id not in (entry_linked_versions or ())
+                and event.object_id not in (owned_versions or ())
             ):
                 closure_files.setdefault(event.operation_id, []).append(event)
                 continue
@@ -3344,22 +3347,44 @@ def _step_is_the_activity(record: Any, action: Any) -> bool:
     )
 
 
-def _entry_linked_versions(matter: Matter) -> set[Any]:
-    """Versions whose document is linked to a note (`Entry`) on this Matter.
+def _owned_versions(matter: Matter) -> set[Any]:
+    """Versions some record owns: linked to any record, or an opinion's sent file.
 
-    What a closing's operation never takes onto its «Teema suletud» row
-    (`CLOSURE_FILES`): a note's file reads on the note. Unscoped, like
-    `_versions_shown_on_their_record`, because it decides *where* a file
-    reads and never *whether* — and because it must not change with what the
-    reader may see. One query.
+    The complement is what a closing's operation may take onto its «Teema
+    suletud» row (`CLOSURE_FILES`): a closure's files are the only versions
+    written in a closing's operation that no record owns. A note's file reads
+    on the note; a `Koja arvamus`'s letter (`final_version`) and its further
+    sent files (`SubmissionSentFile`, docs/adr/0144 §5) belong to the opinion,
+    whatever stage the same save chose. Unscoped, like
+    `_versions_shown_on_their_record`: it decides *where* a file reads and
+    never *whether*, and it must not change with what the reader may see.
+    One query.
     """
     from app.documents.links import DocumentLink
     from app.documents.models import DocumentVersion
+    from app.submissions.models import SubmissionSentFile
 
-    linked = DocumentLink.objects.filter(document__matter=matter, entry__isnull=False).values(
-        "document_id"
+    return set(
+        DocumentVersion.objects.filter(document__matter=matter)
+        .filter(
+            models.Q(
+                document_id__in=DocumentLink.objects.filter(document__matter=matter).values(
+                    "document_id"
+                )
+            )
+            | models.Q(
+                pk__in=Submission.objects.filter(matter=matter, final_version__isnull=False).values(
+                    "final_version_id"
+                )
+            )
+            | models.Q(
+                pk__in=SubmissionSentFile.objects.filter(submission__matter=matter).values(
+                    "version_id"
+                )
+            )
+        )
+        .values_list("id", flat=True)
     )
-    return set(DocumentVersion.objects.filter(document_id__in=linked).values_list("id", flat=True))
 
 
 def _versions_shown_on_their_record(matter: Matter, *, user: Any, day: date) -> set[Any]:
