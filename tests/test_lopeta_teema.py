@@ -56,7 +56,7 @@ from app.workflow.follow_ups import (
     FOLLOW_UP_CLOSURE_WARNING,
     FollowUpClosureUnconfirmed,
 )
-from app.workflow.models import NextAction, StageVocabulary
+from app.workflow.models import NextAction, OpinionFollowUp, StageVocabulary
 from app.workflow.services import set_next_action
 from tests import factories
 from tests.follow_ups import day, follow_up_of, send_koja_arvamus
@@ -168,6 +168,7 @@ def test_a_file_with_no_opinion_and_no_action_closes_with_one_press(signed_in, s
     stage_before = matter.stage_id
     episodes_before = MatterStageEpisode.objects.filter(matter=matter).count()
     entries_before = Entry.objects.filter(matter=matter).count()
+    follow_ups_before = OpinionFollowUp.objects.count()
     before = timezone.now()
 
     response = _close(signed_in, matter)
@@ -192,6 +193,7 @@ def test_a_file_with_no_opinion_and_no_action_closes_with_one_press(signed_in, s
     assert not Submission.objects.filter(matter=matter).exists()
     assert not MatterWorkVictory.objects.filter(matter=matter).exists()
     assert not NextAction.objects.filter(matter=matter).exists()
+    assert OpinionFollowUp.objects.count() == follow_ups_before
     event = ChangeEvent.objects.get(matter=matter, event_type=ChangeEventType.MATTER_CLOSED)
     assert event.actor == specialist
     assert event.payload["disposition"] == Disposition.MONITORING_STOPPED
@@ -398,6 +400,7 @@ def test_opinion_counts_and_the_deadline_history_are_untouched(signed_in, specia
         MatterResponseDeadline.objects.filter(matter=matter).values_list("pk", "outcome")
     )
     current_deadline = matter.response_deadline
+    follow_ups_before = OpinionFollowUp.objects.count()
 
     digest = _close(signed_in, matter)[CLOSURE_DIGEST_HEADER]
     _close(signed_in, matter, confirm_follow_up_closure=digest)
@@ -409,6 +412,8 @@ def test_opinion_counts_and_the_deadline_history_are_untouched(signed_in, specia
         submissions_before
     )
     assert submission.status == SubmissionStatus.SENT
+    # The closure ended the opinion's check; it did not file another one.
+    assert OpinionFollowUp.objects.count() == follow_ups_before
     # Closing answered nothing: the current deadline is not ended as answered.
     assert matter.response_deadline == current_deadline
     assert (
@@ -518,6 +523,16 @@ def test_a_matter_outside_the_visible_set_is_answered_404(client, signed_in, spe
     assert _close(client, matter).status_code == 404
     unknown = Matter(pk=uuid.uuid4())
     assert _close(signed_in, unknown).status_code == 404
+    matter.refresh_from_db()
+    assert matter.is_open and _closures(matter) == 0
+
+
+def test_a_writers_get_on_the_close_url_is_405_and_nothing_closes(signed_in, specialist):
+    matter = _matter(specialist)
+
+    response = signed_in.get(reverse("matters:close_from_workspace", kwargs={"pk": matter.pk}))
+
+    assert response.status_code == 405
     matter.refresh_from_db()
     assert matter.is_open and _closures(matter) == 0
 

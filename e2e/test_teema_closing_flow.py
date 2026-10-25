@@ -62,6 +62,7 @@ def test_the_stage_still_says_what_ends_the_file(page, base_url):
     create_matter(page, base_url, "Lõpetamise brauserikatse: valikud", stage="Riigikogus")
 
     # Beside the direct `Lõpeta teema`, closed until chosen.
+    expect(page.locator("#teema-lopeta")).to_have_count(1)
     expect(page.locator("#teema-lopeta")).to_be_hidden()
     expect(page.get_by_text("+ Lõpeta teema", exact=True)).to_have_count(0)
     # `✓ Tehtud`'s `Uus hetkeseis` — the one `Uus hetkeseis` on the page since
