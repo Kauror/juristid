@@ -255,7 +255,7 @@ record, file name, person, setting value or secret, and it runs nothing.
 ## Status update 2026-10-25 — one administrator, by owner decision
 
 This section records an operational choice made after the decision above was
-deployed. It does not amend §1–§8: the rule, the guard and every safeguard stay
+deployed. It does not amend the Decision sections: the rule, the guard and every safeguard stay
 exactly as written, and the decision's status is unchanged.
 
 **What production runs (verified 25.10.2026, read-only).** Main `c32608155e05`
@@ -266,7 +266,10 @@ infrastructure, has chosen not to appoint a second administrator for now.
 Separately, one non-administrator account still holds a leftover stored
 `accounts.manage` override, with no personal password and no factor; it is not
 usable (stored flags alone never count, §3) and what happens to it is pending an
-owner decision.
+owner decision. It still matters: `bootstrap_first_administrator` refuses while
+any other account holds a stored `accounts.manage` override, so as long as it
+stays, the host cannot appoint a new first administrator if the current one is
+lost or switched off.
 
 **What does not change.**
 
@@ -292,7 +295,7 @@ cannot change themselves. With one, every recovery of the administrator is
 | --- | --- | --- |
 | their phone / authenticator | a stored recovery code at `/haldus/sisene/` | `manage.py reset_second_factor --email … --note …`; they re-enrol at the next step-up (the §Consequences enrolment window applies — reset only when they are ready to enrol at once) |
 | their password | — | `manage.py issue_administrator_link --email … --confirm-email … --note …` prints a one-time reset link to an interactive terminal |
-| the account must be stopped | — | `manage.py emergency_disable_account --email … --confirm-email … --reason …` (§4); if nobody is left, `bootstrap_account_admin` appoints a first administrator again |
+| the account must be stopped | — | `manage.py emergency_disable_account --email … --confirm-email … --reason …` (§4). Appointing a first administrator again with `bootstrap_account_admin` is **refused** (`BOOTSTRAP_ALREADY_DONE`) while any other account still holds a stored `accounts.manage` override, which the leftover non-administrator account does; that override has to be resolved first |
 
 Every one of those needs shell access to the host, which is held by the same
 person. Losing that person's access to both the application factor and the host

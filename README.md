@@ -62,12 +62,13 @@ own e-mail address, personal password and authenticator code
 ([ADR 0186](docs/adr/0186-privileged-administrator-sessions-under-the-shared-gate.md));
 production has one usable full administrator by the owner's decision, so the
 two-administrator guard keeps showing its setup-phase notice. AI access from the
-Chamber's ChatGPT workspace is enabled for individually granted accounts and
-only reads ([ADR 0185](docs/adr/0185-a-read-only-mcp-server-for-ai-clients.md));
+Chamber's ChatGPT workspace: reading is enabled for individually granted
+accounts ([ADR 0185](docs/adr/0185-a-read-only-mcp-server-for-ai-clients.md));
 the write path is deployed and its gateway switched on, but no grant holds the
 write scope and no write has ever been made through it
 ([ADR 0189](docs/adr/0189-mcp-writes-are-prepared-approved-in-juristid-and-committed-by-a-separate-gateway.md)).
 Both as verified on 25.10.2026; the ADRs' dated status updates are the record.
+
 [`docs/production-readiness.md`](docs/production-readiness.md) is the gate
 sequence for anything that changes production.
 

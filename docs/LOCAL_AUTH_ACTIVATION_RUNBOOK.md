@@ -29,7 +29,9 @@ without the owner's explicit approval for the activation itself.
 > is still 2 and Haldus keeps showing the setup-phase notice. Until a second
 > administrator exists, §9's «reset by *another* delegating administrator» has
 > nobody to do it: that administrator's lost factor or password is recovered on
-> the host only (`reset_second_factor`, `issue_administrator_link`).
+> the host only (`reset_second_factor`, `issue_administrator_link`,
+> `emergency_disable_account`; the table in ADR 0186's status update, including
+> why re-bootstrap is refused while a leftover `accounts.manage` override exists).
 
 | | state |
 | --- | --- |
