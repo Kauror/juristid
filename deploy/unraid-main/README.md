@@ -1524,6 +1524,14 @@ stopped. To look yourself:
 docker ps -a --filter label=com.docker.compose.project=juristid-main --filter 'name=^juristid-main-mcp$' --format '{{.Names}} {{.Image}} {{.Status}}'
 ```
 
+If it is not listed, or listed as `Exited`, **do not run it**: naming a profiled
+service starts it, and AI access that somebody stopped stays stopped until
+somebody decides otherwise ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md)).
+`mcp-tunnel` is never part of a code release: it runs a pinned upstream image,
+like `tunnel`, and a release has no reason to move it. The first release that
+carries AI access has its own steps in
+[`docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md`](../../docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md).
+
 If `juristid-main-mcp` is listed as running, replace it as well — in the same
 shell, so it resolves the same exported tag:
 
@@ -1553,14 +1561,6 @@ docker compose -p juristid-main -f deploy/unraid-main/compose.yml restart mcp-tu
 
 [`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md), *After recreating
 `mcp`*, has the detail.
-
-If it is not listed, or listed as `Exited`, **do not run it**: naming a profiled
-service starts it, and AI access that somebody stopped stays stopped until
-somebody decides otherwise ([`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md)).
-`mcp-tunnel` is never part of a code release: it runs a pinned upstream image,
-like `tunnel`, and a release has no reason to move it. The first release that
-carries AI access has its own steps in
-[`docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md`](../../docs/mcp/RELEASE-NOTES-FOR-OPERATORS.md).
 
 **The MCP write gateway follows the same rule** (docs/adr/0189). `mcp-writer`
 runs the release image behind the `mcp` profile; the preflight reads

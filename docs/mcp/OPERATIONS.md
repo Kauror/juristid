@@ -509,7 +509,13 @@ network**: `mcp` must carry the alias `mcp` on `mcp_edge`, the one network the
 tunnel client is on. `compose.yml` names that alias explicitly
 (`networks: mcp_edge: aliases: [mcp]`), so a recreate from the current file
 attaches it. Check it anyway, every time `mcp` is recreated — a release, an
-environment-file change, a host-side `docker network` change:
+environment-file change, a host-side `docker network` change — and after the
+host or its Docker daemon restarts (on 2026-10-25 the host also rebooted
+between the recreate and the moment the missing alias was seen, and which of
+the two dropped it was not established). CI recreates `mcp` and restarts the
+daemon on every run and asks the same question
+(`scripts/check-mcp-edge-alias.sh`), but on the runner's Docker, not this
+host's:
 
 ```bash
 docker exec juristid-main-mcp-tunnel nslookup mcp
