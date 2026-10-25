@@ -84,6 +84,7 @@ from app.workflow.dates import (
 )
 from app.workflow.enums import (
     CLOSURE_REASON_LABELS,
+    DIRECT_CLOSURE_DISPOSITIONS,
     ActionKind,
     DatePrecision,
     DateSemantics,
@@ -2907,22 +2908,9 @@ def kept_precision_choice(value: date | None, precision: str) -> tuple[str, str]
 #: ready for the dedicated "work continues under another Matter" operation that
 #: would ask the question properly (Teema closing redesign §3).
 CLOSURE_CHOICES: tuple[tuple[str, str], ...] = tuple(
+    # The list and why each absent reason is absent: `DIRECT_CLOSURE_DISPOSITIONS`.
     (value, CLOSURE_REASON_LABELS[value])
-    for value in (
-        # **«Koda ei tegele edasi» first, and chosen** (docs/adr/0131, amendment
-        # of 2026-10-25): the ordinary file ends because Koda is done with it,
-        # and finishing one should take one press, not a classification.
-        Disposition.MONITORING_STOPPED.value,
-        Disposition.INITIATIVE_WITHDRAWN.value,
-        Disposition.NO_POSITION_FORMED.value,
-        Disposition.RESPONSE_COMPLETE.value,
-        # **`COMPLETED` is not offered** (docs/adr/0131, release review of
-        # 2026-10-25): «Jõustus või töö lõppes» joined two different facts — a
-        # law in force, which is a `Hetkeseis`, and Koda's work being done,
-        # which is «Koda ei tegele edasi». The disposition, its label and every
-        # stored closure are untouched; «Jõustunud» still closes with it (§10).
-        Disposition.OTHER.value,
-    )
+    for value in DIRECT_CLOSURE_DISPOSITIONS
 )
 
 
@@ -7454,14 +7442,18 @@ class CompactClosureForm(forms.Form):
       lawyer finishing a file would say (`CLOSURE_CHOICES`).
     * `Selgitus` — optional, plain text: what happened and why Koda is done.
       It is `Matter.disposition_reason`, and `Teema käik` reads it in full.
+    * `Lisa failid` — optional, any number: the evidence for *this* closure —
+      the ministry's letter saying the draft was dropped. Validated, stored
+      and tied to the closing act together with it (docs/adr/0131, closure
+      files amendment; `workspace.close_matter_from_workspace`).
     * `confirm_follow_up_closure` — drawn only after a refusal that names the
       live work this closure would end (docs/adr/0152).
 
-    **No date, participant, institution, attachment, stage or opinion field**,
-    and no `Märgi töövõiduks`: closing records that Koda stopped, never that an
+    **No date, participant, institution, stage or opinion field**, and no
+    `Märgi töövõiduks`: closing records that Koda stopped, never that an
     opinion went out, that a win was won or who caused what. A ministry's
-    withdrawal is the lawyer's sentence in `Selgitus`, not a claim this form
-    derives from the reason chosen.
+    withdrawal is the lawyer's sentence in `Selgitus` and the letter it sent,
+    not a claim this form derives from the reason chosen.
     """
 
     use_required_attribute = False
@@ -7494,6 +7486,7 @@ class CompactClosureForm(forms.Form):
             ),
         },
     )
+    attachments = workspace_attachments("id_lopeta_failid")
     #: `Sulge teema ja lõpeta pooleli töö`, drawn after a refused closure (docs/adr/0152).
     confirm_follow_up_closure = follow_up_closure_field()
 

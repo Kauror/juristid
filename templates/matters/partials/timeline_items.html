@@ -247,8 +247,9 @@ record, not professional chronology (master specification 16.5).
               </div>
             {% endif %}
           </div>
-          {% if item.milestone.sub %}
-            <span class="uxtl__mssub">{{ item.milestone.sub }}</span>
+          {% if item.milestone.sub or item.closed_by %}
+            <span class="uxtl__mssub">{{ item.milestone.sub }}{% if item.closed_by %}{% if item.milestone.sub %} · {% endif %}<span
+              title="{{ item.closed_by.display_name }}{% if item.actor_qualifier %} ({{ item.actor_qualifier }}){% endif %}">{{ item.closed_by|name_among:colleagues }}</span>{% endif %}</span>
           {% endif %}
           {% comment %}
             `Juristi märkus` — this office's own reading of what happened, on its

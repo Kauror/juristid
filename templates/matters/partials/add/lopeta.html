@@ -11,9 +11,13 @@
       end of the row by `disclosure-chip--last`.
 
       Two questions: `Põhjus`, chosen already as «Koda ei tegele edasi», and an
-      optional `Selgitus`. No date, participants, institution, file, stage or
-      opinion — meetings and discussions are recorded as they happened through
-      `Kohtumine / arutelu` or `+ Lisa · Muu` first, if at all.
+      optional `Selgitus` — and optional `Lisa failid`, the evidence for this
+      closing (the ministry's letter), stored with it and read under its
+      «Teema suletud» row (docs/adr/0131, closure files amendment). One drop
+      zone for every reason: the files belong to the closing, not to a reason.
+      No date, participants, institution, stage or opinion — meetings and
+      discussions are recorded as they happened through `Kohtumine / arutelu`
+      or `+ Lisa · Muu` first, if at all.
 
       A file with live work is refused once with the sentence naming what would
       end and the box confirming exactly that work
@@ -30,8 +34,10 @@
         {% endif %}
         <form class="addform" data-addform
               hx-post="{% url 'matters:close_from_workspace' pk=matter.pk %}"
-              hx-target="#teema-vaade" hx-swap="outerHTML">
+              hx-target="#teema-vaade" hx-swap="outerHTML"
+              hx-encoding="multipart/form-data">
           {% csrf_token %}
+          {% include "matters/partials/add/save_once.html" with token=save_once_tokens.closure_form %}
           <fieldset class="cx-fieldset"
                     {% if closure_form.disposition.errors %}aria-describedby="{{ closure_form.disposition.auto_id }}_error"{% endif %}>
             <legend class="cx-f__lab">{% field_label closure_form.disposition %}</legend>
@@ -56,6 +62,7 @@
           {% if closure_form.explanation.errors %}
             <p class="field__error" id="{{ closure_form.explanation.auto_id }}_error">{{ closure_form.explanation.errors|first }}</p>
           {% endif %}
+          {% include "matters/partials/add_files.html" with field=closure_form.attachments %}
           {% include "matters/partials/follow_up_closure_confirm.html" with form=closure_form %}
           <div class="addform__actions">
             <button class="button button--primary" type="submit">Lõpeta teema</button>
