@@ -2463,6 +2463,13 @@
       return;
     }
     event.preventDefault();
+    /* `Loobu` means the typing is dropped, not parked: the form goes back to
+       what the server rendered, so the box opens clean next time and the
+       «leave this page?» guard below has nothing left to ask about. */
+    var form = button.closest("form");
+    if (form && holder.contains(form)) {
+      form.reset();
+    }
     holder.open = false;
     var trigger = holder.querySelector("summary");
     if (trigger) {
