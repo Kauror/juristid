@@ -23,6 +23,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
+from app.documents.inline import file_link
 from app.documents.services import add_evidence_version, create_document
 from app.legacy_import.models import ImportBatch, ReconciliationStatus
 from app.legacy_import.source_pages import (
@@ -212,9 +213,8 @@ def test_one_file_reads_on_the_day_it_was_added_to_onenote(normal_matter, specia
     assert row.milestone.sub == f"1 fail · OneNote: {SECTION} → Näidisseaduse eelnõu"
     # Sorted at the moment the source names, not at the import.
     assert row.occurred_at == _utc(2021, 8, 30, 8, 48, 10)
-    assert [file.url for file in row.files] == [
-        reverse("documents:download", kwargs={"pk": version.pk})
-    ]
+    # The exact bytes, by the one open-or-download rule (app/documents/inline.py).
+    assert [file.url for file in row.files] == [file_link(version).href]
     # Never drawn as a person's upload.
     assert row.actor is None and row.is_system and not row.removable
 
@@ -228,9 +228,7 @@ def test_files_added_on_one_day_are_one_row_that_opens_onto_each(normal_matter, 
     assert row.imported_documents == 3
     assert row.occurred_at == min(SAME_DAY.values())
     assert sorted(file.label for file in row.files) == sorted(name for name, _ in FILES)
-    assert {file.url for file in row.files} == {
-        reverse("documents:download", kwargs={"pk": version.pk}) for version in versions
-    }
+    assert {file.url for file in row.files} == {file_link(version).href for version in versions}
     assert not [r for r in rows if r.summary_sentence == "lisas dokumendi"]
 
 

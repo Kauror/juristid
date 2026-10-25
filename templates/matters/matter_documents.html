@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load counts evidence_uploads form_labels %}
+{% load counts document_files evidence_uploads form_labels %}
 {% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -127,11 +127,29 @@ finds again (§23.5).
               {% csrf_token %}
               {% include "matters/partials/add/save_once.html" with token=document_save_once_tokens.dokument %}
               <div class="formgrid">
-                <label class="field">
-                  <span class="field__label">Fail</span>
-                  <input class="field__input" type="file" name="upload" required
-                         accept="{% upload_accept %}">
-                </label>
+                {% comment %}
+                  **One file, dropped or picked** (QoL round 2026-10-25). The
+                  dashed box every other file control on a Teema uses — a
+                  `<label>` over the input, so it is a picker with no script at
+                  all, and `static/js/ux.js` (`bindFileDrop`, the shared drop
+                  handler) adds dragging and the chosen file's name on top.
+
+                  Still a **single** file: no `multiple`, so a second drop
+                  replaces the first, and the `Roll` and `Pealkiri` beside it
+                  describe exactly one document. The queue under the box is
+                  held hidden: it would offer a ✎ title of its own beside the
+                  `Pealkiri` field this form already has.
+                {% endcomment %}
+                <div class="field">
+                  <span class="field__label" id="lae-dokument-fail">Fail{% required_mark %}</span>
+                  <label class="cx-drop" data-filedrop>
+                    <input type="file" name="upload" required
+                           aria-labelledby="lae-dokument-fail"
+                           accept="{% upload_accept %}">
+                    <span class="cx-drop__text" data-filedrop-text>Lohista fail siia või <span class="cx-drop__pick">vali arvutist</span></span>
+                  </label>
+                  <ul class="uploadqueue" data-upload-queue data-upload-queue-hidden hidden></ul>
+                </div>
                 <label class="field">
                   <span class="field__label">Roll</span>
                   {% comment %}
@@ -464,13 +482,25 @@ finds again (§23.5).
                         {% else %}<span class="muted">—</span>{% endif %}
                         <span class="doctable__actions">
                           {% if document.current_version %}
-                            {# Named after its file (ENG-098): twelve links called «Ava» tell a screen reader nothing. #}
-                            <a class="button button--secondary button--tiny"
-                               href="{% url 'documents:open' pk=document.current_version.pk %}"
-                               aria-label="Ava {{ document.title }}">Ava</a>
-                            <a class="quietlink"
-                               href="{% url 'documents:download' pk=document.current_version.pk %}"
-                               title="Tõmba alla" aria-label="Tõmba alla {{ document.title }}">↓</a>
+                            {% comment %}
+                              Named after its file (ENG-098): twelve links
+                              called «Ava» tell a screen reader nothing.
+
+                              `Ava` does what the file allows (QoL round
+                              2026-10-25, `app/documents/inline.py`): a PDF,
+                              an image or plain text opens in a new tab, so the
+                              list stays where it was; anything else is saved
+                              straight from the download route, as `Ava` on a
+                              Word file always ended up doing.
+                            {% endcomment %}
+                            {% with file=document.current_version|file_link %}
+                              <a class="button button--secondary button--tiny"
+                                 href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}
+                                 aria-label="Ava {{ document.title }}{% if file.opens_inline %} — avaneb uues aknas{% endif %}">Ava</a>
+                              <a class="quietlink"
+                                 href="{{ file.download_url }}"
+                                 title="Tõmba alla" aria-label="Tõmba alla {{ document.title }}">↓</a>
+                            {% endwith %}
                           {% endif %}
                           {% if document.is_opinion %}
                             {% include "matters/partials/opinion_manage.html" with document=document %}
@@ -499,6 +529,21 @@ finds again (§23.5).
                               <summary class="opinionmenu__trigger" title="Muuda" aria-label="Muuda {{ document.title }}">⋯</summary>
                               <div class="opinionmenu__body" data-uxfloat="fit">
                                 {% include "matters/partials/document_rename_form.html" with document=document %}
+                                {% if document.current_version %}
+                                  {% comment %}
+                                    The address of this exact version, through
+                                    the route `Ava` links to — nothing public,
+                                    nothing a colleague could open without the
+                                    access they would need anyway
+                                    (static/js/ux.js `bindCopyLink`).
+                                  {% endcomment %}
+                                  {% with file=document.current_version|file_link %}
+                                    <button class="opinionmenu__item" type="button"
+                                            data-copy-href="{{ file.href }}"
+                                            data-label-done="Kopeeritud"
+                                            aria-label="Kopeeri link: {{ document.title }}">Kopeeri link</button>
+                                  {% endwith %}
+                                {% endif %}
                                 <a class="opinionmenu__item" href="{% url 'documents:document_detail' pk=document.pk %}">Dokumendi leht</a>
                               </div>
                             </details>

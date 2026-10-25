@@ -691,3 +691,32 @@ def test_an_opinions_sent_files_in_a_closing_save_are_not_closure_evidence(
     labels = _all_file_labels(matter, specialist)
     assert labels.count("Selgitus.pdf") == 1
     assert labels.count("arvamus.pdf") == 1
+
+
+def test_a_closing_pdf_opens_in_a_new_tab_from_its_row(signed_in, specialist, evidence_root):
+    """The closure's files go through `ChronologyFile.of_version` like every other.
+
+    So a PDF under «Teema suletud» opens on the inline route in a new tab and
+    says so to a screen reader, exactly as a file under any other row does
+    (app/documents/inline.py `file_link`, PR #545).
+    """
+    import re
+
+    matter = _matter(specialist)
+    assert _close(signed_in, matter, files=[_pdf("sulgemise_kiri.pdf")]).status_code == 200
+    version = DocumentVersion.objects.get(document__matter=matter)
+    open_url = reverse("documents:open", kwargs={"pk": version.pk})
+
+    (row,) = _closing_rows(matter, specialist)
+    (file,) = row.files
+    assert file.opens_inline and file.url == open_url
+    assert file.download_url == reverse("documents:download", kwargs={"pk": version.pk})
+
+    page = _page(signed_in, matter)
+    history = page[page.index('id="ajalugu-loend"') :]
+    closing = history[history.index("Teema suletud") :]
+    anchor = re.search(r'<a class="uxtl__file"([^>]*)>sulgemise_kiri\.pdf(.*?)</a>', closing, re.S)
+    assert anchor, "the closing's file is not a link on its row"
+    assert f'href="{open_url}"' in anchor.group(1)
+    assert 'target="_blank" rel="noopener noreferrer"' in anchor.group(1)
+    assert "avaneb uues aknas" in anchor.group(2)
