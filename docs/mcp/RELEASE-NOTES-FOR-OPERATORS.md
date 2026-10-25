@@ -7,6 +7,16 @@ different about the one release that first carries `app.mcp_server`,
 `app.mcp_access` and the two new Compose services. Every later release is the
 ordinary procedure, with step 9's conditional `mcp` line.
 
+> **Where production stands (verified 25.10.2026).** Both releases this file
+> describes are deployed and both enablements have been done: reading is on and
+> proven end to end for one granted READER account (ADR 0185, status update
+> 2026-10-25); `mcp-writer` runs with `MCP_WRITES_ENABLED=1` on `web`, `mcp` and
+> `mcp-writer`. **No grant holds `juristid.write`** and no write has been
+> prepared, approved or committed — code deployed and gateway activated are not
+> the same as a write scope granted or a write made (ADR 0189, status update
+> 2026-10-25). The sections below stay the record of what each release had to
+> leave untouched.
+
 ## Two decisions, two sessions
 
 **Shipping the code** and **switching AI access on** are separate, and each
