@@ -1274,7 +1274,8 @@
 
   /* ---- Minu töö: J/K move, X completes, Enter opens ----------------------
    * The visible equivalents are all on the row already: the ✓ button, the ⋯
-   * menu and the row's own link. The hint strip under the list says so.
+   * menu and the row's own link. The keys are listed on /kiirklahvid/
+   * (app/core/keyboard_shortcuts.py), not on the list itself.
    */
   function workRows() {
     return Array.prototype.slice.call(document.querySelectorAll("[data-workrow]"));
