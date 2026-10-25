@@ -1,4 +1,5 @@
 {% extends "submissions/base.html" %}
+{% load document_files %}
 {% block title %}Arvamused · Saadetud · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -207,8 +208,14 @@
                     link to evidence — and a document id in that slot resolved
                     to nothing, so this column's only control 404'd on every
                     row it rendered (app/documents/urls.py).
+
+                    `file_link` decides where `Ava` goes: a PDF opens in a new
+                    tab, a Word file downloads (app/documents/inline.py). The
+                    version is already joined by `sent_queryset`.
                   {% endcomment %}
-                  <a href="{% url 'documents:open' pk=submission.final_version_id %}">Ava</a>
+                  {% with file=submission.final_version|file_link %}
+                    <a href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}>Ava{% new_tab_note file.opens_inline %}</a>
+                  {% endwith %}
                 {% else %}
                   <span class="table__missing">—</span>
                 {% endif %}

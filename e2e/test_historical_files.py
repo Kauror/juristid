@@ -64,7 +64,7 @@ def test_a_readable_file_opens_rather_than_leading_to_a_page_about_it(page, base
     assert "/ava/" in href, href
     # A new tab, and never one that can reach back into this one.
     expect(link).to_have_attribute("target", "_blank")
-    expect(link).to_have_attribute("rel", "noopener")
+    expect(link).to_have_attribute("rel", "noopener noreferrer")
 
 
 def test_a_signed_container_saves_instead(page, base_url):

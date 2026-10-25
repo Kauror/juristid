@@ -83,6 +83,7 @@ from django.db.models.functions import Greatest
 from app.core.authorization import projected_visibility_q, scope_for_user
 from app.core.derived_visibility import projected_derivation_q
 from app.core.text import normalize_for_matching
+from app.documents.inline import FileLink, file_link
 from app.matters.models import Matter
 from app.search.generations import active_generation_expression
 from app.search.models import (
@@ -494,6 +495,11 @@ class SearchResult:
     document_title: str = ""
     document_id: Any = None
     document_version_id: Any = None
+    #: The matched version's own open-or-download link, for a row that is one
+    #: document's text — built from the version row `PRESENTATION_RELATIONS`
+    #: already joins, so it costs the page no query (`app.documents.inline`).
+    #: ``None`` on every row that is not a specific file.
+    document_file: FileLink | None = None
     entry_id: Any = None
     submission_id: Any = None
     source_page_id: Any = None
@@ -1190,6 +1196,11 @@ def _present(ranked: list[tuple[Any, Any, Any]], *, term: str, user: Any) -> lis
             document_title=document.document.title if document.document else "",
             document_id=document.document_id,
             document_version_id=document.document_version_id,
+            document_file=(
+                file_link(document.document_version)
+                if document.document_id and document.document_version_id
+                else None
+            ),
             entry_id=document.entry_id,
             submission_id=document.submission_id,
             source_page_id=document.matter_source_page_id,

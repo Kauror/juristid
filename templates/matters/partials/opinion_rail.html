@@ -1,3 +1,4 @@
+{% load document_files %}
 {% comment %}
 `Koja arvamus`, in the facts rail — quick reference and nothing else.
 
@@ -52,16 +53,20 @@ without the rail becoming a second file list.
         <span class="railcard__opinion"><time datetime="{{ line.sent_on|date:'Y-m-d' }}">{{ line.sent_label }}</time>{% if line.detail %} · {{ line.detail }}{% endif %}</span>
       {% endif %}
       {% comment %}
-        The version, not the document: `documents:download` is keyed on the
-        exact bytes, which is what makes a link to evidence a link to evidence.
+        The version, not the document: `documents:download` and
+        `documents:open` are keyed on the exact bytes, which is what makes a
+        link to evidence a link to evidence. `file_link` picks between them — a
+        PDF opens in a new tab, a Word file downloads (app/documents/inline.py).
         A document whose first version failed to save has none, and a link to
         nothing is worse than a name.
       {% endcomment %}
       {% if line.document.current_version %}
-        <a class="railcard__file"
-           href="{% url 'documents:download' pk=line.document.current_version.pk %}">
-          {{ line.document.current_version.original_filename }} ↗
-        </a>
+        {% with link=line.document.current_version|file_link %}
+          <a class="railcard__file"
+             href="{{ link.href }}"{% new_tab_attrs link.opens_inline %}>
+            {{ line.document.current_version.original_filename }} ↗{% new_tab_note link.opens_inline %}
+          </a>
+        {% endwith %}
       {% else %}
         <span class="railcard__file muted">{{ line.document.title }}</span>
       {% endif %}
@@ -71,10 +76,12 @@ without the rail becoming a second file list.
       {% endcomment %}
       {% for sent in line.further %}
         {% if sent.current_version %}
-          <a class="railcard__file"
-             href="{% url 'documents:download' pk=sent.current_version.pk %}">
-            {{ sent.current_version.original_filename }} ↗
-          </a>
+          {% with link=sent.current_version|file_link %}
+            <a class="railcard__file"
+               href="{{ link.href }}"{% new_tab_attrs link.opens_inline %}>
+              {{ sent.current_version.original_filename }} ↗{% new_tab_note link.opens_inline %}
+            </a>
+          {% endwith %}
         {% endif %}
       {% endfor %}
       {% for working in line.working %}
@@ -84,7 +91,7 @@ without the rail becoming a second file list.
             alone — what a screen reader announces and what is underlined.
           {% endcomment %}
           <span class="railcard__file"><span class="railcard__filekind">Töödokument</span>
-            <a href="{% url 'documents:download' pk=working.current_version.pk %}">{{ working.current_version.original_filename }} ↗</a></span>
+            {% with link=working.current_version|file_link %}<a href="{{ link.href }}"{% new_tab_attrs link.opens_inline %}>{{ working.current_version.original_filename }} ↗{% new_tab_note link.opens_inline %}</a>{% endwith %}</span>
         {% endif %}
       {% endfor %}
     </div>

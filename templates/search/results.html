@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load people %}
+{% load document_files people %}
 {% block title %}Otsing · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -59,53 +59,82 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
       </p>
       <div class="searchresults">
         {% for row in rows %}
-          <a class="result" href="{{ row.target }}">
-            <span class="result__head">
-              <span class="badge badge--source">{{ row.result.source_label }}</span>
-              <span class="result__title" title="{{ row.result.matter.title }}">{{ row.result.matter.title }}</span>
-              {% if row.result.is_matter %}
-                {% if row.result.matter.stage %}
-                  <span class="badge">{{ row.result.matter.stage.label_et }}</span>
+          {% comment %}
+            **The file itself, one click from its result** (QoL round
+            2026-10-25). A row that is one document's text carries the matched
+            version's link beside the row, never inside it: the row is already
+            a link, and an anchor inside an anchor is invalid HTML that browsers
+            repair by splitting the row. So the row and the file sit side by
+            side in `.resultrow`; the row still goes to the document's page,
+            and the file opens in a new tab when the browser may render it, or
+            downloads (app/documents/inline.py). Every row gets the wrapper so
+            the list keeps one shape and one separator rule.
+          {% endcomment %}
+          <div class="resultrow">
+            <a class="result" href="{{ row.target }}">
+              <span class="result__head">
+                <span class="badge badge--source">{{ row.result.source_label }}</span>
+                <span class="result__title" title="{{ row.result.matter.title }}">{{ row.result.matter.title }}</span>
+                {% if row.result.is_matter %}
+                  {% if row.result.matter.stage %}
+                    <span class="badge">{{ row.result.matter.stage.label_et }}</span>
+                  {% endif %}
+                  {% if row.result.matter.record_mode == "ARCHIVE" %}
+                    <span class="badge badge--archive">Arhiiv</span>
+                  {% endif %}
+                  {% if not row.result.matter.is_open %}
+                    <span class="badge badge--closed">Suletud</span>
+                  {% endif %}
                 {% endif %}
-                {% if row.result.matter.record_mode == "ARCHIVE" %}
-                  <span class="badge badge--archive">Arhiiv</span>
-                {% endif %}
-                {% if not row.result.matter.is_open %}
-                  <span class="badge badge--closed">Suletud</span>
-                {% endif %}
-              {% endif %}
-            </span>
-
-            {% comment %}
-              Which of the Teema's records matched: the Märge, the Kaasamine,
-              the opinion or who gave it, the document and page. Several hits on
-              one Teema used to look identical — a badge and the Teema's title
-              (ENG-083).
-            {% endcomment %}
-            {% if row.result.source_title or row.result.document_title or row.result.source_locator %}
-              <span class="result__source">
-                {% if row.result.source_title %}{{ row.result.source_title }}{% endif %}
-                {% if row.result.source_title and row.result.document_title %} · {% endif %}
-                {% if row.result.document_title %}{{ row.result.document_title }}{% endif %}
-                {% if row.result.source_locator %}{% if row.result.source_title or row.result.document_title %} · {% endif %}{{ row.result.source_locator }}{% endif %}
               </span>
-            {% endif %}
 
-            {% if row.result.snippet %}
-              <span class="result__snippet">„{% for run in row.result.snippet %}{% if run.highlight %}<mark>{{ run.text }}</mark>{% else %}{{ run.text }}{% endif %}{% endfor %}“</span>
-            {% endif %}
+              {% comment %}
+                Which of the Teema's records matched: the Märge, the Kaasamine,
+                the opinion or who gave it, the document and page. Several hits on
+                one Teema used to look identical — a badge and the Teema's title
+                (ENG-083).
+              {% endcomment %}
+              {% if row.result.source_title or row.result.document_title or row.result.source_locator %}
+                <span class="result__source">
+                  {% if row.result.source_title %}{{ row.result.source_title }}{% endif %}
+                  {% if row.result.source_title and row.result.document_title %} · {% endif %}
+                  {% if row.result.document_title %}{{ row.result.document_title }}{% endif %}
+                  {% if row.result.source_locator %}{% if row.result.source_title or row.result.document_title %} · {% endif %}{{ row.result.source_locator }}{% endif %}
+                </span>
+              {% endif %}
 
-            <span class="result__why">
-              vaste: {{ row.result.match_label|lower }}
-              {% if row.result.is_matter %}
-                {% if row.result.matter.is_open %}· avatud{% else %}· suletud{% endif %}
-                {% if row.result.matter.owner %}· vastutaja {{ row.result.matter.owner|name_among:colleagues }}{% endif %}
-                {% if row.action %}
-                  · järgmiseks: {{ row.action.text|truncatechars:60 }}
+              {% if row.result.snippet %}
+                <span class="result__snippet">„{% for run in row.result.snippet %}{% if run.highlight %}<mark>{{ run.text }}</mark>{% else %}{{ run.text }}{% endif %}{% endfor %}“</span>
+              {% endif %}
+
+              <span class="result__why">
+                vaste: {{ row.result.match_label|lower }}
+                {% if row.result.is_matter %}
+                  {% if row.result.matter.is_open %}· avatud{% else %}· suletud{% endif %}
+                  {% if row.result.matter.owner %}· vastutaja {{ row.result.matter.owner|name_among:colleagues }}{% endif %}
+                  {% if row.action %}
+                    · järgmiseks: {{ row.action.text|truncatechars:60 }}
+                  {% endif %}
+                {% endif %}
+              </span>
+            </a>
+            {% with file=row.result.document_file %}
+              {% if file %}
+                {% if file.opens_inline %}
+                  {% comment %}
+                    The new tab is in the accessible name, not a tooltip: the
+                    aria-label replaces the link's text, so a hidden span
+                    inside it would never be read.
+                  {% endcomment %}
+                  <a class="resultrow__file" href="{{ file.open_url }}"{% new_tab_attrs True %}
+                     aria-label="Ava fail {{ file.filename }} — avaneb uues aknas">Ava</a>
+                {% else %}
+                  <a class="resultrow__file" href="{{ file.download_url }}"
+                     aria-label="Laadi alla {{ file.filename }}">Laadi alla</a>
                 {% endif %}
               {% endif %}
-            </span>
-          </a>
+            {% endwith %}
+          </div>
         {% endfor %}
       </div>
       {% include "components/pagination.html" with page=page query_string=query_string %}
