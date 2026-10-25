@@ -589,6 +589,12 @@ class TimelineItem:
     #: How many imported historical files this row stands for, on the one row
     #: per import (`HISTORICAL_IMPORT_ITEM`); 0 on every other row.
     imported_documents: int = 0
+    #: The files a `Lõpeta teema` brought, on its «Teema suletud» row and on no
+    #: other: the `EVIDENCE_VERSION_ADDED` events written in the closing's own
+    #: operation (`CLOSURE_FILES`). Apart from ``events`` on purpose — those
+    #: say what a row *is* (grouped, its marker, its verbs), and a closure with
+    #: a letter under it is still the closure.
+    closure_evidence: tuple[ChangeEvent, ...] = ()
 
     @property
     def is_milestone(self) -> bool:
@@ -850,6 +856,14 @@ class TimelineItem:
         which the template strips — never a summary line, which would quote the
         application back at the reader instead of the colleague."""
         return self.entry.body if self.entry is not None else ""
+
+    @property
+    def closed_by(self) -> Any:
+        """Who pressed `Lõpeta teema` (or chose the stage that closed the file),
+        on the «Teema suletud» row — the files under it are theirs too."""
+        if self.event is not None and self.event.event_type == ChangeEventType.MATTER_CLOSED:
+            return self.event.actor
+        return None
 
     @property
     def is_grouped(self) -> bool:
@@ -1165,6 +1179,23 @@ WITHDRAWAL_REASON_LABEL = "Põhjus"
 
 #: The label of a closure's `Selgitus` on its `Teema käik` row.
 CLOSURE_EXPLANATION_LABEL = "Selgitus"
+
+#: **The files a `Lõpeta teema` brought read on its «Teema suletud» row**
+#: (docs/adr/0131, closure files amendment).
+#:
+#: A closure is not a record a `DocumentLink` can name — it is a state of the
+#: Matter and the `MATTER_CLOSED` event that recorded it — so its evidence is
+#: tied to it the way every act on this page is tied together: the
+#: `operation_id` that `close_matter_from_workspace` stamped on the closing and
+#: on each file's `EVIDENCE_VERSION_ADDED`, in one transaction. Never a time, a
+#: filename, the Matter's current state or an order (docs/adr/0092 §6).
+#:
+#: A Matter closed, reopened and closed again has two closings and two
+#: operations, so each row keeps exactly the files of its own closing. The
+#: files are ordinary `Document`s: listed on `Dokumendid`, searchable, opened
+#: through the usual authorized routes, and attached here through the same
+#: `Document.visible_to` filter as every other file on this page (`_with_files`).
+CLOSURE_FILES = "closure_evidence"
 
 
 @dataclass(frozen=True)
@@ -2380,6 +2411,9 @@ def matter_timeline(
     # second line, and a second dot, for one act (brief §25). Asked of the whole
     # Matter, because it decides whether an event is a row at all.
     shown_on_their_record = _versions_shown_on_their_record(matter, user=user, day=day)
+    # Files some record owns, which a closing's operation never takes from it
+    # (`CLOSURE_FILES`).
+    owned_versions = frozenset(_owned_versions(matter))
     # Files an import brought, read as one row per import rather than one
     # «lisas dokumendi» per file (`HISTORICAL_IMPORT_ITEM`).
     imported_versions = imported_document_versions(matter, user)
@@ -2403,6 +2437,7 @@ def matter_timeline(
         only=only,
         imported_versions=frozenset(imported_versions),
         imported_anchors=imported_row_anchors(imported_versions),
+        owned_versions=owned_versions,
     )
     batch = window
     while True:
@@ -2416,6 +2451,7 @@ def matter_timeline(
             open_action_pk=open_action_pk,
             only=only,
             imported_versions=imported_versions,
+            owned_versions=owned_versions,
         )
         if bound is not None:
             items = [item for item in items if item.occurred_at >= bound]
@@ -2478,6 +2514,8 @@ class _ChronologySources:
     #: The import's own events are not anchors: their moment is the import's,
     #: and a row dated 2021 must not be bounded as if it happened today.
     imported_anchors: tuple[datetime, ...] = ()
+    #: Versions some record owns (`_owned_versions`).
+    owned_versions: frozenset[Any] = frozenset()
     anchor_q: models.Q = field(init=False)
 
     def __post_init__(self) -> None:
@@ -2500,6 +2538,22 @@ class _ChronologySources:
                 actor=None,
                 object_id__in=self.imported_versions,
             )
+        # A closure's own files read on its row (`CLOSURE_FILES`), exactly as
+        # `_assemble_timeline` folds them: in a closing's operation, linked to
+        # no note.
+        closing_operations = list(
+            self.event_scope.filter(event_type=ChangeEventType.MATTER_CLOSED)
+            .exclude(operation_id=None)
+            .values_list("operation_id", flat=True)
+        )
+        if closing_operations:
+            closure_files = models.Q(
+                event_type=ChangeEventType.EVIDENCE_VERSION_ADDED,
+                operation_id__in=closing_operations,
+            )
+            if self.owned_versions:
+                closure_files &= ~models.Q(object_id__in=self.owned_versions)
+            anchor &= ~closure_files
         if self.only != TIMELINE_FILTER_ENTRIES:
             folded = self._folded_effects()
             if folded is not None:
@@ -2784,6 +2838,7 @@ def _assemble_timeline(
     open_action_pk: Any,
     only: str,
     imported_versions: dict[Any, ImportedVersion] | None = None,
+    owned_versions: Any = None,
 ) -> list[TimelineItem]:
     """The chronology rows these sources make, in the one order.
 
@@ -2912,6 +2967,31 @@ def _assemble_timeline(
     # (docs/adr/0074 §14).
     milestone_events = [event for event in renderable if event.event_type in MILESTONE_EVENT_TYPES]
     renderable = [event for event in renderable if event.event_type not in MILESTONE_EVENT_TYPES]
+
+    # **A closure's own files read under it** (`CLOSURE_FILES`): every file of
+    # the closing's operation that no record owns (`_owned_versions`). A note's
+    # file keeps its place on the note's row and an opinion's sent file on the
+    # opinion's, as they always have. Decided by what is stored — the operation and
+    # the link — and never by which other events this reader may see.
+    closing_operations = {
+        event.operation_id
+        for event in milestone_events
+        if event.event_type == ChangeEventType.MATTER_CLOSED and event.operation_id is not None
+    }
+    closure_files: dict[uuid.UUID, list[ChangeEvent]] = {}
+    if closing_operations:
+        not_closure_files: list[ChangeEvent] = []
+        for event in renderable:
+            if (
+                event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+                and event.operation_id in closing_operations
+                and event.object_id not in (owned_versions or ())
+            ):
+                closure_files.setdefault(event.operation_id, []).append(event)
+                continue
+            not_closure_files.append(event)
+        renderable = not_closure_files
+
     for event in milestone_events:
         items.append(
             TimelineItem(
@@ -2922,6 +3002,14 @@ def _assemble_timeline(
                 event=event,
                 events=(event,),
                 milestone=_milestone_for_event(event),
+                # Oldest first, in the order they were chosen: the stream is
+                # newest first.
+                closure_evidence=(
+                    tuple(reversed(closure_files.get(event.operation_id, [])))
+                    if event.operation_id is not None
+                    and event.event_type == ChangeEventType.MATTER_CLOSED
+                    else ()
+                ),
             )
         )
 
@@ -3082,7 +3170,7 @@ def _with_files(page: list[TimelineItem], user: Any) -> list[TimelineItem]:
             return [submission.final_version_id] if submission.final_version_id else []
         return [
             event.object_id
-            for event in item.events
+            for event in (*item.events, *item.closure_evidence)
             if event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED and event.object_id
         ]
 
@@ -3277,6 +3365,46 @@ def _step_is_the_activity(record: Any, action: Any) -> bool:
         and (record.title or "").strip() == (action.text or "").strip()
         and record.occurred_on is not None
         and record.occurred_on == action.target_date
+    )
+
+
+def _owned_versions(matter: Matter) -> set[Any]:
+    """Versions some record owns: linked to any record, or an opinion's sent file.
+
+    The complement is what a closing's operation may take onto its «Teema
+    suletud» row (`CLOSURE_FILES`): a closure's files are the only versions
+    written in a closing's operation that no record owns. A note's file reads
+    on the note; a `Koja arvamus`'s letter (`final_version`) and its further
+    sent files (`SubmissionSentFile`, docs/adr/0144 §5) belong to the opinion,
+    whatever stage the same save chose. Unscoped, like
+    `_versions_shown_on_their_record`: it decides *where* a file reads and
+    never *whether*, and it must not change with what the reader may see.
+    One query.
+    """
+    from app.documents.links import DocumentLink
+    from app.documents.models import DocumentVersion
+    from app.submissions.models import SubmissionSentFile
+
+    return set(
+        DocumentVersion.objects.filter(document__matter=matter)
+        .filter(
+            models.Q(
+                document_id__in=DocumentLink.objects.filter(document__matter=matter).values(
+                    "document_id"
+                )
+            )
+            | models.Q(
+                pk__in=Submission.objects.filter(matter=matter, final_version__isnull=False).values(
+                    "final_version_id"
+                )
+            )
+            | models.Q(
+                pk__in=SubmissionSentFile.objects.filter(submission__matter=matter).values(
+                    "version_id"
+                )
+            )
+        )
+        .values_list("id", flat=True)
     )
 
 

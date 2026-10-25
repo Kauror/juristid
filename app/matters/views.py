@@ -4682,6 +4682,7 @@ SAVE_ONCE_FORMS = (
     "work_victory_form",
     "other_form",
     "meeting_form",
+    "closure_form",
 )
 
 
@@ -8441,9 +8442,16 @@ def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
     The header rides along out of band, as it does on every save that closes a
     Matter: its state badge is the one fact the column swap cannot reach
     (docs/adr/0074 §10).
+
+    **`Lisa failid`** — optional, any number — are stored with the closure and
+    tied to it by its operation, or not at all (docs/adr/0131, closure files
+    amendment). A refused closure, the live-work confirmation included, stores
+    no byte; the browser cannot carry the chosen files through that round
+    trip, so the panel comes back naming them to be chosen again
+    (`static/js/app.js` `showFilesAgain`), as every panel with files does.
     """
     matter = get_visible_matter(request, pk)
-    form = CompactClosureForm(request.POST)
+    form = CompactClosureForm(request.POST, request.FILES)
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="closure_form", form=form)
     try:
@@ -8453,6 +8461,8 @@ def close_from_workspace(request: HttpRequest, pk: Any) -> HttpResponse:
             disposition=form.cleaned_data["disposition"],
             explanation=form.cleaned_data["explanation"],
             follow_ups_confirmed=form.cleaned_data.get(FOLLOW_UP_CLOSURE_FIELD, False),
+            uploads=form.cleaned_data["attachments"],
+            once_token=_posted_once_token(request),
         )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(
