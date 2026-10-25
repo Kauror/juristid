@@ -164,6 +164,7 @@ def test_anonymous_in_mode_none_reaches_nothing(client, settings, ids):
         "core:home",  # a static «sign in» doorway, no data (core/home.html)
         "core:design_tokens",
         "core:release_notes",
+        "core:keyboard_shortcuts",  # the shortcut reference, no data
         "accounts:dev_login",
         "accounts:choose_persona",
         "accounts:shared_gate",
@@ -205,10 +206,12 @@ def test_department_viewer_reads_no_business_page_and_writes_nothing(client, set
         - GATE_READABLE
         - PUBLIC
         - {
-            # Content-free pages: the persona chooser, the gate, the release notes.
+            # Content-free pages: the persona chooser, the gate, the release notes,
+            # the keyboard-shortcut reference.
             "accounts:choose_persona",
             "accounts:shared_gate",
             "core:release_notes",
+            "core:keyboard_shortcuts",
             "core:design_tokens",
             # The administrator sign-in (docs/adr/0186): an address and a
             # password field, before any persona — the step-up is not one.

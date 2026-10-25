@@ -444,9 +444,11 @@ def test_the_revision_itself_is_not_a_link(client: Client, settings) -> None:
 
 
 @pytest.mark.django_db
-def test_the_footer_carries_exactly_one_link(client: Client) -> None:
-    """Quiet band, not a navigation bar."""
-    assert _footer(client.get("/").content.decode()).count("<a ") == 1
+def test_the_footer_carries_exactly_two_links(client: Client) -> None:
+    """Quiet band, not a navigation bar: Uuendused and Kiirklahvid, nothing more."""
+    footer = _footer(client.get("/").content.decode())
+    assert footer.count("<a ") == 2
+    assert footer.index(f'href="{URL}"') < footer.index('href="/kiirklahvid/"')
 
 
 def test_the_release_notes_page_carries_the_footer_too(client: Client) -> None:

@@ -12,6 +12,10 @@ urlpatterns = [
     # somebody looks up, not a destination in the daily rotation
     # (docs/release-notes/README.md).
     path("uuendused/", views.release_notes, name="release_notes"),
+    # Every keyboard shortcut, on one page, linked from the footer beside
+    # Uuendused. The screens themselves carry no hint strips
+    # (app/core/keyboard_shortcuts.py).
+    path("kiirklahvid/", views.keyboard_shortcuts, name="keyboard_shortcuts"),
     # The v2 rebuild's own worklist. Under `/haldus/` with the other internal
     # tooling and deliberately not on the bar (app/core/development_status.py).
     path("haldus/arendus/", views.development_status, name="development_status"),

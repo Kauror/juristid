@@ -204,6 +204,7 @@ SURFACES = {
     "statistika": _go("/statistika/"),
     "otsing": _go("/otsing/?q=s%C3%BCnteetiline"),
     "uuendused": _go("/uuendused/"),
+    "kiirklahvid": _go("/kiirklahvid/"),
 }
 
 
