@@ -954,7 +954,7 @@
    * tab closed inside the delay, or a note whose last save failed. One
    * listener for the page, asking whichever note is there now — it used to be
    * one more listener per swap, each holding a box that no longer existed. */
-  window.addEventListener("beforeunload", function () {
+  window.addEventListener("beforeunload", function (event) {
     document.querySelectorAll("form[data-autosave]").forEach(function (form) {
       var box = autosaveBox(form);
       if (!box || !autosaved.has(box) || box.value === autosaved.get(box)) {
@@ -965,7 +965,89 @@
         navigator.sendBeacon(url, new FormData(form));
       }
     });
+    /* And the drafts nothing saves by itself (below). */
+    askBeforeLeaving(event);
   });
+
+  /* ---- Leaving with text that was never saved --------------------------
+   * A swap carries every draft host across (above), but nothing carried one
+   * across *leaving the page*: text typed into the composer, a `LISA TEEMALE`
+   * panel or a row's `Muuda`, and then a click on `Teemad`, a tab or any other
+   * link, was gone without a word — and nothing is kept in browser storage to
+   * bring it back (docs/adr/0107 §2). So the page asks the browser's own
+   * «leave this page?» question, and only then:
+   *
+   *   - a draft host (`data-draft-host`) holds input that differs from what the
+   *     server rendered into it — the same test the swap uses, so a clean page
+   *     never asks, and nor does a form the server re-rendered with its text;
+   *   - not the note, which saves itself and flushes on leaving (above);
+   *   - not while a form is being submitted the ordinary way, which is the
+   *     person sending that text rather than leaving it;
+   *   - not the host whose own save answered by reloading or redirecting the
+   *     page (`HX-Refresh`, `HX-Redirect`): that text is what was just saved.
+   *
+   * A successful save replaces its host with an empty one, so it stops
+   * counting by itself; Back, a tab switch or a link on a page with nothing
+   * typed are untouched. The browser decides the wording; nothing is stored. */
+  var submittedNativelyAt = 0;
+  var leavingAfterSave = null;
+
+  /* htmx cancels the submits it sends itself on the form, before this
+     listener on the document hears them, so only a real navigation is left.
+     Remembered for a moment only: a submit that answers with a download
+     leaves the page where it is, and the guard must still stand after it. */
+  document.addEventListener("submit", function (event) {
+    if (!event.defaultPrevented) {
+      submittedNativelyAt = Date.now();
+    }
+  });
+
+  window.addEventListener("pageshow", function () {
+    submittedNativelyAt = 0;
+    leavingAfterSave = null;
+  });
+
+  document.body.addEventListener("htmx:beforeOnLoad", function (event) {
+    var xhr = event.detail && event.detail.xhr;
+    if (!xhr) {
+      return;
+    }
+    if (xhr.getResponseHeader("HX-Refresh") === "true" || xhr.getResponseHeader("HX-Redirect")) {
+      var elt = event.detail.elt;
+      leavingAfterSave = elt && elt.closest ? elt.closest("[data-draft-host][id]") || elt : null;
+    }
+  });
+
+  function holdsTextNobodySaved() {
+    var hosts = document.querySelectorAll("[data-draft-host][id]");
+    for (var i = 0; i < hosts.length; i += 1) {
+      var host = hosts[i];
+      if (host.hasAttribute("data-autosave")) {
+        continue;
+      }
+      if (leavingAfterSave && (host === leavingAfterSave || host.contains(leavingAfterSave))) {
+        continue;
+      }
+      /* A host inside another is asked once, as part of the outer one. */
+      if (host.parentElement && host.parentElement.closest("[data-draft-host][id]")) {
+        continue;
+      }
+      if (holdsUnsavedInput(host)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /* Asked from the page's one `beforeunload` listener, below the note's flush. */
+  function askBeforeLeaving(event) {
+    if (Date.now() - submittedNativelyAt < 2000 || !holdsTextNobodySaved()) {
+      return;
+    }
+    event.preventDefault();
+    /* Older engines ask for a value; the text itself is never shown. */
+    event.returnValue = "";
+  }
 
   /* ---- A save must not throw the keyboard back to the top ---------------
    * Every capture on a Teema is an htmx swap, and a swap destroys the element
@@ -5739,6 +5821,38 @@
     }
   });
 
+  /* ---- «Here it is»: the row a save wrote, or a link opened ---------------
+   * The server marks the rows its answer to a successful save wrote
+   * (`data-salvestatud`, `app.matters.timeline_links.saved_row_keys`); a refusal
+   * marks nothing, so nothing lights up for a save that did not happen. The
+   * mark is read once and taken off, and the row carries a quiet panel for a
+   * couple of seconds. Focus is not moved and the page is not scrolled — the
+   * focus rule below already decides where a save leaves the keyboard — and
+   * the row's accordion state is the one `syncKaik` gave it. */
+  var KAIK_SAVED = "uxtl__item--saved";
+  var KAIK_SAVED_MS = 2400;
+
+  function flashKaikRow(row) {
+    row.classList.add(KAIK_SAVED);
+    window.setTimeout(function () {
+      row.classList.remove(KAIK_SAVED);
+    }, KAIK_SAVED_MS);
+  }
+
+  function flashSavedRows(scope) {
+    var root = scope && scope.querySelectorAll ? scope : document;
+    root.querySelectorAll("article.uxtl__item[data-salvestatud]").forEach(function (row) {
+      row.removeAttribute("data-salvestatud");
+      flashKaikRow(row);
+    });
+  }
+
+  document.body.addEventListener("htmx:afterSettle", function () {
+    safeInit("flashSavedRows", function () {
+      flashSavedRows(document);
+    });
+  });
+
   function openKaikTarget() {
     var id = window.location.hash.slice(1);
     var node = null;
@@ -5755,6 +5869,10 @@
     }
     if (row && !row.classList.contains(KAIK_OPEN)) {
       openKaikRow(row, true);
+    }
+    /* A row's own link (`?kirje=`, «Kopeeri link») — shown, as a save is. */
+    if (row && new URLSearchParams(window.location.search).get("kirje") === row.getAttribute("data-kaik-rida")) {
+      flashKaikRow(row);
     }
   }
 
