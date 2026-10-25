@@ -27,9 +27,11 @@ from playwright.sync_api import expect
 from e2e.conftest import (
     REPOSITORY_ROOT,
     SANDRA,
+    accept_leave_prompts,
     chronology,
     create_matter,
     open_add_panel,
+    open_kaik_row,
     sign_in,
     wait_for_htmx,
 )
@@ -210,6 +212,33 @@ def test_a_saved_row_is_shown_for_a_moment(page, base_url):
     expect(saved).not_to_have_class(re.compile(r"uxtl__item--saved"), timeout=6_000)
 
 
+def test_a_row_corrected_in_place_is_shown_for_a_moment(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    create_matter(page, base_url, unique_title("Paranduse esiletõst"))
+    form = _open_muu(page)
+    form.locator('[name="description"]').fill("Esialgne kirjeldus.")
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    wait_for_htmx(page)
+    row = chronology(page).locator("article.uxtl__item").filter(has_text="Esialgne kirjeldus.")
+    expect(row).not_to_have_class(re.compile(r"uxtl__item--saved"), timeout=6_000)
+
+    open_kaik_row(row)
+    row.get_by_role("button", name="Muuda", exact=True).click()
+    box = row.locator(".uxtl__editform textarea").first
+    box.wait_for()
+    # Opening the editor is not a save.
+    expect(row).not_to_have_class(re.compile(r"uxtl__item--saved"))
+    box.fill("Parandatud kirjeldus.")
+    row.locator(".uxtl__editform button[type=submit]").click()
+    wait_for_htmx(page)
+
+    corrected = (
+        chronology(page).locator("article.uxtl__item").filter(has_text="Parandatud kirjeldus.")
+    )
+    expect(corrected).to_have_class(re.compile(r"uxtl__item--saved"))
+    expect(page.locator("[data-salvestatud]")).to_have_count(0)
+
+
 def test_a_refused_save_shows_no_row(page, base_url):
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Keeldutud salvestus"))
@@ -227,6 +256,7 @@ def test_a_refused_save_shows_no_row(page, base_url):
 
 
 def _dialogs(page) -> list[str]:
+    """Record every dialog's type and answer «stay» — the person who stays."""
     seen: list[str] = []
 
     def answer(dialog):
@@ -234,7 +264,18 @@ def _dialogs(page) -> list[str]:
         dialog.dismiss()
 
     page.on("dialog", answer)
+    page._stay_answer = answer  # for `_stop_staying`
     return seen
+
+
+def _stop_staying(page) -> None:
+    page.remove_listener("dialog", page._stay_answer)
+
+
+def _go_to_minu_asjad(page) -> None:
+    page.get_by_role("navigation", name="Peamine").get_by_role(
+        "link", name="Minu asjad", exact=True
+    ).click()
 
 
 def test_leaving_with_typed_text_asks_first(page, base_url):
@@ -244,9 +285,7 @@ def test_leaving_with_typed_text_asks_first(page, base_url):
 
     form = _open_muu(page)
     form.locator('[name="description"]').fill("Pool lauset, mida pole salvestatud")
-    page.get_by_role("navigation", name="Peamine").get_by_role(
-        "link", name="Minu asjad", exact=True
-    ).click()
+    _go_to_minu_asjad(page)
     page.wait_for_timeout(500)
 
     # Asked, and staying kept the text where it was.
@@ -254,6 +293,69 @@ def test_leaving_with_typed_text_asks_first(page, base_url):
     assert page.url == url
     expect(page.locator("#marge-muu form [name='description']")).to_have_value(
         "Pool lauset, mida pole salvestatud"
+    )
+
+    # Answering «leave» leaves (`accept_leave_prompts`, for tests that listen).
+    _stop_staying(page)
+    accept_leave_prompts(page)
+    _go_to_minu_asjad(page)
+    page.wait_for_url(f"{base_url}/minu-asjad/")
+
+
+def test_leaving_after_a_refused_save_asks_first(page, base_url):
+    """A refusal re-renders the form with the text in it, which the swap's own
+    test reads as unchanged — but none of it was saved."""
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("Keeldutud ja lahkumine"))
+    seen = _dialogs(page)
+
+    form = _open_muu(page)
+    form.locator('[name="url"]').fill("https://www.example.ee/keeldutud")
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    wait_for_htmx(page)
+    expect(page.locator("#marge-muu form")).to_contain_text("Kirjelda, mida lisad.")
+    _go_to_minu_asjad(page)
+    page.wait_for_timeout(500)
+
+    assert seen == ["beforeunload"]
+    assert page.url == url
+    expect(page.locator("#marge-muu form [name='url']")).to_have_value(
+        "https://www.example.ee/keeldutud"
+    )
+
+    # The corrected save goes through, and then leaving asks nothing.
+    form = page.locator("#marge-muu form")
+    form.locator('[name="description"]').fill("Nüüd kirjeldusega.")
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    wait_for_htmx(page)
+    expect(chronology(page)).to_contain_text("Nüüd kirjeldusega.")
+    _go_to_minu_asjad(page)
+    page.wait_for_url(f"{base_url}/minu-asjad/")
+    assert seen == ["beforeunload"]
+
+
+def test_downloading_a_file_does_not_ask(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    create_matter(page, base_url, unique_title("Fail ja mustand"))
+    seen = _dialogs(page)
+
+    form = _open_muu(page)
+    form.locator('[name="description"]').fill("Taust failiga.")
+    form.locator('input[type="file"]').set_input_files(
+        [{"name": "taust.pdf", "mimeType": "application/pdf", "buffer": b"%PDF-1.4 taust"}]
+    )
+    form.get_by_role("button", name="Salvesta", exact=True).click()
+    wait_for_htmx(page)
+    form = _open_muu(page)
+    form.locator('[name="description"]').fill("Pooleli järgmine kirje")
+    row = chronology(page).locator("article.uxtl__item").filter(has_text="Taust failiga.")
+    open_kaik_row(row)
+    with page.expect_download():
+        row.locator("a.uxtl__file", has_text="taust.pdf").click()
+
+    assert seen == []
+    expect(page.locator("#marge-muu form [name='description']")).to_have_value(
+        "Pooleli järgmine kirje"
     )
 
 

@@ -12274,6 +12274,15 @@ section:has(.pw-more[open]) tbody.uxextra {
   background-color: var(--surface-selected);
 }
 
+/* Forced colours replace both of those with the system's own, so the moment
+ * would show nothing; an outline in the system highlight colour does. */
+@media (forced-colors: active) {
+  #teema-vaade-wrap .uxtl__item.uxtl__item--saved > .uxtl__body {
+    outline: 2px solid Highlight;
+    outline-offset: 1px;
+  }
+}
+
 #teema-vaade-wrap .uxtl__mssub {
   display: block;
   margin-top: 1px;

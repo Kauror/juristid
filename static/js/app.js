@@ -979,18 +979,36 @@
    *
    *   - a draft host (`data-draft-host`) holds input that differs from what the
    *     server rendered into it — the same test the swap uses, so a clean page
-   *     never asks, and nor does a form the server re-rendered with its text;
+   *     never asks;
+   *   - or a draft host the server answered with a **refusal** still holds
+   *     typed text. A refused save re-renders the form with the text in its
+   *     `value`, so the swap's test sees nothing changed — but none of it was
+   *     saved. The host is marked `data-draft-refused` when a 4xx answer
+   *     settles, and the mark goes with the first 2xx answer to the same host
+   *     (or with the host itself, when a save replaces it);
    *   - not the note, which saves itself and flushes on leaving (above);
-   *   - not while a form is being submitted the ordinary way, which is the
-   *     person sending that text rather than leaving it;
+   *   - not the hosts of a form being submitted the ordinary way, which is the
+   *     person sending that text rather than leaving it — every other host
+   *     still counts;
+   *   - not a click on a file download (`…/tõend/<id>/`, `download`,
+   *     `data-download`): the browser asks before it knows the answer is a
+   *     file, and the page stays where it is;
    *   - not the host whose own save answered by reloading or redirecting the
    *     page (`HX-Refresh`, `HX-Redirect`): that text is what was just saved.
    *
    * A successful save replaces its host with an empty one, so it stops
    * counting by itself; Back, a tab switch or a link on a page with nothing
-   * typed are untouched. The browser decides the wording; nothing is stored. */
-  var submittedNativelyAt = 0;
+   * typed are untouched. The browser decides the wording; nothing is stored.
+   *
+   * **For browser tests:** Playwright accepts a `beforeunload` dialog when no
+   * `dialog` listener is registered. A test that registers one for another
+   * reason, and then leaves a page with typed text, must answer it
+   * (`page.on("dialog", lambda d: d.accept())`, `e2e/conftest.py`
+   * `accept_leave_prompts`). */
+  var submittedNatively = { at: 0, form: null };
+  var downloadClickedAt = 0;
   var leavingAfterSave = null;
+  var requestHosts = new WeakMap();
 
   /* htmx cancels the submits it sends itself on the form, before this
      listener on the document hears them, so only a real navigation is left.
@@ -998,12 +1016,33 @@
      leaves the page where it is, and the guard must still stand after it. */
   document.addEventListener("submit", function (event) {
     if (!event.defaultPrevented) {
-      submittedNativelyAt = Date.now();
+      submittedNatively = { at: Date.now(), form: event.target };
+    }
+  });
+
+  function isDownloadLink(link) {
+    if (link.hasAttribute("download") || link.hasAttribute("data-download")) {
+      return true;
+    }
+    var path = "";
+    try {
+      path = decodeURIComponent(new URL(link.href, window.location.href).pathname);
+    } catch (error) {
+      return false;
+    }
+    return /\/tõend\/[0-9a-f-]{36}\/$/i.test(path);
+  }
+
+  document.addEventListener("click", function (event) {
+    var link = event.target && event.target.closest ? event.target.closest("a[href]") : null;
+    if (link && isDownloadLink(link)) {
+      downloadClickedAt = Date.now();
     }
   });
 
   window.addEventListener("pageshow", function () {
-    submittedNativelyAt = 0;
+    submittedNatively = { at: 0, form: null };
+    downloadClickedAt = 0;
     leavingAfterSave = null;
   });
 
@@ -1018,7 +1057,59 @@
     }
   });
 
+  /* Which draft host sent each request, by id: the answer replaces the
+     element, so the host is found again by its id once the answer is in. */
+  document.body.addEventListener("htmx:beforeRequest", function (event) {
+    var detail = event.detail || {};
+    var elt = detail.elt;
+    var host = elt && elt.closest ? elt.closest("[data-draft-host][id]") : null;
+    if (host && detail.xhr) {
+      requestHosts.set(detail.xhr, host.id);
+    }
+  });
+
+  document.body.addEventListener("htmx:afterSettle", function (event) {
+    var xhr = event.detail && event.detail.xhr;
+    var id = xhr ? requestHosts.get(xhr) : "";
+    var host = id ? document.getElementById(id) : null;
+    if (!host) {
+      return;
+    }
+    if (xhr.status >= 400) {
+      host.setAttribute("data-draft-refused", "");
+    } else {
+      host.removeAttribute("data-draft-refused");
+    }
+  });
+
+  /* Typed text in a refused host: words in a box, or a chosen file. A date
+     the form fills in by itself, a hidden token and a read-only line are not
+     somebody's unsaved work. */
+  function holdsRefusedText(host) {
+    var refused = host.hasAttribute("data-draft-refused")
+      ? [host]
+      : Array.prototype.slice.call(host.querySelectorAll("[data-draft-refused]"));
+    return refused.some(function (place) {
+      var controls = place.querySelectorAll(
+        'textarea, input[type="text"], input[type="url"], input[type="email"], input:not([type]), input[type="file"]'
+      );
+      return Array.prototype.some.call(controls, function (control) {
+        if (control.disabled || control.readOnly) {
+          return false;
+        }
+        if (control.type === "file") {
+          return !!(control.files && control.files.length);
+        }
+        if (control.hasAttribute("data-datepicker") || control.classList.contains("dateinput")) {
+          return false;
+        }
+        return control.value.trim() !== "";
+      });
+    });
+  }
+
   function holdsTextNobodySaved() {
+    var recent = Date.now() - submittedNatively.at < 2000 ? submittedNatively.form : null;
     var hosts = document.querySelectorAll("[data-draft-host][id]");
     for (var i = 0; i < hosts.length; i += 1) {
       var host = hosts[i];
@@ -1028,11 +1119,14 @@
       if (leavingAfterSave && (host === leavingAfterSave || host.contains(leavingAfterSave))) {
         continue;
       }
+      if (recent && (host.contains(recent) || recent.contains(host))) {
+        continue;
+      }
       /* A host inside another is asked once, as part of the outer one. */
       if (host.parentElement && host.parentElement.closest("[data-draft-host][id]")) {
         continue;
       }
-      if (holdsUnsavedInput(host)) {
+      if (holdsUnsavedInput(host) || holdsRefusedText(host)) {
         return true;
       }
     }
@@ -1041,7 +1135,7 @@
 
   /* Asked from the page's one `beforeunload` listener, below the note's flush. */
   function askBeforeLeaving(event) {
-    if (Date.now() - submittedNativelyAt < 2000 || !holdsTextNobodySaved()) {
+    if (Date.now() - downloadClickedAt < 2000 || !holdsTextNobodySaved()) {
       return;
     }
     event.preventDefault();
@@ -5823,7 +5917,8 @@
 
   /* ---- «Here it is»: the row a save wrote, or a link opened ---------------
    * The server marks the rows its answer to a successful save wrote
-   * (`data-salvestatud`, `app.matters.timeline_links.saved_row_keys`); a refusal
+   * (`data-salvestatud`, `app.matters.timeline_links.saved_row_keys`) — the
+   * column's rows, or the one row a `Muuda` corrected in place; a refusal
    * marks nothing, so nothing lights up for a save that did not happen. The
    * mark is read once and taken off, and the row carries a quiet panel for a
    * couple of seconds. Focus is not moved and the page is not scrolled — the
@@ -5841,9 +5936,14 @@
 
   function flashSavedRows(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
-    root.querySelectorAll("article.uxtl__item[data-salvestatud]").forEach(function (row) {
-      row.removeAttribute("data-salvestatud");
-      flashKaikRow(row);
+    /* On the row itself after a column save; on the row's own correction
+       element after an in-place `Muuda` (`_row_saved`), which is inside it. */
+    root.querySelectorAll("[data-salvestatud]").forEach(function (marked) {
+      marked.removeAttribute("data-salvestatud");
+      var row = marked.closest ? marked.closest("article.uxtl__item") : null;
+      if (row) {
+        flashKaikRow(row);
+      }
     });
   }
 
@@ -5871,7 +5971,8 @@
       openKaikRow(row, true);
     }
     /* A row's own link (`?kirje=`, «Kopeeri link») — shown, as a save is. */
-    if (row && new URLSearchParams(window.location.search).get("kirje") === row.getAttribute("data-kaik-rida")) {
+    var linked = (new URLSearchParams(window.location.search).get("kirje") || "").toLowerCase();
+    if (row && linked && linked === (row.getAttribute("data-kaik-rida") || "").toLowerCase()) {
       flashKaikRow(row);
     }
   }
