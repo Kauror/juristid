@@ -73,8 +73,13 @@ once, removes it, and gives the row the accent panel (`--surface-selected`,
 the accordion, and no transition — it appears and goes in one step, the same
 under `prefers-reduced-motion`.
 
-Row corrections that swap one row in place (`Muuda`) keep their existing
-landing (focus on the swapped row) and are not marked.
+Row corrections that swap one element in place (`Muuda` on a Kaasamine, a
+Väline seisukoht, a Menetluse areng, a Koja arvamus or a Sissekanne) are marked
+the same way: each renderer asks the same `correlation_id` question for its own
+record (`_row_saved`), so only a successful correction — not opening the
+editor, `Tühista` or a refusal — marks the swapped element, and the script
+shows the row around it. Their existing focus landing is unchanged. In forced
+colours the panel is an outline in the system highlight colour.
 
 ## 4. Leaving with unsaved text (amends 0107 §2)
 
@@ -83,11 +88,19 @@ browser, so «a reload still loses unsaved text». Measured: text typed into
 `+ Lisa · Muu` and a click on `Minu asjad` lost it without a word. The page's one
 `beforeunload` listener (0107 §3's, which flushes the note) now also asks the
 browser's own «leave this page?» question when a draft host holds input that
-differs from what the server rendered — the same test the swap uses. Not for
-the note (it saves itself), not within two seconds of a native form submit, not
-for the host whose own save answered with `HX-Refresh` / `HX-Redirect`. A
-successful save replaces its host with an empty one, so it stops counting; a
-clean page asks nothing on a link, Back or reload. Nothing is stored.
+differs from what the server rendered — the same test the swap uses — **or**
+when a host the server answered with a refusal (4xx) still holds typed text: a
+refused save re-renders the text into `value`, which the swap's test reads as
+unchanged. That host is marked `data-draft-refused` until a 2xx answer to it;
+dates the form fills in, hidden and read-only fields do not count. Not for the
+note (it saves itself), not for the hosts of a form submitted natively in the
+last two seconds, not after a click on a file download (`…/tõend/<id>/`,
+`download`, `data-download` — the page stays), not for the host whose own save
+answered with `HX-Refresh` / `HX-Redirect`. A successful save replaces its host
+with an empty one, so it stops counting; a clean page asks nothing on a link,
+Back or reload. Nothing is stored. A browser test that registers a `dialog`
+listener and then leaves typed text must answer the prompt
+(`e2e/conftest.py` `accept_leave_prompts`).
 
 ## Consequences
 
