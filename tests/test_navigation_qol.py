@@ -20,19 +20,25 @@ from __future__ import annotations
 
 import re
 import uuid
+from pathlib import Path
 
 import pytest
+from django.conf import settings
 from django.db import connection
 from django.test import RequestFactory
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
+from app.core import authorization
+from app.core.authorization import Scope
+from app.core.enums import Visibility
 from app.matters import timeline_links
 from app.matters import views as matter_views
 from app.matters.episode_timeline import GROUPED_WINDOW
 from app.matters.models import Entry
+from app.matters.removal import remove_matter_record
 from app.matters.return_link import results_return_url
-from app.matters.services import add_entry, change_stage
+from app.matters.services import add_entry, change_stage, entry_revision_token
 from app.workflow.models import StageVocabulary
 from tests import factories
 
@@ -68,6 +74,13 @@ def test_a_narrowed_list_on_this_host_is_offered_back_rebuilt():
     request = _from("http://testserver/teemad/?q=eeln%C3%B5u&olek=avatud&leht=2")
 
     assert results_return_url(request) == "/teemad/?q=eeln%C3%B5u&olek=avatud&leht=2"
+
+
+def test_a_blank_choice_in_the_list_address_is_kept():
+    """`olek=` (every state) is a choice; dropping it would return to another list."""
+    request = _from("http://testserver/teemad/?olek=&q=kliima")
+
+    assert results_return_url(request) == "/teemad/?olek=&q=kliima"
 
 
 def test_the_return_address_is_re_encoded_not_echoed():
@@ -232,6 +245,68 @@ def test_a_key_this_teema_does_not_show_reads_as_no_key_at_all(
     assert "Teise teema märge" not in linked
 
 
+def test_a_removed_entry_reads_as_no_key_at_all(signed_in, specialist, long_flat):
+    """Taken off the file, on a Teema with more rows than one page: the link
+    somebody sent before the removal opens the page as if it named nothing."""
+    removed = _entry(long_flat, "Lame märge 000")
+    remove_matter_record(
+        matter_id=long_flat.pk, kind_key="sissekanne", record_id=removed.pk, actor=specialist
+    )
+
+    plain = signed_in.get(_detail(long_flat)).content.decode()
+    linked = signed_in.get(_detail(long_flat), {"kirje": str(removed.pk)}).content.decode()
+
+    assert _normalized(linked) == _normalized(plain)
+    assert "Lame märge 000" not in linked
+
+
+#: The modules that resolve a reader's scope while the Teema page renders.
+_SCOPED_MODULES = (
+    "app.matters.models",
+    "app.audit.visibility",
+    "app.workflow.models",
+    "app.submissions.models",
+    "app.intelligence.models",
+    "app.documents.links",
+    "app.matters.activity",
+)
+
+
+def test_an_entry_hidden_from_this_reader_reads_as_no_key_at_all(
+    client, specialist, other_specialist, long_flat, monkeypatch
+):
+    """RESTRICTED below a NORMAL Teema, read through the participation-narrowed
+    scope (no request builds it since docs/adr/0181, but the builders still
+    implement it — the same hand-built scope
+    `tests/test_child_projection_visibility.py` reads through). The hidden row
+    is not in this reader's chronology, so its key finds nothing and changes
+    nothing."""
+    hidden = add_entry(matter=long_flat, author=specialist, body="Piiratud sisu märge")
+    Entry.objects.filter(pk=hidden.pk).update(visibility_override=Visibility.RESTRICTED)
+    real = authorization.scope_for_user
+
+    def narrowed(user):
+        if getattr(user, "pk", None) == other_specialist.pk:
+            return Scope(
+                user=user,
+                is_authenticated=True,
+                sees_restricted_by_role=False,
+                break_glass_grant_id=None,
+            )
+        return real(user)
+
+    for module in _SCOPED_MODULES:
+        monkeypatch.setattr(f"{module}.scope_for_user", narrowed)
+    client.force_login(other_specialist)
+
+    plain = client.get(_detail(long_flat)).content.decode()
+    linked = client.get(_detail(long_flat), {"kirje": str(hidden.pk)}).content.decode()
+
+    assert "Lame märge 039" in plain  # the reader does read the Teema
+    assert "Piiratud sisu märge" not in plain
+    assert _normalized(linked) == _normalized(plain)
+
+
 def test_looking_for_a_row_is_bounded(signed_in, specialist, monkeypatch):
     monkeypatch.setattr(matter_views, "TIMELINE_PAGE_SIZE", 5)
     monkeypatch.setattr(timeline_links, "LOCATE_LIMIT", 10)
@@ -328,3 +403,48 @@ def test_a_page_view_marks_nothing(signed_in, specialist):
     html = signed_in.get(_detail(matter)).content.decode()
 
     assert "data-salvestatud" not in html
+
+
+# -- the row a correction in place saved --------------------------------------------
+
+
+def _edit_entry(matter, entry) -> str:
+    return reverse("matters:edit_entry", kwargs={"pk": matter.pk, "entry_id": entry.pk})
+
+
+def test_a_correction_in_place_marks_its_row_and_nothing_else_does(signed_in, specialist):
+    matter = factories.MatterFactory(owner=specialist, stage=None)
+    entry = add_entry(matter=matter, author=specialist, body="<p>Esialgne tekst.</p>")
+    url = _edit_entry(matter, entry)
+
+    opened = signed_in.get(url, headers={"HX-Request": "true"})
+    refused = signed_in.post(
+        url, {"body": "", "revision": entry_revision_token(entry)}, headers={"HX-Request": "true"}
+    )
+    saved = signed_in.post(
+        url,
+        {"body": "<p>Parandatud tekst.</p>", "revision": entry_revision_token(entry)},
+        headers={"HX-Request": "true"},
+    )
+
+    assert opened.status_code == 200
+    assert "data-salvestatud" not in opened.content.decode()
+    assert refused.status_code >= 400
+    assert "data-salvestatud" not in refused.content.decode()
+    assert saved.status_code == 200
+    html = saved.content.decode()
+    assert f'id="sissekanne-{entry.pk}-sisu" data-draft-host data-salvestatud' in html
+
+
+@pytest.mark.parametrize(
+    "partial",
+    ["engagement_row", "external_position_row", "development_row", "submission_row", "entry_body"],
+)
+def test_every_in_place_correction_carries_the_saved_mark(partial):
+    """The five elements `Muuda` swaps in place each carry the mark their renderer
+    sets (`_row_saved`); one of them is exercised end to end above."""
+    text = (
+        Path(settings.BASE_DIR) / "templates" / "matters" / "partials" / f"{partial}.html"
+    ).read_text(encoding="utf-8")
+
+    assert "data-draft-host{% if row_saved %} data-salvestatud{% endif %}" in text

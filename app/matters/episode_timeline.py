@@ -191,6 +191,15 @@ def _is_boundary(item: TimelineItem) -> bool:
     return False
 
 
+def is_period_boundary(item: TimelineItem) -> bool:
+    """Whether the grouped chronology draws no row for ``item`` (`_is_boundary`).
+
+    For `app.matters.timeline_links`: a link to such a row has nothing to land
+    on in the grouped list, so widening the read for it would be work for no row.
+    """
+    return _is_boundary(item)
+
+
 def _opened_at(episode: MatterStageEpisode) -> datetime:
     """When a period began, as far as this system knows — for placing work with none."""
     return episode.started_at or episode.created_at

@@ -131,7 +131,11 @@ from app.matters.enums import (
     MatterOrigin,
     RecordMode,
 )
-from app.matters.episode_timeline import GROUPED_WINDOW, matter_episode_timeline
+from app.matters.episode_timeline import (
+    GROUPED_WINDOW,
+    is_period_boundary,
+    matter_episode_timeline,
+)
 from app.matters.follow_up_restart import restart_offers
 from app.matters.forms import (
     ENGAGEMENT_UNCHANGED,
@@ -3335,7 +3339,9 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
             next_offset = timeline_links.window_reaching(index, TIMELINE_PAGE_SIZE)
             items = located[:next_offset]
             has_more = len(located) > next_offset or located_more
-        elif index is not None:
+        elif index is not None and not is_period_boundary(located[index]):
+            # A stage move the period headings already say draws no row in the
+            # grouped list, so a link to one widens nothing.
             episode_timeline = matter_episode_timeline(
                 matter=matter,
                 user=request.user,
@@ -4595,6 +4601,17 @@ def attach_feedback_form(
     return engagement
 
 
+def _row_saved(request: HttpRequest, matter: Matter, record: Any, status: int) -> bool:
+    """Whether this answer is a successful save that wrote ``record``.
+
+    The in-place twin of the column's `data-salvestatud`: the row's own
+    renderer answers `Muuda`, its `Tühista` and its save alike, and only the
+    last of them — a 2xx POST whose audit rows name the record — marks it
+    (`app.matters.timeline_links.saved_row_keys`).
+    """
+    return str(record.pk) in timeline_links.saved_row_keys(request, matter, status)
+
+
 def _engagement_row(
     request: HttpRequest,
     matter: Matter,
@@ -4626,6 +4643,9 @@ def _engagement_row(
         request,
         "matters/partials/engagement_row.html",
         {
+            # A correction this request saved shows its row for a moment, as a
+            # column save does (`_row_saved`, docs/adr/0190 §3).
+            "row_saved": _row_saved(request, matter, engagement, status),
             "matter": matter,
             # `Lõpeta kaasamine` rides on the record, exactly as it does on the
             # page render. A refused completion comes back bound and asks for
@@ -6914,6 +6934,9 @@ def _entry_row(
         request,
         "matters/partials/entry_body.html",
         {
+            # A correction this request saved shows its row for a moment, as a
+            # column save does (`_row_saved`, docs/adr/0190 §3).
+            "row_saved": _row_saved(request, matter, entry, status),
             "matter": matter,
             "entry": entry,
             "entry_edit_form": form,
@@ -8647,6 +8670,9 @@ def _external_position_row(
         request,
         "matters/partials/external_position_row.html",
         {
+            # A correction this request saved shows its row for a moment, as a
+            # column save does (`_row_saved`, docs/adr/0190 §3).
+            "row_saved": _row_saved(request, matter, position, status),
             "matter": matter,
             "position": position,
             "milestone": external_position_milestone(
@@ -9235,6 +9261,9 @@ def _development_row(
         request,
         "matters/partials/development_row.html",
         {
+            # A correction this request saved shows its row for a moment, as a
+            # column save does (`_row_saved`, docs/adr/0190 §3).
+            "row_saved": _row_saved(request, matter, development, status),
             "matter": matter,
             "development": development,
             "milestone": development_milestone(development),
@@ -9814,6 +9843,9 @@ def _sent_opinion_row(
         request,
         "matters/partials/submission_row.html",
         {
+            # A correction this request saved shows its row for a moment, as a
+            # column save does (`_row_saved`, docs/adr/0190 §3).
+            "row_saved": _row_saved(request, matter, submission, status),
             "matter": matter,
             "submission": submission,
             "milestone": milestone_of(submission),

@@ -54,7 +54,9 @@ def results_return_url(request: HttpRequest) -> str:
         return ""
     if parts.path != reverse("matters:matter_list"):
         return ""
-    params = parse_qsl(parts.query, keep_blank_values=False)
+    # Blank values kept: `olek=` is a choice the register's links make on
+    # purpose (every state, rather than the default open ones).
+    params = parse_qsl(parts.query, keep_blank_values=True)
     if not params:
         return ""
     return f"{parts.path}?{urlencode(params)}"
