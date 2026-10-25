@@ -140,13 +140,13 @@ GROUPS: tuple[ShortcutGroup, ...] = (
                 keys=(("L",),),
                 action=(
                     "Avab tegevuse kirja panemise vormi: kui teemal on käimasolev "
-                    "tegevus, siis «✓ Tehtud» välja «Mida tegid?», muidu "
-                    "«+ Lisa tegevus»."
+                    "tegevus, siis «✓ Tehtud» välja «Mida tegid?», muidu "
+                    "«+ Lisa tegevus»."
                 ),
                 note=(
                     "Ainult teema lehel ja ainult siis, kui kursor ei ole tekstiväljas "
                     "ega avatud vormis. Ei tee midagi, kui sul pole teemale "
-                    "kirjutamise õigust. Sama teevad nupud «✓ Tehtud» ja «+ Lisa tegevus»."
+                    "kirjutamise õigust. Sama teevad nupud «✓ Tehtud» ja «+ Lisa tegevus»."
                 ),
                 evidence=(
                     ("ux.js", 'if (event.key !== "l" && event.key !== "L") {'),

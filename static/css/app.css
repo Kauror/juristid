@@ -10510,9 +10510,9 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin-top: var(--spacing-2);
 }
 
-/* /kiirklahvid/: one short table per area. The key column is as wide as its
-   widest chord and never wraps inside one, so «Ctrl + Enter» is not split
-   across two lines; the description takes the rest. */
+/* /kiirklahvid/: one short table per area. A chord never wraps inside
+   itself, so «Ctrl + Enter» is not split across two lines; the description
+   takes the rest of the row. */
 .shortcuts {
   display: flex;
   flex-direction: column;
@@ -10529,11 +10529,25 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 .shortcuts__keycol {
-  width: 13rem;
+  width: 11rem;
 }
 
-.shortcuts__keys {
+.shortcuts__chord {
   white-space: nowrap;
+}
+
+/* On a phone the key column gives up its fixed width and the table stays
+   inside the screen: chords wrap between alternatives, never inside one. */
+@media (max-width: 640px) {
+  .shortcuts__keycol {
+    width: 6.5rem;
+  }
+
+  .shortcuts__table thead th,
+  .shortcuts__table tbody td {
+    padding-left: var(--spacing-2);
+    padding-right: var(--spacing-2);
+  }
 }
 
 .shortcuts__table tbody td {

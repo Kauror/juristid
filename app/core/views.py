@@ -10,6 +10,7 @@ from django.db import DatabaseError, connection
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.templatetags.static import static
+from django.views.decorators.http import require_safe
 
 from app.core.authorization import is_department_head
 from app.core.development_status import ITEMS as DEVELOPMENT_STATUS_ITEMS
@@ -117,6 +118,7 @@ def release_notes(request: HttpRequest) -> HttpResponse:
     )
 
 
+@require_safe
 def keyboard_shortcuts(request: HttpRequest) -> HttpResponse:
     """Kiirklahvid: every keyboard shortcut Juristid has, on one page.
 
@@ -128,7 +130,7 @@ def keyboard_shortcuts(request: HttpRequest) -> HttpResponse:
     The rows are `app/core/keyboard_shortcuts.py`, where each names the script
     that answers its key — the screens no longer carry hint strips, so this is
     the one place the keys are written down and it must not promise one that
-    is gone.
+    is gone. GET and HEAD only: there is nothing here to post to.
     """
     return render(
         request,

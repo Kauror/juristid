@@ -15,7 +15,9 @@ screen reader can jump by heading to «Minu asjad» and hear the table's headers
 on every cell. `<kbd>` for every key, in the `.key` style the inline editors
 already used, so the page adds no visual language of its own. Where the macOS
 chord differs it is written beside the Windows one in words, not left to a
-footnote, because the modifier is the part people get wrong.
+footnote, because the modifier is the part people get wrong. A chord never
+breaks across lines; the alternatives between chords may, which is what lets
+the key column narrow on a phone instead of scrolling the table sideways.
 {% endcomment %}
 
 {% block content %}
@@ -47,11 +49,11 @@ footnote, because the modifier is the part people get wrong.
           <tbody>
             {% for shortcut in group.shortcuts %}
               <tr>
-                <td class="shortcuts__keys">
-                  {% for chord in shortcut.windows %}{% for key in chord %}<kbd class="key">{{ key }}</kbd>{% if not forloop.last %} + {% endif %}{% endfor %}{% if not forloop.last %} <span class="muted">või</span> {% endif %}{% endfor %}
+                <td>
+                  {% for chord in shortcut.windows %}<span class="shortcuts__chord">{% for key in chord %}<kbd class="key">{{ key }}</kbd>{% if not forloop.last %} + {% endif %}{% endfor %}</span>{% if not forloop.last %} <span class="muted">või</span> {% endif %}{% endfor %}
                   {% if shortcut.uses_modifier %}
                     <span class="shortcuts__mac">macOS:
-                      {% for chord in shortcut.mac %}{% for key in chord %}<kbd class="key">{{ key }}</kbd>{% if not forloop.last %} + {% endif %}{% endfor %}{% if not forloop.last %} <span class="muted">või</span> {% endif %}{% endfor %}
+                      {% for chord in shortcut.mac %}<span class="shortcuts__chord">{% for key in chord %}<kbd class="key">{{ key }}</kbd>{% if not forloop.last %} + {% endif %}{% endfor %}</span>{% if not forloop.last %} <span class="muted">või</span> {% endif %}{% endfor %}
                     </span>
                   {% endif %}
                 </td>

@@ -98,6 +98,12 @@ def test_a_named_persona_past_the_gate_reads_it_too(client, settings) -> None:
 
 
 @pytest.mark.django_db
+def test_a_post_is_refused_because_there_is_nothing_to_post_to(client: Client) -> None:
+    client.force_login(factories.ReaderFactory())
+    assert client.post(URL).status_code == 405
+
+
+@pytest.mark.django_db
 def test_the_page_needs_no_database(client: Client, django_assert_num_queries) -> None:
     with django_assert_num_queries(0):
         assert client.get(URL).status_code == 200
