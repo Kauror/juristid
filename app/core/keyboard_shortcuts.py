@@ -180,8 +180,9 @@ GROUPS: tuple[ShortcutGroup, ...] = (
                 ),
                 note=(
                     "Kui vormis on avatud kalender või soovituste loend, sulgeb esimene "
-                    "Esc ainult selle ja teine Esc vormi. Sama teeb uus klõps välja "
-                    "nimel või vormi nupp «Loobu», kus see on."
+                    "Esc ainult selle ja teine Esc vormi. Vormi sulgeb ka uus klõps "
+                    "välja nimel või nupp «Loobu», kus see on; «Loobu» jätab ka "
+                    "sisestatu kõrvale."
                 ),
                 evidence=(
                     ("app.js", 'if (event.key !== "Escape" || event.defaultPrevented) {'),

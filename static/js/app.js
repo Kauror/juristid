@@ -2464,8 +2464,8 @@
     }
     event.preventDefault();
     /* `Loobu` means the typing is dropped, not parked: the form goes back to
-       what the server rendered, so the box opens clean next time and the
-       «leave this page?» guard below has nothing left to ask about. */
+       what the server rendered, so the box opens clean next time. (Esc only
+       closes the panel and keeps what was typed for the next opening.) */
     var form = button.closest("form");
     if (form && holder.contains(form)) {
       form.reset();
@@ -2503,6 +2503,11 @@
       return;
     }
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      /* Never a confirmation: `Eemalda` and `Kinnita tagasivõtmine` are
+         pressed on purpose, not reached by a save chord from their `Loobu`. */
+      if (form.matches(".uxtl__removeform")) {
+        return;
+      }
       event.preventDefault();
       form.requestSubmit();
       return;

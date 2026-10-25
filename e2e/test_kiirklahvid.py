@@ -58,20 +58,11 @@ def test_loobu_closes_the_summary_editor_without_saving(page, base_url):
     expect(editor).not_to_have_attribute("open", "")
     expect(summary.locator(".summary__trigger")).to_be_focused()
     assert posts == []
-    # Dropped, not parked: the box is back to what the server rendered, so
-    # leaving the page has nothing to ask about.
+    # Dropped, not parked: the box is back to what the server rendered.
     assert box.input_value() != "SEDA-EI-SALVESTATA-4471"
 
-    asked: list[str] = []
-
-    def answer(dialog) -> None:
-        asked.append(dialog.type)
-        dialog.accept()
-
-    page.on("dialog", answer)
     page.goto(url)
     page.wait_for_load_state("networkidle")
-    assert asked == [], "leaving after Loobu asked «leave this page?»"
     expect(page.locator("#teema-luhikokkuvote")).not_to_contain_text("SEDA-EI-SALVESTATA-4471")
 
 

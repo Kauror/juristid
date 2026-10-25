@@ -150,3 +150,26 @@ def test_removing_a_row_lands_on_its_neighbour(page, base_url):
     assert after["index"] == victim_index, after
     assert 0 <= after["top"] < after["viewport"], after
     assert abs(after["scrollY"] - scroll_before) < 200, (scroll_before, after)
+
+
+def test_ctrl_enter_never_confirms_a_removal(page, base_url):
+    """Ctrl/⌘+Enter saves an open form, but a confirmation is pressed on
+    purpose: from its `Loobu` the chord removes nothing (/kiirklahvid/)."""
+    _matter_with_rows(page, base_url, 2)
+    rows = page.locator("article.uxtl__item")
+    open_kaik_row(rows.nth(0))
+    remove = rows.nth(0).locator("summary.uxtl__edit", has_text="Kustuta")
+    remove.scroll_into_view_if_needed()
+    remove.click()
+    posts: list[str] = []
+    page.on(
+        "request",
+        lambda r: posts.append(r.url) if r.method == "POST" and "/eemalda" in r.url else None,
+    )
+    count = rows.count()
+    loobu = rows.nth(0).locator(".uxtl__removeform").get_by_role("button", name="Loobu")
+    loobu.focus()
+    page.keyboard.press("Control+Enter")
+    page.wait_for_timeout(500)
+    assert posts == []
+    assert rows.count() == count
