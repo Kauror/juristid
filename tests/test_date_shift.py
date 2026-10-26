@@ -305,6 +305,33 @@ def test_a_step_with_nobody_responsible_is_not_moved_here(specialist, normal_mat
         shift(action, "paev")
 
 
+@pytest.mark.parametrize("which", ["current", "planned"])
+def test_a_step_whose_responsible_person_has_left_is_not_offered_or_moved(
+    specialist, other_specialist, normal_matter, which
+):
+    """Review of #551: offered, then refused with «Valitud vastutaja…» on the
+    current path and moved on the planned one — now neither."""
+    current(normal_matter, date(2026, 11, 3), text="Praegune")
+    step = (
+        current(normal_matter, date(2026, 11, 5), responsible=other_specialist)
+        if which == "current"
+        else planned(normal_matter, date(2026, 11, 20))
+    )
+    NextAction.objects.filter(pk=step.pk).update(responsible=other_specialist)
+    type(other_specialist).objects.filter(pk=other_specialist.pk).update(is_active=False)
+    step.refresh_from_db()
+    assert not date_shift.is_shiftable(step)
+    items = wi.work_items(specialist, today=date(2026, 11, 1), responsible=other_specialist)
+    assert all(not item.is_date_shiftable for item in items if item.object_id == step.pk)
+
+    with refused(date_shift.SHIFT_NOT_ELIGIBLE):
+        shift(step, "paev")
+
+    step.refresh_from_db()
+    assert step.status in (ActionStatus.OPEN, ActionStatus.PLANNED)
+    assert step.responsible == other_specialist
+
+
 def test_an_opinion_follow_up_check_is_not_moved_here(specialist, normal_matter):
     submission = factories.send_opinion_through_services(normal_matter, specialist)
     check = schedule_first_check(submission=submission, actor=specialist)

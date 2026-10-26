@@ -13,8 +13,10 @@ statutory or external date, which is why the label is «Nihuta kuupäeva» and n
   a week would invent the day it is moved from;
 * not an `Arvamuse järelkontroll` (its day moves through its own form,
   docs/adr/0146 §6);
-* carrying a responsible person — the canonical edit assigns an unnamed step to
-  the Matter's owner, and a date-only change must assign nobody.
+* carrying a responsible person who is still a department worker — the
+  canonical edit assigns an unnamed step to the Matter's owner and refuses a
+  departed one, and a date-only change must neither reassign the step nor fail
+  on a person nobody chose; such a step keeps the full `Muuda`.
 
 Everything else — `Arvamuse tähtaeg`, `Oluline tähtaeg`, a commencement, a
 feedback wait, a WAIT/MONITOR review date, an approximate or undated step, a
@@ -43,6 +45,7 @@ from typing import Any
 
 from django.db import transaction
 
+from app.accounts.selectors import is_assignable_business_user
 from app.core.dates import add_months, format_estonian_date
 from app.core.errors import DomainError
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
@@ -87,7 +90,7 @@ def is_shiftable(action: NextAction) -> bool:
         and action.date_precision == DatePrecision.EXACT
         and action.target_date is not None
         and action.follow_up_id is None
-        and action.responsible_id is not None
+        and is_assignable_business_user(action.responsible)
         and bool(action.matter.is_open)
     )
 

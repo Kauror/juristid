@@ -111,6 +111,7 @@ from django.db.models import BooleanField, Exists, ExpressionWrapper, OuterRef, 
 from django.urls import reverse
 from django.utils import timezone
 
+from app.accounts.selectors import is_assignable_business_user
 from app.core import dates
 from app.core.dates import format_estonian_date, short_day_month
 from app.intelligence.enums import FactStatus, is_informational_milestone
@@ -410,7 +411,7 @@ class WorkItem:
             and self.date_precision == DatePrecision.EXACT
             and self.when is not None
             and not self.is_follow_up
-            and self.responsible is not None
+            and is_assignable_business_user(self.responsible)
             and bool(self.matter.is_open)
         )
 

@@ -192,7 +192,8 @@ Minu asjad calendar's event details. The label is «Nihuta kuupäeva», never
 row-side twin `WorkItem.is_date_shiftable`): a `NextAction` that is `OPEN` or
 `PLANNED`, on an open Matter, `ActionKind.DO` with `DateSemantics.DEADLINE`,
 `DatePrecision.EXACT` with a recorded day, not an `Arvamuse järelkontroll`, and
-carrying a responsible person; the person needs business write
+carrying a responsible person who is still a department worker (a departed
+one keeps the full `Muuda`, which asks who carries it now); the person needs business write
 (`business_write_required`) and visibility (`visible_to`). Not offered for an
 `Arvamuse tähtaeg`, a statutory or external date, a commencement, an `Oluline
 tähtaeg`, a feedback wait, a WAIT/MONITOR review date, an approximate, inferred

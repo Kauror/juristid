@@ -21,7 +21,7 @@ from app.core.errors import DomainError
 from app.matters import date_shift
 from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
 from app.workflow.models import NextAction
-from app.workflow.services import set_next_action
+from app.workflow.services import add_planned_action, set_next_action
 from tests import factories
 
 pytestmark = pytest.mark.django_db(transaction=True, serialized_rollback=True)
@@ -56,8 +56,9 @@ def _in_parallel(*targets: Callable[[], Any]) -> tuple[list[Any], list[BaseExcep
     return results, errors
 
 
+@pytest.mark.parametrize("status", ["current", "planned"])
 @pytest.mark.parametrize(("first", "second"), [("nadal", "nadal"), ("paev", "kuu")])
-def test_two_simultaneous_moves_of_one_step_move_it_once(first, second):
+def test_two_simultaneous_moves_of_one_step_move_it_once(first, second, status):
     owner = factories.UserFactory()
     colleague = factories.DepartmentHeadFactory()
     matter = factories.MatterFactory(owner=owner)
@@ -69,6 +70,11 @@ def test_two_simultaneous_moves_of_one_step_move_it_once(first, second):
         target_date=date(2026, 11, 5),
         actor=owner,
     )
+    if status == "planned":
+        action = add_planned_action(
+            matter=matter, text="Hiljem", target_date=date(2026, 11, 5), actor=owner
+        )
+    live_status = ActionStatus.OPEN if status == "current" else ActionStatus.PLANNED
     before = ChangeEvent.objects.filter(event_type=ChangeEventType.NEXT_ACTION_SET).count()
 
     def move(key: str, actor: Any) -> Callable[[], Any]:
@@ -85,7 +91,9 @@ def test_two_simultaneous_moves_of_one_step_move_it_once(first, second):
     assert len(results) == 1
     assert len(errors) == 1 and isinstance(errors[0], DomainError)
     assert str(errors[0]) == date_shift.SHIFT_STALE
-    live = NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
+    live = NextAction.objects.filter(matter=matter, status=live_status).exclude(
+        text="Saadan arvamuse" if status == "planned" else ""
+    )
     assert live.count() == 1
     assert live.get().target_date == results[0].new_date
     after = ChangeEvent.objects.filter(event_type=ChangeEventType.NEXT_ACTION_SET).count()
