@@ -1867,10 +1867,14 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
         """
         # `Ülevaade – <pealkiri>` / `Uudis – <pealkiri>` since the kind is
         # stored (docs/adr/0142 §C); a row of unknown kind keeps its old line.
+        # A title that already opens with the kind — «Koduka ülevaade: …»,
+        # «Uudis: …» — names it once: «Ülevaade: …» (app/matters/headlines.py,
+        # owner's UX corrections 2026-10-26). Display only; `title` is untouched.
+        from app.matters.headlines import kind_and_title
+
         if not self.effective_kind:
             return f"{self.LINK_LABEL}: {self.title}" if self.title else self.LINK_LABEL
-        label = self.link_label
-        return f"{label} – {self.title}" if self.title else label
+        return kind_and_title(self.link_label, self.title or "")
 
     #: How long the printed address may run before it is cut.
     #:

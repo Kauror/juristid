@@ -159,10 +159,11 @@ def test_a_copied_row_link_lands_on_an_old_row(page, base_url):
     row.evaluate("node => node.closest('details.kaikstage').open = true")
     row.locator(".uxtl__toggle").click()
     expect(row.get_by_role("button", name="Kopeeri link")).to_be_visible()
-    # Held by its address, not its name: the name changes once it has copied.
+    # Held by its address. Since the owner's UX corrections of 2026-10-26 it is
+    # an icon: «Link kopeeritud» is its tooltip, and its text does not change.
     copy = row.locator("button[data-copy-href]")
     copy.click()
-    expect(copy).to_have_text("Link kopeeritud")
+    expect(copy).to_have_attribute("data-copied", "Link kopeeritud")
     copied = page.evaluate("navigator.clipboard.readText()")
     key = row.get_attribute("data-kaik-rida")
     assert (
@@ -227,7 +228,7 @@ def test_a_row_corrected_in_place_is_shown_for_a_moment(page, base_url):
     expect(row).not_to_have_class(re.compile(r"uxtl__item--saved"), timeout=6_000)
 
     open_kaik_row(row)
-    row.get_by_role("button", name="Muuda", exact=True).click()
+    row.locator(".uxtl__icon--edit").click()
     box = row.locator(".uxtl__editform textarea").first
     box.wait_for()
     # Opening the editor is not a save.

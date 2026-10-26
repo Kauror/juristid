@@ -217,7 +217,7 @@ def _file_a_development(
         # `.uxtl__edit`, not the accessible name: the button's name is built
         # by `aria-labelledby` from its own word *and* the headline above it,
         # so an exact match on «Muuda» finds nothing (`development_row.html`).
-        row.locator(".uxtl__edit").first.click()
+        row.locator(".uxtl__icon--edit").first.click()
         editor = page.locator(".uxtl__editform")
         editor.locator("textarea[name=note]").wait_for()
         if note:

@@ -223,8 +223,17 @@ record, not professional chronology (master specification 16.5).
               row. Without the exclusion a `Märge` would carry two `Kustuta` chips,
               one inside its swap target and one outside it.
             {% endcomment %}
+            {% comment %}
+              The row's icons, copy → edit → remove (owner's UX corrections,
+              2026-10-26). The copy icon is drawn for every reader; edit and
+              remove keep the condition they always had. A published `Ülevaade /
+              uudis` draws all three after its own link instead, where its edit
+              is (`website_overview_link.html`).
+            {% endcomment %}
+            {% if not item.website_overview or not item.website_overview.is_published %}
+            <div class="uxtl__editactions">
+              {% include "matters/partials/row_copy_link.html" with row_key=item.row_key %}
             {% if item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
-              <div class="uxtl__editactions">
                 {% comment %}
                   **`Muuda` and `Tühista` on an `Oluline tähtaeg`** (docs/adr/0120
                   §2). Since that record an upcoming milestone is the file's next
@@ -236,15 +245,20 @@ record, not professional chronology (master specification 16.5).
                   only while the milestone still stands.
                 {% endcomment %}
                 {% if item.removable == "tahtaeg" %}
-                  <a class="uxtl__edit" href="{% url 'intelligence:edit_important_date' matter_id=matter.pk pk=item.record.pk %}"
-                     aria-label="Muuda olulist tähtaega: {{ item.record.title }}">Muuda</a>
-                  {% if item.record.status == "ACTIVE" %}
-                    <a class="uxtl__edit" href="{% url 'intelligence:cancel_important_date' matter_id=matter.pk pk=item.record.pk %}"
-                       aria-label="Tühista oluline tähtaeg: {{ item.record.title }}">Tühista</a>
-                  {% endif %}
+                  <a class="uxtl__icon uxtl__icon--edit" title="Muuda" href="{% url 'intelligence:edit_important_date' matter_id=matter.pk pk=item.record.pk %}"
+                     aria-label="Muuda olulist tähtaega: {{ item.record.title }}">{% include "matters/partials/action_icon.html" with name="edit" %}</a>
                 {% endif %}
                 {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="" %}
-              </div>
+                {% comment %}
+                  `Tühista` calls the milestone off — a different act from
+                  removing the record — so it stays a word, after the icons.
+                {% endcomment %}
+                {% if item.removable == "tahtaeg" and item.record.status == "ACTIVE" %}
+                  <a class="uxtl__edit" href="{% url 'intelligence:cancel_important_date' matter_id=matter.pk pk=item.record.pk %}"
+                     aria-label="Tühista oluline tähtaeg: {{ item.record.title }}">Tühista</a>
+                {% endif %}
+            {% endif %}
+            </div>
             {% endif %}
           </div>
           {% if item.milestone.sub or item.closed_by %}
@@ -500,6 +514,17 @@ record, not professional chronology (master specification 16.5).
           <time class="uxtl__time" datetime="{{ item.occurred_at|date:'c' }}">{{ item.occurred_at|date:"j.n.Y" }}</time>
         </p>
         {% endif %}
+        {% comment %}
+          A row that is not an entry — a stage change, a grouped or imported
+          save — has no record to correct, so its one icon, the link to this
+          history entry, stands right under its line. An entry carries it with
+          its `Muuda` and `Kustuta` (`entry_body.html`).
+        {% endcomment %}
+        {% if not item.is_entry %}
+          <div class="uxtl__permalink">
+            {% include "matters/partials/row_copy_link.html" with row_key=item.row_key %}
+          </div>
+        {% endif %}
         {% if item.is_entry %}
           {% comment %}
             The body and the `Muuda` that corrects it, in their own element so
@@ -604,20 +629,6 @@ record, not professional chronology (master specification 16.5).
           {% endif %}
         </span>
       {% endif %}
-      {% comment %}
-        **A link to this one row**, for a colleague or a note elsewhere. The
-        row's own key — a record's, an entry's or an event's id — and its
-        line's anchor, so the link still names this row after any amount of
-        new activity, and the page draws enough rows to include it even when it
-        is behind «Näita varasemaid» (`app.matters.timeline_links`). Last in
-        the open row and quiet: it is looked for, not scanned past. A reader
-        who may not see the row is shown the page as if the link named nothing.
-      {% endcomment %}
-      <div class="uxtl__permalink">
-        <button type="button" class="button button--quiet button--tiny"
-                data-copy-href="{% url 'matters:matter_detail' pk=matter.pk %}?kirje={{ item.row_key|urlencode:'' }}#kaik-{{ item.row_key }}-rida"
-                data-label-done="Link kopeeritud">Kopeeri link</button>
-      </div>
     </div>
   </article>
 {% empty %}

@@ -1644,6 +1644,23 @@
           if (!said) {
             return;
           }
+          /* An icon keeps its glyph: «Link kopeeritud» is a tooltip drawn from
+             `data-copied` (no box moves) and the shared status region, and the
+             `title` says it to a pointer resting there. */
+          if (button.hasAttribute("data-copy-icon")) {
+            if (!button.hasAttribute("data-title-idle")) {
+              button.setAttribute("data-title-idle", button.getAttribute("title") || "");
+            }
+            window.clearTimeout(button.copyLabelTimer);
+            button.setAttribute("data-copied", said);
+            button.setAttribute("title", said);
+            announceCopy(said);
+            button.copyLabelTimer = window.setTimeout(function () {
+              button.removeAttribute("data-copied");
+              button.setAttribute("title", button.getAttribute("data-title-idle"));
+            }, 2000);
+            return;
+          }
           /* The label to come back to is read once, before the first change:
              a second press inside the two seconds would otherwise take
              «Kopeeritud» for the label and leave it there for good. */

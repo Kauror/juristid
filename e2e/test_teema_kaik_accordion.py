@@ -235,7 +235,7 @@ def test_one_row_is_open_at_a_time_and_it_is_the_only_panel(seeded):
     assert all(r["border"] in TRANSPARENT for r in drawn if not r["open"])
     # A secondary row's own controls are reachable once it is open.
     expect(engagement.get_by_role("button", name=re.compile("^Muuda"))).to_be_visible()
-    expect(engagement.get_by_text("Kustuta", exact=True).first).to_be_visible()
+    expect(engagement.locator(".uxtl__icon--remove").first).to_be_visible()
 
 
 def test_the_pressed_row_stays_under_the_pointer_when_another_closes(seeded):
@@ -270,7 +270,10 @@ def test_the_toggle_is_a_named_button_the_keyboard_can_use(seeded):
     opinion = row(page, "Arvamus välja")
     expect(opinion.locator(".uxtl__file").first).to_be_visible()
 
-    # Tab goes on into the open panel's own controls, in reading order.
+    # Tab goes on into the open panel's own controls, in reading order: the
+    # row's icons, copy then edit (owner's UX corrections, 2026-10-26).
+    page.keyboard.press("Tab")
+    assert page.evaluate("() => document.activeElement.textContent.trim()") == "Kopeeri link"
     page.keyboard.press("Tab")
     assert page.evaluate("() => document.activeElement.textContent.trim()") == "Muuda"
 

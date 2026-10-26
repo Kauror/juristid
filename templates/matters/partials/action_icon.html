@@ -1,0 +1,8 @@
+{% comment %}
+One of the three row-action glyphs of `Teema käik`: `copy` (a link to this
+history entry), `edit` (correct this record) and `remove` (the confirmation that
+takes it off the file). Decoration only — `aria-hidden`, and every control that
+draws one carries its words in a visually hidden span and its tooltip in
+`title` (owner's UX corrections, 2026-10-26; `row_copy_link.html`).
+Stroked in `currentColor`, so hover, focus and both themes are the control's own.
+{% endcomment %}<svg class="uxicon" aria-hidden="true" focusable="false" width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">{% if name == "copy" %}<rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-2a1 1 0 0 0-1-1h-6a1 1 0 0 0-1 1v6a1 1 0 0 0 1 1h2"/>{% elif name == "edit" %}<path d="M11 2.5l2.5 2.5L6 12.5l-3.2.7.7-3.2z"/><path d="M9.5 4l2.5 2.5"/>{% else %}<path d="M4 4l8 8M12 4l-8 8"/>{% endif %}</svg>

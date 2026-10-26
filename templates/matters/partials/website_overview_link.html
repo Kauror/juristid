@@ -148,20 +148,31 @@ saying so, which is the same treatment every external link on this page gets.
        href="{{ overview.url }}" title="{{ overview.link_display }}"
        target="_blank" rel="noopener noreferrer">{{ overview.link_label }}<span
        class="visually-hidden">: {{ overview.link_display }} — avaneb uues aknas</span></a>
-    {% if can_write_business_content %}
-      {% comment %}
-        Named by reference — the button's own word, then the address beside it —
-        because a file written up three times shows three of these and «Muuda»
-        alone says which verb and not which record. The address is what tells
-        them apart, which is the whole reason it is now on the page.
-      {% endcomment %}
-      <button class="uxtl__edit" type="button"
-              id="kodulehe-ulevaade-{{ overview.pk }}-muuda"
-              aria-labelledby="kodulehe-ulevaade-{{ overview.pk }}-muuda kodulehe-ulevaade-{{ overview.pk }}-aadress"
-              hx-get="{% url 'matters:correct_website_overview' pk=matter.pk overview_id=overview.pk %}"
-              hx-target="#kodulehe-ulevaade-{{ overview.pk }}-link"
-              hx-swap="outerHTML">Muuda</button>
-    {% endif %}
+    {% comment %}
+      The row's three icons right after the link they belong with — copy →
+      edit → remove (owner's UX corrections, 2026-10-26). The copy icon is the
+      address of this *history entry* in Juristid, never the web page beside
+      it, and is drawn for every reader. `Muuda` is named by reference — its own
+      word, then the address — because a file written up three times shows
+      three of these; `Kustuta` names the headline. Removing is new business
+      work, so it waits for an open Teema; correcting the address does not.
+    {% endcomment %}
+    <div class="uxtl__editactions">
+      {% include "matters/partials/row_copy_link.html" with row_key=overview.pk %}
+      {% if can_write_business_content %}
+        <button class="uxtl__icon uxtl__icon--edit" type="button" title="Muuda"
+                id="kodulehe-ulevaade-{{ overview.pk }}-muuda"
+                aria-labelledby="kodulehe-ulevaade-{{ overview.pk }}-muuda kodulehe-ulevaade-{{ overview.pk }}-aadress"
+                hx-get="{% url 'matters:correct_website_overview' pk=matter.pk overview_id=overview.pk %}"
+                hx-target="#kodulehe-ulevaade-{{ overview.pk }}-link"
+                hx-swap="outerHTML">{% include "matters/partials/action_icon.html" with name="edit" %}<span class="visually-hidden">Muuda</span></button>
+        {% if matter.is_open %}
+          {% with head_id=overview.pk|stringformat:"s" %}
+            {% include "matters/partials/row_remove.html" with record=overview remove_kind="ulevaade" remove_label="ülevaade / uudis" remove_genitive="ülevaate / uudise" remove_revision=overview.updated_at.isoformat remove_named_by="kodulehe-ulevaade-"|add:head_id|add:"-pealkiri" %}
+          {% endwith %}
+        {% endif %}
+      {% endif %}
+    </div>
   {% endif %}
 </div>
 
