@@ -577,3 +577,139 @@ def test_both_keys_are_lifted_into_the_procedures_order():
 
     assert [step.sort_on for step in steps] == [date(2027, 1, 1), date(2027, 3, 1)]
     assert [step.reach_key for step in steps] == [date(2027, 12, 31), date(2027, 12, 31)]
+
+
+# ---------------------------------------------------------------------------
+# Fourth review of #548: the whole rail, built through `matter_rail`
+# ---------------------------------------------------------------------------
+
+
+def _build(nodes, rows, milestones, today):
+    """`matter_rail` over a stand-in rail, rows and milestones, on a fixed day."""
+    from types import SimpleNamespace
+    from unittest import mock
+
+    import app.matters.legal_process as lp
+
+    rail = SimpleNamespace(
+        nodes=tuple(lp.ProcessNode(key=key, label=key, state=state) for key, state in nodes),
+        recorded_phases=frozenset(),
+    )
+    with mock.patch.object(lp.timezone, "localdate", return_value=today):
+        return lp.matter_rail(
+            matter=None, user=None, rail=rail, milestones=milestones, step_rows=(rows, [])
+        )
+
+
+def _stored(when, precision):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        occurs_on=when, occurs_on_precision=precision, hidden=False, display_date=str(when)
+    )
+
+
+def _point(label, when, state, phase=None):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        label=label,
+        sort_on=when,
+        state=state,
+        display=str(when),
+        detail="",
+        is_event=False,
+        ref=label,
+        event_label="",
+        phase=phase,
+    )
+
+
+def _order(steps) -> list[str]:
+    return [step.label for step in steps]
+
+
+def test_rail_an_opinion_in_the_current_period_phase_reads_inside_it():
+    from app.matters.legal_process import STATE_CURRENT, STATE_POSSIBLE, STATE_REACHED
+
+    steps = _build(
+        [("algus", STATE_CURRENT), ("kooskolastus", STATE_POSSIBLE)],
+        {"algus": _stored(date(2026, 1, 1), "YEAR")},
+        [_point("Koja arvamus", date(2026, 5, 10), STATE_REACHED)],
+        date(2026, 10, 26),
+    )
+
+    assert _order(steps) == ["algus", "Koja arvamus", "kooskolastus"]
+
+
+def test_rail_a_future_period_phase_does_not_pull_a_past_point_past_it():
+    """`Valitsuses 2026` not reached: an opinion sent in May reads before the
+    current phase, and nothing ahead of it is drawn as travelled."""
+    from app.matters.legal_process import (
+        STATE_CURRENT,
+        STATE_POSSIBLE,
+        STATE_REACHED,
+        STATE_RECORDED,
+    )
+
+    steps = _build(
+        [
+            ("algus", STATE_RECORDED),
+            ("kooskolastus", STATE_CURRENT),
+            ("valitsus", STATE_POSSIBLE),
+            ("riigikogu", STATE_POSSIBLE),
+        ],
+        {"valitsus": _stored(date(2026, 1, 1), "YEAR")},
+        [_point("Koja arvamus", date(2026, 5, 10), STATE_REACHED)],
+        date(2026, 10, 26),
+    )
+
+    order = _order(steps)
+    assert order.index("Koja arvamus") < order.index("kooskolastus") < order.index("valitsus")
+    current = order.index("kooskolastus")
+    assert all(step.reach == 0.0 for step in steps[current:])
+
+
+def test_rail_a_deadline_before_a_year_phase_reads_before_it():
+    from app.matters.legal_process import STATE_CURRENT, STATE_POSSIBLE
+
+    steps = _build(
+        [
+            ("kooskolastus", STATE_CURRENT),
+            ("riigikogu", STATE_POSSIBLE),
+            ("joustumine", STATE_POSSIBLE),
+        ],
+        {"joustumine": _stored(date(2027, 1, 1), "YEAR")},
+        [_point("Arvamuse tähtaeg", date(2027, 2, 15), STATE_POSSIBLE)],
+        date(2026, 10, 26),
+    )
+
+    order = _order(steps)
+    assert order.index("Arvamuse tähtaeg") < order.index("joustumine")
+
+
+def test_rail_facts_fold_before_points_are_placed():
+    """A transposition deadline and a commencement fold onto their phases
+    before the opinion deadline between them is placed."""
+    from app.matters.legal_process import STATE_CURRENT, STATE_POSSIBLE
+    from app.matters.process_timeline import PHASE_EFFECTIVE, PHASE_TRANSPOSITION
+
+    steps = _build(
+        [
+            ("riigikogu", STATE_CURRENT),
+            ("joustumine", STATE_POSSIBLE),
+            ("ulevotmine", STATE_POSSIBLE),
+        ],
+        {},
+        [
+            _point("Ülevõtmise tähtaeg", date(2027, 3, 1), STATE_POSSIBLE, PHASE_TRANSPOSITION),
+            _point("Arvamuse tähtaeg", date(2027, 4, 1), STATE_POSSIBLE),
+            _point("Jõustumine", date(2027, 6, 1), STATE_POSSIBLE, PHASE_EFFECTIVE),
+        ],
+        date(2026, 10, 26),
+    )
+
+    order = _order(steps)
+    assert order.index("Arvamuse tähtaeg") < order.index("joustumine")
+    keys = [step.sort_on for step in steps if step.is_phase and step.sort_on is not None]
+    assert keys == sorted(keys)

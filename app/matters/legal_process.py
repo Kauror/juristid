@@ -803,6 +803,20 @@ def _phase_keys_in_order(steps: list[RailStep]) -> None:
         floor, reach_floor = sort_on, reach
 
 
+def _placement_key(step: RailStep) -> date | None:
+    """Where a dated point is compared against ``step`` when it is placed.
+
+    A phase already reached began where its period starts. A phase still
+    ahead is only known to precede a point once its **whole** period is over:
+    *Valitsuses 2026* not yet reached says nothing about an opinion sent in
+    May, and *Jõustumine 2027* still lies after a deadline in February
+    (docs/adr/0100, amendment of 2026-10-26). Every other item is its date.
+    """
+    if step.is_phase and step.state not in _REACHED_STATES:
+        return step.reach_key
+    return step.sort_on
+
+
 def _last_dated_phase_not_after(steps: list[RailStep], when: date, *, start: int) -> int | None:
     """The furthest phase from ``start`` on whose explicit date is not after ``when``.
 
@@ -814,7 +828,8 @@ def _last_dated_phase_not_after(steps: list[RailStep], when: date, *, start: int
     found = None
     for index in range(start, len(steps)):
         step = steps[index]
-        if step.is_phase and step.sort_on is not None and step.sort_on <= when:
+        key = _placement_key(step)
+        if step.is_phase and key is not None and key <= when:
             found = index
     return found
 
@@ -1046,8 +1061,16 @@ def matter_rail(
 
     today = timezone.localdate()
     _keep_recorded_phases(steps, matter=matter, user=user, rail=rail, rows=rows, today=today)
-    _phase_keys_in_order(steps)
+    # **Facts folded first, then the phase keys put in order once, then the
+    # rest placed** — so a fact that dates an undated phase moves that phase
+    # before anything is slotted against it (docs/adr/0100, amendment of
+    # 2026-10-26).
+    unfolded = []
     for milestone in sorted(milestones, key=lambda one: one.sort_on):
+        if not _fold_into_phase(steps, milestone):
+            unfolded.append(milestone)
+    _phase_keys_in_order(steps)
+    for milestone in unfolded:
         # **A fact whose phase is drawn is folded onto that phase, not beside
         # it.** A commencement used to be inserted as its own column next to
         # `Jõustumine`, so the rail read `Jõustumine · Jõustumine 1.1.2027` —
@@ -1059,12 +1082,7 @@ def matter_rail(
         # Folded, it is one column carrying its own dates as visible lines.
         # Hiding the phase cannot strand the fact either, because
         # `anchored_phase_keys` is what stops the phase being hidden at all.
-        folded = _fold_into_phase(steps, milestone)
-        if folded:
-            # The fact may date a phase that had no date of its own; it keeps
-            # the procedure's order like any phase date.
-            _phase_keys_in_order(steps)
-            continue
+        # (Folded above, before any slot was decided.)
         if milestone.is_event:
             step = RailStep(
                 key=f"event:{milestone.ref}",
@@ -1582,13 +1600,19 @@ def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], defaul
     low, high = window
     position = default
     for index in range(high - 1, low - 1, -1):
-        placed = steps[index]
-        if placed.sort_on is None:
+        key = _placement_key(steps[index])
+        if key is None:
             continue
-        if placed.sort_on <= when:
+        if key <= when:
             return index + 1
         position = index
-    return position
+    # **Earlier than every dated step in the window**: nothing says it follows
+    # anything there, so it reads at the caller's default when that comes
+    # first — beside the current phase rather than past undated phases, just
+    # because a phase further on carries a date (docs/adr/0100, amendment of
+    # 2026-10-26: a commencement folded onto `Jõustumine` must not pull a
+    # deadline three weeks out past `Valitsuses`).
+    return min(position, default)
 
 
 #: Kept out of the query above on purpose: this module reads and never filters a
