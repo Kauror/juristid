@@ -7202,6 +7202,56 @@ class TimelineStepsForm(forms.Form):
         return DatePrecision.EXACT.value
 
 
+def rail_date_prefill(
+    prefix: str, occurs_on: date | None, precision: str, today: date | None
+) -> dict[str, Any]:
+    """What the four `Täpsus` controls of a rail step's date editor open on.
+
+    Owner's UX review of 2026-10-26 (docs/adr/0100, amendment of that day):
+    clicking a step on `Menetluse kulg` usually records *now*, so an undated
+    step opens on today in Europe/Tallinn — `Täpne päev` on today's day, and
+    the `Kuu`, `Kvartal` and `Aasta` controls on today's month, quarter and
+    year, so switching the chip shows the period already filled in.
+
+    **A recorded date wins.** The controls are filled from it — a day fills
+    every control, a month its quarter and year, a quarter its year — and
+    never from today; a control the record cannot answer (the day of a month)
+    stays empty rather than invented. `period_initial` is applied over this, so
+    the chosen chip and the record's own control are exactly what they were.
+
+    Only this editor reads it. The shared composer opens other forms —
+    deadlines, commencements, opinions — on whatever *they* pass, unchanged.
+    Initial values only: an emptied box posts empty and clears the date, and a
+    refused POST re-renders what was posted, never these.
+    """
+    if occurs_on is None:
+        day = today or timezone.localdate()
+        source, source_precision = day, DatePrecision.EXACT.value
+    else:
+        source, source_precision = occurs_on, precision or DatePrecision.EXACT.value
+    quarter = str((source.month - 1) // 3 + 1)
+    if source_precision in _DAY_PRECISIONS:
+        initial: dict[str, Any] = {
+            f"{prefix}_date": source,
+            f"{prefix}_month": str(source.month),
+            f"{prefix}_quarter": quarter,
+            f"{prefix}_year": source.year,
+        }
+    elif source_precision == DatePrecision.MONTH.value:
+        initial = {
+            f"{prefix}_month": str(source.month),
+            f"{prefix}_quarter": quarter,
+            f"{prefix}_year": source.year,
+        }
+    elif source_precision == DatePrecision.QUARTER.value:
+        initial = {f"{prefix}_quarter": quarter, f"{prefix}_year": source.year}
+    else:
+        initial = {f"{prefix}_year": source.year}
+    if occurs_on is None:
+        initial[f"{prefix}_precision"] = DatePrecision.EXACT.value
+    return initial
+
+
 class RailStepDateForm(forms.Form):
     """A click on one `Menetluse kulg` step: when is it expected?
 
@@ -7229,6 +7279,7 @@ class RailStepDateForm(forms.Form):
         occurs_on: date | None = None,
         precision: str = "",
         revision: str = "",
+        today: date | None = None,
         **kwargs: Any,
     ) -> None:
         kwargs.setdefault("auto_id", "id_kulg_%s")
@@ -7243,9 +7294,10 @@ class RailStepDateForm(forms.Form):
         #: What `_precision_chips` draws: the four, plus the record's own.
         self.precision_choices = precision_choices(self._kept)
         group = _precision_fields(self.PREFIX, date_label="Kuupäev", kept=self._kept)
-        for name, value in period_initial(
-            self.PREFIX, occurs_on, precision or DatePrecision.EXACT.value
-        ).items():
+        initial = period_initial(self.PREFIX, occurs_on, precision or DatePrecision.EXACT.value)
+        if self._kept is None:
+            initial = {**rail_date_prefill(self.PREFIX, occurs_on, precision, today), **initial}
+        for name, value in initial.items():
             group[name].initial = value
         self.fields.update(group)
 

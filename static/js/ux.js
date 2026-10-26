@@ -2052,6 +2052,74 @@
     });
   }
 
+  /* ---- `Menetluse kulg` date editor: one answer, four controls ------------
+   * The rail step's `Täpsus` controls are separate inputs (period_composer.html,
+   * pure CSS shows the chosen one). Here a day typed into `Täpne päev` is
+   * carried into `Kuu`, `Kvartal` and `Aasta`, and a month into its quarter,
+   * so switching the chip shows the period of the day just entered rather than
+   * today's. A control the person changed by hand is never overwritten, and an
+   * emptied or unreadable day carries nothing. Only forms that opt in with
+   * `data-period-follow="<prefix>"` — the shared composer elsewhere is untouched
+   * (templates/matters/partials/rail_step_date_form.html).
+   */
+  function bindPeriodFollow(scope) {
+    scope.querySelectorAll("form[data-period-follow]").forEach(function (form) {
+      if (!once(form, "PeriodFollow")) {
+        return;
+      }
+      var prefix = form.getAttribute("data-period-follow");
+      function field(name) {
+        return form.querySelector("[name='" + prefix + "_" + name + "']");
+      }
+      var day = field("date");
+      var month = field("month");
+      var quarter = field("quarter");
+      var year = field("year");
+      [month, quarter, year].forEach(function (control) {
+        if (control) {
+          control.addEventListener("change", function () {
+            control.setAttribute("data-touched", "");
+          });
+        }
+      });
+      function put(control, value) {
+        if (control && !control.hasAttribute("data-touched")) {
+          control.value = value;
+        }
+      }
+      function follow(m, y) {
+        put(month, String(m));
+        put(quarter, String(Math.floor((m - 1) / 3) + 1));
+        if (y) {
+          put(year, String(y));
+        }
+      }
+      if (day) {
+        var fromDay = function () {
+          var match = /^\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*$/.exec(day.value);
+          if (!match) {
+            return;
+          }
+          var m = parseInt(match[2], 10);
+          if (m >= 1 && m <= 12) {
+            follow(m, parseInt(match[3], 10));
+          }
+        };
+        /* Typed, or written by the date picker (which fires `change`). */
+        day.addEventListener("input", fromDay);
+        day.addEventListener("change", fromDay);
+      }
+      if (month) {
+        month.addEventListener("change", function () {
+          var m = parseInt(month.value, 10);
+          if (m >= 1 && m <= 12) {
+            put(quarter, String(Math.floor((m - 1) / 3) + 1));
+          }
+        });
+      }
+    });
+  }
+
   /* Each binder on its own, as in app.js (`safeInit`, docs/adr/0171): one that
      throws is logged under its name and the rest still bind — and the refusal
      focus that follows `bindAll` after a swap still runs. */
@@ -2079,6 +2147,7 @@
       bindRowFilter,
       bindDateShift,
       bindCalendar,
+      bindPeriodFollow,
     ].forEach(function (binder) {
       safeInit(binder.name, function () {
         binder(root);

@@ -301,3 +301,25 @@ own «Muutmata» chip). Emptied, the date is removed.
    believed — a point dated before it reads before it (amendment of
    2026-09-27, rule 1; docs/adr/0099 §4) — so nothing is clamped. Pinned in
    `tests/test_rail_step_date.py` (the `test_rail_*` cases).
+
+## Amendment of 2026-10-26 (second) — the step's date editor opens on today; no «Eesolev tähtaeg»
+
+**Owner's UX review after r30.**
+
+* **Prefill.** Clicking an undated step opens `millal?` on today in
+  Europe/Tallinn in all four `Täpsus` controls — `Täpne päev` chosen with
+  today's day, and `Kuu`, `Kvartal`, `Aasta` already holding today's month,
+  quarter and year (`forms.rail_date_prefill`, `RailStepDateForm` only). A
+  recorded date wins: the controls are filled from it (a day fills all four, a
+  month its quarter and year, a quarter its year) and never from today; a
+  stored precision the chips do not offer keeps its own chip and nothing else.
+  A day typed in the editor is carried into the other three controls unless
+  those were changed by hand (`data-period-follow`, ux.js). Initial values
+  only: an emptied box still clears the date, a refused POST re-renders what
+  was posted, and nothing is stored before `Salvesta`. The shared composer and
+  every other form using it are unchanged.
+* **No «Eesolev tähtaeg» heading.** An upcoming `Oluline tähtaeg` on the rail
+  shows its description and period under its diamond without the kind above
+  it (`RailItem.type_label`); «Tähtaeg» (passed) and «Töövõit» are still
+  written. `event_label`, the upcoming/passed rule, positions and tooltips are
+  unchanged.

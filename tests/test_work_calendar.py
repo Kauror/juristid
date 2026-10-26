@@ -524,12 +524,13 @@ def test_a_colleague_cannot_open_another_desk_or_its_calendar(client, specialist
 # ---------------------------------------------------------------------------
 
 
-def test_minu_asjad_renders_the_calendar_below_the_statistics(client, specialist):
+def test_minu_asjad_renders_the_calendar_above_the_statistics(client, specialist):
+    """First after any alerts since the owner's UX review of 2026-10-26."""
     client.force_login(specialist)
     body = client.get(MY_WORK).content.decode()
 
     assert 'id="minu-kalender"' in body
-    assert body.index("Minu statistika") < body.index('id="minu-kalender"')
+    assert body.index('id="minu-kalender"') < body.index("Minu statistika")
     for label in ("4 nädalat", "Kuu", "Kvartal", "Aasta"):
         assert f">{label}</a>" in body
 

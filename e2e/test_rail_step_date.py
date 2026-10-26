@@ -65,3 +65,45 @@ def test_a_step_is_dated_by_clicking_it(page, base_url):
     page.reload()
     page.wait_for_load_state("networkidle")
     expect(page.locator(".lprail .tl-strip")).to_contain_text("märts 2027")
+
+
+def test_the_panel_opens_on_today_and_follows_a_typed_day(page, base_url):
+    """Owner's UX review of 2026-10-26: an undated step opens on today in all
+    four `Täpsus` controls; a typed day carries into `Kuu`, `Kvartal` and
+    `Aasta` unless one was changed by hand; opening writes nothing."""
+    from datetime import date
+
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("QA kuupäev täna"), owner=SANDRA)
+    page.goto(url)
+    page.wait_for_load_state("networkidle")
+    page.locator(".lprail__edit").click()
+    panel = page.locator("#menetluse-kulg-muuda")
+    panel.get_by_text("+ Lisa samm", exact=True).click()
+    page.fill("input[name='uus__title']", "Istung täna")
+    _save(page, panel)
+
+    page.get_by_role("button", name="Istung täna: lisa kuupäev").click()
+    today = date.today()
+    day = panel.locator("input[name='kp_date']")
+    expect(day).to_have_value(f"{today.day:02d}.{today.month:02d}.{today.year}")
+    expect(panel.locator("select[name='kp_month']")).to_have_value(str(today.month))
+    expect(panel.locator("select[name='kp_quarter']")).to_have_value(
+        str((today.month - 1) // 3 + 1)
+    )
+    expect(panel.locator("input[name='kp_year']")).to_have_value(str(today.year))
+
+    # A hand-chosen year is kept; the typed day moves month and quarter.
+    panel.locator("label.precision__chip", has_text="Aasta").click()
+    panel.locator("input[name='kp_year']").fill("2031")
+    panel.locator("input[name='kp_year']").dispatch_event("change")
+    panel.locator("label.precision__chip", has_text="Täpne").click()
+    day.fill("15.02.2029")
+    day.dispatch_event("change")
+    expect(panel.locator("select[name='kp_month']")).to_have_value("2")
+    expect(panel.locator("select[name='kp_quarter']")).to_have_value("1")
+    expect(panel.locator("input[name='kp_year']")).to_have_value("2031")
+
+    panel.locator("label.precision__chip", has_text="Kuu").click()
+    _save(page, panel)
+    expect(page.locator(".lprail .tl-strip")).to_contain_text("veebruar 2031")
