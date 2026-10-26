@@ -333,10 +333,21 @@ def _commencement_event(
 
 
 def work_events(
-    user: Any, subject: Any, start: date, end: date, today: date
+    user: Any,
+    subject: Any,
+    start: date,
+    end: date,
+    today: date,
+    items: list[wi.WorkItem] | None = None,
 ) -> list[CalendarEvent]:
-    """This person's dated work overlapping ``start``…``end``, from the work model."""
-    items = wi.work_items(user, today=today, responsible=subject, earliest=start, latest=end)
+    """This person's dated work overlapping ``start``…``end``, from the work model.
+
+    ``items`` is the work model the page has already read for this desk
+    (`MyWork.items` — same reader, subject and day); given, nothing is read
+    again. The calendar's own swaps read it bounded to the window.
+    """
+    if items is None:
+        items = wi.work_items(user, today=today, responsible=subject, earliest=start, latest=end)
     events = [event for event in map(_work_event, items) if event is not None]
     return [event for event in events if event.when <= end and event.period_end >= start]
 
@@ -643,12 +654,14 @@ def build_calendar(
     params: Any,
     today: date,
     query_for: Callable[[dict[str, str | None]], str],
+    items: list[wi.WorkItem] | None = None,
 ) -> Calendar:
     """The calendar for ``subject``'s desk, as ``user`` may see it.
 
     ``params`` is the request's query; ``query_for(changes)`` returns the page's
     address with those calendar parameters set (``None`` drops one), so every
-    link keeps ``kuni`` and ``vaade`` exactly as they were.
+    link keeps ``kuni`` and ``vaade`` exactly as they were. ``items`` — the
+    page's own work model, when it has read one (see `work_events`).
     """
     view = requested_view(params)
     anchor = anchor_from(view, params.get(PERIOD_PARAM), today)
@@ -664,7 +677,7 @@ def build_calendar(
         )
 
     events = _ordered(
-        work_events(user, subject, start, end, today)
+        work_events(user, subject, start, end, today, items)
         + commencement_events(user, subject, start, end, today)
     )
 

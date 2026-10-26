@@ -857,6 +857,10 @@ class MyWork:
     overdue: int = 0
     week: int = 0
     beyond_horizon: int = 0
+    #: Every dated work item of this desk, as read once for the page — the
+    #: calendar beside the bands places these rather than reading them again
+    #: (app/matters/calendar.py).
+    items: list[wi.WorkItem] = field(default_factory=list)
 
     @property
     def has_work(self) -> bool:
@@ -1077,4 +1081,5 @@ def build_my_work(
         overdue=overdue,
         week=week,
         beyond_horizon=beyond,
+        items=everything,
     )

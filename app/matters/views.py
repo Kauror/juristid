@@ -475,7 +475,7 @@ def person_work(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_person_work(request, subject=subject, is_self=subject.pk == request.user.pk)
 
 
-def _person_calendar(request: HttpRequest, *, subject: Any, today: Any) -> Any:
+def _person_calendar(request: HttpRequest, *, subject: Any, today: Any, items: Any = None) -> Any:
     """The rail's calendar (app/matters/calendar.py), its links on this page's address.
 
     Every link keeps the page's other parameters — `kuni`, `vaade` — exactly as
@@ -495,7 +495,7 @@ def _person_calendar(request: HttpRequest, *, subject: Any, today: Any) -> Any:
         return f"{request.path}?{encoded}" if encoded else request.path
 
     return work_calendar.build_calendar(
-        request.user, subject, params=request.GET, today=today, query_for=query_for
+        request.user, subject, params=request.GET, today=today, query_for=query_for, items=items
     )
 
 
@@ -541,7 +541,7 @@ def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) ->
         # to act on a sentence that has since moved (ADR 0021).
         "source_snapshot": snapshot_label(),
         "nav_active": "minu_asjad",
-        "calendar": _person_calendar(request, subject=subject, today=today),
+        "calendar": _person_calendar(request, subject=subject, today=today, items=work.items),
     }
     if is_self:
         # Fetched only here, and only for `request.user`. The manager branch

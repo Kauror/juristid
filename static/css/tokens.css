@@ -390,6 +390,9 @@
   --status-success-border: #6db894;
   --status-info: #0b6597;
   --status-info-soft: #e3eff8;
+  --calendar-work: var(--accent-link);
+  --calendar-commencement: var(--status-success);
+  --calendar-overdue: var(--status-danger);
 
   --surface-document: var(--primitive-neutral-0);
   --text-on-document: var(--primitive-neutral-900);
