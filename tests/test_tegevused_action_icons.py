@@ -89,8 +89,23 @@ def _published(matter, *, url: str, title: str):
     ],
 )
 def test_the_kind_is_named_once_and_a_real_title_keeps_its_words(kind, title, expected):
+    from app.matters.headlines import SOURCE_WORDS
+
     separator = ": " if kind == "Kaasamine" else " – "
-    assert kind_and_title(kind, title, separator=separator) == expected
+    words = SOURCE_WORDS if kind in ("Ülevaade", "Uudis") else ()
+    assert kind_and_title(kind, title, separator=separator, source_words=words) == expected
+
+
+@pytest.mark.parametrize(
+    ("kind", "title", "expected"),
+    [
+        ("Märge", "Koja märge: ministeerium helistas", "Märge: Koja märge: ministeerium helistas"),
+        ("Kaasamine", "Koja kaasamine: liikmed", "Kaasamine: Koja kaasamine: liikmed"),
+    ],
+)
+def test_a_title_a_lawyer_typed_keeps_its_source_word(kind, title, expected):
+    """Review of #555: «Koja», «Kodulehe»… are dropped only from imported koda.ee titles."""
+    assert kind_and_title(kind, title, separator=": ") == expected
 
 
 def test_an_imported_overview_and_news_read_their_kind_once(signed_in, normal_matter):

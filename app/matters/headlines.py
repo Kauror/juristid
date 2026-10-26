@@ -19,7 +19,7 @@ from __future__ import annotations
 SOURCE_WORDS = ("koduka", "koja", "kodulehe")
 
 
-def _kind_prefix_end(kind: str, title: str) -> int:
+def _kind_prefix_end(kind: str, title: str, source_words: tuple[str, ...]) -> int:
     """Where the title's own kind prefix ends (after its colon), or 0 when it has none."""
     head, colon, _rest = title.partition(":")
     if not colon:
@@ -28,15 +28,17 @@ def _kind_prefix_end(kind: str, title: str) -> int:
     wanted = kind.casefold()
     if not words or words[-1].casefold() != wanted:
         return 0
-    if len(words) == 1 or (len(words) == 2 and words[0].casefold() in SOURCE_WORDS):
+    if len(words) == 1 or (len(words) == 2 and words[0].casefold() in source_words):
         return len(head) + 1
     return 0
 
 
-def kind_and_title(kind: str, title: str, *, separator: str = " – ") -> str:
+def kind_and_title(
+    kind: str, title: str, *, separator: str = " – ", source_words: tuple[str, ...] = ()
+) -> str:
     """``Kind – title``, or ``Kind: rest`` when the title already begins with the kind.
 
-    >>> kind_and_title("Ülevaade", "Koduka ülevaade: Mida arvad?")
+    >>> kind_and_title("Ülevaade", "Koduka ülevaade: Mida arvad?", source_words=SOURCE_WORDS)
     'Ülevaade: Mida arvad?'
     >>> kind_and_title("Uudis", "Uudis: Saatsime 15 ettepanekut")
     'Uudis: Saatsime 15 ettepanekut'
@@ -46,7 +48,9 @@ def kind_and_title(kind: str, title: str, *, separator: str = " – ") -> str:
     title = title.strip()
     if not title:
         return kind
-    end = _kind_prefix_end(kind, title)
+    # `source_words` only for imported koda.ee titles: in a title a lawyer
+    # typed — «Koja märge: …» — «Koja» is content (review of #555).
+    end = _kind_prefix_end(kind, title, source_words)
     if end:
         rest = title[end:].strip()
         return f"{kind}: {rest}" if rest else kind
