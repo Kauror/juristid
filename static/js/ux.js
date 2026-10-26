@@ -1887,6 +1887,127 @@
     });
   }
 
+  /* ---- Kalender (Minu asjad) -------------------------------------------
+   * The calendar's days and weeks are ordinary popovers (`data-uxpopover`
+   * above): click, Enter, Space and a tap open them; Escape and a click
+   * outside close them. Two things are added here, neither needed to use it:
+   *
+   *  - a pointer that rests on a day or a week opens its popover, and leaving
+   *    closes it again unless the popover was opened by a click or holds
+   *    focus — hover is a shortcut to what the click shows, never the only way;
+   *  - the quarter and year panel (`data-wcal-panel`) takes focus when it
+   *    arrives, keeps Tab inside itself, and Escape or a click on the backdrop
+   *    follows its own «Sulge» link, so closing is the same request as the
+   *    visible control (templates/matters/partials/work_calendar.html).
+   */
+  function bindCalendar(scope) {
+    var hoverable = window.matchMedia && window.matchMedia("(hover: hover)").matches;
+    scope.querySelectorAll("[data-wcal] details[data-uxpopover]").forEach(function (holder) {
+      if (!hoverable || !once(holder, "CalendarHover")) {
+        return;
+      }
+      var timer = null;
+      holder.addEventListener("mouseenter", function () {
+        window.clearTimeout(timer);
+        if (holder.open) {
+          return;
+        }
+        /* A day the reader chose by click stays open: hovering past another
+           busy day does not take it away. */
+        if (document.querySelector("[data-wcal] details[data-uxpopover][open]:not([data-wcal-hovered])")) {
+          return;
+        }
+        timer = window.setTimeout(function () {
+          holder.setAttribute("data-wcal-hovered", "");
+          holder.open = true;
+        }, 150);
+      });
+      holder.addEventListener("mouseleave", function () {
+        window.clearTimeout(timer);
+        if (!holder.hasAttribute("data-wcal-hovered")) {
+          return;
+        }
+        timer = window.setTimeout(function () {
+          if (holder.contains(document.activeElement)) {
+            return;
+          }
+          holder.removeAttribute("data-wcal-hovered");
+          holder.open = false;
+        }, 200);
+      });
+      /* A click on a hover-opened day keeps it open: it is now chosen. */
+      holder.querySelector("summary").addEventListener("click", function (event) {
+        if (holder.hasAttribute("data-wcal-hovered") && holder.open) {
+          event.preventDefault();
+          holder.removeAttribute("data-wcal-hovered");
+        }
+      });
+      holder.addEventListener("toggle", function () {
+        if (!holder.open) {
+          holder.removeAttribute("data-wcal-hovered");
+        }
+      });
+    });
+
+    var panels = [];
+    if (scope.matches && scope.matches("[data-wcal-panel]")) {
+      panels.push(scope);
+    }
+    scope.querySelectorAll("[data-wcal-panel]").forEach(function (panel) {
+      panels.push(panel);
+    });
+    panels.forEach(function (panel) {
+      if (!once(panel, "CalendarPanel")) {
+        return;
+      }
+      var close = panel.querySelector("[data-wcal-closelink]");
+      var backdrop = panel.parentElement && panel.parentElement.querySelector("[data-wcal-close]");
+      if (backdrop && close) {
+        backdrop.addEventListener("click", function () {
+          close.click();
+        });
+      }
+      panel.addEventListener("keydown", function (event) {
+        /* An open day or week inside the panel takes Escape first: the
+           popover contract closes it and returns focus to its day. */
+        var popover = event.target.closest && event.target.closest("details[data-uxpopover][open]");
+        if (event.key === "Escape" && popover && panel.contains(popover)) {
+          return;
+        }
+        if (event.key === "Escape" && !event.defaultPrevented && close) {
+          event.preventDefault();
+          close.click();
+          return;
+        }
+        if (event.key !== "Tab") {
+          return;
+        }
+        var focusables = Array.prototype.filter.call(
+          panel.querySelectorAll("a[href], button:not([disabled]), summary, [tabindex='0']"),
+          function (node) {
+            return node.offsetParent !== null || node === document.activeElement;
+          }
+        );
+        if (!focusables.length) {
+          return;
+        }
+        var first = focusables[0];
+        var last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first) {
+          event.preventDefault();
+          last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+          event.preventDefault();
+          first.focus();
+        }
+      });
+      var title = panel.querySelector("#wcal-panel-title");
+      if (title) {
+        title.focus();
+      }
+    });
+  }
+
   /* Each binder on its own, as in app.js (`safeInit`, docs/adr/0171): one that
      throws is logged under its name and the rest still bind — and the refusal
      focus that follows `bindAll` after a swap still runs. */
@@ -1912,6 +2033,7 @@
       bindDocumentRename,
       bindCopyLink,
       bindRowFilter,
+      bindCalendar,
     ].forEach(function (binder) {
       safeInit(binder.name, function () {
         binder(root);

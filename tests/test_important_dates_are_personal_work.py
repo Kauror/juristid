@@ -271,4 +271,11 @@ def test_a_commencement_is_not_anybodys_deadline(client, specialist, today):
 
     response = client.get(MY_WORK)
     assert "põhiosa jõustub" not in items_on(response)
-    assert "põhiosa jõustub" not in response.content.decode()
+    # The rail's read-only *Kalender* shows it, labelled as a recorded
+    # commencement date (docs/adr/0158, amendment of 2026-10-26); nothing else
+    # on the page does.
+    body = response.content.decode()
+    start = body.index('id="minu-kalender"')
+    end = body.index("</section>", start)
+    assert "põhiosa jõustub" in body[start:end]
+    assert "põhiosa jõustub" not in body[:start] + body[end:]

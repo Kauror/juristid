@@ -1,0 +1,66 @@
+{% comment %}
+What the chosen view draws, and the periods beside it. Each record appears
+once: on its day, or — known only to a period — in one of the lists below the
+grid (app/matters/calendar.py).
+{% endcomment %}
+<p class="wcal__legend">
+  <span class="wcal__key"><span class="wcal__dot wcal__dot--too" aria-hidden="true"></span>Tähtajad ja tegevused</span>
+  <span class="wcal__key"><span class="wcal__dot wcal__dot--joustumine" aria-hidden="true"></span>Jõustumised</span>
+</p>
+
+{% if calendar.view == "4n" %}
+  {% include "matters/partials/work_calendar_grid.html" with weeks=calendar.weeks weekdays=calendar.weekdays %}
+{% elif calendar.view == "aasta" %}
+  <div class="wcal__year">
+    {% for tile in calendar.year_months %}
+      <a class="wcal__tile{% if tile.density == 1 %} wcal__tile--d1{% elif tile.density == 2 %} wcal__tile--d2{% elif tile.density == 3 %} wcal__tile--d3{% endif %}"
+         href="{{ tile.query }}"
+         hx-get="{{ tile.query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true"
+         aria-label="{{ tile.label }}. Ava kuu.">
+        <span class="wcal__tilename">{{ tile.title }}</span>
+        <span class="wcal__tilecounts" aria-hidden="true">
+          <span class="wcal__count"><span class="wcal__dot wcal__dot--too"></span>{{ tile.work_count }}</span>
+          <span class="wcal__count"><span class="wcal__dot wcal__dot--joustumine"></span>{{ tile.commencement_count }}</span>
+        </span>
+      </a>
+    {% endfor %}
+  </div>
+  <p class="wcal__note">Kuu arv sisaldab ka selle kuu täpsusega kirjeid. Kvartali, poolaasta või aasta täpsusega kirjed on allpool eraldi ega ole ühegi kuu arvus.</p>
+{% else %}
+  <div class="wcal__months{% if calendar.months|length > 1 %} wcal__months--three{% endif %}">
+    {% for grid in calendar.months %}
+      <div class="wcal__month">
+        {% if calendar.months|length > 1 %}
+          <h3 class="wcal__monthtitle">
+            <a href="{{ grid.query }}" hx-get="{{ grid.query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true">{{ grid.title }}</a>
+          </h3>
+        {% endif %}
+        {% include "matters/partials/work_calendar_grid.html" with weeks=grid.weeks weekdays=calendar.weekdays %}
+        {% if grid.month_events %}
+          <h4 class="wcal__listlabel">{{ grid.title }}: kuu jooksul, päev teadmata</h4>
+          <ul class="wcal__list">
+            {% for event in grid.month_events %}
+              {% include "matters/partials/work_calendar_event.html" with event=event %}
+            {% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if calendar.periods %}
+  <h4 class="wcal__listlabel">
+    {% if calendar.view == "4n" %}Täpsema päevata, puudutab seda ajavahemikku{% else %}Pikem periood, päev teadmata{% endif %}
+  </h4>
+  <ul class="wcal__list">
+    {% for event in calendar.periods %}
+      {% include "matters/partials/work_calendar_event.html" with event=event %}
+    {% endfor %}
+  </ul>
+{% endif %}
+
+{% if not calendar.events %}
+  <p class="railblock__empty">Selles ajavahemikus kuupäevaga töid ega jõustumisi ei ole.</p>
+{% endif %}
+<p class="wcal__note">Näitab kehtivaid kirjeid: tehtud tegevusi ei näidata. Jõustumine on kirjas olev kuupäev, mitte tähtaeg.</p>

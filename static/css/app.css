@@ -14232,3 +14232,516 @@ a.jcal__daynum {
   border-radius: var(--radius-sm);
   background: var(--surface-elevated);
 }
+
+/* ==========================================================================
+ * Kalender — Minu asjad's rail calendar (templates/matters/partials/
+ * work_calendar*.html, app/matters/calendar.py, docs/adr/0158 amendment of
+ * 2026-10-26). Compact in the rail; quarter and year open in a panel over the
+ * page. Colour is never the only signal: work is a round dot, a commencement a
+ * diamond, and every day's name says what it holds.
+ * ========================================================================== */
+
+.wcal__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-1) var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+
+.wcal__views {
+  display: inline-flex;
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+
+.wcal__view {
+  padding: 2px var(--spacing-15);
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-secondary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.wcal__view + .wcal__view {
+  border-left: 1px solid var(--border-control);
+}
+
+.wcal__view:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.wcal__view.is-active {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.wcal__period {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-meta);
+}
+
+.wcal__title {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+  white-space: nowrap;
+}
+
+.wcal__nav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0 var(--spacing-1);
+  border-radius: var(--radius-sm);
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.wcal__nav:hover {
+  background: var(--surface-hover);
+}
+
+.wcal__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: 0 0 var(--spacing-15);
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.wcal__key {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+.wcal__dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: var(--radius-circle);
+  background: var(--calendar-work);
+}
+
+.wcal__dot--joustumine {
+  border-radius: 1px;
+  background: var(--calendar-commencement);
+  transform: rotate(45deg) scale(0.9);
+}
+
+.wcal__dot.is-overdue {
+  background: var(--calendar-overdue);
+}
+
+.wcal__grid {
+  display: grid;
+  grid-template-columns: 1.6rem repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.wcal__head {
+  font-size: var(--typography-size-chip);
+  color: var(--text-muted);
+  text-align: center;
+  letter-spacing: var(--typography-tracking-chip);
+}
+
+.wcal__weeknum,
+.wcal__weekbtn {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: 34px;
+  padding-top: 4px;
+  font-size: var(--typography-size-chip);
+  color: var(--text-muted);
+}
+
+.wcal__weekbtn,
+.wcal__daybtn {
+  list-style: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.wcal__weekbtn::-webkit-details-marker,
+.wcal__daybtn::-webkit-details-marker {
+  display: none;
+}
+
+.wcal__weekbtn {
+  color: var(--accent-link);
+  text-decoration: underline dotted;
+}
+
+.wcal__weekbtn:hover,
+.wcal__daybtn:hover {
+  background: var(--surface-hover);
+}
+
+.wcal__day {
+  position: relative;
+  min-width: 0;
+}
+
+.wcal__daybtn,
+.wcal__day--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  min-height: 34px;
+  padding: 3px 1px 2px;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-body);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+}
+
+.wcal__daybtn {
+  background: var(--surface-raised);
+  border-color: var(--border-subtle);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.wcal__day--empty {
+  color: var(--text-muted);
+}
+
+.wcal__day--empty.is-outside {
+  visibility: hidden;
+}
+
+.wcal__day.is-today > .wcal__daybtn,
+.wcal__day--empty.is-today {
+  border-color: var(--accent-border);
+  box-shadow: inset 0 0 0 1px var(--accent-halo);
+  color: var(--text-primary);
+}
+
+.wcal__dots {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  line-height: 1;
+}
+
+.wcal__more {
+  font-size: var(--typography-size-chip-sm);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.wcal__pop {
+  position: fixed;
+  z-index: 50;
+  width: min(20rem, calc(100vw - var(--spacing-8)));
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: var(--spacing-2) var(--spacing-3);
+  text-align: left;
+  font-weight: var(--typography-weight-regular);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-popover);
+}
+
+.wcal__poptitle {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-bold);
+  color: var(--text-primary);
+}
+
+.wcal__grouplabel,
+.wcal__listlabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  margin: var(--spacing-2) 0 var(--spacing-05);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.wcal__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.wcal__eventlink {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--spacing-1) var(--spacing-15);
+  border-left: 3px solid var(--calendar-work);
+  border-radius: var(--radius-sm);
+  color: var(--text-body);
+  text-decoration: none;
+  font-size: var(--typography-size-meta);
+  line-height: var(--typography-line-tight);
+  overflow-wrap: anywhere;
+}
+
+.wcal__event--joustumine > .wcal__eventlink {
+  border-left-style: double;
+  border-left-color: var(--calendar-commencement);
+}
+
+.wcal__eventlink:hover {
+  background: var(--surface-hover);
+}
+
+.wcal__eventcat {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-chip);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: var(--typography-tracking-chip);
+}
+
+.wcal__eventmatter {
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.wcal__eventwhat {
+  color: var(--text-body);
+}
+
+.wcal__eventwhen {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta-sm);
+}
+
+.wcal__status.is-overdue {
+  color: var(--status-danger);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.wcal__note {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.wcal__months {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.wcal__months--three {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-5);
+}
+
+.wcal__monthtitle {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-base);
+}
+
+.wcal__monthtitle a {
+  color: var(--text-primary);
+}
+
+.wcal__year {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-2);
+}
+
+.wcal__tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-height: 64px;
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-raised);
+  color: var(--text-body);
+  text-decoration: none;
+}
+
+.wcal__tile:hover {
+  border-color: var(--accent-border);
+}
+
+.wcal__tile--d1 {
+  background: var(--surface-panel);
+  box-shadow: inset 3px 0 0 var(--accent-halo);
+}
+
+.wcal__tile--d2 {
+  background: var(--surface-selected);
+}
+
+.wcal__tile--d3 {
+  background: var(--surface-selected);
+  border-color: var(--accent-border);
+}
+
+.wcal__tilename {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.wcal__tilecounts {
+  display: flex;
+  gap: var(--spacing-3);
+  font-size: var(--typography-size-meta);
+}
+
+.wcal__count {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+/* Quarter and year: a panel over the page, because three months or twelve do
+   not fit a 340 px rail legibly. */
+.wcal__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: var(--surface-backdrop);
+}
+
+/* Centred by margins, never by `transform`: a transformed ancestor becomes
+   the containing block of the `position: fixed` day popovers inside it, which
+   would then be placed by viewport coordinates relative to the panel. */
+.wcal__panel {
+  position: fixed;
+  z-index: 45;
+  top: calc(var(--layout-topbar) + var(--spacing-4));
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: min(64rem, calc(100vw - var(--spacing-8)));
+  max-height: calc(100vh - var(--layout-topbar) - var(--spacing-8));
+  overflow-y: auto;
+  padding: var(--spacing-4) var(--spacing-5);
+  background: var(--surface-panel);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-overlay);
+  box-shadow: var(--shadow-overlay);
+}
+
+.wcal__panelhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-3);
+  margin-bottom: var(--spacing-2);
+}
+
+.wcal__paneltitle {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  color: var(--text-primary);
+}
+
+.wcal__close {
+  padding: var(--spacing-1) var(--spacing-3);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.wcal__panel .wcal__grid {
+  grid-template-columns: 1.8rem repeat(7, minmax(0, 1fr));
+}
+
+.wcal__panel .wcal__daybtn,
+.wcal__panel .wcal__day--empty {
+  min-height: 40px;
+}
+
+@media (max-width: 860px) {
+  .wcal__months--three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .wcal__year {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .wcal__panel {
+    top: var(--spacing-2);
+    width: calc(100vw - var(--spacing-4));
+    max-height: calc(100vh - var(--spacing-4));
+    padding: var(--spacing-3);
+  }
+}
+
+@media (forced-colors: active) {
+  .wcal__dot {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+
+  .wcal__dot--joustumine {
+    background: Canvas;
+    outline: 1px solid CanvasText;
+  }
+
+  .wcal__day.is-today > .wcal__daybtn,
+  .wcal__day--empty.is-today {
+    outline: 2px solid Highlight;
+  }
+}
+
+.wcal {
+  min-width: 0;
+}
+
+.wcal--wide > .wcal__note {
+  color: var(--text-secondary);
+}
+
+.wcal__today {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.wcal__dot--too {
+  background: var(--calendar-work);
+}
+
+.wcal__month,
+.wcal__event,
+.wcal__week {
+  min-width: 0;
+}
+
+.wcal__head--week {
+  font-style: italic;
+}
+
+.wcal__num {
+  line-height: 1.1;
+}

@@ -1,0 +1,59 @@
+{% comment %}
+Monday-first weeks, a week trigger in the first column. A day with records is a
+disclosure (`data-uxpopover`: one open at a time, Escape and a click outside
+close it, focus returns to the day); an empty day is plain text. The dots are
+inside the day's own button and are not controls themselves — the popover
+lists each record with its link, so nothing clickable is nested.
+
+The week's popover lists its days' records by date. Records known only to a
+period are never in it: they have no day in that week.
+{% endcomment %}
+<div class="wcal__grid">
+  <span class="wcal__head wcal__head--week" aria-hidden="true">N</span>
+  {% for letter in weekdays %}<span class="wcal__head" aria-hidden="true">{{ letter }}</span>{% endfor %}
+  {% for week in weeks %}
+    {% if week.total %}
+      <details class="wcal__week" data-uxpopover>
+        <summary class="wcal__weekbtn" aria-label="{{ week.label }}">{{ week.number }}</summary>
+        <div class="wcal__pop" data-uxfloat="fit">
+          <p class="wcal__poptitle">{{ week.number }}. nädal</p>
+          {% for day in week.busy_days %}
+            <p class="wcal__grouplabel">{{ day.title }}</p>
+            <ul class="wcal__list">
+              {% for event in day.events %}
+                {% include "matters/partials/work_calendar_event.html" with event=event show_category=1 %}
+              {% endfor %}
+            </ul>
+          {% endfor %}
+        </div>
+      </details>
+    {% else %}
+      <span class="wcal__weeknum" title="{{ week.number }}. nädal">{{ week.number }}</span>
+    {% endif %}
+    {% for day in week.days %}
+      {% if day.events %}
+        <details class="wcal__day{% if day.is_today %} is-today{% endif %}" data-uxpopover data-wcal-day>
+          <summary class="wcal__daybtn" aria-label="{{ day.label }}"{% if day.is_today %} aria-current="date"{% endif %}>
+            <span class="wcal__num">{{ day.day.day }}</span>
+            <span class="wcal__dots" aria-hidden="true">
+              {% for event in day.dots %}<span class="wcal__dot wcal__dot--{{ event.category }}{% if event.is_overdue %} is-overdue{% endif %}" title="{{ event.summary }}"></span>{% endfor %}{% if day.more %}<span class="wcal__more">+{{ day.more }}</span>{% endif %}
+            </span>
+          </summary>
+          <div class="wcal__pop" data-uxfloat="fit">
+            <p class="wcal__poptitle">{{ day.title }}</p>
+            {% for group in day.groups %}
+              <p class="wcal__grouplabel"><span class="wcal__dot wcal__dot--{{ group.key }}" aria-hidden="true"></span>{{ group.label }}</p>
+              <ul class="wcal__list">
+                {% for event in group.events %}
+                  {% include "matters/partials/work_calendar_event.html" with event=event %}
+                {% endfor %}
+              </ul>
+            {% endfor %}
+          </div>
+        </details>
+      {% else %}
+        <span class="wcal__day wcal__day--empty{% if not day.in_period %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}"{% if day.is_today %} aria-current="date"{% endif %}><span class="wcal__num">{{ day.day.day }}</span></span>
+      {% endif %}
+    {% endfor %}
+  {% endfor %}
+</div>
