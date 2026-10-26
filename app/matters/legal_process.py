@@ -766,6 +766,28 @@ def _reached_by_its_date(row: Any, today: date) -> bool:
     )
 
 
+def _phase_keys_in_order(steps: list[RailStep]) -> None:
+    """Make the dated phases' placement keys run in the procedure's order, in place.
+
+    The order rule compares phase periods by overlap (`phase_period_fits`), so
+    *Valitsuses 2027* followed by *Riigikogus 1.3.2027* is a valid roadmap — and
+    the year's last day comes after the day that follows it. Placement, the
+    late-point slots and the connector fill all read `sort_on` as if it ran in
+    the phases' order (`_last_dated_phase_not_after`, `_slot_for`,
+    `_reach_between`), so a key earlier than the dated phase before it is lifted
+    to that phase's key. Presentation only: the stored date, its words on the
+    rail and the node's state are unchanged.
+    """
+    floor: date | None = None
+    for index, step in enumerate(steps):
+        if not step.is_phase or step.sort_on is None:
+            continue
+        if floor is not None and step.sort_on < floor:
+            steps[index] = replace(step, sort_on=floor)
+        else:
+            floor = step.sort_on
+
+
 def _last_dated_phase_not_after(steps: list[RailStep], when: date, *, start: int) -> int | None:
     """The furthest phase from ``start`` on whose explicit date is not after ``when``.
 
@@ -840,7 +862,10 @@ def anchored_phase_keys(*, matter: Matter, user: Any) -> frozenset[str]:
 
     facts = matter_intelligence(matter, user)
     keys: set[str] = set()
-    if any(record.date_value is not None for record in facts.effective_dates):
+    if any(
+        record.date_value is not None and record.status == FactStatus.ACTIVE
+        for record in facts.effective_dates
+    ):
         keys.add(PHASE_JOUSTUMINE)
     if any(
         record.kind == ImportantDateKind.TRANSPOSITION_DEADLINE
@@ -983,7 +1008,12 @@ def matter_rail(
             # date, and otherwise nothing.
             when, display = None, ""
             if row is not None and row.occurs_on is not None:
-                when, display = row.occurs_on, row.display_date
+                # **Placed on the period's last day**, as an added step is
+                # (`_added_step`): *Jõustumine 2027* is not reached on 1 January,
+                # and a deadline in February belongs before it, not after it
+                # (docs/adr/0100, amendment of 2026-10-26).
+                when = period_end_for(row.occurs_on, row.occurs_on_precision)
+                display = row.display_date
             steps.append(
                 RailStep(
                     key=node.key,
@@ -999,6 +1029,7 @@ def matter_rail(
 
     today = timezone.localdate()
     _keep_recorded_phases(steps, matter=matter, user=user, rail=rail, rows=rows, today=today)
+    _phase_keys_in_order(steps)
     for milestone in sorted(milestones, key=lambda one: one.sort_on):
         # **A fact whose phase is drawn is folded onto that phase, not beside
         # it.** A commencement used to be inserted as its own column next to
@@ -1195,7 +1226,11 @@ def _keep_recorded_phases(
                 kind=KIND_PHASE,
                 state=STATE_RECORDED,
                 display_date=dated_row.display_date if dated_row is not None else "",
-                sort_on=dated_row.occurs_on if dated_row is not None else None,
+                sort_on=(
+                    period_end_for(dated_row.occurs_on, dated_row.occurs_on_precision)
+                    if dated_row is not None and dated_row.occurs_on is not None
+                    else None
+                ),
             ),
         )
 

@@ -455,3 +455,64 @@ def test_a_closed_file_answers_the_panel_404(signed_in, specialist):
     close_matter(matter=matter, disposition=Disposition.OTHER, actor=specialist)
 
     assert signed_in.get(_url(matter, PHASE_VALITSUS)).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Second review of #548: placement stays in the procedure's order
+# ---------------------------------------------------------------------------
+
+
+def test_a_year_phase_after_a_dated_day_is_placed_after_it_and_not_reached(specialist):
+    """`Valitsuses 1.10.2026`, `Riigikogus 1.3.2027`, `Jõustumine 2027` and a
+    deadline on 15.2.2027: the deadline reads between `Valitsuses` and
+    `Riigikogus`, and the year phase sorts on its last day — so the connector
+    into it is not drawn as already travelled."""
+    from app.intelligence.services import add_important_date
+    from app.matters.legal_process import KIND_PHASE
+    from tests.test_timeline_added_steps import _rail as rail_of
+
+    matter = _file(specialist)
+    for key, when, precision in (
+        (PHASE_VALITSUS, date(2026, 10, 1), "EXACT"),
+        (PHASE_RIIGIKOGU, date(2027, 3, 1), "EXACT"),
+        (PHASE_JOUSTUMINE, date(2027, 1, 1), "YEAR"),
+    ):
+        set_rail_step_date(
+            matter=matter, rail_key=key, occurs_on=when, precision=precision, actor=specialist
+        )
+    add_important_date(
+        matter=matter,
+        title="Ministeeriumi vastus",
+        date_value=date(2027, 2, 15),
+        period_end=date(2027, 2, 15),
+        actor=specialist,
+    )
+
+    steps = rail_of(matter, specialist)
+    labels = [step.label for step in steps]
+    phase_keys = [step.sort_on for step in steps if step.kind == KIND_PHASE and step.sort_on]
+    assert phase_keys == sorted(phase_keys)
+    jõustumine = next(step for step in steps if step.key == PHASE_JOUSTUMINE)
+    assert jõustumine.sort_on == date(2027, 12, 31)
+    assert jõustumine.display_date == "2027"
+    deadline = labels.index("Ministeeriumi vastus")
+    assert labels.index("Valitsuses") < deadline < labels.index("Riigikogus")
+
+
+def test_a_cancelled_commencement_anchors_nothing(signed_in, specialist):
+    from app.intelligence.services import add_effective_date, cancel_effective_date
+
+    matter = _file(specialist)
+    record = add_effective_date(
+        matter=matter,
+        date_value=date(2027, 9, 27),
+        period_end=date(2027, 9, 27),
+        description="Põhiosa",
+        actor=specialist,
+    )
+    cancel_effective_date(record=record, actor=specialist)
+
+    rail = _rail(_page(signed_in, matter))
+
+    assert 'id="kulg-samm-joustumine"' in rail
+    assert signed_in.get(_url(matter, PHASE_JOUSTUMINE)).status_code == 200

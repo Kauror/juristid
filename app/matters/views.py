@@ -9562,9 +9562,16 @@ def rail_step_date_view(request: HttpRequest, pk: Any, key: str) -> HttpResponse
     except TimelineStepsConflict as conflict:
         # What was chosen comes back, on the current version, so pressing
         # `Salvesta` again saves it — the retry `timeline_steps_view` gives.
+        # Rebuilt from the step as it is *now*, so a kept «Muutmata» chip keeps
+        # the period somebody else just saved, not the one this panel opened on.
         retry = request.POST.copy()
         retry["revision"] = timeline_steps_revision_token(matter)
-        form = RailStepDateForm(retry, occurs_on=occurs_on, precision=precision)
+        _label, fresh = _rail_step(request, matter, key)
+        form = RailStepDateForm(
+            retry,
+            occurs_on=fresh.occurs_on if fresh is not None else None,
+            precision=fresh.occurs_on_precision if fresh is not None else "",
+        )
         form.is_valid()
         status, error = 409, str(conflict)
     except DomainError as error_raised:

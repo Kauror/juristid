@@ -2487,7 +2487,7 @@
       return;
     }
     var slot = document.getElementById("menetluse-kulg-muuda");
-    if (!slot || !slot.querySelector("form") || !holdsUnsavedInput(slot)) {
+    if (!slot || !slot.querySelector("form") || !(holdsUnsavedInput(slot) || holdsRefusedText(slot))) {
       return;
     }
     event.preventDefault();
