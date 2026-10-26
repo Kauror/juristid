@@ -462,7 +462,7 @@ def test_a_closed_file_answers_the_panel_404(signed_in, specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_a_year_phase_after_a_dated_day_is_placed_after_it_and_not_reached(specialist):
+def test_a_year_phase_after_a_dated_day_keeps_the_deadline_before_it(specialist):
     """`Valitsuses 1.10.2026`, `Riigikogus 1.3.2027`, `Jõustumine 2027` and a
     deadline on 15.2.2027: the deadline reads between `Valitsuses` and
     `Riigikogus`, and the year phase sorts on its last day — so the connector
@@ -493,7 +493,7 @@ def test_a_year_phase_after_a_dated_day_is_placed_after_it_and_not_reached(speci
     phase_keys = [step.sort_on for step in steps if step.kind == KIND_PHASE and step.sort_on]
     assert phase_keys == sorted(phase_keys)
     jõustumine = next(step for step in steps if step.key == PHASE_JOUSTUMINE)
-    assert jõustumine.sort_on == date(2027, 12, 31)
+    assert jõustumine.reach_key == date(2027, 12, 31)
     assert jõustumine.display_date == "2027"
     deadline = labels.index("Ministeeriumi vastus")
     assert labels.index("Valitsuses") < deadline < labels.index("Riigikogus")
@@ -516,3 +516,64 @@ def test_a_cancelled_commencement_anchors_nothing(signed_in, specialist):
 
     assert 'id="kulg-samm-joustumine"' in rail
     assert signed_in.get(_url(matter, PHASE_JOUSTUMINE)).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Third review of #548: placed on the period's start, reached on its end
+# ---------------------------------------------------------------------------
+
+
+def _phase(key: str, state: str, start=None, end=None):
+    from app.matters.legal_process import KIND_PHASE, RailStep
+
+    return RailStep(key=key, label=key, kind=KIND_PHASE, state=state, sort_on=start, reach_on=end)
+
+
+def test_a_point_inside_a_period_dated_phase_reads_inside_it():
+    """`Algus 2026` current and an opinion sent 10.5.2026: the opinion reads
+    after `Algus`, never before the beginning (F1)."""
+    from app.matters.legal_process import STATE_CURRENT, STATE_POSSIBLE, _slot_for
+
+    steps = [
+        _phase("algus", STATE_CURRENT, date(2026, 1, 1), date(2026, 12, 31)),
+        _phase("kooskolastus", STATE_POSSIBLE),
+    ]
+
+    assert _slot_for(steps, date(2026, 5, 10), (0, len(steps)), 1) == 1
+
+
+def test_a_year_phase_after_a_dated_day_is_part_filled_not_travelled():
+    """`Riigikogus 1.3.2027` current, `Jõustumine 2027` ahead, today 1.6.2027:
+    the connector into `Jõustumine` is part-filled, not drawn as travelled."""
+    from app.matters.legal_process import (
+        STATE_CURRENT,
+        STATE_POSSIBLE,
+        _one_backbone,
+        _phase_keys_in_order,
+    )
+
+    steps = [
+        _phase("riigikogu", STATE_CURRENT, date(2027, 3, 1), date(2027, 3, 1)),
+        _phase("joustumine", STATE_POSSIBLE, date(2027, 1, 1), date(2027, 12, 31)),
+    ]
+    _phase_keys_in_order(steps)
+
+    assert steps[1].sort_on == date(2027, 3, 1)
+    assert steps[1].reach_key == date(2027, 12, 31)
+    drawn = _one_backbone(steps, date(2027, 6, 1))
+    assert 0 < drawn[0].reach < 1
+
+
+def test_both_keys_are_lifted_into_the_procedures_order():
+    """`Valitsuses 2027` then `Riigikogus 1.3.2027` is in order by overlap; the
+    later phase is reached no earlier than the year it follows ends."""
+    from app.matters.legal_process import STATE_POSSIBLE, _phase_keys_in_order
+
+    steps = [
+        _phase("valitsus", STATE_POSSIBLE, date(2027, 1, 1), date(2027, 12, 31)),
+        _phase("riigikogu", STATE_POSSIBLE, date(2027, 3, 1), date(2027, 3, 1)),
+    ]
+    _phase_keys_in_order(steps)
+
+    assert [step.sort_on for step in steps] == [date(2027, 1, 1), date(2027, 3, 1)]
+    assert [step.reach_key for step in steps] == [date(2027, 12, 31), date(2027, 12, 31)]
