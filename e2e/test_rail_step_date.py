@@ -68,10 +68,12 @@ def test_a_step_is_dated_by_clicking_it(page, base_url):
 
 
 def test_the_panel_opens_on_today_and_follows_a_typed_day(page, base_url):
-    """Owner's UX review of 2026-10-26: an undated step opens on today in all
-    four `Täpsus` controls; a typed day carries into `Kuu`, `Kvartal` and
-    `Aasta` unless one was changed by hand; opening writes nothing."""
-    from datetime import date
+    """Owner's UX review of 2026-10-26: an undated step opens on Tallinn's today
+    in all four `Täpsus` controls; the day typed last carries into `Kuu`,
+    `Kvartal` and `Aasta` — in each format the server accepts — and switching
+    a chip changes no value."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
 
     sign_in(page, base_url, SANDRA)
     url = create_matter(page, base_url, unique_title("QA kuupäev täna"), owner=SANDRA)
@@ -84,26 +86,28 @@ def test_the_panel_opens_on_today_and_follows_a_typed_day(page, base_url):
     _save(page, panel)
 
     page.get_by_role("button", name="Istung täna: lisa kuupäev").click()
-    today = date.today()
+    today = datetime.now(ZoneInfo("Europe/Tallinn")).date()
     day = panel.locator("input[name='kp_date']")
+    month = panel.locator("select[name='kp_month']")
+    quarter = panel.locator("select[name='kp_quarter']")
+    year = panel.locator("input[name='kp_year']")
     expect(day).to_have_value(f"{today.day:02d}.{today.month:02d}.{today.year}")
-    expect(panel.locator("select[name='kp_month']")).to_have_value(str(today.month))
-    expect(panel.locator("select[name='kp_quarter']")).to_have_value(
-        str((today.month - 1) // 3 + 1)
-    )
-    expect(panel.locator("input[name='kp_year']")).to_have_value(str(today.year))
+    expect(month).to_have_value(str(today.month))
+    expect(quarter).to_have_value(str((today.month - 1) // 3 + 1))
+    expect(year).to_have_value(str(today.year))
 
-    # A hand-chosen year is kept; the typed day moves month and quarter.
-    panel.locator("label.precision__chip", has_text="Aasta").click()
-    panel.locator("input[name='kp_year']").fill("2031")
-    panel.locator("input[name='kp_year']").dispatch_event("change")
-    panel.locator("label.precision__chip", has_text="Täpne").click()
-    day.fill("15.02.2029")
-    day.dispatch_event("change")
-    expect(panel.locator("select[name='kp_month']")).to_have_value("2")
-    expect(panel.locator("select[name='kp_quarter']")).to_have_value("1")
-    expect(panel.locator("input[name='kp_year']")).to_have_value("2031")
+    for typed, m, q, y in (
+        ("15.02.2029", "2", "1", "2029"),
+        ("5.8.27", "8", "3", "2027"),
+        ("2028-11-03", "11", "4", "2028"),
+    ):
+        day.fill(typed)
+        day.dispatch_event("change")
+        expect(month).to_have_value(m)
+        expect(quarter).to_have_value(q)
+        expect(year).to_have_value(y)
 
     panel.locator("label.precision__chip", has_text="Kuu").click()
+    expect(month).to_have_value("11")
     _save(page, panel)
-    expect(page.locator(".lprail .tl-strip")).to_contain_text("veebruar 2031")
+    expect(page.locator(".lprail .tl-strip")).to_contain_text("november 2028")

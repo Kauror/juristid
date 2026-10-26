@@ -165,6 +165,13 @@ def test_the_prefill_is_the_rail_editors_alone():
     )
     assert stored["kp_precision"].value() == "HALF_YEAR"
     assert stored["kp_date"].value() is None
+    # The year a half-year is in, so `Aasta` opens on it rather than empty.
+    assert stored["kp_year"].value() == 2027
+    inferred = RailStepDateForm(
+        occurs_on=date(2027, 5, 9), precision="INFERRED", today=date(2026, 10, 26)
+    )
+    assert inferred["kp_precision"].value() == "INFERRED"
+    assert inferred["kp_date"].value() == date(2027, 5, 9)
 
 
 def test_the_panel_opens_on_tallinns_today(signed_in, specialist, monkeypatch):

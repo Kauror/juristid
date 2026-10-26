@@ -8,8 +8,8 @@ the date is removed. It lands in the same slot `Muuda` opens into, so the two
 are never open at once (app/matters/views.py `rail_step_date_view`).
 
 An undated step opens on today (Europe/Tallinn) in all four controls, a dated
-one on its own date (`forms.rail_date_prefill`); a day typed here is carried
-into `Kuu`, `Kvartal` and `Aasta` unless those were changed by hand
+one on its own date (`forms.rail_date_prefill`); the day typed last is carried
+into `Kuu`, `Kvartal` and `Aasta`, and switching a chip changes no value
 (`data-period-follow`, static/js/ux.js). Nothing is saved before `Salvesta`.
 
 A save re-renders the whole Teema view, as `Muuda kulgu` does: a date moves the

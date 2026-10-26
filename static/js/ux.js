@@ -2054,14 +2054,30 @@
 
   /* ---- `Menetluse kulg` date editor: one answer, four controls ------------
    * The rail step's `Täpsus` controls are separate inputs (period_composer.html,
-   * pure CSS shows the chosen one). Here a day typed into `Täpne päev` is
-   * carried into `Kuu`, `Kvartal` and `Aasta`, and a month into its quarter,
-   * so switching the chip shows the period of the day just entered rather than
-   * today's. A control the person changed by hand is never overwritten, and an
-   * emptied or unreadable day carries nothing. Only forms that opt in with
-   * `data-period-follow="<prefix>"` — the shared composer elsewhere is untouched
+   * pure CSS shows the chosen one). Here the answer last *typed* is carried into
+   * the others: a day into `Kuu`, `Kvartal` and `Aasta`, a month into its
+   * quarter, so switching the chip shows the period of what was just entered
+   * rather than today's. Switching a chip changes no value, and an emptied or
+   * unreadable day carries nothing. The day is read in the three formats the
+   * server accepts (`d.m.yyyy`, `d.m.yy`, `yyyy-mm-dd`, app/core/dates.py).
+   * Only forms that opt in with `data-period-follow="<prefix>"` — the shared
+   * composer elsewhere is untouched
    * (templates/matters/partials/rail_step_date_form.html).
    */
+  function readDay(text) {
+    var value = (text || "").trim();
+    var dotted = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/.exec(value);
+    if (dotted) {
+      var y = parseInt(dotted[3], 10);
+      return { month: parseInt(dotted[2], 10), year: dotted[3].length === 2 ? 2000 + y : y };
+    }
+    var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+    if (iso) {
+      return { month: parseInt(iso[2], 10), year: parseInt(iso[1], 10) };
+    }
+    return null;
+  }
+
   function bindPeriodFollow(scope) {
     scope.querySelectorAll("form[data-period-follow]").forEach(function (form) {
       if (!once(form, "PeriodFollow")) {
@@ -2075,35 +2091,23 @@
       var month = field("month");
       var quarter = field("quarter");
       var year = field("year");
-      [month, quarter, year].forEach(function (control) {
-        if (control) {
-          control.addEventListener("change", function () {
-            control.setAttribute("data-touched", "");
-          });
-        }
-      });
       function put(control, value) {
-        if (control && !control.hasAttribute("data-touched")) {
+        if (control) {
           control.value = value;
         }
       }
-      function follow(m, y) {
-        put(month, String(m));
-        put(quarter, String(Math.floor((m - 1) / 3) + 1));
-        if (y) {
-          put(year, String(y));
-        }
+      function quarterOf(m) {
+        return String(Math.floor((m - 1) / 3) + 1);
       }
       if (day) {
         var fromDay = function () {
-          var match = /^\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*$/.exec(day.value);
-          if (!match) {
+          var read = readDay(day.value);
+          if (!read || read.month < 1 || read.month > 12) {
             return;
           }
-          var m = parseInt(match[2], 10);
-          if (m >= 1 && m <= 12) {
-            follow(m, parseInt(match[3], 10));
-          }
+          put(month, String(read.month));
+          put(quarter, quarterOf(read.month));
+          put(year, String(read.year));
         };
         /* Typed, or written by the date picker (which fires `change`). */
         day.addEventListener("input", fromDay);
@@ -2113,7 +2117,7 @@
         month.addEventListener("change", function () {
           var m = parseInt(month.value, 10);
           if (m >= 1 && m <= 12) {
-            put(quarter, String(Math.floor((m - 1) / 3) + 1));
+            put(quarter, quarterOf(m));
           }
         });
       }

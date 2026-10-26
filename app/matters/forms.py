@@ -7294,9 +7294,10 @@ class RailStepDateForm(forms.Form):
         #: What `_precision_chips` draws: the four, plus the record's own.
         self.precision_choices = precision_choices(self._kept)
         group = _precision_fields(self.PREFIX, date_label="Kuupäev", kept=self._kept)
-        initial = period_initial(self.PREFIX, occurs_on, precision or DatePrecision.EXACT.value)
-        if self._kept is None:
-            initial = {**rail_date_prefill(self.PREFIX, occurs_on, precision, today), **initial}
+        initial = {
+            **rail_date_prefill(self.PREFIX, occurs_on, precision, today),
+            **period_initial(self.PREFIX, occurs_on, precision or DatePrecision.EXACT.value),
+        }
         for name, value in initial.items():
             group[name].initial = value
         self.fields.update(group)

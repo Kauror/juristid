@@ -312,9 +312,11 @@ own «Muutmata» chip). Emptied, the date is removed.
   quarter and year (`forms.rail_date_prefill`, `RailStepDateForm` only). A
   recorded date wins: the controls are filled from it (a day fills all four, a
   month its quarter and year, a quarter its year) and never from today; a
-  stored precision the chips do not offer keeps its own chip and nothing else.
-  A day typed in the editor is carried into the other three controls unless
-  those were changed by hand (`data-period-follow`, ux.js). Initial values
+  stored precision the chips do not offer keeps its own chip (its year, or an
+  inferred day, still fill the controls they answer). The value typed last is
+  carried into the others — a day into `Kuu`, `Kvartal`, `Aasta`, in every
+  format the server reads; a month into its quarter — and switching a chip
+  changes no value (`data-period-follow`, ux.js). Initial values
   only: an emptied box still clears the date, a refused POST re-renders what
   was posted, and nothing is stored before `Salvesta`. The shared composer and
   every other form using it are unchanged.
