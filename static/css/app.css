@@ -12349,7 +12349,7 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .uxtl__body:not(:has(
   > :not(.uxtl__toggle, .uxtl__head, .uxtl__meta, .uxtl__ms-body, .uxtl__permalink),
   > .uxtl__ms-body > :not(.uxtl__head),
-  .uxtl__head > .uxtl__editactions
+  .uxtl__head > .uxtl__editactions > :not(.uxtl__icon--copy)
 )) > .uxtl__toggle {
   display: none;
 }
@@ -12373,13 +12373,13 @@ section:has(.pw-more[open]) tbody.uxextra {
   }
 }
 
-/* `Kopeeri link` — the open row's own address (`timeline_items.html`). Last in
- * the panel, quiet, and lifted above the toggle like the row's other
- * controls. */
+/* The copy icon of a row with no record to correct — a stage change, a grouped
+ * or imported save — right under its line (`timeline_items.html`), lifted
+ * above the toggle like the row's other controls. */
 #teema-vaade-wrap .uxtl__permalink {
   position: relative;
   z-index: 1;
-  margin: var(--spacing-15) 0 0;
+  margin: 2px 0 0;
 }
 
 /* **The row a save just wrote, or a link just opened**, for a moment.
@@ -14863,3 +14863,128 @@ a.jcal__daynum {
 .wcal__shiftbtn::-webkit-details-marker {
   display: none;
 }
+
+/* ==========================================================================
+ * Teema käik — the row's three action icons (owner's UX corrections,
+ * 2026-10-26; templates/matters/partials/row_copy_link.html, action_icon.html,
+ * row_remove.html). Copy → edit → remove, together right after the record's
+ * label or link. Icons only to the eye: every one carries its word in a visually
+ * hidden span, its record by `aria-labelledby`, and its word again in `title`.
+ * A 28 px target, quiet until reached for, like the `.uxtl__edit` chip it
+ * replaces.
+ * ========================================================================== */
+
+.uxtl__icon {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -6px 0;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  list-style: none;
+  vertical-align: middle;
+}
+
+.uxtl__icon::-webkit-details-marker {
+  display: none;
+}
+
+.uxtl__icon:hover {
+  color: var(--accent-link);
+  background: var(--surface-hover);
+}
+
+.uxtl__icon:focus-visible {
+  color: var(--accent-link);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.uxtl__icon--remove:hover {
+  color: var(--status-danger);
+}
+
+.uxtl__remove[open] > .uxtl__icon--remove {
+  color: var(--status-danger);
+  border-color: var(--border-control);
+}
+
+.uxicon {
+  display: block;
+  flex: none;
+}
+
+/* «Link kopeeritud», as a tooltip over the icon: absolutely placed, so the
+   line around it does not move (`bindCopyLink`, `data-copied`). */
+.uxtl__icon[data-copied]::after {
+  content: attr(data-copied);
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: 50%;
+  z-index: 3;
+  transform: translateX(-50%);
+  padding: 2px var(--spacing-15);
+  border-radius: var(--radius-sm);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-primary);
+  font: 400 11.5px/1.3 var(--typography-font-sans);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The icon group itself: tight, and on the head line beside the label. */
+.uxtl__editactions:has(> .uxtl__icon) {
+  gap: 2px;
+}
+
+/* A published `Ülevaade / uudis`: its link and its icons on one line. */
+#teema-vaade-wrap .uxtl__weblink:not(:has(form)) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+
+#teema-vaade-wrap .uxtl__weblink:not(:has(form)) > .uxtl__editactions {
+  margin: 0;
+}
+
+/* The pencil: the same quiet glyph as the others, the accent once reached. */
+.uxtl__icon--edit:hover {
+  color: var(--accent-link);
+}
+
+@media (forced-colors: active) {
+  .uxtl__icon {
+    forced-color-adjust: auto;
+    color: LinkText;
+  }
+}
+
+/* Review of #555: «Teema loodud», «Teema suletud» and every row with nothing
+ * behind its line draw no toggle (the rule above), so the closed state that
+ * hides the head icons until a row is opened hid their copy icon for good.
+ * Such a row shows its icons as an open one does — the same condition, read
+ * off what the row holds. */
+@media screen and (scripting: enabled) {
+  #teema-vaade-wrap .uxtl__body:not(:has(
+    > :not(.uxtl__toggle, .uxtl__head, .uxtl__meta, .uxtl__ms-body, .uxtl__permalink),
+    > .uxtl__ms-body > :not(.uxtl__head),
+    .uxtl__head > .uxtl__editactions > :not(.uxtl__icon--copy)
+  )) > .uxtl__head > .uxtl__editactions {
+    display: inline-flex;
+    /* The 28 px target keeps its size; the line keeps its 27.5 px, the same
+       as every closed row beside it (measured). */
+    margin-block: -4px;
+  }
+}
+

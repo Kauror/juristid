@@ -1640,8 +1640,40 @@
           selection.addRange(range);
         }
         var done = function () {
-          var said = button.getAttribute("data-label-done");
+          var said =
+            button.getAttribute("data-label-done") ||
+            (button.hasAttribute("data-copy-icon") ? "Link kopeeritud" : "");
           if (!said) {
+            return;
+          }
+          /* An icon keeps its glyph: «Link kopeeritud» is a tooltip drawn from
+             `data-copied` (no box moves) and the shared status region, and the
+             `title` says it to a pointer resting there. */
+          if (button.hasAttribute("data-copy-icon")) {
+            if (!button.hasAttribute("data-title-idle")) {
+              button.setAttribute("data-title-idle", button.getAttribute("title") || "");
+            }
+            /* An icon named by its own `aria-label` (Dokumendid) says it there
+               too; one named by `aria-labelledby` (Teema käik) is announced
+               through the status region alone. */
+            var named = button.hasAttribute("aria-label");
+            if (named && !button.hasAttribute("data-aria-idle")) {
+              button.setAttribute("data-aria-idle", button.getAttribute("aria-label"));
+            }
+            window.clearTimeout(button.copyLabelTimer);
+            button.setAttribute("data-copied", said);
+            button.setAttribute("title", said);
+            if (named) {
+              button.setAttribute("aria-label", said);
+            }
+            announceCopy(said);
+            button.copyLabelTimer = window.setTimeout(function () {
+              button.removeAttribute("data-copied");
+              button.setAttribute("title", button.getAttribute("data-title-idle"));
+              if (named) {
+                button.setAttribute("aria-label", button.getAttribute("data-aria-idle"));
+              }
+            }, 2000);
             return;
           }
           /* The label to come back to is read once, before the first change:

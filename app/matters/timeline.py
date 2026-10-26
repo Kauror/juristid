@@ -45,6 +45,7 @@ from app.core.dates import format_estonian_date, start_of_local_day
 from app.matters import selectors
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import EngagementKind, WebsiteOverviewStatus
+from app.matters.headlines import kind_and_title
 from app.matters.models import (
     Entry,
     Matter,
@@ -1460,7 +1461,9 @@ def engagement_milestone(engagement: MatterEngagement) -> ChronologyMilestone:
         if url
     )
     return ChronologyMilestone(
-        what=f"Kaasamine: {engagement.title}",
+        # The kind once: a round titled «Kaasamine: liikmed» reads «Kaasamine:
+        # liikmed», not «Kaasamine: Kaasamine: liikmed» (app/matters/headlines.py).
+        what=kind_and_title("Kaasamine", engagement.title, separator=": "),
         # The date as it was actually known, or the words «kuupäev teadmata» —
         # never the day the row happens to sit on, and never the anchor of a
         # period. `MatterEngagement.display_date` is `format_at_precision`, so a
@@ -1722,11 +1725,9 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
     (docs/adr/0091 §4, §5).
     """
     return ChronologyMilestone(
-        what=(
-            f"{DEVELOPMENT_HEADLINE}: {development.title}"
-            if development.title
-            else DEVELOPMENT_HEADLINE
-        ),
+        # The kind once, as every other kind (app/matters/headlines.py): a
+        # title written «Märge: …» does not read «Märge: Märge: …».
+        what=kind_and_title(DEVELOPMENT_HEADLINE, development.title or "", separator=": "),
         # The date as it was actually known, or the words «kuupäev teadmata» —
         # never the day the row happens to sit on, and never the anchor of a
         # period (docs/adr/0079 §3).

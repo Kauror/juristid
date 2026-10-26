@@ -54,12 +54,17 @@ record that is not there.
     would be and is still the difference between a list of twelve identical
     buttons and a list somebody can navigate.
   {% endcomment %}
+  {% comment %}
+    An X since the owner's UX corrections of 2026-10-26: the last of the row's
+    three icons (copy → edit → remove). It opens this confirmation and removes
+    nothing by itself; the word stays in the accessible name and the tooltip.
+  {% endcomment %}
   {% if remove_named_by %}
-    <summary class="uxtl__edit" id="{{ remove_kind }}-{{ record.pk }}-kustuta"
-             aria-labelledby="{{ remove_kind }}-{{ record.pk }}-kustuta {{ remove_named_by }}">Kustuta</summary>
+    <summary class="uxtl__icon uxtl__icon--remove" id="{{ remove_kind }}-{{ record.pk }}-kustuta" title="Kustuta"
+             aria-labelledby="{{ remove_kind }}-{{ record.pk }}-kustuta {{ remove_named_by }}">{% include "matters/partials/action_icon.html" with name="remove" %}<span class="visually-hidden">Kustuta</span></summary>
   {% else %}
-    <summary class="uxtl__edit" id="{{ remove_kind }}-{{ record.pk }}-kustuta">Kustuta<span
-      class="visually-hidden"> — {{ remove_label }}</span></summary>
+    <summary class="uxtl__icon uxtl__icon--remove" id="{{ remove_kind }}-{{ record.pk }}-kustuta" title="Kustuta">{% include "matters/partials/action_icon.html" with name="remove" %}<span
+      class="visually-hidden">Kustuta — {{ remove_label }}</span></summary>
   {% endif %}
   <form class="uxtl__removeform"
         hx-post="{% url 'matters:remove_record' pk=matter.pk kind=remove_kind record_id=record.pk %}"

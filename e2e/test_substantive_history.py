@@ -371,7 +371,7 @@ def test_an_approximate_act_prints_its_period_and_not_a_day(page, base_url):
     # composed by `aria-labelledby` from its own word *and* the headline above
     # it, so an exact match on «Muuda» finds nothing.
     open_kaik_row(row)
-    row.locator(".uxtl__edit").first.click()
+    row.locator(".uxtl__icon--edit").first.click()
     form = page.locator(".uxtl__editform")
     form.wait_for()
     form.locator("label.precision__chip", has_text="Kuu").first.click()

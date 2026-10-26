@@ -350,7 +350,7 @@ def test_an_open_row_editor_survives_an_unrelated_save(page, base_url):
     assert record_marge(page, "Rida üks") == 200
 
     open_kaik_row(page.locator(KAIK_ROW).filter(has_text="Rida üks").first)
-    page.locator(".uxtl__edit").first.click()
+    page.locator(".uxtl__icon--edit").first.click()
     wait_for_htmx(page)
     editor = page.locator(".uxtl__editform textarea[name=note]")
     editor.fill("Pooleli parandus")

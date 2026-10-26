@@ -357,15 +357,19 @@ def test_a_row_with_nothing_behind_its_line_has_nothing_to_open(signed_in, kaik_
     (created,) = [row for row in rows if "Teema loodud" in row.text()]
     (body,) = [node for node in created.elements() if "uxtl__body" in node.classes]
 
-    # `Kopeeri link` (docs/adr/0190 §2) is on every row and is not detail: the
-    # stylesheet's toggle rule leaves it out, so this row still opens nothing.
+    # The copy icon (docs/adr/0190 §2, on the head line since the owner's UX
+    # corrections of 2026-10-26) is on every row and is not detail: the
+    # stylesheet's toggle rule leaves a copy-only group out, so this row still
+    # opens nothing.
     assert [sorted(child.classes) for child in body.elements()] == [
         ["uxtl__toggle"],
         ["uxtl__head"],
-        ["uxtl__permalink"],
     ]
     (head,) = body.find("uxtl__head")
-    assert not head.find("uxtl__editactions")
+    (actions,) = head.find("uxtl__editactions")
+    assert [sorted(child.classes) for child in actions.elements()] == [
+        ["uxtl__icon", "uxtl__icon--copy"]
+    ]
 
 
 # ---------------------------------------------------------------------------

@@ -166,7 +166,7 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Märgitud liikmeks ekslikult").first
     open_kaik_row(row)
-    row.get_by_text("Muuda", exact=True).click()
+    row.locator(".uxtl__icon--edit").click()
     # Scoped to the row: the capture panel renders its own `source_is_member`
     # on the same page, and that one is hidden inside a closed disclosure.
     mark = row.locator("input[name='source_is_member']")
@@ -369,7 +369,7 @@ def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
         "#ajalugu-loend .uxtl__item", has_text="Vale teema peale kirjutatud märge"
     ).first
     open_kaik_row(row)
-    row.get_by_text("Kustuta", exact=True).click()
+    row.locator(".uxtl__icon--remove").click()
     # The confirmation names what is going and offers a way out.
     page.wait_for_selector("text=Eemaldan selle märke jaotisest «Tegevused»")
     row.get_by_role("button", name="Eemalda", exact=True).click()
@@ -391,7 +391,7 @@ def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="See märge jääb alles").first
     open_kaik_row(row)
-    row.get_by_text("Kustuta", exact=True).click()
+    row.locator(".uxtl__icon--remove").click()
     page.wait_for_selector("text=Eemaldan selle märke jaotisest «Tegevused»")
     row.get_by_role("button", name="Loobu", exact=True).click()
     page.wait_for_timeout(300)
@@ -412,7 +412,7 @@ def test_the_removal_is_still_in_the_change_log(page, base_url):
 
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Eemaldatav märge logis").first
     open_kaik_row(row)
-    row.get_by_text("Kustuta", exact=True).click()
+    row.locator(".uxtl__icon--remove").click()
     row.get_by_role("button", name="Eemalda", exact=True).click()
     page.wait_for_timeout(800)
 
@@ -460,7 +460,7 @@ def test_the_koja_arvamus_row_can_be_corrected_like_every_other(page, base_url):
     open_kaik_row(row)
     assert row.count(), "the chronology holds no recorded send to correct"
 
-    row.get_by_text("Muuda", exact=True).click()
+    row.locator(".uxtl__icon--edit").click()
     # Scoped to the row: `+ Koja arvamus` in the launcher renders its own
     # `sent_on` on the same page, so a page-wide selector resolves to two.
     box = row.locator("input[name='sent_on']")
@@ -492,8 +492,8 @@ def test_a_recorded_send_offers_no_kustuta(page, base_url):
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Arvamus välja").first
     open_kaik_row(row)
 
-    assert row.get_by_text("Muuda", exact=True).count() == 1
-    assert row.get_by_text("Kustuta", exact=True).count() == 0
+    assert row.locator(".uxtl__icon--edit").count() == 1
+    assert row.locator(".uxtl__icon--remove").count() == 0
 
 
 def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_url):

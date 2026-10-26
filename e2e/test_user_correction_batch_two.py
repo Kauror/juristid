@@ -65,7 +65,7 @@ def test_a_kaasamine_edits_what_it_asked_and_its_links_read_as_names(page, base_
         "",
     )
 
-    row.locator(".uxtl__edit", has_text="Muuda").first.click()
+    row.locator(".uxtl__icon--edit").first.click()
     edit = page.locator(".uxtl__editform")
     edit.wait_for()
     expect(edit.locator("[name=feedback_deadline]")).to_be_visible()
