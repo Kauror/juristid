@@ -179,6 +179,7 @@ from app.matters.forms import (
     PlanRevisionForm,
     ProceduralDevelopmentEditForm,
     ProceduralLinkEditForm,
+    RailStepDateForm,
     ReopenForm,
     ResponseDeadlineForm,
     ReviewActionForm,
@@ -296,6 +297,7 @@ from app.matters.services import (
     set_organisations,
     set_policy_area_other,
     set_policy_areas,
+    set_rail_step_date,
     set_timeline_steps,
     timeline_steps_revision_token,
 )
@@ -3408,6 +3410,10 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "rail_steps": matter_rail(
             matter=matter, user=request.user, rail=rail, milestones=steps, step_rows=step_rows
         ),
+        # Which rail items a click dates (`rail_step_date_view`): this file's
+        # own phases and the steps somebody added — never an event, a sent
+        # opinion or a deadline, which are records with their own surfaces.
+        "rail_datable": _rail_datable_keys(phases, step_rows),
         "matter": matter,
         "current_action": current_action,
         # Read-only workflow-consistency alerts about that step, for this reader
@@ -9452,6 +9458,112 @@ def _timeline_steps_refusal(
     response["HX-Retarget"] = "#menetluse-kulg-muuda"
     response["HX-Reswap"] = "innerHTML"
     return response
+
+
+def _rail_datable_keys(phases: Any, step_rows: Any) -> frozenset[str]:
+    """The rail keys a click may date: the pattern's phases and the added steps."""
+    keys = {node.phase_key for node in phases.pattern.nodes} if phases.pattern else set()
+    keys.update(row.rail_key for row in step_rows[1])
+    return frozenset(keys)
+
+
+def _rail_step(request: HttpRequest, matter: Matter, key: str) -> tuple[str, Any]:
+    """The label and stored row of one datable rail step, or a 404.
+
+    Datable means what `_rail_datable_keys` offers the page — a phase of this
+    file's pattern, or one of its own added steps read through `visible_to`.
+    Anything else is the same 404 an unknown key gets.
+    """
+    phases = legal_process.phase_context(matter=matter)
+    rows, added = legal_process.timeline_step_rows(matter=matter, user=request.user)
+    if key not in _rail_datable_keys(phases, (rows, added)):
+        raise Http404
+    for row in added:
+        if row.rail_key == key:
+            return row.title, row
+    pattern = phases.pattern
+    node = next(node for node in pattern.nodes if node.phase_key == key) if pattern else None
+    if node is None:  # pragma: no cover — `_rail_datable_keys` offered it
+        raise Http404
+    return node.label, rows.get(key)
+
+
+def _rail_step_date_panel(
+    request: HttpRequest,
+    matter: Matter,
+    *,
+    key: str,
+    label: str,
+    form: RailStepDateForm,
+    status: int = 200,
+    error: str = "",
+) -> HttpResponse:
+    response = render(
+        request,
+        "matters/partials/rail_step_date_form.html",
+        {
+            "matter": matter,
+            "step_key": key,
+            "step_label": label,
+            "rail_date_form": form,
+            "rail_date_error": error,
+        },
+        status=status,
+    )
+    if status != 200:
+        # Back into the panel slot, never over the whole Teema view — the
+        # reason `_timeline_steps_refusal` gives.
+        response["HX-Retarget"] = "#menetluse-kulg-muuda"
+        response["HX-Reswap"] = "innerHTML"
+    return response
+
+
+@login_required
+@business_write_required
+@require_http_methods(["GET", "POST"])
+def rail_step_date_view(request: HttpRequest, pk: Any, key: str) -> HttpResponse:
+    """A click on a `Menetluse kulg` step — when is it expected?
+
+    GET opens a small panel under the rail with the one `Täpsus` composer,
+    opened on what the step holds; POST saves through `set_rail_step_date`
+    and re-renders the whole Teema view, because a date moves the rail
+    (`timeline_steps_view` explains why). A refusal comes back in the panel
+    holding what was chosen. Writers on an open Matter only: the service
+    takes the open-Matter lock, and the page draws no button otherwise.
+    """
+    matter = get_visible_matter(request, pk)
+    label, row = _rail_step(request, matter, key)
+    occurs_on = row.occurs_on if row is not None else None
+    precision = row.occurs_on_precision if row is not None else ""
+    if request.method == "GET":
+        form = RailStepDateForm(
+            occurs_on=occurs_on,
+            precision=precision,
+            revision=timeline_steps_revision_token(matter),
+        )
+        return _rail_step_date_panel(request, matter, key=key, label=label, form=form)
+    form = RailStepDateForm(request.POST, occurs_on=occurs_on, precision=precision)
+    if not form.is_valid():
+        return _rail_step_date_panel(request, matter, key=key, label=label, form=form, status=400)
+    chosen_on, chosen_precision = form.period
+    try:
+        set_rail_step_date(
+            matter=matter,
+            rail_key=key,
+            occurs_on=chosen_on,
+            precision=chosen_precision,
+            actor=request.user,
+            expected_revision=form.cleaned_data.get("revision") or None,
+        )
+    except TimelineStepsConflict as conflict:
+        status, error = 409, str(conflict)
+    except DomainError as error_raised:
+        status, error = 400, str(error_raised)
+    else:
+        return _render_overview(request, matter)
+    return _rail_step_date_panel(
+        request, matter, key=key, label=label, form=form, status=status, error=error
+    )
 
 
 @login_required

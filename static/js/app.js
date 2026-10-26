@@ -2439,6 +2439,29 @@
     }
   });
 
+  /* ---- `Loobu` on a panel swapped into a slot -----------------------------
+   * The `Menetluse kulg` date panel opens into `#menetluse-kulg-muuda` from a
+   * click on a rail step (`rail_step_date_form.html`). `Loobu` empties that
+   * slot — nothing is posted — and puts focus back on the step that opened it.
+   */
+  document.addEventListener("click", function (event) {
+    var button = event.target.closest ? event.target.closest("[data-close-slot]") : null;
+    if (!button) {
+      return;
+    }
+    var slot = document.getElementById(button.getAttribute("data-close-slot"));
+    if (!slot) {
+      return;
+    }
+    event.preventDefault();
+    var back = button.getAttribute("data-return-to");
+    slot.innerHTML = "";
+    var opener = back ? document.getElementById(back) : null;
+    if (opener) {
+      opener.focus();
+    }
+  });
+
   /* ---- `Loobu` inside a disclosure ---------------------------------------
    * The click equivalent of the `Esc` the handler below already answers, for
    * the one editor where leaving is the *expected* outcome rather than the

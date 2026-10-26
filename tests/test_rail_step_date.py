@@ -1,0 +1,322 @@
+"""A click on a `Menetluse kulg` step dates it (owner, 2026-10-26).
+
+`Valitsuses`, `Riigikogus`, `Jõustumine` — every phase of the file's procedure,
+and every step a person added — is a button for a writer on an open file. It
+opens a small `millal?` panel with the one `Täpsus` composer: a day, or a month,
+quarter or year when that is all anybody knows. What is pinned here:
+
+* every phase and added step is clickable for a writer, nothing for a reader,
+  nothing on a closed file, and never an event or a sent opinion;
+* the panel saves a day, a month, a quarter and a year, reopens on what it
+  saved, and clears the date when emptied;
+* it writes through `set_timeline_steps` — the same row, the same audit event —
+  keeps the procedure's order, keeps a hidden phase hidden and an added step's
+  name and place;
+* `Muuda kulgu` saved afterwards does not turn a period into a day;
+* a stale panel, a crafted key, a reader and an outsider are refused.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import date
+
+import pytest
+from django.urls import reverse
+from django.utils.text import slugify
+
+from app.audit.enums import ChangeEventType
+from app.audit.models import ChangeEvent
+from app.matters.models import MatterTimelineStep
+from app.matters.process_phases import PHASE_JOUSTUMINE, PHASE_RIIGIKOGU, PHASE_VALITSUS
+from app.matters.services import (
+    RAIL_DATE_OUT_OF_ORDER,
+    RAIL_STEP_NOT_DATABLE,
+    TIMELINE_STEPS_CONFLICT,
+    change_stage,
+    set_rail_step_date,
+    set_timeline_steps,
+    timeline_steps_revision_token,
+)
+from app.workflow.enums import DatePrecision
+from tests import factories
+from tests.refusals import refused
+from tests.test_timeline_added_steps import _matter, _stage
+
+pytestmark = pytest.mark.django_db
+
+
+def _file(owner):
+    matter = _matter(owner, instruments=("seadus",))
+    change_stage(matter=matter, stage=_stage("consultation"), actor=owner)
+    return matter
+
+
+def _url(matter, key: str) -> str:
+    return reverse("matters:rail_step_date", kwargs={"pk": matter.pk, "key": key})
+
+
+def _page(client, matter) -> str:
+    return client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+
+def _rail(html: str) -> str:
+    return html[html.index('class="tl-strip"') :].split("</section>")[0]
+
+
+def _post(client, matter, key: str, **data):
+    return client.post(_url(matter, key), data, headers={"HX-Request": "true"})
+
+
+def _row(matter, key: str) -> MatterTimelineStep | None:
+    return MatterTimelineStep.objects.filter(matter=matter, phase_key=key).first()
+
+
+# ---------------------------------------------------------------------------
+# What is clickable
+# ---------------------------------------------------------------------------
+
+
+def test_every_phase_is_a_button_for_a_writer(signed_in, specialist):
+    matter = _file(specialist)
+
+    rail = _rail(_page(signed_in, matter))
+
+    for key, label in (
+        (PHASE_VALITSUS, "Valitsuses"),
+        (PHASE_RIIGIKOGU, "Riigikogus"),
+        (PHASE_JOUSTUMINE, "Jõustumine"),
+    ):
+        button = re.search(rf'<button[^>]*id="kulg-samm-{key}"[^>]*>', rail)
+        assert button is not None, key
+        assert _url(matter, key) in button.group(0)
+        assert f'aria-label="{label}: lisa kuupäev"' in button.group(0)
+
+
+def test_a_reader_and_a_closed_file_get_no_buttons(client, signed_in, specialist, reader):
+    from app.matters.services import close_matter
+    from app.workflow.enums import Disposition
+
+    matter = _file(specialist)
+    client.force_login(reader)
+    assert "tl-step__pick" not in _page(client, matter)
+
+    close_matter(matter=matter, disposition=Disposition.OTHER, actor=specialist)
+    assert "tl-step__pick" not in _page(signed_in, matter)
+
+
+def test_the_panel_opens_on_what_the_step_holds(signed_in, specialist):
+    matter = _file(specialist)
+    set_rail_step_date(
+        matter=matter,
+        rail_key=PHASE_JOUSTUMINE,
+        occurs_on=date(2026, 10, 1),
+        precision=DatePrecision.QUARTER.value,
+        actor=specialist,
+    )
+
+    panel = signed_in.get(_url(matter, PHASE_JOUSTUMINE), headers={"HX-Request": "true"})
+
+    assert panel.status_code == 200
+    body = panel.content.decode()
+    assert "Jõustumine</strong> — millal?" in body
+    assert re.search(r'value="QUARTER"[^>]*checked', body)
+    assert re.search(r'<option value="4" selected>', body)
+    assert 'value="2026"' in body
+    assert 'data-close-slot="menetluse-kulg-muuda"' in body
+
+
+# ---------------------------------------------------------------------------
+# Saving
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("data", "expected", "precision", "shown"),
+    [
+        (
+            {"kp_precision": "EXACT", "kp_date": "15.03.2027"},
+            date(2027, 3, 15),
+            "EXACT",
+            "15.3.2027",
+        ),
+        (
+            {"kp_precision": "MONTH", "kp_month": "3", "kp_year": "2027"},
+            date(2027, 3, 1),
+            "MONTH",
+            "märts 2027",
+        ),
+        (
+            {"kp_precision": "QUARTER", "kp_quarter": "2", "kp_year": "2027"},
+            date(2027, 4, 1),
+            "QUARTER",
+            "II kvartal 2027",
+        ),
+        ({"kp_precision": "YEAR", "kp_year": "2027"}, date(2027, 1, 1), "YEAR", "2027"),
+    ],
+)
+def test_a_day_a_month_a_quarter_or_a_year(signed_in, specialist, data, expected, precision, shown):
+    matter = _file(specialist)
+
+    response = _post(signed_in, matter, PHASE_JOUSTUMINE, **data)
+
+    assert response.status_code == 200
+    row = _row(matter, PHASE_JOUSTUMINE)
+    assert row is not None
+    assert (row.occurs_on, row.occurs_on_precision) == (expected, precision)
+    assert shown in _rail(response.content.decode())
+    assert (
+        ChangeEvent.objects.filter(
+            matter=matter, event_type=ChangeEventType.TIMELINE_STEPS_CHANGED
+        ).count()
+        == 1
+    )
+
+
+def test_emptying_the_panel_clears_the_date(signed_in, specialist):
+    matter = _file(specialist)
+    _post(signed_in, matter, PHASE_VALITSUS, kp_precision="EXACT", kp_date="01.12.2026")
+
+    _post(signed_in, matter, PHASE_VALITSUS, kp_precision="EXACT", kp_date="")
+
+    # Shown and undated is the default, which is no row at all.
+    assert _row(matter, PHASE_VALITSUS) is None
+
+
+def test_a_half_stated_period_is_refused_in_the_panel(signed_in, specialist):
+    matter = _file(specialist)
+
+    response = _post(signed_in, matter, PHASE_VALITSUS, kp_precision="MONTH", kp_month="3")
+
+    assert response.status_code == 400
+    assert response["HX-Retarget"] == "#menetluse-kulg-muuda"
+    assert _row(matter, PHASE_VALITSUS) is None
+
+
+def test_the_procedures_order_is_kept(signed_in, specialist):
+    matter = _file(specialist)
+    _post(signed_in, matter, PHASE_RIIGIKOGU, kp_precision="EXACT", kp_date="01.03.2027")
+
+    response = _post(signed_in, matter, PHASE_JOUSTUMINE, kp_precision="YEAR", kp_year="2026")
+
+    assert response.status_code == 400
+    assert RAIL_DATE_OUT_OF_ORDER in response.content.decode()
+    assert _row(matter, PHASE_JOUSTUMINE) is None
+    with refused(RAIL_DATE_OUT_OF_ORDER):
+        set_rail_step_date(
+            matter=matter,
+            rail_key=PHASE_VALITSUS,
+            occurs_on=date(2027, 6, 1),
+            precision=DatePrecision.EXACT.value,
+            actor=specialist,
+        )
+
+
+def test_a_hidden_phase_stays_hidden(specialist):
+    matter = _file(specialist)
+    set_timeline_steps(matter=matter, steps=[(PHASE_VALITSUS, True, None, "EXACT")])
+
+    set_rail_step_date(
+        matter=matter,
+        rail_key=PHASE_VALITSUS,
+        occurs_on=date(2026, 12, 1),
+        precision=DatePrecision.MONTH.value,
+        actor=specialist,
+    )
+
+    row = _row(matter, PHASE_VALITSUS)
+    assert row.hidden is True
+    assert row.occurs_on_precision == DatePrecision.MONTH.value
+
+
+def test_an_added_step_keeps_its_name_and_place(signed_in, specialist):
+    matter = _file(specialist)
+    set_timeline_steps(
+        matter=matter,
+        steps=(),
+        added=[(None, "Komisjoni istung", None, "EXACT", PHASE_VALITSUS, False)],
+        actor=specialist,
+    )
+    step = MatterTimelineStep.objects.get(matter=matter, phase_key="")
+    assert f'id="kulg-samm-{slugify(step.rail_key)}"' in _rail(_page(signed_in, matter))
+
+    response = _post(
+        signed_in, matter, step.rail_key, kp_precision="MONTH", kp_month="5", kp_year="2027"
+    )
+
+    assert response.status_code == 200
+    step.refresh_from_db()
+    assert (step.title, step.after_key) == ("Komisjoni istung", PHASE_VALITSUS)
+    assert (step.occurs_on, step.occurs_on_precision) == (date(2027, 5, 1), "MONTH")
+
+
+def test_muuda_kulgu_keeps_a_period_it_did_not_change(signed_in, specialist):
+    """The panel's phase boxes are a day; saving it must not turn
+    *II kvartal 2027* into the first of April."""
+    matter = _file(specialist)
+    _post(
+        signed_in, matter, PHASE_JOUSTUMINE, kp_precision="QUARTER", kp_quarter="2", kp_year="2027"
+    )
+    panel = signed_in.get(
+        reverse("matters:timeline_steps", kwargs={"pk": matter.pk}), headers={"HX-Request": "true"}
+    ).content.decode()
+    data = dict.fromkeys(re.findall(r'name="([a-z_]+__shown)"', panel), "on")
+    data["revision"] = re.search(r'name="revision" value="([^"]*)"', panel).group(1)
+    data[f"{PHASE_JOUSTUMINE}__date"] = "01.04.2027"
+
+    signed_in.post(reverse("matters:timeline_steps", kwargs={"pk": matter.pk}), data)
+
+    row = _row(matter, PHASE_JOUSTUMINE)
+    assert (row.occurs_on, row.occurs_on_precision) == (date(2027, 4, 1), "QUARTER")
+
+
+# ---------------------------------------------------------------------------
+# Refusals
+# ---------------------------------------------------------------------------
+
+
+def test_a_stale_panel_is_refused(signed_in, specialist):
+    matter = _file(specialist)
+    stale = timeline_steps_revision_token(matter)
+    set_rail_step_date(
+        matter=matter,
+        rail_key=PHASE_RIIGIKOGU,
+        occurs_on=date(2027, 1, 1),
+        precision="YEAR",
+        actor=specialist,
+    )
+
+    response = _post(
+        signed_in, matter, PHASE_VALITSUS, kp_precision="YEAR", kp_year="2026", revision=stale
+    )
+
+    assert response.status_code == 409
+    assert TIMELINE_STEPS_CONFLICT in response.content.decode()
+    assert _row(matter, PHASE_VALITSUS) is None
+
+
+@pytest.mark.parametrize("key", ["arvamus", "samm:00000000-0000-0000-0000-000000000000", "bogus"])
+def test_a_key_the_rail_does_not_offer_is_404(signed_in, specialist, key):
+    matter = _file(specialist)
+
+    assert signed_in.get(_url(matter, key)).status_code == 404
+    assert _post(signed_in, matter, key, kp_precision="YEAR", kp_year="2026").status_code == 404
+    with refused(RAIL_STEP_NOT_DATABLE):
+        set_rail_step_date(
+            matter=matter, rail_key=key, occurs_on=None, precision="EXACT", actor=specialist
+        )
+
+
+def test_a_reader_and_an_outsider_cannot_date_a_step(client, specialist, reader):
+    matter = _file(specialist)
+    client.force_login(reader)
+    assert (
+        _post(client, matter, PHASE_VALITSUS, kp_precision="YEAR", kp_year="2026").status_code
+        == 404
+    )
+    client.force_login(factories.AdministratorFactory())
+    assert (
+        _post(client, matter, PHASE_VALITSUS, kp_precision="YEAR", kp_year="2026").status_code
+        == 404
+    )
+    assert _row(matter, PHASE_VALITSUS) is None

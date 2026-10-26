@@ -251,3 +251,30 @@ shape, every pattern, and cases for late entry, backdated records, explicit
 roadmap dates and folded facts) and by
 `e2e/test_teema_page_cleanup.py::test_opinions_sent_after_the_file_opened_read_after_algus`
 at 1440 and 768 px.
+
+## Amendment, 2026-10-26 — a step is dated by clicking it
+
+**Owner request.** Every phase of the file's procedure on `Menetluse kulg` —
+`Valitsuses`, `Riigikogus`, `Jõustumine` — and every step a person added is a
+button for a writer on an open file. It opens a small `millal?` panel in the
+slot `Muuda` opens into, with the one `Täpsus` composer every period on the
+product uses: a day, or a month, quarter or year (a stored half-year keeps its
+own «Muutmata» chip). Emptied, the date is removed.
+
+1. **Nothing new is stored.** `set_rail_step_date` hands the one row to
+   `set_timeline_steps`: the same `MatterTimelineStep`, the same «shown,
+   undated is no row», the same `TIMELINE_STEPS_CHANGED` event and the same
+   revision token, so this panel and an open `Muuda kulgu` cannot post over
+   each other. A hidden phase stays hidden; an added step keeps its name and
+   place. No migration.
+2. **§5's order rule holds here too**: a phase date earlier than an earlier
+   phase's or later than a later phase's is refused
+   (`RAIL_DATE_OUT_OF_ORDER`, compared on the stored anchors via
+   `phase_date_bounds`).
+3. **Only roadmap items.** An event, a sent opinion, a deadline and a
+   commencement are records with their own surfaces and are never buttons;
+   a key the page does not offer is a 404 (`_rail_datable_keys`).
+4. **`Muuda kulgu` no longer turns a period into a day.** Its phase boxes are
+   day boxes; a save that leaves a box at its stored anchor now keeps the
+   stored precision, so *II kvartal 2027* set on the rail survives the panel.
+   A day typed there is stored as a day, as before.

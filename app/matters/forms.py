@@ -6842,6 +6842,9 @@ class TimelineStepsForm(forms.Form):
         #: Phases pinned by a canonical dated fact (`anchored_phase_keys`).
         self.anchored = frozenset(anchored or ())
         stored = dict(rows or {})
+        #: What each phase row holds now, so a save that leaves a date box as
+        #: it was keeps the period it states (`steps`).
+        self._stored_rows = stored
         for node in self.nodes:
             key = node.phase_key
             row = stored.get(key)
@@ -7164,8 +7167,82 @@ class TimelineStepsForm(forms.Form):
             # rendered» is never how a rule is kept here.
             hidden = not self._protection(key) and not self.cleaned_data.get(f"{key}__shown")
             when = self.cleaned_data.get(f"{key}__date")
-            answers.append((key, hidden, when, DatePrecision.EXACT.value))
+            # **A period set on the rail survives this panel** (a click on the
+            # step, `RailStepDateForm`). The box shows its anchor; saved
+            # unchanged, the phase keeps *IV kvartal 2026* rather than turning
+            # into the first of October. A day typed here is a day.
+            row = self._stored_rows.get(key)
+            precision = DatePrecision.EXACT.value
+            if row is not None and when is not None and when == row.occurs_on:
+                precision = row.occurs_on_precision
+            answers.append((key, hidden, when, precision))
         return answers
+
+
+class RailStepDateForm(forms.Form):
+    """A click on one `Menetluse kulg` step: when is it expected?
+
+    **One question, through the one `Täpsus` composer** — a day, or a month,
+    quarter or year when that is all anybody knows, stored as the same period
+    every other composer on the product stores (`_precision_fields`,
+    docs/adr/0079 §1). Empty clears the date. Opened on what the row holds, so
+    a step recorded as *IV kvartal 2026* reopens as that quarter and never as an
+    invented first of October (`period_initial`); a stored precision the chips
+    do not offer keeps its own chip (`kept_precision_choice`).
+
+    ``revision`` is the panel's own token, so this and an open `Muuda kulgu`
+    cannot post over each other (`timeline_steps_revision_token`).
+    """
+
+    use_required_attribute = False
+
+    PREFIX = "kp"
+
+    revision = forms.CharField(required=False, widget=forms.HiddenInput())
+
+    def __init__(
+        self,
+        *args: Any,
+        occurs_on: date | None = None,
+        precision: str = "",
+        revision: str = "",
+        **kwargs: Any,
+    ) -> None:
+        kwargs.setdefault("auto_id", "id_kulg_%s")
+        if revision:
+            kwargs.setdefault("initial", {})
+            kwargs["initial"] = {**kwargs["initial"], "revision": revision}
+        super().__init__(*args, **kwargs)
+        #: The stored period, kept as it is while its own «Muutmata» chip stays
+        #: chosen: there is no control to rebuild a half-year from.
+        self._stored = (occurs_on, precision or DatePrecision.EXACT.value)
+        self._kept = kept_precision_choice(*self._stored)
+        group = _precision_fields(self.PREFIX, date_label="Kuupäev", kept=self._kept)
+        for name, value in period_initial(
+            self.PREFIX, occurs_on, precision or DatePrecision.EXACT.value
+        ).items():
+            group[name].initial = value
+        self.fields.update(group)
+
+    def clean(self) -> dict[str, Any]:
+        cleaned = super().clean() or self.cleaned_data
+        if self._kept is not None and cleaned.get(f"{self.PREFIX}_precision") == self._kept[0]:
+            self.period = self._stored
+            return cleaned
+        anchor, _end, precision = _period_anchor(self, self.PREFIX)
+        self.period = (anchor, precision if anchor is not None else DatePrecision.EXACT.value)
+        return cleaned
+
+    @property
+    def composer(self) -> dict[str, Any]:
+        prefix = self.PREFIX
+        return {
+            "chips": _precision_chips(self, f"{prefix}_precision"),
+            "date_field": self[f"{prefix}_date"],
+            "month_field": self[f"{prefix}_month"],
+            "quarter_field": self[f"{prefix}_quarter"],
+            "year_field": self[f"{prefix}_year"],
+        }
 
 
 class ProceduralDevelopmentEditForm(forms.Form):

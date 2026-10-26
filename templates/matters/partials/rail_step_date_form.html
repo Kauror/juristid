@@ -1,0 +1,33 @@
+{% comment %}
+A click on one `Menetluse kulg` step — when is it expected?
+
+The small panel under the rail for the commonest `Muuda kulgu` edit: this one
+step's date, through the one `Täpsus` composer every period on the product uses
+— a day, or a month, quarter or year when that is all anybody knows. Emptied,
+the date is removed. It lands in the same slot `Muuda` opens into, so the two
+are never open at once (app/matters/views.py `rail_step_date_view`).
+
+A save re-renders the whole Teema view, as `Muuda kulgu` does: a date moves the
+step on the rail and can change how every connector is drawn. `Loobu` closes
+the panel and writes nothing.
+{% endcomment %}
+<form class="kulgform kulgform--one" data-addform
+      hx-post="{% url 'matters:rail_step_date' pk=matter.pk key=step_key %}"
+      hx-target="#teema-vaade" hx-swap="outerHTML"
+      aria-labelledby="kulg-kuupaev-pealkiri">
+  {% csrf_token %}
+  {{ rail_date_form.revision }}
+  <p class="kulgform__lede" id="kulg-kuupaev-pealkiri"><strong>{{ step_label }}</strong> — millal?</p>
+  {% if rail_date_error %}
+    <p class="formerror" role="alert">{{ rail_date_error }}</p>
+  {% endif %}
+  {% with composer=rail_date_form.composer %}
+    {% include "matters/partials/period_composer.html" with chips=composer.chips date_field=composer.date_field month_field=composer.month_field quarter_field=composer.quarter_field year_field=composer.year_field only %}
+  {% endwith %}
+  <div class="addform__actions">
+    <button class="button button--primary" type="submit">Salvesta</button>
+    <button class="button button--quiet" type="button"
+            data-close-slot="menetluse-kulg-muuda"
+            data-return-to="kulg-samm-{{ step_key|slugify }}">Loobu</button>
+  </div>
+</form>

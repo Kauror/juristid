@@ -5115,6 +5115,87 @@ def set_timeline_steps(
     return len(changed) + len(step_changes)
 
 
+#: What a click on the rail dating a phase out of the procedure's order is told —
+#: the order rule `Muuda kulgu` keeps on its own boxes (docs/adr/0100 §5).
+RAIL_DATE_OUT_OF_ORDER = (
+    "Kuupäev ei sobi menetluse järjekorda: see ei saa olla varem kui eelmise etapi "
+    "kuupäev ega hiljem kui järgmise oma."
+)
+#: What a click on a rail item this file does not offer to date is told.
+RAIL_STEP_NOT_DATABLE = "Seda menetluse sammu ei saa siin dateerida."
+
+
+@transaction.atomic
+def set_rail_step_date(
+    *,
+    matter: Matter,
+    rail_key: str,
+    occurs_on: Any,
+    precision: str,
+    actor: Any = None,
+    expected_revision: str | None = None,
+) -> int:
+    """A click on one `Menetluse kulg` step — when it is expected, at the precision known.
+
+    The shortcut beside `Muuda kulgu` for its commonest edit: one phase of the
+    file's own procedure, or one step a person added, gets a date — a day, or
+    a month, quarter, half-year or year when that is all anybody knows — or
+    loses the one it had (``occurs_on=None``).
+
+    **Nothing but `set_timeline_steps`**, handed that one row: the same table,
+    the same «shown, undated is no row» rule, the same `TIMELINE_STEPS_CHANGED`
+    event and the same revision check against the panel. Whether the phase is
+    shown is kept as it is; an added step keeps its name and its place.
+
+    **The procedure's order is kept here too**: a phase date earlier than an
+    earlier phase's or later than a later phase's is refused, the rule
+    `TimelineStepsForm.clean` keeps on the panel's boxes, compared on the
+    stored anchors as there (`phase_date_bounds`).
+
+    ``rail_key`` is a phase of this file's pattern or ``samm:<id>`` for one of
+    its added steps; anything else is refused rather than guessed at.
+    """
+    from app.matters.legal_process import phase_context
+    from app.matters.models import MatterTimelineStep
+    from app.matters.process_phases import phase_date_bounds
+
+    locked = lock_open_matter_for_business_write(matter.pk)
+    if expected_revision and timeline_steps_revision_token(locked) != expected_revision:
+        raise TimelineStepsConflict(TIMELINE_STEPS_CONFLICT)
+    rows = list(MatterTimelineStep.objects.select_for_update(no_key=True).filter(matter=locked))
+    prefix = MatterTimelineStep.ADDED_KEY_PREFIX
+    if rail_key.startswith(prefix):
+        step = next((row for row in rows if row.is_added and row.rail_key == rail_key), None)
+        if step is None:
+            raise DomainError(RAIL_STEP_NOT_DATABLE)
+        return set_timeline_steps(
+            matter=locked,
+            steps=(),
+            added=[(step.pk, step.title, occurs_on, precision, step.after_key, False)],
+            actor=actor,
+        )
+    pattern = phase_context(matter=locked).pattern
+    if pattern is None or pattern.index_of_phase(rail_key) is None:
+        raise DomainError(RAIL_STEP_NOT_DATABLE)
+    phases = {row.phase_key: row for row in rows if not row.is_added}
+    if occurs_on is not None:
+        dated = {
+            key: row.occurs_on
+            for key, row in phases.items()
+            if key != rail_key and row.occurs_on is not None
+        }
+        earliest, latest = phase_date_bounds(pattern, rail_key, dated)
+        if (earliest is not None and occurs_on < earliest) or (
+            latest is not None and occurs_on > latest
+        ):
+            raise DomainError(RAIL_DATE_OUT_OF_ORDER)
+    current = phases.get(rail_key)
+    hidden = current.hidden if current is not None else False
+    return set_timeline_steps(
+        matter=locked, steps=[(rail_key, hidden, occurs_on, precision)], actor=actor
+    )
+
+
 @transaction.atomic
 def record_confirmed_phase_date(
     *,

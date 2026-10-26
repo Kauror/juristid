@@ -365,6 +365,13 @@ urlpatterns = [
         views.timeline_steps_view,
         name="timeline_steps",
     ),
+    # A click on one rail step: when is it expected? The phase key, or
+    # `samm:<id>` for an added step (`set_rail_step_date`).
+    path(
+        "teemad/<uuid:pk>/menetluse-kulg/kuupaev/<str:key>/",
+        views.rail_step_date_view,
+        name="rail_step_date",
+    ),
     # `+ Lisa fail` on a filed `Menetluse areng`: another paper supporting a step
     # the file already records, arriving after the step was written up. The route
     # keeps the domain's own word — the immutable store really does hold

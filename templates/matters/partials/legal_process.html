@@ -112,7 +112,24 @@ nothing at all.
           {% if step.is_event %}
             <span class="tl-step__type">{{ step.event_label }}</span>
           {% endif %}
-          <span class="tl-step__what">{{ step.label }}</span>
+          {% comment %}
+            **A phase or an added step is dated by clicking it** (owner,
+            2026-10-26): the name is a button that opens the small `millal?`
+            panel under the rail — a day, or a month, quarter or year
+            (`rail_step_date_form.html`). Only for a writer on an open file, and
+            only on what `rail_datable` offers: an event, a sent opinion and a
+            deadline are records with their own surfaces. Its accessible name
+            says what the click does; the visible name is unchanged.
+          {% endcomment %}
+          {% if can_write and matter.is_open and step.key in rail_datable %}
+            <button type="button" class="tl-step__what tl-step__pick"
+                    id="kulg-samm-{{ step.key|slugify }}"
+                    hx-get="{% url 'matters:rail_step_date' pk=matter.pk key=step.key %}"
+                    hx-target="#menetluse-kulg-muuda" hx-swap="innerHTML"
+                    aria-label="{{ step.label }}: {% if step.display_date %}muuda kuupäeva ({{ step.display_date }}){% else %}lisa kuupäev{% endif %}">{{ step.label }}</button>
+          {% else %}
+            <span class="tl-step__what">{{ step.label }}</span>
+          {% endif %}
           {% comment %}
             Never colour alone. A column still ahead says so to a screen reader
             and on a printout, which is what the muting cannot do
