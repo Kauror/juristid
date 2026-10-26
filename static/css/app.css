@@ -15087,3 +15087,16 @@ a.jcal__daynum {
     grid-column: 4;
   }
 }
+
+/* Review of #554: a filename joined by underscores has no break opportunity,
+   so in the Dokumendid list it widened its column and pushed Ava, the
+   download icon and ⋯ out of the table's box at 1024 px and below. */
+.doctable .table__title a,
+.doctable__filename {
+  overflow-wrap: anywhere;
+}
+
+/* The message and the attachments, folded into «Dokumendi andmed». */
+.docdata__part {
+  margin-top: var(--spacing-3);
+}

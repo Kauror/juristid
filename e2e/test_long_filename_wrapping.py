@@ -111,6 +111,22 @@ def test_a_long_filename_does_not_widen_the_teema_or_the_document_page(page, bas
     assert href, "no document detail link on Dokumendid"
     _holds(_readings(page, base_url + href, ".dochead__title", NEEDLE_FILE), LONG_FILE)
 
+    # The Dokumendid list too (review of #554): the name wraps in its own cell
+    # and the row's Ava / download / ⋯ stay inside the table's box.
+    _holds(
+        _readings(page, f"{url}dokumendid/", ".doctable .table__title a", NEEDLE_FILE), LONG_FILE
+    )
+    for width in (1024, 375):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.goto(f"{url}dokumendid/")
+        page.wait_for_load_state("networkidle")
+        box = page.evaluate(
+            """() => { const w = document.querySelector('.tablewrap--evidence');
+                       return w ? [w.scrollWidth, w.clientWidth] : null; }"""
+        )
+        assert box is None or box[0] <= box[1] + ROUNDING, (width, box)
+    page.set_viewport_size({"width": 1440, "height": 900})
+
 
 def test_a_long_compound_title_does_not_widen_muuda_teemat(page, base_url):
     sign_in(page, base_url, MARTIN)

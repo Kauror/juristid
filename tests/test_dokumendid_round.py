@@ -219,7 +219,7 @@ def test_a_refused_rename_comes_back_with_its_form_open(signed_in, pdf):
 
     detail = reverse("documents:document_detail", kwargs={"pk": pdf.document_id})
     assert response.status_code == 302
-    assert response["Location"] == f"{detail}?muuda=pealkiri#muuda-dokumenti"
+    assert response["Location"] == f"{detail}?muuda=pealkiri"
     page = signed_in.get(response["Location"]).content.decode()
     assert 'id="muuda-dokumenti" open' in page
     assert 'class="messages"' in page
@@ -228,7 +228,7 @@ def test_a_refused_rename_comes_back_with_its_form_open(signed_in, pdf):
 def test_a_refused_new_version_comes_back_with_its_form_open(signed_in, pdf):
     response = signed_in.post(reverse("documents:add_version", kwargs={"pk": pdf.document_id}), {})
 
-    assert response["Location"].endswith("?muuda=versioon#muuda-dokumenti")
+    assert response["Location"].endswith("?muuda=versioon")
 
 
 def test_a_rename_from_the_list_still_returns_to_the_list(signed_in, normal_matter, pdf):
@@ -307,7 +307,11 @@ def test_the_technical_facts_are_still_on_the_page(signed_in, pdf):
     assert f"{pdf.size_bytes} baiti" in data
     originaal = _between(html, 'id="originaal-heading"', 'id="dokumendi-andmed"')
     assert "Failinimi" in originaal and "kaaskiri.pdf" in originaal
-    assert "Saadi" in originaal and "Töötlemine" in originaal
+    assert "Saadi" in originaal
+    # The processing state is technical data since the review of #554: inside
+    # «Dokumendi andmed», as the owner's brief lists it.
+    assert "Töötlemine" not in originaal
+    assert "Töötlemine" in data
 
 
 def test_a_long_filename_wraps_in_its_own_cell(signed_in, normal_matter, evidence_root):
@@ -343,3 +347,14 @@ def test_reading_the_page_writes_nothing(signed_in, pdf):
     pdf.refresh_from_db()
     assert (ChangeEvent.objects.count(), DocumentVersion.objects.count()) == before
     assert pdf.sha256 == digest
+
+
+def test_the_message_and_its_attachments_are_under_dokumendi_andmed():
+    """The parent e-mail and the attachments list are technical data too (review of #554)."""
+    from django.template.loader import get_template
+
+    source = get_template("documents/document_detail.html").template.source
+    start = source.index('id="dokumendi-andmed"')
+    data = source[start : source.index("</details>", source.index("Selle kirja manused", start))]
+    assert "Saabus e-kirjaga" in data
+    assert "Selle kirja manused" in data

@@ -81,9 +81,15 @@ MANAGE_FORMS = ("versioon", "pealkiri", "liik", "eemalda")
 
 
 def _back_to_manage(document: Any, form: str) -> HttpResponse:
-    """The document's page with «Muuda dokumenti» open on ``form``."""
+    """The document's page with «Muuda dokumenti» open on ``form``.
+
+    No `#fragment`: the message saying *why* the save was refused renders above
+    the page heading, and scrolling the disclosure to the top of the window
+    scrolled that message out of sight (review of #554). The disclosure sits
+    right under the heading, so the top of the page shows both.
+    """
     url = reverse("documents:document_detail", kwargs={"pk": document.pk})
-    return redirect(f"{url}?{MANAGE_PARAM}={form}#muuda-dokumenti")
+    return redirect(f"{url}?{MANAGE_PARAM}={form}")
 
 
 def _open_evidence(request: HttpRequest, version: DocumentVersion, *, disposition: str) -> Any:

@@ -168,11 +168,13 @@
 
   {% if version %}
     {% comment %}
-      `Originaal` keeps what identifies the file at a glance — its own name,
-      when it arrived, whether its text has been read — and the rest of the
-      evidence detail is one click away under «Dokumendi andmed»: the exact
-      type and size, the OneNote day, the checksum, the provenance and every
-      version with its own open and download. Nothing was dropped.
+      `Originaal` keeps what identifies the file at a glance — its own name and
+      when it arrived — and the rest of the evidence detail is one click away
+      under «Dokumendi andmed», as the owner's brief lists it: the exact type
+      and size, the OneNote day, the version and its processing state, the
+      checksum, the provenance, every version with its own open and download,
+      and the message the file came in or the attachments it carries. Nothing
+      was dropped.
 
       `detailgrid--wrap` lets a long filename break inside its own cell instead
       of running under the next label (the overlap the owner's screenshot
@@ -183,9 +185,6 @@
       <dl class="detailgrid detailgrid--wrap">
         <div><dt>Failinimi</dt><dd>{{ version.original_filename }}</dd></div>
         <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"j.n.Y H:i" }}</dd></div>
-        <div><dt>Töötlemine</dt>
-          <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>
-        </div>
       </dl>
       <p class="cardnote">Muutumatu tõend. Baidid ei muutu kunagi — parandus on uus versioon.</p>
 
@@ -198,6 +197,9 @@
             <div><dt>Lisatud OneNote'i</dt><dd>{% if onenote_addition.display %}{{ onenote_addition.display }}{% if onenote_addition.predates_page %} · lisatud enne praeguse lehe loomist{% endif %}{% else %}kuupäev teadmata{% endif %}</dd></div>
           {% endif %}
           <div><dt>Versioon</dt><dd>{{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</dd></div>
+          <div><dt>Töötlemine</dt>
+            <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>
+          </div>
           <div class="detailgrid__wide"><dt>SHA-256</dt><dd class="mono">{{ version.sha256 }}</dd></div>
           {% if document.provenance_note %}
             <div class="detailgrid__wide"><dt>Päritolu</dt><dd>{{ document.provenance_note }}</dd></div>
@@ -243,38 +245,38 @@
             </table>
           </div>
         {% endif %}
+        {% if parent_email %}
+          <section class="docdata__part" aria-labelledby="parent-heading">
+            <h3 class="sectionlabel" id="parent-heading">Saabus e-kirjaga</h3>
+            <p class="cardnote">
+              See fail oli manus number {{ parent_email.ordinal }} kirjas
+              <a href="{% url 'documents:document_detail' pk=parent_email.parent_version.document_id %}">{{ parent_email.parent_version.original_filename }}</a>.
+              Kirjas kandis see nime <span class="mono">{{ parent_email.declared_filename }}</span>.
+            </p>
+          </section>
+        {% endif %}
+
+        {% if attachments %}
+          <section class="docdata__part" aria-labelledby="manused-heading">
+            <h3 class="sectionlabel" id="manused-heading">
+              Selle kirja manused
+              <span class="sectionlabel__count">{{ attachments|length }}</span>
+            </h3>
+            <ul class="filelist">
+              {% for link in attachments %}
+                <li class="filelist__item">
+                  <a href="{% url 'documents:document_detail' pk=link.attachment_version.document_id %}">
+                    {{ link.declared_filename }}
+                  </a>
+                  <span class="filelist__meta">{{ link.attachment_version.size_bytes|filesizeformat }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
       </details>
     </section>
 
-    {% if parent_email %}
-      <section class="card" aria-labelledby="parent-heading">
-        <h2 class="sectionlabel" id="parent-heading">Saabus e-kirjaga</h2>
-        <p class="cardnote">
-          See fail oli manus number {{ parent_email.ordinal }} kirjas
-          <a href="{% url 'documents:document_detail' pk=parent_email.parent_version.document_id %}">{{ parent_email.parent_version.original_filename }}</a>.
-          Kirjas kandis see nime <span class="mono">{{ parent_email.declared_filename }}</span>.
-        </p>
-      </section>
-    {% endif %}
-
-    {% if attachments %}
-      <section class="card" aria-labelledby="manused-heading">
-        <h2 class="sectionlabel" id="manused-heading">
-          Selle kirja manused
-          <span class="sectionlabel__count">{{ attachments|length }}</span>
-        </h2>
-        <ul class="filelist">
-          {% for link in attachments %}
-            <li class="filelist__item">
-              <a href="{% url 'documents:document_detail' pk=link.attachment_version.document_id %}">
-                {{ link.declared_filename }}
-              </a>
-              <span class="filelist__meta">{{ link.attachment_version.size_bytes|filesizeformat }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      </section>
-    {% endif %}
   {% endif %}
 </div>
 {% endblock %}

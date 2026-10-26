@@ -144,6 +144,8 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     # exists to answer questions about one file.
     detail_url = row.locator(".table__title a").first.get_attribute("href")
     page.goto(f"{base_url}{detail_url}")
+    # Under «Dokumendi andmed» since the owner's review of 2026-10-26.
+    page.locator("#dokumendi-andmed > summary").click()
     expect(page.get_by_text(re.compile("Teksti töötlemine ootel|Töötlemisel"))).to_be_visible()
 
     run_worker([synthetic_pdf.name])
@@ -311,7 +313,9 @@ def test_an_email_shows_its_sender_and_its_attachments(
     expect(actions.get_by_role("link", name="Laadi alla")).to_have_attribute(
         "href", re.compile(r"/dokumendid/")
     )
-    # And the message names what came inside it, both ways round.
+    # And the message names what came inside it, both ways round — under
+    # «Dokumendi andmed» since the owner's review of 2026-10-26.
+    page.locator("#dokumendi-andmed > summary").click()
     expect(page.get_by_role("heading", name="Selle kirja manused")).to_be_visible()
     expect(page.get_by_text("lisa-1.pdf").first).to_be_visible()
     screenshots(page, "24-kirja-originaal")

@@ -134,9 +134,13 @@ def test_muuda_dokumenti_is_folded_until_asked_for(page, base_url, filed):
     page.evaluate("document.querySelector('#muuda-dokumenti input[name=title]').required = false")
     title_box.fill("   ")
     manage.get_by_role("button", name="Salvesta pealkiri").click()
-    page.wait_for_url(re.compile(r"\?muuda=pealkiri#muuda-dokumenti$"))
+    page.wait_for_url(re.compile(r"\?muuda=pealkiri$"))
     expect(page.locator("details#muuda-dokumenti")).to_have_attribute("open", "")
     expect(page.locator(".messages")).to_be_visible()
+    # Inside the window, not merely in the DOM (review of #554): the reason
+    # for the refusal is the first thing read.
+    box = page.locator(".messages").bounding_box()
+    assert box is not None and 0 <= box["y"] and box["y"] + box["height"] <= 900
     expect(page.locator("details#muuda-dokumenti input[name=title]")).to_be_visible()
 
 
