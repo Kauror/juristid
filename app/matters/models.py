@@ -1873,6 +1873,13 @@ class MatterWebsiteOverview(VisibilityInheritingModel, RemovableRecord):
         from app.matters.headlines import kind_and_title
 
         if not self.effective_kind:
+            # No stored kind, but a title that names one — «Koduka ülevaade: …»,
+            # «Uudis: …» — reads that kind once rather than «Ülevaade / uudis:
+            # Koduka ülevaade: …» (review of #555). Display only.
+            for named in ("Ülevaade", "Uudis"):
+                once = kind_and_title(named, self.title or "", separator="\0")
+                if "\0" not in once and once != named:
+                    return once
             return f"{self.LINK_LABEL}: {self.title}" if self.title else self.LINK_LABEL
         return kind_and_title(self.link_label, self.title or "")
 

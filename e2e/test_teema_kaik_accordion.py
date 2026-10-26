@@ -139,11 +139,23 @@ def test_every_row_arrives_closed_and_unboxed(seeded):
 
     # The detail of every row is in the page and out of sight.
     history = page.locator("#ajalugu-loend")
-    for selector in (".uxtl__file", ".uxtl__entry", ".uxtl__mssub", ".uxtl__editactions"):
+    for selector in (".uxtl__file", ".uxtl__entry", ".uxtl__mssub"):
         found = history.locator(selector)
         assert found.count(), selector
         for index in range(found.count()):
             expect(found.nth(index)).to_be_hidden()
+    # The icons are hidden on every row that opens; a row with nothing behind
+    # its line has no toggle and shows them closed (review of #555), or its
+    # copy icon could never be reached.
+    rows_with_icons = history.locator(".uxtl__body:has(.uxtl__editactions)")
+    assert rows_with_icons.count()
+    for index in range(rows_with_icons.count()):
+        body = rows_with_icons.nth(index)
+        icons = body.locator(":scope > .uxtl__head > .uxtl__editactions, .uxtl__editactions").first
+        if body.locator(":scope > .uxtl__toggle").is_visible():
+            expect(icons).to_be_hidden()
+        else:
+            expect(icons).to_be_visible()
 
     # A closed row is one line: nothing on the list is taller than a line and
     # its padding at this width.

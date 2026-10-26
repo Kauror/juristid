@@ -244,3 +244,68 @@ def test_every_icon_has_a_word_and_a_tooltip(signed_in, normal_matter, specialis
         assert "visually-hidden" in control or "aria-label=" in control, control
         assert 'aria-hidden="true"' in control, control
         assert "<button" not in control[1:] and "<a " not in control[1:], control
+
+
+# ---------------------------------------------------------------------------
+# Review of #555
+# ---------------------------------------------------------------------------
+
+
+def test_a_milestones_remove_icon_names_its_own_row(signed_in, normal_matter, specialist):
+    """Two deadlines on one Teema: each X is named by its own line, not by a kind."""
+    from app.intelligence.services import add_important_date
+
+    day = dt.date.today() + dt.timedelta(days=20)
+    first = add_important_date(
+        matter=normal_matter,
+        title="Esimene tähtaeg",
+        date_value=day,
+        period_end=day,
+        actor=specialist,
+    )
+    add_important_date(
+        matter=normal_matter,
+        title="Teine tähtaeg",
+        date_value=day,
+        period_end=day,
+        actor=specialist,
+    )
+
+    body = signed_in.get(_teema(normal_matter)).content.decode()
+
+    labelled = re.findall(r'<summary[^>]*aria-labelledby="([^"]+)"[^>]*>', body)
+    named_by_row = [ids for ids in labelled if "kustuta" in ids and "-rida" in ids]
+    assert len(named_by_row) >= 2
+    assert all(ids.split()[1].startswith("kaik-") for ids in named_by_row)
+    assert first.title in body
+
+
+def test_a_note_titled_with_its_kind_reads_it_once():
+    from app.matters.timeline import DEVELOPMENT_HEADLINE
+
+    assert kind_and_title(DEVELOPMENT_HEADLINE, "Märge: ministeerium helistas", separator=": ") == (
+        "Märge: ministeerium helistas"
+    )
+    assert kind_and_title(DEVELOPMENT_HEADLINE, "Kohtumine", separator=": ") == "Märge: Kohtumine"
+    assert kind_and_title(DEVELOPMENT_HEADLINE, "", separator=": ") == "Märge"
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        (
+            IMPORTED_OVERVIEW,
+            "Ülevaade: Mida arvad üleriigilise planeeringu aastani 2050 uuendatud eelnõust?",
+        ),
+        ("Uudis: Saatsime 15 ettepanekut", "Uudis: Saatsime 15 ettepanekut"),
+        ("Majanduse ülevaade: 2026", "Ülevaade / uudis: Majanduse ülevaade: 2026"),
+        ("", "Ülevaade / uudis"),
+    ],
+)
+def test_an_overview_of_unknown_kind_takes_the_kind_its_title_names(title, expected):
+    from app.matters.models import MatterWebsiteOverview
+
+    overview = MatterWebsiteOverview(title=title, url="https://example.invalid/x")
+    overview.kind = ""
+
+    assert overview.headline == expected

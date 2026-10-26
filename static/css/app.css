@@ -14969,3 +14969,19 @@ a.jcal__daynum {
     color: LinkText;
   }
 }
+
+/* Review of #555: «Teema loodud», «Teema suletud» and every row with nothing
+ * behind its line draw no toggle (the rule above), so the closed state that
+ * hides the head icons until a row is opened hid their copy icon for good.
+ * Such a row shows its icons as an open one does — the same condition, read
+ * off what the row holds. */
+@media screen and (scripting: enabled) {
+  #teema-vaade-wrap .uxtl__body:not(:has(
+    > :not(.uxtl__toggle, .uxtl__head, .uxtl__meta, .uxtl__ms-body, .uxtl__permalink),
+    > .uxtl__ms-body > :not(.uxtl__head),
+    .uxtl__head > .uxtl__editactions > :not(.uxtl__icon--copy)
+  )) > .uxtl__head > .uxtl__editactions {
+    display: inline-flex;
+  }
+}
+

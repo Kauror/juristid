@@ -248,7 +248,7 @@ record, not professional chronology (master specification 16.5).
                   <a class="uxtl__icon uxtl__icon--edit" title="Muuda" href="{% url 'intelligence:edit_important_date' matter_id=matter.pk pk=item.record.pk %}"
                      aria-label="Muuda olulist tähtaega: {{ item.record.title }}">{% include "matters/partials/action_icon.html" with name="edit" %}</a>
                 {% endif %}
-                {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="" %}
+                {% include "matters/partials/row_remove.html" with record=item.record remove_kind=item.removable remove_label=item.removable_label remove_genitive=item.removable_genitive remove_revision=item.removal_revision remove_named_by="kaik-"|add:item.row_key|add:"-rida" %}
                 {% comment %}
                   `Tühista` calls the milestone off — a different act from
                   removing the record — so it stays a word, after the icons.

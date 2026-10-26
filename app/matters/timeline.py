@@ -1725,11 +1725,9 @@ def development_milestone(development: MatterProceduralDevelopment) -> Chronolog
     (docs/adr/0091 §4, §5).
     """
     return ChronologyMilestone(
-        what=(
-            f"{DEVELOPMENT_HEADLINE}: {development.title}"
-            if development.title
-            else DEVELOPMENT_HEADLINE
-        ),
+        # The kind once, as every other kind (app/matters/headlines.py): a
+        # title written «Märge: …» does not read «Märge: Märge: …».
+        what=kind_and_title(DEVELOPMENT_HEADLINE, development.title or "", separator=": "),
         # The date as it was actually known, or the words «kuupäev teadmata» —
         # never the day the row happens to sit on, and never the anchor of a
         # period (docs/adr/0079 §3).
