@@ -592,11 +592,14 @@ class Matter(BaseModel):
         is ARCHIVE only because a closure the register never dated can be held
         no other way (``matters_closure_fields_consistent``) — so the notice
         would be a source label on routine work, not a warning about it
-        (docs/adr/0148 §5).
+        (docs/adr/0148 §5). A finished Teema the Lovable pilot built is the same
+        case (docs/adr/0191).
         """
         if self.record_mode != RecordMode.ARCHIVE:
             return False
-        return not self.pilot_imports.exists()
+        if self.pilot_imports.exists():
+            return False
+        return not self.evidence_pilot_records.filter(pilot="lovable-pilot").exists()
 
     @property
     def sender_names(self) -> str:
