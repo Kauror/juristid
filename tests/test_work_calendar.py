@@ -631,3 +631,12 @@ def test_old_overdue_work_outside_the_window_is_not_read(specialist):
 
     assert build(specialist).events == []
     assert build(specialist, kalender="aasta").events == []
+
+
+def test_a_period_anchored_before_the_supported_years_does_not_break_the_page(specialist):
+    """The year-wide pre-filter reads a 1989 anchor for a 1990 window (review of #550)."""
+    matter = factories.MatterFactory(owner=specialist)
+    action(matter, date(1989, 1, 1), precision=DatePrecision.YEAR, text="ammune aasta")
+
+    for view, raw in (("kuu", "1990-01"), ("4n", "1990-01-01"), ("aasta", "1990")):
+        build(specialist, kalender=view, kalendri_aeg=raw)

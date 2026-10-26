@@ -53,8 +53,9 @@ from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterEffectiveDate
 from app.matters import work_items as wi
 from app.matters.models import Matter
-from app.workflow.dates import format_at_precision, is_approximate, period_bounds
+from app.workflow.dates import format_at_precision, is_approximate
 from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
+from app.workflow.lateness import period_end_for
 
 # ---------------------------------------------------------------------------
 # Address
@@ -291,7 +292,10 @@ def _work_status(item: wi.WorkItem) -> str:
 def _work_event(item: wi.WorkItem) -> CalendarEvent | None:
     if item.when is None:
         return None
-    _start, end = period_bounds(item.when, item.date_precision)
+    # `period_end_for`, not `period_bounds`: a period anchored outside the
+    # supported years (a 1989 row read by the year-wide pre-filter) must not
+    # turn the page into a 500 — the guard `action_item` already relies on.
+    end = item.period_end or period_end_for(item.when, item.date_precision)
     return CalendarEvent(
         category=CATEGORY_WORK,
         key=f"{item.source_type}:{item.object_id}",
@@ -299,7 +303,7 @@ def _work_event(item: wi.WorkItem) -> CalendarEvent | None:
         text=item.text,
         meaning=item.meaning,
         when=item.when,
-        period_end=item.period_end or end,
+        period_end=end,
         precision=item.date_precision,
         display_date=item.display_date or format_at_precision(item.when, item.date_precision),
         status=_work_status(item),

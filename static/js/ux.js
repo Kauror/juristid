@@ -1912,6 +1912,11 @@
         if (holder.open) {
           return;
         }
+        /* A day the reader chose by click stays open: hovering past another
+           busy day does not take it away. */
+        if (document.querySelector("[data-wcal] details[data-uxpopover][open]:not([data-wcal-hovered])")) {
+          return;
+        }
         timer = window.setTimeout(function () {
           holder.setAttribute("data-wcal-hovered", "");
           holder.open = true;
@@ -1963,6 +1968,12 @@
         });
       }
       panel.addEventListener("keydown", function (event) {
+        /* An open day or week inside the panel takes Escape first: the
+           popover contract closes it and returns focus to its day. */
+        var popover = event.target.closest && event.target.closest("details[data-uxpopover][open]");
+        if (event.key === "Escape" && popover && panel.contains(popover)) {
+          return;
+        }
         if (event.key === "Escape" && !event.defaultPrevented && close) {
           event.preventDefault();
           close.click();

@@ -104,3 +104,26 @@ def test_no_horizontal_scroll_on_a_phone(page, base_url, view):
     )
 
     assert overflow <= 0
+
+
+def test_inside_the_quarter_panel_a_day_opens_on_screen_and_escape_closes_only_it(page, base_url):
+    """Review of #550: the panel must not displace its popovers, and Escape on an
+    open day closes the day, not the panel."""
+    _open(page, base_url, path="/minu-asjad/?kalender=kvartal")
+    day = page.locator(f"[data-wcal-panel] {TODAY_DAY.removeprefix('#minu-kalender ')}")
+    summary = day.locator("summary")
+
+    summary.focus()
+    page.keyboard.press("Enter")
+    popover = day.locator(".wcal__pop")
+    expect(popover).to_be_visible()
+    pop = popover.bounding_box()
+    anchor = summary.bounding_box()
+    assert pop is not None and anchor is not None
+    assert 0 <= pop["x"] and pop["x"] + pop["width"] <= 1440
+    # Placed against its own day, not shifted by the panel's offset.
+    assert abs((pop["x"] + pop["width"]) - (anchor["x"] + anchor["width"])) < 40
+
+    page.keyboard.press("Escape")
+    expect(popover).to_be_hidden()
+    expect(page.get_by_role("dialog")).to_be_visible()

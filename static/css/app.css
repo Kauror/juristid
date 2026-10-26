@@ -14631,12 +14631,16 @@ a.jcal__daynum {
   background: var(--surface-backdrop);
 }
 
+/* Centred by margins, never by `transform`: a transformed ancestor becomes
+   the containing block of the `position: fixed` day popovers inside it, which
+   would then be placed by viewport coordinates relative to the panel. */
 .wcal__panel {
   position: fixed;
   z-index: 45;
   top: calc(var(--layout-topbar) + var(--spacing-4));
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin-inline: auto;
   width: min(64rem, calc(100vw - var(--spacing-8)));
   max-height: calc(100vh - var(--layout-topbar) - var(--spacing-8));
   overflow-y: auto;
