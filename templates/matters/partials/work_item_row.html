@@ -113,6 +113,19 @@ control on this row: the row itself is the link.
           <a class="rowmenu__item" href="{{ item.matter_url }}#praegune-tegevus">Lisa tulemus…</a>
           <a class="rowmenu__item" href="{{ item.matter_url }}#lisa-jargmine">Muuda</a>
         {% endif %}
+        {% if item.is_date_shiftable and can_write_business_content %}
+          {% comment %}
+            «Nihuta kuupäeva» — the one control here that writes, and only after
+            its own `Salvesta`: a `Teen` step with an exact day, moved by a day,
+            a week or a month from the stored day (app/matters/date_shift.py).
+            Never offered for an `Arvamuse tähtaeg`, an `Oluline tähtaeg`, a
+            feedback wait or a review date — those keep their own forms.
+          {% endcomment %}
+          <details class="rowmenu__shift" data-dateshift>
+            <summary class="rowmenu__item">Nihuta kuupäeva</summary>
+            {% include "matters/partials/date_shift_form.html" with item=item %}
+          </details>
+        {% endif %}
         {% if item.is_review_ripe %}
           {% comment %}
             "Vaatasin üle" is a real service (app/workflow/services.acknowledge_review)

@@ -1887,6 +1887,50 @@
     });
   }
 
+  /* ---- «Nihuta kuupäeva» -----------------------------------------------
+   * `Loobu` is a reset button, so with no script it still clears the choice.
+   * Here it also folds the control away and returns focus to the command that
+   * opened it — and to the row's `⋯` when the control was inside a row menu,
+   * so a cancelled shift leaves the reader where they started
+   * (templates/matters/partials/date_shift_form.html).
+   */
+  function bindDateShift(scope) {
+    /* Opening the control inside a calendar day that hover opened pins that
+       day, as a click on it would: the form must not fold away when the
+       pointer drifts while somebody is choosing. */
+    scope.querySelectorAll("details[data-dateshift]").forEach(function (holder) {
+      if (!once(holder, "DateShiftPin")) {
+        return;
+      }
+      holder.addEventListener("toggle", function () {
+        var day = holder.open && holder.parentElement && holder.parentElement.closest("details[data-wcal-hovered]");
+        if (day) {
+          day.removeAttribute("data-wcal-hovered");
+        }
+      });
+    });
+    scope.querySelectorAll("[data-dateshift-cancel]").forEach(function (button) {
+      if (!once(button, "DateShiftCancel")) {
+        return;
+      }
+      button.addEventListener("click", function () {
+        var holder = button.closest("details[data-dateshift]");
+        if (!holder) {
+          return;
+        }
+        holder.open = false;
+        var menu = holder.parentElement && holder.parentElement.closest("details");
+        var target = menu ? menu.querySelector("summary") : holder.querySelector("summary");
+        if (menu) {
+          menu.open = false;
+        }
+        if (target) {
+          target.focus();
+        }
+      });
+    });
+  }
+
   /* ---- Kalender (Minu asjad) -------------------------------------------
    * The calendar's days and weeks are ordinary popovers (`data-uxpopover`
    * above): click, Enter, Space and a tap open them; Escape and a click
@@ -2033,6 +2077,7 @@
       bindDocumentRename,
       bindCopyLink,
       bindRowFilter,
+      bindDateShift,
       bindCalendar,
     ].forEach(function (binder) {
       safeInit(binder.name, function () {

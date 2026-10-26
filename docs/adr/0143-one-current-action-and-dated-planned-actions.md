@@ -179,3 +179,54 @@ only within itself, so `02.11 — Ootame tagasisidet` read under
 Pinned by `tests/test_current_work_chronology.py`,
 `tests/test_current_work_refreshes_after_round_answer.py` and
 `e2e/test_current_work_chronology.py`.
+
+## Amendment of 2026-10-26 — «Nihuta kuupäeva»
+
+**Owner's brief «Final Feature Development», feature B.** A lawyer can move an
+eligible internal task's day by **+1 päev**, **+1 nädal** or **+1 kuu** without
+opening the full editor: from a Minu asjad work row's `⋯` menu, and from the
+Minu asjad calendar's event details. The label is «Nihuta kuupäeva», never
+«Pikenda tähtaega»: this changes a plan, not a statutory or external date.
+
+**Eligible, and nothing else** (`app/matters/date_shift.is_shiftable`, and the
+row-side twin `WorkItem.is_date_shiftable`): a `NextAction` that is `OPEN` or
+`PLANNED`, on an open Matter, `ActionKind.DO` with `DateSemantics.DEADLINE`,
+`DatePrecision.EXACT` with a recorded day, not an `Arvamuse järelkontroll`, and
+carrying a responsible person who is still a department worker (a departed
+one keeps the full `Muuda`, which asks who carries it now); the person needs business write
+(`business_write_required`) and visibility (`visible_to`). Not offered for an
+`Arvamuse tähtaeg`, a statutory or external date, a commencement, an `Oluline
+tähtaeg`, a feedback wait, a WAIT/MONITOR review date, an approximate, inferred
+or undated step, a finished one, a closed Matter, or a row the reader may not
+see. Broadening this list is a product decision.
+
+**Arithmetic.** From the *stored* day, never today: a day, seven days, or one
+calendar month clamped to the shorter month (`app.core.dates.add_months`:
+31.1 → 28.2/29.2). The three proposals are computed on the server and the chosen
+one is previewed before `Salvesta`; nothing is written by choosing.
+
+**One write path.** `POST /teemad/<pk>/tegevus/<action_id>/nihuta/`
+(`shift_action_date_view`, CSRF, writer-only, 404 for a hidden or foreign id)
+calls `date_shift.shift_action_date`, which under the Matter's lock
+(`lock_open_matter_for_business_write`) re-reads the named row *of this
+Matter*, refuses it if it is no longer current/planned or its day is not the day
+the person reviewed (`SHIFT_STALE`) or it is not eligible (`SHIFT_NOT_ELIGIBLE`),
+recomputes the new day and checks it against the previewed one, then hands
+every other value off the locked row to the canonical edit:
+
+* current — `workspace.change_current_action` (supersedes the row; carries plan
+  step and restriction), with the row's own `responsible` passed explicitly so
+  the step is never reassigned to the Matter's owner;
+* planned — `workflow.services.change_planned_action`, which now also carries
+  the plan step and source sentence (as `Muuda` on the current step already
+  did).
+
+The audit trail is theirs: one `NEXT_ACTION_SET` naming the replaced row, which
+keeps the old day. A repeated press or a concurrent second save names a row that
+was just superseded and is refused — one move, one row, one event
+(`tests/test_date_shift_concurrency.py`). Nothing else is written: no
+completion, note, meeting, stage move, closure, opinion deadline, commencement
+or consultation change. Post/redirect/get back to the desk it was pressed on
+(only `matters:my_work` / `matters:person_work`), keeping horizon and calendar
+period; the message «Kuupäev muudetud: 5.11 → 12.11.» appears only after the
+save committed, a refusal says why. No migration.

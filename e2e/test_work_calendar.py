@@ -33,7 +33,7 @@ def _open(page, base_url, width=1440, height=1000, path="/minu-asjad/"):
 def test_a_day_opens_from_the_keyboard_and_escape_returns_to_it(page, base_url):
     _open(page, base_url)
     day = page.locator(TODAY_DAY)
-    summary = day.locator("summary")
+    summary = day.locator(":scope > summary")
 
     summary.focus()
     page.keyboard.press("Enter")
@@ -55,7 +55,7 @@ def test_hover_opens_a_day_and_leaving_closes_it(page, base_url):
     _open(page, base_url)
     day = page.locator(TODAY_DAY)
 
-    day.locator("summary").hover()
+    day.locator(":scope > summary").hover()
     expect(day.locator(".wcal__pop")).to_be_visible()
 
     page.mouse.move(5, 5)
@@ -111,7 +111,7 @@ def test_inside_the_quarter_panel_a_day_opens_on_screen_and_escape_closes_only_i
     open day closes the day, not the panel."""
     _open(page, base_url, path="/minu-asjad/?kalender=kvartal")
     day = page.locator(f"[data-wcal-panel] {TODAY_DAY.removeprefix('#minu-kalender ')}")
-    summary = day.locator("summary")
+    summary = day.locator(":scope > summary")
 
     summary.focus()
     page.keyboard.press("Enter")
