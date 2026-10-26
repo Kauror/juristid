@@ -807,7 +807,8 @@ def _phase_keys_in_order(steps: list[RailStep]) -> None:
 def _placement_key(step: RailStep) -> date | None:
     """Where a dated point is compared against ``step`` when it is placed.
 
-    A phase already reached began where its period starts. A phase still
+    A phase already reached — or behind the file unrecorded (`Teadmata`) —
+    began where its period starts. A phase still
     ahead is only known to precede a point once its **whole** period is over:
     *Valitsuses 2026* not yet reached says nothing about an opinion sent in
     May, and *Jõustumine 2027* still lies after a deadline in February
@@ -1187,7 +1188,8 @@ def matter_rail(
             beside = current if anchor is None else max(anchor, current)
             window, default = (beside, len(steps)), min(beside + 1, len(steps))
         # An explicit phase date a person wrote is believed — a point dated
-        # before it reads before it (docs/adr/0099 §4) — so the slot is not
+        # before it reads before it (docs/adr/0100, amendment of 2026-09-27,
+        # rule 1; docs/adr/0099 §4) — so the slot is not
         # clamped to the beginning or to the current phase.
         steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
     _place_added_steps(steps, added, rail=rail, today=today)

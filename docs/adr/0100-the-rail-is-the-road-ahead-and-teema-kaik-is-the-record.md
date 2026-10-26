@@ -286,3 +286,18 @@ own «Muutmata» chip). Emptied, the date is removed.
    which says «Kirjas: II kvartal 2027» beside the box. A different day typed
    there is stored as a day, as before. An edited `Muuda kulgu` is not
    replaced by a click on a step without the person confirming it.
+5. **Placing a phase dated to a period** (review rounds of #548). A phase
+   carries two keys: it is **placed** where its period starts (`sort_on`) and
+   **reached** where it ends (`reach_on`, read by the connector fill), both
+   lifted to run in the procedure's order (`_phase_keys_in_order`). A point is
+   compared against a phase **still ahead** on that phase's period end, and
+   against every other phase — current, recorded or `Teadmata` behind the file
+   — on its start (`_placement_key`): *Valitsuses 2026* not yet reached does
+   not pull a May opinion past it, and an opinion in May reads inside
+   *Algus 2026*. Facts are folded onto their phases first, the keys ordered
+   once, then the remaining points placed. A point earlier than every dated
+   step in its window reads at its default, beside the current phase, rather
+   than past undated phases. An explicit date a person wrote is still
+   believed — a point dated before it reads before it (amendment of
+   2026-09-27, rule 1; docs/adr/0099 §4) — so nothing is clamped. Pinned in
+   `tests/test_rail_step_date.py` (the `test_rail_*` cases).

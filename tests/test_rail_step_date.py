@@ -758,3 +758,24 @@ def test_rail_a_deadline_ahead_reads_beside_the_current_phase_not_past_undated_o
     )
 
     assert _order(steps)[:2] == ["kooskolastus", "Arvamuse tähtaeg"]
+
+
+def test_rail_a_point_inside_an_unrecorded_later_period_phase_reads_inside_it():
+    """`VTK 2026` behind the file but unrecorded, after a recorded `Algus`: an
+    opinion sent in May reads inside `VTK`, not before it."""
+    from app.matters.legal_process import (
+        STATE_CURRENT,
+        STATE_REACHED,
+        STATE_RECORDED,
+        STATE_UNKNOWN,
+    )
+
+    steps = _build(
+        [("algus", STATE_RECORDED), ("vtk", STATE_UNKNOWN), ("kooskolastus", STATE_CURRENT)],
+        {"vtk": _stored(date(2026, 1, 1), "YEAR")},
+        [_point("Koja arvamus", date(2026, 5, 10), STATE_REACHED)],
+        date(2026, 10, 26),
+    )
+
+    order = _order(steps)
+    assert order.index("vtk") < order.index("Koja arvamus") < order.index("kooskolastus")
