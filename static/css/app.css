@@ -14982,6 +14982,9 @@ a.jcal__daynum {
     .uxtl__head > .uxtl__editactions > :not(.uxtl__icon--copy)
   )) > .uxtl__head > .uxtl__editactions {
     display: inline-flex;
+    /* The 28 px target keeps its size; the line keeps its 27.5 px, the same
+       as every closed row beside it (measured). */
+    margin-block: -4px;
   }
 }
 
