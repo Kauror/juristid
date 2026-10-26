@@ -14234,6 +14234,107 @@ a.jcal__daynum {
 }
 
 /* ==========================================================================
+ * «Nihuta kuupäeva» (templates/matters/partials/date_shift_form.html,
+ * app/matters/date_shift.py). A small form inside a row's `⋯` menu and the
+ * calendar's event details. The chosen move's new day is shown by `:has`, so
+ * the preview needs no script and nothing is saved until `Salvesta`.
+ * ========================================================================== */
+
+.rowmenu__shift > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.rowmenu__shift > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dateshift {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+  width: min(17rem, calc(100vw - var(--spacing-8)));
+  padding: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-body);
+}
+
+.dateshift__current {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.dateshift__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.dateshift__legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.dateshift__choice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  min-height: 28px;
+  padding: 0 var(--spacing-2);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  cursor: pointer;
+}
+
+.dateshift__choice:has(input:checked) {
+  border-color: var(--accent-border);
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.dateshift__preview {
+  margin: 0;
+  min-height: 1.4em;
+}
+
+.dateshift__new {
+  display: none;
+}
+
+.dateshift:has(input[value="paev"]:checked) .dateshift__new[data-shift="paev"],
+.dateshift:has(input[value="nadal"]:checked) .dateshift__new[data-shift="nadal"],
+.dateshift:has(input[value="kuu"]:checked) .dateshift__new[data-shift="kuu"] {
+  display: inline;
+}
+
+.dateshift:has(input[name="nihe"]:checked) .dateshift__none {
+  display: none;
+}
+
+.dateshift__none {
+  color: var(--text-muted);
+}
+
+.dateshift__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.dateshift__full {
+  margin-left: auto;
+  color: var(--accent-link);
+}
+
+/* ==========================================================================
  * Kalender — Minu asjad's rail calendar (templates/matters/partials/
  * work_calendar*.html, app/matters/calendar.py, docs/adr/0158 amendment of
  * 2026-10-26). Compact in the rail; quarter and year open in a panel over the
@@ -14744,4 +14845,21 @@ a.jcal__daynum {
 
 .wcal__num {
   line-height: 1.1;
+}
+
+/* «Nihuta kuupäeva» inside a calendar popover: a quiet command under the
+   record it moves, opening the same form as the work row's menu. */
+.wcal__shift {
+  margin: 0 0 var(--spacing-1) var(--spacing-15);
+}
+
+.wcal__shiftbtn {
+  list-style: none;
+  cursor: pointer;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--accent-link);
+}
+
+.wcal__shiftbtn::-webkit-details-marker {
+  display: none;
 }
