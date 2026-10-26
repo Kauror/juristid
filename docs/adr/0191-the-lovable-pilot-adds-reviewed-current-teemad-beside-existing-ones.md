@@ -30,7 +30,9 @@ automatically, and promotion needs a new decision. This record is that decision,
 for this pilot only, and it keeps 0157's rule intact: **nothing is read off the
 wording at apply.** A person reviews each topic and the package states the
 reading — step kind, date meaning, date, lifecycle, disposition, commencement
-kind — with the reviewer's reason. The parser (`register_next_actions` 2.1) may
+kind — with the reviewer's reason; `validate` refuses a step without an explicit
+kind and date meaning, a WAIT or MONITOR that is not a review date, and a
+deadline already past at the snapshot. The parser (`register_next_actions` 2.1) may
 *propose* a kind while the package is being built; it never decides one at apply
 (0173 §7). The mirror itself (PR #429) is not activated by this.
 
@@ -63,15 +65,19 @@ moment — no backdated audit:
   `jõustunud`) → `MatterEffectiveDate` KNOWN_DATE; on a draft →
   `MatterImportantDate` PLANNED_COMMENCEMENT; «Eeldatava kuupäevaga» →
   ESTIMATED_COMMENCEMENT; «Üldises korras» → GENERAL_ORDER with no date. The
-  qualifier (`täpsustus`) is kept. No check task is created for an import.
+  qualifier (`täpsustus`) is kept. The import creates no check task; a
+  KNOWN_DATE it records is an ordinary recorded commencement, so 0188's
+  reminder to the Vastutaja applies to it exactly as to one typed in.
 - **A finished file** — ARCHIVE, `is_open=False`, its disposition, **no
   `closed_at` and no `MATTER_CLOSED`** (0148 §5). «lõpetatud», which has no
   reviewed mapping in the vocabulary, is a package decision: COMPLETED, no stage.
   Its commencements are kept as source only, because the date services refuse a
   closed file and closing afterwards would invent a closure event.
 - **A continuation** — `superseded_by` only when the successor is in the same
-  package. A successor outside it stays source text: nothing already in Juristid
-  is linked to, updated or read for writing.
+  package, set directly on the predecessor (as the Excel pilot does), so no
+  change event claims somebody linked them. A successor outside the package
+  stays source text: nothing already in Juristid is linked to, updated or read
+  for writing.
 
 ## 4. What is never written
 
@@ -94,13 +100,17 @@ not selected for this pilot and the rule question is left to the owner.
 The Excel and evidence pilots need an empty database. This one needs **every
 one of its references to be free** — native, imported, archived or deleted. One
 taken reference stops the whole apply. Under `LOCK TABLE matters_matter IN SHARE
-ROW EXCLUSIVE MODE` the plan is rebuilt and must hash to the approved plan digest
-(0184). A fingerprint over every other Matter's identity and `updated_at` is
+ROW EXCLUSIVE MODE` — taken after the year's reference-sequence rows, the order
+native creation uses, and with a 10-second `lock_timeout`, so a lawyer creating
+a Teema mid-import is neither deadlocked nor queued for long — the plan is
+rebuilt and must hash to the approved plan digest (0184). `verify` runs inside
+the same transaction before the commit; a difference rolls everything back. A fingerprint over every other Matter's identity and `updated_at` is
 taken before and after the writes inside the transaction and must be identical.
 The plan digest deliberately excludes the total Matter count: lawyers keep
 working while an import is planned. The year's reference sequence is pushed to
 Lovable's highest number so a Teema created during testing cannot take a number
-Lovable already holds.
+Lovable already holds; `reserve_through` must equal the snapshot's own
+`highest_reference`, is part of the plan digest and is printed by `plan`.
 
 ## 6. The OneNote link
 

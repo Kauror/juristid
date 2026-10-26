@@ -91,7 +91,10 @@ FIELD_DECISIONS = frozenset(
     {"APPLIED", "PRESERVED_AS_SOURCE_ONLY", "HELD_FOR_REVIEW", "NOT_PRESENT"}
 )
 
-_REFERENCE = re.compile(r"^(\d{4})_(\d{1,6})$")
+#: No leading zero: `2026_05` would be stored, and displayed, as `2026_5`.
+_REFERENCE = re.compile(r"^(\d{4})_([1-9]\d{0,5})$")
+#: `EvidencePilotRecord.record_key`.
+RECORD_KEY_LENGTH = 120
 _BACKUP_SET = re.compile(r"^sets/\d{8}T\d{6}Z$")
 
 
@@ -173,16 +176,27 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
     people = package.get("people") or {}
 
     seen: set[str] = set()
+    keys: set[str] = set()
+    highest: dict[str, int] = {}
     for topic in topics:
         reference = str(topic.get("reference") or "")
         report.topics += 1
         problems = _validate_topic(topic, people=people, as_of=as_of)
         out.extend(f"{reference}: {p}" for p in problems)
-        if parse_reference(reference) is None:
+        parsed = parse_reference(reference)
+        if parsed is None:
             continue
         if reference in seen:
             out.append(f"{reference}: listed twice.")
         seen.add(reference)
+        highest[str(parsed[0])] = max(highest.get(str(parsed[0]), 0), parsed[1])
+        # Every provenance key the writer will use, once each and short enough.
+        for key in _record_keys(topic):
+            if not key or len(key) > RECORD_KEY_LENGTH:
+                out.append(f"{reference}: record key {key!r} is empty or too long.")
+            elif key in keys:
+                out.append(f"{reference}: record key {key!r} is used twice.")
+            keys.add(key)
         if topic.get("lifecycle") == "ACTIVE":
             report.open_topics += 1
         if topic.get("next_action"):
@@ -192,7 +206,44 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
                 report.commencements_ready += 1
             else:
                 report.commencements_source_only += 1
+    out.extend(_validate_reserve(package, highest))
     return report
+
+
+def _record_keys(topic: dict[str, Any]) -> list[str]:
+    reference = str(topic.get("reference") or "")
+    keys = [reference]
+    if topic.get("next_action"):
+        keys.append(f"{reference}-NEXT")
+    if (topic.get("deadline") or {}).get("treatment") == "OPEN_REQUEST":
+        keys.append(f"{reference}-REQUEST")
+    if topic.get("successor"):
+        keys.append(f"{reference}-CONTINUES")
+    keys.extend(
+        str(r.get("key") or "")
+        for r in topic.get("commencements") or []
+        if r.get("review") == READY
+    )
+    return keys
+
+
+def _validate_reserve(package: dict[str, Any], highest: dict[str, int]) -> list[str]:
+    """`reserve_through` moves a reference sequence for good, so it must be exactly
+    the source's own highest number, stated in the snapshot, and never below the
+    package's."""
+    out: list[str] = []
+    stated = (package.get("snapshot") or {}).get("highest_reference") or {}
+    for year, through in (package.get("reserve_through") or {}).items():
+        if not re.fullmatch(r"20\d{2}", str(year)) or not isinstance(through, int):
+            out.append(f"reserve_through {year!r}: {through!r} is not a year and a number.")
+        elif stated.get(str(year)) != through:
+            out.append(
+                f"reserve_through {year}: {through} is not the snapshot's highest_reference "
+                f"for that year ({stated.get(str(year))!r})."
+            )
+        elif through < highest.get(str(year), 0):
+            out.append(f"reserve_through {year}: {through} is below the package's own references.")
+    return out
 
 
 def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | None) -> list[str]:
@@ -219,8 +270,10 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
         out.append(f"a finished topic needs a disposition, not {disposition!r}.")
 
     owner_raw = topic.get("owner_raw") or ""
-    if active and owner_raw not in people:
+    if active and not str(people.get(owner_raw) or "").strip():
         out.append(f"owner {owner_raw!r} has no reviewed person; an open file needs one.")
+    if topic.get("successor") and (active or disposition != "SUPERSEDED"):
+        out.append("only a finished, SUPERSEDED topic continues under another.")
 
     received = topic.get("received_date")
     if received and _day(received) is None:
@@ -248,8 +301,17 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
             shape_input["review_date"] = step.get("target_date")
         else:
             shape_input["target_date"] = step.get("target_date")
+        for name in ("kind", "date_semantics"):
+            # The package states the reading; a default never stands in for it.
+            if not step.get(name):
+                out.append(f"next_action.{name} is required.")
         _shape, shape_problems = step_shape(shape_input)
         out.extend(shape_problems)
+        if step.get("kind") in {"WAIT", "MONITOR"} and step.get("date_semantics") != "REVIEW_ON":
+            out.append("a WAIT or MONITOR step is a review date (REVIEW_ON).")
+        step_day = _day(step.get("target_date"))
+        if step.get("date_semantics") == "DEADLINE" and as_of and step_day and step_day < as_of:
+            out.append("a deadline before the snapshot would be overdue on arrival; not current.")
         if not step.get("reason"):
             out.append("next_action needs the reviewer's reason.")
 
@@ -263,6 +325,8 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
             out.append("only an open topic has an outstanding opinion request.")
         if day is None:
             out.append("an open request needs its deadline.")
+        if topic.get("koda_initiative"):
+            out.append("a Chamber initiative takes no new request (docs/adr/0151 §2).")
         if not (
             step
             and step.get("treatment") == "OPINION_DRAFTING"
@@ -276,6 +340,8 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
 
     for record in topic.get("commencements") or []:
         key = record.get("key") or "?"
+        if not record.get("key"):
+            out.append("a commencement needs its key.")
         review = record.get("review")
         if review == SOURCE_ONLY:
             if not record.get("reason"):
@@ -301,7 +367,7 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
 
     url = topic.get("onenote_url") or ""
     if url and not url.startswith("https://"):
-        out.append("onenote_url is not an https address; it is kept as source only.")
+        out.append("onenote_url is not an https address; fix the package.")
     for name, decision in (topic.get("field_decisions") or {}).items():
         if decision not in FIELD_DECISIONS:
             out.append(f"field_decisions[{name}] = {decision!r} is unknown.")
@@ -398,7 +464,9 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
                 )
             else:
                 topic_plan.owner = matches[0]
-        elif owner_raw:
+        if topic_plan.is_open and topic_plan.owner is None:
+            plan.problems.append(f"{reference}: an open file needs its owner's account.")
+        elif not name and owner_raw:
             topic_plan.warnings.append(
                 f"VASTUTAJA {owner_raw!r} has no Juristid account; kept as source only."
             )
@@ -470,12 +538,18 @@ def _read_database(plan: LovablePlan) -> None:
         plan.database_state = "applied"
     else:
         mine_refs = {m.display_reference for m in mine}
-        plan.collisions = [ref for ref in taken_refs if ref not in mine_refs] or taken_refs
+        plan.collisions = [ref for ref in taken_refs if ref not in mine_refs]
         plan.database_state = "conflict"
-        plan.problems.append(
-            "These references already exist in Juristid and are never overwritten; replace them "
-            f"in the selection and plan again: {', '.join(plan.collisions)}"
-        )
+        if plan.collisions:
+            plan.problems.append(
+                "These references already exist in Juristid and are never overwritten; replace "
+                f"them in the selection and plan again: {', '.join(plan.collisions)}"
+            )
+        else:
+            plan.problems.append(
+                f"The database holds {written} record(s) of this package but not the whole of "
+                "it — a partial or removed import. Nothing is repaired here; investigate first."
+            )
 
 
 def plan_digest(plan: LovablePlan) -> str:
@@ -502,6 +576,7 @@ def plan_digest(plan: LovablePlan) -> str:
                 }
                 for t in plan.topics
             ],
+            "reserve_through": plan.package.get("reserve_through") or {},
         }
     )
 
@@ -610,9 +685,19 @@ def apply_plan(
 
     with transaction.atomic():
         current = _hold_and_replan(plan, expect_plan_sha256)
+        if current.database_state == "applied":  # another apply won the lock
+            return ApplyReport(already_applied=True)
+        _require_writable(current, expect_plan_sha256)
         writer = _Writer(current, backup_set=backup_set.strip(), plan_sha256=expect_plan_sha256)
         report, touched = writer.write()
         refresh_matters(indexable_matters().filter(pk__in=touched))
+        # Read back before the commit: a difference rolls everything back.
+        report.verify = verify_applied(build_plan(plan.package))
+        if not report.verify.ok:
+            raise LovablePilotError(
+                "The written records do not match the package; nothing was written:\n  "
+                + "\n  ".join(report.verify.discrepancies)
+            )
     return report
 
 
@@ -641,6 +726,7 @@ def dry_run(plan: LovablePlan) -> ApplyReport:
     try:
         with transaction.atomic():
             current = _hold_and_replan(plan, plan_digest(plan))
+            _require_writable(current, plan_digest(plan))
             writer = _Writer(current, backup_set="dry-run", plan_sha256=plan_digest(plan))
             report, _touched = writer.write()
             report.verify = verify_applied(build_plan(plan.package))
@@ -650,15 +736,39 @@ def dry_run(plan: LovablePlan) -> ApplyReport:
         return rolled.report
 
 
+#: How long the apply waits for a lock before giving up, rather than queueing
+#: every lawyer's save behind it.
+LOCK_TIMEOUT = "10s"
+
+
 def _hold_and_replan(plan: LovablePlan, expect_plan_sha256: str) -> LovablePlan:
-    """Lock out other Matter writers, then require the plan to be what was approved."""
+    """Lock out other Matter writers, then re-read the database under the lock.
+
+    **Lock order.** Native creation locks the year's `MatterReferenceSequence`
+    row and then inserts a Matter; taking the table lock first and the sequence
+    afterwards would be the opposite order and could deadlock a lawyer creating
+    a Teema mid-import. So the sequence rows for every year this package writes
+    or reserves are locked first, then the table, each with a timeout.
+    """
     from django.db import connection
 
-    from app.matters.models import Matter
+    from app.matters.models import Matter, MatterReferenceSequence
 
+    years = {parse_reference(t.reference)[0] for t in plan.topics}  # type: ignore[index]
+    years |= {int(y) for y in (plan.package.get("reserve_through") or {})}
+    with connection.cursor() as cursor:
+        cursor.execute(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'")
+    for year in sorted(years):
+        MatterReferenceSequence.objects.get_or_create(year=year)
+    list(
+        MatterReferenceSequence.objects.select_for_update().filter(year__in=years).order_by("year")
+    )
     with connection.cursor() as cursor:
         cursor.execute(f'LOCK TABLE "{Matter._meta.db_table}" IN SHARE ROW EXCLUSIVE MODE')
-    current = build_plan(plan.package)
+    return build_plan(plan.package)
+
+
+def _require_writable(current: LovablePlan, expect_plan_sha256: str) -> None:
     try:
         require_digest(
             plan_digest(current),
@@ -673,7 +783,6 @@ def _hold_and_replan(plan: LovablePlan, expect_plan_sha256: str) -> LovablePlan:
             "The plan rebuilt under the lock is not writable; nothing was written:\n  "
             + "\n  ".join(current.problems or [current.database_state])
         )
-    return current
 
 
 class _Writer:
@@ -1011,6 +1120,8 @@ class VerifyReport:
 
 def verify_applied(plan: LovablePlan) -> VerifyReport:
     """Every topic against what the database holds. Read-only; fails on any difference."""
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
     from app.documents.models import Document
     from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
     from app.legacy_import.models import MatterSourceReference
@@ -1043,6 +1154,21 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
             out.append(f"{ref}: stage differs.")
         if m.is_open != topic_plan.is_open:
             out.append(f"{ref}: open/closed differs.")
+        if m.deleted_at is not None:
+            out.append(f"{ref}: the Matter is deleted.")
+        wanted_mode = "FULL" if topic_plan.is_open else "ARCHIVE"
+        if m.record_mode != wanted_mode:
+            out.append(f"{ref}: record mode {m.record_mode!r} ≠ {wanted_mode!r}.")
+        if (m.track == "KODA_INITIATIVE") != bool(topic.get("koda_initiative")):
+            out.append(f"{ref}: menetlusliik differs.")
+        if m.received_date != _day(topic.get("received_date")):
+            out.append(f"{ref}: Saabus differs.")
+        if m.addressee_organisation_id != (
+            topic_plan.addressee.pk if topic_plan.addressee else None
+        ):
+            out.append(f"{ref}: addressee differs.")
+        if ChangeEvent.objects.filter(matter=m, event_type=ChangeEventType.MATTER_CLOSED).exists():
+            out.append(f"{ref}: a closure event exists; none happened in Juristid.")
         if m.closed_at is not None:
             out.append(f"{ref}: a closure date was written; none is in the source.")
         if not topic_plan.is_open and m.disposition != topic["disposition"]:
@@ -1095,12 +1221,22 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
             out.append(f"{ref}: a response deadline was written; the source's is history only.")
 
         ready = [r for r in topic.get("commencements") or [] if r.get("review") == READY]
-        effective = MatterEffectiveDate.objects.filter(matter=m).count()
-        important = MatterImportantDate.objects.filter(matter=m).count()
-        if effective != sum(1 for r in ready if r["target"] == T_EFFECTIVE_DATE):
-            out.append(f"{ref}: {effective} effective dates, package says otherwise.")
-        if important != sum(1 for r in ready if r["target"] == T_IMPORTANT_DATE):
-            out.append(f"{ref}: {important} important dates, package says otherwise.")
+        effective = sorted(
+            (e.kind, e.date_value) for e in MatterEffectiveDate.objects.filter(matter=m)
+        )
+        important = sorted(
+            (i.kind, i.date_value) for i in MatterImportantDate.objects.filter(matter=m)
+        )
+        wanted_effective = sorted(
+            (r["kind"], _day(r.get("date"))) for r in ready if r["target"] == T_EFFECTIVE_DATE
+        )
+        wanted_important = sorted(
+            (r["kind"], _day(r.get("date"))) for r in ready if r["target"] == T_IMPORTANT_DATE
+        )
+        if effective != wanted_effective:
+            out.append(f"{ref}: effective dates {effective} ≠ {wanted_effective}.")
+        if important != wanted_important:
+            out.append(f"{ref}: important dates {important} ≠ {wanted_important}.")
         for r in topic.get("commencements") or []:
             if r.get("review") != READY:
                 report.held["commencement"] = report.held.get("commencement", 0) + 1
@@ -1113,4 +1249,20 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
             out.append(f"{ref}: a follow-up check exists; this pilot schedules none.")
         if deadline.get("treatment") == "SOURCE_ONLY":
             report.held["historical_deadline"] = report.held.get("historical_deadline", 0) + 1
+
+    # The provenance: exactly the records the package implies, each still there.
+    from django.apps import apps
+
+    from .models import EvidencePilotRecord
+
+    rows = list(EvidencePilotRecord.objects.filter(pilot=PILOT, package_sha256=plan.digest))
+    written: dict[str, int] = {}
+    for row in rows:
+        written[row.record_kind] = written.get(row.record_kind, 0) + 1
+        if row.target_model and row.target_id:
+            model = apps.get_model(row.target_model)
+            if not model._default_manager.filter(pk=row.target_id).exists():
+                out.append(f"{row.record_key}: its {row.target_model} no longer exists.")
+    if written != plan.expected_writes():
+        out.append(f"provenance rows {written} ≠ expected {plan.expected_writes()}.")
     return report

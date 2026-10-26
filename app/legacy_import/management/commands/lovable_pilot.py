@@ -87,6 +87,7 @@ class Command(BaseCommand):
             "existing_matters": plan.existing_matters,
             "collisions": plan.collisions,
             "expected_writes": plan.expected_writes(),
+            "reserve_through": plan.package.get("reserve_through") or {},
             "warnings": {t.reference: t.warnings for t in plan.topics if t.warnings},
             "problems": plan.problems,
         }

@@ -186,6 +186,7 @@ def _package(*topics: dict[str, Any]) -> dict[str, Any]:
             "as_of": "2026-10-26T17:40:16+00:00",
             "snapshot_sha256": "a" * 64,
             "project": "näidis",
+            "highest_reference": {"2026": 520},
         },
         "people": {"Mari": "Mari Näidis", "Jaan": "Jaan Näidis"},
         "reserve_through": {"2026": 520},
@@ -280,6 +281,40 @@ def test_the_synthetic_package_validates():
         (
             lambda p: p["topics"][0]["source"]["row"].update(nr="2026_999"),
             "does not match the reference",
+        ),
+        (lambda p: p["people"].update(Mari=""), "an open file needs one"),
+        (
+            lambda p: p["topics"][0]["next_action"].pop("date_semantics"),
+            "date_semantics is required",
+        ),
+        (lambda p: p["topics"][0]["next_action"].pop("kind"), "kind is required"),
+        (
+            lambda p: p["topics"][0]["next_action"].update(date_semantics="EXPECTED_AROUND"),
+            "a WAIT or MONITOR step is a review date",
+        ),
+        (
+            lambda p: p["topics"][1]["commencements"][1].update(key="2026_502-C01"),
+            "is used twice",
+        ),
+        (lambda p: p["topics"][1]["commencements"][1].update(key="x" * 121), "empty or too long"),
+        (lambda p: p["topics"][1]["commencements"][2].pop("key"), "needs its key"),
+        (lambda p: p["topics"][1].update(koda_initiative=True), "takes no new request"),
+        (
+            lambda p: (
+                p["topics"][1]["next_action"].update(target_date="2026-10-01"),
+                p["topics"][1]["deadline"].update(deadline="2026-10-01"),
+            ),
+            "overdue on arrival",
+        ),
+        (lambda p: p["topics"][0].update(successor="2026_502"), "only a finished, SUPERSEDED"),
+        (lambda p: p.update(reserve_through={"2026": 52000}), "highest_reference"),
+        (lambda p: p.update(reserve_through={"20x6": 5}), "not a year and a number"),
+        (
+            lambda p: (
+                p["topics"][0].update(reference="2026_0501"),
+                p["topics"][0]["source"]["row"].update(nr="2026_0501"),
+            ),
+            "is not YYYY_N",
         ),
     ],
 )
@@ -479,6 +514,33 @@ def test_verify_finds_a_difference(world, pilot_on):
 # ---------------------------------------------------------------------------
 # what a reader sees
 # ---------------------------------------------------------------------------
+
+
+def test_the_archive_notice_names_the_same_pilot_constant():
+    # `Matter.shows_register_archive_notice` cannot import the module (a cycle),
+    # so it spells the pilot's name; this keeps the two from drifting apart.
+    import inspect
+
+    assert f'"{lovable_pilot.PILOT}"' in inspect.getsource(
+        Matter.shows_register_archive_notice.fget
+    )
+
+
+def test_the_edit_page_names_lovable_without_a_row_number(world, pilot_on):
+    from app.matters.views import _immutable_facts
+
+    _apply(_package())
+    facts = dict(_immutable_facts(Matter.objects.get(reference_number=501)))
+    assert facts["Algallikas"] == "Lovable"
+
+
+def test_a_partial_import_is_reported_not_repaired(world, pilot_on):
+    _apply(_package())
+    EvidencePilotRecord.objects.filter(record_kind="NEXT_ACTION").first().delete()
+    plan = build_plan(_package())
+    assert plan.database_state == "conflict"
+    assert plan.collisions == []
+    assert any("partial or removed import" in p for p in plan.problems)
 
 
 def test_the_documents_tab_links_onenote_and_says_nothing_was_imported(world, pilot_on, client):

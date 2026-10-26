@@ -6351,7 +6351,11 @@ def _immutable_facts(matter: Matter) -> list[tuple[str, str]]:
     reference = matter.source_references.order_by("created_at").first()
     if reference is not None:
         where = reference.source_file_name or reference.source_system
-        if reference.source_row_number:
+        if reference.source_system == "LOVABLE":
+            # A register table, not a worksheet: its "row" is the reference
+            # number, which this panel deliberately never prints (docs/adr/0191).
+            where = "Lovable"
+        elif reference.source_row_number:
             where = f"{where}, rida {reference.source_row_number}"
         facts.append(("Algallikas", where))
     return facts
