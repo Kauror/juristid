@@ -5,7 +5,7 @@ from a ministry is often one token — `Eelnou_seletuskiri_lisa_…_2026.pdf` �
 three places sized themselves to it:
 
 * the chronology's file link, `#teema-vaade-wrap .uxtl__file` (inline-flex);
-* the document page's heading, `.pagehead__title` in a flex row;
+* the document page's heading, `.dochead__title` (`.pagehead__title` until 2026-10-26);
 * `Muuda teemat`'s context line, `.pagehead__context`, carrying the Matter title.
 
 Measured the way `e2e/test_timeline_long_token_wrapping.py` measures: the
@@ -109,7 +109,7 @@ def test_a_long_filename_does_not_widen_the_teema_or_the_document_page(page, bas
         detail = page.locator(".doctable a[href^='/dokumendid/']").first
         href = detail.get_attribute("href")
     assert href, "no document detail link on Dokumendid"
-    _holds(_readings(page, base_url + href, ".pagehead__title", NEEDLE_FILE), LONG_FILE)
+    _holds(_readings(page, base_url + href, ".dochead__title", NEEDLE_FILE), LONG_FILE)
 
 
 def test_a_long_compound_title_does_not_widen_muuda_teemat(page, base_url):
