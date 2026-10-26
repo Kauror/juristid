@@ -475,8 +475,53 @@ def person_work(request: HttpRequest, pk: Any) -> HttpResponse:
     return _render_person_work(request, subject=subject, is_self=subject.pk == request.user.pk)
 
 
+def _person_calendar(request: HttpRequest, *, subject: Any, today: Any, items: Any = None) -> Any:
+    """The rail's calendar (app/matters/calendar.py), its links on this page's address.
+
+    Every link keeps the page's other parameters — `kuni`, `vaade` — exactly as
+    they are and changes only the calendar's two, so moving the calendar never
+    moves the timeline or the portfolio filter beside it.
+    """
+    from app.matters import calendar as work_calendar
+
+    def query_for(changes: dict[str, str | None]) -> str:
+        params = request.GET.copy()
+        for key, value in changes.items():
+            if value is None:
+                params.pop(key, None)
+            else:
+                params[key] = value
+        encoded = params.urlencode()
+        return f"{request.path}?{encoded}" if encoded else request.path
+
+    return work_calendar.build_calendar(
+        request.user, subject, params=request.GET, today=today, query_for=query_for, items=items
+    )
+
+
+def _wants_calendar_fragment(request: HttpRequest) -> bool:
+    """An HTMX swap of the calendar alone — never a history restore (see `_wants_fragment`)."""
+    from app.matters.calendar import ELEMENT_ID
+
+    return (
+        is_htmx(request)
+        and request.headers.get("HX-History-Restore-Request") != "true"
+        and request.headers.get("HX-Target") == ELEMENT_ID
+    )
+
+
 def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) -> HttpResponse:
     today = timezone.localdate()
+    if _wants_calendar_fragment(request):
+        # The calendar's own navigation: nothing else on the page is read.
+        return render(
+            request,
+            "matters/partials/work_calendar.html",
+            {
+                "calendar": _person_calendar(request, subject=subject, today=today),
+                "is_self": is_self,
+            },
+        )
     horizon = horizon_from(request.GET.get(HORIZON_PARAM), today)
     view = view_from(request.GET.get(VIEW_PARAM))
     work = build_my_work(request.user, today=today, horizon=horizon, subject=subject, view=view)
@@ -496,6 +541,7 @@ def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) ->
         # to act on a sentence that has since moved (ADR 0021).
         "source_snapshot": snapshot_label(),
         "nav_active": "minu_asjad",
+        "calendar": _person_calendar(request, subject=subject, today=today, items=work.items),
     }
     if is_self:
         # Fetched only here, and only for `request.user`. The manager branch

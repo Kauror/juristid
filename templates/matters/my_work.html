@@ -555,6 +555,14 @@ The rail holds only what has no honest place on a timeline.
           </div>
         </details>
       </section>
+
+      {% comment %}
+        One calendar of this desk's dated work and the commencements on the
+        Teemad this person carries, under the statistics (docs/adr/0158,
+        amendment of 2026-10-26). Read-only, and its own block: nothing above
+        it — no band, figure or count — reads it.
+      {% endcomment %}
+      {% include "matters/partials/work_calendar.html" with calendar=calendar %}
     </aside>
   </div>
 </div>

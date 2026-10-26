@@ -1396,19 +1396,34 @@ def annotate_response_deadline_outstanding(
     )
 
 
+#: How far before its own anchor a period-dated row can still be running: a
+#: year anchored on 1 January ends on 31 December (`DatePrecision.YEAR`).
+PERIOD_REACH = timedelta(days=366)
+
+
 def work_items(
     user: Any,
     *,
     today: date | None = None,
     responsible: Any = None,
     latest: date | None = None,
+    earliest: date | None = None,
 ) -> list[WorkItem]:
     """Every dated work item this reader may see, chronologically.
 
     Four queries, not one per row — one per source, each already narrowed by
     ``visible_to``. ``latest`` bounds the future so a page that only shows five
     weeks does not drag a decade of milestones through Python. Nothing bounds
-    the past: work that is late is exactly what these pages exist to surface.
+    the past by default: work that is late is exactly what these pages exist to
+    surface.
+
+    ``earliest`` is the one exception, for a reader that shows a *window* rather
+    than a queue — the Minu asjad calendar (docs/adr/0158, amendment of
+    2026-10-26). It is a pre-filter in SQL, never the answer: it keeps every row
+    whose period can still reach ``earliest`` and the caller decides overlap
+    itself. A `NextAction` stores only its anchor, and the widest period it may
+    name is a year anchored on 1 January, so its anchor is read from
+    :data:`PERIOD_REACH` earlier; the other three sources store their last day.
 
     One Matter can legitimately produce more than one item: a response deadline,
     a DO deadline and a milestone are three different commitments and a
@@ -1427,6 +1442,11 @@ def work_items(
         deadlines = deadlines.filter(date_value__lte=latest)
         responses = responses.filter(response_deadline__lte=latest)
         waits = waits.filter(feedback_deadline__lte=latest)
+    if earliest is not None:
+        actions = actions.filter(target_date__gte=earliest - PERIOD_REACH)
+        deadlines = deadlines.filter(period_end__gte=earliest)
+        responses = responses.filter(response_deadline__gte=earliest)
+        waits = waits.filter(feedback_deadline__gte=earliest)
 
     # **People and stages are read once for the whole model, not once per row**
     # (2026-10-17 audit, JPERF-005). Each source used to join its Matter's owner

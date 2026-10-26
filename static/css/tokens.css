@@ -282,6 +282,12 @@
   --status-success-border: var(--primitive-success-700);
   --status-info: var(--primitive-info-400);
   --status-info-soft: var(--primitive-info-900);
+  /* Kalender (Minu asjad): the two categories, by colour *and* shape - a round
+     dot for work, a diamond for a commencement. Built on the semantic tokens,
+     so the light theme follows without a second definition. */
+  --calendar-work: var(--accent-link);
+  --calendar-commencement: var(--status-success);
+  --calendar-overdue: var(--status-danger);
 
   /* Documents and charts with white backgrounds sit inside this, never
      directly on the canvas. */
@@ -384,6 +390,9 @@
   --status-success-border: #6db894;
   --status-info: #0b6597;
   --status-info-soft: #e3eff8;
+  --calendar-work: var(--accent-link);
+  --calendar-commencement: var(--status-success);
+  --calendar-overdue: var(--status-danger);
 
   --surface-document: var(--primitive-neutral-0);
   --text-on-document: var(--primitive-neutral-900);

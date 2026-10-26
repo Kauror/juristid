@@ -61,7 +61,9 @@ pytestmark = pytest.mark.django_db
 #: Osakond +1 since docs/adr/0188: the rail asks once for commencement checks on
 #: Teemad with no Vastutaja, for the holder of the management view.
 OSAKOND_BUDGET = 46
-MINU_ASJAD_BUDGET = 30
+#: Minu asjad +1 since the rail's Kalender (docs/adr/0158, amendment of
+#: 2026-10-26): its commencements, read once; its work is the page's own list.
+MINU_ASJAD_BUDGET = 31
 STATISTIKA_BUDGET = 33
 
 

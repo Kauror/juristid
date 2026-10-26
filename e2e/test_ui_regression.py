@@ -1759,6 +1759,17 @@ def test_a_closed_disclosure_contributes_no_masks(page, base_url):
             )
 
 
+#: Minu asjad with its rail *Kalender* pinned to one fixed, past month. The
+#: calendar is clock-derived through and through — which days, which week
+#: numbers, which records, how many dots a day holds and so how tall a week row
+#: is — so the default «four weeks around today» would redraw the rail every
+#: morning. A month nothing in the seeded world is dated in renders the same
+#: grid on every run; what the calendar *shows* is asserted in
+#: `e2e/test_work_calendar.py` and `tests/test_work_calendar.py` instead
+#: (docs/adr/0158, amendment of 2026-10-26).
+MY_WORK_PINNED = "/minu-asjad/?kalender=kuu&kalendri_aeg=2024-02"
+
+
 def test_my_work(page, base_url):
     """Minu töö: one chronological timeline and the rail beside it.
 
@@ -1766,7 +1777,7 @@ def test_my_work(page, base_url):
     a row lands in depends on the weekday the job runs, which is why the dates
     themselves are masked and the bands are asserted in Python instead.
     """
-    signed_in(page, base_url, "/minu-asjad/")
+    signed_in(page, base_url, MY_WORK_PINNED)
     compare("minu-too", capture(page, "minu-too"))
 
 
@@ -1801,7 +1812,7 @@ ULTRAWIDE = {"width": 3440, "height": 900}
     "name,path",
     [
         ("osakond-3440", "/osakond/"),
-        ("minu-too-3440", "/minu-asjad/"),
+        ("minu-too-3440", MY_WORK_PINNED),
         ("teemad-3440", "/teemad/"),
         ("statistika-3440", "/statistika/"),
     ],
@@ -1963,7 +1974,7 @@ def test_light_shell(page, base_url):
 
 
 def test_light_my_work(page, base_url):
-    signed_in(in_light(page), base_url, "/minu-asjad/")
+    signed_in(in_light(page), base_url, MY_WORK_PINNED)
     compare("hele-minu-too", light_capture(page, "hele-minu-too", rules="minu-too"))
 
 

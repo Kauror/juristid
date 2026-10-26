@@ -227,3 +227,57 @@ commencements by a Matter-sized page would split one file's stages across
 pages, and a page boundary across buckets would hide which bucket a row is
 in. The per-bucket bound above was chosen instead: every bucket's count stays
 exact and visible, and the rest of a bucket is one click away.
+
+## Amendment of 2026-10-26 — one calendar on Minu asjad
+
+**Owner's brief «Final Feature Development», feature A.** Minu asjad (and the
+authorized colleague page `/inimesed/<uuid>/asjad/`) gains a read-only
+*Kalender* in the right rail, under *Minu statistika*, showing two categories
+side by side: *Tähtajad ja tegevused* and *Jõustumised*. It is a second
+presentation of records that already exist, not a destination, model or
+workflow; §6 above and ADR 0188 §7 stand unchanged — a commencement is never a
+`NextAction`, never «üle aja», and reaches no work figure.
+
+**Population.** `app/matters/calendar.py` reads, for the period shown:
+
+* **work** — `work_items.work_items(user, responsible=subject, earliest, latest)`:
+  exactly the rows the bands above it hold, under their precedence (an open
+  step suppresses its file's `Arvamuse tähtaeg`), so nothing is read twice;
+  `earliest` is a new, optional SQL pre-filter (a `NextAction` anchor is read a
+  year earlier, `PERIOD_REACH`, so a year-precision step still reaches December)
+  and the overlap is decided in Python;
+* **commencements** — `MatterEffectiveDate.objects.visible_to(user)`, `ACTIVE`,
+  dated, overlapping the period, on `Matter.objects.visible_to(user)` owned by
+  the subject — open and closed (§2's reason), never a tombstone.
+
+The *subject* chooses whose desk; the *reader* stays the authorization
+principal. A restricted Matter or child record the reader may not see gives no
+dot, count or line.
+
+**Views and address.** `?kalender=` `4n` (default: the previous ISO week, this
+week and the next two — 19.10–15.11 on Monday 26.10.2026) · `kuu` · `kvartal` ·
+`aasta`, and `?kalendri_aeg=` (`2026-10-19` · `2026-11` · `2026-K4` · `2026`).
+Unreadable values fall back to the current period. Neither collides with `kuni`
+or `vaade`, and every link keeps those. Links are ordinary links swapped by HTMX
+on the same URL (`HX-Target: minu-kalender`) with `hx-push-url`, so refresh,
+Back and a pasted address show the same period. Quarter and year open in a
+panel over the page; «Sulge» and Escape go to the month view.
+
+**Precision.** A day (`EXACT`, `INFERRED` — labelled «tuletatud tekstist») is
+on its cell. In the month and quarter views a `MONTH` record is listed under its
+month («kuu jooksul, päev teadmata»); a quarter, half-year or year — and in the
+four-week view every approximate record — is listed once under the grid. The
+year overview counts days and month-precision records in their month and lists
+wider periods once, in no month's count. Nothing is drawn on a period's first
+day.
+
+**Wording.** Work rows keep the work model's meaning (PLAANIS, VAATAN ÜLE,
+OOTAME TAGASISIDET, OLULINE TÄHTAEG, ARVAMUSE TÄHTAEG) and its states: «üle
+tähtaja» only where `WorkItem.is_overdue`, «ülevaatamise aeg on käes» for a
+ripe review, «teadmiseks, ei ole tähtaeg» for an informational milestone. A
+commencement reads «Kirjas olev jõustumise kuupäev», and once past «Kirjas
+olev kuupäev on möödunud» — never «jõustus».
+
+**Cost.** Six statements per view at any number of records (measured with 1 and
+41 records per view in `tests/test_work_calendar.py`); no migration, no index,
+no new model or route, no search-index change.

@@ -442,7 +442,8 @@ def test_minu_asjad_offers_it_only_on_eligible_rows(client, specialist):
 
     assert _row_menu_offers(body, "Teen ise ära")
     assert not _row_menu_offers(body, "Ootan ministeeriumi vastust")
-    assert body.count("data-dateshift>") == 1
+    # One work row offers it (the calendar's popovers repeat the same step).
+    assert body.count('class="rowmenu__shift"') == 1
     assert "+1 nädal" in body and "Muuda täpsemalt" in body
 
 
@@ -471,3 +472,26 @@ def test_a_reader_is_not_offered_the_control(client, reader):
 
     assert "Lugeja rida" in body
     assert "Nihuta kuupäeva" not in body
+
+
+def test_the_calendar_offers_it_for_an_eligible_step_and_never_for_a_commencement(
+    client, specialist
+):
+    today = timezone.localdate()
+    day = today + timedelta(days=2)
+    matter = factories.MatterFactory(owner=specialist)
+    current(matter, day, text="Kalendrist nihutatav")
+    factories.EffectiveDateFactory(matter=matter, date_value=day, description="jõustub siis")
+    client.force_login(specialist)
+
+    response = client.get(MY_WORK, HTTP_HX_REQUEST="true", HTTP_HX_TARGET="minu-kalender")
+    body = response.content.decode()
+
+    work_item = body.index("Kalendrist nihutatav")
+    commencement = body.index("jõustub siis")
+    # The day popover lists work before commencements; the control sits under
+    # the step, and nothing follows the commencement's line before its item ends.
+    assert "Nihuta kuupäeva" in body[work_item:commencement]
+    after = body[commencement : body.index("</li>", commencement)]
+    assert "Nihuta kuupäeva" not in after
+    assert 'name="tagasi" value="/minu-asjad/"' in body

@@ -802,7 +802,14 @@ def test_a_commencement_never_reaches_minu_asjad(signed_in, specialist):
 
     body = signed_in.get(reverse("matters:my_work")).content.decode()
 
-    assert "Ainulaadne jõustumise kirjeldus" not in body
+    # Since the amendment of 2026-10-26 the rail's read-only *Kalender* shows
+    # it, labelled as a recorded commencement date; nothing else on the page
+    # does — no band, row, figure or count — and no step is created.
+    start = body.index('id="minu-kalender"')
+    end = body.index("</section>", start)
+    calendar, rest = body[start:end], body[:start] + body[end:]
+    assert "Ainulaadne jõustumise kirjeldus" in calendar
+    assert "Ainulaadne jõustumise kirjeldus" not in rest
     assert not matter.next_actions.exists()
 
 
