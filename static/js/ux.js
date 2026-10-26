@@ -1895,6 +1895,20 @@
    * (templates/matters/partials/date_shift_form.html).
    */
   function bindDateShift(scope) {
+    /* Opening the control inside a calendar day that hover opened pins that
+       day, as a click on it would: the form must not fold away when the
+       pointer drifts while somebody is choosing. */
+    scope.querySelectorAll("details[data-dateshift]").forEach(function (holder) {
+      if (!once(holder, "DateShiftPin")) {
+        return;
+      }
+      holder.addEventListener("toggle", function () {
+        var day = holder.open && holder.parentElement && holder.parentElement.closest("details[data-wcal-hovered]");
+        if (day) {
+          day.removeAttribute("data-wcal-hovered");
+        }
+      });
+    });
     scope.querySelectorAll("[data-dateshift-cancel]").forEach(function (button) {
       if (!once(button, "DateShiftCancel")) {
         return;
