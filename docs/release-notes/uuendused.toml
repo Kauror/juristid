@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-10-26
 basis = "deployment"
-prs = [543, 544, 545, 546, 548, 550, 551]
+prs = [543, 544, 545, 546, 548, 550, 551, 553, 554, 555]
 # Kasutusmugavuse voor: lõpetamise failid ja nelja põhjusega «Lõpeta teema»
 # (#543, ADR 0131 täiendus), dokumendilingid (#545), navigeerimine ja
 # salvestamata teksti kaitse (#546, ADR 0190), «Kiirklahvid» (#544).
@@ -18,6 +18,11 @@ prs = [543, 544, 545, 546, 548, 550, 551]
 # (#548, ADR 0100 täiendus 26.10).
 # Samal päeval kolmas väljalase: Minu asjade kalender (#550, ADR 0158
 # täiendus 26.10) ja «Nihuta kuupäeva» (#551, ADR 0143 täiendus 26.10).
+# Samal päeval neljas väljalase: viis kasutusmugavuse parandust omaniku
+# ülevaatuse järel (#553 Minu asjade külgveerg, menetluse kulu kuupäev ja
+# «Eesolev tähtaeg»; #555 Tegevuste ikoonid ja korduvad liigid; #554
+# Dokumendid). Kui see väljalase jõuab tootmisse hiljem, lähevad need viis
+# punkti selle päeva uude kirjesse.
 # Migratsioonideta, otsinguindeksit uuesti ei ehitata. Kui väljalase ei jõua
 # tootmisse 26.10 (Tallinna aja järgi), liigub see kirje väljalaske päeva
 # kuupäevale.
@@ -36,6 +41,11 @@ changes = [
   "Menetluse kulu sammule (näiteks «Riigikogus» või «Jõustumine») saab kuupäeva lisada sellel klõpsates: täpse päeva või ainult kuu, kvartali või aasta.",
   "Minu asjade paremas veerus on nüüd kalender, kus on koos sinu tööde tähtajad ja tegevused ning sinu teemade õigusaktide jõustumised. Kalendrit saab vaadata nelja nädala, kuu, kvartali või aasta kaupa.",
   "Oma tegevuse kuupäeva saab Minu asjades ja kalendris kiiresti nihutada päeva, nädala või kuu võrra: rea menüüs «Nihuta kuupäeva».",
+  "Minu asjades on kalender nüüd paremas veerus kõige ülal (teavituste all, kui neid on); märkmed on veeru lõpus.",
+  "Menetluse kulu sammule kuupäeva lisades on väljad juba tänase päeva, kuu, kvartali ja aastaga täidetud; olemasolev kuupäev jääb alles.",
+  "Menetluse kulul ei ole tähtaja kohal enam pealkirja «Eesolev tähtaeg».",
+  "Tegevustes on «Kopeeri link», «Muuda» ja «Kustuta» nüüd väikesed ikoonid kirje pealkirja järel, ja kirje liik ei kordu pealkirjas («Uudis: …», mitte «Uudis – Uudis: …»).",
+  "Dokumentides on üleslaadimise nupp nüüd «Lae üles» ja korduv link «Vaata sisu» on eemaldatud; dokumendi lehel on kõige ees «Ava fail» või «Laadi alla», parandused on kokku pandud jaotisse «Muuda dokumenti».",
 ]
 
 [[day]]
