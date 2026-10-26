@@ -2193,8 +2193,10 @@ def test_a_dated_fact_reaches_the_chronology_only_once_it_has_happened(
 
     # On the rail as events since docs/adr/0172 §6 — named, and marked as
     # what they are — never as stages.
+    # The upcoming one's kind is no longer written above it (owner's UX review
+    # of 2026-10-26, docs/adr/0100); the passed one's still is.
     assert "Riigikogu I lugemine" in strip
-    assert '<span class="tl-step__type">Eesolev tähtaeg</span>' in strip
+    assert '<span class="tl-step__type">Eesolev tähtaeg</span>' not in strip
     assert '<span class="tl-step__type">Tähtaeg</span>' in strip
     assert "Riigikogu I lugemine" in chronology
     # And it is marked as still ahead rather than read as something that

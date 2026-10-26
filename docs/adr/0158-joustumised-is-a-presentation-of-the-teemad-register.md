@@ -281,3 +281,16 @@ olev kuupäev on möödunud» — never «jõustus».
 **Cost.** Six statements per view at any number of records (measured with 1 and
 41 records per view in `tests/test_work_calendar.py`); no migration, no index,
 no new model or route, no search-index change.
+
+## Amendment of 2026-10-26 (second) — the calendar's place and its footer
+
+**Owner's UX review after r30.** On Minu asjad the rail now reads: alerts
+(the reader's own «Kontrolli jõustumist» prompts and «Uus asi», only when there
+are any, no placeholder) → *Kalender* → Järgmise tegevuseta → Kuupäevata →
+Viimati muudetud → Minu statistika → Märkmed. A colleague's page has no alerts
+and no notes (neither is fetched for it) and ends with Kiirvaade after the same
+common blocks. The calendar's footer «Näitab kehtivaid kirjeid: tehtud
+tegevusi ei näidata. Jõustumine on kirjas olev kuupäev, mitte tähtaeg.» is
+removed from every view; the legend, period headings, empty state and every
+event's own wording («Kirjas olev jõustumise kuupäev») keep the distinction. No
+data, selector or URL changes.

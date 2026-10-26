@@ -750,6 +750,21 @@ class RailStep:
         return self.kind == KIND_EVENT
 
     @property
+    def type_label(self) -> str:
+        """The kind written above an event's title — or nothing.
+
+        «Eesolev tähtaeg» is not written (owner's UX review of 2026-10-26,
+        docs/adr/0100 amendment of that day): the description and period right
+        under it already say what the deadline is, and the diamond marks it as
+        an event. The classification itself — `event_label`, upcoming versus
+        passed — is unchanged and still read by everything that sorts, draws or
+        explains the marker; «Tähtaeg» and «Töövõit» are still written.
+        """
+        from app.matters.process_timeline import UPCOMING_DEADLINE_EVENT
+
+        return "" if self.event_label == UPCOMING_DEADLINE_EVENT else self.event_label
+
+    @property
     def reach_percent(self) -> str:
         """``reach`` as a CSS length — ``0%``, ``37.2%``, ``100%``.
 

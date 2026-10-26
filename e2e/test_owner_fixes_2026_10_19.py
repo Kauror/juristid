@@ -112,7 +112,9 @@ def test_a_deadline_and_a_victory_are_events_on_the_rail(page, base_url):
     expect(deadline).to_have_count(1)
     expect(victory).to_have_count(1)
     # Their kind in words, not colour; their own day.
-    expect(deadline.locator(".tl-step__type")).to_have_text("Eesolev tähtaeg")
+    # An upcoming deadline's kind is no longer written (docs/adr/0100,
+    # amendment of 2026-10-26); «Töövõit» still is.
+    expect(deadline.locator(".tl-step__type")).to_have_count(0)
     expect(deadline).to_contain_text(_et(date.today() + timedelta(days=2)))
     expect(victory.locator(".tl-step__type")).to_have_text("Töövõit")
     expect(victory).to_contain_text(_et(date.today()))
