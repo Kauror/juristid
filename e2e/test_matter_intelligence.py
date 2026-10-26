@@ -256,7 +256,9 @@ def test_an_exact_milestone_can_be_added_in_a_few_fields(page, base_url):
     # a stage of the procedure.
     marker = page.locator(".tl-step--event", has_text="Kooskõlastusringi lõpp")
     expect(marker).to_have_count(1)
-    expect(marker.locator(".tl-step__type")).to_have_text("Eesolev tähtaeg")
+    # Its kind is no longer written above an upcoming one (owner's UX review
+    # of 2026-10-26, docs/adr/0100); the diamond and its title say it.
+    expect(marker.locator(".tl-step__type")).to_have_count(0)
     expect(page.locator("#ajalugu-loend")).to_contain_text("Kooskõlastusringi lõpp")
 
     # And still in its own fact section, which is what the rest of this

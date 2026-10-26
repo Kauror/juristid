@@ -114,3 +114,37 @@ listener and then leaves typed text must answer the prompt
   not among the newest rows drawn; a GET with an unknown key costs the same read.
 - Browser tests that type into a draft host and then leave without saving now
   meet a `beforeunload` dialog; Playwright accepts it by default.
+
+## Amendment of 2026-10-26 — the row's actions are three icons, together
+
+**Owner's UX corrections, fix 3.** A `Teema käik` row's controls were spread
+over three places: `Kopeeri link` on a line of its own at the foot of the open
+row, `Muuda` beside a link or the text, `Kustuta` by the heading. They are now
+one group, in one order — **copy → edit → remove** — right after the record's
+label or primary link (`templates/matters/partials/row_copy_link.html`,
+`action_icon.html`, `row_remove.html`):
+
+* **Copy** (§2's link, unchanged in what it copies): always this history
+  entry's own address, `?kirje=<row key>#kaik-<row key>-rida` — never a web
+  page the row links to. Drawn for every reader, on a closed Teema too: copying
+  a link is reading. «Link kopeeritud» is a tooltip from `data-copied` and the
+  shared status region; the icon's text and the line do not move.
+* **Edit** (pencil): the record's own correction — the same HTMX swap targets,
+  forms, revision checks and gates as `Muuda` had.
+* **Remove** (X): opens the existing `Kustuta` confirmation; nothing is removed
+  until `Eemalda`, and `Loobu` returns focus to the X.
+
+Only what the record and reader actually have is drawn. Each icon carries its
+word in a visually hidden span, the row by `aria-labelledby` (its own word,
+then the row's line or headline), and its word in `title`; 28 px targets and
+the focus ring. Other words keep their meaning and stay words: `Tühista` (calls
+an `Oluline tähtaeg` off — not removal), `+ Lisa fail`, `+ Lisa töödokument`,
+`Võta tagasi`. A row with no record to correct (a stage change, an imported
+save) carries only the copy icon under its line. A copy-only group is not
+«detail» for the accordion, so `Teema loodud` still draws no toggle.
+
+The same amendment names a kind once in a headline: a koda.ee title that
+already opens with its kind — «Koduka ülevaade: …», «Uudis: …», «Kaasamine: …»
+— reads «Ülevaade: …», «Uudis: …» (`app/matters/headlines.py`, an allow-list of
+the kind word and a few source words, so «Majanduse ülevaade: 2026» keeps every
+word). Display only: stored titles are untouched. No migration.

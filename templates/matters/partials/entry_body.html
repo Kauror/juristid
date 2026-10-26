@@ -127,12 +127,21 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
            class="visually-hidden"> — avaneb uues aknas</span></a>
       </span>
     {% endif %}
+    {% comment %}
+      The entry's icons, copy → edit → remove (owner's UX corrections,
+      2026-10-26), together under the text they act on. The copy icon — the
+      address of this history entry — is drawn for every reader; each icon is
+      named by its word and then the entry's own line (`kaik-<pk>-rida`).
+    {% endcomment %}
+    <div class="uxtl__editactions">
+      {% include "matters/partials/row_copy_link.html" with row_key=entry.pk %}
     {% if can_write_business_content %}
-      <div class="uxtl__editactions">
-        <button class="uxtl__edit" type="button"
+        <button class="uxtl__icon uxtl__icon--edit" type="button" title="Muuda"
+                id="sissekanne-{{ entry.pk }}-muuda"
+                aria-labelledby="sissekanne-{{ entry.pk }}-muuda kaik-{{ entry.pk }}-rida"
                 hx-get="{% url 'matters:edit_entry' pk=matter.pk entry_id=entry.pk %}"
                 hx-target="#sissekanne-{{ entry.pk }}-sisu"
-                hx-swap="outerHTML">Muuda</button>
+                hx-swap="outerHTML">{% include "matters/partials/action_icon.html" with name="edit" %}<span class="visually-hidden">Muuda</span></button>
         {% comment %}
           `Kustuta`, beside `Muuda` and gated on `matter.is_open` where `Muuda`
           is not.
@@ -148,10 +157,12 @@ control that would add something new (app/matters/views.py, docs/adr/0075 §12).
           never how a rule is kept (OWNER-04, docs/adr/0102).
         {% endcomment %}
         {% if matter.is_open %}
-          {% include "matters/partials/row_remove.html" with record=entry remove_kind="sissekanne" remove_label="sissekanne" remove_genitive="sissekande" remove_revision=entry.updated_at.isoformat remove_named_by="" %}
+          {% with entry_key=entry.pk|stringformat:"s" %}
+            {% include "matters/partials/row_remove.html" with record=entry remove_kind="sissekanne" remove_label="sissekanne" remove_genitive="sissekande" remove_revision=entry.updated_at.isoformat remove_named_by="kaik-"|add:entry_key|add:"-rida" %}
+          {% endwith %}
         {% endif %}
-      </div>
     {% endif %}
+    </div>
   {% endif %}
 </div>
 {% comment %}

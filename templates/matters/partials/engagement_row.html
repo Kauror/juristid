@@ -267,8 +267,9 @@ before the closure.
         <span class="uxtl__msdate">{{ milestone.display_date }}</span>
         {% if milestone.ahead %}<span class="uxtl__msahead">Eesolev</span>{% endif %}
       </p>
-      {% if can_write_business_content and matter.is_open %}
-        <div class="uxtl__editactions">
+      <div class="uxtl__editactions">
+          {% include "matters/partials/row_copy_link.html" with row_key=engagement.pk %}
+          {% if can_write_business_content and matter.is_open %}
           {% comment %}
             «Muuda» on its own says which verb and not which record, and a
             chronology may show a dozen of these. The accessible name is
@@ -279,12 +280,12 @@ before the closure.
             anything reading the page as text and, measured, for the tests that
             hold one act to one line (tests/test_matter_engagement.py).
           {% endcomment %}
-          <button class="uxtl__edit" type="button"
+          <button class="uxtl__icon uxtl__icon--edit" type="button" title="Muuda"
                   id="kaasamine-{{ engagement.pk }}-muuda"
                   aria-labelledby="kaasamine-{{ engagement.pk }}-muuda kaasamine-{{ engagement.pk }}-pealkiri"
                   hx-get="{% url 'matters:update_engagement' pk=matter.pk engagement_id=engagement.pk %}"
                   hx-target="#kaasamine-{{ engagement.pk }}-sisu"
-                  hx-swap="outerHTML">Muuda</button>
+                  hx-swap="outerHTML">{% include "matters/partials/action_icon.html" with name="edit" %}<span class="visually-hidden">Muuda</span></button>
           {% comment %}
             `Kustuta`, beside `Muuda`. The same consultation recorded twice is the
             ordinary mistake here, and correcting the second copy into something
@@ -293,8 +294,8 @@ before the closure.
           {% with head_id=engagement.pk|stringformat:"s" %}
             {% include "matters/partials/row_remove.html" with record=engagement remove_kind="kaasamine" remove_label="kaasamine" remove_genitive="kaasamise" remove_revision=engagement.updated_at.isoformat remove_named_by="kaasamine-"|add:head_id|add:"-pealkiri" %}
           {% endwith %}
+        {% endif %}
         </div>
-      {% endif %}
     </div>
     {% if milestone.sub %}
       <span class="uxtl__mssub">{{ milestone.sub }}</span>

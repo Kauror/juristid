@@ -196,25 +196,27 @@ anything changed.
         <span class="uxtl__mswhat" id="koja-arvamus-{{ submission.pk }}-pealkiri">{{ milestone.what }}</span>
         <span class="uxtl__msdate">{{ milestone.display_date }}</span>
       </p>
-      {% if can_write_business_content %}
+      
         {% comment %}
           A `<div>`, not a `<p>`: `Võta tagasi` below is a `<details>`, and the
           parser closes an open `p` at one (`matters/partials/row_remove.html`,
           `tests/test_ui_contract.py`).
         {% endcomment %}
         <div class="uxtl__editactions">
+          {% include "matters/partials/row_copy_link.html" with row_key=submission.pk %}
+          {% if can_write_business_content %}
           {% comment %}
             Named by reference — the button's own word, then the headline element
             above it — rather than by repeating the headline into a
             visually-hidden span, which would put «Arvamus välja» into the
             document twice on a file with three sent opinions.
           {% endcomment %}
-          <button class="uxtl__edit" type="button"
+          <button class="uxtl__icon uxtl__icon--edit" type="button" title="Muuda"
                   id="koja-arvamus-{{ submission.pk }}-muuda"
                   aria-labelledby="koja-arvamus-{{ submission.pk }}-muuda koja-arvamus-{{ submission.pk }}-pealkiri"
                   hx-get="{% url 'matters:update_sent_opinion' pk=matter.pk submission_id=submission.pk %}"
                   hx-target="#koja-arvamus-{{ submission.pk }}-sisu"
-                  hx-swap="outerHTML">Muuda</button>
+                  hx-swap="outerHTML">{% include "matters/partials/action_icon.html" with name="edit" %}<span class="visually-hidden">Muuda</span></button>
           {% comment %}
             `+ Lisa töödokument` — the editable file the letter was drafted in,
             filed under this opinion after the send (docs/adr/0129 §7). Beside
@@ -251,8 +253,8 @@ anything changed.
           {% if submission.is_sent %}
             {% include "submissions/partials/withdraw_confirm.html" with submission=submission withdraw_back="teema" %}
           {% endif %}
+        {% endif %}
         </div>
-      {% endif %}
     </div>
     {% if milestone.sub %}
       <span class="uxtl__mssub">{{ milestone.sub }}</span>

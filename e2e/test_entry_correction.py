@@ -84,7 +84,7 @@ def _entry_row(page):
 
 def _open_the_editor(page):
     row = _entry_row(page)
-    row.get_by_role("button", name="Muuda", exact=True).click()
+    row.locator(".uxtl__icon--edit").click()
     box = page.locator(".uxtl__editform textarea")
     box.wait_for()
     return box
@@ -213,5 +213,5 @@ def test_a_reader_is_offered_no_correction(page, base_url):
     entry = history.locator("article.uxtl__item").filter(has_text="Avalik sissekanne").first
     open_kaik_row(entry)
     expect(history.get_by_text("Avalik sissekanne")).to_be_visible()
-    expect(page.get_by_role("button", name="Muuda", exact=True)).to_have_count(0)
+    expect(history.locator(".uxtl__icon--edit")).to_have_count(0)
     expect(history.locator("button", has_text="Muuda")).to_have_count(0)

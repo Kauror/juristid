@@ -84,7 +84,7 @@ def _action(page, suffix: str):
     useless as a locator. The id is what identifies the control
     (`development_row.html`).
     """
-    return _row(page).locator(f"button.uxtl__edit[id$='-{suffix}']")
+    return _row(page).locator(f"button[id$='-{suffix}']")
 
 
 def test_the_row_offers_lisa_fail_beside_muuda(page, base_url: str):

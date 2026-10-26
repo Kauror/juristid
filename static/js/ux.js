@@ -1640,29 +1640,40 @@
           selection.addRange(range);
         }
         var done = function () {
-          /* An icon button has no text to swap: its tooltip and accessible
-             name say «Link kopeeritud» for two seconds instead, and the shared
-             status region says it aloud — nothing on the row moves
-             (templates/documents/partials/copy_link_icon.html). */
+          var said =
+            button.getAttribute("data-label-done") ||
+            (button.hasAttribute("data-copy-icon") ? "Link kopeeritud" : "");
+          if (!said) {
+            return;
+          }
+          /* An icon keeps its glyph: «Link kopeeritud» is a tooltip drawn from
+             `data-copied` (no box moves) and the shared status region, and the
+             `title` says it to a pointer resting there. */
           if (button.hasAttribute("data-copy-icon")) {
-            if (!button.hasAttribute("data-label-idle")) {
-              button.setAttribute("data-label-idle", button.getAttribute("aria-label") || "");
+            if (!button.hasAttribute("data-title-idle")) {
               button.setAttribute("data-title-idle", button.getAttribute("title") || "");
             }
+            /* An icon named by its own `aria-label` (Dokumendid) says it there
+               too; one named by `aria-labelledby` (Teema käik) is announced
+               through the status region alone. */
+            var named = button.hasAttribute("aria-label");
+            if (named && !button.hasAttribute("data-aria-idle")) {
+              button.setAttribute("data-aria-idle", button.getAttribute("aria-label"));
+            }
             window.clearTimeout(button.copyLabelTimer);
-            button.setAttribute("data-copied", "");
-            button.setAttribute("title", "Link kopeeritud");
-            button.setAttribute("aria-label", "Link kopeeritud");
-            announceCopy("Link kopeeritud");
+            button.setAttribute("data-copied", said);
+            button.setAttribute("title", said);
+            if (named) {
+              button.setAttribute("aria-label", said);
+            }
+            announceCopy(said);
             button.copyLabelTimer = window.setTimeout(function () {
               button.removeAttribute("data-copied");
               button.setAttribute("title", button.getAttribute("data-title-idle"));
-              button.setAttribute("aria-label", button.getAttribute("data-label-idle"));
+              if (named) {
+                button.setAttribute("aria-label", button.getAttribute("data-aria-idle"));
+              }
             }, 2000);
-            return;
-          }
-          var said = button.getAttribute("data-label-done");
-          if (!said) {
             return;
           }
           /* The label to come back to is read once, before the first change:
@@ -2073,6 +2084,83 @@
     });
   }
 
+  /* ---- `Menetluse kulg` date editor: one answer, four controls ------------
+   * The rail step's `Täpsus` controls are separate inputs (period_composer.html,
+   * pure CSS shows the chosen one). Here the answer last *typed* is carried into
+   * the others: a day into `Kuu`, `Kvartal` and `Aasta`, a month into its
+   * quarter, so switching the chip shows the period of what was just entered
+   * rather than today's. Switching a chip changes no value, and an emptied or
+   * unreadable day carries nothing. The day is read in the three formats the
+   * server accepts (`d.m.yyyy`, `d.m.yy`, `yyyy-mm-dd`, app/core/dates.py).
+   * Only forms that opt in with `data-period-follow="<prefix>"` — the shared
+   * composer elsewhere is untouched
+   * (templates/matters/partials/rail_step_date_form.html).
+   */
+  function readDay(text) {
+    var value = (text || "").trim();
+    var dotted = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/.exec(value);
+    if (dotted) {
+      var y = parseInt(dotted[3], 10);
+      /* A two-digit year as Python's `%y` reads it on the server: 69–99 are
+         the 1900s, so the period shown is the one a day saved would be in. */
+      if (dotted[3].length === 2) {
+        y = y < 69 ? 2000 + y : 1900 + y;
+      }
+      return { month: parseInt(dotted[2], 10), year: y };
+    }
+    var iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+    if (iso) {
+      return { month: parseInt(iso[2], 10), year: parseInt(iso[1], 10) };
+    }
+    return null;
+  }
+
+  function bindPeriodFollow(scope) {
+    scope.querySelectorAll("form[data-period-follow]").forEach(function (form) {
+      if (!once(form, "PeriodFollow")) {
+        return;
+      }
+      var prefix = form.getAttribute("data-period-follow");
+      function field(name) {
+        return form.querySelector("[name='" + prefix + "_" + name + "']");
+      }
+      var day = field("date");
+      var month = field("month");
+      var quarter = field("quarter");
+      var year = field("year");
+      function put(control, value) {
+        if (control) {
+          control.value = value;
+        }
+      }
+      function quarterOf(m) {
+        return String(Math.floor((m - 1) / 3) + 1);
+      }
+      if (day) {
+        var fromDay = function () {
+          var read = readDay(day.value);
+          if (!read || read.month < 1 || read.month > 12) {
+            return;
+          }
+          put(month, String(read.month));
+          put(quarter, quarterOf(read.month));
+          put(year, String(read.year));
+        };
+        /* Typed, or written by the date picker (which fires `change`). */
+        day.addEventListener("input", fromDay);
+        day.addEventListener("change", fromDay);
+      }
+      if (month) {
+        month.addEventListener("change", function () {
+          var m = parseInt(month.value, 10);
+          if (m >= 1 && m <= 12) {
+            put(quarter, quarterOf(m));
+          }
+        });
+      }
+    });
+  }
+
   /* Each binder on its own, as in app.js (`safeInit`, docs/adr/0171): one that
      throws is logged under its name and the rest still bind — and the refusal
      focus that follows `bindAll` after a swap still runs. */
@@ -2100,6 +2188,7 @@
       bindRowFilter,
       bindDateShift,
       bindCalendar,
+      bindPeriodFollow,
     ].forEach(function (binder) {
       safeInit(binder.name, function () {
         binder(root);

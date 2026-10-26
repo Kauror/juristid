@@ -1,0 +1,22 @@
+{% comment %}
+The copy icon of a `Teema käik` row: the address of **this history entry** —
+`?kirje=<row key>#kaik-<row key>-rida`, the deep link docs/adr/0190 made — and
+never a web page the row happens to link to. First of the row's icons (copy →
+edit → remove), on the head line beside the record's label, and drawn for every
+reader: a link is reading, not writing, so a READER and a closed Teema keep it.
+
+The caller supplies `matter` and `row_key` (the record's own pk, or an entry's —
+`TimelineItem.row_key`). The accessible name is «Kopeeri link» followed by the
+row's own line, `kaik-<row key>-rida` — the element every branch of the
+chronology draws and the row's toggle is already named by — by reference, so a
+page of thirty rows is not thirty identical buttons and a corrected headline
+renames it with no second copy.
+
+`data-copy-icon` tells `bindCopyLink` (static/js/ux.js) to say «Link kopeeritud»
+in a tooltip and the shared status region instead of rewriting the button's
+text, so nothing moves.
+{% endcomment %}
+<button type="button" class="uxtl__icon uxtl__icon--copy" id="kaik-{{ row_key }}-kopeeri"
+        data-copy-href="{% url 'matters:matter_detail' pk=matter.pk %}?kirje={{ row_key|urlencode:'' }}#kaik-{{ row_key }}-rida"
+        data-copy-icon data-label-done="Link kopeeritud" title="Kopeeri link"
+        aria-labelledby="kaik-{{ row_key }}-kopeeri kaik-{{ row_key }}-rida">{% include "matters/partials/action_icon.html" with name="copy" %}<span class="visually-hidden">Kopeeri link</span></button>

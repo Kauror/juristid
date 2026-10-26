@@ -139,11 +139,23 @@ def test_every_row_arrives_closed_and_unboxed(seeded):
 
     # The detail of every row is in the page and out of sight.
     history = page.locator("#ajalugu-loend")
-    for selector in (".uxtl__file", ".uxtl__entry", ".uxtl__mssub", ".uxtl__editactions"):
+    for selector in (".uxtl__file", ".uxtl__entry", ".uxtl__mssub"):
         found = history.locator(selector)
         assert found.count(), selector
         for index in range(found.count()):
             expect(found.nth(index)).to_be_hidden()
+    # The icons are hidden on every row that opens; a row with nothing behind
+    # its line has no toggle and shows them closed (review of #555), or its
+    # copy icon could never be reached.
+    rows_with_icons = history.locator(".uxtl__body:has(.uxtl__editactions)")
+    assert rows_with_icons.count()
+    for index in range(rows_with_icons.count()):
+        body = rows_with_icons.nth(index)
+        icons = body.locator(":scope > .uxtl__head > .uxtl__editactions, .uxtl__editactions").first
+        if body.locator(":scope > .uxtl__toggle").is_visible():
+            expect(icons).to_be_hidden()
+        else:
+            expect(icons).to_be_visible()
 
     # A closed row is one line: nothing on the list is taller than a line and
     # its padding at this width.
@@ -235,7 +247,7 @@ def test_one_row_is_open_at_a_time_and_it_is_the_only_panel(seeded):
     assert all(r["border"] in TRANSPARENT for r in drawn if not r["open"])
     # A secondary row's own controls are reachable once it is open.
     expect(engagement.get_by_role("button", name=re.compile("^Muuda"))).to_be_visible()
-    expect(engagement.get_by_text("Kustuta", exact=True).first).to_be_visible()
+    expect(engagement.locator(".uxtl__icon--remove").first).to_be_visible()
 
 
 def test_the_pressed_row_stays_under_the_pointer_when_another_closes(seeded):
@@ -270,7 +282,10 @@ def test_the_toggle_is_a_named_button_the_keyboard_can_use(seeded):
     opinion = row(page, "Arvamus välja")
     expect(opinion.locator(".uxtl__file").first).to_be_visible()
 
-    # Tab goes on into the open panel's own controls, in reading order.
+    # Tab goes on into the open panel's own controls, in reading order: the
+    # row's icons, copy then edit (owner's UX corrections, 2026-10-26).
+    page.keyboard.press("Tab")
+    assert page.evaluate("() => document.activeElement.textContent.trim()") == "Kopeeri link"
     page.keyboard.press("Tab")
     assert page.evaluate("() => document.activeElement.textContent.trim()") == "Muuda"
 

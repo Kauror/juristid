@@ -695,7 +695,7 @@ def test_a_developments_lawyer_note_reads_on_the_row_under_its_own_label(page, b
     # «Muuda» — which makes an exact name match miss every one of them
     # (`development_row.html`).
     open_kaik_row(row)
-    row.locator(".uxtl__edit").first.click()
+    row.locator(".uxtl__icon--edit").first.click()
     editor = page.locator(".uxtl__editform")
     editor.locator("textarea[name=note]").wait_for()
     editor.locator("textarea[name=note]").fill("Muudatused ei arvesta Koja ettepanekut.")
@@ -768,7 +768,7 @@ def _open_the_editor(page):
     exact match on «Muuda» finds nothing (`development_row.html`).
     """
     open_kaik_row(chronology(page).locator(".uxtl__ms-body").first)
-    chronology(page).locator(".uxtl__ms-body").first.locator(".uxtl__edit").first.click()
+    chronology(page).locator(".uxtl__ms-body").first.locator(".uxtl__icon--edit").first.click()
     form = page.locator(".uxtl__editform")
     form.wait_for()
     return form

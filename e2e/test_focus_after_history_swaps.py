@@ -133,7 +133,7 @@ def test_removing_a_row_lands_on_its_neighbour(page, base_url):
     victim_index = 5
     open_kaik_row(rows.nth(victim_index))
     # The row is `display: contents`, so it is reached through its own control.
-    remove = rows.nth(victim_index).locator("summary.uxtl__edit", has_text="Kustuta")
+    remove = rows.nth(victim_index).locator("summary.uxtl__icon--remove")
     remove.scroll_into_view_if_needed()
     remove.click()
     rows.nth(victim_index).get_by_role("button", name="Eemalda").focus()
@@ -158,7 +158,7 @@ def test_ctrl_enter_never_confirms_a_removal(page, base_url):
     _matter_with_rows(page, base_url, 2)
     rows = page.locator("article.uxtl__item")
     open_kaik_row(rows.nth(0))
-    remove = rows.nth(0).locator("summary.uxtl__edit", has_text="Kustuta")
+    remove = rows.nth(0).locator("summary.uxtl__icon--remove")
     remove.scroll_into_view_if_needed()
     remove.click()
     posts: list[str] = []
