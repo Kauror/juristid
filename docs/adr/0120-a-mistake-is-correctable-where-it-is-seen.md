@@ -322,3 +322,33 @@ is never the next step and never late, exactly like the first. The value joins
 the same, still unreleased migration (now `intelligence/0004_informational_commencement_kinds`);
 no data changes, nothing is backfilled, and the kind is still never read from a
 title.
+
+## Amendment of 2026-10-26 — the document page opens on the file
+
+**Owner's «Five UX Corrections» brief, fix 5 (presentation only).** The
+document's own page (`templates/documents/document_detail.html`) is reordered:
+
+1. **Identity** — the title (or filename) as a plain heading that wraps, and one
+   line of role, `Piiratud`, file type, size and «Versioon N / M»; the filename
+   under it when it differs from the title.
+2. **The way to the file** — «Ava fail» as the primary action only where
+   `app/documents/inline.py` lets the browser render the format, in a new tab;
+   otherwise «Laadi alla» is primary, so the page never promises an opening
+   that turns into a download. A copy icon copies this exact version's
+   authorized address (no public link). The heading is no longer the download.
+3. **«Muuda dokumenti»** — what this ADR introduced as **Paranda dokumenti**,
+   now a closed disclosure holding the same four forms (`Lisa uus versioon`,
+   `Pealkiri`, `Liik`, `Eemalda dokument` with its confirmation), each with its
+   own route, refusal and audit. A refused correction redirects to
+   `?muuda=<versioon|pealkiri|liik|eemalda>#muuda-dokumenti`, which opens it
+   (and the removal confirmation for `eemalda`). Absent for a reader and on a
+   closed Matter, as before.
+4. **Originaal** — filename, received date and processing state visible; type,
+   exact size, OneNote day, version number, SHA-256, provenance and the version
+   history (open and download per version) under «Dokumendi andmed». Cells wrap
+   inside themselves, so a long filename no longer runs under the next label.
+
+On Dokumendid the row's «Vaata sisu» is gone (it led to the same page as the
+title), the upload button reads «↑ Lae üles», and `Ava`, the download icon and
+`⋯` sit together in their own column. No route, model, migration, evidence
+byte, version, extraction or search behaviour changed.

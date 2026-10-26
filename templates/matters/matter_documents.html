@@ -102,7 +102,7 @@ finds again (§23.5).
         {% endcomment %}
         {% if can_add_content %}
           <button class="button button--primary" type="button" data-reveals="lae-dokument">
-            ↑ Lae dokument
+            ↑ Lae üles
           </button>
         {% endif %}
       </form>
@@ -221,7 +221,7 @@ finds again (§23.5).
               <div class="docempty__actions">
                 {% if can_add_content %}
                   <button class="button button--primary" type="button" data-reveals="lae-dokument">
-                    ↑ Lae dokument
+                    ↑ Lae üles
                   </button>
                 {% endif %}
                 <button class="button button--quiet" type="button" data-reveals="sharepointi-viide">
@@ -289,6 +289,7 @@ finds again (§23.5).
                     <th scope="col">Fail</th>
                     <th scope="col">Kuupäev</th>
                     <th scope="col">Lisas</th>
+                    <th scope="col" class="doctable__actionshead"><span class="visually-hidden">Toimingud</span></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -436,24 +437,13 @@ finds again (§23.5).
                           <span class="doctable__context">Seotud kirje: {{ context }}</span>
                         {% endfor %}
                         {% comment %}
-                          The way from here to the text a search matched, and
-                          nothing about how it got there. The extraction state
-                          used to be a chip beside every filename, which meant
-                          «Teksti töötlemine ootel» and «Teksti eraldamine ei
-                          kohaldu» on rows whose reader was looking for a file —
-                          a machine's progress reported forty times over to
-                          somebody who never asked. The state is not gone: it is
-                          on the document's own page under `Töötlemine`, where a
-                          reader consults it about one file, and Assisted Intake
-                          still says when it has nothing to read yet
-                          (Stage-2B brief 35, app/documents/preview.py).
+                          No «Vaata sisu» (Dokumendid round, 2026-10-26). It
+                          led to the same document page as the title above it,
+                          so a file with extracted text showed one destination
+                          twice. The title is the way to the document page and
+                          to the text a search matched; the extraction state is
+                          on that page under `Töötlemine` (app/documents/preview.py).
                         {% endcomment %}
-                        {% if document.current_version.extraction_state == "DONE" %}
-                          <span class="doctable__state">
-                            <a class="quietlink"
-                               href="{% url 'documents:document_detail' pk=document.pk %}">Vaata sisu</a>
-                          </span>
-                        {% endif %}
                       </td>
                       <td class="table__date">
                         {% comment %}
@@ -477,9 +467,18 @@ finds again (§23.5).
                         where a reader goes when the version is the question
                         (templates/documents/document_detail.html).
                       {% endcomment %}
-                      <td>
+                      <td class="doctable__by">
                         {% if document.created_by %}{{ document.created_by.get_short_name }}
                         {% else %}<span class="muted">—</span>{% endif %}
+                      </td>
+                      {% comment %}
+                        One compact cluster per row, in its own column at the
+                        row's end (Dokumendid round, 2026-10-26): `Ava`, the
+                        download icon and `⋯`, side by side, so the reader does
+                        not hunt across the table for them. Nothing in it moved
+                        to another route and nothing new was added.
+                      {% endcomment %}
+                      <td class="doctable__actionscell">
                         <span class="doctable__actions">
                           {% if document.current_version %}
                             {% comment %}
@@ -497,9 +496,9 @@ finds again (§23.5).
                               <a class="button button--secondary button--tiny"
                                  href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}
                                  aria-label="Ava {{ document.title }}{% if file.opens_inline %} — avaneb uues aknas{% endif %}">Ava</a>
-                              <a class="quietlink"
+                              <a class="docaction"
                                  href="{{ file.download_url }}"
-                                 title="Tõmba alla" aria-label="Tõmba alla {{ document.title }}">↓</a>
+                                 title="Tõmba alla" aria-label="Tõmba alla {{ document.title }}"><svg class="docaction__glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M12 4L12 15M12 15L7.5 10.5M12 15L16.5 10.5M5 19L19 19" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></a>
                             {% endwith %}
                           {% endif %}
                           {% if document.is_opinion %}
@@ -540,7 +539,7 @@ finds again (§23.5).
                                   {% with file=document.current_version|file_link %}
                                     <button class="opinionmenu__item" type="button"
                                             data-copy-href="{{ file.href }}"
-                                            data-label-done="Kopeeritud"
+                                            data-label-done="Link kopeeritud"
                                             aria-label="Kopeeri link: {{ document.title }}">Kopeeri link</button>
                                   {% endwith %}
                                 {% endif %}

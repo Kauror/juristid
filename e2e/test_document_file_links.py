@@ -96,19 +96,22 @@ def test_copy_link_puts_the_versions_absolute_address_on_the_clipboard(page, bas
     page.wait_for_load_state("networkidle")
 
     actions = page.get_by_role("group", name="Faili toimingud")
-    opener = actions.get_by_role("link", name="Ava — avaneb uues aknas", exact=True)
+    opener = actions.get_by_role("link", name="Ava fail — avaneb uues aknas", exact=True)
     expected = opener.evaluate("a => a.href")
-    # By its hook, not its name: the name is what the click changes.
+    # By its hook, not its name: the name is what the click changes. An icon
+    # since the Dokumendid round (2026-10-26): its name says which file.
     button = actions.locator("button[data-copy-href]")
-    expect(button).to_have_accessible_name("Kopeeri link")
+    expect(button).to_have_accessible_name("Kopeeri link: kiri.pdf")
+    expect(button).to_have_attribute("title", "Kopeeri link")
     button.click()
 
-    expect(button).to_have_text("Kopeeritud")
-    # Said, not only shown: one polite status region carries the same word.
-    expect(page.locator("#kopeeri-teade[role=status]")).to_have_text("Kopeeritud")
-    # A second press inside the two seconds must not make «Kopeeritud» the label.
+    expect(button).to_have_accessible_name("Link kopeeritud")
+    expect(button).to_have_attribute("title", "Link kopeeritud")
+    # Said, not only shown: one polite status region carries the same words.
+    expect(page.locator("#kopeeri-teade[role=status]")).to_have_text("Link kopeeritud")
+    # A second press inside the two seconds must not make the feedback the label.
     button.click()
-    expect(button).to_have_text("Kopeeri link", timeout=5_000)
+    expect(button).to_have_accessible_name("Kopeeri link: kiri.pdf", timeout=5_000)
 
     copied = page.evaluate("navigator.clipboard.readText()")
     assert copied == expected
@@ -147,7 +150,7 @@ def test_copy_link_shows_the_address_when_the_clipboard_refuses(page, base_url):
             break
         page.wait_for_timeout(100)
     assert shown == [("prompt", "Kopeeri link", expected)]
-    expect(button).to_have_text("Kopeeri link")
+    expect(button).to_have_accessible_name("Kopeeri link: keeld.pdf")
 
 
 def test_dokumendid_takes_one_dropped_file_with_its_role_and_title(page, base_url):

@@ -32,6 +32,7 @@ from django.http import (
     HttpResponseBase,
 )
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from app.accounts import shared_gate
@@ -68,6 +69,27 @@ from app.documents.uploads import UPLOAD_ACCEPT, read_upload
 from app.matters.views import get_visible_matter
 
 logger = logging.getLogger(__name__)
+
+
+#: «Muuda dokumenti» on the document's page is a closed disclosure; this query
+#: parameter opens it, on the one form a refusal came from. A refused correction
+#: lands back with the disclosure open and the message above it, so the reader
+#: does not have to find a form the page folded away (Dokumendid round,
+#: 2026-10-26). Values are fixed; anything else opens nothing.
+MANAGE_PARAM = "muuda"
+MANAGE_FORMS = ("versioon", "pealkiri", "liik", "eemalda")
+
+
+def _back_to_manage(document: Any, form: str) -> HttpResponse:
+    """The document's page with «Muuda dokumenti» open on ``form``.
+
+    No `#fragment`: the message saying *why* the save was refused renders above
+    the page heading, and scrolling the disclosure to the top of the window
+    scrolled that message out of sight (review of #554). The disclosure sits
+    right under the heading, so the top of the page shows both.
+    """
+    url = reverse("documents:document_detail", kwargs={"pk": document.pk})
+    return redirect(f"{url}?{MANAGE_PARAM}={form}")
 
 
 def _open_evidence(request: HttpRequest, version: DocumentVersion, *, disposition: str) -> Any:
@@ -217,7 +239,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
 
     if not form.is_valid() and "upload" in form.errors:
         messages.error(request, "Vali fail.")
-        return redirect("documents:document_detail", pk=document.pk)
+        return _back_to_manage(document, "versioon")
 
     try:
         upload = read_upload(request.FILES.get("upload"))
@@ -231,6 +253,7 @@ def add_version(request: HttpRequest, pk: Any) -> HttpResponse:
         messages.success(request, "Uus versioon on salvestatud.")
     except DomainError as error:
         messages.error(request, str(error))
+        return _back_to_manage(document, "versioon")
 
     return redirect("documents:document_detail", pk=document.pk)
 
@@ -252,6 +275,7 @@ def change_role(request: HttpRequest, pk: Any) -> HttpResponse:
         messages.success(request, "Dokumendi liik on muudetud.")
     except DomainError as error:
         messages.error(request, str(error))
+        return _back_to_manage(document, "liik")
     return redirect("documents:document_detail", pk=document.pk)
 
 
@@ -272,6 +296,8 @@ def rename(request: HttpRequest, pk: Any) -> HttpResponse:
         messages.success(request, "Dokumendi pealkiri on muudetud.")
     except DomainError as error:
         messages.error(request, str(error))
+        if request.POST.get("tagasi") != "dokumendid":
+            return _back_to_manage(document, "pealkiri")
     if request.POST.get("tagasi") == "dokumendid":
         return redirect("matters:matter_documents", pk=document.matter_id)
     return redirect("documents:document_detail", pk=document.pk)
@@ -295,7 +321,7 @@ def remove(request: HttpRequest, pk: Any) -> HttpResponse:
         remove_document(document=document, actor=request.user)
     except DomainError as error:
         messages.error(request, str(error))
-        return redirect("documents:document_detail", pk=document.pk)
+        return _back_to_manage(document, "eemalda")
     messages.success(request, DOCUMENT_REMOVED_MESSAGE)
     return redirect("matters:matter_documents", pk=document.matter_id)
 
@@ -476,6 +502,7 @@ def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     # exactly what the route would.
     can_correct = may_write_business_content(request.user) and document.matter.is_open
     statuses = opinion_evidence_statuses(document) if can_correct else set()
+    manage = request.GET.get(MANAGE_PARAM, "")
 
     return render(
         request,
@@ -490,6 +517,15 @@ def document_detail(request: HttpRequest, pk: Any) -> HttpResponse:
             "role_refusal": role_change_refusal(document, statuses) if can_correct else "",
             "version_refusal": new_version_refusal(document, statuses) if can_correct else "",
             "removal_refusal": removal_refusal(document, statuses) if can_correct else "",
+            # Which form of «Muuda dokumenti» to open on arrival — a refused
+            # correction's own, or none (`MANAGE_PARAM`).
+            "open_manage": manage if can_correct and manage in MANAGE_FORMS else "",
+            # «PDF», «DOCX» — what the file is, for the heading's one line.
+            "file_kind": (
+                inline.extension_of(version.original_filename).lstrip(".").upper()
+                if version is not None
+                else ""
+            ),
             "preview": build_preview(version) if version is not None else None,
             # Provenance in both directions: what this file arrived inside, and
             # what arrived inside it.

@@ -3,9 +3,10 @@
 {% block title %}{{ document.title }} · {{ matter.title }} · {{ application_name }}{% endblock %}
 
 {% comment %}
-  The original, and what it is made of. The file's own name is the heading and
-  the heading is the download: a page about one file does not need a button
-  repeating the name printed above it (02-EKRAANID §G).
+  The original, and what it is made of. Since the Dokumendid round of
+  2026-10-26 the heading is plain and the primary action beside it is the way to
+  the file (see below): the heading-as-download of 02-EKRAANID §G gave the page
+  two ways to one file and none that looked like a button.
 
   The «Tuletatud eelvaade» block is gone from this page. The extraction pipeline
   behind it — the parsers, the fragments, the thumbnails, the routes and the
@@ -14,262 +15,268 @@
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="page docpage">
   <nav class="crumbs" aria-label="Asukoht">
     <a href="{% url 'matters:matter_documents' pk=matter.pk %}">{{ matter.title|truncatechars:60 }} · Dokumendid</a>
   </nav>
 
-  <header class="pagehead">
-    {% comment %}
-      What this document is called, and it is the way to the bytes. Through the
-      authorization-checked download route exactly as the button was — the
-      control moved, the check did not (app/documents/views.py).
+  {% comment %}
+    **What a document page is for, in that order** (Dokumendid round,
+    2026-10-26): what the file is, the way to it, then — folded away — how to
+    correct it, and last the evidence detail. It used to open on four
+    correction forms, and the only obvious way to the file was its own title.
 
-      The **title** rather than the filename, when somebody gave it one. The
-      filename has not gone anywhere — it is `Failinimi` in `Originaal` below,
-      beside the type, the size and the checksum, which is where the file's
-      mechanics belong — and the heading now says the same thing the list says,
-      so following a row does not land on a page named after something else
-      (adversarial QA 2026-09-12, QA-05).
-    {% endcomment %}
-    {% with file=version|file_link %}
-    <h1 class="pagehead__title">
-      {% if version %}
-        <a href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}>{% if document.title %}{{ document.title }}{% else %}{{ version.original_filename }}{% endif %}{% new_tab_note file.opens_inline %}</a>
-      {% else %}{{ document.title }}{% endif %}
-    </h1>
-    <span class="pagehead__context">
-      {{ document.get_role_display }}
+    The heading is now plain text. The primary action beside it is the way to
+    the bytes: «Ava fail» only where `app/documents/inline.py` lets the
+    browser render the format (PDF, image, plain text), in a new tab; anything
+    else gets «Laadi alla» as the primary action, so the page never promises an
+    opening that turns into a download. The copy icon copies the address of
+    this exact version through the same authorized route — nothing public.
+  {% endcomment %}
+  {% with file=version|file_link %}
+  <header class="dochead">
+    <h1 class="dochead__title">{% if document.title %}{{ document.title }}{% elif version %}{{ version.original_filename }}{% else %}Dokument{% endif %}</h1>
+    <p class="dochead__meta">
+      <span>{{ document.get_role_display }}</span>
       {% if document.is_restricted %}<span class="badge badge--restricted">Piiratud</span>{% endif %}
-    </span>
-    {% comment %}
-      **What can be done with the file, each by its own name** (QoL round
-      2026-10-25). `Ava` only where the browser may render it — PDF, image,
-      plain text, by `app/documents/inline.py` — and then in a new tab, so this
-      page stays where it was. `Laadi alla` always. `Kopeeri link` copies the
-      address of this exact version through the same authorized route the
-      heading links to: a colleague who follows it is asked who they are and
-      what they may read exactly as the reader was, and nobody else gets in.
-    {% endcomment %}
-    {% if file %}
-      <div class="pagehead__actions" role="group" aria-label="Faili toimingud">
-        {% if file.opens_inline %}
-          <a class="button button--secondary button--tiny" href="{{ file.open_url }}"{% new_tab_attrs True %}>Ava{% new_tab_note True %}</a>
-        {% endif %}
-        <a class="button button--quiet button--tiny" href="{{ file.download_url }}">Laadi alla</a>
-        <button class="button button--quiet button--tiny" type="button"
-                data-copy-href="{{ file.href }}" data-label-done="Kopeeritud">Kopeeri link</button>
-      </div>
+      {% if version %}
+        {% if file_kind %}<span>{{ file_kind }}</span>{% endif %}
+        <span>{{ version.size_bytes|filesizeformat }}</span>
+        <span>Versioon {{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</span>
+      {% endif %}
+    </p>
+    {% if version and document.title and document.title != version.original_filename %}
+      <p class="dochead__filename">{{ version.original_filename }}</p>
     {% endif %}
-    {% endwith %}
+    {% if file %}
+      <div class="dochead__actions" role="group" aria-label="Faili toimingud">
+        {% if file.opens_inline %}
+          <a class="button button--primary" href="{{ file.open_url }}"{% new_tab_attrs True %}>Ava fail{% new_tab_note True %}</a>
+          <a class="button button--quiet" href="{{ file.download_url }}">Laadi alla</a>
+        {% else %}
+          <a class="button button--primary" href="{{ file.download_url }}">Laadi alla</a>
+        {% endif %}
+        {% include "documents/partials/copy_link_icon.html" with href=file.href name=version.original_filename %}
+      </div>
+    {% else %}
+      <p class="cardnote">Sellel dokumendil ei ole veel faili, mida avada.</p>
+    {% endif %}
   </header>
+  {% endwith %}
 
   {% comment %}
-    **Correcting a document** (docs/adr/0120, UQ-12). The note under
-    `Originaal` has always said a correction is a new version; this is where
-    one is made — and the other two corrections a mistaken upload needs:
-    what the file *is*, and taking it off the Matter altogether.
+    **Correcting a document** (docs/adr/0120, UQ-12), now behind one closed
+    disclosure. The four operations stay four forms with their own buttons and
+    their own routes; nothing was merged.
 
     Nothing here touches evidence. `Lisa uus versioon` adds an immutable
-    version and makes it current, every earlier one staying in `Versioonid`
-    below; `Muuda liiki` changes the document's classification and no byte;
+    version and makes it current, every earlier one staying in the history;
+    `Muuda liiki` changes the document's classification and no byte;
     `Eemalda` takes the document off Dokumendid, `Teema käik` and search while
     its versions, their bytes and the audit trail stay. Each is refused by its
     service for an opinion's letter — with the sentence printed here instead of
-    the control, so nobody presses something that can only fail — and each is
-    audited.
+    the control — and each is audited.
 
-    Only for somebody who may write, on an open Matter (`can_correct`). The
-    three routes check both again on their own, under the Matter's lock.
+    Only for somebody who may write, on an open Matter (`can_correct`): a
+    reader gets no empty section at all. A refused save comes back with
+    `?muuda=<form>` (`app/documents/views.py`, `MANAGE_PARAM`), which opens the
+    disclosure — and `Eemalda dokument` inside it when that was the form — so
+    the message above is next to the form it is about.
   {% endcomment %}
   {% if can_correct %}
-    <section class="card" aria-labelledby="paranda-heading" id="paranda">
-      <h2 class="sectionlabel" id="paranda-heading">Paranda dokumenti</h2>
-
-      {% if version_refusal %}
-        <p class="cardnote">{{ version_refusal }}</p>
-      {% else %}
-        <form class="stackform" method="post" enctype="multipart/form-data"
-              action="{% url 'documents:add_version' pk=document.pk %}">
-          {% csrf_token %}
-          <label class="field">
-            <span class="field__label">Lisa uus versioon</span>
-            <input class="field__input" type="file" name="upload" required
-                   accept="{% upload_accept %}">
-            <span class="field__help">
-              Parandatud fail saab kehtivaks versiooniks. Eelmised versioonid jäävad
-              muutumatuna alles versioonide ajalukku.
-            </span>
-          </label>
-          <div class="form__actions">
-            <button class="button button--primary" type="submit" aria-label="Salvesta uus versioon">Salvesta</button>
-          </div>
-        </form>
-      {% endif %}
-
-      <form class="stackform" method="post"
-            action="{% url 'documents:rename' pk=document.pk %}">
-        {% csrf_token %}
-        <label class="field">
-          <span class="field__label">Pealkiri{% required_mark %}</span>
-          <input class="field__input" type="text" name="title" value="{{ document.title }}"
-                 maxlength="400" required>
-          <span class="field__help">Muudab ainult nähtavat pealkirja; algne failinimi ja failid ei muutu.</span>
-        </label>
-        <div class="form__actions">
-          <button class="button button--quiet" type="submit" aria-label="Salvesta pealkiri">Salvesta</button>
-        </div>
-      </form>
-
-      {% if not role_refusal %}
-        <form class="stackform" method="post"
-              action="{% url 'documents:change_role' pk=document.pk %}">
-          {% csrf_token %}
-          <label class="field">
-            <span class="field__label">Liik</span>
-            <select class="field__input" name="role">
-              {% for value, label in role_choices %}
-                <option value="{{ value }}"{% if value == document.role %} selected{% endif %}>{{ label }}</option>
-              {% endfor %}
-            </select>
-            <span class="field__help">Muudab ainult dokumendi liigitust; failid ei muutu.</span>
-          </label>
-          <div class="form__actions">
-            <button class="button button--quiet" type="submit" aria-label="Salvesta liik">Salvesta</button>
-          </div>
-        </form>
-      {% endif %}
-
-      {% if removal_refusal %}
-        {% if removal_refusal != version_refusal %}
-          <p class="cardnote">{{ removal_refusal }}</p>
-        {% endif %}
-      {% else %}
-        <details class="disclosure" id="eemalda-dokument">
-          <summary>Eemalda dokument</summary>
-          <form class="stackform" method="post"
-                action="{% url 'documents:remove' pk=document.pk %}">
+    <details class="card docmanage" id="muuda-dokumenti"{% if open_manage %} open{% endif %}>
+      <summary class="docmanage__summary">Muuda dokumenti</summary>
+      <div class="docmanage__body">
+        {% if version_refusal %}
+          <p class="cardnote">{{ version_refusal }}</p>
+        {% else %}
+          <form class="stackform" method="post" enctype="multipart/form-data"
+                action="{% url 'documents:add_version' pk=document.pk %}">
             {% csrf_token %}
-            <p class="cardnote">
-              Dokument eemaldatakse selle teema dokumentide hulgast, jaotisest «Tegevused» ja
-              otsingust. Failid ja kõik versioonid jäävad tõendina alles, baite ei muudeta,
-              ja eemaldamine jääb muudatuste logisse.
-            </p>
+            <label class="field">
+              <span class="field__label">Lisa uus versioon</span>
+              <input class="field__input" type="file" name="upload" required
+                     accept="{% upload_accept %}">
+              <span class="field__help">
+                Parandatud fail saab kehtivaks versiooniks. Eelmised versioonid jäävad
+                muutumatuna alles versioonide ajalukku.
+              </span>
+            </label>
             <div class="form__actions">
-              <button class="button button--danger" type="submit">Eemalda</button>
+              <button class="button button--primary" type="submit" aria-label="Salvesta uus versioon">Salvesta</button>
             </div>
           </form>
-        </details>
-      {% endif %}
-    </section>
+        {% endif %}
+
+        <form class="stackform" method="post"
+              action="{% url 'documents:rename' pk=document.pk %}">
+          {% csrf_token %}
+          <label class="field">
+            <span class="field__label">Pealkiri{% required_mark %}</span>
+            <input class="field__input" type="text" name="title" value="{{ document.title }}"
+                   maxlength="400" required>
+            <span class="field__help">Muudab ainult nähtavat pealkirja; algne failinimi ja failid ei muutu.</span>
+          </label>
+          <div class="form__actions">
+            <button class="button button--quiet" type="submit" aria-label="Salvesta pealkiri">Salvesta</button>
+          </div>
+        </form>
+
+        {% if not role_refusal %}
+          <form class="stackform" method="post"
+                action="{% url 'documents:change_role' pk=document.pk %}">
+            {% csrf_token %}
+            <label class="field">
+              <span class="field__label">Liik</span>
+              <select class="field__input" name="role">
+                {% for value, label in role_choices %}
+                  <option value="{{ value }}"{% if value == document.role %} selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <span class="field__help">Muudab ainult dokumendi liigitust; failid ei muutu.</span>
+            </label>
+            <div class="form__actions">
+              <button class="button button--quiet" type="submit" aria-label="Salvesta liik">Salvesta</button>
+            </div>
+          </form>
+        {% endif %}
+
+        {% if removal_refusal %}
+          {% if removal_refusal != version_refusal %}
+            <p class="cardnote">{{ removal_refusal }}</p>
+          {% endif %}
+        {% else %}
+          <details class="disclosure" id="eemalda-dokument"{% if open_manage == "eemalda" %} open{% endif %}>
+            <summary>Eemalda dokument</summary>
+            <form class="stackform" method="post"
+                  action="{% url 'documents:remove' pk=document.pk %}">
+              {% csrf_token %}
+              <p class="cardnote">
+                Dokument eemaldatakse selle teema dokumentide hulgast, jaotisest «Tegevused» ja
+                otsingust. Failid ja kõik versioonid jäävad tõendina alles, baite ei muudeta,
+                ja eemaldamine jääb muudatuste logisse.
+              </p>
+              <div class="form__actions">
+                <button class="button button--danger" type="submit">Eemalda</button>
+              </div>
+            </form>
+          </details>
+        {% endif %}
+      </div>
+    </details>
   {% endif %}
 
   {% if version %}
+    {% comment %}
+      `Originaal` keeps what identifies the file at a glance — its own name and
+      when it arrived — and the rest of the evidence detail is one click away
+      under «Dokumendi andmed», as the owner's brief lists it: the exact type
+      and size, the OneNote day, the version and its processing state, the
+      checksum, the provenance, every version with its own open and download,
+      and the message the file came in or the attachments it carries. Nothing
+      was dropped.
+
+      `detailgrid--wrap` lets a long filename break inside its own cell instead
+      of running under the next label (the overlap the owner's screenshot
+      showed).
+    {% endcomment %}
     <section class="card card--evidence" aria-labelledby="originaal-heading">
       <h2 class="sectionlabel" id="originaal-heading">Originaal</h2>
-      <p class="cardnote">
-        Muutumatu tõend. Baidid ei muutu kunagi — parandus on uus versioon.
-      </p>
-      <dl class="detailgrid">
+      <dl class="detailgrid detailgrid--wrap">
         <div><dt>Failinimi</dt><dd>{{ version.original_filename }}</dd></div>
-        <div><dt>Tüüp</dt><dd>{{ version.mime_type }}</dd></div>
-        <div><dt>Suurus</dt><dd>{{ version.size_bytes|filesizeformat }}</dd></div>
         <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"j.n.Y H:i" }}</dd></div>
-        {% if onenote_addition %}
-          <div><dt>Lisatud OneNote'i</dt><dd>{% if onenote_addition.display %}{{ onenote_addition.display }}{% if onenote_addition.predates_page %} · lisatud enne praeguse lehe loomist{% endif %}{% else %}kuupäev teadmata{% endif %}</dd></div>
-        {% endif %}
-        <div><dt>Versioon</dt><dd>{{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</dd></div>
-        <div><dt>Töötlemine</dt>
-          <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>
-        </div>
       </dl>
+      <p class="cardnote">Muutumatu tõend. Baidid ei muutu kunagi — parandus on uus versioon.</p>
 
-      <details class="disclosure">
-        <summary>Tehnilised andmed</summary>
-        <dl class="detailgrid">
-          <div><dt>SHA-256</dt><dd class="mono">{{ version.sha256 }}</dd></div>
+      <details class="disclosure docdata" id="dokumendi-andmed">
+        <summary>Dokumendi andmed</summary>
+        <dl class="detailgrid detailgrid--wrap">
+          <div><dt>Tüüp</dt><dd>{{ version.mime_type }}</dd></div>
+          <div><dt>Suurus</dt><dd>{{ version.size_bytes|filesizeformat }} ({{ version.size_bytes }} baiti)</dd></div>
+          {% if onenote_addition %}
+            <div><dt>Lisatud OneNote'i</dt><dd>{% if onenote_addition.display %}{{ onenote_addition.display }}{% if onenote_addition.predates_page %} · lisatud enne praeguse lehe loomist{% endif %}{% else %}kuupäev teadmata{% endif %}</dd></div>
+          {% endif %}
+          <div><dt>Versioon</dt><dd>{{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</dd></div>
+          <div><dt>Töötlemine</dt>
+            <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>
+          </div>
+          <div class="detailgrid__wide"><dt>SHA-256</dt><dd class="mono">{{ version.sha256 }}</dd></div>
           {% if document.provenance_note %}
-            <div><dt>Päritolu</dt><dd>{{ document.provenance_note }}</dd></div>
+            <div class="detailgrid__wide"><dt>Päritolu</dt><dd>{{ document.provenance_note }}</dd></div>
           {% endif %}
         </dl>
+
+        {% if versions|length > 1 %}
+          <h3 class="sectionlabel" id="versioonid-heading">Versioonid <span class="sectionlabel__count">{{ versions|length }}</span></h3>
+          <div class="tablewrap">
+            <table class="table docversions">
+              <thead>
+                <tr>
+                  <th scope="col">Versioon</th>
+                  <th scope="col">Fail</th>
+                  <th scope="col">Suurus</th>
+                  <th scope="col" class="table__date">Saadi</th>
+                  <th scope="col">Töötlemine</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in versions %}
+                  <tr>
+                    <td>{{ row.version_number }}{% if row.pk == version.pk %} <span class="badge">kehtiv</span>{% endif %}</td>
+                    {% with file=row|file_link %}
+                      <td class="docversions__file">
+                        <a href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}>{{ row.original_filename }}{% new_tab_note file.opens_inline %}</a>
+                        {% if file.opens_inline %}
+                          <a class="quietlink" href="{{ file.download_url }}" title="Laadi alla"
+                             aria-label="Laadi alla {{ row.original_filename }}, versioon {{ row.version_number }}">↓</a>
+                        {% endif %}
+                      </td>
+                    {% endwith %}
+                    <td>{{ row.size_bytes|filesizeformat }}</td>
+                    <td class="table__date">{{ row.acquired_at|date:"j.n.Y" }}</td>
+                    <td>
+                      <span class="statechip statechip--{{ row.extraction_state|extraction_tone }}">
+                        {{ row.extraction_state|extraction_label }}
+                      </span>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+        {% if parent_email %}
+          <section class="docdata__part" aria-labelledby="parent-heading">
+            <h3 class="sectionlabel" id="parent-heading">Saabus e-kirjaga</h3>
+            <p class="cardnote">
+              See fail oli manus number {{ parent_email.ordinal }} kirjas
+              <a href="{% url 'documents:document_detail' pk=parent_email.parent_version.document_id %}">{{ parent_email.parent_version.original_filename }}</a>.
+              Kirjas kandis see nime <span class="mono">{{ parent_email.declared_filename }}</span>.
+            </p>
+          </section>
+        {% endif %}
+
+        {% if attachments %}
+          <section class="docdata__part" aria-labelledby="manused-heading">
+            <h3 class="sectionlabel" id="manused-heading">
+              Selle kirja manused
+              <span class="sectionlabel__count">{{ attachments|length }}</span>
+            </h3>
+            <ul class="filelist">
+              {% for link in attachments %}
+                <li class="filelist__item">
+                  <a href="{% url 'documents:document_detail' pk=link.attachment_version.document_id %}">
+                    {{ link.declared_filename }}
+                  </a>
+                  <span class="filelist__meta">{{ link.attachment_version.size_bytes|filesizeformat }}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </section>
+        {% endif %}
       </details>
     </section>
 
-    {% if parent_email %}
-      <section class="card" aria-labelledby="parent-heading">
-        <h2 class="sectionlabel" id="parent-heading">Saabus e-kirjaga</h2>
-        <p class="cardnote">
-          See fail oli manus number {{ parent_email.ordinal }} kirjas
-          <a href="{% url 'documents:document_detail' pk=parent_email.parent_version.document_id %}">{{ parent_email.parent_version.original_filename }}</a>.
-          Kirjas kandis see nime <span class="mono">{{ parent_email.declared_filename }}</span>.
-        </p>
-      </section>
-    {% endif %}
-
-    {% if attachments %}
-      <section class="card" aria-labelledby="manused-heading">
-        <h2 class="sectionlabel" id="manused-heading">
-          Selle kirja manused
-          <span class="sectionlabel__count">{{ attachments|length }}</span>
-        </h2>
-        <ul class="filelist">
-          {% for link in attachments %}
-            <li class="filelist__item">
-              <a href="{% url 'documents:document_detail' pk=link.attachment_version.document_id %}">
-                {{ link.declared_filename }}
-              </a>
-              <span class="filelist__meta">{{ link.attachment_version.size_bytes|filesizeformat }}</span>
-            </li>
-          {% endfor %}
-        </ul>
-      </section>
-    {% endif %}
-
-    {% if versions|length > 1 %}
-      <section class="card" aria-labelledby="versioonid-heading">
-        <h2 class="sectionlabel" id="versioonid-heading">Versioonid <span class="sectionlabel__count">{{ versions|length }}</span></h2>
-        <div class="tablewrap">
-          <table class="table">
-            <thead>
-              <tr>
-                <th scope="col">Versioon</th>
-                <th scope="col">Fail</th>
-                <th scope="col">Suurus</th>
-                <th scope="col" class="table__date">Saadi</th>
-                <th scope="col">Töötlemine</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in versions %}
-                <tr>
-                  <td>{{ row.version_number }}{% if row.pk == version.pk %} <span class="badge">kehtiv</span>{% endif %}</td>
-                  {% with file=row|file_link %}
-                    <td>
-                      <a href="{{ file.href }}"{% new_tab_attrs file.opens_inline %}>{{ row.original_filename }}{% new_tab_note file.opens_inline %}</a>
-                      {% if file.opens_inline %}
-                        <a class="quietlink" href="{{ file.download_url }}" title="Laadi alla"
-                           aria-label="Laadi alla {{ row.original_filename }}, versioon {{ row.version_number }}">↓</a>
-                      {% endif %}
-                    </td>
-                  {% endwith %}
-                  <td>{{ row.size_bytes|filesizeformat }}</td>
-                  <td class="table__date">{{ row.acquired_at|date:"j.n.Y" }}</td>
-                  <td>
-                    <span class="statechip statechip--{{ row.extraction_state|extraction_tone }}">
-                      {{ row.extraction_state|extraction_label }}
-                    </span>
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </section>
-    {% endif %}
-  {% else %}
-    <section class="card">
-      <p class="empty">Sellel dokumendil ei ole veel tõendit.</p>
-    </section>
   {% endif %}
 </div>
 {% endblock %}

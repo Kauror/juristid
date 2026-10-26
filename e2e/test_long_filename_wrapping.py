@@ -5,7 +5,7 @@ from a ministry is often one token — `Eelnou_seletuskiri_lisa_…_2026.pdf` �
 three places sized themselves to it:
 
 * the chronology's file link, `#teema-vaade-wrap .uxtl__file` (inline-flex);
-* the document page's heading, `.pagehead__title` in a flex row;
+* the document page's heading, `.dochead__title` (`.pagehead__title` until 2026-10-26);
 * `Muuda teemat`'s context line, `.pagehead__context`, carrying the Matter title.
 
 Measured the way `e2e/test_timeline_long_token_wrapping.py` measures: the
@@ -109,7 +109,23 @@ def test_a_long_filename_does_not_widen_the_teema_or_the_document_page(page, bas
         detail = page.locator(".doctable a[href^='/dokumendid/']").first
         href = detail.get_attribute("href")
     assert href, "no document detail link on Dokumendid"
-    _holds(_readings(page, base_url + href, ".pagehead__title", NEEDLE_FILE), LONG_FILE)
+    _holds(_readings(page, base_url + href, ".dochead__title", NEEDLE_FILE), LONG_FILE)
+
+    # The Dokumendid list too (review of #554): the name wraps in its own cell
+    # and the row's Ava / download / ⋯ stay inside the table's box.
+    _holds(
+        _readings(page, f"{url}dokumendid/", ".doctable .table__title a", NEEDLE_FILE), LONG_FILE
+    )
+    for width in (1024, 375):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.goto(f"{url}dokumendid/")
+        page.wait_for_load_state("networkidle")
+        box = page.evaluate(
+            """() => { const w = document.querySelector('.tablewrap--evidence');
+                       return w ? [w.scrollWidth, w.clientWidth] : null; }"""
+        )
+        assert box is None or box[0] <= box[1] + ROUNDING, (width, box)
+    page.set_viewport_size({"width": 1440, "height": 900})
 
 
 def test_a_long_compound_title_does_not_widen_muuda_teemat(page, base_url):

@@ -8048,14 +8048,6 @@ button.opinionmenu__item {
   padding: var(--spacing-3);
 }
 
-/* The extraction state, under a document's name rather than in a column. */
-.doctable__state {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-left: var(--spacing-2);
-}
-
 /* The Dokumendid tab: one column, full width, no rail. */
 .teemadocs {
   display: flex;
@@ -14865,6 +14857,54 @@ a.jcal__daynum {
 }
 
 /* ==========================================================================
+ * Dokumendid round, 2026-10-26 — a file-first list and a document page that
+ * opens on the file (templates/matters/matter_documents.html,
+ * templates/documents/document_detail.html).
+ * ========================================================================== */
+
+/* The row's actions in their own narrow column at its end: `Ava`, the
+   download icon and `⋯` together, never spread across the table. */
+.doctable__actionshead,
+.doctable__actionscell {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.doctable__actionscell .doctable__actions {
+  margin-left: 0;
+}
+
+/* The download as an icon with a 28 px target, the same size as `⋯`. */
+.docaction,
+.copyicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.docaction:hover,
+.copyicon:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.docaction:focus-visible,
+.copyicon:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* ==========================================================================
  * Teema käik — the row's three action icons (owner's UX corrections,
  * 2026-10-26; templates/matters/partials/row_copy_link.html, action_icon.html,
  * row_remove.html). Copy → edit → remove, together right after the record's
@@ -14907,6 +14947,202 @@ a.jcal__daynum {
   outline-offset: 1px;
 }
 
+.copyicon[data-copied] {
+  color: var(--status-success);
+  border-color: var(--status-success-border);
+}
+
+.docaction__glyph,
+.copyicon__glyph {
+  display: block;
+}
+
+/* The document page: identity, then the way to the file. */
+.docpage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.dochead {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-15);
+  min-width: 0;
+}
+
+.dochead__title {
+  margin: 0;
+  font-size: var(--typography-size-page-title);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-title);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dochead__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.dochead__filename {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.dochead__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-1);
+}
+
+/* «Muuda dokumenti»: closed until asked for, the four forms inside it. */
+.docmanage > .docmanage__summary {
+  cursor: pointer;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.docmanage__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-3);
+}
+
+/* A long filename or checksum breaks inside its own cell instead of running
+   under the next label — the overlap in `Originaal`. */
+.detailgrid--wrap > div {
+  min-width: 0;
+}
+
+.detailgrid--wrap dd {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.detailgrid__wide {
+  grid-column: 1 / -1;
+}
+
+.docdata {
+  margin-top: var(--spacing-3);
+}
+
+.docversions__file {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 860px) {
+  .doctable__actionscell {
+    white-space: normal;
+  }
+}
+
+.docversions {
+  margin-top: var(--spacing-1);
+}
+
+.doctable__by {
+  white-space: nowrap;
+}
+
+/* The cards on the document page carry one padding, and what is inside them
+   starts at it: before, the grid sat flush against the card's edge while its
+   label and note were indented by their own paddings. */
+.docpage .card {
+  padding: var(--spacing-3) var(--spacing-4);
+  overflow: visible;
+}
+
+.docpage .card > .sectionlabel,
+.docpage .card .cardnote,
+.docdata > .sectionlabel {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.docpage .card .detailgrid {
+  margin-top: 0;
+}
+
+.docpage .card .cardnote {
+  margin-top: var(--spacing-2);
+}
+
+.docdata > summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.docdata > .sectionlabel {
+  margin-top: var(--spacing-3);
+}
+
+.dochead .cardnote {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* A phone: each file is one block — its name across the top, then the day,
+   who added it and the actions on one line — rather than four columns that
+   squeeze the name into a word per line and push the actions off the edge.
+   The header row stays for a screen reader. */
+@media (max-width: 600px) {
+  .doctable thead tr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  .doctable tbody tr {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
+    align-items: center;
+    column-gap: var(--spacing-3);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .doctable tbody td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+
+  .doctable tbody .table__title {
+    grid-column: 1 / -1;
+    margin-bottom: var(--spacing-1);
+  }
+
+  .doctable tbody .doctable__actionscell {
+    grid-column: 4;
+  }
+}
+
+/* Review of #554: a filename joined by underscores has no break opportunity,
+   so in the Dokumendid list it widened its column and pushed Ava, the
+   download icon and ⋯ out of the table's box at 1024 px and below. */
+.doctable .table__title a,
+.doctable__filename {
+  overflow-wrap: anywhere;
+}
+
+/* The message and the attachments, folded into «Dokumendi andmed». */
+.docdata__part {
+  margin-top: var(--spacing-3);
+}
 .uxtl__icon--remove:hover {
   color: var(--status-danger);
 }

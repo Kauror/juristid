@@ -843,7 +843,7 @@ def test_uploading_a_document_later_starts_no_reading_workflow(
     matter_url = page.url
 
     open_documents(page)
-    page.get_by_role("button", name="↑ Lae dokument").click()
+    page.get_by_role("button", name="↑ Lae üles").click()
     page.locator("#lae-dokument input[name='upload']").set_input_files(str(letter_pdf))
     page.get_by_role("button", name="Salvesta", exact=True).click()
     page.wait_for_load_state("networkidle")

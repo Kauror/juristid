@@ -137,21 +137,24 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     row = page.locator(".doctable tbody tr", has_text="katse-eelnou.pdf")
     expect(row).to_have_count(1)
     expect(row.locator(".statechip")).to_have_count(0)
-    expect(row.get_by_role("link", name="Vaata sisu")).to_have_count(0)
+    expect(row.get_by_role("link", name="Vaata sisu")).to_have_count(0)  # never, since 2026-10-26
     screenshots(page, "21-tootlemine-ootel")
 
     # The state is still recorded and still reported, on the surface that
     # exists to answer questions about one file.
     detail_url = row.locator(".table__title a").first.get_attribute("href")
     page.goto(f"{base_url}{detail_url}")
+    # Under «Dokumendi andmed» since the owner's review of 2026-10-26.
+    page.locator("#dokumendi-andmed > summary").click()
     expect(page.get_by_text(re.compile("Teksti töötlemine ootel|Töötlemisel"))).to_be_visible()
 
     run_worker([synthetic_pdf.name])
 
-    # Back to the list, where the only thing extraction changes is that the way
-    # into the text appears. That is asserted by the block below, which follows
-    # «Vaata sisu» — a link that was absent a moment ago.
+    # Back to the list. Extraction adds no second link beside the title any
+    # more: the title is the way to the document page (Dokumendid round,
+    # 2026-10-26), and the extracted words are asserted through search below.
     page.goto(documents_url)
+    expect(row.get_by_role("link", name="Vaata sisu")).to_have_count(0)
 
     # -- the immutable original, and the way to its bytes -----------------
     # Followed by href rather than clicked. The table header is sticky, so a
@@ -164,14 +167,18 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     # (02-EKRAANID §G, docs/design-v2-compatibility.md DS-10). The extraction is
     # untouched — the fragment this test is really about is asserted below,
     # through the search that reads the same derivative.
-    preview_link = page.get_by_role("link", name="Vaata sisu").first
-    expect(preview_link).to_be_visible()
-    page.goto(f"{base_url}{preview_link.get_attribute('href')}")
+    title_link = row.locator(".table__title a").first
+    expect(title_link).to_be_visible()
+    page.goto(f"{base_url}{title_link.get_attribute('href')}")
     expect(page.get_by_role("heading", name="Originaal")).to_be_visible()
     expect(page.get_by_text("Muutumatu tõend", exact=False)).to_be_visible()
     expect(page.locator(".card--derived")).to_have_count(0)
-    heading = page.get_by_role("heading", name="katse-eelnou.pdf")
-    expect(heading.get_by_role("link")).to_have_attribute("href", re.compile(r"/dokumendid/"))
+    # A plain heading and a primary action beside it (2026-10-26).
+    expect(page.get_by_role("heading", name="katse-eelnou.pdf")).to_be_visible()
+    actions = page.get_by_role("group", name="Faili toimingud")
+    expect(actions.get_by_role("link", name=re.compile("^Ava fail"))).to_have_attribute(
+        "href", re.compile(r"/dokumendid/")
+    )
     screenshots(page, "22-originaal")
 
     # -- and the words inside it are findable, with the page they are on ---
@@ -289,9 +296,7 @@ def test_an_email_shows_its_sender_and_its_attachments(
     # The message specifically, not `.first`: the documents table is newest
     # first, so the attachments extracted from this message sort above it.
     message_row = page.locator("tr", has_text="kooskolastus.eml").first
-    page.goto(
-        f"{base_url}{message_row.get_by_role('link', name='Vaata sisu').get_attribute('href')}"
-    )
+    page.goto(f"{base_url}{message_row.locator('.table__title a').first.get_attribute('href')}")
 
     # The «Tuletatud eelvaade» block is gone from this page with the v2 design,
     # and with it the rendered parsed headers (02-EKRAANID §G,
@@ -301,11 +306,16 @@ def test_an_email_shows_its_sender_and_its_attachments(
     # its checksum, and what came inside it.
     expect(page.get_by_role("heading", name="Originaal")).to_be_visible()
     expect(page.locator(".card--derived")).to_have_count(0)
-    # The filename in the H1 *is* the download, so there is no separate button.
+    # A message cannot be previewed: «Laadi alla» is its primary action.
     heading = page.get_by_role("heading", name="kooskolastus.eml")
     expect(heading).to_be_visible()
-    expect(heading.get_by_role("link")).to_have_attribute("href", re.compile(r"/dokumendid/"))
-    # And the message names what came inside it, both ways round.
+    actions = page.get_by_role("group", name="Faili toimingud")
+    expect(actions.get_by_role("link", name="Laadi alla")).to_have_attribute(
+        "href", re.compile(r"/dokumendid/")
+    )
+    # And the message names what came inside it, both ways round — under
+    # «Dokumendi andmed» since the owner's review of 2026-10-26.
+    page.locator("#dokumendi-andmed > summary").click()
     expect(page.get_by_role("heading", name="Selle kirja manused")).to_be_visible()
     expect(page.get_by_text("lisa-1.pdf").first).to_be_visible()
     screenshots(page, "24-kirja-originaal")

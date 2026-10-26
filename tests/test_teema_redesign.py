@@ -1188,12 +1188,11 @@ def test_extraction_state_still_reaches_the_readers_who_need_it(signed_in, speci
     assert STATE_LABELS[ExtractionState.NOT_APPLICABLE] == "Teksti eraldamine ei kohaldu"
 
 
-def test_vaata_sisu_survives_the_chip_it_stood_beside(signed_in, specialist):
-    """The link was inside the state element and is the half worth keeping.
+def test_the_title_is_the_one_way_to_the_document_page(signed_in, specialist):
+    """No «Vaata sisu» beside it, extracted or not (Dokumendid round, 2026-10-26).
 
-    It is the only route from this table to the text a search matched, and it
-    is offered on exactly the documents that have text: present once the
-    extraction is `DONE`, absent while it is not.
+    It led to the same page as the title, so a file with text showed one
+    destination twice. The title still leads there, and no state chip returns.
     """
     matter = factories.MatterFactory(owner=specialist)
     version = _evidence(matter, specialist)
@@ -1207,8 +1206,11 @@ def test_vaata_sisu_survives_the_chip_it_stood_beside(signed_in, specialist):
     version.save(update_fields=["extraction_state", "updated_at"])
 
     table = _table_of(_documents(signed_in, matter))
-    assert "Vaata sisu" in table
-    assert reverse("documents:document_detail", kwargs={"pk": version.document.pk}) in table
+    assert "Vaata sisu" not in table
+    title = table[table.index('class="table__title"') :]
+    title = title[: title.index("</td>")]
+    assert reverse("documents:document_detail", kwargs={"pk": version.document.pk}) in title
+    assert title.count("<a ") == 1
     # And still no chip beside it.
     assert "statechip" not in table
 
