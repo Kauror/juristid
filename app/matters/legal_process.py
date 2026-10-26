@@ -358,7 +358,11 @@ def phase_date_offers(*, phases: PhaseContext, rows: dict[str, Any]) -> dict[str
     pattern = phases.pattern
     if pattern is None:
         return {}
-    dated = {key: row.occurs_on for key, row in rows.items() if row.occurs_on is not None}
+    dated = {
+        key: (row.occurs_on, period_end_for(row.occurs_on, row.occurs_on_precision))
+        for key, row in rows.items()
+        if row.occurs_on is not None
+    }
     offers: dict[str, PhaseDateOffer] = {}
     for stage_key in sorted(CONFIRMABLE_STAGE_KEYS):
         phase_key = confirmable_phase(pattern, from_stage=phases.stage_key, to_stage=stage_key)

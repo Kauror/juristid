@@ -267,14 +267,22 @@ own «Muutmata» chip). Emptied, the date is removed.
    revision token, so this panel and an open `Muuda kulgu` cannot post over
    each other. A hidden phase stays hidden; an added step keeps its name and
    place. No migration.
-2. **§5's order rule holds here too**: a phase date earlier than an earlier
-   phase's or later than a later phase's is refused
-   (`RAIL_DATE_OUT_OF_ORDER`, compared on the stored anchors via
-   `phase_date_bounds`).
+2. **§5's order rule holds here too — over periods.** A phase may be dated to
+   a month, a quarter or a year, so phases are compared by **overlap**, never
+   by a period's first day: a period is refused only when it ends before an
+   earlier phase's period begins or begins after a later phase's ends
+   (`phase_date_bounds`, `phase_period_fits`, `RAIL_DATE_OUT_OF_ORDER`).
+   `Riigikogus 1.3.2027` then `Jõustumine 2027` is in order. The same rule is
+   applied by `Muuda kulgu`'s `clean`, by `record_confirmed_phase_date` and by
+   the `+ Märge` offer, so no surface refuses a state another allowed.
 3. **Only roadmap items.** An event, a sent opinion, a deadline and a
-   commencement are records with their own surfaces and are never buttons;
-   a key the page does not offer is a 404 (`_rail_datable_keys`).
+   commencement are records with their own surfaces and are never buttons,
+   and a phase carrying a recorded fact (`Jõustumine` with its commencement)
+   is dated by that record. A key the page does not offer, and any key on a
+   closed file, is a 404 (`_rail_datable_keys`, `anchored_phase_keys`).
 4. **`Muuda kulgu` no longer turns a period into a day.** Its phase boxes are
    day boxes; a save that leaves a box at its stored anchor now keeps the
-   stored precision, so *II kvartal 2027* set on the rail survives the panel.
-   A day typed there is stored as a day, as before.
+   stored precision, so *II kvartal 2027* set on the rail survives the panel,
+   which says «Kirjas: II kvartal 2027» beside the box. A different day typed
+   there is stored as a day, as before. An edited `Muuda kulgu` is not
+   replaced by a click on a step without the person confirming it.

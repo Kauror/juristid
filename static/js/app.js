@@ -2456,9 +2456,43 @@
     event.preventDefault();
     var back = button.getAttribute("data-return-to");
     slot.innerHTML = "";
+    /* A refusal's mark goes with the panel it was about (`data-draft-refused`). */
+    slot.removeAttribute("data-draft-refused");
+    slot.refusedChoices = null;
     var opener = back ? document.getElementById(back) : null;
     if (opener) {
       opener.focus();
+    }
+  });
+
+  /* Esc on the date panel is its `Loobu`. */
+  document.addEventListener("keydown", function (event) {
+    if (event.key !== "Escape" || event.defaultPrevented || !event.target.closest) {
+      return;
+    }
+    var panel = event.target.closest(".kulgform--one");
+    var close = panel ? panel.querySelector("[data-close-slot]") : null;
+    if (close) {
+      event.preventDefault();
+      close.click();
+    }
+  });
+
+  /* A click on a rail step opens its panel in the slot `Muuda kulgu` uses. An
+   * edited `Muuda kulgu` there is not replaced unasked: the person confirms
+   * dropping it, or the click does nothing. */
+  document.body.addEventListener("htmx:confirm", function (event) {
+    var source = event.detail && event.detail.elt;
+    if (!source || !source.classList || !source.classList.contains("tl-step__pick")) {
+      return;
+    }
+    var slot = document.getElementById("menetluse-kulg-muuda");
+    if (!slot || !slot.querySelector("form") || !holdsUnsavedInput(slot)) {
+      return;
+    }
+    event.preventDefault();
+    if (window.confirm("Menetluse kulu muudatused on salvestamata. Kas loobud neist?")) {
+      event.detail.issueRequest(true);
     }
   });
 

@@ -9476,7 +9476,11 @@ def _rail_step(request: HttpRequest, matter: Matter, key: str) -> tuple[str, Any
     """
     phases = legal_process.phase_context(matter=matter)
     rows, added = legal_process.timeline_step_rows(matter=matter, user=request.user)
-    if key not in _rail_datable_keys(phases, (rows, added)):
+    if not matter.is_open or key not in _rail_datable_keys(phases, (rows, added)):
+        raise Http404
+    # A phase a recorded fact dates — `Jõustumine` with its commencement — is
+    # dated by that record and draws no button (`legal_process.html`).
+    if key in legal_process.anchored_phase_keys(matter=matter, user=request.user):
         raise Http404
     for row in added:
         if row.rail_key == key:
@@ -9556,6 +9560,12 @@ def rail_step_date_view(request: HttpRequest, pk: Any, key: str) -> HttpResponse
             expected_revision=form.cleaned_data.get("revision") or None,
         )
     except TimelineStepsConflict as conflict:
+        # What was chosen comes back, on the current version, so pressing
+        # `Salvesta` again saves it — the retry `timeline_steps_view` gives.
+        retry = request.POST.copy()
+        retry["revision"] = timeline_steps_revision_token(matter)
+        form = RailStepDateForm(retry, occurs_on=occurs_on, precision=precision)
+        form.is_valid()
         status, error = 409, str(conflict)
     except DomainError as error_raised:
         status, error = 400, str(error_raised)

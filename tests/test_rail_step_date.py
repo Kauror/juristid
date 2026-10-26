@@ -320,3 +320,138 @@ def test_a_reader_and_an_outsider_cannot_date_a_step(client, specialist, reader)
         == 404
     )
     assert _row(matter, PHASE_VALITSUS) is None
+
+
+# ---------------------------------------------------------------------------
+# Review of #548: periods are compared by overlap; the edges
+# ---------------------------------------------------------------------------
+
+
+def test_a_year_after_a_dated_phase_in_that_year_is_in_order(signed_in, specialist):
+    """`Riigikogus 1.3.2027` and then `Jõustumine 2027`: the year contains the
+    day, so it is not «earlier» — only its first day was."""
+    matter = _file(specialist)
+    _post(signed_in, matter, PHASE_RIIGIKOGU, kp_precision="EXACT", kp_date="01.03.2027")
+
+    response = _post(signed_in, matter, PHASE_JOUSTUMINE, kp_precision="YEAR", kp_year="2027")
+
+    assert response.status_code == 200
+    assert _row(matter, PHASE_JOUSTUMINE).occurs_on_precision == "YEAR"
+
+
+@pytest.mark.parametrize("order", ["day_first", "quarter_first"])
+def test_a_day_and_a_quarter_containing_it_are_in_order(signed_in, specialist, order):
+    matter = _file(specialist)
+    day = {"kp_precision": "EXACT", "kp_date": "15.10.2026"}
+    quarter = {"kp_precision": "QUARTER", "kp_quarter": "4", "kp_year": "2026"}
+    if order == "day_first":
+        _post(signed_in, matter, PHASE_VALITSUS, **day)
+        response = _post(signed_in, matter, PHASE_RIIGIKOGU, **quarter)
+    else:
+        _post(signed_in, matter, PHASE_RIIGIKOGU, **quarter)
+        response = _post(signed_in, matter, PHASE_VALITSUS, **day)
+
+    assert response.status_code == 200
+    assert _row(matter, PHASE_VALITSUS) is not None and _row(matter, PHASE_RIIGIKOGU) is not None
+
+
+def test_a_period_wholly_before_an_earlier_phase_is_still_refused(signed_in, specialist):
+    matter = _file(specialist)
+    _post(signed_in, matter, PHASE_RIIGIKOGU, kp_precision="EXACT", kp_date="05.01.2027")
+
+    response = _post(signed_in, matter, PHASE_JOUSTUMINE, kp_precision="YEAR", kp_year="2026")
+
+    assert response.status_code == 400
+    assert RAIL_DATE_OUT_OF_ORDER in response.content.decode()
+
+
+def test_muuda_kulgu_accepts_the_periods_the_rail_accepted(signed_in, specialist):
+    """The panel compares the same periods, so a rail it did not draw cannot
+    lock it: saved unchanged, `Riigikogus 1.3.2027` + `Jõustumine 2027` saves."""
+    matter = _file(specialist)
+    _post(signed_in, matter, PHASE_RIIGIKOGU, kp_precision="EXACT", kp_date="01.03.2027")
+    _post(signed_in, matter, PHASE_JOUSTUMINE, kp_precision="YEAR", kp_year="2027")
+    url = reverse("matters:timeline_steps", kwargs={"pk": matter.pk})
+    panel = signed_in.get(url, headers={"HX-Request": "true"}).content.decode()
+    assert "Kirjas: 2027" in panel
+    data = dict.fromkeys(re.findall(r'name="([a-z_]+__shown)"', panel), "on")
+    data["revision"] = re.search(r'name="revision" value="([^"]*)"', panel).group(1)
+    data[f"{PHASE_RIIGIKOGU}__date"] = "01.03.2027"
+    data[f"{PHASE_JOUSTUMINE}__date"] = "01.01.2027"
+
+    response = signed_in.post(url, data, headers={"HX-Request": "true"})
+
+    assert response.status_code == 200
+    assert _row(matter, PHASE_JOUSTUMINE).occurs_on_precision == "YEAR"
+
+
+def test_a_stored_half_year_keeps_its_own_chip_and_survives_a_save(signed_in, specialist):
+    matter = _file(specialist)
+    MatterTimelineStep.objects.create(
+        matter=matter,
+        phase_key=PHASE_JOUSTUMINE,
+        occurs_on=date(2027, 7, 1),
+        occurs_on_precision="HALF_YEAR",
+    )
+
+    panel = signed_in.get(_url(matter, PHASE_JOUSTUMINE)).content.decode()
+    assert re.search(r'value="HALF_YEAR"[^>]*checked', panel)
+    assert "Muutmata: II poolaasta 2027" in panel
+
+    assert _post(signed_in, matter, PHASE_JOUSTUMINE, kp_precision="HALF_YEAR").status_code == 200
+    row = _row(matter, PHASE_JOUSTUMINE)
+    assert (row.occurs_on, row.occurs_on_precision) == (date(2027, 7, 1), "HALF_YEAR")
+
+
+def test_a_conflict_comes_back_on_the_current_version_and_saves_on_retry(signed_in, specialist):
+    matter = _file(specialist)
+    stale = timeline_steps_revision_token(matter)
+    set_rail_step_date(
+        matter=matter,
+        rail_key=PHASE_RIIGIKOGU,
+        occurs_on=date(2027, 1, 1),
+        precision="YEAR",
+        actor=specialist,
+    )
+    first = _post(
+        signed_in, matter, PHASE_VALITSUS, kp_precision="YEAR", kp_year="2026", revision=stale
+    )
+    assert first.status_code == 409
+    fresh = re.search(r'name="revision" value="([^"]*)"', first.content.decode()).group(1)
+    assert fresh == timeline_steps_revision_token(matter)
+
+    again = _post(
+        signed_in, matter, PHASE_VALITSUS, kp_precision="YEAR", kp_year="2026", revision=fresh
+    )
+
+    assert again.status_code == 200
+    assert _row(matter, PHASE_VALITSUS).occurs_on == date(2026, 1, 1)
+
+
+def test_jo_ustumine_with_a_recorded_commencement_is_not_a_button(signed_in, specialist):
+    from app.intelligence.services import add_effective_date
+
+    matter = _file(specialist)
+    add_effective_date(
+        matter=matter,
+        date_value=date(2027, 9, 27),
+        period_end=date(2027, 9, 27),
+        description="Põhiosa",
+        actor=specialist,
+    )
+
+    rail = _rail(_page(signed_in, matter))
+
+    assert 'id="kulg-samm-joustumine"' not in rail
+    assert 'id="kulg-samm-riigikogu"' in rail
+    assert signed_in.get(_url(matter, PHASE_JOUSTUMINE)).status_code == 404
+
+
+def test_a_closed_file_answers_the_panel_404(signed_in, specialist):
+    from app.matters.services import close_matter
+    from app.workflow.enums import Disposition
+
+    matter = _file(specialist)
+    close_matter(matter=matter, disposition=Disposition.OTHER, actor=specialist)
+
+    assert signed_in.get(_url(matter, PHASE_VALITSUS)).status_code == 404

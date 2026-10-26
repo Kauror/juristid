@@ -5150,14 +5150,16 @@ def set_rail_step_date(
     **The procedure's order is kept here too**: a phase date earlier than an
     earlier phase's or later than a later phase's is refused, the rule
     `TimelineStepsForm.clean` keeps on the panel's boxes, compared on the
-    stored anchors as there (`phase_date_bounds`).
+    periods by overlap (`phase_period_fits`): `Riigikogus 1.3.2027` and then
+    `Jõustumine 2027` is in order.
 
     ``rail_key`` is a phase of this file's pattern or ``samm:<id>`` for one of
     its added steps; anything else is refused rather than guessed at.
     """
     from app.matters.legal_process import phase_context
     from app.matters.models import MatterTimelineStep
-    from app.matters.process_phases import phase_date_bounds
+    from app.matters.process_phases import phase_period_fits
+    from app.workflow.lateness import period_end_for
 
     locked = lock_open_matter_for_business_write(matter.pk)
     if expected_revision and timeline_steps_revision_token(locked) != expected_revision:
@@ -5180,14 +5182,12 @@ def set_rail_step_date(
     phases = {row.phase_key: row for row in rows if not row.is_added}
     if occurs_on is not None:
         dated = {
-            key: row.occurs_on
+            key: (row.occurs_on, period_end_for(row.occurs_on, row.occurs_on_precision))
             for key, row in phases.items()
             if key != rail_key and row.occurs_on is not None
         }
-        earliest, latest = phase_date_bounds(pattern, rail_key, dated)
-        if (earliest is not None and occurs_on < earliest) or (
-            latest is not None and occurs_on > latest
-        ):
+        period = (occurs_on, period_end_for(occurs_on, precision))
+        if not phase_period_fits(pattern, rail_key, period, dated):
             raise DomainError(RAIL_DATE_OUT_OF_ORDER)
     current = phases.get(rail_key)
     hidden = current.hidden if current is not None else False
@@ -5236,7 +5236,8 @@ def record_confirmed_phase_date(
     `Märge` or the stage later never moves it (docs/adr/0124 §4's rule).
     """
     from app.matters.models import MatterTimelineStep
-    from app.matters.process_phases import phase_date_bounds
+    from app.matters.process_phases import phase_period_fits
+    from app.workflow.lateness import period_end_for
 
     if pattern is None or not phase_key or day is None or day > timezone.localdate():
         return False
@@ -5248,9 +5249,12 @@ def record_confirmed_phase_date(
     existing = rows.get(phase_key)
     if existing is not None and existing.occurs_on is not None:
         return False
-    dated = {key: row.occurs_on for key, row in rows.items() if row.occurs_on is not None}
-    earliest, latest = phase_date_bounds(pattern, phase_key, dated)
-    if (earliest is not None and day < earliest) or (latest is not None and day > latest):
+    dated = {
+        key: (row.occurs_on, period_end_for(row.occurs_on, row.occurs_on_precision))
+        for key, row in rows.items()
+        if row.occurs_on is not None
+    }
+    if not phase_period_fits(pattern, phase_key, (day, day), dated):
         return False
     MatterTimelineStep.objects.update_or_create(
         matter=matter,

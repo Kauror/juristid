@@ -7017,6 +7017,9 @@ class TimelineStepsForm(forms.Form):
                     "shown_field": self[f"{key}__shown"],
                     "date_field": self[f"{key}__date"],
                     "protected": self._protection(key),
+                    # A period set on the rail, in its own words — the box
+                    # beside it can only show the period's first day.
+                    "period": self._period_note(key),
                 }
             )
         return drawn
@@ -7038,22 +7041,29 @@ class TimelineStepsForm(forms.Form):
         The error lands on the box that is out of order and the rest of the
         panel comes back as it was typed, so nothing has to be re-entered.
         """
+        from app.workflow.lateness import period_end_for
+
         cleaned = super().clean() or self.cleaned_data
+        # Each phase's **period**: a box left at its stored anchor keeps the
+        # stored precision (`steps`), so *2027* is compared as the whole year
+        # and never as its first day (docs/adr/0100, amendment of 2026-10-26).
         seen: list[tuple[str, Any]] = []
         for node in self.nodes:
             key = node.phase_key
             when = cleaned.get(f"{key}__date")
             if when is None:
                 continue
-            for earlier_label, earlier in seen:
-                if when < earlier:
+            start = when
+            end = period_end_for(when, self._precision_kept(key, when))
+            for earlier_label, earlier_start in seen:
+                if end < earlier_start:
                     self.add_error(
                         f"{key}__date",
                         f"{node.label} ei saa olla varem kui {earlier_label}.",
                     )
                     break
             else:
-                seen.append((node.label, when))
+                seen.append((node.label, start))
         self._clean_added_steps(cleaned)
         return cleaned
 
@@ -7156,7 +7166,6 @@ class TimelineStepsForm(forms.Form):
         `None`, which is what stops a save writing an expectation over a day the
         file already proved.
         """
-        from app.workflow.enums import DatePrecision
 
         answers: list[tuple[str, bool, Any, str]] = []
         for node in self.nodes:
@@ -7171,12 +7180,26 @@ class TimelineStepsForm(forms.Form):
             # step, `RailStepDateForm`). The box shows its anchor; saved
             # unchanged, the phase keeps *IV kvartal 2026* rather than turning
             # into the first of October. A day typed here is a day.
-            row = self._stored_rows.get(key)
-            precision = DatePrecision.EXACT.value
-            if row is not None and when is not None and when == row.occurs_on:
-                precision = row.occurs_on_precision
-            answers.append((key, hidden, when, precision))
+            answers.append((key, hidden, when, self._precision_kept(key, when)))
         return answers
+
+    def _period_note(self, key: str) -> str:
+        """*II kvartal 2027* for a phase stored as a period; ``""`` for a day."""
+        from app.workflow.dates import is_approximate
+
+        row = self._stored_rows.get(key)
+        if row is None or row.occurs_on is None or not is_approximate(row.occurs_on_precision):
+            return ""
+        return row.display_date
+
+    def _precision_kept(self, key: str, when: Any) -> str:
+        """The stored precision when the box still holds the stored anchor, else a day."""
+        from app.workflow.enums import DatePrecision
+
+        row = self._stored_rows.get(key)
+        if row is not None and when is not None and when == row.occurs_on:
+            return str(row.occurs_on_precision)
+        return DatePrecision.EXACT.value
 
 
 class RailStepDateForm(forms.Form):
@@ -7217,6 +7240,8 @@ class RailStepDateForm(forms.Form):
         #: chosen: there is no control to rebuild a half-year from.
         self._stored = (occurs_on, precision or DatePrecision.EXACT.value)
         self._kept = kept_precision_choice(*self._stored)
+        #: What `_precision_chips` draws: the four, plus the record's own.
+        self.precision_choices = precision_choices(self._kept)
         group = _precision_fields(self.PREFIX, date_label="Kuupäev", kept=self._kept)
         for name, value in period_initial(
             self.PREFIX, occurs_on, precision or DatePrecision.EXACT.value
