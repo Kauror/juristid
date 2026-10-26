@@ -251,3 +251,53 @@ shape, every pattern, and cases for late entry, backdated records, explicit
 roadmap dates and folded facts) and by
 `e2e/test_teema_page_cleanup.py::test_opinions_sent_after_the_file_opened_read_after_algus`
 at 1440 and 768 px.
+
+## Amendment, 2026-10-26 — a step is dated by clicking it
+
+**Owner request.** Every phase of the file's procedure on `Menetluse kulg` —
+`Valitsuses`, `Riigikogus`, `Jõustumine` — and every step a person added is a
+button for a writer on an open file. It opens a small `millal?` panel in the
+slot `Muuda` opens into, with the one `Täpsus` composer every period on the
+product uses: a day, or a month, quarter or year (a stored half-year keeps its
+own «Muutmata» chip). Emptied, the date is removed.
+
+1. **Nothing new is stored.** `set_rail_step_date` hands the one row to
+   `set_timeline_steps`: the same `MatterTimelineStep`, the same «shown,
+   undated is no row», the same `TIMELINE_STEPS_CHANGED` event and the same
+   revision token, so this panel and an open `Muuda kulgu` cannot post over
+   each other. A hidden phase stays hidden; an added step keeps its name and
+   place. No migration.
+2. **§5's order rule holds here too — over periods.** A phase may be dated to
+   a month, a quarter or a year, so phases are compared by **overlap**, never
+   by a period's first day: a period is refused only when it ends before an
+   earlier phase's period begins or begins after a later phase's ends
+   (`phase_date_bounds`, `phase_period_fits`, `RAIL_DATE_OUT_OF_ORDER`).
+   `Riigikogus 1.3.2027` then `Jõustumine 2027` is in order. The same rule is
+   applied by `Muuda kulgu`'s `clean`, by `record_confirmed_phase_date` and by
+   the `+ Märge` offer, so no surface refuses a state another allowed.
+3. **Only roadmap items.** An event, a sent opinion, a deadline and a
+   commencement are records with their own surfaces and are never buttons,
+   and a phase carrying a recorded fact (`Jõustumine` with its commencement)
+   is dated by that record. A key the page does not offer, and any key on a
+   closed file, is a 404 (`_rail_datable_keys`, `anchored_phase_keys`).
+4. **`Muuda kulgu` no longer turns a period into a day.** Its phase boxes are
+   day boxes; a save that leaves a box at its stored anchor now keeps the
+   stored precision, so *II kvartal 2027* set on the rail survives the panel,
+   which says «Kirjas: II kvartal 2027» beside the box. A different day typed
+   there is stored as a day, as before. An edited `Muuda kulgu` is not
+   replaced by a click on a step without the person confirming it.
+5. **Placing a phase dated to a period** (review rounds of #548). A phase
+   carries two keys: it is **placed** where its period starts (`sort_on`) and
+   **reached** where it ends (`reach_on`, read by the connector fill), both
+   lifted to run in the procedure's order (`_phase_keys_in_order`). A point is
+   compared against a phase **still ahead** on that phase's period end, and
+   against every other phase — current, recorded or `Teadmata` behind the file
+   — on its start (`_placement_key`): *Valitsuses 2026* not yet reached does
+   not pull a May opinion past it, and an opinion in May reads inside
+   *Algus 2026*. Facts are folded onto their phases first, the keys ordered
+   once, then the remaining points placed. A point earlier than every dated
+   step in its window reads at its default, beside the current phase, rather
+   than past undated phases. An explicit date a person wrote is still
+   believed — a point dated before it reads before it (amendment of
+   2026-09-27, rule 1; docs/adr/0099 §4) — so nothing is clamped. Pinned in
+   `tests/test_rail_step_date.py` (the `test_rail_*` cases).

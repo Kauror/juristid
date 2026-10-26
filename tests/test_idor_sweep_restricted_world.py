@@ -259,6 +259,10 @@ def _candidates(route: str, params: list[str], objects: dict[str, Any]) -> list[
         expansions = [{"kind": kind} for kind in REMOVABLE]
     if "field" in params:
         expansions = [{"field": field} for field in _field_names()]
+    if "key" in params and route == "matters:rail_step_date":
+        # `matters:rail_step_date`: a rail key names a phase of the file's
+        # procedure, not an object — the Matter in the path is what is hidden.
+        expansions = [{"key": "valitsus"}]
     out = []
     for fixed in expansions:
         kwargs = dict(fixed)

@@ -77,6 +77,13 @@ audit row — whatever mix of phases and steps a person changed together.
           <span class="visually-hidden">{{ row.label }} — {{ row.date_field.label }}</span>
           {{ row.date_field }}
         </label>
+        {% if row.period %}
+          {% comment %}
+            A period set by clicking the step on the rail. The day box can only
+            show its first day; saved unchanged, the period is kept.
+          {% endcomment %}
+          <span class="kulgform__protected">Kirjas: {{ row.period }}</span>
+        {% endif %}
         {% if row.date_field.errors %}
           <p class="field__error" id="{{ row.date_field.auto_id }}_error">{{ row.date_field.errors|first }}</p>
         {% endif %}

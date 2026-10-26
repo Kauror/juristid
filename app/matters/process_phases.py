@@ -655,21 +655,47 @@ def confirmable_phase(pattern: ProcessPattern | None, *, from_stage: str, to_sta
 
 
 def phase_date_bounds(
-    pattern: ProcessPattern, phase_key: str, dated: dict[str, dt.date]
+    pattern: ProcessPattern,
+    phase_key: str,
+    dated: dict[str, tuple[dt.date, dt.date]],
 ) -> tuple[dt.date | None, dt.date | None]:
-    """The earliest and latest day ``phase_key`` may take beside the dates set.
+    """The order rule for ``phase_key``: the latest start before it, the earliest end after it.
 
     The roadmap's own order rule (docs/adr/0100 §5, `TimelineStepsForm.clean`):
     explicit phase dates run in the procedure's order, compared only with each
-    other. So a date for this phase may not be earlier than any earlier phase's
-    date nor later than any later phase's. ``None`` on a side nothing bounds.
+    other. ``dated`` holds each dated phase's **period** — ``(first day, last
+    day)``, the same day twice for an exact date — because a phase may be dated
+    to a month, a quarter or a year (amendment of 2026-10-26).
+
+    Periods are compared by overlap, never by their first days: `Riigikogus
+    1.3.2027` followed by `Jõustumine 2027` is in order, and so is a phase in
+    the same quarter as its neighbour's day. A period for this phase fits when
+    it **ends on or after** the returned earliest day and **starts on or
+    before** the returned latest one (:func:`phase_period_fits`). ``None`` on a
+    side nothing bounds.
     """
     index = pattern.index_of_phase(phase_key)
     if index is None:
         return None, None
-    earlier = [dated[n.phase_key] for n in pattern.nodes[:index] if n.phase_key in dated]
-    later = [dated[n.phase_key] for n in pattern.nodes[index + 1 :] if n.phase_key in dated]
+    earlier = [dated[n.phase_key][0] for n in pattern.nodes[:index] if n.phase_key in dated]
+    later = [dated[n.phase_key][1] for n in pattern.nodes[index + 1 :] if n.phase_key in dated]
     return (max(earlier) if earlier else None, min(later) if later else None)
+
+
+def phase_period_fits(
+    pattern: ProcessPattern,
+    phase_key: str,
+    period: tuple[dt.date, dt.date],
+    dated: dict[str, tuple[dt.date, dt.date]],
+) -> bool:
+    """Whether ``period`` for ``phase_key`` keeps the roadmap in the procedure's order.
+
+    Refused only when it ends before an earlier phase's period has begun, or
+    begins after a later phase's period has ended (:func:`phase_date_bounds`).
+    """
+    earliest, latest = phase_date_bounds(pattern, phase_key, dated)
+    start, end = period
+    return (earliest is None or end >= earliest) and (latest is None or start <= latest)
 
 
 __all__ = [
@@ -705,4 +731,5 @@ __all__ = [
     "phase_choices",
     "phase_date_bounds",
     "phase_label",
+    "phase_period_fits",
 ]

@@ -107,6 +107,7 @@ from app.matters.process_phases import (
 from app.matters.process_timeline import (
     PHASE_EFFECTIVE,
     PHASE_TRANSPOSITION,
+    STATE_AHEAD,
     STATE_REACHED,
     STATE_TODAY,
     dated_state,
@@ -358,7 +359,11 @@ def phase_date_offers(*, phases: PhaseContext, rows: dict[str, Any]) -> dict[str
     pattern = phases.pattern
     if pattern is None:
         return {}
-    dated = {key: row.occurs_on for key, row in rows.items() if row.occurs_on is not None}
+    dated = {
+        key: (row.occurs_on, period_end_for(row.occurs_on, row.occurs_on_precision))
+        for key, row in rows.items()
+        if row.occurs_on is not None
+    }
     offers: dict[str, PhaseDateOffer] = {}
     for stage_key in sorted(CONFIRMABLE_STAGE_KEYS):
         phase_key = confirmable_phase(pattern, from_stage=phases.stage_key, to_stage=stage_key)
@@ -703,6 +708,11 @@ class RailStep:
     state: str
     display_date: str = ""
     sort_on: date | None = None
+    #: Where the connector fill measures this item to, when it is not
+    #: `sort_on`: a phase dated to a period is *placed* where the period starts
+    #: and *reached* where it ends (docs/adr/0100, amendment of 2026-10-26).
+    #: ``None`` means `sort_on` (`reach_key`).
+    reach_on: date | None = None
     #: Secondary information, read as the item's `title`: a closure's
     #: `Disposition`. Short and supplementary; a 150px column cannot carry a
     #: sentence without pushing its neighbours' dates out of alignment.
@@ -725,6 +735,11 @@ class RailStep:
     reach: float = 1.0
     #: An event marker's kind, written above its title (`KIND_EVENT`).
     event_label: str = ""
+
+    @property
+    def reach_key(self) -> date | None:
+        """What the connector fill reads: `reach_on`, else `sort_on`."""
+        return self.reach_on if self.reach_on is not None else self.sort_on
 
     @property
     def is_phase(self) -> bool:
@@ -762,6 +777,50 @@ def _reached_by_its_date(row: Any, today: date) -> bool:
     )
 
 
+def _phase_keys_in_order(steps: list[RailStep]) -> None:
+    """Make the dated phases' placement keys run in the procedure's order, in place.
+
+    The order rule compares phase periods by overlap (`phase_period_fits`), so
+    *Valitsuses 2027* followed by *Riigikogus 1.3.2027* is a valid roadmap — and
+    the year's last day comes after the day that follows it. Placement, the
+    late-point slots and the connector fill all read `sort_on` as if it ran in
+    the phases' order (`_last_dated_phase_not_after`, `_slot_for`,
+    `_reach_between`), so a key earlier than the dated phase before it is lifted
+    to that phase's key — the placement key (`sort_on`, the period's start)
+    and the fill key (`reach_key`, its end) each against its own kind.
+    Presentation only: the stored date, its words on the rail and the node's
+    state are unchanged. Run again after a fact is folded onto a phase.
+    """
+    floor: date | None = None
+    reach_floor: date | None = None
+    for index, step in enumerate(steps):
+        if not step.is_phase or step.sort_on is None:
+            continue
+        sort_on = step.sort_on if floor is None else max(step.sort_on, floor)
+        reach = step.reach_key or sort_on
+        reach = max(reach, sort_on) if reach_floor is None else max(reach, sort_on, reach_floor)
+        if (sort_on, reach) != (step.sort_on, step.reach_key):
+            steps[index] = replace(step, sort_on=sort_on, reach_on=reach)
+        floor, reach_floor = sort_on, reach
+
+
+def _placement_key(step: RailStep) -> date | None:
+    """Where a dated point is compared against ``step`` when it is placed.
+
+    A phase already reached — or behind the file unrecorded (`Teadmata`) —
+    began where its period starts. A phase still
+    ahead is only known to precede a point once its **whole** period is over:
+    *Valitsuses 2026* not yet reached says nothing about an opinion sent in
+    May, and *Jõustumine 2027* still lies after a deadline in February
+    (docs/adr/0100, amendment of 2026-10-26). Every other item is its date.
+    """
+    if step.is_phase and step.state in (STATE_POSSIBLE, STATE_AHEAD):
+        return step.reach_key
+    # A `Teadmata` phase lies *behind* the file's position, like a recorded
+    # one: it began where its period starts.
+    return step.sort_on
+
+
 def _last_dated_phase_not_after(steps: list[RailStep], when: date, *, start: int) -> int | None:
     """The furthest phase from ``start`` on whose explicit date is not after ``when``.
 
@@ -773,7 +832,8 @@ def _last_dated_phase_not_after(steps: list[RailStep], when: date, *, start: int
     found = None
     for index in range(start, len(steps)):
         step = steps[index]
-        if step.is_phase and step.sort_on is not None and step.sort_on <= when:
+        key = _placement_key(step)
+        if step.is_phase and key is not None and key <= when:
             found = index
     return found
 
@@ -836,7 +896,10 @@ def anchored_phase_keys(*, matter: Matter, user: Any) -> frozenset[str]:
 
     facts = matter_intelligence(matter, user)
     keys: set[str] = set()
-    if any(record.date_value is not None for record in facts.effective_dates):
+    if any(
+        record.date_value is not None and record.status == FactStatus.ACTIVE
+        for record in facts.effective_dates
+    ):
         keys.add(PHASE_JOUSTUMINE)
     if any(
         record.kind == ImportantDateKind.TRANSPOSITION_DEADLINE
@@ -977,9 +1040,15 @@ def matter_rail(
             # a section per occurrence. What this node carries is what somebody
             # deliberately put on the roadmap: an explicit `MatterTimelineStep`
             # date, and otherwise nothing.
-            when, display = None, ""
+            when, reached_on, display = None, None, ""
             if row is not None and row.occurs_on is not None:
-                when, display = row.occurs_on, row.display_date
+                # **Placed where the period starts, reached where it ends**
+                # (docs/adr/0100, amendment of 2026-10-26): an opinion sent in
+                # May reads inside `Algus 2026`, and *Jõustumine 2027* is not
+                # travelled into on 1 January. For a day the two are the same.
+                when = row.occurs_on
+                reached_on = period_end_for(row.occurs_on, row.occurs_on_precision)
+                display = row.display_date
             steps.append(
                 RailStep(
                     key=node.key,
@@ -988,6 +1057,7 @@ def matter_rail(
                     state=node.state,
                     display_date=display,
                     sort_on=when,
+                    reach_on=reached_on,
                     # No `reach` here: every connector on this rail is decided
                     # once, after the dated points are placed (`_one_backbone`).
                 )
@@ -995,7 +1065,16 @@ def matter_rail(
 
     today = timezone.localdate()
     _keep_recorded_phases(steps, matter=matter, user=user, rail=rail, rows=rows, today=today)
+    # **Facts folded first, then the phase keys put in order once, then the
+    # rest placed** — so a fact that dates an undated phase moves that phase
+    # before anything is slotted against it (docs/adr/0100, amendment of
+    # 2026-10-26).
+    unfolded = []
     for milestone in sorted(milestones, key=lambda one: one.sort_on):
+        if not _fold_into_phase(steps, milestone):
+            unfolded.append(milestone)
+    _phase_keys_in_order(steps)
+    for milestone in unfolded:
         # **A fact whose phase is drawn is folded onto that phase, not beside
         # it.** A commencement used to be inserted as its own column next to
         # `Jõustumine`, so the rail read `Jõustumine · Jõustumine 1.1.2027` —
@@ -1007,9 +1086,7 @@ def matter_rail(
         # Folded, it is one column carrying its own dates as visible lines.
         # Hiding the phase cannot strand the fact either, because
         # `anchored_phase_keys` is what stops the phase being hidden at all.
-        folded = _fold_into_phase(steps, milestone)
-        if folded:
-            continue
+        # (Folded above, before any slot was decided.)
         if milestone.is_event:
             step = RailStep(
                 key=f"event:{milestone.ref}",
@@ -1110,6 +1187,10 @@ def matter_rail(
             anchor = _phase_slot(steps, milestone)
             beside = current if anchor is None else max(anchor, current)
             window, default = (beside, len(steps)), min(beside + 1, len(steps))
+        # An explicit phase date a person wrote is believed — a point dated
+        # before it reads before it (docs/adr/0100, amendment of 2026-09-27,
+        # rule 1; docs/adr/0099 §4) — so the slot is not
+        # clamped to the beginning or to the current phase.
         steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
     _place_added_steps(steps, added, rail=rail, today=today)
     return _one_backbone(steps, today)
@@ -1192,6 +1273,11 @@ def _keep_recorded_phases(
                 state=STATE_RECORDED,
                 display_date=dated_row.display_date if dated_row is not None else "",
                 sort_on=dated_row.occurs_on if dated_row is not None else None,
+                reach_on=(
+                    period_end_for(dated_row.occurs_on, dated_row.occurs_on_precision)
+                    if dated_row is not None and dated_row.occurs_on is not None
+                    else None
+                ),
             ),
         )
 
@@ -1392,7 +1478,7 @@ def _one_backbone(steps: list[RailStep], today: date) -> list[RailStep]:
         if start <= index < end:
             reach = 1.0
         elif index == end and index + 1 < len(steps):
-            reach = _reach_between(step.sort_on, steps[index + 1].sort_on, today)
+            reach = _reach_between(step.reach_key, steps[index + 1].reach_key, today)
         else:
             reach = 0.0
         decided.append(replace(step, reach=reach))
@@ -1522,13 +1608,19 @@ def _slot_for(steps: list[RailStep], when: date, window: tuple[int, int], defaul
     low, high = window
     position = default
     for index in range(high - 1, low - 1, -1):
-        placed = steps[index]
-        if placed.sort_on is None:
+        key = _placement_key(steps[index])
+        if key is None:
             continue
-        if placed.sort_on <= when:
+        if key <= when:
             return index + 1
         position = index
-    return position
+    # **Earlier than every dated step in the window**: nothing says it follows
+    # anything there, so it reads at the caller's default when that comes
+    # first — beside the current phase rather than past undated phases, just
+    # because a phase further on carries a date (docs/adr/0100, amendment of
+    # 2026-10-26: a commencement folded onto `Jõustumine` must not pull a
+    # deadline three weeks out past `Valitsuses`).
+    return min(position, default)
 
 
 #: Kept out of the query above on purpose: this module reads and never filters a

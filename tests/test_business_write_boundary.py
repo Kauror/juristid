@@ -680,6 +680,22 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
             MatterTimelineStep.objects.filter(matter=w["matter"]).values_list("phase_key", "hidden")
         ),
     ),
+    # A click on one `Menetluse kulg` step: its date. The same row and the same
+    # open-Matter lock as `Muuda kulgu`, one phase at a time (docs/adr/0100,
+    # amendment of 2026-10-26).
+    WriteRoute(
+        name="matters:rail_step_date",
+        label="Menetluse sammu kuupäev",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "key": "valitsus"},
+            {"kp_precision": "YEAR", "kp_year": "2030"},
+        ),
+        probe=lambda w: sorted(
+            MatterTimelineStep.objects.filter(matter=w["matter"]).values_list(
+                "phase_key", "occurs_on", "occurs_on_precision"
+            )
+        ),
+    ),
     # `+ Lisa fail` — another paper supporting a step already on the file. New
     # business content on an open Matter like every other evidence capture, and
     # deliberately separate from the correction above: one changes what the row
