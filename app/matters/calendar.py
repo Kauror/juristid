@@ -390,6 +390,7 @@ def _ordered(events: list[CalendarEvent]) -> list[CalendarEvent]:
             e.when,
             0 if e.is_work else 1,
             str(e.matter.title).casefold(),
+            str(e.text).casefold(),
             e.key,
         ),
     )
