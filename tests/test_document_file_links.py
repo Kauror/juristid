@@ -189,19 +189,28 @@ def test_the_document_page_names_open_download_and_copy_link(signed_in, two_file
     download_url = reverse("documents:download", kwargs={"pk": pdf.pk})
     actions = html[html.index('aria-label="Faili toimingud"') :]
     actions = actions[: actions.index("</div>")]
-    assert f'href="{open_url}"' in actions and NEW_TAB in actions and ">Ava<span" in actions
+    # «Ava fail» is the primary action for a PDF; «Laadi alla» beside it; the
+    # copy icon copies this exact version's address (Dokumendid round 2026-10-26).
+    assert f'href="{open_url}"' in actions and NEW_TAB in actions and ">Ava fail<span" in actions
+    assert 'class="button button--primary" href="' + open_url in actions
     assert f'href="{download_url}">Laadi alla</a>' in actions
-    assert f'data-copy-href="{open_url}"' in actions and ">Kopeeri link</button>" in actions
-    heading = html[html.index('class="pagehead__title"') :]
-    assert heading.index(open_url) < heading.index("</h1>")
+    assert (
+        f'data-copy-href="{open_url}"' in actions
+        and 'aria-label="Kopeeri link: kaaskiri.pdf"' in actions
+    )
+    # The heading is plain text now: the action is the way to the file.
+    heading = html[html.index('class="dochead__title"') :]
+    assert open_url not in heading[: heading.index("</h1>")]
 
     page = signed_in.get(reverse("documents:document_detail", kwargs={"pk": docx.document_id}))
     html = page.content.decode()
     download_url = reverse("documents:download", kwargs={"pk": docx.pk})
     actions = html[html.index('aria-label="Faili toimingud"') :]
     actions = actions[: actions.index("</div>")]
+    # A Word file cannot be previewed: «Laadi alla» is the primary action and
+    # nothing promises an opening.
     assert ">Ava" not in actions and "target=" not in actions
-    assert f'href="{download_url}">Laadi alla</a>' in actions
+    assert f'class="button button--primary" href="{download_url}">Laadi alla</a>' in actions
     assert f'data-copy-href="{download_url}"' in actions
     assert reverse("documents:open", kwargs={"pk": docx.pk}) not in html
 
@@ -489,7 +498,8 @@ def test_only_a_link_that_opens_a_new_tab_says_so(signed_in, normal_matter, two_
     detail = signed_in.get(
         reverse("documents:document_detail", kwargs={"pk": pdf.document_id})
     ).content.decode()
-    assert detail.count(NEW_TAB_NOTE) >= 2  # the heading and «Ava»
+    # Only «Ava fail» now: the heading is plain text (Dokumendid round, 2026-10-26).
+    assert detail.count(NEW_TAB_NOTE) == 1
 
 
 @pytest.mark.django_db

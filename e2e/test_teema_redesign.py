@@ -245,7 +245,7 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
     expect(page.get_by_text("Sellel teemal ei ole veel dokumente.")).to_be_visible()
 
     # An upload asks for the role with the file, before anything is committed.
-    page.locator(".docempty").get_by_role("button", name="↑ Lae dokument").click()
+    page.locator(".docempty").get_by_role("button", name="↑ Lae üles").click()
     panel = page.locator("#lae-dokument")
     expect(panel).to_be_visible()
     expect(panel.locator("select[name='role']")).to_be_visible()

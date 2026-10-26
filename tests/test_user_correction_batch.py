@@ -802,7 +802,7 @@ def test_the_page_offers_the_three_corrections_and_explains_a_refusal(
     body = signed_in.get(
         reverse("documents:document_detail", kwargs={"pk": plain_document.pk})
     ).content.decode()
-    assert "Paranda dokumenti" in body
+    assert "Muuda dokumenti" in body
     assert reverse("documents:add_version", kwargs={"pk": plain_document.pk}) in body
     assert reverse("documents:change_role", kwargs={"pk": plain_document.pk}) in body
     assert reverse("documents:remove", kwargs={"pk": plain_document.pk}) in body
@@ -823,7 +823,7 @@ def test_a_reader_is_offered_no_correction(client, reader, plain_document):
     client.force_login(reader)
     response = client.get(reverse("documents:document_detail", kwargs={"pk": plain_document.pk}))
 
-    assert "Paranda dokumenti" not in response.content.decode()
+    assert "Muuda dokumenti" not in response.content.decode()
     assert client.post(
         reverse("documents:remove", kwargs={"pk": plain_document.pk})
     ).status_code in (403, 404)

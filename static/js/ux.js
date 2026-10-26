@@ -1640,6 +1640,27 @@
           selection.addRange(range);
         }
         var done = function () {
+          /* An icon button has no text to swap: its tooltip and accessible
+             name say «Link kopeeritud» for two seconds instead, and the shared
+             status region says it aloud — nothing on the row moves
+             (templates/documents/partials/copy_link_icon.html). */
+          if (button.hasAttribute("data-copy-icon")) {
+            if (!button.hasAttribute("data-label-idle")) {
+              button.setAttribute("data-label-idle", button.getAttribute("aria-label") || "");
+              button.setAttribute("data-title-idle", button.getAttribute("title") || "");
+            }
+            window.clearTimeout(button.copyLabelTimer);
+            button.setAttribute("data-copied", "");
+            button.setAttribute("title", "Link kopeeritud");
+            button.setAttribute("aria-label", "Link kopeeritud");
+            announceCopy("Link kopeeritud");
+            button.copyLabelTimer = window.setTimeout(function () {
+              button.removeAttribute("data-copied");
+              button.setAttribute("title", button.getAttribute("data-title-idle"));
+              button.setAttribute("aria-label", button.getAttribute("data-label-idle"));
+            }, 2000);
+            return;
+          }
           var said = button.getAttribute("data-label-done");
           if (!said) {
             return;

@@ -193,7 +193,7 @@ def test_a_closed_matters_documents_page_offers_no_upload(signed_in, specialist)
 
     body = _documents_page(signed_in, matter)
 
-    assert "↑ Lae dokument" not in body
+    assert "↑ Lae üles" not in body
     assert reverse("documents:upload_evidence", kwargs={"matter_id": matter.pk}) not in body
 
 
@@ -601,7 +601,7 @@ def test_reopening_restores_the_whole_surface(signed_in, specialist, organisatio
     assert matter.is_open
 
     body = _documents_page(signed_in, matter)
-    assert "↑ Lae dokument" in body
+    assert "↑ Lae üles" in body
     assert reverse("submissions:attach_evidence", kwargs={"pk": draft.pk}) in body
     assert reverse("submissions:register_sent", kwargs={"matter_id": matter.pk}) in body
     assert "+ Uus arvamus" not in body
@@ -682,7 +682,7 @@ def test_an_open_matter_still_offers_everything_to_a_writer(signed_in, specialis
     matter = factories.MatterFactory(owner=specialist)
     body = _documents_page(signed_in, matter)
 
-    assert "↑ Lae dokument" in body
+    assert "↑ Lae üles" in body
     assert "+ SharePointi viide" in body
     # Retired, not hidden from this reader: nobody is offered it on Dokumendid
     # (docs/adr/0061, amendment of 2026-09-27).
@@ -695,6 +695,6 @@ def test_a_reader_is_still_offered_nothing_on_an_open_matter(client, reader, spe
     client.force_login(reader)
     body = _documents_page(client, matter)
 
-    assert "↑ Lae dokument" not in body
+    assert "↑ Lae üles" not in body
     assert "+ Uus arvamus" not in body
     assert "+ SharePointi viide" not in body

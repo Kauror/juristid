@@ -606,5 +606,5 @@ def test_a_reader_sees_the_opinion_but_no_way_to_add_one(page, base_url):
 
     page.goto(f"{url.rstrip('/')}/dokumendid/")
     page.wait_for_load_state("networkidle")
-    expect(page.get_by_role("button", name=re.compile("Lae dokument"))).to_have_count(0)
+    expect(page.get_by_role("button", name=re.compile("Lae üles"))).to_have_count(0)
     expect(page.get_by_text("+ Uus arvamus")).to_have_count(0)

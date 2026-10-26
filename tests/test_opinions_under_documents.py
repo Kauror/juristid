@@ -1650,7 +1650,7 @@ def test_the_document_page_is_headed_by_the_title_and_still_names_the_file(signe
     body = signed_in.get(
         reverse("documents:document_detail", kwargs={"pk": document.pk})
     ).content.decode()
-    heading = body[body.index("pagehead__title") : body.index("pagehead__context")]
+    heading = body[body.index("dochead__title") : body.index("dochead__meta")]
 
     assert "Ministeeriumi saatekiri" in heading
     assert "kiri.pdf" not in heading

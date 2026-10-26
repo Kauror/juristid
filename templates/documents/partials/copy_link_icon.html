@@ -1,0 +1,20 @@
+{% comment %}
+A compact «Kopeeri link» — an icon button that copies ``href`` (made absolute
+against the reader's own address) through `bindCopyLink` in static/js/ux.js.
+
+``href`` is an authorized route to one exact file version (`file_link`), never
+a public address. ``name`` says which file, so the accessible name is «Kopeeri
+link: <file>» and twenty rows are not twenty identical buttons to a screen
+reader. `data-copy-icon` asks for the icon form of the feedback: the tooltip
+and the accessible name become «Link kopeeritud» for two seconds and the shared
+status region says it aloud — nothing is replaced and nothing moves.
+{% endcomment %}
+<button class="copyicon" type="button"
+        data-copy-href="{{ href }}" data-copy-icon
+        title="Kopeeri link"
+        aria-label="Kopeeri link: {{ name }}">
+  <svg class="copyicon__glyph" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+    <rect x="8" y="8" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/>
+    <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+  </svg>
+</button>
