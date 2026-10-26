@@ -107,6 +107,7 @@ from app.matters.process_phases import (
 from app.matters.process_timeline import (
     PHASE_EFFECTIVE,
     PHASE_TRANSPOSITION,
+    STATE_AHEAD,
     STATE_REACHED,
     STATE_TODAY,
     dated_state,
@@ -812,8 +813,10 @@ def _placement_key(step: RailStep) -> date | None:
     May, and *Jõustumine 2027* still lies after a deadline in February
     (docs/adr/0100, amendment of 2026-10-26). Every other item is its date.
     """
-    if step.is_phase and step.state not in _REACHED_STATES:
+    if step.is_phase and step.state in (STATE_POSSIBLE, STATE_AHEAD):
         return step.reach_key
+    # A `Teadmata` phase lies *behind* the file's position, like a recorded
+    # one: it began where its period starts.
     return step.sort_on
 
 
@@ -1183,6 +1186,9 @@ def matter_rail(
             anchor = _phase_slot(steps, milestone)
             beside = current if anchor is None else max(anchor, current)
             window, default = (beside, len(steps)), min(beside + 1, len(steps))
+        # An explicit phase date a person wrote is believed — a point dated
+        # before it reads before it (docs/adr/0099 §4) — so the slot is not
+        # clamped to the beginning or to the current phase.
         steps.insert(_slot_for(steps, milestone.sort_on, window, default), step)
     _place_added_steps(steps, added, rail=rail, today=today)
     return _one_backbone(steps, today)

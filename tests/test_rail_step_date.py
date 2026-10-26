@@ -713,3 +713,48 @@ def test_rail_facts_fold_before_points_are_placed():
     assert order.index("Arvamuse tähtaeg") < order.index("joustumine")
     keys = [step.sort_on for step in steps if step.is_phase and step.sort_on is not None]
     assert keys == sorted(keys)
+
+
+# ---------------------------------------------------------------------------
+# Fifth review of #548: behind the file is behind it, and the beginning holds
+# ---------------------------------------------------------------------------
+
+
+def test_rail_a_point_inside_an_unrecorded_earlier_period_phase_reads_inside_it():
+    """`Algus 2026` is behind the file but unrecorded (`Teadmata`): an opinion
+    sent in May reads inside it, never before the beginning."""
+    from app.matters.legal_process import (
+        STATE_CURRENT,
+        STATE_POSSIBLE,
+        STATE_REACHED,
+        STATE_UNKNOWN,
+    )
+
+    steps = _build(
+        [("algus", STATE_UNKNOWN), ("kooskolastus", STATE_CURRENT), ("valitsus", STATE_POSSIBLE)],
+        {"algus": _stored(date(2026, 1, 1), "YEAR")},
+        [_point("Koja arvamus", date(2026, 5, 10), STATE_REACHED)],
+        date(2026, 10, 26),
+    )
+
+    assert _order(steps)[:3] == ["algus", "Koja arvamus", "kooskolastus"]
+
+
+def test_rail_a_deadline_ahead_reads_beside_the_current_phase_not_past_undated_ones():
+    """A deadline in November with `Jõustumine 1.3.2027` dated and the phases
+    between undated: beside the current phase, not after `Riigikogus`."""
+    from app.matters.legal_process import STATE_CURRENT, STATE_POSSIBLE
+
+    steps = _build(
+        [
+            ("kooskolastus", STATE_CURRENT),
+            ("valitsus", STATE_POSSIBLE),
+            ("riigikogu", STATE_POSSIBLE),
+            ("joustumine", STATE_POSSIBLE),
+        ],
+        {"joustumine": _stored(date(2027, 3, 1), "EXACT")},
+        [_point("Arvamuse tähtaeg", date(2026, 11, 15), STATE_POSSIBLE)],
+        date(2026, 10, 26),
+    )
+
+    assert _order(steps)[:2] == ["kooskolastus", "Arvamuse tähtaeg"]
