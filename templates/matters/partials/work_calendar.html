@@ -1,0 +1,44 @@
+{% comment %}
+Kalender — the rail's one calendar of this desk's dated work and recorded
+commencements (app/matters/calendar.py, docs/adr/0158 amendment of 2026-10-26).
+
+Read-only. Two categories, told apart by shape as well as colour: a round dot
+for *Tähtajad ja tegevused*, a diamond for *Jõustumised*. Each dot is one real
+record; a day shows three and «+N», and its popover lists every one.
+
+A day is the only place a dot goes. A record known only to a month, quarter,
+half-year or year is listed under the grid under its period — never on a day
+cell, never counted in a week (ADR 0079, ADR 0158 §4).
+
+The whole block is the HTMX target of its own links: each one is also an
+ordinary link to this page with the calendar's two parameters changed, so
+refresh, Back and a pasted address all show the same period (`hx-push-url`,
+and `historyCacheSize = 0` reloads it on Back).
+
+Quarter and year need more room than the rail has, so they open in a panel over
+the page. «Sulge» is a link to the month view, which is where Escape goes too.
+{% endcomment %}
+<section class="railblock wcal{% if calendar.is_wide %} wcal--wide{% endif %}"
+         id="{{ calendar.element_id }}"
+         aria-label="Kalender"
+         data-wcal>
+  <h2 class="railblock__label">Kalender</h2>
+  {% include "matters/partials/work_calendar_bar.html" with calendar=calendar %}
+
+  {% if calendar.is_wide %}
+    <p class="wcal__note">{{ calendar.title }} on avatud suuremas aknas.
+      <a class="wcal__nav" href="{{ calendar.close_query }}" hx-get="{{ calendar.close_query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true">Sulge</a>
+    </p>
+    <div class="wcal__backdrop" data-wcal-close></div>
+    <div class="wcal__panel" role="dialog" aria-modal="true" aria-labelledby="wcal-panel-title" data-wcal-panel>
+      <div class="wcal__panelhead">
+        <h2 class="wcal__paneltitle" id="wcal-panel-title" tabindex="-1">Kalender · {{ calendar.title }}</h2>
+        <a class="wcal__close" href="{{ calendar.close_query }}" hx-get="{{ calendar.close_query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true" data-wcal-closelink>Sulge</a>
+      </div>
+      {% include "matters/partials/work_calendar_bar.html" with calendar=calendar in_panel=1 %}
+      {% include "matters/partials/work_calendar_body.html" with calendar=calendar %}
+    </div>
+  {% else %}
+    {% include "matters/partials/work_calendar_body.html" with calendar=calendar %}
+  {% endif %}
+</section>

@@ -1,0 +1,31 @@
+{% comment %}
+The calendar's controls: the four views, then ‹ period › and «Täna». Every
+control is a link to this page's own address (see work_calendar.html).
+{% endcomment %}
+<nav class="wcal__bar" aria-label="Kalendri vaade{% if in_panel %} (paneel){% endif %}">
+  <span class="wcal__views">
+    {% for link in calendar.views %}
+      <a class="wcal__view{% if link.is_current %} is-active{% endif %}"
+         href="{{ link.query }}"
+         hx-get="{{ link.query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true"
+         {% if link.is_current %}aria-current="true"{% endif %}>{{ link.label }}</a>
+    {% endfor %}
+  </span>
+  <span class="wcal__period">
+    {% if calendar.previous_query %}
+      <a class="wcal__nav" href="{{ calendar.previous_query }}"
+         hx-get="{{ calendar.previous_query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true"
+         aria-label="Eelmine periood">‹</a>
+    {% endif %}
+    <span class="wcal__title">{{ calendar.title }}</span>
+    {% if calendar.next_query %}
+      <a class="wcal__nav" href="{{ calendar.next_query }}"
+         hx-get="{{ calendar.next_query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true"
+         aria-label="Järgmine periood">›</a>
+    {% endif %}
+    {% if calendar.shows_today %}
+      <a class="wcal__nav wcal__today" href="{{ calendar.today_query }}"
+         hx-get="{{ calendar.today_query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true">Täna</a>
+    {% endif %}
+  </span>
+</nav>

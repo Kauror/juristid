@@ -1,0 +1,15 @@
+{% comment %}
+One record in a calendar popover or list: which Teema, what the date means and
+what it says, the date at the precision it was recorded to, and its state —
+«üle tähtaja» only where the work model says so; a commencement is never late
+and never confirmed. The link opens the record on its Teema (the work row's own
+deep link, or the Teema's Jõustumine section).
+{% endcomment %}
+<li class="wcal__event wcal__event--{{ event.category }}">
+  <a class="wcal__eventlink" href="{{ event.url }}">
+    {% if show_category %}<span class="wcal__eventcat"><span class="wcal__dot wcal__dot--{{ event.category }}" aria-hidden="true"></span>{{ event.category_label }}</span>{% endif %}
+    <span class="wcal__eventmatter">{% if event.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ event.matter.title }}</span>
+    <span class="wcal__eventwhat">{{ event.meaning }}{% if event.text %}: {{ event.text }}{% endif %}</span>
+    <span class="wcal__eventwhen">{{ event.display_date }}{% if event.precision_label %} · {{ event.precision_label }}{% endif %}{% if event.status %} · <span class="wcal__status{% if event.is_overdue %} is-overdue{% endif %}">{{ event.status }}</span>{% endif %}</span>
+  </a>
+</li>
