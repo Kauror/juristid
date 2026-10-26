@@ -10,12 +10,14 @@
 [[day]]
 date = 2026-10-26
 basis = "deployment"
-prs = [543, 544, 545, 546, 548]
+prs = [543, 544, 545, 546, 548, 550, 551]
 # Kasutusmugavuse voor: lõpetamise failid ja nelja põhjusega «Lõpeta teema»
 # (#543, ADR 0131 täiendus), dokumendilingid (#545), navigeerimine ja
 # salvestamata teksti kaitse (#546, ADR 0190), «Kiirklahvid» (#544).
 # Samal päeval teine väljalase: menetluse kulu sammu dateerimine klõpsuga
 # (#548, ADR 0100 täiendus 26.10).
+# Samal päeval kolmas väljalase: Minu asjade kalender (#550, ADR 0158
+# täiendus 26.10) ja «Nihuta kuupäeva» (#551, ADR 0143 täiendus 26.10).
 # Migratsioonideta, otsinguindeksit uuesti ei ehitata. Kui väljalase ei jõua
 # tootmisse 26.10 (Tallinna aja järgi), liigub see kirje väljalaske päeva
 # kuupäevale.
@@ -32,6 +34,8 @@ changes = [
   "Äsja salvestatud või parandatud kirje tõstetakse jaotises «Tegevused» hetkeks esile.",
   "Uus leht «Kiirklahvid» (lehe jaluses «Uuenduste» kõrval) kirjeldab Juristidi kiirklahve; otsinguvälja «Ctrl K» vihje on eemaldatud ja lühikokkuvõtte muutmisel on nupp «Loobu».",
   "Menetluse kulu sammule (näiteks «Riigikogus» või «Jõustumine») saab kuupäeva lisada sellel klõpsates: täpse päeva või ainult kuu, kvartali või aasta.",
+  "Minu asjade paremas veerus on nüüd kalender, kus on koos sinu tööde tähtajad ja tegevused ning sinu teemade õigusaktide jõustumised. Kalendrit saab vaadata nelja nädala, kuu, kvartali või aasta kaupa.",
+  "Oma tegevuse kuupäeva saab Minu asjades ja kalendris kiiresti nihutada päeva, nädala või kuu võrra: rea menüüs «Nihuta kuupäeva».",
 ]
 
 [[day]]
