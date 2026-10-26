@@ -322,12 +322,20 @@ The rail holds only what has no honest place on a timeline.
       </section>
     </div>
 
-    <aside class="worklayout2__rail" aria-label="{% if is_self %}Märkmed ja muutused{% else %}Kiirvaade ja muutused{% endif %}">
+    <aside class="worklayout2__rail" aria-label="{% if is_self %}Kalender, ülevaade ja märkmed{% else %}Kalender, ülevaade ja kiirvaade{% endif %}">
+      {% comment %}
+        The rail's order (owner's UX review of 2026-10-26): alerts first and
+        only when there are any — the reader's own «Kontrolli jõustumist»
+        prompts and «Uus asi» —, then the Kalender, then the four lists, then
+        the private Märkmed last. A colleague's page has no alerts and no notes
+        (neither is fetched for it, 01-EHITUSJUHIS §3.5); it ends with
+        Kiirvaade, after the same common blocks.
+      {% endcomment %}
       {% if is_self %}
         {% comment %}
           «Uus asi» — what a colleague has just put on this desk, and nothing
-          else. Above Märkmed because it is the only block on the rail that is
-          about something that changed while the reader was away; it is
+          else. At the top of the rail because it is the only block on it that
+          is about something that changed while the reader was away; it is
           noticeable by being here and by being absent the rest of the time,
           not by being loud.
 
@@ -370,7 +378,154 @@ The rail holds only what has no honest place on a timeline.
             {% endfor %}
           </section>
         {% endif %}
+      {% endif %}
 
+      {% comment %}
+        One calendar of this desk's dated work and the commencements on the
+        Teemad this person carries, first after any alerts (docs/adr/0158,
+        amendments of 2026-10-26). Read-only, and its own block: nothing above
+        it — no band, figure or count — reads it.
+      {% endcomment %}
+      {% include "matters/partials/work_calendar.html" with calendar=calendar %}
+
+      {% comment %}
+        A stalled Matter must not disappear merely because it carries no date.
+        This is the one attention state that cannot be derived from a timeline,
+        and it is the first list after the calendar for that reason.
+      {% endcomment %}
+      <section class="railblock" aria-label="Järgmise tegevuseta">
+        <h2 class="railblock__label railblock__label--warning">
+          Järgmise tegevuseta <span class="railblock__count">{{ work.quiet_total }}</span>
+        </h2>
+        {% for row in work.quiet %}
+          <div class="quietrow">
+            <a class="quietrow__title" href="{% url 'matters:matter_detail' pk=row.matter.pk %}">{{ row.matter.title }}</a>
+            {% with instruction=source_instructions|get_item:row.matter.pk %}
+              {% if instruction %}
+                <span class="quietrow__source">
+                  <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
+                  <span class="quietrow__sourcetext" title="{{ instruction }}">{{ instruction }}</span>
+                </span>
+              {% endif %}
+            {% endwith %}
+            <span class="quietrow__meta">
+              {{ row.silence }}
+              {% comment %}
+                `#lisa-jargmine` — `+ Lisa tegevus` in `PRAEGUNE TEGEVUS`, which a
+                Matter with no open step draws (docs/adr/0126 §1). These rows are
+                exactly those Matters. It pointed at `+ Märge · Tavaline` until
+                that left `+ Lisa` on 2026-10-07; the arrival handler in
+                static/js/ux.js opens the disclosure and puts the cursor in it.
+              {% endcomment %}
+              <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#lisa-jargmine">Määra</a>
+            </span>
+          </div>
+        {% empty %}
+          <p class="railblock__empty">Kõigil avatud teemadel on järgmine tegevus määratud.</p>
+        {% endfor %}
+        {% if work.quiet_total > work.quiet|length %}
+          <a class="railblock__more" href="{{ work.portfolio.register_url }}&amp;tegevus=puudub">Näita kõiki {{ work.quiet_total }} →</a>
+        {% endif %}
+      </section>
+
+      {% comment %}
+        Every open step with no date, in one list. "No idea when" is one
+        condition whatever the stored kind, and three two-row lists would be
+        three headings for six facts.
+
+        An open `Kaasamine` with no reply-by date is listed here too, saying
+        what it is and «Tähtaeg määramata», and its link opens the round's own
+        chronology row, where `Lõpeta kaasamine` is (docs/adr/0132).
+      {% endcomment %}
+      <section class="railblock" aria-label="Kuupäevata">
+        <h2 class="railblock__label">
+          Kuupäevata <span class="railblock__count">{{ work.undated_total }}</span>
+        </h2>
+        {% for item in work.undated %}
+          <a class="undatedrow" href="{{ item.record_url }}">
+            {% if item.is_feedback_wait %}
+              <span class="undatedrow__action">Ootame tagasisidet · {{ item.date_display }}: {{ item.text }}</span>
+            {% else %}
+              <span class="undatedrow__action">{{ item.text }}</span>
+            {% endif %}
+            <span class="undatedrow__matter">
+              {{ item.matter.title }}
+            </span>
+          </a>
+        {% empty %}
+          <p class="railblock__empty">
+            {% if is_self %}Igal sinu tegevusel on kuupäev.{% else %}Igal tegevusel on kuupäev.{% endif %}
+          </p>
+        {% endfor %}
+        {% if work.undated_total > work.undated|length %}
+          <a class="railblock__more" href="{{ work.undated_url }}">Näita kõiki {{ work.undated_total }} →</a>
+        {% endif %}
+      </section>
+
+      {% comment %}
+        Viimati muudetud, from the activity precedence the register's own
+        *Viimane tegevus* column reads. Not an audit log: the label names the
+        kind of fact that moved the file, which is what a person scanning for
+        "what happened while I was away" is actually asking
+        (app/matters/activity.py).
+      {% endcomment %}
+      <section class="railblock" aria-label="Viimati muudetud">
+        <h2 class="railblock__label">Viimati muudetud</h2>
+        <div class="pw-events">
+          {% for change in work.changes %}
+            <a class="pw-event" href="{% url 'matters:matter_detail' pk=change.matter.pk %}">
+              {% comment %}
+                `compact_display`, not the raw date. A `Kaasamine` may be
+                recorded to a month, a quarter or a year, and the stored value
+                is then the period's first day — `1.10` here would name a day
+                nobody named. A day still reads `12.5`, a month reads `09.26`,
+                and a quarter or a year is spelled out
+                (app/matters/activity.py, docs/adr/0082 §3).
+              {% endcomment %}
+              <span class="pw-event__when">{{ change.compact_display }}</span>
+              <span>
+                <span class="pw-event__what">{{ change.label }}</span>
+                <span class="pw-event__matter">{{ change.matter.title }}</span>
+              </span>
+            </a>
+          {% empty %}
+            <p class="railblock__empty">Muudatusi ei ole.</p>
+          {% endfor %}
+        </div>
+      </section>
+
+      {% comment %}
+        Counts, never ratings. No rank, no percentage, no comparison with a
+        colleague — the same refusal Osakond opens with.
+
+        Open in both views. It used to be collapsed on one's own desk, on the
+        reasoning that a person already knows their own numbers (02-EKRAANID
+        §A); live use reversed that. What a person knows is roughly, and the
+        block was being opened every morning to find out exactly — so the
+        disclosure was not sparing anybody a decision, it was charging a click
+        for the answer. `is_self` no longer decides the state, only the label.
+      {% endcomment %}
+      <section class="railblock" aria-label="Statistika">
+        <details class="foldout" open>
+          <summary class="foldout__trigger">
+            <span class="foldout__label">{% if is_self %}Minu statistika{% else %}Statistika{% endif %}</span>
+          </summary>
+          <div class="foldout__body">
+            <div class="pw-stats">
+              <p class="pw-stats__grp">{{ work.stats.month_label }}</p>
+              {% for row in work.stats.month %}
+                <span>{{ row.label }} <b>{{ row.value }}</b></span>
+              {% endfor %}
+              <p class="pw-stats__grp">{{ work.stats.year_label }}</p>
+              {% for row in work.stats.year %}
+                <span>{{ row.label }} <b>{{ row.value }}</b></span>
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+      </section>
+
+      {% if is_self %}
         {% comment %}
           The desk pad. Present only in the self view — this whole block is
           inside the branch, so a manager's response does not contain it.
@@ -418,151 +573,6 @@ The rail holds only what has no honest place on a timeline.
           <p class="pw-privnote">Isiklikke märkmeid näeb ainult inimene ise.</p>
         </section>
       {% endif %}
-
-      {% comment %}
-        A stalled Matter must not disappear merely because it carries no date.
-        This is the one attention state that cannot be derived from a timeline,
-        and it is first in the rail for that reason.
-      {% endcomment %}
-      <section class="railblock" aria-label="Järgmise tegevuseta">
-        <h2 class="railblock__label railblock__label--warning">
-          Järgmise tegevuseta <span class="railblock__count">{{ work.quiet_total }}</span>
-        </h2>
-        {% for row in work.quiet %}
-          <div class="quietrow">
-            <a class="quietrow__title" href="{% url 'matters:matter_detail' pk=row.matter.pk %}">{{ row.matter.title }}</a>
-            {% with instruction=source_instructions|get_item:row.matter.pk %}
-              {% if instruction %}
-                <span class="quietrow__source">
-                  <span class="table__sourcelabel">Excelist{% if source_snapshot %} · {{ source_snapshot }}{% endif %}</span>
-                  <span class="quietrow__sourcetext" title="{{ instruction }}">{{ instruction }}</span>
-                </span>
-              {% endif %}
-            {% endwith %}
-            <span class="quietrow__meta">
-              {{ row.silence }}
-              {% comment %}
-                `#lisa-jargmine` — `+ Lisa tegevus` in `PRAEGUNE TEGEVUS`, which a
-                Matter with no open step draws (docs/adr/0126 §1). These rows are
-                exactly those Matters. It pointed at `+ Märge · Tavaline` until
-                that left `+ Lisa` on 2026-10-07; the arrival handler in
-                static/js/ux.js opens the disclosure and puts the cursor in it.
-              {% endcomment %}
-              <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#lisa-jargmine">Määra</a>
-            </span>
-          </div>
-        {% empty %}
-          <p class="railblock__empty">Kõigil avatud teemadel on järgmine tegevus määratud.</p>
-        {% endfor %}
-        {% if work.quiet_total > work.quiet|length %}
-          <a class="railblock__more" href="{{ work.portfolio.register_url }}&amp;tegevus=puudub">Näita kõiki {{ work.quiet_total }} →</a>
-        {% endif %}
-      </section>
-
-      {% comment %}
-        Viimati muudetud, from the activity precedence the register's own
-        *Viimane tegevus* column reads. Not an audit log: the label names the
-        kind of fact that moved the file, which is what a person scanning for
-        "what happened while I was away" is actually asking
-        (app/matters/activity.py).
-      {% endcomment %}
-      <section class="railblock" aria-label="Viimati muudetud">
-        <h2 class="railblock__label">Viimati muudetud</h2>
-        <div class="pw-events">
-          {% for change in work.changes %}
-            <a class="pw-event" href="{% url 'matters:matter_detail' pk=change.matter.pk %}">
-              {% comment %}
-                `compact_display`, not the raw date. A `Kaasamine` may be
-                recorded to a month, a quarter or a year, and the stored value
-                is then the period's first day — `1.10` here would name a day
-                nobody named. A day still reads `12.5`, a month reads `09.26`,
-                and a quarter or a year is spelled out
-                (app/matters/activity.py, docs/adr/0082 §3).
-              {% endcomment %}
-              <span class="pw-event__when">{{ change.compact_display }}</span>
-              <span>
-                <span class="pw-event__what">{{ change.label }}</span>
-                <span class="pw-event__matter">{{ change.matter.title }}</span>
-              </span>
-            </a>
-          {% empty %}
-            <p class="railblock__empty">Muudatusi ei ole.</p>
-          {% endfor %}
-        </div>
-      </section>
-
-      {% comment %}
-        Every open step with no date, in one list. "No idea when" is one
-        condition whatever the stored kind, and three two-row lists would be
-        three headings for six facts.
-
-        An open `Kaasamine` with no reply-by date is listed here too, saying
-        what it is and «Tähtaeg määramata», and its link opens the round's own
-        chronology row, where `Lõpeta kaasamine` is (docs/adr/0132).
-      {% endcomment %}
-      <section class="railblock" aria-label="Kuupäevata">
-        <h2 class="railblock__label">
-          Kuupäevata <span class="railblock__count">{{ work.undated_total }}</span>
-        </h2>
-        {% for item in work.undated %}
-          <a class="undatedrow" href="{{ item.record_url }}">
-            {% if item.is_feedback_wait %}
-              <span class="undatedrow__action">Ootame tagasisidet · {{ item.date_display }}: {{ item.text }}</span>
-            {% else %}
-              <span class="undatedrow__action">{{ item.text }}</span>
-            {% endif %}
-            <span class="undatedrow__matter">
-              {{ item.matter.title }}
-            </span>
-          </a>
-        {% empty %}
-          <p class="railblock__empty">
-            {% if is_self %}Igal sinu tegevusel on kuupäev.{% else %}Igal tegevusel on kuupäev.{% endif %}
-          </p>
-        {% endfor %}
-        {% if work.undated_total > work.undated|length %}
-          <a class="railblock__more" href="{{ work.undated_url }}">Näita kõiki {{ work.undated_total }} →</a>
-        {% endif %}
-      </section>
-
-      {% comment %}
-        Counts, never ratings. No rank, no percentage, no comparison with a
-        colleague — the same refusal Osakond opens with.
-
-        Open in both views. It used to be collapsed on one's own desk, on the
-        reasoning that a person already knows their own numbers (02-EKRAANID
-        §A); live use reversed that. What a person knows is roughly, and the
-        block was being opened every morning to find out exactly — so the
-        disclosure was not sparing anybody a decision, it was charging a click
-        for the answer. `is_self` no longer decides the state, only the label.
-      {% endcomment %}
-      <section class="railblock" aria-label="Statistika">
-        <details class="foldout" open>
-          <summary class="foldout__trigger">
-            <span class="foldout__label">{% if is_self %}Minu statistika{% else %}Statistika{% endif %}</span>
-          </summary>
-          <div class="foldout__body">
-            <div class="pw-stats">
-              <p class="pw-stats__grp">{{ work.stats.month_label }}</p>
-              {% for row in work.stats.month %}
-                <span>{{ row.label }} <b>{{ row.value }}</b></span>
-              {% endfor %}
-              <p class="pw-stats__grp">{{ work.stats.year_label }}</p>
-              {% for row in work.stats.year %}
-                <span>{{ row.label }} <b>{{ row.value }}</b></span>
-              {% endfor %}
-            </div>
-          </div>
-        </details>
-      </section>
-
-      {% comment %}
-        One calendar of this desk's dated work and the commencements on the
-        Teemad this person carries, under the statistics (docs/adr/0158,
-        amendment of 2026-10-26). Read-only, and its own block: nothing above
-        it — no band, figure or count — reads it.
-      {% endcomment %}
-      {% include "matters/partials/work_calendar.html" with calendar=calendar %}
     </aside>
   </div>
 </div>

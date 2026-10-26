@@ -438,7 +438,9 @@ def test_6_markers_are_events_beside_unchanged_stages(signed_in, specialist, nor
     strip = after[after.index('class="tl-strip"') :]
     strip = strip[: strip.index("</div>")]
     assert strip.count("tl-step--event") == 2
-    assert '<span class="tl-step__type">Eesolev tähtaeg</span>' in strip
+    # The upcoming deadline's kind is no longer written above it (owner's UX
+    # review of 2026-10-26); its title and diamond remain.
+    assert "Eesolev tähtaeg" not in strip
     assert '<span class="tl-step__type">Töövõit</span>' in strip
     assert "isiklik põhjus" in strip and "Töövõidu pealkiri" in strip
     phases_after = re.findall(

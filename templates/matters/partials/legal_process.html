@@ -109,8 +109,8 @@ nothing at all.
             title — and its dot is a diamond — so it reads apart from the
             procedure's steps without colour (`KIND_EVENT`).
           {% endcomment %}
-          {% if step.is_event %}
-            <span class="tl-step__type">{{ step.event_label }}</span>
+          {% if step.is_event and step.type_label %}
+            <span class="tl-step__type">{{ step.type_label }}</span>
           {% endif %}
           {% comment %}
             **A phase or an added step is dated by clicking it** (owner,
