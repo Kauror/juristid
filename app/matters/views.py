@@ -5449,6 +5449,86 @@ def change_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) ->
     return _render_overview(request, matter)
 
 
+#: Where «Nihuta kuupäeva» may send the person back to: the desk it was pressed
+#: on, by route name, never an arbitrary address the form carried.
+SHIFT_RETURN_ROUTES = ("matters:my_work", "matters:person_work")
+
+
+def _shift_return_url(request: HttpRequest) -> str:
+    """The Minu asjad page the form was drawn on, with its own query — or Minu asjad.
+
+    The form posts the page's path and query (`tagasi`) so a saved shift lands
+    back on the same timeline horizon and calendar period. Only a path that
+    resolves to one of `SHIFT_RETURN_ROUTES` on this host is followed; anything
+    else — another host, another page, garbage — returns to plain Minu asjad.
+    """
+    from urllib.parse import urlsplit
+
+    from django.urls import Resolver404, resolve
+
+    fallback = reverse("matters:my_work")
+    raw = request.POST.get("tagasi", "")
+    parts = urlsplit(raw)
+    if parts.scheme or parts.netloc or not parts.path.startswith("/"):
+        return fallback
+    try:
+        match = resolve(parts.path)
+    except Resolver404:
+        return fallback
+    if f"{match.namespace}:{match.url_name}" not in SHIFT_RETURN_ROUTES:
+        return fallback
+    return f"{parts.path}?{parts.query}" if parts.query else parts.path
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def shift_action_date_view(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse:
+    """«Nihuta kuupäeva» — move one current or planned task's day (app/matters/date_shift.py).
+
+    The action is resolved through the reader's `visible_to` on this Matter
+    first, so an identifier of a hidden row or of another Matter answers 404;
+    eligibility, staleness and the canonical edit are the use case's, under the
+    Matter's lock. Post/redirect/get back to the desk it was pressed on, with
+    the outcome as a message — success only once the save has committed.
+    """
+    from datetime import date as date_type
+
+    from app.matters.date_shift import shift_action_date
+
+    matter = get_visible_matter(request, pk)
+    action = get_object_or_404(
+        NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
+    )
+    back = _shift_return_url(request)
+    shift = request.POST.get("nihe", "")
+
+    def day(name: str) -> date_type | None:
+        try:
+            return date_type.fromisoformat(request.POST.get(name, ""))
+        except ValueError:
+            return None
+
+    source = day("kuupaev")
+    if source is None:
+        messages.error(request, "Kuupäeva ei muudetud: vorm oli puudulik. Laadi leht uuesti.")
+        return redirect(back)
+    try:
+        result = shift_action_date(
+            matter=matter,
+            action_id=action.pk,
+            actor=request.user,
+            shift=shift,
+            source_date=source,
+            proposed_date=day(f"uus_{shift}"),
+        )
+    except DomainError as error:
+        messages.error(request, str(error))
+        return redirect(back)
+    messages.success(request, result.message)
+    return redirect(back)
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])

@@ -464,6 +464,14 @@ urlpatterns = [
         views.change_planned_action_view,
         name="change_planned_action",
     ),
+    # «Nihuta kuupäeva» — one internal task's day by a day, a week or a month,
+    # current or planned, from Minu asjad and its calendar (docs/adr/0143,
+    # amendment of 2026-10-26).
+    path(
+        "teemad/<uuid:pk>/tegevus/<uuid:action_id>/nihuta/",
+        views.shift_action_date_view,
+        name="shift_action_date",
+    ),
     path(
         "teemad/<uuid:pk>/planeeritud/<uuid:action_id>/tehtud/",
         views.complete_planned_action_view,

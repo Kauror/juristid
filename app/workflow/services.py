@@ -927,6 +927,11 @@ def change_planned_action(
     the history keeps both. Keeps its responsible person and its restriction;
     the current action is untouched. A stale tab naming an action no longer
     planned refuses with nothing written.
+
+    **And its plan step and source sentence** (amendment of 2026-10-26, «Nihuta
+    kuupäeva»): the replacement is the same work, so it keeps what `Muuda` on
+    the current action keeps (`carry_plan_step`, docs/adr/0133 §4) — copied off
+    the locked row, never inferred.
     """
     from app.matters.locks import lock_matter_for_write
 
@@ -963,6 +968,8 @@ def change_planned_action(
         responsible=previous.responsible,
         created_by=actor,
         visibility_override=previous.visibility_override,
+        plan_step_id=previous.plan_step_id,
+        source_text=previous.source_text,
     )
     previous.status = ActionStatus.SUPERSEDED
     previous.ended_at = timezone.now()

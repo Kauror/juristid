@@ -1887,6 +1887,36 @@
     });
   }
 
+  /* ---- «Nihuta kuupäeva» -----------------------------------------------
+   * `Loobu` is a reset button, so with no script it still clears the choice.
+   * Here it also folds the control away and returns focus to the command that
+   * opened it — and to the row's `⋯` when the control was inside a row menu,
+   * so a cancelled shift leaves the reader where they started
+   * (templates/matters/partials/date_shift_form.html).
+   */
+  function bindDateShift(scope) {
+    scope.querySelectorAll("[data-dateshift-cancel]").forEach(function (button) {
+      if (!once(button, "DateShiftCancel")) {
+        return;
+      }
+      button.addEventListener("click", function () {
+        var holder = button.closest("details[data-dateshift]");
+        if (!holder) {
+          return;
+        }
+        holder.open = false;
+        var menu = holder.parentElement && holder.parentElement.closest("details");
+        var target = menu ? menu.querySelector("summary") : holder.querySelector("summary");
+        if (menu) {
+          menu.open = false;
+        }
+        if (target) {
+          target.focus();
+        }
+      });
+    });
+  }
+
   /* Each binder on its own, as in app.js (`safeInit`, docs/adr/0171): one that
      throws is logged under its name and the rest still bind — and the refusal
      focus that follows `bindAll` after a swap still runs. */
@@ -1912,6 +1942,7 @@
       bindDocumentRename,
       bindCopyLink,
       bindRowFilter,
+      bindDateShift,
     ].forEach(function (binder) {
       safeInit(binder.name, function () {
         binder(root);

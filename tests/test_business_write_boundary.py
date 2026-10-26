@@ -1039,6 +1039,26 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         events=(ChangeEventType.NEXT_ACTION_SET,),
     ),
+    # «Nihuta kuupäeva» (docs/adr/0143, amendment of 2026-10-26): the same
+    # canonical edit as the route above, so the same gate and the same event.
+    WriteRoute(
+        name="matters:shift_action_date",
+        label="Tegevuse kuupäeva nihutamine",
+        request=lambda w: (
+            {"pk": w["matter"].pk, "action_id": w["planned_action"].pk},
+            {
+                "nihe": "paev",
+                "kuupaev": w["planned_action"].target_date.isoformat(),
+                "tagasi": "/minu-asjad/",
+            },
+        ),
+        probe=lambda w: (
+            w["planned_action"]
+            .__class__.objects.values_list("status", flat=True)
+            .get(pk=w["planned_action"].pk)
+        ),
+        events=(ChangeEventType.NEXT_ACTION_SET,),
+    ),
     WriteRoute(
         name="matters:complete_planned_action",
         label="Planeeritud tegevuse lõpetamine",

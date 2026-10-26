@@ -392,6 +392,43 @@ class WorkItem:
         return self.matter_url
 
     @property
+    def is_date_shiftable(self) -> bool:
+        """Whether «Nihuta kuupäeva» is offered on this row (app/matters/date_shift.py).
+
+        The record half of the rule, read off what the row already carries: a
+        `Teen` step with a deadline recorded to an exact day, current or planned,
+        not an `Arvamuse järelkontroll`, with somebody responsible. Every other
+        source — an `Arvamuse tähtaeg`, an `Oluline tähtaeg`, a feedback wait —
+        and every review date is left to its own full form. The person's right
+        to write is the template's question; the server asks both again under
+        the lock.
+        """
+        return (
+            self.is_action
+            and self.action_kind == ActionKind.DO
+            and self.date_semantics == DateSemantics.DEADLINE
+            and self.date_precision == DatePrecision.EXACT
+            and self.when is not None
+            and not self.is_follow_up
+            and self.responsible is not None
+            and bool(self.matter.is_open)
+        )
+
+    @property
+    def shift_choices(self) -> list[Any]:
+        """The three proposed days, computed on the server from the stored one."""
+        from app.matters.date_shift import choices
+
+        return choices(self.when) if self.when is not None else []
+
+    @property
+    def full_edit_url(self) -> str:
+        """«Muuda täpsemalt» — the row's own full `Muuda`, current or planned."""
+        if self.is_planned:
+            return self.planned_edit_url
+        return f"{self.matter_url}#lisa-jargmine"
+
+    @property
     def planned_edit_url(self) -> str:
         """A planned row's own `Muuda` on the Teema page (docs/adr/0143 §A3)."""
         return f"{self.matter_url}#planeeritud-{self.object_id}"

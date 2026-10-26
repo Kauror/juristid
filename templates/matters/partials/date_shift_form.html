@@ -1,0 +1,45 @@
+{% comment %}
+«Nihuta kuupäeva» — one internal task's day moved by a day, a week or a month
+(app/matters/date_shift.py, docs/adr/0143 amendment of 2026-10-26).
+
+Choosing a move only previews it: the three proposed days are computed on the
+server from the stored day and the chosen one is shown under the choices (CSS
+`:has`, no script). Nothing is written until `Salvesta`, and the server
+recomputes the day itself and refuses if the step or its day changed since this
+was drawn (`kuupaev`, `uus_<move>`).
+
+`tagasi` is this page's own address, so the save lands back on the same
+timeline horizon and calendar period; the server follows it only to Minu asjad
+or a colleague's desk.
+
+Used in a work row's `⋯` menu and in the calendar's event details — the same
+form and the same server operation from both.
+{% endcomment %}
+<form class="dateshift" method="post"
+      action="{% url 'matters:shift_action_date' pk=item.matter_id action_id=item.object_id %}">
+  {% csrf_token %}
+  <input type="hidden" name="kuupaev" value="{{ item.when|date:'Y-m-d' }}">
+  <input type="hidden" name="tagasi" value="{{ request.get_full_path }}">
+  <p class="dateshift__current">Praegu <b>{{ item.display_date }}</b></p>
+  <fieldset class="dateshift__choices">
+    <legend class="dateshift__legend">Nihuta kuupäeva: {{ item.text|truncatechars:60 }}</legend>
+    {% for choice in item.shift_choices %}
+      <label class="dateshift__choice">
+        <input type="radio" name="nihe" value="{{ choice.key }}" required>
+        <span>{{ choice.label }}</span>
+      </label>
+      <input type="hidden" name="uus_{{ choice.key }}" value="{{ choice.day|date:'Y-m-d' }}">
+    {% endfor %}
+  </fieldset>
+  <p class="dateshift__preview" aria-live="polite">
+    <span class="dateshift__none">Vali, kui palju nihutada.</span>
+    {% for choice in item.shift_choices %}
+      <span class="dateshift__new" data-shift="{{ choice.key }}">Uus kuupäev <b>{{ choice.display }}</b></span>
+    {% endfor %}
+  </p>
+  <div class="dateshift__actions">
+    <button class="button button--primary button--tiny" type="submit">Salvesta</button>
+    <button class="button button--quiet button--tiny" type="reset" data-dateshift-cancel>Loobu</button>
+    <a class="dateshift__full" href="{{ item.full_edit_url }}">Muuda täpsemalt</a>
+  </div>
+</form>
