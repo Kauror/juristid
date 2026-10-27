@@ -8,7 +8,7 @@
     python manage.py lovable_sync control --mode off|compare|apply --reason R
     python manage.py lovable_sync control --cut-over \\
         --operator-intent lovable-sync-cutover --reason R
-    python manage.py lovable_sync resolve --reference 2025_218 --field stage --note N
+    python manage.py lovable_sync resolve --reference 2026_501 --field stage --note N
 
 `run` reads Lovable as the service login named in the credentials file and
 reconciles the pilot's 100 Teemad. It needs ``JURISTID_LOVABLE_SYNC`` and
