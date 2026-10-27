@@ -19,7 +19,8 @@
 # (database; also what Haldus shows). Final cutover: `lovable_sync control
 # --cut-over …`, then remove the cron file. The credentials stay on the host:
 # Docker reads them as root (--env-file) and the container sees only the values.
-# Never `set -x`: the environment carries the service login.
+# Never `set -x`: the environment carries the service login. Docker's --env-file
+# takes values literally: write KEY=value with no quotes.
 set -u -o pipefail
 
 APPDATA=/mnt/user/appdata/juristid-main
@@ -48,12 +49,16 @@ exec 9>/tmp/juristid-lovable-sync.lock
 flock -n 9 || { say "SKIP another synchronisation is running"; exit 0; }
 
 if [ -e "$SYNC_DIR/PAUSED" ]; then say "SKIP paused on the host ($SYNC_DIR/PAUSED)"; exit 0; fi
-if [ -d /tmp/juristid-host-lock ]; then
+# The release lock, taken (not only looked at): a release cannot start under a run.
+if ! mkdir /tmp/juristid-host-lock 2>/dev/null; then
   say "SKIP a release holds /tmp/juristid-host-lock ($(cat /tmp/juristid-host-lock/owner 2>/dev/null))"
   exit 0
 fi
+echo "owner=lovable-sync pid=$$ $(date -u +%FT%TZ)" > /tmp/juristid-host-lock/owner
+trap 'rm -rf /tmp/juristid-host-lock' EXIT
 
-IMAGE="$(docker inspect -f '{{.Config.Image}}' juristid-main-web 2>/dev/null)"
+# The image the site is SERVING (its id), never whatever its tag points at now.
+IMAGE="$(docker inspect -f '{{.Image}}' juristid-main-web 2>/dev/null)"
 HEALTH="$(docker inspect -f '{{.State.Health.Status}}' juristid-main-web 2>/dev/null)"
 if [ -z "$IMAGE" ] || [ "$HEALTH" != healthy ]; then say "FAIL web is not healthy (${HEALTH:-absent})"; exit 1; fi
 
@@ -71,11 +76,12 @@ one_off() {
 }
 
 DUE="$(one_off due --trigger "$TRIGGER" | tail -1)"
-say "$DUE (image $IMAGE)"
+say "${DUE:-<no answer>} (image ${IMAGE:7:12})"
 case "$DUE" in
   "DUE APPLY") MODE=apply ;;
   "DUE COMPARE") MODE=compare ;;
-  *) exit 0 ;;
+  "NOT_DUE "*) exit 0 ;;
+  *) say "FAIL the due check gave no answer (container or database)"; exit 1 ;;
 esac
 
 SET=""

@@ -59,7 +59,8 @@
       {% csrf_token %}
       <button type="submit" class="button button--secondary">Kontrolli muudatusi</button>
     </form>
-    <p class="acctnote">Võrdleb viimati loetud Lovable'i seisu Juristide praeguse seisuga. Midagi ei muudeta.</p>
+    <p class="acctnote">Võrdleb viimati loetud Lovable'i seisu Juristide praeguse seisuga. Ühtegi teemat ei muudeta.</p>
+    {% if table_run %}<p class="acctnote">Tabel: {{ table_run.get_trigger_display }} {{ table_run.started_at|date:"j.n.Y H:i" }}{% if table_run.snapshot_taken_at %}, Lovable'i seis {{ table_run.snapshot_taken_at|date:"j.n.Y H:i" }}{% endif %}.</p>{% endif %}
     {% if pending %}
       <div class="accttable">
         <table class="data-table">

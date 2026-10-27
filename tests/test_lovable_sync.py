@@ -175,7 +175,11 @@ def _run(
     return run_sync(
         trigger=trigger,
         transport=cohort["source"],
-        backup_set=kw.pop("backup_set", "sets/20261027T221000Z"),
+        # A set taken five minutes before the run, as the host script takes one.
+        backup_set=kw.pop(
+            "backup_set",
+            (moment - dt.timedelta(minutes=5)).astimezone(dt.UTC).strftime("sets/%Y%m%dT%H%M%SZ"),
+        ),
         now=lambda: moment,
         pause=lambda _s: None,
         **kw,
@@ -649,9 +653,10 @@ def test_a_crash_inside_one_teema_rolls_that_teema_back(cohort, monkeypatch):
     assert _decisions(run, "2026_501")["*"].outcome == SyncOutcome.FAILED
     assert _matter("2026_505").title == "Uus 505"
     assert run.counts["failed"] == 1
+    assert run.status == SyncRunStatus.FAILED  # one Teema not written is not a success
 
 
-def test_a_second_run_waits_for_the_first(cohort):
+def test_a_second_run_is_refused_while_one_holds_the_lock(cohort):
     other = connections["default"].copy()
     try:
         with other.cursor() as cursor:
@@ -1030,3 +1035,197 @@ def test_run_needs_the_one_off_switches(db, settings):
     settings.LOVABLE_SYNC_ENABLED = False
     with pytest.raises(CommandError, match="JURISTID_LOVABLE_SYNC"):
         call_command("lovable_sync", "run", "--trigger", "scheduled")
+
+
+# ---------------------------------------------------------------------------
+# The independent review's findings (2026-10-27), each pinned
+# ---------------------------------------------------------------------------
+
+
+def test_a_day_the_lawyer_reviewed_in_place_is_not_the_baseline(cohort):
+    """«Vaatasin üle» moves the pilot's step's day in place, keeping its id: the
+    baseline is the day the pilot wrote, so the lawyer's day is a local change and
+    a later source day conflicts instead of replacing it."""
+    from app.workflow.services import acknowledge_review
+
+    matter = _matter("2026_501")
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    acknowledge_review(
+        action=step, actor=cohort["world"]["mari"], next_review_date=dt.date(2026, 11, 20)
+    )
+    cohort["source"].edit("2026_501", tegevuse_tahtaeg="2026-11-25")
+    run = _run(cohort)
+    assert _decisions(run, "2026_501")["next_action_date"].outcome == SyncOutcome.CONFLICT
+    step.refresh_from_db()
+    assert NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).target_date == dt.date(
+        2026, 11, 20
+    )
+
+
+def test_a_resolved_wording_does_not_let_the_source_move_the_lawyers_own_step(cohort):
+    from app.matters.workspace import change_current_action
+
+    matter = _matter("2026_505")
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    change_current_action(
+        matter=matter,
+        actor=cohort["world"]["jaan"],
+        action_id=step.pk,
+        text="Minu oma sõnastus",
+        kind=step.kind,
+        date_semantics=step.date_semantics,
+        target_date=step.target_date,
+    )
+    cohort["source"].edit("2026_505", jargmiseks="Lovable uus sõnastus")
+    _run(cohort)
+    lovable_sync.resolve_field(reference="2026_505", field_name="next_action_text", note="jääb")
+    cohort["source"].edit("2026_505", tegevuse_tahtaeg="2026-12-03")
+    run = _run(cohort, at=NIGHT + dt.timedelta(days=1))
+    decision = _decisions(run, "2026_505")["next_action_date"]
+    assert decision.outcome == SyncOutcome.REVIEW_REQUIRED
+    assert decision.reason == lovable_sync.NOT_SOURCE_STEP
+    assert (
+        NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).target_date
+        == step.target_date
+    )
+
+
+def test_converged_wording_becomes_the_baseline_and_a_later_day_moves(cohort):
+    from app.matters.workspace import change_current_action
+
+    matter = _matter("2026_505")
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    change_current_action(
+        matter=matter,
+        actor=cohort["world"]["jaan"],
+        action_id=step.pk,
+        text="Ootan ministeeriumi vastust",
+        kind="WAIT",
+        date_semantics="REVIEW_ON",
+        target_date=dt.date(2026, 11, 22),
+    )
+    cohort["source"].edit(
+        "2026_505", jargmiseks="Ootan ministeeriumi vastust", tegevuse_tahtaeg="2026-11-22"
+    )
+    first = _run(cohort)
+    assert (
+        _decisions(first, "2026_505")["next_action_text"].outcome == SyncOutcome.ALREADY_CONVERGED
+    )
+    cohort["source"].edit("2026_505", tegevuse_tahtaeg="2026-11-29")
+    second = _run(cohort, at=NIGHT + dt.timedelta(days=1))
+    assert "next_action_text" not in _decisions(second, "2026_505")
+    after = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    assert (after.text, after.kind, after.target_date) == (
+        "Ootan ministeeriumi vastust",
+        "WAIT",
+        dt.date(2026, 11, 29),
+    )
+
+
+def test_a_value_that_comes_back_is_applied_again_without_jamming(cohort):
+    for night, day in enumerate(["2026-11-29", "2026-11-15", "2026-11-29"]):
+        cohort["source"].edit("2026_501", tegevuse_tahtaeg=day)
+        run = _run(cohort, at=NIGHT + dt.timedelta(days=night))
+        assert run.status == SyncRunStatus.SUCCEEDED, run.error
+        assert _decisions(run, "2026_501") == {} or "*" not in _decisions(run, "2026_501")
+    step = NextAction.objects.get(matter=_matter("2026_501"), status=ActionStatus.OPEN)
+    assert step.target_date == dt.date(2026, 11, 29)
+
+
+def test_a_run_with_a_failed_teema_is_not_a_success(cohort, monkeypatch):
+    import app.workflow.services as workflow_services
+
+    cohort["source"].edit("2026_501", tegevuse_tahtaeg="2026-11-29")
+    monkeypatch.setattr(workflow_services, "set_next_action", lambda **_kw: 1 / 0)
+    run = _run(cohort)
+    assert run.status == SyncRunStatus.FAILED
+    assert run.error.startswith(lovable_sync.PARTIAL)
+    assert not lovable_sync.sync_health(now=NIGHT + dt.timedelta(hours=1)).ok
+
+
+def test_standing_conflicts_do_not_hold_every_later_night(cohort, monkeypatch):
+    from app.matters.services import set_matter_title
+
+    monkeypatch.setattr(lovable_sync, "MAX_NEW_CONFLICTS", 0)
+    set_matter_title(matter=_matter("2026_501"), value="Juristi oma", actor=cohort["world"]["mari"])
+    cohort["source"].edit("2026_501", teema="Lovable oma")
+    first = _run(cohort)
+    assert first.status == SyncRunStatus.REVIEW_ONLY  # a new conflict: the night is held
+    cohort["source"].edit("2026_505", teema="Uus 505")
+    second = _run(cohort, at=NIGHT + dt.timedelta(days=1))
+    assert second.status == SyncRunStatus.SUCCEEDED, second.error
+    assert _matter("2026_505").title == "Uus 505"
+
+
+def test_a_closed_teema_gets_no_new_link(cohort):
+    cohort["source"].edit("2026_503", onenote_link=NEW_URL)
+    run = _run(cohort)
+    assert _decisions(run, "2026_503")["onenote_link"].reason == lovable_sync.MATTER_CLOSED
+    assert not MatterSourceReference.objects.filter(onenote_url=NEW_URL).exists()
+
+
+def test_a_closed_teema_already_matching_the_source_converges(cohort):
+    from app.matters.services import set_matter_title
+
+    set_matter_title(matter=_matter("2026_503"), value="Uus nimi", actor=cohort["world"]["mari"])
+    cohort["source"].edit("2026_503", teema="Uus nimi")
+    run = _run(cohort)
+    assert _decisions(run, "2026_503")["title"].outcome == SyncOutcome.ALREADY_CONVERGED
+
+
+def test_check_changes_nothing_but_its_own_findings(cohort):
+    lovable_sync.set_mode(SyncMode.COMPARE, reason="t")
+    cohort["source"].edit("2026_501", hetkeseis="Valitsuses")
+    _run(cohort)
+    states = list(
+        LovableSyncState.objects.order_by("reference").values("applied", "observed", "observed_run")
+    )
+    snapshots = list(lovable_sync.LovableSyncSnapshot.objects.values_list("pk", flat=True))
+    check = run_sync(trigger=SyncTrigger.CHECK, now=lambda: NIGHT + dt.timedelta(days=40))
+    assert check.status == SyncRunStatus.SUCCEEDED
+    assert (
+        list(
+            LovableSyncState.objects.order_by("reference").values(
+                "applied", "observed", "observed_run"
+            )
+        )
+        == states
+    )
+    assert list(lovable_sync.LovableSyncSnapshot.objects.values_list("pk", flat=True)) == snapshots
+
+
+def test_check_seeds_nothing(cohort):
+    check = run_sync(trigger=SyncTrigger.CHECK, now=lambda: NIGHT)
+    assert check.status == SyncRunStatus.FAILED and check.error.startswith("COHORT_SIZE")
+    assert not LovableSyncState.objects.exists()
+
+
+@pytest.mark.parametrize(
+    ("backup_set", "fresh"),
+    [
+        ("sets/20261027T221000Z", True),  # 5 minutes before 00:15 Tallinn (22:15 UTC)
+        ("sets/20261027T180000Z", False),  # hours old
+        ("sets/20200101T000000Z", False),  # invented
+        ("sets/20261027T230000Z", False),  # after the run started
+        ("../etc", False),
+    ],
+)
+def test_only_a_fresh_backup_set_opens_the_mutating_stage(backup_set, fresh):
+    started = dt.datetime(2026, 10, 27, 22, 15, tzinfo=dt.UTC)
+    assert (lovable_sync.fresh_backup_set(backup_set, started) == backup_set) is fresh
+
+
+def test_a_stale_backup_set_writes_nothing(cohort):
+    cohort["source"].edit("2026_501", teema="Uus 501")
+    run = _run(cohort, backup_set="sets/20261020T000000Z")
+    assert run.status == SyncRunStatus.REVIEW_ONLY and run.error == lovable_sync.NO_BACKUP
+    assert _matter("2026_501").title == "Näidisteema 2026_501"
+
+
+def test_a_resolved_owner_is_not_learnt_as_a_name(cohort):
+    cohort["source"].edit("2026_501", uus_vastutaja="Jaan")
+    lovable_sync.set_mode(SyncMode.COMPARE, reason="t")
+    _run(cohort)
+    lovable_sync.resolve_field(reference="2026_501", field_name="owner", note="Mari jääb")
+    resolver = lovable_sync.OwnerResolver(LovableSyncState.objects.all())
+    assert resolver.resolve("Jaan") == (str(cohort["world"]["jaan"].pk), "")

@@ -48,7 +48,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from django.db import connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.utils import timezone
 
 from app.legacy_import.lovable_pilot import PILOT, SOURCE_SYSTEM, SOURCE_TABLE
@@ -81,7 +81,12 @@ EXPECTED_COHORT = 100
 #: Circuit breakers (docs/adr/0192 §7): a night that would touch more Teemad than
 #: this, or raise more conflicts, writes nothing and waits for a person.
 MAX_CHANGED_MATTERS = 20
-MAX_CONFLICTS = 10
+#: Conflicts stay until a person resolves them, so the breaker is on the *rise*
+#: since the previous night, never on the standing total.
+MAX_NEW_CONFLICTS = 10
+#: How old a backup set may be when the mutating stage starts (the host script
+#: takes and verifies one minutes before; a stale or invented name writes nothing).
+BACKUP_MAX_AGE = dt.timedelta(hours=2)
 #: More cohort rows missing from the source than this is a broken read or a
 #: broken source, never a night's work: the run stops.
 MAX_MISSING = 5
@@ -121,6 +126,7 @@ DATE_PAST = "DATE_IN_PAST"
 NOT_EXACT = "STEP_DATE_NOT_EXACT"
 LINK_NOT_HTTPS = "LINK_NOT_HTTPS"
 BREAKER = "CIRCUIT_BREAKER"
+PARTIAL = "PARTIAL_FAILURE"
 NO_BACKUP = "NO_VERIFIED_BACKUP"
 COMPARE_ONLY = "COMPARE_ONLY"
 
@@ -179,7 +185,7 @@ SOURCE_FIELDS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "owner": lambda b: operative_owner(b["row"]),
     "next_action_text": lambda b: text_value(b["row"].get("jargmiseks")),
     "next_action_date": lambda b: day_value(b["row"].get("tegevuse_tahtaeg")),
-    "onenote_link": lambda b: str(b["row"].get("onenote_link") or ""),
+    "onenote_link": lambda b: str(b["row"].get("onenote_link") or "").strip(),
     "stage": lambda b: text_value(b["row"].get("hetkeseis")),
     "opinion_deadline": lambda b: day_value(b["row"].get("arvamuse_tahtaeg")),
     "sent": lambda b: text_value(b["row"].get("valja")),
@@ -237,7 +243,14 @@ def _action_dict(action: Any) -> dict[str, Any] | None:
 
 
 def _imported_action(matter: Any) -> tuple[dict[str, Any] | None, str]:
-    """The step the pilot wrote and the treatment its package stated."""
+    """The step the pilot wrote and the treatment its package stated.
+
+    Read off the pilot's own ``NEXT_ACTION_SET`` event, not off the row as it is
+    now: «Vaatasin üle» and a rescheduled check change a step's day **in place**,
+    keeping its id, and a baseline taken from the edited row would make the
+    lawyer's day look like the pilot's and let a source change replace it. A row
+    edited in place since gets an unknowable precision, so it reads as a local
+    change, never as the baseline."""
     from app.audit.models import ChangeEvent
     from app.legacy_import.models import EvidencePilotRecord
     from app.workflow.models import NextAction
@@ -255,10 +268,24 @@ def _imported_action(matter: Any) -> tuple[dict[str, Any] | None, str]:
         .order_by("occurred_at")
         .first()
     )
-    treatment = (
-        str(((event.payload or {}).get("provenance") or {}).get("treatment") or "") if event else ""
+    if action is None or event is None:
+        return None, ""
+    payload = event.payload or {}
+    treatment = str((payload.get("provenance") or {}).get("treatment") or "")
+    written = _action_dict(action) or {}
+    written.update(
+        kind=payload.get("kind", written["kind"]),
+        date_semantics=payload.get("date_semantics", written["date_semantics"]),
+        target_date=payload.get("target_date"),
     )
-    return _action_dict(action), treatment
+    edited = ChangeEvent.objects.filter(
+        matter=matter,
+        object_id=record.target_id,
+        event_type__in=("NEXT_ACTION_REVIEWED", "NEXT_ACTION_RESCHEDULED"),
+    ).exists()
+    if edited:
+        written["date_precision"] = "?"
+    return written, treatment
 
 
 def _imported_owner_id(matter: Any) -> str | None:
@@ -384,6 +411,10 @@ def _three_way(
     if c_src == a_src:
         outcome = SyncOutcome.UNCHANGED if b == a_tgt else SyncOutcome.LOCAL_TEST_CHANGE
         return FieldDecision(name, outcome, **common)
+    if c_tgt is not None and b == c_tgt:
+        # Juristid already says what the source now says — even for a field a
+        # machine may not write: the baseline catches up and nothing is written.
+        return FieldDecision(name, SyncOutcome.ALREADY_CONVERGED, target=c_tgt, **common)
     if held:
         return FieldDecision(name, SyncOutcome.REVIEW_REQUIRED, held, **common)
     if b == c_tgt:
@@ -404,6 +435,8 @@ class OwnerResolver:
         pairs: dict[str, set[str]] = {}
         for state in states:
             owner = state.applied.get("owner") or {}
+            if owner.get("resolved"):
+                continue  # an operator's resolution says who kept the file, not who a name is
             if owner.get("source") and owner.get("target") not in (None, "?"):
                 pairs.setdefault(name_key(owner["source"]), set()).add(owner["target"])
         self.pairs = pairs
@@ -461,6 +494,9 @@ def _step_decisions(
                 a_text,
                 b_view or None,
                 c_text,
+                # The lawyer wrote the source's sentence: that step is now the
+                # baseline, and its wording is the source's own.
+                target=b_step if converged else None,
             )
         )
     else:
@@ -523,11 +559,13 @@ def _step_decisions(
             )
         )
         return out
+    if a_step and (b_step or None) != a_step:
+        # The lawyer's step differs from what was applied: that is a conflict to
+        # show, whatever else would also have held the change.
+        out.append(FieldDecision("next_action_date", SyncOutcome.CONFLICT, **common))
+        return out
     if reason:
         out.append(FieldDecision("next_action_date", SyncOutcome.REVIEW_REQUIRED, reason, **common))
-        return out
-    if (b_step or None) != a_step:
-        out.append(FieldDecision("next_action_date", SyncOutcome.CONFLICT, **common))
         return out
     target = {**a_step, "target_date": c_date}
     out.append(FieldDecision("next_action_date", SyncOutcome.ELIGIBLE, target=target, **common))
@@ -609,6 +647,8 @@ def plan_matter(
     )
     if not src["onenote_link"]:
         link_held = HELD  # a removed link is a person's call, never an erasure
+    if closed:
+        link_held = MATTER_CLOSED
     plan.decisions.append(
         _three_way(
             "onenote_link",
@@ -648,9 +688,12 @@ def _provenance(
     }
 
 
-def idempotency_key(state: LovableSyncState, decision: FieldDecision) -> str:
+def idempotency_key(state: LovableSyncState, decision: FieldDecision, version: int | None) -> str:
+    """One applied write per source row version and field. A value may come back
+    (12.11 → 15.11 → 12.11 → 15.11); a Lovable version never does, because its
+    guard makes every save exactly one higher."""
     material = json.dumps(
-        [str(state.source_id), decision.field, decision.baseline, decision.source],
+        [str(state.source_id), decision.field, version, decision.source],
         sort_keys=True,
         default=str,
     )
@@ -713,7 +756,8 @@ def _sync_batch(run: LovableSyncRun, snapshot: dict[str, Any]) -> Any:
         defaults={
             "contract_version": MAPPING_VERSION,
             "started_at": run.started_at,
-            "reconciliation_status": ReconciliationStatus.RUNNING,
+            "reconciliation_status": ReconciliationStatus.COMPLETED,
+            "finished_at": run.started_at,
             "notes": f"Lovable sync run {run.pk}",
         },
     )
@@ -799,7 +843,7 @@ def apply_matter(
                 baseline=decision.baseline,
                 current=new_b,
                 source=decision.source,
-                idempotency_key=idempotency_key(state, decision),
+                idempotency_key=idempotency_key(state, decision, fresh.version),
             )
         for decision in fresh.decisions:
             if decision.outcome == SyncOutcome.ALREADY_CONVERGED:
@@ -828,6 +872,10 @@ def _advance(applied: dict[str, Any], decision: FieldDecision) -> None:
     """B already says what C says: the baseline catches up, nothing is written."""
     if decision.field == "next_action_text":
         applied["next_action_text"] = {"source": decision.source}
+        if isinstance(decision.target, dict):
+            # Juristid's open step now reads exactly as Lovable's sentence: a later
+            # day-only change of that sentence may move it.
+            applied["next_action"] = {"target": decision.target, "treatment": "SOURCE_NEXT_STEP"}
     elif decision.field == "next_action_date":
         applied["next_action_date"] = {"source": decision.source}
         if isinstance(decision.target, dict):
@@ -897,15 +945,20 @@ def run_lock() -> Any:
     try:
         yield
     finally:
-        with connection.cursor() as cursor:
-            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, LOCK_KEY])
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, LOCK_KEY])
+        except DatabaseError:
+            # The session lock dies with the connection; closing it releases it and
+            # never masks the error the run itself raised.
+            connection.close()
 
 
 def run_key_for(trigger: str, now: dt.datetime) -> str:
     local = now.astimezone(TALLINN)
     if trigger == SyncTrigger.SCHEDULED:
         return local.date().isoformat()
-    return f"{local:%Y-%m-%dT%H%M%S}-{trigger.lower()}"
+    return f"{local:%Y-%m-%dT%H%M%S.%f}-{trigger.lower()}"
 
 
 @dataclass
@@ -1016,6 +1069,14 @@ def _observe(state: LovableSyncState, plan: MatterPlan, run: LovableSyncRun) -> 
     LovableSyncState.objects.filter(pk=state.pk).update(**updates, updated_at=timezone.now())
 
 
+def fresh_backup_set(backup_set: str, started: dt.datetime) -> str:
+    """The set's name if it is a set taken shortly before this run, else ``""``."""
+    if not _BACKUP_SET.match(backup_set or ""):
+        return ""
+    taken = dt.datetime.strptime(backup_set[5:], "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC)
+    return backup_set if dt.timedelta(0) <= started - taken <= BACKUP_MAX_AGE else ""
+
+
 def run_sync(
     *,
     trigger: str,
@@ -1044,14 +1105,18 @@ def run_sync(
 
     with run_lock():
         mode = SyncMode.COMPARE if trigger == SyncTrigger.CHECK else ctl.mode
-        run = LovableSyncRun.objects.create(
-            run_key=key,
-            trigger=trigger,
-            mode=mode,
-            started_at=started,
-            mapping_version=MAPPING_VERSION,
-            backup_set=backup_set if _BACKUP_SET.match(backup_set or "") else "",
-        )
+        try:
+            with transaction.atomic():
+                run = LovableSyncRun.objects.create(
+                    run_key=key,
+                    trigger=trigger,
+                    mode=mode,
+                    started_at=started,
+                    mapping_version=MAPPING_VERSION,
+                    backup_set=fresh_backup_set(backup_set, started),
+                )
+        except IntegrityError as error:
+            raise SyncRefused("DUPLICATE", f"Run {key} already exists.") from error
         try:
             _execute(run, transport=transport, clock=clock, pause=pause)
         except (SourceError, SyncRefused) as error:
@@ -1079,7 +1144,14 @@ def _execute(
     from app.matters.models import Matter
     from app.search.indexing import refresh_matters
 
-    states = ensure_states()
+    check = run.trigger == SyncTrigger.CHECK
+    # `Kontrolli muudatusi` reads only: it seeds nothing, advances no baseline,
+    # observes nothing and prunes nothing; it records its own findings, no more.
+    states = (
+        list(LovableSyncState.objects.select_related("matter").order_by("reference"))
+        if check
+        else ensure_states()
+    )
     if len(states) != EXPECTED_COHORT:
         raise SyncRefused(
             "COHORT_SIZE",
@@ -1126,10 +1198,18 @@ def _execute(
 
     changed = [p for p in plans if p.eligible]
     conflicts = sum(1 for p in plans if SyncOutcome.CONFLICT in p.outcomes())
+    previous_run = (
+        LovableSyncRun.objects.exclude(pk=run.pk)
+        .exclude(trigger=SyncTrigger.CHECK)
+        .exclude(status=SyncRunStatus.FAILED)
+        .order_by("-started_at")
+        .first()
+    )
+    conflicts_before = (previous_run.counts or {}).get("conflicts", 0) if previous_run else 0
     hold = ""
-    if run.mode != SyncMode.APPLY or run.trigger == SyncTrigger.CHECK:
+    if run.mode != SyncMode.APPLY or check:
         hold = COMPARE_ONLY
-    elif len(changed) > MAX_CHANGED_MATTERS or conflicts > MAX_CONFLICTS:
+    elif len(changed) > MAX_CHANGED_MATTERS or conflicts - conflicts_before > MAX_NEW_CONFLICTS:
         hold = BREAKER
     elif not run.backup_set:
         hold = NO_BACKUP
@@ -1159,7 +1239,7 @@ def _execute(
     # business write, only the record of what Lovable and Juristid agree on.
     with transaction.atomic():
         for plan in final:
-            if plan.status or plan.state.pk is None:
+            if check or plan.status or plan.state.pk is None:
                 continue
             state = LovableSyncState.objects.select_for_update().get(pk=plan.state.pk)
             applied = dict(state.applied)
@@ -1179,7 +1259,7 @@ def _execute(
     for plan in final:
         counts.add(plan)
         _record(run, plan)
-        if not plan.status:
+        if not plan.status and not check:
             _observe(LovableSyncState.objects.get(pk=plan.state.pk), plan, run)
     _observe_index(
         counts, snapshot, cohort_ids, previous_snapshot.document if previous_snapshot else None
@@ -1190,14 +1270,22 @@ def _execute(
     run.counts = counts.as_dict()
     run.verified = verified
     run.finished_at = finished
-    if hold in (BREAKER, NO_BACKUP):
+    if not verified:
+        run.status = SyncRunStatus.FAILED
+        run.error = "VERIFY: an applied Teema does not read back as written."
+    elif counts.failed:
+        # The others were written and verified; the run still is not a success.
+        run.status = SyncRunStatus.FAILED
+        run.error = f"{PARTIAL}: {counts.failed} Teema(d) not applied; nothing half-written."
+    elif hold in (BREAKER, NO_BACKUP):
         run.status = SyncRunStatus.REVIEW_ONLY
         run.error = hold
     else:
-        run.status = SyncRunStatus.SUCCEEDED if verified else SyncRunStatus.FAILED
-        run.error = "" if verified else "VERIFY: an applied Teema does not read back as written."
+        run.status = SyncRunStatus.SUCCEEDED
+        run.error = ""
     run.save(update_fields=["counts", "verified", "finished_at", "status", "error", "updated_at"])
-    prune_snapshots(now=finished)
+    if not check:
+        prune_snapshots(now=finished)
 
 
 def prune_snapshots(*, now: dt.datetime) -> int:
@@ -1230,8 +1318,21 @@ def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncD
         before = (applied.get(field_name) or {}).get("source")
         if field_name in ("next_action_text", "next_action_date"):
             applied[field_name] = {"source": value}
-            applied["next_action"] = {**applied.get("next_action", {}), "target": b["next_action"]}
-        elif field_name in ("title", "owner", "onenote_link"):
+            step = b["next_action"]
+            # The step Juristid keeps is the source's only if it reads as the
+            # source's sentence; otherwise a later day change of that sentence
+            # must never move the lawyer's own step.
+            source_wording = bool(step) and text_value(step["text"]) == text_value(
+                state.observed.get("next_action_text")
+            )
+            applied["next_action"] = {
+                "target": step,
+                "treatment": "SOURCE_NEXT_STEP" if source_wording else "RESOLVED_LOCAL",
+            }
+        elif field_name == "owner":
+            # Who kept the file, not who the name is: never taught to the resolver.
+            applied[field_name] = {"source": value, "target": b[field_name], "resolved": True}
+        elif field_name in ("title", "onenote_link"):
             applied[field_name] = {"source": value, "target": b[field_name]}
         else:
             applied[field_name] = {"source": value}

@@ -92,10 +92,11 @@ recurring transfer on 2026-10-27, scoped to this cohort. Host-side files under
 Per field: **A** the source value Juristid last accepted, **B** Juristid now,
 **C** the source tonight. A is seeded from the pilot's immutable provenance —
 the raw row in `MatterSourceReference.source_row_raw`, the reviewed title, the
-pilot's step (`EvidencePilotRecord` → `NextAction`, with its package treatment
-from the `NEXT_ACTION_SET` event) and the import owner (the first hand-over's
-`from`, or the owner if never handed over) — never from the current row, which
-may already carry a lawyer's edit.
+pilot's step as its own `NEXT_ACTION_SET` event recorded it (kind, date meaning,
+day, package treatment — a step whose day was since changed in place by «Vaatasin
+üle» or a reschedule reads as a local change) and the import owner (the first
+hand-over's `from`, or the owner if never handed over) — never from the current
+row, which may already carry a lawyer's edit.
 
 | | |
 |---|---|
@@ -110,7 +111,12 @@ Comparison uses canonical values: whitespace-collapsed NFC text, ISO dates, and
 for names Lovable's own `raw_norm`. **Last applied and last observed are kept
 apart** (`LovableSyncState.applied` / `.observed`): a held change stays pending
 every night until the source returns, Juristid converges, or an operator
-resolves it (`lovable_sync resolve`, which records a decision). Fields the pilot
+resolves it (`lovable_sync resolve`, which records a decision). A held field
+whose Juristid value already equals the source's converges like any other. A
+converged next-step sentence makes the lawyer's step the baseline; an operator's
+resolution does so only when the step reads as the source's sentence, so the
+source can never move a lawyer's own step's day. A resolved owner is never
+learnt as a name → person pair. Fields the pilot
 snapshot did not carry start their baseline at first observation as report-only
 fields.
 
@@ -148,7 +154,8 @@ Order: title, owner, step. Every write uses `actor=None` and a provenance of
 the snapshot digest and the mapping version, on the service's own event — no
 event is backdated, and no task is completed, reminder acknowledged, opinion
 sent or activity created. Each applied field gets a `LovableSyncDecision` with
-a unique idempotency key (source id, field, A, C). Search projections are
+a unique idempotency key (source id, field, source version, C): a value may come
+back, a Lovable version never does. Search projections are
 refreshed for the written Teemad (`refresh_matters`). After commit each written
 Teema is read back against its new baseline; a mismatch fails the run.
 
@@ -157,10 +164,12 @@ Teema is read back against its new baseline; a mismatch fails the run.
 The same snapshot twice writes nothing the second time: the baseline already
 says C. One runner at a time (`pg_try_advisory_lock(24607, 1)`, and `flock` on
 the host). The nightly run key is the Tallinn date, so a second scheduled run
-the same date refuses. One Teema's failure is isolated and reported; a broken
-snapshot, a cohort that is not 100, more than 5 missing rows, or a failed
-read-back stops the run. A night with more than **20** Teemad to write or more
-than **10** conflicts writes nothing (`REVIEW_ONLY`, `CIRCUIT_BREAKER`).
+the same date refuses. One Teema's failure is isolated — rolled back whole — and
+the run is then `FAILED` (`PARTIAL_FAILURE`), never a success; a broken snapshot,
+a cohort that is not 100, more than 5 missing rows, or a failed read-back stops
+the run. A night with more than **20** Teemad to write, or more than **10**
+conflicts **more than the previous night** (they persist until resolved), writes
+nothing (`REVIEW_ONLY`, `CIRCUIT_BREAKER`).
 
 ### 8. Schedule and backups
 
@@ -173,8 +182,11 @@ file, no release in progress, web healthy, the credentials file root-only, due,
 then in APPLY mode a fresh backup set **and its level-2 verification**, then a
 short-lived container of the image the site is serving (`--cpus 1 --memory 1g
 --pids-limit 256`, 20-minute timeout) on the existing internal network. No
-compose service, database, tunnel or other KOCORP service is touched. Without a
-verified backup the run writes nothing (`REVIEW_ONLY`, `NO_VERIFIED_BACKUP`).
+compose service, database, tunnel or other KOCORP service is touched. The run
+accepts only a set named for a moment at most two hours before it started;
+without one it writes nothing (`REVIEW_ONLY`, `NO_VERIFIED_BACKUP`). The script
+takes the release host lock for its duration, so no release starts under a run,
+and runs the serving image by id.
 GitHub Actions never runs the job.
 
 ### 9. Control, visibility, cutover
@@ -188,7 +200,8 @@ over row OFF; then the cron file is removed.
 Haldus → **Lovable sünkroonimine** (technical administrator, like Süsteemi seis):
 the verdict, last attempt and last success, snapshot time, verification, the
 night's counts, `Kontrolli muudatusi` (compares the newest stored snapshot with
-Juristid; writes no Teema), and the server commands. A pending change's wording
+Juristid and records only its own findings: no Teema, baseline, observation or
+snapshot changes), and the server commands. A pending change's wording
 is shown only for a Teema the reader may open (`Matter.objects.visible_to`);
 otherwise it is counted. `production_status` gains a *Lovable sync* row: red
 when the last run failed or was held, when a run never finished, or when there

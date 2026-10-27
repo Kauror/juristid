@@ -321,7 +321,10 @@ def lovable(request: HttpRequest) -> HttpResponse:
             request,
             "lovable",
             health=health,
-            summary=summary_lines(latest) if latest is not None else [],
+            # The verdict's own run, never a `Kontrolli muudatusi` that came after
+            # a failed night and would read like a success.
+            summary=summary_lines(health.last_run) if health.last_run is not None else [],
+            table_run=latest,
             stale_hours=int(STALE_AFTER.total_seconds() // 3600),
             pending=pending,
             hidden=hidden,
