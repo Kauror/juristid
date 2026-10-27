@@ -352,3 +352,35 @@ On Dokumendid the row's «Vaata sisu» is gone (it led to the same page as the
 title), the upload button reads «↑ Lae üles», and `Ava`, the download icon and
 `⋯` sit together in their own column. No route, model, migration, evidence
 byte, version, extraction or search behaviour changed.
+
+## Amendment of 2026-10-27 — an informational milestone is not work
+
+**Owner's P1 brief after the Lovable pilot import (ADR 0191).** The pilot's
+2025_218 carried an `ESTIMATED_COMMENCEMENT` of 1 January 2026 beside a real
+`MONITOR` review on 2 December. Minu asjad put the estimate at the top of
+*Sel nädalal* with «299 p»: the amendment of 2026-10-19 had made an
+informational milestone never the next step and never late, but it stayed in
+the work model, and a past milestone that is not late is "come round"
+(`band_of`), so it was banded with this week's work and counted in its figure.
+
+**Decided now.** `work_items.important_deadlines` — the one selector every work
+surface reads milestones through — leaves out `INFORMATIONAL_IMPORTANT_DATE_KINDS`.
+Minu asjad's bands and header figures, a colleague's desk, Osakond, Ülevaade,
+the register's `?too=` populations, the reporting strip and the calendar's
+*Tähtajad ja tegevused* all agree by construction, because none of them sees
+the record as work any more. `OTHER` and `TRANSPOSITION_DEADLINE` are unchanged
+and a past one is still overdue.
+
+The record is untouched and stays on its Teema with its kind, date and
+provenance. The Minu asjad calendar shows it under **Jõustumised**, named by its
+kind («Eeldatav jõustumine (allika hinnang)», «Eelnõus kavandatud jõustumine»)
+and never as «Kirjas olev jõustumise kuupäev»; a past one reads «Hinnanguline
+kuupäev on möödunud; jõustumist ei ole kirjas». It is counted apart from
+recorded commencements («1 jõustumine, 1 hinnanguline jõustumine») and the year
+tile's two printed figures stay work and recorded commencements. Population:
+active rows on open, full-record Matters the person owns, through the reader's
+`visible_to` on Matter and record — the population the work model read before.
+
+**Not changed.** A Matter whose only dated record is informational still has no
+next step and is still in «vajab sekkumist» for that reason. No data, migration,
+import or Lovable record changed.

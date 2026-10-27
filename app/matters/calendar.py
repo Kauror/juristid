@@ -11,7 +11,11 @@ reads two canonical sources and writes nothing:
   absence of duplicates: a row is placed once, from the one source that owns it.
 * **Jõustumised** — active `MatterEffectiveDate` rows on Matters this person
   carries, open or closed (a commencement often lands after the file is closed,
-  ADR 0158 §2), read through the *reader's* `visible_to`.
+  ADR 0158 §2), read through the *reader's* `visible_to`. Beside them, labelled
+  as what they are, the informational milestones — a commencement a draft plans
+  or a source estimates (docs/adr/0120, amendment of 2026-10-27). They are not
+  work, so the work model no longer carries them; they are never late, never
+  counted as work, and a past one never reads as having commenced.
 
 On a colleague's desk the colleague decides *whose* work is shown and the reader
 remains the authorization principal: every queryset starts from
@@ -49,9 +53,14 @@ from django.urls import reverse
 
 from app.core import dates
 from app.core.dates import format_estonian_date, short_day_month
-from app.intelligence.enums import FactStatus
-from app.intelligence.models import MatterEffectiveDate
+from app.intelligence.enums import (
+    INFORMATIONAL_IMPORTANT_DATE_KINDS,
+    FactStatus,
+    ImportantDateKind,
+)
+from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
 from app.matters import work_items as wi
+from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.workflow.dates import format_at_precision, is_approximate
 from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
@@ -97,6 +106,10 @@ CATEGORY_LABELS = {
 }
 COMMENCEMENT_MEANING = "Kirjas olev jõustumise kuupäev"
 COMMENCEMENT_PASSED = "Kirjas olev kuupäev on möödunud"
+#: A past estimate is not a commencement: nothing on record says the act came
+#: into force, only that somebody once expected it to.
+ESTIMATE_PASSED = "Hinnanguline kuupäev on möödunud; jõustumist ei ole kirjas"
+ESTIMATE_KEY_PREFIX = "IMPORTANT_DATE:"
 
 _YEAR_MIN, _YEAR_MAX = 1990, 2100
 
@@ -243,6 +256,11 @@ class CalendarEvent:
         return self.category == CATEGORY_WORK
 
     @property
+    def is_estimate(self) -> bool:
+        """A planned or estimated commencement (`estimate_events`), not a recorded one."""
+        return self.key.startswith(ESTIMATE_KEY_PREFIX)
+
+    @property
     def is_approximate(self) -> bool:
         return is_approximate(self.precision)
 
@@ -383,6 +401,55 @@ def commencement_events(
     ]
 
 
+def estimate_events(
+    user: Any, subject: Any, start: date, end: date, today: date
+) -> list[CalendarEvent]:
+    """Planned and estimated commencements on this person's open Matters, overlapping the window.
+
+    The informational milestones (`INFORMATIONAL_IMPORTANT_DATE_KINDS`) the work
+    model leaves out, over the population it used to read them from: active
+    rows on open, full-record Matters the subject owns, through the reader's own
+    ``visible_to`` on both the Matter and the record. Shown under *Jõustumised*
+    and named by their kind — «Eeldatav jõustumine (allika hinnang)», «Eelnõus
+    kavandatud jõustumine» — so they never read as a recorded commencement, and a
+    past one says that nothing on record shows the act came into force.
+    """
+    matters = Matter.objects.visible_to(user).filter(owner=subject).order_by().values("pk")
+    records = (
+        MatterImportantDate.objects.visible_to(user)
+        .filter(
+            status=FactStatus.ACTIVE,
+            kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS,
+            matter__in=matters,
+            matter__is_open=True,
+            matter__record_mode=RecordMode.FULL,
+            date_value__lte=end,
+            period_end__gte=start,
+        )
+        .select_related("matter")
+    )
+    events = []
+    for record in records:
+        matter_url = reverse("matters:matter_detail", kwargs={"pk": record.matter_id})
+        events.append(
+            CalendarEvent(
+                category=CATEGORY_COMMENCEMENT,
+                key=f"{ESTIMATE_KEY_PREFIX}{record.pk}",
+                matter=record.matter,
+                text=record.title,
+                meaning=str(ImportantDateKind(record.kind).label),
+                when=record.date_value,
+                period_end=record.period_end,
+                precision=record.date_precision,
+                display_date=record.display_date
+                or format_at_precision(record.date_value, record.date_precision),
+                status=ESTIMATE_PASSED if record.period_end < today else "",
+                url=matter_url,
+            )
+        )
+    return events
+
+
 def _ordered(events: list[CalendarEvent]) -> list[CalendarEvent]:
     return sorted(
         events,
@@ -421,12 +488,14 @@ def _counted(count: int, one: str, many: str) -> str:
     return f"{count} {one if count == 1 else many}"
 
 
-def _counts_label(work: int, commencements: int) -> str:
+def _counts_label(work: int, commencements: int, estimates: int = 0) -> str:
     parts = []
     if work:
         parts.append(_counted(work, "tähtaeg või tegevus", "tähtaega või tegevust"))
     if commencements:
         parts.append(_counted(commencements, "jõustumine", "jõustumist"))
+    if estimates:
+        parts.append(_counted(estimates, "hinnanguline jõustumine", "hinnangulist jõustumist"))
     return ", ".join(parts) if parts else "sündmusi ei ole"
 
 
@@ -457,7 +526,12 @@ class Day:
 
     @property
     def commencement_count(self) -> int:
-        return len(self.events) - self.work_count
+        """Recorded commencements only; an estimate is counted apart (`estimate_count`)."""
+        return sum(1 for event in self.events if not event.is_work and not event.is_estimate)
+
+    @property
+    def estimate_count(self) -> int:
+        return sum(1 for event in self.events if event.is_estimate)
 
     @property
     def title(self) -> str:
@@ -470,7 +544,7 @@ class Day:
         today = ", täna" if self.is_today else ""
         return (
             f"{format_estonian_date(self.day)}{today}: "
-            f"{_counts_label(self.work_count, self.commencement_count)}"
+            f"{_counts_label(self.work_count, self.commencement_count, self.estimate_count)}"
         )
 
 
@@ -492,9 +566,10 @@ class Week:
         first, last = self.days[0].day, self.days[-1].day
         work = sum(day.work_count for day in self.days)
         commencements = sum(day.commencement_count for day in self.days)
+        estimates = sum(day.estimate_count for day in self.days)
         return (
             f"{self.number}. nädal, {short_day_month(first)}–{short_day_month(last)}: "
-            f"{_counts_label(work, commencements)}"
+            f"{_counts_label(work, commencements, estimates)}"
         )
 
 
@@ -516,10 +591,11 @@ class YearMonth:
     work_count: int
     commencement_count: int
     query: str
+    estimate_count: int = 0
 
     @property
     def total(self) -> int:
-        return self.work_count + self.commencement_count
+        return self.work_count + self.commencement_count + self.estimate_count
 
     @property
     def density(self) -> int:
@@ -534,7 +610,8 @@ class YearMonth:
 
     @property
     def label(self) -> str:
-        return f"{self.title}: {_counts_label(self.work_count, self.commencement_count)}"
+        counts = _counts_label(self.work_count, self.commencement_count, self.estimate_count)
+        return f"{self.title}: {counts}"
 
 
 def _week(
@@ -633,11 +710,16 @@ class Calendar:
 
     @property
     def commencement_count(self) -> int:
-        return len(self.events) - self.work_count
+        """Recorded commencements only; an estimate is counted apart (`estimate_count`)."""
+        return sum(1 for event in self.events if not event.is_work and not event.is_estimate)
+
+    @property
+    def estimate_count(self) -> int:
+        return sum(1 for event in self.events if event.is_estimate)
 
     @property
     def counts_label(self) -> str:
-        return _counts_label(self.work_count, self.commencement_count)
+        return _counts_label(self.work_count, self.commencement_count, self.estimate_count)
 
     @property
     def element_id(self) -> str:
@@ -680,6 +762,7 @@ def build_calendar(
     events = _ordered(
         work_events(user, subject, start, end, today, items)
         + commencement_events(user, subject, start, end, today)
+        + estimate_events(user, subject, start, end, today)
     )
 
     by_day: dict[date, list[CalendarEvent]] = {}
@@ -764,13 +847,15 @@ def build_calendar(
             day_events = [e for day, rows in by_day.items() if month <= day <= last for e in rows]
             listed = month_lists.get(month, [])
             work = sum(1 for e in day_events + listed if e.is_work)
-            commencements = len(day_events) + len(listed) - work
+            estimates = sum(1 for e in day_events + listed if e.is_estimate)
+            commencements = len(day_events) + len(listed) - work - estimates
             tiles.append(
                 YearMonth(
                     month=month,
                     title=ESTONIAN_MONTHS[number - 1].capitalize(),
                     work_count=work,
                     commencement_count=commencements,
+                    estimate_count=estimates,
                     query=address(VIEW_MONTH, month),
                 )
             )
