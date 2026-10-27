@@ -45,7 +45,7 @@ if not LovableSyncRun.objects.filter(run_key__startswith="e2e-").exists():
     def row(matter, **values):
         return {
             "id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"e2e-lovable/{matter.pk}")),
-            "nr": matter.display_reference(),
+            "nr": matter.display_reference,
             "aasta": matter.reference_year,
             "teema": matter.title,
             "vastutaja": "Mari",
@@ -114,7 +114,7 @@ if not LovableSyncRun.objects.filter(run_key__startswith="e2e-").exists():
         m.pk: LovableSyncState.objects.create(
             matter=m,
             source_id=first[m.pk]["id"],
-            reference=m.display_reference(),
+            reference=m.display_reference,
             applied={},
             observed={},
         )
