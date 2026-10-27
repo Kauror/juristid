@@ -20,8 +20,9 @@ from typing import Any
 import pytest
 from django.urls import reverse
 
-from app.audit.enums import ChangeEventType
+from app.audit.enums import ChangeEventType, SecurityEventType
 from app.audit.models import ChangeEvent
+from app.audit.services import record_security_event
 from app.documents.models import Document
 from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
 from app.legacy_import import lovable_pilot
@@ -307,6 +308,8 @@ def test_the_synthetic_package_validates():
             "overdue on arrival",
         ),
         (lambda p: p["topics"][0].update(successor="2026_502"), "only a finished, SUPERSEDED"),
+        (lambda p: p["topics"][3].update(successor="2026_504"), "cannot continue under itself"),
+        (lambda p: p["topics"][1]["next_action"].update(text="Kirjutan vastuse"), "is drafted"),
         (lambda p: p.update(reserve_through={"2026": 52000}), "highest_reference"),
         (lambda p: p.update(reserve_through={"20x6": 5}), "not a year and a number"),
         (
@@ -353,6 +356,33 @@ def test_an_existing_reference_stops_the_plan_and_the_apply(world, pilot_on):
     with pytest.raises(LovablePilotError, match="never overwritten"):
         _apply(_package())
     assert Matter.all_objects.count() == 1
+
+
+def test_two_topics_cannot_continue_under_each_other():
+    def loop(p):
+        p["topics"][2].update(lifecycle="CONTINUES", disposition="SUPERSEDED", successor="2026_504")
+        p["topics"][3].update(successor="2026_503")
+
+    assert any("which continues under it" in problem for problem in _problems(loop))
+
+
+def test_a_permanently_deleted_reference_is_never_reused(world, pilot_on):
+    record_security_event(
+        event_type=SecurityEventType.MATTER_DELETED, detail={"reference": "2026_502"}
+    )
+    plan = build_plan(_package())
+    assert plan.database_state == "conflict"
+    assert plan.collisions == ["2026_502"]
+    with pytest.raises(LovablePilotError, match="never overwritten"):
+        _apply(_package())
+    assert Matter.all_objects.count() == 0
+
+
+def test_an_owner_who_may_not_be_given_work_stops_the_plan(world):
+    world["mari"].is_staff = True
+    world["mari"].save(update_fields=["is_staff"])
+    plan = build_plan(_package())
+    assert any("may be assigned to" in problem for problem in plan.problems), plan.problems
 
 
 def test_an_unrelated_existing_matter_does_not_block_and_is_not_touched(world, pilot_on):

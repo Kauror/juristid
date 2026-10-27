@@ -55,6 +55,7 @@ from django.utils import timezone
 from app.legacy_import.evidence_pilot import step_shape
 from app.legacy_import.integrity import IntegrityError, canonical_sha256, require_digest
 from app.legacy_import.limits import load_json_document
+from app.workflow.services import OPINION_PREPARATION_TEXT
 
 PILOT = "lovable-pilot"
 PILOT_VERSION = "1.0"
@@ -206,6 +207,12 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
                 report.commencements_ready += 1
             else:
                 report.commencements_source_only += 1
+    successors = {str(t.get("reference") or ""): str(t.get("successor") or "") for t in topics}
+    for reference, successor in successors.items():
+        if successor == reference:
+            out.append(f"{reference}: a topic cannot continue under itself.")
+        elif successor and successors.get(successor) == reference:
+            out.append(f"{reference}: continues under {successor}, which continues under it.")
     out.extend(_validate_reserve(package, highest))
     return report
 
@@ -330,6 +337,7 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
         if not (
             step
             and step.get("treatment") == "OPINION_DRAFTING"
+            and step.get("text") == OPINION_PREPARATION_TEXT
             and step.get("kind") == "DO"
             and step.get("date_semantics") == "DEADLINE"
             and _day(step.get("target_date")) == day
@@ -429,6 +437,7 @@ class LovablePlan:
 def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
     """Resolve everything and read the database. Never writes."""
     from app.accounts.models import User
+    from app.accounts.selectors import is_assignable_business_user
     from app.legacy_import.register_semantics import split_addressees
     from app.legacy_import.resolution import MappingTables, resolve_organisation
     from app.taxonomy.models import LegalInstrumentType
@@ -461,6 +470,11 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
                 plan.problems.append(
                     f"{reference}: owner {owner_raw!r} → {name!r} is not exactly one active "
                     "account."
+                )
+            elif not is_assignable_business_user(matches[0]):
+                plan.problems.append(
+                    f"{reference}: owner {name!r} is not somebody business work may be "
+                    "assigned to (docs/adr/0181)."
                 )
             else:
                 topic_plan.owner = matches[0]
@@ -529,7 +543,7 @@ def _read_database(plan: LovablePlan) -> None:
         evidence_pilot_records__record_kind="MATTER",
     ).distinct()
     written = EvidencePilotRecord.objects.filter(pilot=PILOT, package_sha256=plan.digest).count()
-    taken_refs = sorted(m.display_reference for m in taken)
+    taken_refs = sorted({m.display_reference for m in taken} | _deleted_references(plan.topics))
     if not taken_refs and written == 0:
         plan.database_state = "ready"
     elif mine.count() == len(plan.topics) == len(taken_refs) and written == sum(
@@ -550,6 +564,23 @@ def _read_database(plan: LovablePlan) -> None:
                 f"The database holds {written} record(s) of this package but not the whole of "
                 "it — a partial or removed import. Nothing is repaired here; investigate first."
             )
+
+
+def _deleted_references(topics: list[TopicPlan]) -> set[str]:
+    """The package's references a permanently deleted Matter once held.
+
+    `permanently_delete_matter` removes the row and keeps the reference only in
+    its security event; a reference the department has used is never reused.
+    """
+    from app.audit.enums import SecurityEventType
+    from app.audit.models import SecurityAuditEvent
+
+    wanted = [t.reference for t in topics]
+    return set(
+        SecurityAuditEvent.objects.filter(
+            event_type=SecurityEventType.MATTER_DELETED, detail__reference__in=wanted
+        ).values_list("detail__reference", flat=True)
+    )
 
 
 def plan_digest(plan: LovablePlan) -> str:
@@ -723,12 +754,15 @@ def dry_run(plan: LovablePlan) -> ApplyReport:
         )
     if plan.database_state != "ready":
         raise LovablePilotError(f"The database is {plan.database_state!r}, not ready.")
+    from app.search.indexing import indexable_matters, refresh_matters
+
     try:
         with transaction.atomic():
             current = _hold_and_replan(plan, plan_digest(plan))
             _require_writable(current, plan_digest(plan))
             writer = _Writer(current, backup_set="dry-run", plan_sha256=plan_digest(plan))
-            report, _touched = writer.write()
+            report, touched = writer.write()
+            refresh_matters(indexable_matters().filter(pk__in=touched))
             report.verify = verify_applied(build_plan(plan.package))
             raise _RolledBack(report)
     except _RolledBack as rolled:

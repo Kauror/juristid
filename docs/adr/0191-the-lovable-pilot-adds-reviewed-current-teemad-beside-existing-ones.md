@@ -106,6 +106,14 @@ a Teema mid-import is neither deadlocked nor queued for long — the plan is
 rebuilt and must hash to the approved plan digest (0184). `verify` runs inside
 the same transaction before the commit; a difference rolls everything back. A fingerprint over every other Matter's identity and `updated_at` is
 taken before and after the writes inside the transaction and must be identical.
+That fingerprint catches a model save on another Matter; it does not see a
+bulk `update()` or a related row. Those are excluded by construction instead:
+the writer only creates rows hanging off its own new Matters, and the one
+existing row it changes is the year's reference sequence, which the plan
+digest binds. A reference a permanently deleted Matter once held (kept in its
+security event) counts as taken, and an owner must be somebody business work
+may be assigned to (0181). Because lawyers' saves on any Matter wait for the
+table lock until the commit, the apply is run outside working hours.
 The plan digest deliberately excludes the total Matter count: lawyers keep
 working while an import is planned. The year's reference sequence is pushed to
 Lovable's highest number so a Teema created during testing cannot take a number
