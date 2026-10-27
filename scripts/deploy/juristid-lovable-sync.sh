@@ -40,7 +40,7 @@ case "${1:-}" in
   *) echo "usage: $0 [--manual]" >&2; exit 64 ;;
 esac
 
-mkdir -p -m 0750 "$LOG_DIR"
+mkdir -p "$LOG_DIR" && chmod 0750 "$LOG_DIR"
 LOG="$LOG_DIR/$(date -u +%Y%m%dT%H%M%SZ)-$TRIGGER.log"
 exec >>"$LOG" 2>&1
 say() { echo "$(date -u +%FT%TZ) $*"; }
