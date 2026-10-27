@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # The nightly Lovable → Juristid synchronisation, host side (docs/adr/0192).
 #
 #   juristid-lovable-sync.sh             # from cron: 15 21,22 * * * (UTC)
@@ -21,7 +21,7 @@
 # Docker reads them as root (--env-file) and the container sees only the values.
 # Never `set -x`: the environment carries the service login. Docker's --env-file
 # takes values literally: write KEY=value with no quotes.
-set -u -o pipefail
+set -euo pipefail
 
 APPDATA=/mnt/user/appdata/juristid-main
 REPO=$APPDATA/repo
@@ -58,12 +58,12 @@ echo "owner=lovable-sync pid=$$ $(date -u +%FT%TZ)" > /tmp/juristid-host-lock/ow
 trap 'rm -rf /tmp/juristid-host-lock' EXIT
 
 # The image the site is SERVING (its id), never whatever its tag points at now.
-IMAGE="$(docker inspect -f '{{.Image}}' juristid-main-web 2>/dev/null)"
-HEALTH="$(docker inspect -f '{{.State.Health.Status}}' juristid-main-web 2>/dev/null)"
+IMAGE="$(docker inspect -f '{{.Image}}' juristid-main-web 2>/dev/null)" || IMAGE=""
+HEALTH="$(docker inspect -f '{{.State.Health.Status}}' juristid-main-web 2>/dev/null)" || HEALTH=""
 if [ -z "$IMAGE" ] || [ "$HEALTH" != healthy ]; then say "FAIL web is not healthy (${HEALTH:-absent})"; exit 1; fi
 
 if [ ! -f "$CREDENTIALS" ]; then say "FAIL $CREDENTIALS is missing"; exit 1; fi
-if [ "$(stat -c '%u %a' "$CREDENTIALS")" != "0 600" ]; then
+if [ "$(stat -c '%u %a' "$CREDENTIALS" 2>/dev/null || true)" != "0 600" ]; then
   say "FAIL $CREDENTIALS must be owned by root with mode 600"; exit 1
 fi
 
@@ -75,7 +75,7 @@ one_off() {
     --entrypoint python "$IMAGE" manage.py lovable_sync "$@" </dev/null
 }
 
-DUE="$(one_off due --trigger "$TRIGGER" | tail -1)"
+DUE="$(one_off due --trigger "$TRIGGER" | tail -1)" || DUE=""
 say "${DUE:-<no answer>} (image ${IMAGE:7:12})"
 case "$DUE" in
   "DUE APPLY") MODE=apply ;;
@@ -105,8 +105,8 @@ if [ "$MODE" = apply ]; then
 fi
 
 say "run"
-one_off run --trigger "$TRIGGER" ${SET:+--backup-set "$SET"}
-rc=$?
+rc=0
+one_off run --trigger "$TRIGGER" ${SET:+--backup-set "$SET"} || rc=$?
 say "END rc=$rc"
-find "$LOG_DIR" -maxdepth 1 -type f -name '*.log*' -mtime +"$LOG_RETENTION_DAYS" -delete
+find "$LOG_DIR" -maxdepth 1 -type f -name '*.log*' -mtime +"$LOG_RETENTION_DAYS" -delete || true
 exit "$rc"

@@ -411,7 +411,7 @@ def verify_snapshot(document: dict[str, Any]) -> None:
 #: The source's write paths. Each is called with a UUID that cannot exist, so
 #: even a write path that wrongly let the identity in would find nothing to
 #: change; what is checked is that it refuses the caller.
-WRITE_RPCS = (
+WRITE_RPCS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("save_topic", {"p_id": None, "p_expected_version": 0, "p_fields": {}}),
     ("save_topic_with_stages", {"p_id": None, "p_expected_version": 0, "p_fields": {}}),
     ("delete_topic", {"p_id": None, "p_expected_version": 0}),

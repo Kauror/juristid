@@ -40,6 +40,7 @@ import hashlib
 import json
 import logging
 import re
+import time
 import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable
@@ -482,7 +483,7 @@ def _step_decisions(
     text_changed = c_text != a_text
     if text_changed:
         converged = (
-            bool(b_step)
+            b_step is not None
             and text_value(b_step["text"]) == c_text
             and b_step["target_date"] == c_date
         )
@@ -564,8 +565,12 @@ def _step_decisions(
         # show, whatever else would also have held the change.
         out.append(FieldDecision("next_action_date", SyncOutcome.CONFLICT, **common))
         return out
-    if reason:
-        out.append(FieldDecision("next_action_date", SyncOutcome.REVIEW_REQUIRED, reason, **common))
+    if reason or a_step is None:
+        out.append(
+            FieldDecision(
+                "next_action_date", SyncOutcome.REVIEW_REQUIRED, reason or NO_STEP, **common
+            )
+        )
         return out
     target = {**a_step, "target_date": c_date}
     out.append(FieldDecision("next_action_date", SyncOutcome.ELIGIBLE, target=target, **common))
@@ -1172,7 +1177,7 @@ def _execute(
             transport,
             sorted(cohort_ids),
             mapping_version=MAPPING_VERSION,
-            **({"pause": pause} if pause else {}),
+            pause=pause or time.sleep,
         )
     verify_snapshot(snapshot)
     run.snapshot_sha256 = snapshot["sha256"]
@@ -1292,7 +1297,10 @@ def prune_snapshots(*, now: dt.datetime) -> int:
     """Snapshots older than the approved retention go; the run ledger stays."""
     cutoff = now - dt.timedelta(days=SNAPSHOT_RETENTION_DAYS)
     latest = LovableSyncSnapshot.objects.order_by("-taken_at").values_list("pk", flat=True).first()
-    deleted, _ = LovableSyncSnapshot.objects.filter(taken_at__lt=cutoff).exclude(pk=latest).delete()
+    stale = LovableSyncSnapshot.objects.filter(taken_at__lt=cutoff)
+    if latest is not None:
+        stale = stale.exclude(pk=latest)
+    deleted, _ = stale.delete()
     return deleted
 
 
