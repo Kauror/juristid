@@ -63,7 +63,9 @@ pytestmark = pytest.mark.django_db
 OSAKOND_BUDGET = 46
 #: Minu asjad +1 since the rail's Kalender (docs/adr/0158, amendment of
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
-MINU_ASJAD_BUDGET = 31
+#: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
+#: commencements left the work model and the calendar reads them once itself.
+MINU_ASJAD_BUDGET = 32
 STATISTIKA_BUDGET = 33
 
 
