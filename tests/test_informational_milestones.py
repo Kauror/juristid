@@ -243,13 +243,14 @@ def test_an_informational_milestone_that_has_passed_is_not_late(specialist):
     matter = factories.MatterFactory(owner=specialist)
     _milestone(matter, specialist, days=-5)
 
+    # Not late, and since docs/adr/0120's amendment of 2026-10-27 not work at
+    # all: the work model leaves it out (tests/test_informational_not_work.py).
     items = [
         item
         for item in wi.work_items(specialist, today=TODAY)
         if item.matter_id == matter.pk and item.source_type == wi.SOURCE_IMPORTANT_DEADLINE
     ]
-    assert [item.is_informational for item in items] == [True]
-    assert not items[0].is_overdue
+    assert items == []
     deadline = active_deadline(matter, specialist, today=TODAY)
     assert deadline is not None and deadline.is_past and not deadline.is_overdue
     # An `OTHER` milestone that passed is still late, as before.

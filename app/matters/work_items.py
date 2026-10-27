@@ -114,7 +114,11 @@ from django.utils import timezone
 from app.accounts.selectors import is_assignable_business_user
 from app.core import dates
 from app.core.dates import format_estonian_date, short_day_month
-from app.intelligence.enums import FactStatus, is_informational_milestone
+from app.intelligence.enums import (
+    INFORMATIONAL_IMPORTANT_DATE_KINDS,
+    FactStatus,
+    is_informational_milestone,
+)
 from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
 from app.legacy_import.register_semantics import OPINION_WORK_COMPLETE_STATES
@@ -991,12 +995,22 @@ def undated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextActio
 
 
 def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImportantDate]:
-    """Active milestones on open Matters, scoped to the reader.
+    """Active milestones on open Matters that are somebody's work, scoped to the reader.
 
     ``owner`` filters by ``Matter.owner`` because that is who the milestone
     belongs to for work purposes. An ownerless Matter's deadline therefore
     reaches nobody's Minu töö — it appears as *vastutajata* on Ülevaade, which
     is the honest place for work nobody has been given (§4.2).
+
+    **An informational milestone is not work** (docs/adr/0120, amendment of
+    2026-10-27). A commencement a draft plans or a source estimates
+    (`INFORMATIONAL_IMPORTANT_DATE_KINDS`) is a date the file watches, not a
+    commitment anybody here made, so it is left out of the work population
+    itself: every band, count, register filter and statistic built on
+    :func:`work_items` agrees by construction. Kept in the work model, a past
+    estimate was "come round" and sat at the top of *Sel nädalal* with «299 p»
+    beside it. It stays on its Teema, and the Minu asjad calendar shows it under
+    *Jõustumised*, labelled as the estimate it is (`calendar.estimate_events`).
     """
     queryset = (
         MatterImportantDate.objects.visible_to(user)
@@ -1005,6 +1019,7 @@ def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImpor
             matter__is_open=True,
             matter__record_mode=RecordMode.FULL,
         )
+        .exclude(kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS)
         .select_related("matter", "matter__stage", "matter__owner")
     )
     if owner is not None:
