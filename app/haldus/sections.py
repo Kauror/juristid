@@ -128,6 +128,13 @@ SECTIONS: tuple[Section, ...] = (
         may_open_system,
         "Versioon, otsinguindeksi värskus ning failitöötluse vead kokkuvõttes.",
     ),
+    Section(
+        "lovable",
+        "Lovable sünkroonimine",
+        "haldus:lovable",
+        may_open_system,
+        "Öise Lovable'i sünkroonimise seis, viimased tulemused ja ülevaatust ootavad muudatused.",
+    ),
 )
 
 _CACHE = "_juristid_haldus_sections"

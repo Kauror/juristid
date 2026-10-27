@@ -381,6 +381,13 @@ from app.legacy_import.current_state import (  # noqa: E402
     CurrentRegisterState,
     RegisterCurrency,
 )
+from app.legacy_import.lovable_sync_models import (  # noqa: E402
+    LovableSyncControl,
+    LovableSyncDecision,
+    LovableSyncRun,
+    LovableSyncSnapshot,
+    LovableSyncState,
+)
 from app.legacy_import.opinion_archive import (  # noqa: E402
     OpinionArchiveBatch,
     OpinionArchiveItem,
@@ -740,6 +747,11 @@ __all__ = [
     "LegacySourcePage",
     "LegacySourceResource",
     "LegacySourceResourceImport",
+    "LovableSyncControl",
+    "LovableSyncDecision",
+    "LovableSyncRun",
+    "LovableSyncSnapshot",
+    "LovableSyncState",
     "MatchMethod",
     "MatterSourcePage",
     "MatterSourceReference",

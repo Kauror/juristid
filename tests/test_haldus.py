@@ -38,6 +38,7 @@ def test_the_registry_is_the_contracted_one():
         "klassifikaatorid",
         "osakond",
         "susteem",
+        "lovable",
     ]
     assert sections.section("ulevaade").url_name == "haldus:index"
     assert reverse("haldus:index") == "/haldus/"

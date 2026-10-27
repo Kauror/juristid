@@ -189,6 +189,14 @@ def _count(number: int, noun: str) -> str:
     return f"{number} {noun}" if number == 1 else f"{number} {noun}s"
 
 
+def _lovable_sync() -> CheckResult:
+    """The nightly Lovable synchronisation (docs/adr/0192): ran, succeeded, recent."""
+    from app.legacy_import.lovable_sync import sync_health
+
+    health = sync_health()
+    return CheckResult("lovable_sync", "Lovable sync", health.ok, health.detail)
+
+
 #: The checks, in the order they are printed. Order is part of the output
 #: contract: an operator reading two runs side by side compares rows by
 #: position, and a set would reorder between them.
@@ -198,6 +206,7 @@ CHECKS: tuple[Callable[[], CheckResult], ...] = (
     _search_freshness,
     _era_contracts,
     _archive_projection,
+    _lovable_sync,
 )
 
 

@@ -1038,6 +1038,12 @@ EVIDENCE_PILOT_ENABLED = env_bool("JURISTID_EVIDENCE_PILOT", default=False)
 # runs `lovable_pilot apply` carries it.
 LOVABLE_PILOT_ENABLED = env_bool("JURISTID_LOVABLE_PILOT", default=False)
 
+# The nightly Lovable synchronisation (docs/adr/0192) reads the source and may
+# write allowlisted changes to the pilot's Teemad. Off by default and never in an
+# env file: only the short-lived container the host scheduler starts at 00:15
+# carries it, so the running application never reaches Lovable.
+LOVABLE_SYNC_ENABLED = env_bool("JURISTID_LOVABLE_SYNC", default=False)
+
 # -- Cloudflare Access ------------------------------------------------------
 #
 # The production authenticator. Cloudflare authenticates a person against the
