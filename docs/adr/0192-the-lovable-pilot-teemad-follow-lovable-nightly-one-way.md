@@ -215,6 +215,44 @@ an isolated clone of the production database, checked for provenance,
 idempotency and rollback → D. deploy, cron installed in COMPARE; APPLY after the
 owner has seen B and C, with a supervised first execution.
 
+### 11. Uuendused → Lovable (amendment, 2026-10-27)
+
+Lawyers asked to see what changed in Lovable, night by night, beside Juristid's
+own release notes. `/uuendused/` keeps the Juristid notes as its default section
+and gains a second, **Lovable** (`/uuendused/lovable/`, its own address).
+
+It is an extension of this ADR, not a new mechanism: no table, job, poll or
+source request. `app.legacy_import.lovable_review` reads the records §3–§7 already
+keep and answers two questions apart:
+
+- **What changed in Lovable?** Each *scheduled* night's stored snapshot against
+  the snapshot of the nearest earlier scheduled night, source against source,
+  through the reconciliation's own canonical extractors (`SOURCE_FIELDS`; a
+  name by `raw_norm`). A held change that stays pending for five nights changed
+  once and is shown once. A topic gone from the reading, back in it, or
+  re-numbered is an event of its own, never an invented field edit; a Teema is
+  always linked through its state's Matter, never through Lovable's `nr`. The
+  first night is a starting point; a night that read nothing, a reading that
+  no longer verifies and one past the 30-day retention say so instead of
+  showing nothing.
+- **What did Juristid do with it?** The night's `LovableSyncDecision`. "Uuendatud"
+  only where an `APPLIED` decision exists — written in the transaction of the
+  write it records (§6) — in this night's run or a manual run since the
+  previous night, which is then named. Otherwise the decision's own outcome
+  (Rakendamata, Vajab ülevaatamist, Vastuolu, Juristides juba sama), and with
+  no decision the reconciliation's finding that Juristid already holds the value.
+
+Manual runs and `Kontrolli muudatusi` are not nights; Haldus keeps showing them.
+Only `SOURCE_FIELDS` are compared, so `markmed` and `mitteametlik_arvamus` — never
+in a snapshot — cannot appear.
+
+Unlike the Juristid notes this is business content, so the page asks what every
+business read asks (docs/adr/0181): `login_required` sends a caller with no
+persona to the doorway, `may_read_business_content` refuses a signed-in account
+without a business role (the technical administrator) with a 403, and each
+Teema passes `Matter.objects.visible_to`; one that does not is counted, never
+named, and a tombstoned Teema is left out (docs/adr/0096). GET and HEAD only.
+
 ## Consequences
 
 - The pilot's Teemad keep up with Lovable for the fields a machine can carry
@@ -225,3 +263,5 @@ owner has seen B and C, with a supervised first execution.
 - `set_matter_title` takes an optional `provenance`; the Teema's OneNote link is
   the newest observation's.
 - The sync dies with cutover; it cannot be turned back on.
+- Uuendused has a Lovable section for business readers (§11); its history is
+  as long as the snapshot retention, 30 days.

@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% block title %}Lovable · Uuendused · {{ application_name }}{% endblock %}
+
+{% comment %}
+Uuendused → Lovable (docs/adr/0192 §11): what changed in the Lovable register
+between one nightly synchronisation and the one before it, and what Juristid did
+with each change. Read-only; built by `app.legacy_import.lovable_review` from the
+records the nightly run already keeps.
+
+One accordion per night, the newest open — the same native `<details>` the
+Juristid section uses. Every value is source text rendered through ordinary
+autoescaping; nothing here is `|safe`. A Teema the reader may not open is not
+named, linked or counted on its own: the night says only how many were held back.
+
+The night's date is text, not a `<time>`, for the reason the release notes give:
+the visual suite masks every `<time>`, and this date identifies the group.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Uuendused</h1>
+    <span class="pagehead__context">
+      Mida Lovable'is öö jooksul muudeti ja kas muudatus jõudis Juristidesse. Võrreldakse
+      Lovable'ist üle toodud teemasid; iga öö lugemist võrreldakse eelmise öö lugemisega.
+    </span>
+  </div>
+
+  {% include "core/_uuendused_tabs.html" %}
+
+  <div class="relnotes">
+    {% for night in history.nights %}
+      <details class="accordion relnotes__day" {% if forloop.first %}open{% endif %}>
+        <summary class="accordion__head">
+          <span class="accordion__caret" aria-hidden="true"></span>
+          <h2 class="accordion__title">{{ night.started_local }}</h2>
+          <span class="accordion__summary">
+            {% if night.comparison == "COMPARED" %}
+              {% if night.changed_topics %}{{ night.changed_topics }} teema{{ night.changed_topics|pluralize:",t" }} muudetud{% else %}muudatusi ei olnud{% endif %}
+            {% elif night.comparison == "BASELINE" %}lähtepunkt{% else %}võrdlust ei ole{% endif %}
+            · {{ night.status_label }}
+          </span>
+        </summary>
+        <div class="accordion__body">
+          <dl class="lovnight__stats">
+            <div><dt>Sünkroonimine</dt><dd><span class="statechip {% if night.failed %}statechip--problem{% elif night.run.status == 'SUCCEEDED' %}statechip--ok{% else %}statechip--waiting{% endif %}">{{ night.status_label }}</span></dd></div>
+            {% if night.comparison == "COMPARED" %}
+              <div><dt>Muudetud teemasid</dt><dd>{{ night.changed_topics }}</dd></div>
+              <div><dt>Muudetud välju</dt><dd>{{ night.changed_fields }}</dd></div>
+              <div><dt>Juristides uuendatud</dt><dd>{{ night.applied }}</dd></div>
+              <div><dt>Vajab tähelepanu</dt><dd>{{ night.attention }}</dd></div>
+            {% endif %}
+          </dl>
+          {% if night.mode_note %}<p class="lovnight__note">{{ night.mode_note }}</p>{% endif %}
+          {% if night.failed %}<p class="lovnight__note lovnight__note--problem">Sünkroonimine ebaõnnestus. Allpool on ainult see, mis enne katkemist loeti.</p>{% endif %}
+          {% if night.baseline_local %}<p class="lovnight__note">Võrreldud lugemisega {{ night.baseline_local }}.</p>{% endif %}
+          {% if night.message %}<p class="empty">{{ night.message }}</p>{% endif %}
+          {% if night.hidden %}<p class="lovnight__note">Veel {{ night.hidden }} muudetud teema{{ night.hidden|pluralize:",t" }} ei ole sulle nähtav.</p>{% endif %}
+
+          {% for topic in night.topics %}
+            <section class="lovnight__topic" aria-label="{{ topic.reference }}">
+              <h3 class="lovnight__topichead">
+                <a href="{% url 'matters:matter_detail' topic.matter_id %}">{{ topic.reference }} — {{ topic.title }}</a>
+              </h3>
+              {% if topic.kind == "MISSING" %}
+                <p class="lovnight__note lovnight__note--problem">Lovable'is seda teemat enam ei ole (kustutatud või peidetud). Juristides ei muudetud midagi.</p>
+              {% elif topic.kind == "BACK" %}
+                <p class="lovnight__note">Teema on Lovable'is jälle nähtav.</p>
+              {% endif %}
+              {% if topic.renumbered %}
+                <p class="lovnight__note lovnight__note--problem">Lovable'is muutus teema number: {{ topic.renumbered.0 }} → {{ topic.renumbered.1 }}. Juristides jääb tunnus samaks; vaata üle.</p>
+              {% endif %}
+              {% if topic.fields %}
+                <div class="tablewrap">
+                  <table class="data-table lovnight__table">
+                    <thead>
+                      <tr><th scope="col">Väli</th><th scope="col">Enne</th><th scope="col">Pärast</th><th scope="col">Juristides</th></tr>
+                    </thead>
+                    <tbody>
+                      {% for change in topic.fields %}
+                        <tr>
+                          <th scope="row">{{ change.label }}</th>
+                          <td>{{ change.before }}</td>
+                          <td>{{ change.after }}</td>
+                          <td>
+                            <span class="statechip {% if change.result == 'APPLIED' or change.result == 'SAME' %}statechip--ok{% elif change.result == 'CONFLICT' or change.result == 'FAILED' %}statechip--problem{% else %}statechip--waiting{% endif %}">{{ change.result_label }}</span>
+                            {% if change.note %}<span class="lovnight__why">{{ change.note }}</span>{% endif %}
+                          </td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% endif %}
+            </section>
+          {% endfor %}
+        </div>
+      </details>
+    {% empty %}
+      <p class="empty">Öiseid sünkroonimisi ei ole veel olnud.</p>
+    {% endfor %}
+  </div>
+
+  {% if history.older %}
+    <p class="lovnight__more"><a href="?koik=1">Näita vanemaid öid ({{ history.older }})</a></p>
+  {% elif history.showing_all and history.nights %}
+    <p class="lovnight__note">Näidatud on kõik ööd viimase {{ history.retention_days }} päeva jooksul; vanemaid lugemisi ei hoita.</p>
+  {% endif %}
+</div>
+{% endblock %}

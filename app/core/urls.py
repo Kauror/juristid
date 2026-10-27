@@ -12,6 +12,7 @@ urlpatterns = [
     # somebody looks up, not a destination in the daily rotation
     # (docs/release-notes/README.md).
     path("uuendused/", views.release_notes, name="release_notes"),
+    path("uuendused/lovable/", views.release_notes_lovable, name="release_notes_lovable"),
     # Every keyboard shortcut, on one page, linked from the footer beside
     # Uuendused. The screens themselves carry no hint strips
     # (app/core/keyboard_shortcuts.py).

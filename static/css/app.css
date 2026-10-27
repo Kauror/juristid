@@ -15224,3 +15224,73 @@ a.jcal__daynum {
   }
 }
 
+
+/* Uuendused → Lovable (docs/adr/0192 §11): one night's figures as a row of
+   label/value pairs, then one block per changed Teema. The table itself is the
+   shared `.data-table` inside `.tablewrap`, which scrolls locally on a phone so
+   the document never does. */
+.lovnight__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-6);
+  margin: 0 0 var(--spacing-3);
+}
+
+.lovnight__stats dt {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.lovnight__stats dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.lovnight__note {
+  margin: 0 0 var(--spacing-2);
+  color: var(--text-secondary);
+  max-width: 76ch;
+}
+
+.lovnight__note--problem {
+  color: var(--status-warning);
+}
+
+.lovnight__topic {
+  margin-top: var(--spacing-4);
+}
+
+.lovnight__topichead {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+}
+
+/* Source values are sentences and links: they wrap, a long OneNote address
+   included, rather than widening the table past its container. */
+.lovnight__table {
+  min-width: 36rem;
+}
+
+.lovnight__table th[scope="row"] {
+  width: 22%;
+  color: var(--text-secondary);
+  font-weight: var(--typography-weight-medium);
+}
+
+.lovnight__table td {
+  overflow-wrap: anywhere;
+  vertical-align: top;
+}
+
+.lovnight__why {
+  display: block;
+  margin-top: var(--spacing-1);
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.lovnight__more {
+  margin-top: var(--spacing-4);
+}

@@ -25,6 +25,7 @@ changes = [
   "Lovable'ist üle toodud teemal on vaates «Dokumendid» jaotis «Allikas» lingiga algsele OneNote'i lehele; lehe sisu ja manuseid Juristidesse ei tooda.",
   "Eeldatav või eelnõus kavandatud jõustumise kuupäev ei ole enam Minu asjades töö ega tähtaeg; see on teema juures alles ja kalendris jõustumiste all märkega «hinnanguline».",
   "Lovable'ist üle toodud teemad võrreldakse igal ööl kell 00.15 Lovable'iga. Pealkirja, vastutaja, muutmata tegevuse kuupäeva ja OneNote'i lingi muutus jõuab hommikuks Juristidesse; Juristides tehtud muudatust üle ei kirjutata ja muu muutus ootab ülevaatust (Haldus → «Lovable sünkroonimine»).",
+  "Uuenduste lehel on nüüd kaks osa: «Juristid» ja «Lovable». «Lovable» all näeb öö kaupa, mida Lovable'is üle toodud teemadel muudeti — iga välja endine ja uus väärtus — ning kas muudatus jõudis Juristidesse või ootab ülevaatust.",
 ]
 
 [[day]]

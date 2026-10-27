@@ -27,6 +27,7 @@ from app.core.authorization import (
     may_view_department_management,
 )
 from app.haldus.sections import Section, section, visible_sections
+from app.legacy_import.lovable_sync_labels import LOVABLE_FIELD_LABELS, LOVABLE_REASONS
 
 NOT_HERE = "Lehte ei leitud."
 
@@ -227,48 +228,6 @@ def susteem(request: HttpRequest) -> HttpResponse:
             continuity=administration.continuity_status(),
         ),
     )
-
-
-#: What each synchronised field is called on the page.
-LOVABLE_FIELD_LABELS = {
-    "*": "Teema",
-    "title": "Pealkiri",
-    "owner": "Vastutaja",
-    "next_action_text": "Järgmine tegevus (sõnastus)",
-    "next_action_date": "Järgmise tegevuse kuupäev",
-    "onenote_link": "OneNote'i link",
-    "stage": "Hetkeseis",
-    "opinion_deadline": "Arvamuse tähtaeg",
-    "sent": "Välja",
-    "sent_date": "Välja saatmise kuupäev",
-    "addressee": "Kellele",
-    "koda_initiative": "Koja ettepanek",
-    "legal_act": "Õigusakt",
-    "received": "Sisse",
-    "commencements": "Jõustumised",
-    "operational_scope": "Operatiivne ulatus",
-}
-
-#: Why a change waits for a person, in a sentence.
-LOVABLE_REASONS = {
-    "HELD_FIELD": "Seda välja ei uuendata automaatselt.",
-    "MATTER_CLOSED": "Teema on Juristides suletud.",
-    "NO_BASELINE": "Viimati rakendatud väärtus pole teada.",
-    "UNRESOLVED_OWNER": "Vastutajat ei leitud üheselt.",
-    "OWNER_NOT_ASSIGNABLE": "Sellele inimesele ei saa praegu tööd määrata.",
-    "TITLE_WAS_REVIEWED": "Pealkiri vaadati impordil üle ja erineb allikast.",
-    "TITLE_EMPTY": "Allika pealkiri on tühi.",
-    "NEXT_STEP_TEXT_CHANGED": (
-        "Järgmise tegevuse sõnastus muutus; liigi (tee/oota/jälgi) otsustab inimene."
-    ),
-    "DATE_WITH_TEXT_CHANGE": "Kuupäev muutus koos sõnastusega.",
-    "NO_SOURCE_STEP": "Juristides pole sellest allikast tulnud tegevust.",
-    "STEP_NOT_FROM_SOURCE_WORDING": "Juristide tegevus ei põhine allika sõnastusel.",
-    "DATE_CLEARED": "Allikas kustutati kuupäev.",
-    "DATE_IN_PAST": "Uus kuupäev on möödas; see muutuks kohe hilinenuks.",
-    "STEP_DATE_NOT_EXACT": "Tegevuse kuupäev pole täpne päev.",
-    "LINK_NOT_HTTPS": "Link pole https-aadress.",
-}
 
 
 @never_cache

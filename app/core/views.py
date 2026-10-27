@@ -6,13 +6,14 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied
 from django.db import DatabaseError, connection
 from django.http import Http404, HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.templatetags.static import static
 from django.views.decorators.http import require_safe
 
-from app.core.authorization import is_department_head
+from app.core.authorization import is_department_head, may_read_business_content
 from app.core.development_status import ITEMS as DEVELOPMENT_STATUS_ITEMS
 from app.core.keyboard_shortcuts import GROUPS as KEYBOARD_SHORTCUT_GROUPS
 from app.core.middleware import FAILURE_HEADER, NO_STORE, is_htmx
@@ -114,7 +115,42 @@ def release_notes(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "core/release_notes.html",
-        {"release_days": load_release_notes()},
+        {"release_days": load_release_notes(), "uuendused_tab": "juristid"},
+    )
+
+
+#: Said to a signed-in account that may not read business content — the
+#: technical administrator without a business role (docs/adr/0181).
+LOVABLE_NEEDS_A_READER = (
+    "Lovable'i muudatused on teemade sisu. Neid näeb ainult juriidilise osakonna kasutaja."
+)
+
+
+@require_safe
+@login_required
+def release_notes_lovable(request: HttpRequest) -> HttpResponse:
+    """Uuendused → Lovable: what changed in Lovable night by night (docs/adr/0192 §11).
+
+    Unlike the Juristid section beside it this is business content — Teema
+    titles, owners, dates — so it asks the question every business read asks.
+    `login_required` sends a caller with no persona (anonymous, or a shared-gate
+    session that has not chosen who is reading) to the doorway; a signed-in
+    account without a business role, the technical administrator, is refused
+    here, and every Teema the page names has passed `visible_to`
+    (`app.legacy_import.lovable_review`).
+
+    GET and HEAD only, and read-only all the way down: the page compares stored
+    snapshots and reads the run's decisions. It never reaches Lovable.
+    """
+    if not may_read_business_content(request.user):
+        raise PermissionDenied(LOVABLE_NEEDS_A_READER)
+    from app.legacy_import.lovable_review import nightly_history
+
+    history = nightly_history(request.user, show_all=request.GET.get("koik") == "1")
+    return render(
+        request,
+        "core/release_notes_lovable.html",
+        {"history": history, "uuendused_tab": "lovable"},
     )
 
 
