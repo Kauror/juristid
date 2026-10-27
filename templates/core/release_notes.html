@@ -44,6 +44,8 @@ and a typo in it must not be able to become markup.
     </span>
   </div>
 
+  {% include "core/_uuendused_tabs.html" %}
+
   <div class="relnotes">
     {% for day in release_days %}
       <details class="accordion relnotes__day" {% if forloop.first %}open{% endif %}>

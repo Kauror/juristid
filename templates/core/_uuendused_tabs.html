@@ -1,0 +1,15 @@
+{% comment %}
+  Uuendused has two sections under one heading: Juristid (the release notes,
+  the default) and Lovable (what changed in the Lovable register night by night,
+  docs/adr/0192 §11). Plain links with their own addresses, so either can be
+  bookmarked and shared; the same `.tabs` strip Haldus uses. The Lovable tab is a
+  link and nothing more — its page asks who is reading before it shows anything.
+{% endcomment %}
+<nav class="tabs" aria-label="Uuenduste osad">
+  <a class="tabs__tab {% if uuendused_tab == 'juristid' %}is-active{% endif %}"
+     href="{% url 'core:release_notes' %}"
+     {% if uuendused_tab == 'juristid' %}aria-current="page"{% endif %}>Juristid</a>
+  <a class="tabs__tab {% if uuendused_tab == 'lovable' %}is-active{% endif %}"
+     href="{% url 'core:release_notes_lovable' %}"
+     {% if uuendused_tab == 'lovable' %}aria-current="page"{% endif %}>Lovable</a>
+</nav>
