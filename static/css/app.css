@@ -15273,6 +15273,19 @@ a.jcal__daynum {
   min-width: 36rem;
 }
 
+/* On a phone the «Juristides» column is the answer, so it must not sit behind
+   a sideways swipe: the four columns share the width and their text wraps. */
+@media (max-width: 40rem) {
+  .lovnight__table {
+    min-width: 0;
+  }
+
+  .lovnight__table th,
+  .lovnight__table td {
+    overflow-wrap: anywhere;
+  }
+}
+
 .lovnight__table th[scope="row"] {
   width: 22%;
   color: var(--text-secondary);

@@ -64,6 +64,10 @@ def test_the_lovable_section_shows_the_night_at_every_width(
         "href", re.compile(r"/teemad/[0-9a-f-]{36}/")
     )
     assert not document_overflows(page), "the document scrolls sideways"
+    # The «Juristides» answer is on screen without a sideways swipe at any width.
+    verdict = newest.locator(".statechip", has_text="Vastuolu").first
+    box, wrap = verdict.bounding_box(), table.locator("xpath=..").bounding_box()
+    assert box and wrap and box["x"] + box["width"] <= wrap["x"] + wrap["width"] + 1
     screenshots(page, f"uuendused-lovable-{width}")
 
 
