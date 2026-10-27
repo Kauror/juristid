@@ -20,6 +20,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from app.core.enums import Visibility
@@ -133,12 +134,14 @@ def test_the_reference_matter_shows_its_real_review_and_not_its_estimate(special
 
 
 def test_the_estimate_stays_on_its_teema(client, specialist):
-    matter = _reference_matter(specialist)[0]
+    matter = factories.MatterFactory(owner=specialist)
+    _date(matter, date(2026, 1, 1), kind=ESTIMATED, title="Tasu jaotuskava kehtima")
+    _step(matter, date(2026, 12, 2))
     client.force_login(specialist)
 
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
-    assert "Eeldatav jõustumine" in body
+    assert "Tasu jaotuskava kehtima" in body
     assert MatterImportantDate.objects.filter(matter=matter, kind=ESTIMATED).count() == 1
 
 
@@ -265,6 +268,9 @@ def test_every_calendar_view_places_the_estimate_once_and_counts_no_work(special
     assert keys.count(f"{cal.ESTIMATE_KEY_PREFIX}{record.pk}") == 1
     if view == cal.VIEW_YEAR:
         november = calendar.year_months[10]
+        html = render_to_string("matters/partials/work_calendar_body.html", {"calendar": calendar})
+        tile = html[html.index("November") : html.index("Detsember")]
+        assert '<span class="wcal__dot wcal__dot--joustumine"></span>1</span>' in tile
         assert (november.work_count, november.commencement_count, november.estimate_count) == (
             0,
             0,
@@ -285,17 +291,61 @@ def test_a_colleagues_desk_reads_the_same_population(specialist, department_head
     rows = [item for band in work.bands for item in band.items if item.matter_id == matter.pk]
     assert [row.object_id for row in rows] == [step.pk]
     assert work.week == 0
-    events = _calendar(department_head, subject=specialist).events
-    assert [e.is_estimate for e in events if e.matter.pk == matter.pk] == []  # Jan: not shown
+    upcoming = _date(matter, date(2026, 11, 3), kind=ESTIMATED, title="Kolleegi hinnang")
+    theirs = _calendar(department_head, subject=specialist).events
+    assert [e.key for e in theirs if e.is_estimate] == [f"{cal.ESTIMATE_KEY_PREFIX}{upcoming.pk}"]
+    assert not any(e.is_estimate for e in _calendar(department_head).events)
 
 
 def test_a_restricted_estimate_follows_the_readers_scope(specialist, reader, administrator):
     matter = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
     _date(matter, date(2026, 11, 3), kind=ESTIMATED, title="piiratud hinnang")
 
-    assert [e.text for e in _calendar(reader, subject=specialist).events] == ["piiratud hinnang"]
+    readable = factories.MatterFactory(owner=specialist)
+    record = _date(readable, date(2026, 11, 4), kind=PLANNED, title="piiratud kirje")
+    MatterImportantDate.objects.filter(pk=record.pk).update(
+        visibility_override=Visibility.RESTRICTED
+    )
+
+    texts = sorted(e.text for e in _calendar(reader, subject=specialist).events)
+    assert texts == ["piiratud hinnang", "piiratud kirje"]
     assert _calendar(administrator, subject=specialist).events == []
     assert all(
         tile.total == 0
         for tile in _calendar(administrator, subject=specialist, kalender="aasta").year_months
     )
+
+
+def test_an_approximate_estimate_is_listed_under_its_period_never_on_a_day(specialist):
+    from app.workflow.enums import DatePrecision
+
+    matter = factories.MatterFactory(owner=specialist)
+    month = add_important_date(
+        matter=matter,
+        title="Kuu hinnang",
+        date_value=date(2026, 11, 1),
+        period_end=date(2026, 11, 30),
+        date_precision=DatePrecision.MONTH,
+        kind=ESTIMATED,
+        actor=specialist,
+    )
+    quarter = add_important_date(
+        matter=matter,
+        title="Kvartali hinnang",
+        date_value=date(2026, 10, 1),
+        period_end=date(2026, 12, 31),
+        date_precision=DatePrecision.QUARTER,
+        kind=ESTIMATED,
+        actor=specialist,
+    )
+
+    calendar = _calendar(specialist, kalender=cal.VIEW_MONTH, kalendri_aeg="2026-11")
+    on_days = [e.key for w in calendar.months[0].weeks for d in w.days for e in d.events]
+    assert f"{cal.ESTIMATE_KEY_PREFIX}{month.pk}" not in on_days
+    assert [e.key for e in calendar.months[0].month_events] == [
+        f"{cal.ESTIMATE_KEY_PREFIX}{month.pk}"
+    ]
+    assert f"{cal.ESTIMATE_KEY_PREFIX}{quarter.pk}" in [e.key for e in calendar.periods]
+    year = _calendar(specialist, kalender=cal.VIEW_YEAR)
+    # A month-precision estimate counts in its month; a quarter in no month.
+    assert [t.estimate_count for t in year.year_months][9:12] == [0, 1, 0]

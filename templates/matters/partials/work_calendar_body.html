@@ -20,7 +20,7 @@ grid (app/matters/calendar.py).
         <span class="wcal__tilename">{{ tile.title }}</span>
         <span class="wcal__tilecounts" aria-hidden="true">
           <span class="wcal__count"><span class="wcal__dot wcal__dot--too"></span>{{ tile.work_count }}</span>
-          <span class="wcal__count"><span class="wcal__dot wcal__dot--joustumine"></span>{{ tile.commencement_count }}</span>
+          <span class="wcal__count"><span class="wcal__dot wcal__dot--joustumine"></span>{{ tile.commencement_count|add:tile.estimate_count }}</span>
         </span>
       </a>
     {% endfor %}

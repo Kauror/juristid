@@ -6,7 +6,7 @@ and never confirmed. The link opens the record on its Teema (the work row's own
 deep link, or the Teema's Jõustumine section). An eligible work step also
 offers «Nihuta kuupäeva» beside it.
 {% endcomment %}
-<li class="wcal__event wcal__event--{{ event.category }}">
+<li class="wcal__event wcal__event--{{ event.category }}{% if event.is_estimate %} is-estimate{% endif %}">
   <a class="wcal__eventlink" href="{{ event.url }}">
     {% if show_category %}<span class="wcal__eventcat"><span class="wcal__dot wcal__dot--{{ event.category }}" aria-hidden="true"></span>{{ event.category_label }}</span>{% endif %}
     <span class="wcal__eventmatter">{% if event.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ event.matter.title }}</span>
