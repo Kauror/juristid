@@ -3988,6 +3988,26 @@ def _historical_context(matter: Any, user: Any) -> dict:
     return historical_summary(matter, user)
 
 
+def _lovable_source_links(matter: Any) -> list[dict[str, str]]:
+    """The OneNote page a Lovable-imported Teema's register row linked, if any.
+
+    Read from the immutable `MatterSourceReference`, exactly as Lovable held it,
+    and only an ``https://`` address: a stored value is a link to follow, never
+    markup or a script scheme (docs/adr/0191 §6). The page behind it is not
+    fetched; the reader's own Microsoft sign-in decides what they see.
+    """
+    from app.legacy_import.lovable_pilot import SOURCE_SYSTEM
+    from app.legacy_import.models import MatterSourceReference
+
+    urls = (
+        MatterSourceReference.objects.filter(matter=matter, source_system=SOURCE_SYSTEM)
+        .exclude(onenote_url="")
+        .order_by("created_at")
+        .values_list("onenote_url", flat=True)
+    )
+    return [{"url": url} for url in dict.fromkeys(urls) if url.startswith("https://")]
+
+
 #: How many evidence rows the Dokumendid table renders before it offers
 #: "Näita rohkem". A file with forty documents is real; forty rows above the
 #: fold is not what somebody opening the tab is looking for.
@@ -4289,6 +4309,7 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     context = _header_context(request, matter)
     context.update(
         {
+            "source_links": _lovable_source_links(matter),
             "tab": "dokumendid",
             "nav_active": "teemad",
             "evidence_documents": visible_evidence,
@@ -6330,7 +6351,11 @@ def _immutable_facts(matter: Matter) -> list[tuple[str, str]]:
     reference = matter.source_references.order_by("created_at").first()
     if reference is not None:
         where = reference.source_file_name or reference.source_system
-        if reference.source_row_number:
+        if reference.source_system == "LOVABLE":
+            # A register table, not a worksheet: its "row" is the reference
+            # number, which this panel deliberately never prints (docs/adr/0191).
+            where = "Lovable"
+        elif reference.source_row_number:
             where = f"{where}, rida {reference.source_row_number}"
         facts.append(("Algallikas", where))
     return facts

@@ -713,6 +713,31 @@ finds again (§23.5).
           </ul>
         </section>
       {% endif %}
+
+      {% if source_links %}
+        {% comment %}
+          Where the Teema's dossier lives while it has not been migrated: the
+          OneNote page Lovable linked, opened with the reader's own Microsoft
+          sign-in. A link, not an import — the sentence below says so, so an
+          empty file list above reads as "not brought over yet" rather than as a
+          failed import (docs/adr/0191 §6).
+        {% endcomment %}
+        <section class="docsection" aria-labelledby="allikas-heading">
+          <div class="docsection__head">
+            <h2 class="docsection__title" id="allikas-heading">Allikas</h2>
+          </div>
+          <ul class="filelist">
+            {% for link in source_links %}
+              <li class="filelist__item">
+                <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">OneNote</a>
+                <span class="filelist__meta">
+                  Lehe sisu ja manuseid ei ole Juristidesse imporditud; avaneb OneNote'is sinu Microsofti kontoga.
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
     </div>
 
   </div>
