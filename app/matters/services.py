@@ -1566,7 +1566,9 @@ def guard_matter_field_revision(*, matter: Matter, field: str, expected: str | N
 
 
 @transaction.atomic
-def set_matter_title(*, matter: Matter, value: str, actor: Any = None) -> Matter:
+def set_matter_title(
+    *, matter: Matter, value: str, actor: Any = None, provenance: dict[str, Any] | None = None
+) -> Matter:
     """Rename a Matter.
 
     Editable, and deliberately not editable inline in the header. A rename is
@@ -1588,6 +1590,10 @@ def set_matter_title(*, matter: Matter, value: str, actor: Any = None) -> Matter
 
     What this does **not** touch: the reference, the register identity, the
     origin, or any imported provenance. A rename is a rename.
+
+    ``provenance`` means what it means on `assign_matter`: no colleague renamed
+    the file, an operation did — the nightly Lovable synchronisation
+    (docs/adr/0192) — and the event says which run, from which source version.
     """
     cleaned = (value or "").strip()
     if not cleaned:
@@ -1605,7 +1611,7 @@ def set_matter_title(*, matter: Matter, value: str, actor: Any = None) -> Matter
         actor=actor,
         obj=matter,
         summary=cleaned[:200],
-        payload={"previous": previous, "current": cleaned},
+        payload={"previous": previous, "current": cleaned, **(provenance or {})},
     )
     return matter
 

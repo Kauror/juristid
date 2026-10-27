@@ -17,6 +17,8 @@ urlpatterns = [
     path("", views.index, name="index"),
     path("osakond/", views.osakond, name="osakond"),
     path("susteem/", views.susteem, name="susteem"),
+    path("lovable/", views.lovable, name="lovable"),
+    path("lovable/kontrolli/", views.lovable_check, name="lovable_check"),
     # -- the verified administrator session (shared gate only, docs/adr/0186) --
     path("sisene/", admin_session_views.sign_in, name="sign_in"),
     path("sisene/kood/", admin_session_views.sign_in_code, name="sign_in_code"),

@@ -15,7 +15,7 @@ from typing import Any
 from django.conf import settings
 from django.db import DatabaseError
 from django.http import Http404, HttpRequest, HttpResponse
-from django.shortcuts import render
+from django.shortcuts import redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
@@ -227,3 +227,142 @@ def susteem(request: HttpRequest) -> HttpResponse:
             continuity=administration.continuity_status(),
         ),
     )
+
+
+#: What each synchronised field is called on the page.
+LOVABLE_FIELD_LABELS = {
+    "*": "Teema",
+    "title": "Pealkiri",
+    "owner": "Vastutaja",
+    "next_action_text": "Järgmine tegevus (sõnastus)",
+    "next_action_date": "Järgmise tegevuse kuupäev",
+    "onenote_link": "OneNote'i link",
+    "stage": "Hetkeseis",
+    "opinion_deadline": "Arvamuse tähtaeg",
+    "sent": "Välja",
+    "sent_date": "Välja saatmise kuupäev",
+    "addressee": "Kellele",
+    "koda_initiative": "Koja ettepanek",
+    "legal_act": "Õigusakt",
+    "received": "Sisse",
+    "commencements": "Jõustumised",
+    "operational_scope": "Operatiivne ulatus",
+}
+
+#: Why a change waits for a person, in a sentence.
+LOVABLE_REASONS = {
+    "HELD_FIELD": "Seda välja ei uuendata automaatselt.",
+    "MATTER_CLOSED": "Teema on Juristides suletud.",
+    "NO_BASELINE": "Viimati rakendatud väärtus pole teada.",
+    "UNRESOLVED_OWNER": "Vastutajat ei leitud üheselt.",
+    "OWNER_NOT_ASSIGNABLE": "Sellele inimesele ei saa praegu tööd määrata.",
+    "TITLE_WAS_REVIEWED": "Pealkiri vaadati impordil üle ja erineb allikast.",
+    "TITLE_EMPTY": "Allika pealkiri on tühi.",
+    "NEXT_STEP_TEXT_CHANGED": (
+        "Järgmise tegevuse sõnastus muutus; liigi (tee/oota/jälgi) otsustab inimene."
+    ),
+    "DATE_WITH_TEXT_CHANGE": "Kuupäev muutus koos sõnastusega.",
+    "NO_SOURCE_STEP": "Juristides pole sellest allikast tulnud tegevust.",
+    "STEP_NOT_FROM_SOURCE_WORDING": "Juristide tegevus ei põhine allika sõnastusel.",
+    "DATE_CLEARED": "Allikas kustutati kuupäev.",
+    "DATE_IN_PAST": "Uus kuupäev on möödas; see muutuks kohe hilinenuks.",
+    "STEP_DATE_NOT_EXACT": "Tegevuse kuupäev pole täpne päev.",
+    "LINK_NOT_HTTPS": "Link pole https-aadress.",
+}
+
+
+@never_cache
+@require_http_methods(["GET"])
+def lovable(request: HttpRequest) -> HttpResponse:
+    """Lovable sünkroonimine (docs/adr/0192): the night's result and what waits.
+
+    For a verified technical administrator, like Süsteemi seis: the run ledger
+    and its counts. **What changed is business content**, so a pending change is
+    shown with its wording only for a Teema this reader may already open
+    (`Matter.objects.visible_to`); the rest are counted, never named.
+    """
+    from app.legacy_import.lovable_sync import STALE_AFTER, summary_lines, sync_health
+    from app.legacy_import.lovable_sync_models import SyncOutcome
+    from app.matters.models import Matter
+
+    _require(request, "lovable")
+    from app.legacy_import.lovable_sync_models import LovableSyncRun
+
+    health = sync_health()
+    # The newest run of any kind, `Kontrolli muudatusi` included, is what the
+    # table below explains; the verdict above it is the nightly job's alone.
+    latest = LovableSyncRun.objects.order_by("-started_at").first()
+    pending: list[dict[str, Any]] = []
+    hidden = 0
+    if latest is not None:
+        visible = set(Matter.objects.visible_to(request.user).values_list("pk", flat=True))
+        decisions = latest.decisions.exclude(
+            outcome__in=[SyncOutcome.UNCHANGED, SyncOutcome.ALREADY_CONVERGED]
+        ).select_related("state", "state__matter")
+        for decision in decisions:
+            if decision.state.matter_id not in visible:
+                hidden += 1
+                continue
+            pending.append(
+                {
+                    "matter": decision.state.matter,
+                    "field": LOVABLE_FIELD_LABELS.get(decision.field, decision.field),
+                    "outcome": SyncOutcome(decision.outcome).label,
+                    "reason": LOVABLE_REASONS.get(decision.reason, decision.reason),
+                    "baseline": _shown(decision.baseline),
+                    "current": _shown(decision.current),
+                    "source": _shown(decision.source),
+                }
+            )
+    return render(
+        request,
+        "haldus/lovable.html",
+        _context(
+            request,
+            "lovable",
+            health=health,
+            # The verdict's own run, never a `Kontrolli muudatusi` that came after
+            # a failed night and would read like a success.
+            summary=summary_lines(health.last_run) if health.last_run is not None else [],
+            table_run=latest,
+            stale_hours=int(STALE_AFTER.total_seconds() // 3600),
+            pending=pending,
+            hidden=hidden,
+        ),
+    )
+
+
+def _shown(value: Any) -> str:
+    if value is None or value == "":
+        return "—"
+    if isinstance(value, dict):
+        return " · ".join(str(v) for k, v in value.items() if k != "id" and v not in (None, ""))
+    if isinstance(value, list):
+        return (
+            "; ".join(
+                " ".join(str(x) for x in item if x) if isinstance(item, list) else str(item)
+                for item in value
+            )
+            or "—"
+        )
+    if isinstance(value, bool):
+        return "jah" if value else "ei"
+    return str(value)
+
+
+@never_cache
+@require_http_methods(["POST"])
+def lovable_check(request: HttpRequest) -> HttpResponse:
+    """`Kontrolli muudatusi`: the newest stored snapshot against Juristid now.
+
+    Report-only. It reads no source and writes no Teema; it records one run in
+    the ledger, so what it found is what the page then shows."""
+    from app.legacy_import.lovable_sync import SyncRefused, run_sync
+    from app.legacy_import.lovable_sync_models import SyncTrigger
+
+    _require(request, "lovable")
+    try:
+        run_sync(trigger=SyncTrigger.CHECK)
+    except SyncRefused:
+        pass  # the page shows the control state and the newest run as they are
+    return redirect("haldus:lovable")

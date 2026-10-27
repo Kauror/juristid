@@ -1823,6 +1823,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "haldus:enrol": "D: administrator step-up, the person's own authenticator",
     "haldus:reauthenticate": "D: administrator step-up, fresh proof",
     "haldus:sign_out": "D: ends the administrator session",
+    # I — the Lovable sync's report-only check (docs/adr/0192): records only its
+    # own findings, never a Teema, behind `may_open_system` (404 for everybody
+    # else; tests/test_lovable_sync.py).
+    "haldus:lovable_check": "I: Lovable sync check, report-only, may_open_system",
 }
 
 

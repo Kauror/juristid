@@ -3995,6 +3995,11 @@ def _lovable_source_links(matter: Any) -> list[dict[str, str]]:
     and only an ``https://`` address: a stored value is a link to follow, never
     markup or a script scheme (docs/adr/0191 §6). The page behind it is not
     fetched; the reader's own Microsoft sign-in decides what they see.
+
+    **The newest observation's link** (docs/adr/0192 §5): when the nightly
+    synchronisation sees Lovable point at another page it appends a new
+    reference beside the pilot's, which stays as it was, and the Teema links
+    where Lovable links now.
     """
     from app.legacy_import.lovable_pilot import SOURCE_SYSTEM
     from app.legacy_import.models import MatterSourceReference
@@ -4002,10 +4007,10 @@ def _lovable_source_links(matter: Any) -> list[dict[str, str]]:
     urls = (
         MatterSourceReference.objects.filter(matter=matter, source_system=SOURCE_SYSTEM)
         .exclude(onenote_url="")
-        .order_by("created_at")
+        .order_by("-created_at")
         .values_list("onenote_url", flat=True)
     )
-    return [{"url": url} for url in dict.fromkeys(urls) if url.startswith("https://")]
+    return [{"url": url} for url in urls[:1] if url.startswith("https://")]
 
 
 #: How many evidence rows the Dokumendid table renders before it offers

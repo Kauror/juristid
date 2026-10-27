@@ -1,0 +1,102 @@
+{% extends "haldus/base.html" %}
+{% block title %}Lovable sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Lovable sünkroonimine (docs/adr/0192), for a verified technical
+  administrator. The run ledger in counts; a pending change's wording only for a
+  Teema the reader may already open — the rest are counted, never named.
+  `Kontrolli muudatusi` compares the newest stored snapshot with Juristid and
+  writes no Teema. Running, pausing and retiring the job are server commands.
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="sunk-seis">
+    <h2 class="acctsection__title" id="sunk-seis">Seis</h2>
+    <dl class="detailgrid">
+      <dt>Hinnang</dt>
+      <dd>
+        {% if health.ok %}<span class="statechip statechip--ok">Korras</span>{% else %}<span class="statechip statechip--problem">Vajab tähelepanu</span>{% endif %}
+        <span class="mono">{{ health.detail }}</span>
+      </dd>
+      <dt>Viimane katse</dt>
+      <dd>
+        {% if health.last_run %}
+          {{ health.last_run.started_at|date:"j.n.Y H:i" }} · {{ health.last_run.get_trigger_display }} · {{ health.last_run.get_mode_display }} · {{ health.last_run.get_status_display }}{% if health.last_run.counts.duration_seconds %} · {{ health.last_run.counts.duration_seconds }} s{% endif %}
+        {% else %}—{% endif %}
+      </dd>
+      <dt>Viimane edukas</dt>
+      <dd>{% if health.last_success %}{{ health.last_success.started_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+      <dt>Lähteseis loetud</dt>
+      <dd>{% if health.last_run.snapshot_taken_at %}{{ health.last_run.snapshot_taken_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+      <dt>Kontrollitud</dt>
+      <dd>{% if health.last_run %}{% if health.last_run.verified %}<span class="statechip statechip--ok">Kirjed loeti üle</span>{% else %}<span class="statechip statechip--waiting">Ei kontrollitud</span>{% endif %}{% else %}—{% endif %}</dd>
+    </dl>
+    <p class="acctnote">Kui viimane edukas käivitus on vanem kui {{ stale_hours }} tundi või viimane katse ebaõnnestus, on hinnang punane.</p>
+  </section>
+
+  {% if summary %}
+  <section class="panel" aria-labelledby="sunk-tulemus">
+    <h2 class="acctsection__title" id="sunk-tulemus">Viimane tulemus</h2>
+    <ul class="linklist">{% for line in summary %}<li>{{ line }}</li>{% endfor %}</ul>
+    {% with c=health.last_run.counts %}
+    {% if c %}
+    <dl class="detailgrid">
+      <dt>Puudub allikast</dt><dd>{{ c.missing|default:0 }}</dd>
+      <dt>Tunnus muutunud</dt><dd>{{ c.identifier_changed|default:0 }}</dd>
+      <dt>Lovable'is elavaid teemasid</dt><dd>{{ c.source_live|default:0 }}</dd>
+      <dt>Neist väljaspool sünkroonitavaid</dt><dd>{{ c.outside_cohort|default:0 }}</dd>
+      <dt>Uued eelmisest korrast</dt><dd>{{ c.new_since_previous|default:0 }}</dd>
+      <dt>Operatiivsed, Juristides puudu</dt><dd>{{ c.operational_not_in_juristid|default:0 }}</dd>
+    </dl>
+    {% endif %}
+    {% endwith %}
+  </section>
+  {% endif %}
+
+  <section class="panel" aria-labelledby="sunk-ootel">
+    <h2 class="acctsection__title" id="sunk-ootel">Ülevaatust ootavad ja kohalikud muudatused</h2>
+    <form method="post" action="{% url 'haldus:lovable_check' %}">
+      {% csrf_token %}
+      <button type="submit" class="button button--secondary">Kontrolli muudatusi</button>
+    </form>
+    <p class="acctnote">Võrdleb viimati loetud Lovable'i seisu Juristide praeguse seisuga. Ühtegi teemat ei muudeta.</p>
+    {% if table_run %}<p class="acctnote">Tabel: {{ table_run.get_trigger_display }} {{ table_run.started_at|date:"j.n.Y H:i" }}{% if table_run.snapshot_taken_at %}, Lovable'i seis {{ table_run.snapshot_taken_at|date:"j.n.Y H:i" }}{% endif %}.</p>{% endif %}
+    {% if pending %}
+      <div class="accttable">
+        <table class="data-table">
+          <thead>
+            <tr><th scope="col">Teema</th><th scope="col">Väli</th><th scope="col">Tulemus</th><th scope="col">Põhjus</th><th scope="col">Viimati rakendatud</th><th scope="col">Juristides</th><th scope="col">Lovable'is</th></tr>
+          </thead>
+          <tbody>
+            {% for row in pending %}
+              <tr>
+                <td><a href="{% url 'matters:matter_detail' row.matter.pk %}">{{ row.matter.display_reference }}</a></td>
+                <td>{{ row.field }}</td>
+                <td>{{ row.outcome }}</td>
+                <td>{{ row.reason|default:"—" }}</td>
+                <td>{{ row.baseline }}</td>
+                <td>{{ row.current }}</td>
+                <td>{{ row.source }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif not hidden %}
+      <p>Ootel muudatusi pole.</p>
+    {% endif %}
+    {% if hidden %}
+      <p class="acctnote">{{ hidden }} muudatus{{ hidden|pluralize:"t" }} teemadel, mida sinu valitud isik ei näe; nende sisu siin ei näidata.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="sunk-juhtimine">
+    <h2 class="acctsection__title" id="sunk-juhtimine">Juhtimine serveris</h2>
+    <ul class="linklist mono">
+      <li>lovable_sync control --mode off --reason "…"  (peata)</li>
+      <li>lovable_sync control --mode compare|apply --reason "…"  (jätka)</li>
+      <li>juristid-lovable-sync.sh --manual  (käivita kohe, samade kontrollidega)</li>
+      <li>lovable_sync control --cut-over --operator-intent lovable-sync-cutover --reason "…"  (lõplik üleminek, tagasivõtmatu)</li>
+    </ul>
+  </section>
+{% endblock %}
