@@ -8,6 +8,20 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-27
+basis = "deployment"
+prs = [557]
+# Lovable'i piloodi kood (#557, ADR 0191): käsk `lovable_pilot` ja OneNote'i
+# link vaates «Dokumendid». Väljalase ise teemasid ei lisa; 100 teema
+# lisamine on eraldi, omaniku lubatud toiming pärast väljalaset.
+# Migratsioonideta, otsinguindeksit uuesti ei ehitata. Kui väljalase ei jõua
+# tootmisse 27.10 (Tallinna aja järgi), liigub see kirje väljalaske päeva
+# kuupäevale.
+changes = [
+  "Lovable'ist üle toodud teemal on vaates «Dokumendid» jaotis «Allikas» lingiga algsele OneNote'i lehele; lehe sisu ja manuseid Juristidesse ei tooda.",
+]
+
+[[day]]
 date = 2026-10-26
 basis = "deployment"
 prs = [543, 544, 545, 546, 548, 550, 551, 553, 554, 555]
