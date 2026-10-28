@@ -4,7 +4,7 @@ once: on its day, or — known only to a period — in one of the lists below th
 grid (app/matters/calendar.py).
 {% endcomment %}
 <p class="wcal__legend">
-  <span class="wcal__key"><span class="wcal__dot wcal__dot--too{% if calendar.is_department %} wcal__dot--none{% endif %}" aria-hidden="true"></span>Tähtajad ja tegevused{% if calendar.is_department and calendar.view != "aasta" %} (värv: vastutaja){% endif %}</span>
+  <span class="wcal__key"><span class="wcal__dot wcal__dot--too" aria-hidden="true"></span>Tähtajad ja tegevused{% if calendar.is_department and calendar.view != "aasta" %} (värv: vastutaja){% endif %}</span>
   <span class="wcal__key"><span class="wcal__dot wcal__dot--joustumine" aria-hidden="true"></span>Jõustumised</span>
 </p>
 {% if calendar.people %}

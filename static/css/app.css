@@ -14489,49 +14489,51 @@ a.jcal__daynum {
 /* Osakond's calendar: a work dot in its responsible person's colour
    (app/matters/calendar.py, `person_colour`); nobody responsible is a hollow
    neutral ring rather than anybody's colour. Late keeps the person's fill and
-   adds a ring in the overdue colour, so lateness never repaints the person. */
-.wcal__dot--none {
+   adds a ring in the overdue colour, so lateness never repaints the person.
+   Two classes, so the generic `.wcal__dot--too` fill declared later in this
+   file cannot repaint every person in the work colour. */
+.wcal__dot.wcal__dot--none {
   background: transparent;
   box-shadow: inset 0 0 0 1.5px var(--calendar-person-none);
 }
 
-.wcal__dot--p1 {
+.wcal__dot.wcal__dot--p1 {
   background: var(--calendar-person-1);
 }
 
-.wcal__dot--p2 {
+.wcal__dot.wcal__dot--p2 {
   background: var(--calendar-person-2);
 }
 
-.wcal__dot--p3 {
+.wcal__dot.wcal__dot--p3 {
   background: var(--calendar-person-3);
 }
 
-.wcal__dot--p4 {
+.wcal__dot.wcal__dot--p4 {
   background: var(--calendar-person-4);
 }
 
-.wcal__dot--p5 {
+.wcal__dot.wcal__dot--p5 {
   background: var(--calendar-person-5);
 }
 
-.wcal__dot--p6 {
+.wcal__dot.wcal__dot--p6 {
   background: var(--calendar-person-6);
 }
 
-.wcal__dot--p7 {
+.wcal__dot.wcal__dot--p7 {
   background: var(--calendar-person-7);
 }
 
-.wcal__dot--p8 {
+.wcal__dot.wcal__dot--p8 {
   background: var(--calendar-person-8);
 }
 
-.wcal__dot--p9 {
+.wcal__dot.wcal__dot--p9 {
   background: var(--calendar-person-9);
 }
 
-.wcal__dot--p10 {
+.wcal__dot.wcal__dot--p10 {
   background: var(--calendar-person-10);
 }
 
@@ -14539,7 +14541,7 @@ a.jcal__daynum {
   box-shadow: 0 0 0 1.5px var(--calendar-overdue);
 }
 
-.wcal__dot--none.is-overdue {
+.wcal__dot.wcal__dot--none.is-overdue {
   background: transparent;
   box-shadow:
     inset 0 0 0 1.5px var(--calendar-person-none),

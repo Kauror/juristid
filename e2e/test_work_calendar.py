@@ -175,3 +175,31 @@ def test_no_horizontal_scroll_on_a_phone_on_osakond(page, base_url, view):
     )
 
     assert overflow <= 0
+
+
+def test_department_dots_are_painted_in_their_persons_colour(page, base_url):
+    """The person classes win over the generic work fill declared later in app.css.
+
+    They once did not: every dot on Osakond drew in the one work colour and the
+    legend's names matched nothing on the grid. Read from the computed style,
+    because only the cascade can tell.
+    """
+    _open(page, base_url, path="/osakond/")
+    fills = page.evaluate(
+        """() => {
+          const work = getComputedStyle(
+            document.querySelector('#osakonna-kalender .wcal__legend .wcal__dot--too')
+          ).backgroundColor;
+          const people = [...document.querySelectorAll(
+            '#osakonna-kalender .wcal__grid .wcal__dot[class*="wcal__dot--p"]'
+          )].map((dot) => getComputedStyle(dot).backgroundColor);
+          const nobody = [...document.querySelectorAll(
+            '#osakonna-kalender .wcal__grid .wcal__dot--none'
+          )].map((dot) => getComputedStyle(dot).backgroundColor);
+          return {work, people, nobody};
+        }"""
+    )
+
+    assert fills["people"], "the seeded world has dated work with somebody responsible"
+    assert all(fill != fills["work"] for fill in fills["people"])
+    assert all(fill == "rgba(0, 0, 0, 0)" for fill in fills["nobody"])
