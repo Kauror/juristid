@@ -60,7 +60,11 @@ pytestmark = pytest.mark.django_db
 #: PERFORMANCE-AUDIT.md §10, query counts (deterministic, so CI holds them).
 #: Osakond +1 since docs/adr/0188: the rail asks once for commencement checks on
 #: Teemad with no Vastutaja, for the holder of the management view.
-OSAKOND_BUDGET = 46
+#: +3 since the department calendar at the top of the rail and the remembered
+#: Eesolev windows: the calendar's commencements and estimates, read once each
+#: (its work is the page's own list), and the reader's remembered blocks, read
+#: once for the page (app/accounts/disclosures.py).
+OSAKOND_BUDGET = 49
 #: Minu asjad +1 since the rail's Kalender (docs/adr/0158, amendment of
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
@@ -148,6 +152,10 @@ _TOKENS = [
         'name="csrfmiddlewaretoken" value=""',
     ),
     (re.compile(r'name="salvestus" value="[^"]+"'), 'name="salvestus" value=""'),
+    (
+        re.compile(r'data-csrf="[^"]+"'),
+        'data-csrf=""',
+    ),  # docs/adr/0194: the remembered-blocks endpoint meta
 ]
 
 

@@ -149,7 +149,7 @@ def _page(client: Client, url: str) -> str:
         if getattr(response, "streaming", False)
         else response.content
     )
-    return re.sub(r'value="[A-Za-z0-9]{32,}"', "CSRF", raw.decode())
+    return re.sub(r'(?:value|data-csrf)="[A-Za-z0-9]{32,}"', "CSRF", raw.decode())
 
 
 def _reader_client(world) -> Client:

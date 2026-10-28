@@ -110,7 +110,7 @@ def _body(client: Client, url: str) -> str:
     """One rendering, with only the per-request CSRF token removed."""
     response = client.get(url)
     assert response.status_code == 200, f"{url} answered {response.status_code}"
-    return re.sub(r'value="[A-Za-z0-9]{32,}"', "CSRF", response.content.decode())
+    return re.sub(r'(?:value|data-csrf)="[A-Za-z0-9]{32,}"', "CSRF", response.content.decode())
 
 
 def _detail_url(world) -> str:
