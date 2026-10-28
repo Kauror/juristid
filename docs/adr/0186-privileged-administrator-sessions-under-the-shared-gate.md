@@ -309,3 +309,29 @@ disappears on its own. The Secure Pilot Gate's «second break-glass administrato
 and continuity path» (`docs/secure-pilot-gate.md`) and the open decision
 «Support/absence cover and second administrator» (`docs/open-decisions.md`) stay
 open; this section records the accepted risk, not their sign-off.
+
+## Amendment 2026-10-28 — Haldus as a gear, Ülevaade for every reader
+
+The owner's brief of 2026-10-28 («Juristid UX & workflow package», Haldus as a
+gear icon) changes how Haldus is reached, not what it authorizes.
+
+- **The bar.** Haldus is no longer a text item in the primary navigation. It is
+  a gear icon beside «Välju» (accessible name and tooltip «Haldus»,
+  `aria-current` on Haldus pages), shown to **every** signed-in persona or
+  account, and to a persona-less gate session holding a verified administrator
+  session. Showing it to everybody alike keeps the property §Haldus asked for —
+  switching personas reveals nothing about who the administrators are.
+- **Ülevaade opens for every signed-in reader** (`sections.may_open_overview`),
+  because it now carries *Rakendus*: Uuendused, Kiirklahvid, the running build
+  (stage, environment, revision, build time — the footer's former stamp) and
+  «Taasta plokkide vaikeseaded». It shows nothing privileged to a reader without
+  a verified session: the session and continuity panels follow
+  `verified_administrator`, the section list follows each section's predicate,
+  and every route behind a section still refuses on its own (404).
+- **The way to the step-up** moves from a call to action on Ülevaade to the
+  bottom of the persona menu («Halduri sisselogimine»), the same for every
+  reader; the persona page keeps its link and `/haldus/sisene/` is unchanged.
+  While a verified session is open the menu names whose it is and offers
+  «Lõpeta halduri seanss» (`haldus:sign_out`, which ends only that session).
+  Step-up, session limits, re-authentication, throttling and audit are
+  unchanged.

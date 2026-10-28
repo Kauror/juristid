@@ -4,9 +4,14 @@
 {% comment %}
   Haldus → Ülevaade. What the reader can do here, in a few lines: the
   verified administrator session (whose it is, what it may do, how long it
-  lasts), whether the two-administrator rule holds, and the sections this
-  reader may open. Not a dashboard: the work lists live on their own pages
-  (docs/adr/0186).
+  lasts), whether the two-administrator rule holds, the sections this reader
+  may open, and Rakendus. Not a dashboard: the work lists live on their own
+  pages (docs/adr/0186).
+
+  Every signed-in reader reaches this page (the owner's brief, 2026-10-28), so
+  only Rakendus is unconditional; the rest follows the verified administrator
+  session or each section's own predicate. The way to the administrator
+  sign-in is the persona menu's, not a call to action here.
 {% endcomment %}
 
 {% block haldus_content %}
@@ -33,17 +38,6 @@
           <button type="submit" class="button button--secondary">Lõpeta halduri seanss</button>
         </form>
       {% endif %}
-    </section>
-  {% elif step_up_offered %}
-    <section class="panel" aria-labelledby="halduri-kinnitus">
-      <h2 class="acctsection__title" id="halduri-kinnitus">Halduri sisselogimine</h2>
-      <p class="acctnote">
-        Kui haldad kasutajaid või süsteemi, logi halduriks sisse oma e-posti, isikliku parooli ja
-        autentimisrakenduse koodiga. Kasutaja valimine ühisparooli taga seda ei asenda.
-      </p>
-      <div class="form__actions">
-        <a class="button button--secondary" href="{% url 'haldus:sign_in' %}">Halduri sisselogimine</a>
-      </div>
     </section>
   {% endif %}
 
@@ -86,4 +80,49 @@
       </ul>
     </section>
   {% endif %}
+
+  {% comment %}
+    Rakendus: the application itself, for everybody. Uuendused and Kiirklahvid
+    left the footer for here, and so did the build stamp — read from the same
+    context processor the footer reads (`application`), in Tallinn time.
+    Uuendused keeps its own two doors: the Lovable night's changes ask for a
+    reader on their own page (`core:release_notes_lovable`).
+  {% endcomment %}
+  <section class="panel" aria-labelledby="rakendus">
+    <h2 class="acctsection__title" id="rakendus">Rakendus</h2>
+    <ul class="linklist">
+      <li class="linklist__item">
+        <a href="{% url 'core:release_notes' %}">Uuendused</a>
+        <span class="linklist__meta">Juristide rakenduse uuendused ja Lovable'i öiste muudatuste osa.</span>
+      </li>
+      <li class="linklist__item">
+        <a href="{% url 'core:keyboard_shortcuts' %}">Kiirklahvid</a>
+        <span class="linklist__meta">Saadaolevad kiirklahvid ja nende kasutamine.</span>
+      </li>
+    </ul>
+    <h3 class="acctsection__title" id="rakenduse-versioon">Rakenduse versioon</h3>
+    <dl class="detailgrid" aria-labelledby="rakenduse-versioon">
+      <dt>Etapp</dt>
+      <dd>{{ application_stage|default:"—" }}</dd>
+      <dt>Keskkond</dt>
+      <dd>{{ application_environment|default:"—" }}</dd>
+      <dt>Versioon</dt>
+      <dd><span class="mono">{{ application_revision|default:"—" }}</span></dd>
+      <dt>Ehitatud</dt>
+      <dd>{% if application_built_at %}{{ application_built_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+    </dl>
+    {% if user.is_authenticated %}
+      {% comment %}
+        Remembered blocks (docs/adr/0194): forgets the selected persona's
+        open/closed choices and nobody else's. Only for somebody signed in as
+        somebody — a persona-less administrator session has none to forget.
+      {% endcomment %}
+      <form method="post" action="{% url 'accounts:reset_disclosures' %}" class="acctactions">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'haldus:index' %}">
+        <button type="submit" class="button button--secondary">Taasta plokkide vaikeseaded</button>
+        <span class="acctnote">Meelde jäetud avatud ja suletud plokid avanevad jälle vaikimisi viisil — praegu valitud kasutaja jaoks.</span>
+      </form>
+    {% endif %}
+  </section>
 {% endblock %}

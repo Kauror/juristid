@@ -80,18 +80,7 @@ and the two sections that were genuinely the head's are decided on the page
   docs/adr/0028).
 {% endcomment %}
 {% comment %}
-  Haldus — one item, leading to the Haldus shell, whose own sub-navigation
-  holds Kasutajad ja õigused, Klassifikaatorid, Osakonna töökorraldus and
-  Süsteemi seis. Offered only where at least one section would open for this
-  reader, or — under the shared gate — to a persona whose account may verify
-  itself as an administrator, as the way to that sign-in
-  (app/accounts/templatetags/haldus.py). Every route asks its own question
-  again and 404s when the answer is no (docs/adr/0186).
+  Haldus is not here any more. It is the gear beside «Välju» (templates/base.html,
+  app/accounts/templatetags/haldus.py): an occasional destination, not part of
+  the everyday rotation (the owner's brief, 2026-10-28).
 {% endcomment %}
-{% load haldus %}
-{% haldus_link as haldus_href %}
-{% if haldus_href %}
-<a class="topnav__link {% if nav_active == 'haldus' %}is-active{% endif %}"
-   {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
-   href="{{ haldus_href }}">Haldus</a>
-{% endif %}

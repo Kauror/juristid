@@ -119,14 +119,14 @@ def test_the_head_reads_the_same_order_as_a_specialist(client, department_head):
     """The order is not conditional on a role.
 
     Osakond was head-only navigation once (docs/adr/0049); it is not any more.
-    The one item that does follow the reader is «Haldus», last and only where a
-    Haldus section opens — for the head, Osakonna töökorraldus
-    (docs/adr/0186). Everything before it is the specialist's order, unchanged.
+    «Haldus» followed the reader here until 2026-10-28; it is a gear beside
+    «Välju» now, for everybody, and not a navigation item at all
+    (docs/adr/0186, amendment).
     """
     client.force_login(department_head)
 
     labels = labels_of(navigation_of(client.get(reverse("matters:department"))))
-    assert labels == [*EXPECTED_ORDER, "Haldus"]
+    assert labels == EXPECTED_ORDER
 
 
 # ---------------------------------------------------------------------------

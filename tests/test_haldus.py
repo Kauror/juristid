@@ -93,11 +93,12 @@ def test_the_verified_administrator_sees_continuity_and_their_session(client):
     assert reverse("haldus:sign_out") in body
 
 
-def test_the_bar_offers_one_haldus_item_where_something_opens(client):
+def test_the_bar_offers_the_haldus_gear_to_every_persona(client):
+    """Ülevaade opens for everybody signed in since 2026-10-28, so the gear does too."""
     specialist, _ = person()
     pass_gate(client)
     choose(client, specialist)
-    assert 'href="/haldus/"' not in client.get(reverse("matters:my_work")).content.decode()
+    assert 'href="/haldus/"' in client.get(reverse("matters:my_work")).content.decode()
 
     choose(client, factories.DepartmentHeadFactory())
     assert 'href="/haldus/"' in client.get(reverse("matters:my_work")).content.decode()
@@ -119,7 +120,8 @@ def test_the_bar_does_not_say_who_the_administrators_are(client):
     assert "/haldus/" not in bar(manager)
 
 
-def test_the_landing_offers_the_sign_in_to_every_head_alike(client):
+def test_the_page_offers_the_sign_in_to_every_head_alike(client):
+    """From the persona menu now, on every page and the same for both."""
     plain = factories.DepartmentHeadFactory()
     admin, _ = full_admin(role=UserRole.DEPARTMENT_HEAD)
     pass_gate(client)

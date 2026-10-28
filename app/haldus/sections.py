@@ -92,13 +92,30 @@ def _any_other(request: HttpRequest) -> bool:
     return any(section.visible(request) for section in SECTIONS if section.key != "ulevaade")
 
 
+def may_open_overview(request: HttpRequest) -> bool:
+    """Ülevaade: anybody signed in as somebody, and whoever another section opens for.
+
+    Since 2026-10-28 the landing page is also where *Rakendus* lives — Uuendused,
+    Kiirklahvid, the running build and «Taasta plokkide vaikeseaded» — so every
+    signed-in persona or account reaches it (the owner's brief, Haldus as a gear
+    icon). It shows nothing privileged: each other section keeps its own
+    predicate here and its own refusal in its view. A shared-gate session with
+    no persona reaches it only through a verified administrator session, as
+    before (docs/adr/0186).
+    """
+    persona = _persona(request)
+    if getattr(persona, "is_authenticated", False):
+        return True
+    return _any_other(request)
+
+
 SECTIONS: tuple[Section, ...] = (
     Section(
         "ulevaade",
         "Ülevaade",
         "haldus:index",
-        _any_other,
-        "Mida sa siin teha saad ja kas haldus on tagatud.",
+        may_open_overview,
+        "Rakenduse andmed, halduri seanss ja sulle avatud halduse osad.",
     ),
     Section(
         "kasutajad",
