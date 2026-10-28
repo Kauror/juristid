@@ -8,6 +8,31 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-28
+basis = "deployment"
+prs = [563]
+# Kasutusmugavuse ja töövoo pakett (#563): Osakonna kalender, «Viimased
+# tegevused», tänane vaikekuupäev, arvude selgitused, meelde jäetud plokid
+# (ADR 0194, accounts 0006 — üks uus tabel), Haldus «Rakendus» ja uus jalus
+# (ADR 0186 täiendus). CI tasemed (#561, #562) on sisemised ja punkti ei saa.
+# Otsinguindeksit uuesti ei ehitata. Kui väljalase ei jõua tootmisse 28.10
+# (Tallinna aja järgi), liigub see kirje väljalaske päeva kuupäevale.
+changes = [
+  "Osakonna lehel on kalender: kõigi tegevused ja tähtajad, iga inimene oma värviga; päeva avades on näha «Isik — Teema».",
+  "Kalendri päeva avades ei korrata kuupäeva enam iga rea juures.",
+  "Minu asjades on «Märkmed» nüüd «Kuupäevata» järel.",
+  "«Minu viimased sissekanded» ja «Viimati muudetud» on asendatud ühe loendiga «Viimased tegevused»: teema esimesena, kümme rida ja ülejäänud «Näita veel» all.",
+  "Uue järgmise tegevuse kuupäev on vaikimisi täna; kuupäevata tegevuse jaoks tühjenda kuupäeva kast.",
+  "Minu asjade ja Osakonna arvudel on selgemad nimed ning «?», mis ütleb, mida arv loeb.",
+  "Statistika → Tegevus → «Saadetud arvamused» tabelis ei ole enam veergu «Liik».",
+  "Teemade loendi kuupäeva ees ei ole enam «PLAANIS» ega «VAATAN ÜLE»; see on kuupäeva vihjes alles. «ARVAMUSE TÄHTAEG» jääb.",
+  "Lahtikäivad plokid jäävad lahti või kinni nii, nagu need viimati jätsid; Haldus → «Taasta plokkide vaikeseaded» toob algse seisu tagasi.",
+  "Osakonna «Eesolev» on jaotatud kuueks: täna, homme, nädala ülejäänud päevad, järgmine nädal, ülejäänud kuu ja kaugemal.",
+  "Haldus on nüüd hammasratas «Välju» kõrval ja halduri sisselogimine on kasutaja valiku lehel. Halduse uues osas «Rakendus» on Uuendused, Kiirklahvid ja rakenduse versioon.",
+  "Lehe jaluses on «Eesti Kaubandus-Tööstuskoda · ehitatud …»; ehitusaeg viib Uuenduste lehele.",
+]
+
+[[day]]
 date = 2026-10-27
 basis = "deployment"
 prs = [557, 558, 559, 560]
