@@ -82,6 +82,13 @@ regeneration. `E2E_UPDATE_BASELINES=1` is for the first baseline of a brand-new
 scenario and nothing else: it rewrites *every* file and skips the comparison, so
 a run with it on refreshes scenarios nobody looked at and reports nothing.
 
+That run can be a draft's. Since docs/adr/0193 (amendment) this job also runs
+in the FAST tier whenever a draft changes `templates/`, `static/` or `e2e/`,
+with the same world and the same upload, so the candidates arrive in about four
+minutes rather than after a whole FULL round. On a draft its red blocks nothing;
+take the candidates, commit them to the draft, and mark it ready once it is
+green.
+
 A missing baseline **fails**, by name. It used to skip, so that a brand-new
 scenario would not turn the build red before anybody had looked at what it
 captured — and the Teema rebuild then spent a whole round with ten scenarios
