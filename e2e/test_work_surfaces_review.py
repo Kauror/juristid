@@ -367,8 +367,13 @@ def test_the_strip_figures_are_the_counts_of_the_bands_they_open(page, base_url)
     """
     _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
 
-    for caption, key in (("üle tähtaja", "ule_tahtaja"), ("sel nädalal", "sel_nadalal")):
-        figure = page.locator(f'.seis__figure:has(.seis__caption:text-is("{caption}"))')
+    # The week figure has read «tegevust sel nädalal» since the UX package of
+    # 2026-10-28 («tegevus» for one), so the captions are patterns.
+    for caption, key in (
+        ("^üle tähtaja$", "ule_tahtaja"),
+        ("^tegevust? sel nädalal$", "sel_nadalal"),
+    ):
+        figure = page.locator(f'.seis__figure:has(.seis__caption:text-matches("{caption}"))')
         band = page.locator(f"section.workband#{key}")
         if figure.count() == 0:
             # A zero is not drawn; then the band holds nothing either.

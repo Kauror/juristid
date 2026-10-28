@@ -634,9 +634,13 @@ def test_the_intervention_row_states_the_missing_deadline_and_nothing_else(page,
     # of opinions other tests registered as sent long ago — so in a busy shared
     # world every row may be overdue work; then that is what fills it, and the
     # row's wording is held by tests/test_identifier_free_ui.py without a browser.
+    # Unless the file still owes its `Arvamuse tähtaeg`: then the row reads
+    # «samm puudub» over that deadline, because «tähtaeg puudub» would be false
+    # (54e5fb29). Which of the two a shard sees depends on what the tests before
+    # it filed, so both are allowed and neither may be silent.
     quiet = [text for text in texts if "järgmine samm määramata" in text]
     for text in quiet:
-        assert "tähtaeg puudub" in text, text
+        assert "tähtaeg puudub" in text or "arvamuse tähtaeg" in text, text
     if not quiet:
         assert all(" p üle" in text for text in texts), texts
 

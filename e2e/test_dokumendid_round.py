@@ -14,7 +14,7 @@ import re
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, READER, create_matter, sign_in, sign_out
+from e2e.conftest import MARTIN, READER, create_matter, open_disclosure, sign_in, sign_out
 from e2e.test_document_file_links import PDF, _documents, _upload
 from e2e.titles import unique_title
 
@@ -156,7 +156,7 @@ def test_a_long_filename_wraps_and_nothing_scrolls_sideways(page, base_url, file
             <= 0
         ), width
         _detail_of(page, base_url, LONG[:20])
-        page.locator("details#dokumendi-andmed > summary").click()
+        open_disclosure(page.locator("details#dokumendi-andmed"))
         assert (
             page.evaluate(
                 "document.documentElement.scrollWidth - document.documentElement.clientWidth"
