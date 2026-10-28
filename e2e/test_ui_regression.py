@@ -197,6 +197,10 @@ CLOCK_DEPENDENT = [
     # from today and changes every morning. The row and the step's own words
     # stay in the baseline.
     ".curact__date",
+    # A date box that opens on today (ADR 0052, addendum of 2026-10-28):
+    # `✓ Tehtud`'s `Millal?` and `+ Lisa tegevus`'s day. The box and its quick
+    # days stay in the baseline; only the date written into it moves daily.
+    "input[data-today-default]",
     # `Excelist` and the register snapshot label beside an imported instruction.
     ".curact__flag",
     # The outstanding `Arvamuse tähtaeg` stated under the task — «20.09 · 25 p
@@ -961,6 +965,7 @@ def _assert_every_required_normalisation_is_declared() -> None:
 _assert_every_required_normalisation_is_declared()
 
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
+    "praegune-tehtud": ("input[data-today-default]",),
     "minu-too": PORTFOLIO_WHEN,
     "minu-too-3440": PORTFOLIO_WHEN,
     "teemad-1280": OPINION_SENT,
@@ -2859,6 +2864,8 @@ def test_the_done_form_on_a_teema_filed_today(page, base_url):
     page.wait_for_load_state("networkidle")
     page.locator("#lisa-jargmine > summary").click()
     page.locator("#lisa-jargmine [name='text']").fill("Tutvu materjaliga")
+    # The box opens on today since 2026-10-28; emptied, the step has no day.
+    page.locator("#id_target_date").fill("")
     page.locator("#lisa-jargmine button[type=submit]").first.click()
     page.wait_for_load_state("networkidle")
     page.locator('label[for="tehtud-valik"]').click()
