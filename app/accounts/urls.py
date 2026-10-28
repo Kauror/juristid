@@ -9,7 +9,7 @@ nothing is watching — and a mode that is not running has no pages to probe.
 
 from django.urls import path
 
-from app.accounts import local_views, views
+from app.accounts import disclosure_views, local_views, views
 
 urlpatterns = [
     path("arendus-sisselogimine/", views.dev_login, name="dev_login"),
@@ -34,4 +34,7 @@ urlpatterns = [
     ),
     path("turvalisus/eemalda/", local_views.security_remove, name="security_remove"),
     path("kinnita/", local_views.reauthenticate, name="reauthenticate"),
+    # -- remembered blocks, in every mode (docs/adr/0194) -------------------
+    path("plokid/", disclosure_views.save_disclosure, name="save_disclosure"),
+    path("plokid/taasta/", disclosure_views.reset_disclosures, name="reset_disclosures"),
 ]

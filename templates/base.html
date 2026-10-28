@@ -33,6 +33,15 @@
       idempotently, and again after every HTMX swap (static/js/ux.js).
     {% endcomment %}
     <script src="{% static 'js/ux.js' %}" defer></script>
+    {% if user.is_authenticated %}
+      {% comment %}
+        Remembered blocks (docs/adr/0194): where a reader's open/closed choice
+        for an informational block is saved, for the person signed in. Absent
+        for anybody else, so their blocks are plain `<details>` with defaults.
+      {% endcomment %}
+      <meta name="disclosure-endpoint" content="{% url 'accounts:save_disclosure' %}" data-csrf="{{ csrf_token }}">
+      <script src="{% static 'js/disclosures.js' %}" defer></script>
+    {% endif %}
   </head>
   <body>
     <a class="skip-link" href="#sisu">Liigu sisu juurde</a>
