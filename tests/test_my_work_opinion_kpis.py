@@ -1,10 +1,12 @@
 """Minu asjad's two opinion figures: this week's, and every opinion in preparation.
 
-«arvamust sellel nädalal» and «arvamust kokku» close the Seis strip (shortened
-from «arvamust koostada sel nädalal» and «arvamust koostamisel kokku» in the
-owner's review of 2026-10-12 — captions only), on one's own desk and on a
-colleague's (`app/matters/my_work.py`, `OpinionWork`). Neither is a new
-definition, and the tests below hold them to that:
+«arvamust tähtajaga sel nädalal» and «arvamust koostamisel» close the Seis
+strip (shortened from «arvamust koostada sel nädalal» and «arvamust koostamisel
+kokku» in the owner's review of 2026-10-12, and reworded once more in the UX
+package of 2026-10-28 so that *due* and *being written* read as two populations
+— captions only), on one's own desk and on a colleague's
+(`app/matters/my_work.py`, `OpinionWork`). Neither is a new definition, and the
+tests below hold them to that:
 
 * **in preparation** is ``dashboard.drafting_matters`` — Osakond's ARVAMUS
   KOOSTAMISEL population, the register's ``?arvamus=koostamisel`` — narrowed to
@@ -64,11 +66,11 @@ SUNDAY = dt.date(2026, 10, 11)
 
 WEEK_KEY = "opinions_week"
 TOTAL_KEY = "opinions_drafting"
-WEEK_CAPTION = "arvamust sellel nädalal"
-TOTAL_CAPTION = "arvamust kokku"
+WEEK_CAPTION = "arvamust tähtajaga sel nädalal"
+TOTAL_CAPTION = "arvamust koostamisel"
 #: What a figure of exactly one reads, in the nominative.
-WEEK_CAPTION_ONE = "arvamus sellel nädalal"
-TOTAL_CAPTION_ONE = "arvamus kokku"
+WEEK_CAPTION_ONE = "arvamus tähtajaga sel nädalal"
+TOTAL_CAPTION_ONE = "arvamus koostamisel"
 
 
 # ---------------------------------------------------------------------------

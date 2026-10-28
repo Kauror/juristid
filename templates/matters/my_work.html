@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load register_source people notifications %}
+{% load register_source people notifications disclosures %}
 {% block title %}{% if is_self %}Minu asjad{% else %}{{ subject.display_name }} · asjad{% endif %} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -289,34 +289,57 @@ The rail holds only what has no honest place on a timeline.
       </section>
 
       {% comment %}
-        Open, both views. The list is four short lines and it answers «did I
-        write that down?», which is a question a person asks on the way past
-        rather than one they open a panel to ask. A disclosure whose first act
-        every morning is to be opened is not saving anybody a decision.
+        Viimased tegevused — what moved on this desk lately, newest first,
+        immediately under the Teemad it moved (owner's UX package, 2026-10-28).
+        One list where there were two: the rail's «Viimati muudetud» (one row
+        per Teema, its latest fact) and «Minu viimased sissekanded». Two
+        populations in it — substantive work on the Teemad this person owns,
+        whoever did it, and what this person wrote on somebody else's — read
+        by `app/matters/recent_activity.py`, which says what counts and why.
+
+        **The Teema first**, because it is what a reader scans for; the date,
+        the person and the act under it. The person only when it was somebody
+        else: on one's own desk one's own name is noise, and on a colleague's
+        it is the colleague's name repeated. An imported or source fact — an
+        arrival, a OneNote page's own timestamp — has nobody behind it and
+        names nobody.
+
+        A remembered block (`my_work.recent_activity`, open by default). The
+        «Näita veel» inside it is the rest of the same read, not a second
+        request, and is not remembered: a list expansion is not a preference.
       {% endcomment %}
-      <section class="workband workband--entries" aria-label="Viimased sissekanded">
-        <details class="foldout" open>
+      <section class="workband workband--activity" aria-label="Viimased tegevused">
+        <details class="foldout" {% disclosure "my_work.recent_activity" %}>
           <summary class="foldout__trigger">
-            <span class="foldout__label">{% if is_self %}Minu viimased sissekanded{% else %}Viimased sissekanded{% endif %}</span>
-            {% if work.last_entry %}
-              <span class="foldout__meta">viimane {{ work.last_entry.occurred_at|date:"j.n" }} kell {{ work.last_entry.occurred_at|date:"H:i" }}</span>
-            {% else %}
-              <span class="foldout__meta">sissekandeid ei ole</span>
-            {% endif %}
+            <span class="foldout__label">Viimased tegevused</span>
           </summary>
           <div class="foldout__body">
-            {% for entry in work.entries %}
-              <a class="entryline" href="{% url 'matters:matter_detail' pk=entry.matter.pk %}">
-                <span class="entryline__when">{{ entry.occurred_at|date:"j.n" }}</span>
-                <span class="entryline__matter">
-                  {{ entry.matter.title }}
-                </span>
-              </a>
+            <p class="actfeed__hint">
+              {% if is_self %}
+                Sisulised tegevused sinu teemadel, kes tahes need tegi, ja sinu sissekanded teiste teemadel.
+              {% else %}
+                Sisulised tegevused selle inimese teemadel, kes tahes need tegi, ja tema sissekanded teiste teemadel.
+              {% endif %}
+              Pealkirja, vastutaja ja muude andmete muutmist siin ei näidata.
+            </p>
+            {% for row in work.activity.preview %}
+              {% include "matters/partials/activity_row.html" with row=row %}
             {% empty %}
               <p class="workempty">
-                {% if is_self %}Sa ei ole veel sissekandeid teinud.{% else %}Sissekandeid ei ole.{% endif %}
+                {% if is_self %}Sinu teemadel ei ole veel tegevusi.{% else %}Tegevusi ei ole.{% endif %}
               </p>
             {% endfor %}
+            {% if work.activity.remaining %}
+              <details class="pw-more">
+                <summary>Näita veel {{ work.activity.remaining }} ▾<span class="visually-hidden"> — viimased tegevused</span></summary>
+                {% for row in work.activity.rest %}
+                  {% include "matters/partials/activity_row.html" with row=row %}
+                {% endfor %}
+              </details>
+            {% endif %}
+            {% if work.activity.at_cap %}
+              <p class="actfeed__cap">Siin on {{ work.activity.limit }} viimast tegevust. Varasemad on teemade endi käigus.</p>
+            {% endif %}
           </div>
         </details>
       </section>
@@ -324,12 +347,14 @@ The rail holds only what has no honest place on a timeline.
 
     <aside class="worklayout2__rail" aria-label="{% if is_self %}Kalender, ülevaade ja märkmed{% else %}Kalender, ülevaade ja kiirvaade{% endif %}">
       {% comment %}
-        The rail's order (owner's UX review of 2026-10-26): alerts first and
-        only when there are any — the reader's own «Kontrolli jõustumist»
-        prompts and «Uus asi» —, then the Kalender, then the four lists, then
-        the private Märkmed last. A colleague's page has no alerts and no notes
-        (neither is fetched for it, 01-EHITUSJUHIS §3.5); it ends with
-        Kiirvaade, after the same common blocks.
+        The rail's order (owner's UX review of 2026-10-26, amended by the UX
+        package of 2026-10-28): alerts first and only when there are any — the
+        reader's own «Kontrolli jõustumist» prompts and «Uus asi» —, then the
+        Kalender, Järgmise tegevuseta, Kuupäevata, the private Märkmed and
+        Minu statistika. «Viimati muudetud» left the rail for «Viimased
+        tegevused» in the main column. A colleague's page has no alerts and no
+        notes (neither is fetched for it, 01-EHITUSJUHIS §3.5); Kiirvaade
+        stands where the notes would be.
       {% endcomment %}
       {% if is_self %}
         {% comment %}
@@ -462,73 +487,14 @@ The rail holds only what has no honest place on a timeline.
         {% endif %}
       </section>
 
-      {% comment %}
-        Viimati muudetud, from the activity precedence the register's own
-        *Viimane tegevus* column reads. Not an audit log: the label names the
-        kind of fact that moved the file, which is what a person scanning for
-        "what happened while I was away" is actually asking
-        (app/matters/activity.py).
-      {% endcomment %}
-      <section class="railblock" aria-label="Viimati muudetud">
-        <h2 class="railblock__label">Viimati muudetud</h2>
-        <div class="pw-events">
-          {% for change in work.changes %}
-            <a class="pw-event" href="{% url 'matters:matter_detail' pk=change.matter.pk %}">
-              {% comment %}
-                `compact_display`, not the raw date. A `Kaasamine` may be
-                recorded to a month, a quarter or a year, and the stored value
-                is then the period's first day — `1.10` here would name a day
-                nobody named. A day still reads `12.5`, a month reads `09.26`,
-                and a quarter or a year is spelled out
-                (app/matters/activity.py, docs/adr/0082 §3).
-              {% endcomment %}
-              <span class="pw-event__when">{{ change.compact_display }}</span>
-              <span>
-                <span class="pw-event__what">{{ change.label }}</span>
-                <span class="pw-event__matter">{{ change.matter.title }}</span>
-              </span>
-            </a>
-          {% empty %}
-            <p class="railblock__empty">Muudatusi ei ole.</p>
-          {% endfor %}
-        </div>
-      </section>
-
-      {% comment %}
-        Counts, never ratings. No rank, no percentage, no comparison with a
-        colleague — the same refusal Osakond opens with.
-
-        Open in both views. It used to be collapsed on one's own desk, on the
-        reasoning that a person already knows their own numbers (02-EKRAANID
-        §A); live use reversed that. What a person knows is roughly, and the
-        block was being opened every morning to find out exactly — so the
-        disclosure was not sparing anybody a decision, it was charging a click
-        for the answer. `is_self` no longer decides the state, only the label.
-      {% endcomment %}
-      <section class="railblock" aria-label="Statistika">
-        <details class="foldout" open>
-          <summary class="foldout__trigger">
-            <span class="foldout__label">{% if is_self %}Minu statistika{% else %}Statistika{% endif %}</span>
-          </summary>
-          <div class="foldout__body">
-            <div class="pw-stats">
-              <p class="pw-stats__grp">{{ work.stats.month_label }}</p>
-              {% for row in work.stats.month %}
-                <span>{{ row.label }} <b>{{ row.value }}</b></span>
-              {% endfor %}
-              <p class="pw-stats__grp">{{ work.stats.year_label }}</p>
-              {% for row in work.stats.year %}
-                <span>{{ row.label }} <b>{{ row.value }}</b></span>
-              {% endfor %}
-            </div>
-          </div>
-        </details>
-      </section>
-
       {% if is_self %}
         {% comment %}
           The desk pad. Present only in the self view — this whole block is
           inside the branch, so a manager's response does not contain it.
+          Fourth, after the two lists and before the statistics (owner's UX
+          package, 2026-10-28): it is written in every day, and it was below
+          a block people read once a month. Moved, not rebuilt — the form, the
+          revision and the conflict slot are what they were.
         {% endcomment %}
         <section class="railblock" aria-label="Märkmed">
           <h2 class="railblock__label">Märkmed</h2>
@@ -563,6 +529,11 @@ The rail holds only what has no honest place on a timeline.
           </div>
         </section>
       {% else %}
+        {% comment %}
+          A colleague's page has Kiirvaade in the slot the notes have on one's
+          own, so the rail keeps one shape: the two lists, then this person's
+          own block, then the statistics.
+        {% endcomment %}
         <section class="railblock" aria-label="Kiirvaade">
           <h2 class="railblock__label">Kiirvaade</h2>
           <div class="pw-kiir">
@@ -573,6 +544,39 @@ The rail holds only what has no honest place on a timeline.
           <p class="pw-privnote">Isiklikke märkmeid näeb ainult inimene ise.</p>
         </section>
       {% endif %}
+      {% comment %}
+        Counts, never ratings. No rank, no percentage, no comparison with a
+        colleague — the same refusal Osakond opens with.
+
+        Open by default in both views. It used to be collapsed on one's own
+        desk, on the reasoning that a person already knows their own numbers
+        (02-EKRAANID §A); live use reversed that. What a person knows is
+        roughly, and the block was being opened every morning to find out
+        exactly. `is_self` decides the label, never the state, and since
+        2026-10-28 the state is the reader's own: a remembered block
+        (`my_work.statistics`, app/accounts/disclosures.py), so somebody who
+        closes it finds it closed tomorrow.
+      {% endcomment %}
+      <section class="railblock" aria-label="Statistika">
+        <details class="foldout" {% disclosure "my_work.statistics" %}>
+          <summary class="foldout__trigger">
+            <span class="foldout__label">{% if is_self %}Minu statistika{% else %}Statistika{% endif %}</span>
+          </summary>
+          <div class="foldout__body">
+            <div class="pw-stats">
+              <p class="pw-stats__grp">{{ work.stats.month_label }}</p>
+              {% for row in work.stats.month %}
+                <span>{{ row.label }} <b>{{ row.value }}</b></span>
+              {% endfor %}
+              <p class="pw-stats__grp">{{ work.stats.year_label }}</p>
+              {% for row in work.stats.year %}
+                <span>{{ row.label }} <b>{{ row.value }}</b></span>
+              {% endfor %}
+            </div>
+          </div>
+        </details>
+      </section>
+
     </aside>
   </div>
 </div>

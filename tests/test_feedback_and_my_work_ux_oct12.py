@@ -12,10 +12,13 @@ KAASAMINE · LISA TAGASISIDE (docs/adr/0142 amendment of 2026-10-12)
 
 MINU ASJAD (docs/adr/0149 amendment of 2026-10-12)
 * B — «arvamust sellel nädalal» and «arvamust kokku», with «arvamus …» for one;
-  the old captions are gone; values, keys, links and order are unchanged;
+  the old captions are gone; values, keys, links and order are unchanged
+  (reworded again by the UX package of 2026-10-28: «arvamust tähtajaga sel
+  nädalal» and «arvamust koostamisel», tests/test_seis_figure_help.py);
 * C — «teemat menetluses» («teema menetluses» for one) on the same link to the
   same open-Matter list, with an explanation in a button *beside* the link —
-  never inside it — and on no other strip.
+  never inside it. Since the UX package of 2026-10-28 every Minu asjad and
+  Osakond figure carries one; Saabunud's and Statistika's strips still do not.
 
 The browser half (hover, focus, tap, Escape, the viewport) is in
 e2e/test_my_work_in_progress_help.py.
@@ -33,8 +36,9 @@ from django.utils import timezone
 from app.matters.enums import EngagementKind, ExternalPositionProvenance
 from app.matters.forms import ExternalPositionEditForm, FeedbackForm
 from app.matters.models import MatterEngagement, MatterExternalPosition
-from app.matters.my_work import IN_PROGRESS_HELP, build_my_work, opinion_work
+from app.matters.my_work import build_my_work, opinion_work
 from app.matters.register_filters import register_population
+from app.matters.seis_help import IN_PROGRESS_HELP
 from app.matters.services import add_engagement, close_matter, record_external_position
 from app.matters.timeline import LAWYER_NOTE_LABEL
 from app.matters.work_items import open_matters
@@ -228,9 +232,9 @@ def _strip(work) -> dict:
 @pytest.mark.parametrize(
     ("count", "week", "total"),
     [
-        (1, "arvamus sellel nädalal", "arvamus kokku"),
-        (2, "arvamust sellel nädalal", "arvamust kokku"),
-        (3, "arvamust sellel nädalal", "arvamust kokku"),
+        (1, "arvamus tähtajaga sel nädalal", "arvamus koostamisel"),
+        (2, "arvamust tähtajaga sel nädalal", "arvamust koostamisel"),
+        (3, "arvamust tähtajaga sel nädalal", "arvamust koostamisel"),
     ],
 )
 def test_the_opinion_captions_are_short_and_agree_with_their_number(specialist, count, week, total):
@@ -274,9 +278,15 @@ def test_the_page_says_the_new_captions_and_never_the_old_ones(client, specialis
 
     body = client.get(reverse("matters:my_work")).content.decode()
 
-    assert '<span class="seis__caption">arvamus sellel nädalal</span>' in body
-    assert '<span class="seis__caption">arvamust kokku</span>' in body
-    for old in ("arvamust koostada sel nädalal", "arvamust koostamisel kokku", "avatud teemat"):
+    assert '<span class="seis__caption">arvamus tähtajaga sel nädalal</span>' in body
+    assert '<span class="seis__caption">arvamust koostamisel</span>' in body
+    for old in (
+        "arvamust koostada sel nädalal",
+        "arvamust koostamisel kokku",
+        "avatud teemat",
+        "arvamus sellel nädalal",
+        "arvamust kokku",
+    ):
         assert old not in body, old
 
 
@@ -338,7 +348,8 @@ def test_the_explanation_is_a_neighbour_of_the_link_never_inside_it(client, spec
 
     body = client.get(reverse("matters:my_work")).content.decode()
 
-    assert body.count("data-seishelp") == 1
+    # Every figure drawn is explained (UX package 2026-10-28); the first is this one.
+    assert body.count("data-seishelp") == body.count('class="seis__figure"') >= 1
     item = body[body.index('<span class="seis__item" data-seishelp>') :]
     item = item[: item.index('<span class="seis__tip"')]
     link = item[item.index('<a class="seis__figure"') : item.index("</a>") + len("</a>")]
@@ -371,19 +382,23 @@ def test_a_colleagues_desk_carries_the_same_figure(client, department_head, spec
     body = client.get(reverse("matters:person_work", kwargs={"pk": specialist.pk})).content.decode()
 
     assert '<span class="seis__caption">teemat menetluses</span>' in body
-    assert body.count("data-seishelp") == 1
+    assert body.count("data-seishelp") == body.count('class="seis__figure"')
+    assert 'id="seis-selgitus-menetluses"' in body
 
 
 @pytest.mark.parametrize(
     ("route", "who"),
     [
-        ("matters:department", "department_head"),
         ("matters:inbox", "specialist"),
         ("reporting:overview", "department_head"),
     ],
 )
 def test_no_other_strip_grows_the_explanation(client, request, route, who):
-    """The Seis component is shared; only Minu asjad's first figure explains itself."""
+    """The Seis component is shared; Saabunud's and Statistika's strips explain nothing.
+
+    Osakond left this list in the UX package of 2026-10-28: every figure there
+    carries its own explanation now (tests/test_seis_figure_help.py).
+    """
     person = request.getfixturevalue(who)
     factories.MatterFactory(owner=person, is_open=True)
     client.force_login(person)

@@ -1,6 +1,6 @@
 """Kiirklahvid in a real browser: the page, and two promises it makes.
 
-* `/kiirklahvid/` is reached from the footer beside Uuendused.
+* `/kiirklahvid/` is reached from Haldus → Rakendus beside Uuendused.
 * The Lühikokkuvõte editor lost its «Ctrl + Enter salvestab · Esc katkestab»
   caption, so `Esc` needs a click equivalent on the screen: `Loobu` closes the
   box and posts nothing (AGENTS.md: every shortcut has a click equivalent).
@@ -22,9 +22,11 @@ from e2e.conftest import SANDRA, open_matter, sign_in
 pytestmark = pytest.mark.e2e
 
 
-def test_the_footer_reaches_the_shortcut_page(page, base_url):
+def test_haldus_rakendus_reaches_the_shortcut_page(page, base_url):
     sign_in(page, base_url, SANDRA)
-    page.locator(".app__footer").get_by_role("link", name="Kiirklahvid").click()
+    page.locator(".topbar").get_by_role("link", name="Haldus", exact=True).click()
+    page.wait_for_url(f"{base_url}/haldus/")
+    page.get_by_role("link", name="Kiirklahvid", exact=True).click()
     page.wait_for_url(f"{base_url}/kiirklahvid/")
     expect(page.get_by_role("heading", level=1, name="Kiirklahvid")).to_be_visible()
     expect(page.get_by_role("heading", level=2, name="Minu asjad")).to_be_visible()

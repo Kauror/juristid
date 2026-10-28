@@ -190,7 +190,16 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
   <td class="table__date">
     {% with shown=matter|register_date %}
       {% if shown %}
-        <span class="datemeaning">{{ shown.meaning }}</span>
+        {% comment %}
+          **The step's own date reads as the date alone** (UX package
+          2026-10-28): «12.11.2026», not «PLAANIS 12.11.2026». The word moves
+          to the date's tooltip and stays in the accessible text, so a screen
+          reader still hears «Plaanis 12.11.2026»; the step's sentence is the
+          cell to the left. A fallback date keeps its visible word — nothing
+          else on the row says it is the `Arvamuse tähtaeg` or an `Oluline
+          tähtaeg` (`RegisterDate.from_step`).
+        {% endcomment %}
+        {% if shown.from_step %}<span class="visually-hidden">{{ shown.meaning }} </span>{% else %}<span class="datemeaning">{{ shown.meaning }}</span>{% endif %}
         {% comment %}
           **Late in words, not only in red** (QA-BROWSER-04, WCAG 1.4.1). The
           overdue colour and weight stay; «üle tähtaja» says the same thing to
@@ -203,7 +212,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           four, which left the rendered attribute carrying the indentation
           between its names. Harmless to CSS and not harmless to read.
         {% endcomment %}
-        <span class="dateline{% if shown.is_overdue %} dateline--overdue{% elif shown.is_deadline %} dateline--deadline{% endif %}{% if shown.is_approximate %} dateline--approximate{% endif %}">{{ shown.display }}{% if shown.settled %} · {{ shown.settled }}{% endif %}</span>{% if shown.is_overdue %}<span class="dateline__late"> · üle tähtaja</span>{% endif %}
+        <span class="dateline{% if shown.is_overdue %} dateline--overdue{% elif shown.is_deadline %} dateline--deadline{% endif %}{% if shown.is_approximate %} dateline--approximate{% endif %}"{% if shown.from_step %} title="{{ shown.meaning }}: {{ shown.display }}"{% endif %}>{{ shown.display }}{% if shown.settled %} · {{ shown.settled }}{% endif %}</span>{% if shown.is_overdue %}<span class="dateline__late"> · üle tähtaja</span>{% endif %}
       {% else %}
         <span class="muted">—</span>
       {% endif %}

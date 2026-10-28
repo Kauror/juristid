@@ -71,23 +71,19 @@ def _session_summary(request: HttpRequest) -> dict[str, Any] | None:
     }
 
 
-def _step_up_offered(request: HttpRequest) -> bool:
-    """Whether to offer «Halduri sisselogimine» on the landing page.
-
-    Under the shared gate, to **every** reader without a verified session, the
-    same way whatever persona is chosen: offering it only to personas whose
-    accounts hold administration would tell anybody with the shared password
-    who the administrators are. The step-up asks the person's own password and
-    code either way.
-    """
-    if not admin_session.is_available():
-        return False
-    return admin_session.verified_administrator(request) is None
-
-
 @never_cache
 @require_http_methods(["GET"])
 def index(request: HttpRequest) -> HttpResponse:
+    """Haldus → Ülevaade: the administrator session, continuity, sections, Rakendus.
+
+    Opens for every signed-in reader since 2026-10-28 (`may_open_overview`),
+    because *Rakendus* — Uuendused, Kiirklahvid, the running build and
+    «Taasta plokkide vaikeseaded» — is for everybody. What is privileged on it
+    follows the verified administrator session, never the persona: the session
+    and continuity panels, and the list of sections, each by its own predicate.
+    The way to the administrator sign-in is in the persona menu now
+    (templates/components/persona_switcher.html), the same for every reader.
+    """
     _require(request, "ulevaade")
     summary = _session_summary(request)
     return render(
@@ -100,7 +96,6 @@ def index(request: HttpRequest) -> HttpResponse:
             # The two-administrator rule, for whoever administers: the persona's
             # holding of the capability is not enough to be shown it.
             continuity=administration.continuity_status() if summary is not None else None,
-            step_up_offered=_step_up_offered(request),
             others=[item for item in visible_sections(request) if item.key != "ulevaade"],
         ),
     )

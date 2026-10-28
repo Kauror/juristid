@@ -1,4 +1,5 @@
 {% extends "reporting/base.html" %}
+{% load disclosures %}
 {% block title %}Statistika · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -101,7 +102,7 @@ definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
         the strip above.
       {% endcomment %}
       <section class="railblock" aria-label="Definitsioonid">
-        <details class="foldout">
+        <details class="foldout" {% disclosure "reporting.overview.definitions" %}>
           <summary class="foldout__trigger">
             <span class="foldout__label">Mida need arvud tähendavad</span>
           </summary>

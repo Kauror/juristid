@@ -25,7 +25,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import RESTRICTED_TITLE
-from e2e.conftest import READER, SANDRA, sign_in, sign_out
+from e2e.conftest import READER, SANDRA, open_disclosure, sign_in, sign_out
 from tests.extraction_report import assert_expected_files_extracted
 
 pytestmark = pytest.mark.e2e
@@ -145,7 +145,7 @@ def test_a_pdf_uploaded_through_saabunud_becomes_searchable_by_its_contents(
     detail_url = row.locator(".table__title a").first.get_attribute("href")
     page.goto(f"{base_url}{detail_url}")
     # Under «Dokumendi andmed» since the owner's review of 2026-10-26.
-    page.locator("#dokumendi-andmed > summary").click()
+    open_disclosure(page.locator("#dokumendi-andmed"))
     expect(page.get_by_text(re.compile("Teksti töötlemine ootel|Töötlemisel"))).to_be_visible()
 
     run_worker([synthetic_pdf.name])
@@ -315,7 +315,7 @@ def test_an_email_shows_its_sender_and_its_attachments(
     )
     # And the message names what came inside it, both ways round — under
     # «Dokumendi andmed» since the owner's review of 2026-10-26.
-    page.locator("#dokumendi-andmed > summary").click()
+    open_disclosure(page.locator("#dokumendi-andmed"))
     expect(page.get_by_role("heading", name="Selle kirja manused")).to_be_visible()
     expect(page.get_by_text("lisa-1.pdf").first).to_be_visible()
     screenshots(page, "24-kirja-originaal")

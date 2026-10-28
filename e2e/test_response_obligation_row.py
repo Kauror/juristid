@@ -23,6 +23,8 @@ that pinned it would be red by Thursday.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -87,7 +89,10 @@ def test_the_row_states_the_plan_and_then_what_is_still_owed(page, base_url):
     cell = seeded_row(page).locator("td.table__date").first
 
     # The plan, unchanged: the step's own date, under the step's own meaning.
-    expect(cell.locator(".datemeaning").first).to_have_text("Vaatan üle")
+    # The step's word is the date's tooltip and accessible text now, not a
+    # printed label (UX package 2026-10-28, requirement 8).
+    expect(cell.locator(".datemeaning")).to_have_count(0)
+    expect(cell.locator(".dateline").first).to_have_attribute("title", re.compile(r"^Vaatan üle: "))
     # And the obligation, second.
     owed = cell.locator(".dateowed")
     expect(owed).to_have_count(1)

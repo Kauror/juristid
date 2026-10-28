@@ -8,7 +8,8 @@
   page with a heading of its own replaces `haldus_head` whole, so there is
   only ever one h1.
   The strip reuses Statistika's `tabs`, which scrolls itself at phone width
-  rather than the page.
+  rather than the page. A reader with Ülevaade alone — everybody signed in,
+  since 2026-10-28 — gets no strip: one tab is not a choice.
 {% endcomment %}
 
 {% block content %}
@@ -21,7 +22,7 @@
   </div>
   {% endblock %}
 
-  {% if haldus_sections %}
+  {% if haldus_sections|length > 1 %}
     <nav class="tabs" aria-label="Halduse osad">
       {% for section in haldus_sections %}
         <a class="tabs__tab {% if haldus_active == section.key %}is-active{% endif %}"

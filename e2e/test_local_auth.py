@@ -166,12 +166,17 @@ def test_the_first_administrator_activates_and_must_enrol(
     expect(page.locator(".acctcodes__code")).to_have_count(10)
     page.get_by_role("link", name="Olen koodid salvestanud").click()
     page.wait_for_load_state("networkidle")
-    # Offered now, and only now: an administrator with a second-factor session.
-    # Read from the bar's hrefs, because at 1440px the item sits inside the
-    # collapsed «Veel» menu (e2e/conftest.py `navigation_targets`). The item
-    # leads to the Haldus shell, whose sub-navigation holds Kasutajad
-    # (docs/adr/0186).
-    assert "/haldus/" in navigation_targets(page)
+    # The Haldus gear beside «Välju» (every signed-in account has it since
+    # 2026-10-28) leads to the Haldus shell, whose sub-navigation holds
+    # Kasutajad for an administrator with a second-factor session
+    # (docs/adr/0186, amendment).
+    page.locator(".topbar").get_by_role("link", name="Haldus", exact=True).click()
+    page.wait_for_url(f"{local_base_url}/haldus/")
+    expect(
+        page.get_by_role("navigation", name="Halduse osad").get_by_role(
+            "link", name="Kasutajad ja õigused"
+        )
+    ).to_be_visible()
 
 
 def test_the_user_list_and_creating_an_account(page, local_base_url, first_administrator):

@@ -1,21 +1,21 @@
 """Which window a future deadline lands in, and what the panel shows.
 
-The panel is Osakond's *Eesolev* and it cuts five windows
+The panel is Osakond's *Eesolev* and it cuts six windows
 (`department_dashboard.upcoming_windows`, ADR 0049 §5). This module was written
 against the three-window read model that preceded it (`overview.deadline_groups`
 and friends); that model outlived its renderer, was compared window by window
 against this one, and has been removed. What is left here is what the live panel
 still has to be true about:
 
-* **the panel** — that each window is one shut `<details>` holding every row it
-  counted, and what the count on its summary promises;
+* **the panel** — that each window is one remembered `<details>` holding every
+  row it counted, and what the count on its summary promises;
 * **what must not change** — a WAIT is not a deadline, a month-precision date
   does not become a day, a restricted Matter is not visible to a reader who may
   not see it, and the rows of a window run earliest first;
 * **the arithmetic underneath it** — `end_of_month`, which is what cuts the
   fourth window.
 
-The partition itself — five touching intervals, nothing between them or across
+The partition itself — six touching intervals, nothing between them or across
 them — is asserted in `tests/test_department_page.py` (a year of dates out of
 chosen days) and in `tests/test_ux_pass.py` (a year of days, and that *Ülejäänud
 kuu* ends where its month does).
@@ -115,7 +115,7 @@ def _window(panel: str, heading: str) -> str:
 
 
 def _upcoming(user, today: date) -> dict[str, dd.UpcomingGroup]:
-    """The five windows the page renders, by key.
+    """The six windows the page renders, by key.
 
     The panel's first window is *today*, which is why this module's frozen
     Wednesday matters: a deadline earlier in the same week is behind the panel
@@ -126,7 +126,8 @@ def _upcoming(user, today: date) -> dict[str, dd.UpcomingGroup]:
 
 
 #: A Wednesday whose week starts in the previous month — the handoff's own
-#: worked example. Monday 31.08, Sunday 06.09, the rest of the month 07.09–30.09.
+#: worked example. Tomorrow Thursday 03.09, the rest of the week 04.09–06.09,
+#: next week 07.09–13.09, the rest of the month 14.09–30.09.
 WEDNESDAY_02_09 = date(2026, 9, 2)
 
 
@@ -240,7 +241,7 @@ def test_no_window_offers_naita_veel_however_many_it_holds(
     for n in range(9):
         # Nine deadlines across the seven days inside next week's window: two of
         # them double up, which is the case a per-day cap would have hidden.
-        _deadline(department_head, on=date(2026, 9, 4) + timedelta(days=n % 7), title=f"Nädal {n}")
+        _deadline(department_head, on=date(2026, 9, 7) + timedelta(days=n % 7), title=f"Nädal {n}")
     for n in range(8):
         _deadline(department_head, on=date(2026, 9, 14) + timedelta(days=n), title=f"Kuu {n}")
     for n in range(7):
@@ -262,16 +263,16 @@ def test_no_window_offers_naita_veel_however_many_it_holds(
 
 
 @pytest.mark.django_db
-def test_every_window_is_a_shut_details_and_the_group_link_is_gone(
+def test_every_window_is_a_remembered_details_and_the_group_link_is_gone(
     client, department_head, wednesday
 ) -> None:
-    """Native `<details>`, shut, and no `<a>` in the summary.
+    """Native `<details>`, open or shut by its window's default, and no `<a>` in the summary.
 
-    Shut is asserted on the tag itself rather than through the rows being
+    The state is asserted on the tag itself rather than through the rows being
     missing — the rows are served with the page, which is the whole point — and
-    the tag is matched exactly, so `<details class="uxdl" open>` fails here
-    rather than shipping a panel that opens itself. The `<div>` it replaces
-    fails the same assertion.
+    the tag is matched exactly: *Järgmine nädal* opens by default and *Kaugemal*
+    does not, until the reader says otherwise (docs/adr/0194). The `<div>` it
+    replaces fails the same assertion.
 
     The anchor is asserted twice over: the register URL each window used to
     carry is not in the panel, and no `<a>` of any kind is inside a `<summary>`.
@@ -279,7 +280,7 @@ def test_every_window_is_a_shut_details_and_the_group_link_is_gone(
     in one place — and the first is the specific one this round removed.
     """
     today = wednesday
-    _deadline(department_head, on=date(2026, 9, 4), title="Nädala eelnõu")
+    _deadline(department_head, on=date(2026, 9, 8), title="Nädala eelnõu")
     _deadline(department_head, on=date(2026, 11, 3), title="Novembri eelnõu")
 
     panel = _panel(client, department_head)
@@ -287,7 +288,14 @@ def test_every_window_is_a_shut_details_and_the_group_link_is_gone(
     populated = [group for group in _upcoming(department_head, today).values() if group.count]
     assert {group.key for group in populated} == {"nadal", "kaugemal"}
 
-    assert panel.count('<details class="uxdl">') == 2
+    assert panel.count('<details class="uxdl" data-disclosure=') == 2
+    assert (
+        '<details class="uxdl" data-disclosure="department.upcoming.next_week" '
+        'data-disclosure-saved="1" open>'
+    ) in panel
+    assert (
+        '<details class="uxdl" data-disclosure="department.upcoming.far" data-disclosure-saved="0">'
+    ) in panel
     assert panel.count('<summary class="uxdl__head">') == 2
     assert '<div class="uxdl">' not in panel
 
@@ -398,7 +406,7 @@ def test_the_groups_are_still_read_through_visible_to(
     today = wednesday
     _deadline(
         specialist,
-        on=date(2026, 9, 4),
+        on=date(2026, 9, 8),
         title="Piiratud teema",
         visibility=Visibility.RESTRICTED,
     )
@@ -441,7 +449,7 @@ def test_the_rows_of_a_window_run_earliest_first(department_head, wednesday) -> 
     today = wednesday
     # Out of order on purpose, and interleaved across the two windows so that a
     # sort that happened to follow insertion order would have to be lucky twice.
-    for day in (12, 4, 8):
+    for day in (12, 7, 8):
         _deadline(department_head, on=date(2026, 9, day), title=f"Nädala eelnõu {day}")
     for day in (25, 14, 30, 18):
         _deadline(department_head, on=date(2026, 9, day), title=f"Kuu eelnõu {day}")
@@ -449,7 +457,7 @@ def test_the_rows_of_a_window_run_earliest_first(department_head, wednesday) -> 
     groups = _upcoming(department_head, today)
 
     assert [item.when for item in groups["nadal"].items] == [
-        date(2026, 9, 4),
+        date(2026, 9, 7),
         date(2026, 9, 8),
         date(2026, 9, 12),
     ]

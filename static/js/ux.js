@@ -278,6 +278,15 @@
       });
       field.addEventListener("change", sync);
       field.addEventListener("input", sync);
+      /* A box drawn on today (`data-today-default`) is renewed by app.js when
+         its form is entered after midnight, without an event of its own; the
+         pressed chip is re-read after that, so «Täna» is never lit beside a
+         day it no longer names. */
+      if (field.hasAttribute("data-today-default") && field.form) {
+        field.form.addEventListener("focusin", function () {
+          window.setTimeout(sync, 0);
+        });
+      }
       sync();
     });
   }

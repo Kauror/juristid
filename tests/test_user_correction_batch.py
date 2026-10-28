@@ -540,7 +540,7 @@ def test_the_figures_are_the_totals_of_the_bands_they_open(mixed_desk):
 
     assert figures["week"].value == bands[wi.BAND_WEEK].total == len(bands[wi.BAND_WEEK].items)
     assert figures["week"].url == f"#{wi.BAND_WEEK}"
-    assert figures["week"].caption == "sel nädalal"
+    assert figures["week"].caption == "tegevust sel nädalal"
     # Two rows: the exact day and the wait. The month that ends on Wednesday is
     # a period, not a weekly deadline (docs/adr/0121 §7).
     assert figures["week"].value == 2

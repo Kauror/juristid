@@ -436,6 +436,67 @@
   display: none;
 }
 
+/* ---- Haldus, the gear beside «Välju» (the owner's brief, 2026-10-28) -----
+ *
+ * The theme switch's size and quietness, so the bar keeps its one 48px row,
+ * and the same 8px to «Välju» the switch keeps to the persona: it reads as one
+ * of the account controls, not as one more destination. Unlike the switch it
+ * is a link and needs no script. On a Haldus page it carries the bar's own
+ * "you are here" mark — the inset brand underline — besides `aria-current`. */
+.topbar__haldus {
+  flex: none;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  margin-right: calc(var(--spacing-2) - var(--spacing-6));
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 860px) {
+  .topbar__haldus {
+    margin-right: calc(var(--spacing-2) - var(--spacing-3));
+  }
+}
+
+/* The gear is one more 30px control on a bar that was tuned to just fit at
+ * 861px, where it stops wrapping. Between there and 1000px the bar's gap gives
+ * the width back (24px → 16px), and the two account-control margins follow it
+ * so the switch and the gear still sit 8px from their neighbours. Measured by
+ * e2e/test_ux_pass.py at 900px, which the gear alone pushed 33px sideways. */
+@media (min-width: 861px) and (max-width: 1000px) {
+  .topbar {
+    gap: var(--spacing-4);
+  }
+
+  .themetoggle:not(:last-child),
+  .topbar__haldus {
+    margin-right: calc(var(--spacing-2) - var(--spacing-4));
+  }
+}
+
+.topbar__haldus:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.topbar__haldus.is-active {
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 0 var(--accent-primary);
+}
+
+.topbar__hicon {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .avatar {
   width: 28px;
   height: 28px;
@@ -1212,6 +1273,10 @@ p.formnote {
 .table__date {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  /* The containing block of the cell's screen-reader-only meaning («Plaanis»),
+     so that absolutely positioned label stays inside `.tablewrap`'s horizontal
+     scroll instead of widening the page on a phone. */
+  position: relative;
 }
 
 .table--register .table__date {
@@ -3541,6 +3606,36 @@ button.personaoption:focus-visible {
   font-size: var(--typography-size-label);
   line-height: var(--typography-line-normal);
   color: var(--text-muted);
+}
+
+/* «Halduri sisselogimine», or the verified administrator session: below the
+   note and ruled off from it, because it is a different act — a person's own
+   sign-in, not a choice of whose work to show (docs/adr/0186). */
+.personamenu__admin {
+  margin: var(--spacing-1) 0 0;
+  padding: 7px var(--spacing-25) var(--spacing-1);
+  border-top: 1px solid var(--border-control);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-1) var(--spacing-2);
+  font-size: var(--typography-size-label);
+  line-height: var(--typography-line-normal);
+}
+
+.personamenu__adminline {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.personamenu__adminlink,
+.personamenu__adminline a {
+  color: var(--accent-link);
+}
+
+.personamenu__adminform {
+  margin: 0;
 }
 
 /* ---- the full page ------------------------------------------------- */
@@ -8242,7 +8337,8 @@ button.opinionmenu__item {
 
 /* A figure that explains itself (components/seis.html, `help`): the link as it
    was, a quiet `i` button beside it — a sibling, never nested — and the
-   explanation under them. Only Minu asjad's «teemat menetluses» has one. */
+   explanation under them. Every figure on Minu asjad and Osakond has one
+   (app/matters/seis_help.py); Saabunud and Statistika have none. */
 .seis__item {
   position: relative;
   display: inline-flex;
@@ -8734,37 +8830,65 @@ button.opinionmenu__item {
   gap: 2px;
 }
 
-.entryline {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 1fr);
-  gap: 0 var(--spacing-4);
-  padding: 2px var(--spacing-3);
+/* ---- Viimased tegevused ---------------------------------------------- */
+
+/* The Teema on the first line, because it is what a reader scans for; the
+   date, the person and the act on the second, quieter one
+   (templates/matters/partials/activity_row.html). */
+.actline {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--spacing-1) var(--spacing-3);
   text-decoration: none;
   color: inherit;
   border-radius: var(--radius-sm);
-  font-size: var(--typography-size-meta);
+  min-width: 0;
 }
 
-.entryline:hover {
+.actline:hover {
   background: var(--surface-hover);
+  text-decoration: none;
 }
 
-.entryline__when {
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.entryline__matter {
+.actline__matter {
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.actline__meta {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
-/* The entries foldout closes the left column, so it carries no bottom rule —
-   the page ends there. */
-.workband--entries {
+.actline__when {
+  font-variant-numeric: tabular-nums;
+}
+
+.actline__actor {
+  color: var(--text-secondary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.actfeed__hint,
+.actfeed__cap {
+  margin: 0 0 var(--spacing-2);
+  padding: 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.actfeed__cap {
+  margin: var(--spacing-2) 0 0;
+}
+
+/* The feed closes the left column, so it carries no bottom rule — the page
+   ends there. */
+.workband--activity {
   border-bottom: none;
 }
 /* ---- the rail ------------------------------------------------------ */
@@ -9326,8 +9450,7 @@ button.opinionmenu__item {
      rather than a sideways scroll, because a work row is read, not scanned. */
   .workrow2__link,
   .interrow__link,
-  .arealine,
-  .entryline {
+  .arealine {
     grid-template-columns: minmax(0, 1fr);
     gap: 2px;
   }
@@ -10001,59 +10124,6 @@ section:has(.pw-more[open]) tbody.uxextra {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   color: var(--text-primary);
-}
-
-/* ---- Viimati muudetud ------------------------------------------------ */
-
-.pw-events {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-
-.pw-event {
-  display: grid;
-  grid-template-columns: 40px minmax(0, 1fr);
-  gap: 0 var(--spacing-25);
-  padding: var(--spacing-1) var(--spacing-2);
-  border-radius: var(--radius-control);
-  text-decoration: none;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.pw-event > span {
-  min-width: 0;
-}
-
-.pw-event:hover {
-  background: var(--surface-hover);
-  text-decoration: none;
-}
-
-.pw-event__when {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.pw-event__what,
-.pw-event__matter {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pw-event__what {
-  font-size: var(--typography-size-meta);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
-}
-
-.pw-event__matter {
-  font-size: var(--typography-size-meta);
-  color: var(--text-muted);
 }
 
 /* ---- Kiirvaade (manager only) ---------------------------------------- */
@@ -14436,6 +14506,79 @@ a.jcal__daynum {
   background: var(--calendar-overdue);
 }
 
+/* Osakond's calendar: a work dot in its responsible person's colour
+   (app/matters/calendar.py, `person_colour`); nobody responsible is a hollow
+   neutral ring rather than anybody's colour. Late keeps the person's fill and
+   adds a ring in the overdue colour, so lateness never repaints the person.
+   Two classes, so the generic `.wcal__dot--too` fill declared later in this
+   file cannot repaint every person in the work colour. */
+.wcal__dot.wcal__dot--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--calendar-person-none);
+}
+
+.wcal__dot.wcal__dot--p1 {
+  background: var(--calendar-person-1);
+}
+
+.wcal__dot.wcal__dot--p2 {
+  background: var(--calendar-person-2);
+}
+
+.wcal__dot.wcal__dot--p3 {
+  background: var(--calendar-person-3);
+}
+
+.wcal__dot.wcal__dot--p4 {
+  background: var(--calendar-person-4);
+}
+
+.wcal__dot.wcal__dot--p5 {
+  background: var(--calendar-person-5);
+}
+
+.wcal__dot.wcal__dot--p6 {
+  background: var(--calendar-person-6);
+}
+
+.wcal__dot.wcal__dot--p7 {
+  background: var(--calendar-person-7);
+}
+
+.wcal__dot.wcal__dot--p8 {
+  background: var(--calendar-person-8);
+}
+
+.wcal__dot.wcal__dot--p9 {
+  background: var(--calendar-person-9);
+}
+
+.wcal__dot.wcal__dot--p10 {
+  background: var(--calendar-person-10);
+}
+
+.wcal__dot[class*="wcal__dot--p"].is-overdue {
+  box-shadow: 0 0 0 1.5px var(--calendar-overdue);
+}
+
+.wcal__dot.wcal__dot--none.is-overdue {
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 1.5px var(--calendar-person-none),
+    0 0 0 1.5px var(--calendar-overdue);
+}
+
+.wcal__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: calc(-1 * var(--spacing-1)) 0 var(--spacing-15);
+  padding: 0;
+  list-style: none;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-secondary);
+}
+
 .wcal__grid {
   display: grid;
   grid-template-columns: 1.6rem repeat(7, minmax(0, 1fr));
@@ -14629,6 +14772,53 @@ a.jcal__daynum {
   font-size: var(--typography-size-meta-sm);
 }
 
+/* The department calendar's compact entry: person — Teema, then what the date
+   means. Not one big link: only the Teema is a link. */
+.wcal__event--compact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--spacing-1) var(--spacing-15);
+  border-left: 3px solid var(--calendar-work);
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-meta);
+  line-height: var(--typography-line-tight);
+  overflow-wrap: anywhere;
+}
+
+.wcal__event--compact.wcal__event--joustumine {
+  border-left-style: double;
+  border-left-color: var(--calendar-commencement);
+}
+
+.wcal__eventhead {
+  color: var(--text-body);
+}
+
+.wcal__eventperson {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  color: var(--text-primary);
+}
+
+.wcal__eventsep {
+  color: var(--text-muted);
+}
+
+.wcal__event--compact .wcal__eventmatter {
+  text-decoration: none;
+}
+
+.wcal__event--compact .wcal__eventmatter:hover {
+  text-decoration: underline;
+}
+
+.wcal__event--compact .wcal__eventwhat {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta-sm);
+}
+
 .wcal__status.is-overdue {
   color: var(--status-danger);
   font-weight: var(--typography-weight-semibold);
@@ -14801,6 +14991,12 @@ a.jcal__daynum {
   .wcal__dot--joustumine {
     background: Canvas;
     outline: 1px solid CanvasText;
+  }
+
+  .wcal__dot--none {
+    background: Canvas;
+    box-shadow: none;
+    outline: 1px dashed CanvasText;
   }
 
   .wcal__day.is-today > .wcal__daybtn,

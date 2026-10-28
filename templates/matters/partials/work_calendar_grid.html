@@ -7,6 +7,15 @@ lists each record with its link, so nothing clickable is nested.
 
 The week's popover lists its days' records by date. Records known only to a
 period are never in it: they have no day in that week.
+
+Inside a day's popover — and under a day's heading in the week's — an entry
+does not repeat the day its heading already states (`in_day`); it keeps a date
+only where the record's own dates say more than that day, and always keeps a
+precision label and its state. The lists under the grid keep every date.
+
+`compact` is the department calendar: a work dot takes its responsible person's
+colour (`event.person_class`) and an entry is person — Teema, then what the
+date means.
 {% endcomment %}
 <div class="wcal__grid">
   <span class="wcal__head wcal__head--week" aria-hidden="true">N</span>
@@ -21,7 +30,7 @@ period are never in it: they have no day in that week.
             <p class="wcal__grouplabel">{{ day.title }}</p>
             <ul class="wcal__list">
               {% for event in day.events %}
-                {% include "matters/partials/work_calendar_event.html" with event=event show_category=1 %}
+                {% include "matters/partials/work_calendar_event.html" with event=event show_category=1 in_day=1 compact=compact %}
               {% endfor %}
             </ul>
           {% endfor %}
@@ -36,7 +45,7 @@ period are never in it: they have no day in that week.
           <summary class="wcal__daybtn" aria-label="{{ day.label }}"{% if day.is_today %} aria-current="date"{% endif %}>
             <span class="wcal__num">{{ day.day.day }}</span>
             <span class="wcal__dots" aria-hidden="true">
-              {% for event in day.dots %}<span class="wcal__dot wcal__dot--{{ event.category }}{% if event.is_overdue %} is-overdue{% endif %}" title="{{ event.summary }}"></span>{% endfor %}{% if day.more %}<span class="wcal__more">+{{ day.more }}</span>{% endif %}
+              {% for event in day.dots %}<span class="wcal__dot wcal__dot--{{ event.category }}{% if compact and event.is_work %} wcal__dot--{{ event.person_class }}{% endif %}{% if event.is_overdue %} is-overdue{% endif %}" title="{% if compact %}{{ event.compact_summary }}{% else %}{{ event.summary }}{% endif %}"></span>{% endfor %}{% if day.more %}<span class="wcal__more">+{{ day.more }}</span>{% endif %}
             </span>
           </summary>
           <div class="wcal__pop" data-uxfloat="fit">
@@ -45,7 +54,7 @@ period are never in it: they have no day in that week.
               <p class="wcal__grouplabel"><span class="wcal__dot wcal__dot--{{ group.key }}" aria-hidden="true"></span>{{ group.label }}</p>
               <ul class="wcal__list">
                 {% for event in group.events %}
-                  {% include "matters/partials/work_calendar_event.html" with event=event %}
+                  {% include "matters/partials/work_calendar_event.html" with event=event in_day=1 compact=compact %}
                 {% endfor %}
               </ul>
             {% endfor %}

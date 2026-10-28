@@ -165,9 +165,10 @@ def test_no_raw_permission_identifier_reaches_the_page(client):
             assert f" {identifier} " not in text
 
 
-def test_the_bar_offers_haldus_only_to_an_administrator(client):
-    # The bar's one «Haldus» item leads to the Haldus shell, whose
-    # sub-navigation holds Kasutajad (docs/adr/0186).
+def test_the_bar_offers_haldus_to_everybody_and_kasutajad_only_to_an_administrator(client):
+    # The bar's Haldus gear leads to Haldus → Ülevaade, which every signed-in
+    # account reaches since 2026-10-28 (Rakendus); its sub-navigation holds
+    # Kasutajad only for an administrator (docs/adr/0186, amendment).
     haldus = f'href="{reverse("haldus:index")}"'
     administrator(client)
     assert haldus in client.get(reverse("matters:my_work")).content.decode()
@@ -176,8 +177,9 @@ def test_the_bar_offers_haldus_only_to_an_administrator(client):
     colleague = Client()
     user, _ = person()
     sign_in(colleague, user)
-    assert haldus not in colleague.get(reverse("matters:my_work")).content.decode()
-    assert reverse(LIST) not in colleague.get(reverse("matters:my_work")).content.decode()
+    assert haldus in colleague.get(reverse("matters:my_work")).content.decode()
+    assert reverse(LIST) not in colleague.get(reverse("haldus:index")).content.decode()
+    assert colleague.get(reverse(LIST)).status_code == 404
 
 
 # -- creating and editing ---------------------------------------------------------------

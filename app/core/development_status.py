@@ -131,10 +131,11 @@ ITEMS: tuple[StatusItem, ...] = (
         why="Rühmitust ei muudeta kirjeldava lause pärast.",
         state=DECIDED,
         next_step=(
-            "Kinnitatud kujundus (raam C) ütleb viis akent: Täna, homme, "
-            "Järgmine nädal, Ülejäänud kuu, Kaugemal. Need on ehitatud ja nad "
-            "jagavad tulevased päris tähtajad täpselt ära — ükski kuupäev ei "
-            "ole kahes aknas ega puudu (ADR 0049 §5)."
+            "Kinnitatud kujundus (raam C) ütles viis akent; omaniku 28.10.2026 "
+            "otsusega on neid kuus: Täna, Homme, Käesoleva nädala ülejäänud "
+            "päevad, Järgmine nädal, Ülejäänud kuu, Kaugemal. Need jagavad "
+            "tulevased päris tähtajad täpselt ära — ükski kuupäev ei ole kahes "
+            "aknas ega puudu (ADR 0049 §5)."
         ),
         sources=(
             "02-EKRAANID §B",

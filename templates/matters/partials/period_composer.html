@@ -69,11 +69,24 @@ would submit an empty year. It is its own group, revealed by any of the three.
         store nothing of their own, so the server sees one value however it was
         chosen and the panel works with the chips ignored entirely.
       {% endcomment %}
+      {% comment %}
+        `date_text` is the date box's value as drawn (`NextActionForm.quick_date_text`),
+        so the span it matches — `Täna` on a new step, which opens on today —
+        is pressed in the HTML itself, before and without any script.
+        static/js/ux.js `bindQuickDates` keeps it true as the box changes.
+      {% endcomment %}
       {% for choice in quick_dates %}
-        <button type="button" class="uxchip" aria-pressed="false"
-                data-quickdate="{{ choice.value }}"
-                data-label-default="{{ choice.label }}"
-                data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+        {% if date_text and choice.value == date_text %}
+          <button type="button" class="uxchip is-selected" aria-pressed="true"
+                  data-quickdate="{{ choice.value }}"
+                  data-label-default="{{ choice.label }}"
+                  data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }} → {{ choice.when }}</button>
+        {% else %}
+          <button type="button" class="uxchip" aria-pressed="false"
+                  data-quickdate="{{ choice.value }}"
+                  data-label-default="{{ choice.label }}"
+                  data-label-chosen="{{ choice.label }} → {{ choice.when }}">{{ choice.label }}</button>
+        {% endif %}
       {% endfor %}
       <label class="cx-f cx-f--date">
         <span class="cx-f__lab">{% field_label date_field %}</span>

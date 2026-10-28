@@ -206,10 +206,15 @@ def test_the_register_row_still_qualifies_its_date(signed_in, three_steps):
     elsewhere on this page — it was, for «Tähtaeg», by the `?tahtaeg_alates=`
     control and the *Tähtaeg sel kuul* saved view, both of which are about
     `Arvamuse tähtaeg` and neither of which is the Kuupäev cell. So the
-    assertion reads the rendered cell (docs/adr/0054 §Amendment).
+    assertion reads the rendered cell (docs/adr/0054 §Amendment). Since the UX
+    package of 2026-10-28 the step's word is the date's accessible text and
+    tooltip rather than a printed label, so that is where it is read.
     """
     body = body_of(signed_in.get(reverse("matters:matter_list")))
-    meanings = re.findall(r'<span class="datemeaning">([^<]*)</span>', body)
+    meanings = re.findall(
+        r'<span class="(?:datemeaning|visually-hidden)">([^<]*?) ?</span>\s*<span class="dateline',
+        body,
+    )
 
     assert "Plaanis" in meanings
     assert "Vaatan üle" in meanings

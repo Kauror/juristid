@@ -179,7 +179,8 @@ CLOCK_DEPENDENT = [
     # daily peeking past its mask turns every baseline red the next morning.
     ".workrow2__datecell",
     ".interrow__reason",
-    ".entryline__when",
+    # «Viimased tegevused»: «täna 14:05», «28.10» — today-relative by design.
+    ".actline__when",
     ".arealine__date",
     ".quietrow__meta",
     ".factrow__date",
@@ -196,6 +197,10 @@ CLOCK_DEPENDENT = [
     # from today and changes every morning. The row and the step's own words
     # stay in the baseline.
     ".curact__date",
+    # A date box that opens on today (ADR 0052, addendum of 2026-10-28):
+    # `✓ Tehtud`'s `Millal?` and `+ Lisa tegevus`'s day. The box and its quick
+    # days stay in the baseline; only the date written into it moves daily.
+    "input[data-today-default]",
     # `Excelist` and the register snapshot label beside an imported instruction.
     ".curact__flag",
     # The outstanding `Arvamuse tähtaeg` stated under the task — «20.09 · 25 p
@@ -220,6 +225,15 @@ CLOCK_DEPENDENT = [
     # in the baseline; the fifth is tomorrow's weekday and carries `data-clock`.
     ".uxdl__date",
     ".uxdl__range",
+    # Since 2026-10-28 the week is two windows — «Käesoleva nädala ülejäänud
+    # päevad» and «Järgmine nädal» — and a deadline a few days out is in the
+    # first on a Monday and in the second on a Thursday. The seeded world's
+    # opinion deadline is four days ahead, so which heading it sits under
+    # flips with the weekday. Both headings are masked; the window, its row and
+    # its count stay in the baseline. Reached through the remembered-block key,
+    # which names the window, rather than by position.
+    '[data-disclosure="department.upcoming.remaining_week"] .uxdl__title',
+    '[data-disclosure="department.upcoming.next_week"] .uxdl__title',
     ".railcard__value--date",
     # A date control's value renders in the control, and the create form's
     # Saabus defaults to today. Scoped to that form: unscoped, the selector also
@@ -261,11 +275,6 @@ CLOCK_DEPENDENT = [
     # elsewhere: `.foldout__meta` says "kogu osakond · viimane kuu" on Minu
     # asjad, `.muted` carries register text, and `.interrow__detail` is the
     # next step in words on every row that has one.
-    #
-    # Minu töö's "viimane 26.8 kell 13:20". The rows *inside* the disclosure
-    # are `.entryline__when` and were masked; the summary line above them, which
-    # is the only part visible while the disclosure is shut, was not.
-    ".workband--entries .foldout__meta",
     # The closed banner's "(26.8.2026)". `closed_at` is set when the Matter is
     # closed, and the browser suite closes one on every run, so this is today's
     # date on every run. The same date in the facts rail is a `<time>` and was
@@ -335,12 +344,14 @@ CLOCK_DEPENDENT = [
     # The label, the row, the block, the borders and the spacing all stay in the
     # comparison. What is painted is one small box per value.
     '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
-    '.seis__figure:has(.seis__caption:text-is("tähtaeg sel nädalal")) .seis__number',
-    # Minu asjad's own week figure, captioned «sel nädalal» since docs/adr/0120:
-    # the total of the *Sel nädalal* band, which moves with the weekday for the
-    # reason the Osakond figure above does. It used to share that caption, and
-    # with it that mask.
-    '.seis__figure:has(.seis__caption:text-is("sel nädalal")) .seis__number',
+    '.seis__figure:has(.seis__caption:text-matches("^tähtajaga teemat? sel nädalal$"))'
+    " .seis__number",
+    # Minu asjad's own week figure, captioned «sel nädalal» since docs/adr/0120
+    # and «tegevust sel nädalal» since the UX package of 2026-10-28: the total of
+    # the *Sel nädalal* band, which moves with the weekday for the reason the
+    # Osakond figure above («tähtajaga teemat sel nädalal», «… teema …» for one)
+    # does. Matched as a pattern because the caption follows its number.
+    '.seis__figure:has(.seis__caption:text-matches("^tegevust? sel nädalal$")) .seis__number',
     # ---- The v2 surfaces, found by walking the rendered DOM for text that
     # looks like a date or a day count and asking which selector already
     # covered it — the same method that found the three above, and the reason
@@ -362,10 +373,6 @@ CLOCK_DEPENDENT = [
     # «muutus 29.8» is a date the seeded world places relative to it. There is
     # no label beside it to lose.
     ".pw-matter__when",
-    # The rail's «Viimati muudetud» dates, same reasoning: the element holds
-    # the date and nothing else. What changed is named on the line beside it
-    # and stays in the baseline.
-    ".pw-event__when",
     # The date at the end of a portfolio row's next step. NOT `.pw-matter__next`
     # — that span opens with the mode chip and the step in the lawyer's own
     # words, which is exactly the business content a baseline exists to check.
@@ -383,13 +390,14 @@ CLOCK_DEPENDENT = [
 #: `Sissekandeid sel nädalal` and `Tähtaegu sel nädalal` were two more of these
 #: and are no longer on the page: the Aruandlus block they were rows of is the
 #: three-row year block now, and the week rows went with the merge (ADR 0049).
-#: What replaced them is the Seis strip's «tähtaeg sel nädalal», which is a
+#: What replaced them is the Seis strip's «tähtajaga teemat sel nädalal», which is a
 #: sharper case than any of the three — `WORK_DEADLINE_THIS_WEEK` runs from
 #: *today* to Sunday, so it shrinks every morning rather than only when the run
 #: crosses a Monday.
 OSAKOND_WEEK_COUNTS = (
     '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
-    '.seis__figure:has(.seis__caption:text-is("tähtaeg sel nädalal")) .seis__number',
+    '.seis__figure:has(.seis__caption:text-matches("^tähtajaga teemat? sel nädalal$"))'
+    " .seis__number",
 )
 
 #: What each scenario's capture may not silently stop masking.
@@ -420,9 +428,9 @@ OSAKOND_WEEK_COUNTS = (
 #: render one element per row — so the only way to stop matching is to move the
 #: markup, which is what this is here to catch.
 #:
-#: `[data-clock]` and `.pw-event__when` are deliberately *not* here. The first
+#: `[data-clock]` and `.actline__when` are deliberately *not* here. The first
 #: renders only for a row whose next step carries a date, the second only when
-#: something changed recently; absent, each paints nothing, and requiring
+#: something happened on the desk; absent, each paints nothing, and requiring
 #: either would turn a quiet week into a visual failure.
 OPINION_SENT = ('.submission__meta div:has(dt:text-is("Saadetud")) dd',)
 PORTFOLIO_WHEN = (".pw-matter__when",)
@@ -966,8 +974,9 @@ def _assert_every_required_normalisation_is_declared() -> None:
 _assert_every_required_normalisation_is_declared()
 
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
-    "minu-too": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
-    "minu-too-3440": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
+    "praegune-tehtud": ("input[data-today-default]",),
+    "minu-too": PORTFOLIO_WHEN,
+    "minu-too-3440": PORTFOLIO_WHEN,
     "teemad-1280": OPINION_SENT,
     "teemad-1440": OPINION_SENT,
     "teemad-3440": OPINION_SENT,
@@ -1688,7 +1697,7 @@ def test_dashboard(page, base_url):
     Dates are masked, because the seeded world computes them from today; the
     composition may not move.
     """
-    signed_in(page, base_url, "/osakond/")
+    signed_in(page, base_url, OSAKOND_PINNED)
     compare("osakond", capture(page, "osakond"))
 
 
@@ -1776,6 +1785,13 @@ def test_a_closed_disclosure_contributes_no_masks(page, base_url):
 #: (docs/adr/0158, amendment of 2026-10-26).
 MY_WORK_PINNED = "/minu-asjad/?kalender=kuu&kalendri_aeg=2024-02"
 
+#: Osakond with its department calendar pinned the same way, for the same
+#: reason — and one more: a dot's colour is a hash of the responsible person's
+#: id, which a fresh seed draws anew, so the default four weeks would also
+#: repaint between two runs of the same commit. The colours are asserted from
+#: the computed style in `e2e/test_work_calendar.py` instead.
+OSAKOND_PINNED = "/osakond/?kalender=kuu&kalendri_aeg=2024-02"
+
 
 def test_my_work(page, base_url):
     """Minu töö: one chronological timeline and the rail beside it.
@@ -1818,7 +1834,7 @@ ULTRAWIDE = {"width": 3440, "height": 900}
 @pytest.mark.parametrize(
     "name,path",
     [
-        ("osakond-3440", "/osakond/"),
+        ("osakond-3440", OSAKOND_PINNED),
         ("minu-too-3440", MY_WORK_PINNED),
         ("teemad-3440", "/teemad/"),
         ("statistika-3440", "/statistika/"),
@@ -1986,7 +2002,7 @@ def test_light_my_work(page, base_url):
 
 
 def test_light_department(page, base_url):
-    signed_in(in_light(page), base_url, "/osakond/")
+    signed_in(in_light(page), base_url, OSAKOND_PINNED)
     compare("hele-osakond", light_capture(page, "hele-osakond", rules="osakond"))
 
 
@@ -2864,6 +2880,8 @@ def test_the_done_form_on_a_teema_filed_today(page, base_url):
     page.wait_for_load_state("networkidle")
     page.locator("#lisa-jargmine > summary").click()
     page.locator("#lisa-jargmine [name='text']").fill("Tutvu materjaliga")
+    # The box opens on today since 2026-10-28; emptied, the step has no day.
+    page.locator("#id_target_date").fill("")
     page.locator("#lisa-jargmine button[type=submit]").first.click()
     page.wait_for_load_state("networkidle")
     page.locator('label[for="tehtud-valik"]').click()

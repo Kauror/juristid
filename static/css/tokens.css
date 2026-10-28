@@ -288,6 +288,22 @@
   --calendar-work: var(--accent-link);
   --calendar-commencement: var(--status-success);
   --calendar-overdue: var(--status-danger);
+  /* Osakond's calendar: one colour per person responsible, picked by a stable
+     hash of the person's id (app/matters/calendar.py, `person_colour`). Bright
+     enough to read as a 7px dot on the dark surfaces; never the only carrier -
+     the legend and each popover entry name the person. Nobody responsible is
+     the neutral `--calendar-person-none`. */
+  --calendar-person-1: #6cb4ff;
+  --calendar-person-2: #f2a541;
+  --calendar-person-3: #5fd3a0;
+  --calendar-person-4: #f08cb8;
+  --calendar-person-5: #b59cff;
+  --calendar-person-6: #e8d44d;
+  --calendar-person-7: #4fd1e0;
+  --calendar-person-8: #ff8a75;
+  --calendar-person-9: #a8cf5f;
+  --calendar-person-10: #d8b48a;
+  --calendar-person-none: var(--text-muted);
 
   /* Documents and charts with white backgrounds sit inside this, never
      directly on the canvas. */
@@ -393,6 +409,18 @@
   --calendar-work: var(--accent-link);
   --calendar-commencement: var(--status-success);
   --calendar-overdue: var(--status-danger);
+  /* The same ten people, darker: at least 3:1 against the light surfaces. */
+  --calendar-person-1: #1f6fd1;
+  --calendar-person-2: #b35f00;
+  --calendar-person-3: #12805c;
+  --calendar-person-4: #b8336f;
+  --calendar-person-5: #6b4fd8;
+  --calendar-person-6: #846f00;
+  --calendar-person-7: #0b7d8c;
+  --calendar-person-8: #c2412d;
+  --calendar-person-9: #567a10;
+  --calendar-person-10: #8a5a2b;
+  --calendar-person-none: var(--text-muted);
 
   --surface-document: var(--primitive-neutral-0);
   --text-on-document: var(--primitive-neutral-900);

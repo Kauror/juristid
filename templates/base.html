@@ -33,6 +33,15 @@
       idempotently, and again after every HTMX swap (static/js/ux.js).
     {% endcomment %}
     <script src="{% static 'js/ux.js' %}" defer></script>
+    {% if user.is_authenticated %}
+      {% comment %}
+        Remembered blocks (docs/adr/0194): where a reader's open/closed choice
+        for an informational block is saved, for the person signed in. Absent
+        for anybody else, so their blocks are plain `<details>` with defaults.
+      {% endcomment %}
+      <meta name="disclosure-endpoint" content="{% url 'accounts:save_disclosure' %}">
+      <script src="{% static 'js/disclosures.js' %}" defer></script>
+    {% endif %}
   </head>
   <body>
     <a class="skip-link" href="#sisu">Liigu sisu juurde</a>
@@ -271,6 +280,28 @@
             <span class="avatar" title="{{ user.display_name }}">{{ user.initials }}</span>
           {% endif %}
 
+          {% comment %}
+            Haldus, as a gear beside «Välju» rather than a word in the everyday
+            navigation (the owner's brief, 2026-10-28). Its landing page opens
+            for every signed-in reader alike, so the gear says nothing about who
+            administers anything; each section behind it decides for itself
+            (app/accounts/templatetags/haldus.py, docs/adr/0186). An inline
+            icon in `currentColor`: no icon font, no new request.
+          {% endcomment %}
+          {% load haldus %}{% haldus_link as haldus_href %}
+          {% if haldus_href %}
+            <a class="topbar__haldus{% if nav_active == 'haldus' %} is-active{% endif %}"
+               {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
+               href="{{ haldus_href }}" title="Haldus">
+              <svg class="topbar__hicon" viewBox="0 0 24 24" width="16" height="16"
+                   aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              <span class="visually-hidden">Haldus</span>
+            </a>
+          {% endif %}
+
           <form class="topbar__signout" method="post" action="{% url 'accounts:sign_out' %}">
             {% csrf_token %}
             <button type="submit" class="button button--quiet">Välju</button>
@@ -300,28 +331,16 @@
 
       <footer class="app__footer">
         {% comment %}
-          The build stamp answers "what is running here" by looking, and every
-          part of it stays: the stage, the environment, the revision and when
-          the image was made (tests/test_build_stamp.py).
-
-          `Uuendused` is added beside it, and `Kiirklahvid` beside that — the
-          one page that lists the keyboard shortcuts, so the screens need no
-          hint strips (2026-10-25). Nothing else is. This is where
-          somebody already looks when they wonder what version they are on, and
-          the honest next question — *what changed in it* — had no answer
-          anywhere in the application. Two quiet links, in the quietest band on
-          the page: the footer is not a navigation bar and does not become one.
-
-          The revision itself stays plain text. Making the SHA clickable would
-          give one sentence two meanings — an identifier and a destination —
-          and the identifier is the part an operator reads back over a phone.
+          The organisation, and when the running build was made — in Tallinn
+          time, as a link to what changed in it (Uuendused). Nothing else: the
+          stage, the environment and the revision moved to Haldus → Rakendus
+          with Kiirklahvid (the owner's brief, 2026-10-28). Without a usable
+          build stamp the link says «Uuendused» rather than inventing a date
+          (app/core/context_processors.py `parse_built_at`).
         {% endcomment %}
         <p>
-          Eesti Kaubandus-Tööstuskoda · {{ application_stage }} · {{ application_environment }} ·
-          versioon {{ application_revision }} ·
-          <a href="{% url 'core:release_notes' %}">Uuendused</a> ·
-          <a href="{% url 'core:keyboard_shortcuts' %}">Kiirklahvid</a>{% if application_built_at %} ·
-          ehitatud {{ application_built_at|date:"j.n.Y H:i" }}{% endif %}
+          Eesti Kaubandus-Tööstuskoda ·
+          {% if application_built_at %}<a href="{% url 'core:release_notes' %}" title="Uuendused">ehitatud {{ application_built_at|date:"j.n.Y H:i" }}</a>{% else %}<a href="{% url 'core:release_notes' %}">Uuendused</a>{% endif %}
         </p>
       </footer>
     </div>

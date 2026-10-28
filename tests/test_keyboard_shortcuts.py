@@ -115,23 +115,25 @@ def test_the_page_needs_no_database(client: Client, django_assert_num_queries) -
 
 
 @pytest.mark.django_db
-def test_the_footer_links_it_beside_uuendused(client: Client) -> None:
-    footer = _footer(client.get("/uuendused/").content.decode())
-    assert re.search(
-        r'href="/uuendused/">Uuendused</a>\s*·\s*<a href="/kiirklahvid/">Kiirklahvid</a>', footer
-    )
+def test_haldus_rakendus_links_it_beside_uuendused(client: Client) -> None:
+    """Moved from the footer to Haldus → Rakendus (the owner's brief, 2026-10-28)."""
+    client.force_login(factories.ReaderFactory())
+    body = client.get(reverse("haldus:index")).content.decode()
+    start = body.index('aria-labelledby="rakendus"')
+    section = body[start : body.index("</section>", start)]
+    assert section.index('href="/uuendused/"') < section.index(f'href="{URL}"')
 
 
 @pytest.mark.django_db
-def test_the_footer_link_is_on_an_ordinary_work_page(client: Client) -> None:
+def test_the_footer_no_longer_links_it(client: Client) -> None:
     client.force_login(factories.ReaderFactory())
     footer = _footer(client.get(reverse("matters:my_work")).content.decode())
-    assert f'href="{URL}"' in footer
+    assert f'href="{URL}"' not in footer
 
 
 @pytest.mark.django_db
-def test_the_link_is_not_behind_haldus(client: Client) -> None:
-    """On the footer every page has, and nowhere in the administration menu."""
+def test_the_link_is_not_on_the_bar(client: Client) -> None:
+    """Haldus → Rakendus, one click behind the gear; not a bar destination of its own."""
     client.force_login(factories.ReaderFactory())
     body = client.get(reverse("matters:my_work")).content.decode()
     header = body[: body.index('<main class="app__main"')]

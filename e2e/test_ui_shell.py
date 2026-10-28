@@ -330,6 +330,46 @@ def test_the_things_a_lawyer_reaches_for_are_on_the_bar(page, base_url, width, h
         expect(page.locator(".avatar").first).to_be_visible()
 
 
+@pytest.mark.parametrize("width,height", [*VIEWPORTS, (1600, 900)], ids=lambda v: str(v))
+def test_haldus_is_a_gear_beside_valju_and_not_in_the_navigation(page, base_url, width, height):
+    """The owner's brief, 2026-10-28: an icon named «Haldus», right of the persona, left of Välju.
+
+    Inside the viewport at every supported width, so the one-row, no-sideways
+    scroll rule above already covers what it costs; never a navigation item.
+    """
+    sign_in(page, base_url, SANDRA)
+    page.set_viewport_size({"width": width, "height": height})
+    open_register(page, base_url)
+
+    navigation = page.get_by_role("navigation", name="Peamine")
+    expect(navigation.get_by_role("link", name="Haldus")).to_have_count(0)
+
+    gear = page.locator(".topbar").get_by_role("link", name="Haldus", exact=True)
+    expect(gear).to_have_count(1)
+    expect(gear).to_be_visible()
+    expect(gear).to_have_attribute("title", "Haldus")
+    box = gear.bounding_box()
+    signout = page.locator(".topbar__signout").bounding_box()
+    persona = page.locator(".personapill, .avatar").first.bounding_box()
+    assert persona["x"] + persona["width"] <= box["x"] < signout["x"]
+    assert box["x"] + box["width"] <= page.viewport_size["width"] + 1
+
+
+def test_the_gear_is_reached_by_keyboard_and_marks_haldus_current(page, base_url):
+    sign_in(page, base_url, SANDRA)
+    open_register(page, base_url)
+
+    gear = page.locator(".topbar__haldus")
+    gear.focus()
+    expect(gear).to_be_focused()
+    page.keyboard.press("Enter")
+    page.wait_for_url(f"{base_url}/haldus/")
+
+    expect(page.locator(".topbar__haldus")).to_have_attribute("aria-current", "page")
+    expect(page.get_by_role("heading", name="Rakendus", exact=True)).to_be_visible()
+    assert not document_overflows(page)
+
+
 def test_the_secondary_navigation_disclosure_is_keyboard_operable(page, base_url):
     """ "Veel" is a real disclosure: focusable, announced, and it opens on Enter.
 
@@ -594,9 +634,13 @@ def test_the_intervention_row_states_the_missing_deadline_and_nothing_else(page,
     # of opinions other tests registered as sent long ago — so in a busy shared
     # world every row may be overdue work; then that is what fills it, and the
     # row's wording is held by tests/test_identifier_free_ui.py without a browser.
+    # Unless the file still owes its `Arvamuse tähtaeg`: then the row reads
+    # «samm puudub» over that deadline, because «tähtaeg puudub» would be false
+    # (54e5fb29). Which of the two a shard sees depends on what the tests before
+    # it filed, so both are allowed and neither may be silent.
     quiet = [text for text in texts if "järgmine samm määramata" in text]
     for text in quiet:
-        assert "tähtaeg puudub" in text, text
+        assert "tähtaeg puudub" in text or "arvamuse tähtaeg" in text, text
     if not quiet:
         assert all(" p üle" in text for text in texts), texts
 

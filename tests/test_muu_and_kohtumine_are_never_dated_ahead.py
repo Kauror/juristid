@@ -353,8 +353,8 @@ def test_a_day_ahead_cannot_become_the_last_activity(
 
 def test_a_typo_year_cannot_head_recent_work(signed_in, specialist, department_head):
     """2062 for 2026 is refused; the meeting held today is the Teema's latest work."""
-    from app.matters.my_work import recent_entries
     from app.matters.overview import FEED_ALL, activity_feed
+    from app.matters.recent_activity import ENTRY_LABEL, build_recent_activity
 
     matter = factories.MatterFactory(owner=specialist)
     typo = dt.date(2062, _today().month, min(_today().day, 28))
@@ -362,7 +362,9 @@ def test_a_typo_year_cannot_head_recent_work(signed_in, specialist, department_h
     assert _post(signed_in, "muu", matter, _et(typo)).status_code == 400
     assert _post(signed_in, "kohtumine", matter, _et(_today())).status_code == 200
 
-    assert [entry.kind for entry in recent_entries(specialist, specialist)] == [EntryKind.MEETING]
+    rows = build_recent_activity(specialist, specialist).rows
+    assert rows[0].day == _today() and ENTRY_LABEL in rows[0].label
+    assert all(row.day <= _today() for row in rows)
     first = activity_feed(department_head, _today(), FEED_ALL)[0]
     assert timezone.localtime(first.when).date() == _today()
     assert _last(matter, department_head) == (0, ActivityBasis.ENTRY)

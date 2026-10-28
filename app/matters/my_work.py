@@ -41,11 +41,21 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date, start_of_local_day
 from app.intelligence.enums import FactStatus
 from app.matters import work_items as wi
-from app.matters.activity import BASIS_LABELS, activity_of, annotate_last_activity, annotated_slice
+from app.matters.activity import activity_of, annotate_last_activity, annotated_slice
 from app.matters.dashboard import drafting_matters
 from app.matters.models import Entry, Matter
 from app.matters.next_step import milestone_is_upcoming, milestone_order
+from app.matters.recent_activity import RecentActivity, build_recent_activity
 from app.matters.register_filters import OPINION_DRAFTING
+from app.matters.seis_help import (
+    IN_PROGRESS_HELP,
+    MY_NO_ACTION_HELP,
+    MY_OPINIONS_DRAFTING_HELP,
+    MY_OPINIONS_DUE_HELP,
+    MY_OVERDUE_HELP,
+    MY_WEEK_HELP,
+    FigureHelp,
+)
 from app.matters.selectors import date_range_q
 from app.workflow.enums import ESTONIAN_MONTHS
 
@@ -65,7 +75,6 @@ HORIZON_ALL = "koik"
 
 #: Caps. The heading above each list states the honest total either way.
 RAIL_LIMIT = 8
-ENTRY_LIMIT = 6
 
 #: How many portfolio rows are on screen before the rest go behind
 #: «Näita veel N ▾». The rest are the same list, sliced.
@@ -80,9 +89,6 @@ PORTFOLIO_VISIBLE = 6
 #: rendered. Two hundred is far beyond a working desk, so on an ordinary desk
 #: nothing changes; `DIGEST_LIMIT` caps Osakond's *Tehtud* at the same figure.
 PORTFOLIO_LIMIT = 200
-
-#: How many changed Matters the rail names.
-CHANGE_LIMIT = 5
 
 #: What «Hiljuti muutunud» means, and what «Muutusteta 30 p» means. Both are
 #: measured against the same activity fact the register's *Viimane tegevus*
@@ -249,16 +255,6 @@ def undated_items(
     ]
     rows.sort(key=lambda item: (item.matter.title, item.source_type, item.object_id))
     return rows[:limit], total
-
-
-def recent_entries(user: Any, subject: Any, limit: int = ENTRY_LIMIT) -> list[Entry]:
-    """What this person wrote lately. A way back, not a second timeline."""
-    return list(
-        Entry.objects.visible_to(user)
-        .filter(author=subject)
-        .select_related("matter")
-        .chronological()[:limit]
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -545,108 +541,8 @@ def build_portfolio(
 
 
 # ---------------------------------------------------------------------------
-# Viimati muudetud
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ChangeRow:
-    """One Matter that moved, and what kind of fact moved it."""
-
-    matter: Matter
-    #: The anchor the rail sorts on. A day for eight of the nine activity
-    #: bases; the first day of the period for a `Kaasamine` recorded to a
-    #: month, a quarter or a year (docs/adr/0082).
-    occurred_on: date
-    #: How that anchor reads in a column with no room for a year — `12.5`,
-    #: `09.26`, *IV kvartal 2026*. Carried rather than derived in the template,
-    #: which cannot ask what precision the fact behind the row was recorded to
-    #: (`app.matters.activity.MatterActivityFact.compact_display`).
-    compact_display: str
-    label: str
-
-
-def recent_changes(
-    user: Any, subject: Any, limit: int = CHANGE_LIMIT, *, matters: list[Matter] | None = None
-) -> list[ChangeRow]:
-    """The subject's Matters that moved most recently, newest first.
-
-    Built from the existing activity precedence rather than from an audit log:
-    `annotate_last_activity` already resolves the latest fact on a Matter and
-    says which kind of fact it was, and `BASIS_LABELS` already names those kinds
-    in Estonian. A second chronology would be a second thing to keep true
-    (app/matters/activity.py, design handoff 03 §3).
-
-    ``matters`` is that same annotated population when the caller already holds
-    it — `build_portfolio` reads exactly this queryset for the rows above — so
-    the page does not annotate every open file on the desk twice (2026-10-17
-    audit, JPERF-005). Omitted, it is read here.
-    """
-    if matters is None:
-        matters = list(
-            annotate_last_activity(
-                wi.open_matters(user).filter(owner=subject).select_related("stage", "owner"),
-                user,
-            )
-        )
-    rows: list[ChangeRow] = []
-    for matter in matters:
-        activity = activity_of(matter)
-        if activity is None:
-            continue
-        rows.append(
-            ChangeRow(
-                matter=matter,
-                occurred_on=activity.occurred_on,
-                compact_display=activity.compact_display,
-                label=BASIS_LABELS.get(activity.basis, ""),
-            )
-        )
-    rows.sort(key=lambda row: (row.occurred_on, row.matter.title), reverse=True)
-    return rows[:limit]
-
-
-# ---------------------------------------------------------------------------
 # The whole page
 # ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class FigureHelp:
-    """The explanation one figure carries beside its link (components/seis.html).
-
-    A title and plain paragraphs, nothing else: it is read on hover, on focus
-    and on a tap, and by a screen reader as the description of its button.
-    ``slug`` makes the element id, so two explained figures on one page could
-    never share one.
-    """
-
-    slug: str
-    title: str
-    paragraphs: tuple[str, ...]
-
-
-#: «Menetluses olev teema» — the product owner's explanation (review of
-#: 2026-10-12), adapted from the earlier interface. Two words differ from what
-#: was supplied, both to match what the figure actually counts: the stage list
-#: names «Kooskõlastusringil» by its own label, and it ends with the Matters
-#: whose `Hetkeseis` is not chosen yet, because `open_matters` counts every open
-#: file whatever its stage — a `Määramata` one included. The figure itself is
-#: unchanged (docs/adr/0149 amendment of 2026-10-12).
-IN_PROGRESS_HELP = FigureHelp(
-    slug="menetluses",
-    title="Menetluses olev teema",
-    paragraphs=(
-        "Menetluses olev teema on teema, millega tuleb veel tegeleda – näiteks "
-        "koostada arvamus või hoida pärast arvamuse saatmist teemal silma peal.",
-        "Menetluses on teemad, mille hetkeseis on idee, kooskõlastusringil, "
-        "valitsuses, Riigikogus, jõustumise ootel, Eesti seisukoht koostamisel, "
-        "ELi menetluses, ELi õiguse ülevõtmise ootel või muu, ning teemad, mille "
-        "hetkeseis on veel määramata.",
-        "Kui teemaga ei ole vaja enam tegeleda, näiteks teema on jõustunud või "
-        "rohkem ei tegele, kuulub see lõpetatud teemade hulka.",
-    ),
-)
 
 
 def _counted(value: int, one: str, many: str) -> str:
@@ -662,10 +558,10 @@ class SeisFigure:
     tähtaja" is a warning about nothing, and a page that cries wolf every
     morning is a page people stop reading (01 §3.7).
 
-    ``help`` is the one optional explanation a figure may carry; only the
-    first figure here sets it. The other surfaces that render this component
-    feed it different dataclasses without the attribute, so none of them can
-    grow the icon by accident.
+    ``help`` is the explanation a figure carries beside its link
+    (app/matters/seis_help.py). Every figure on this strip sets one, as every
+    figure on Osakond's does; Saabunud and Statistika feed the component
+    dataclasses that leave it empty.
     """
 
     key: str
@@ -848,8 +744,11 @@ class MyWork:
     #: undated steps this person is responsible for, not every Matter they own
     #: (ENG-059).
     undated_url: str = ""
-    changes: list[ChangeRow] = field(default_factory=list)
-    entries: list[Entry] = field(default_factory=list)
+    #: *Viimased tegevused* — what moved on this desk lately, and what its owner
+    #: wrote elsewhere (app/matters/recent_activity.py). It replaced the rail's
+    #: *Viimati muudetud* and *Minu viimased sissekanded* (owner's UX package,
+    #: 2026-10-28).
+    activity: RecentActivity | None = None
     quick: list[QuickRow] = field(default_factory=list)
     stats: PersonStats | None = None
     opinions: OpinionWork | None = None
@@ -875,10 +774,6 @@ class MyWork:
         band, so nothing is counted twice.
         """
         return sum(band.count for band in self.bands)
-
-    @property
-    def last_entry(self) -> Entry | None:
-        return self.entries[0] if self.entries else None
 
 
 def _work_url(subject: Any, population: str) -> str:
@@ -994,9 +889,15 @@ def build_my_work(
     # separate figure with its own list rather than a narrowing of that band.
     #
     # **Captions only, owner's review of 2026-10-12.** «avatud teemat» became
-    # «teemat menetluses» with an explanation beside it, and the two opinion
-    # captions were shortened to «arvamust sellel nädalal» and «arvamust
-    # kokku». Every key, value, query and link is what it was.
+    # «teemat menetluses» with an explanation beside it. Every key, value, query
+    # and link is what it was.
+    #
+    # **Captions and explanations, UX package of 2026-10-28.** Every figure now
+    # carries its `i` (app/matters/seis_help.py), written against what the
+    # figure counts rather than what its caption suggests. «sel nädalal» became
+    # «tegevust sel nädalal» — the band's rows, not Matters — and the opinion
+    # figures say which population they are: «tähtajaga sel nädalal» is due,
+    # «koostamisel» is being written; neither is a sent one. No count moved.
     seis = [
         SeisFigure(
             "open",
@@ -1005,26 +906,47 @@ def build_my_work(
             _register_url(subject),
             help=IN_PROGRESS_HELP,
         ),
-        SeisFigure("overdue", overdue, "üle tähtaja", f"#{wi.BAND_OVERDUE}", "danger"),
-        SeisFigure("week", week, "sel nädalal", f"#{wi.BAND_WEEK}", "warning"),
+        SeisFigure(
+            "overdue",
+            overdue,
+            "üle tähtaja",
+            f"#{wi.BAND_OVERDUE}",
+            "danger",
+            help=MY_OVERDUE_HELP,
+        ),
+        SeisFigure(
+            "week",
+            week,
+            _counted(week, "tegevus sel nädalal", "tegevust sel nädalal"),
+            f"#{wi.BAND_WEEK}",
+            "warning",
+            help=MY_WEEK_HELP,
+        ),
         SeisFigure(
             "no_action",
             quiet_total,
             "järgmise tegevuseta",
             _register_url(subject, tegevus="puudub"),
             "warning",
+            help=MY_NO_ACTION_HELP,
         ),
         SeisFigure(
             "opinions_week",
             opinions.due_this_week,
-            _counted(opinions.due_this_week, "arvamus sellel nädalal", "arvamust sellel nädalal"),
+            _counted(
+                opinions.due_this_week,
+                "arvamus tähtajaga sel nädalal",
+                "arvamust tähtajaga sel nädalal",
+            ),
             opinions.due_url,
+            help=MY_OPINIONS_DUE_HELP,
         ),
         SeisFigure(
             "opinions_drafting",
             opinions.in_preparation,
-            _counted(opinions.in_preparation, "arvamus kokku", "arvamust kokku"),
+            _counted(opinions.in_preparation, "arvamus koostamisel", "arvamust koostamisel"),
             opinions.preparation_url,
+            help=MY_OPINIONS_DRAFTING_HELP,
         ),
     ]
 
@@ -1072,8 +994,7 @@ def build_my_work(
         undated=undated,
         undated_total=undated_total,
         undated_url=_work_url(subject, wi.WORK_UNDATED),
-        changes=recent_changes(user, subject, matters=[row.matter for row in portfolio.all_rows]),
-        entries=recent_entries(user, subject),
+        activity=build_recent_activity(user, subject, today),
         quick=quick,
         stats=person_stats(user, subject, today),
         opinions=opinions,

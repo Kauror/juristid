@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import re
 from datetime import date, timedelta
-from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -162,13 +161,17 @@ def test_the_deadline_windows_are_consecutive_and_exhaustive() -> None:
     end is what the fourth window is cut by, and it lands on a different
     weekday every month.
 
-    The panel is Osakond's *Eesolev*, which cuts five windows
-    (`dd.upcoming_windows`, ADR 0049 §5). This walked a three-window read model
-    until that model was retired; the windows changed and the property did not,
-    because it belongs to whatever partition the panel cuts rather than to any
-    one shape of it. `tests/test_department_page.py` asserts the same partition
-    from the other side — a year of *dates* out of a handful of chosen days,
-    where this is a year of *days*.
+    The panel is Osakond's *Eesolev*, which cuts six windows
+    (`dd.upcoming_windows`, ADR 0049 §5). Two of them can be empty — *Ülejäänud
+    nädal* at the weekend, *Ülejäänud kuu* when next week ends a month — and an
+    empty window "ends" the day before it starts, so it moves nothing: the
+    next one starts the day after the last day actually covered. This walked a
+    three-window read model until that model was retired; the windows changed
+    and the property did not, because it belongs to whatever partition the
+    panel cuts rather than to any one shape of it.
+    `tests/test_department_page.py` asserts the same partition from the other
+    side — a year of *dates* out of a handful of chosen days, where this is a
+    year of *days*.
     """
     for offset in range(0, 366):
         day = date(2026, 1, 1) + timedelta(days=offset)
@@ -178,11 +181,13 @@ def test_the_deadline_windows_are_consecutive_and_exhaustive() -> None:
             f"{day}: the first window is not today and today alone"
         )
         assert windows[-1][3] is None, "the last window is open-ended"
-        for (*_, ends), (_, _, starts, _) in pairwise(windows):
-            assert ends is not None
-            assert starts == ends + timedelta(days=1), (
-                f"gap or overlap at {day}: {ends} then {starts}"
+        covered = windows[0][3]
+        for _key, _label, starts, ends in windows[1:]:
+            assert starts == covered + timedelta(days=1), (
+                f"gap or overlap at {day}: {covered} then {starts}"
             )
+            if ends is not None:
+                covered = max(covered, ends)
 
 
 def test_the_rest_of_the_month_ends_on_a_real_month_end() -> None:
@@ -211,6 +216,10 @@ def test_the_rest_of_the_month_ends_on_a_real_month_end() -> None:
         windows = {key: (starts, ends) for key, _label, starts, ends in dd.upcoming_windows(day)}
         month_start, month_end = windows["kuu"]
         assert month_end is not None
+        if month_start > month_end:
+            # Next week's Sunday was its month's last day: nothing is left of it.
+            assert month_end == windows["nadal"][1] == end_of_month(month_end), day
+            continue
         assert month_end == end_of_month(month_start), (
             f"{day}: Ülejäänud kuu runs {month_start}–{month_end}, "
             f"not to its own month's end {end_of_month(month_start)}"
@@ -984,7 +993,8 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
 def test_the_eesolev_groups_are_consecutive_and_open_their_own_window(
     department_head,
 ) -> None:
-    """Five windows: today, tomorrow, next week, the rest of the month, and after.
+    """Six windows: today, tomorrow, the rest of this week, next week, the rest of
+    the month, and after.
 
     Consecutive by construction, and each link narrows the register to exactly
     its own dates rather than to a window that merely contains them
@@ -1001,14 +1011,27 @@ def test_the_eesolev_groups_are_consecutive_and_open_their_own_window(
         _due(department_head, days=offset, title=f"Tähtaeg {offset} päeva pärast")
 
     groups = upcoming_groups(department_head, today)
-    assert [group.key for group in groups] == ["tana", "homme", "nadal", "kuu", "kaugemal"]
+    assert [group.key for group in groups] == [
+        "tana",
+        "homme",
+        "nadala_lopp",
+        "nadal",
+        "kuu",
+        "kaugemal",
+    ]
     assert groups[0].starts == today
     assert groups[-1].ends is None, "the far window has to stay open-ended"
-    for earlier, later in pairwise(groups):
-        assert earlier.ends is not None
-        assert later.starts == earlier.ends + timedelta(days=1)
+    covered = groups[0].ends
+    for later in groups[1:]:
+        assert covered is not None
+        assert later.starts == covered + timedelta(days=1)
+        if later.ends is not None:
+            covered = max(covered, later.ends)
 
     for group in groups:
+        if group.is_empty_window:
+            assert group.count == 0, group.key
+            continue
         query = dict(parse_qsl(urlparse(group.url).query))
         listed = register_population(department_head, query, today=today)
         assert listed.count() == group.matter_count, f"{group.key} promises what it cannot show"

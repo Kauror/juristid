@@ -22,7 +22,7 @@ from app.core.management.commands.seed_e2e_data import (
     RESTRICTED_TITLE,
     SUBMISSION_TITLE,
 )
-from e2e.conftest import ADMIN, MARTIN, READER, SANDRA, go_to, sign_in, sign_out
+from e2e.conftest import ADMIN, MARTIN, READER, SANDRA, go_to, open_disclosure, sign_in, sign_out
 
 pytestmark = pytest.mark.e2e
 
@@ -314,7 +314,7 @@ def test_a_chart_can_be_read_as_a_table(page, base_url):
     # A *composition* chart: the trend's fallback table is period and count,
     # with no share column, and it is the first one on the page.
     chart = page.locator("section.chart").filter(has_text="Teemad kirje liigi järgi").first
-    chart.get_by_text("Vaata tabelina").click()
+    open_disclosure(chart.locator("details.chart__fallback").first)
 
     table = chart.locator("table.data-table")
     expect(table).to_be_visible()
@@ -431,7 +431,7 @@ def test_the_two_long_trends_start_in_different_years(page, base_url):
 
     archive = page.locator("section.chart").filter(has_text="Arvamuste arhiiv aastate kaupa")
     expect(archive).to_be_visible()
-    archive.get_by_text("Vaata tabelina").click()
+    open_disclosure(archive.locator("details.chart__fallback").first)
     years = archive.locator("table.data-table tbody th").all_inner_texts()
     assert years, "the archive trend drew no years"
     assert all(int(year.strip()) >= 2020 for year in years)

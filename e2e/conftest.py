@@ -296,6 +296,20 @@ def sign_in(page, base_url: str, persona: Persona) -> None:
     page.wait_for_url(f"{base_url}/minu-asjad/")
 
 
+def open_disclosure(details) -> None:
+    """Open a `<details>` whether or not it already is.
+
+    A remembered block (docs/adr/0194) opens as the persona last left it, and
+    the personas are shared by every test in a shard: a block one test opened
+    arrives open in the next, where a bare click on its summary would *close*
+    it and leave the test reading hidden text as empty. So a test that needs a
+    block open asks for that state rather than for a toggle.
+    """
+    if details.get_attribute("open") is None:
+        details.locator(":scope > summary").click()
+    expect(details).to_have_attribute("open", "")
+
+
 def pass_the_gate(page, gate_base_url: str) -> None:
     """Type the department password, and land on the dashboard behind it.
 

@@ -486,26 +486,28 @@ def _foldout_tag(body: str, label: str) -> str:
     return body[start : body.index(">", start) + 1]
 
 
-def test_minu_viimased_sissekanded_starts_open(client, specialist):
-    """Four short lines answering «did I write that down?».
+def test_viimased_tegevused_starts_open(client, specialist):
+    """It answers «what moved on my files?», which is asked on the way past.
 
-    It was a closed `<details class="foldout">`, which charged a click for an
-    answer a person asks for on the way past.
+    Its predecessor, «Minu viimased sissekanded», was a closed `<details
+    class="foldout">` once, which charged a click for that answer. Now a
+    remembered block whose default is open (`my_work.recent_activity`).
     """
     client.force_login(specialist)
     body = client.get(reverse("matters:my_work")).content.decode()
 
-    assert "open" in _foldout_tag(body, "Minu viimased sissekanded")
+    assert "open" in _foldout_tag(body, "Viimased tegevused")
+    assert 'data-disclosure="my_work.recent_activity"' in _foldout_tag(body, "Viimased tegevused")
 
 
-def test_the_entries_foldout_starts_open_on_a_colleagues_desk_too(
+def test_the_activity_foldout_starts_open_on_a_colleagues_desk_too(
     client, specialist, department_head
 ):
-    """Same disclosure, same state: `is_self` decides the label, not the state."""
+    """Same disclosure, same state on a colleague's desk."""
     client.force_login(department_head)
     body = client.get(_person_url(specialist)).content.decode()
 
-    assert "open" in _foldout_tag(body, "Viimased sissekanded")
+    assert "open" in _foldout_tag(body, "Viimased tegevused")
 
 
 def test_minu_statistika_starts_open(client, specialist):
@@ -544,10 +546,9 @@ def test_opening_the_two_foldouts_changed_nothing_inside_them(client, specialist
     client.force_login(specialist)
     body = client.get(reverse("matters:my_work")).content.decode()
 
-    assert 'class="foldout__label">Minu viimased sissekanded<' in body
+    assert 'class="foldout__label">Viimased tegevused<' in body
     assert 'class="foldout__label">Minu statistika<' in body
     assert 'class="pw-stats"' in body
-    assert "Sa ei ole veel sissekandeid teinud." in body
 
 
 # -- Aktiivsed teemad reads as a list of Teemad (2026-09-13) -----------------

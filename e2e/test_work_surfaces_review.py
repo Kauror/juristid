@@ -128,7 +128,7 @@ def test_the_range_control_is_in_the_url(page, base_url):
 
 
 def test_both_foldouts_are_readable_without_a_click(page, base_url):
-    """«Minu viimased sissekanded» and «Minu statistika» start open.
+    """«Viimased tegevused» and «Minu statistika» start open.
 
     Asserted on visibility rather than on the attribute: `open` in the markup
     and a body a person can actually read are two different claims, and it is
@@ -136,10 +136,10 @@ def test_both_foldouts_are_readable_without_a_click(page, base_url):
     """
     _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
 
-    entries = page.locator(".workband--entries details.foldout")
+    entries = page.locator(".workband--activity > details.foldout")
     statistics = page.locator('.railblock[aria-label="Statistika"] details.foldout')
 
-    for name, foldout in (("sissekanded", entries), ("statistika", statistics)):
+    for name, foldout in (("tegevused", entries), ("statistika", statistics)):
         assert foldout.count() == 1, f"the {name} foldout is not on the page"
         assert foldout.get_attribute("open") is not None, f"the {name} foldout starts closed"
         assert foldout.locator(".foldout__body").is_visible(), (
@@ -147,8 +147,12 @@ def test_both_foldouts_are_readable_without_a_click(page, base_url):
         )
 
     # The disclosure still works: this is a default, not a removal.
-    page.locator(".workband--entries .foldout__trigger").click()
+    page.locator(".workband--activity .foldout__trigger").click()
     assert not entries.locator(".foldout__body").is_visible()
+    # It is a remembered block (`my_work.recent_activity`): the click above is
+    # stored for this persona, so it is put back for every test after this one.
+    page.locator(".workband--activity .foldout__trigger").click()
+    assert entries.locator(".foldout__body").is_visible()
 
 
 def test_an_active_topic_row_carries_the_topic_marker(page, base_url):
@@ -161,6 +165,12 @@ def test_an_active_topic_row_carries_the_topic_marker(page, base_url):
     """
     _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
 
+    # Past the render cap the rows wait in a closed «Näita veel», and Chromium
+    # reports an unlaid-out `::before` as 0px wide. Earlier tests in a shard
+    # give Sandra more Matters than the preview holds, so open it first.
+    more = page.locator(".workband--portfolio details.pw-more")
+    if more.count():
+        more.locator("> summary").click()
     titles = page.locator(".workband--portfolio .pw-matter__title")
     assert titles.count(), "Aktiivsed teemad rendered no rows to mark"
 
@@ -234,7 +244,10 @@ def test_no_seis_figure_leads_nowhere(page, base_url):
             continue
         assert href and href != "#", f"{caption} leads nowhere"
 
-    assert unlinked == ["arvamust välja sel nädalal"], unlinked
+    assert unlinked in (
+        ["arvamust saadetud sel nädalal"],
+        ["arvamus saadetud sel nädalal"],
+    ), unlinked
 
 
 def test_the_area_accordion_is_a_real_disclosure(page, base_url):
@@ -354,8 +367,13 @@ def test_the_strip_figures_are_the_counts_of_the_bands_they_open(page, base_url)
     """
     _open(page, base_url, MARTIN, "/minu-asjad/", 1440)
 
-    for caption, key in (("üle tähtaja", "ule_tahtaja"), ("sel nädalal", "sel_nadalal")):
-        figure = page.locator(f'.seis__figure:has(.seis__caption:text-is("{caption}"))')
+    # The week figure has read «tegevust sel nädalal» since the UX package of
+    # 2026-10-28 («tegevus» for one), so the captions are patterns.
+    for caption, key in (
+        ("^üle tähtaja$", "ule_tahtaja"),
+        ("^tegevust? sel nädalal$", "sel_nadalal"),
+    ):
+        figure = page.locator(f'.seis__figure:has(.seis__caption:text-matches("{caption}"))')
         band = page.locator(f"section.workband#{key}")
         if figure.count() == 0:
             # A zero is not drawn; then the band holds nothing either.
@@ -371,7 +389,7 @@ def test_the_strip_figures_are_the_counts_of_the_bands_they_open(page, base_url)
 #: `OpinionWork`). Martin owns the seeded opinions in preparation — the DRAFT on
 #: the overdue Matter and the register row with a blank VÄLJA — so his total is
 #: never a zero the strip would leave out.
-OPINION_TOTAL = '.seis__figure:has(.seis__caption:text-matches("^arvamust? kokku$"))'
+OPINION_TOTAL = '.seis__figure:has(.seis__caption:text-matches("^arvamus(t)? koostamisel$"))'
 
 
 @pytest.mark.parametrize("theme", ["dark", "light"])
@@ -393,7 +411,7 @@ def test_the_opinion_figures_read_in_both_themes_and_open_their_list(page, base_
     assert page.evaluate("() => document.documentElement.dataset.theme") == theme
 
     figure = page.locator(OPINION_TOTAL)
-    assert figure.count() == 1, "Martin's strip draws no «arvamust kokku»"
+    assert figure.count() == 1, "Martin's strip draws no «arvamust koostamisel»"
     assert figure.is_visible()
     failing = [found for found in page.evaluate(AUDIT) if "seis__" in found["element"]]
     assert not failing, f"{theme}: strip text under AA: {failing}"

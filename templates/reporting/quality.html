@@ -1,4 +1,5 @@
 {% extends "reporting/base.html" %}
+{% load disclosures %}
 {% block title %}Statistika · Andmekvaliteet · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -113,7 +114,7 @@ bytes in OneNote itself are all correct states of the record
           </div>
         {% endfor %}
       </div>
-      <details class="chart__fallback">
+      <details class="chart__fallback" {% disclosure "reporting.chart_table" %}>
         <summary>Vaata tabelina</summary>
         <div class="tablewrap">
           <table class="data-table">

@@ -11,6 +11,11 @@ than reimplemented here (Stage-2E brief 39).
 
 The rows come from the same selector the charts counted with, so the total above
 is the number the chart showed.
+
+**No `Liik` column** (UX package 2026-10-28, requirement 7). Three columns —
+Saadetud, Teema, Adressaadid — and Teema takes the width the fourth held. Only
+the presentation: the kind is still stored, still filtered on by whatever
+`?arvamus=` the statistic carries, and still the `liik` column of the CSV export.
 {% endcomment %}
 
 {% block page_actions %}
@@ -30,7 +35,6 @@ is the number the chart showed.
           <thead>
             <tr>
               <th scope="col">Saadetud</th>
-              <th scope="col">Liik</th>
               <th scope="col">Teema</th>
               <th scope="col">Adressaadid</th>
             </tr>
@@ -39,7 +43,6 @@ is the number the chart showed.
             {% for submission in page.object_list %}
               <tr>
                 <td class="table__date">{{ submission.sent_at|date:"j.n.Y" }}</td>
-                <td><span class="muted">{{ submission.get_kind_display }}</span></td>
                 <td class="table__title">
                   <a href="{% url 'matters:matter_detail' pk=submission.matter_id %}">
                     {{ submission.title }}

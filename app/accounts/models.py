@@ -682,3 +682,41 @@ class AuthenticationThrottle(BaseModel):
         if self.locked_until is None or self.locked_until <= now:
             return 0
         return int((self.locked_until - now).total_seconds()) + 1
+
+
+class DisclosurePreference(BaseModel):
+    """Whether one person keeps one informational block open or closed.
+
+    Presentation state and nothing else (docs/adr/0194). Keyed to the person the
+    request is signed in as — the selected persona under the shared gate, the
+    account under personal sign-in — so a desk opened on another device folds
+    the same way. It is never identity proof and never read by authorization.
+
+    Only an *explicit* choice is stored. A person who never touched a block has
+    no row for it and gets the block's default from the registry
+    (`app.accounts.disclosures`), so a default changed later still reaches
+    everybody who has not decided otherwise.
+    """
+
+    user = models.ForeignKey(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="disclosure_preferences",
+        verbose_name="kasutaja",
+    )
+    #: A registered key (`app.accounts.disclosures.DISCLOSURES`); the endpoint
+    #: refuses any other, so the table is bounded by the registry.
+    key = models.CharField(max_length=80, verbose_name="ploki tunnus")
+    is_open = models.BooleanField(verbose_name="avatud")
+
+    class Meta:
+        verbose_name = "ploki eelistus"
+        verbose_name_plural = "plokkide eelistused"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "key"], name="accounts_disclosurepref_user_key"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.key}={'avatud' if self.is_open else 'suletud'}"

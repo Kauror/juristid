@@ -48,7 +48,7 @@ from app.core.dates import format_estonian_date
 from app.matters.activity import activity_of, annotate_last_activity
 from app.matters.enums import EngagementKind
 from app.matters.models import Matter, MatterEngagement
-from app.matters.my_work import recent_changes
+from app.matters.recent_activity import build_recent_activity
 from app.matters.services import (
     add_engagement,
     close_matter,
@@ -593,8 +593,12 @@ def test_viimane_tegevus_is_unchanged_for_every_exact_fact(specialist):
         (DatePrecision.YEAR, "2025"),
     ],
 )
-def test_viimati_muudetud_has_a_compact_reading_that_is_not_a_day(specialist, precision, expected):
-    """*Viimati muudetud* on Minu töö prints `j.n` and has no room for a year.
+def test_viimased_tegevused_has_a_compact_reading_that_is_not_a_day(
+    specialist, precision, expected
+):
+    """*Viimased tegevused* on Minu asjad prints `j.n` and has no room for a year.
+
+    It inherited this from *Viimati muudetud*, which it replaced (2026-10-28).
 
     A month is spelled out like a quarter or a year — «oktoober 2025», not
     `10.25`, which two numbers under a column of days read as a day
@@ -609,10 +613,14 @@ def test_viimati_muudetud_has_a_compact_reading_that_is_not_a_day(specialist, pr
         occurred_on_precision=precision,
     )
 
-    rows = recent_changes(specialist, specialist)
+    rows = [
+        row
+        for row in build_recent_activity(specialist, specialist).rows
+        if row.label == "Kaasamine"
+    ]
 
-    assert [row.compact_display for row in rows] == [expected]
-    assert rows[0].occurred_on == dt.date(2025, 10, 1)
+    assert [row.when for row in rows] == [expected]
+    assert rows[0].day == dt.date(2025, 10, 1)
 
 
 def test_an_exact_engagement_wins_a_tie_against_an_approximate_one(specialist):

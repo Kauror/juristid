@@ -41,12 +41,14 @@ failure this discipline exists to prevent (master specification 18.9).
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
 from django.utils import timezone
 
+from app.matters import calendar as work_calendar
 from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters import work_items as wi
@@ -99,6 +101,11 @@ class Department:
     #: already builds it. There is no second area implementation here.
     area_page: ov.Overview | None = None
 
+    #: The department calendar at the top of the rail, on both scopes — Minu
+    #: asjad's calendar with no subject (app/matters/calendar.py). ``None`` when
+    #: the caller gave no address to build its links on.
+    calendar: work_calendar.Calendar | None = None
+
     @property
     def is_department(self) -> bool:
         return self.scope == ov.SCOPE_DEPARTMENT
@@ -137,6 +144,7 @@ def build_department(
     params: Any = None,
     sort: str = ov.SORT_OPEN,
     show_empty_areas: bool = False,
+    calendar_query_for: Callable[[dict[str, str | None]], str] | None = None,
 ) -> Department:
     """Assemble one scope of ``/osakond/`` for one reader.
 
@@ -150,6 +158,11 @@ def build_department(
     Its table, its sort control and its two rail blocks are the current approved
     implementation and are reused rather than rebuilt — this page changed where
     the scope lives, not what it says.
+
+    ``calendar_query_for`` is the page's own address with the calendar's two
+    parameters changed (`calendar.build_calendar`); given, the rail's department
+    calendar is built — on either scope — from the same one read of the work
+    model as everything else here.
     """
     today = today or timezone.localdate()
     params = params if params is not None else {}
@@ -164,6 +177,18 @@ def build_department(
     items = wi.work_items(viewer, today=today)
 
     page.seis = dd.seis_figures(viewer, today, items=items)
+
+    if calendar_query_for is not None:
+        # Department-wide in both scopes, and over the page's own `items`: the
+        # calendar adds its two commencement reads and no second work read.
+        page.calendar = work_calendar.build_calendar(
+            viewer,
+            None,
+            params=params,
+            today=today,
+            query_for=calendar_query_for,
+            items=items,
+        )
 
     if scope == ov.SCOPE_AREAS:
         page.area_page = ov.build_overview(
