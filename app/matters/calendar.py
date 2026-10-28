@@ -22,6 +22,20 @@ remains the authorization principal: every queryset starts from
 ``visible_to(user)``, so a restricted Matter or a restricted child record on a
 readable one contributes no dot, no count and no line.
 
+**Osakond carries the same calendar, department-wide** (``subject=None``). Not a
+second calendar: the same periods, the same navigation and the same placement
+rules, over the work model *unnarrowed* — every dated work row the reader may
+see — and every commencement on a Matter the reader may see, whoever owns it.
+What differs is presentation only. A work dot takes the colour of the person
+**responsible** for that row (`WorkItem.responsible`: an action's own
+responsible person, who may not be the Matter's owner; the owner for a
+deadline, a response deadline and a feedback wait, by the work model's rule),
+from a fixed palette by a stable hash of the person's id — so one colleague is
+one colour on every page, every day, every device. A row nobody is responsible
+for is neutral, never somebody's colour. A commencement keeps its diamond and
+its own colour: it is nobody's work. Colour is never the only carrier: the
+legend names everybody it shows and every popover entry names its person.
+
 Three rules carry over unchanged.
 
 * **No day is invented.** A day — `EXACT` or `INFERRED` (ADR 0079 §8) — goes on
@@ -44,6 +58,7 @@ and commencements by overlap, so a year overview never reads the archive.
 from __future__ import annotations
 
 import calendar as stdlib_calendar
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -91,6 +106,15 @@ WIDE_VIEWS = (VIEW_QUARTER, VIEW_YEAR)
 
 #: The HTMX target the calendar swaps itself into, and the id it carries.
 ELEMENT_ID = "minu-kalender"
+#: The department calendar's own target on Osakond, so an HTMX request always
+#: says which of the two calendars it is for.
+DEPARTMENT_ELEMENT_ID = "osakonna-kalender"
+
+#: How many person colours the palette holds (`--calendar-person-1` …
+#: `--calendar-person-10` in static/css/tokens.css, both themes).
+PERSON_COLOURS = 10
+#: Shown where a work row has nobody responsible. Says so; invents nobody.
+NO_PERSON_LABEL = "Vastutaja määramata"
 
 #: The four-week view starts this many weeks before the current one.
 WEEKS_BEFORE = 1
@@ -217,6 +241,31 @@ def period_title(view: str, anchor: date) -> str:
 
 
 # ---------------------------------------------------------------------------
+# People
+# ---------------------------------------------------------------------------
+
+
+def person_colour(person: Any) -> int:
+    """The person's palette slot, 1 … `PERSON_COLOURS`. Stable, not assigned.
+
+    A hash of the user's primary key — a UUID that never changes — rather than an
+    order of appearance: an order would hand one colleague blue on one page and
+    orange on the next. Two colleagues may share a slot; the legend and each
+    popover entry name the person, so the colour is a shortcut and never the
+    only carrier.
+    """
+    digest = hashlib.sha256(str(person.pk).encode()).digest()
+    return int.from_bytes(digest[:4], "big") % PERSON_COLOURS + 1
+
+
+@dataclass(frozen=True)
+class LegendPerson:
+    name: str
+    #: The palette slot as a class suffix — ``p3`` — or ``none`` for nobody.
+    colour: str
+
+
+# ---------------------------------------------------------------------------
 # Events
 # ---------------------------------------------------------------------------
 
@@ -246,6 +295,9 @@ class CalendarEvent:
     url: str
     #: The work row behind it, for a work event; ``None`` for a commencement.
     item: wi.WorkItem | None = None
+    #: Who is responsible for a work row (`WorkItem.responsible`); ``None`` for a
+    #: commencement and for a row nobody is responsible for.
+    person: Any = None
 
     @property
     def category_label(self) -> str:
@@ -278,6 +330,42 @@ class CalendarEvent:
     @property
     def is_restricted(self) -> bool:
         return bool(self.matter.is_restricted)
+
+    @property
+    def spans_days(self) -> bool:
+        """Whether the record's own dates say more than the one day it is placed on.
+
+        A day popover's heading already states the day, so an entry repeats its
+        date only where this is true (or its precision qualifies the day).
+        """
+        return self.period_end != self.when
+
+    @property
+    def person_label(self) -> str:
+        """The responsible person's name, or that there is nobody. Work rows only."""
+        if self.person is None:
+            return NO_PERSON_LABEL
+        return str(self.person.display_name or self.person.upn)
+
+    @property
+    def person_class(self) -> str:
+        """``p1`` … ``p10``, or ``none`` — the dot's colour on the department calendar."""
+        if self.person is None:
+            return "none"
+        return f"p{person_colour(self.person)}"
+
+    @property
+    def compact_summary(self) -> str:
+        """The department calendar's dot ``title``: person — Teema · meaning · state.
+
+        Without the step's own sentence: the department calendar previews whose
+        work falls where, and the sentence is one click away on the Teema.
+        """
+        head = str(self.matter.title)
+        if self.is_work:
+            head = f"{self.person_label} — {head}"
+        parts = [head, self.meaning, self.precision_label, self.status]
+        return " · ".join(str(part) for part in parts if part)
 
     @property
     def summary(self) -> str:
@@ -327,6 +415,7 @@ def _work_event(item: wi.WorkItem) -> CalendarEvent | None:
         status=_work_status(item),
         url=item.record_url,
         item=item,
+        person=item.responsible,
     )
 
 
@@ -360,14 +449,35 @@ def work_events(
 ) -> list[CalendarEvent]:
     """This person's dated work overlapping ``start``…``end``, from the work model.
 
-    ``items`` is the work model the page has already read for this desk
-    (`MyWork.items` — same reader, subject and day); given, nothing is read
-    again. The calendar's own swaps read it bounded to the window.
+    ``subject=None`` is the whole department as ``user`` may see it: the work
+    model unnarrowed. ``items`` is the work model the page has already read
+    (`MyWork.items` for a desk, `build_department`'s one read for Osakond — same
+    reader, narrowing and day); given, nothing is read again. The calendar's own
+    swaps read it bounded to the window.
     """
     if items is None:
         items = wi.work_items(user, today=today, responsible=subject, earliest=start, latest=end)
-    events = [event for event in map(_work_event, items) if event is not None]
-    return [event for event in events if event.when <= end and event.period_end >= start]
+    # Overlap first, then the event: a department's unbounded model is mostly
+    # outside any one window, and an event built only to be discarded costs a
+    # URL reversal per row.
+    events = []
+    for item in items:
+        if item.when is None or item.when > end:
+            continue
+        if (item.period_end or period_end_for(item.when, item.date_precision)) < start:
+            continue
+        event = _work_event(item)
+        if event is not None:
+            events.append(event)
+    return events
+
+
+def _carried_matters(user: Any, subject: Any) -> Any:
+    """Where a commencement may come from: visible Matters, the subject's — or all of them."""
+    matters = Matter.objects.visible_to(user)
+    if subject is not None:
+        matters = matters.filter(owner=subject)
+    return matters.order_by().values("pk")
 
 
 def commencement_events(
@@ -379,10 +489,11 @@ def commencement_events(
     subject's ownership — open and closed, never a tombstone (the default
     manager's scope) — and the records themselves are read through their own
     ``visible_to``, so a restricted commencement on a readable Matter is absent.
+    ``subject=None`` (Osakond) does not narrow: every Matter the reader may see.
     `GENERAL_ORDER` and `UNKNOWN` carry no date by constraint and are never on a
     calendar.
     """
-    matters = Matter.objects.visible_to(user).filter(owner=subject).order_by().values("pk")
+    matters = _carried_matters(user, subject)
     records = (
         MatterEffectiveDate.objects.visible_to(user)
         .filter(
@@ -413,8 +524,9 @@ def estimate_events(
     and named by their kind — «Eeldatav jõustumine (allika hinnang)», «Eelnõus
     kavandatud jõustumine» — so they never read as a recorded commencement, and a
     past one says that nothing on record shows the act came into force.
+    ``subject=None`` (Osakond) does not narrow by owner.
     """
-    matters = Matter.objects.visible_to(user).filter(owner=subject).order_by().values("pk")
+    matters = _carried_matters(user, subject)
     records = (
         MatterImportantDate.objects.visible_to(user)
         .filter(
@@ -699,6 +811,11 @@ class Calendar:
     #: Every event read for the window, once — what the counts are taken from.
     events: list[CalendarEvent] = field(default_factory=list)
     close_query: str = ""
+    #: The HTMX target and id: `ELEMENT_ID` on a desk, `DEPARTMENT_ELEMENT_ID` on Osakond.
+    element_id: str = ELEMENT_ID
+    #: The department calendar: work dots coloured by the person responsible, a
+    #: legend of those people, and compact popover entries.
+    is_department: bool = False
 
     @property
     def is_wide(self) -> bool:
@@ -722,8 +839,30 @@ class Calendar:
         return _counts_label(self.work_count, self.commencement_count, self.estimate_count)
 
     @property
-    def element_id(self) -> str:
-        return ELEMENT_ID
+    def people(self) -> list[LegendPerson]:
+        """Everybody a work dot of this period is coloured for, by name; nobody else.
+
+        Taken from `events` — the rows the reader may see in the shown window —
+        and from nothing wider, so no name reaches the legend that no dot, list
+        entry or popover on the calendar carries. Nobody-responsible comes last,
+        as itself. Empty outside the department calendar and in the year view,
+        whose tiles count rather than colour.
+        """
+        if not self.is_department or self.view == VIEW_YEAR:
+            return []
+        named: dict[Any, LegendPerson] = {}
+        nobody = False
+        for event in self.events:
+            if not event.is_work:
+                continue
+            if event.person is None:
+                nobody = True
+            elif event.person.pk not in named:
+                named[event.person.pk] = LegendPerson(event.person_label, event.person_class)
+        people = sorted(named.values(), key=lambda person: person.name.casefold())
+        if nobody:
+            people.append(LegendPerson(NO_PERSON_LABEL, "none"))
+        return people
 
     @property
     def weekdays(self) -> tuple[str, ...]:
@@ -740,6 +879,9 @@ def build_calendar(
     items: list[wi.WorkItem] | None = None,
 ) -> Calendar:
     """The calendar for ``subject``'s desk, as ``user`` may see it.
+
+    ``subject=None`` is Osakond's: the whole department as ``user`` may see it,
+    under its own element id and with person colours (module docstring).
 
     ``params`` is the request's query; ``query_for(changes)`` returns the page's
     address with those calendar parameters set (``None`` drops one), so every
@@ -815,6 +957,8 @@ def build_calendar(
         close_query=address(VIEW_MONTH, today.replace(day=1) if start <= today <= end else anchor)
         if view in WIDE_VIEWS
         else "",
+        element_id=DEPARTMENT_ELEMENT_ID if subject is None else ELEMENT_ID,
+        is_department=subject is None,
     )
 
     if view == VIEW_WEEKS:

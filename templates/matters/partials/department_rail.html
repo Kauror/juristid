@@ -10,7 +10,15 @@ restated four counts the main column already lists as rows (design handoff C
 
 Valdkonniti keeps the current approved area-scope blocks, included whole from
 the object that builds them, and shares the Aruandlus block below.
+
+Both scopes open with the department calendar: Minu asjad's calendar, whole
+department as this reader may see it, a work dot in the colour of the person
+responsible for it (app/matters/calendar.py, `subject=None`). It swaps itself
+by HTMX under its own id and keeps `vaade` on every link.
 {% endcomment %}
+{% if page.calendar %}
+  {% include "matters/partials/work_calendar.html" with calendar=page.calendar %}
+{% endif %}
 
 {% comment %}
   R1-C (docs/adr/0188 §5): «Kontrolli jõustumist» on Teemad with nobody

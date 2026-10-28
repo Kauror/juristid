@@ -10,6 +10,8 @@ a line (Stage-2F brief 31).
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
@@ -17,10 +19,47 @@ from django.utils import timezone
 
 from app.core.authorization import may_view_department_management
 from app.core.decorators import viewer_for
+from app.core.middleware import is_htmx
+from app.matters import calendar as work_calendar
 from app.matters import overview as overview_module
 from app.matters.department import build_department
 from app.matters.department_changes import build_changes
 from app.matters.department_dashboard import PERIOD_END_PARAM, PERIOD_START_PARAM, TEAM_COLUMNS
+
+
+def _calendar_query_for(request: HttpRequest, scope: str) -> Any:
+    """The page's own address with the calendar's parameters changed, and no others.
+
+    `vaade` (the scope), Tehtud's period and anything else on the address stay
+    exactly as they are, so moving the calendar never moves the page around it —
+    the same rule Minu asjad's calendar keeps (`views._person_calendar`). The
+    scope is written out as the page resolved it — even when the address left
+    it to its default or used a retired alias (`?vaade=tiim`): a calendar link
+    is never the bare `/osakond/` the navigation links to, and a pasted one
+    opens the scope it was taken on.
+    """
+
+    def query_for(changes: dict[str, str | None]) -> str:
+        params = request.GET.copy()
+        params[overview_module.SCOPE_PARAM] = scope
+        for key, value in changes.items():
+            if value is None:
+                params.pop(key, None)
+            else:
+                params[key] = value
+        encoded = params.urlencode()
+        return f"{request.path}?{encoded}" if encoded else request.path
+
+    return query_for
+
+
+def _wants_calendar_fragment(request: HttpRequest) -> bool:
+    """An HTMX swap of the department calendar alone — never a history restore."""
+    return (
+        is_htmx(request)
+        and request.headers.get("HX-History-Restore-Request") != "true"
+        and request.headers.get("HX-Target") == work_calendar.DEPARTMENT_ELEMENT_ID
+    )
 
 
 @login_required
@@ -64,6 +103,22 @@ def department(request: HttpRequest) -> HttpResponse:
     sort = request.GET.get(overview_module.SORT_PARAM, overview_module.SORT_OPEN)
     show_empty_areas = request.GET.get(overview_module.SHOW_EMPTY_AREAS_PARAM) == "1"
     today = timezone.localdate()
+    if _wants_calendar_fragment(request):
+        # The calendar's own navigation: nothing else on the page is read. The
+        # work model is read bounded to the shown window (`calendar.work_events`).
+        return render(
+            request,
+            "matters/partials/work_calendar.html",
+            {
+                "calendar": work_calendar.build_calendar(
+                    viewer_for(request),
+                    None,
+                    params=request.GET,
+                    today=today,
+                    query_for=_calendar_query_for(request, scope),
+                ),
+            },
+        )
     return render(
         request,
         "matters/department.html",
@@ -82,6 +137,7 @@ def department(request: HttpRequest) -> HttpResponse:
                 params=request.GET,
                 sort=sort,
                 show_empty_areas=show_empty_areas,
+                calendar_query_for=_calendar_query_for(request, scope),
             ),
             "scopes": overview_module.SCOPES,
             "scope": scope,

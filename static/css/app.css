@@ -14436,6 +14436,77 @@ a.jcal__daynum {
   background: var(--calendar-overdue);
 }
 
+/* Osakond's calendar: a work dot in its responsible person's colour
+   (app/matters/calendar.py, `person_colour`); nobody responsible is a hollow
+   neutral ring rather than anybody's colour. Late keeps the person's fill and
+   adds a ring in the overdue colour, so lateness never repaints the person. */
+.wcal__dot--none {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--calendar-person-none);
+}
+
+.wcal__dot--p1 {
+  background: var(--calendar-person-1);
+}
+
+.wcal__dot--p2 {
+  background: var(--calendar-person-2);
+}
+
+.wcal__dot--p3 {
+  background: var(--calendar-person-3);
+}
+
+.wcal__dot--p4 {
+  background: var(--calendar-person-4);
+}
+
+.wcal__dot--p5 {
+  background: var(--calendar-person-5);
+}
+
+.wcal__dot--p6 {
+  background: var(--calendar-person-6);
+}
+
+.wcal__dot--p7 {
+  background: var(--calendar-person-7);
+}
+
+.wcal__dot--p8 {
+  background: var(--calendar-person-8);
+}
+
+.wcal__dot--p9 {
+  background: var(--calendar-person-9);
+}
+
+.wcal__dot--p10 {
+  background: var(--calendar-person-10);
+}
+
+.wcal__dot[class*="wcal__dot--p"].is-overdue {
+  box-shadow: 0 0 0 1.5px var(--calendar-overdue);
+}
+
+.wcal__dot--none.is-overdue {
+  background: transparent;
+  box-shadow:
+    inset 0 0 0 1.5px var(--calendar-person-none),
+    0 0 0 1.5px var(--calendar-overdue);
+}
+
+.wcal__people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin: calc(-1 * var(--spacing-1)) 0 var(--spacing-15);
+  padding: 0;
+  list-style: none;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-secondary);
+}
+
 .wcal__grid {
   display: grid;
   grid-template-columns: 1.6rem repeat(7, minmax(0, 1fr));
@@ -14629,6 +14700,53 @@ a.jcal__daynum {
   font-size: var(--typography-size-meta-sm);
 }
 
+/* The department calendar's compact entry: person — Teema, then what the date
+   means. Not one big link: only the Teema is a link. */
+.wcal__event--compact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--spacing-1) var(--spacing-15);
+  border-left: 3px solid var(--calendar-work);
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-meta);
+  line-height: var(--typography-line-tight);
+  overflow-wrap: anywhere;
+}
+
+.wcal__event--compact.wcal__event--joustumine {
+  border-left-style: double;
+  border-left-color: var(--calendar-commencement);
+}
+
+.wcal__eventhead {
+  color: var(--text-body);
+}
+
+.wcal__eventperson {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  color: var(--text-primary);
+}
+
+.wcal__eventsep {
+  color: var(--text-muted);
+}
+
+.wcal__event--compact .wcal__eventmatter {
+  text-decoration: none;
+}
+
+.wcal__event--compact .wcal__eventmatter:hover {
+  text-decoration: underline;
+}
+
+.wcal__event--compact .wcal__eventwhat {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta-sm);
+}
+
 .wcal__status.is-overdue {
   color: var(--status-danger);
   font-weight: var(--typography-weight-semibold);
@@ -14801,6 +14919,12 @@ a.jcal__daynum {
   .wcal__dot--joustumine {
     background: Canvas;
     outline: 1px solid CanvasText;
+  }
+
+  .wcal__dot--none {
+    background: Canvas;
+    box-shadow: none;
+    outline: 1px dashed CanvasText;
   }
 
   .wcal__day.is-today > .wcal__daybtn,
