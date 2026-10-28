@@ -207,7 +207,12 @@ FULL = "github.event_name!='pull_request'||!github.event.pull_request.draft"
 #: Jobs that wait for the preflight's *result* and may be skipped by it:
 #: none is a required check, and each stands behind an aggregator that
 #: refuses a skipped dependency.
-BEHIND_THE_PREFLIGHT = {"postgres-safety", "tests", "browser", "visual"}
+BEHIND_THE_PREFLIGHT = {"postgres-safety", "tests", "browser"}
+
+#: The visual job also runs in FAST on a draft that touches the UI, so it says
+#: `!cancelled()` and asks for the preflight's success itself in FULL
+#: (tests/test_ci_tiers.py holds its whole condition).
+VISUAL = "visual"
 
 
 def test_a_job_that_waits_only_for_a_slot_still_runs_when_its_predecessor_fails() -> None:
@@ -236,6 +241,11 @@ def test_a_job_that_waits_only_for_a_slot_still_runs_when_its_predecessor_fails(
             assert any(
                 name in workflow["jobs"][gate]["needs"] for gate in AGGREGATORS - {"shard-balance"}
             )
+        elif name == VISUAL:
+            assert job["needs"] == ["preflight", "changes"]
+            assert condition.startswith("${{!cancelled()&&")
+            assert f"(({FULL})&&needs.preflight.result=='success')" in condition
+            assert name in workflow["jobs"]["browser-gate"]["needs"]
         else:
             assert condition == f"${{{{!cancelled()&&({FULL})}}}}", (
                 f"`{name}` waits for {job['needs']} but would be skipped if it failed"

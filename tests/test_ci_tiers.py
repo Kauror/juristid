@@ -138,12 +138,6 @@ READY = event("pull_request", draft=False)
 DISPATCH = event("workflow_dispatch")
 
 
-def job_runs(job: dict[str, Any], context: dict[str, Any]) -> bool:
-    """Whether a job's own condition admits it, all its needs having succeeded."""
-    condition = job.get("if")
-    return True if condition is None else bool(evaluate(str(condition), context))
-
-
 def job_name(job: dict[str, Any], context: dict[str, Any]) -> str:
     name = str(job["name"])
     if "matrix." in name:
@@ -151,20 +145,61 @@ def job_name(job: dict[str, Any], context: dict[str, Any]) -> str:
     return str(evaluate(name, context)) if name.startswith("${{") else name
 
 
-def running(workflow: dict[str, Any], context: dict[str, Any]) -> set[str]:
-    """The jobs that run for this event when everything succeeds."""
+def results(
+    workflow: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    ui: bool = False,
+    failed: frozenset[str] = frozenset(),
+) -> dict[str, str]:
+    """Every job's result for this event, the way Actions decides it.
+
+    A job whose condition has no status function carries an implicit
+    `success()`: it is skipped unless every job it needs succeeded. A job that
+    says `always()` or `!cancelled()` is evaluated whatever they did, with
+    their results in `needs.<job>.result`. ``ui`` is what the `changes` job
+    reports when it runs; ``failed`` lists jobs that run and fail.
+    """
     jobs = workflow["jobs"]
-    ran: set[str] = set()
-    for key in jobs:  # a job's needs come before it in this file
-        needs = jobs[key].get("needs", [])
-        if job_runs(jobs[key], context) and all(need in ran for need in needs):
-            ran.add(key)
-    return ran
+    result: dict[str, str] = {}
+    for key, job in jobs.items():  # a job's needs come before it in this file
+        needs = job.get("needs", [])
+        scope = dict(context)
+        for need in needs:
+            scope[f"needs.{need}.result"] = result[need]
+        ran_changes = result.get("changes") == "success"
+        scope["needs.changes.outputs.ui"] = ("true" if ui else "false") if ran_changes else ""
+        condition = str(job.get("if", ""))
+        status_aware = "always()" in condition or "cancelled()" in condition
+        if not status_aware and any(result[need] != "success" for need in needs):
+            result[key] = "skipped"
+        elif condition and not evaluate(condition, scope):
+            result[key] = "skipped"
+        else:
+            result[key] = "failure" if key in failed else "success"
+    return result
 
 
-def simulated_jobs(workflow: dict[str, Any], context: dict[str, Any]) -> list[dict[str, Any]]:
+def running(
+    workflow: dict[str, Any],
+    context: dict[str, Any],
+    *,
+    ui: bool = False,
+    failed: frozenset[str] = frozenset(),
+) -> set[str]:
+    """The jobs that run (pass or fail) for this event."""
+    return {
+        key
+        for key, outcome in results(workflow, context, ui=ui, failed=failed).items()
+        if outcome != "skipped"
+    }
+
+
+def simulated_jobs(
+    workflow: dict[str, Any], context: dict[str, Any], *, ui: bool = False
+) -> list[dict[str, Any]]:
     """The jobs API's view of a green run of this event: names as GitHub shows them."""
-    ran = running(workflow, context)
+    ran = running(workflow, context, ui=ui)
     return [
         {
             "name": job_name(job, context),
@@ -175,7 +210,17 @@ def simulated_jobs(workflow: dict[str, Any], context: dict[str, Any]) -> list[di
     ]
 
 
-FAST_JOBS = {"quality", "focused"}
+FAST_JOBS = {"quality", "focused", "changes"}
+#: The FAST tier on a draft that touches templates, static files or e2e/.
+FAST_UI_JOBS = FAST_JOBS | {"visual"}
+#: The jobs that only ever run in FAST.
+FAST_ONLY = {"focused", "changes"}
+
+#: The visual job's condition: FULL after a green preflight, or FAST on a UI draft.
+VISUAL = (
+    f"!cancelled() && ((({FULL}) && needs.preflight.result == 'success') || "
+    f"(({FAST}) && needs.changes.outputs.ui == 'true'))"
+)
 
 
 def test_the_evaluator_refuses_what_it_cannot_read() -> None:
@@ -191,6 +236,9 @@ def test_every_job_condition_is_the_fast_or_the_full_condition(workflow) -> None
         condition = str(job.get("if", "")).replace("${{", "").replace("}}", "").strip()
         if key == "quality":
             assert condition == "", "the quality job runs in both tiers, unconditionally"
+            continue
+        if key == "visual":
+            assert condition == VISUAL, f"the visual job's condition changed: {condition!r}"
             continue
         assert condition in {
             FAST,
@@ -221,14 +269,25 @@ def test_1_a_draft_and_every_push_to_it_run_only_fast(workflow) -> None:
     assert running(workflow, DRAFT_PUSH) == FAST_JOBS
 
 
+def test_1_a_draft_that_touches_the_ui_also_runs_the_visual_job(workflow) -> None:
+    """Rendering diffs and baseline candidates without a FULL round — and nothing more."""
+    assert running(workflow, DRAFT_PUSH, ui=True) == FAST_UI_JOBS
+
+
+@pytest.mark.parametrize("ui", [False, True])
+def test_full_is_the_same_whatever_the_draft_touched(workflow, ui) -> None:
+    """`changes` is FAST's alone: in FULL it is skipped and decides nothing."""
+    assert running(workflow, READY, ui=ui) == set(workflow["jobs"]) - FAST_ONLY
+
+
 def test_2_marking_ready_runs_full(workflow) -> None:
-    """`ready_for_review` carries draft=false: every job but the FAST-only one."""
-    assert running(workflow, READY) == set(workflow["jobs"]) - {"focused"}
+    """`ready_for_review` carries draft=false: every job but the FAST-only ones."""
+    assert running(workflow, READY) == set(workflow["jobs"]) - FAST_ONLY
 
 
 def test_3_a_push_to_a_ready_pull_request_runs_full_again(workflow) -> None:
     """`synchronize` on a ready pull request is the READY context once more."""
-    assert running(workflow, READY) == set(workflow["jobs"]) - {"focused"}
+    assert running(workflow, READY) == set(workflow["jobs"]) - FAST_ONLY
     concurrency = workflow["concurrency"]
     assert concurrency["group"] == "${{ github.workflow }}-${{ github.ref }}"
     assert concurrency["cancel-in-progress"] is True
@@ -266,7 +325,7 @@ def test_4_returning_to_draft_starts_nothing_and_the_next_push_is_fast(workflow)
 @pytest.mark.parametrize("context", [DISPATCH, event("workflow_dispatch", draft=None)])
 def test_5_a_dispatched_run_is_full(workflow, context) -> None:
     """main-proof's fallback and a run started by hand: no pull request, so FULL."""
-    assert running(workflow, context) == set(workflow["jobs"]) - {"focused"}
+    assert running(workflow, context) == set(workflow["jobs"]) - FAST_ONLY
 
 
 def test_5_main_proof_still_dispatches_this_workflow() -> None:
@@ -329,9 +388,12 @@ def _pr_run() -> dict[str, Any]:
     }
 
 
-def test_6_a_green_fast_run_is_not_proof_of_a_merge(workflow) -> None:
-    """Its run concludes success — skipped jobs fail nothing — and is still refused."""
-    fast = simulated_jobs(workflow, DRAFT_PUSH)
+@pytest.mark.parametrize("ui", [False, True])
+def test_6_a_green_fast_run_is_not_proof_of_a_merge(workflow, ui) -> None:
+    """Its run concludes success — skipped jobs fail nothing — and is still refused.
+
+    With the visual job green on a UI draft too: it is not a required gate."""
+    fast = simulated_jobs(workflow, DRAFT_PUSH, ui=ui)
     verdict = gate.pull_request_verdict(
         "t" * 40, "d" * 40, ["b" * 40, "h" * 40], [_pr_run()], lambda _r: fast, lambda _r: "d" * 40
     )
@@ -340,10 +402,11 @@ def test_6_a_green_fast_run_is_not_proof_of_a_merge(workflow) -> None:
         assert f"{required} (not in the run" in verdict.detail
 
 
-def test_6_even_with_its_skipped_jobs_hidden_a_fast_run_lacks_the_gates(workflow) -> None:
+@pytest.mark.parametrize("ui", [False, True])
+def test_6_even_with_its_skipped_jobs_hidden_a_fast_run_lacks_the_gates(workflow, ui) -> None:
     """Independent of the skip check: only the jobs that ran, and still not FULL."""
     ran_only = [
-        job for job in simulated_jobs(workflow, DRAFT_PUSH) if job["conclusion"] == "success"
+        job for job in simulated_jobs(workflow, DRAFT_PUSH, ui=ui) if job["conclusion"] == "success"
     ]
     assert gate.not_green(ran_only)
 
@@ -366,7 +429,7 @@ def test_6_a_fast_run_on_main_could_not_be_mains_proof_either(workflow) -> None:
 def test_6_a_full_run_is_proof(workflow) -> None:
     """The control: the same check accepts what a green FULL run reports."""
     full = simulated_jobs(workflow, READY)
-    full = [job for job in full if job["conclusion"] == "success"]  # `focused` is skipped in FULL
+    full = [job for job in full if job["conclusion"] == "success"]  # FAST-only jobs are skipped
     assert not gate.not_green(full)
 
 
@@ -387,7 +450,7 @@ def test_the_tier_is_recorded_from_the_same_condition(workflow) -> None:
 # ---------------------------------------------------------------------------
 
 AGGREGATORS = {"tests-gate", "browser-gate"}
-INFORMATIONAL = {"shard-balance", "focused"}
+INFORMATIONAL = {"shard-balance", "focused", "changes"}
 
 
 def _required_keys(workflow: dict[str, Any]) -> dict[str, str]:
@@ -410,8 +473,28 @@ def test_7_every_job_is_a_gate_or_stands_behind_one(workflow) -> None:
 
 def test_7_every_job_behind_the_preflight_is_gated_by_it(workflow) -> None:
     """Expensive jobs start only after the preflight; required leaves refuse without it."""
-    for key in ("postgres-safety", "tests", "browser", "visual"):
+    for key in ("postgres-safety", "tests", "browser"):
         assert workflow["jobs"][key]["needs"] == ["preflight"]
+    assert workflow["jobs"]["visual"]["needs"] == ["preflight", "changes"]
+
+
+@pytest.mark.parametrize("ui", [False, True])
+def test_7_a_failed_preflight_skips_every_expensive_job(workflow, ui) -> None:
+    """Including the visual job, which in FULL waits for the preflight's result."""
+    outcome = results(workflow, READY, ui=ui, failed=frozenset({"preflight"}))
+    for key in ("postgres-safety", "tests", "browser", "visual"):
+        assert outcome[key] == "skipped", key
+    # They run — and refuse; the bash tests below run their refusals.
+    for key in ("tests-gate", "browser-gate", "recovery", "container"):
+        assert outcome[key] != "skipped", key
+
+
+def test_7_a_fast_visual_failure_fails_no_required_check(workflow) -> None:
+    """On a draft the visual job is information: no required job aggregates it."""
+    outcome = results(workflow, DRAFT_PUSH, ui=True, failed=frozenset({"visual"}))
+    for key, job in workflow["jobs"].items():
+        if job_name(job, DRAFT_PUSH) in gate.REQUIRED_GATES:
+            assert outcome[key] == "success", key
     for key in ("tests-gate", "browser-gate", "recovery", "container"):
         assert "preflight" in workflow["jobs"][key]["needs"]
 
@@ -478,7 +561,7 @@ def test_8_no_workflow_runs_pull_request_code_with_a_privileged_trigger() -> Non
 
 def test_8_the_fast_jobs_cannot_write_anything(workflow) -> None:
     assert workflow["permissions"] == {"contents": "read"}
-    for key in ("quality", "focused", "preflight"):
+    for key in ("quality", "focused", "changes", "preflight", "visual"):
         assert "permissions" not in workflow["jobs"][key]
 
 
@@ -493,12 +576,11 @@ def test_8_the_focused_selection_feeds_nothing_in_full() -> None:
         ROOT / "scripts" / "ci" / "run_slices.py",
     ]:
         assert "ci_focused_selection" not in path.read_text(encoding="utf-8"), path.name
-    usage = [
-        key
-        for key, job in yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"].items()
-        if "ci_focused_selection" in yaml.safe_dump(job)
-    ]
-    assert usage == ["focused"]
+    jobs = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]
+    usage = {key for key, job in jobs.items() if "ci_focused_selection" in yaml.safe_dump(job)}
+    assert usage == FAST_ONLY
+    for key in usage:
+        assert str(jobs[key]["if"]) == f"${{{{ {FAST} }}}}", f"`{key}` must be FAST-only"
 
 
 # ---------------------------------------------------------------------------
@@ -561,3 +643,48 @@ def test_focused_is_deterministic() -> None:
 def test_focused_contract_set_exists() -> None:
     for path in ci_focused_selection.ALWAYS:
         assert (ROOT / path).is_file(), path
+
+
+@pytest.mark.parametrize(
+    ("changed", "ui"),
+    [
+        (["templates/matters/detail.html"], True),
+        (["static/css/app.css", "app/x.py"], True),
+        (["e2e/baselines/otsing.png"], True),
+        (["e2e/test_ui_regression.py"], True),
+        (["app/matters/views.py", "tests/test_matters.py"], False),
+        (["docs/ci-architecture.md", ".github/workflows/ci.yml"], False),
+        (["app/templatetags/x.py", "mystatic/x.css"], False),
+        ([], False),
+        (["templates\\base.html"], True),
+    ],
+)
+def test_the_ui_rule(changed: list[str], ui: bool) -> None:
+    assert ci_focused_selection.touches_ui(changed) is ui
+
+
+def test_the_ui_answer_is_written_as_a_step_output(tmp_path) -> None:
+    changed = tmp_path / "changed.txt"
+    output = tmp_path / "github_output"
+    changed.write_text("templates/base.html\n", encoding="utf-8")
+    assert ci_focused_selection.main(["--changed", str(changed), "--ui-output", str(output)]) == 0
+    changed.write_text("app/x.py\n", encoding="utf-8")
+    assert ci_focused_selection.main(["--changed", str(changed), "--ui-output", str(output)]) == 0
+    assert output.read_text(encoding="utf-8") == "ui=true\nui=false\n"
+
+
+def test_the_changes_job_needs_nothing_but_the_standard_library() -> None:
+    """It runs `python3` on the bare runner, before (and without) `uv sync`."""
+    import ast
+
+    for name in ("ci_focused_selection.py", "ci_sharding.py"):
+        tree = ast.parse((ROOT / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import | ast.ImportFrom):
+                module = (
+                    node.module if isinstance(node, ast.ImportFrom) else node.names[0].name
+                ) or ""
+                top = module.split(".")[0]
+                assert top in sys.stdlib_module_names or top in {"ci_sharding", "__future__"}, (
+                    f"{name} imports {module}"
+                )

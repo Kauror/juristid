@@ -10,9 +10,9 @@ pull request that is a **draft** runs the **FAST** tier instead:
 
 | | FAST (draft PR) | FULL (ready PR, `ready_for_review`, any `workflow_dispatch`) |
 | --- | --- | --- |
-| Jobs | `Format, lint, types and system checks`, `Focused tests (FAST tier)` | `Preflight`, then everything in this document |
-| Wall clock | ~3 min | ~9–10 min |
-| Runner-minutes | measured in PR #561 | ~122 + ~1 for the preflight |
+| Jobs | `Format, lint, types and system checks`, `Focused tests (FAST tier)`, `Does the draft touch the UI`; plus `Visual regression` when it does | `Preflight`, then everything in this document |
+| Wall clock | ~3 min; ~4–5 min when the draft touches the UI | ~9–10 min |
+| Runner-minutes | ~4.5; ~9 when the draft touches the UI | ~122 + ~1 for the preflight |
 | Merge or release evidence | **never** | yes — the only evidence there is |
 
 What decides it is one expression, written out in every job's `if:` and held
@@ -49,7 +49,18 @@ request's run").
 changed, and the changed `tests/**/test_*.py` files, within a 240 s budget
 (`ci_focused_selection.py`; deferred files are named in the job summary). It is
 a convenience for the author: not required, not read by any gate, imported by
-nothing in FULL. Browser tests run only in FULL.
+nothing in FULL. The behavioural browser shards run only in FULL.
+
+**The visual job on a UI draft.** When a draft changes `templates/`, `static/`
+or `e2e/` (`ci_focused_selection.touches_ui`, decided by the ten-second
+`changes` job on the bare runner), FAST also runs `Visual regression` — the
+same job, same world, same artifact (`test-report-visual`) as in FULL. A draft
+that moves a baseline learns it, and gets the candidates, without a FULL round;
+in the 26–27 Oct history 7 of 18 red FULL runs were visual-only. On a draft no
+required check aggregates it (the browser gate does not run), so a red visual
+job blocks nothing and is never evidence. In FULL the job is exactly what it
+was: after a green preflight, aggregated by `Browser workflow (Playwright on
+PostgreSQL 18)`.
 
 The short version: nothing was removed to make CI faster. The two suites that
 took the time — the PostgreSQL suite and the browser suite — were split into
