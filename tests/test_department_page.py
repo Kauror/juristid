@@ -37,6 +37,7 @@ from django.utils import timezone
 from django.utils.html import escape
 
 from app.accounts.enums import UserRole
+from app.core.dates import end_of_month
 from app.core.enums import Visibility
 from app.intelligence.services import (
     add_important_date,
@@ -759,9 +760,14 @@ def eesolev(client, person) -> str:
     return body.split('aria-label="Eesolev"')[-1].split("</section>")[0]
 
 
+#: How every window's `<details>` opens: the class, then the remembered-block
+#: attributes (`{% disclosure group.disclosure_key %}`, docs/adr/0194).
+WINDOW_TAG = '<details class="uxdl" data-disclosure="department.upcoming.'
+
+
 def windows_of(panel: str) -> list[str]:
     """Each window's `<details>`, in the order the panel prints them."""
-    return [chunk.split("</details>")[0] for chunk in panel.split('<details class="uxdl">')[1:]]
+    return [chunk.split("</details>")[0] for chunk in panel.split(WINDOW_TAG)[1:]]
 
 
 def bodies_of(panel: str) -> list[str]:
@@ -818,24 +824,35 @@ def four_windows(specialist, today):
     return made
 
 
-def test_every_populated_window_is_one_details_shut_by_default(
+def test_every_populated_window_is_one_remembered_details_open_by_its_default(
     client, department_head, four_windows, today
 ):
-    """A native disclosure, and none of them opens itself.
+    """A native disclosure per window, open or shut by the window's registered default.
 
-    The tag is matched exactly, so `<details class="uxdl" open>` fails here
-    rather than shipping a panel that decides which window the reader came for.
-    The `<div>` it replaces fails the same assertion, and so would a scripted
-    imitation of one.
+    Since docs/adr/0194 a window remembers how its reader left it, by the
+    window's *kind* (`group.disclosure_key`); untouched, the four near windows
+    are open and *Ülejäänud kuu* and *Kaugemal* shut. The tag is matched
+    exactly, so a literal `open` written beside the remembered one fails here,
+    and so would the `<div>` it replaced.
     """
+    from app.accounts.disclosures import DISCLOSURES
+
     panel = eesolev(client, department_head)
     populated = [group for group in dd.upcoming_groups(department_head, today) if group.count]
 
     assert len(populated) == 3
-    assert panel.count('<details class="uxdl">') == len(populated)
+    assert panel.count(WINDOW_TAG) == len(populated)
     assert panel.count('<summary class="uxdl__head">') == len(populated)
     assert '<div class="uxdl">' not in panel
-    assert "<details" not in panel.replace('<details class="uxdl">', "")
+    for group in populated:
+        opened = DISCLOSURES[group.disclosure_key].default_open
+        tag = (
+            f'<details class="uxdl" data-disclosure="{group.disclosure_key}" '
+            f'data-disclosure-saved="{1 if opened else 0}"{" open" if opened else ""}>'
+        )
+        assert tag in panel, group.key
+        panel = panel.replace(tag, "")
+    assert "<details" not in panel
 
 
 def test_each_summary_names_its_window_and_counts_the_deadlines_it_opens(
@@ -1046,7 +1063,7 @@ def test_a_restricted_deadline_is_disclosed_to_every_reader_and_not_to_an_outsid
 
 
 # =========================================================================
-# §39 — the five windows partition the future
+# §39 — the six windows partition the future
 # =========================================================================
 
 
@@ -1062,7 +1079,7 @@ CALENDARS = [
 
 @pytest.mark.parametrize("day", CALENDARS)
 def test_upcoming_windows_partition(day):
-    """Five consecutive intervals, and nothing between or across them.
+    """Six consecutive intervals, and nothing between or across them.
 
     Checked day by day over a year rather than on sampled dates: a boundary that
     is wrong by one day is exactly the bug that survives a test which only looks
@@ -1088,10 +1105,19 @@ def test_the_windows_start_where_the_labels_say(day):
     assert windows["tana"][1] == windows["tana"][2] == day
     assert windows["homme"][1] == day + timedelta(days=1)
     assert windows["homme"][0] == dd.weekday_name(day + timedelta(days=1))
-    assert windows["nadal"][1] == day + timedelta(days=2)
+    # The rest of this ISO week, from the day after tomorrow (empty at the weekend).
+    assert windows["nadala_lopp"][1] == day + timedelta(days=2)
+    assert windows["nadala_lopp"][2] == wi.end_of_iso_week(day)
+    # Next ISO week, never before the day after tomorrow (a Sunday's tomorrow
+    # is that Monday, and it is *Homme*).
+    assert windows["nadal"][1] == max(
+        wi.end_of_iso_week(day) + timedelta(days=1), day + timedelta(days=2)
+    )
+    assert windows["nadal"][1].isocalendar()[1] == (day + timedelta(days=7)).isocalendar()[1]
     assert windows["nadal"][2] == wi.end_of_iso_week(day) + timedelta(days=7)
     assert windows["kuu"][1] == windows["nadal"][2] + timedelta(days=1)
-    assert windows["kaugemal"][1] == windows["kuu"][2] + timedelta(days=1)
+    assert windows["kuu"][2] == end_of_month(windows["nadal"][2])
+    assert windows["kaugemal"][1] == max(windows["kuu"][2], windows["nadal"][2]) + timedelta(days=1)
     assert windows["kaugemal"][2] is None
 
 
@@ -1148,7 +1174,8 @@ def test_a_new_deadline_source_reaches_eesolev_without_osakond_code(
         owner=specialist,
         reference_year=2026,
         actor=specialist,
-        response_deadline=today + timedelta(days=3),
+        # The first day of *Järgmine nädal*, whatever weekday CI runs on.
+        response_deadline=dd.upcoming_windows(today)[3][2],
     )
 
     groups = {group.key: group for group in dd.upcoming_groups(department_head, today)}
