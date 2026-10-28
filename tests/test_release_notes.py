@@ -400,18 +400,24 @@ def test_the_renderer_sorts_rather_than_trusting_the_file_order() -> None:
 
 
 @pytest.mark.django_db
-def test_the_footer_offers_uuendused(client: Client) -> None:
+def test_the_footer_offers_uuendused(client: Client, settings) -> None:
+    """Through the build time when there is one, by name when there is not."""
+    settings.APPLICATION_BUILT_AT = "2026-08-19T11:52:22Z"
     footer = _footer(client.get("/").content.decode())
-    assert f'href="{URL}"' in footer
-    assert "Uuendused" in footer
+    assert re.search(rf'<a href="{URL}"[^>]*>ehitatud 19\.8\.2026 14:52</a>', footer)
+
+    settings.APPLICATION_BUILT_AT = ""
+    footer = _footer(client.get("/").content.decode())
+    assert f'<a href="{URL}">Uuendused</a>' in footer
 
 
 @pytest.mark.django_db
-def test_the_footer_still_says_which_build_is_running(client: Client, settings) -> None:
-    """The link is added beside the stamp; it replaces nothing.
+def test_the_footer_names_the_organisation_and_nothing_else_about_the_build(
+    client: Client, settings
+) -> None:
+    """Stage, environment and revision moved to Haldus → Rakendus (2026-10-28).
 
-    `tests/test_build_stamp.py` owns the stamp's own semantics. This is the
-    narrower claim that adding a link did not push any of it off the page.
+    `tests/test_build_stamp.py` holds that they are said there.
     """
     settings.APPLICATION_REVISION = "ceb324c"
     settings.APPLICATION_BUILT_AT = "2026-08-19T11:52:22Z"
@@ -419,36 +425,17 @@ def test_the_footer_still_says_which_build_is_running(client: Client, settings) 
     settings.APPLICATION_ENVIRONMENT = "production"
 
     footer = _footer(client.get("/").content.decode())
-    assert "Stage 4" in footer
-    assert "production" in footer
-    assert "versioon ceb324c" in footer
-    assert "ehitatud 19.8.2026 14:52" in footer
+    assert "Eesti Kaubandus-Tööstuskoda" in footer
+    for moved in ("Stage 4", "production", "ceb324c", "versioon"):
+        assert moved not in footer, moved
 
 
 @pytest.mark.django_db
-def test_the_footer_omits_the_build_time_when_there_is_none_and_still_links(
-    client: Client, settings
-) -> None:
-    """The link sits before the conditional half, so it survives its absence."""
-    settings.APPLICATION_BUILT_AT = ""
+def test_the_footer_carries_exactly_one_link(client: Client) -> None:
+    """Quiet band, not a navigation bar: Uuendused, nothing more. Kiirklahvid is in Haldus."""
     footer = _footer(client.get("/").content.decode())
-    assert "ehitatud" not in footer
-    assert f'href="{URL}"' in footer
-
-
-@pytest.mark.django_db
-def test_the_revision_itself_is_not_a_link(client: Client, settings) -> None:
-    settings.APPLICATION_REVISION = "ceb324c"
-    footer = _footer(client.get("/").content.decode())
-    assert re.search(r"versioon ceb324c\b(?![^<]*</a>)", footer)
-
-
-@pytest.mark.django_db
-def test_the_footer_carries_exactly_two_links(client: Client) -> None:
-    """Quiet band, not a navigation bar: Uuendused and Kiirklahvid, nothing more."""
-    footer = _footer(client.get("/").content.decode())
-    assert footer.count("<a ") == 2
-    assert footer.index(f'href="{URL}"') < footer.index('href="/kiirklahvid/"')
+    assert footer.count("<a ") == 1
+    assert 'href="/kiirklahvid/"' not in footer
 
 
 def test_the_release_notes_page_carries_the_footer_too(client: Client) -> None:

@@ -230,11 +230,11 @@ def test_a_click_outside_closes_the_popover(past_the_door):
     # The footer band, nowhere near the popover. Clicking a heading instead
     # would be a click on whatever the dashboard happens to put there.
     #
-    # Its own padding, not its centre. The band carries one link now — the
-    # build stamp's `Uuendused` — and Playwright aims at the middle of the
-    # element, which is a coordinate that moves with the length of the revision
-    # string. `position` is measured from the padding box, so (4, 4) is inside
-    # the band and provably outside the `<p>` that holds the link.
+    # Its own padding, not its centre. The band carries one link — the build
+    # time, leading to Uuendused — and Playwright aims at the middle of the
+    # element, which is a coordinate that moves with the length of its text.
+    # `position` is measured from the padding box, so (4, 4) is inside the band
+    # and provably outside the `<p>` that holds the link.
     page.locator(".app__footer").click(position={"x": 4, "y": 4})
 
     expect(_menu(page)).to_be_hidden()

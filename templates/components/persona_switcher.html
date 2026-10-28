@@ -92,5 +92,30 @@
     <p class="personamenu__note">
       Valik ei ole autentimine — see muudab ainult, kelle vaadet näidatakse.
     </p>
+
+    {% comment %}
+      The way to the administrator's own sign-in, separate from the choice above
+      and offered to every reader alike: it asks the person's own e-mail,
+      password and authenticator code, and choosing a persona never stands in
+      for it (docs/adr/0186). Showing it only to personas whose accounts may
+      administer would tell anybody with the shared password who they are.
+      While this browser holds a verified session the section names whose it
+      is and ends it — «Lõpeta» ends only the administrator session, never the
+      persona or the gate (`haldus:sign_out`).
+    {% endcomment %}
+    {% load haldus %}{% verified_administrator_session as administrator %}
+    <div class="personamenu__admin">
+      {% if administrator %}
+        <p class="personamenu__adminline">
+          Halduri seanss: <a href="{% url 'haldus:index' %}">{{ administrator.display_name }}</a>
+        </p>
+        <form method="post" action="{% url 'haldus:sign_out' %}" class="personamenu__adminform">
+          {% csrf_token %}
+          <button type="submit" class="button button--quiet">Lõpeta halduri seanss</button>
+        </form>
+      {% else %}
+        <a class="personamenu__adminlink" href="{% url 'haldus:sign_in' %}">Halduri sisselogimine</a>
+      {% endif %}
+    </div>
   </div>
 </div>

@@ -436,6 +436,51 @@
   display: none;
 }
 
+/* ---- Haldus, the gear beside «Välju» (the owner's brief, 2026-10-28) -----
+ *
+ * The theme switch's size and quietness, so the bar keeps its one 48px row,
+ * and the same 8px to «Välju» the switch keeps to the persona: it reads as one
+ * of the account controls, not as one more destination. Unlike the switch it
+ * is a link and needs no script. On a Haldus page it carries the bar's own
+ * "you are here" mark — the inset brand underline — besides `aria-current`. */
+.topbar__haldus {
+  flex: none;
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  margin-right: calc(var(--spacing-2) - var(--spacing-6));
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+
+@media (max-width: 860px) {
+  .topbar__haldus {
+    margin-right: calc(var(--spacing-2) - var(--spacing-3));
+  }
+}
+
+.topbar__haldus:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.topbar__haldus.is-active {
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 0 var(--accent-primary);
+}
+
+.topbar__hicon {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .avatar {
   width: 28px;
   height: 28px;
@@ -3541,6 +3586,36 @@ button.personaoption:focus-visible {
   font-size: var(--typography-size-label);
   line-height: var(--typography-line-normal);
   color: var(--text-muted);
+}
+
+/* «Halduri sisselogimine», or the verified administrator session: below the
+   note and ruled off from it, because it is a different act — a person's own
+   sign-in, not a choice of whose work to show (docs/adr/0186). */
+.personamenu__admin {
+  margin: var(--spacing-1) 0 0;
+  padding: 7px var(--spacing-25) var(--spacing-1);
+  border-top: 1px solid var(--border-control);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-1) var(--spacing-2);
+  font-size: var(--typography-size-label);
+  line-height: var(--typography-line-normal);
+}
+
+.personamenu__adminline {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.personamenu__adminlink,
+.personamenu__adminline a {
+  color: var(--accent-link);
+}
+
+.personamenu__adminform {
+  margin: 0;
 }
 
 /* ---- the full page ------------------------------------------------- */

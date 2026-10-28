@@ -30,12 +30,13 @@ def parse_built_at(raw: str) -> datetime | None:
     process lives anyway: it describes the image the process was started from.
 
     A stamp that will not parse becomes ``None`` rather than reaching the page
-    as raw text. The footer's job is to answer "what is running here" quickly
+    as raw text: the footer then links «Uuendused» with no date, and Haldus →
+    Rakendus shows a dash. Their job is to answer "what is running here" quickly
     and correctly; half-legible output there costs more than a missing line,
     which at least prompts somebody to look.
 
     The image writes UTC. Rendering goes through Django's date filter, which
-    converts to ``TIME_ZONE``, so the footer reads in Tallinn time without the
+    converts to ``TIME_ZONE``, so both read in Tallinn time without the
     build having to know where it would be read.
     """
     try:

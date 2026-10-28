@@ -34,7 +34,8 @@ def open_from_the_footer(page, base_url: str):
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/")
     page.wait_for_load_state("networkidle")
-    page.locator(".app__footer").get_by_role("link", name="Uuendused").click()
+    # The footer's one link: the build time when the image has one, else «Uuendused».
+    page.locator(".app__footer").get_by_role("link").click()
     page.wait_for_load_state("networkidle")
     return page
 
@@ -50,13 +51,15 @@ def test_the_footer_link_opens_the_release_notes(page, base_url):
     expect(page.get_by_role("heading", name="Uuendused", exact=True)).to_be_visible()
 
 
-def test_the_footer_still_names_the_running_build_beside_the_link(page, base_url):
-    """The link is an addition. What the band already said stays said."""
+def test_the_footer_names_the_organisation_and_links_uuendused(page, base_url):
+    """Stage, environment and revision moved to Haldus → Rakendus (2026-10-28)."""
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/")
     footer = page.locator(".app__footer")
-    expect(footer).to_contain_text("versioon")
-    expect(footer.get_by_role("link", name="Uuendused")).to_be_visible()
+    expect(footer).to_contain_text("Eesti Kaubandus-Tööstuskoda")
+    expect(footer).not_to_contain_text("versioon")
+    expect(footer.get_by_role("link")).to_have_count(1)
+    expect(footer.get_by_role("link")).to_have_attribute("href", URL)
 
 
 # ---------------------------------------------------------------------------

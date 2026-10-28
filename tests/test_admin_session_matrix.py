@@ -160,7 +160,9 @@ MATRIX: dict[str, tuple[Callable[[Client], Client], tuple[object, ...]]] = {
     "head_manage_persona_only": (head_manage_persona_only, (OK, NO, NO, NO, OK)),
     "head_manage_verified": (head_manage_verified, (OK, OK, OK, NO, OK)),
     "head_manage_delegate_verified": (head_full_verified, (OK, OK, OK, NO, OK)),
-    "specialist": (specialist, (NO, NO, NO, NO, NO)),
+    # Haldus → Ülevaade opens for every signed-in persona since 2026-10-28
+    # (Rakendus); nothing behind it does (docs/adr/0186, amendment).
+    "specialist": (specialist, (OK, NO, NO, NO, NO)),
     "reader": (reader, (NO, NO, NO, NO, NO)),
     "specialist_choosing_the_head": (specialist_choosing_the_head, (OK, NO, NO, NO, OK)),
     "gate_without_persona": (gate_only, (NO, NO, NO, NO, NO)),
