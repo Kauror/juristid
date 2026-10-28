@@ -179,7 +179,8 @@ CLOCK_DEPENDENT = [
     # daily peeking past its mask turns every baseline red the next morning.
     ".workrow2__datecell",
     ".interrow__reason",
-    ".entryline__when",
+    # «Viimased tegevused»: «täna 14:05», «28.10» — today-relative by design.
+    ".actline__when",
     ".arealine__date",
     ".quietrow__meta",
     ".factrow__date",
@@ -261,11 +262,6 @@ CLOCK_DEPENDENT = [
     # elsewhere: `.foldout__meta` says "kogu osakond · viimane kuu" on Minu
     # asjad, `.muted` carries register text, and `.interrow__detail` is the
     # next step in words on every row that has one.
-    #
-    # Minu töö's "viimane 26.8 kell 13:20". The rows *inside* the disclosure
-    # are `.entryline__when` and were masked; the summary line above them, which
-    # is the only part visible while the disclosure is shut, was not.
-    ".workband--entries .foldout__meta",
     # The closed banner's "(26.8.2026)". `closed_at` is set when the Matter is
     # closed, and the browser suite closes one on every run, so this is today's
     # date on every run. The same date in the facts rail is a `<time>` and was
@@ -364,10 +360,6 @@ CLOCK_DEPENDENT = [
     # «muutus 29.8» is a date the seeded world places relative to it. There is
     # no label beside it to lose.
     ".pw-matter__when",
-    # The rail's «Viimati muudetud» dates, same reasoning: the element holds
-    # the date and nothing else. What changed is named on the line beside it
-    # and stays in the baseline.
-    ".pw-event__when",
     # The date at the end of a portfolio row's next step. NOT `.pw-matter__next`
     # — that span opens with the mode chip and the step in the lawyer's own
     # words, which is exactly the business content a baseline exists to check.
@@ -423,9 +415,9 @@ OSAKOND_WEEK_COUNTS = (
 #: render one element per row — so the only way to stop matching is to move the
 #: markup, which is what this is here to catch.
 #:
-#: `[data-clock]` and `.pw-event__when` are deliberately *not* here. The first
+#: `[data-clock]` and `.actline__when` are deliberately *not* here. The first
 #: renders only for a row whose next step carries a date, the second only when
-#: something changed recently; absent, each paints nothing, and requiring
+#: something happened on the desk; absent, each paints nothing, and requiring
 #: either would turn a quiet week into a visual failure.
 OPINION_SENT = ('.submission__meta div:has(dt:text-is("Saadetud")) dd',)
 PORTFOLIO_WHEN = (".pw-matter__when",)
@@ -969,8 +961,8 @@ def _assert_every_required_normalisation_is_declared() -> None:
 _assert_every_required_normalisation_is_declared()
 
 REQUIRED_MASKS: dict[str, tuple[str, ...]] = {
-    "minu-too": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
-    "minu-too-3440": (".workband--entries .foldout__meta", *PORTFOLIO_WHEN),
+    "minu-too": PORTFOLIO_WHEN,
+    "minu-too-3440": PORTFOLIO_WHEN,
     "teemad-1280": OPINION_SENT,
     "teemad-1440": OPINION_SENT,
     "teemad-3440": OPINION_SENT,

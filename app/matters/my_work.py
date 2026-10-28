@@ -41,10 +41,11 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date, start_of_local_day
 from app.intelligence.enums import FactStatus
 from app.matters import work_items as wi
-from app.matters.activity import BASIS_LABELS, activity_of, annotate_last_activity, annotated_slice
+from app.matters.activity import activity_of, annotate_last_activity, annotated_slice
 from app.matters.dashboard import drafting_matters
 from app.matters.models import Entry, Matter
 from app.matters.next_step import milestone_is_upcoming, milestone_order
+from app.matters.recent_activity import RecentActivity, build_recent_activity
 from app.matters.register_filters import OPINION_DRAFTING
 from app.matters.seis_help import (
     IN_PROGRESS_HELP,
@@ -74,7 +75,6 @@ HORIZON_ALL = "koik"
 
 #: Caps. The heading above each list states the honest total either way.
 RAIL_LIMIT = 8
-ENTRY_LIMIT = 6
 
 #: How many portfolio rows are on screen before the rest go behind
 #: «Näita veel N ▾». The rest are the same list, sliced.
@@ -89,9 +89,6 @@ PORTFOLIO_VISIBLE = 6
 #: rendered. Two hundred is far beyond a working desk, so on an ordinary desk
 #: nothing changes; `DIGEST_LIMIT` caps Osakond's *Tehtud* at the same figure.
 PORTFOLIO_LIMIT = 200
-
-#: How many changed Matters the rail names.
-CHANGE_LIMIT = 5
 
 #: What «Hiljuti muutunud» means, and what «Muutusteta 30 p» means. Both are
 #: measured against the same activity fact the register's *Viimane tegevus*
@@ -258,16 +255,6 @@ def undated_items(
     ]
     rows.sort(key=lambda item: (item.matter.title, item.source_type, item.object_id))
     return rows[:limit], total
-
-
-def recent_entries(user: Any, subject: Any, limit: int = ENTRY_LIMIT) -> list[Entry]:
-    """What this person wrote lately. A way back, not a second timeline."""
-    return list(
-        Entry.objects.visible_to(user)
-        .filter(author=subject)
-        .select_related("matter")
-        .chronological()[:limit]
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -554,68 +541,6 @@ def build_portfolio(
 
 
 # ---------------------------------------------------------------------------
-# Viimati muudetud
-# ---------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class ChangeRow:
-    """One Matter that moved, and what kind of fact moved it."""
-
-    matter: Matter
-    #: The anchor the rail sorts on. A day for eight of the nine activity
-    #: bases; the first day of the period for a `Kaasamine` recorded to a
-    #: month, a quarter or a year (docs/adr/0082).
-    occurred_on: date
-    #: How that anchor reads in a column with no room for a year — `12.5`,
-    #: `09.26`, *IV kvartal 2026*. Carried rather than derived in the template,
-    #: which cannot ask what precision the fact behind the row was recorded to
-    #: (`app.matters.activity.MatterActivityFact.compact_display`).
-    compact_display: str
-    label: str
-
-
-def recent_changes(
-    user: Any, subject: Any, limit: int = CHANGE_LIMIT, *, matters: list[Matter] | None = None
-) -> list[ChangeRow]:
-    """The subject's Matters that moved most recently, newest first.
-
-    Built from the existing activity precedence rather than from an audit log:
-    `annotate_last_activity` already resolves the latest fact on a Matter and
-    says which kind of fact it was, and `BASIS_LABELS` already names those kinds
-    in Estonian. A second chronology would be a second thing to keep true
-    (app/matters/activity.py, design handoff 03 §3).
-
-    ``matters`` is that same annotated population when the caller already holds
-    it — `build_portfolio` reads exactly this queryset for the rows above — so
-    the page does not annotate every open file on the desk twice (2026-10-17
-    audit, JPERF-005). Omitted, it is read here.
-    """
-    if matters is None:
-        matters = list(
-            annotate_last_activity(
-                wi.open_matters(user).filter(owner=subject).select_related("stage", "owner"),
-                user,
-            )
-        )
-    rows: list[ChangeRow] = []
-    for matter in matters:
-        activity = activity_of(matter)
-        if activity is None:
-            continue
-        rows.append(
-            ChangeRow(
-                matter=matter,
-                occurred_on=activity.occurred_on,
-                compact_display=activity.compact_display,
-                label=BASIS_LABELS.get(activity.basis, ""),
-            )
-        )
-    rows.sort(key=lambda row: (row.occurred_on, row.matter.title), reverse=True)
-    return rows[:limit]
-
-
-# ---------------------------------------------------------------------------
 # The whole page
 # ---------------------------------------------------------------------------
 
@@ -819,8 +744,11 @@ class MyWork:
     #: undated steps this person is responsible for, not every Matter they own
     #: (ENG-059).
     undated_url: str = ""
-    changes: list[ChangeRow] = field(default_factory=list)
-    entries: list[Entry] = field(default_factory=list)
+    #: *Viimased tegevused* — what moved on this desk lately, and what its owner
+    #: wrote elsewhere (app/matters/recent_activity.py). It replaced the rail's
+    #: *Viimati muudetud* and *Minu viimased sissekanded* (owner's UX package,
+    #: 2026-10-28).
+    activity: RecentActivity | None = None
     quick: list[QuickRow] = field(default_factory=list)
     stats: PersonStats | None = None
     opinions: OpinionWork | None = None
@@ -846,10 +774,6 @@ class MyWork:
         band, so nothing is counted twice.
         """
         return sum(band.count for band in self.bands)
-
-    @property
-    def last_entry(self) -> Entry | None:
-        return self.entries[0] if self.entries else None
 
 
 def _work_url(subject: Any, population: str) -> str:
@@ -1070,8 +994,7 @@ def build_my_work(
         undated=undated,
         undated_total=undated_total,
         undated_url=_work_url(subject, wi.WORK_UNDATED),
-        changes=recent_changes(user, subject, matters=[row.matter for row in portfolio.all_rows]),
-        entries=recent_entries(user, subject),
+        activity=build_recent_activity(user, subject, today),
         quick=quick,
         stats=person_stats(user, subject, today),
         opinions=opinions,

@@ -1,8 +1,10 @@
 """Owner's UX review of 2026-10-26 — fixes 1, 2 and 4.
 
 1. Minu asjad's rail reads alerts → Kalender → Järgmise tegevuseta →
-   Kuupäevata → Viimati muudetud → Minu statistika → Märkmed; a colleague's page
-   the same common blocks and then Kiirvaade. The calendar lost its footer note.
+   Kuupäevata → Märkmed → Minu statistika (UX package of 2026-10-28: the notes
+   moved up, «Viimati muudetud» left the rail for «Viimased tegevused»); a
+   colleague's page has Kiirvaade where the notes are. The calendar lost its
+   footer note.
 2. A `Menetluse kulg` step's date editor opens an undated step on today
    (Europe/Tallinn) in all four `Täpsus` controls, a dated one on its own date.
 4. The rail no longer writes «Eesolev tähtaeg» above an upcoming deadline.
@@ -34,10 +36,12 @@ SELF_ORDER = [
     "Kalender",
     "Järgmise tegevuseta",
     "Kuupäevata",
-    "Viimati muudetud",
-    "Statistika",
     "Märkmed",
+    "Statistika",
 ]
+
+#: A colleague's desk: Kiirvaade in the notes' slot, the rest identical.
+COLLEAGUE_ORDER = ["Kalender", "Järgmise tegevuseta", "Kuupäevata", "Kiirvaade", "Statistika"]
 
 
 def _rail_blocks(html: str) -> list[str]:
@@ -71,7 +75,7 @@ def test_alerts_come_before_the_calendar_and_only_when_there_are_any(
     assert blocks == ["Uus asi", *SELF_ORDER]
 
 
-def test_a_colleagues_page_has_the_common_order_then_kiirvaade_and_no_notes(
+def test_a_colleagues_page_has_kiirvaade_in_the_notes_slot_and_no_notes(
     client, specialist, department_head
 ):
     from app.matters.person_work import save_scratchpad
@@ -81,7 +85,8 @@ def test_a_colleagues_page_has_the_common_order_then_kiirvaade_and_no_notes(
 
     body = client.get(reverse("matters:person_work", kwargs={"pk": specialist.pk})).content.decode()
 
-    assert _rail_blocks(body) == [*SELF_ORDER[:-1], "Kiirvaade"]
+    assert _rail_blocks(body) == COLLEAGUE_ORDER
+    assert "Märkmed" not in _rail_blocks(body)
     assert "Väga isiklik märge" not in body
     assert "pw-note-body" not in body
 

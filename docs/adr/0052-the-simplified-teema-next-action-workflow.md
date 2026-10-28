@@ -250,3 +250,36 @@ the retired panel: `.nextpanel__line`, `.nextpanel__text`, `.nextpanel__date`,
 `.nextpanel .chiprow`, `.chip--meaning`, and the `bindDerivedMeaning`
 derivation in `static/js/app.js` that moved the meaning chips when a kind was
 chosen.
+
+## Addendum — a new step opens on today, 2026-10-28
+
+Owner's UX package of 2026-10-28. §5's last sentence and the Uus teema
+addendum's «`target_date` lost its `initial`» are narrowed, not withdrawn.
+
+**What changed.** A *new* next step on the Teema page — `+ Lisa tegevus` in
+`PRAEGUNE TEGEVUS`, and `Järgmine tegevus` → `Millal?` inside `✓ Tehtud` —
+opens with today's date (Europe/Tallinn, `timezone.localdate()`) in the box.
+On `+ Lisa tegevus`, `Täpne päev` is the chosen precision and `Täna` is drawn
+pressed in the HTML itself, so the default is a visible answer rather than a
+silent one. `Homme`, `+1 nädal`, `+2 nädalat` and the date picker work as
+before, and the pressed chip follows the box (`static/js/ux.js`
+`bindQuickDates`).
+
+**What did not.** The default is a value in a box, never a value the server
+supplies: the POST is read exactly as before. Clearing the box still saves a
+step with no date (docs/adr/0106). Choosing `Kuu`, `Kvartal` or `Aasta` reads
+only that precision's controls, so the day left in the hidden box is not
+submitted as the answer (`forms._period_anchor`). `Muuda` opens on the step's
+own date and precision (`period_initial`), and a refused save redraws what was
+posted. In `✓ Tehtud` an empty `Järgmine tegevus` still drops the day, so the
+default never opens a step by itself.
+
+**Where it does not apply.** `NextActionForm` without its precision control
+(the host Uus teema used before its first step left creation) keeps an empty
+box: there a step is optional and a date with no sentence is refused on the
+sentence, so a pre-filled day would turn «no step» into an error. `+ Määra järgmine
+tegevus` beside a current step (a *planned* step, docs/adr/0143) keeps its
+required, empty box: a planned step is by definition one queued behind the
+current one, and today is the one day it is least likely to be. `Alusta` on a
+`Soovitatud järgmisena` row, the deadline, waiting and review dates of every
+other panel, and every historical-date editor are unchanged.

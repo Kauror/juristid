@@ -9,10 +9,11 @@ this file holds:
   correlated maxima (`activity.known_active_since`);
 * the **capped lists** that annotate (Osakond's quiet interventions, Minu asjad's
   quiet rail) draw their slice on the primary key first (`activity.annotated_slice`);
-* **Minu asjad** stops annotating every open file on the desk twice
-  (`recent_changes(matters=…)`), and its month figures compare timestamps with a
-  plain range instead of a `AT TIME ZONE` cast (`start_of_local_day`), as do
-  Osakond's *Tehtud* and `sent_submissions` (`local_day_range`);
+* **Minu asjad** stopped annotating every open file on the desk twice (the
+  rail's *Viimati muudetud*, since replaced by *Viimased tegevused*, which
+  annotates nothing — app/matters/recent_activity.py), and its month figures
+  compare timestamps with a plain range instead of a `AT TIME ZONE` cast
+  (`start_of_local_day`), as do Osakond's *Tehtud* and `sent_submissions` (`local_day_range`);
 * **Statistika** reads the work model only up to the end of the one window its
   two work figures can reach;
 * **render caps**: Minu asjad's portfolio and each Osakond *Eesolev* window
@@ -65,7 +66,13 @@ OSAKOND_BUDGET = 46
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
 #: commencements left the work model and the calendar reads them once itself.
-MINU_ASJAD_BUDGET = 32
+#: +10 since «Viimased tegevused» (owner's UX package, 2026-10-28): one capped
+#: read per activity source (entries, sends, steps, Kaasamine, Märge, Väline
+#: seisukoht, Ülevaade, the Matter's own closure/arrival, OneNote pages) and
+#: one for the audit rows that group them — fixed, whatever the desk holds
+#: (`tests/test_my_work_recent_activity.py`). «Minu viimased sissekanded»'s
+#: one read went with it.
+MINU_ASJAD_BUDGET = 42
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).
@@ -175,18 +182,10 @@ def _old_behaviour(monkeypatch) -> None:
         return condition
 
     reading = wi.work_items
-    recent_changes = my_work.recent_changes
 
     monkeypatch.setattr(activity, "known_active_since", lambda user, since: Q(pk__in=[]))
     monkeypatch.setattr(ov, "annotated_slice", old_slice)
     monkeypatch.setattr(my_work, "annotated_slice", old_slice)
-    monkeypatch.setattr(
-        my_work,
-        "recent_changes",
-        lambda user, subject, limit=my_work.CHANGE_LIMIT, matters=None: recent_changes(
-            user, subject, limit
-        ),
-    )
     monkeypatch.setattr(dd, "local_day_range", old_day_range)
     monkeypatch.setattr(
         overview_strip.work_items,
