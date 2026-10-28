@@ -11,7 +11,8 @@ written against the selector its figure calls — `work_items.real_deadlines`,
 and a definition is never changed to make a sentence true. Where a figure counts
 something a reader might not expect (Osakond's strip counts every open Matter the
 reader may see, not one department's; Minu asjad's week figure counts rows, not
-Matters), the sentence says so rather than the count moving.
+Matters), the count stays as it is. The wording itself is the owner's, shortened
+on 2026-10-28.
 
 Each text names, as far as it matters for that figure: what is counted (Matters,
 or individual deadlines and actions, or sent letters), which dates (the current
@@ -92,15 +93,9 @@ MY_OVERDUE_HELP = FigureHelp(
     slug="minu-ule-tahtaja",
     title="Üle tähtaja",
     paragraphs=(
-        "Loeb üksikuid tähtaegu, mitte teemasid: ühel teemal võib neid olla mitu. "
-        "Arv on sama, mis allpool jaotises «Üle tähtaja».",
-        "Arvesse lähevad möödunud ja täitmata tähtajad: järgmise sammu plaanitud "
-        "kuupäev («Plaanis»), kui samm on selle inimese teha, ning oluline tähtaeg, "
-        "arvamuse tähtaeg ja kaasamise tagasiside tähtaeg teemadel, mille vastutaja "
-        "ta on. Kuu või kvartali täpsusega kuupäev on üle alles siis, kui kogu "
-        "periood on möödas.",
-        "Möödunud ülevaatamise («Vaatan üle») või oodatav («Oodatav») kuupäev ei ole "
-        "tähtaeg: see on jaotises «Sel nädalal».",
+        "Loeb tähtaegu, mis on möödas – ühel teemal võib neid olla mitu.",
+        "Arvesse lähevad möödunud ja täitmata tähtajad.",
+        "Möödunud ülevaatamise («Vaatan üle») või oodatav («Oodatav») kuupäev ei ole tähtaeg.",
     ),
 )
 
@@ -112,16 +107,12 @@ MY_WEEK_HELP = FigureHelp(
     slug="minu-sel-nadalal",
     title="Tegevused sel nädalal",
     paragraphs=(
-        "Loeb ridu allpool jaotises «Sel nädalal», mitte teemasid: ühel teemal võib "
-        "olla mitu tegevust või tähtaega.",
+        "Ühel teemal võib olla mitu tegevust või tähtaega.",
         "Arvesse lähevad järgmised sammud («Plaanis», «Vaatan üle», «Oodatav») ning "
         "olulised tähtajad, arvamuse tähtajad ja kaasamise tagasiside tähtajad, mille "
-        "päev on tänasest kuni pühapäevani (käesolev nädal esmaspäevast pühapäevani, "
-        "Eesti aja järgi). Kuu või kvartali täpsusega kuupäev ei kuulu siia enne, "
-        "kui kogu periood on möödas.",
-        "Lisaks on siin möödunud kuupäevad, mis ei ole tähtajad – näiteks "
-        "ülevaatamise («Vaatan üle») või oodatav («Oodatav») kuupäev, mis on kätte "
-        "jõudnud. Möödunud tähtajad on eraldi arvus «üle tähtaja».",
+        "tähtaeg on tänasest kuni pühapäevani.",
+        "Siin on ka möödunud kuupäevad, mis ei ole tähtajad – näiteks ülevaatamise "
+        "(«Vaatan üle») või oodatav («Oodatav») kuupäev, mis on kätte jõudnud.",
     ),
 )
 
@@ -131,8 +122,8 @@ MY_NO_ACTION_HELP = FigureHelp(
     slug="minu-jargmise-tegevuseta",
     title="Järgmise tegevuseta",
     paragraphs=(
-        "Loeb teemasid: menetluses olevad teemad, mille vastutaja on see inimene ja "
-        "millel ei ole avatud järgmist sammu ega eesolevat olulist tähtaega.",
+        "Menetluses olevad teemad, millel ei ole avatud järgmist sammu ega eesolevat "
+        "olulist tähtaega.",
         "Sellist teemat ei too ükski kuupäev töölauale, seepärast on see eraldi välja toodud.",
     ),
 )
@@ -143,12 +134,9 @@ MY_OPINIONS_DUE_HELP = FigureHelp(
     slug="minu-arvamus-tahtajaga",
     title="Arvamuse tähtaeg sel nädalal",
     paragraphs=(
-        "Loeb teemasid, mille vastutaja on see inimene, mille arvamus on veel "
-        "koostamisel ja mille arvamuse tähtaeg on käesoleval nädalal (esmaspäevast "
-        "pühapäevani, Eesti aja järgi).",
-        "Ka selle nädala juba möödunud tähtaeg on siin; varasemate nädalate "
-        "tähtajad ei ole. Saadetud arvamusi see arv ei loe: loetakse ainult teemasid, "
-        "mille arvamus on veel koostamisel.",
+        "Loeb teemasid, mille arvamus on veel koostamisel ja mille arvamuse tähtaeg on "
+        "käesoleval nädalal (esmaspäevast pühapäevani, Eesti aja järgi).",
+        "Selle nädala juba möödunud tähtaeg on siin.",
     ),
 )
 
@@ -158,9 +146,8 @@ MY_OPINIONS_DRAFTING_HELP = FigureHelp(
     slug="minu-arvamus-koostamisel",
     title="Arvamus koostamisel",
     paragraphs=(
-        "Loeb teemasid, mitte dokumente: menetluses olevad teemad, mille vastutaja on "
-        "see inimene ja mille arvamus on koostamisel. Kaks mustandit ühel teemal on "
-        "üks teema.",
+        "Menetluses olevad teemad, mille arvamus on koostamisel. Kaks mustandit ühel "
+        "teemal on üks teema.",
         DRAFTING_MEANING,
     ),
 )
@@ -171,7 +158,7 @@ MY_OPINIONS_DRAFTING_HELP = FigureHelp(
 #
 # Every figure but «saadetud» runs the register's filters over
 # `Matter.objects.visible_to(reader)` and open FULL Matters — every open file
-# the reader may see, not one department's. The texts say so.
+# the reader may see, not one department's.
 # ---------------------------------------------------------------------------
 
 #: `?too=hilinenud` — `overdue_items`, reduced to Matters.
@@ -179,12 +166,10 @@ DEPT_OVERDUE_HELP = FigureHelp(
     slug="osakond-ule-tahtaja",
     title="Üle tähtaja",
     paragraphs=(
-        "Loeb teemasid, mitte tähtaegu: teema on siin üks kord, olgu tal üks või mitu "
-        "möödunud tähtaega.",
-        "Arvesse lähevad menetluses olevad teemad (kõik, mida sul on õigus näha), "
-        "millel on möödunud ja täitmata järgmise sammu plaanitud kuupäev («Plaanis»), "
-        "oluline tähtaeg, arvamuse tähtaeg või kaasamise tagasiside tähtaeg. Kuu või "
-        "kvartali täpsusega kuupäev on üle alles siis, kui kogu periood on möödas.",
+        "Üle tähtaja olevad teemad – iga teema üks kord.",
+        "Arvesse lähevad menetluses olevad teemad, millel on möödunud ja täitmata "
+        "järgmise sammu plaanitud kuupäev («Plaanis»), oluline tähtaeg, arvamuse "
+        "tähtaeg või kaasamise tagasiside tähtaeg.",
         "Möödunud ülevaatamise («Vaatan üle») või oodatav («Oodatav») kuupäev ei ole "
         "tähtaeg ega too teemat siia.",
     ),
@@ -196,12 +181,11 @@ DEPT_WEEK_HELP = FigureHelp(
     slug="osakond-tahtaeg-sel-nadalal",
     title="Tähtajaga teemad sel nädalal",
     paragraphs=(
-        "Loeb teemasid, mitte tähtaegu: menetluses olevad teemad (kõik, mida sul on "
-        "õigus näha), millel on tähtaeg tänasest kuni pühapäevani (Eesti aja järgi). "
-        "Mitme tähtajaga teema on siin üks kord.",
+        "Loeb teemasid, mitte tähtaegu: menetluses olevad teemad, millel on tähtaeg "
+        "tänasest kuni pühapäevani.",
         "Tähtajaks loetakse järgmise sammu plaanitud kuupäeva («Plaanis»), olulist "
-        "tähtaega ja arvamuse tähtaega, päeva täpsusega. Ülevaatamise («Vaatan üle») "
-        "ja oodatav («Oodatav») kuupäev ning kaasamise tagasiside tähtaeg siia ei kuulu.",
+        "tähtaega ja arvamuse tähtaega, päeva täpsusega. Ülevaatamise («Vaatan üle») ja "
+        "oodatav («Oodatav») kuupäev ning kaasamise tagasiside tähtaeg siia ei kuulu.",
         "Selle nädala juba möödunud tähtaeg on arvus «üle tähtaja».",
     ),
 )
@@ -210,10 +194,7 @@ DEPT_WEEK_HELP = FigureHelp(
 DEPT_UNASSIGNED_HELP = FigureHelp(
     slug="osakond-vastutajata",
     title="Vastutajata",
-    paragraphs=(
-        "Loeb menetluses olevaid teemasid (kõik, mida sul on õigus näha), millel ei "
-        "ole vastutajat.",
-    ),
+    paragraphs=("Loeb menetluses olevaid teemasid, millel ei ole vastutajat.",),
 )
 
 
@@ -223,10 +204,9 @@ def dept_unreviewed_help(window_days: int) -> FigureHelp:
         slug="osakond-labi-vaatamata",
         title="Uus, läbi vaatamata",
         paragraphs=(
-            "Loeb menetluses olevaid teemasid (kõik, mida sul on õigus näha), mille "
-            f"saabumise kuupäev on viimase {window_days} päeva sees (kuni tänaseni) ja "
-            "millel ei ole veel vastutajat ega järgmist sammu (ka eesolevat olulist "
-            "tähtaega).",
+            "Loeb menetluses olevaid teemasid, mille saabumise kuupäev on viimase "
+            f"{window_days} päeva sees (kuni tänaseni) ja millel ei ole veel vastutajat "
+            "ega järgmist sammu (ka eesolevat olulist tähtaega).",
             "Eraldi «läbi vaadatud» märget teemal ei ole: arv tugineb neile kolmele tunnusele.",
         ),
     )
@@ -237,9 +217,8 @@ DEPT_NO_ACTION_HELP = FigureHelp(
     slug="osakond-jargmise-tegevuseta",
     title="Järgmise tegevuseta",
     paragraphs=(
-        "Loeb menetluses olevaid teemasid (kõik, mida sul on õigus näha), millel ei "
-        "ole avatud järgmist sammu ega eesolevat olulist tähtaega, olgu vastutaja "
-        "määratud või mitte.",
+        "Loeb menetluses olevaid teemasid, millel ei ole avatud järgmist sammu ega "
+        "eesolevat olulist tähtaega, olgu vastutaja määratud või mitte.",
     ),
 )
 
@@ -249,12 +228,10 @@ DEPT_SENT_HELP = FigureHelp(
     slug="osakond-arvamus-saadetud",
     title="Arvamused saadetud sel nädalal",
     paragraphs=(
-        "Loeb saadetud arvamusi, mitte teemasid: kui ühel teemal saadeti kaks "
-        "arvamust, on neid siin kaks.",
-        "Arvesse lähevad arvamused (kõik, mida sul on õigus näha), mille saatmise "
-        "kuupäev on käesoleva nädala esmaspäevast tänaseni (Eesti aja järgi). "
-        "Koostamisel ja tagasi võetud arvamused ei ole siin, samuti mitte vastus "
-        "«märkusi ja ettepanekuid ei ole».",
+        "Loeb saadetud arvamusi, mitte teemasid: kui ühel teemal saadeti kaks arvamust, "
+        "on neid siin kaks.",
+        "Arvesse lähevad arvamused, mille saatmise kuupäev on käesoleva nädala "
+        "esmaspäevast tänaseni.",
         "Arvul ei ole nimekirja linki, sest ükski nimekiri ei näita täpselt sama nädalat.",
     ),
 )
@@ -264,9 +241,8 @@ DEPT_DRAFTING_HELP = FigureHelp(
     slug="osakond-arvamus-koostamisel",
     title="Arvamus koostamisel",
     paragraphs=(
-        "Loeb teemasid, mitte dokumente: menetluses olevad teemad (kõik, mida sul on "
-        "õigus näha), mille arvamus on koostamisel. Kaks mustandit ühel teemal on "
-        "üks teema.",
+        "Loeb teemasid, mitte dokumente: menetluses olevad teemad, mille arvamus on "
+        "koostamisel. Kaks mustandit ühel teemal on üks teema.",
         DRAFTING_MEANING,
     ),
 )

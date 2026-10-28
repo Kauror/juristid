@@ -127,27 +127,27 @@ def test_the_slugs_never_collide_between_the_two_strips(specialist, department_h
 
 
 @pytest.mark.parametrize(
-    ("help_text", "opening"),
+    ("help_text", "unit"),
     [
-        # Matters, each once.
-        (seis_help.DEPT_OVERDUE_HELP, "Loeb teemasid, mitte tähtaegu"),
+        # Matters, each once. The wording is the owner's (2026-10-28); what is
+        # checked is that the first paragraph still names the unit counted.
+        (seis_help.DEPT_OVERDUE_HELP, "iga teema üks kord"),
         (seis_help.DEPT_WEEK_HELP, "Loeb teemasid, mitte tähtaegu"),
         (seis_help.DEPT_DRAFTING_HELP, "Loeb teemasid, mitte dokumente"),
-        (seis_help.MY_OPINIONS_DRAFTING_HELP, "Loeb teemasid, mitte dokumente"),
+        (seis_help.MY_OPINIONS_DRAFTING_HELP, "Kaks mustandit ühel teemal on üks teema"),
         (seis_help.MY_OPINIONS_DUE_HELP, "Loeb teemasid"),
         # Rows and letters, each one.
-        (seis_help.MY_OVERDUE_HELP, "Loeb üksikuid tähtaegu, mitte teemasid"),
-        (seis_help.MY_WEEK_HELP, "Loeb ridu"),
+        (seis_help.MY_OVERDUE_HELP, "Loeb tähtaegu"),
+        (seis_help.MY_WEEK_HELP, "mitu tegevust või tähtaega"),
         (seis_help.DEPT_SENT_HELP, "Loeb saadetud arvamusi, mitte teemasid"),
     ],
 )
-def test_each_explanation_opens_by_naming_what_it_counts(help_text, opening) -> None:
-    assert help_text.paragraphs[0].startswith(opening)
+def test_each_explanation_names_what_it_counts(help_text, unit) -> None:
+    assert unit in help_text.paragraphs[0]
 
 
-def test_the_week_texts_name_the_tallinn_week_and_its_ends() -> None:
+def test_the_week_texts_name_the_week_and_its_ends() -> None:
     assert "tänasest kuni pühapäevani" in seis_help.DEPT_WEEK_HELP.paragraphs[0]
-    assert "Eesti aja järgi" in seis_help.DEPT_WEEK_HELP.paragraphs[0]
     assert "esmaspäevast tänaseni" in " ".join(seis_help.DEPT_SENT_HELP.paragraphs)
     assert "esmaspäevast pühapäevani" in seis_help.MY_OPINIONS_DUE_HELP.paragraphs[0]
     # A WAIT's expected date and a MONITOR's review date are never Osakond's week.
@@ -158,9 +158,8 @@ def test_sent_due_and_drafting_texts_keep_their_populations_apart() -> None:
     sent = " ".join(seis_help.DEPT_SENT_HELP.paragraphs)
     due = " ".join(seis_help.MY_OPINIONS_DUE_HELP.paragraphs)
     drafting = " ".join(seis_help.DEPT_DRAFTING_HELP.paragraphs)
-    assert "Koostamisel ja tagasi võetud arvamused ei ole siin" in sent
-    assert "märkusi ja ettepanekuid ei ole" in sent
-    assert "Saadetud arvamusi see arv ei loe" in due
+    assert "saadetud arvamusi" in sent
+    assert "veel koostamisel" in due
     assert seis_help.DRAFTING_MEANING in drafting
     assert "Koostan arvamuse" in seis_help.DRAFTING_MEANING
 
