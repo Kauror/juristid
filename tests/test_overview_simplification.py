@@ -259,7 +259,7 @@ def test_the_old_link_renders_the_same_page_as_the_department_scope(client, depa
     import re
 
     def without_csrf(body: str) -> str:
-        return re.sub(r'(?:value|data-csrf)="[A-Za-z0-9]{64}"', 'value="CSRF"', body)
+        return re.sub(r'value="[A-Za-z0-9]{64}"', 'value="CSRF"', body)
 
     client.force_login(department_head)
 

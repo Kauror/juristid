@@ -1,6 +1,6 @@
 """Osakond → Eesolev: the six date windows, exactly.
 
-Täna · Homme (by its weekday) · Ülejäänud nädal · Järgmine nädal · Ülejäänud kuu
+Täna · Homme (by its weekday) · Käesoleva nädala ülejäänud päevad · Järgmine nädal · Ülejäänud kuu
 · Kaugemal (`department_dashboard.upcoming_windows`). Consecutive, never
 overlapping, exhaustive for every future real deadline — asserted here over
 every day of four years rather than on a handful of chosen ones, then on the
@@ -208,7 +208,7 @@ def test_homme_is_headed_by_its_weekday():
     assert labels == {
         "tana": "Täna",
         "homme": "neljapäev",
-        "nadala_lopp": "Ülejäänud nädal",
+        "nadala_lopp": "Käesoleva nädala ülejäänud päevad",
         "nadal": "Järgmine nädal",
         "kuu": "Ülejäänud kuu",
         "kaugemal": "Kaugemal",
@@ -363,7 +363,7 @@ def test_today_is_the_tallinn_date(specialist, monkeypatch):
 
 @pytest.mark.django_db
 def test_an_empty_window_is_not_drawn(client, department_head, monkeypatch):
-    """Saturday: *Ülejäänud nädal* holds no days, so it has no heading."""
+    """Saturday: *Käesoleva nädala ülejäänud päevad* holds no days, so it has no heading."""
     saturday = date(2026, 10, 31)
     monkeypatch.setattr(timezone, "localdate", lambda *a, **k: saturday)
     _deadline(department_head, date(2026, 11, 1), "Pühapäeval")

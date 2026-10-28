@@ -939,7 +939,7 @@ class UpcomingGroup:
     def is_empty_window(self) -> bool:
         """True where the interval holds no days at all.
 
-        *Ülejäänud nädal* on a Saturday and a Sunday, and *Ülejäänud kuu* when
+        *Käesoleva nädala ülejäänud päevad* on a Saturday and a Sunday, and *Ülejäänud kuu* when
         next week's Sunday is the last day of its month: each would begin after
         it ended. It holds nothing by construction, and the panel omits it
         rather than printing a heading over an interval read backwards.
@@ -1019,7 +1019,7 @@ def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], .
     docs/adr/0122 §2).
 
     * *Täna*, then *Homme* — headed by tomorrow's weekday, as it always was.
-    * *Ülejäänud nädal* — the day after tomorrow to Sunday of **this** ISO week.
+    * *Käesoleva nädala ülejäänud päevad* — the day after tomorrow to Sunday of **this** ISO week.
       Fri–Sun on a Wednesday, Sunday alone on a Friday, and empty on a Saturday
       (tomorrow is Sunday) and on a Sunday (tomorrow is next week's Monday).
     * *Järgmine nädal* — Monday to Sunday of the **next** ISO week, except that
@@ -1043,7 +1043,7 @@ def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], .
     return (
         ("tana", "Täna", today, today),
         ("homme", weekday_name(tomorrow), tomorrow, tomorrow),
-        ("nadala_lopp", "Ülejäänud nädal", rest_of_week_start, week_end),
+        ("nadala_lopp", "Käesoleva nädala ülejäänud päevad", rest_of_week_start, week_end),
         ("nadal", "Järgmine nädal", next_week_start, next_week_end),
         ("kuu", "Ülejäänud kuu", month_start, month_end),
         # The later of the two ends: an empty *Ülejäänud kuu* ends before it began.
