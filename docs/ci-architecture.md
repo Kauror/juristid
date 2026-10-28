@@ -41,7 +41,8 @@ compose smoke test` run and refuse in their first step. Every required check is
 red; none is a green skip.
 
 **Evidence.** The release gate and `main-proof.yml` accept a run only if it holds
-all six required gates, each `success`, and — for a pull request's run — a
+all six required gates, each `success` (the only skips allowed are the
+FAST-only jobs', which every FULL run skips), and — for a pull request's run — a
 tested-tree record that says `tier full` (see "Main is proved by its pull
 request's run").
 

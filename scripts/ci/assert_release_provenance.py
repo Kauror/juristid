@@ -92,6 +92,19 @@ REQUIRED_GATES: tuple[str, ...] = (
     "Dependency vulnerability baseline",
 )
 
+#: The jobs that run only in the FAST tier, by name. Every FULL run skips them,
+#: so "green in every job" means every job but these — and only when skipped:
+#: a FAST-only job that ran and failed is still a failure. Held to `ci.yml` by
+#: tests/test_ci_tiers.py. (Until 2026-10-28 the skip was refused, so no FULL
+#: run could prove anything: main-proof fell back to a FULL run on main for
+#: 7a066621, and the release gate would have refused it too.)
+FAST_ONLY_JOBS: frozenset[str] = frozenset(
+    {
+        "Focused tests (FAST tier)",
+        "Does the draft touch the UI (FAST tier)",
+    }
+)
+
 #: The only tier whose recorded tree may release anything.
 FULL_TIER = "full"
 
@@ -107,11 +120,14 @@ def not_green(jobs: Sequence[dict[str, Any]]) -> list[str]:
 
     A FAST run's skipped jobs are caught by the first half; its renamed gates
     by the second — two independent reasons it is never a FULL run's proof.
+    The one skip a FULL run may contain is a FAST-only job's (`FAST_ONLY_JOBS`):
+    skipped by design in every FULL run, and never evidence of anything.
     """
     problems = [
         f"{job.get('name')} ({job.get('conclusion') or job.get('status')})"
         for job in jobs
         if job.get("conclusion") != "success"
+        and not (job.get("conclusion") == "skipped" and job.get("name") in FAST_ONLY_JOBS)
     ]
     names = {job.get("name") for job in jobs}
     problems += [

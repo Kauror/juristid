@@ -107,6 +107,19 @@ regression — baselines an intended UI change moved, found a FULL round too
 late. With the visual job in FAST those become ~9-runner-minute draft rounds;
 the replay goes from 32% to ~45% fewer runner-minutes.
 
+### Correction: a FULL run's FAST-only skips (2026-10-28)
+
+As merged in #561, the gate required every job of a run to be `success`, but
+every FULL run skips the FAST-only jobs by design — so no FULL run could prove
+anything. Main-proof found it on the merge of #561 (`7a066621`), failed closed
+and dispatched FULL on main; the release gate would have refused too. The
+gate now accepts exactly one kind of non-success: a **skipped** job whose name
+is in `FAST_ONLY_JOBS` (`Focused tests (FAST tier)`, `Does the draft touch the
+UI (FAST tier)`). A FAST-only job that ran and failed is still refused, and
+`tests/test_ci_tiers.py` holds that list to `ci.yml` and checks a FULL run as
+the jobs API reports it — skips included — which is what the original test had
+filtered away.
+
 ## Rejected
 
 - **A separate FAST workflow file.** `ci.yml` would still trigger on a draft's

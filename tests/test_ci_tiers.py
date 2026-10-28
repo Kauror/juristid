@@ -426,11 +426,33 @@ def test_6_a_fast_run_on_main_could_not_be_mains_proof_either(workflow) -> None:
     assert not gate.ci_verdict("t" * 40, [main_run], lambda _r: fast).ok
 
 
-def test_6_a_full_run_is_proof(workflow) -> None:
-    """The control: the same check accepts what a green FULL run reports."""
-    full = simulated_jobs(workflow, READY)
-    full = [job for job in full if job["conclusion"] == "success"]  # FAST-only jobs are skipped
+@pytest.mark.parametrize("context", [READY, DISPATCH])
+@pytest.mark.parametrize("ui", [False, True])
+def test_6_a_full_run_is_proof(workflow, context, ui) -> None:
+    """The control: the gate accepts a green FULL run *exactly as the jobs API reports it*.
+
+    Skipped FAST-only jobs included. This test once filtered them out first,
+    and so passed while every real FULL run was refused — found live, when
+    main-proof could not prove the merge of #561 (7a066621).
+    """
+    full = simulated_jobs(workflow, context, ui=ui)
     assert not gate.not_green(full)
+    run = _pr_run()
+    verdict = gate.pull_request_verdict(
+        "t" * 40, "d" * 40, ["b" * 40, "h" * 40], [run], lambda _r: full, lambda _r: "d" * 40
+    )
+    assert verdict.ok, verdict.detail
+    main_run = run | {"event": "workflow_dispatch", "head_branch": "main", "head_sha": "t" * 40}
+    assert gate.ci_verdict("t" * 40, [main_run], lambda _r: full).ok
+
+
+def test_6_the_skips_a_full_run_may_contain_are_exactly_the_fast_only_jobs(workflow) -> None:
+    skipped = {
+        job["name"] for job in simulated_jobs(workflow, READY) if job["conclusion"] == "skipped"
+    }
+    assert skipped == gate.FAST_ONLY_JOBS
+    fast_only = {job_name(workflow["jobs"][key], READY) for key in FAST_ONLY}
+    assert fast_only == gate.FAST_ONLY_JOBS
 
 
 def test_the_tier_is_recorded_from_the_same_condition(workflow) -> None:

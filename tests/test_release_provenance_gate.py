@@ -253,6 +253,29 @@ def test_some_jobs_green_is_not_green(conclusion: Any) -> None:
     assert "Backup and restore rehearsal" in verdict.detail
 
 
+@pytest.mark.parametrize("name", sorted(gate.FAST_ONLY_JOBS))
+def test_a_skipped_fast_only_job_does_not_spoil_a_full_run(name: str) -> None:
+    """Every FULL run skips the FAST-only jobs; that skip alone is allowed."""
+    jobs = [*GREEN_JOBS, {"name": name, "status": "completed", "conclusion": "skipped"}]
+    assert gate.ci_verdict(SHA, [run()], lambda _run: jobs).ok
+
+
+@pytest.mark.parametrize("name", sorted(gate.FAST_ONLY_JOBS))
+@pytest.mark.parametrize("conclusion", ["failure", "cancelled", None])
+def test_a_fast_only_job_that_did_not_pass_is_still_refused(name: str, conclusion: Any) -> None:
+    jobs = [*GREEN_JOBS, {"name": name, "status": "completed", "conclusion": conclusion}]
+    assert not gate.ci_verdict(SHA, [run()], lambda _run: jobs).ok
+
+
+def test_only_the_fast_only_names_may_be_skipped() -> None:
+    """A lookalike name is an ordinary job, and its skip is refused."""
+    jobs = [
+        *GREEN_JOBS,
+        {"name": "Focused tests (FAST tier) ", "status": "completed", "conclusion": "skipped"},
+    ]
+    assert not gate.ci_verdict(SHA, [run()], lambda _run: jobs).ok
+
+
 def test_a_run_with_no_jobs_proves_nothing() -> None:
     assert not gate.ci_verdict(SHA, [run()], lambda _run: []).ok
 
