@@ -128,7 +128,7 @@ def test_the_range_control_is_in_the_url(page, base_url):
 
 
 def test_both_foldouts_are_readable_without_a_click(page, base_url):
-    """«Minu viimased sissekanded» and «Minu statistika» start open.
+    """«Viimased tegevused» and «Minu statistika» start open.
 
     Asserted on visibility rather than on the attribute: `open` in the markup
     and a body a person can actually read are two different claims, and it is
@@ -136,10 +136,10 @@ def test_both_foldouts_are_readable_without_a_click(page, base_url):
     """
     _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
 
-    entries = page.locator(".workband--entries details.foldout")
+    entries = page.locator(".workband--activity > details.foldout")
     statistics = page.locator('.railblock[aria-label="Statistika"] details.foldout')
 
-    for name, foldout in (("sissekanded", entries), ("statistika", statistics)):
+    for name, foldout in (("tegevused", entries), ("statistika", statistics)):
         assert foldout.count() == 1, f"the {name} foldout is not on the page"
         assert foldout.get_attribute("open") is not None, f"the {name} foldout starts closed"
         assert foldout.locator(".foldout__body").is_visible(), (
@@ -147,8 +147,12 @@ def test_both_foldouts_are_readable_without_a_click(page, base_url):
         )
 
     # The disclosure still works: this is a default, not a removal.
-    page.locator(".workband--entries .foldout__trigger").click()
+    page.locator(".workband--activity .foldout__trigger").click()
     assert not entries.locator(".foldout__body").is_visible()
+    # It is a remembered block (`my_work.recent_activity`): the click above is
+    # stored for this persona, so it is put back for every test after this one.
+    page.locator(".workband--activity .foldout__trigger").click()
+    assert entries.locator(".foldout__body").is_visible()
 
 
 def test_an_active_topic_row_carries_the_topic_marker(page, base_url):
