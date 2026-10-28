@@ -70,7 +70,7 @@ DISCLOSURES: dict[str, Disclosure] = {
         Disclosure("my_work.statistics", True, "Minu asjad · Minu statistika"),
         Disclosure("my_work.recent_activity", True, "Minu asjad · Viimased tegevused"),
         # Teema → Dokumendid.
-        Disclosure("matter_documents.working", False, "Teema · Dokumendid · Töödokumendid"),
+        Disclosure("matter_documents.working", False, "Teema · Dokumendid · SharePointi viited"),
         Disclosure("matter_documents.archive", False, "Teema · Dokumendid · Seotud arhiivikirjad"),
         # Dokument.
         Disclosure("document.data", False, "Dokument · Dokumendi andmed"),

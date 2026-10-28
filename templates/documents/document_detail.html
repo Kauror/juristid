@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load document_files document_state evidence_uploads form_labels %}
+{% load disclosures document_files document_state evidence_uploads form_labels %}
 {% block title %}{{ document.title }} · {{ matter.title }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -188,7 +188,7 @@
       </dl>
       <p class="cardnote">Muutumatu tõend. Baidid ei muutu kunagi — parandus on uus versioon.</p>
 
-      <details class="disclosure docdata" id="dokumendi-andmed">
+      <details class="disclosure docdata" id="dokumendi-andmed" {% disclosure "document.data" %}>
         <summary>Dokumendi andmed</summary>
         <dl class="detailgrid detailgrid--wrap">
           <div><dt>Tüüp</dt><dd>{{ version.mime_type }}</dd></div>

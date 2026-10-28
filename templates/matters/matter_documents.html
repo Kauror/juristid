@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load counts document_files evidence_uploads form_labels %}
+{% load counts disclosures document_files evidence_uploads form_labels %}
 {% block title %}Dokumendid · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -579,7 +579,7 @@ finds again (§23.5).
           reader the file they had just seen did not exist. The anchor id stays,
           so no saved link moves.
         {% endcomment %}
-        <details class="accordion accordion--working" id="toodokumendid">
+        <details class="accordion accordion--working" id="toodokumendid" {% disclosure "matter_documents.working" %}>
           <summary class="accordion__head">
             <span class="accordion__caret" aria-hidden="true"></span>
             <h2 class="accordion__title">SharePointi viited</h2>
@@ -657,7 +657,7 @@ finds again (§23.5).
           returns an empty list otherwise, so a reader without the corpus gets no
           rows, no count and no hint that any exist (docs/adr/0028, 0056).
         {% endcomment %}
-        <details class="accordion accordion--archive" id="seotud-arhiivikirjad">
+        <details class="accordion accordion--archive" id="seotud-arhiivikirjad" {% disclosure "matter_documents.archive" %}>
           <summary class="accordion__head">
             <span class="accordion__caret" aria-hidden="true"></span>
             <h2 class="accordion__title">Seotud arhiivikirjad</h2>
