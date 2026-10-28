@@ -24,8 +24,12 @@ from e2e.conftest import MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
-FIGURE = ".seis__item[data-seishelp] a.seis__figure"
-INFO = ".seis__item[data-seishelp] .seis__info"
+#: The «teemat menetluses» figure's own item. Every Minu asjad figure carries an
+#: explanation since the UX package of 2026-10-28, so the item is picked by the
+#: explanation it holds rather than by being the only one.
+ITEM = ".seis__item[data-seishelp]:has(#seis-selgitus-menetluses)"
+FIGURE = f"{ITEM} a.seis__figure"
+INFO = f"{ITEM} .seis__info"
 TIP = "#seis-selgitus-menetluses"
 
 

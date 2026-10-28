@@ -100,8 +100,17 @@ def date_meanings(body: str) -> list[str]:
     proves nothing: the register also carries `?tahtaeg_alates=` and the
     *Tähtaeg sel kuul* saved view, both about `Arvamuse tähtaeg`, so a
     whole-page search for either word answers the wrong question.
+
+    The step's own word is no longer printed in the cell (UX package
+    2026-10-28): it is the date's accessible text, a visually hidden span
+    right before it, and its tooltip. A fallback date — `Arvamuse tähtaeg`,
+    `Oluline tähtaeg` — still prints its word. Both are read here, and only
+    where they qualify a `dateline`.
     """
-    return re.findall(r'<span class="datemeaning">([^<]*)</span>', body)
+    return re.findall(
+        r'<span class="(?:datemeaning|visually-hidden)">([^<]*?) ?</span>\s*<span class="dateline',
+        body,
+    )
 
 
 def work_meanings(body: str) -> list[str]:

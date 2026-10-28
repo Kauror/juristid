@@ -38,14 +38,16 @@ one surface that dropped the band was Jälgimine, which is retired
 different dataclasses feed this and only some carry `key`, which no template has
 ever read.
 
-**`help` is optional and rare.** A figure that carries one (Minu asjad's «teemat
-menetluses», app/matters/my_work.py `FigureHelp`, owner's review 2026-10-12) is
-drawn inside `.seis__item` with a quiet `i` button *beside* its link, never
-inside it: a button nested in an anchor is two controls in one, and the figure
-must stay exactly the link it was. The explanation is the button's
-`aria-describedby`, shown on hover, on focus and on a tap, and closed by Escape
-or a tap elsewhere (static/js/app.js, `bindSeisHelp`). Every other caller feeds
-a dataclass without the attribute, so no other strip can grow the icon.
+**`help` is optional.** A figure that carries one (app/matters/seis_help.py
+`FigureHelp`: every figure on Minu asjad and on Osakond, UX package
+2026-10-28; Minu asjad's «teemat menetluses» since the owner's review of
+2026-10-12) is drawn inside `.seis__item` with a quiet `i` button *beside* its
+link, never inside it: a button nested in an anchor is two controls in one, and
+the figure must stay exactly the link it was. The explanation is the button's
+`aria-describedby`, shown on hover, on focus and on a tap, closed by Escape or a
+tap elsewhere, and slid inside the window at its right edge (static/js/app.js,
+`bindSeisHelp`). Saabunud and Statistika feed figures without one, so their
+strips grow no icon.
 {% endcomment %}
 <div class="seis{% if compact %} seis--compact{% endif %}">
   {% for figure in figures %}

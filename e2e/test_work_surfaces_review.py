@@ -234,7 +234,10 @@ def test_no_seis_figure_leads_nowhere(page, base_url):
             continue
         assert href and href != "#", f"{caption} leads nowhere"
 
-    assert unlinked == ["arvamust välja sel nädalal"], unlinked
+    assert unlinked in (
+        ["arvamust saadetud sel nädalal"],
+        ["arvamus saadetud sel nädalal"],
+    ), unlinked
 
 
 def test_the_area_accordion_is_a_real_disclosure(page, base_url):

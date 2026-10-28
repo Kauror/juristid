@@ -108,6 +108,17 @@ from app.matters.register_filters import (
     WORK_PARAM,
     register_population,
 )
+from app.matters.seis_help import (
+    DEPT_DRAFTING_HELP,
+    DEPT_NO_ACTION_HELP,
+    DEPT_OVERDUE_HELP,
+    DEPT_SENT_HELP,
+    DEPT_UNASSIGNED_HELP,
+    DEPT_WEEK_HELP,
+    FigureHelp,
+    counted,
+    dept_unreviewed_help,
+)
 from app.matters.selectors import MISSING
 from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionStatus
 from app.submissions.models import Submission
@@ -195,6 +206,10 @@ class SeisFigure:
     #: `danger`, `warning` or empty. Emphasis only: the caption beside every
     #: figure says what it is, so nothing here is carried by colour alone.
     tone: str = ""
+    #: What the figure counts, in words, drawn as an `i` beside it
+    #: (app/matters/seis_help.py). Every Osakond figure sets one; Saabunud's
+    #: figures, which share this dataclass, leave it empty.
+    help: FigureHelp | None = None
 
 
 #: How far back "recently arrived, nobody has looked" reaches.
@@ -328,18 +343,47 @@ def seis_figures(
     unreviewed = _unreviewed_params(today)
     no_action = _no_action_params()
 
+    week_count = count(this_week)
+    unreviewed_count = count(unreviewed)
+    sent_count = sent_this_week(user, today).count()
+    drafting_count = drafting_matters(user).count()
+
+    # Captions and explanations: UX package of 2026-10-28. «tähtaeg sel
+    # nädalal» became «tähtajaga teemat sel nädalal» because it counts Matters,
+    # and «arvamust välja» became «arvamust saadetud» because it counts sent
+    # letters; every figure carries an `i` saying what it counts
+    # (app/matters/seis_help.py). No population, count or link changed.
     return [
-        SeisFigure("overdue", count(overdue), "üle tähtaja", register_url(**overdue), "danger"),
-        SeisFigure("week", count(this_week), "tähtaeg sel nädalal", register_url(**this_week)),
         SeisFigure(
-            "unassigned", count(unassigned), "vastutajata", register_url(**unassigned), "warning"
+            "overdue",
+            count(overdue),
+            "üle tähtaja",
+            register_url(**overdue),
+            "danger",
+            help=DEPT_OVERDUE_HELP,
+        ),
+        SeisFigure(
+            "week",
+            week_count,
+            counted(week_count, "tähtajaga teema sel nädalal", "tähtajaga teemat sel nädalal"),
+            register_url(**this_week),
+            help=DEPT_WEEK_HELP,
+        ),
+        SeisFigure(
+            "unassigned",
+            count(unassigned),
+            "vastutajata",
+            register_url(**unassigned),
+            "warning",
+            help=DEPT_UNASSIGNED_HELP,
         ),
         SeisFigure(
             "unreviewed",
-            count(unreviewed),
-            "uut läbi vaatamata",
+            unreviewed_count,
+            counted(unreviewed_count, "uus läbi vaatamata", "uut läbi vaatamata"),
             register_url(**unreviewed),
             "warning",
+            help=dept_unreviewed_help(UNREVIEWED_WINDOW_DAYS),
         ),
         # «Uut sel nädalal» stood here. It is arrival, not risk — a file that
         # came in on Tuesday is on the strip whether or not anything is wrong
@@ -353,6 +397,7 @@ def seis_figures(
             "järgmise tegevuseta",
             register_url(**no_action),
             "warning",
+            help=DEPT_NO_ACTION_HELP,
         ),
         # No link. The count is the current calendar week and the Arvamused
         # workspace filters by year and month, so the only destination available
@@ -361,9 +406,10 @@ def seis_figures(
         # (`e2e/test_kpi_navigation.py`, DS-24).
         SeisFigure(
             "sent",
-            sent_this_week(user, today).count(),
-            "arvamust välja sel nädalal",
+            sent_count,
+            counted(sent_count, "arvamus saadetud sel nädalal", "arvamust saadetud sel nädalal"),
             "",
+            help=DEPT_SENT_HELP,
         ),
         # Information, not a warning: no tone. The team table's ARVAMUS
         # KOOSTAMISEL column counts the same `drafting_matters` per owner, so this
@@ -372,9 +418,10 @@ def seis_figures(
         # selector is (docs/adr/0149 §2).
         SeisFigure(
             "drafting",
-            drafting_matters(user).count(),
-            "arvamust koostamisel",
+            drafting_count,
+            counted(drafting_count, "arvamus koostamisel", "arvamust koostamisel"),
             register_url(**_drafting_params()),
+            help=DEPT_DRAFTING_HELP,
         ),
     ]
 

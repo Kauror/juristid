@@ -301,7 +301,7 @@ def test_the_weeks_opinion_figure_states_a_number_it_cannot_open(page, base_url)
     sign_in(page, base_url, HEAD)
     open_overview(page, base_url, "osakond")
 
-    figure = page.locator(".seis__figure").filter(has_text="arvamust välja").first
+    figure = page.locator(".seis__figure").filter(has_text="saadetud sel nädalal").first
     expect(figure).to_be_visible()
     assert figure.evaluate("node => node.tagName.toLowerCase()") == "span"
     assert figure.locator("a").count() == 0
@@ -321,15 +321,22 @@ def test_the_strip_carries_the_seven_approved_figures(page, base_url):
     captions = [
         text.strip() for text in page.locator(".seis__figure .seis__caption").all_inner_texts()
     ]
-    assert captions == [
-        "üle tähtaja",
-        "tähtaeg sel nädalal",
-        "vastutajata",
-        "uut läbi vaatamata",
-        "järgmise tegevuseta",
-        "arvamust välja sel nädalal",
-        "arvamust koostamisel",
-    ], captions
+    # Captions of the UX package of 2026-10-28; a figure of exactly one reads
+    # in the nominative singular, so four of them are patterns.
+    expected = [
+        r"üle tähtaja",
+        r"tähtajaga teemat? sel nädalal",
+        r"vastutajata",
+        r"uu[st] läbi vaatamata",
+        r"järgmise tegevuseta",
+        r"arvamust? saadetud sel nädalal",
+        r"arvamust? koostamisel",
+    ]
+    assert len(captions) == len(expected), captions
+    for caption, pattern in zip(captions, expected, strict=True):
+        assert re.fullmatch(pattern, caption), captions
+    # Every figure explains itself, beside its link and never inside it.
+    expect(page.locator(".seis .seis__info")).to_have_count(7)
 
 
 # ---------------------------------------------------------------------------

@@ -335,12 +335,14 @@ CLOCK_DEPENDENT = [
     # The label, the row, the block, the borders and the spacing all stay in the
     # comparison. What is painted is one small box per value.
     '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
-    '.seis__figure:has(.seis__caption:text-is("tähtaeg sel nädalal")) .seis__number',
-    # Minu asjad's own week figure, captioned «sel nädalal» since docs/adr/0120:
-    # the total of the *Sel nädalal* band, which moves with the weekday for the
-    # reason the Osakond figure above does. It used to share that caption, and
-    # with it that mask.
-    '.seis__figure:has(.seis__caption:text-is("sel nädalal")) .seis__number',
+    '.seis__figure:has(.seis__caption:text-matches("^tähtajaga teemat? sel nädalal$"))'
+    " .seis__number",
+    # Minu asjad's own week figure, captioned «sel nädalal» since docs/adr/0120
+    # and «tegevust sel nädalal» since the UX package of 2026-10-28: the total of
+    # the *Sel nädalal* band, which moves with the weekday for the reason the
+    # Osakond figure above («tähtajaga teemat sel nädalal», «… teema …» for one)
+    # does. Matched as a pattern because the caption follows its number.
+    '.seis__figure:has(.seis__caption:text-matches("^tegevust? sel nädalal$")) .seis__number',
     # ---- The v2 surfaces, found by walking the rendered DOM for text that
     # looks like a date or a day count and asking which selector already
     # covered it — the same method that found the three above, and the reason
@@ -383,13 +385,14 @@ CLOCK_DEPENDENT = [
 #: `Sissekandeid sel nädalal` and `Tähtaegu sel nädalal` were two more of these
 #: and are no longer on the page: the Aruandlus block they were rows of is the
 #: three-row year block now, and the week rows went with the merge (ADR 0049).
-#: What replaced them is the Seis strip's «tähtaeg sel nädalal», which is a
+#: What replaced them is the Seis strip's «tähtajaga teemat sel nädalal», which is a
 #: sharper case than any of the three — `WORK_DEADLINE_THIS_WEEK` runs from
 #: *today* to Sunday, so it shrinks every morning rather than only when the run
 #: crosses a Monday.
 OSAKOND_WEEK_COUNTS = (
     '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
-    '.seis__figure:has(.seis__caption:text-is("tähtaeg sel nädalal")) .seis__number',
+    '.seis__figure:has(.seis__caption:text-matches("^tähtajaga teemat? sel nädalal$"))'
+    " .seis__number",
 )
 
 #: What each scenario's capture may not silently stop masking.
