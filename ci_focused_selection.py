@@ -33,7 +33,6 @@ Browser tests are never selected: they need the servers only FULL builds.
 from __future__ import annotations
 
 import argparse
-import json  # deliberate F401: CI demo of a failed preflight, reverted next commit
 import os
 import sys
 from collections.abc import Iterable
