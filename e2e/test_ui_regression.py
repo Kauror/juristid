@@ -225,6 +225,15 @@ CLOCK_DEPENDENT = [
     # in the baseline; the fifth is tomorrow's weekday and carries `data-clock`.
     ".uxdl__date",
     ".uxdl__range",
+    # Since 2026-10-28 the week is two windows — «Käesoleva nädala ülejäänud
+    # päevad» and «Järgmine nädal» — and a deadline a few days out is in the
+    # first on a Monday and in the second on a Thursday. The seeded world's
+    # opinion deadline is four days ahead, so which heading it sits under
+    # flips with the weekday. Both headings are masked; the window, its row and
+    # its count stay in the baseline. Reached through the remembered-block key,
+    # which names the window, rather than by position.
+    '[data-disclosure="department.upcoming.remaining_week"] .uxdl__title',
+    '[data-disclosure="department.upcoming.next_week"] .uxdl__title',
     ".railcard__value--date",
     # A date control's value renders in the control, and the create form's
     # Saabus defaults to today. Scoped to that form: unscoped, the selector also
@@ -1688,7 +1697,7 @@ def test_dashboard(page, base_url):
     Dates are masked, because the seeded world computes them from today; the
     composition may not move.
     """
-    signed_in(page, base_url, "/osakond/")
+    signed_in(page, base_url, OSAKOND_PINNED)
     compare("osakond", capture(page, "osakond"))
 
 
@@ -1776,6 +1785,13 @@ def test_a_closed_disclosure_contributes_no_masks(page, base_url):
 #: (docs/adr/0158, amendment of 2026-10-26).
 MY_WORK_PINNED = "/minu-asjad/?kalender=kuu&kalendri_aeg=2024-02"
 
+#: Osakond with its department calendar pinned the same way, for the same
+#: reason — and one more: a dot's colour is a hash of the responsible person's
+#: id, which a fresh seed draws anew, so the default four weeks would also
+#: repaint between two runs of the same commit. The colours are asserted from
+#: the computed style in `e2e/test_work_calendar.py` instead.
+OSAKOND_PINNED = "/osakond/?kalender=kuu&kalendri_aeg=2024-02"
+
 
 def test_my_work(page, base_url):
     """Minu töö: one chronological timeline and the rail beside it.
@@ -1818,7 +1834,7 @@ ULTRAWIDE = {"width": 3440, "height": 900}
 @pytest.mark.parametrize(
     "name,path",
     [
-        ("osakond-3440", "/osakond/"),
+        ("osakond-3440", OSAKOND_PINNED),
         ("minu-too-3440", MY_WORK_PINNED),
         ("teemad-3440", "/teemad/"),
         ("statistika-3440", "/statistika/"),
@@ -1986,7 +2002,7 @@ def test_light_my_work(page, base_url):
 
 
 def test_light_department(page, base_url):
-    signed_in(in_light(page), base_url, "/osakond/")
+    signed_in(in_light(page), base_url, OSAKOND_PINNED)
     compare("hele-osakond", light_capture(page, "hele-osakond", rules="osakond"))
 
 
