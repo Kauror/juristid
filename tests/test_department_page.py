@@ -455,14 +455,17 @@ def test_the_strip_carries_the_seven_approved_figures(department_head, world, to
         "sent",
         "drafting",
     ]
+    # Captions of the UX package of 2026-10-28, in the nominative singular for
+    # exactly one (tests/test_seis_figure_help.py holds both forms).
+    one = {figure.key: figure.value == 1 for figure in built.seis}
     assert [figure.caption for figure in built.seis] == [
         "üle tähtaja",
-        "tähtaeg sel nädalal",
+        "tähtajaga teema sel nädalal" if one["week"] else "tähtajaga teemat sel nädalal",
         "vastutajata",
-        "uut läbi vaatamata",
+        "uus läbi vaatamata" if one["unreviewed"] else "uut läbi vaatamata",
         "järgmise tegevuseta",
-        "arvamust välja sel nädalal",
-        "arvamust koostamisel",
+        "arvamus saadetud sel nädalal" if one["sent"] else "arvamust saadetud sel nädalal",
+        "arvamus koostamisel" if one["drafting"] else "arvamust koostamisel",
     ]
 
 
@@ -1565,8 +1568,10 @@ def test_the_page_uses_the_approved_vocabulary(client, department_head, world):
     client.force_login(department_head)
     body = client.get(PAGE).content.decode()
 
-    for word in ("Osakond", "Vajab sekkumist", "Eesolev", "Tehtud", "uut läbi vaatamata"):
+    for word in ("Osakond", "Vajab sekkumist", "Eesolev", "Tehtud", "läbi vaatamata"):
         assert word in body, word
+    # «uus» for exactly one, «uut» otherwise (UX package 2026-10-28).
+    assert "uut läbi vaatamata" in body or "uus läbi vaatamata" in body
 
     lowered = body.casefold()
     for forbidden in ("vajab tähelepanu", "triaaž", "seisma jäänud", "tähtajad registris"):

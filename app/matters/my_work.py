@@ -46,6 +46,15 @@ from app.matters.dashboard import drafting_matters
 from app.matters.models import Entry, Matter
 from app.matters.next_step import milestone_is_upcoming, milestone_order
 from app.matters.register_filters import OPINION_DRAFTING
+from app.matters.seis_help import (
+    IN_PROGRESS_HELP,
+    MY_NO_ACTION_HELP,
+    MY_OPINIONS_DRAFTING_HELP,
+    MY_OPINIONS_DUE_HELP,
+    MY_OVERDUE_HELP,
+    MY_WEEK_HELP,
+    FigureHelp,
+)
 from app.matters.selectors import date_range_q
 from app.workflow.enums import ESTONIAN_MONTHS
 
@@ -611,44 +620,6 @@ def recent_changes(
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True)
-class FigureHelp:
-    """The explanation one figure carries beside its link (components/seis.html).
-
-    A title and plain paragraphs, nothing else: it is read on hover, on focus
-    and on a tap, and by a screen reader as the description of its button.
-    ``slug`` makes the element id, so two explained figures on one page could
-    never share one.
-    """
-
-    slug: str
-    title: str
-    paragraphs: tuple[str, ...]
-
-
-#: «Menetluses olev teema» — the product owner's explanation (review of
-#: 2026-10-12), adapted from the earlier interface. Two words differ from what
-#: was supplied, both to match what the figure actually counts: the stage list
-#: names «Kooskõlastusringil» by its own label, and it ends with the Matters
-#: whose `Hetkeseis` is not chosen yet, because `open_matters` counts every open
-#: file whatever its stage — a `Määramata` one included. The figure itself is
-#: unchanged (docs/adr/0149 amendment of 2026-10-12).
-IN_PROGRESS_HELP = FigureHelp(
-    slug="menetluses",
-    title="Menetluses olev teema",
-    paragraphs=(
-        "Menetluses olev teema on teema, millega tuleb veel tegeleda – näiteks "
-        "koostada arvamus või hoida pärast arvamuse saatmist teemal silma peal.",
-        "Menetluses on teemad, mille hetkeseis on idee, kooskõlastusringil, "
-        "valitsuses, Riigikogus, jõustumise ootel, Eesti seisukoht koostamisel, "
-        "ELi menetluses, ELi õiguse ülevõtmise ootel või muu, ning teemad, mille "
-        "hetkeseis on veel määramata.",
-        "Kui teemaga ei ole vaja enam tegeleda, näiteks teema on jõustunud või "
-        "rohkem ei tegele, kuulub see lõpetatud teemade hulka.",
-    ),
-)
-
-
 def _counted(value: int, one: str, many: str) -> str:
     """The caption that reads after ``value``: «1 teema …», «2 teemat …»."""
     return one if value == 1 else many
@@ -662,10 +633,10 @@ class SeisFigure:
     tähtaja" is a warning about nothing, and a page that cries wolf every
     morning is a page people stop reading (01 §3.7).
 
-    ``help`` is the one optional explanation a figure may carry; only the
-    first figure here sets it. The other surfaces that render this component
-    feed it different dataclasses without the attribute, so none of them can
-    grow the icon by accident.
+    ``help`` is the explanation a figure carries beside its link
+    (app/matters/seis_help.py). Every figure on this strip sets one, as every
+    figure on Osakond's does; Saabunud and Statistika feed the component
+    dataclasses that leave it empty.
     """
 
     key: str
@@ -994,9 +965,15 @@ def build_my_work(
     # separate figure with its own list rather than a narrowing of that band.
     #
     # **Captions only, owner's review of 2026-10-12.** «avatud teemat» became
-    # «teemat menetluses» with an explanation beside it, and the two opinion
-    # captions were shortened to «arvamust sellel nädalal» and «arvamust
-    # kokku». Every key, value, query and link is what it was.
+    # «teemat menetluses» with an explanation beside it. Every key, value, query
+    # and link is what it was.
+    #
+    # **Captions and explanations, UX package of 2026-10-28.** Every figure now
+    # carries its `i` (app/matters/seis_help.py), written against what the
+    # figure counts rather than what its caption suggests. «sel nädalal» became
+    # «tegevust sel nädalal» — the band's rows, not Matters — and the opinion
+    # figures say which population they are: «tähtajaga sel nädalal» is due,
+    # «koostamisel» is being written; neither is a sent one. No count moved.
     seis = [
         SeisFigure(
             "open",
@@ -1005,26 +982,47 @@ def build_my_work(
             _register_url(subject),
             help=IN_PROGRESS_HELP,
         ),
-        SeisFigure("overdue", overdue, "üle tähtaja", f"#{wi.BAND_OVERDUE}", "danger"),
-        SeisFigure("week", week, "sel nädalal", f"#{wi.BAND_WEEK}", "warning"),
+        SeisFigure(
+            "overdue",
+            overdue,
+            "üle tähtaja",
+            f"#{wi.BAND_OVERDUE}",
+            "danger",
+            help=MY_OVERDUE_HELP,
+        ),
+        SeisFigure(
+            "week",
+            week,
+            _counted(week, "tegevus sel nädalal", "tegevust sel nädalal"),
+            f"#{wi.BAND_WEEK}",
+            "warning",
+            help=MY_WEEK_HELP,
+        ),
         SeisFigure(
             "no_action",
             quiet_total,
             "järgmise tegevuseta",
             _register_url(subject, tegevus="puudub"),
             "warning",
+            help=MY_NO_ACTION_HELP,
         ),
         SeisFigure(
             "opinions_week",
             opinions.due_this_week,
-            _counted(opinions.due_this_week, "arvamus sellel nädalal", "arvamust sellel nädalal"),
+            _counted(
+                opinions.due_this_week,
+                "arvamus tähtajaga sel nädalal",
+                "arvamust tähtajaga sel nädalal",
+            ),
             opinions.due_url,
+            help=MY_OPINIONS_DUE_HELP,
         ),
         SeisFigure(
             "opinions_drafting",
             opinions.in_preparation,
-            _counted(opinions.in_preparation, "arvamus kokku", "arvamust kokku"),
+            _counted(opinions.in_preparation, "arvamus koostamisel", "arvamust koostamisel"),
             opinions.preparation_url,
+            help=MY_OPINIONS_DRAFTING_HELP,
         ),
     ]
 

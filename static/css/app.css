@@ -8242,7 +8242,8 @@ button.opinionmenu__item {
 
 /* A figure that explains itself (components/seis.html, `help`): the link as it
    was, a quiet `i` button beside it — a sibling, never nested — and the
-   explanation under them. Only Minu asjad's «teemat menetluses» has one. */
+   explanation under them. Every figure on Minu asjad and Osakond has one
+   (app/matters/seis_help.py); Saabunud and Statistika have none. */
 .seis__item {
   position: relative;
   display: inline-flex;

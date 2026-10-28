@@ -407,8 +407,8 @@ def test_the_strip_ends_with_the_week_and_the_drafting_figures(department_head, 
     figures = dd.seis_figures(department_head, dt.date(2026, 10, 9))
     assert [f.key for f in figures][-2:] == ["sent", "drafting"]
     sent, draft = figures[-2], figures[-1]
-    assert (sent.caption, sent.url) == ("arvamust välja sel nädalal", "")
-    assert draft.caption == "arvamust koostamisel"
+    assert (sent.caption, sent.url) == ("arvamust saadetud sel nädalal", "")
+    assert draft.caption == "arvamus koostamisel"
     assert draft.tone == "", "information, not a warning"
     assert draft.value == 1
 
