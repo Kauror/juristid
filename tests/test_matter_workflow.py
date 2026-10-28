@@ -255,8 +255,9 @@ def test_my_work_query_count_is_bounded(signed_in, specialist):
 
     assert response.status_code == 200
     # Generous, but far below one-per-row: this catches a regression into N+1,
-    # not a precise budget.
-    assert len(captured) < 40
+    # not a precise budget. 40 until «Viimased tegevused» (2026-10-28), which
+    # reads each of its sources once, capped (`MINU_ASJAD_BUDGET`).
+    assert len(captured) < 50
 
 
 def test_matter_detail_query_count_is_bounded(signed_in, specialist):

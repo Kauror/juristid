@@ -83,8 +83,8 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 from typing import Any
 
-from django.db.models import BooleanField, Case, Q, Value, When
-from django.db.models.functions import Coalesce
+from django.db.models import BooleanField, Case, F, Q, Value, When
+from django.db.models.functions import Coalesce, Greatest, TruncDate
 from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
@@ -312,43 +312,56 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
             )
         )
 
-    for action in (
-        sources.actions_set.filter(matter__in=owned, created_at__lt=tomorrow)
-        .select_related("matter", "created_by")
-        .order_by("-created_at", "-pk")[:limit]
-    ):
-        facts.append(
-            _moment_fact(
-                action.matter,
-                action.created_at,
-                ACTION_SET_LABEL,
-                actor=action.created_by,
-                family=_ACTION_SET,
-                object_id=action.pk,
+    # A step set by a person, and a step a person finished or called off: one
+    # read, ordered on the later of the two moments that count, so the newest
+    # fifty of either are in it. A superseded step ended because its
+    # replacement was set, and that set is the act («Järgmine tegevus
+    # muudetud»); its end is not a second one.
+    set_counts = Q(created_by__isnull=False, created_at__lt=tomorrow)
+    end_counts = (
+        Q(ended_by__isnull=False, ended_at__lt=tomorrow)
+        & ~Q(status=ActionStatus.SUPERSEDED)
+        & ~Q(ended_at=None)
+    )
+    actions = (
+        (sources.actions_set | sources.actions_ended)
+        .filter(matter__in=owned)
+        .filter(set_counts | end_counts)
+        .annotate(
+            counted_set=Case(When(set_counts, then=F("created_at")), default=None),
+            counted_end=Case(When(end_counts, then=F("ended_at")), default=None),
+        )
+        .select_related("matter", "created_by", "ended_by")
+        .order_by(Greatest("counted_set", "counted_end").desc(nulls_last=True), "-pk")[:limit]
+    )
+    for action in actions:
+        if action.counted_set is not None:
+            facts.append(
+                _moment_fact(
+                    action.matter,
+                    action.counted_set,
+                    ACTION_SET_LABEL,
+                    actor=action.created_by,
+                    family=_ACTION_SET,
+                    object_id=action.pk,
+                )
             )
-        )
-
-    # A superseded step ended because its replacement was set, and that set is
-    # the act («Järgmine tegevus muudetud»); its end is not a second one.
-    for action in (
-        sources.actions_ended.filter(matter__in=owned, ended_at__lt=tomorrow)
-        .exclude(status=ActionStatus.SUPERSEDED)
-        .select_related("matter", "ended_by")
-        .order_by("-ended_at", "-pk")[:limit]
-    ):
-        label = (
-            ACTION_DONE_LABEL if action.status == ActionStatus.COMPLETED else ACTION_CANCELLED_LABEL
-        )
-        facts.append(
-            _moment_fact(
-                action.matter,
-                action.ended_at,
-                label,
-                actor=action.ended_by,
-                family=_ACTION_ENDED,
-                object_id=action.pk,
+        if action.counted_end is not None:
+            label = (
+                ACTION_DONE_LABEL
+                if action.status == ActionStatus.COMPLETED
+                else ACTION_CANCELLED_LABEL
             )
-        )
+            facts.append(
+                _moment_fact(
+                    action.matter,
+                    action.counted_end,
+                    label,
+                    actor=action.ended_by,
+                    family=_ACTION_ENDED,
+                    object_id=action.pk,
+                )
+            )
 
     # The three records that may be dated to a period, each on its own
     # business date at its own precision (docs/adr/0079, 0121, 0122). The
@@ -419,31 +432,37 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
 
     # The Matter's own two facts. A closure names who closed it, when anybody
     # did; an arrival date is the source's and has no person behind it.
-    for matter in (
-        visible.filter(owner=subject, closed_at__isnull=False, closed_at__lt=tomorrow)
+    # One read for both, ordered on the later of the two.
+    closed = Q(closed_at__isnull=False, closed_at__lt=tomorrow)
+    received = Q(received_date__isnull=False, received_date__lte=today)
+    own_facts = (
+        visible.filter(owner=subject)
+        .filter(closed | received)
+        .annotate(
+            counted_closed=Case(When(closed, then=TruncDate("closed_at")), default=None),
+            counted_received=Case(When(received, then=F("received_date")), default=None),
+        )
         .select_related("closed_by")
-        .order_by("-closed_at")[:limit]
-    ):
-        if matter.closed_at is None:  # excluded by the filter; narrows the type
-            continue
-        facts.append(
-            _moment_fact(
-                matter,
-                matter.closed_at,
-                BASIS_LABELS[ActivityBasis.CLOSURE],
-                actor=matter.closed_by,
-                family=_CLOSURE,
-                object_id=matter.pk,
+        .order_by(Greatest("counted_closed", "counted_received").desc(nulls_last=True), "-pk")[
+            :limit
+        ]
+    )
+    for matter in own_facts:
+        if matter.counted_closed is not None and matter.closed_at is not None:
+            facts.append(
+                _moment_fact(
+                    matter,
+                    matter.closed_at,
+                    BASIS_LABELS[ActivityBasis.CLOSURE],
+                    actor=matter.closed_by,
+                    family=_CLOSURE,
+                    object_id=matter.pk,
+                )
             )
-        )
-    for matter in visible.filter(
-        owner=subject, received_date__isnull=False, received_date__lte=today
-    ).order_by("-received_date")[:limit]:
-        if matter.received_date is None:  # excluded by the filter; narrows the type
-            continue
-        facts.append(
-            _dated_fact(matter, matter.received_date, BASIS_LABELS[ActivityBasis.RECEIVED])
-        )
+        if matter.counted_received is not None and matter.received_date is not None:
+            facts.append(
+                _dated_fact(matter, matter.received_date, BASIS_LABELS[ActivityBasis.RECEIVED])
+            )
 
     # Archived OneNote pages: source metadata, never a person. A page's
     # modification is the later and better fact; its creation is a fact of its

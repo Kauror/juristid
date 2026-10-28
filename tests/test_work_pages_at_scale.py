@@ -66,7 +66,13 @@ OSAKOND_BUDGET = 46
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
 #: commencements left the work model and the calendar reads them once itself.
-MINU_ASJAD_BUDGET = 32
+#: +10 since «Viimased tegevused» (owner's UX package, 2026-10-28): one capped
+#: read per activity source (entries, sends, steps, Kaasamine, Märge, Väline
+#: seisukoht, Ülevaade, the Matter's own closure/arrival, OneNote pages) and
+#: one for the audit rows that group them — fixed, whatever the desk holds
+#: (`tests/test_my_work_recent_activity.py`). «Minu viimased sissekanded»'s
+#: one read went with it.
+MINU_ASJAD_BUDGET = 42
 STATISTIKA_BUDGET = 33
 
 

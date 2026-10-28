@@ -8,5 +8,5 @@ the department's own short form, lengthened only where two colleagues share it
 {% endcomment %}
 <a class="actline" href="{% url 'matters:matter_detail' pk=row.matter.pk %}">
   <span class="actline__matter">{{ row.matter.title }}</span>
-  <span class="actline__meta"><time class="actline__when" datetime="{{ row.day|date:'Y-m-d' }}">{{ row.when }}</time>{% if row.actor %} · <span class="actline__actor">{{ row.actor|name_among:colleagues }}</span>{% endif %} · <span class="actline__what">{{ row.label }}</span></span>
+  <span class="actline__meta"><time class="actline__when" datetime="{{ row.day|date:'Y-m-d' }}">{{ row.when }}</time>{% if row.actor %} · <span class="actline__actor">{{ row.actor|name_among:colleagues }}</span>{% endif %} · {{ row.label }}</span>
 </a>
