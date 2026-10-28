@@ -3,6 +3,54 @@
 What runs on every pull request, why it is split the way it is, and what to do
 when a piece of it goes red.
 
+## Two tiers: FAST for a draft, FULL for merge readiness (2026-10-28)
+
+Since docs/adr/0193 the whole of CI described below is the **FULL** tier. A
+pull request that is a **draft** runs the **FAST** tier instead:
+
+| | FAST (draft PR) | FULL (ready PR, `ready_for_review`, any `workflow_dispatch`) |
+| --- | --- | --- |
+| Jobs | `Format, lint, types and system checks`, `Focused tests (FAST tier)` | `Preflight`, then everything in this document |
+| Wall clock | ~3 min | ~9–10 min |
+| Runner-minutes | measured in PR #561 | ~122 + ~1 for the preflight |
+| Merge or release evidence | **never** | yes — the only evidence there is |
+
+What decides it is one expression, written out in every job's `if:` and held
+there by `tests/test_ci_tiers.py`: a `pull_request` event whose PR is a draft is
+FAST; anything else is FULL. So marking a draft ready runs FULL; a push to a
+ready PR runs FULL again (its previous result was for another commit and does
+not carry over); converting back to draft starts nothing, and the next push is
+FAST; and a run started by hand or by `main-proof.yml`, on main or on a branch,
+is FULL.
+
+**Required checks on a draft.** GitHub counts a skipped required check as
+passing. On a draft, the five non-quality gates are skipped **under another
+name**, so a draft's commit carries no check under those required names and
+branch protection shows them as *Expected*. That is what stops a merge in the
+seconds between `gh pr ready` and the FULL run's checks appearing on the same
+commit. GitHub does not evaluate the `name:` expression of a skipped job, so on
+a draft the Checks tab lists those five by their raw expression text — expected,
+and not the required name either way. The quality job reports under its
+required name in both tiers and is identical in both.
+
+**Failed prerequisite.** In FULL, the PostgreSQL safety job, the PostgreSQL and
+browser runners and the visual job wait for `Preflight (format, lint, types,
+imports)` (~1 minute). If it fails they are skipped, both suite gates refuse a
+skipped dependency, and `Backup and restore rehearsal` and `Container and
+compose smoke test` run and refuse in their first step. Every required check is
+red; none is a green skip.
+
+**Evidence.** The release gate and `main-proof.yml` accept a run only if it holds
+all six required gates, each `success`, and — for a pull request's run — a
+tested-tree record that says `tier full` (see "Main is proved by its pull
+request's run").
+
+**The focused job** runs the database-free contract tests, the CI tests when CI
+changed, and the changed `tests/**/test_*.py` files, within a 240 s budget
+(`ci_focused_selection.py`; deferred files are named in the job summary). It is
+a convenience for the author: not required, not read by any gate, imported by
+nothing in FULL. Browser tests run only in FULL.
+
 The short version: nothing was removed to make CI faster. The two suites that
 took the time — the PostgreSQL suite and the browser suite — were split into
 shards, each runner hosts two of them at once in worlds of their own, and the
@@ -448,6 +496,13 @@ The release gate (`release-image.yml`) is unchanged in what it requires: main's
 own green run, now including a run started on main, or — while that is absent
 or still running, never over a red one — proof (b), which it re-derives itself
 rather than trusting the proof job.
+
+Since 2026-10-28 (docs/adr/0193) both proofs also require all six required
+gates among the run's jobs, each `success`, and proof (b) requires the
+tested-tree record to say `tier full`. A draft's FAST run fails both conditions
+independently, so it can never stand in for a FULL run. A record with no tier
+line (a run from before the tiers) is refused; main-proof then dispatches FULL
+on main, which is safe and costs one run.
 
 ## What was measured, when it was split (2026-08-30)
 
