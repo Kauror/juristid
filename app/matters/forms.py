@@ -2525,11 +2525,14 @@ class NextActionForm(forms.Form):
     )
     #: **The day the work will be done**, and nothing more subtle than that.
     #:
-    #: No `initial`. It used to default to today, on the reasoning that today
-    #: is the answer nearly every time — but a blank new-Teema form silently
-    #: holding today is a factual claim the person never made, and it turned
-    #: "you forgot the date" into a date nobody chose. Deciding when somebody
-    #: will do their own work is not the application's to decide (ADR 0052 §5).
+    #: No `initial` on the field. It used to default to today, on the reasoning
+    #: that today is the answer nearly every time — but a blank new-Teema form
+    #: silently holding today is a factual claim the person never made, and it
+    #: turned "you forgot the date" into a date nobody chose (ADR 0052 §5).
+    #: That still holds on Uus teema. On the Teema page's `+ Lisa tegevus` the
+    #: owner reversed it (ADR 0052, addendum of 2026-10-28): a new step opens
+    #: on today, *visibly* — `Täpne päev` chosen and `Täna` lit — and clearing
+    #: the box still saves a step with no date. See `__init__`.
     #:
     #: There **is** a precision group behind it, added in this round.
     #:
@@ -2623,6 +2626,35 @@ class NextActionForm(forms.Form):
             # quick spans' sake.
             del group["next_date"]
             self.fields.update(group)
+            # **A new step opens on today** (ADR 0052, addendum of 2026-10-28):
+            # `Täpne päev`, today's date in Europe/Tallinn, and so `Täna` lit
+            # beside it (`quick_date_text`). Only on the Teema page's `+ Lisa
+            # tegevus` — `periods` and no step being edited — and only on an
+            # unbound render: an edit opens on the step's own date and
+            # precision (`period_initial`), and a refused save shows what was
+            # posted, an emptied box included. Nothing is decided on the
+            # server: the default is a value in a box the person can see and
+            # clear, and the POST is read exactly as before.
+            if self.current is None and not self.is_bound:
+                self.initial.setdefault("target_date", timezone.localdate())
+                self.initial.setdefault("next_precision", DatePrecision.EXACT.value)
+                # A Teema page left open overnight still opens the panel on
+                # *today*: the box the server drew yesterday is renewed in
+                # Tallinn time while it still holds what it was drawn with
+                # (`data-today-default`, static/js/app.js — `+ Lisa · Muu`'s).
+                self.fields["target_date"].widget.attrs["data-today-default"] = "true"
+
+    @property
+    def quick_date_text(self) -> str:
+        """The date box's value as it is drawn, for the quick span that matches it.
+
+        The chips carry the same spelling (`views.quick_date_choices` writes
+        `format_estonian_date`, which is what the widget renders), so the one
+        whose value equals this is drawn pressed in the HTML itself — before
+        any script runs, and with none (`period_composer.html`).
+        """
+        bound = self["target_date"]
+        return str(bound.field.widget.format_value(bound.value()) or "")
 
     @property
     def precision_chips(self) -> list[dict[str, Any]]:
@@ -4107,11 +4139,13 @@ class CompleteCurrentActionForm(forms.Form):
             }
         ),
     )
-    #: The next step's day, if it is known. Optional, never defaulted, and an
-    #: exact day: a step that belongs *in October* is given its period through
-    #: `Muuda` afterwards, which is where the precision control lives
-    #: (docs/adr/0106, docs/adr/0079). `+1 päev`, `+1 nädal` and `+1 kuu` beside
-    #: it only write into this box (`next_step_date_choices`).
+    #: The next step's day, if it is known. Optional and an exact day: a step
+    #: that belongs *in October* is given its period through `Muuda`
+    #: afterwards, which is where the precision control lives (docs/adr/0106,
+    #: docs/adr/0079). `+1 päev`, `+1 nädal` and `+1 kuu` beside it only write
+    #: into this box (`next_step_date_choices`). Opens on today, like `+ Lisa
+    #: tegevus` (ADR 0052, addendum of 2026-10-28); with `Järgmine tegevus`
+    #: left empty `clean` drops it, so the default never opens a step on its own.
     next_date = EstonianDateField(
         label="Millal?",
         required=False,
@@ -4138,6 +4172,12 @@ class CompleteCurrentActionForm(forms.Form):
         )
         set_choices(self, "stage", active_stages())
         cast(NextStageChoiceField, self.fields["stage"]).offer(next_stages)
+        if not self.is_bound:
+            # The new next step's day starts on today, in the box, where the
+            # person can see it, change it or clear it. A refused save redraws
+            # what was posted instead (ADR 0052, addendum of 2026-10-28).
+            self.initial.setdefault("next_date", timezone.localdate())
+            self.fields["next_date"].widget.attrs["data-today-default"] = "true"
 
     def clean_body(self) -> str:
         return require_written_body(self.cleaned_data.get("body"), "Kirjelda, mida tegid.")
