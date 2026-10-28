@@ -462,6 +462,22 @@
   }
 }
 
+/* The gear is one more 30px control on a bar that was tuned to just fit at
+ * 861px, where it stops wrapping. Between there and 1000px the bar's gap gives
+ * the width back (24px → 16px), and the two account-control margins follow it
+ * so the switch and the gear still sit 8px from their neighbours. Measured by
+ * e2e/test_ux_pass.py at 900px, which the gear alone pushed 33px sideways. */
+@media (min-width: 861px) and (max-width: 1000px) {
+  .topbar {
+    gap: var(--spacing-4);
+  }
+
+  .themetoggle:not(:last-child),
+  .topbar__haldus {
+    margin-right: calc(var(--spacing-2) - var(--spacing-4));
+  }
+}
+
 .topbar__haldus:hover {
   background: var(--surface-hover);
   color: var(--text-primary);

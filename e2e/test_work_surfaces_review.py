@@ -165,6 +165,12 @@ def test_an_active_topic_row_carries_the_topic_marker(page, base_url):
     """
     _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
 
+    # Past the render cap the rows wait in a closed «Näita veel», and Chromium
+    # reports an unlaid-out `::before` as 0px wide. Earlier tests in a shard
+    # give Sandra more Matters than the preview holds, so open it first.
+    more = page.locator(".workband--portfolio details.pw-more")
+    if more.count():
+        more.locator("> summary").click()
     titles = page.locator(".workband--portfolio .pw-matter__title")
     assert titles.count(), "Aktiivsed teemad rendered no rows to mark"
 

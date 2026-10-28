@@ -31,22 +31,25 @@ UNDATED_LABEL = "Kuupäev määramata"
 
 
 def _record_undated_step(page, text: str) -> None:
-    """A first step through `+ Lisa tegevus`, its day box left empty.
+    """A first step through `+ Lisa tegevus`, its day box emptied.
 
     The one ordinary way to add work since `+ Lisa · Tavaline` left on
     2026-10-07 (docs/adr/0143). Until then a first step came from `+ Märge`
     dated ahead and had its day taken off through `Muuda` (docs/adr/0124,
-    docs/adr/0106 §4); the empty box is now the whole gesture.
+    docs/adr/0106 §4). Since 2026-10-28 the box opens on today (ADR 0052
+    addendum), so an undated step is the person clearing it — and the box must
+    stay clear as it is saved, not be refilled with today behind their back.
     """
     open_next_action_form(page)
     page.locator("#lisa-jargmine [name='text']").fill(text)
+    page.locator("#id_target_date").fill("")
     expect(page.locator("#id_target_date")).to_have_value("")
     page.locator("#lisa-jargmine button[type=submit]").click()
     page.wait_for_load_state("networkidle")
 
 
-def test_a_step_saves_with_the_day_box_left_alone(page, base_url):
-    """The gesture the round is for: a step with its day box empty, saved."""
+def test_a_step_saves_with_the_day_box_emptied(page, base_url):
+    """The gesture the round is for: a step with its day box emptied, saved."""
     sign_in(page, base_url, SANDRA)
     create_matter(page, base_url, unique_title("Kuupäevata samm"), owner=SANDRA)
 
