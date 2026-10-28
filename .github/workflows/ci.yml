@@ -361,6 +361,30 @@ jobs:
           test "${#files[@]}" -gt 0 || { echo "the selection is empty"; exit 1; }
           uv run pytest -q -p no:cacheprovider "${files[@]}"
 
+  # FAST only: does this draft touch what a page looks like? Decides whether
+  # the visual job runs on a draft. Ten seconds on the bare runner — no uv, no
+  # database — so the visual job starts at once rather than after a longer job.
+  changes:
+    name: Does the draft touch the UI (FAST tier)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+    outputs:
+      ui: ${{ steps.ui.outputs.ui }}
+    steps:
+      # The test merge's first parent is main, so `HEAD^1..HEAD` is the change.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Templates, static files or browser tests changed
+        id: ui
+        run: |
+          set -euo pipefail
+          git diff --name-only HEAD^1 HEAD > changed.txt
+          python3 ci_focused_selection.py --changed changed.txt --ui-output "$GITHUB_OUTPUT"
+
   postgres-safety:
     name: PostgreSQL migration and runtime safety
     runs-on: ubuntu-24.04
@@ -1043,8 +1067,21 @@ jobs:
     name: Visual regression
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: [preflight]
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    # FULL: after a green preflight, as every expensive job — skipped when it
+    # fails, and the browser gate then refuses the skip.
+    #
+    # FAST, too, when the draft touches templates, static files or browser
+    # tests (`changes`): one runner, ~4 minutes, beside the quality job, so a
+    # UI draft gets its rendering diffs and baseline candidates
+    # (`test-report-visual`) without a FULL round. On a draft no required
+    # check aggregates it — the browser gate is not run — so its result is
+    # information for the author, never merge or release evidence.
+    #
+    # `!cancelled()` because one of its two needs is always skipped (the
+    # preflight on a draft, `changes` otherwise); the tier is then decided
+    # explicitly from the event and the needed job's own result.
+    needs: [preflight, changes]
+    if: ${{ !cancelled() && (((github.event_name != 'pull_request' || !github.event.pull_request.draft) && needs.preflight.result == 'success') || ((github.event_name == 'pull_request' && github.event.pull_request.draft) && needs.changes.outputs.ui == 'true')) }}
 
     # Its own world, which is a determinism fix before it is a speed one.
     #

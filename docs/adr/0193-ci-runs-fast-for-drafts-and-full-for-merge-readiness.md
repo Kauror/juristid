@@ -87,10 +87,38 @@ gate never reads it. FULL's suites are still the whole collection, partitioned b
 - A PR opened ready for review, or pushed to while ready, still runs FULL on
   every push. The saving depends on agents opening drafts and marking ready once
   (AGENTS.md, "CI tiers").
-- Visual baseline candidates come only from a FULL run's `test-report-visual`
-  artifact, as before.
+- Visual baseline candidates come from a FULL run's `test-report-visual`
+  artifact, and — since the amendment below — from a UI draft's FAST run.
 - Nothing about main-proof changes: it still accepts a green PR run on the exact
   tree (now: a FULL one) and otherwise dispatches FULL on main.
+
+## Amendment: the visual job on a UI draft (2026-10-28, owner's go-ahead)
+
+A draft whose change touches `templates/`, `static/` or `e2e/` also runs
+`Visual regression` in FAST. A ten-second FAST-only job, `changes`, decides it
+with `ci_focused_selection.touches_ui` (standard library only, on the bare
+runner). The visual job keeps its name, world and artifact; its condition is
+`!cancelled()` and either FULL with a green preflight, or FAST with `ui ==
+'true'`. FULL is unchanged. On a draft no required check aggregates it, so it
+is information, never evidence (`tests/test_ci_tiers.py`).
+
+Why: replaying 26–27 Oct, 7 of the 18 red FULL runs failed only in visual
+regression — baselines an intended UI change moved, found a FULL round too
+late. With the visual job in FAST those become ~9-runner-minute draft rounds;
+the replay goes from 32% to ~45% fewer runner-minutes.
+
+### Correction: a FULL run's FAST-only skips (2026-10-28)
+
+As merged in #561, the gate required every job of a run to be `success`, but
+every FULL run skips the FAST-only jobs by design — so no FULL run could prove
+anything. Main-proof found it on the merge of #561 (`7a066621`), failed closed
+and dispatched FULL on main; the release gate would have refused too. The
+gate now accepts exactly one kind of non-success: a **skipped** job whose name
+is in `FAST_ONLY_JOBS` (`Focused tests (FAST tier)`, `Does the draft touch the
+UI (FAST tier)`). A FAST-only job that ran and failed is still refused, and
+`tests/test_ci_tiers.py` holds that list to `ci.yml` and checks a FULL run as
+the jobs API reports it — skips included — which is what the original test had
+filtered away.
 
 ## Rejected
 

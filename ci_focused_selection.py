@@ -27,7 +27,17 @@ files would exceed it, the most expensive ones are left to FULL and named, so
 a draft's run stays a few minutes long and never pretends to have run them.
 Browser tests are never selected: they need the servers only FULL builds.
 
+It also says whether a draft touches the UI (`templates/`, `static/`, `e2e/`).
+When it does, the FAST tier runs the `Visual regression` job too, so a draft
+gets its rendering diffs and baseline candidates without a FULL round. Again a
+convenience: on a draft that job is aggregated by no required check, and FULL
+runs it on every ready pull request whatever this says.
+
     ci_focused_selection.py --changed changed.txt --output focused.txt
+    ci_focused_selection.py --changed changed.txt --ui-output "$GITHUB_OUTPUT"
+
+Standard library only (with ci_sharding.py), so the second form runs on the
+bare runner before `uv` exists.
 """
 
 from __future__ import annotations
@@ -73,6 +83,9 @@ CI_TESTS_EXTRA: tuple[str, ...] = (
     "tests/test_release_provenance_gate.py",
     "tests/test_main_proof.py",
 )
+
+#: A change under any of these can change what a page looks like.
+UI_PATH_PREFIXES: tuple[str, ...] = ("templates/", "static/", "e2e/")
 
 #: Predicted seconds of test time the selected files may take together.
 DEFAULT_BUDGET_SECONDS = 240.0
@@ -128,14 +141,29 @@ def select(
     return Selection(tuple(fixed + sorted(kept)), tuple(deferred), spent)
 
 
+def touches_ui(changed: Iterable[str]) -> bool:
+    """Whether any changed path can change a rendering."""
+    return any(path.strip().replace("\\", "/").startswith(UI_PATH_PREFIXES) for path in changed)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--changed", type=Path, required=True, help="One changed path per line.")
-    parser.add_argument("--output", type=Path, required=True, help="Test files, one per line.")
+    parser.add_argument("--output", type=Path, help="Test files, one per line.")
+    parser.add_argument("--ui-output", type=Path, help="Append ui=true|false here.")
     parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET_SECONDS)
     args = parser.parse_args(argv)
+    if args.output is None and args.ui_output is None:
+        parser.error("give --output, --ui-output or both")
 
     changed = args.changed.read_text(encoding="utf-8").splitlines()
+    if args.ui_output is not None:
+        ui = touches_ui(changed)
+        with args.ui_output.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(f"ui={'true' if ui else 'false'}\n")
+        print(f"touches the UI ({', '.join(UI_PATH_PREFIXES)}): {'yes' if ui else 'no'}")
+    if args.output is None:
+        return 0
     ci_tests = [
         path.relative_to(REPOSITORY_ROOT).as_posix()
         for path in sorted(REPOSITORY_ROOT.glob(CI_TESTS_GLOB))

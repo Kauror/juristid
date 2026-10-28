@@ -104,8 +104,12 @@ is ready for review. Work so that FULL runs once per change:
    protection enforces by waiting on the six required checks. Never merge on
    the strength of a FAST run, and never try to work around an *Expected*
    required check.
-6. Visual baseline candidates come from a FULL run's `test-report-visual`
-   artifact, as before; a UI change therefore needs one FULL run to get them.
+6. A draft that changes `templates/`, `static/` or `e2e/` also runs
+   `Visual regression` in FAST (~4 more minutes on one runner). Take baseline
+   candidates from that run's `test-report-visual` artifact, commit them to the
+   draft, and mark ready only when the draft's visual job is green — so the
+   FULL round does not fail on baselines. A red visual job on a draft blocks
+   nothing; it is information for you.
 7. `gh workflow run ci.yml --ref <branch>` runs FULL on any branch, draft or not.
 
 ## UX quality
