@@ -45,7 +45,10 @@ HEAD = "c" * 40
 TREE = "d" * 40
 OTHER_TREE = "e" * 40
 
-JOBS = [{"name": "PostgreSQL 18 test suite", "status": "completed", "conclusion": "success"}]
+#: A FULL run: every required gate, green (gate.REQUIRED_GATES).
+JOBS = [
+    {"name": name, "status": "completed", "conclusion": "success"} for name in gate.REQUIRED_GATES
+]
 
 
 def pr_run(**overrides: Any) -> dict[str, Any]:

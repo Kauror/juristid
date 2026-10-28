@@ -81,6 +81,33 @@ Do not introduce without measured need and explicit approval:
 - Do not rewrite published Git history.
 - Use feature branches and PRs for implementation work.
 
+## CI tiers (docs/adr/0193)
+
+CI runs **FAST** (~3 min, quality + focused tests) on a **draft** pull request and
+**FULL** (the whole suite, ~10 min, ~120 runner-minutes) on a pull request that
+is ready for review. Work so that FULL runs once per change:
+
+1. Run the local checks first: `uv run ruff format --check . && uv run ruff
+   check . && uv run mypy`, plus the focused tests you touched.
+2. Open the pull request **as a draft**: `gh pr create --draft …`. Iterate by
+   pushing to the draft; each push runs FAST only.
+3. When the change is complete, mark it ready **once**: `gh pr ready <N>`. That
+   runs FULL. Do not push to a ready PR while its FULL run is in progress unless
+   the new commit supersedes it — the push cancels the run and starts another.
+4. If FULL fails on something you must iterate on, return to draft
+   (`gh pr ready <N> --undo`), reproduce locally (docs/ci-architecture.md,
+   "Reproducing a shard locally"), push fixes, and mark ready again. For a
+   flaky, unrelated failure, re-run only the failed jobs:
+   `gh run rerun <run-id> --failed` — not the whole run.
+5. **FAST passing is never merge evidence.** A draft cannot be merged; a ready
+   PR merges only on a green FULL run of its current head, which branch
+   protection enforces by waiting on the six required checks. Never merge on
+   the strength of a FAST run, and never try to work around an *Expected*
+   required check.
+6. Visual baseline candidates come from a FULL run's `test-report-visual`
+   artifact, as before; a UI change therefore needs one FULL run to get them.
+7. `gh workflow run ci.yml --ref <branch>` runs FULL on any branch, draft or not.
+
 ## UX quality
 
 - Estonian UI.
