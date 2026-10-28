@@ -39,7 +39,7 @@
         for an informational block is saved, for the person signed in. Absent
         for anybody else, so their blocks are plain `<details>` with defaults.
       {% endcomment %}
-      <meta name="disclosure-endpoint" content="{% url 'accounts:save_disclosure' %}" data-csrf="{{ csrf_token }}">
+      <meta name="disclosure-endpoint" content="{% url 'accounts:save_disclosure' %}">
       <script src="{% static 'js/disclosures.js' %}" defer></script>
     {% endif %}
   </head>

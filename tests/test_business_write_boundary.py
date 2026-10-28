@@ -1714,6 +1714,11 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # `get_visible_matter` (app/matters/views.py, docs/adr/0051,
     # tests/test_new_assignment_notices.py).
     "matters:open_assignment_notice": "C: the recipient's own read receipt",
+    # C — remembered blocks (docs/adr/0194): which informational accordions the
+    # signed-in person keeps open. Presentation state keyed on `request.user`,
+    # bounded by a registry of keys, with no parameter that names anybody else.
+    "accounts:save_disclosure": "C: the signed-in person's own block states",
+    "accounts:reset_disclosures": "C: resets the signed-in person's own block states",
     # D — authentication and session control. Not business content, and two of
     # them must work for somebody who has no role at all yet.
     "accounts:dev_login": "D: synthetic sign-in, development only",

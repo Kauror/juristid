@@ -27,7 +27,6 @@
     return;
   }
   var endpoint = meta.getAttribute("content");
-  var csrf = meta.getAttribute("data-csrf") || "";
   var wanted = {};
   var inFlight = {};
 
@@ -44,6 +43,11 @@
     if (inFlight[key] || !Object.prototype.hasOwnProperty.call(wanted, key)) {
       return;
     }
+    // The token the bar's own «Välju» form carries — present on every page
+    // drawn for somebody signed in — so the page's markup is the same on every
+    // render and no second copy of the token is needed.
+    var field = document.querySelector('input[name="csrfmiddlewaretoken"]');
+    var csrf = field ? field.value : "";
     var opened = wanted[key];
     delete wanted[key];
     inFlight[key] = true;
