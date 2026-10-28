@@ -4,8 +4,29 @@ name: CI
 # starts one on main only when no pull request's run proves the merge. Main does
 # not re-run this on every push: the pull request's run already tested the exact
 # tree the merge commits (docs/ci-architecture.md).
+#
+# Two tiers, decided by one fact of the event (docs/adr/0193):
+#
+# * FAST — a pull request that is a **draft**. Only the quality job and a
+#   focused test job run: about three minutes on two runners. The jobs behind
+#   the other five required checks are skipped *and renamed*, so a draft's
+#   commit never carries a check under a required name it did not earn; branch
+#   protection then waits on those names ("Expected"), which is what stops a
+#   `gh pr ready && gh pr merge` from merging on FAST evidence alone.
+# * FULL — everything else: a pull request that is ready for review, the
+#   `ready_for_review` event itself, and every run started by hand or by
+#   `main-proof.yml`. The whole of CI, exactly as before, after a one-minute
+#   preflight that keeps a lint or import error from occupying sixteen runners.
+#
+# `converted_to_draft` is deliberately not a trigger: a commit that was FULL
+# verified stays verified, and the next push to the draft is FAST. Every
+# condition below is one of two strings, and tests/test_ci_tiers.py holds every
+# job to them:
+#   FAST: github.event_name == 'pull_request' && github.event.pull_request.draft
+#   FULL: github.event_name != 'pull_request' || !github.event.pull_request.draft
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
 
 concurrency:
@@ -43,7 +64,12 @@ jobs:
       # request's green run as the proof for the merge commit only when this
       # recorded tree is byte-for-byte the merge commit's own; without the
       # artifact it accepts nothing but main's own run, as it always did.
+      #
+      # The tier is recorded too, and the gate accepts only `tier full`: a
+      # draft's FAST run tested the same tree, but not with the whole suite.
       - name: Record the tree this run tests
+        env:
+          TIER: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && 'fast' || 'full' }}
         run: |
           set -euo pipefail
           mkdir -p tested
@@ -51,6 +77,7 @@ jobs:
             echo "tree $(git rev-parse 'HEAD^{tree}')"
             echo "commit $(git rev-parse HEAD)"
             echo "event $GITHUB_EVENT_NAME"
+            echo "tier $TIER"
           } > tested/tested-tree.txt
           cat tested/tested-tree.txt
 
@@ -193,10 +220,153 @@ jobs:
           E2E_GATE_BASE_URL: http://127.0.0.1:8001
         run: uv run python scripts/ci/report_shard_health.py --strict
 
+  # FULL only. The cheap half of the quality job, run first so that the
+  # expensive jobs start only on a tree that formats, lints, type-checks and
+  # imports. Measured on 26-27 Oct 2026, a run that failed one of these still
+  # spent ~120 runner-minutes on shards that could not have passed. It is not a
+  # required check and needs not be: when it fails, the jobs that need it are
+  # skipped, both suite gates refuse a skipped dependency, and the two required
+  # leaf jobs that wait for it refuse explicitly (docs/ci-architecture.md).
+  preflight:
+    name: Preflight (format, lint, types, imports)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "0"
+      DJANGO_ALLOWED_HOSTS: localhost
+      E2E_BASE_URL: http://127.0.0.1:8000
+      E2E_GATE_BASE_URL: http://127.0.0.1:8001
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          # Nothing after this checkout talks to the remote with git, so the
+          # token is not left in .git/config for later steps to read.
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      - name: Formatting
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Static types
+        run: uv run mypy
+
+      - name: Django system checks
+        run: uv run python manage.py check
+
+      # One collection of each suite: an import error here would otherwise be
+      # found by every shard at once.
+      - name: Every test module imports
+        run: uv run pytest tests e2e --collect-only -q -p no:cacheprovider > /dev/null
+
+  # FAST only: the tests a draft touched, on one PostgreSQL, beside the
+  # quality job. A convenience for the author, never evidence: it is not a
+  # required check, the release gate does not read it, and nothing about which
+  # tests the FULL tier runs depends on it (ci_focused_selection.py).
+  focused:
+    name: Focused tests (FAST tier)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+    services:
+      postgres:
+        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        env:
+          POSTGRES_DB: juristid
+          POSTGRES_USER: juristid
+          POSTGRES_PASSWORD: juristid
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U juristid -d juristid"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --tmpfs /var/lib/postgresql
+
+    env:
+      DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
+      DJANGO_DEBUG: "0"
+      DJANGO_SECURE_SSL_REDIRECT: "0"
+      DEV_LOGIN_ENABLED: "0"
+      REAL_DATA_ALLOWED: "0"
+      POSTGRES_DB: juristid
+      POSTGRES_USER: juristid
+      POSTGRES_PASSWORD: juristid
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_SSLMODE: disable
+
+    steps:
+      # Two commits deep: a pull request's checkout is GitHub's test merge, and
+      # its first parent is main — so `HEAD^1..HEAD` is exactly what the pull
+      # request changes.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
+        with:
+          enable-cache: true
+
+      - run: uv sync --frozen
+
+      # The same cached OCR packages as the shards, so a changed extraction
+      # test runs rather than tripping the skip policy (ENG-051).
+      - name: Runner image identity
+        id: runner-image
+        run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+
+      - name: Cache the OCR packages
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/ocr-debs
+          key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
+
+      - name: Install the OCR runtime
+        run: |
+          set -euo pipefail
+          packages="tesseract-ocr tesseract-ocr-est tesseract-ocr-eng"
+          cache="$HOME/ocr-debs"
+          if compgen -G "$cache/*.deb" > /dev/null && sudo dpkg -i "$cache"/*.deb > /dev/null; then
+            echo "installed from the cached packages"
+          else
+            echo "no usable cache; installing from the mirror"
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends --yes $packages
+          fi
+
+      - name: Choose the focused tests
+        run: |
+          set -euo pipefail
+          git diff --name-only HEAD^1 HEAD > changed.txt
+          uv run python ci_focused_selection.py --changed changed.txt --output focused.txt
+
+      # An empty list would make this a bare `pytest` — the whole suite on one
+      # runner — so it is refused rather than run.
+      - name: Focused tests
+        run: |
+          set -euo pipefail
+          mapfile -t files < focused.txt
+          test "${#files[@]}" -gt 0 || { echo "the selection is empty"; exit 1; }
+          uv run pytest -q -p no:cacheprovider "${files[@]}"
+
   postgres-safety:
     name: PostgreSQL migration and runtime safety
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    needs: [preflight]
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
 
     # Everything the PostgreSQL suite proved *before* running a test, kept
     # exactly as it was and moved to a job of its own.
@@ -401,6 +571,8 @@ jobs:
     # size: generous slack so that a slow runner is never mistaken for a broken
     # branch, and a number that gets noticed if the suite ever grows into it.
     timeout-minutes: 15
+    needs: [preflight]
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
 
     strategy:
       # Every shard runs. Stopping the others when one fails would hide which
@@ -559,28 +731,32 @@ jobs:
     # The logical gate, under the name it has always had, so that a required
     # status check and anything referring to this suite keeps meaning what it
     # meant. The shards are what changed; the promise is not.
-    name: PostgreSQL 18 test suite
+    name: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && 'PostgreSQL 18 test suite (FULL tier, not run on a draft)' || 'PostgreSQL 18 test suite' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    needs: [postgres-safety, tests]
+    needs: [preflight, postgres-safety, tests]
     # `always()`, because a gate that only runs when its dependencies succeeded
     # is a gate that is *skipped* when they do not — and a skipped required
-    # check does not block anything. It has to run and then refuse.
-    if: always()
+    # check does not block anything. It has to run and then refuse. On a draft
+    # (FAST) it is skipped under another name, so the required one stays
+    # unreported rather than skipped.
+    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
 
     steps:
       - name: Every part of the suite succeeded
         env:
+          PREFLIGHT: ${{ needs.preflight.result }}
           SAFETY: ${{ needs.postgres-safety.result }}
           SHARDS: ${{ needs.tests.result }}
         run: |
           set -euo pipefail
+          echo "preflight: $PREFLIGHT"
           echo "migration and runtime safety: $SAFETY"
           echo "test shards: $SHARDS"
           # Anything other than success, including `cancelled` and `skipped`.
           # A cancelled shard proved nothing, and a green gate over one would be
           # worse than no gate at all.
-          for result in "$SAFETY" "$SHARDS"; do
+          for result in "$PREFLIGHT" "$SAFETY" "$SHARDS"; do
             if [ "$result" != "success" ]; then
               echo "the PostgreSQL suite did not pass: a dependency reported '$result'"
               exit 1
@@ -660,9 +836,10 @@ jobs:
   # pytest-playwright → pytest-base-url → requests, so a runtime-only audit
   # could not see it. tests/test_ci_supply_chain.py holds these properties.
   dependency-scan:
-    name: Dependency vulnerability baseline
+    name: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && 'Dependency vulnerability baseline (FULL tier, not run on a draft)' || 'Dependency vulnerability baseline' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     env:
       PIP_AUDIT: pip-audit==2.9.0
     steps:
@@ -698,6 +875,8 @@ jobs:
     name: "Browser, runner ${{ matrix.runner }} of 9"
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    needs: [preflight]
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
 
     strategy:
       fail-fast: false
@@ -864,6 +1043,8 @@ jobs:
     name: Visual regression
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    needs: [preflight]
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
 
     # Its own world, which is a determinism fix before it is a speed one.
     #
@@ -1032,22 +1213,24 @@ jobs:
 
   browser-gate:
     # The logical gate, under the name it has always had.
-    name: Browser workflow (Playwright on PostgreSQL 18)
+    name: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && 'Browser workflow (Playwright on PostgreSQL 18) (FULL tier, not run on a draft)' || 'Browser workflow (Playwright on PostgreSQL 18)' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    needs: [browser, visual]
-    if: always()
+    needs: [preflight, browser, visual]
+    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
 
     steps:
       - name: Every part of the browser workflow succeeded
         env:
+          PREFLIGHT: ${{ needs.preflight.result }}
           SHARDS: ${{ needs.browser.result }}
           VISUAL: ${{ needs.visual.result }}
         run: |
           set -euo pipefail
+          echo "preflight: $PREFLIGHT"
           echo "browser shards: $SHARDS"
           echo "visual regression: $VISUAL"
-          for result in "$SHARDS" "$VISUAL"; do
+          for result in "$PREFLIGHT" "$SHARDS" "$VISUAL"; do
             if [ "$result" != "success" ]; then
               echo "the browser workflow did not pass: a dependency reported '$result'"
               exit 1
@@ -1100,7 +1283,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     needs: [tests, browser]
-    if: always()
+    if: ${{ always() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     continue-on-error: true
     permissions:
       contents: read
@@ -1156,7 +1339,7 @@ jobs:
           retention-days: 30
 
   recovery:
-    name: Backup and restore rehearsal
+    name: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && 'Backup and restore rehearsal (FULL tier, not run on a draft)' || 'Backup and restore rehearsal' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     # After the migration safety job, for a slot rather than for a result. The account runs
@@ -1167,8 +1350,8 @@ jobs:
     # passed or failed, and reports under its own name either way. Together
     # they finish well inside the slowest shard runner
     # (docs/ci-architecture.md, "2026-10-11").
-    needs: [postgres-safety]
-    if: ${{ !cancelled() }}
+    needs: [preflight, postgres-safety]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
 
     # The strongest claim this repository can make about its backups without
     # touching production: a set is created by the production script, verified,
@@ -1201,6 +1384,18 @@ jobs:
       LEGACY_SOURCE_ROOT: /tmp/juristid-rehearsal/data/legacy-source
 
     steps:
+      # The preflight is a prerequisite, not a slot: when it did not pass,
+      # this job reports under its required name and refuses, rather than
+      # being skipped — a skipped required check blocks nothing.
+      - name: The preflight passed
+        env:
+          PREFLIGHT: ${{ needs.preflight.result }}
+        run: |
+          if [ "$PREFLIGHT" != "success" ]; then
+            echo "the preflight reported '$PREFLIGHT'; nothing here can pass on this tree"
+            exit 1
+          fi
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # Nothing after this checkout talks to the remote with git, so the
@@ -1893,7 +2088,7 @@ jobs:
         run: docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" down -v
 
   container:
-    name: Container and compose smoke test
+    name: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft) && 'Container and compose smoke test (FULL tier, not run on a draft)' || 'Container and compose smoke test' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     # After the dependency scan, for a slot rather than for a result. The account runs
@@ -1904,9 +2099,21 @@ jobs:
     # passed or failed, and reports under its own name either way. Together
     # they finish well inside the slowest shard runner
     # (docs/ci-architecture.md, "2026-10-11").
-    needs: [dependency-scan]
-    if: ${{ !cancelled() }}
+    needs: [preflight, dependency-scan]
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     steps:
+      # The preflight is a prerequisite, not a slot: when it did not pass,
+      # this job reports under its required name and refuses, rather than
+      # being skipped — a skipped required check blocks nothing.
+      - name: The preflight passed
+        env:
+          PREFLIGHT: ${{ needs.preflight.result }}
+        run: |
+          if [ "$PREFLIGHT" != "success" ]; then
+            echo "the preflight reported '$PREFLIGHT'; nothing here can pass on this tree"
+            exit 1
+          fi
+
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # Nothing after this checkout talks to the remote with git, so the

@@ -43,6 +43,14 @@ It needs `GH_TOKEN` (the workflow's own token, with `actions: read`).
       Branch protection's "up to date" rule is what makes the two coincide; the
       tree comparison is what makes relying on it safe.
 
+   Both proofs also require **every one of the six required gates** among the
+   run's jobs, each `success` (`REQUIRED_GATES`), and proof (b) requires the
+   recorded tree to say `tier full` (since 2026-10-28, docs/adr/0193). A draft
+   pull request's FAST run skips most of CI and renames the gates it skips, so
+   it fails both conditions independently: it can never stand in for a FULL
+   run, whatever its summary says. An artifact without a tier line is refused
+   too — fail closed; it costs at most one FULL run on main.
+
 Fails closed: anything it cannot establish — no run, an API error, a missing
 ref — is a refusal, not a pass.
 
@@ -71,11 +79,45 @@ from typing import Any
 API = "https://api.github.com"
 WORKFLOW_PATH_SUFFIX = ".github/workflows/"
 
+#: The six logical gates of a FULL `ci.yml` run — the required status checks
+#: on main, by the names branch protection knows them by. A run that lacks one
+#: did not run the whole of CI, however green the rest. Held to the workflow
+#: and to the FAST tier's renaming by tests/test_ci_tiers.py.
+REQUIRED_GATES: tuple[str, ...] = (
+    "Format, lint, types and system checks",
+    "PostgreSQL 18 test suite",
+    "Browser workflow (Playwright on PostgreSQL 18)",
+    "Container and compose smoke test",
+    "Backup and restore rehearsal",
+    "Dependency vulnerability baseline",
+)
+
+#: The only tier whose recorded tree may release anything.
+FULL_TIER = "full"
+
 
 @dataclass(frozen=True)
 class Verdict:
     ok: bool
     detail: str
+
+
+def not_green(jobs: Sequence[dict[str, Any]]) -> list[str]:
+    """Every job that did not succeed, and every required gate that is not there.
+
+    A FAST run's skipped jobs are caught by the first half; its renamed gates
+    by the second — two independent reasons it is never a FULL run's proof.
+    """
+    problems = [
+        f"{job.get('name')} ({job.get('conclusion') or job.get('status')})"
+        for job in jobs
+        if job.get("conclusion") != "success"
+    ]
+    names = {job.get("name") for job in jobs}
+    problems += [
+        f"{gate} (not in the run: not a FULL run)" for gate in REQUIRED_GATES if gate not in names
+    ]
+    return sorted(problems)
 
 
 # ---------------------------------------------------------------------------
@@ -169,15 +211,11 @@ def ci_verdict(
     jobs = list(jobs_for(latest))
     if not jobs:
         return Verdict(False, f"main's CI for {target} reports no jobs: {url}")
-    not_green = sorted(
-        f"{job.get('name')} ({job.get('conclusion') or job.get('status')})"
-        for job in jobs
-        if job.get("conclusion") != "success"
-    )
-    if not_green:
+    problems = not_green(jobs)
+    if problems:
         return Verdict(
             False,
-            f"main's CI for {target} was not green in every job: {', '.join(not_green)}: {url}",
+            f"main's CI for {target} was not green in every job: {', '.join(problems)}: {url}",
         )
     return Verdict(True, f"main's CI passed on {target}, all {len(jobs)} jobs: {url}")
 
@@ -233,23 +271,19 @@ def pull_request_verdict(
     jobs = list(jobs_for(latest))
     if not jobs:
         return Verdict(False, f"the pull request's CI for {head} reports no jobs: {url}")
-    not_green = sorted(
-        f"{job.get('name')} ({job.get('conclusion') or job.get('status')})"
-        for job in jobs
-        if job.get("conclusion") != "success"
-    )
-    if not_green:
+    problems = not_green(jobs)
+    if problems:
         return Verdict(
             False,
             f"the pull request's CI for {head} was not green in every job: "
-            f"{', '.join(not_green)}: {url}",
+            f"{', '.join(problems)}: {url}",
         )
     tested = tested_tree_for(latest)
     if not tested:
         return Verdict(
             False,
-            f"the pull request's CI for {head} recorded no tested tree, so what it tested "
-            f"is not known: {url}",
+            f"the pull request's CI for {head} recorded no tested tree of a FULL-tier run "
+            f"(a draft's FAST run, or no record at all), so it proves nothing: {url}",
         )
     if tested != target_tree:
         return Verdict(
@@ -322,12 +356,20 @@ def _get_bytes(url: str, token: str) -> bytes:
 
 
 def parse_tested_tree(text: str) -> str | None:
-    """The ``tree <sha>`` line `ci.yml` wrote, or nothing."""
+    """The ``tree <sha>`` line `ci.yml` wrote — only when it also says ``tier full``.
+
+    A FAST run records its tree too, and an artifact from before the tiers
+    records none; neither is evidence of the whole of CI, so both read as no
+    tree at all.
+    """
+    fields: dict[str, str] = {}
     for line in text.splitlines():
         key, _, value = line.partition(" ")
-        if key == "tree" and len(value.strip()) == 40:
-            return value.strip()
-    return None
+        fields.setdefault(key, value.strip())
+    tree = fields.get("tree", "")
+    if len(tree) != 40 or fields.get("tier") != FULL_TIER:
+        return None
+    return tree
 
 
 def fetch_tested_tree(repository: str, run: dict[str, Any], token: str) -> str | None:

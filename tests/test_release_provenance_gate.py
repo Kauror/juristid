@@ -190,18 +190,9 @@ def run(**overrides: Any) -> dict[str, Any]:
     return fields | overrides
 
 
+#: A FULL run: the six required gates, all green.
 GREEN_JOBS = [
-    {
-        "name": "Format, lint, types and system checks",
-        "status": "completed",
-        "conclusion": "success",
-    },
-    {"name": "PostgreSQL 18 test suite", "status": "completed", "conclusion": "success"},
-    {
-        "name": "Browser workflow (Playwright on PostgreSQL 18)",
-        "status": "completed",
-        "conclusion": "success",
-    },
+    {"name": name, "status": "completed", "conclusion": "success"} for name in gate.REQUIRED_GATES
 ]
 
 
@@ -212,7 +203,7 @@ def green(_run: dict) -> list[dict]:
 def test_main_ci_that_passed_in_every_job_is_accepted() -> None:
     verdict = gate.ci_verdict(SHA, [run()], green)
     assert verdict.ok
-    assert "all 3 jobs" in verdict.detail
+    assert "all 6 jobs" in verdict.detail
 
 
 @pytest.mark.parametrize("conclusion", ["failure", "cancelled", "timed_out", "neutral", None])
@@ -341,7 +332,7 @@ def zipped_tested_tree(tree: str) -> bytes:
     """The artifact `ci.yml` uploads, as the API hands it back: a zip."""
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as bundle:
-        lines = [f"tree {tree}", f"commit {'c' * 40}", "event pull_request", ""]
+        lines = [f"tree {tree}", f"commit {'c' * 40}", "event pull_request", "tier full", ""]
         bundle.writestr("tested-tree.txt", "\n".join(lines))
     return buffer.getvalue()
 
@@ -528,9 +519,18 @@ def test_main_run_state(runs: list[dict], state: str) -> None:
 
 
 def test_the_tested_tree_line_is_read_and_nothing_else() -> None:
-    assert gate.parse_tested_tree(f"tree {SHA}\ncommit {OTHER}\n") == SHA
-    assert gate.parse_tested_tree("tree short\n") is None
+    assert gate.parse_tested_tree(f"tree {SHA}\ncommit {OTHER}\ntier full\n") == SHA
+    assert gate.parse_tested_tree("tree short\ntier full\n") is None
     assert gate.parse_tested_tree("") is None
+
+
+@pytest.mark.parametrize("tier", ["tier fast\n", "", "tier\n", "tier FULL\n", "tier full-ish\n"])
+def test_only_a_full_tier_record_names_a_tested_tree(tier: str) -> None:
+    """A draft's FAST run records its tree too; that tree releases nothing.
+
+    Nor does a record from before the tiers: fail closed, at the cost of at
+    most one FULL run on main."""
+    assert gate.parse_tested_tree(f"tree {SHA}\ncommit {OTHER}\n{tier}") is None
 
 
 def test_merge_released_on_its_pull_requests_run_while_main_has_not_run(

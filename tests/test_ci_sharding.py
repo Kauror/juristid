@@ -199,6 +199,16 @@ def test_each_gate_requires_a_report_from_every_shard(gate: str, job: str) -> No
 #: The aggregators and the report, which wait for their dependencies' *results*.
 AGGREGATORS = {"tests-gate", "browser-gate", "shard-balance"}
 
+#: The FULL tier's condition (docs/adr/0193; tests/test_ci_tiers.py holds every
+#: job to it). Every job below is written as this, or as `always()` /
+#: `!cancelled()` and this.
+FULL = "github.event_name!='pull_request'||!github.event.pull_request.draft"
+
+#: Jobs that wait for the preflight's *result* and may be skipped by it:
+#: none is a required check, and each stands behind an aggregator that
+#: refuses a skipped dependency.
+BEHIND_THE_PREFLIGHT = {"postgres-safety", "tests", "browser", "visual"}
+
 
 def test_a_job_that_waits_only_for_a_slot_still_runs_when_its_predecessor_fails() -> None:
     """Chaining is how two short jobs share one of the account's twenty slots.
@@ -207,7 +217,9 @@ def test_a_job_that_waits_only_for_a_slot_still_runs_when_its_predecessor_fails(
     required check blocks nothing. So every non-aggregating job that waits
     for another must say `!cancelled()`: it runs and reports under its own
     name whatever its predecessor did. And the aggregators must say
-    `always()`, so they run and refuse.
+    `always()`, so they run and refuse. The one exception is the preflight's
+    dependants, which are *meant* to be skipped when it fails — that is the
+    saving — and are each aggregated by a gate that then refuses.
     """
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     for name, job in workflow["jobs"].items():
@@ -215,9 +227,17 @@ def test_a_job_that_waits_only_for_a_slot_still_runs_when_its_predecessor_fails(
             continue
         condition = str(job.get("if", "")).replace(" ", "")
         if name in AGGREGATORS:
-            assert condition == "always()", f"`{name}` must run whatever it aggregates did"
+            assert condition == f"${{{{always()&&({FULL})}}}}", (
+                f"`{name}` must run whatever it aggregates did"
+            )
+        elif name in BEHIND_THE_PREFLIGHT:
+            assert job["needs"] == ["preflight"]
+            assert condition == f"${{{{{FULL}}}}}"
+            assert any(
+                name in workflow["jobs"][gate]["needs"] for gate in AGGREGATORS - {"shard-balance"}
+            )
         else:
-            assert condition == "${{!cancelled()}}", (
+            assert condition == f"${{{{!cancelled()&&({FULL})}}}}", (
                 f"`{name}` waits for {job['needs']} but would be skipped if it failed"
             )
 
