@@ -1257,6 +1257,10 @@ p.formnote {
 .table__date {
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
+  /* The containing block of the cell's screen-reader-only meaning («Plaanis»),
+     so that absolutely positioned label stays inside `.tablewrap`'s horizontal
+     scroll instead of widening the page on a phone. */
+  position: relative;
 }
 
 .table--register .table__date {
