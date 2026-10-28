@@ -151,8 +151,6 @@ _TOKENS = [
         'name="csrfmiddlewaretoken" value=""',
     ),
     (re.compile(r'name="salvestus" value="[^"]+"'), 'name="salvestus" value=""'),
-    # The remembered-blocks endpoint's token (templates/base.html, docs/adr/0194).
-    (re.compile(r'data-csrf="[^"]+"'), 'data-csrf=""'),
 ]
 
 
