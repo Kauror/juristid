@@ -66,7 +66,10 @@ OSAKOND_BUDGET = 46
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
 #: commencements left the work model and the calendar reads them once itself.
 MINU_ASJAD_BUDGET = 32
-STATISTIKA_BUDGET = 33
+#: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
+#: tähendavad» is a remembered block, and the reader's saved block states are
+#: read once per request (app/accounts/disclosures.py).
+STATISTIKA_BUDGET = 34
 
 
 def _days_ago(days: int) -> datetime.datetime:
