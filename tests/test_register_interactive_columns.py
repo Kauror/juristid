@@ -81,7 +81,7 @@ def thead_of(response) -> str:
 #: cannot pass (`e2e/test_register_columns.py` asserts the same thing in a
 #: browser).
 DATE_CELL = re.compile(
-    r'<td class="table__date">.*?(?:<span class="dateline[^"]*">\s*([^<\s][^<]*?)\s*</span>|'
+    r'<td class="table__date">.*?(?:<span class="dateline[^"]*"[^>]*>\s*([^<\s][^<]*?)\s*</span>|'
     r'<span class="muted">(—)</span>)',
     re.DOTALL,
 )

@@ -114,6 +114,15 @@ class RegisterDate:
     #: that a sent opinion or the register discharged. Empty otherwise. The cell
     #: then states the date without the deadline colour.
     settled: str = ""
+    #: Whether the date is the open `Järgmiseks` step's own — «Plaanis», «Vaatan
+    #: üle», «Oodatav». The register cell then prints the date alone and keeps
+    #: the word for the tooltip and the screen reader: the step's sentence sits
+    #: one column to the left, and the date's colour, weight and precision
+    #: already say whether it is a commitment, late or approximate (UX package
+    #: 2026-10-28, requirement 8). A fallback date — `Arvamuse tähtaeg`,
+    #: `Oluline tähtaeg` — keeps its visible word, because nothing beside it says
+    #: which obligation it is.
+    from_step: bool = False
 
 
 def _open_action(matter: Matter) -> Any:
@@ -150,6 +159,7 @@ def register_date(matter: Matter, today: date | None = None) -> RegisterDate | N
             is_overdue=action.is_overdue(today),
             is_deadline=action.date_semantics == DateSemantics.DEADLINE,
             is_approximate=action.is_approximate,
+            from_step=True,
         )
     if matter.response_deadline is not None:
         from app.matters.work_items import DISCHARGED

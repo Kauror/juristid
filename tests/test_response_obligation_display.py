@@ -186,7 +186,7 @@ def _body(response) -> str:
 #: pattern is non-greedy on purpose: what it must never do is let a second line
 #: answer a question asked about the first.
 _PRIMARY_CELL = re.compile(
-    r'<td class="table__date">.*?(?:<span class="dateline[^"]*">\s*([^<\s][^<]*?)\s*</span>|'
+    r'<td class="table__date">.*?(?:<span class="dateline[^"]*"[^>]*>\s*([^<\s][^<]*?)\s*</span>|'
     r'<span class="muted">(—)</span>)',
     re.DOTALL,
 )
