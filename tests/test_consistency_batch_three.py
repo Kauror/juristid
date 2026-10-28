@@ -738,7 +738,7 @@ def test_the_register_and_osakond_pages_agree(signed_in, department_head, specia
     body = signed_in.get(reverse("matters:department")).content.decode()
     windows = dict(
         re.findall(
-            r'<details class="uxdl">.*?uxdl__title[^>]*>([^<]+)<.*?</summary>(.*?)</details>',
+            r'<details class="uxdl"[^>]*>.*?uxdl__title[^>]*>([^<]+)<.*?</summary>(.*?)</details>',
             body,
             re.S,
         )

@@ -90,6 +90,7 @@ HREF = re.compile(r'href="([^"#]+)"')
 VOLATILE = (
     re.compile(r'name="csrfmiddlewaretoken" value="[^"]*"'),
     re.compile(r'name="csrf-token" content="[^"]*"'),
+    re.compile(r'data-csrf="[^"]*"'),  # docs/adr/0194: the remembered-blocks endpoint meta
     re.compile(r'nonce="[^"]*"'),
 )
 

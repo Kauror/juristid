@@ -510,7 +510,7 @@ def surfaces(world) -> list[str]:
 
 def _normalize(body: bytes) -> str:
     text = body.decode()
-    return re.sub(r'value="[A-Za-z0-9]{32,}"', "CSRF", text)
+    return re.sub(r'(?:value|data-csrf)="[A-Za-z0-9]{32,}"', "CSRF", text)
 
 
 def _capture(client: Client, urls: list[str]) -> dict[str, tuple[int, str, str]]:

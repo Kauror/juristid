@@ -931,14 +931,18 @@ class UpcomingGroup:
         return self.ends is None
 
     @property
+    def disclosure_key(self) -> str:
+        """The window's remembered-block key — its kind, never its dates (docs/adr/0194)."""
+        return UPCOMING_DISCLOSURE_KEYS[self.key]
+
+    @property
     def is_empty_window(self) -> bool:
         """True where the interval holds no days at all.
 
-        *Ülejäänud kuu* is one such window whenever next week already runs to or
-        past the end of the month: the rest of the month would begin on Monday
-        and have ended on Sunday. It holds nothing by construction, and the
-        panel omits it rather than printing a heading over an interval read
-        backwards.
+        *Ülejäänud nädal* on a Saturday and a Sunday, and *Ülejäänud kuu* when
+        next week's Sunday is the last day of its month: each would begin after
+        it ended. It holds nothing by construction, and the panel omits it
+        rather than printing a heading over an interval read backwards.
         """
         return self.ends is not None and self.starts > self.ends
 
@@ -980,52 +984,70 @@ UPCOMING_PREVIEW = 5
 #: window's heading still counts them all (2026-10-17 audit, JPERF-005).
 UPCOMING_LIMIT = 100
 
-#: The windows are cut here rather than where they are rendered, because two of
-#: the five boundaries are the kind that look obvious and are not: *järgmine
-#: nädal* ends at the end of the *next* ISO week and not seven days from
-#: tomorrow, and *ülejäänud kuu* ends at the end of whatever month that Sunday
-#: falls in — which can be the month after this one.
-UPCOMING_WINDOWS: tuple[str, ...] = ("tana", "homme", "nadal", "kuu", "kaugemal")
+#: The windows are cut here rather than where they are rendered, because three
+#: of the six boundaries are the kind that look obvious and are not: *ülejäänud
+#: nädal* is empty at the weekend, *järgmine nädal* is the **next ISO week** but
+#: never begins before the day after tomorrow, and *ülejäänud kuu* is the rest
+#: of whatever month that Sunday falls in — which can be the month after this
+#: one, and can be nothing at all.
+UPCOMING_WINDOWS: tuple[str, ...] = ("tana", "homme", "nadala_lopp", "nadal", "kuu", "kaugemal")
+
+#: Each window's remembered-block key (app/accounts/disclosures.py). Semantic —
+#: the window's *kind*, never its dates — so a reader who folded *Järgmine
+#: nädal* finds it folded next Monday too, when it holds a different week.
+UPCOMING_DISCLOSURE_KEYS: dict[str, str] = {
+    "tana": "department.upcoming.today",
+    "homme": "department.upcoming.tomorrow",
+    "nadala_lopp": "department.upcoming.remaining_week",
+    "nadal": "department.upcoming.next_week",
+    "kuu": "department.upcoming.rest_month",
+    "kaugemal": "department.upcoming.far",
+}
 
 
 def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], ...]:
-    """The five consecutive windows *Eesolev* holds: key, heading, first, last.
+    """The six consecutive windows *Eesolev* holds: key, heading, first, last.
 
     Consecutive and exhaustive by construction. Each begins the day after the
-    previous one ends and the last has no end, so a future real deadline lands
-    in exactly one of them — never in two, and never in none. That is asserted
-    across awkward calendars rather than assumed (`tests/test_department_page.py`).
-    A deadline recorded as a month, a quarter or a year is not a day, so it is
-    in none of the four with a last day and always in *Kaugemal* until its
-    period ends — never *Homme* because its month begins tomorrow
-    (`WorkItem.in_window`, docs/adr/0122 §2).
+    previous one ends — an empty window "ends" the day before it begins — and
+    the last has no end, so a future real deadline lands in exactly one of them:
+    never in two, never in none. That is asserted over every day of several
+    years rather than assumed (`tests/test_deadline_grouping.py`). A deadline
+    recorded as a month, a quarter or a year is not a day, so it is in none of
+    the windows with a last day and always in *Kaugemal* until its period ends —
+    never *Homme* because its month begins tomorrow (`WorkItem.in_window`,
+    docs/adr/0122 §2).
 
-    Two boundaries carry the whole of the difficulty:
-
-    * *Järgmine nädal* runs from the day after tomorrow to the end of the **next
-      ISO week**, so on a Friday it is nine days and on a Sunday it is seven.
-      The heading says «järgmine nädal» and the interval has to mean it.
-    * *Ülejäänud kuu* is what is left of the month that Sunday falls in. When
-      next week already runs past the month's end that window is empty by
-      construction — it would start after it ended — and `is_empty_window` says
-      so rather than the panel printing a heading over a backwards interval.
-
-    *Kaugemal* then starts the day after the later of those two, which is what
-    keeps the five touching in both cases.
+    * *Täna*, then *Homme* — headed by tomorrow's weekday, as it always was.
+    * *Ülejäänud nädal* — the day after tomorrow to Sunday of **this** ISO week.
+      Fri–Sun on a Wednesday, Sunday alone on a Friday, and empty on a Saturday
+      (tomorrow is Sunday) and on a Sunday (tomorrow is next week's Monday).
+    * *Järgmine nädal* — Monday to Sunday of the **next** ISO week, except that
+      it never begins before the day after tomorrow: on a Sunday tomorrow is
+      that Monday and is *Homme*, so the week is Tuesday to Sunday. Never both.
+    * *Ülejäänud kuu* — what is left of the calendar month next week's Sunday
+      falls in, from the Monday after it. The meaning it has had since
+      docs/adr/0049 §5 (not "thirty days"). When that Sunday is the month's last
+      day nothing is left and the window is empty; it no longer runs on through
+      the whole of the following month, which the old cut did and its own
+      docstring said it did not.
+    * *Kaugemal* — everything after.
     """
     tomorrow = today + timedelta(days=1)
-    next_week_start = tomorrow + timedelta(days=1)
-    next_week_end = wi.end_of_iso_week(today) + timedelta(days=7)
+    week_end = wi.end_of_iso_week(today)
+    rest_of_week_start = tomorrow + timedelta(days=1)
+    next_week_end = week_end + timedelta(days=7)
+    next_week_start = max(week_end + timedelta(days=1), rest_of_week_start)
     month_start = next_week_end + timedelta(days=1)
-    # Never before the week's own end, so *Kaugemal* cannot begin inside a
-    # window the reader has already been shown.
-    month_end = max(end_of_month(month_start), next_week_end)
+    month_end = end_of_month(next_week_end)
     return (
         ("tana", "Täna", today, today),
         ("homme", weekday_name(tomorrow), tomorrow, tomorrow),
+        ("nadala_lopp", "Ülejäänud nädal", rest_of_week_start, week_end),
         ("nadal", "Järgmine nädal", next_week_start, next_week_end),
         ("kuu", "Ülejäänud kuu", month_start, month_end),
-        ("kaugemal", "Kaugemal", month_end + timedelta(days=1), None),
+        # The later of the two ends: an empty *Ülejäänud kuu* ends before it began.
+        ("kaugemal", "Kaugemal", max(month_end, next_week_end) + timedelta(days=1), None),
     )
 
 
@@ -1035,6 +1057,7 @@ def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], .
 _UPCOMING_SHOWN: dict[str, int | None] = {
     "tana": None,
     "homme": None,
+    "nadala_lopp": None,
     "nadal": None,
     "kuu": UPCOMING_PREVIEW,
     "kaugemal": UPCOMING_PREVIEW,
@@ -1044,9 +1067,9 @@ _UPCOMING_SHOWN: dict[str, int | None] = {
 def upcoming_groups(
     user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
 ) -> list[UpcomingGroup]:
-    """Every real deadline ahead, in the five windows :func:`upcoming_windows` cuts.
+    """Every real deadline ahead, in the six windows :func:`upcoming_windows` cuts.
 
-    One read of the work model, one partition. Not five queries: five windows
+    One read of the work model, one partition. Not six queries: six windows
     assembled independently is five chances for a date to appear twice or in
     none, and the partition is the property this panel is asserted on.
 

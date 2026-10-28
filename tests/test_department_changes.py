@@ -968,7 +968,13 @@ def test_periood_kvartal_still_resolves_under_its_new_label(client, department_h
     assert (quarter.end - quarter.start).days + 1 == 91
 
     client.force_login(department_head)
-    tehtud = client.get(OSAKOND, {"periood": "kvartal"}).content.decode()
+    # Tehtud's own section: the rail's calendar has a «Kvartal» view of its own.
+    tehtud = (
+        client.get(OSAKOND, {"periood": "kvartal"})
+        .content.decode()
+        .split('id="tehtud"')[1]
+        .split('class="ovbody__rail"')[0]
+    )
     changes = client.get(PAGE, {"periood": "kvartal"}).content.decode()
     bounds = dd.period_from({"periood": "kvartal"}, today).bounds
 

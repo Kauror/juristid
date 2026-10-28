@@ -17,12 +17,17 @@ and `historyCacheSize = 0` reloads it on Back).
 
 Quarter and year need more room than the rail has, so they open in a panel over
 the page. «Sulge» is a link to the month view, which is where Escape goes too.
+
+On Osakond the same block is the department's calendar (`calendar.is_department`):
+its own element id, a work dot coloured by the person responsible for it, a
+legend of those people, and compact popover entries — person, Teema, what the
+date means — without the step's own sentence.
 {% endcomment %}
 <section class="railblock wcal{% if calendar.is_wide %} wcal--wide{% endif %}"
          id="{{ calendar.element_id }}"
-         aria-label="Kalender"
+         aria-label="{% if calendar.is_department %}Osakonna kalender{% else %}Kalender{% endif %}"
          data-wcal>
-  <h2 class="railblock__label">Kalender</h2>
+  <h2 class="railblock__label">{% if calendar.is_department %}Osakonna kalender{% else %}Kalender{% endif %}</h2>
   {% include "matters/partials/work_calendar_bar.html" with calendar=calendar %}
 
   {% if calendar.is_wide %}

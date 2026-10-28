@@ -620,11 +620,12 @@ def test_an_upcoming_window_opens_its_own_rows_on_the_page(page, base_url):
     """«kõik N» opens N deadlines where the reader is standing, and shuts again.
 
     The window is a native `<details>`, so this is the one assertion no Django
-    test can make: that a real browser toggles it with no script, that the rows
-    were shut when the page arrived, and that clicking the summary does not
-    navigate. `expect(...).to_be_visible()` is the check that matters — the rows
-    are in the markup either way, and a CSS mistake that left them displayed
-    would pass any assertion about the HTML.
+    test can make: that a real browser toggles it, that it arrived the way its
+    remembered state says (`data-disclosure-saved`, docs/adr/0194 — the near
+    windows open by default, *Ülejäänud kuu* and *Kaugemal* shut), and that
+    clicking the summary does not navigate. `expect(...).to_be_visible()` is
+    the check that matters — the rows are in the markup either way, and a CSS
+    mistake that left them displayed would pass any assertion about the HTML.
 
     Every window on the page, not the first: the far one used to be the window
     that hid rows behind a second control, and it is the one this would most
@@ -643,12 +644,16 @@ def test_an_upcoming_window_opens_its_own_rows_on_the_page(page, base_url):
         promised = int(summary.locator(".uxdl__all").inner_text().split()[1])
         rows = window.locator(".uxdl__row")
 
-        # Shut on arrival, and the rows are served with the page rather than
-        # fetched: they are in the DOM and not on screen.
-        assert not window.evaluate("element => element.open"), f"window {index} opened itself"
+        # As remembered on arrival, and the rows are served with the page
+        # rather than fetched: they are in the DOM either way.
+        saved = window.get_attribute("data-disclosure-saved") == "1"
+        assert window.evaluate("element => element.open") is saved, f"window {index}"
         assert rows.count() == promised, (
             f"window {index} counts {promised} and holds {rows.count()}"
         )
+        if saved:
+            # Shut it first, so the opening below is the click's doing.
+            summary.click()
         expect(rows.first).to_be_hidden()
 
         was = page.url
@@ -663,6 +668,9 @@ def test_an_upcoming_window_opens_its_own_rows_on_the_page(page, base_url):
         summary.click()
         assert not window.evaluate("element => element.open")
         expect(rows.first).to_be_hidden()
+        if saved:
+            # Leave the reader's remembered state as it was found.
+            summary.click()
 
 
 def test_the_windows_open_independently_and_the_section_link_still_navigates(page, base_url):
@@ -680,12 +688,15 @@ def test_the_windows_open_independently_and_the_section_link_still_navigates(pag
     if windows.count() < 2:
         pytest.skip("the seeded world holds fewer than two upcoming windows today")
 
+    before = [windows.nth(i).evaluate("element => element.open") for i in range(windows.count())]
     windows.first.locator("summary.uxdl__head").click()
-    assert windows.first.evaluate("element => element.open")
+    assert windows.first.evaluate("element => element.open") is not before[0]
     for index in range(1, windows.count()):
-        assert not windows.nth(index).evaluate("element => element.open"), (
-            f"opening the first window opened window {index} as well"
+        assert windows.nth(index).evaluate("element => element.open") is before[index], (
+            f"toggling the first window toggled window {index} as well"
         )
+    # Put the first one back as the reader had it (docs/adr/0194).
+    windows.first.locator("summary.uxdl__head").click()
 
     section = page.locator('section[aria-label="Eesolev"]')
     expect(section.locator("summary a")).to_have_count(0)

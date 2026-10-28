@@ -127,3 +127,51 @@ def test_inside_the_quarter_panel_a_day_opens_on_screen_and_escape_closes_only_i
     page.keyboard.press("Escape")
     expect(popover).to_be_hidden()
     expect(page.get_by_role("dialog")).to_be_visible()
+
+
+# ---------------------------------------------------------------------------
+# Osakond's calendar — the same block, department-wide (app/matters/calendar.py)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("scope", ["osakond", "valdkonniti"])
+def test_the_department_calendar_swaps_in_place_and_keeps_the_scope(page, base_url, scope):
+    _open(page, base_url, path=f"/osakond/?vaade={scope}")
+    page.evaluate("window.__stillHere = true")
+
+    page.locator("#osakonna-kalender a.wcal__view", has_text="Kuu").first.click()
+
+    expect(page).to_have_url(re.compile(r"kalender=kuu"))
+    expect(page).to_have_url(re.compile(rf"vaade={scope}"))
+    expect(page.locator("#osakonna-kalender .wcal__view.is-active")).to_have_text("Kuu")
+    assert page.evaluate("window.__stillHere === true")
+
+
+def test_a_department_day_opens_from_the_keyboard_with_person_first_entries(page, base_url):
+    _open(page, base_url, path="/osakond/")
+    day = page.locator(
+        '#osakonna-kalender details[data-wcal-day]:has(summary[aria-current="date"])'
+    )
+    summary = day.locator(":scope > summary")
+
+    summary.focus()
+    page.keyboard.press("Enter")
+
+    popover = day.locator(".wcal__pop")
+    expect(popover).to_be_visible()
+    expect(popover.locator(".wcal__eventperson").first).to_be_visible()
+    expect(popover).not_to_contain_text("Konfidentsiaalne järgmine samm")
+
+    page.keyboard.press("Escape")
+    expect(popover).to_be_hidden()
+
+
+@pytest.mark.parametrize("view", ["", "&kalender=kuu", "&kalender=kvartal", "&kalender=aasta"])
+def test_no_horizontal_scroll_on_a_phone_on_osakond(page, base_url, view):
+    _open(page, base_url, width=375, height=812, path=f"/osakond/?vaade=osakond{view}")
+
+    overflow = page.evaluate(
+        "document.documentElement.scrollWidth - document.documentElement.clientWidth"
+    )
+
+    assert overflow <= 0

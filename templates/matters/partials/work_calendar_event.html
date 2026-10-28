@@ -5,13 +5,37 @@ what it says, the date at the precision it was recorded to, and its state —
 and never confirmed. The link opens the record on its Teema (the work row's own
 deep link, or the Teema's Jõustumine section). An eligible work step also
 offers «Nihuta kuupäeva» beside it.
+
+`in_day` — the entry sits under a heading that already states its day (a day's
+popover, a day group in the week's). The date is then not repeated unless the
+record's own dates say more than that day (`event.spans_days`); a precision
+label («tuletatud tekstist») and the state always stay. The lists under the grid
+pass no `in_day` and keep every date.
+
+`compact` — the department calendar (`calendar.is_department`): **person —
+Teema**, the Teema linked, then the date's meaning from the stored semantics
+(PLAANIS, VAATAN ÜLE, ARVAMUSE TÄHTAEG…) and its state. The step's own sentence
+is not shown; it is one click away. No «Nihuta kuupäeva»: this is a preview.
 {% endcomment %}
+{% if compact %}
+<li class="wcal__event wcal__event--{{ event.category }} wcal__event--compact">
+  <span class="wcal__eventhead">
+    {% if show_category %}<span class="wcal__eventcat"><span class="wcal__dot wcal__dot--{{ event.category }}" aria-hidden="true"></span>{{ event.category_label }}</span>{% endif %}
+    {% if event.is_work %}<span class="wcal__eventperson"><span class="wcal__dot wcal__dot--too wcal__dot--{{ event.person_class }}" aria-hidden="true"></span>{{ event.person_label }}</span><span class="wcal__eventsep"> — </span>{% endif %}<a class="wcal__eventmatter" href="{{ event.url }}">{% if event.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ event.matter.title }}</a>
+  </span>
+  <span class="wcal__eventwhat">{{ event.meaning }}{% if not in_day or event.spans_days %} · {{ event.display_date }}{% endif %}{% if event.precision_label %} · {{ event.precision_label }}{% endif %}{% if event.status %} · <span class="wcal__status{% if event.is_overdue %} is-overdue{% endif %}">{{ event.status }}</span>{% endif %}</span>
+</li>
+{% else %}
 <li class="wcal__event wcal__event--{{ event.category }}">
   <a class="wcal__eventlink" href="{{ event.url }}">
     {% if show_category %}<span class="wcal__eventcat"><span class="wcal__dot wcal__dot--{{ event.category }}" aria-hidden="true"></span>{{ event.category_label }}</span>{% endif %}
     <span class="wcal__eventmatter">{% if event.is_restricted %}<span aria-label="Piiratud teema">🔒</span> {% endif %}{{ event.matter.title }}</span>
     <span class="wcal__eventwhat">{{ event.meaning }}{% if event.text %}: {{ event.text }}{% endif %}</span>
-    <span class="wcal__eventwhen">{{ event.display_date }}{% if event.precision_label %} · {{ event.precision_label }}{% endif %}{% if event.status %} · <span class="wcal__status{% if event.is_overdue %} is-overdue{% endif %}">{{ event.status }}</span>{% endif %}</span>
+    {% if not in_day or event.spans_days %}
+      <span class="wcal__eventwhen">{{ event.display_date }}{% if event.precision_label %} · {{ event.precision_label }}{% endif %}{% if event.status %} · <span class="wcal__status{% if event.is_overdue %} is-overdue{% endif %}">{{ event.status }}</span>{% endif %}</span>
+    {% elif event.precision_label or event.status %}
+      <span class="wcal__eventwhen">{{ event.precision_label }}{% if event.precision_label and event.status %} · {% endif %}{% if event.status %}<span class="wcal__status{% if event.is_overdue %} is-overdue{% endif %}">{{ event.status }}</span>{% endif %}</span>
+    {% endif %}
   </a>
   {% if event.item and event.item.is_date_shiftable and can_write_business_content %}
     {% comment %}
@@ -26,3 +50,4 @@ offers «Nihuta kuupäeva» beside it.
     </details>
   {% endif %}
 </li>
+{% endif %}

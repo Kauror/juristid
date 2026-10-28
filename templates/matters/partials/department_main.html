@@ -134,9 +134,12 @@ Only what the department may honestly call a deadline: DO deadlines and Olulised
 tähtajad. A WAIT's expected date and a MONITOR's review date are commitments
 nobody made and belong in Vajab sekkumist above (master specification 18.8).
 
-Five windows, consecutive and open-ended at the far end, so a dated commitment
-is in exactly one of them. Each window is one disclosure: the heading is the
-control, and the dates under it are what opening it reveals.
+Six windows — Täna, Homme (by its weekday), Ülejäänud nädal, Järgmine nädal,
+Ülejäänud kuu, Kaugemal — consecutive and open-ended at the far end, so a dated
+commitment is in exactly one of them; a window with nothing in it is not drawn
+(app/matters/department_dashboard.py, `upcoming_windows`). Each window is one
+disclosure: the heading is the control, and the dates under it are what opening
+it reveals.
 
 KAUGEMAL is a real list. It was one summary line, so a deadline in November was
 on no screen anywhere until November.
@@ -151,6 +154,7 @@ window opens where they are standing, and because what it opens is a list of
 control that promised one of them would be lying about what it does
 (app/matters/work_items.py).
 {% endcomment %}
+{% load disclosures %}
 <section class="ovsection" aria-label="Eesolev">
   <div class="ovsection__head">
     <h2 class="ovsection__title">Eesolev</h2>
@@ -162,9 +166,11 @@ control that promised one of them would be lying about what it does
     {% if group.count %}
       {% comment %}
         A real `<details>`, so it opens with no script and answers the keyboard
-        on its own. Shut by default — all of them, including the first: a panel
-        that opened one window for the reader would be deciding which window
-        they came for, and on most mornings that is not today's.
+        on its own. Open or shut as this reader last left it, by the window's
+        kind rather than its dates (`group.disclosure_key`, docs/adr/0194) —
+        so a folded *Järgmine nädal* is still folded when the week rolls over.
+        Untouched, the four near windows are open and *Ülejäänud kuu* and
+        *Kaugemal* shut (app/accounts/disclosures.py).
 
         No `<a>` inside the `<summary>`. A link inside a disclosure trigger is
         two controls in one place: Enter would follow the link on one browser
@@ -172,7 +178,7 @@ control that promised one of them would be lying about what it does
         read as a destination. The rows keep their own links, which is where a
         destination belongs.
       {% endcomment %}
-      <details class="uxdl">
+      <details class="uxdl" {% disclosure group.disclosure_key %}>
         <summary class="uxdl__head">
           {% comment %}
             Tomorrow's group is headed by tomorrow's weekday, which is a

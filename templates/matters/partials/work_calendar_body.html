@@ -4,12 +4,24 @@ once: on its day, or — known only to a period — in one of the lists below th
 grid (app/matters/calendar.py).
 {% endcomment %}
 <p class="wcal__legend">
-  <span class="wcal__key"><span class="wcal__dot wcal__dot--too" aria-hidden="true"></span>Tähtajad ja tegevused</span>
+  <span class="wcal__key"><span class="wcal__dot wcal__dot--too{% if calendar.is_department %} wcal__dot--none{% endif %}" aria-hidden="true"></span>Tähtajad ja tegevused{% if calendar.is_department and calendar.view != "aasta" %} (värv: vastutaja){% endif %}</span>
   <span class="wcal__key"><span class="wcal__dot wcal__dot--joustumine" aria-hidden="true"></span>Jõustumised</span>
 </p>
+{% if calendar.people %}
+  {% comment %}
+    Who the coloured dots are, named — only the people a dot, list entry or
+    popover in this period is coloured for (`Calendar.people`), so the legend
+    never names somebody the reader has no row of.
+  {% endcomment %}
+  <ul class="wcal__people" aria-label="Vastutajad">
+    {% for person in calendar.people %}
+      <li class="wcal__key"><span class="wcal__dot wcal__dot--{{ person.colour }}" aria-hidden="true"></span>{{ person.name }}</li>
+    {% endfor %}
+  </ul>
+{% endif %}
 
 {% if calendar.view == "4n" %}
-  {% include "matters/partials/work_calendar_grid.html" with weeks=calendar.weeks weekdays=calendar.weekdays %}
+  {% include "matters/partials/work_calendar_grid.html" with weeks=calendar.weeks weekdays=calendar.weekdays compact=calendar.is_department %}
 {% elif calendar.view == "aasta" %}
   <div class="wcal__year">
     {% for tile in calendar.year_months %}
@@ -35,12 +47,12 @@ grid (app/matters/calendar.py).
             <a href="{{ grid.query }}" hx-get="{{ grid.query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true">{{ grid.title }}</a>
           </h3>
         {% endif %}
-        {% include "matters/partials/work_calendar_grid.html" with weeks=grid.weeks weekdays=calendar.weekdays %}
+        {% include "matters/partials/work_calendar_grid.html" with weeks=grid.weeks weekdays=calendar.weekdays compact=calendar.is_department %}
         {% if grid.month_events %}
           <h4 class="wcal__listlabel">{{ grid.title }}: kuu jooksul, päev teadmata</h4>
           <ul class="wcal__list">
             {% for event in grid.month_events %}
-              {% include "matters/partials/work_calendar_event.html" with event=event %}
+              {% include "matters/partials/work_calendar_event.html" with event=event compact=calendar.is_department %}
             {% endfor %}
           </ul>
         {% endif %}
@@ -55,7 +67,7 @@ grid (app/matters/calendar.py).
   </h4>
   <ul class="wcal__list">
     {% for event in calendar.periods %}
-      {% include "matters/partials/work_calendar_event.html" with event=event %}
+      {% include "matters/partials/work_calendar_event.html" with event=event compact=calendar.is_department %}
     {% endfor %}
   </ul>
 {% endif %}

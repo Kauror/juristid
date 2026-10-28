@@ -308,7 +308,9 @@ def test_an_expired_grant_is_remembered_as_absent_not_as_present(
 #: 53 / 58. A ceiling that no longer bites is a ceiling that stopped saying
 #: anything, so these are lowered whenever a round makes a page cheaper.
 PAGE_BUDGETS = [
-    ("/osakond/", 48),
+    # +3: the rail's department calendar (commencements, estimates) and the
+    # remembered Eesolev windows (one read of the reader's blocks).
+    ("/osakond/", 51),
     ("/osakond/?vaade=valdkonniti", 30),
     ("/statistika/andmekvaliteet/", 62),
     ("/statistika/ajalooline/", 63),
