@@ -1,3 +1,4 @@
+{% load disclosures %}
 {% comment %}
 One period measured against a comparable earlier one (docs/adr/0160).
 
@@ -40,7 +41,7 @@ are more letters (brief 34).
     <p class="metric__note">{{ note }}</p>
   {% endfor %}
 
-  <details class="definition">
+  <details class="definition" {% disclosure "reporting.definition" %}>
     <summary class="definition__summary">Kuidas arvutatakse?</summary>
     <div class="definition__body">
       {% include "reporting/_definition.html" with definition=result.definition result=result %}

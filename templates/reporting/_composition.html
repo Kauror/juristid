@@ -1,3 +1,4 @@
+{% load disclosures %}
 {% comment %}
 A composition chart: one CSS bar per segment, each one a link into the records
 behind it.
@@ -75,7 +76,7 @@ from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
       {% endfor %}
     </div>
 
-    <details class="chart__fallback">
+    <details class="chart__fallback" {% disclosure "reporting.chart_table" %}>
       <summary>Vaata tabelina</summary>
       <div class="tablewrap">
         <table class="data-table">
@@ -119,7 +120,7 @@ from geometry (master specification 17.8, 18.10; Stage-2E brief 46, 60).
     {% endfor %}
   {% endif %}
 
-  <details class="definition">
+  <details class="definition" {% disclosure "reporting.definition" %}>
     <summary class="definition__summary">Kuidas arvutatakse?</summary>
     <div class="definition__body">
       {% include "reporting/_definition.html" with definition=item.result.definition result=item.result %}

@@ -1,3 +1,4 @@
+{% load disclosures %}
 {% comment %}
 A two-dimensional count — year × responsibility, month × responsibility — as a
 real HTML table.
@@ -96,7 +97,7 @@ matrix must never push the page sideways.
     <p class="metric__note">{{ note }}</p>
   {% endfor %}
 
-  <details class="definition">
+  <details class="definition" {% disclosure "reporting.definition" %}>
     <summary class="definition__summary">Kuidas arvutatakse?</summary>
     <div class="definition__body">
       {% include "reporting/_definition.html" with definition=item.result.definition result=item.result %}

@@ -1,3 +1,4 @@
+{% load disclosures %}
 {% comment %}
 One metric card: the number, what it was measured over, and how it was worked
 out.
@@ -59,7 +60,7 @@ and a refusal must never look alike (Stage-2E brief 9, 48).
     <p class="metric__note">{{ note }}</p>
   {% endfor %}
 
-  <details class="definition">
+  <details class="definition" {% disclosure "reporting.definition" %}>
     <summary class="definition__summary">Kuidas arvutatakse?</summary>
     <div class="definition__body">
       {% include "reporting/_definition.html" with definition=result.definition result=result %}

@@ -1,3 +1,4 @@
+{% load disclosures %}
 {% comment %}
 A trend: one inline SVG polyline whose coordinates the server computed.
 
@@ -73,7 +74,7 @@ direction; the number is shown as text instead.
   {% endif %}
 
   {% if item.bars %}
-    <details class="chart__fallback">
+    <details class="chart__fallback" {% disclosure "reporting.chart_table" %}>
       <summary>Vaata tabelina</summary>
       <div class="tablewrap">
         <table class="data-table">
@@ -105,7 +106,7 @@ direction; the number is shown as text instead.
     <p class="metric__note">{{ note }}</p>
   {% endfor %}
 
-  <details class="definition">
+  <details class="definition" {% disclosure "reporting.definition" %}>
     <summary class="definition__summary">Kuidas arvutatakse?</summary>
     <div class="definition__body">
       {% include "reporting/_definition.html" with definition=item.result.definition result=item.result %}
