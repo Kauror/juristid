@@ -416,3 +416,65 @@ def test_an_approval_is_refused_for_a_stale_matter_and_nothing_is_saved(client, 
     assert McpWriteProposal.objects.get(pk=assign["proposal_id"]).status == ProposalStatus.STALE
     assert not ChangeEvent.objects.filter(auth_method=AuthMethod.MCP).exists()
     assert timezone.now()  # the clock was never needed beyond the TOTP pin
+
+
+# -- one correlation id from the tool call to the audit log (audit 2026-10-28 C-07) --------
+
+
+def test_one_correlation_id_ties_tool_call_proposal_approval_commit_and_audit(
+    client, monkeypatch, caplog
+):
+    import json
+    import logging
+
+    from app.mcp_writes.models import McpWriteApproval, McpWriteEvent, McpWriteEventType
+
+    caplog.set_level(logging.INFO, logger="app.mcp_server.calls")
+    moment = w.freeze_totp(monkeypatch)
+    mari = factories.UserFactory(upn="mari.maasikas@example.invalid")
+    matter = factories.MatterFactory(owner=mari)
+    matter.refresh_from_db()
+    token, secret = _connect(mari, moment)
+    mcp = w.Mcp(token, host=w.TUNNEL_CLIENT_HOST)
+    _as(client, mari)
+
+    note = _prepare(
+        mcp,
+        "add_matter_note",
+        {"matter": matter.display_reference, "text": NOTE, "occurred_on": "2026-10-01"},
+    )
+    _approve(client, note, w.code_at(secret, moment, 1))
+    _commit(mcp, note)
+
+    calls = [
+        json.loads(r.getMessage().split(" ", 1)[1])
+        for r in caplog.records
+        if r.getMessage().startswith("mcp_tool_call ")
+    ]
+    prepare_call, commit_call = calls[-2], calls[-1]
+    assert (prepare_call["tool"], commit_call["tool"]) == (
+        "prepare_add_matter_note",
+        "commit_prepared_action",
+    )
+    # The tool log carries no proposal id (only ids of its own call); the
+    # proposal and its events are found by the call's correlation id.
+    assert "proposal_id" not in prepare_call
+    proposal = McpWriteProposal.objects.get(pk=note["proposal_id"])
+    # The prepare tool call's own id is the proposal's.
+    assert str(proposal.correlation_id) == prepare_call["correlation_id"]
+    events = {e.event_type: e for e in McpWriteEvent.objects.filter(proposal=proposal)}
+    for kind in (
+        McpWriteEventType.PREPARED,
+        McpWriteEventType.APPROVED,
+        McpWriteEventType.COMMITTED,
+    ):
+        assert events[kind].correlation_id == proposal.correlation_id, kind
+    # The commit tool call is found from the commit event, and the business rows
+    # the commit wrote carry the proposal's id.
+    assert (
+        events[McpWriteEventType.COMMITTED].detail["call_correlation_id"]
+        == (commit_call["correlation_id"])
+    )
+    assert McpWriteApproval.objects.get(proposal=proposal).user == mari
+    business = [row for row in _ai_rows(mari) if row.matter_id == matter.pk]
+    assert business and {row.correlation_id for row in business} == {proposal.correlation_id}

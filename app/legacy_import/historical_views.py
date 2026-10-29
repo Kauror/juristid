@@ -14,6 +14,7 @@ decisions in the middle of a lawyer's navigation is not a feature.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from django.contrib import messages
@@ -25,6 +26,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 
+from app.accounts import shared_gate
+from app.audit.enums import SecurityEventType
+from app.audit.services import record_security_event
 from app.core.authorization import (
     QUEUE_NEEDS_A_READER,
     matter_visibility_q,
@@ -33,6 +37,7 @@ from app.core.authorization import (
     scope_for_user,
 )
 from app.core.authorization import apply as apply_scope
+from app.core.client_ip import client_ip
 from app.core.http import content_disposition
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
@@ -50,6 +55,8 @@ from app.legacy_import.source_pages import (
 )
 from app.matters.enums import DataQualityTier, MatterOrigin, RecordMode
 from app.matters.models import Matter
+
+logger = logging.getLogger(__name__)
 
 
 def visible_links(user: Any) -> Any:
@@ -240,6 +247,11 @@ def source_xml(request: HttpRequest, pk: Any) -> FileResponse:
     Always an attachment. This is OneNote's markup, it is untrusted like any
     stored file, and it is never rendered — the readable version is the page
     above (Stage-2D brief 11).
+
+    The whole page's business content leaves the system here, so it is audited
+    as every other served file is (`DOCUMENT_DOWNLOADED`, through the shared-gate
+    helper); a stored key whose object is gone is a 404 and a failed audit row,
+    never a 500, and neither the key nor the page title is in the answer.
     """
     from app.legacy_import.historical_apply import legacy_source_storage
 
@@ -248,7 +260,36 @@ def source_xml(request: HttpRequest, pk: Any) -> FileResponse:
     if not page.source_xml_storage_key:
         return HttpResponse(status=404)  # type: ignore[return-value]
 
-    handle = legacy_source_storage().open(page.source_xml_storage_key, "rb")
+    def audit(*, succeeded: bool, outcome: str = "") -> None:
+        detail = {
+            "source": "onenote_source_xml",
+            "matter": str(link.matter_id),
+            "sha256": page.source_xml_sha256,
+            "disposition": "attachment",
+        }
+        if outcome:
+            detail["outcome"] = outcome
+        record_security_event(
+            event_type=SecurityEventType.DOCUMENT_DOWNLOADED,
+            actor=request.user if request.user.is_authenticated else None,
+            subject=page,
+            ip_address=client_ip(request),
+            user_agent=request.META.get("HTTP_USER_AGENT", ""),
+            succeeded=succeeded,
+            detail=shared_gate.audit_detail(request, **detail),
+        )
+
+    try:
+        handle = legacy_source_storage().open(page.source_xml_storage_key, "rb")
+    except FileNotFoundError:
+        logger.error(
+            "historical source XML missing page=%s storage_key=%s",
+            page.pk,
+            page.source_xml_storage_key,
+        )
+        audit(succeeded=False, outcome="source_object_missing")
+        raise Http404("Lehe lähte-XML-i ei leitud hoidlast.") from None
+    audit(succeeded=True)
     response = FileResponse(handle, content_type="application/xml", as_attachment=True)
     response["Content-Disposition"] = content_disposition("attachment", f"{page.page_key}.xml")
     response["X-Content-Type-Options"] = "nosniff"

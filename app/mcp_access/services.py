@@ -656,14 +656,6 @@ def peek_link(proof: str) -> McpEnrolmentLink | None:
     return link
 
 
-def link_for(proof: str, user: User) -> McpEnrolmentLink | None:
-    """The usable link, only if it is this account's. Otherwise indistinguishable from none."""
-    link = peek_link(proof)
-    if link is None or link.grant.user_id != user.pk or grant_refusal(user):
-        return None
-    return link
-
-
 def enrolment_account(proof: str) -> User | None:
     """The account a usable link was issued to, while it may still be granted; else None.
 

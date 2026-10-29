@@ -39,11 +39,15 @@ def test_the_server_refuses_to_start_outside_the_read_only_role(settings, role):
         call_command("run_mcp_server")
 
 
+@pytest.mark.django_db
 def test_the_server_runs_uvicorn_with_the_hardened_configuration(settings, monkeypatch):
     import uvicorn
 
     fx.configure(settings)
     settings.JURISTID_PROCESS_ROLE = "mcp"
+    # The test database's owner role is not a SELECT-only reader, and E047 is an
+    # error for it whatever REAL_DATA_ALLOWED says; this test is about uvicorn.
+    monkeypatch.setattr("app.mcp_server.db_role.privilege_problems", lambda cursor: [])
     settings.MCP_LISTEN_HOST = "0.0.0.0"  # noqa: S104 - the container network, as in Compose
     settings.MCP_LISTEN_PORT = 8001
     served: list[Any] = []

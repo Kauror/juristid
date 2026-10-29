@@ -5,6 +5,7 @@
     python manage.py lovable_sync run --trigger manual --credentials F [--backup-set S]
     python manage.py lovable_sync check
     python manage.py lovable_sync access-probe --credentials F
+    python manage.py lovable_sync access-sql
     python manage.py lovable_sync control --mode off|compare|apply --reason R
     python manage.py lovable_sync control --cut-over \\
         --operator-intent lovable-sync-cutover --reason R
@@ -16,7 +17,10 @@ reconciles the pilot's 100 Teemad. It needs ``JURISTID_LOVABLE_SYNC`` and
 obeys the control row: OFF refuses, COMPARE writes nothing, APPLY writes the
 allowlisted changes when a verified backup set is named. `check` compares the
 newest stored snapshot with Juristid now, without reaching Lovable.
-`access-probe` proves the service login reads and can do nothing else.
+`access-probe` shows the service login reads, and tries to prove it can do
+nothing else: PASS, FAIL, or INDETERMINATE when HTTP cannot tell a refusal from
+a write that matched nothing — then `access-sql` prints the read-only catalogue
+inspection the owner runs in Lovable's SQL editor before the job may be enabled.
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 3 held for review (circuit breaker or no backup), 1 failed.
@@ -43,7 +47,16 @@ class Command(BaseCommand):
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "action",
-            choices=["status", "due", "run", "check", "access-probe", "control", "resolve"],
+            choices=[
+                "status",
+                "due",
+                "run",
+                "check",
+                "access-probe",
+                "access-sql",
+                "control",
+                "resolve",
+            ],
         )
         parser.add_argument("--trigger", choices=["scheduled", "manual"], default="manual")
         parser.add_argument(
@@ -88,13 +101,24 @@ class Command(BaseCommand):
     def _access_probe(self, options: dict[str, Any]) -> None:
         config = lovable_source.load_config(self._credentials(options))
         result = lovable_source.access_probe(config)
-        for name, ok, detail in result.checks:
-            self.stdout.write(f"{'PASS' if ok else 'FAIL'}  {name}  ({detail})")
-        if not result.passed:
+        for check in result.checks:
+            self.stdout.write(f"{check.status}  {check.name}  ({check.detail})")
+        if result.verdict == lovable_source.FAIL:
             raise CommandError(
                 "The service login is not read-only as required; do not enable the job."
             )
+        if result.verdict != lovable_source.PASS:
+            raise CommandError(
+                "ACCESS PROBE INDETERMINATE: HTTP could not prove every write is refused. "
+                "Do not enable the job (and never APPLY) until the read-only inspection "
+                "(`lovable_sync access-sql`) has been run in Lovable's SQL editor and shows "
+                "no write path for this identity."
+            )
         self.stdout.write("ACCESS PROBE PASSED")
+
+    def _access_sql(self, options: dict[str, Any]) -> None:
+        """The read-only catalogue inspection that settles what HTTP cannot."""
+        self.stdout.write(lovable_source.GRANT_INSPECTION_SQL)
 
     def _due(self, options: dict[str, Any]) -> None:
         """For the host scheduler, which has no Tallinn clock of its own: whether

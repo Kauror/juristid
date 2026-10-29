@@ -294,3 +294,14 @@ tools were listed; `list_matters`, `get_matter`, `search_records` and
 Juristid; and an invalid bearer token was refused with 401. Exactly one account
 holds a grant. The decision's status is unchanged. Writes are ADR 0189 and are a
 separate state (its status update of the same date).
+
+## Status update 2026-10-29 — after the code audit of 2026-10-28
+
+The status stays **Proposed**. On branch `remediation/a-lovable-security` (not
+merged or deployed by this note): juristid.E047 — the `mcp` process's database
+role is SELECT-only — is now an error in the `mcp` process role whatever
+`REAL_DATA_ALLOWED` says (audit C-04). The role is the only lock on what the
+process can do to the database, so a hand-edited env file that lost the
+real-data flag can no longer start a write-capable reader with only a warning.
+No CI job or local workflow runs the `mcp` role against the owner role. The
+dead helper `app.mcp_access.services.link_for` was removed (no caller anywhere).

@@ -154,3 +154,34 @@ operator's `grant-write` for a SPECIALIST or DEPARTMENT_HEAD account and that
 person's new connection (docs/mcp/OAUTH-SCOPES.md); state 4 is that person's first
 approved change. Neither is a deployment step, and neither is implied by state 2.
 Reading (ADR 0185) is enabled and was verified end to end on 25.10.2026.
+
+## Status update 2026-10-29 — after the code audit of 2026-10-28
+
+The status stays **Proposed**. Remediated on branch
+`remediation/a-lovable-security` (not merged or deployed by this note):
+
+- **Re-verification window (C-03).** The owner decided on 2026-10-29 that
+  production runs `MCP_WRITE_REVERIFY_SECONDS=0`: every approval needs its own
+  fresh authenticator code, and nothing is remembered between approvals (a
+  window left from a non-zero setting is ignored). The code default stays 300 s
+  until the operator changes the production environment. Independently of the
+  setting, every check that needs no code — pending, not expired, the arguments
+  digest, the grant's write right, not stale — now runs **before** the code is
+  spent and again under the proposal's lock afterwards, so a proposal that
+  cannot be approved spends no code and opens no window, and the window (when
+  there is one) is opened only by a code that approved something. Prepare →
+  approve → commit, proposal identity, one-time codes and replay protection are
+  unchanged.
+- **Correlation (C-07).** `X-Correlation-Id` from `mcp` is accepted by the
+  gateway only as a canonical, non-nil UUID; missing, malformed or already a
+  proposal's, it is replaced by a fresh one (logged as replaced). A prepared
+  proposal keeps the prepare call's id, so the tool call's log line, the
+  proposal, its PREPARED / APPROVED / COMMITTED events and the business audit
+  rows of the commit share one id; the commit call's own id is kept on its
+  events as `call_correlation_id`. The id is a label only: it never selects a
+  proposal, grant or user.
+- **The writer's database role (C-04).** juristid.E050 is an error in the
+  `mcp_writer` process role whatever `REAL_DATA_ALLOWED` says, so a gateway
+  connected as a write-capable role never starts.
+
+Production state is as the 2026-10-25 update records; nothing above changes it.
