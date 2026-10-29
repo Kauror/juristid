@@ -1566,7 +1566,11 @@ class RailRow:
 
 
 def incoming_rail(
-    user: Any, today: date | None = None, *, items: list[Any] | None = None
+    user: Any,
+    today: date | None = None,
+    *,
+    items: list[Any] | None = None,
+    unreviewed_count: int | None = None,
 ) -> list[RailRow]:
     """*Uued teemad* — what has arrived, and what has been left alone.
 
@@ -1583,6 +1587,10 @@ def incoming_rail(
     The wording is the handoff's and is not negotiable: «Muutusteta 30 p», never
     «seisma jäänud» — a file nobody has touched for a month is a fact, and the
     other phrase is a judgement about the person carrying it.
+
+    ``unreviewed_count`` is the strip's «uut läbi vaatamata», for a page that has
+    already counted it (`seis_figures`): the same parameters for the same reader
+    on the same day, so the page asks once (2026-10-28 audit, D-03).
     """
     today = today or timezone.localdate()
     population = Matter.objects.visible_to(user)
@@ -1600,7 +1608,12 @@ def incoming_rail(
 
     return [
         RailRow("Uut sel nädalal", count(arrived), register_url(**arrived)),
-        RailRow("Uut läbi vaatamata", count(unreviewed), register_url(**unreviewed), "warning"),
+        RailRow(
+            "Uut läbi vaatamata",
+            count(unreviewed) if unreviewed_count is None else unreviewed_count,
+            register_url(**unreviewed),
+            "warning",
+        ),
         RailRow(f"Muutusteta {wi.QUIET_DAYS} p", count(quiet), register_url(**quiet)),
     ]
 

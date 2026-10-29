@@ -66,7 +66,9 @@ pytestmark = pytest.mark.django_db
 #: Eesolev windows: the calendar's commencements and estimates, read once each
 #: (its work is the page's own list), and the reader's remembered blocks, read
 #: once for the page (app/accounts/disclosures.py).
-OSAKOND_BUDGET = 49
+#: −1 since the 2026-10-28 audit (D-03): «Uut läbi vaatamata» is counted once
+#: for the strip and the rail, which had baked the duplicate into the 49.
+OSAKOND_BUDGET = 48
 #: Minu asjad +1 since the rail's Kalender (docs/adr/0158, amendment of
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
@@ -81,7 +83,15 @@ MINU_ASJAD_BUDGET = 42
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).
-STATISTIKA_BUDGET = 34
+#: −1 since the 2026-10-28 audit (D-02): «teemat töövõiduga» is counted once for
+#: the strip and the rail.
+STATISTIKA_BUDGET = 33
+#: Teemad (the register) on the same world. Its per-row flatness is
+#: `tests/test_matter_workflow.py::test_the_register_does_not_query_per_row`;
+#: this is the page's whole count, measured at 27 after D-04 (one organisation
+#: catalogue read for the three choosers, one worker list for the row control
+#: and `colleagues`), 30 before.
+TEEMAD_BUDGET = 27
 
 
 def _days_ago(days: int) -> datetime.datetime:
@@ -490,6 +500,7 @@ def test_an_eesolev_window_renders_its_head_and_still_counts_every_deadline(
         ("department_head", "matters:department", OSAKOND_BUDGET),
         ("specialist", "matters:my_work", MINU_ASJAD_BUDGET),
         ("specialist", "reporting:overview", STATISTIKA_BUDGET),
+        ("specialist", "matters:matter_list", TEEMAD_BUDGET),
     ],
 )
 @pytest.mark.parametrize("population", [36, 72])
@@ -511,3 +522,75 @@ def test_each_page_stays_within_its_query_budget(
         response = client.get(reverse(route))
     assert response.status_code == 200
     assert len(captured.captured_queries) <= budget
+
+
+# ---------------------------------------------------------------------------
+# The statements the 2026-10-28 audit found sent twice (D-02, D-03, D-04)
+# ---------------------------------------------------------------------------
+#
+# Narrow on purpose: each names one statement a page used to send twice, not a
+# blanket «no SQL repeats» rule — a page may legitimately ask one question in
+# two places as long as it is a cheap and deliberate choice.
+
+
+def _statements(client, user, url):
+    client.force_login(user)
+    with CaptureQueriesContext(connection) as captured:
+        response = client.get(url)
+    assert response.status_code == 200
+    return [q["sql"] for q in captured.captured_queries]
+
+
+def _repeated(statements, *needles):
+    """Statements containing every needle that were sent more than once."""
+    matching = [sql for sql in statements if all(needle in sql for needle in needles)]
+    assert matching, f"no statement matched {needles}; the check proves nothing"
+    return {sql[:200]: matching.count(sql) for sql in set(matching) if matching.count(sql) > 1}
+
+
+def test_statistika_counts_the_work_victories_once(
+    client, specialist, other_specialist, organisation
+):
+    """D-02: the strip's and the rail's «teemat töövõiduga» are one count."""
+    _world(specialist, other_specialist, organisation)
+    statements = _statements(client, specialist, reverse("reporting:overview"))
+
+    victory_counts = [
+        sql
+        for sql in statements
+        if 'SELECT COUNT(*) AS "__count" FROM "matters_matter"' in sql
+        and "intelligence_matterworkvictory" in sql
+    ]
+    assert len(victory_counts) == 1
+
+
+def test_osakond_sends_no_matter_count_twice(
+    client, specialist, other_specialist, department_head, organisation
+):
+    """D-03: «Uut läbi vaatamata» on the strip and the rail is one count."""
+    _world(specialist, other_specialist, organisation)
+    statements = _statements(client, department_head, reverse("matters:department"))
+
+    assert _repeated(statements, 'SELECT COUNT(*) AS "__count" FROM "matters_matter"') == {}
+
+
+def test_teemad_reads_the_catalogue_and_the_workers_once(
+    client, specialist, other_specialist, organisation
+):
+    """D-04: three choosers, one catalogue read; one worker list for the page."""
+    _world(specialist, other_specialist, organisation)
+    statements = _statements(client, specialist, reverse("matters:matter_list"))
+
+    assert _repeated(statements, 'FROM "organisations_organisation"') == {}
+    assert _repeated(statements, 'FROM "accounts_user"', '"accounts_user"."is_staff"') == {}
+
+
+def test_a_colleagues_desk_reads_the_workers_once(
+    client, specialist, other_specialist, department_head, organisation
+):
+    """D-04: the switcher's people are the page's `colleagues`."""
+    _world(specialist, other_specialist, organisation)
+    url = reverse("matters:person_work", kwargs={"pk": specialist.pk})
+    statements = _statements(client, department_head, url)
+
+    assert _repeated(statements, 'FROM "accounts_user"', '"accounts_user"."is_staff"') == {}
