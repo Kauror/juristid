@@ -775,7 +775,7 @@ def test_the_summary_says_counts_and_names_a_failure():
 
 def _credentials(tmp_path, **values: str):
     data = {
-        "LOVABLE_SYNC_URL": "https://naidis.supabase.example",
+        "LOVABLE_SYNC_URL": "https://naidis.supabase.co",
         "LOVABLE_SYNC_PUBLISHABLE_KEY": "sb_publishable_naidis",
         "LOVABLE_SYNC_EMAIL": "sync@example.invalid",
         "LOVABLE_SYNC_PASSWORD": "naidis-salasona",
@@ -852,7 +852,7 @@ def test_the_reader_reads_only_allowlisted_tables(tmp_path):
         transport.select("topic", ["markmed"], filters={}, order="id")
     transport.select("topic", ["id", "nr"], filters={}, order="id")
     assert all(
-        line.startswith(("GET ", "POST https://naidis.supabase.example/auth")) for line in seen
+        line.startswith(("GET ", "POST https://naidis.supabase.co/auth")) for line in seen
     )
 
 
@@ -1016,7 +1016,7 @@ def test_due_says_paused_ran_and_cut_over(cohort):
 
 def test_credentials_can_come_from_the_environment(monkeypatch):
     for key, value in {
-        "LOVABLE_SYNC_URL": "https://naidis.supabase.example",
+        "LOVABLE_SYNC_URL": "https://naidis.supabase.co",
         "LOVABLE_SYNC_PUBLISHABLE_KEY": "sb_publishable_naidis",
         "LOVABLE_SYNC_EMAIL": "sync@example.invalid",
         "LOVABLE_SYNC_PASSWORD": "naidis-salasona",

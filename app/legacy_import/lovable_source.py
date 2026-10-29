@@ -28,6 +28,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import json
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -88,9 +89,22 @@ class SourceError(Exception):
     """The source could not be read safely. ``code`` is for the run ledger; the
     message never carries a credential or a row."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, postgrest_code: str = "") -> None:
         super().__init__(message)
         self.code = code
+        #: PostgREST's own error code (a SQLSTATE such as ``42501``, or ``PGRST…``)
+        #: from an error answer's JSON body, when it had one. Never its message.
+        self.postgrest_code = postgrest_code
+
+
+def _postgrest_code(error: urllib.error.HTTPError) -> str:
+    """The ``code`` of a PostgREST error body, and nothing else from it."""
+    try:
+        body = json.loads(error.read(4096) or b"null")
+    except (ValueError, OSError, AttributeError, TypeError):
+        return ""
+    code = body.get("code") if isinstance(body, dict) else None
+    return code if isinstance(code, str) and re.fullmatch(r"[A-Z0-9]{1,12}", code) else ""
 
 
 # ---------------------------------------------------------------------------
@@ -147,6 +161,7 @@ def load_config(path: str | Path | None = None) -> SourceConfig:
     url = values["LOVABLE_SYNC_URL"].rstrip("/")
     if not url.startswith("https://"):
         raise SourceError("CREDENTIALS_NOT_HTTPS", "LOVABLE_SYNC_URL must be https://.")
+    url = authorised_origin(url)
     if values["LOVABLE_SYNC_PUBLISHABLE_KEY"].startswith("sb_secret_"):
         raise SourceError(
             "PRIVILEGED_KEY", "A secret API key is not accepted; use the publishable key."
@@ -157,6 +172,40 @@ def load_config(path: str | Path | None = None) -> SourceConfig:
         email=values["LOVABLE_SYNC_EMAIL"],
         password=values["LOVABLE_SYNC_PASSWORD"],
     )
+
+
+#: The only origin the service login, its token and the publishable key are ever
+#: sent to: Lovable's own Supabase project API, ``https://<project ref>.supabase.co``
+#: on the default port, with no path, user part, query or fragment.
+AUTHORISED_HOST = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}\.supabase\.co$")
+
+
+def authorised_origin(url: str) -> str:
+    """``url`` as the one origin credentials may go to, or `SourceError`.
+
+    Not any ``https://`` host: a mistyped or substituted ``LOVABLE_SYNC_URL``
+    would otherwise receive the service e-mail and password on sign-in."""
+    parts = urllib.parse.urlsplit(url)
+    host = (parts.hostname or "").lower()
+    try:
+        port = parts.port
+    except ValueError:
+        port = -1
+    if (
+        parts.scheme != "https"
+        or not AUTHORISED_HOST.match(host)
+        or port not in (None, 443)
+        or parts.username is not None
+        or parts.password is not None
+        or parts.path not in ("", "/")
+        or parts.query
+        or parts.fragment
+    ):
+        raise SourceError(
+            "CREDENTIALS_HOST",
+            "LOVABLE_SYNC_URL must be the Lovable project's https://<ref>.supabase.co origin.",
+        )
+    return f"https://{host}"
 
 
 def _jwt_claims(token: str) -> dict[str, Any]:
@@ -197,8 +246,22 @@ class Transport(Protocol):
 Opener = Callable[[urllib.request.Request, float], Any]
 
 
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    """A 3xx is never followed: urllib's own handler would resend the bearer
+    token and the API key to whatever ``Location`` says, ``http://`` included.
+    Returning nothing leaves the 3xx as an `HTTPError`, which `_request` turns
+    into ``REDIRECT_REFUSED`` before anything is read."""
+
+    def redirect_request(self, *_args: Any, **_kwargs: Any) -> None:
+        return None
+
+
+_OPENER = urllib.request.build_opener(_RefuseRedirects)
+
+
 def _default_opener(request: urllib.request.Request, timeout: float) -> Any:
-    return urllib.request.urlopen(request, timeout=timeout)  # noqa: S310 - https enforced
+    # https and the authorised origin are enforced by `load_config` and `_request`.
+    return _OPENER.open(request, timeout=timeout)
 
 
 class HttpTransport:
@@ -211,16 +274,34 @@ class HttpTransport:
         self.token = ""
 
     def _request(self, method: str, path: str, *, body: dict | None = None, headers: dict) -> Any:
+        origin = authorised_origin(self.config.url)
+        target = origin + path
+        if not path.startswith("/") or urllib.parse.urlsplit(target).netloc != origin[8:]:
+            raise SourceError("CREDENTIALS_HOST", "A Lovable request left the authorised origin.")
         data = json.dumps(body).encode() if body is not None else None
-        request = urllib.request.Request(  # noqa: S310 - load_config refuses anything but https://
-            self.config.url + path, data=data, method=method, headers=headers
+        request = urllib.request.Request(  # noqa: S310 - the authorised https origin only
+            target, data=data, method=method, headers=headers
         )
         try:
             with self.opener(request, TIMEOUT_SECONDS) as response:
+                landed = str(getattr(response, "geturl", lambda: target)() or target)
+                if not landed.startswith("https://") or (
+                    urllib.parse.urlsplit(landed).netloc != origin[8:]
+                ):
+                    raise SourceError(
+                        "REDIRECT_REFUSED", "Lovable answered from another origin; nothing read."
+                    )
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as error:
+            if 300 <= error.code < 400:
+                raise SourceError(
+                    "REDIRECT_REFUSED",
+                    f"Lovable redirected {path.split('?')[0]}; redirects are never followed.",
+                ) from None
             raise SourceError(
-                f"HTTP_{error.code}", f"Lovable answered {error.code} on {path.split('?')[0]}."
+                f"HTTP_{error.code}",
+                f"Lovable answered {error.code} on {path.split('?')[0]}.",
+                postgrest_code=_postgrest_code(error),
             ) from None
         except (urllib.error.URLError, TimeoutError, OSError) as error:
             raise SourceError(
@@ -270,12 +351,26 @@ class HttpTransport:
             )
             if not isinstance(page, list):
                 raise SourceError("RESPONSE_SHAPE", f"{table} did not answer with rows.")
-            rows.extend(page)
+            rows.extend(only_columns(page, columns, table=table))
             if len(rows) > MAX_INDEX_ROWS:
                 raise SourceError("TOO_MANY_ROWS", f"{table} returned more rows than the cap.")
             if len(page) < PAGE_SIZE:
                 return rows
             offset += PAGE_SIZE
+
+
+def only_columns(
+    rows: Iterable[Any], columns: Iterable[str], *, table: str
+) -> list[dict[str, Any]]:
+    """Each row cut down to the columns asked for: a column the source sends
+    beyond the allowlist is dropped here, so it never reaches a snapshot."""
+    wanted = tuple(columns)
+    out = []
+    for row in rows:
+        if not isinstance(row, dict):
+            raise SourceError("RESPONSE_SHAPE", f"{table} answered with something not a row.")
+        out.append({column: row[column] for column in wanted if column in row})
+    return out
 
 
 def _in(ids: Iterable[str]) -> str:
@@ -285,6 +380,18 @@ def _in(ids: Iterable[str]) -> str:
 # ---------------------------------------------------------------------------
 # The snapshot
 # ---------------------------------------------------------------------------
+
+
+def _select(
+    transport: Transport, table: str, columns: Iterable[str], *, filters: dict[str, str], order: str
+) -> list[dict[str, Any]]:
+    """Every snapshot read, whatever the transport: only the allowlisted columns
+    of an allowlisted table are kept for the durable snapshot (docs/adr/0192 §4)."""
+    columns = tuple(columns)
+    if table not in TABLES or not set(columns) <= set(TABLES[table]):
+        raise SourceError("NOT_ALLOWLISTED", f"Reading {table} is not allowlisted.")
+    rows = transport.select(table, columns, filters=filters, order=order)
+    return only_columns(rows, columns, table=table)
 
 
 def _chunks(items: list[str]) -> Iterable[list[str]]:
@@ -298,21 +405,24 @@ def _read_cohort(transport: Transport, ids: list[str]) -> dict[str, Any]:
     responsible: list[dict[str, Any]] = []
     links: list[dict[str, Any]] = []
     for chunk in _chunks(ids):
-        topics += transport.select("topic", TOPIC_COLUMNS, filters={"id": _in(chunk)}, order="id")
-        commencements += transport.select(
+        topics += _select(transport, "topic", TOPIC_COLUMNS, filters={"id": _in(chunk)}, order="id")
+        commencements += _select(
+            transport,
             "topic_commencement",
             TABLES["topic_commencement"],
             filters={"topic_id": _in(chunk)},
             order="topic_id,position,id",
         )
-        responsible += transport.select(
+        responsible += _select(
+            transport,
             "topic_responsible_change",
             TABLES["topic_responsible_change"],
             filters={"topic_id": _in(chunk)},
             order="topic_id,id",
         )
         for column in ("prev_topic_id", "next_topic_id"):
-            links += transport.select(
+            links += _select(
+                transport,
                 "topic_stage_link",
                 TABLES["topic_stage_link"],
                 filters={column: _in(chunk)},
@@ -345,7 +455,7 @@ def _read_cohort(transport: Transport, ids: list[str]) -> dict[str, Any]:
 
 
 def _index(transport: Transport) -> list[dict[str, Any]]:
-    return transport.select("topic", INDEX_COLUMNS, filters={}, order="id")
+    return _select(transport, "topic", INDEX_COLUMNS, filters={}, order="id")
 
 
 def take_snapshot(
@@ -422,18 +532,83 @@ WRITE_RPCS: tuple[tuple[str, dict[str, Any]], ...] = (
     ("testala_purge_topic", {"p_id": None}),
 )
 
+#: A probe check's verdict. Only PASS proves anything; INDETERMINATE means HTTP
+#: could not tell a refusal from something else, and blocks activation exactly
+#: as FAIL does until the read-only inspection (`GRANT_INSPECTION_SQL`) settles it.
+PASS, FAIL, INDETERMINATE = "PASS", "FAIL", "INDETERMINATE"
+
+#: The status codes that are the source refusing *this caller*: not signed in
+#: enough (401) or not allowed (403). Anything else — a 404 for a path that does
+#: not exist, a 400 from a function that raised for its own reasons, a 405 — says
+#: nothing about whether the identity may write.
+REFUSAL_STATUS = {"HTTP_401", "HTTP_403"}
+#: PostgreSQL's own refusals, as PostgREST reports them in an error body:
+#: insufficient privilege, and invalid authorization.
+REFUSAL_SQLSTATE = {"42501", "28000"}
+
+
+@dataclass(frozen=True)
+class ProbeCheck:
+    name: str
+    status: str
+    detail: str
+
+    @property
+    def ok(self) -> bool:
+        return self.status == PASS
+
+    def __iter__(self) -> Any:  # (name, ok, detail), as the checks always read
+        return iter((self.name, self.ok, self.detail))
+
 
 @dataclass
 class ProbeResult:
-    checks: list[tuple[str, bool, str]]
+    checks: list[ProbeCheck]
 
     @property
     def passed(self) -> bool:
-        return all(ok for _name, ok, _detail in self.checks)
+        return all(check.status == PASS for check in self.checks)
+
+    @property
+    def verdict(self) -> str:
+        """PASS only when every check proved its point; any FAIL is FAIL;
+        otherwise INDETERMINATE — never enough to switch the job on."""
+        statuses = {check.status for check in self.checks}
+        if FAIL in statuses:
+            return FAIL
+        return PASS if statuses == {PASS} else INDETERMINATE
 
 
-def _refused(transport: HttpTransport, method: str, path: str, body: Any) -> tuple[bool, str]:
-    """True when the source refused (an HTTP error, or a write that matched no row)."""
+def write_probe_verdict(
+    error: SourceError | None, answer: Any = None, *, kind: str
+) -> tuple[str, str]:
+    """What one write attempt's answer proves, with no business content.
+
+    ``kind`` is ``"rpc"`` (a write function) or ``"table"`` (PATCH/DELETE on a
+    table, aimed at a UUID that cannot exist).
+
+    * 401/403, or PostgreSQL's own permission refusal in the error body → PASS.
+    * Any 2xx from a write *function* → FAIL: it ran for this caller.
+    * A 2xx from a table write that returned rows → FAIL: something changed.
+    * ``200 []`` from a table write → INDETERMINATE: under row-level security a
+      forbidden UPDATE and a permitted one that matched no row answer alike.
+    * 404 (a missing route or function), any other 4xx, a 5xx, an unreachable
+      source or an unexpected body → INDETERMINATE: absence is not refusal.
+    """
+    if error is not None:
+        if error.code in REFUSAL_STATUS or error.postgrest_code in REFUSAL_SQLSTATE:
+            return PASS, f"{error.code} {error.postgrest_code}".strip()
+        return INDETERMINATE, f"{error.code} {error.postgrest_code}".strip() + " proves no refusal"
+    if kind == "rpc":
+        return FAIL, "ACCEPTED: the function ran for this caller"
+    if isinstance(answer, list) and answer:
+        return FAIL, f"ACCEPTED: {len(answer)} row(s) returned"
+    if answer in ([], None):
+        return INDETERMINATE, "2xx with no rows: a hidden refusal and a no-match look the same"
+    return INDETERMINATE, f"unexpected answer ({type(answer).__name__})"
+
+
+def _attempt(transport: HttpTransport, method: str, path: str, body: Any) -> tuple[Any, Any]:
     try:
         answer = transport._request(
             method,
@@ -447,94 +622,171 @@ def _refused(transport: HttpTransport, method: str, path: str, body: Any) -> tup
             },
         )
     except SourceError as error:
-        return error.code.startswith("HTTP_4"), error.code
-    return answer in ([], None), "no rows affected" if answer in ([], None) else "ACCEPTED"
+        if error.code in ("CREDENTIALS_HOST", "REDIRECT_REFUSED"):
+            raise
+        return error, None
+    return None, answer
+
+
+def _hidden_verdict(error: SourceError | None, rows: Any) -> tuple[str, str]:
+    """A read the identity must not see: no rows, or an explicit refusal."""
+    if error is not None:
+        if error.code in REFUSAL_STATUS or error.postgrest_code in REFUSAL_SQLSTATE:
+            return PASS, error.code
+        return INDETERMINATE, f"{error.code} proves nothing is hidden"
+    if rows == []:
+        return PASS, "0 rows"
+    if isinstance(rows, list):
+        return FAIL, f"{len(rows)} rows visible"
+    return INDETERMINATE, f"unexpected answer ({type(rows).__name__})"
 
 
 def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> ProbeResult:
-    """Read what the job needs, and prove nothing more is possible. Counts only."""
+    """Read what the job needs, and try to show nothing more is possible. Counts only.
+
+    Over HTTP alone a write the identity may not make cannot always be told
+    from one that found nothing, so this can end INDETERMINATE: the job then
+    stays off until `GRANT_INSPECTION_SQL` has been run read-only in Lovable's
+    SQL editor and shows no write path for the identity."""
     import uuid
 
     transport = HttpTransport(config, opener=opener)
-    checks: list[tuple[str, bool, str]] = []
+    checks: list[ProbeCheck] = []
     transport.sign_in()
     claims = _jwt_claims(transport.token)
+    role = claims.get("role")
     checks.append(
-        (
-            "token role is authenticated",
-            claims.get("role") == "authenticated",
-            str(claims.get("role")),
+        ProbeCheck(
+            "token role is authenticated", PASS if role == "authenticated" else FAIL, str(role)
         )
     )
 
     # 1. It reads the live topics and their children.
     index = _index(transport)
-    checks.append(("reads live topics", len(index) > 0, f"{len(index)} rows"))
+    checks.append(ProbeCheck("reads live topics", PASS if index else FAIL, f"{len(index)} rows"))
     sample = [str(r["id"]) for r in index[:ID_CHUNK]]
     cohort = _read_cohort(transport, sample) if sample else {}
     checks.append(
-        ("reads topic children", len(cohort) == len(sample), f"{len(cohort)} topics read")
+        ProbeCheck(
+            "reads topic children",
+            PASS if sample and len(cohort) == len(sample) else FAIL,
+            f"{len(cohort)} topics read",
+        )
     )
 
-    # 2. It cannot write: every write path refuses it.
+    # 2. It cannot write: every write path must refuse it, explicitly.
     ghost = str(uuid.uuid4())
     for name, body in WRITE_RPCS:
         payload = {k: (ghost if v is None else v) for k, v in body.items()}
-        ok, detail = _refused(transport, "POST", f"/rest/v1/rpc/{name}", payload)
-        checks.append((f"refused: rpc {name}", ok, detail))
+        error, answer = _attempt(transport, "POST", f"/rest/v1/rpc/{name}", payload)
+        status, detail = write_probe_verdict(error, answer, kind="rpc")
+        checks.append(ProbeCheck(f"refused: rpc {name}", status, detail))
     for method in ("PATCH", "DELETE"):
-        ok, detail = _refused(
+        error, answer = _attempt(
             transport,
             method,
             f"/rest/v1/topic?id=eq.{ghost}",
             {"teema": "x"} if method == "PATCH" else None,
         )
-        checks.append((f"refused: {method} topic", ok, detail))
+        status, detail = write_probe_verdict(error, answer, kind="table")
+        checks.append(ProbeCheck(f"refused: {method} topic", status, detail))
 
     # 3. No administrative history, no deleted topics.
-    for table in ("topic_change_event", "topic_change_field"):
+    reads = [(f"hidden: {t}", f"/rest/v1/{t}?select=*&limit=1") for t in HIDDEN_TABLES]
+    reads.append(
+        ("hidden: deleted topics", "/rest/v1/topic?select=id&deleted_at=not.is.null&limit=1")
+    )
+    for name, path in reads:
         try:
-            rows = transport._request(
-                "GET",
-                f"/rest/v1/{table}?select=*&limit=1",
-                headers={
-                    "apikey": config.publishable_key,
-                    "Authorization": f"Bearer {transport.token}",
-                },
+            rows, failure = (
+                transport._request(
+                    "GET",
+                    path,
+                    headers={
+                        "apikey": config.publishable_key,
+                        "Authorization": f"Bearer {transport.token}",
+                    },
+                ),
+                None,
             )
-            hidden = rows == []
-            detail = "0 rows" if hidden else f"{len(rows)} rows visible"
-        except SourceError as error:
-            hidden, detail = error.code.startswith("HTTP_4"), error.code
-        checks.append((f"hidden: {table}", hidden, detail))
-    try:
-        deleted = transport._request(
-            "GET",
-            "/rest/v1/topic?select=id&deleted_at=not.is.null&limit=1",
-            headers={
-                "apikey": config.publishable_key,
-                "Authorization": f"Bearer {transport.token}",
-            },
-        )
-        checks.append(("hidden: deleted topics", deleted == [], f"{len(deleted)} rows"))
-    except SourceError as error:
-        checks.append(("hidden: deleted topics", error.code.startswith("HTTP_4"), error.code))
+        except SourceError as refusal:
+            if refusal.code in ("CREDENTIALS_HOST", "REDIRECT_REFUSED"):
+                raise
+            rows, failure = None, refusal
+        status, detail = _hidden_verdict(failure, rows)
+        checks.append(ProbeCheck(name, status, detail))
 
     # 4. No administrative standing: not an admin, and no staff profile at all.
-    try:
-        admin = transport._request(
-            "POST",
-            "/rest/v1/rpc/can_access_admin_view",
-            body={"_user_id": claims.get("sub")},
-            headers={
-                "apikey": config.publishable_key,
-                "Authorization": f"Bearer {transport.token}",
-                "Content-Type": "application/json",
-            },
+    admin_error, admin = _attempt(
+        transport, "POST", "/rest/v1/rpc/can_access_admin_view", {"_user_id": claims.get("sub")}
+    )
+    if admin_error is not None:
+        checks.append(ProbeCheck("not an administrator", INDETERMINATE, admin_error.code))
+    else:
+        checks.append(
+            ProbeCheck(
+                "not an administrator",
+                PASS if admin is False else FAIL if admin is True else INDETERMINATE,
+                str(admin) if isinstance(admin, bool) or admin is None else type(admin).__name__,
+            )
         )
-        checks.append(("not an administrator", admin is False, str(admin)))
-    except SourceError as error:
-        checks.append(("not an administrator", False, error.code))
-    ok, detail = _refused(transport, "POST", "/rest/v1/rpc/topic_writer", {})
-    checks.append(("no staff profile (topic_writer refuses)", ok, detail))
+    writer_error, answer = _attempt(transport, "POST", "/rest/v1/rpc/topic_writer", {})
+    status, detail = write_probe_verdict(writer_error, answer, kind="rpc")
+    checks.append(ProbeCheck("no staff profile (topic_writer refuses)", status, detail))
     return ProbeResult(checks)
+
+
+HIDDEN_TABLES = ("topic_change_event", "topic_change_field")
+
+#: The independent check, for when HTTP cannot prove a refusal (docs/adr/0192
+#: status update 2026-10-29). The owner runs it in Lovable's own SQL editor
+#: (Cloud → Database → SQL), read-only: every statement is a SELECT on the
+#: catalogue, nothing is written, and no Lovable row is touched. Replace the
+#: e-mail placeholder with the service login's address before running.
+#:
+#: Expected for a read-only identity: (1) exactly one user and **no** profile
+#: row; (2) row-level security enabled on every listed table; (3) **no** INSERT,
+#: UPDATE, DELETE or ALL policy that applies to ``authenticated`` or ``public``
+#: on them; (4) every write function either not executable by
+#: ``authenticated`` or, if SECURITY DEFINER, its definition calls
+#: ``topic_writer()`` or ``caller_is_admin()`` — and (5) ``topic_writer``'s own
+#: definition raises when the caller has no ``user_profiles`` row. Anything
+#: else: the job is not switched on and the identity is not widened.
+GRANT_INSPECTION_SQL = """\
+-- 1. The service identity exists once and has no staff profile.
+select u.id, (select count(*) from public.user_profiles p where p.user_id = u.id) as profiles
+from auth.users u where lower(u.email) = lower('<service login e-mail>');
+
+-- 2. Row-level security is on for every table the job touches or must not see.
+select c.relname as table_name, c.relrowsecurity as rls_enabled, c.relforcerowsecurity as rls_forced
+from pg_class c join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relname in ('topic', 'topic_commencement',
+  'topic_responsible_change', 'topic_stage_link', 'topic_source_row',
+  'topic_change_event', 'topic_change_field', 'user_profiles')
+order by 1;
+
+-- 3. Write policies that could apply to a signed-in user (expected: no rows).
+select tablename, policyname, cmd, roles
+from pg_policies
+where schemaname = 'public' and tablename in ('topic', 'topic_commencement',
+  'topic_responsible_change', 'topic_stage_link', 'topic_source_row',
+  'topic_change_event', 'topic_change_field', 'user_profiles')
+  and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+  and (roles && array['authenticated', 'public']::name[])
+order by 1, 2;
+
+-- 4. The write functions: who may call them and whether they check the caller.
+select p.proname, p.prosecdef as security_definer,
+  has_function_privilege('authenticated', p.oid, 'EXECUTE') as authenticated_may_execute,
+  (pg_get_functiondef(p.oid) ~* '(topic_writer|caller_is_admin)\\s*\\(') as checks_caller
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.proname in ('save_topic', 'save_topic_with_stages',
+  'delete_topic', 'restore_topic', 'testala_save_topic', 'testala_delete_topic',
+  'testala_restore_topic', 'testala_purge_topic')
+order by 1;
+
+-- 5. topic_writer refuses a caller with no profile (read the definition).
+select pg_get_functiondef(p.oid)
+from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' and p.proname = 'topic_writer';
+"""
