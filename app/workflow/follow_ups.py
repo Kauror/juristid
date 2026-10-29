@@ -54,6 +54,7 @@ from app.workflow.enums import (
     FollowUpState,
 )
 from app.workflow.models import NextAction, OpinionFollowUp
+from app.workflow.step_markers import CLOSED_WITH_MATTER, RECALCULATED
 
 #: Calendar days from the recorded sending date to the first check. Not
 #: business days: the owner's rule is «30 days after», and a check that moves
@@ -96,10 +97,9 @@ FOLLOW_UP_CLOSURE_WARNING = (
     "Sellel teemal on pooleli Koja arvamuse järelkontroll. "
     "Teema sulgemisel lõpetatakse ka planeeritud järelkontroll."
 )
-#: The reasons written when something other than a check ends the monitoring.
-CLOSED_WITH_MATTER = "Teema suleti"
-WITHDRAWN_OPINION = "Arvamus võeti tagasi"
-SUPERSEDED_OPINION = "Arvamus asendati"
+#: The reasons written when something other than a check ends the monitoring —
+#: `CLOSED_WITH_MATTER`, `WITHDRAWN_OPINION`, `SUPERSEDED_OPINION` — live in
+#: `app.workflow.step_markers`, beside the predicates that read them.
 
 ACTIVE = (ActionStatus.OPEN, ActionStatus.PLANNED)
 
@@ -809,7 +809,7 @@ def follow_sent_date_correction(*, submission: Any, actor: Any = None) -> NextAc
         payload={
             "from": previous.isoformat() if previous else None,
             "to": due.isoformat(),
-            "recalculated": True,
+            RECALCULATED: True,
             "follow_up": _block(follow_up, sent_on=sent_on.isoformat()),
         },
     )

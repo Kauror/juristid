@@ -48,7 +48,7 @@ from app.submissions.services import (
     sent_opinion_revision,
     withdraw_submission,
 )
-from app.workflow import follow_ups
+from app.workflow import follow_ups, step_markers
 from app.workflow.enums import ActionStatus, FollowUpOutcome, FollowUpState
 from app.workflow.follow_ups import (
     FOLLOW_UP_CLOSURE_WARNING,
@@ -1235,7 +1235,7 @@ def test_withdrawing_an_opinion_ends_its_check_and_keeps_the_done_ones(
     assert cancelled.status == ActionStatus.CANCELLED
     follow_up = follow_up_of(opinion)
     assert follow_up.state == FollowUpState.CANCELLED
-    assert follow_up.end_reason == follow_ups.WITHDRAWN_OPINION
+    assert follow_up.end_reason == step_markers.WITHDRAWN_OPINION
     assert active_check(other).status == ActionStatus.PLANNED
 
 

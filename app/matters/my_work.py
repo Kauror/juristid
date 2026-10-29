@@ -38,7 +38,7 @@ from typing import Any
 from django.urls import reverse
 from django.utils import timezone
 
-from app.core.dates import format_estonian_date, start_of_local_day
+from app.core.dates import format_estonian_date, local_day_range
 from app.intelligence.enums import FactStatus
 from app.matters import work_items as wi
 from app.matters.activity import activity_of, annotate_last_activity, annotated_slice
@@ -617,14 +617,14 @@ def person_stats(user: Any, subject: Any, today: date) -> PersonStats:
     # **A plain range on the timestamp, not `__date`** (2026-10-17 audit,
     # JPERF-005). `occurred_at__date__gte` cast every one of the person's entries
     # to a Tallinn date before comparing, which no index can answer; «on or after
-    # the local day» is exactly «at or after that day's first local moment»
-    # (`start_of_local_day`), and that the `occurred_at` index can.
+    # the local day» is the open-ended `local_day_range`, which the
+    # `occurred_at` index can (2026-10-28 audit, A-01).
     def closed(since: date) -> int:
-        return owned.filter(is_open=False, closed_at__gte=start_of_local_day(since)).count()
+        return owned.filter(local_day_range("closed_at", since), is_open=False).count()
 
     entries = (
         Entry.objects.visible_to(user)
-        .filter(author=subject, occurred_at__gte=start_of_local_day(month_start))
+        .filter(local_day_range("occurred_at", month_start), author=subject)
         .count()
     )
     return PersonStats(

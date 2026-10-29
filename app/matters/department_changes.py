@@ -76,10 +76,11 @@ from app.audit.provenance import actor_label
 from app.audit.visibility import scope_change_events
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import matter_visibility_q, scope_for_user
-from app.core.dates import format_estonian_date, read_flexible_date
+from app.core.dates import format_estonian_date, local_day_range, read_flexible_date
 from app.matters import department_dashboard as dd
 from app.matters.enums import MatterOrigin, RecordMode, StageEpisodeOrigin
 from app.matters.models import Matter, MatterStageEpisode
+from app.workflow.step_markers import automatic_step_q, closure_cancelled_q
 
 #: The windows this view offers, in the order the control draws them. The
 #: parser is Tehtud's (`department_dashboard.period_from`), so «7 päeva» starts
@@ -450,18 +451,13 @@ def _scoped_events(user: Any, matters: QuerySet[Matter]) -> QuerySet[ChangeEvent
 
 
 def _in_window(events: QuerySet[ChangeEvent], period: dd.Period) -> QuerySet[ChangeEvent]:
-    # `__date`, in the project's zone (Europe/Tallinn): a change at 00:30 on
-    # the first day is inside a window that starts that day, one at 23:59 on
-    # the last day is inside one that ends it.
-    return events.filter(
-        occurred_at__date__gte=period.start,
-        occurred_at__date__lte=period.end,
-    )
+    # On a Europe/Tallinn day from the first to the last, both included: a
+    # change at 00:30 on the first day is inside a window that starts that day,
+    # one at 23:59 on the last day is inside one that ends it. A half-open range
+    # on the timestamp (`local_day_range`), which the `occurred_at` index can
+    # answer, rather than a cast of every audit row to a local date (D-01).
+    return events.filter(local_day_range("occurred_at", period.start, period.end))
 
-
-#: The reason `workflow.services.end_open_action_for_closure` writes on every
-#: step a closure ends. Read, never written, here.
-CLOSURE_CANCEL_REASON = "Teema suleti"
 
 #: The events that make a Matter stop being current work. A step ended by a
 #: closure belongs to the first of these written on its Matter at or after it
@@ -477,81 +473,19 @@ CLOSURE_ROW = "NEXT_ACTIONS_ENDED_BY_CLOSURE"
 CLOSURE_VERB = "sulges teema"
 
 
-def _automatic_q() -> Q:
-    """Step changes a service made on its own, which nobody chose (ADR 0159 §2, D1).
-
-    Each is recognised by the marker its writer puts in the payload, so the
-    audit row itself stays as it is:
-
-    * the first opinion follow-up check, scheduled by recording the send
-      (``follow_up.automatic``, docs/adr/0146 §10) — the send is Tehtud's;
-    * a current check put back on the plan because new work was written over
-      it (``returned_to_plan: true``; the new work's own event carries the id
-      as a string and stays a person's act);
-    * a planned step made current because the current one was finished
-      (``promoted``) — it was «määras» once, when it was planned, and the
-      finishing is its own «lõpetas»;
-    * a check's day recalculated from a corrected send date (``recalculated``);
-    * a check cancelled because its opinion was withdrawn (reason
-      `follow_ups.WITHDRAWN_OPINION` with the ``follow_up`` block) — the
-      withdrawal is the person's act, and the check ending is its consequence;
-    * a check cancelled because its opinion was replaced (reason
-      `follow_ups.SUPERSEDED_OPINION`, same shape) — the replacement's consequence.
-    """
-    from app.workflow.follow_ups import SUPERSEDED_OPINION, WITHDRAWN_OPINION
-
-    # JSON containment (`@>`), never a key lookup: a missing key compares NULL,
-    # and `exclude()` over a NULL drops the row it should keep.
-    return (
-        Q(
-            event_type=ChangeEventType.NEXT_ACTION_SET,
-            payload__contains={"follow_up": {"automatic": True}},
-        )
-        | Q(
-            event_type=ChangeEventType.NEXT_ACTION_SET,
-            payload__contains={"returned_to_plan": True},
-        )
-        | Q(event_type=ChangeEventType.NEXT_ACTION_SET, payload__contains={"promoted": True})
-        | Q(
-            event_type=ChangeEventType.NEXT_ACTION_RESCHEDULED,
-            payload__contains={"recalculated": True},
-        )
-        | Q(
-            event_type=ChangeEventType.NEXT_ACTION_CANCELLED,
-            payload__contains={"reason": WITHDRAWN_OPINION},
-            payload__has_key="follow_up",
-        )
-        | Q(
-            event_type=ChangeEventType.NEXT_ACTION_CANCELLED,
-            payload__contains={"reason": SUPERSEDED_OPINION},
-            payload__has_key="follow_up",
-        )
-    )
-
-
-def _closure_q() -> Q:
-    """A step ended because its Matter was closed, not cancelled on its own.
-
-    The reason the closure helper writes; a ``closure`` key, should a closure
-    writer come to mark its cancellations explicitly, is read the same way.
-    """
-    return Q(event_type=ChangeEventType.NEXT_ACTION_CANCELLED) & (
-        Q(payload__contains={"reason": CLOSURE_CANCEL_REASON}) | Q(payload__has_key="closure")
-    )
-
-
 def _person_acts(events: QuerySet[ChangeEvent]) -> QuerySet[ChangeEvent]:
     """A colleague's change, and for a new Teema one filed here, not imported.
 
-    A step change the system made on the person's behalf (`_automatic_q`) is
-    not theirs, though the row names them as its actor.
+    A step change the system made on the person's behalf
+    (`step_markers.automatic_step_q`) is not theirs, though the row names them
+    as its actor.
     """
     return (
         events.filter(actor__isnull=False)
         .exclude(
             Q(event_type=ChangeEventType.MATTER_CREATED) & ~Q(matter__origin=MatterOrigin.NATIVE)
         )
-        .exclude(_automatic_q())
+        .exclude(automatic_step_q())
     )
 
 
@@ -728,7 +662,7 @@ def _coverage(
     return Coverage(
         recorded_since=_first_day(events.filter(actor__isnull=False)),
         system_events=in_window.filter(actor__isnull=True).count(),
-        automatic_steps=in_window.filter(_automatic_q(), actor__isnull=False).count(),
+        automatic_steps=in_window.filter(automatic_step_q(), actor__isnull=False).count(),
         imported_matters=in_window.filter(event_type=ChangeEventType.MATTER_CREATED)
         .exclude(matter__origin=MatterOrigin.NATIVE)
         .count(),
@@ -829,7 +763,9 @@ def build_changes(
     return DepartmentChanges(
         period=period,
         period_error=error,
-        categories=_categories(acts.exclude(_closure_q()), acts.filter(_closure_q())),
+        categories=_categories(
+            acts.exclude(closure_cancelled_q()), acts.filter(closure_cancelled_q())
+        ),
         coverage=_coverage(matters, events, period),
         snapshots=_snapshot_comparison(user, period),
         outputs=dd.build_digest(user, period) if with_outputs else None,

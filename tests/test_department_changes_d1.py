@@ -40,6 +40,7 @@ from app.workflow.services import (
     set_next_action,
     set_next_action_for_new_work,
 )
+from app.workflow.step_markers import CLOSED_WITH_MATTER
 from tests import factories
 from tests.follow_ups import active_check, mark_sent
 
@@ -364,7 +365,7 @@ def test_a_closure_on_the_repeated_hour_is_dated_that_tallinn_day(department_hea
     matter = create_matter(title="Kellakeeramine", owner=specialist, actor=specialist)
     # The second 03:30 (fold=1, EET): 00:30 UTC on the 25th.
     moment = datetime(2026, 10, 25, 3, 30, fold=1, tzinfo=TALLINN)
-    _hand_written_closure(matter, specialist, moment, 3, {"reason": dc.CLOSURE_CANCEL_REASON})
+    _hand_written_closure(matter, specialist, moment, 3, {"reason": CLOSED_WITH_MATTER})
 
     def window(stamp: str):
         return dc.build_changes(
@@ -452,7 +453,7 @@ def _cancel(matter, actor, step, moment: datetime) -> None:
         object_type="workflow.NextAction",
         object_id=step.pk,
         occurred_at=moment,
-        payload={"reason": dc.CLOSURE_CANCEL_REASON},
+        payload={"reason": CLOSED_WITH_MATTER},
     )
 
 

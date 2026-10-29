@@ -62,7 +62,7 @@ A removed record does not exist here at all (docs/adr/0102).
 **Should a new record type affect «Viimane tegevus», «Muutusteta 30 p» or
 Osakond's count?** Only if it is accepted as substantive work on the Matter *and*
 carries a defensible business date of its own. Then it is added here — to
-:class:`_WorkSources`, :func:`annotate_last_activity`, :func:`activity_of`,
+:class:`WorkSources`, :func:`annotate_last_activity`, :func:`activity_of`,
 :func:`annotate_activity_date` and :func:`work_activity_between` — and nowhere
 else.
 
@@ -113,7 +113,7 @@ raises rather than printing a wrong date.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Any
 
 from django.db.models import (
@@ -134,7 +134,7 @@ from django.utils import timezone
 
 from app.core.authorization import apply as apply_scope
 from app.core.authorization import child_scope_q, scope_for_user
-from app.core.dates import start_of_local_day
+from app.core.dates import local_day_range, start_of_local_day
 from app.legacy_import.source_pages import MatterSourcePage, SourceRelationshipKind
 from app.matters.enums import MatterOrigin, WebsiteOverviewStatus
 from app.matters.models import (
@@ -344,8 +344,16 @@ def _latest_where_any(queryset: QuerySet[Any], field: str) -> Case:
 
 
 @dataclass(frozen=True)
-class _WorkSources:
+class WorkSources:
     """Each record type that can be substantive work, read for one reader.
+
+    Public, because three readers depend on it on purpose and a change here
+    changes all three: :func:`annotate_last_activity` and :func:`known_active_since`
+    (*Viimane tegevus*, «Muutusteta 30 p»), :func:`work_activity_between`
+    (Osakond's «Teemades muudatusi»), and Minu asjad's *Viimased tegevused*
+    (`app.matters.recent_activity`), whose promise is «exactly the records
+    Viimane tegevus reads». Narrowing a source narrows every one of them
+    (2026-10-28 audit, A-03).
 
     Every queryset is already reader-scoped (:func:`_readable`) and already
     limited to the rows that count — a person's step, a dated begun round, a
@@ -383,11 +391,11 @@ def _readable(model: Any, scope: Any) -> QuerySet[Any]:
     return scoped
 
 
-def _work_sources(user: Any, today: date | None = None) -> _WorkSources:
+def work_sources(user: Any, today: date | None = None) -> WorkSources:
     day = today or timezone.localdate()
     scope = scope_for_user(user)
     actions = _readable(NextAction, scope)
-    return _WorkSources(
+    return WorkSources(
         entries=_readable(Entry, scope),
         # Any submission that carries a send date. A submission later withdrawn
         # or superseded was still genuinely sent on that day, and the withdrawal
@@ -493,7 +501,7 @@ def known_active_since(user: Any, since: date) -> Q:
     Europe/Tallinn, which is exactly «its local date is on or after ``since``»,
     the reading `_as_date` gives them (`app.core.dates.start_of_local_day`).
     """
-    sources = _work_sources(user)
+    sources = work_sources(user)
     moment = start_of_local_day(since)
     return (
         Q(received_date__gte=since)
@@ -526,11 +534,11 @@ def annotate_last_activity(queryset: QuerySet[Matter], user: Any) -> QuerySet[Ma
     """Attach the latest of every work fact to the queryset as a subquery annotation.
 
     One correlated subquery per fact for the whole page, each over a source
-    :func:`_work_sources` has already scoped to this reader and limited to what
+    :func:`work_sources` has already scoped to this reader and limited to what
     counts, so a restricted record announces nothing through the date column
     to somebody who cannot open it.
     """
-    sources = _work_sources(user)
+    sources = work_sources(user)
     return queryset.annotate(
         activity_entry_at=_latest(sources.entries, "occurred_at"),
         activity_submission_at=_latest(sources.submissions, "sent_at"),
@@ -739,20 +747,22 @@ def work_activity_between(
     No ``NATIVE_RECORD`` fallback: that prints something true when nothing else
     is known, and is not a qualifying fact.
     """
-    sources = _work_sources(user)
-    since, until = start_of_local_day(start), start_of_local_day(end + timedelta(days=1))
+    sources = work_sources(user)
     day_precision = ~Q(occurred_on_precision__in=APPROXIMATE_PRECISIONS)
 
-    def happened(rows: QuerySet[Any], **window: Any) -> Exists:
-        return Exists(rows.filter(matter=OuterRef("pk"), **window))
+    def on_local_days(field: str) -> Q:
+        return local_day_range(field, start, end)
+
+    def happened(rows: QuerySet[Any], *moment: Q, **window: Any) -> Exists:
+        return Exists(rows.filter(*moment, matter=OuterRef("pk"), **window))
 
     return queryset.filter(
-        Q(closed_at__gte=since, closed_at__lt=until)
+        on_local_days("closed_at")
         | Q(received_date__gte=start, received_date__lte=end)
-        | happened(sources.entries, occurred_at__gte=since, occurred_at__lt=until)
-        | happened(sources.submissions, sent_at__gte=since, sent_at__lt=until)
-        | happened(sources.actions_set, created_at__gte=since, created_at__lt=until)
-        | happened(sources.actions_ended, ended_at__gte=since, ended_at__lt=until)
+        | happened(sources.entries, on_local_days("occurred_at"))
+        | happened(sources.submissions, on_local_days("sent_at"))
+        | happened(sources.actions_set, on_local_days("created_at"))
+        | happened(sources.actions_ended, on_local_days("ended_at"))
         | happened(
             sources.engagements.filter(day_precision),
             occurred_on__gte=start,
@@ -771,13 +781,11 @@ def work_activity_between(
         )
         | happened(
             sources.pages,
-            source_page__source_modified_at__gte=since,
-            source_page__source_modified_at__lt=until,
+            on_local_days("source_page__source_modified_at"),
         )
         | happened(
             sources.pages,
-            source_page__source_created_at__gte=since,
-            source_page__source_created_at__lt=until,
+            on_local_days("source_page__source_created_at"),
         )
     )
 

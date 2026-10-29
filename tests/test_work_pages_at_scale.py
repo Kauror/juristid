@@ -42,9 +42,10 @@ from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
 
-from app.core.dates import start_of_local_day
+from app.core.dates import local_day_range, start_of_local_day
 from app.core.enums import Visibility
 from app.matters import activity, my_work
+from app.matters import department_changes as dc
 from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters import work_items as wi
@@ -190,7 +191,8 @@ def _old_behaviour(monkeypatch) -> None:
     monkeypatch.setattr(activity, "known_active_since", lambda user, since: Q(pk__in=[]))
     monkeypatch.setattr(ov, "annotated_slice", old_slice)
     monkeypatch.setattr(my_work, "annotated_slice", old_slice)
-    monkeypatch.setattr(dd, "local_day_range", old_day_range)
+    for module in (dd, dc, ov, my_work, activity):
+        monkeypatch.setattr(module, "local_day_range", old_day_range)
     monkeypatch.setattr(
         overview_strip.work_items,
         "work_items",
@@ -412,7 +414,7 @@ def test_a_local_day_range_is_the_same_rows_as_the_date_cast(specialist, normal_
             entries.filter(occurred_at__date__gte=first)
         ), first
         for last in days:
-            ranged = set(entries.filter(dd.local_day_range("occurred_at", first, last)))
+            ranged = set(entries.filter(local_day_range("occurred_at", first, last)))
             cast = set(entries.filter(occurred_at__date__gte=first, occurred_at__date__lte=last))
             assert ranged == cast, (first, last)
 

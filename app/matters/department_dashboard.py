@@ -74,7 +74,7 @@ from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -84,10 +84,10 @@ from app.core.dates import (
     DateReading,
     end_of_month,
     format_estonian_date,
+    local_day_range,
     read_flexible_date,
     short_day_month,
     short_range,
-    start_of_local_day,
     weekday_name,
 )
 from app.intelligence.enums import WorkVictoryStatus
@@ -274,22 +274,6 @@ def _no_action_params() -> dict[str, Any]:
 def _drafting_params() -> dict[str, Any]:
     """«Arvamust koostamisel», as register parameters — `drafting_matters`' own population."""
     return {**_open_full(), "arvamus": OPINION_DRAFTING}
-
-
-def local_day_range(field: str, first: date, last: date | None = None) -> Q:
-    """``field`` falls on a Europe/Tallinn day from ``first`` to ``last``, both included.
-
-    The same rows as ``{field}__date__gte=first`` and ``{field}__date__lte=last``,
-    written as a half-open range on the timestamp itself: at or after the first
-    local moment of ``first``, and before the first local moment of the day after
-    ``last`` (`app.core.dates.start_of_local_day`). The ``__date`` spelling casts
-    every row to a local date before comparing, so no index on the column can
-    answer it (2026-10-17 audit, JPERF-005).
-    """
-    condition = Q(**{f"{field}__gte": start_of_local_day(first)})
-    if last is not None:
-        condition &= Q(**{f"{field}__lt": start_of_local_day(last + timedelta(days=1))})
-    return condition
 
 
 def sent_submissions(user: Any, *, since: date, until: date | None = None) -> QuerySet[Submission]:
