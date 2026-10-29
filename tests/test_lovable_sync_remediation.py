@@ -464,3 +464,21 @@ def test_haldus_counts_but_never_names_the_restricted_change(client, restricted_
     body = client.get(reverse("haldus:lovable")).content.decode()
     assert SECRET_TITLE not in body and SECRET_STAGE not in body
     assert reverse("matters:matter_detail", args=[restricted_night.pk]) not in body
+
+
+def test_haldus_names_a_stopped_change_in_words_not_codes(client, cohort, settings, monkeypatch):
+    from tests.admin_session import apply_admin_gate, choose, technical_admin, verified
+
+    monkeypatch.setattr(lovable_sync, "verify_matter", lambda plan: False)
+    cohort["source"].edit("2026_501", teema="Näidisteema 2026_501 uus")
+    cohort["source"].edit("2026_505", teema="Näidisteema 2026_505 uus")
+    _run(cohort, SCHEDULED)
+    apply_admin_gate(settings)
+    settings.REAL_DATA_ALLOWED = False
+    admin, secret = technical_admin()
+    verified(client, admin, secret)
+    choose(client, cohort["world"]["mari"])
+    body = client.get(reverse("haldus:lovable")).content.decode()
+    assert "Jäi kirjutamata: varasema teema tagasilugemine ebaõnnestus" in body
+    assert "Kirjutati, kuid tagasilugemine ei vastanud kirjutatule." in body
+    assert "VERIFY_STOPPED" not in body and "VERIFY_MISMATCH" not in body

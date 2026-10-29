@@ -42,4 +42,6 @@ LOVABLE_REASONS = {
     "DATE_IN_PAST": "Uus kuupäev on möödas; see muutuks kohe hilinenuks.",
     "STEP_DATE_NOT_EXACT": "Tegevuse kuupäev pole täpne päev.",
     "LINK_NOT_HTTPS": "Link pole https-aadress.",
+    "VERIFY_STOPPED": "Jäi kirjutamata: varasema teema tagasilugemine ebaõnnestus ja öö peatati.",
+    "VERIFY_MISMATCH": "Kirjutati, kuid tagasilugemine ei vastanud kirjutatule.",
 }
