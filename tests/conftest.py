@@ -4,6 +4,7 @@ import zipfile
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import date
 
 import pytest
 from pytest_django.plugin import DjangoDbBlocker
@@ -173,6 +174,38 @@ def signed_in(client, specialist):
     """A client signed in as an ordinary specialist."""
     client.force_login(specialist)
     return client
+
+
+# ---------------------------------------------------------------------------
+# An opt-in clock (audit 2026-10-28, E-05)
+# ---------------------------------------------------------------------------
+
+#: The day `today` stands for when a test does not choose one: a Wednesday in
+#: the middle of a month and a quarter, so «this week», «this month» and «this
+#: quarter» all have room on both sides. A rule that changes at a boundary is
+#: tested by choosing the boundary, not by hoping the run lands near one.
+TEST_TODAY = date(2026, 10, 28)
+
+
+@pytest.fixture
+def today(request: pytest.FixtureRequest) -> date:
+    """A fixed day for a test to pass to code that takes `today` explicitly.
+
+    Opt-in and nothing more: no clock is frozen, `timezone.now()` and
+    `date.today()` are untouched, and a test that does not ask for this fixture
+    behaves exactly as before. Most of the date rules already accept the day
+    they reason about (`today=` on the work-item, calendar, lateness and
+    intelligence functions), so the seam is the argument, and this is a
+    deterministic value to put in it — instead of `date.today()`, which makes a
+    band or week assertion depend on the weekday the suite happens to run.
+
+    Choose another day, or several, with indirect parametrisation::
+
+        @pytest.mark.parametrize("today", [date(2026, 11, 1), date(2026, 11, 2)], indirect=True)
+        def test_a_week_boundary(today): ...
+    """
+    chosen: date = getattr(request, "param", TEST_TODAY)
+    return chosen
 
 
 @pytest.fixture
