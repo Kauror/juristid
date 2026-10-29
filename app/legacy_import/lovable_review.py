@@ -12,9 +12,13 @@ apart:
 2. **What did Juristid do with it?** The run's own `LovableSyncDecision` rows.
    "Uuendatud" is said only where an `APPLIED` decision exists: that row is
    written in the same transaction as the write it records, and a Teema whose
-   write failed is rolled back whole, row included (§6). Everything else is
-   the decision's own outcome, or, with no decision at all, the fact that the
-   reconciliation found Juristid already holding the source's value.
+   write failed is rolled back whole, row included (§6). "Juristides juba sama"
+   is said only where the reconciliation recorded that Juristid converged
+   (`ALREADY_CONVERGED`); an operator's resolution is "Lahendatud käsitsi". A
+   field the night never compared — its topic was re-numbered or missing, or
+   the run stopped before it recorded anything — is "Ei võrreldud", never
+   "sama" (audit 2026-10-28 B-01, C-08). A night whose run failed is never the
+   baseline the next night is compared with.
 
 Only scheduled runs are nights. A manual run and a `Kontrolli muudatusi` check
 are not on this page (Haldus shows them); a manual run's write is still found
@@ -38,10 +42,15 @@ from django.utils import timezone
 
 from app.legacy_import.lovable_source import SourceError, verify_snapshot
 from app.legacy_import.lovable_sync import (
+    RESOLVED_PREFIX,
     SNAPSHOT_RETENTION_DAYS,
     SOURCE_FIELDS,
     TALLINN,
+    VERIFY_MISMATCH,
+    VERIFY_STOPPED,
+    is_baseline_run,
     name_key,
+    run_reconciled,
 )
 from app.legacy_import.lovable_sync_labels import LOVABLE_FIELD_LABELS, LOVABLE_REASONS
 from app.legacy_import.lovable_sync_models import (
@@ -83,6 +92,8 @@ NOT_APPLIED = "NOT_APPLIED"
 REVIEW = "REVIEW"
 CONFLICT = "CONFLICT"
 SAME = "SAME"
+RESOLVED = "RESOLVED"
+NOT_COMPARED = "NOT_COMPARED"
 LOCAL = "LOCAL"
 FAILED = "FAILED"
 UNKNOWN = "UNKNOWN"
@@ -93,6 +104,8 @@ RESULT_LABELS = {
     REVIEW: "Vajab ülevaatamist",
     CONFLICT: "Vastuolu",
     SAME: "Juristides juba sama",
+    RESOLVED: "Lahendatud käsitsi",
+    NOT_COMPARED: "Ei võrreldud",
     LOCAL: "Juristides muudetud",
     FAILED: "Viga",
     UNKNOWN: "Teadmata",
@@ -120,6 +133,26 @@ _HELD_BY_RUN = {
     "NO_VERIFIED_BACKUP": "Värsket kontrollitud varukoopiat polnud; öö jäi kirjutamata.",
 }
 COMPARE_ONLY_NOTE = "Võrdlusrežiim: Juristidesse ei kirjutata."
+VERIFY_STOPPED_NOTE = (
+    "Jäi kirjutamata: selle öö varasema teema tagasilugemine ebaõnnestus ja öö peatati."
+)
+VERIFY_FAILED_NOTE = "Kirjutati, kuid tagasilugemine ei vastanud kirjutatule; vaata teema üle."
+WRITE_FAILED_NOTE = "Teema kirjutamine ebaõnnestus; Juristides ei muudetud midagi."
+#: Why a field was not compared, by the topic's own recorded `*` decision.
+NOT_COMPARED_NOTES = {
+    "IDENTIFIER_CHANGED": "Teema number muutus Lovable'is; välju ei võrreldud.",
+    "SOURCE_MISSING": "Teemat polnud Lovable'i lugemises; välju ei võrreldud.",
+}
+NOT_RECONCILED_NOTE = "Öö katkes enne Juristidega võrdlemist ({code})."
+NOT_RECONCILED = (
+    "Sünkroonimine katkes pärast Lovable'i lugemist: muudatusi ei võrreldud Juristidega "
+    "ja seda lugemist ei kasutata järgmise öö võrdluses."
+)
+VERIFY_STOPPED_NIGHT = (
+    "Öö peatati: kirjutatud teema tagasilugemine ei vastanud kirjutatule, järgmisi teemasid "
+    "ei kirjutatud. Seda lugemist ei kasutata järgmise öö võrdluses."
+)
+UNEXPLAINED_NOTE = "Selle öö võrdlus ei salvestanud selle välja kohta otsust."
 
 NO_CHANGES = "Lovable'is ei tuvastatud muudatusi."
 FIRST_READING = "Esimene öine lugemine: see on lähtepunkt. Muudatusi näeb alates järgmisest ööst."
@@ -211,6 +244,8 @@ class Night:
     #: (the earlier snapshot is gone or does not verify).
     comparison: str
     message: str = ""
+    #: Said above the changes when the run did not reconcile (`run_reconciled`).
+    warning: str = ""
     baseline_local: str = ""
     topics: list[TopicChange] = field(default_factory=list)
     hidden: int = 0
@@ -230,7 +265,7 @@ class Night:
     @property
     def attention(self) -> int:
         return sum(
-            1 for t in self.topics for f in t.fields if f.result in (REVIEW, CONFLICT)
+            1 for t in self.topics for f in t.fields if f.result in (REVIEW, CONFLICT, FAILED)
         ) + sum(1 for t in self.topics if t.kind != "CHANGED" or t.renumbered)
 
 
@@ -263,32 +298,75 @@ def _document(snapshot: LovableSyncSnapshot | None) -> dict[str, Any] | None:
     return snapshot.document
 
 
+def _elsewhere(run: LovableSyncRun, night: LovableSyncRun) -> str:
+    """Where a write or a convergence happened, when not in the night itself."""
+    if run.pk == night.pk:
+        return ""
+    if run.trigger == SyncTrigger.MANUAL:
+        return f"Käsitsi käivitusel {_local(run.started_at)}."
+    return f"Käivitusel {_local(run.started_at)}."
+
+
 def _result(
     name: str,
     after: Any,
     *,
     decision: LovableSyncDecision | None,
+    topic: LovableSyncDecision | None,
     applied_in: LovableSyncRun | None,
+    converged_in: LovableSyncRun | None,
+    resolved_at: dt.datetime | None,
     night: LovableSyncRun,
+    reconciled: bool,
 ) -> tuple[str, str]:
+    """One changed field's answer, from recorded evidence only.
+
+    ``topic`` is the Teema's own ``*`` decision that night (SOURCE_MISSING,
+    IDENTIFIER_CHANGED, FAILED), ``reconciled`` whether the run recorded its
+    reconciliation at all. With no evidence the answer is never «sama»."""
+    topic_outcome = topic.outcome if topic is not None else ""
     if applied_in is not None:
-        note = (
-            ""
-            if applied_in.pk == night.pk
-            else (f"Käsitsi käivitusel {_local(applied_in.started_at)}.")
-        )
-        return APPLIED, note
+        if topic is not None and topic.reason == VERIFY_MISMATCH:
+            return FAILED, VERIFY_FAILED_NOTE
+        return APPLIED, _elsewhere(applied_in, night)
+    if resolved_at is not None:
+        return RESOLVED, f"Lahendati {_local(resolved_at)}; Juristides jäi oma väärtus."
+    if topic_outcome in NOT_COMPARED_NOTES:
+        return NOT_COMPARED, NOT_COMPARED_NOTES[topic_outcome]
+    if not reconciled:
+        code = (night.error or "").split(":")[0] or night.status
+        return NOT_COMPARED, NOT_RECONCILED_NOTE.format(code=code)
     if decision is None:
-        # Not recorded means the reconciliation found nothing to do: Juristid
-        # already holds what Lovable now says (UNCHANGED is never stored).
-        return SAME, ""
-    result = _FROM_OUTCOME.get(SyncOutcome(decision.outcome), UNKNOWN)
+        if converged_in is not None:
+            return SAME, _elsewhere(converged_in, night)
+        # Not recorded, with no write, convergence or resolution to explain it:
+        # the night gives no evidence either way, so it is not said to be «sama».
+        return UNKNOWN, UNEXPLAINED_NOTE
+    outcome = SyncOutcome(decision.outcome)
+    if outcome == SyncOutcome.ELIGIBLE and topic_outcome == SyncOutcome.FAILED:
+        return FAILED, WRITE_FAILED_NOTE
+    result = _FROM_OUTCOME.get(outcome, UNKNOWN)
     if result == NOT_APPLIED:
+        if decision.reason == VERIFY_STOPPED:
+            return result, VERIFY_STOPPED_NOTE
         if night.mode == SyncMode.COMPARE:
             return result, COMPARE_ONLY_NOTE
         held = _HELD_BY_RUN.get((night.error or "").split(":")[0])
         return result, held or ""
     return result, LOVABLE_REASONS.get(decision.reason, "")
+
+
+def _matching(
+    rows: list[tuple[Any, Any]], name: str, value: Any, *, after: dt.datetime | None = None
+) -> Any:
+    """The first recorded (when, source) whose source is ``value``."""
+    for when, source in rows:
+        moment = when.started_at if isinstance(when, LovableSyncRun) else when
+        if after is not None and moment < after:
+            continue
+        if _key(name, source) == _key(name, value):
+            return when
+    return None
 
 
 def _compare(
@@ -301,8 +379,11 @@ def _compare(
     live: set[Any],
     decisions: dict[tuple[Any, str], LovableSyncDecision],
     applied: dict[tuple[Any, str], list[tuple[LovableSyncRun, Any]]],
+    converged: dict[tuple[Any, str], list[tuple[LovableSyncRun, Any]]],
+    resolutions: dict[tuple[Any, str], list[tuple[dt.datetime, Any]]],
 ) -> None:
     run = night.run
+    reconciled = run_reconciled(run)
     for source_id in sorted(set(before) | set(after)):
         state = states.get(source_id)
         if state is None or state.matter_id not in live:
@@ -324,20 +405,21 @@ def _compare(
             for name in FIELD_ORDER:
                 if _key(name, was[name]) == _key(name, now[name]):
                     continue
-                applied_in = next(
-                    (
-                        r
-                        for r, source in applied.get((state.pk, name), [])
-                        if _key(name, source) == _key(name, now[name])
-                    ),
-                    None,
-                )
                 result, note = _result(
                     name,
                     now[name],
                     decision=decisions.get((state.pk, name)),
-                    applied_in=applied_in,
+                    topic=decisions.get((state.pk, "*")),
+                    applied_in=_matching(applied.get((state.pk, name), []), name, now[name]),
+                    converged_in=_matching(converged.get((state.pk, name), []), name, now[name]),
+                    resolved_at=_matching(
+                        resolutions.get((state.pk, name), []),
+                        name,
+                        now[name],
+                        after=run.started_at,
+                    ),
                     night=run,
+                    reconciled=reconciled,
                 )
                 topic.fields.append(
                     FieldChange(
@@ -383,10 +465,13 @@ def nightly_history(
     if not shown_runs:
         return History(nights=[], older=0, showing_all=show_all)
 
-    # Each shown night's baseline: the nearest earlier scheduled run that read Lovable.
-    snapshot_runs = set(
+    # Each shown night's baseline: the nearest earlier scheduled run that read
+    # Lovable *and did not fail* — a failed run's reading is shown for its own
+    # night, but is never what the next night is measured against.
+    with_snapshot = set(
         LovableSyncSnapshot.objects.filter(run__in=scheduled).values_list("run_id", flat=True)
     )
+    snapshot_runs = {r.pk for r in scheduled if r.pk in with_snapshot and is_baseline_run(r)}
     baseline_of: dict[Any, LovableSyncRun | None] = {}
     for position, run in enumerate(scheduled):
         if run not in shown_runs:
@@ -404,10 +489,19 @@ def nightly_history(
     decisions: dict[Any, dict[tuple[Any, str], LovableSyncDecision]] = {
         r.pk: {} for r in shown_runs
     }
-    for d in LovableSyncDecision.objects.filter(run__in=shown_runs).exclude(
-        outcome=SyncOutcome.APPLIED
+    for d in (
+        LovableSyncDecision.objects.filter(run__in=shown_runs)
+        .exclude(outcome=SyncOutcome.APPLIED)
+        .exclude(reason__startswith=RESOLVED_PREFIX)
     ):
         decisions[d.run_id][(d.state_id, d.field)] = d
+    # An operator's resolution (`lovable_sync resolve`) is recorded on whichever
+    # run last observed the field; it answers for the night the change appeared.
+    resolutions: dict[tuple[Any, str], list[tuple[dt.datetime, Any]]] = {}
+    for d in LovableSyncDecision.objects.filter(
+        outcome=SyncOutcome.ALREADY_CONVERGED, reason__startswith=RESOLVED_PREFIX
+    ).order_by("created_at"):
+        resolutions.setdefault((d.state_id, d.field), []).append((d.created_at, d.source))
     oldest = min(
         [b.started_at for b in baseline_of.values() if b is not None]
         + [r.started_at for r in shown_runs]
@@ -415,6 +509,15 @@ def nightly_history(
     applied_rows = (
         LovableSyncDecision.objects.filter(outcome=SyncOutcome.APPLIED, run__started_at__gt=oldest)
         .exclude(run__trigger=SyncTrigger.CHECK)
+        .select_related("run")
+        .order_by("run__started_at")
+    )
+    converged_rows = (
+        LovableSyncDecision.objects.filter(
+            outcome=SyncOutcome.ALREADY_CONVERGED, run__started_at__gt=oldest
+        )
+        .exclude(run__trigger=SyncTrigger.CHECK)
+        .exclude(reason__startswith=RESOLVED_PREFIX)
         .select_related("run")
         .order_by("run__started_at")
     )
@@ -460,6 +563,16 @@ def nightly_history(
                 window_applied.setdefault((row.state_id, row.field), []).append(
                     (row.run, row.source)
                 )
+        window_converged: dict[tuple[Any, str], list[tuple[LovableSyncRun, Any]]] = {}
+        for row in converged_rows:
+            if baseline.started_at < row.run.started_at <= run.started_at:
+                window_converged.setdefault((row.state_id, row.field), []).append(
+                    (row.run, row.source)
+                )
+        if not run_reconciled(run):
+            night.warning = NOT_RECONCILED
+        elif (run.error or "").startswith("VERIFY"):
+            night.warning = VERIFY_STOPPED_NIGHT
         _compare(
             night,
             before.get("cohort") or {},
@@ -469,6 +582,8 @@ def nightly_history(
             live=live,
             decisions=decisions[run.pk],
             applied=window_applied,
+            converged=window_converged,
+            resolutions=resolutions,
         )
         if not night.topics and not night.hidden:
             night.message = NO_CHANGES

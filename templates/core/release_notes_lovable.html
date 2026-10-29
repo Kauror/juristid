@@ -52,7 +52,7 @@ the visual suite masks every `<time>`, and this date identifies the group.
             {% endif %}
           </dl>
           {% if night.mode_note %}<p class="lovnight__note">{{ night.mode_note }}</p>{% endif %}
-          {% if night.failed %}<p class="lovnight__note lovnight__note--problem">Sünkroonimine ebaõnnestus. Allpool on ainult see, mis enne katkemist loeti.</p>{% endif %}
+          {% if night.warning %}<p class="lovnight__note lovnight__note--problem">{{ night.warning }}</p>{% elif night.failed %}<p class="lovnight__note lovnight__note--problem">Sünkroonimine ebaõnnestus. Allpool on ainult see, mis enne katkemist loeti.</p>{% endif %}
           {% if night.baseline_local %}<p class="lovnight__note">Võrreldud lugemisega {{ night.baseline_local }}.</p>{% endif %}
           {% if night.message %}<p class="empty">{{ night.message }}</p>{% endif %}
           {% if night.hidden %}<p class="lovnight__note">Veel {{ night.hidden }} muudetud teema{{ night.hidden|pluralize:",t" }} ei ole sulle nähtav.</p>{% endif %}
@@ -83,7 +83,7 @@ the visual suite masks every `<time>`, and this date identifies the group.
                           <td>{{ change.before }}</td>
                           <td>{{ change.after }}</td>
                           <td>
-                            <span class="statechip {% if change.result == 'APPLIED' or change.result == 'SAME' %}statechip--ok{% elif change.result == 'CONFLICT' or change.result == 'FAILED' %}statechip--problem{% else %}statechip--waiting{% endif %}">{{ change.result_label }}</span>
+                            <span class="statechip {% if change.result == 'APPLIED' or change.result == 'SAME' or change.result == 'RESOLVED' %}statechip--ok{% elif change.result == 'CONFLICT' or change.result == 'FAILED' %}statechip--problem{% else %}statechip--waiting{% endif %}">{{ change.result_label }}</span>
                             {% if change.note %}<span class="lovnight__why">{{ change.note }}</span>{% endif %}
                           </td>
                         </tr>
