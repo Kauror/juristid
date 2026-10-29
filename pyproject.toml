@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Koda Õigusloome — legislative matter and advocacy management system"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "django>=5.2,<6.0",
+    "django>=5.2,<7.0",
     "psycopg[binary]>=3.2",
     "gunicorn>=23.0",
     "whitenoise>=6.9",
