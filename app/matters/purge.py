@@ -156,7 +156,7 @@ def _chunked(values: Sequence[Any], size: int = CHUNK) -> Iterator[Sequence[Any]
         yield values[start : start + size]
 
 
-def _reverse_relations(model: type[models.Model]) -> list[Any]:
+def reverse_relations(model: type[models.Model]) -> list[Any]:
     """Every relation pointing *at* this model, hidden ones included.
 
     ``include_hidden`` matters twice. It is how the implicit through tables
@@ -175,7 +175,13 @@ def _reverse_relations(model: type[models.Model]) -> list[Any]:
     ]
 
 
-def _behaviour_name(on_delete: Any) -> str:
+def behaviour_name(on_delete: Any) -> str:
+    """``CASCADE``, ``PROTECT``, … — the name of a relation's ``on_delete``.
+
+    Public with `reverse_relations`, because the deletion planner
+    (`app.matters.deletion`) walks the same relations and must name a
+    behaviour the way the purge does (2026-10-28 audit, A-03).
+    """
     return {
         models.CASCADE: "CASCADE",
         models.PROTECT: "PROTECT",
@@ -211,7 +217,7 @@ def _collect_owned(matter_ids: Sequence[Any]) -> _Collected:
         model, ids = queue.pop(0)
         if not ids:
             continue
-        for relation in _reverse_relations(model):
+        for relation in reverse_relations(model):
             if relation.on_delete not in OWNING_BEHAVIOURS:
                 continue
             child = relation.related_model
@@ -223,7 +229,7 @@ def _collect_owned(matter_ids: Sequence[Any]) -> _Collected:
             collected.models.setdefault(child_label, child)
             # A model reached by two relations keeps the stricter description:
             # PROTECT is what a future purge would have to solve for.
-            behaviour = _behaviour_name(relation.on_delete)
+            behaviour = behaviour_name(relation.on_delete)
             if collected.behaviour.get(child_label) != "PROTECT":
                 collected.behaviour[child_label] = behaviour
             fresh = found - known
@@ -255,7 +261,7 @@ def _outside_references(collected: _Collected) -> list[Blocker]:
         if not owned_ids:
             continue
         target = sorted(owned_ids, key=str)
-        for relation in _reverse_relations(model):
+        for relation in reverse_relations(model):
             child_label = relation.related_model._meta.label
             outside = _referring_ids(relation, target) - collected.ids.get(child_label, set())
             if not outside:
@@ -266,7 +272,7 @@ def _outside_references(collected: _Collected) -> list[Blocker]:
                     label=f"{child_label}.{relation.field.name}",
                     count=len(outside),
                     detail=(
-                        f"{_behaviour_name(relation.on_delete)} onto {label}; "
+                        f"{behaviour_name(relation.on_delete)} onto {label}; "
                         "referring row is outside the test set"
                     ),
                 )
