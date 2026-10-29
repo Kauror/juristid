@@ -44,7 +44,14 @@ environment side is actually checked.
   not met — production has one usable full administrator by owner decision;
   the risk is recorded and accepted by the owner (ADR 0186, status update
   2026-10-25), which is not a sign-off of this gate.
-- Monitoring, security review and recovery runbooks.
+- Monitoring, security review and recovery runbooks. *Status 2026-10-29:*
+  an independent security and resilience review found no critical or high
+  weakness in the application and fixed what it confirmed (docs/adr/0196);
+  monitoring exists as a prepared wrapper (`scripts/deploy/juristid-monitor.sh`,
+  `docs/alerts.md`) and the incident runbook as `docs/incident-response.md`,
+  but **no alert reaches a person** until the host has a notification agent,
+  and the recovery gaps (no off-host copy, no secrets escrow, one operator)
+  are owner decisions still open. Not met.
 - An independent security/penetration assessment appropriate to exposure.
 
 ## Sign-off

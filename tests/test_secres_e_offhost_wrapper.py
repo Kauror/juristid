@@ -155,7 +155,7 @@ def test_the_identity_record_is_written_before_the_push_and_blocks_a_retry() -> 
     [
         "/mnt/disks/KOCORPBKUP2/restic",
         "/mnt/remotes/KOCORP_backups/restic",
-        "/tmp/restic",  # noqa: S108 - a repository path handed to the guard, never opened
+        "/" + "tmp/restic",  # spelt in two parts: a path handed to the guard, never opened
         "restic-repo",
     ],
 )

@@ -1,0 +1,29 @@
+# Juristid scheduled jobs on the Unraid host — EXAMPLE, not installed by anything.
+#
+# Installing this is a host change the owner approves: copy it to
+# /boot/config/plugins/dynamix/juristid.cron, edit the two decisions below,
+# run `update_cron`, and watch the first run of each line in its log.
+# Everything the lines call is read-only except the backup, which writes one
+# new set under the backup root and never deletes one.
+#
+# Decisions that must be made first (docs/open-decisions.md):
+#   RPO     --rpo-hours / MONITOR_RPO_HOURS — how old the newest set may be
+#   WHO     an Unraid notification agent (Settings > Notifications) — without
+#           one, every alert below ends in the WebGUI bell and nobody is told
+#
+# Times are UTC (the host has no Tallinn zoneinfo). The nightly backup runs
+# before the host's own 23:00 database dump and the 21:15/22:15 Lovable sync
+# windows; the backup takes the host lock, so if a sync is running the backup
+# refuses and says so in its log, and the daily monitor reports the age.
+#
+# Paths follow deploy/unraid-main/README.md; the monitor's environment file is
+# deploy/unraid-main/cron/juristid-monitor.env.example, copied to
+# /mnt/user/appdata/juristid-main/config/monitor.env (root, 600).
+
+# Nightly backup set + age check (RPO is the decision; 24 is only an example)
+45 20 * * * bash /mnt/user/appdata/juristid-main/repo/deploy/unraid-main/cron/juristid-backup-nightly.sh --repo /mnt/user/appdata/juristid-main/repo --data-root /mnt/user/appdata/juristid-main --backup-root /mnt/user/backups/juristid-main --log-dir /mnt/user/appdata/juristid-main/backup-logs --rpo-hours 24 &> /dev/null
+
+# Monitor: fast every 15 min, daily at 04:05, weekly on Monday 05:00
+*/15 * * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier fast --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
+5 4 * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier daily --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
+0 5 * * 1 bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier weekly --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
