@@ -2155,7 +2155,9 @@ Suitable from MVP/early management layer when definitions are agreed:
 
 - active FULL Matters;
 - new FULL Matters created;
-- formal Submissions sent (from Submission entity);
+- formal Submissions sent (from Submission entity); an opinion count leaves out
+  sends that are not opinions (an official «no comments» answer, ADR 0174), and
+  the list it opens applies the same exclusion (`?ainult=arvamused`);
 - response/submission deadlines;
 - active Matters without next action;
 - overdue `DO + DEADLINE` actions;

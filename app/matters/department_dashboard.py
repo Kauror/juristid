@@ -120,8 +120,9 @@ from app.matters.seis_help import (
     dept_unreviewed_help,
 )
 from app.matters.selectors import MISSING
-from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionStatus
+from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
+from app.submissions.workspace import OPINIONS_ONLY, OPINIONS_ONLY_PARAM, reportable_opinions
 
 #: How far back "recently arrived" reaches. A fortnight, because a department
 #: review is a fortnightly conversation.
@@ -287,11 +288,12 @@ def sent_submissions(user: Any, *, since: date, until: date | None = None) -> Qu
     or three hours ahead of UTC, so a letter sent at half past midnight belongs
     to the day the sender was living in.
     """
-    queryset = (
-        Submission.objects.visible_to(user)
-        .filter(status=SubmissionStatus.SENT, sent_at__isnull=False)
-        # Opinions: an official «no comments» answer is not one (docs/adr/0174).
-        .exclude(kind__in=NOT_AN_OPINION_KINDS)
+    # Opinions: an official «no comments» answer is not one (docs/adr/0174),
+    # by the exclusion the list behind «Saadetud arvamusi» applies too.
+    queryset = reportable_opinions(
+        Submission.objects.visible_to(user).filter(
+            status=SubmissionStatus.SENT, sent_at__isnull=False
+        )
     )
     # As a range on the timestamp (`local_day_range`), which is the same local
     # dates and which the `sent_at` index can answer (2026-10-17 audit, JPERF-005).
@@ -1617,7 +1619,10 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
 
     «Saadetud arvamusi» is the same population as the team table's `ARVAMUSI
     VÄLJA · <aasta>` Kokku cell, from the same window, and that equality is
-    asserted rather than assumed (`tests/test_department_page.py`).
+    asserted rather than assumed (`tests/test_department_page.py`). Its link
+    carries ``?ainult=arvamused``, so the list it opens leaves out the «no
+    comments» answers the figure leaves out (`workspace.reportable_opinions`,
+    2026-10-28 audit B-04; `tests/test_sent_opinion_drill_through.py`).
     """
     today = today or timezone.localdate()
     year = today.year
@@ -1630,7 +1635,7 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
         RailRow(
             "Saadetud arvamusi",
             sent_submissions(user, since=start, until=end).count(),
-            f"{reverse('submissions:sent')}?aasta={year}",
+            f"{reverse('submissions:sent')}?aasta={year}&{OPINIONS_ONLY_PARAM}={OPINIONS_ONLY}",
         ),
         RailRow(
             "Teemasid töövõiduga",
