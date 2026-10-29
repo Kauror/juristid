@@ -271,7 +271,9 @@ def test_a_definition_is_available_beside_every_number(page, base_url, screensho
     open_statistics(page, base_url, "teemad/")
 
     disclosure = page.locator("details.definition").first
-    disclosure.get_by_text("Kuidas arvutatakse?").click()
+    # A remembered block (docs/adr/0194): asked for open, not toggled.
+    expect(disclosure.locator(":scope > summary")).to_contain_text("Kuidas arvutatakse?")
+    open_disclosure(disclosure)
     expect(disclosure).to_contain_text("Populatsioon")
     expect(disclosure).to_contain_text("Ajavaade")
     screenshots(page, "statistika-definitsioon")

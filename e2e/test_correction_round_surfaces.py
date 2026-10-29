@@ -22,6 +22,7 @@ from e2e.conftest import (
     AVALDATUD_MUJAL,
     SAADETI_KOJALE,
     SANDRA,
+    await_post,
     create_matter,
     feedback_form,
     open_add_panel,
@@ -70,8 +71,7 @@ def _record_commencement(page, description: str, day: str) -> None:
     page.locator('label[for="marge-joustumine-valik"]').click()
     page.fill("input[name='effective_title']", description)
     page.fill("input[name='effective_on']", day)
-    page.locator("#marge-joustumine button[type=submit]").first.click()
-    page.wait_for_timeout(1200)
+    await_post(page, page.locator("#marge-joustumine button[type=submit]").first.click)
 
 
 def _save_feedback(page) -> None:
@@ -172,8 +172,7 @@ def test_the_member_mark_can_be_taken_off_again(page, base_url):
     mark = row.locator("input[name='source_is_member']")
     mark.wait_for(state="attached")
     mark.uncheck(force=True)
-    row.get_by_role("button", name="Salvesta").click()
-    page.wait_for_timeout(500)
+    await_post(page, row.get_by_role("button", name="Salvesta").click)
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -372,8 +371,7 @@ def test_a_mistaken_marge_can_be_taken_off_the_file(page, base_url):
     row.locator(".uxtl__icon--remove").click()
     # The confirmation names what is going and offers a way out.
     page.wait_for_selector("text=Eemaldan selle märke jaotisest «Tegevused»")
-    row.get_by_role("button", name="Eemalda", exact=True).click()
-    page.wait_for_timeout(800)
+    await_post(page, row.get_by_role("button", name="Eemalda", exact=True).click)
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -394,9 +392,8 @@ def test_the_confirmation_can_be_left_without_removing_anything(page, base_url):
     row.locator(".uxtl__icon--remove").click()
     page.wait_for_selector("text=Eemaldan selle märke jaotisest «Tegevused»")
     row.get_by_role("button", name="Loobu", exact=True).click()
-    page.wait_for_timeout(300)
 
-    assert "See märge jääb alles" in page.locator("#ajalugu-loend").inner_text()
+    expect(page.locator("#ajalugu-loend")).to_contain_text("See märge jääb alles")
     focused = page.evaluate("() => document.activeElement && document.activeElement.textContent")
     assert "Kustuta" in (focused or "")
 
@@ -413,8 +410,7 @@ def test_the_removal_is_still_in_the_change_log(page, base_url):
     row = page.locator("#ajalugu-loend .uxtl__item", has_text="Eemaldatav märge logis").first
     open_kaik_row(row)
     row.locator(".uxtl__icon--remove").click()
-    row.get_by_role("button", name="Eemalda", exact=True).click()
-    page.wait_for_timeout(800)
+    await_post(page, row.get_by_role("button", name="Eemalda", exact=True).click)
 
     page.goto(f"{url}muudatused/")
     page.wait_for_load_state("networkidle")
@@ -467,8 +463,7 @@ def test_the_koja_arvamus_row_can_be_corrected_like_every_other(page, base_url):
     box.wait_for(state="visible")
     box.fill("15.05.2026")
     row.locator("textarea[name='summary']").fill("Toetame eelnõu pikema üleminekuajaga.")
-    row.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_timeout(600)
+    await_post(page, row.get_by_role("button", name="Salvesta", exact=True).click)
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
@@ -528,8 +523,7 @@ def test_a_new_organisation_typed_into_the_picker_becomes_a_real_one(page, base_
     page.goto(second)
     picker = open_feedback_form(page).locator("[data-orgfind]").first
     picker.locator("[data-orgfind-input]").fill(name)
-    page.wait_for_timeout(400)
-    assert name in picker.inner_text()
+    expect(picker).to_contain_text(name)
 
 
 # ---------------------------------------------------------------------------
@@ -653,8 +647,7 @@ def test_a_correction_opened_and_saved_keeps_the_member_mark(page, base_url):
     editor = row.locator("form.uxtl__editform")
     editor.locator("textarea[name='summary']").wait_for(state="visible")
     assert editor.locator("input[name='source_is_member']").is_checked()
-    editor.get_by_role("button", name="Salvesta", exact=True).first.click()
-    page.wait_for_timeout(1000)
+    await_post(page, editor.get_by_role("button", name="Salvesta", exact=True).first.click)
 
     page.goto(url)
     page.wait_for_load_state("networkidle")
