@@ -325,7 +325,7 @@ heartbeat() {
 
 check_backup_age() {
   local output status
-  output="$("$SCRIPT_DIR/juristid-check-backup-age.sh" --backup-root "$MONITOR_BACKUP_ROOT" --max-age-hours "$MONITOR_RPO_HOURS" 2>&1)" && status=0 || status=$?
+  output="$(bash "$SCRIPT_DIR/juristid-check-backup-age.sh" --backup-root "$MONITOR_BACKUP_ROOT" --max-age-hours "$MONITOR_RPO_HOURS" 2>&1)" && status=0 || status=$?
   case "$status" in
     0) report backup_age ok "$(printf '%s\n' "$output" | grep '^OK:' | head -n 1)" ;;
     3) report backup_age WARN "$(printf '%s\n' "$output" | grep '^CRITICAL:' | head -n 1) RECOVERY.md, Has a backup been taken lately?" ;;
@@ -463,7 +463,7 @@ check_newest_set() {
   local newest status
   newest="$(find "$MONITOR_BACKUP_ROOT/sets" -maxdepth 1 -mindepth 1 -type d -name '[0-9]*Z' 2>/dev/null | sort | tail -n 1 || true)"
   [ -n "$newest" ] || { report verify_newest WARN "no backup set to verify."; return 0; }
-  if "$SCRIPT_DIR/juristid-verify-backup.sh" --project "$MONITOR_PROJECT" --compose-file "$MONITOR_COMPOSE_FILE" --set "$newest" --backup-root "$MONITOR_BACKUP_ROOT" --level 2 >/dev/null 2>&1; then
+  if bash "$SCRIPT_DIR/juristid-verify-backup.sh" --project "$MONITOR_PROJECT" --compose-file "$MONITOR_COMPOSE_FILE" --set "$newest" --backup-root "$MONITOR_BACKUP_ROOT" --level 2 >/dev/null 2>&1; then
     report verify_newest ok "newest set $(basename -- "$newest") passes level 2"
   else
     status=$?

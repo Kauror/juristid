@@ -303,7 +303,11 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
     *administrator's* own password and nobody else's: a link whose holder may
     not administer is answered exactly like no link at all — a 404.
     """
-    if keep_link_proof(request, purpose=purpose):
+    kept = keep_link_proof(request, purpose=purpose)
+    if kept or request.GET.get(mail.LINK_PARAMETER) is not None:
+        # Kept or not, a `?kood=` leaves the address bar at once; a value that
+        # was not the shape of a link kept nothing, and the bare page then
+        # answers it exactly like no link at all.
         return redirect(route)
 
     gate = not local_auth.is_local_password()
