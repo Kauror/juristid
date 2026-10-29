@@ -37,7 +37,7 @@ from app.matters.enums import EngagementKind
 from app.matters.models import Matter
 from app.matters.my_work import build_my_work
 from app.matters.next_step import upcoming_milestone, without_next_step
-from app.matters.selectors import active_deadline, filter_by_next_action
+from app.matters.selectors import filter_by_next_action
 from app.reporting.context import ReportingContext, parse_period
 from app.reporting.selectors.activity import active_without_next_action
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics
@@ -251,13 +251,15 @@ def test_an_informational_milestone_that_has_passed_is_not_late(specialist):
         if item.matter_id == matter.pk and item.source_type == wi.SOURCE_IMPORTANT_DEADLINE
     ]
     assert items == []
-    deadline = active_deadline(matter, specialist, today=TODAY)
-    assert deadline is not None and deadline.is_past and not deadline.is_overdue
     # An `OTHER` milestone that passed is still late, as before.
     other = factories.MatterFactory(owner=specialist)
     _milestone(other, specialist, days=-5, kind=ImportantDateKind.OTHER, title="Lubatud vastus")
-    late = active_deadline(other, specialist, today=TODAY)
-    assert late is not None and late.is_overdue
+    [late] = [
+        item
+        for item in wi.work_items(specialist, today=TODAY)
+        if item.matter_id == other.pk and item.source_type == wi.SOURCE_IMPORTANT_DEADLINE
+    ]
+    assert late.is_overdue and late.days_late == 5
 
 
 # ---------------------------------------------------------------------------
@@ -360,5 +362,8 @@ def test_a_source_estimated_commencement_is_informational_too(client, specialist
     assert "Järgmine samm on määramata" in _zone(client, matter)
     assert matter.pk in _missing(specialist, [matter])
     record = MatterImportantDate.objects.get(matter=matter)
-    passed = wi._deadline_item(record, record.period_end + timedelta(days=1))
-    assert passed.is_informational and not passed.is_overdue
+    # Not work at all, so never late: left out of the work population itself
+    # (`important_deadlines`), on the day after it passes as on any other.
+    assert record not in wi.important_deadlines(specialist)
+    passed = record.period_end + timedelta(days=1)
+    assert [i for i in wi.work_items(specialist, today=passed) if i.object_id == record.pk] == []

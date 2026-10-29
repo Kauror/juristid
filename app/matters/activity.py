@@ -286,28 +286,6 @@ class MatterActivityFact:
     def is_approximate(self) -> bool:
         return is_approximate(self.date_precision)
 
-    @property
-    def compact_display(self) -> str:
-        """The same fact for a surface that has no room for a year.
-
-        `12.5` for a day, which is what *Viimati muudetud* on Minu töö has
-        always printed, and the period spelled out for a month, a quarter or a
-        year — «oktoober 2025», not `10.25`, which two numbers under a column of
-        days read as a day (docs/adr/0120, UQ-09).
-
-        Never the anchor as a day. `01.10` under a heading that means "when
-        something last happened" is a claim about the first of October.
-        """
-        if self.is_approximate:
-            return self.display_date
-        return f"{self.occurred_on.day}.{self.occurred_on.month}"
-
-    @property
-    def is_source_derived(self) -> bool:
-        """Whether the date came from archived source metadata rather than
-        from something this system recorded."""
-        return self.basis in (ActivityBasis.ONENOTE_MODIFIED, ActivityBasis.ONENOTE_CREATED)
-
 
 def _latest(queryset: QuerySet[Any], field: str) -> Subquery:
     """``Max(field)`` for the Matters in the outer query, one subquery total.
@@ -799,3 +777,24 @@ def activity_for_matter(matter: Matter, user: Any) -> MatterActivityFact | None:
     """
     annotated = annotate_last_activity(Matter.objects.filter(pk=matter.pk), user).first()
     return activity_of(annotated) if annotated is not None else None
+
+
+__all__ = [
+    "ACTIVITY_COLUMNS",
+    "ACTIVITY_DATE",
+    "ANNOTATIONS",
+    "BASIS_LABELS",
+    "BASIS_PRECEDENCE",
+    "CHRONOLOGY_RELATIONSHIPS",
+    "ActivityBasis",
+    "MatterActivityFact",
+    "WorkSources",
+    "activity_for_matter",
+    "activity_of",
+    "annotate_activity_date",
+    "annotate_last_activity",
+    "annotated_slice",
+    "known_active_since",
+    "work_activity_between",
+    "work_sources",
+]

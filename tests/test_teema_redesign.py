@@ -30,6 +30,7 @@ from app.documents.preview import STATE_LABELS
 from app.documents.services import add_evidence_version, create_document, link_working_document
 from app.intelligence.models import MatterImportantDate
 from app.matters import selectors, workspace
+from app.matters import work_items as wi
 from app.matters.enums import EngagementKind
 from app.matters.models import MatterPersonalNote
 from app.matters.services import (
@@ -136,7 +137,9 @@ def test_a_restricted_matter_is_unreachable_for_an_outsider(client, administrato
     assert response.status_code == 404
 
 
-def test_the_header_shows_the_nearest_future_deadline(specialist):
+def test_the_header_counts_down_to_kodas_own_deadline_not_a_nearer_milestone(specialist):
+    """The header's resolver is `response_deadline_of` (docs/adr/0074 §2); the
+    «nearest dated thing» it replaced (`active_deadline`) is gone (A-05)."""
     today = timezone.localdate()
     matter = factories.MatterFactory(owner=specialist, response_deadline=today + timedelta(days=30))
     MatterImportantDate.objects.create(
@@ -146,15 +149,15 @@ def test_the_header_shows_the_nearest_future_deadline(specialist):
         period_end=today + timedelta(days=5),
     )
 
-    active = selectors.active_deadline(matter, specialist)
+    active = selectors.response_deadline_of(matter, specialist)
 
     assert active is not None
-    assert active.label == "Kooskõlastusringi lõpp"
-    assert active.days_remaining == 5
+    assert active.label == "Arvamuse tähtaeg"
+    assert active.days_remaining == 30
     assert not active.is_past
 
 
-def test_the_header_falls_back_to_the_nearest_past_deadline(specialist):
+def test_the_header_still_states_a_passed_deadline(specialist):
     today = timezone.localdate()
     matter = factories.MatterFactory(owner=specialist, response_deadline=today - timedelta(days=40))
     MatterImportantDate.objects.create(
@@ -164,10 +167,10 @@ def test_the_header_falls_back_to_the_nearest_past_deadline(specialist):
         period_end=today - timedelta(days=3),
     )
 
-    active = selectors.active_deadline(matter, specialist)
+    active = selectors.response_deadline_of(matter, specialist)
 
     assert active is not None
-    assert active.label == "Möödunud verstapost"
+    assert active.label == "Arvamuse tähtaeg"
     assert active.is_past
 
 
@@ -177,7 +180,7 @@ def test_the_deadline_slot_disappears_when_there_is_none(signed_in, specialist):
 
     body = _detail(signed_in, matter)
 
-    assert selectors.active_deadline(matter, specialist) is None
+    assert selectors.response_deadline_of(matter, specialist) is None
     assert "metaline__item--deadline" not in body
 
 
@@ -193,7 +196,7 @@ def test_the_next_action_review_date_is_not_a_header_deadline(specialist):
         actor=specialist,
     )
 
-    assert selectors.active_deadline(matter, specialist) is None
+    assert selectors.response_deadline_of(matter, specialist) is None
 
 
 def test_a_cancelled_milestone_is_not_the_active_deadline(specialist):
@@ -210,7 +213,9 @@ def test_a_cancelled_milestone_is_not_the_active_deadline(specialist):
     )
     cancel_important_date(record=record, actor=specialist)
 
-    assert selectors.active_deadline(matter, specialist) is None
+    # Not a deadline anywhere: the work model reads active milestones only.
+    assert record not in wi.important_deadlines(specialist)
+    assert selectors.response_deadline_of(matter, specialist) is None
 
 
 # ---------------------------------------------------------------------------

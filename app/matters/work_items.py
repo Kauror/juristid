@@ -117,7 +117,6 @@ from app.core.dates import format_estonian_date, short_day_month
 from app.intelligence.enums import (
     INFORMATIONAL_IMPORTANT_DATE_KINDS,
     FactStatus,
-    is_informational_milestone,
 )
 from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
@@ -337,11 +336,6 @@ class WorkItem:
     #: (docs/adr/0144 §1). An `Arvamuse järelkontroll` is planned too and keeps
     #: its own `record_url`.
     is_planned: bool = False
-    #: Whether this row is an informational `Oluline tähtaeg` (a commencement a
-    #: draft proposes, `INFORMATIONAL_IMPORTANT_DATE_KINDS`): a date the file
-    #: watches, never its next step and never late (docs/adr/0120, amendment of
-    #: 2026-10-19). Read off the stored kind; `False` on every other row.
-    is_informational: bool = False
 
     @property
     def date_display(self) -> str:
@@ -771,8 +765,11 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
     read model follow a reassignment without anybody editing the deadline: move
     the Matter and the milestone moves with it, which is the behaviour a
     department actually has (§4.2).
+
+    Never an informational milestone (`INFORMATIONAL_IMPORTANT_DATE_KINDS`):
+    :func:`important_deadlines` leaves those out of the work population, so
+    every row here is a commitment (docs/adr/0120, amendment of 2026-10-27).
     """
-    informational = is_informational_milestone(record.kind)
     return WorkItem(
         source_type=SOURCE_IMPORTANT_DEADLINE,
         object_id=record.pk,
@@ -788,13 +785,10 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
         meaning=MEANING_IMPORTANT,
         text=record.title,
         # A milestone is a real commitment, so its last day passing is genuine
-        # lateness — unlike a review date, which is only a reminder. An
-        # informational one is not a commitment of anybody's here: a draft's
-        # planned commencement passing is not Koda being late.
-        is_overdue=record.period_end < today and not informational,
+        # lateness — unlike a review date, which is only a reminder.
+        is_overdue=record.period_end < today,
         is_review_ripe=False,
         today=today,
-        is_informational=informational,
     )
 
 
@@ -1114,9 +1108,7 @@ def response_obligation_outstanding_q(user: Any) -> Q:
     return Q(response_deadline__isnull=False) & ~_discharge_exists(user)
 
 
-def response_obligations(
-    user: Any, *, owner: Any = None, open_only: bool = True
-) -> QuerySet[Matter]:
+def response_obligations(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
     """Matters whose ``Arvamuse tähtaeg`` is still officially unanswered.
 
     This is the **obligation**, not the plan, and they are two different
@@ -1144,19 +1136,16 @@ def response_obligations(
     reason :func:`important_deadlines` does — this obligation belongs to whoever
     carries the file.
 
-    ``open_only=False`` drops **only** the ``is_open`` clause. ARCHIVE rows stay
-    out and the reader scope stays on; what changes is that a closed Matter with
-    an unanswered deadline can be described honestly, which is a different act
-    from putting it in a live queue. Nothing that reads this population for work
-    passes ``False``.
+    Open Matters only. A closed Matter with an unanswered deadline is described
+    honestly by :func:`response_obligation_of`, which is a different act from
+    putting it in a live queue. (An ``open_only=False`` switch for that had no
+    caller outside its own test and went after the 2026-10-28 audit, A-10.)
 
     ``Matter.response_deadline`` is never written, cleared or moved by any of
     this. It remains canonical Matter data stating itself in the header, exactly
     as ADR 0050 requires.
     """
-    base = full_matters(user)
-    if open_only:
-        base = base.filter(is_open=True)
+    base = full_matters(user).filter(is_open=True)
     queryset = (
         annotate_response_obligation(base.filter(response_deadline__isnull=False), user)
         .filter(**{DISCHARGED: False})
@@ -1713,15 +1702,6 @@ def review_ripe_items(items: list[WorkItem]) -> list[WorkItem]:
     return [item for item in items if item.is_review_ripe]
 
 
-def week_items(items: list[WorkItem], today: date, week_end: date | None = None) -> list[WorkItem]:
-    """Dated work falling inside the current ISO week, today included.
-
-    A day of this week, never a period (docs/adr/0122 §2).
-    """
-    week_end = week_end or end_of_iso_week(today)
-    return [item for item in items if item.in_window(today, week_end)]
-
-
 def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
     """Only what a department may honestly call a deadline.
 
@@ -2150,7 +2130,6 @@ __all__ = [
     "start_of_iso_week",
     "undated_actions",
     "undated_feedback_waits",
-    "week_items",
     "work_items",
     "work_population_ids",
     "work_population_items",

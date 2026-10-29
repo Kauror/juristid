@@ -572,7 +572,7 @@ def test_the_obligation_costs_the_same_however_many_matters_it_holds(specialist,
 
 
 def test_a_closed_matter_is_described_honestly_and_queued_nowhere(specialist, today):
-    """``open_only=False`` drops the ``is_open`` clause and nothing else.
+    """The obligation population is open Matters; a closed one is described, not queued.
 
     Closing a file stops the work. It does not retrospectively answer a ministry,
     and a product that cannot say so has no way to report what was never sent.
@@ -584,7 +584,6 @@ def test_a_closed_matter_is_described_honestly_and_queued_nowhere(specialist, to
 
     assert matter.is_open is False
     assert matter.pk not in _obliged(specialist)
-    assert matter.pk in _obliged(specialist, open_only=False)
 
     # Still in no live work population.
     assert matter.pk not in _operational(specialist)
@@ -599,14 +598,16 @@ def test_a_closed_matter_is_described_honestly_and_queued_nowhere(specialist, to
     assert matter.response_deadline == today - timedelta(days=30)
 
 
-def test_open_only_false_drops_the_open_clause_and_nothing_else(specialist, administrator, today):
-    """An ARCHIVE row and a restricted Matter stay out of both spellings.
+def test_an_archive_row_and_an_unreadable_matter_are_never_obligations(
+    specialist, administrator, today
+):
+    """An ARCHIVE row and a restricted Matter its reader may not see stay out.
 
-    The flag widens the population by exactly one clause. A reading that also
-    dropped the record mode would put a decade of imported register rows into a
-    report about what Koda still owes, and one that dropped the reader scope
-    would be the leak the scope exists to prevent. (The scoped-out viewer is an
-    administrator without a grant since docs/adr/0181; a READER sees it.)
+    A reading that dropped the record mode would put a decade of imported
+    register rows into a report about what Koda still owes, and one that dropped
+    the reader scope would be the leak the scope exists to prevent. (The
+    scoped-out viewer is an administrator without a grant since docs/adr/0181;
+    a READER sees it.)
     """
     archived = factories.ArchiveMatterFactory(
         owner=specialist,
@@ -619,10 +620,9 @@ def test_open_only_false_drops_the_open_clause_and_nothing_else(specialist, admi
         visibility=Visibility.RESTRICTED,
     )
 
-    for open_only in (True, False):
-        assert archived.pk not in _obliged(specialist, open_only=open_only)
-        assert hidden.pk not in _obliged(administrator, open_only=open_only)
-        assert hidden.pk in _obliged(specialist, open_only=open_only)
+    assert archived.pk not in _obliged(specialist)
+    assert hidden.pk not in _obliged(administrator)
+    assert hidden.pk in _obliged(specialist)
 
 
 # ---------------------------------------------------------------------------

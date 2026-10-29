@@ -94,7 +94,6 @@ PORTFOLIO_LIMIT = 200
 #: measured against the same activity fact the register's *Viimane tegevus*
 #: column shows, so a row cannot be recent here and stale there.
 RECENT_DAYS = 7
-QUIET_DAYS = wi.QUIET_DAYS
 
 
 def _month_end(year: int, month: int) -> date:
@@ -434,11 +433,9 @@ def _upcoming_milestones(items: list[wi.WorkItem], today: date) -> dict[Any, wi.
             continue
         end = item.period_end or item.when
         # An informational milestone is a date the file watches, never its next
-        # step (`INFORMATIONAL_IMPORTANT_DATE_KINDS`): the same test the page
-        # and `without_next_step` apply, read off the item rather than a record.
-        if item.is_informational or not milestone_is_upcoming(
-            status=FactStatus.ACTIVE, period_end=end, today=today
-        ):
+        # step (`INFORMATIONAL_IMPORTANT_DATE_KINDS`), and never a work item at
+        # all: `work_items.important_deadlines` leaves it out.
+        if not milestone_is_upcoming(status=FactStatus.ACTIVE, period_end=end, today=today):
             continue
         key = milestone_order(item.when, end, item.object_id)
         current = chosen.get(item.matter_id)

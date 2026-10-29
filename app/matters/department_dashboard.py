@@ -836,7 +836,6 @@ class UpcomingGroup:
     items: list[wi.WorkItem]
     starts: date
     ends: date | None
-    shown: int
 
     @property
     def count(self) -> int:
@@ -859,26 +858,6 @@ class UpcomingGroup:
         honest count for `url`, and the pair the window's own tests hold apart.
         """
         return len({item.matter_id for item in self.items})
-
-    @property
-    def preview(self) -> list[wi.WorkItem]:
-        """The head of the window, and no longer what *Eesolev* renders.
-
-        The panel showed `preview` and put `rest` behind a «Näita veel N»
-        disclosure inside the group. The group is itself a disclosure now and
-        owns every row, so the template reads `items`: opening «kõik N» that
-        revealed some of N would be the same lie the old count was.
-        """
-        return self.items[: self.shown]
-
-    @property
-    def rest(self) -> list[wi.WorkItem]:
-        """The tail `preview` leaves. Unrendered, for the same reason."""
-        return self.items[self.shown :]
-
-    @property
-    def remaining(self) -> int:
-        return max(0, self.count - self.shown)
 
     @property
     def rendered(self) -> list[wi.WorkItem]:
@@ -957,13 +936,6 @@ class UpcomingGroup:
         return register_url(**params)
 
 
-#: Where `preview` cuts a group, for the two windows that carry a cut at all.
-#: *Eesolev* does not render the cut any more — every window is one disclosure
-#: and opening it shows the whole window — so this now describes the read model
-#: alone. Five is what the three-window panel of docs/adr/0046 also showed; that
-#: panel and its own constant are gone, and this is the only one left.
-UPCOMING_PREVIEW = 5
-
 #: How many rows one *Eesolev* window draws when opened (`UpcomingGroup.rendered`).
 #: A hundred deadlines in one window is beyond any working department's week;
 #: the cap exists for the scale where every open file has a date ahead, and the
@@ -1037,19 +1009,6 @@ def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], .
     )
 
 
-#: Where each window's `preview` cuts. `None` means "all of them", and the panel
-#: renders all of them either way: *Eesolev*'s windows are disclosures now and
-#: none of them slices.
-_UPCOMING_SHOWN: dict[str, int | None] = {
-    "tana": None,
-    "homme": None,
-    "nadala_lopp": None,
-    "nadal": None,
-    "kuu": UPCOMING_PREVIEW,
-    "kaugemal": UPCOMING_PREVIEW,
-}
-
-
 def upcoming_groups(
     user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
 ) -> list[UpcomingGroup]:
@@ -1085,17 +1044,7 @@ def upcoming_groups(
         window = wi.work_population_items(
             deadlines, wi.WORK_DEADLINE_WINDOW, today, window=(starts, ends)
         )
-        shown = _UPCOMING_SHOWN[key]
-        groups.append(
-            UpcomingGroup(
-                key=key,
-                label=label,
-                items=window,
-                starts=starts,
-                ends=ends,
-                shown=len(window) if shown is None else shown,
-            )
-        )
+        groups.append(UpcomingGroup(key=key, label=label, items=window, starts=starts, ends=ends))
     return groups
 
 

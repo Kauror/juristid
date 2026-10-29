@@ -3900,8 +3900,8 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # approved target reads `Saabus` and `Tähtaeg` as a pair — when it
         # arrived, when Koda's answer is due — so the slot cannot be filled by
         # whichever `MatterImportantDate` happens to be nearest
-        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). `selectors.active_deadline`
-        # still answers that broader question for the surfaces that ask it.
+        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). The work model answers that
+        # broader question for the surfaces that ask it (`work_items`).
         "response_deadline": selectors.response_deadline_of(matter, request.user),
         # The deadline's history and the form's choices. Callables, cached, so
         # only a surface that draws them pays: the header asks for the last

@@ -1419,7 +1419,7 @@ def test_the_header_still_states_the_response_deadline(client, specialist, today
         text="Vaatan uuesti üle",
     )
 
-    resolved = selectors.active_deadline(matter, specialist, today=today)
+    resolved = selectors.response_deadline_of(matter, specialist, today=today)
     assert resolved is not None
     assert resolved.value == date(2026, 1, 27)
     assert resolved.label == "Arvamuse tähtaeg"

@@ -386,8 +386,6 @@ def _work_status(item: wi.WorkItem) -> str:
         return "üle tähtaja"
     if item.is_review_ripe:
         return "ülevaatamise aeg on käes"
-    if item.is_informational:
-        return "teadmiseks, ei ole tähtaeg"
     if item.is_follow_up:
         return "arvamuse järelkontroll"
     if item.is_planned:

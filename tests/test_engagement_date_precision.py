@@ -582,7 +582,6 @@ def test_viimane_tegevus_is_unchanged_for_every_exact_fact(specialist):
     assert fact is not None
     assert fact.date_precision == DatePrecision.EXACT
     assert fact.display_date == "12.9.2026"
-    assert fact.compact_display == "12.9"
 
 
 @pytest.mark.parametrize(

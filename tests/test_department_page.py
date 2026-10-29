@@ -970,14 +970,15 @@ def test_a_window_holds_the_whole_of_itself_rather_than_a_preview(
 
     group = next(g for g in dd.upcoming_groups(department_head, today) if g.key == "kaugemal")
     assert group.count == 6
-    assert group.preview and group.rest, "the fixture no longer exercises the old split"
+    # More than the five rows the old two-tier panel showed before its «Näita veel».
+    assert len(group.items) > 5, "the fixture no longer exercises the old split"
 
     panel = eesolev(client, department_head)
     assert "Näita veel" not in panel
     assert "Näita kõiki" not in panel
 
     (body,) = bodies_of(panel)
-    for item in [*group.preview, *group.rest]:
+    for item in group.items:
         assert item.matter.title in body, item.matter.title
 
 
@@ -1212,8 +1213,7 @@ def test_kaugemal_is_a_list_rather_than_a_summary(department_head, specialist, t
 
     group = next(g for g in dd.upcoming_groups(department_head, today) if g.key == "kaugemal")
     assert group.count == 6
-    assert len(group.preview) == dd.UPCOMING_PREVIEW
-    assert len(group.rest) == 1
+    assert group.rendered == group.items
     assert group.range_label.startswith("alates ")
 
 

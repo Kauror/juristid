@@ -113,7 +113,6 @@ def test_an_import_timestamp_is_never_reported_as_activity(specialist):
     assert fact is not None
     assert fact.occurred_on.year == 2018
     assert fact.basis == ActivityBasis.ONENOTE_MODIFIED
-    assert fact.is_source_derived is True
 
 
 def test_the_modified_date_beats_the_created_date_on_the_same_page(specialist):
