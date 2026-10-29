@@ -475,12 +475,12 @@ def test_e050_is_silent_for_every_other_process(settings):
 
 
 @pytest.mark.django_db
-def test_e050_refuses_the_owner_role_on_real_data_and_warns_elsewhere(settings):
+@pytest.mark.parametrize("real_data", [True, False])
+def test_e050_refuses_the_owner_role_whatever_the_real_data_flag(settings, real_data):
+    """Audit 2026-10-28 C-04: the writer role is the gateway's only database lock."""
     settings.JURISTID_PROCESS_ROLE = "mcp_writer"
-    settings.REAL_DATA_ALLOWED = True
+    settings.REAL_DATA_ALLOWED = real_data
     found = checks.check_mcp_writer_database_role()
     assert [type(item).__name__ for item in found] == ["Error"]
     assert found[0].id == "juristid.E050"
     assert "must never write" in found[0].msg
-    settings.REAL_DATA_ALLOWED = False
-    assert [type(item).__name__ for item in checks.check_mcp_writer_database_role()] == ["Warning"]

@@ -270,15 +270,16 @@ def test_e047_is_silent_for_every_other_process(settings):
     assert checks.check_mcp_database_role() == []
 
 
-def test_e047_refuses_the_owner_role_on_real_data_and_warns_elsewhere(settings):
+@pytest.mark.parametrize("real_data", [True, False])
+def test_e047_refuses_the_owner_role_whatever_the_real_data_flag(settings, real_data):
+    """Audit 2026-10-28 C-04: an env file that lost REAL_DATA_ALLOWED must not
+    turn a write-capable MCP reader into a warning."""
     settings.JURISTID_PROCESS_ROLE = "mcp"
-    settings.REAL_DATA_ALLOWED = True
+    settings.REAL_DATA_ALLOWED = real_data
     found = checks.check_mcp_database_role()
     assert [type(item).__name__ for item in found] == ["Error"]
     assert found[0].id == "juristid.E047"
     assert "SUPERUSER" in found[0].msg or "owns or may write" in found[0].msg
-    settings.REAL_DATA_ALLOWED = False
-    assert [type(item).__name__ for item in checks.check_mcp_database_role()] == ["Warning"]
 
 
 def test_e047_finds_nothing_wrong_with_the_role_the_command_made(mcp_role):
@@ -295,7 +296,8 @@ def test_privilege_problems_name_what_the_owner_role_holds():
     assert "may SELECT django_session" in joined
 
 
-def test_run_mcp_server_refuses_to_serve_as_the_owner_role_on_real_data(settings, monkeypatch):
+@pytest.mark.parametrize("real_data", [True, False])
+def test_run_mcp_server_refuses_to_serve_as_a_write_capable_role(settings, monkeypatch, real_data):
     import uvicorn
     from django.core.management.base import SystemCheckError
 
@@ -303,7 +305,7 @@ def test_run_mcp_server_refuses_to_serve_as_the_owner_role_on_real_data(settings
 
     fx.configure(settings)
     settings.JURISTID_PROCESS_ROLE = "mcp"
-    settings.REAL_DATA_ALLOWED = True
+    settings.REAL_DATA_ALLOWED = real_data
     served: list[Any] = []
     monkeypatch.setattr(uvicorn.Server, "run", lambda self, sockets=None: served.append(self))
 

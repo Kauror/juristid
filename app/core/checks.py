@@ -1043,10 +1043,14 @@ def check_mcp_database_role(app_configs: Any = None, **kwargs: Any) -> list[Erro
     default (NEW-02) — read from the catalogue, not from this session's options
     (`app.mcp_server.db_role.privilege_problems`).
 
-    An error wherever real data is allowed; a warning elsewhere, where a laptop
-    or CI connects as the one role it has. A database check: `run_mcp_server`
-    runs it before serving (`manage.py check --database default` does too).
-    Only the catalogue is read.
+    Always an error in this process role, whatever `REAL_DATA_ALLOWED` says
+    (audit 2026-10-28 C-04): the role is the only lock on what the MCP process
+    can do to the database, and a hand-edited env file that dropped the
+    real-data flag must not turn a write-capable reader into a warning. No CI
+    job or local workflow runs the `mcp` role against the owner role; one that
+    needs a reader makes it with `manage.py mcp_db_role --apply`. A database
+    check: `run_mcp_server` runs it before serving (`manage.py check --database
+    default` does too). Only the catalogue is read.
     """
     if _process_role() != "mcp":
         return []
@@ -1061,9 +1065,8 @@ def check_mcp_database_role(app_configs: Any = None, **kwargs: Any) -> list[Erro
         problems = [f"the role's privileges could not be read ({type(error).__name__})"]
     if not problems:
         return []
-    kind = Error if getattr(settings, "REAL_DATA_ALLOWED", False) else Warning
     return [
-        kind(
+        Error(
             "The MCP process's database role is not SELECT-only: " + "; ".join(problems) + ".",
             hint=(
                 "Create the role from web with `manage.py mcp_db_role --apply --password-stdin` "
@@ -1087,9 +1090,9 @@ def check_mcp_writer_database_role(app_configs: Any = None, **kwargs: Any) -> li
     and carry its bounds as role settings
     (`app.mcp_writes.db_role.privilege_problems_writer`).
 
-    An error wherever real data is allowed; a warning elsewhere. A database
-    check: the gateway's commands run it before serving. Only the catalogue is
-    read.
+    Always an error in this process role, whatever `REAL_DATA_ALLOWED` says
+    (audit 2026-10-28 C-04), for the reason E047 gives. A database check: the
+    gateway's commands run it before serving. Only the catalogue is read.
     """
     if _process_role() != "mcp_writer":
         return []
@@ -1104,9 +1107,8 @@ def check_mcp_writer_database_role(app_configs: Any = None, **kwargs: Any) -> li
         problems = [f"the role's privileges could not be read ({type(error).__name__})"]
     if not problems:
         return []
-    kind = Error if getattr(settings, "REAL_DATA_ALLOWED", False) else Warning
     return [
-        kind(
+        Error(
             "The MCP write gateway's database role is not the least-privilege writer: "
             + "; ".join(problems)
             + ".",

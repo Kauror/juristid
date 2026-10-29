@@ -10,6 +10,7 @@ with connections of their own and must see what the test wrote.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 from datetime import timedelta
@@ -334,3 +335,21 @@ def test_brackets_inside_strings_do_not_count_as_nesting():
     assert not gateway.too_deep(b'{"text": "' + b"[" * 100 + b'\\" ]"}')
     assert gateway.too_deep(b"[" * 33)
     assert not gateway.too_deep(b"[" * 32 + b"]" * 32)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("real_data", [True, False])
+def test_the_gateway_does_not_start_on_a_write_capable_owner_role(settings, monkeypatch, real_data):
+    """Audit 2026-10-28 C-04: E050 is an error in the `mcp_writer` role whether
+    or not REAL_DATA_ALLOWED is set, so a gateway connected as the test
+    database's owner (it can write every table) never reaches uvicorn."""
+    import uvicorn
+    from django.core.management.base import SystemCheckError
+
+    settings.JURISTID_PROCESS_ROLE = settings.MCP_WRITER_PROCESS_ROLE
+    settings.REAL_DATA_ALLOWED = real_data
+    served: list[Any] = []
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self, sockets=None: served.append(self))
+    with pytest.raises(SystemCheckError, match=r"juristid\.E050"):
+        call_command("run_mcp_write_gateway", stdout=io.StringIO(), stderr=io.StringIO())
+    assert served == []
