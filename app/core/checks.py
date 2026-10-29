@@ -1028,6 +1028,11 @@ def _mcp_writer_problems() -> list[Error | Warning]:
     return problems
 
 
+def _names_default(kwargs: dict[str, Any]) -> bool:
+    """Whether a database check was asked to look at the ``default`` database."""
+    return "default" in (kwargs.get("databases") or ())
+
+
 @register(Tags.database)
 def check_mcp_database_role(app_configs: Any = None, **kwargs: Any) -> list[Error | Warning]:
     """juristid.E047: the MCP process is connected as a SELECT-only role (MCPSEC-03).
@@ -1051,8 +1056,13 @@ def check_mcp_database_role(app_configs: Any = None, **kwargs: Any) -> list[Erro
     needs a reader makes it with `manage.py mcp_db_role --apply`. A database
     check: `run_mcp_server` runs it before serving (`manage.py check --database
     default` does too). Only the catalogue is read.
+
+    Like every database check, silent when no database is named: a plain
+    `manage.py check` passes ``databases=None``, which is Django's way of saying
+    "do not touch a database" — the image's static check runs without one.
+    Before C-04 that went unnoticed because the result was a warning there.
     """
-    if _process_role() != "mcp":
+    if _process_role() != "mcp" or not _names_default(kwargs):
         return []
     from django.db import connection
 
@@ -1093,8 +1103,9 @@ def check_mcp_writer_database_role(app_configs: Any = None, **kwargs: Any) -> li
     Always an error in this process role, whatever `REAL_DATA_ALLOWED` says
     (audit 2026-10-28 C-04), for the reason E047 gives. A database check: the
     gateway's commands run it before serving. Only the catalogue is read.
+    Silent when no database is named, as E047 is.
     """
-    if _process_role() != "mcp_writer":
+    if _process_role() != "mcp_writer" or not _names_default(kwargs):
         return []
     from django.db import connection
 

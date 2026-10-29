@@ -267,7 +267,15 @@ def test_the_command_refuses_what_it_should(args):
 
 def test_e047_is_silent_for_every_other_process(settings):
     settings.JURISTID_PROCESS_ROLE = ""
+    assert checks.check_mcp_database_role(databases=["default"]) == []
+
+
+def test_e047_touches_no_database_when_none_is_named(settings):
+    """A plain `manage.py check` passes ``databases=None`` (the image's static
+    check, which runs with no database at all): a database check stays silent."""
+    settings.JURISTID_PROCESS_ROLE = "mcp"
     assert checks.check_mcp_database_role() == []
+    assert checks.check_mcp_database_role(databases=None) == []
 
 
 @pytest.mark.parametrize("real_data", [True, False])
@@ -276,7 +284,7 @@ def test_e047_refuses_the_owner_role_whatever_the_real_data_flag(settings, real_
     turn a write-capable MCP reader into a warning."""
     settings.JURISTID_PROCESS_ROLE = "mcp"
     settings.REAL_DATA_ALLOWED = real_data
-    found = checks.check_mcp_database_role()
+    found = checks.check_mcp_database_role(databases=["default"])
     assert [type(item).__name__ for item in found] == ["Error"]
     assert found[0].id == "juristid.E047"
     assert "SUPERUSER" in found[0].msg or "owns or may write" in found[0].msg

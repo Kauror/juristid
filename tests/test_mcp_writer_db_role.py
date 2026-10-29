@@ -471,7 +471,14 @@ def test_a_placeholder_or_short_password_changes_nothing():
 def test_e050_is_silent_for_every_other_process(settings):
     for role in ("", "web", "mcp"):
         settings.JURISTID_PROCESS_ROLE = role
-        assert checks.check_mcp_writer_database_role() == []
+        assert checks.check_mcp_writer_database_role(databases=["default"]) == []
+
+
+def test_e050_touches_no_database_when_none_is_named(settings):
+    """As E047: a plain `manage.py check` names no database."""
+    settings.JURISTID_PROCESS_ROLE = "mcp_writer"
+    assert checks.check_mcp_writer_database_role() == []
+    assert checks.check_mcp_writer_database_role(databases=None) == []
 
 
 @pytest.mark.django_db
@@ -480,7 +487,7 @@ def test_e050_refuses_the_owner_role_whatever_the_real_data_flag(settings, real_
     """Audit 2026-10-28 C-04: the writer role is the gateway's only database lock."""
     settings.JURISTID_PROCESS_ROLE = "mcp_writer"
     settings.REAL_DATA_ALLOWED = real_data
-    found = checks.check_mcp_writer_database_role()
+    found = checks.check_mcp_writer_database_role(databases=["default"])
     assert [type(item).__name__ for item in found] == ["Error"]
     assert found[0].id == "juristid.E050"
     assert "must never write" in found[0].msg
