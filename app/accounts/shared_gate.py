@@ -41,6 +41,7 @@ from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import transaction
 from django.http import HttpRequest
+from django.middleware.csrf import rotate_token
 from django.utils import timezone
 from django.utils.crypto import salted_hmac
 
@@ -243,8 +244,14 @@ def client_key(request: HttpRequest) -> str:
     `CF-Connecting-IP`, the only thing that distinguishes callers. The throttle
     is a rate limit, not identity: an attacker who could vary the address still
     has to guess a long password one request at a time.
+
+    Counted per `throttle.counting_unit` — an IPv4 address, an IPv6 /64 — the
+    unit the personal sign-in throttle already counts, so a subscriber's prefix
+    is one client here too (security review 2026-10-29, A-01).
     """
-    return key_for_address(client_ip(request) or "unknown")
+    from app.accounts.throttle import counting_unit
+
+    return key_for_address(counting_unit(client_ip(request) or "") or "unknown")
 
 
 def key_for_address(address: str) -> str:
@@ -513,10 +520,17 @@ def open_gate(request: HttpRequest, *, carried: GatePass | None = None) -> None:
     before a rotation into one after it, and a carried pass with no version
     stays one that `has_passed` refuses (docs/adr/0183). The idle clock does
     restart: a persona change is a request like any other.
+
+    A fresh pass also rotates the CSRF secret, as Django's `login()` does at
+    the persona step: a CSRF cookie planted before the password (a sibling
+    host of the domain, a shared browser) must not stay valid for the POSTs a
+    gate session makes before it picks a name (security review 2026-10-29,
+    A-02). A carried pass is not a sign-in and rotates nothing of its own.
     """
     request.session.cycle_key()
     now = timezone.now().isoformat()
     if carried is None:
+        rotate_token(request)
         passed_at, credential = now, credential_version()
     else:
         passed_at, credential = carried.passed_at or now, carried.credential or ""

@@ -220,6 +220,18 @@ if [ -n "$ENV_FILE" ]; then
   else
     fail "the environment file is missing: $ENV_FILE. The stack will not start, and the failure will be about a variable rather than about this."
   fi
+  # A copy of an environment file beside the live one (`*.bak-*`, `*~`,
+  # `*.orig`) holds the secrets of an earlier day — usually the very values a
+  # rotation was meant to retire, since the gate password rotation says never
+  # to rotate back (README). The 2026-10-29 security review found nine of
+  # them on the host (D-05). Names only, never a value; a warning rather than
+  # a refusal, because deleting them is the owner's step, not the release's.
+  env_dir="$(dirname -- "$ENV_FILE")"
+  for copy in "$env_dir"/*.bak* "$env_dir"/*~ "$env_dir"/*.orig; do
+    [ -e "$copy" ] || continue
+    printf 'WARN %s
+' "a copy of an environment file sits beside the live one: $(basename -- "$copy"). It holds the secrets of the day it was taken; delete it, or move it to the escrow RECOVERY.md names."
+  done
 fi
 
 # AI access (docs/adr/0185): the MCP server's and the tunnel client's own

@@ -28,6 +28,29 @@ die() {
   exit 1
 }
 
+# The host lock: one directory, `mkdir` as the atomic test-and-take, an `owner`
+# file naming who holds it. `juristid-lovable-sync.sh` takes it so a release
+# cannot start under a run; the backup and the restore take it too (security
+# review 2026-10-29, E-04), because a `pg_dump` beside a release's `migrate`
+# waits on its locks, and a dump beside a `pg_restore --single-transaction`
+# records the empty pre-restore database as that minute's backup. Overridable
+# for a test harness, never for a deployment.
+JURISTID_HOST_LOCK="${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}"
+
+take_host_lock() {
+  local owner="$1"
+  mkdir "$JURISTID_HOST_LOCK" 2>/dev/null || return 1
+  printf 'owner=%s pid=%s %s\n' "$owner" "$$" "$(date -u +%FT%TZ)" > "$JURISTID_HOST_LOCK/owner"
+}
+
+host_lock_owner() {
+  cat "$JURISTID_HOST_LOCK/owner" 2>/dev/null || printf 'unknown'
+}
+
+release_host_lock() {
+  rm -rf -- "$JURISTID_HOST_LOCK"
+}
+
 note() {
   printf '%s\n' "$*"
 }

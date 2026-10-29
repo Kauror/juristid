@@ -28,6 +28,7 @@ from __future__ import annotations
 import base64
 import datetime as dt
 import json
+import logging
 import re
 import time
 import urllib.error
@@ -83,6 +84,9 @@ MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_INDEX_ROWS = 20_000
 ID_CHUNK = 50
 CONSISTENCY_ATTEMPTS = 3
+
+
+logger = logging.getLogger("app.legacy_import.lovable")
 
 
 class SourceError(Exception):
@@ -363,13 +367,37 @@ def only_columns(
     rows: Iterable[Any], columns: Iterable[str], *, table: str
 ) -> list[dict[str, Any]]:
     """Each row cut down to the columns asked for: a column the source sends
-    beyond the allowlist is dropped here, so it never reaches a snapshot."""
+    beyond the allowlist is dropped here, so it never reaches a snapshot.
+
+    A NUL (U+0000) inside a string is dropped here too. PostgreSQL holds it in
+    neither ``text`` nor ``jsonb``, so before this the first consumer that could
+    not hold it was the snapshot's INSERT, whose ``DataError`` failed the whole
+    night as ``INTERNAL`` without naming a table or a row — and every night after
+    it, until somebody edited Lovable (security review 2026-10-29, C-02). Nothing
+    Juristid could ever store is lost by the drop; the log names the table, the
+    row's id and the column, never the value. Other control characters pass
+    unchanged, as they do through Juristid's own title path.
+    """
     wanted = tuple(columns)
     out = []
     for row in rows:
         if not isinstance(row, dict):
             raise SourceError("RESPONSE_SHAPE", f"{table} answered with something not a row.")
-        out.append({column: row[column] for column in wanted if column in row})
+        kept: dict[str, Any] = {}
+        for column in wanted:
+            if column not in row:
+                continue
+            value = row[column]
+            if isinstance(value, str) and "\x00" in value:
+                logger.warning(
+                    "lovable: %s row %s column %s held U+0000; dropped before the snapshot",
+                    table,
+                    row.get("id", "?"),
+                    column,
+                )
+                value = value.replace("\x00", "")
+            kept[column] = value
+        out.append(kept)
     return out
 
 

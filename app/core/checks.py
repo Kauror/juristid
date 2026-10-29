@@ -1132,3 +1132,77 @@ def check_mcp_writer_database_role(app_configs: Any = None, **kwargs: Any) -> li
             id="juristid.E050",
         )
     ]
+
+
+@register(Tags.database)
+def check_application_database_role(
+    app_configs: Any = None, **kwargs: Any
+) -> list[Error | Warning]:
+    """juristid.W059: on real data, web and the workers are not connected as a superuser.
+
+    The MCP roles are held to least privilege at start-up (E047, E050). The
+    application's own connection — the process that parses every upload and
+    every form — was not looked at, and on the production host it is the role
+    the `db` service was initialised with, which the official image makes the
+    cluster superuser (security review 2026-10-29, D-02). A superuser holds
+    `pg_read_server_files`, `COPY … TO PROGRAM` and `ALTER SYSTEM`, so any SQL
+    mistake in the request path is one step from the database container's
+    shell; a least-privilege owner role keeps it to the application's tables.
+
+    A warning rather than an error, deliberately: splitting the role on the
+    live cluster is the owner's maintenance step (a new LOGIN role, `REASSIGN
+    OWNED`, new credentials in juristid.env), and until it is done every
+    production start would otherwise refuse. It becomes an error with that
+    step. Only with REAL_DATA_ALLOWED — the local and CI databases are owned by
+    whatever role the developer has — and only in the application processes:
+    the MCP processes have their own checks. The catalogue is read, nothing
+    else.
+    """
+    if _is_mcp_process() or not _names_default(kwargs) or not settings.REAL_DATA_ALLOWED:
+        return []
+    from django.db import connection
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT rolname, rolsuper, rolcreaterole, rolbypassrls, rolreplication "
+                "FROM pg_roles WHERE rolname = current_user"
+            )
+            row = cursor.fetchone()
+    except Exception as error:  # pragma: no cover - the database is down: W059 cannot tell
+        return [
+            Warning(
+                f"The application's database role could not be read ({type(error).__name__}).",
+                id="juristid.W059",
+            )
+        ]
+    if row is None:  # pragma: no cover - current_user always has a pg_roles row
+        return []
+    name, superuser, createrole, bypassrls, replication = row
+    held = [
+        label
+        for flag, label in (
+            (superuser, "SUPERUSER"),
+            (createrole, "CREATEROLE"),
+            (bypassrls, "BYPASSRLS"),
+            (replication, "REPLICATION"),
+        )
+        if flag
+    ]
+    if not held:
+        return []
+    return [
+        Warning(
+            f"The application is connected to PostgreSQL as role {name}, which holds "
+            + ", ".join(held)
+            + ". A SQL mistake in a request would then reach the server's files and "
+            "shell, not only the application's tables.",
+            hint=(
+                "Create a LOGIN role with none of these attributes, make it the owner "
+                "of the application's objects (REASSIGN OWNED BY), point POSTGRES_USER "
+                "and POSTGRES_PASSWORD in juristid.env at it, and keep the superuser "
+                "for backups and `mcp_db_role` only (deploy/unraid-main/README.md)."
+            ),
+            id="juristid.W059",
+        )
+    ]

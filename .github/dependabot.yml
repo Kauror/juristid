@@ -1,0 +1,30 @@
+# Dependabot proposes the bumps nothing else proposes (security review
+# 2026-10-29, D-08): the SHA-pinned GitHub Actions and the uv lock. The
+# pip-audit and Trivy gates in ci.yml refuse a *known* advisory at the next
+# FULL run; this is what notices that there is a newer version to move to.
+#
+# Small limits on purpose: every pull request here costs a FAST run, and a
+# dependency bump is reviewed like any other change (AGENTS.md). Nothing is
+# merged automatically.
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Tallinn"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Tallinn"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"

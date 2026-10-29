@@ -232,6 +232,16 @@ services:
       # another directory in the backup's field of view, and it must not become
       # another path inside the appdata SMB share.
       - pending_uploads:/app/pending-uploads
+    # The hardening the MCP services already run with (security review
+    # 2026-10-29, D-01): no capability, no privilege gain through a setuid
+    # binary, a bounded process table. The same image already runs this way as
+    # `mcp`. A memory limit and a read-only root are left to the owner's sizing
+    # decision and are deliberately not set here.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
     networks:
       - internal
 
@@ -326,6 +336,16 @@ services:
       # to change the source it is reading, so nothing on this side is given
       # the ability to.
       - pending_uploads:/app/pending-uploads:ro
+    # The hardening the MCP services already run with (security review
+    # 2026-10-29, D-01): no capability, no privilege gain through a setuid
+    # binary, a bounded process table. The same image already runs this way as
+    # `mcp`. A memory limit and a read-only root are left to the owner's sizing
+    # decision and are deliberately not set here.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
     networks:
       - internal
 
@@ -384,6 +404,16 @@ services:
     # projection out of PostgreSQL and reads no file the application stores;
     # giving it the evidence tree would widen what a compromised container can
     # reach for no benefit.
+    # The hardening the MCP services already run with (security review
+    # 2026-10-29, D-01): no capability, no privilege gain through a setuid
+    # binary, a bounded process table. The same image already runs this way as
+    # `mcp`. A memory limit and a read-only root are left to the owner's sizing
+    # decision and are deliberately not set here.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
     networks:
       - internal
 
@@ -441,6 +471,16 @@ services:
     volumes:
       # READ-WRITE, because deleting is what this process is for.
       - pending_uploads:/app/pending-uploads
+    # The hardening the MCP services already run with (security review
+    # 2026-10-29, D-01): no capability, no privilege gain through a setuid
+    # binary, a bounded process table. The same image already runs this way as
+    # `mcp`. A memory limit and a read-only root are left to the owner's sizing
+    # decision and are deliberately not set here.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
     networks:
       - internal
 
@@ -476,6 +516,16 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # The hardening the MCP services already run with (security review
+    # 2026-10-29, D-01): no capability, no privilege gain through a setuid
+    # binary, a bounded process table. The same image already runs this way as
+    # `mcp`. A memory limit and a read-only root are left to the owner's sizing
+    # decision and are deliberately not set here.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 128
     networks:
       - internal
 
