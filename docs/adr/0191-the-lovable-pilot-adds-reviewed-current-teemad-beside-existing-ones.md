@@ -150,3 +150,14 @@ database and fails on any difference.
   the Excel pilot's: routine finished work, not the historical archive.
 - The Secure Pilot Gate still governs whether real data may be applied; this
   record does not pass it.
+
+## Status update 2026-10-29
+
+The status stays **proposed**: no formal acceptance is recorded. As the release
+history states it, the one-time pilot was **applied** to the KOCORP
+lawyer-testing database on 27.10.2026 (13 → 113 Teemad, `verify` 100/0) and is
+complete. Its `lovable_pilot` commands and `LOVABLE_PILOT_ENABLED` flag remain in
+the code, gated as described above, by the owner's decision of 2026-10-29: they
+are not removed and not reactivated. They are a different control from the
+nightly synchronisation's (ADR 0192: `LovableSyncControl`, `JURISTID_LOVABLE_SYNC`),
+which follows these Teemad afterwards.
