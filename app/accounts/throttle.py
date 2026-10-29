@@ -100,15 +100,18 @@ def network_of(request: HttpRequest) -> str:
     `REMOTE_ADDR` wherever no trusted proxy stands in front. It is a rate-limit
     key, never an identity (docs/adr/0016).
     """
-    return _counting_unit(client_ip(request) or "") or "unknown"
+    return counting_unit(client_ip(request) or "") or "unknown"
 
 
-def _counting_unit(raw: str) -> str:
+def counting_unit(raw: str) -> str:
     """The unit one client is counted as: an IPv4 address, or an IPv6 /64.
 
     An IPv6 subscriber is handed a whole /64 and can rotate through it for
     free, so counting single IPv6 addresses would give one attacker billions of
-    fresh counters. The /64 is what one household or one office holds.
+    fresh counters. The /64 is what one household or one office holds. The
+    shared gate's lockout counts the same unit (security review 2026-10-29,
+    A-01): before that it keyed on the full address, so one /64 held as many
+    sets of five guesses as it had addresses.
     """
     try:
         address = ipaddress.ip_address(raw)

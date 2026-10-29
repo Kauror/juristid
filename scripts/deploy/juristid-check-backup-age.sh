@@ -145,6 +145,13 @@ complete=0
 incomplete=0
 partial=0
 unreadable=""
+future=""
+# A stamp more than an hour ahead of this host's clock is not a backup taken
+# "just now": it is a wrong clock, or a set copied in from elsewhere, and
+# counting it would answer OK for as long as the name says (security review
+# 2026-10-29, E-07). It is reported and left out of the verdict.
+now="$(date -u +%s)"
+future_limit=$((now + 3600))
 
 for entry in "$SETS_DIR"/*; do
   [ -d "$entry" ] || continue
@@ -168,6 +175,11 @@ for entry in "$SETS_DIR"/*; do
     continue
   fi
 
+  if [ "$epoch" -gt "$future_limit" ]; then
+    future="$future $name"
+    continue
+  fi
+
   complete=$((complete + 1))
   if [ "$epoch" -gt "$newest_epoch" ]; then
     newest_epoch="$epoch"
@@ -176,6 +188,7 @@ for entry in "$SETS_DIR"/*; do
 done
 
 [ -z "$unreadable" ] || note "WARNING: could not read a date from:$unreadable"
+[ -z "$future" ] || note "WARNING: stamped in the future, not counted (a wrong clock, or a set copied in):$future"
 [ "$incomplete" -eq 0 ] || note "WARNING: $incomplete directory/directories named like a set are missing one of: $REQUIRED_FILES"
 [ "$partial" -eq 0 ] || note "NOTE: $partial unfinished .partial director(y/ies) present. They are not backups; look at them."
 
@@ -184,7 +197,6 @@ if [ "$complete" -eq 0 ]; then
   exit "$EXIT_NONE"
 fi
 
-now="$(date -u +%s)"
 age_seconds=$((now - newest_epoch))
 [ "$age_seconds" -ge 0 ] || age_seconds=0
 age_hours=$((age_seconds / 3600))

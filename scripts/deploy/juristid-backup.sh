@@ -183,6 +183,13 @@ if [ "$free_mib" -lt "$MINIMUM_FREE_MIB" ]; then
   die "only ${free_mib} MiB free at $BACKUP_ROOT; ${MINIMUM_FREE_MIB} MiB required. Refusing to start a backup that may not finish. Do not free space by deleting Docker objects on this host."
 fi
 
+# Taken before the stamp, so two runs a second apart are refused here rather
+# than by the same-second check, and before anything is written. Held until
+# exit; a release or a restore that holds it is reported by name, and the exit
+# status is non-zero so a scheduled run's wrapper knows no set was taken.
+take_host_lock backup || die "another operation holds $JURISTID_HOST_LOCK ($(host_lock_owner)). A backup under a release or a restore would record the wrong moment; run it again once that has finished."
+trap 'release_host_lock' EXIT
+
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 SET_DIR="$BACKUP_ROOT/sets/$STAMP"
 # Built under a name no reader would mistake for a finished set, and renamed
@@ -199,7 +206,7 @@ mkdir "$PARTIAL_DIR"
 # The listings taken as the dump begins (see "What belongs to this set"). Not in
 # the set: they are working state, and a set carries only what it checksums.
 SCRATCH="$(mktemp -d)"
-trap 'rm -rf -- "$SCRATCH"' EXIT
+trap 'rm -rf -- "$SCRATCH"; release_host_lock' EXIT
 
 note "Juristid backup"
 note "  project      $JURISTID_PROJECT"

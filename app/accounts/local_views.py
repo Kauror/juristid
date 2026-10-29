@@ -26,8 +26,17 @@ from django.urls import reverse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
-from app.accounts import admin_session, capabilities, credentials, local_auth, mail, mfa, tokens
-from app.accounts.enums import CredentialTokenPurpose
+from app.accounts import (
+    admin_session,
+    capabilities,
+    credentials,
+    local_auth,
+    mail,
+    mfa,
+    throttle,
+    tokens,
+)
+from app.accounts.enums import CredentialTokenPurpose, ThrottleScope
 from app.accounts.forms import (
     ChangePasswordForm,
     EnrolmentForm,
@@ -271,10 +280,13 @@ def keep_link_proof(request: HttpRequest, *, purpose: str) -> bool:
     raw = request.GET.get(mail.LINK_PARAMETER)
     if raw is None:
         return False
-    request.session[local_auth.SESSION_LINK] = {
-        "purpose": str(purpose),
-        "proof": tokens.proof_of(raw[:200]),
-    }
+    proof = tokens.proof_of(raw[:200])
+    if not proof:
+        # Not the shape of a link at all. Keeping it would write a session row
+        # (a fortnight long, before the gate) for every anonymous request that
+        # carries any `?kood=` value (security review 2026-10-29, A-03).
+        return False
+    request.session[local_auth.SESSION_LINK] = {"purpose": str(purpose), "proof": proof}
     return True
 
 
@@ -291,16 +303,30 @@ def _link_view(request: HttpRequest, *, purpose: str, route: str, template: str)
     *administrator's* own password and nobody else's: a link whose holder may
     not administer is answered exactly like no link at all — a 404.
     """
-    if keep_link_proof(request, purpose=purpose):
+    kept = keep_link_proof(request, purpose=purpose)
+    if kept or request.GET.get(mail.LINK_PARAMETER) is not None:
+        # Kept or not, a `?kood=` leaves the address bar at once; a value that
+        # was not the shape of a link kept nothing, and the bare page then
+        # answers it exactly like no link at all.
         return redirect(route)
 
     gate = not local_auth.is_local_password()
     stored = request.session.get(local_auth.SESSION_LINK) or {}
     proof = stored.get("proof", "") if stored.get("purpose") == str(purpose) else ""
+    # Guessing a link is impractical (128-bit selector, 256-bit verifier), and
+    # `ThrottleScope.CREDENTIAL_LINK` was defined for the attempt all the same —
+    # and charged nowhere (security review 2026-10-29, A-05). A network that is
+    # locked has its proof refused before any lookup; a proof that opens nothing
+    # counts as one failure.
+    probes = [throttle.network_counter(ThrottleScope.CREDENTIAL_LINK, request)]
+    if proof and throttle.is_locked(probes):
+        proof = ""
     holder = credentials.link_holder(tokens.peek(proof, purpose=purpose)) if proof else None
     if gate and holder is not None and not admin_session.may_receive_administrator_link(holder):
         holder = None
     if holder is None:
+        if proof:
+            throttle.charge(probes)
         request.session.pop(local_auth.SESSION_LINK, None)
         if gate:
             raise Http404("Lehte ei leitud.")

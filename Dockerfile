@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-
 # Both stages are Debian 13 (trixie), and both are pinned by digest. The tag is
 # for the reader; Docker pulls the digest, so a rebuild cannot quietly move to a
 # different base, and moving to a newer one is a reviewed change to this file.

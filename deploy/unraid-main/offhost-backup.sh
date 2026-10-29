@@ -93,10 +93,18 @@ done
 repository_line="$(grep -E '^RESTIC_REPOSITORY=.+' "$ENV_FILE" || true)"
 [ -n "$repository_line" ] || die "$ENV_FILE has no RESTIC_REPOSITORY. No destination; nothing was copied."
 repository="${repository_line#RESTIC_REPOSITORY=}"
-# A repository on this host's own array is not off-host, whatever it is called.
+# A repository on this host's own storage is not off-host, whatever it is
+# called: not the array, not the cache, not the flash drive, not an unassigned
+# USB disk under /mnt/disks, not a mount under /mnt/remotes, and not any other
+# path — a path with no scheme is a local directory to restic. Only a
+# destination named by a scheme (`rest:`, `s3:`, `sftp:`, `b2:`, `azure:`,
+# `gs:`, `rclone:`) can be somewhere else (security review 2026-10-29, E-10).
 case "$repository" in
-  /mnt/user/*|/mnt/disk[0-9]*|/mnt/cache*|/boot/*|local:*)
+  local:*|/*|./*|../*|.|..)
     die "RESTIC_REPOSITORY points at this host's own storage. That is not an off-host copy." ;;
+  *:*) : ;;
+  *)
+    die "RESTIC_REPOSITORY has no scheme, so restic would treat it as a directory on this host's own storage. That is not an off-host copy." ;;
 esac
 
 # -- the set ---------------------------------------------------------------

@@ -157,9 +157,19 @@ password (`SHARED_GATE_SESSION_SECONDS`) or after 8 hours without a request
 
 ### Rotating the password
 
-Edit `JURISTID_SHARED_GATE_PASSWORD` in the host's environment file and restart
-the web container. Nothing is stored anywhere else, so nothing else has to
-change.
+Edit `JURISTID_SHARED_GATE_PASSWORD` in the host's environment file and
+**recreate** the application services with the running release's exports:
+
+```bash
+docker compose -p juristid-main -f deploy/unraid-main/compose.yml up -d --no-build --no-deps web intake-reader searchindex intake-sweeper notifications
+```
+
+Not `docker compose restart`: a restart keeps the container's original
+environment, so the old password would stay in force while the file said
+otherwise, and nothing below would happen (security review 2026-10-29, F-06).
+Then prove it, in a private window: the old password is refused, the new one
+accepted (checks A–D under "Before calling it live"). Nothing is stored
+anywhere else, so nothing else has to change.
 
 **Rotating the shared password now ends every open gate session.** Each session
 records which password it was opened under (a keyed digest, never the password
@@ -177,7 +187,7 @@ next makes a request, not at the moment of rotation, so a session opened under
 password A that made no request while B was configured would pass again if A
 were set once more. Always choose a new password.
 
-Tell the department the new password before the restart: everybody types it
+Tell the department the new password before the recreate: everybody types it
 once at their next request. The release that introduced this (ADR 0183) did
 the same once by itself — sessions opened before it carry no version and are
 treated as opened under an old password.

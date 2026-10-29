@@ -1266,17 +1266,43 @@ mistake worth naming.
 | --- | --- | --- | --- |
 | **The Juristid backup set** | `juristid-backup.sh` — the thing this file is about | `database.dump` + the evidence and page-XML mirrors, with a manifest and checksums | whenever somebody runs it |
 | **Unraid *Appdata Backup*** | a host plugin, unrelated to this repository | tar archives of the containers' appdata volumes, taken with the containers **stopped** | weekly |
-| **The KOCORP nightly USB snapshot** — INFERRED, verify on host | a host job outside this repository (`/mnt/user/appdata/kocorp-backup/run_backup.sh`, per operations notes) | rsync snapshots of `backups/`, `appdata/` — so very likely `config/juristid.env` and `cloudflared/` in plaintext — and `juristid-main/source`, onto a USB disk in the same host | nightly, about 23:30 UTC, per operations notes |
-| **The historical source corpus** | the read-only import material | the Excel register, the OneNote export, the migration audit | copied once, never since |
+| **The host's nightly database dump** | a host job outside this repository (`/mnt/user/appdata/kocorp-backup/dump_databases.sh`) | a plain `pg_dump --clean --if-exists \| gzip` of the `juristid` database into `/mnt/user/backups/databases/juristid-main-db/`, gzip and completion-marker checked, roles dumped beside it, **30-day retention** — database only, no evidence membership, not a set | nightly, 23:00 UTC |
+| **The KOCORP nightly USB snapshot** | a host job outside this repository (`/mnt/user/appdata/kocorp-backup/run_backup.sh` → `backup_to_usb.sh`) | hardlinked rsync snapshots (`--link-dest`, old snapshots kept) of `appdata/` — `config/*.env` and `cloudflared/` **in plaintext** — `backups/` (every set, pool and dump) and `juristid-main/source`, onto one USB disk in the same host, mounted only for the run; live PostgreSQL data directories excluded | nightly, 23:30 UTC |
+| **The historical source corpus** | the read-only import material | the Excel register, the OneNote export, the migration audit | copied once; since then also in the USB snapshot |
 
-**The USB snapshot row is not verified by this repository.** On 13.10.2026 a
-read-only look at the host found the disk's UUID present and a `last-backup-ok`
-marker dated 12.10.2026 23:49 UTC. What it copies, how long it keeps it, and
-whether a restore from it works were **not** checked. Re-verify on the host
-before relying on any of it. Even as described it is not off-host: same host,
-same room, unencrypted, writable and deletable by root, and checked by no
-Juristid tool. It does not meet the contract in
-[What an off-host copy has to satisfy](#what-an-off-host-copy-has-to-satisfy).
+#### Host-level copies this repository does not own (read on 2026-10-29)
+
+The two nightly rows above were read on the host, read-only, during the
+2026-10-29 security and resilience review; they replace the INFERRED row this
+section carried since 13.10.2026. What they are **not**: off-host (same host,
+same room), encrypted (the secrets travel in plaintext), deletion-protected
+(root writes and deletes both), or checked by any Juristid tool. What they
+**are**: a second physical disk with history, and the freshest database copy
+on the host. The array has **no parity** (removed 2026-09-10, confirmed
+2026-10-29), so the USB snapshot is also the only thing that survives the data
+disk. The host's 15-minute watchdog (`watchdog.sh`, same directory) watches
+the USB run's age, the containers it was told about (`db`, `intake-reader`,
+`searchindex`, `tunnel`, `web` — not the five added since) and the public
+hostname, and calls Unraid's `notify`; **no notification agent is configured
+on the host**, so those alerts stop at the WebGUI bell. The ownership
+boundary: the repository owns the set format, the scripts, the monitor and
+the runbook; the host owns scheduling, media and the alert recipient.
+
+**Restoring the nightly plain dump, by hand.** `juristid-restore.sh` refuses
+it (no `PGDMP` magic, no `manifest.json`, and `--clean` is the opposite of the
+script's refusal of a populated database). It restores only into an **empty**
+database, and only like this:
+
+```bash
+gunzip -c /mnt/user/backups/databases/juristid-main-db/<globals>.sql.gz | psql -U juristid -d postgres   # roles first
+gunzip -c /mnt/user/backups/databases/juristid-main-db/<dump>.sql.gz | psql --single-transaction -v ON_ERROR_STOP=1 -U juristid -d <empty database>
+```
+
+then `deployment_readiness`, `check_evidence_integrity` and
+`prune_orphaned_evidence`: the evidence copy is 30–65 minutes newer than the
+dump, so a Teema deleted in that window leaves rows without bytes and an
+upload in it leaves bytes without rows. Prefer a set; use the dump when the
+newest set is older than the work you would lose.
 
 **Only the first is a set-consistent Juristid backup.** Appdata Backup stops the
 containers and tars their volumes, so what it produces is crash-consistent in
@@ -1285,11 +1311,14 @@ safety net, not this application's backup. It carries no manifest, no
 `SHA256SUMS`, no `pg_restore --list`, and nothing in this repository verifies or
 restores it. Treat it as a second chance, never as the plan.
 
-**Do not disable it.** It is one of at most two things copying some
-configuration state off the appdata tree — the tunnel credential among it; the
-other is the USB snapshot above, if that is what it appears to be — and until
-the secrets have a deliberate backup of their own, switching it off would
-quietly remove a recovery path nobody replaced. Its cost is real and should be
+**Do not disable it without a decision.** Since the USB snapshot copies the
+appdata tree nightly (read on 2026-10-29), its unique value is the
+stopped-container copy of the PostgreSQL data directory; its container list
+predates the MCP, notifications and intake-sweeper services; and its runs of
+19.10 and 26.10.2026 were flagged failed by an unrelated container, which
+skipped its retention cleanup. Keeping it, narrowing it to `db`, or switching
+it off once the secrets are escrowed is an owner decision
+(`docs/open-decisions.md`). Until then it stays. Its cost is real and should be
 recorded rather than hidden: it stops `juristid-main-web` and `juristid-main-db`
 for the length of the run. In the 31.08.2026 run that was **41 minutes** —
 `juristid-main-db` stopped at 01:01:17Z and started again at 01:42:22Z — most of
@@ -1395,9 +1424,10 @@ repository that quietly implements those acquires policy nobody agreed to.
 **DR0 — canonical data, the backups and the source corpus are all on one
 physical disk.** Not merely one host: measured on 01.09.2026 and again on
 03.09.2026, production's appdata, the backup sets, the historical corpus and the
-weekly Appdata Backup destination all resolve to the same data disk. Array
-parity, if the array still has it (re-verify: see above), protects against that
-disk failing and against nothing else. This is the one that outranks everything
+weekly Appdata Backup destination all resolve to the same data disk. The array
+has **no parity** (removed 2026-09-10; confirmed on the host 2026-10-29); the
+nightly USB snapshot ([Host-level copies](#host-level-copies-this-repository-does-not-own-read-on-2026-10-29))
+is what survives that disk, and nothing survives the host. This is the one that outranks everything
 below, and the contract a fix has to meet is in
 [What an off-host copy has to satisfy](#what-an-off-host-copy-has-to-satisfy).
 The prepared procedure is [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md); it waits on
@@ -1435,9 +1465,12 @@ deliberate; the point is that the runbook does not say where, so nobody can
 check, and a restore that recovers the database, the evidence and the page XML
 still cannot bring the deployment back without them. See [Secrets](#secrets).
 Naming the destination is a custody decision, which is why this file records the
-gap instead of choosing one. Still open on 13.10.2026: the only copies anybody
-can point to are probably the Appdata Backup archives and the plaintext USB
-snapshot (both INFERRED). [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md) proposes
+gap instead of choosing one. Still open on 29.10.2026, with the facts now read on the host: copies
+**do** exist — the nightly USB snapshot of `config/` and `cloudflared/` and the
+weekly Appdata Backup tar — every one plaintext, on the same host, beside nine
+`*.bak-*` copies of earlier environment files that hold the values a rotation
+was meant to retire (the deploy preflight now names them). No copy exists
+outside the building and nothing is escrowed. [`OFFHOST-BACKUP.md`](OFFHOST-BACKUP.md) proposes
 escrowing the values in the Chamber's password manager, next to the off-host
 repository keys, and keeps them out of every backup set.
 
@@ -1461,13 +1494,17 @@ single most important sentence in this file.
 These are operations decisions, recorded rather than invented
 (`docs/open-decisions.md`):
 
-* how often a backup is taken, and by what — nothing is scheduled today, and
-  adding a cron entry on this host means editing a file generated from the flash
-  drive, which is its own hazard;
+* how often a backup is taken, and by what — nothing is scheduled today;
+  `deploy/unraid-main/cron/` holds the wrapper and an example cron line that
+  would do it (the RPO is its one required parameter), and installing a cron
+  entry on this host means editing a file generated from the flash drive,
+  which is its own hazard. The backup and the restore now take the host lock
+  the sync takes (docs/adr/0196), so a scheduled run cannot overlap a release;
 * how long sets are kept, and what deletes them;
 * the **RPO** — how much work the Chamber is willing to lose. It is the number
   `juristid-check-backup-age.sh --max-age-hours` takes, and the script refuses
-  to invent one;
+  to invent one; so does `juristid-monitor.sh` (`MONITOR_RPO_HOURS`), which
+  is what would turn a stale set into a notification (`docs/alerts.md`);
 * the **RTO** — how long it may take to come back;
 * the off-host destination and who holds its credentials;
 * **how often a real set is rehearsed.** One has been restored

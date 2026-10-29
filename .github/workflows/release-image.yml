@@ -244,6 +244,17 @@ jobs:
           } > "release-manifest-$SHORT.txt"
           cat "release-manifest-$SHORT.txt"
           echo "$digest  $archive" > "$archive.sha256"
+          # What the image ships, recorded beside it (security review
+          # 2026-10-29, D-09): the Debian packages — the one inventory nothing
+          # else keeps, since apt installs them at build time — and the locked
+          # Python set, which `uv sync --frozen` installed from uv.lock at this
+          # revision. A later advisory is then answered by reading two files
+          # rather than by loading the image.
+          docker run --rm --entrypoint dpkg-query "juristid-main-web:$SHORT" \
+            -W -f '${Package}=${Version}\n' | sort > "os-packages-$SHORT.txt"
+          cp uv.lock "python-packages-$SHORT.lock"
+          echo "os_packages:   os-packages-$SHORT.txt ($(wc -l < "os-packages-$SHORT.txt") entries)" >> "release-manifest-$SHORT.txt"
+          echo "python_lock:   python-packages-$SHORT.lock (uv.lock at $FULL)" >> "release-manifest-$SHORT.txt"
           echo "ARCHIVE=$archive" >> "$GITHUB_ENV"
 
       - name: Upload
@@ -254,6 +265,8 @@ jobs:
             ${{ env.ARCHIVE }}
             ${{ env.ARCHIVE }}.sha256
             release-manifest-${{ env.SHORT }}.txt
+            os-packages-${{ env.SHORT }}.txt
+            python-packages-${{ env.SHORT }}.lock
           # The image is already gzipped; asking the upload to compress it again
           # costs minutes and saves nothing.
           compression-level: 0
