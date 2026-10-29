@@ -310,8 +310,10 @@ def test_the_first_figure_is_the_same_open_matter_list(specialist, count, captio
 
     assert figure.value == count
     assert figure.caption == caption
+    # Landing on the rows, as every register link does (2026-10-28 audit, A-07).
     assert figure.url == (
         f"{reverse('matters:matter_list')}?olek=avatud&liik=FULL&vastutaja={specialist.pk}"
+        "#tulemused"
     )
     assert figure.help is IN_PROGRESS_HELP
     counted = set(open_matters(specialist).filter(owner=specialist).values_list("pk", flat=True))

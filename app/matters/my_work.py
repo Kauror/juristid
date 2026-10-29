@@ -32,13 +32,12 @@ the Matter's current owner (app/matters/work_items.py).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
-from django.urls import reverse
 from django.utils import timezone
 
-from app.core.dates import format_estonian_date, local_day_range
+from app.core.dates import end_of_month, format_estonian_date, local_day_range
 from app.intelligence.enums import FactStatus
 from app.matters import work_items as wi
 from app.matters.activity import activity_of, annotate_last_activity, annotated_slice
@@ -46,7 +45,7 @@ from app.matters.dashboard import drafting_matters
 from app.matters.models import Entry, Matter
 from app.matters.next_step import milestone_is_upcoming, milestone_order
 from app.matters.recent_activity import RecentActivity, build_recent_activity
-from app.matters.register_filters import OPINION_DRAFTING
+from app.matters.register_filters import OPEN_FULL, OPINION_DRAFTING, register_url
 from app.matters.seis_help import (
     IN_PROGRESS_HELP,
     MY_NO_ACTION_HELP,
@@ -96,12 +95,6 @@ PORTFOLIO_LIMIT = 200
 RECENT_DAYS = 7
 
 
-def _month_end(year: int, month: int) -> date:
-    if month == 12:
-        return date(year, 12, 31)
-    return date(year, month + 1, 1) - timedelta(days=1)
-
-
 def _shift_months(anchor: date, months: int) -> tuple[int, int]:
     index = anchor.year * 12 + (anchor.month - 1) + months
     return index // 12, index % 12 + 1
@@ -136,7 +129,7 @@ def default_horizon(today: date) -> Horizon:
     return Horizon(
         key=f"{year}-{month:02d}",
         label=f"Kuni {ESTONIAN_MONTHS[month - 1]}",
-        until=_month_end(year, month),
+        until=end_of_month(date(year, month, 1)),
     )
 
 
@@ -155,7 +148,7 @@ def horizon_from(value: str | None, today: date) -> Horizon:
                 return Horizon(
                     key=f"{year}-{month:02d}",
                     label=f"Kuni {ESTONIAN_MONTHS[month - 1]}",
-                    until=_month_end(year, month),
+                    until=end_of_month(date(year, month, 1)),
                 )
         except (ValueError, TypeError):
             pass
@@ -519,9 +512,7 @@ def build_portfolio(
         )
     )
 
-    base = reverse("matters:matter_list")
-    owner = getattr(subject, "pk", "")
-    register = f"{base}?olek=avatud&liik=FULL&vastutaja={owner}" if owner else base
+    register = _register_url(subject)
 
     return Portfolio(
         view=view,
@@ -779,19 +770,16 @@ def _work_url(subject: Any, population: str) -> str:
     `?too=` is resolved by `work_items.work_population_ids` and `?too_vastutaja=`
     narrows it to one person, so the number here and the rows there are one
     selector rather than two similar ones (app/matters/register_filters.py).
+    Built by the register's one link builder, so it lands on the rows as
+    Osakond's figures do (2026-10-28 audit, A-07).
     """
     owner = getattr(subject, "pk", "")
-    return (
-        f"{reverse('matters:matter_list')}?olek=avatud&liik=FULL"
-        f"&too={population}&too_vastutaja={owner}"
-    )
+    return register_url(**OPEN_FULL, too=population, too_vastutaja=owner)
 
 
 def _register_url(subject: Any, **extra: str) -> str:
-    owner = getattr(subject, "pk", "")
-    query = "&".join(f"{key}={value}" for key, value in extra.items())
-    base = f"{reverse('matters:matter_list')}?olek=avatud&liik=FULL&vastutaja={owner}"
-    return f"{base}&{query}" if query else base
+    """This person's open FULL Matters in the register, narrowed by ``extra``."""
+    return register_url(**OPEN_FULL, vastutaja=getattr(subject, "pk", ""), **extra)
 
 
 def build_my_work(

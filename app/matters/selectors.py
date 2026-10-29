@@ -439,7 +439,11 @@ def response_deadline_of(
     """
     if matter.response_deadline is None:
         return None
-    from app.matters.work_items import response_deadline_is_outstanding, response_obligation_of
+    from app.matters.work_items import (
+        response_deadline_is_outstanding,
+        response_obligation_of,
+        settlement_word,
+    )
 
     day = today or timezone.localdate()
     value = matter.response_deadline
@@ -455,17 +459,17 @@ def response_deadline_of(
     # this test covers. A second comparison would read as a rule about open
     # Matters and be unreachable on every one of them.
     active = matter.is_open
-    settled = ""
-    if not active:
-        settled = "teema suletud"
-    elif (
-        matter.response_requested_at is None
-        and not response_obligation_of(matter, user).is_outstanding
-    ):
-        # A deadline from before requests were tracked, discharged the way it
-        # always was. One recorded as a request is never discharged while it is
-        # current: answering it ends it (`app/matters/response_deadlines.py`).
-        settled = "lõpetatud"
+    # The word is `work_items.settlement_word`'s, shared with the register's
+    # Kuupäev cell. Short-circuited, so the obligation is asked of the work
+    # model only for an open deadline that was never recorded as a request.
+    settled = settlement_word(
+        matter,
+        discharged=(
+            active
+            and matter.response_requested_at is None
+            and not response_obligation_of(matter, user).is_outstanding
+        ),
+    )
     return ActiveDeadline(
         label="Arvamuse tähtaeg",
         value=value,

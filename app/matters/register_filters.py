@@ -54,6 +54,32 @@ from app.workflow.dates import year_from
 #: definitions of one string (docs/adr/0049, DUP-04).
 RESULTS_ANCHOR = "#tulemused"
 
+#: The register filters that mean "open FULL", as the list understands them —
+#: the base of every figure that counts current work.
+OPEN_FULL: dict[str, str] = {"olek": "avatud", "liik": RecordMode.FULL.value}
+
+
+def register_url(**params: Any) -> str:
+    """A link into Teemad with filters already applied, landing on the rows.
+
+    The one builder every figure that opens the register uses — Osakond,
+    Ülevaade's area rows, Statistika and Minu asjad (2026-10-28 audit, A-07:
+    three copies, and Minu asjad's landed on the filter panel rather than on
+    the rows). Only parameters the register actually supports. Every number
+    that links to a list is a promise that the list behind it holds exactly
+    those rows, and the promise is kept by reusing the register's own query
+    parameters rather than inventing a parallel query language (Stage-2F brief
+    35). An empty value is left out rather than sent as ``?key=``.
+    """
+    from django.urls import reverse
+
+    query = "&".join(
+        f"{key}={value}" for key, value in params.items() if value is not None and value != ""
+    )
+    base = reverse("matters:matter_list")
+    return f"{base}?{query}{RESULTS_ANCHOR}" if query else f"{base}{RESULTS_ANCHOR}"
+
+
 #: What `?allikas=` means. A word rather than a boolean, because `allikas=0`
 #: reads as "source number zero" in a URL somebody is editing by hand.
 SOURCE_PRESENT = "on"

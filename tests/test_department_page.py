@@ -49,7 +49,7 @@ from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.models import Matter
-from app.matters.register_filters import register_population
+from app.matters.register_filters import RESULTS_ANCHOR, register_population
 from app.matters.services import close_matter, create_matter
 from app.submissions.enums import SubmissionStatus
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
@@ -532,7 +532,7 @@ def test_every_other_figure_lands_on_the_register_rows(department_head, world, t
 
     assert len(register) == 6
     for figure in register:
-        assert figure.url.endswith(dd.RESULTS_ANCHOR), figure.key
+        assert figure.url.endswith(RESULTS_ANCHOR), figure.key
 
 
 def test_the_strip_no_longer_carries_what_moved_to_the_rail(department_head, world, today):

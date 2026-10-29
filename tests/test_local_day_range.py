@@ -191,3 +191,15 @@ def test_the_feed_selectors_and_the_month_figures_carry_no_date_cast(specialist,
             if "AT TIME ZONE" in sql
         ]
         assert casts == [], [sql[sql.index("AT TIME ZONE") - 120 :][:200] for sql in casts]
+
+
+def test_an_entry_names_its_tallinn_day_not_its_utc_day(specialist, normal_matter):
+    """B-06: 23:30 UTC on 28 October is 01:30 on the 29th in Tallinn."""
+    entry = add_entry(
+        matter=normal_matter,
+        body="<p>Hilja</p>",
+        author=specialist,
+        occurred_at=dt.datetime(2026, 10, 28, 23, 30, tzinfo=UTC),
+    )
+
+    assert str(entry).endswith("29.10.2026")

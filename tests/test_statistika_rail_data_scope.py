@@ -48,8 +48,8 @@ from app.intelligence.services import (
     add_work_victory_candidate,
     confirm_work_victory,
 )
-from app.matters.department_dashboard import RESULTS_ANCHOR
 from app.matters.models import Matter
+from app.matters.register_filters import RESULTS_ANCHOR
 from app.reporting import overview_strip
 from app.reporting.selectors.base import REGISTER_DATA_SCOPE
 from app.workflow.enums import DatePrecision

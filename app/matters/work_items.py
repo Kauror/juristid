@@ -988,6 +988,26 @@ def undated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextActio
     return queryset
 
 
+def active_milestones(user: Any, *, owner: Any = None) -> QuerySet[MatterImportantDate]:
+    """Every active `Oluline tähtaeg` on an open FULL Matter, scoped to the reader.
+
+    The one base population two readers partition by kind (2026-10-28 audit,
+    A-08): :func:`important_deadlines` — the work model's milestones — leaves
+    out `INFORMATIONAL_IMPORTANT_DATE_KINDS`, and the calendar's
+    `estimate_events` keeps only those. A clause added here reaches both, so a
+    new rule about which milestones are live cannot leave the *Jõustumised*
+    estimates on the old one. ``owner`` narrows by ``Matter.owner``.
+    """
+    queryset = MatterImportantDate.objects.visible_to(user).filter(
+        status=FactStatus.ACTIVE,
+        matter__is_open=True,
+        matter__record_mode=RecordMode.FULL,
+    )
+    if owner is not None:
+        queryset = queryset.filter(matter__owner=owner)
+    return queryset
+
+
 def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImportantDate]:
     """Active milestones on open Matters that are somebody's work, scoped to the reader.
 
@@ -1006,19 +1026,11 @@ def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImpor
     beside it. It stays on its Teema, and the Minu asjad calendar shows it under
     *Jõustumised*, labelled as the estimate it is (`calendar.estimate_events`).
     """
-    queryset = (
-        MatterImportantDate.objects.visible_to(user)
-        .filter(
-            status=FactStatus.ACTIVE,
-            matter__is_open=True,
-            matter__record_mode=RecordMode.FULL,
-        )
+    return (
+        active_milestones(user, owner=owner)
         .exclude(kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS)
         .select_related("matter", "matter__stage", "matter__owner")
     )
-    if owner is not None:
-        queryset = queryset.filter(matter__owner=owner)
-    return queryset
 
 
 def _discharge_exists(user: Any) -> Q:
@@ -1154,6 +1166,35 @@ def response_obligations(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
     if owner is not None:
         queryset = queryset.filter(owner=owner)
     return queryset
+
+
+#: Why an `Arvamuse tähtaeg` no longer asks for work, in the words the Teema
+#: header and the register's Kuupäev cell both print beside the date.
+SETTLED_CLOSED = "teema suletud"
+SETTLED_DISCHARGED = "lõpetatud"
+
+
+def settlement_word(matter: Matter, *, discharged: bool) -> str:
+    """«teema suletud», «lõpetatud», or ``""`` while the deadline is still owed.
+
+    One rule for the two surfaces that state a settled deadline (2026-10-28
+    audit, A-06): the header (`selectors.response_deadline_of`) and the
+    register cell (`register_dates.register_date`). Each reads ``discharged``
+    its own way — the header asks :func:`response_obligation_of`, the register
+    reads the :data:`DISCHARGED` annotation its queryset carries — and both
+    then say the same word.
+
+    A closed file owes nothing by a date. A deadline from before requests were
+    tracked, discharged the way it always was (a sent opinion, the register's
+    `VÄLJA`), is «lõpetatud»; one recorded as a request is never discharged
+    while it is current, because answering it ends it
+    (`app/matters/response_deadlines.py`).
+    """
+    if not matter.is_open:
+        return SETTLED_CLOSED
+    if matter.response_requested_at is None and discharged:
+        return SETTLED_DISCHARGED
+    return ""
 
 
 def response_obligation_of(
@@ -2082,6 +2123,8 @@ __all__ = [
     "MEANING_IMPORTANT",
     "MEANING_RESPONSE",
     "MEANING_REVIEW",
+    "SETTLED_CLOSED",
+    "SETTLED_DISCHARGED",
     "SOURCE_FEEDBACK_WAIT",
     "SOURCE_IMPORTANT_DEADLINE",
     "SOURCE_NEXT_ACTION",
@@ -2103,6 +2146,7 @@ __all__ = [
     "WorkBand",
     "WorkItem",
     "action_item",
+    "active_milestones",
     "annotate_response_obligation",
     "band_items",
     "band_of",
@@ -2126,6 +2170,7 @@ __all__ = [
     "response_obligations",
     "review_ripe_items",
     "secondary_response_obligation",
+    "settlement_word",
     "sort_items",
     "start_of_iso_week",
     "undated_actions",

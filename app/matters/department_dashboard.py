@@ -102,11 +102,12 @@ from app.matters.dashboard import (
 from app.matters.enums import RecordMode
 from app.matters.models import Entry, Matter
 from app.matters.register_filters import (
+    OPEN_FULL,
     OPINION_DRAFTING,
-    RESULTS_ANCHOR,
     VICTORY_PARAM,
     WORK_PARAM,
     register_population,
+    register_url,
 )
 from app.matters.seis_help import (
     DEPT_DRAFTING_HELP,
@@ -135,23 +136,9 @@ INCOMING_WINDOW_DAYS = 14
 OUTSIDE_DEPARTMENT_NAME = "Väljaspool osakonda"
 
 
-def register_url(**params: Any) -> str:
-    """A link into Teemad with filters already applied, landing on the rows.
-
-    Only parameters the register actually supports today. Every number that
-    links to a list is a promise that the list behind it holds exactly those
-    rows, and the promise is kept by reusing the register's own query
-    parameters rather than inventing a parallel query language beside Stage
-    2E.1's (Stage-2F brief 35).
-    """
-    query = "&".join(f"{key}={value}" for key, value in params.items() if value)
-    base = reverse("matters:matter_list")
-    return f"{base}?{query}{RESULTS_ANCHOR}" if query else f"{base}{RESULTS_ANCHOR}"
-
-
 def _open_full() -> dict[str, Any]:
-    """The register filters that mean "open FULL", as the list understands them."""
-    return {"olek": "avatud", "liik": RecordMode.FULL.value}
+    """The register filters that mean "open FULL" (`register_filters.OPEN_FULL`)."""
+    return dict(OPEN_FULL)
 
 
 def _by_owner(queryset: QuerySet[Matter]) -> dict[Any, int]:
