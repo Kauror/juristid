@@ -667,6 +667,129 @@ def test_focused_contract_set_exists() -> None:
         assert (ROOT / path).is_file(), path
 
 
+# E-01: a file the timing table never measured is priced from its own size.
+
+#: Priced against TIMINGS above, whose median per-test rate in `tests/` is 1 s.
+_SOURCES = {
+    "tests/test_new_and_large.py": "\n".join(
+        [
+            "import pytest",
+            "CASES = [1, 2, 3, 4, 5]",
+            *(f"def test_{n}(): pass" for n in range(120)),
+            "@pytest.mark.parametrize('x', CASES)",
+            "def test_param(x): pass",
+            "class TestGroup:",
+            "    @pytest.mark.parametrize(('a', 'b'), [(1, 2), (3, 4)])",
+            "    @pytest.mark.parametrize('c', range(3))",
+            "    def test_matrix(self, a, b, c): pass",
+            "    def helper(self): pass",
+            "def helper(): pass",
+        ]
+    ),
+    "tests/test_new_and_small.py": "def test_one(): pass\ndef test_two(): pass\n",
+}
+
+
+def test_counting_reads_functions_classes_and_literal_parametrisation() -> None:
+    assert ci_focused_selection.count_tests(_SOURCES["tests/test_new_and_large.py"]) == (
+        120 + 5 + 2 * 3
+    )
+    assert ci_focused_selection.count_tests(_SOURCES["tests/test_new_and_small.py"]) == 2
+    # A computed parametrisation counts once: an estimate errs low, it never invents.
+    computed = "import pytest\n@pytest.mark.parametrize('x', make())\ndef test_x(x): pass\n"
+    assert ci_focused_selection.count_tests(computed) == 1
+
+
+def _select_with_sources(changed, budget=240.0):
+    existing = {*changed, *ci_focused_selection.ALWAYS}
+    return ci_focused_selection.select(
+        changed,
+        exists=existing.__contains__,
+        timings=TIMINGS,
+        budget=budget,
+        test_count=lambda path: (
+            ci_focused_selection.count_tests(_SOURCES[path]) if path in _SOURCES else None
+        ),
+    )
+
+
+def test_a_large_new_unmeasured_module_is_deferred_and_a_small_measured_one_runs() -> None:
+    """The finding: an unmeasured 131-test file used to cost the median file."""
+    picked = _select_with_sources(["tests/test_new_and_large.py", "tests/test_cheap.py"], 60.0)
+    assert "tests/test_cheap.py" in picked.run
+    assert picked.deferred == ("tests/test_new_and_large.py",)
+    assert dict(picked.unmeasured)["tests/test_new_and_large.py"] == 131
+    assert "tests/test_cheap.py" not in dict(picked.unmeasured)
+    median_file = ci_sharding.median_file_seconds(TIMINGS)
+    assert median_file < 60.0, "the old median-file price would have kept it"
+
+
+def test_a_small_new_unmeasured_module_still_runs_and_is_labelled() -> None:
+    picked = _select_with_sources(["tests/test_new_and_small.py"])
+    assert "tests/test_new_and_small.py" in picked.run
+    assert dict(picked.unmeasured) == {"tests/test_new_and_small.py": 2}
+    lines = ci_focused_selection.describe(picked, 1)
+    assert any(
+        "tests/test_new_and_small.py [unmeasured: 2 test(s) counted" in line for line in lines
+    )
+    assert "not in ci/shard-timings.json" in lines[0]
+
+
+def test_an_uncountable_unmeasured_module_says_it_was_priced_as_the_median_file() -> None:
+    picked = _select_with_sources(["tests/test_unknown_shape.py"])
+    assert dict(picked.unmeasured) == {
+        "tests/test_unknown_shape.py": ci_focused_selection.UNCOUNTED
+    }
+    lines = ci_focused_selection.describe(picked, 1)
+    assert any("priced as the median file" in line for line in lines)
+
+
+def test_the_unmeasured_estimate_is_deterministic() -> None:
+    changed = ["tests/test_new_and_large.py", "tests/test_new_and_small.py", "tests/test_mid.py"]
+    first = _select_with_sources(changed, 60.0)
+    assert first == _select_with_sources(list(reversed(changed)), 60.0)
+    assert ci_focused_selection.describe(first, 3) == ci_focused_selection.describe(first, 3)
+
+
+# 7.3(2): the OCR runtime is installed only when the selection needs it.
+
+
+def test_the_contract_set_alone_needs_no_services() -> None:
+    assert not _select([]).needs_services
+    ci_tests = ("tests/test_ci_tiers.py",)
+    assert not _select([".github/workflows/ci.yml"], ci_tests=ci_tests).needs_services
+
+
+def test_a_touched_test_file_needs_the_services() -> None:
+    assert _select(["tests/test_cheap.py"]).needs_services
+    # Deferred only is not run, so it needs nothing.
+    assert not _select(["tests/test_heavy.py"], budget=20.0).needs_services
+
+
+def test_the_services_answer_is_written_as_a_step_output(tmp_path) -> None:
+    changed = tmp_path / "changed.txt"
+    output = tmp_path / "github_output"
+    focused = tmp_path / "focused.txt"
+    changed.write_text("docs/adr/0193-ci-tiers.md\n", encoding="utf-8")
+    argv = ["--changed", str(changed), "--output", str(focused), "--services-output", str(output)]
+    assert ci_focused_selection.main(argv) == 0
+    assert output.read_text(encoding="utf-8") == "services=false\n"
+
+
+def test_the_focused_job_installs_ocr_only_when_the_selection_needs_it(workflow) -> None:
+    steps = workflow["jobs"]["focused"]["steps"]
+    names = [step.get("name", "") for step in steps]
+    choose = names.index("Choose the focused tests")
+    for name in ("Cache the OCR packages", "Install the OCR runtime"):
+        index = names.index(name)
+        assert index > choose, f"{name!r} must come after the selection"
+        assert steps[index]["if"] == "steps.choose.outputs.services == 'true'", name
+    assert steps[choose]["id"] == "choose"
+    assert "--services-output" in steps[choose]["run"]
+    # The tests themselves always run.
+    assert "if" not in steps[names.index("Focused tests")]
+
+
 @pytest.mark.parametrize(
     ("changed", "ui"),
     [
@@ -676,13 +799,56 @@ def test_focused_contract_set_exists() -> None:
         (["e2e/test_ui_regression.py"], True),
         (["app/matters/views.py", "tests/test_matters.py"], False),
         (["docs/ci-architecture.md", ".github/workflows/ci.yml"], False),
-        (["app/templatetags/x.py", "mystatic/x.css"], False),
+        (["mystatic/x.css", "apps/templatetags_old.py", "tests/test_templatetags.py"], False),
+        (["app/core/checks.py", "app/core/datesets.txt"], False),
         ([], False),
         (["templates\\base.html"], True),
     ],
 )
 def test_the_ui_rule(changed: list[str], ui: bool) -> None:
     assert ci_focused_selection.touches_ui(changed) is ui
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/core/templatetags/dates.py",
+        "app/matters/templatetags/matter_tags.py",
+        "app/accounts/templatetags/disclosures.py",
+        "app/brand_new_app/templatetags/x.py",
+        "app\\workflow\\templatetags\\x.py",
+        "app/core/widgets.py",
+        "app/core/dates.py",
+        "app/core/context_processors.py",
+        "app/core/release_notes.py",
+        "docs/release-notes/uuendused.toml",
+    ],
+)
+def test_python_that_writes_markup_runs_the_visual_lane(workflow, path: str) -> None:
+    """E-04: a draft changing a template tag, a widget or the date formatting
+    gets its visual diffs in FAST, not as a moved baseline in FULL."""
+    ui = ci_focused_selection.touches_ui([path])
+    assert ui is True, path
+    assert "visual" in running(workflow, DRAFT_PUSH, ui=ui)
+
+
+@pytest.mark.parametrize(
+    "path",
+    sorted(
+        p.relative_to(ROOT).as_posix()
+        for p in (ROOT / "app").glob("*/templatetags/*.py")
+        if p.name != "__init__.py"
+    ),
+)
+def test_every_template_tag_module_in_the_repository_touches_the_ui(path: str) -> None:
+    assert ci_focused_selection.touches_ui([path]), path
+
+
+def test_the_ui_rule_leaves_full_untouched(workflow) -> None:
+    """FULL runs the visual job whatever the rule says (unchanged by E-04)."""
+    for ui in (False, True):
+        for context in (READY, DISPATCH):
+            assert "visual" in running(workflow, context, ui=ui)
 
 
 def test_the_ui_answer_is_written_as_a_step_output(tmp_path) -> None:
