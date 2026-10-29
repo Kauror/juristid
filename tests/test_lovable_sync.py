@@ -851,9 +851,7 @@ def test_the_reader_reads_only_allowlisted_tables(tmp_path):
     with pytest.raises(SourceError):
         transport.select("topic", ["markmed"], filters={}, order="id")
     transport.select("topic", ["id", "nr"], filters={}, order="id")
-    assert all(
-        line.startswith(("GET ", "POST https://naidis.supabase.co/auth")) for line in seen
-    )
+    assert all(line.startswith(("GET ", "POST https://naidis.supabase.co/auth")) for line in seen)
 
 
 def test_a_service_role_sign_in_stops_before_any_read(tmp_path):
