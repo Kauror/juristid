@@ -14,9 +14,10 @@ Each scenario is a component family rather than a page: the shell, the
 register, a Matter header, a Matter in a special state, the position surface,
 the evidence surface, the create form, the search results, a generated reading
 surface, a refused save, the persona switcher, and the same workspaces at the
-widths they have to hold. That is 36 captures today, each with a committed
-baseline — `e2e/baselines/` is the inventory. A screenshot of every route would
-lock in a hundred baselines that nobody re-reads, and a suite nobody re-reads
+widths they have to hold. Each capture has a committed baseline, and
+`e2e/baselines/` is the inventory: 53 captures on 2026-10-29 (this sentence
+said 36 until the audit of 2026-10-28 counted, E-07). A screenshot of every
+route would lock in a hundred baselines that nobody re-reads, and a suite nobody re-reads
 approves a bad design as efficiently as a good one.
 
 How close is close enough
@@ -1647,6 +1648,56 @@ def test_search_results(page, base_url):
     compare("otsing", capture(page, "otsing"))
 
 
+#: The days the `uuendused` capture shows: fixed, so that adding a release note
+#: — which every release does — no longer moves the picture. Before this the
+#: baseline was re-pinned 21 times in ten days, once per changelog entry, which
+#: is a ritual rather than a regression check (audit 2026-10-28, E-02). One open
+#: day and three shut ones, with a long line, short lines and a one-change day,
+#: is the composition the scenario exists to hold.
+RELEASE_NOTE_FIXTURE: tuple[tuple[str, tuple[str, ...]], ...] = (
+    (
+        "2026-01-15",
+        (
+            "Teema lehel on praegune tegevus nüüd esimesena ja selle all on «Lisa"
+            " teemale», nii et järgmine samm on alati sealsamas, kus seda otsitakse.",
+            "Registri veerud jäävad meelde.",
+            "Otsing leiab teema ka eelnõu numbri järgi.",
+        ),
+    ),
+    ("2026-01-14", ("Minu asjad näitab tähtajaga tööd ühes plokis.",)),
+    ("2026-01-12", ("Osakonna lehel on uus kalender.", "Uuendused on nüüd päevade kaupa.")),
+    ("2026-01-09", ("Dokumendi andmed on eraldi plokis.",)),
+)
+
+#: Rewrites `.relnotes` into the fixture days by cloning the server's own first
+#: (open) and second (shut) day, so every element, class and attribute is the
+#: template's — only the words and the number of days are the fixture's.
+_RELEASE_NOTE_FIXTURE_SCRIPT = """
+(days) => {
+  const list = document.querySelector('.relnotes');
+  const shown = list.querySelectorAll(':scope > details.relnotes__day');
+  if (shown.length < 2) { return false; }
+  const openTemplate = shown[0].cloneNode(true);
+  const shutTemplate = shown[1].cloneNode(true);
+  shown.forEach((day) => day.remove());
+  days.forEach((day, index) => {
+    const node = (index === 0 ? openTemplate : shutTemplate).cloneNode(true);
+    node.querySelector('.accordion__title').textContent = day.heading;
+    node.querySelector('.accordion__summary').textContent = day.count;
+    const ul = node.querySelector('.relnotes__list');
+    const item = ul.querySelector('li');
+    ul.replaceChildren(...day.changes.map((text) => {
+      const li = item.cloneNode(false);
+      li.textContent = text;
+      return li;
+    }));
+    list.appendChild(node);
+  });
+  return true;
+}
+"""
+
+
 def test_release_notes(page, base_url):
     """Uuendused: the day accordions, the newest open and the rest shut.
 
@@ -1656,15 +1707,39 @@ def test_release_notes(page, base_url):
     disclosure per day — and it is exactly the kind of thing no DOM assertion
     notices going wrong.
 
-    Nothing on it is clock-derived, which is unusual enough to be worth saying.
-    The dates come from a file in the image, so they hold still by construction
-    and are deliberately **not** `<time>` elements: the mask list paints over
-    every `<time>` on a captured page, and painting over these would leave a
-    baseline showing a list of empty rectangles
-    (`templates/core/release_notes.html`). The one value here that does move is
-    the build stamp, and `.app__footer` has covered that since this suite began.
+    So it is photographed over fixture days (`RELEASE_NOTE_FIXTURE`), not over
+    the committed changelog. The page is the real one — the server's own
+    markup, cloned, with the tabs, the page head and the shell untouched — and
+    only the days' words and their number are fixed, formatted by the product's
+    own `ReleaseDay`, so a changed heading or count format still moves the
+    picture. The changelog grows with every release; the composition does not.
+    That the newest *committed* note is the open day, bullet for bullet, is a
+    functional fact and is proved where it can be read rather than looked at:
+    `e2e/test_release_notes.py::test_the_latest_release_note_is_the_open_day`.
+
+    Nothing else here is clock-derived: the dates are text, deliberately not
+    `<time>` elements, so the mask list does not paint them out
+    (`templates/core/release_notes.html`). The build stamp in `.app__footer` is
+    masked as it is everywhere.
     """
+    from datetime import date
+
+    from app.core.release_notes import ReleaseDay
+
     signed_in(page, base_url, "/uuendused/")
+    fixture = [ReleaseDay(date.fromisoformat(when), notes) for when, notes in RELEASE_NOTE_FIXTURE]
+    rewritten = page.evaluate(
+        _RELEASE_NOTE_FIXTURE_SCRIPT,
+        [
+            {"heading": day.heading, "count": day.count_label, "changes": list(day.changes)}
+            for day in fixture
+        ],
+    )
+    assert rewritten, "the page needs two committed days to clone the composition from"
+    shown = page.locator(".relnotes > details.relnotes__day")
+    expect(shown).to_have_count(len(fixture))
+    expect(shown.first).to_have_attribute("open", "")
+    expect(shown.first.locator(".accordion__title")).to_have_text(fixture[0].heading)
     compare("uuendused", capture(page, "uuendused"))
 
 
