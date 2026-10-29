@@ -534,3 +534,115 @@ def test_another_persona_cannot_withdraw(client, world):
     assert _generic(client.post(url(proposal), {"otsus": "tuhista"}))
     proposal.refresh_from_db()
     assert proposal.status == ProposalStatus.APPROVED
+
+
+# -- MCP_WRITE_REVERIFY_SECONDS=0, and no code spent on what cannot be approved ------
+# (audit 2026-10-28 C-03; owner's decision 2026-10-29, scenario G)
+
+
+def test_with_reverify_zero_every_approval_needs_its_own_fresh_code(
+    client, world, stand_ins, settings
+):
+    settings.MCP_WRITE_REVERIFY_SECONDS = 0
+    first, second = prepared(world), prepared(world, title="Teine pealkiri")
+    as_persona(client, world["user"])
+
+    approved = client.post(url(first), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    assert approval_views.DONE in body(approved)
+    assert approval_views.SESSION_RECENT not in client.session
+
+    page = client.get(url(second))
+    assert 'name="kood"' in body(page)  # the page asks again
+    shortcut = client.post(url(second), {"otsus": "kinnita"})
+    assert shortcut.status_code == 400 and approval_views.BAD_CODE in body(shortcut)
+    second.refresh_from_db()
+    assert second.status == ProposalStatus.PENDING
+    assert not McpWriteApproval.objects.filter(proposal=second).exists()
+
+    fresh = client.post(url(second), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    assert approval_views.DONE in body(fresh)
+    assert McpWriteApproval.objects.get(proposal=second).method == ApprovalMethod.TOTP
+    assert len(stand_ins.code_calls) == 3
+
+
+def test_with_reverify_zero_a_window_left_in_the_session_is_worthless(client, world, settings):
+    first, second = prepared(world), prepared(world, title="Teine pealkiri")
+    as_persona(client, world["user"])
+    client.post(url(first), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    assert approval_views.SESSION_RECENT in client.session  # opened under the old 300 s
+    settings.MCP_WRITE_REVERIFY_SECONDS = 0
+    page = client.post(url(second), {"otsus": "kinnita"})
+    assert page.status_code == 400 and approval_views.BAD_CODE in body(page)
+    assert not McpWriteApproval.objects.filter(proposal=second).exists()
+
+
+@pytest.mark.parametrize("seconds", [0, 300])
+def test_a_tampered_proposal_spends_no_code_and_opens_no_window(
+    client, world, stand_ins, settings, seconds
+):
+    settings.MCP_WRITE_REVERIFY_SECONDS = seconds
+    tampered, other = prepared(world), prepared(world, title="Teine pealkiri")
+    McpWriteProposal.objects.filter(pk=tampered.pk).update(
+        canonical_arguments={"matter_id": str(world["matter"].pk), "title": "Muu"}
+    )
+    as_persona(client, world["user"])
+
+    client.post(url(tampered), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+
+    tampered.refresh_from_db()
+    assert tampered.status == ProposalStatus.FAILED
+    assert stand_ins.code_calls == []  # the code was never presented, so never spent
+    assert approval_views.SESSION_RECENT not in client.session
+    no_code = client.post(url(other), {"otsus": "kinnita"})
+    assert no_code.status_code == 400
+    assert not McpWriteApproval.objects.exists()
+
+
+@pytest.mark.parametrize("seconds", [0, 300])
+def test_an_expired_proposal_spends_no_code_and_opens_no_window(
+    client, world, stand_ins, settings, seconds
+):
+    settings.MCP_WRITE_REVERIFY_SECONDS = seconds
+    expired, other = prepared(world), prepared(world, title="Teine pealkiri")
+    McpWriteProposal.objects.filter(pk=expired.pk).update(
+        expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    as_persona(client, world["user"])
+
+    page = client.post(url(expired), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+
+    assert approval_views.EXPIRED in body(page)
+    expired.refresh_from_db()
+    assert expired.status == ProposalStatus.EXPIRED
+    assert stand_ins.code_calls == []
+    assert approval_views.SESSION_RECENT not in client.session
+    assert client.post(url(other), {"otsus": "kinnita"}).status_code == 400
+    # The same code still approves a proposal that can be approved.
+    approved = client.post(url(other), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    assert approval_views.DONE in body(approved)
+
+
+def test_a_proposal_that_moves_on_while_the_code_is_checked_is_refused_under_the_lock(
+    client, world, stand_ins, monkeypatch
+):
+    """The checks run again after the code: a stale record found then is refused
+    and, having approved nothing, opens no window."""
+    proposal, other = prepared(world), prepared(world, title="Teine pealkiri")
+    as_persona(client, world["user"])
+    real = approval_views.is_stale
+    seen: list[str] = []
+
+    def stale_on_the_second_look(p, user):
+        seen.append(str(p.pk))
+        # The page's look, the look before the code, then the look under the lock.
+        return len([s for s in seen if s == str(proposal.pk)]) >= 3 or real(p, user)
+
+    monkeypatch.setattr(approval_views, "is_stale", stale_on_the_second_look)
+    client.post(url(proposal), {"otsus": "kinnita", "kood": support.GOOD_CODE})
+    proposal.refresh_from_db()
+    assert proposal.status == ProposalStatus.STALE
+    assert len(stand_ins.code_calls) == 1  # only a genuine race spends the code
+    assert not McpWriteApproval.objects.exists()
+    assert approval_views.SESSION_RECENT not in client.session
+    monkeypatch.setattr(approval_views, "is_stale", real)
+    assert client.post(url(other), {"otsus": "kinnita"}).status_code == 400

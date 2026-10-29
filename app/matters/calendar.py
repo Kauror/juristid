@@ -73,9 +73,8 @@ from app.intelligence.enums import (
     FactStatus,
     ImportantDateKind,
 )
-from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+from app.intelligence.models import MatterEffectiveDate
 from app.matters import work_items as wi
-from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.workflow.dates import format_at_precision, is_approximate
 from app.workflow.enums import ESTONIAN_MONTHS, ROMAN_QUARTERS, DatePrecision
@@ -143,10 +142,6 @@ def requested_view(params: Any) -> str:
     return value if value in dict(VIEWS) else VIEW_WEEKS
 
 
-def _week_start(day: date) -> date:
-    return day - timedelta(days=day.weekday())
-
-
 def _quarter_of(day: date) -> int:
     return (day.month - 1) // 3 + 1
 
@@ -159,7 +154,7 @@ def default_anchor(view: str, today: date) -> date:
         return date(today.year, 3 * (_quarter_of(today) - 1) + 1, 1)
     if view == VIEW_YEAR:
         return date(today.year, 1, 1)
-    return _week_start(today) - timedelta(weeks=WEEKS_BEFORE)
+    return wi.start_of_iso_week(today) - timedelta(weeks=WEEKS_BEFORE)
 
 
 def anchor_from(view: str, raw: str | None, today: date) -> date:
@@ -174,7 +169,7 @@ def anchor_from(view: str, raw: str | None, today: date) -> date:
         if view == VIEW_WEEKS and len(text) == 10:
             day = date.fromisoformat(text)
             if _YEAR_MIN <= day.year <= _YEAR_MAX:
-                return _week_start(day)
+                return wi.start_of_iso_week(day)
         elif view == VIEW_MONTH and len(text) == 7 and text[4] == "-":
             year, month = int(text[:4]), int(text[5:])
             if _YEAR_MIN <= year <= _YEAR_MAX and 1 <= month <= 12:
@@ -386,8 +381,6 @@ def _work_status(item: wi.WorkItem) -> str:
         return "üle tähtaja"
     if item.is_review_ripe:
         return "ülevaatamise aeg on käes"
-    if item.is_informational:
-        return "teadmiseks, ei ole tähtaeg"
     if item.is_follow_up:
         return "arvamuse järelkontroll"
     if item.is_planned:
@@ -527,14 +520,14 @@ def estimate_events(
     ``subject=None`` (Osakond) does not narrow by owner.
     """
     matters = _carried_matters(user, subject)
+    # The work model's own milestone base, the informational half of it
+    # (`work_items.active_milestones`, A-08): what `important_deadlines` leaves
+    # out is exactly what is shown here.
     records = (
-        MatterImportantDate.objects.visible_to(user)
+        wi.active_milestones(user)
         .filter(
-            status=FactStatus.ACTIVE,
             kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS,
             matter__in=matters,
-            matter__is_open=True,
-            matter__record_mode=RecordMode.FULL,
             date_value__lte=end,
             period_end__gte=start,
         )

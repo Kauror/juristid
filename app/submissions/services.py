@@ -702,7 +702,8 @@ def withdraw_submission(
     # A withdrawn opinion is no longer anything to check on: its planned or
     # current check is cancelled with the reason, kept with its opinion, and
     # completed checks stay as they were (docs/adr/0146 §9).
-    from app.workflow.follow_ups import WITHDRAWN_OPINION, cancel_checks_of_submission
+    from app.workflow.follow_ups import cancel_checks_of_submission
+    from app.workflow.step_markers import WITHDRAWN_OPINION
 
     cancel_checks_of_submission(submission=submission, actor=actor, reason=WITHDRAWN_OPINION)
     return submission
@@ -730,7 +731,8 @@ def supersede_submission(*, submission: Submission, actor: Any = None) -> Submis
     )
     # The replacement, once sent, is checked on in its own right; the
     # superseded letter's check ends here (docs/adr/0146 §9).
-    from app.workflow.follow_ups import SUPERSEDED_OPINION, cancel_checks_of_submission
+    from app.workflow.follow_ups import cancel_checks_of_submission
+    from app.workflow.step_markers import SUPERSEDED_OPINION
 
     cancel_checks_of_submission(submission=submission, actor=actor, reason=SUPERSEDED_OPINION)
     return submission

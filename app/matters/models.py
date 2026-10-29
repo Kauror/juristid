@@ -843,7 +843,10 @@ class Entry(VisibilityInheritingModel, RemovableRecord):
         ]
 
     def __str__(self) -> str:
-        return f"{self.get_kind_display()} {format_estonian_date(self.occurred_at.date())}"
+        # The Tallinn day, as every surface prints it — not the UTC date of the
+        # stored timestamp, which is the day before for an entry at 01:00 (B-06).
+        local_day = timezone.localtime(self.occurred_at).date()
+        return f"{self.get_kind_display()} {format_estonian_date(local_day)}"
 
     def parent_visibility(self) -> str:
         return self.matter.visibility

@@ -148,3 +148,10 @@ already opens with its kind — «Koduka ülevaade: …», «Uudis: …», «Kaa
 — reads «Ülevaade: …», «Uudis: …» (`app/matters/headlines.py`, an allow-list of
 the kind word and a few source words, so «Majanduse ülevaade: 2026» keeps every
 word). Display only: stored titles are untouched. No migration.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** 2026-10-25 in #546 (merge `e7e04973`, quality-of-life PR C).
+- **Deployed** as production r28, `462838af` (2026-10-25 22:04 UTC, #543–#547); the amendment of 2026-10-26 was merged in #555 (`9ac7fd0d`) and deployed with r31, `de3564cb` (2026-10-26 16:17 UTC).

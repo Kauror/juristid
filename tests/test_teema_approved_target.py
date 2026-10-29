@@ -190,8 +190,8 @@ def test_the_header_deadline_is_the_response_deadline_not_the_nearest_milestone(
     """**§10.** A Riigikogu reading in three weeks is not a day Koda owes an
     opinion on, and the slot's own editor is headed `Arvamuse tähtaeg`.
 
-    `selectors.active_deadline` still answers the broader "what is the next
-    dated thing on this file" for the work lists that want it.
+    The work lists read the next dated thing from the work model itself
+    (`app.matters.work_items`).
     """
     normal_matter.response_deadline = timezone.localdate() + timedelta(days=40)
     normal_matter.save(update_fields=["response_deadline"])

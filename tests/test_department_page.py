@@ -49,7 +49,7 @@ from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.models import Matter
-from app.matters.register_filters import register_population
+from app.matters.register_filters import RESULTS_ANCHOR, register_population
 from app.matters.services import close_matter, create_matter
 from app.submissions.enums import SubmissionStatus
 from app.workflow.enums import ActionKind, DatePrecision, DateSemantics, Disposition
@@ -532,7 +532,7 @@ def test_every_other_figure_lands_on_the_register_rows(department_head, world, t
 
     assert len(register) == 6
     for figure in register:
-        assert figure.url.endswith(dd.RESULTS_ANCHOR), figure.key
+        assert figure.url.endswith(RESULTS_ANCHOR), figure.key
 
 
 def test_the_strip_no_longer_carries_what_moved_to_the_rail(department_head, world, today):
@@ -970,14 +970,15 @@ def test_a_window_holds_the_whole_of_itself_rather_than_a_preview(
 
     group = next(g for g in dd.upcoming_groups(department_head, today) if g.key == "kaugemal")
     assert group.count == 6
-    assert group.preview and group.rest, "the fixture no longer exercises the old split"
+    # More than the five rows the old two-tier panel showed before its «Näita veel».
+    assert len(group.items) > 5, "the fixture no longer exercises the old split"
 
     panel = eesolev(client, department_head)
     assert "Näita veel" not in panel
     assert "Näita kõiki" not in panel
 
     (body,) = bodies_of(panel)
-    for item in [*group.preview, *group.rest]:
+    for item in group.items:
         assert item.matter.title in body, item.matter.title
 
 
@@ -1212,8 +1213,7 @@ def test_kaugemal_is_a_list_rather_than_a_summary(department_head, specialist, t
 
     group = next(g for g in dd.upcoming_groups(department_head, today) if g.key == "kaugemal")
     assert group.count == 6
-    assert len(group.preview) == dd.UPCOMING_PREVIEW
-    assert len(group.rest) == 1
+    assert group.rendered == group.items
     assert group.range_label.startswith("alates ")
 
 

@@ -413,122 +413,6 @@ class ActiveDeadline:
         return self.is_active and self.days_remaining == 0 and not self.is_past
 
 
-def active_deadline(
-    matter: Matter,
-    user: Any,
-    today: date | None = None,
-    milestones: Any = None,
-) -> ActiveDeadline | None:
-    """The single most relevant deadline, or nothing at all.
-
-    Two rules, in order (Teema redesign §5.5):
-
-    1. the nearest deadline still ahead of us;
-    2. failing that, the nearest one behind us.
-
-    And when the Matter has neither, this returns ``None`` and the header slot
-    disappears rather than printing an em dash. A row of labels with no values
-    is what made the old header read as a data-quality problem.
-
-    **Two sources, deliberately.** ``Matter.response_deadline`` is the date by
-    which Koda's own opinion is due, and it is the commonest deadline on the
-    whole register. ``MatterImportantDate`` is everything else the department
-    watches. A rule that read only one of them would leave most Matters looking
-    undated.
-
-    **Not the ``NextAction`` date.** That is what Koda does next; a review date
-    on a WAIT is not a deadline and must never be rendered as one
-    (master specification 18.8).
-
-    Cancelled milestones are excluded: an expectation somebody called off is
-    history, not a commitment. A period is "past" only once its **last** day is
-    behind us, which is why an approximate date is compared on ``period_end``.
-
-    ``milestones`` is for the one caller that has already read them: the Matter
-    page renders `Olulised tähtajad` from the same rows, and asking the same
-    table the same question twice per request is a query for an answer already
-    in memory. Anything passed here must already be authorization-scoped —
-    which is why the parameter is not the default.
-    """
-    from app.intelligence.enums import FactStatus, is_informational_milestone
-    from app.intelligence.models import MatterImportantDate
-
-    day = today or timezone.localdate()
-    # The fifth member says which *kind* of deadline the row is, because that
-    # decides what "late" means for it — the response deadline can be
-    # discharged and a milestone cannot (see `ActiveDeadline`).
-    candidates: list[tuple[date, date, str, str, bool]] = []
-
-    if matter.response_deadline is not None:
-        candidates.append(
-            (
-                matter.response_deadline,
-                matter.response_deadline,
-                "Arvamuse tähtaeg",
-                format_estonian_date(matter.response_deadline),
-                True,
-            )
-        )
-
-    if milestones is None:
-        milestones = (
-            MatterImportantDate.objects.filter(matter=matter, status=FactStatus.ACTIVE)
-            .visible_to(user)
-            .only("date_value", "period_end", "date_precision", "title", "kind")
-        )
-    informational: set[tuple[date, date, str]] = set()
-    for record in milestones:
-        if record.status != FactStatus.ACTIVE:
-            continue
-        candidates.append(
-            (record.date_value, record.period_end, record.title, record.display_date, False)
-        )
-        if is_informational_milestone(record.kind):
-            informational.add((record.date_value, record.period_end, record.title))
-
-    if not candidates:
-        return None
-
-    upcoming = [row for row in candidates if row[1] >= day]
-    pool = upcoming or candidates
-    # Nearest first among the upcoming; nearest *last* among the past, which is
-    # the most recent one — the same "closest to today" rule read backwards.
-    anchor_value, period_end, label, display, is_response = (
-        min(pool, key=lambda row: (row[0], row[1]))
-        if upcoming
-        else max(pool, key=lambda row: (row[1], row[0]))
-    )
-    is_past = period_end < day
-    if not is_past:
-        overdue = False
-    elif is_response:
-        # Asked of the canonical work model rather than decided here, so the
-        # header and every work list answer it once (`wi.outstanding_response_
-        # deadlines`). Only reached for a Matter whose own deadline is the one
-        # on screen and is already behind us, so it is one indexed lookup on the
-        # page that needs it and none on the pages that do not.
-        from app.matters.work_items import response_deadline_is_outstanding
-
-        overdue = response_deadline_is_outstanding(matter, user)
-    elif (anchor_value, period_end, label) in informational:
-        # An informational milestone (a draft's planned commencement) passing
-        # is not lateness — the reading `wi.WorkItem` gives it too.
-        overdue = False
-    else:
-        # A milestone nobody discharges. Its last day passing is genuine
-        # lateness, which is the reading `wi.WorkItem` already gives it.
-        overdue = True
-    return ActiveDeadline(
-        label=label,
-        value=anchor_value,
-        display=display,
-        is_past=is_past,
-        days_remaining=(anchor_value - day).days,
-        is_overdue=overdue,
-        days_late=(day - period_end).days if is_past else 0,
-    )
-
-
 def response_deadline_of(
     matter: Matter, user: Any, today: date | None = None
 ) -> ActiveDeadline | None:
@@ -537,11 +421,13 @@ def response_deadline_of(
     The metaline slot means one thing — `Matter.response_deadline`, labelled
     `Arvamuse tähtaeg` — and never «whichever dated fact is nearest».
 
-    :func:`active_deadline` answers a different, still useful question: *what is
-    the next dated thing on this file*, over both the response deadline and the
-    watched milestones. That is the right answer for a work list, where a row
-    stands for a Matter and the reader wants to know when anything about it is
-    due. It is the wrong answer for a header slot whose editor opens
+    «The next dated thing on this file», over both the response deadline and
+    the watched milestones, is the work model's question (`app.matters.work_items`),
+    and the right one for a work list, where a row stands for a Matter and the
+    reader wants to know when anything about it is due. (`active_deadline`
+    answered it a second time, with its own copy of which deadline may be late,
+    and had no caller left; removed after the 2026-10-28 audit, A-05.) It is the
+    wrong answer for a header slot whose editor opens
     `Arvamuse tähtaeg` and whose neighbour is `Saabus`: read as a pair, arrival
     and response deadline are one fact about Koda's obligation, and silently
     showing a Riigikogu reading date between them says Koda owes an opinion on
@@ -553,7 +439,11 @@ def response_deadline_of(
     """
     if matter.response_deadline is None:
         return None
-    from app.matters.work_items import response_deadline_is_outstanding, response_obligation_of
+    from app.matters.work_items import (
+        response_deadline_is_outstanding,
+        response_obligation_of,
+        settlement_word,
+    )
 
     day = today or timezone.localdate()
     value = matter.response_deadline
@@ -569,17 +459,17 @@ def response_deadline_of(
     # this test covers. A second comparison would read as a rule about open
     # Matters and be unreachable on every one of them.
     active = matter.is_open
-    settled = ""
-    if not active:
-        settled = "teema suletud"
-    elif (
-        matter.response_requested_at is None
-        and not response_obligation_of(matter, user).is_outstanding
-    ):
-        # A deadline from before requests were tracked, discharged the way it
-        # always was. One recorded as a request is never discharged while it is
-        # current: answering it ends it (`app/matters/response_deadlines.py`).
-        settled = "lõpetatud"
+    # The word is `work_items.settlement_word`'s, shared with the register's
+    # Kuupäev cell. Short-circuited, so the obligation is asked of the work
+    # model only for an open deadline that was never recorded as a request.
+    settled = settlement_word(
+        matter,
+        discharged=(
+            active
+            and matter.response_requested_at is None
+            and not response_obligation_of(matter, user).is_outstanding
+        ),
+    )
     return ActiveDeadline(
         label="Arvamuse tähtaeg",
         value=value,

@@ -70,3 +70,10 @@ changes it.
   the answer is official, and the label says the opposite.
 - **A flag on `FORMAL_OPINION`.** Rejected: every count, follow-up and label
   would need to read two fields to say one thing.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** 2026-10-20 in #503 (merge `36031db5`), with the choices-only migration `submissions/0011`.
+- **Deployed** as production release `f0795fe5` (2026-10-20 15:36 UTC, #500–#504), `submissions/0011` applied there.

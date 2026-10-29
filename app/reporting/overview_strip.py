@@ -31,7 +31,7 @@ click away.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Any
 
@@ -163,6 +163,23 @@ def _in_force_params(today: date) -> dict[str, Any]:
     )
 
 
+def victory_figure(viewer: Any, today: date, *, context: ReportingContext | None = None) -> Figure:
+    """«teemat töövõiduga» this calendar year: Matters carrying a work victory.
+
+    Counted once per page and printed twice — in the strip, captioned with the
+    year, and in the rail's «Aruandlus <year>» — because the two are the same
+    population through the same chips, whatever period the page shows
+    (2026-10-28 audit, D-02: the page sent the identical count twice).
+    """
+    population = Matter.objects.visible_to(viewer)
+    return _figure(
+        context,
+        _victory_params(today.year),
+        "teemat töövõiduga",
+        lambda params: _count(viewer, params, today, population),
+    )
+
+
 def strip(
     results: dict[str, Any],
     viewer: Any,
@@ -170,6 +187,7 @@ def strip(
     period_label: str,
     *,
     context: ReportingContext | None = None,
+    victory: Figure | None = None,
 ) -> list[Figure]:
     """The five-figure strip, as far as this product can honestly fill it.
 
@@ -199,15 +217,10 @@ def strip(
     #
     # Narrowed by the page's chips like the three catalogued figures beside it
     # (`_chipped`, QA-STATS-02); its window is the year its caption names.
-    population = Matter.objects.visible_to(viewer)
-    figures.append(
-        _figure(
-            context,
-            _victory_params(today.year),
-            f"teemat töövõiduga {today.year}",
-            lambda params: _count(viewer, params, today, population),
-        )
-    )
+    # ``victory`` is the page's one count of it (`victory_figure`), shared with
+    # the rail.
+    victory = victory or victory_figure(viewer, today, context=context)
+    figures.append(replace(victory, caption=f"{victory.caption} {today.year}"))
     return figures
 
 
@@ -217,6 +230,7 @@ def rail(
     results: dict[str, Any],
     *,
     context: ReportingContext | None = None,
+    victory: Figure | None = None,
 ) -> list[RailBlock]:
     """Praegu, and this year's reporting totals.
 
@@ -292,18 +306,15 @@ def rail(
     # only list either number can open is a list of Matters — and a caption
     # saying "töövõite" over a count of Matters would be the disagreement this
     # module exists to prevent (docs/adr/0071).
-    for params, caption in (
-        (_victory_params(today.year), "teemat töövõiduga"),
-        (_in_force_params(today), "teemat jõustunud aktiga"),
-    ):
-        reporting_rows.append(
-            _figure(
-                context,
-                params,
-                caption,
-                lambda chipped: _count(viewer, chipped, today, population),
-            )
+    reporting_rows.append(victory or victory_figure(viewer, today, context=context))
+    reporting_rows.append(
+        _figure(
+            context,
+            _in_force_params(today),
+            "teemat jõustunud aktiga",
+            lambda chipped: _count(viewer, chipped, today, population),
         )
+    )
 
     return [
         RailBlock("Praegu", now_rows),

@@ -229,3 +229,10 @@ request), `EXTRACTION_MAX_IMAGE_PIXELS` (80 M, now enforced at the limit).
 - Reversible: every number is a setting; removing the handler and middleware
   lines restores the old boundary without touching data. No migration, no
   Compose change, no search rebuild.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** in security hardening round 2 (merge `b6b27abc, #519 = #515–#518, 2026-10-22`).
+- **Deployed** to production as `1270ca01` (2026-10-23, the release of #521, which carried the security baseline merged before it).

@@ -219,14 +219,22 @@ def overview(request: HttpRequest) -> HttpResponse:
             [metric_keys.SUBMISSIONS_SENT], context.with_period(this_year)
         )
 
+    # The strip and the rail both print «teemat töövõiduga» this year: one
+    # count for both (2026-10-28 audit, D-02).
+    victory = overview_strip.victory_figure(viewer, today, context=context)
+
     return render(
         request,
         "reporting/overview.html",
         {
             **_shell(request, context, "ulevaade"),
-            "seis": overview_strip.strip(cards, viewer, today, period_label, context=context),
+            "seis": overview_strip.strip(
+                cards, viewer, today, period_label, context=context, victory=victory
+            ),
             "tables": _tables(tables),
-            "rail": overview_strip.rail(viewer, today, reporting_year, context=context),
+            "rail": overview_strip.rail(
+                viewer, today, reporting_year, context=context, victory=victory
+            ),
             "people": services.compute(metric_keys.MATTERS_BY_OWNER, context),
             "people_period": period_label,
             "export_url": exports.export_url(context, "teemad"),

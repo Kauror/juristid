@@ -20,9 +20,11 @@ when its period is over. That rule now lives once, in
 
 What this module holds
 ----------------------
-* the boundary per precision, for both review meanings (``REVIEW_ON`` and
-  ``EXPECTED_AROUND``) and both review kinds, and the Python and SQL readings
-  agreeing on it;
+* the boundary per precision, for both review kinds and every date meaning
+  they carry — a review date (``REVIEW_ON``, and ``DEADLINE`` on a review
+  kind) comes round when its period opens, an expectation (``EXPECTED_AROUND``)
+  on its period's last day (owner's decision of 2026-10-29, docs/adr/0195) —
+  and the Python and SQL readings agreeing on it;
 * set parity between ``WORK_RIPE``, ``?tegevus=ulevaatus``, the ``REVIEW_DUE``
   statistic, ``due_for_review`` and the row predicate, on the last day of a
   quarter and on the first day of the next — including reviews dated today;
@@ -54,6 +56,8 @@ from app.reporting.context import ReportingContext, parse_period
 from app.reporting.selectors.activity import review_due
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.lateness import (
+    expectation_due_date_q,
+    expectation_has_come_round,
     is_review_due,
     review_due_date_q,
     review_due_q,
@@ -121,16 +125,58 @@ BOUNDARIES = [
     (DatePrecision.MONTH, _d(1987, 3, 1), _d(2026, 9, 30), True),
 ]
 
-#: Both review kinds, with both date meanings a review kind carries. §6 is
-#: stated of `due_for_review`, which never read the date meaning — so an
-#: expectation comes round on the same day as a review date (see the rule's
-#: table in `app/workflow/lateness.py`).
-REVIEW_PAIRS = [(WAIT, REVIEW_ON), (WAIT, EXPECTED), (MONITOR, REVIEW_ON), (MONITOR, EXPECTED)]
+#: An expectation is somebody else's timing, not an instruction to review: it
+#: comes round on the **last** day of the period it names — the day itself for
+#: a day — and not merely because the period began (owner's decision of
+#: 2026-10-29, docs/adr/0195).
+EXPECTATION_BOUNDARIES = [
+    (DatePrecision.EXACT, _d(2026, 9, 24), _d(2026, 9, 23), False),
+    (DatePrecision.EXACT, _d(2026, 9, 24), _d(2026, 9, 24), True),
+    (DatePrecision.EXACT, _d(2026, 9, 24), _d(2026, 9, 25), True),
+    (DatePrecision.INFERRED, _d(2026, 9, 24), _d(2026, 9, 24), True),
+    # «oktoober 2026»: not on 1 October, not on the 29th — on the 31st.
+    (DatePrecision.MONTH, _d(2026, 10, 1), _d(2026, 10, 1), False),
+    (DatePrecision.MONTH, _d(2026, 10, 1), _d(2026, 10, 29), False),
+    (DatePrecision.MONTH, _d(2026, 10, 1), _d(2026, 10, 30), False),
+    (DatePrecision.MONTH, _d(2026, 10, 1), _d(2026, 10, 31), True),
+    (DatePrecision.MONTH, _d(2026, 10, 1), _d(2026, 11, 1), True),
+    # «IV kvartal 2026» on 31 December.
+    (DatePrecision.QUARTER, _d(2026, 10, 1), _d(2026, 10, 29), False),
+    (DatePrecision.QUARTER, _d(2026, 10, 1), _d(2026, 12, 30), False),
+    (DatePrecision.QUARTER, _d(2026, 10, 1), _d(2026, 12, 31), True),
+    (DatePrecision.QUARTER, _d(2026, 10, 1), _d(2027, 1, 1), True),
+    (DatePrecision.HALF_YEAR, _d(2026, 7, 1), _d(2026, 12, 30), False),
+    (DatePrecision.HALF_YEAR, _d(2026, 7, 1), _d(2026, 12, 31), True),
+    # «2027» on 31 December 2027.
+    (DatePrecision.YEAR, _d(2027, 1, 1), _d(2027, 1, 1), False),
+    (DatePrecision.YEAR, _d(2027, 1, 1), _d(2027, 12, 30), False),
+    (DatePrecision.YEAR, _d(2027, 1, 1), _d(2027, 12, 31), True),
+    # Stored mid-period, still the period it names.
+    (DatePrecision.MONTH, _d(2026, 10, 15), _d(2026, 10, 30), False),
+    (DatePrecision.MONTH, _d(2026, 10, 15), _d(2026, 10, 31), True),
+    (DatePrecision.MONTH, _d(1987, 3, 1), _d(2026, 9, 30), True),
+]
+
+#: Both review kinds with each date meaning, and the boundary each follows.
+#: A review date — and a ``DEADLINE`` on a review kind, which is never late
+#: (§4) — comes round when its period opens (ADR 0079 §6).
+REVIEW_PAIRS = [
+    (WAIT, REVIEW_ON),
+    (MONITOR, REVIEW_ON),
+    (WAIT, DEADLINE),
+    (MONITOR, DEADLINE),
+]
+EXPECTATION_PAIRS = [(WAIT, EXPECTED), (MONITOR, EXPECTED)]
 
 
 @pytest.mark.parametrize(("precision", "stored", "day", "due"), BOUNDARIES)
 def test_the_date_half_comes_round_when_the_period_opens(precision, stored, day, due):
     assert review_has_come_round(stored, precision, day) is due
+
+
+@pytest.mark.parametrize(("precision", "stored", "day", "due"), EXPECTATION_BOUNDARIES)
+def test_an_expectation_comes_round_on_the_last_day_of_its_period(precision, stored, day, due):
+    assert expectation_has_come_round(stored, precision, day) is due
 
 
 @pytest.mark.parametrize(("kind", "semantics"), REVIEW_PAIRS)
@@ -151,9 +197,36 @@ def test_the_row_and_the_queryset_answer_the_boundary_the_same_way(
     assert action.is_due_for_review(day) is due
     assert (action in NextAction.objects.due_for_review(day)) is due
     assert NextAction.objects.filter(review_due_date_q(day), pk=action.pk).exists() is due
-    assert is_review_due(kind=kind, value=stored, precision=precision, today=day) is due, (
-        "the pure predicate disagrees with the model"
+    assert (
+        is_review_due(kind=kind, value=stored, precision=precision, today=day, semantics=semantics)
+        is due
+    ), "the pure predicate disagrees with the model"
+
+
+@pytest.mark.parametrize(("kind", "semantics"), EXPECTATION_PAIRS)
+@pytest.mark.parametrize(("precision", "stored", "day", "due"), EXPECTATION_BOUNDARIES)
+def test_an_expectation_row_and_its_queryset_answer_the_same_way(
+    normal_matter, kind, semantics, precision, stored, day, due
+):
+    action = factories.NextActionFactory(
+        matter=normal_matter,
+        text="Vastus oodatav",
+        kind=kind,
+        date_semantics=semantics,
+        target_date=stored,
+        date_precision=precision,
+        status=ActionStatus.OPEN,
     )
+
+    assert action.is_due_for_review(day) is due
+    assert (action in NextAction.objects.due_for_review(day)) is due
+    assert NextAction.objects.filter(expectation_due_date_q(day), pk=action.pk).exists() is due
+    assert (
+        is_review_due(kind=kind, value=stored, precision=precision, today=day, semantics=semantics)
+        is due
+    )
+    # Never late, whatever the day: an expectation is not a promise (ADR 0011).
+    assert action.is_overdue(day) is False
 
 
 @pytest.mark.parametrize("semantics", [DEADLINE, EXPECTED, REVIEW_ON])
@@ -213,12 +286,15 @@ POPULATION = [
     ("inferred-1.10", WAIT, REVIEW_ON, DatePrecision.INFERRED, _d(2026, 10, 1), False, True),
     ("month-sept", MONITOR, REVIEW_ON, DatePrecision.MONTH, _d(2026, 9, 1), True, True),
     ("month-oct-review", WAIT, REVIEW_ON, DatePrecision.MONTH, _d(2026, 10, 1), False, True),
-    ("month-oct-expected", WAIT, EXPECTED, DatePrecision.MONTH, _d(2026, 10, 1), False, True),
+    # An expectation is not looked at because its month began (docs/adr/0195).
+    ("month-oct-expected", WAIT, EXPECTED, DatePrecision.MONTH, _d(2026, 10, 1), False, False),
     ("month-nov", MONITOR, EXPECTED, DatePrecision.MONTH, _d(2026, 11, 1), False, False),
+    # On its quarter's last day, and after.
     ("quarter-q3", WAIT, EXPECTED, DatePrecision.QUARTER, _d(2026, 7, 1), True, True),
     ("quarter-q4", MONITOR, REVIEW_ON, DatePrecision.QUARTER, _d(2026, 10, 1), False, True),
     ("quarter-q1-27", WAIT, REVIEW_ON, DatePrecision.QUARTER, _d(2027, 1, 1), False, False),
-    ("half-2", MONITOR, EXPECTED, DatePrecision.HALF_YEAR, _d(2026, 7, 1), True, True),
+    ("half-2", MONITOR, EXPECTED, DatePrecision.HALF_YEAR, _d(2026, 7, 1), False, False),
+    ("half-2-review", MONITOR, REVIEW_ON, DatePrecision.HALF_YEAR, _d(2026, 7, 1), True, True),
     ("year-2026", WAIT, REVIEW_ON, DatePrecision.YEAR, _d(2026, 1, 1), True, True),
     ("year-2027", MONITOR, REVIEW_ON, DatePrecision.YEAR, _d(2027, 1, 1), False, False),
     ("undated-wait", WAIT, EXPECTED, DatePrecision.EXACT, None, False, False),

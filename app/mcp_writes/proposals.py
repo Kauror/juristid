@@ -13,8 +13,10 @@ gateway, after the gateway has verified the bearer token and asked
    back, so whatever an operation might write while previewing (it must write
    nothing) cannot escape, `on_commit` callbacks included;
 4. stores the proposal — PENDING for `MCP_WRITE_PROPOSAL_SECONDS` — with the
-   canonical arguments, their digest, the state, the preview and a fresh
-   correlation id, and one `PREPARED` event, in one transaction;
+   canonical arguments, their digest, the state, the preview and the tool
+   call's correlation id (`X-Correlation-Id`, validated by the gateway; a
+   fresh one when it is missing, malformed or already a proposal's), and one
+   `PREPARED` event, in one transaction;
 5. answers the gateway's response, with the approval page's absolute address.
 
 A refused preparation stores no proposal and writes one `PREPARE_REFUSED`
@@ -27,7 +29,11 @@ import dataclasses
 import hashlib
 import json
 import logging
+import re
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import timedelta
 from typing import Any
 
@@ -81,6 +87,39 @@ def digest_of(proposal: McpWriteProposal) -> str:
     )
 
 
+# -- the correlation id ---------------------------------------------------------
+
+#: A canonical UUID as text, the only shape `X-Correlation-Id` is accepted in.
+_CANONICAL_UUID = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+#: The gateway call this worker thread is serving (audit 2026-10-28 C-07): set by
+#: the gateway around the work, read by `record` so that every event the call
+#: writes can be found from the tool call's own log line.
+_call_correlation: ContextVar[uuid.UUID | None] = ContextVar(
+    "mcp_write_call_correlation", default=None
+)
+
+
+def parse_correlation_id(raw: Any) -> uuid.UUID | None:
+    """``raw`` as a correlation id, or None when it is not a canonical, non-nil UUID.
+
+    Only ever a label for tracing: it never selects a proposal, a grant or a
+    user, so a forged one can only mislabel a log line, never reach a record."""
+    if not isinstance(raw, str) or not _CANONICAL_UUID.match(raw.strip().lower()):
+        return None
+    value = uuid.UUID(raw.strip())
+    return None if value.int == 0 else value
+
+
+@contextmanager
+def call_correlation(correlation_id: uuid.UUID | None) -> Iterator[None]:
+    token = _call_correlation.set(correlation_id)
+    try:
+        yield
+    finally:
+        _call_correlation.reset(token)
+
+
 # -- the events -----------------------------------------------------------------
 
 
@@ -96,13 +135,24 @@ def record(
     correlation_id: uuid.UUID | None = None,
     **detail: Any,
 ) -> McpWriteEvent:
-    """Append one event. ``detail`` holds codes and ids only."""
+    """Append one event. ``detail`` holds codes and ids only.
+
+    An event about a proposal carries the proposal's correlation id, which ties
+    prepare, approval and commit together; when a gateway call other than the
+    one that prepared it wrote the event (a commit), that call's id is kept
+    beside it as ``call_correlation_id``. An event with no proposal (a refused
+    prepare) carries the call's id."""
+    call = _call_correlation.get()
     if proposal is not None:
         user = user if user is not None else proposal.user
         grant_id = grant_id if grant_id is not None else proposal.grant_id
         client_id = client_id or proposal.client_id
         operation = operation or proposal.operation
         correlation_id = correlation_id or proposal.correlation_id
+    if correlation_id is None:
+        correlation_id = call
+    elif call is not None and call != correlation_id:
+        detail.setdefault("call_correlation_id", str(call))
     return McpWriteEvent.objects.create(
         event_type=event_type,
         succeeded=succeeded,
@@ -216,7 +266,12 @@ def has_nul(value: Any) -> bool:
 
 
 def prepare(
-    *, access: Any, user: Any, operation_name: Any, raw_arguments: Any
+    *,
+    access: Any,
+    user: Any,
+    operation_name: Any,
+    raw_arguments: Any,
+    correlation_id: uuid.UUID | None = None,
 ) -> dict[str, Any] | Refusal:
     """Validate, preview and store one proposed change. Writes no business row.
 
@@ -228,7 +283,11 @@ def prepare(
     """
     try:
         return _prepare(
-            access=access, user=user, operation_name=operation_name, raw_arguments=raw_arguments
+            access=access,
+            user=user,
+            operation_name=operation_name,
+            raw_arguments=raw_arguments,
+            correlation_id=correlation_id,
         )
     except Exception as error:
         logger.error("MCP write prepare failed: %s", type(error).__name__)
@@ -244,7 +303,12 @@ def prepare(
 
 
 def _prepare(
-    *, access: Any, user: Any, operation_name: Any, raw_arguments: Any
+    *,
+    access: Any,
+    user: Any,
+    operation_name: Any,
+    raw_arguments: Any,
+    correlation_id: uuid.UUID | None = None,
 ) -> dict[str, Any] | Refusal:
     op = operations.get(operation_name) if isinstance(operation_name, str) else None
     if op is None:
@@ -301,6 +365,12 @@ def _prepare(
         state = jsonable(prepared.state)
         preview = preview_json(prepared.preview)
         now = timezone.now()
+        if (
+            correlation_id is None
+            or McpWriteProposal.objects.filter(correlation_id=correlation_id).exists()
+        ):
+            # One id, one proposal: a reused one would join two changes' trails.
+            correlation_id = uuid.uuid4()
         proposal = McpWriteProposal.objects.create(
             id=uuid.uuid4(),
             user=user,
@@ -321,7 +391,7 @@ def _prepare(
             state=state,
             preview=preview,
             expires_at=now + timedelta(seconds=int(settings.MCP_WRITE_PROPOSAL_SECONDS)),
-            correlation_id=uuid.uuid4(),
+            correlation_id=correlation_id,
         )
         record(McpWriteEventType.PREPARED, proposal=proposal)
     return proposal_answer(proposal)

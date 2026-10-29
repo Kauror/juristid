@@ -70,6 +70,7 @@ from app.core.enums import Visibility
 from app.intelligence.services import add_important_date
 from app.matters import overview as ov
 from app.matters import work_items as wi
+from app.matters.register_filters import RESULTS_ANCHOR
 from app.matters.services import close_matter, create_matter
 from app.submissions.enums import SubmissionStatus
 from app.taxonomy.models import PolicyArea
@@ -558,7 +559,7 @@ def test_every_drilldown_lands_on_the_results(department_head, world, today, sco
     _, claims = walk(department_head, today, scope=scope)
 
     for claim in register_claims(claims):
-        assert claim.url.endswith(ov.RESULTS_ANCHOR), f"{scope}/{claim.where}"
+        assert claim.url.endswith(RESULTS_ANCHOR), f"{scope}/{claim.where}"
 
 
 @pytest.mark.parametrize("scope", ALL_SCOPES)

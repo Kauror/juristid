@@ -15,7 +15,14 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.dates import format_estonian_date
-from e2e.conftest import MARTIN, create_matter, sign_in, start_first_step, unique_title
+from e2e.conftest import (
+    MARTIN,
+    create_matter,
+    open_disclosure,
+    sign_in,
+    start_first_step,
+    unique_title,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -25,6 +32,13 @@ def _row(page, text):
 
 
 def _open_shift(page, row):
+    # A band shows its first rows and folds the rest into «Näita veel»
+    # (`details.pw-more`). Where this step lands depends on how many of Martin's
+    # rows earlier tests on the same browser shard dated ahead of it, so open
+    # the fold when the row is in one rather than assume it is above it.
+    fold = row.locator("xpath=ancestor::details[contains(concat(' ', @class, ' '), ' pw-more ')]")
+    if fold.count():
+        open_disclosure(fold.first)
     row.locator(".rowmenu__trigger").click()
     row.get_by_text("Nihuta kuupäeva", exact=True).click()
     return row.locator("form.dateshift")

@@ -66,6 +66,25 @@ Where sources conflict, precedence is:
 
 This rule resolves one material conflict: the current workbook supplied for this specification contains **11** authoritative `Hetkeseis` labels and explicitly includes `ootan ELi õiguse ülevõtmist`. The independent validation report's contrary claim about 13 labels and the absence of that status does not match the current workbook and is not adopted.
 
+## As built, 2026-10-29 — where the running system differs from this text
+
+This specification is the original product design; the ADRs in `docs/adr/`
+record what was decided after it, and where they differ the ADR governs (see the
+vocabulary below). The departures a reader is most likely to trip over are
+marked in place with an **As built (2026-10-29)** block:
+
+- **Visibility** (§5.1, §5.2): one internal read policy since ADR 0181 — every
+  business role, READER included, reads NORMAL and RESTRICTED content alike.
+- **Deployment, identity and evidence storage** (§5.3, §15.1): production runs
+  on the Unraid host behind a Cloudflare tunnel with `AUTH_MODE=shared_gate`,
+  and evidence lives on the host filesystem. Azure, Entra ID and Blob remain the
+  documented future target, not the current deployment.
+- **Minu töö / Minu asjad, Juhtimine, the Teema page** (§7.2, §7.5, §8): the
+  surfaces were rebuilt by later ADRs; the as-built blocks name them.
+
+Text not marked this way is either still accurate or the historical plan the
+ADRs amended; the ADR index is the record.
+
 ## Decision status vocabulary
 
 Throughout this specification:
@@ -439,7 +458,19 @@ Authorized users can understand active inventory, deadlines, submissions, subjec
 - **Spetsialist / jurist:** create/edit Matters; add entries/documents; manage assigned work, consultation and submissions; search authorized history.
 - **Osakonnajuht:** specialist capabilities plus assignment/reassignment, portfolio/data-quality views, closure review and later impact/work-victory review.
 - **Süsteemiadministraator:** user/role administration, reference data, imports/exports, integrations, health and technical support. Does **not** automatically receive business access to restricted content.
-- **Lugeja** *(later/optional):* read authorized Matters/reports without editing, e.g. management or communications where approved.
+- **Lugeja** *(implemented as the READER role):* reads business content without editing, e.g. management or communications where approved.
+
+> **As built (2026-10-29), [ADR 0181](adr/0181-one-internal-read-policy-for-all-business-content.md).**
+> Business read is one predicate, `may_read_business_content`
+> (`app/core/authorization.py`): an active account acting as SPECIALIST,
+> DEPARTMENT_HEAD or READER (`ROLES_WITH_BUSINESS_READ`) reads all business
+> content, NORMAL and RESTRICTED alike; READER does not write
+> (`ROLES_WITH_BUSINESS_WRITE`). Granting READER therefore grants sight of
+> RESTRICTED Matters. Technical administration (ADMINISTRATOR or superuser
+> without a business role) reads no business content at all; the only
+> exception is an explicit, time-bounded, audited break-glass grant. Behind the
+> shared gate a READER is not offered as a persona (ADR 0181, consistency note
+> of 2026-10-25).
 
 External member companies are not application users in MVP.
 
@@ -449,6 +480,15 @@ MVP has two visibility scopes:
 
 - `NORMAL` — visible to authorized department users;
 - `RESTRICTED` — visible to the configured business roles, which since [ADR 0042](adr/0042-department-wide-lawyer-access.md) are both lawyer roles (`Spetsialist / jurist` and `Osakonnajuht`), and otherwise only to the Matter owner and explicit collaborators. It separates the legal team from technical administration, a shared-gate visitor and anyone outside the application; it does not separate one lawyer from another.
+
+> **As built (2026-10-29), [ADR 0181](adr/0181-one-internal-read-policy-for-all-business-content.md)
+> supersedes the sentence above.** RESTRICTED is a sensitivity label, not an
+> internal read barrier: SPECIALIST, DEPARTMENT_HEAD **and READER** read it
+> exactly as they read NORMAL, through the same all-or-nothing `scope_for_user`.
+> The separation that remains is internal versus external — anonymous callers,
+> inactive accounts, a shared-gate session with no persona, and technical
+> administrators without a business role read nothing. Restricted child records
+> may still be more restrictive than their Matter, never less.
 
 The Matter sets the default. Child records inherit that visibility automatically. A child may be **more restrictive** than its parent but may never become less restrictive than the effective parent scope.
 
@@ -495,6 +535,24 @@ Production adds/locks:
 - offboarding test;
 - second break-glass administrator/continuity path;
 - production monitoring, security review and recovery runbooks.
+
+> **As built (2026-10-29).** The list above is the original target. The
+> real-data instance actually runs on the department's Unraid host
+> (`deploy/unraid-main/`), with no host port, reachable only through a
+> Cloudflare tunnel ([ADR 0022](adr/0022-deployment-backup-and-recovery.md)).
+> Authentication is `AUTH_MODE=shared_gate`: one department password, then a
+> persona ([ADR 0016](adr/0016-authentication-modes-and-the-shared-gate.md));
+> since [ADR 0004](adr/0004-authentication-direction.md)'s amendment of
+> 2026-10-08 personal sign-in (`AUTH_MODE=local_password`,
+> [ADR 0145](adr/0145-local-password-authentication-and-account-administration.md))
+> is the planned individual authenticator, built and deployed dormant, and
+> Entra ID waits. Haldus needs a verified administrator session
+> ([ADR 0186](adr/0186-privileged-administrator-sessions-under-the-shared-gate.md)).
+> Evidence binaries are stored on the host filesystem under `EVIDENCE_ROOT`
+> (`config/settings.py`, Django `FileSystemStorage`), not Azure Blob. The
+> Secure Pilot Gate above is not signed off. Azure, Entra and Blob remain the
+> future target described in this specification and §15, not the current
+> deployment.
 
 # 6. Koda advocacy operating model
 
@@ -669,6 +727,12 @@ Group by action semantics rather than one mixed due-date list:
 - MONITOR actions scheduled for review;
 - expected-around developments needing attention.
 
+A review date comes round on the first day of the period it names (*«oktoober
+2026»* from 1 October, ADR 0079 §6) and is then current work in *Sel nädalal*
+even while the period runs; an expected-around date is someone else's timing,
+not an instruction to review, and comes round only on its period's last day.
+Neither is ever an overdue deadline (owner's decision of 2026-10-29, ADR 0195).
+
 ### Minu aktiivsed teemad
 
 Active Matter inventory sorted primarily by current next action/date and recent meaningful activity.
@@ -684,6 +748,21 @@ Key indicators are clickable filters, not decorative cards:
 - unassigned for managers.
 
 Matter count is called **inventory/portfolio**, not workload/productivity.
+
+> **As built (2026-10-29) — the page's layout, not its band rules.** The page
+> is `Minu asjad` (`/minu-asjad/`, `templates/matters/my_work.html`). Its main
+> column is three sections: **«Tähtajaline töö»** (dated work, grouped into the
+> time bands the page names; which work belongs in which band is stated by the
+> ADRs, not by this block), **«Aktiivsed teemad»** (the active-Matter inventory,
+> with the view chips «Kõik», «Vajab sekkumist», «Ilma järgmiseta» and «Hiljuti
+> muutunud», `app/matters/my_work.py`) and **«Viimased tegevused»**. Waiting and
+> monitoring work is not split into separate «Ootan» and «Jälgin» blocks. A rail
+> beside them holds the calendar, «Uus asi», «Järgmise tegevuseta»,
+> «Kuupäevata», «Märkmed» and «Minu statistika». The headings «Teen», «Ootan /
+> kontrollin» and «Minu aktiivsed teemad» above are the original plan. See ADR
+> [0049](adr/0049-one-department-page.md),
+> [0172](adr/0172-owner-acceptance-fixes-of-2026-10-19.md) and
+> [0190](adr/0190-back-to-results-a-row-link-and-the-saved-row.md).
 
 ## 7.3 Saabunud
 
@@ -745,6 +824,11 @@ Initial manager views:
 
 Every count drills through to the exact authorized records.
 
+> **As built (2026-10-29).** The manager views live on one department page,
+> `Osakond` (`/osakond/`, [ADR 0049](adr/0049-one-department-page.md)), and in
+> `Statistika`. No «reporting reconciliation status during cutover» surface was
+> built; no ADR records its removal, and the cutover it served is complete.
+
 ## 7.6 Global search
 
 A globally visible search field is available from every page. `Ctrl+K` initially focuses/opens search; a broad command palette is deferred.
@@ -792,6 +876,21 @@ Reading order on `Teema`, and nothing renders that holds nothing:
 See ADR 0030 for the decisions this rests on, including why one composer save
 produces one timeline event without any canonical record being suppressed.
 
+> **As built (2026-10-29).** The reading order above, and the composer of
+> §8.3, are the original plan (ADR 0030). The page was rebuilt to the approved
+> target ([ADR 0074](adr/0074-teema-approved-target.md),
+> [ADR 0075](adr/0075-teema-current-action-and-add-to-matter-workspace.md)):
+> the `Teema` view is **`PRAEGUNE TEGEVUS`** (the current task and the one box
+> that finishes it), **`LISA TEEMALE`** (one small form at a time) and
+> **`Ajajoon`** (the process strip, then the chronology), with a rail of
+> slow-changing facts — `Seotud materjalid` and `Koja arvamus` among them
+> (`templates/matters/partials/overview.html`). There is no standalone
+> `Kaasamine` section (rounds are entered from `LISA TEEMALE` and read in the
+> strip and the chronology) and no free-text `Koja seisukoht` block — the
+> Chamber's output on a Matter is the letter it sent. The unified composer was
+> retired with ENG-050A2 (ADR 0075 §11, amended); only the correction of a
+> filed entry keeps a route under it (`app/matters/urls.py`).
+
 ## 8.2 Header
 
 Always visible:
@@ -808,6 +907,8 @@ Always visible:
 Long Estonian titles wrap cleanly and never push the working content below an oversized hero header.
 
 ## 8.3 Unified Sissekanne composer
+
+> **Historical (2026-10-29):** retired — see the as-built note in §8.1.
 
 The composer is the primary adoption feature.
 
@@ -853,6 +954,11 @@ Display:
 Newest-first timeline with collapsible month/year groups. Routine field-edit noise is hidden by default.
 
 ## 8.5 Seisukoht ja kaasamine
+
+> **As built (2026-10-29):** no free-text `Koja seisukoht` block and no
+> standalone `Kaasamine` section on the page (see §8.1). Consultation answers
+> are structured: every `Lisa tagasiside` reply is a `MatterExternalPosition`
+> row tied to its round (`app/matters/engagement_replies.py`, ADR 0167 §2, 0170).
 
 MVP contains:
 
@@ -1204,6 +1310,9 @@ Core fields:
 One Matter may have many Submissions. Opinion/submission-volume statistics query this entity.
 
 ### AdditionalDate (`MatterDate`)
+
+> **As built (2026-10-29):** the model is `MatterImportantDate`
+> (`app/intelligence/models.py`).
 
 Purpose: important dates **not already canonical elsewhere**.
 
@@ -1753,6 +1862,12 @@ A trigger means **evaluate**, not automatically migrate. `SearchDocument` should
 
 Do not force one storage technology to solve both immutable evidence and Office co-authoring.
 
+> **As built (2026-10-29).** Immutable evidence binaries are stored through
+> Django's `FileSystemStorage` under `EVIDENCE_ROOT` on the Unraid host
+> (`config/settings.py`), with the same Document/DocumentVersion semantics and
+> backed up with the database ([ADR 0022](adr/0022-deployment-backup-and-recovery.md)).
+> Azure Blob is the future production target, not the current store.
+
 ## 15.2 Evidence documents
 
 Store immutable Blob-backed DocumentVersion for evidence such as:
@@ -2149,7 +2264,9 @@ Suitable from MVP/early management layer when definitions are agreed:
 
 - active FULL Matters;
 - new FULL Matters created;
-- formal Submissions sent (from Submission entity);
+- formal Submissions sent (from Submission entity); an opinion count leaves out
+  sends that are not opinions (an official «no comments» answer, ADR 0174), and
+  the list it opens applies the same exclusion (`?ainult=arvamused`);
 - response/submission deadlines;
 - active Matters without next action;
 - overdue `DO + DEADLINE` actions;

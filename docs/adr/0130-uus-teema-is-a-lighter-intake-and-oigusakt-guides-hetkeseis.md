@@ -514,6 +514,9 @@ when correcting a Teema, and read the absence as «every stage fits».
   radio the lawyer then saves — the server still infers nothing.
 - Scope: `Uus teema`'s script. No model, no validation, no server-side
   inference; `Muuda teemat` never chooses a stage.
+- Status update 2026-10-29: this amendment was merged and shipped without a
+  separately recorded approval — see «Status update 2026-10-29» at the end of
+  this record.
 
 ### What was decided before
 
@@ -640,3 +643,22 @@ the page already shows, and buttons that did not end the form.
    out of the form; nothing is linked before the save. Choosing a result
    clears the picker's memory of the last query, so the same query asked again
    searches again.
+
+## Status update 2026-10-29 — the stage-from-instrument amendment shipped
+
+This section records what happened to the amendment of 2026-10-09 («a stage
+chosen from the instrument», marked *awaiting the owner's approval before
+merge*). It does not rewrite that amendment or the record's status.
+
+- **Implemented** in commit `e82df3df` (2026-10-09, titled «[AWAITING OWNER]»):
+  `prefill_stage_by_instrument` in `app/workflow/stage_guidance.py`, serialised
+  into the page and applied by `static/js/app.js` (the block opening «The
+  conservative prefill (docs/adr/0130, amendment of 2026-10-09 …»).
+- **Merged** 2026-10-10 in #419 and **deployed** with the lawyer-UX round
+  (#418–#421, production `1379d3ed`).
+- **Approval**: no explicit owner approval of this amendment is recorded in the
+  repository. The owner's accepted amendment of 2026-10-12 above retires its
+  rule 4 and states that «Rules 1–3 and 5 stand», which is the closest written
+  confirmation; formal acceptance of the amendment itself remains for the owner
+  to state.
+

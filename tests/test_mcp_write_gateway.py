@@ -10,6 +10,7 @@ with connections of their own and must see what the test wrote.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 from datetime import timedelta
@@ -334,3 +335,136 @@ def test_brackets_inside_strings_do_not_count_as_nesting():
     assert not gateway.too_deep(b'{"text": "' + b"[" * 100 + b'\\" ]"}')
     assert gateway.too_deep(b"[" * 33)
     assert not gateway.too_deep(b"[" * 32 + b"]" * 32)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("real_data", [True, False])
+def test_the_gateway_does_not_start_on_a_write_capable_owner_role(settings, monkeypatch, real_data):
+    """Audit 2026-10-28 C-04: E050 is an error in the `mcp_writer` role whether
+    or not REAL_DATA_ALLOWED is set, so a gateway connected as the test
+    database's owner (it can write every table) never reaches uvicorn."""
+    import uvicorn
+    from django.core.management.base import SystemCheckError
+
+    settings.JURISTID_PROCESS_ROLE = settings.MCP_WRITER_PROCESS_ROLE
+    settings.REAL_DATA_ALLOWED = real_data
+    served: list[Any] = []
+    monkeypatch.setattr(uvicorn.Server, "run", lambda self, sockets=None: served.append(self))
+    with pytest.raises(SystemCheckError, match=r"juristid\.E050"):
+        call_command("run_mcp_write_gateway", stdout=io.StringIO(), stderr=io.StringIO())
+    assert served == []
+
+
+# -- X-Correlation-Id (audit 2026-10-28 C-07) ----------------------------------------------
+
+
+def _prepare_with(chain: Any, correlation: str | None) -> httpx2.Response:
+    headers = {} if correlation is None else {"X-Correlation-Id": correlation}
+    return call(
+        "POST",
+        "/v1/prepare",
+        body={
+            "operation": "test_rename_matter",
+            "arguments": {"matter": str(chain["matter"].pk), "title": "Uus"},
+        },
+        token=chain["token"],
+        headers=headers,
+    )
+
+
+@transactional
+def test_a_valid_correlation_id_follows_the_proposal_through_commit(chain, caplog):
+    import uuid
+
+    from app.mcp_writes.models import McpWriteEvent, McpWriteEventType
+
+    caplog.set_level(logging.INFO, logger="app.mcp_writes")
+    first, second = str(uuid.uuid4()), str(uuid.uuid4())
+    prepared = _prepare_with(chain, first)
+    proposal_id = prepared.json()["proposal"]["id"]
+    proposal = McpWriteProposal.objects.get(pk=proposal_id)
+    assert str(proposal.correlation_id) == first
+    _approve(proposal_id)
+    done = call(
+        "POST",
+        "/v1/commit",
+        body={"proposal_id": proposal_id},
+        token=chain["token"],
+        headers={"X-Correlation-Id": second},
+    )
+    assert done.json()["status"] == "executed"
+    events = {e.event_type: e for e in McpWriteEvent.objects.filter(proposal=proposal)}
+    assert str(events[McpWriteEventType.PREPARED].correlation_id) == first
+    committed = events[McpWriteEventType.COMMITTED]
+    assert str(committed.correlation_id) == first
+    assert committed.detail["call_correlation_id"] == second
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("mcp-writer ")]
+    assert f"corr={first}" in lines[0] and f"corr={second}" in lines[1]
+    assert "(replaced)" not in "\n".join(lines)
+
+
+@transactional
+@pytest.mark.parametrize(
+    "bad",
+    [
+        None,
+        "",
+        "not-a-uuid",
+        "00000000-0000-0000-0000-000000000000",
+        "{12345678-1234-1234-1234-123456789abc}",
+        "12345678123412341234123456789abc",
+        "x" * 200,
+        " 12345678-1234-1234-1234-123456789abc; DROP",
+    ],
+)
+def test_a_missing_or_malformed_correlation_id_is_replaced(chain, caplog, bad):
+    caplog.set_level(logging.INFO, logger="app.mcp_writes")
+    prepared = _prepare_with(chain, bad)
+    proposal = McpWriteProposal.objects.get(pk=prepared.json()["proposal"]["id"])
+    assert proposal.correlation_id.int != 0 and str(proposal.correlation_id) != bad
+    line = next(r.getMessage() for r in caplog.records if r.getMessage().startswith("mcp-writer "))
+    assert f"corr={proposal.correlation_id} (replaced)" in line
+
+
+@transactional
+def test_a_reused_correlation_id_never_joins_two_proposals(chain):
+    import uuid
+
+    shared = str(uuid.uuid4())
+    one = _prepare_with(chain, shared).json()["proposal"]["id"]
+    two = _prepare_with(chain, shared).json()["proposal"]["id"]
+    ids = set(
+        McpWriteProposal.objects.filter(pk__in=[one, two]).values_list("correlation_id", flat=True)
+    )
+    assert len(ids) == 2 and uuid.UUID(shared) in ids
+
+
+@transactional
+def test_a_correlation_id_naming_another_proposal_reaches_nothing(chain):
+    """The id is a label: a commit carrying someone else's proposal's correlation
+    id still commits only what its own proposal_id names, and only if approved."""
+    prepared = _prepare_with(chain, None).json()["proposal"]["id"]
+    target = McpWriteProposal.objects.get(pk=prepared)
+    waiting = call(
+        "POST",
+        "/v1/commit",
+        body={"proposal_id": prepared},
+        token=chain["token"],
+        headers={"X-Correlation-Id": str(target.correlation_id)},
+    )
+    assert waiting.json()["status"] == "awaiting_approval"
+    other = factories.UserFactory()
+    stranger = support.token_for(other, support.active_grant(other))
+    refused(
+        call(
+            "POST",
+            "/v1/commit",
+            body={"proposal_id": prepared},
+            token=stranger,
+            headers={"X-Correlation-Id": str(target.correlation_id)},
+        ),
+        404,
+        "not_found",
+    )
+    target.refresh_from_db()
+    assert target.status == ProposalStatus.PENDING

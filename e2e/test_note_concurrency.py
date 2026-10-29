@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import pytest
 
-from e2e.conftest import MARTIN, open_matter, sign_in
+from e2e.conftest import MARTIN, await_post, open_matter, sign_in
 
 pytestmark = pytest.mark.e2e
 
@@ -53,10 +53,22 @@ def _texts() -> tuple[str, str]:
     return f"{_A} [{nonce}]", f"{_B} [{nonce}]"
 
 
-#: The autosave fires 900 ms after typing stops on the Teema rail and 800 ms on
-#: Minu asjad. This is that plus the round trip, with room to spare — a flake here
-#: would read as a concurrency defect, which is the last thing worth guessing at.
-SETTLE_MS = 1600
+#: Both pads post to an address ending `/markmed/`: the Teema rail's
+#: `teemad/<pk>/markmed/` and Minu asjad's `minu-asjad/markmed/`.
+NOTE_SAVE = "/markmed/"
+
+
+def _autosave(page, type_into) -> None:
+    """Type, and wait until that page's autosave has been answered and swapped.
+
+    The autosave fires 900 ms after typing stops on the Teema rail and 800 ms
+    on Minu asjad. This used to sleep 1600 ms and hope the round trip fitted —
+    and a flake here would read as a concurrency defect, which is the last
+    thing worth guessing at. Now it waits for the save's own response and for
+    HTMX to apply it (the hint, and the out-of-band revision token), so the
+    next line reads what the server answered (audit 2026-10-28, E-06).
+    """
+    await_post(page, type_into, NOTE_SAVE)
 
 
 def test_a_stale_second_tab_is_told_and_overwrites_nothing(browser, base_url):
@@ -79,12 +91,10 @@ def test_a_stale_second_tab_is_told_and_overwrites_nothing(browser, base_url):
         box_a.wait_for()
         box_b.wait_for()
 
-        box_a.fill(a_text)
-        a.wait_for_timeout(SETTLE_MS)
+        _autosave(a, lambda: box_a.fill(a_text))
         assert "Salvestatud" in a.locator("#teema-markme-seis").inner_text()
 
-        box_b.fill(b_text)
-        b.wait_for_timeout(SETTLE_MS)
+        _autosave(b, lambda: box_b.fill(b_text))
 
         # B is told, in the slot the successful save also writes to — so the
         # answer is where B was already looking for it.
@@ -124,10 +134,8 @@ def test_the_stale_tab_can_save_again_after_reloading(browser, base_url):
         b.goto(a.url)
         b.wait_for_load_state("networkidle")
 
-        a.locator("textarea.railnote__area").fill(a_text)
-        a.wait_for_timeout(SETTLE_MS)
-        b.locator("textarea.railnote__area").fill(b_text)
-        b.wait_for_timeout(SETTLE_MS)
+        _autosave(a, lambda: a.locator("textarea.railnote__area").fill(a_text))
+        _autosave(b, lambda: b.locator("textarea.railnote__area").fill(b_text))
         assert "teises aknas" in b.locator("#teema-markme-seis").inner_text().lower()
 
         b.reload()
@@ -138,8 +146,7 @@ def test_the_stale_tab_can_save_again_after_reloading(browser, base_url):
         # And the conflict block is gone, because there is nothing left to resolve.
         assert b.locator("#teema-markme-konflikt").inner_text().strip() == ""
 
-        box.fill(f"{a_text} {b_text}")
-        b.wait_for_timeout(SETTLE_MS)
+        _autosave(b, lambda: box.fill(f"{a_text} {b_text}"))
         assert "Salvestatud" in b.locator("#teema-markme-seis").inner_text()
     finally:
         context.close()
@@ -160,8 +167,8 @@ def test_consecutive_saves_from_one_tab_do_not_conflict_with_themselves(page, ba
     run = _texts()[0][-9:-1]
     seen: list[str] = []
     for number in range(1, 4):
-        box.fill(f"Salvestus number {number} [{run}].")
-        page.wait_for_timeout(SETTLE_MS)
+        text = f"Salvestus number {number} [{run}]."
+        _autosave(page, lambda text=text: box.fill(text))
         hint = page.locator("#teema-markme-seis").inner_text()
         assert "Salvestatud" in hint, f"save {number} was refused: {hint}"
         assert "teises aknas" not in hint.lower()
@@ -194,12 +201,10 @@ def test_the_desk_pad_behaves_the_same_way(browser, base_url):
         b.goto(f"{base_url}/minu-asjad/")
         b.wait_for_load_state("networkidle")
 
-        a.locator("#pw-note-body").fill(a_text)
-        a.wait_for_timeout(SETTLE_MS)
+        _autosave(a, lambda: a.locator("#pw-note-body").fill(a_text))
 
         box_b = b.locator("#pw-note-body")
-        box_b.fill(b_text)
-        b.wait_for_timeout(SETTLE_MS)
+        _autosave(b, lambda: box_b.fill(b_text))
 
         assert "teises aknas" in b.locator("#pw-note-meta").inner_text().lower()
         assert box_b.input_value() == b_text
@@ -225,8 +230,8 @@ def test_the_desk_pad_saves_consecutively(page, base_url):
     run = _texts()[0][-9:-1]
     seen: list[str] = []
     for number in range(1, 4):
-        box.fill(f"Meeldetuletus {number} [{run}].")
-        page.wait_for_timeout(SETTLE_MS)
+        text = f"Meeldetuletus {number} [{run}]."
+        _autosave(page, lambda text=text: box.fill(text))
         meta = page.locator("#pw-note-meta").inner_text()
         assert "teises aknas" not in meta.lower(), f"save {number} was refused: {meta}"
         token = page.locator("#pw-note-revision").get_attribute("value")

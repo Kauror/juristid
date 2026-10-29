@@ -1,7 +1,7 @@
 # 0194 — Informational blocks remember their reader
 
 - Status: Proposed (owner's coordinated UX & workflow brief of 2026-10-28,
-  requirement 9 and owner decisions 2, 5 and 6; not merged)
+  requirement 9 and owner decisions 2, 5 and 6; merged 2026-10-28 in #563)
 - Adds: `accounts.DisclosurePreference` (migration `accounts/0006`, additive),
   `app/accounts/disclosures.py`, `{% disclosure %}`, `static/js/disclosures.js`,
   `POST /konto/plokid/` and `POST /konto/plokid/taasta/`
@@ -94,3 +94,19 @@ Deliberately **not** remembered:
   attribute. A test refuses an unregistered key in a template.
 - Two people sharing one persona at the shared gate share its folding — the
   approved behaviour, and harmless because nothing but presentation is stored.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend it, and
+the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** 2026-10-28 in #563 (merge `fb37a5ea`, workstream C merge `0e661f37`).
+- **Deployed** as production release r36, `fb37a5ea`, 2026-10-28 17:00 UTC, with
+  its one additive migration `accounts/0006_disclosure_preferences` applied
+  (backup set `20261028T165612Z` taken before it). A code-only rollback leaves
+  `0006` in place; the table is additive and unread by authorization.
+- **Testing consequence found after the merge** (audit 2026-10-28, E-03): the
+  preference is per persona and the browser suite's personas are shared by every
+  test in a shard, so a test that toggled a remembered block changed what the
+  next test saw. The behaviour above is unchanged; the browser suite now starts
+  each signed-in test from the registered defaults (`e2e/conftest.py`).

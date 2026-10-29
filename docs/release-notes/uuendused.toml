@@ -8,6 +8,28 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-29
+basis = "deployment"
+prs = [564]
+# Koodiauditi 28.10 parandused (#564, ADR 0195 ja ADRide 0185, 0189, 0191,
+# 0192 täiendused): Lovable'i ülevaatuse sildid ja öise kirjutamise peatumine,
+# küpse ülevaatuse riba, sulgeja nimi «Tehtud» all, «Saadetud arvamusi»
+# sihtloend. Testide, CI ja dokumentide muudatused on sisemised. MCP
+# kinnituse uus kood igaks kinnituseks jõustub alles siis, kui tootmise seade
+# MCP_WRITE_REVERIFY_SECONDS=0 on pandud — siis lisatakse eraldi punkt.
+# Migratsioonideta, otsinguindeksit uuesti ei ehitata. Kui väljalase ei jõua
+# tootmisse 29.10 (Tallinna aja järgi), liigub see kirje väljalaske päeva
+# kuupäevale.
+changes = [
+  "Ülevaatus, mille aeg on käes (nt «vaatan üle oktoobris» oktoobris), on Minu asjades nüüd «Sel nädalal», mitte «Hiljem». Hiljaks see ei jää.",
+  "Teise poole oodatav vastus (nt «IV kvartalis») tuleb ülevaatamiseks perioodi viimasel päeval ega jää kunagi hiljaks.",
+  "Osakonna «Tehtud» all on suletud teema juures see, kes teema sulges; kui sulgejat pole kirjas, vastutaja.",
+  "Osakonna ja Statistika arv «Saadetud arvamusi» avab täpselt need arvamused, mida see loeb; ametlik «märkusteta» vastus nende hulka ei kuulu.",
+  "Uuenduste osas «Lovable» öeldakse «Juristides juba sama» ainult siis, kui väärtused on päriselt võrreldud. Muidu on kirjas «Ei võrreldud» või «Lahendatud käsitsi».",
+  "Kui öine Lovable'i sünkroonimine ei suuda kirjutatud muudatust tagasi lugedes kinnitada, jätab see selle öö ülejäänud muudatused tegemata ja märgib öö ebaõnnestunuks (Haldus → «Lovable sünkroonimine»).",
+]
+
+[[day]]
 date = 2026-10-28
 basis = "deployment"
 prs = [563]

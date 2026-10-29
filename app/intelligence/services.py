@@ -122,8 +122,10 @@ def add_important_date(
     legacy_source_page: Any = None,
 ) -> MatterImportantDate:
     # A closed Matter takes no new canonical fact, and the check belongs here
-    # rather than in the three surfaces that reach this — `Muuda`'s own route,
-    # the Teema workspace and the compatibility composer — because a stale
+    # rather than in the callers that reach this — `Muuda`'s own route, the
+    # Teema workspace, the MCP write gateway (app/mcp_writes/operations/dates.py)
+    # and the gated one-off pilot imports; the compatibility composer that was a
+    # third page is gone (ENG-050A2) — because a stale
     # browser posts to a server that cannot tell which page it came from
     # (R2-02). Under the Matter lock, so a closure committing alongside this
     # cannot leave a fact on a file that is already shut
@@ -381,8 +383,9 @@ def add_effective_date(
     legacy_source_page: Any = None,
 ) -> MatterEffectiveDate:
     # A closed Matter takes no new canonical fact, and the check belongs here
-    # rather than in the three surfaces that reach this — `Muuda`'s own route,
-    # the Teema workspace and the compatibility composer — because a stale
+    # rather than in the callers that reach this — `Muuda`'s own route, the
+    # Teema workspace and the gated one-off pilot imports; the compatibility
+    # composer that was a third page is gone (ENG-050A2) — because a stale
     # browser posts to a server that cannot tell which page it came from
     # (R2-02). Under the Matter lock, so a closure committing alongside this
     # cannot leave a fact on a file that is already shut
@@ -678,8 +681,9 @@ def add_confirmed_work_victory(
     proposal, which is a different question (app/core/authorization.py).
     """
     # A closed Matter takes no new canonical fact, and the check belongs here
-    # rather than in the three surfaces that reach this — `Muuda`'s own route,
-    # the Teema workspace and the compatibility composer — because a stale
+    # rather than in the two pages that reach this — `Muuda`'s own route and
+    # the Teema workspace; the compatibility composer that was a third is gone
+    # (ENG-050A2) — because a stale
     # browser posts to a server that cannot tell which page it came from
     # (R2-02). Under the Matter lock, so a closure committing alongside this
     # cannot leave a fact on a file that is already shut

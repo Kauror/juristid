@@ -265,3 +265,63 @@ named, and a tombstoned Teema is left out (docs/adr/0096). GET and HEAD only.
 - The sync dies with cutover; it cannot be turned back on.
 - Uuendused has a Lovable section for business readers (§11); its history is
   as long as the snapshot retention, 30 days.
+
+## Status update 2026-10-29 — after the code audit of 2026-10-28
+
+The status stays **Proposed**: the owner has not formally accepted this record.
+For the record, as the release history states it: the synchronisation was
+deployed and **activated in COMPARE mode** (cron installed) on 27.10.2026.
+**APPLY has never been authorised or switched on**, and nothing below
+authorises it. The audit's findings on this record are remediated on branch
+`remediation/a-lovable-security` (merged and deployed only when the owner says
+so):
+
+- **§11, «Juristides juba sama» (B-01, C-08).** Said now only where the
+  reconciliation recorded convergence. New answers: «Ei võrreldud» for a field
+  the night did not compare (its topic was re-numbered or missing, or the run
+  stopped before recording), «Lahendatud käsitsi» for an operator's
+  `lovable_sync resolve`, «Viga» for a Teema whose write failed or did not read
+  back, and «Teadmata» where nothing recorded explains a change — never «sama».
+  Recorded runs are read as they are; nothing historical is rewritten.
+- **§3, §7, which reading is a baseline.** A run's snapshot is stored only after
+  the `MAX_MISSING` check, so a broken read is never kept. Only a run that
+  finished without failing (SUCCEEDED or REVIEW_ONLY) is a baseline — for the
+  next night on Uuendused → Lovable, for `Kontrolli muudatusi`, and for «new
+  since the previous reading». A failed run's snapshot stays as evidence of what
+  it read; pruning keeps the newest baseline as well as the newest snapshot.
+- **§6–§7, a failed read-back stops the run (B-05).** The first applied Teema
+  that does not read back as written ends the run's writing: later eligible
+  changes are recorded as not executed (`ELIGIBLE` / `VERIFY_STOPPED`), the
+  Teema gets a `FAILED` / `VERIFY_MISMATCH` decision, earlier writes and their
+  provenance stay, nothing is rolled back automatically, and the run is FAILED
+  with counts `verify_failed` and `not_executed`.
+- **§9, `Kontrolli muudatusi` (C-06).** A second check within 60 seconds is
+  refused, and a check that would record exactly what the newest check
+  recorded reuses it instead of adding an identical one. No ledger, decision,
+  audit or provenance row is deleted; whether old CHECK runs should ever be
+  pruned is an open retention decision for the owner.
+- **§2, the transport (C-02).** Credentials, the bearer token and the
+  publishable key go only to the project's `https://<ref>.supabase.co` origin
+  (`LOVABLE_SYNC_URL` is refused otherwise); a redirect is never followed, and
+  an answer from another origin is refused; every row is cut to the allowlisted
+  columns before it can reach a snapshot. Still GET-only.
+- **§2, the access probe (C-01).** Over PostgREST a forbidden PATCH/DELETE
+  under row-level security answers `200 []`, exactly like a permitted one that
+  matched nothing, and a 404 only says a route is missing. The probe now passes
+  a write path only on an explicit refusal (401/403, or PostgreSQL's `42501` /
+  `28000` in the error body); `200 []`, a 404 and any other answer are
+  **INDETERMINATE**, and a write function that runs for the caller fails. An
+  INDETERMINATE probe blocks activation exactly like a failed one.
+  `lovable_sync access-sql` prints the independent check: read-only catalogue
+  queries (the identity's profile, row-level security, write policies, the
+  write functions' grants and caller checks, `topic_writer`'s definition) for
+  the owner to run in Lovable's own SQL editor. It writes nothing and touches
+  no Lovable row.
+
+**Operational follow-up (owner).** The probe that passed on 27.10.2026 used the
+old rule and so proved the read side only. Before APPLY is ever considered: run
+`lovable_sync access-probe` again with the real service login; if it is not
+PASS, run the `access-sql` queries and confirm every expected answer; record the
+result. Until then the identity is not shown to be unable to write, and APPLY
+stays off. (Juristid itself only ever reads Lovable, so this concerns the
+Lovable side if the credential ever leaked.)

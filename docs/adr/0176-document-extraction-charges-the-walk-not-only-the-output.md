@@ -76,3 +76,10 @@ takes about 1.5 s. All are environment variables.
   deployment's job (Compose); they are recommended, not set, here.
 - openpyxl still parses one XML `<row>` whole and loads shared strings at
   open; those stay bounded by ADR 0014's uncompressed-size and ratio guards.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** in the security remediation integration (merge `9a2e834a, #514 = #506–#513, 2026-10-22`).
+- **Deployed** to production as `1270ca01` (2026-10-23, the release of #521, which carried the security baseline merged before it).

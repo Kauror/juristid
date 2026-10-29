@@ -76,6 +76,30 @@ def test_the_newest_day_starts_expanded_and_the_rest_do_not(page, base_url):
         assert days(page).nth(index).get_attribute("open") is None
 
 
+def test_the_latest_release_note_is_the_open_day(page, base_url):
+    """The newest committed entry is what a reader sees first, word for word.
+
+    The functional half of the `uuendused` visual scenario: that scenario
+    photographs the page's composition over fixed fixture days, so a release
+    note added to `docs/release-notes/uuendused.toml` no longer needs a new
+    baseline (audit 2026-10-28, E-02). Which entry is on top, and that each of
+    its bullets is shown, is proved here against the file itself.
+    """
+    from app.core.release_notes import parse_release_notes, release_notes_path
+
+    newest = parse_release_notes(release_notes_path().read_text(encoding="utf-8"))[0]
+    open_from_the_footer(page, base_url)
+    first = days(page).first
+    expect(first).to_have_attribute("open", "")
+    expect(first.locator(".accordion__title")).to_have_text(newest.heading)
+    expect(first.locator(".accordion__summary")).to_have_text(newest.count_label)
+    bullets = first.locator(".relnotes__list > li")
+    expect(bullets).to_have_count(len(newest.changes))
+    for index, change in enumerate(newest.changes):
+        expect(bullets.nth(index)).to_have_text(change)
+        expect(bullets.nth(index)).to_be_visible()
+
+
 def test_the_open_day_shows_its_changes_and_a_shut_one_does_not(page, base_url):
     open_from_the_footer(page, base_url)
     expect(days(page).first.locator("li").first).to_be_visible()

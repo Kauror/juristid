@@ -118,3 +118,10 @@ went on working.
   back to an earlier password (2026-10-22 review).
 - A local-password deployment that rotates `SECRET_KEY` also abandons sign-ins
   waiting for their code (they were ended by the session hash already).
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** in security hardening round 2 (merge `b6b27abc, #519 = #515–#518, 2026-10-22`).
+- **Deployed** to production as `1270ca01` (2026-10-23, the release of #521, which carried the security baseline merged before it).

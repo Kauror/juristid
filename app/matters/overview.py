@@ -65,7 +65,7 @@ from app.core.authorization import (
     matter_visibility_q,
     scope_for_user,
 )
-from app.core.dates import format_estonian_date
+from app.core.dates import format_estonian_date, local_day_range
 from app.intelligence.models import (
     MatterEffectiveDate,
     MatterImportantDate,
@@ -74,7 +74,7 @@ from app.intelligence.models import (
 from app.matters import work_items as wi
 from app.matters.activity import activity_of, annotated_slice
 from app.matters.models import Entry, Matter, MatterEngagement
-from app.matters.register_filters import RESULTS_ANCHOR
+from app.matters.register_filters import OPEN_FULL, register_url
 from app.matters.selectors import MISSING
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
@@ -130,26 +130,6 @@ INTERVENTION_LIMIT = 60
 FEED_LIMIT = 12
 RAIL_LIMIT = 6
 AREA_MATTER_PREVIEW = 4
-
-
-def _teemad(**params: Any) -> str:
-    """A link into the register with filters already applied.
-
-    Every figure on this page is a promise that a list exists behind it, and the
-    promise is kept by reusing the register's own query parameters rather than
-    inventing a parallel query language beside them.
-
-    The fragment is part of the promise. A filtered register still opens on its
-    search box and its narrowing panel, and a reader who arrived from "12 üle
-    tähtaja" wants the twelve rows — so the link names the results region and
-    the register focuses it (templates/matters/matter_list.html).
-    """
-    query = "&".join(f"{key}={value}" for key, value in params.items() if value not in (None, ""))
-    base = reverse("matters:matter_list")
-    return f"{base}?{query}{RESULTS_ANCHOR}" if query else f"{base}{RESULTS_ANCHOR}"
-
-
-_OPEN_FULL = {"olek": "avatud", "liik": "FULL"}
 
 
 @dataclass(frozen=True)
@@ -286,7 +266,7 @@ def intervention_url() -> str:
     that *are* the definition, resolved by the read model's own selector
     (`WORK_NEEDS_ATTENTION`, app/matters/work_items.py).
     """
-    return _teemad(**_OPEN_FULL, too=wi.WORK_NEEDS_ATTENTION)
+    return register_url(**OPEN_FULL, too=wi.WORK_NEEDS_ATTENTION)
 
 
 def _short(value: date | None) -> str:
@@ -403,7 +383,7 @@ def intervention_rows(
                 matter=matter,
                 detail="järgmine samm määramata",
                 owner=matter.owner,
-                sort_on=since or matter.updated_at.date(),
+                sort_on=since or timezone.localtime(matter.updated_at).date(),
             )
         )
 
@@ -425,7 +405,7 @@ def intervention_rows(
                 if deadline
                 else "arvamuse tähtaeg määramata",
                 owner=None,
-                sort_on=matter.received_date or matter.created_at.date(),
+                sort_on=matter.received_date or timezone.localtime(matter.created_at).date(),
             )
         )
 
@@ -705,7 +685,7 @@ def _authorized_change_events(user: Any, since: date) -> QuerySet[ChangeEvent]:
     return (
         ChangeEvent.objects.filter(
             eligible,
-            occurred_at__date__gte=since,
+            local_day_range("occurred_at", since),
             matter__in=visible_matters,
         )
         .select_related("matter", "actor")
@@ -726,7 +706,7 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
     if kind in (FEED_ALL, FEED_ENTRIES):
         entries = (
             Entry.objects.visible_to(user)
-            .filter(occurred_at__date__gte=since)
+            .filter(local_day_range("occurred_at", since))
             .select_related("matter", "author")
             .chronological()[:FEED_LIMIT]
         )
@@ -743,16 +723,16 @@ def activity_feed(user: Any, today: date, kind: str = FEED_ALL) -> list[FeedItem
     if kind in (FEED_ALL, FEED_SUBMISSIONS):
         sent = (
             Submission.objects.visible_to(user)
-            # `sent_at__date__gte`, not `sent_at__gte`. `since` is a date, and
-            # Django compares a date against a DateTimeField by widening it to
-            # midnight *naive* — which raises a RuntimeWarning under
-            # USE_TZ and quietly means "midnight UTC" rather than midnight here.
-            # The two Entry/ChangeEvent branches beside this one already use the
-            # `__date` lookup; this one did not (Ülevaade QA §5).
+            # A local-day bound, never `sent_at__gte=since`: `since` is a date,
+            # and Django compares a date against a DateTimeField by widening it
+            # to midnight *naive* — which raises a RuntimeWarning under USE_TZ
+            # and quietly means "midnight UTC" rather than midnight here
+            # (Ülevaade QA §5). `local_day_range` is the same local days as the
+            # `__date` cast it replaced, as a range the index can answer (A-01).
             .filter(
+                local_day_range("sent_at", since),
                 status=SubmissionStatus.SENT,
                 sent_at__isnull=False,
-                sent_at__date__gte=since,
             )
             .select_related("matter", "sent_by")
             .order_by("-sent_at")[:FEED_LIMIT]
@@ -827,22 +807,22 @@ class AreaRow:
 
     @property
     def url(self) -> str:
-        return _teemad(**_OPEN_FULL, valdkond=self.key)
+        return register_url(**OPEN_FULL, valdkond=self.key)
 
     @property
     def overdue_url(self) -> str:
         # The read model's own population, not `?tegevus=hilinenud`: the column
         # counts a passed `Oluline tähtaeg` too, and that carries no open action
         # for the register to filter on.
-        return _teemad(**_OPEN_FULL, valdkond=self.key, too=wi.WORK_OVERDUE)
+        return register_url(**OPEN_FULL, valdkond=self.key, too=wi.WORK_OVERDUE)
 
     @property
     def no_action_url(self) -> str:
-        return _teemad(**_OPEN_FULL, valdkond=self.key, tegevus=MISSING)
+        return register_url(**OPEN_FULL, valdkond=self.key, tegevus=MISSING)
 
     @property
     def unassigned_url(self) -> str:
-        return _teemad(**_OPEN_FULL, valdkond=self.key, vastutaja=MISSING)
+        return register_url(**OPEN_FULL, valdkond=self.key, vastutaja=MISSING)
 
 
 def _initials(display_name: str) -> str:
@@ -1067,7 +1047,7 @@ def organisation_ranking(
         CountRow(
             label=row["source_organisations__name"],
             count=row["total"],
-            url=_teemad(**_OPEN_FULL, saatja=row["source_organisations__id"]),
+            url=register_url(**OPEN_FULL, saatja=row["source_organisations__id"]),
         )
         for row in grouped
     ]

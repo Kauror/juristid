@@ -559,6 +559,9 @@ def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) ->
         context["assignment_notices"] = person_workspace.unread_assignment_notices(request.user)
     else:
         context["switcher"] = person_workspace.build_switcher(subject)
+        # The switcher's people are the department's workers, which is exactly
+        # the context processor's `colleagues`: one read for both (D-04).
+        context["colleagues"] = context["switcher"].people
     return render(request, "matters/my_work.html", context)
 
 
@@ -1921,6 +1924,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         cleared.pop(parameter, None)
 
     chips = _active_filters(request, params)
+    workers = list(assignable_business_users())
     context: dict[str, Any] = {
         "page": page,
         "paginator": paginator,
@@ -2083,7 +2087,11 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # Who a row may be handed to, current reader first. The same population
         # the Matter header's own control offers, so the two cannot disagree
         # about who work may be given to (app/accounts/selectors.py, ADR 0036).
-        "assignable_people": _assignable_first(request.user),
+        "assignable_people": _assignable_first(request.user, workers),
+        # The same people, in the order `department_workers` reads them, as the
+        # `colleagues` a first name is told apart among — the context
+        # processor's lazy list, already read here (2026-10-28 audit, D-04).
+        "colleagues": workers,
         # The row control is an assignment. Drawn by the `work.assign`
         # capability — both lawyer roles by default — and enforced by the route
         # and by `assign_matter` beneath it (docs/adr/0145 §3).
@@ -2104,14 +2112,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     return render(request, "matters/matter_list.html", context)
 
 
-def _assignable_first(reader: Any) -> list[User]:
+def _assignable_first(reader: Any, people: list[User] | None = None) -> list[User]:
     """Everybody work may be given to, with the reader at the top.
 
     "(mina)" first because the commonest triage decision is *I will take this*,
     and a list that made somebody hunt for their own name in an alphabetical
-    column would make the two-click gesture a three-click one.
+    column would make the two-click gesture a three-click one. ``people`` is
+    `assignable_business_users()` already read by the caller.
     """
-    people = list(assignable_business_users())
+    people = list(assignable_business_users()) if people is None else people
     return sorted(people, key=lambda person: (person.pk != getattr(reader, "pk", None),))
 
 
@@ -2249,15 +2258,21 @@ def _organisation_choosers(params: Any) -> list[dict[str, Any]]:
     reading it here does not turn it into a filter.
     """
     choosers: list[dict[str, Any]] = []
+    # The three choosers read one catalogue; with no term typed — the usual
+    # page — they ask it the same question. Answered once per term (D-04).
+    options: dict[str, list[Organisation]] = {}
     for field, label in ORGANISATION_CHOOSER_FIELDS.items():
         term = (params.get(f"{field}{CONTROL_PARAM_SUFFIX}") or "").strip()
         chosen = params.get(field, "")
+        if term not in options:
+            options[term] = _organisation_options(term)
         choosers.append(
             {
                 "field": field,
                 "field_label": label,
                 "term": term,
-                "organisation_options": _organisation_options(term),
+                # A copy per chooser, so no template mutating one changes another.
+                "organisation_options": list(options[term]),
                 "chosen_organisation": _organisation_or_none(chosen),
                 "chosen_value": chosen,
             }
@@ -3885,8 +3900,8 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # approved target reads `Saabus` and `Tähtaeg` as a pair — when it
         # arrived, when Koda's answer is due — so the slot cannot be filled by
         # whichever `MatterImportantDate` happens to be nearest
-        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). `selectors.active_deadline`
-        # still answers that broader question for the surfaces that ask it.
+        # (TEEMA_TARGET_SPEC §B, docs/adr/0074 §2). The work model answers that
+        # broader question for the surfaces that ask it (`work_items`).
         "response_deadline": selectors.response_deadline_of(matter, request.user),
         # The deadline's history and the form's choices. Callables, cached, so
         # only a surface that draws them pays: the header asks for the last

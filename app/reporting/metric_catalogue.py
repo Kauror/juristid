@@ -691,12 +691,17 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     #: the same event — a review date that has arrived — and differed only by
     #: the stored kind, which is not a distinction a reader is asked to make.
     #: Their sum is this (ADR 0054).
+    #: Version 2 (2026-10-29, docs/adr/0195): an expectation («Oodatav umbes»)
+    #: is counted from its period's last day, not its first — the population
+    #: moved, so the version did.
     MetricDefinition(
         key=REVIEW_DUE,
-        version=1,
+        version=2,
         label_et="Ülevaatus käes",
         description_et=(
-            "Kehtivad tegevused, mille ülevaatuse kuupäev on saabunud. Ei ole hilinemine."
+            "Kehtivad tegevused, mille ülevaatuse kuupäev on saabunud – kuu või kvartali "
+            "täpsusega alates perioodi algusest; oodatav aeg alles perioodi viimasel "
+            "päeval. Ei ole hilinemine."
         ),
         source_population_et="Kehtivad järgmised tegevused, liik WAIT või MONITOR, kuupäevaga",
         time_basis=TimeBasis.POINT_IN_TIME,

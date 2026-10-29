@@ -60,6 +60,18 @@ x-logging: &bounded-logs
     max-size: "10m"
     max-file: "5"
 
+# How every application container reaches PostgreSQL: the `db` service on the
+# stack's own network, plain TCP because the connection never leaves it. Seven
+# services carried these three lines verbatim (audit 2026-10-28, F-17); each
+# now merges them with `<<: *db-env` and adds its own keys after. A merge key
+# resolves to exactly the mapping it replaced — tests/test_ci_compose_db_env.py
+# holds every service to it — and a service's own key of
+# the same name would win, which none has.
+x-db-env: &db-env
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  POSTGRES_SSLMODE: disable
+
 services:
   db:
     # The tag for the reader, the digest for Docker (ADR 0179). `postgres:18`
@@ -171,9 +183,7 @@ services:
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
+      <<: *db-env
       EVIDENCE_ROOT: /app/evidence
       DERIVATIVE_ROOT: /app/derivatives
       LEGACY_SOURCE_ROOT: /app/legacy-source
@@ -294,9 +304,7 @@ services:
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
+      <<: *db-env
       SEED_DEV_DATA: "0"
       # This is a deployed stack, and it says so. `config/test_safety.py`
       # refuses to start the test suite in any environment carrying this
@@ -364,9 +372,7 @@ services:
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
+      <<: *db-env
       SEED_DEV_DATA: "0"
       # As on every other service in this file: `config/test_safety.py` refuses
       # to run the test suite in a process that inherits this marker.
@@ -424,9 +430,7 @@ services:
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
+      <<: *db-env
       SEED_DEV_DATA: "0"
       # As on every other service in this file: `config/test_safety.py` refuses
       # to run the test suite in a process that inherits this marker.
@@ -464,9 +468,7 @@ services:
     env_file:
       - ${JURISTID_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid.env}
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
+      <<: *db-env
       SEED_DEV_DATA: "0"
       # As on every other service in this file: `config/test_safety.py` refuses
       # to run the test suite in a process that inherits this marker.
@@ -588,9 +590,7 @@ services:
     env_file:
       - ${JURISTID_MCP_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp.env}
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
+      <<: *db-env
       # What makes the database connections read-only and the browser's gate
       # secrets unnecessary (config/settings.py, app/core/checks.py).
       JURISTID_PROCESS_ROLE: mcp
@@ -698,9 +698,7 @@ services:
     env_file:
       - ${JURISTID_MCP_WRITER_ENV_FILE:-/mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env}
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: "5432"
-      POSTGRES_SSLMODE: disable
+      <<: *db-env
       # Bounded statements, no kept connection, the writer's own checks
       # (config/settings.py, app/core/checks.py). Not read-only: writing is
       # what it is for, and its role is what bounds the writing.

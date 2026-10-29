@@ -321,6 +321,19 @@ jobs:
 
       - run: uv sync --frozen
 
+      # Chosen first, so the job knows whether it needs the OCR runtime: the
+      # contract and CI tests alone are database- and OCR-free, and a draft
+      # that changes only code, docs or CI runs nothing else (audit
+      # 2026-10-28, 7.3(2)). The PostgreSQL service is a job-level container
+      # and still starts; the tests it would serve are what is skipped when
+      # nothing needs them, never the tests themselves.
+      - name: Choose the focused tests
+        id: choose
+        run: |
+          set -euo pipefail
+          git diff --name-only HEAD^1 HEAD > changed.txt
+          uv run python ci_focused_selection.py --changed changed.txt --output focused.txt --services-output "$GITHUB_OUTPUT"
+
       # The same cached OCR packages as the shards, so a changed extraction
       # test runs rather than tripping the skip policy (ENG-051).
       - name: Runner image identity
@@ -328,12 +341,14 @@ jobs:
         run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache the OCR packages
+        if: steps.choose.outputs.services == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
 
       - name: Install the OCR runtime
+        if: steps.choose.outputs.services == 'true'
         run: |
           set -euo pipefail
           packages="tesseract-ocr tesseract-ocr-est tesseract-ocr-eng"
@@ -345,12 +360,6 @@ jobs:
             sudo apt-get update
             sudo apt-get install --no-install-recommends --yes $packages
           fi
-
-      - name: Choose the focused tests
-        run: |
-          set -euo pipefail
-          git diff --name-only HEAD^1 HEAD > changed.txt
-          uv run python ci_focused_selection.py --changed changed.txt --output focused.txt
 
       # An empty list would make this a bare `pytest` — the whole suite on one
       # runner — so it is refused rather than run.

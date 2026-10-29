@@ -130,6 +130,17 @@ BREAKER = "CIRCUIT_BREAKER"
 PARTIAL = "PARTIAL_FAILURE"
 NO_BACKUP = "NO_VERIFIED_BACKUP"
 COMPARE_ONLY = "COMPARE_ONLY"
+#: An applied Teema did not read back as written: the run stops writing, and
+#: every eligible change after it is recorded as not executed (ADR 0192 §7).
+VERIFY_MISMATCH = "VERIFY_MISMATCH"
+VERIFY_STOPPED = "VERIFY_STOPPED"
+#: An operator's `resolve_field` decision carries this reason prefix.
+RESOLVED_PREFIX = "RESOLVED:"
+
+#: `Kontrolli muudatusi` is a person pressing a button: a second press this soon
+#: after the last is refused, and a check that would record exactly what the
+#: newest check already recorded records nothing new (audit 2026-10-28 C-06).
+CHECK_MIN_INTERVAL = dt.timedelta(seconds=60)
 
 
 class SyncRefused(Exception):
@@ -395,6 +406,10 @@ class MatterPlan:
     source: dict[str, Any] = field(default_factory=dict)
     version: int | None = None
     decisions: list[FieldDecision] = field(default_factory=list)
+    #: Written, but did not read back as written (`verify_matter`).
+    verify_failed: bool = False
+    #: Eligible, but not written: an earlier Teema's read-back failed this run.
+    not_executed: bool = False
 
     def outcomes(self) -> set[str]:
         return {d.outcome for d in self.decisions} | ({self.status} if self.status else set())
@@ -979,6 +994,8 @@ class RunCounts:
     missing: int = 0
     identifier_changed: int = 0
     failed: int = 0
+    verify_failed: int = 0
+    not_executed: int = 0
     fields: dict[str, int] = field(default_factory=dict)
     source_live: int = 0
     outside_cohort: int = 0
@@ -1000,6 +1017,8 @@ class RunCounts:
         self.missing += SyncOutcome.SOURCE_MISSING in outcomes
         self.identifier_changed += SyncOutcome.IDENTIFIER_CHANGED in outcomes
         self.failed += SyncOutcome.FAILED in outcomes
+        self.verify_failed += plan.verify_failed
+        self.not_executed += plan.not_executed
         tally = Counter(
             f"{d.field}:{d.outcome}" for d in plan.decisions if d.outcome != SyncOutcome.UNCHANGED
         )
@@ -1056,6 +1075,16 @@ def _record(run: LovableSyncRun, plan: MatterPlan) -> None:
     ]
     if plan.status:
         rows.append(LovableSyncDecision(run=run, state=plan.state, field="*", outcome=plan.status))
+    elif plan.verify_failed:
+        rows.append(
+            LovableSyncDecision(
+                run=run,
+                state=plan.state,
+                field="*",
+                outcome=SyncOutcome.FAILED,
+                reason=VERIFY_MISMATCH,
+            )
+        )
     LovableSyncDecision.objects.bulk_create(rows)
 
 
@@ -1072,6 +1101,36 @@ def _observe(state: LovableSyncState, plan: MatterPlan, run: LovableSyncRun) -> 
     if started:
         updates["applied"] = applied
     LovableSyncState.objects.filter(pk=state.pk).update(**updates, updated_at=timezone.now())
+
+
+def run_reconciled(run: LovableSyncRun) -> bool:
+    """Whether the run got as far as recording its reconciliation.
+
+    A run that failed — or never finished — before `_execute` saved its counts
+    compared nothing with Juristid: no field of it may be read as «sama»
+    (audit 2026-10-28 B-01)."""
+    return not (run.status in (SyncRunStatus.FAILED, SyncRunStatus.RUNNING) and not run.counts)
+
+
+#: Only a run that finished without failing is a baseline (audit 2026-10-28
+#: B-01, scenario A): a failed or unfinished run's snapshot is kept as the
+#: evidence of what it read and did, but neither the next run's «new since the
+#: previous reading», nor `Kontrolli muudatusi`, nor the next night on
+#: Uuendused → Lovable is measured against it.
+BASELINE_STATUSES = (SyncRunStatus.SUCCEEDED, SyncRunStatus.REVIEW_ONLY)
+
+
+def is_baseline_run(run: LovableSyncRun) -> bool:
+    return run.status in BASELINE_STATUSES
+
+
+def comparable_snapshots() -> Any:
+    """Stored snapshots of baseline runs only (`is_baseline_run`), newest first."""
+    return (
+        LovableSyncSnapshot.objects.filter(run__status__in=BASELINE_STATUSES)
+        .select_related("run")
+        .order_by("-taken_at")
+    )
 
 
 def fresh_backup_set(backup_set: str, started: dt.datetime) -> str:
@@ -1103,6 +1162,15 @@ def run_sync(
         raise SyncRefused("NO_SOURCE", "A run that reads Lovable needs the source connection.")
     started = clock()
     key = run_key_for(trigger, started)
+    if trigger == SyncTrigger.CHECK:
+        last_check = (
+            LovableSyncRun.objects.filter(trigger=SyncTrigger.CHECK).order_by("-started_at").first()
+        )
+        if last_check is not None and started - last_check.started_at < CHECK_MIN_INTERVAL:
+            raise SyncRefused(
+                "CHECK_TOO_SOON",
+                "A check ran less than a minute ago; its findings are on the page.",
+            )
     if LovableSyncRun.objects.filter(run_key=key).exists():
         raise SyncRefused(
             "DUPLICATE", f"Run {key} already exists; the nightly run happens once per date."
@@ -1110,6 +1178,10 @@ def run_sync(
 
     with run_lock():
         mode = SyncMode.COMPARE if trigger == SyncTrigger.CHECK else ctl.mode
+        if trigger == SyncTrigger.CHECK:
+            same = _identical_check(clock)
+            if same is not None:
+                return same
         try:
             with transaction.atomic():
                 run = LovableSyncRun.objects.create(
@@ -1163,7 +1235,8 @@ def _execute(
             f"The synchronised cohort holds {len(states)} Teemad, not {EXPECTED_COHORT}.",
         )
     cohort_ids = {str(s.source_id) for s in states}
-    previous_snapshot = LovableSyncSnapshot.objects.order_by("-taken_at").first()
+    # Only a run that finished without failing is a baseline (`is_baseline_run`).
+    previous_snapshot = comparable_snapshots().first()
 
     if run.trigger == SyncTrigger.CHECK:
         if previous_snapshot is None:
@@ -1183,10 +1256,6 @@ def _execute(
     run.snapshot_sha256 = snapshot["sha256"]
     run.snapshot_taken_at = dt.datetime.fromisoformat(snapshot["taken_at"])
     run.save(update_fields=["snapshot_sha256", "snapshot_taken_at", "updated_at"])
-    if run.trigger != SyncTrigger.CHECK:
-        LovableSyncSnapshot.objects.create(
-            run=run, taken_at=run.snapshot_taken_at, sha256=snapshot["sha256"], document=snapshot
-        )
 
     today = clock().astimezone(TALLINN).date()
     resolver = OwnerResolver(states)
@@ -1197,8 +1266,13 @@ def _execute(
 
     missing = sum(1 for p in plans if p.status == SyncOutcome.SOURCE_MISSING)
     if missing > MAX_MISSING:
+        # Before the snapshot is stored: a broken read is never kept as a reading.
         raise SyncRefused(
             "COHORT_MISSING", f"{missing} synchronised Teemad are missing from the source read."
+        )
+    if run.trigger != SyncTrigger.CHECK:
+        LovableSyncSnapshot.objects.create(
+            run=run, taken_at=run.snapshot_taken_at, sha256=snapshot["sha256"], document=snapshot
         )
 
     changed = [p for p in plans if p.eligible]
@@ -1226,6 +1300,16 @@ def _execute(
         if hold or not plan.eligible:
             final.append(plan)
             continue
+        if not verified:
+            # A read-back failed: the writer or the baseline logic is wrong, and
+            # writing more Teemad with it is the opposite of a breaker. Every
+            # later eligible change is recorded as not executed; nothing earlier
+            # is rolled back (ADR 0192 §7).
+            plan.not_executed = True
+            for decision in plan.eligible:
+                decision.reason = VERIFY_STOPPED
+            final.append(plan)
+            continue
         try:
             done = apply_matter(plan, run=run, snapshot=snapshot, resolver=resolver, today=today)
         except Exception as error:
@@ -1238,13 +1322,15 @@ def _execute(
         final.append(done)
         if any(d.outcome == SyncOutcome.APPLIED for d in done.decisions):
             applied_ids.append(done.state.matter_id)
-            verified = verify_matter(done) and verified
+            if not verify_matter(done):
+                done.verify_failed = True
+                verified = False
 
     # Converged fields advance their baseline even on a compare-only night: no
     # business write, only the record of what Lovable and Juristid agree on.
     with transaction.atomic():
         for plan in final:
-            if check or plan.status or plan.state.pk is None:
+            if check or plan.status or plan.not_executed or plan.state.pk is None:
                 continue
             state = LovableSyncState.objects.select_for_update().get(pk=plan.state.pk)
             applied = dict(state.applied)
@@ -1277,7 +1363,10 @@ def _execute(
     run.finished_at = finished
     if not verified:
         run.status = SyncRunStatus.FAILED
-        run.error = "VERIFY: an applied Teema does not read back as written."
+        run.error = (
+            "VERIFY: an applied Teema does not read back as written; the run stopped writing"
+            f" ({counts.not_executed} Teema(d) not written after it)."
+        )
     elif counts.failed:
         # The others were written and verified; the run still is not a success.
         run.status = SyncRunStatus.FAILED
@@ -1293,13 +1382,88 @@ def _execute(
         prune_snapshots(now=finished)
 
 
+def _findings(run_or_plans: Any) -> set[tuple[Any, ...]]:
+    """What a check records, as comparable values."""
+    if isinstance(run_or_plans, LovableSyncRun):
+        return {
+            (
+                str(d.state_id),
+                d.field,
+                d.outcome,
+                d.reason,
+                _j(d.baseline),
+                _j(d.current),
+                _j(d.source),
+            )
+            for d in run_or_plans.decisions.all()
+        }
+    found: set[tuple[Any, ...]] = set()
+    for plan in run_or_plans:
+        for d in plan.decisions:
+            if d.outcome not in (SyncOutcome.UNCHANGED, SyncOutcome.APPLIED):
+                found.add(
+                    (
+                        str(plan.state.pk),
+                        d.field,
+                        d.outcome,
+                        d.reason,
+                        _j(d.baseline),
+                        _j(d.current),
+                        _j(d.source),
+                    )
+                )
+        if plan.status:
+            found.add((str(plan.state.pk), "*", plan.status, "", _j(None), _j(None), _j(None)))
+    return found
+
+
+def _j(value: Any) -> str:
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _identical_check(clock: Callable[[], dt.datetime]) -> LovableSyncRun | None:
+    """The newest run, when it is a successful check of the same stored reading
+    whose findings are exactly what a check now would record — so pressing
+    `Kontrolli muudatusi` again adds no second, identical ledger entry. Reads
+    only; never deletes or edits a recorded run."""
+    latest = LovableSyncRun.objects.order_by("-started_at").first()
+    snapshot = comparable_snapshots().first()
+    if (
+        latest is None
+        or snapshot is None
+        or latest.trigger != SyncTrigger.CHECK
+        or latest.status != SyncRunStatus.SUCCEEDED
+        or latest.snapshot_sha256 != snapshot.sha256
+    ):
+        return None
+    try:
+        verify_snapshot(snapshot.document)
+    except SourceError:
+        return None
+    states = list(LovableSyncState.objects.select_related("matter").order_by("reference"))
+    if len(states) != EXPECTED_COHORT:
+        return None
+    today = clock().astimezone(TALLINN).date()
+    resolver = OwnerResolver(states)
+    plans = [
+        plan_matter(
+            s, snapshot.document["cohort"].get(str(s.source_id)), resolver=resolver, today=today
+        )
+        for s in states
+    ]
+    return latest if _findings(plans) == _findings(latest) else None
+
+
 def prune_snapshots(*, now: dt.datetime) -> int:
     """Snapshots older than the approved retention go; the run ledger stays."""
     cutoff = now - dt.timedelta(days=SNAPSHOT_RETENTION_DAYS)
     latest = LovableSyncSnapshot.objects.order_by("-taken_at").values_list("pk", flat=True).first()
+    # The newest baseline too: after failed nights it is what a check compares with.
+    baseline = comparable_snapshots().values_list("pk", flat=True).first()
     stale = LovableSyncSnapshot.objects.filter(taken_at__lt=cutoff)
-    if latest is not None:
-        stale = stale.exclude(pk=latest)
+    keep = [pk for pk in (latest, baseline) if pk is not None]
+    if keep:
+        stale = stale.exclude(pk__in=keep)
     deleted, _ = stale.delete()
     return deleted
 
@@ -1351,7 +1515,7 @@ def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncD
             state=state,
             field=field_name,
             outcome=SyncOutcome.ALREADY_CONVERGED,
-            reason=f"RESOLVED: {note}"[:60],
+            reason=f"{RESOLVED_PREFIX} {note}"[:60],
             baseline=before,
             source=value,
         )

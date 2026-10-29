@@ -60,7 +60,7 @@ from app.core.errors import DomainError
 from app.core.models import AppendOnlyModel
 from app.documents.references import EVIDENCE_REFERENCES
 from app.matters.models import Matter
-from app.matters.purge import CHUNK, OWNING_BEHAVIOURS, _behaviour_name, _reverse_relations
+from app.matters.purge import CHUNK, OWNING_BEHAVIOURS, behaviour_name, reverse_relations
 from app.search.indexing import forget_matter, suspend_indexing
 
 logger = logging.getLogger(__name__)
@@ -296,7 +296,7 @@ def _collect_owned(matter: Matter) -> _Owned:
         model, ids = queue.pop(0)
         if not ids:
             continue
-        for relation in _reverse_relations(model):
+        for relation in reverse_relations(model):
             if relation.on_delete not in OWNING_BEHAVIOURS:
                 continue
             child = relation.related_model
@@ -423,7 +423,7 @@ def _outside_references(owned: _Owned) -> list[DeletionBlocker]:
         target = sorted(owned.ids[label], key=str)
         if not target:
             continue
-        for relation in _reverse_relations(model):
+        for relation in reverse_relations(model):
             child_label = relation.related_model._meta.label
             outside = owned.referring_ids(relation, target) - owned.ids.get(child_label, set())
             if not outside:
@@ -434,7 +434,7 @@ def _outside_references(owned: _Owned) -> list[DeletionBlocker]:
                     label=f"{child_label}.{relation.field.name}",
                     count=len(outside),
                     detail=(
-                        f"{_behaviour_name(relation.on_delete)} onto {label}; "
+                        f"{behaviour_name(relation.on_delete)} onto {label}; "
                         "the referring row is outside this matter"
                     ),
                 )

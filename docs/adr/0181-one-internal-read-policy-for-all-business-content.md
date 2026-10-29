@@ -204,3 +204,11 @@ gate a READER account reads through its own individually verified MCP grant
 Technical administration still grants no business read: the verified
 administrator session of ADR 0186 changes neither `request.user` nor the
 persona, so it opens Haldus and nothing of the business.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** in security hardening round 2 (merge `b6b27abc, #519 = #515–#518, 2026-10-22`).
+- **Deployed** to production as `1270ca01` (2026-10-23, the release of #521, which carried the security baseline merged before it).
+- The code still matches the policy (see the consistency note of 2026-10-25 above); the master specification's §5.1/§5.2 now describe it and point here (2026-10-29).
