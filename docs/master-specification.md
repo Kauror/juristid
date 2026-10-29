@@ -669,6 +669,12 @@ Group by action semantics rather than one mixed due-date list:
 - MONITOR actions scheduled for review;
 - expected-around developments needing attention.
 
+A review date comes round on the first day of the period it names (*«oktoober
+2026»* from 1 October, ADR 0079 §6) and is then current work in *Sel nädalal*
+even while the period runs; an expected-around date is someone else's timing,
+not an instruction to review, and comes round only on its period's last day.
+Neither is ever an overdue deadline (owner's decision of 2026-10-29, ADR 0195).
+
 ### Minu aktiivsed teemad
 
 Active Matter inventory sorted primarily by current next action/date and recent meaningful activity.

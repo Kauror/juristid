@@ -62,14 +62,15 @@ kind                   date meaning        comes round
 ``WAIT``/``MONITOR``   ``REVIEW_ON``       the first day of the recorded period — the
                                            day itself for ``EXACT``/``INFERRED``
                                            (ADR 0079 §6, *«vaatan üle oktoobris»*)
-``WAIT``/``MONITOR``   ``EXPECTED_AROUND`` the same day. §6 is stated of
-                                           ``due_for_review``, which has never read
-                                           the date meaning, and its rejected
-                                           alternative («make ``due_for_review``
-                                           period-end too») is exactly the other
-                                           reading. The owner may still choose
-                                           period end for an expectation; that would
-                                           be a branch here and nowhere else.
+``WAIT``/``MONITOR``   ``EXPECTED_AROUND`` the **last** day of the recorded period —
+                                           the day itself for ``EXACT``/``INFERRED``.
+                                           An expectation is somebody else's timing,
+                                           not an instruction to review: *«vastus
+                                           oodatav IV kvartalis»* is not something to
+                                           look at on 1 October merely because the
+                                           quarter began (owner's decision of
+                                           2026-10-29, docs/adr/0195). This was the
+                                           branch this table reserved for the owner.
 ``WAIT``/``MONITOR``   ``DEADLINE``        the same day. Not late either way: only
                                            ``DO`` + ``DEADLINE`` can be (§4).
 ``DO``                 any                 never. A plan is late or not late; it is
@@ -78,7 +79,9 @@ kind                   date meaning        comes round
 
 ``MONTH``/``QUARTER``/``HALF_YEAR``/``YEAR`` differ only in how long the period
 is. A review is due on its **first** day and stays due until somebody reviews
-it, so *III kvartal 2026* is due from 1 July, *2027* from 1 January 2027.
+it, so *III kvartal 2026* is due from 1 July, *2027* from 1 January 2027. An
+expectation recorded to the same period comes round on 30 September and on
+31 December 2027 — and, like a review, never becomes late.
 
 Two readings again, from one definition: :func:`review_has_come_round` for a
 loaded row and :func:`review_due_q` for a queryset. The SQL reading is the same
@@ -90,12 +93,18 @@ two return the same set on every surface that counts them.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Q
 
 from app.workflow.dates import InvalidPeriod, period_bounds
-from app.workflow.enums import OVERDUE_KIND, OVERDUE_SEMANTICS, REVIEW_KINDS, DatePrecision
+from app.workflow.enums import (
+    OVERDUE_KIND,
+    OVERDUE_SEMANTICS,
+    REVIEW_KINDS,
+    DatePrecision,
+    DateSemantics,
+)
 
 #: The precisions whose stored date stands for a span of days rather than one.
 #:
@@ -227,10 +236,43 @@ def review_due_date_q(today: date) -> Q:
     return condition
 
 
-def is_review_due(*, kind: str, value: date | None, precision: str, today: date) -> bool:
+def expectation_has_come_round(value: date | None, precision: str, today: date) -> bool:
+    """Whether the period an ``EXPECTED_AROUND`` date names has reached its last day.
+
+    The date half of the review rule for an expectation (docs/adr/0195): the
+    day itself for a day, the period's last day for a period. Undated, never.
+    """
+    if value is None:
+        return False
+    return period_end_for(value, precision) <= today
+
+
+def expectation_due_date_q(today: date) -> Q:
+    """:func:`expectation_has_come_round` for a ``NextAction`` queryset.
+
+    A period has reached its last day by ``today`` exactly when its anchor
+    falls before the period ``today + 1 day`` is in, at that row's own
+    precision — the inversion :func:`review_due_date_q` uses, one day on.
+    """
+    tomorrow = today + timedelta(days=1)
+    condition = ~Q(date_precision__in=APPROXIMATE_PRECISIONS) & Q(target_date__lte=today)
+    for precision in APPROXIMATE_PRECISIONS:
+        start, _ = period_bounds(tomorrow, precision)
+        condition |= Q(date_precision=precision, target_date__lt=start)
+    return condition
+
+
+def is_review_due(
+    *, kind: str, value: date | None, precision: str, today: date, semantics: str
+) -> bool:
     """The whole review rule for one row, status aside: a review kind whose
-    period has begun. The caller has already decided the row is open."""
-    return kind in REVIEW_KINDS and review_has_come_round(value, precision, today)
+    review date's period has begun, or whose expectation's period has reached
+    its last day. The caller has already decided the row is open."""
+    if kind not in REVIEW_KINDS:
+        return False
+    if semantics == DateSemantics.EXPECTED_AROUND:
+        return expectation_has_come_round(value, precision, today)
+    return review_has_come_round(value, precision, today)
 
 
 def review_due_q(today: date) -> Q:
@@ -242,4 +284,7 @@ def review_due_q(today: date) -> Q:
     ``is_review_ripe`` — answers for a single row. One definition, so the
     figure, the list behind it and the styling of the row cannot disagree again.
     """
-    return Q(kind__in=REVIEW_KINDS, target_date__isnull=False) & review_due_date_q(today)
+    expected = Q(date_semantics=DateSemantics.EXPECTED_AROUND)
+    return Q(kind__in=REVIEW_KINDS, target_date__isnull=False) & (
+        (~expected & review_due_date_q(today)) | (expected & expectation_due_date_q(today))
+    )

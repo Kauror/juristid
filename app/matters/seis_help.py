@@ -102,7 +102,10 @@ MY_OVERDUE_HELP = FigureHelp(
 #: The *Sel nädalal* band's total (`band_of`): rows whose day falls from today to
 #: Sunday — any kind of dated work — plus every past row that is not overdue
 #: (a WAIT or MONITOR date come round, a vague DO expectation whose period has
-#: ended). A period that has not ended is never this week's (docs/adr/0121 §7).
+#: ended), plus every review that has come round while its period still runs
+#: (*«Vaatan üle oktoobris»* from 1 October; owner's decision of 2026-10-29,
+#: docs/adr/0195). Any other period that has not ended is not this week's
+#: (docs/adr/0121 §7) — an expectation («Oodatav») included, until its last day.
 MY_WEEK_HELP = FigureHelp(
     slug="minu-sel-nadalal",
     title="Tegevused sel nädalal",
@@ -111,8 +114,10 @@ MY_WEEK_HELP = FigureHelp(
         "Arvesse lähevad järgmised sammud («Plaanis», «Vaatan üle», «Oodatav») ning "
         "olulised tähtajad, arvamuse tähtajad ja kaasamise tagasiside tähtajad, mille "
         "tähtaeg on tänasest kuni pühapäevani.",
-        "Siin on ka möödunud kuupäevad, mis ei ole tähtajad – näiteks ülevaatamise "
-        "(«Vaatan üle») või oodatav («Oodatav») kuupäev, mis on kätte jõudnud.",
+        "Siin on ka ülevaatamise («Vaatan üle») kuupäevad, mis on kätte jõudnud – kuu, "
+        "kvartali või aasta täpsusega ülevaatus alates selle perioodi esimesest päevast.",
+        "Oodatav («Oodatav») kuupäev tuleb siia alles perioodi viimasel päeval. "
+        "Kumbki ei ole tähtaeg.",
     ),
 )
 

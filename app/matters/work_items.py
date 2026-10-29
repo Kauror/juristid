@@ -1612,6 +1612,17 @@ def band_of(
     period it is. Only once the whole period is behind us is it placed with
     the other past items — overdue, or come round for a look — because then no
     representative day is being chosen at all.
+
+    **One exception, by the owner's decision of 2026-10-29 (docs/adr/0195): a
+    review that has come round is this week's work** even while its period
+    runs. *«Vaatan üle oktoobris»* on 29 October is a look due now — it is
+    in `Ülevaatamiseks`, in *Vajab sekkumist*, styled «ülevaatamise aeg on
+    käes» — and filing the same row under *Hiljem* told the reader the
+    opposite. Ripeness is the canonical review rule (`is_review_ripe`,
+    `app.workflow.lateness`), so the band, the counters and the filters read
+    one answer. An expectation (``EXPECTED_AROUND``) is not promoted by its
+    period beginning: it comes round only on the period's last day, and
+    stays in *Hiljem* until then. Nothing here makes a row late.
     """
     when = item.when
     if when is None:
@@ -1620,6 +1631,9 @@ def band_of(
     if end < today:
         # Genuinely late, or merely come round. Both are now; only one is red.
         return BAND_OVERDUE if item.is_overdue else BAND_WEEK
+    if item.is_review_ripe:
+        # A review whose period has begun, not yet over: due now, never late.
+        return BAND_WEEK
     # The two day-bounded bands through the one window rule every deadline
     # surface reads (docs/adr/0122 §2): a day inside them is theirs, and a
     # period never is — it falls through to *Hiljem*, the band with no last day.
