@@ -119,6 +119,7 @@ import pytest
 from playwright.sync_api import expect
 
 from app.core.management.commands.seed_e2e_data import ARCHIVE_TITLE, OPEN_TITLE
+from app.matters.seis_help import counted
 from e2e.conftest import (
     DESKTOP_VIEWPORT,
     HEAD,
@@ -399,6 +400,27 @@ OSAKOND_WEEK_COUNTS = (
     '.railrow:has(.railrow__key:text-is("Uut sel nädalal")) .railrow__value',
     '.seis__figure:has(.seis__caption:text-matches("^tähtajaga teemat? sel nädalal$"))'
     " .seis__number",
+)
+
+#: That figure's number and caption, held at «0 tähtajaga teemat sel nädalal».
+#:
+#: The mask above hides the digits, but the caption agrees with them — «teema»
+#: for one, «teemat» otherwise (`seis_help.counted`) — and the two spellings are
+#: different widths, with five figures after them on the same line. So the
+#: seeded world's one response deadline, four days out, put «teema» on the page
+#: on the days of the week it falls before Sunday and «teemat» on the rest, and
+#: every figure to its right moved: `osakond`, `osakond-3440` and `hele-osakond`
+#: went red on 29 October 2026 for code that had not changed (measured on
+#: `fb37a5ea` and on the remediation branch: the same 1 on both). Barlow's
+#: figures are proportional, so the masked number is held as well. Zero is what
+#: the committed baselines hold.
+OSAKOND_WEEK_FIGURE = (
+    OSAKOND_WEEK_COUNTS[1],
+    '.seis__caption:text-matches("^tähtajaga teemat? sel nädalal$")',
+)
+OSAKOND_WEEK_HELD: tuple[tuple[str, str], ...] = (
+    (OSAKOND_WEEK_FIGURE[0], "0"),
+    (OSAKOND_WEEK_FIGURE[1], "tähtajaga teemat sel nädalal"),
 )
 
 #: What each scenario's capture may not silently stop masking.
@@ -848,6 +870,11 @@ SCENARIO_NORMALISED_TEXT: dict[str, tuple[tuple[str, str], ...]] = {
     # the entry.
     "teema-arhiiv": ((CHRONOLOGY_RUN_DAY[0], CANONICAL_RUN_DAY),),
     "statistika-3440": STATISTIKA_MONTH_TABLE,
+    # Osakond's week figure (`OSAKOND_WEEK_FIGURE`). Scoped to the two dark
+    # captures and, through `rules`, `hele-osakond`: the same caption is not on
+    # any other surface.
+    "osakond": OSAKOND_WEEK_HELD,
+    "osakond-3440": OSAKOND_WEEK_HELD,
 }
 
 
@@ -949,6 +976,10 @@ REQUIRED_NORMALISATIONS: dict[str, tuple[str, ...]] = {
     "teema-dokumendid": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
     "teema-dokumendid-1024": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
     "teema-arvamused": (*OPINION_ROW_SENT, *EVIDENCE_DATE),
+    # Osakond renders its figures at nought too (`show_zeros`), so the week
+    # figure is on both captures every run.
+    "osakond": OSAKOND_WEEK_FIGURE,
+    "osakond-3440": OSAKOND_WEEK_FIGURE,
     # The two Teema captures that used to render a folded system run are not
     # here any more. The approved target has no folded run: those events are
     # milestones in their own right — `Teema loodud`, `Hetkeseis: …` — or
@@ -2280,6 +2311,24 @@ def test_the_month_view_chip_is_the_same_width_at_every_count(page):
         MONTH_CHIP_VARIANTS,
         MONTH_VIEW_CHIP[0],
     )
+
+
+def test_the_department_week_figure_is_the_same_width_at_every_count(page):
+    """«1 tähtajaga teema» is narrower than «0 tähtajaga teemat», and five figures follow."""
+    for selector in OSAKOND_WEEK_FIGURE:
+        _holds_still(
+            page,
+            lambda count: (
+                '<span class="seis__figure">'
+                f'<span class="seis__number">{count}</span>'
+                '<span class="seis__caption">'
+                f"{counted(count, 'tähtajaga teema sel nädalal', 'tähtajaga teemat sel nädalal')}"
+                "</span></span>"
+            ),
+            (0, 1, 2, 11),
+            selector,
+            "osakond",
+        )
 
 
 def test_the_closed_banner_date_is_the_same_width_on_any_day(page):
