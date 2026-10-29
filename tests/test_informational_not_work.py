@@ -349,3 +349,35 @@ def test_an_approximate_estimate_is_listed_under_its_period_never_on_a_day(speci
     year = _calendar(specialist, kalender=cal.VIEW_YEAR)
     # A month-precision estimate counts in its month; a quarter in no month.
     assert [t.estimate_count for t in year.year_months][9:12] == [0, 1, 0]
+
+
+@pytest.mark.parametrize("scope", ["own_desk", "colleagues_desk", "department"])
+def test_an_estimate_is_a_commencement_on_every_calendar_scope(specialist, department_head, scope):
+    """E-11(2): Osakond's calendar too places an informational estimate under
+    *Jõustumised*, once, as nobody's work and in nobody's colour — the same
+    reading as the personal calendars (`estimate_events` over
+    `work_items.active_milestones`)."""
+    from django.http import QueryDict
+
+    matter = factories.MatterFactory(owner=specialist)
+    record = _date(matter, date(2026, 11, 3), kind=ESTIMATED)
+    reader, subject = {
+        "own_desk": (specialist, specialist),
+        "colleagues_desk": (department_head, specialist),
+        "department": (department_head, None),
+    }[scope]
+
+    calendar = cal.build_calendar(
+        reader,
+        subject,
+        params=QueryDict(mutable=True),
+        today=TODAY,
+        query_for=lambda changes: "?",
+    )
+    mine = [e for e in calendar.events if e.matter.pk == matter.pk]
+
+    assert [e.key for e in mine] == [f"{cal.ESTIMATE_KEY_PREFIX}{record.pk}"]
+    [estimate] = mine
+    assert estimate.category == cal.CATEGORY_COMMENCEMENT and estimate.is_estimate
+    assert not estimate.is_work and not estimate.is_overdue
+    assert estimate.person is None
