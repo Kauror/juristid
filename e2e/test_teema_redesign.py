@@ -28,6 +28,7 @@ from e2e.conftest import (
     create_matter,
     document_overflows,
     open_add_panel,
+    open_disclosure,
     open_kaik_period,
     open_matter,
     record_marge,
@@ -277,8 +278,9 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
     # width.)
     expect(page.locator(".teemadocs .rail")).to_have_count(0)
     working = page.locator("#toodokumendid")
+    # Shut by default (a remembered block, docs/adr/0194; sign-in resets it).
     expect(working).not_to_have_attribute("open", "")
-    working.locator(".accordion__head").click()
+    open_disclosure(working)
     # The form is a shared panel, revealed rather than always open: three
     # controls point at it and there is one of it.
     working.locator(".disclosure-chip", has_text="+ SharePointi viide").click()

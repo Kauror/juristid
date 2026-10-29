@@ -42,30 +42,73 @@ _CLASS = re.compile(r'\bclass="([^"]+)"')
 STATE_AWARE_HELPERS = frozenset({"_summary_of", "open_disclosure", "close_disclosure"})
 
 
+_SUMMARY_TAG = re.compile(r"<summary\b[^>]*>", re.DOTALL)
+
+
+_CSS_IDENT = re.compile(r"^-?[A-Za-z_][\w-]*$")
+
+
+def _classes(tag: str) -> set[str]:
+    """The literal class names on a tag; template expressions inside it are skipped."""
+    classes: set[str] = set()
+    for found in _CLASS.findall(tag):
+        classes |= {c for c in found.split() if _CSS_IDENT.match(c)}
+    return classes
+
+
+def _template_blocks() -> tuple[set[str], set[str], set[str], set[str], set[str], set[str]]:
+    """(remembered ids, remembered classes, other classes, and the same for summaries).
+
+    A `<details>`'s summary is the first `<summary>` after its opening tag.
+    """
+    ids: set[str] = set()
+    details_in: set[str] = set()
+    details_out: set[str] = set()
+    summary_in: set[str] = set()
+    summary_out: set[str] = set()
+    every_summary: set[str] = set()
+    for template in TEMPLATES.rglob("*.html"):
+        text = template.read_text(encoding="utf-8")
+        for summary in _SUMMARY_TAG.findall(text):
+            every_summary |= _classes(summary)
+        for match in _DETAILS_TAG.finditer(text):
+            tag = match.group(0)
+            remembered = "{% disclosure" in tag
+            following = _SUMMARY_TAG.search(text, match.end())
+            summary_classes = _classes(following.group(0)) if following else set()
+            if remembered:
+                ids |= set(_ID.findall(tag))
+                details_in |= _classes(tag)
+                summary_in |= summary_classes
+            else:
+                details_out |= _classes(tag)
+                summary_out |= summary_classes
+    return ids, details_in, details_out, summary_in, summary_out, every_summary
+
+
 def remembered_block_hooks() -> frozenset[str]:
-    """CSS hooks that name a remembered block and nothing else.
+    """CSS hooks that name a remembered block (or its summary) and nothing else.
 
     Read from the templates: every `<details>` carrying `{% disclosure … %}`
-    contributes its id, and each of its classes that no *un*remembered
-    `<details>` also carries. Plus the attribute itself.
+    contributes its id, each of its classes that no *un*remembered `<details>`
+    also carries, and each class of its `<summary>` that no other summary
+    carries (`.foldout__trigger`). Plus the attribute itself.
     """
-    remembered_ids: set[str] = set()
-    remembered_classes: set[str] = set()
-    other_classes: set[str] = set()
-    for template in TEMPLATES.rglob("*.html"):
-        for tag in _DETAILS_TAG.findall(template.read_text(encoding="utf-8")):
-            classes = set()
-            for found in _CLASS.findall(tag):
-                classes |= {c for c in found.split() if "{" not in c and "%" not in c}
-            if "{% disclosure" in tag:
-                remembered_ids |= set(_ID.findall(tag))
-                remembered_classes |= classes
-            else:
-                other_classes |= classes
-    hooks = {f"#{value}" for value in remembered_ids}
-    hooks |= {f".{value}" for value in remembered_classes - other_classes}
+    ids, details_in, details_out, summary_in, summary_out, _ = _template_blocks()
+    hooks = {f"#{value}" for value in ids}
+    hooks |= {f".{value}" for value in details_in - details_out}
+    hooks |= {f".{value}" for value in summary_in - summary_out}
     hooks.add("[data-disclosure")
     return frozenset(hooks)
+
+
+def summary_classes() -> frozenset[str]:
+    """The classes of remembered blocks' own `<summary>`s: clicking one is a toggle.
+
+    Only theirs — a chip that opens a *nested*, unremembered panel inside a
+    remembered block (`.disclosure-chip`) is not a toggle of the block.
+    """
+    return frozenset(f".{value}" for value in _template_blocks()[3])
 
 
 def _hook_pattern(hooks: frozenset[str]) -> re.Pattern[str]:
@@ -86,7 +129,9 @@ def _names(node: ast.AST) -> set[str]:
     return {child.id for child in ast.walk(node) if isinstance(child, ast.Name)}
 
 
-def bare_summary_clicks(source: str, hooks: frozenset[str]) -> list[tuple[int, str]]:
+def bare_summary_clicks(
+    source: str, hooks: frozenset[str], summaries: frozenset[str] = frozenset()
+) -> list[tuple[int, str]]:
     """`(line, function)` of every summary click on a remembered block in `source`.
 
     Inside each function, a local variable carries the strings of the
@@ -95,6 +140,7 @@ def bare_summary_clicks(source: str, hooks: frozenset[str]) -> list[tuple[int, s
     `window.locator("summary").click()` is seen for what it is.
     """
     pattern = _hook_pattern(hooks)
+    summary_pattern = _hook_pattern(summaries | {"summary"}) if summaries else None
     found: list[tuple[int, str]] = []
     tree = ast.parse(source)
     for function in ast.walk(tree):
@@ -146,7 +192,11 @@ def bare_summary_clicks(source: str, hooks: frozenset[str]) -> list[tuple[int, s
                 and isinstance(receiver.func, ast.Attribute)
                 and receiver.func.attr == "get_by_text"
             )
-            if not by_text and not any("summary" in text for text in strings):
+            on_summary = any("summary" in text for text in strings) or (
+                summary_pattern is not None
+                and any(summary_pattern.search(text) for text in strings)
+            )
+            if not by_text and not on_summary:
                 continue
             if any(pattern.search(text) for text in strings):
                 found.append((node.lineno, function.name))
@@ -156,8 +206,15 @@ def bare_summary_clicks(source: str, hooks: frozenset[str]) -> list[tuple[int, s
 def test_the_remembered_block_hooks_are_found() -> None:
     """The scanner is only as good as the hooks it knows; pin the ones that matter."""
     hooks = remembered_block_hooks()
-    for hook in ("#dokumendi-andmed", "#toodokumendid", "#seotud-arhiivikirjad", ".uxdl"):
+    for hook in (
+        "#dokumendi-andmed",
+        "#toodokumendid",
+        "#seotud-arhiivikirjad",
+        ".uxdl",
+        ".foldout__trigger",
+    ):
         assert hook in hooks, hook
+    assert ".accordion__head" in summary_classes()
     # A class an ordinary disclosure also wears is not a hook: `.accordion` is
     # the release notes' day too, which is not remembered.
     assert ".accordion" not in hooks
@@ -180,19 +237,35 @@ def test_the_remembered_block_hooks_are_found() -> None:
         ),
         ('def t(page):\n    page.locator("details.relnotes__day summary").click()\n', False),
         ('def t(page):\n    page.locator(".uxdl__row a").click()\n', False),
+        (
+            'def t(page):\n    d = page.locator("details.uxdl").first\n'
+            '    d.get_by_text("Kõik").click()\n',
+            True,
+        ),
+        ('def t(page):\n    page.locator(".band .foldout__trigger").click()\n', True),
+        (
+            'def t(page):\n    w = page.locator("#dokumendi-andmed")\n'
+            '    w.locator(".accordion__head").click()\n',
+            True,
+        ),
+        ('def t(page):\n    page.locator("#ajajoon .accordion__head").click()\n', False),
     ],
 )
 def test_the_scanner_tells_a_bare_click_from_a_state_aware_one(source, flagged) -> None:
-    hooks = frozenset({"#dokumendi-andmed", ".uxdl", "[data-disclosure"})
-    assert bool(bare_summary_clicks(source, hooks)) is flagged
+    hooks = frozenset({"#dokumendi-andmed", ".uxdl", ".foldout__trigger", "[data-disclosure"})
+    summaries = frozenset({".accordion__head", ".foldout__trigger"})
+    assert bool(bare_summary_clicks(source, hooks, summaries)) is flagged
 
 
 def test_no_browser_test_clicks_the_summary_of_a_remembered_block() -> None:
     hooks = remembered_block_hooks()
+    summaries = summary_classes()
     offences = [
         f"{path.relative_to(ROOT).as_posix()}:{line} in {function}"
         for path in sorted(E2E.glob("*.py"))
-        for line, function in bare_summary_clicks(path.read_text(encoding="utf-8"), hooks)
+        for line, function in bare_summary_clicks(
+            path.read_text(encoding="utf-8"), hooks, summaries
+        )
     ]
     assert not offences, (
         "A remembered block (docs/adr/0194) arrives in the state its persona last "

@@ -21,7 +21,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from e2e.conftest import HEAD, MARTIN, SANDRA, sign_in
+from e2e.conftest import HEAD, MARTIN, SANDRA, sign_in, toggle_disclosure
 
 pytestmark = pytest.mark.e2e
 
@@ -146,12 +146,12 @@ def test_both_foldouts_are_readable_without_a_click(page, base_url):
             f"the {name} foldout is marked open and shows nothing"
         )
 
-    # The disclosure still works: this is a default, not a removal.
-    page.locator(".workband--activity .foldout__trigger").click()
+    # The disclosure still works: this is a default, not a removal. It is a
+    # remembered block (`my_work.recent_activity`), so the click is stored for
+    # this persona — and put back here; every sign-in resets it anyway.
+    assert toggle_disclosure(entries) is False
     assert not entries.locator(".foldout__body").is_visible()
-    # It is a remembered block (`my_work.recent_activity`): the click above is
-    # stored for this persona, so it is put back for every test after this one.
-    page.locator(".workband--activity .foldout__trigger").click()
+    assert toggle_disclosure(entries) is True
     assert entries.locator(".foldout__body").is_visible()
 
 
