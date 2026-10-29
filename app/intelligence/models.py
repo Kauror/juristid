@@ -270,7 +270,8 @@ class MatterImportantDate(MatterFact):
         The window is the header band's own: a date more than sixty days out is
         rendered as the date alone, because past that a day count stops telling
         anybody anything and starts pushing the title off the row. The rule and
-        the number are `active_deadline`'s — stated here rather than shared
+        the number are the header's (`selectors.response_deadline_of`) — stated
+        here rather than shared
         because that selector answers a different question (which single
         deadline the header shows) and folding the two together would couple a
         row's presentation to the header's choice of row.
