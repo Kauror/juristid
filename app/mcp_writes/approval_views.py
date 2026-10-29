@@ -28,7 +28,16 @@ Approving is one explicit POST for one proposal, CSRF-protected, with either
 * a code this same gate session typed less than `MCP_WRITE_REVERIFY_SECONDS`
   ago, kept in the session as a keyed binding of the grant, the account, its
   `security_epoch` and the gate pass — a persona change, a new gate pass, an
-  epoch bump or another grant makes it worthless.
+  epoch bump or another grant makes it worthless. With
+  ``MCP_WRITE_REVERIFY_SECONDS=0`` (production, owner's decision 2026-10-29)
+  there is no such window: nothing is remembered and every approval asks for
+  its own fresh code.
+
+Every check that needs no code — still pending, not expired, the arguments
+digest, the grant's write right, not stale — is made **before** the code is
+spent, so a proposal that cannot be approved never consumes a valid code; they
+are all made again under the proposal's lock afterwards. A code is remembered
+for the window only after an approval actually succeeded.
 
 The approval row (`McpWriteApproval`) records the user, the grant and the
 arguments digest the person saw, the method and the address; the proposal
@@ -287,6 +296,10 @@ def _recent_holds(request: HttpRequest, user: Any, grant: McpAccessGrant) -> boo
 
 
 def _remember(request: HttpRequest, user: Any, grant: McpAccessGrant) -> None:
+    """Keep the window open — only when there is a window at all."""
+    if not reverify_seconds():
+        request.session.pop(SESSION_RECENT, None)
+        return
     request.session[SESSION_RECENT] = {
         "binding": _recent_binding(request, user, grant),
         "verified_at": timezone.now().isoformat(),
@@ -471,10 +484,62 @@ def _code_refused(
     return _page(request, proposal, can_approve=True, error=error, status=status)
 
 
+def _problem(proposal: McpWriteProposal, user: Any, now: datetime) -> str:
+    """Why this proposal may not be approved now, or "" — none of it needs a code."""
+    if proposal.status != ProposalStatus.PENDING:
+        return "not_pending"
+    if proposal.is_expired_at(now):
+        return "expired"
+    if digest_of(proposal) != proposal.arguments_digest:
+        return "digest"
+    if proposal.grant.status != GrantStatus.ACTIVE or not access.may_write(user, proposal.grant):
+        return "no_write_right"
+    if is_stale(proposal, user):
+        return "stale"
+    return ""
+
+
+def _settle(locked: McpWriteProposal, problem: str) -> None:
+    """Under the proposal's lock: the final status a problem leaves, and its event."""
+    final = {
+        "expired": ProposalStatus.EXPIRED,
+        "digest": ProposalStatus.FAILED,
+        "stale": ProposalStatus.STALE,
+    }.get(problem)
+    if final is not None:
+        locked.status = final
+        locked.failure_code = "approval_mismatch" if problem == "digest" else problem
+        locked.save(update_fields=["status", "failure_code", "updated_at"])
+    record(McpWriteEventType.APPROVAL_REFUSED, succeeded=False, proposal=locked, code=problem)
+
+
+def _problem_page(request: HttpRequest, locked: McpWriteProposal, problem: str) -> HttpResponse:
+    if problem == "no_write_right":
+        return _refusal_page(request)
+    locked.refresh_from_db()
+    if locked.status == ProposalStatus.PENDING:
+        return _page(request, locked, can_approve=False, notice=GENERIC_REFUSAL, status=409)
+    return _page(request, locked, can_approve=False, done=STATUS_TEXT[locked.status])
+
+
 def _approve(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
     user: Any = request.user
     grant = proposal.grant
     ip = client_ip(request)
+
+    # Before the code: a proposal that cannot be approved spends nothing and
+    # opens no window (audit 2026-10-28 C-03).
+    with transaction.atomic():
+        locked = (
+            McpWriteProposal.objects.select_for_update().select_related("grant").get(pk=proposal.pk)
+        )
+        problem = _problem(locked, user, timezone.now())
+        if problem:
+            _settle(locked, problem)
+    if problem:
+        return _problem_page(request, locked, problem)
+
+    typed = False
     if _recent_holds(request, user, grant):
         method = ApprovalMethod.RECENT_TOTP
     else:
@@ -487,38 +552,18 @@ def _approve(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
         )
         if outcome.status != "ok":
             return _code_refused(request, proposal, outcome)
-        _remember(request, user, grant)
-        method = ApprovalMethod.TOTP
+        method, typed = ApprovalMethod.TOTP, True
 
     with transaction.atomic():
         locked = (
             McpWriteProposal.objects.select_for_update().select_related("grant").get(pk=proposal.pk)
         )
         now = timezone.now()
-        problem = ""
-        if locked.status != ProposalStatus.PENDING:
-            problem = "not_pending"
-        elif locked.is_expired_at(now):
-            problem = "expired"
-        elif digest_of(locked) != locked.arguments_digest:
-            problem = "digest"
-        elif locked.grant.status != GrantStatus.ACTIVE or not access.may_write(user, locked.grant):
-            problem = "no_write_right"
-        elif is_stale(locked, user):
-            problem = "stale"
+        # Everything again, under the lock: the proposal may have moved on
+        # while the code was being checked.
+        problem = _problem(locked, user, now)
         if problem:
-            final = {
-                "expired": ProposalStatus.EXPIRED,
-                "digest": ProposalStatus.FAILED,
-                "stale": ProposalStatus.STALE,
-            }.get(problem)
-            if final is not None:
-                locked.status = final
-                locked.failure_code = "approval_mismatch" if problem == "digest" else problem
-                locked.save(update_fields=["status", "failure_code", "updated_at"])
-            record(
-                McpWriteEventType.APPROVAL_REFUSED, succeeded=False, proposal=locked, code=problem
-            )
+            _settle(locked, problem)
         else:
             McpWriteApproval.objects.create(
                 proposal=locked,
@@ -533,11 +578,9 @@ def _approve(request: HttpRequest, proposal: McpWriteProposal) -> HttpResponse:
             locked.status = ProposalStatus.APPROVED
             locked.save(update_fields=["status", "updated_at"])
             record(McpWriteEventType.APPROVED, proposal=locked, method=str(method))
-    if problem == "no_write_right":
-        return _refusal_page(request)
     if problem:
-        locked.refresh_from_db()
-        if locked.status == ProposalStatus.PENDING:
-            return _page(request, locked, can_approve=False, notice=GENERIC_REFUSAL, status=409)
-        return _page(request, locked, can_approve=False, done=STATUS_TEXT[locked.status])
+        return _problem_page(request, locked, problem)
+    if typed:
+        # Only a code that approved something opens the window (none at 0).
+        _remember(request, user, locked.grant)
     return _page(request, locked, can_approve=False, done=DONE)

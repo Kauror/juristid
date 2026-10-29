@@ -29,9 +29,16 @@ cd /mnt/user/appdata/juristid-main/repo
    prepared — the Teema and its link, each field «praegu → pärast», the
    consequences, what does not change, warnings, expiry. «Kinnita» needs the
    current code from their «Juristidi MCP autentija» (the same authenticator,
-   lock ladder and throttle as connecting ChatGPT). A code typed in the same
-   gate session less than `MCP_WRITE_REVERIFY_SECONDS` (5 min) ago is reused,
-   but every proposal still needs its own «Kinnita». «Lükka tagasi» declines.
+   lock ladder and throttle as connecting ChatGPT). Production runs with
+   `MCP_WRITE_REVERIFY_SECONDS=0` (owner's decision 2026-10-29): **every**
+   approval needs its own fresh code, and nothing is remembered between them.
+   With a positive value (the code default is 300 s) a code that approved a
+   change in the same gate session less than that long ago is reused, but
+   every proposal still needs its own «Kinnita». A proposal that cannot be
+   approved — expired, changed since the preview, its arguments no longer
+   matching, the grant no longer allowed to write — is refused **before** the
+   code is checked, so it spends no code and opens no reuse window.
+   «Lükka tagasi» declines.
    If the record changed since the preview, the page says so and offers no
    «Kinnita». Anybody else — another persona, a guessed link — gets one
    generic refusal.
