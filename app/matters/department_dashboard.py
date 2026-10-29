@@ -1445,7 +1445,7 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
             is_open=False,
             record_mode=RecordMode.FULL,
         )
-        .select_related("owner")
+        .select_related("owner", "closed_by")
         .order_by("-closed_at")[:DIGEST_LIMIT]
     )
     victories = list(
@@ -1500,7 +1500,11 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
             )
         )
     for matter in closed:
-        initials, name = person(matter.owner)
+        # Whoever closed it (`close_matter` writes `closed_by`), as Viimased
+        # tegevused and Muudatused say; the owner only when the closure names
+        # nobody — an imported or cut-over closure — as for a send without
+        # `sent_by` above (2026-10-28 audit, B-03).
+        initials, name = person(matter.closed_by or matter.owner)
         rows.append(
             DigestRow(
                 when=timezone.localtime(matter.closed_at).date(),
