@@ -76,3 +76,11 @@ start need the gate and key settings. Narrowing the workers is not part of this.
   recreates them (a few seconds of database outage; the bind-mounted cluster is
   untouched). Apply it as an announced maintenance step, not inside a code
   release; until then releases keep `--no-deps`.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** in the security remediation integration (merge `9a2e834a, #514 = #506–#513, 2026-10-22`; #506).
+- **Deployed** to production as `1270ca01` (2026-10-23, the release of #521, which carried the security baseline merged before it).
+- **Not verified here**: the database container's own environment (§ on the database receiving only its variables) changes only when the `db` service is recreated, which releases deliberately avoid (`--no-deps` application services). Whether production's `db` container has been recreated on the new definition since is not recorded in this repository.

@@ -97,3 +97,10 @@ record only makes the audit trail say so. Personal sign-in (0145) stays dormant.
 - Readers that want «who really acted» must read `auth_method` and
   `authenticated_principal`, never `actor` alone.
 - No setting, environment variable or Compose change. Two additive migrations.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** in the security remediation integration (merge `9a2e834a, #514 = #506–#513, 2026-10-22`; #510, migrations `audit/0038`, `accounts/0005`).
+- **Deployed** to production as `1270ca01` (2026-10-23, the release of #521, which carried the security baseline merged before it).

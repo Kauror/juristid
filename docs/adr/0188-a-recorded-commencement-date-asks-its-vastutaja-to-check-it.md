@@ -146,3 +146,11 @@ date is recorded.
   one or two statements.
 - If the worker is not deployed nothing is generated, and nothing else breaks.
 - Reversible: drop the service and the includes; the table is history only.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** 2026-10-23 in #522 (merge `6e195631`, Admin & Workflow R1; migrations `notifications/0001`, `audit/0039`).
+- **Deployed** as production `6e195631` (2026-10-23).
+- **Activated**: the `notifications` worker is a service in `deploy/unraid-main/compose.yml` and was one of the five application services of that release.

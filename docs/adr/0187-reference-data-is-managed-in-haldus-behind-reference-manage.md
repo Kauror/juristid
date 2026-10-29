@@ -108,3 +108,21 @@ and any capability for this work.
 - Django admin still exposes the same models to whoever reaches it; narrowing it is a
   separate decision and is not taken here.
 - Organisation merge and deactivation remain unavailable by design until a later ADR.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** 2026-10-23 in #522 (merge `6e195631`, Admin & Workflow R1).
+- **Deployed** as production `6e195631` (2026-10-23).
+- **Accepted design, recorded on review (audit 2026-10-28, C-09)**: a
+  shared-gate persona holding `reference.manage` (by default the department
+  head) changes the organisations catalogue and the keyword vocabulary without
+  an administrator step-up. `reference_data_required`
+  (`app/reference_data/views.py`) admits whoever `reference_actor`
+  (`app/reference_data/access.py`) resolves — the persona holding the
+  capability, or a verified administrator who holds it — and no fresh proof is
+  asked. This is intended: maintaining reference data is department work, not
+  account administration, it stays outside `REQUIRES_BUSINESS_WRITE`, and every
+  change is audited to the persona (or to the administrator principal with
+  `administrator_session`).

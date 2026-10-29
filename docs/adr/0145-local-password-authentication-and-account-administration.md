@@ -472,3 +472,20 @@ entered through each mode's existing sign-in. The Django admin's own rules
 (read-only business records, `is_active` read-only under `local_password`) are
 unchanged. No throttle is merged or retired in code. No MFA device is reset
 automatically, no key is rotated, and there is no migration.
+
+## Status update 2026-10-29 — the trusted-source exemption, recorded as accepted
+
+This section records a design confirmed on review (audit 2026-10-28, C-09); it
+does not amend the decision and the status is unchanged.
+
+The trusted-source rule under **Throttling** above applies to both sign-in
+paths that check a password: the local sign-in (`app/accounts/local_auth.py`,
+`throttle.is_trusted_source` before the counters are held) and the
+administrator step-up of docs/adr/0186 (`app/accounts/admin_session.py`, the
+same check). A source is remembered only after a fully successful sign-in or
+step-up (`throttle.remember_trusted_source`). From such a source only the
+account-wide counter (`ThrottleScope.SIGN_IN_ACCOUNT`) is ignored; the
+account-and-network counter and the network counter still apply, so a
+remembered network buys no unlimited guessing. This is the intended trade,
+kept as written.
+
