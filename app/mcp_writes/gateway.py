@@ -32,9 +32,16 @@ Answers are JSON with ``Cache-Control: no-store``. A refusal is
 an internal failure or a timeout), its message a fixed sentence that never
 quotes the request.
 
+**Correlation.** ``X-Correlation-Id`` from `mcp` is accepted only as a
+canonical UUID (`proposals.parse_correlation_id`); missing or malformed, it
+is replaced by a fresh one. It labels the call: a prepared proposal keeps it,
+and every event the call writes can be found by it (audit 2026-10-28 C-07).
+It is never used to find a proposal or to decide anything.
+
 **Logging.** One line per call (`app.mcp_writes.gateway.calls`): path,
-operation (only a registered name), user id, outcome code, HTTP status and
-duration. Never the token, the key, the arguments or any text.
+operation (only a registered name), user id, outcome code, HTTP status,
+duration and the correlation id. Never the token, the key, the arguments or
+any text.
 """
 
 from __future__ import annotations
@@ -43,6 +50,7 @@ import hmac
 import json
 import logging
 import time
+import uuid
 from collections.abc import Callable
 from typing import Any
 
@@ -231,15 +239,35 @@ def _as_the_writer(
     return run
 
 
-def _log(path: str, operation: str, user_id: Any, code: str, status: int, started: float) -> None:
+CORRELATION_HEADER = "X-Correlation-Id"
+
+
+def _correlation(request: Request) -> tuple[uuid.UUID, bool]:
+    """The call's correlation id, and whether it had to be replaced."""
+    given = proposals.parse_correlation_id(request.headers.get(CORRELATION_HEADER))
+    return (given, False) if given is not None else (uuid.uuid4(), True)
+
+
+def _log(
+    path: str,
+    operation: str,
+    user_id: Any,
+    code: str,
+    status: int,
+    started: float,
+    correlation: Any = None,
+    replaced: bool = False,
+) -> None:
     call_log.info(
-        "mcp-writer %s op=%s user=%s outcome=%s status=%s ms=%d",
+        "mcp-writer %s op=%s user=%s outcome=%s status=%s ms=%d corr=%s%s",
         path,
         operation or "-",
         user_id or "-",
         code,
         status,
         int((time.monotonic() - started) * 1000),
+        correlation or "-",
+        " (replaced)" if replaced else "",
     )
 
 
@@ -258,9 +286,19 @@ def build_app(*, runtime: ReaderRuntime | None = None) -> Starlette:
         started = time.monotonic()
         operation_label = ""
         user_id: Any = None
+        correlation, replaced = _correlation(request)
 
         def done(response: Response, code: str) -> Response:
-            _log(path, operation_label, user_id, code, response.status_code, started)
+            _log(
+                path,
+                operation_label,
+                user_id,
+                code,
+                response.status_code,
+                started,
+                correlation,
+                replaced,
+            )
             return response
 
         if _declared_too_large(request):
@@ -295,12 +333,14 @@ def build_app(*, runtime: ReaderRuntime | None = None) -> Starlette:
                 return done(_refused(answer), answer.code)
 
             def work(verified: Any, writer: Any) -> dict[str, Any] | Refusal:
-                return proposals.prepare(
-                    access=verified,
-                    user=writer,
-                    operation_name=name,
-                    raw_arguments=payload.get("arguments"),
-                )
+                with proposals.call_correlation(correlation):
+                    return proposals.prepare(
+                        access=verified,
+                        user=writer,
+                        operation_name=name,
+                        raw_arguments=payload.get("arguments"),
+                        correlation_id=correlation,
+                    )
         else:
             unexpected = set(payload) - {"proposal_id"}
             if unexpected:
@@ -309,7 +349,8 @@ def build_app(*, runtime: ReaderRuntime | None = None) -> Starlette:
             proposal_id = payload.get("proposal_id")
 
             def work(verified: Any, writer: Any) -> dict[str, Any] | Refusal:
-                return commits.commit(access=verified, user=writer, proposal_id=proposal_id)
+                with proposals.call_correlation(correlation):
+                    return commits.commit(access=verified, user=writer, proposal_id=proposal_id)
 
         try:
             result, user_id = await runtime.run(_as_the_writer(raw_token, work))
