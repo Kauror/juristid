@@ -29,7 +29,7 @@ Every numbered stage through 2A–2I is merged, and the Secure Pilot Gate is not
 - One canonical Matter model covers current and archive records.
 - Stage, disposition and next action are separate concepts.
 - Submission is first-class MVP data.
-- Blob is the immutable evidence store; SharePoint may be referenced for mutable collaborative working documents.
+- Evidence binaries are immutable (Blob is the future target store; as built they live on the filesystem under `EVIDENCE_ROOT`); SharePoint may be referenced for mutable collaborative working documents.
 - Search is a core product capability.
 - Statistics must be drillable and coverage-aware.
 - Advocacy outcome and attribution are separate concepts.
@@ -43,10 +43,15 @@ Preferred architecture characteristics are:
 - server-rendered HTML + HTMX by default;
 - minimal isolated JavaScript/TypeScript islands only where UX requires client-side state;
 - Docker portability;
-- Azure production target;
-- Entra identity;
+- Azure production target — a *future* target. As built (2026-10-29) production
+  runs on the department's Unraid host behind a Cloudflare tunnel
+  (`deploy/unraid-main/`, README "Where this is");
+- Entra identity — likewise future. As built, production authenticates with
+  `AUTH_MODE=shared_gate`: one department password, then a persona
+  (docs/adr/0004 as amended, docs/adr/0145);
 - canonical relational data in PostgreSQL;
-- immutable evidence binaries outside PostgreSQL.
+- immutable evidence binaries outside PostgreSQL (as built: the filesystem under
+  `EVIDENCE_ROOT`, not Blob — docs/adr/0022).
 
 Do not introduce without measured need and explicit approval:
 - microservices;
@@ -104,13 +109,24 @@ is ready for review. Work so that FULL runs once per change:
    protection enforces by waiting on the six required checks. Never merge on
    the strength of a FAST run, and never try to work around an *Expected*
    required check.
-6. A draft that changes `templates/`, `static/` or `e2e/` also runs
+6. A draft that changes `templates/`, `static/`, `e2e/`, a `templatetags/`
+   module, `app/core/widgets.py`, `app/core/dates.py`,
+   `app/core/context_processors.py` or the release notes also runs
    `Visual regression` in FAST (~4 more minutes on one runner). Take baseline
    candidates from that run's `test-report-visual` artifact, commit them to the
    draft, and mark ready only when the draft's visual job is green — so the
    FULL round does not fail on baselines. A red visual job on a draft blocks
    nothing; it is information for you.
-7. `gh workflow run ci.yml --ref <branch>` runs FULL on any branch, draft or not.
+7. `gh workflow run ci.yml --ref <branch>` runs FULL on any branch, draft or not
+   — but after the merge `main-proof` does not reuse it (it reads only the pull
+   request's own `pull_request` runs) and dispatches FULL again on main: two
+   FULL rounds for one change. Prefer `gh pr ready` once; keep a manual
+   dispatch for a branch with no pull request (docs/ci-architecture.md, "Main
+   is proved by its pull request's run").
+8. Browser tests: every `sign_in` resets the persona's remembered blocks; never
+   click a remembered block's summary bare (`open_disclosure` /
+   `close_disclosure` / `toggle_disclosure`), and wait for conditions, not
+   durations — `tests/test_e2e_contracts.py` enforces both.
 
 ## UX quality
 
