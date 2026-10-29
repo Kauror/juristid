@@ -23,6 +23,14 @@
 {% block workspace %}
   <div class="card card--tight">
     <form class="form" method="get" role="search">
+      {% if filters.only %}
+        {% comment %}
+          Kept across a search: a figure that counts opinions opened this list
+          narrowed to them (`?ainult=arvamused`), and the narrowing is said
+          below the form rather than dropped by the next «Otsi».
+        {% endcomment %}
+        <input type="hidden" name="ainult" value="{{ filters.only }}">
+      {% endif %}
       <div class="formgrid">
         <label class="field field--wide" for="sent-search">
           <span class="field__label">Otsi arvamustest</span>
@@ -97,6 +105,9 @@
       to take on trust — including when the honest answer is nought.
     {% endcomment %}
     <p class="cardnote resultcount">{{ total }} vastet.</p>
+    {% if filters.only %}
+      <p class="cardnote">Ainult arvamused: märkusteta vastused ei ole selles loendis.</p>
+    {% endif %}
   {% endif %}
 
   {% if page.object_list and not refusal %}

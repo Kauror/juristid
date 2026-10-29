@@ -34,6 +34,7 @@ import re
 from datetime import date, datetime, time, timedelta
 from typing import NamedTuple
 
+from django.db.models import Q
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
@@ -198,6 +199,28 @@ def start_of_local_day(value: date) -> datetime:
     Local midnight always exists here: daylight saving changes at 03:00/04:00.
     """
     return timezone.make_aware(datetime.combine(value, time.min))
+
+
+def local_day_range(field: str, first: date, last: date | None = None) -> Q:
+    """``field`` falls on a Europe/Tallinn day from ``first`` to ``last``, both included.
+
+    The one spelling of «a timestamp on a local day» (2026-10-28 audit, A-01).
+    The same rows as ``{field}__date__gte=first`` and ``{field}__date__lte=last``,
+    written as a half-open range on the timestamp itself: at or after the first
+    local moment of ``first``, and before the first local moment of the day after
+    ``last`` (`start_of_local_day`). The ``__date`` spelling casts every row to a
+    local date before comparing — ``("col" AT TIME ZONE 'Europe/Tallinn')::date``
+    — so no index on the column can answer it (JPERF-005, D-01). ``last=None``
+    is open-ended.
+
+    Across daylight saving the two agree because each bound is a local
+    midnight made aware in the zone of that very day: the day DST ends is 25
+    hours long and the day it starts 23, and the range is exactly those hours.
+    """
+    condition = Q(**{f"{field}__gte": start_of_local_day(first)})
+    if last is not None:
+        condition &= Q(**{f"{field}__lt": start_of_local_day(last + timedelta(days=1))})
+    return condition
 
 
 def end_of_month(value: date) -> date:

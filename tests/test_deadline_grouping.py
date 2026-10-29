@@ -207,11 +207,10 @@ def test_the_former_preview_and_the_former_remainder_are_in_the_same_disclosure(
 ) -> None:
     """The two halves the read model still cuts are one list on the page.
 
-    `preview` and `rest` are what the old two-tier panel rendered separately.
-    They are asserted through the read model here rather than by counting rows,
-    so this cannot pass because the template happens to print fourteen titles in
-    some order: the rows that used to be behind the inner control are named, and
-    every one of them is inside the outer one.
+    The old two-tier panel rendered the first five rows and put the rest behind
+    an inner control. Every row of the read model's window is named here rather
+    than counted, so this cannot pass because the template happens to print
+    fourteen titles in some order: each one is inside the one disclosure.
     """
     today = wednesday
     for n in range(14):
@@ -220,10 +219,10 @@ def test_the_former_preview_and_the_former_remainder_are_in_the_same_disclosure(
         )
 
     group = _upcoming(department_head, today)["kuu"]
-    assert group.preview and group.rest, "the fixture no longer exercises the split"
+    assert len(group.items) > 5, "the fixture no longer exercises the split"
 
     window = _window(_panel(client, department_head), "ÜLEJÄÄNUD KUU")
-    for item in [*group.preview, *group.rest]:
+    for item in group.items:
         assert item.matter.title in window, item.matter.title
 
 

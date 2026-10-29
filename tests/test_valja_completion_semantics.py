@@ -433,7 +433,7 @@ def test_the_header_calls_an_outstanding_deadline_late(specialist, today):
     matter = _matter(specialist, deadline=today - timedelta(days=30))
     _mark(matter, state=OpinionSentState.BLANK)
 
-    deadline = selectors.active_deadline(matter, specialist, today=today)
+    deadline = selectors.response_deadline_of(matter, specialist, today=today)
 
     assert deadline is not None
     assert deadline.is_past is True
@@ -450,7 +450,7 @@ def test_a_deadline_due_today_is_neither_late_nor_a_countdown(specialist, today)
     matter = _matter(specialist, deadline=today)
     _mark(matter, state=OpinionSentState.BLANK)
 
-    deadline = selectors.active_deadline(matter, specialist, today=today)
+    deadline = selectors.response_deadline_of(matter, specialist, today=today)
 
     assert deadline is not None
     assert deadline.is_today is True
@@ -464,7 +464,7 @@ def test_a_future_deadline_still_counts_down(specialist, today):
     matter = _matter(specialist, deadline=today + timedelta(days=45))
     _mark(matter, state=OpinionSentState.BLANK)
 
-    deadline = selectors.active_deadline(matter, specialist, today=today)
+    deadline = selectors.response_deadline_of(matter, specialist, today=today)
 
     assert deadline is not None
     assert deadline.is_past is False
@@ -492,7 +492,7 @@ def test_the_header_does_not_call_a_discharged_deadline_late(
     matter = _matter(specialist, deadline=today - timedelta(days=30))
     _mark(matter, state=state, sent_on=today - timedelta(days=28))
 
-    deadline = selectors.active_deadline(matter, specialist, today=today)
+    deadline = selectors.response_deadline_of(matter, specialist, today=today)
     assert deadline is not None
     assert deadline.is_past is True
     assert deadline.is_overdue is False
@@ -545,9 +545,11 @@ def test_an_important_date_keeps_its_own_lateness(specialist, today):
         actor=specialist,
     )
 
-    deadline = selectors.active_deadline(matter, specialist, today=today)
-
-    assert deadline is not None
-    assert deadline.label == "Konsultatsioon lopeb"
-    assert deadline.is_overdue is True
-    assert deadline.days_late == 10
+    # Asked of the work model, which owns lateness: the milestone's row is late
+    # by its own last day, while the discharged response deadline is not work.
+    items = [item for item in wi.work_items(specialist, today=today) if item.matter_id == matter.pk]
+    [milestone] = [item for item in items if item.source_type == wi.SOURCE_IMPORTANT_DEADLINE]
+    assert milestone.text == "Konsultatsioon lopeb"
+    assert milestone.is_overdue is True
+    assert milestone.days_late == 10
+    assert not any(item.source_type == wi.SOURCE_RESPONSE_DEADLINE for item in items)

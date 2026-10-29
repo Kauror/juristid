@@ -28,6 +28,7 @@ from app.workflow.enums import (
     DateSemantics,
 )
 from app.workflow.models import NextAction
+from app.workflow.step_markers import CLOSED_WITH_MATTER, PROMOTED, RETURNED_TO_PLAN
 
 
 def current_next_action(matter: Any) -> NextAction | None:
@@ -383,7 +384,7 @@ def set_next_action(
         # one of the four above and silently change what the event says.
         payload["provenance"] = provenance
     if returned_to_plan is not None:
-        payload["returned_to_plan"] = str(returned_to_plan.pk)
+        payload[RETURNED_TO_PLAN] = str(returned_to_plan.pk)
 
     record_change_event(
         event_type=ChangeEventType.NEXT_ACTION_SET,
@@ -410,7 +411,7 @@ def set_next_action(
                 ),
                 "replaced": None,
                 "planned": True,
-                "returned_to_plan": True,
+                RETURNED_TO_PLAN: True,
                 "follow_up": _follow_up_block(returned_to_plan),
             },
         )
@@ -711,11 +712,11 @@ def end_open_action_for_closure(*, matter: Any, actor: Any = None) -> NextAction
     for planned in NextAction.objects.filter(matter=matter, status=ActionStatus.PLANNED).order_by(
         "target_date", "created_at", "pk"
     ):
-        cancel_next_action(action=planned, actor=actor, reason="Teema suleti")
+        cancel_next_action(action=planned, actor=actor, reason=CLOSED_WITH_MATTER)
     action = current_next_action(matter)
     if action is None:
         return None
-    return cancel_next_action(action=action, actor=actor, reason="Teema suleti")
+    return cancel_next_action(action=action, actor=actor, reason=CLOSED_WITH_MATTER)
 
 
 @transaction.atomic
@@ -1081,7 +1082,7 @@ def promote_next_planned_action(*, matter: Any, actor: Any = None) -> NextAction
             "date_semantics": action.date_semantics,
             "target_date": action.target_date.isoformat() if action.target_date else None,
             "replaced": None,
-            "promoted": True,
+            PROMOTED: True,
         },
     )
     return action

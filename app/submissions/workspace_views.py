@@ -91,6 +91,7 @@ def sent(request: HttpRequest) -> HttpResponse:
         kind=request.GET.get("liik", "").strip(),
         recipient_id=request.GET.get("saaja", "").strip(),
         owner_id=request.GET.get("vastutaja", "").strip(),
+        only=request.GET.get(workspace.OPINIONS_ONLY_PARAM, "").strip(),
     )
 
     refusal = ""

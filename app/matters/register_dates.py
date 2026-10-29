@@ -162,16 +162,13 @@ def register_date(matter: Matter, today: date | None = None) -> RegisterDate | N
             from_step=True,
         )
     if matter.response_deadline is not None:
-        from app.matters.work_items import DISCHARGED
+        from app.matters.work_items import DISCHARGED, settlement_word
 
         # Read off the annotation the register's queryset already carries
         # (`selectors.matter_list_queryset`); a surface without it states the
-        # deadline as it always did rather than paying a query per row.
-        settled = ""
-        if not matter.is_open:
-            settled = "teema suletud"
-        elif matter.response_requested_at is None and getattr(matter, DISCHARGED, None) is True:
-            settled = "lõpetatud"
+        # deadline as it always did rather than paying a query per row. The
+        # word is the header's (`work_items.settlement_word`, A-06).
+        settled = settlement_word(matter, discharged=getattr(matter, DISCHARGED, None) is True)
         return RegisterDate(
             settled=settled,
             value=matter.response_deadline,

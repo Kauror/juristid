@@ -117,7 +117,6 @@ from app.core.dates import format_estonian_date, short_day_month
 from app.intelligence.enums import (
     INFORMATIONAL_IMPORTANT_DATE_KINDS,
     FactStatus,
-    is_informational_milestone,
 )
 from app.intelligence.models import MatterImportantDate
 from app.legacy_import.current_state import CurrentRegisterState, RegisterCurrency
@@ -337,11 +336,6 @@ class WorkItem:
     #: (docs/adr/0144 §1). An `Arvamuse järelkontroll` is planned too and keeps
     #: its own `record_url`.
     is_planned: bool = False
-    #: Whether this row is an informational `Oluline tähtaeg` (a commencement a
-    #: draft proposes, `INFORMATIONAL_IMPORTANT_DATE_KINDS`): a date the file
-    #: watches, never its next step and never late (docs/adr/0120, amendment of
-    #: 2026-10-19). Read off the stored kind; `False` on every other row.
-    is_informational: bool = False
 
     @property
     def date_display(self) -> str:
@@ -771,8 +765,11 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
     read model follow a reassignment without anybody editing the deadline: move
     the Matter and the milestone moves with it, which is the behaviour a
     department actually has (§4.2).
+
+    Never an informational milestone (`INFORMATIONAL_IMPORTANT_DATE_KINDS`):
+    :func:`important_deadlines` leaves those out of the work population, so
+    every row here is a commitment (docs/adr/0120, amendment of 2026-10-27).
     """
-    informational = is_informational_milestone(record.kind)
     return WorkItem(
         source_type=SOURCE_IMPORTANT_DEADLINE,
         object_id=record.pk,
@@ -788,13 +785,10 @@ def _deadline_item(record: MatterImportantDate, today: date) -> WorkItem:
         meaning=MEANING_IMPORTANT,
         text=record.title,
         # A milestone is a real commitment, so its last day passing is genuine
-        # lateness — unlike a review date, which is only a reminder. An
-        # informational one is not a commitment of anybody's here: a draft's
-        # planned commencement passing is not Koda being late.
-        is_overdue=record.period_end < today and not informational,
+        # lateness — unlike a review date, which is only a reminder.
+        is_overdue=record.period_end < today,
         is_review_ripe=False,
         today=today,
-        is_informational=informational,
     )
 
 
@@ -994,6 +988,26 @@ def undated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextActio
     return queryset
 
 
+def active_milestones(user: Any, *, owner: Any = None) -> QuerySet[MatterImportantDate]:
+    """Every active `Oluline tähtaeg` on an open FULL Matter, scoped to the reader.
+
+    The one base population two readers partition by kind (2026-10-28 audit,
+    A-08): :func:`important_deadlines` — the work model's milestones — leaves
+    out `INFORMATIONAL_IMPORTANT_DATE_KINDS`, and the calendar's
+    `estimate_events` keeps only those. A clause added here reaches both, so a
+    new rule about which milestones are live cannot leave the *Jõustumised*
+    estimates on the old one. ``owner`` narrows by ``Matter.owner``.
+    """
+    queryset = MatterImportantDate.objects.visible_to(user).filter(
+        status=FactStatus.ACTIVE,
+        matter__is_open=True,
+        matter__record_mode=RecordMode.FULL,
+    )
+    if owner is not None:
+        queryset = queryset.filter(matter__owner=owner)
+    return queryset
+
+
 def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImportantDate]:
     """Active milestones on open Matters that are somebody's work, scoped to the reader.
 
@@ -1012,19 +1026,11 @@ def important_deadlines(user: Any, *, owner: Any = None) -> QuerySet[MatterImpor
     beside it. It stays on its Teema, and the Minu asjad calendar shows it under
     *Jõustumised*, labelled as the estimate it is (`calendar.estimate_events`).
     """
-    queryset = (
-        MatterImportantDate.objects.visible_to(user)
-        .filter(
-            status=FactStatus.ACTIVE,
-            matter__is_open=True,
-            matter__record_mode=RecordMode.FULL,
-        )
+    return (
+        active_milestones(user, owner=owner)
         .exclude(kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS)
         .select_related("matter", "matter__stage", "matter__owner")
     )
-    if owner is not None:
-        queryset = queryset.filter(matter__owner=owner)
-    return queryset
 
 
 def _discharge_exists(user: Any) -> Q:
@@ -1114,9 +1120,7 @@ def response_obligation_outstanding_q(user: Any) -> Q:
     return Q(response_deadline__isnull=False) & ~_discharge_exists(user)
 
 
-def response_obligations(
-    user: Any, *, owner: Any = None, open_only: bool = True
-) -> QuerySet[Matter]:
+def response_obligations(user: Any, *, owner: Any = None) -> QuerySet[Matter]:
     """Matters whose ``Arvamuse tähtaeg`` is still officially unanswered.
 
     This is the **obligation**, not the plan, and they are two different
@@ -1144,19 +1148,16 @@ def response_obligations(
     reason :func:`important_deadlines` does — this obligation belongs to whoever
     carries the file.
 
-    ``open_only=False`` drops **only** the ``is_open`` clause. ARCHIVE rows stay
-    out and the reader scope stays on; what changes is that a closed Matter with
-    an unanswered deadline can be described honestly, which is a different act
-    from putting it in a live queue. Nothing that reads this population for work
-    passes ``False``.
+    Open Matters only. A closed Matter with an unanswered deadline is described
+    honestly by :func:`response_obligation_of`, which is a different act from
+    putting it in a live queue. (An ``open_only=False`` switch for that had no
+    caller outside its own test and went after the 2026-10-28 audit, A-10.)
 
     ``Matter.response_deadline`` is never written, cleared or moved by any of
     this. It remains canonical Matter data stating itself in the header, exactly
     as ADR 0050 requires.
     """
-    base = full_matters(user)
-    if open_only:
-        base = base.filter(is_open=True)
+    base = full_matters(user).filter(is_open=True)
     queryset = (
         annotate_response_obligation(base.filter(response_deadline__isnull=False), user)
         .filter(**{DISCHARGED: False})
@@ -1165,6 +1166,35 @@ def response_obligations(
     if owner is not None:
         queryset = queryset.filter(owner=owner)
     return queryset
+
+
+#: Why an `Arvamuse tähtaeg` no longer asks for work, in the words the Teema
+#: header and the register's Kuupäev cell both print beside the date.
+SETTLED_CLOSED = "teema suletud"
+SETTLED_DISCHARGED = "lõpetatud"
+
+
+def settlement_word(matter: Matter, *, discharged: bool) -> str:
+    """«teema suletud», «lõpetatud», or ``""`` while the deadline is still owed.
+
+    One rule for the two surfaces that state a settled deadline (2026-10-28
+    audit, A-06): the header (`selectors.response_deadline_of`) and the
+    register cell (`register_dates.register_date`). Each reads ``discharged``
+    its own way — the header asks :func:`response_obligation_of`, the register
+    reads the :data:`DISCHARGED` annotation its queryset carries — and both
+    then say the same word.
+
+    A closed file owes nothing by a date. A deadline from before requests were
+    tracked, discharged the way it always was (a sent opinion, the register's
+    `VÄLJA`), is «lõpetatud»; one recorded as a request is never discharged
+    while it is current, because answering it ends it
+    (`app/matters/response_deadlines.py`).
+    """
+    if not matter.is_open:
+        return SETTLED_CLOSED
+    if matter.response_requested_at is None and discharged:
+        return SETTLED_DISCHARGED
+    return ""
 
 
 def response_obligation_of(
@@ -1612,6 +1642,17 @@ def band_of(
     period it is. Only once the whole period is behind us is it placed with
     the other past items — overdue, or come round for a look — because then no
     representative day is being chosen at all.
+
+    **One exception, by the owner's decision of 2026-10-29 (docs/adr/0195): a
+    review that has come round is this week's work** even while its period
+    runs. *«Vaatan üle oktoobris»* on 29 October is a look due now — it is
+    in `Ülevaatamiseks`, in *Vajab sekkumist*, styled «ülevaatamise aeg on
+    käes» — and filing the same row under *Hiljem* told the reader the
+    opposite. Ripeness is the canonical review rule (`is_review_ripe`,
+    `app.workflow.lateness`), so the band, the counters and the filters read
+    one answer. An expectation (``EXPECTED_AROUND``) is not promoted by its
+    period beginning: it comes round only on the period's last day, and
+    stays in *Hiljem* until then. Nothing here makes a row late.
     """
     when = item.when
     if when is None:
@@ -1620,6 +1661,9 @@ def band_of(
     if end < today:
         # Genuinely late, or merely come round. Both are now; only one is red.
         return BAND_OVERDUE if item.is_overdue else BAND_WEEK
+    if item.is_review_ripe:
+        # A review whose period has begun, not yet over: due now, never late.
+        return BAND_WEEK
     # The two day-bounded bands through the one window rule every deadline
     # surface reads (docs/adr/0122 §2): a day inside them is theirs, and a
     # period never is — it falls through to *Hiljem*, the band with no last day.
@@ -1697,15 +1741,6 @@ def overdue_items(items: list[WorkItem]) -> list[WorkItem]:
 
 def review_ripe_items(items: list[WorkItem]) -> list[WorkItem]:
     return [item for item in items if item.is_review_ripe]
-
-
-def week_items(items: list[WorkItem], today: date, week_end: date | None = None) -> list[WorkItem]:
-    """Dated work falling inside the current ISO week, today included.
-
-    A day of this week, never a period (docs/adr/0122 §2).
-    """
-    week_end = week_end or end_of_iso_week(today)
-    return [item for item in items if item.in_window(today, week_end)]
 
 
 def real_deadlines(items: list[WorkItem]) -> list[WorkItem]:
@@ -2088,6 +2123,8 @@ __all__ = [
     "MEANING_IMPORTANT",
     "MEANING_RESPONSE",
     "MEANING_REVIEW",
+    "SETTLED_CLOSED",
+    "SETTLED_DISCHARGED",
     "SOURCE_FEEDBACK_WAIT",
     "SOURCE_IMPORTANT_DEADLINE",
     "SOURCE_NEXT_ACTION",
@@ -2109,6 +2146,7 @@ __all__ = [
     "WorkBand",
     "WorkItem",
     "action_item",
+    "active_milestones",
     "annotate_response_obligation",
     "band_items",
     "band_of",
@@ -2132,11 +2170,11 @@ __all__ = [
     "response_obligations",
     "review_ripe_items",
     "secondary_response_obligation",
+    "settlement_word",
     "sort_items",
     "start_of_iso_week",
     "undated_actions",
     "undated_feedback_waits",
-    "week_items",
     "work_items",
     "work_population_ids",
     "work_population_items",

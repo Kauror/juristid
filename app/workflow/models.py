@@ -554,13 +554,16 @@ class NextAction(VisibilityInheritingModel):
 
     def is_due_for_review(self, today: date | None = None) -> bool:
         """Whether this review has come round: a review kind whose recorded
-        period has begun, today included.
+        period has begun, today included — or, for an ``EXPECTED_AROUND``
+        date, whose period has reached its last day.
 
         *oktoober 2026* is due from 1 October — not from 1 November, where the
         work surfaces used to put it by borrowing the deadline rule above. A
         reminder is not a promise, and the two boundaries are a month apart on
-        purpose (ADR 0079 §6, ENG-040). Every work surface's ``is_review_ripe``
-        is this answer, and ``due_for_review`` is the same rule in SQL
+        purpose (ADR 0079 §6, ENG-040). An expectation is somebody else's
+        timing, not a reminder, and is not looked at merely because its period
+        began (docs/adr/0195). Every work surface's ``is_review_ripe`` is this
+        answer, and ``due_for_review`` is the same rule in SQL
         (:mod:`app.workflow.lateness`).
         """
         if not self.is_open:
@@ -570,6 +573,7 @@ class NextAction(VisibilityInheritingModel):
             value=self.target_date,
             precision=self.date_precision,
             today=today or timezone.localdate(),
+            semantics=self.date_semantics,
         )
 
     @property

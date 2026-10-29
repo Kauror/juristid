@@ -40,7 +40,7 @@ from django.db.models import Q, QuerySet
 
 from app.core.request_params import digits_or_none, uuid_or_none
 from app.organisations.models import Organisation
-from app.submissions.enums import SubmissionKind, SubmissionStatus
+from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionKind, SubmissionStatus
 from app.submissions.models import (
     Submission,
     addressed_to,
@@ -61,6 +61,25 @@ MAX_QUERY_CHARACTERS = 500
 
 class SubmissionQueryRefused(ValueError):
     """A filter value this workspace will not run rather than guess at."""
+
+
+#: ``?ainult=arvamused`` — the list narrowed to what a figure counts as an
+#: opinion. A link from a figure that counts opinions carries it, so the list it
+#: opens holds exactly the figure's rows (2026-10-28 audit, B-04).
+OPINIONS_ONLY_PARAM = "ainult"
+OPINIONS_ONLY = "arvamused"
+
+
+def reportable_opinions[Rows: QuerySet[Any]](rows: Rows) -> Rows:
+    """``rows`` without the sends that are not opinions (`NOT_AN_OPINION_KINDS`).
+
+    An official «no comments» answer is a send and is listed, but it is not an
+    opinion and is counted on its own (docs/adr/0174). The one spelling of that
+    exclusion for a figure and the list it opens: Osakond's «Saadetud
+    arvamusi» (`department_dashboard.sent_submissions`) and this workspace's
+    ``?ainult=arvamused``.
+    """
+    return rows.exclude(kind__in=NOT_AN_OPINION_KINDS)
 
 
 @dataclass(frozen=True)
@@ -84,6 +103,9 @@ class SentFilters:
     kind: str = ""
     recipient_id: str = ""
     owner_id: str = ""
+    #: `OPINIONS_ONLY` or nothing: whether sends that are not opinions are left
+    #: out (`reportable_opinions`).
+    only: str = ""
 
     @property
     def any_applied(self) -> bool:
@@ -95,6 +117,7 @@ class SentFilters:
             or self.kind
             or self.recipient_id
             or self.owner_id
+            or self.only
             or self.status != SubmissionStatus.SENT
         )
 
@@ -187,6 +210,11 @@ def sent_queryset(user: Any, filters: SentFilters) -> QuerySet[Submission]:
         # is this" is a question about the work, and the person who pressed send
         # may have been covering.
         rows = rows.filter(matter__owner_id=owner_id)
+
+    if filters.only:
+        if filters.only != OPINIONS_ONLY:
+            raise SubmissionQueryRefused(f"Tundmatu valik: {filters.only}.")
+        rows = reportable_opinions(rows)
 
     # `addressee_rows`, the one collection the `Adressaat` cell prints: one
     # query for the page, however many rows it has (ENG-061).

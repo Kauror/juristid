@@ -759,7 +759,6 @@ def broad_desk(specialist):
         "Oktoober algab sel nädalal",
         "III kvartal lõpeb sel nädalal",
         "Aasta",
-        "Jälgi septembris",
     ],
 )
 def test_a_broad_period_is_never_this_weeks(broad_desk, title):
@@ -773,7 +772,16 @@ def test_a_broad_period_is_never_this_weeks(broad_desk, title):
 def test_an_exact_day_this_week_is_still_this_weeks(broad_desk):
     work = build_my_work(broad_desk, today=TODAY)
 
-    assert _band_texts(work, wi.BAND_WEEK) == ["Täpne sel nädalal"]
+    assert "Täpne sel nädalal" in _band_texts(work, wi.BAND_WEEK)
+
+
+def test_a_review_whose_period_has_begun_is_this_weeks(broad_desk):
+    """The one exception to the rule above: a review that has come round is due
+    now, whatever its precision (owner's decision of 2026-10-29, docs/adr/0195).
+    Ripe, never late — and in the band the strip's week figure counts."""
+    work = build_my_work(broad_desk, today=TODAY)
+
+    assert _band_texts(work, wi.BAND_WEEK) == ["Jälgi septembris", "Täpne sel nädalal"]
 
 
 def test_a_broad_period_keeps_its_words(broad_desk):
@@ -801,7 +809,7 @@ def test_every_count_on_the_page_is_its_rows(signed_in, broad_desk):
     for band in work.bands:
         assert band.count == len(band.preview) + len(band.rest) == len(band.items)
     bands = {band.key: band for band in work.bands}
-    assert figures["week"] == bands[wi.BAND_WEEK].total == 1
+    assert figures["week"] == bands[wi.BAND_WEEK].total == 2
     assert figures["overdue"] == (bands[wi.BAND_OVERDUE].total if wi.BAND_OVERDUE in bands else 0)
 
 

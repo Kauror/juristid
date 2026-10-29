@@ -24,7 +24,7 @@ What counts
 -----------
 **The selection is `app.matters.activity`'s, not the audit log's.** The same
 record types *Viimane tegevus* reads, scoped and filtered by the very querysets
-it builds (`activity._work_sources`), each on its own business date — so this
+it builds (`activity.work_sources`), each on its own business date — so this
 list cannot call something work that the register column does not, and an
 administrative write (a title edit, an owner change, a document upload) or a
 machine write (an import, an enrichment, a step an importer set) is no more an
@@ -46,9 +46,10 @@ record with no operation stands alone, as it does in `Teema käik`. A step
 change the system made on a person's behalf — the follow-up check a send
 schedules, a check put back on the plan, a step a closure ended — is the
 consequence of another row, not an act of its own, and is left out on the
-same markers Osakond's *Muudatused* reads (`department_changes._automatic_q`,
-`_closure_q`). A replaced step's ``SUPERSEDED`` end is the replacement's
-«muudetud», never a row of its own.
+same markers Osakond's *Muudatused* reads, which the workflow services write
+and `app.workflow.step_markers` names (`system_step_change_q`). A replaced
+step's ``SUPERSEDED`` end is the replacement's «muudetud», never a row of its
+own.
 
 Who did it
 ----------
@@ -91,12 +92,12 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date, start_of_local_day
 from app.matters import work_items as wi
-from app.matters.activity import BASIS_LABELS, ActivityBasis, _work_sources
-from app.matters.department_changes import _automatic_q, _closure_q
+from app.matters.activity import BASIS_LABELS, ActivityBasis, work_sources
 from app.matters.models import Matter
 from app.matters.timeline import DAY_DATED_ENTRY_KINDS
 from app.workflow.dates import format_at_precision, is_approximate
 from app.workflow.enums import ActionStatus, DatePrecision
+from app.workflow.step_markers import system_step_change_q
 
 #: How many rows are on screen before the rest go behind «Näita veel N ▾».
 FEED_VISIBLE = 10
@@ -253,7 +254,7 @@ def when_label(fact_day: date, *, today: date, moment: datetime | None, precisio
 
 def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
     """Every source, each capped and newest first. One query per source."""
-    sources = _work_sources(user, today)
+    sources = work_sources(user, today)
     visible = wi.full_matters(user)
     owned = visible.filter(owner=subject).values("pk")
     tomorrow = start_of_local_day(today + timedelta(days=1))
@@ -536,7 +537,7 @@ def _event_facts(facts: list[_Fact]) -> dict[tuple[str, Any], _EventFacts]:
         )
         .annotate(
             is_automatic=Case(
-                When(_automatic_q() | _closure_q(), then=Value(True)),
+                When(system_step_change_q(), then=Value(True)),
                 default=Value(False),
                 output_field=BooleanField(),
             )

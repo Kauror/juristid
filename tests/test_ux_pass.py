@@ -247,7 +247,7 @@ def test_a_deadline_past_the_month_is_on_the_page_rather_than_nowhere(
     groups = dep.build_department(department_head, is_head=True, today=today).upcoming
     far = next(group for group in groups if group.is_far)
     assert far.count == 1
-    assert far.preview[0].matter.title == "Ehitusseadustiku muutmise seaduse eelnõu"
+    assert far.items[0].matter.title == "Ehitusseadustiku muutmise seaduse eelnõu"
 
     client.force_login(department_head)
     body = client.get(reverse("matters:department") + "?vaade=osakond").content.decode()

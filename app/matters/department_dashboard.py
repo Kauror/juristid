@@ -74,7 +74,7 @@ from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -84,10 +84,10 @@ from app.core.dates import (
     DateReading,
     end_of_month,
     format_estonian_date,
+    local_day_range,
     read_flexible_date,
     short_day_month,
     short_range,
-    start_of_local_day,
     weekday_name,
 )
 from app.intelligence.enums import WorkVictoryStatus
@@ -102,11 +102,12 @@ from app.matters.dashboard import (
 from app.matters.enums import RecordMode
 from app.matters.models import Entry, Matter
 from app.matters.register_filters import (
+    OPEN_FULL,
     OPINION_DRAFTING,
-    RESULTS_ANCHOR,
     VICTORY_PARAM,
     WORK_PARAM,
     register_population,
+    register_url,
 )
 from app.matters.seis_help import (
     DEPT_DRAFTING_HELP,
@@ -120,8 +121,9 @@ from app.matters.seis_help import (
     dept_unreviewed_help,
 )
 from app.matters.selectors import MISSING
-from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionStatus
+from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
+from app.submissions.workspace import OPINIONS_ONLY, OPINIONS_ONLY_PARAM, reportable_opinions
 
 #: How far back "recently arrived" reaches. A fortnight, because a department
 #: review is a fortnightly conversation.
@@ -134,23 +136,9 @@ INCOMING_WINDOW_DAYS = 14
 OUTSIDE_DEPARTMENT_NAME = "Väljaspool osakonda"
 
 
-def register_url(**params: Any) -> str:
-    """A link into Teemad with filters already applied, landing on the rows.
-
-    Only parameters the register actually supports today. Every number that
-    links to a list is a promise that the list behind it holds exactly those
-    rows, and the promise is kept by reusing the register's own query
-    parameters rather than inventing a parallel query language beside Stage
-    2E.1's (Stage-2F brief 35).
-    """
-    query = "&".join(f"{key}={value}" for key, value in params.items() if value)
-    base = reverse("matters:matter_list")
-    return f"{base}?{query}{RESULTS_ANCHOR}" if query else f"{base}{RESULTS_ANCHOR}"
-
-
 def _open_full() -> dict[str, Any]:
-    """The register filters that mean "open FULL", as the list understands them."""
-    return {"olek": "avatud", "liik": RecordMode.FULL.value}
+    """The register filters that mean "open FULL" (`register_filters.OPEN_FULL`)."""
+    return dict(OPEN_FULL)
 
 
 def _by_owner(queryset: QuerySet[Matter]) -> dict[Any, int]:
@@ -276,22 +264,6 @@ def _drafting_params() -> dict[str, Any]:
     return {**_open_full(), "arvamus": OPINION_DRAFTING}
 
 
-def local_day_range(field: str, first: date, last: date | None = None) -> Q:
-    """``field`` falls on a Europe/Tallinn day from ``first`` to ``last``, both included.
-
-    The same rows as ``{field}__date__gte=first`` and ``{field}__date__lte=last``,
-    written as a half-open range on the timestamp itself: at or after the first
-    local moment of ``first``, and before the first local moment of the day after
-    ``last`` (`app.core.dates.start_of_local_day`). The ``__date`` spelling casts
-    every row to a local date before comparing, so no index on the column can
-    answer it (2026-10-17 audit, JPERF-005).
-    """
-    condition = Q(**{f"{field}__gte": start_of_local_day(first)})
-    if last is not None:
-        condition &= Q(**{f"{field}__lt": start_of_local_day(last + timedelta(days=1))})
-    return condition
-
-
 def sent_submissions(user: Any, *, since: date, until: date | None = None) -> QuerySet[Submission]:
     """Opinions Koda actually sent inside a window, for this reader.
 
@@ -303,11 +275,12 @@ def sent_submissions(user: Any, *, since: date, until: date | None = None) -> Qu
     or three hours ahead of UTC, so a letter sent at half past midnight belongs
     to the day the sender was living in.
     """
-    queryset = (
-        Submission.objects.visible_to(user)
-        .filter(status=SubmissionStatus.SENT, sent_at__isnull=False)
-        # Opinions: an official «no comments» answer is not one (docs/adr/0174).
-        .exclude(kind__in=NOT_AN_OPINION_KINDS)
+    # Opinions: an official «no comments» answer is not one (docs/adr/0174),
+    # by the exclusion the list behind «Saadetud arvamusi» applies too.
+    queryset = reportable_opinions(
+        Submission.objects.visible_to(user).filter(
+            status=SubmissionStatus.SENT, sent_at__isnull=False
+        )
     )
     # As a range on the timestamp (`local_day_range`), which is the same local
     # dates and which the `sent_at` index can answer (2026-10-17 audit, JPERF-005).
@@ -850,7 +823,6 @@ class UpcomingGroup:
     items: list[wi.WorkItem]
     starts: date
     ends: date | None
-    shown: int
 
     @property
     def count(self) -> int:
@@ -873,26 +845,6 @@ class UpcomingGroup:
         honest count for `url`, and the pair the window's own tests hold apart.
         """
         return len({item.matter_id for item in self.items})
-
-    @property
-    def preview(self) -> list[wi.WorkItem]:
-        """The head of the window, and no longer what *Eesolev* renders.
-
-        The panel showed `preview` and put `rest` behind a «Näita veel N»
-        disclosure inside the group. The group is itself a disclosure now and
-        owns every row, so the template reads `items`: opening «kõik N» that
-        revealed some of N would be the same lie the old count was.
-        """
-        return self.items[: self.shown]
-
-    @property
-    def rest(self) -> list[wi.WorkItem]:
-        """The tail `preview` leaves. Unrendered, for the same reason."""
-        return self.items[self.shown :]
-
-    @property
-    def remaining(self) -> int:
-        return max(0, self.count - self.shown)
 
     @property
     def rendered(self) -> list[wi.WorkItem]:
@@ -971,13 +923,6 @@ class UpcomingGroup:
         return register_url(**params)
 
 
-#: Where `preview` cuts a group, for the two windows that carry a cut at all.
-#: *Eesolev* does not render the cut any more — every window is one disclosure
-#: and opening it shows the whole window — so this now describes the read model
-#: alone. Five is what the three-window panel of docs/adr/0046 also showed; that
-#: panel and its own constant are gone, and this is the only one left.
-UPCOMING_PREVIEW = 5
-
 #: How many rows one *Eesolev* window draws when opened (`UpcomingGroup.rendered`).
 #: A hundred deadlines in one window is beyond any working department's week;
 #: the cap exists for the scale where every open file has a date ahead, and the
@@ -1051,19 +996,6 @@ def upcoming_windows(today: date) -> tuple[tuple[str, str, date, date | None], .
     )
 
 
-#: Where each window's `preview` cuts. `None` means "all of them", and the panel
-#: renders all of them either way: *Eesolev*'s windows are disclosures now and
-#: none of them slices.
-_UPCOMING_SHOWN: dict[str, int | None] = {
-    "tana": None,
-    "homme": None,
-    "nadala_lopp": None,
-    "nadal": None,
-    "kuu": UPCOMING_PREVIEW,
-    "kaugemal": UPCOMING_PREVIEW,
-}
-
-
 def upcoming_groups(
     user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
 ) -> list[UpcomingGroup]:
@@ -1099,17 +1031,7 @@ def upcoming_groups(
         window = wi.work_population_items(
             deadlines, wi.WORK_DEADLINE_WINDOW, today, window=(starts, ends)
         )
-        shown = _UPCOMING_SHOWN[key]
-        groups.append(
-            UpcomingGroup(
-                key=key,
-                label=label,
-                items=window,
-                starts=starts,
-                ends=ends,
-                shown=len(window) if shown is None else shown,
-            )
-        )
+        groups.append(UpcomingGroup(key=key, label=label, items=window, starts=starts, ends=ends))
     return groups
 
 
@@ -1461,7 +1383,7 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
             is_open=False,
             record_mode=RecordMode.FULL,
         )
-        .select_related("owner")
+        .select_related("owner", "closed_by")
         .order_by("-closed_at")[:DIGEST_LIMIT]
     )
     victories = list(
@@ -1516,7 +1438,11 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
             )
         )
     for matter in closed:
-        initials, name = person(matter.owner)
+        # Whoever closed it (`close_matter` writes `closed_by`), as Viimased
+        # tegevused and Muudatused say; the owner only when the closure names
+        # nobody — an imported or cut-over closure — as for a send without
+        # `sent_by` above (2026-10-28 audit, B-03).
+        initials, name = person(matter.closed_by or matter.owner)
         rows.append(
             DigestRow(
                 when=timezone.localtime(matter.closed_at).date(),
@@ -1576,7 +1502,11 @@ class RailRow:
 
 
 def incoming_rail(
-    user: Any, today: date | None = None, *, items: list[Any] | None = None
+    user: Any,
+    today: date | None = None,
+    *,
+    items: list[Any] | None = None,
+    unreviewed_count: int | None = None,
 ) -> list[RailRow]:
     """*Uued teemad* — what has arrived, and what has been left alone.
 
@@ -1593,6 +1523,10 @@ def incoming_rail(
     The wording is the handoff's and is not negotiable: «Muutusteta 30 p», never
     «seisma jäänud» — a file nobody has touched for a month is a fact, and the
     other phrase is a judgement about the person carrying it.
+
+    ``unreviewed_count`` is the strip's «uut läbi vaatamata», for a page that has
+    already counted it (`seis_figures`): the same parameters for the same reader
+    on the same day, so the page asks once (2026-10-28 audit, D-03).
     """
     today = today or timezone.localdate()
     population = Matter.objects.visible_to(user)
@@ -1610,7 +1544,12 @@ def incoming_rail(
 
     return [
         RailRow("Uut sel nädalal", count(arrived), register_url(**arrived)),
-        RailRow("Uut läbi vaatamata", count(unreviewed), register_url(**unreviewed), "warning"),
+        RailRow(
+            "Uut läbi vaatamata",
+            count(unreviewed) if unreviewed_count is None else unreviewed_count,
+            register_url(**unreviewed),
+            "warning",
+        ),
         RailRow(f"Muutusteta {wi.QUIET_DAYS} p", count(quiet), register_url(**quiet)),
     ]
 
@@ -1629,7 +1568,10 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
 
     «Saadetud arvamusi» is the same population as the team table's `ARVAMUSI
     VÄLJA · <aasta>` Kokku cell, from the same window, and that equality is
-    asserted rather than assumed (`tests/test_department_page.py`).
+    asserted rather than assumed (`tests/test_department_page.py`). Its link
+    carries ``?ainult=arvamused``, so the list it opens leaves out the «no
+    comments» answers the figure leaves out (`workspace.reportable_opinions`,
+    2026-10-28 audit B-04; `tests/test_sent_opinion_drill_through.py`).
     """
     today = today or timezone.localdate()
     year = today.year
@@ -1642,7 +1584,7 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
         RailRow(
             "Saadetud arvamusi",
             sent_submissions(user, since=start, until=end).count(),
-            f"{reverse('submissions:sent')}?aasta={year}",
+            f"{reverse('submissions:sent')}?aasta={year}&{OPINIONS_ONLY_PARAM}={OPINIONS_ONLY}",
         ),
         RailRow(
             "Teemasid töövõiduga",

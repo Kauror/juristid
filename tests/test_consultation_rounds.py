@@ -724,7 +724,13 @@ def _surfaces(viewer: Any, matter: Matter) -> dict[str, Any]:
             item.is_overdue for item in mine if item.source_type == wi.SOURCE_RESPONSE_DEADLINE
         ],
         "overdue_items": len([i for i in wi.overdue_items(items) if i.matter_id == matter.pk]),
-        "week_items": len([i for i in wi.week_items(items, today) if i.matter_id == matter.pk]),
+        "week_items": len(
+            [
+                i
+                for i in items
+                if i.in_window(today, wi.end_of_iso_week(today)) and i.matter_id == matter.pk
+            ]
+        ),
         "header_overdue": header.is_overdue if header else None,
         "header_owed": header.is_active if header else None,
         "mcp_overdue": snapshot["is_overdue"] if snapshot else None,

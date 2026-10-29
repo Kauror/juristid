@@ -64,11 +64,6 @@ def requested_row(request: HttpRequest) -> str:
     return value if _ROW_KEY.match(value) else ""
 
 
-def row_anchor(key: str) -> str:
-    """The id of a row's line, which the link's fragment names."""
-    return f"kaik-{key}-rida"
-
-
 def locate_row(
     *,
     matter: Any,
