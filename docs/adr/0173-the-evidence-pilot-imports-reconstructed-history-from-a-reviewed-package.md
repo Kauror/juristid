@@ -1,8 +1,8 @@
 # 0173 — The evidence pilot imports reconstructed history from a reviewed package
 
-**Status:** proposed (2026-10-19) — built and tested on synthetic data; not merged,
-not run against any shared or production database. Running it is a separate,
-owner-authorised operation.
+**Status:** proposed (2026-10-19) — built and tested on synthetic data; merged on
+2026-10-20 (#501, released with #500–#504) and run against production once, by the
+owner's separate authorisation, the same day (see the status update at the end).
 **Date:** 2026-10-19
 
 The owner's twelve-topic brief of 2026-10-19. The hosted test-build is to be
@@ -182,7 +182,7 @@ occurred in the reviewed package:
 
 A refused apply rolls back every row but can leave stored files with no
 document; the runbook prunes them (`prune_orphaned_evidence`) after any failure. The migration is still the one additive `legacy_import/0017`
-(unmerged, regenerated).
+(regenerated before the merge; merged 2026-10-20).
 
 ## 7. Amendment — reviewed step kinds and organisation continuity (2026-10-20)
 
@@ -226,7 +226,7 @@ WAIT does not take the 04.11 `Arvamuse tähtaeg` off the work lists.
 Nothing is renamed, merged or re-addressed. A 2021 letter to
 «Justiitsministeerium» keeps that addressee. Each alias and each link gets its
 own provenance row (`ORGANISATION_ALIAS`, `ORGANISATION_RELATIONSHIP`), and the
-row's check constraint (still the unmerged `legacy_import/0017`) allows both
+row's check constraint (`legacy_import/0017`, merged 2026-10-20) allows both
 without a Teema. `verify` reads both back.
 
 **Search learns the link, not a new name.** `continuity_names` (one hop each
@@ -249,3 +249,25 @@ The v2.3 package uses this for:
   history: the evidence pilot is the second.
 - The future replacement of the hosted dataset follows 0148's reset discipline
   (backup set, old database kept, fingerprint), and is out of scope here.
+
+## Status update 2026-10-29 — merged, applied once, gated
+
+This section records what happened after the decision; it does not amend the
+decision, and its status is unchanged (no formal acceptance was recorded).
+
+- **Merged** 2026-10-20 in #501 (`b2850d6f` added this record; merge `a821c4e3`),
+  with the additive migration `legacy_import/0017_evidence_pilot_record.py` (and
+  `0018`) now on `main`.
+- **Deployed** as production release `f0795fe5` (2026-10-20 15:36 UTC, #500–#504);
+  the four migrations of that release, `legacy_import/0017` among them, were
+  applied there. Backup set `sets/20261020T153421Z` before the swap.
+- **Run once** on production the same day, by the owner's explicit decision: the
+  reviewed v2.3 twelve-topic package was applied and `verify` passed; the earlier
+  pilot world was kept as a separate database and backup set.
+- **Now**: the operation is complete. `evidence_pilot` and its gate
+  (`EVIDENCE_PILOT_ENABLED`, from `JURISTID_EVIDENCE_PILOT`, together with
+  `REAL_DATA_ALLOWED`, the intent, digest, backup-set and empty-database checks)
+  remain in the code, and the flag stays unset in every deploy file — the command
+  refuses without it. Keeping or removing the command is an owner decision
+  (audit 2026-10-28, F-12: kept).
+

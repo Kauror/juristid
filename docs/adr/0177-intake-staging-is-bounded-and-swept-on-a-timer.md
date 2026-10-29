@@ -82,3 +82,11 @@ volume lives in Docker's own storage, shared by every container.
   covers both.
 - Reversible: the limits are settings, and stopping the service returns to the
   manual command.
+
+## Status update 2026-10-29 — merged and deployed
+
+This section records what happened after the decision; it does not amend the decision, and the status is unchanged (no formal acceptance was recorded).
+
+- **Merged** in the security remediation integration (merge `9a2e834a, #514 = #506–#513, 2026-10-22`; #512 added the `intake-sweeper` service).
+- **Deployed** to production as `1270ca01` (2026-10-23, the release of #521, which carried the security baseline merged before it).
+- **Activated**: the `intake-sweeper` service is defined in `deploy/unraid-main/compose.yml`; it is recorded among the application services moved by release r24 (`216d71ae`, 2026-10-24) at the latest.

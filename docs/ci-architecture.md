@@ -10,7 +10,7 @@ pull request that is a **draft** runs the **FAST** tier instead:
 
 | | FAST (draft PR) | FULL (ready PR, `ready_for_review`, any `workflow_dispatch`) |
 | --- | --- | --- |
-| Jobs | `Format, lint, types and system checks`, `Focused tests (FAST tier)`, `Does the draft touch the UI`; plus `Visual regression` when it does | `Preflight`, then everything in this document |
+| Jobs | `Format, lint, types and system checks`, `Focused tests (FAST tier)`, `Does the draft touch the UI (FAST tier)`; plus `Visual regression` when it does | `Preflight`, then everything in this document |
 | Wall clock | ~3 min; ~4–5 min when the draft touches the UI | ~9–10 min |
 | Runner-minutes | ~4.5; ~9 when the draft touches the UI | ~122 + ~1 for the preflight |
 | Merge or release evidence | **never** | yes — the only evidence there is |
@@ -52,9 +52,25 @@ changed, and the changed `tests/**/test_*.py` files, within a 240 s budget
 a convenience for the author: not required, not read by any gate, imported by
 nothing in FULL. The behavioural browser shards run only in FULL.
 
-**The visual job on a UI draft.** When a draft changes `templates/`, `static/`
-or `e2e/` (`ci_focused_selection.touches_ui`, decided by the ten-second
-`changes` job on the bare runner), FAST also runs `Visual regression` — the
+Since 2026-10-29 (audit E-01) a changed test file that `ci/shard-timings.json`
+does not hold — every file a new feature adds — is priced from its own size:
+its tests are counted from the source (test functions, `Test*` classes, literal
+parametrisation) and multiplied by its directory's measured per-test rate,
+rather than priced as the median file (~3 s), which had let a 70-test module
+look as cheap as a four-test one. The summary labels each such file
+`[unmeasured: N test(s) counted, priced per test]`, or `… priced as the median
+file` when its source could not be read. And the job installs the OCR runtime
+only when the selection holds more than the database-free contract and CI tests
+(`--services-output`, audit 7.3(2)); the PostgreSQL service is a job-level
+container and still starts — making it conditional would mean restructuring the
+job into two, which was judged not worth ~20 s per draft push.
+
+**The visual job on a UI draft.** When a draft changes `templates/`, `static/`,
+`e2e/`, any app's `templatetags/`, `app/core/widgets.py`, `app/core/dates.py`,
+`app/core/context_processors.py`, `app/core/release_notes.py` or
+`docs/release-notes/` — the Python that writes markup or the dates on it counts
+since 2026-10-29 (audit E-04) — (`ci_focused_selection.touches_ui`, decided by
+the ten-second `changes` job on the bare runner), FAST also runs `Visual regression` — the
 same job, same world, same artifact (`test-report-visual`) as in FULL. A draft
 that moves a baseline learns it, and gets the candidates, without a FULL round;
 in the 26–27 Oct history 7 of 18 red FULL runs were visual-only. On a draft no
@@ -219,6 +235,34 @@ first, and only then consider the split. Three things are worth knowing:
   `artifacts/browser-11/…`). If both shards on a runner fail at once on
   connection errors, read for «crash of another server process» before reading
   the tests.
+
+## Browser-suite determinism rules (2026-10-29)
+
+Three rules the browser suite holds itself to, each checked without a browser
+by `tests/test_e2e_contracts.py`, which is in the focused job's always-run set:
+
+* **Every sign-in starts from the registered block defaults.** Remembered blocks
+  (docs/adr/0194) are stored per persona on the server and the personas are
+  shared by a shard, so a test used to begin from whatever earlier tests in its
+  shard left — and which tests those are changes whenever this table or the
+  file set rebalances the shards (FULL run 40686621037, audit E-03).
+  `e2e/conftest.py::sign_in` now posts to the product's own reset endpoint for
+  the signed-in persona (`reset_disclosures`), drops the flash message it
+  stores, and redraws the landing page only if one of its blocks is off its
+  default. `e2e/test_remembered_block_isolation.py` is the regression: one test
+  closes a block and proves it persisted, the next (same persona) starts at the
+  default, in either order.
+* **No bare summary click on a remembered block.** A click toggles from a state
+  the test did not choose; ask for the state with `open_disclosure` /
+  `close_disclosure`, or use `toggle_disclosure` where the toggle is the
+  subject. The contract reads the hooks from the templates.
+* **No new fixed sleeps.** `wait_for_timeout` and `time.sleep` are counted per
+  file (`INTENTIONAL_SLEEPS`); wait for a condition instead (`expect`,
+  `wait_for_htmx`, `await_post`, `page.wait_for_function`).
+
+`tests/conftest.py` offers an opt-in `today` fixture for the PostgreSQL suite: a
+fixed Wednesday to pass to code that takes `today=` explicitly, re-chosen with
+indirect parametrisation. Nothing is frozen globally (audit E-05).
 
 ## Visual regression runs in its own world
 
@@ -515,6 +559,21 @@ tested-tree record to say `tier full`. A draft's FAST run fails both conditions
 independently, so it can never stand in for a FULL run. A record with no tier
 line (a run from before the tiers) is refused; main-proof then dispatches FULL
 on main, which is safe and costs one run.
+
+**A FULL run dispatched by hand on a branch is not reused** (audit 2026-10-28,
+E-08). `gh workflow run ci.yml --ref <branch>` runs FULL on the branch head and
+reports the six required names there, so it can satisfy branch protection for
+that head. But proof (b) reads only the pull request's own `pull_request` runs
+(`pull_request_runs` in `scripts/ci/assert_release_provenance.py`), so after the
+merge `main-proof.yml` finds no FULL `pull_request` run for the merge's tree and
+dispatches FULL once more on main: two FULL rounds for one change. Accepting
+dispatched runs in proof (b) was considered and not done: it would widen the
+release gate's evidence to a second event type with its own head and tree
+rules, for a saving that the normal workflow already gets. The efficient path
+is the one in AGENTS.md: iterate on a draft, then `gh pr ready` once — that
+`ready_for_review` run is a `pull_request` run, and main-proof accepts it
+without dispatching anything. Reserve a manual dispatch for a branch with no
+pull request, or for re-proving main itself.
 
 ## What was measured, when it was split (2026-08-30)
 

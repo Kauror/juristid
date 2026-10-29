@@ -44,9 +44,10 @@ More than 180 decisions, each with its status, context, alternatives and
 consequences. A hand-maintained prose list of stages is a thing that goes stale
 between releases; the ADR index is written as part of the change it describes.
 
-**The phase is pre-QA, behind the shared gate.** Every ADR from 0040 onward
-records it that way, and it is what `AUTH_MODE=shared_gate` means on the
-real-data instance: one department password, then a persona
+**The real-data instance is in departmental use behind the shared gate; the
+Secure Pilot Gate (specification §5.3) is not signed off.** Production runs on
+the Unraid host behind a Cloudflare tunnel (below), with `AUTH_MODE=shared_gate`:
+one department password, then a persona
 ([ADR 0016](docs/adr/0016-authentication-modes-and-the-shared-gate.md)). The
 step after it is personal sign-in — `AUTH_MODE=local_password`, a personal
 password and a second factor, with account administration under Haldus →
@@ -68,13 +69,20 @@ the write path is deployed and its gateway switched on, but no grant holds the
 write scope and no write has ever been made through it
 ([ADR 0189](docs/adr/0189-mcp-writes-are-prepared-approved-in-juristid-and-committed-by-a-separate-gateway.md)).
 Both as verified on 25.10.2026; the ADRs' dated status updates are the record.
+By the owner's decision of 2026-10-29 production is to run MCP write approvals
+with `MCP_WRITE_REVERIFY_SECONDS=0`, so every write approval asks for its own
+fresh authenticator confirmation; the code default (300 seconds) is unchanged,
+and the setting is applied on the host by the operator, not by this repository.
 
 [`docs/production-readiness.md`](docs/production-readiness.md) is the gate
 sequence for anything that changes production.
 
 **What the running build calls itself is a label, not a gate.**
 `APPLICATION_STAGE` defaults to `Stage 2I` in `config/settings.py` and is what
-the footer of every page, the signed-out landing and `/healthz` report. A
+Haldus → Rakendus, the signed-out landing page and `/healthz` report. Since the
+owner's brief of 2026-10-28 the footer of a page carries only the organisation
+and the build time (linking to Uuendused); the stage, environment and revision
+moved to Haldus → Rakendus (`templates/base.html`, `templates/haldus/index.html`). A
 deployment does not pin it: a stage copied into a `.env` is a stage that goes
 stale where nobody looks, which is why
 [`deploy/unraid-main/.env.example`](deploy/unraid-main/.env.example) deliberately
@@ -101,14 +109,44 @@ material is ignored.
 
 **Deliberately unbuilt.** `Kaasamine` exists and is deliberately small: which
 channel, what it was called, an optional link and an optional date. It is a
-pointer to outreach, not a campaign tool — no recipient list, no response store,
-no click tracking, no provider integration, because the Chamber already buys
-that product and a worse copy inside the case file would bury the one fact the
-file needs ([ADR 0027](docs/adr/0027-matter-engagement.md)). **Structured member
-responses are the part that is not built**, and that ADR is why. Later still:
+pointer to outreach, not a campaign tool — no recipient list, no click tracking,
+no provider integration, because the Chamber already buys that product and a
+worse copy inside the case file would bury the one fact the file needs
+([ADR 0027](docs/adr/0027-matter-engagement.md)). The answers it brings back
+*are* recorded: every `Lisa tagasiside` reply is its own `MatterExternalPosition`
+row tied to its round, with its date, files and audit events, and a later answer
+to a finished round stays attached to it (`app/matters/engagement_replies.py`,
+[ADR 0167](docs/adr/0167-a-kaasamine-takes-later-answers-and-a-received-answer-keeps-its-source.md) §2,
+[ADR 0170](docs/adr/0170-lisa-tagasiside-is-the-one-door-for-every-position.md)).
+What is not built is a campaign's recipient list and delivery tracking. Later still:
 EIS and Riigikogu integration, advocacy outcomes and attribution, and anything
 involving embeddings, semantic search or AI summarisation. Each is authorized by
 its own written brief; nothing is built ahead of one.
+
+**Kept, but not active.** Three kinds of code are in the repository on purpose
+and do nothing in production:
+
+- *Uus teema suggestions* (`app/matters/intake_suggestions/`, behind
+  `MATTER_INTAKE_SUGGESTIONS_ENABLED`, default off and off in every deploy
+  file) are **dormant**: kept by the owner's decision of 2026-10-29, not
+  activated; `Uus teema` is manual-first
+  ([ADR 0088](docs/adr/0088-uus-teema-is-manual-first.md)). Switching them on
+  is a separate product decision.
+- *The one-off import pilots* — `excel_pilot_2026` (2026-10-09, [ADR 0148](docs/adr/0148-the-2026-excel-pilot-imports-a-reviewed-sample-as-native-work.md)),
+  `evidence_pilot` (2026-10-20, [ADR 0173](docs/adr/0173-the-evidence-pilot-imports-reconstructed-history-from-a-reviewed-package.md))
+  and `lovable_pilot` (2026-10-27, [ADR 0191](docs/adr/0191-the-lovable-pilot-adds-reviewed-current-teemad-beside-existing-ones.md))
+  — **completed**. The commands stay, and each refuses to run unless its own
+  flag is set (`JURISTID_EXCEL_PILOT`, `JURISTID_EVIDENCE_PILOT`,
+  `JURISTID_LOVABLE_PILOT`, read as `EXCEL_PILOT_ENABLED`,
+  `EVIDENCE_PILOT_ENABLED`, `LOVABLE_PILOT_ENABLED`); those flags must stay
+  unset. They are unrelated to the **live** Lovable nightly synchronisation,
+  which is controlled by `JURISTID_LOVABLE_SYNC` and its database control row
+  and runs in COMPARE mode only; APPLY is not authorised
+  ([ADR 0192](docs/adr/0192-the-lovable-pilot-teemad-follow-lovable-nightly-one-way.md)).
+- *The browser suite's note test door* (`ADD_NOTE_TEST_DOOR_ENABLED`, which
+  follows `DEV_LOGIN_ENABLED`) is safe as built: the view refuses whenever
+  `REAL_DATA_ALLOWED` is on, and production sets neither development flag
+  ([ADR 0143](docs/adr/0143-one-current-action-and-dated-planned-actions.md), amendment of 2026-10-17).
 
 [`docs/open-decisions.md`](docs/open-decisions.md) lists what still belongs to
 named people rather than to the code. `/haldus/arendus/` in the running

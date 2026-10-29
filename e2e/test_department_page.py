@@ -37,10 +37,12 @@ from e2e.conftest import (
     MARTIN,
     READER,
     SANDRA,
+    close_disclosure,
     create_matter,
     go_to,
     sign_in,
     sign_out,
+    toggle_disclosure,
     unique_title,
 )
 from e2e.legacy_opinions import leave_a_draft
@@ -640,37 +642,31 @@ def test_an_upcoming_window_opens_its_own_rows_on_the_page(page, base_url):
 
     for index in range(windows.count()):
         window = windows.nth(index)
-        summary = window.locator("summary.uxdl__head")
-        promised = int(summary.locator(".uxdl__all").inner_text().split()[1])
+        promised = int(window.locator("summary.uxdl__head .uxdl__all").inner_text().split()[1])
         rows = window.locator(".uxdl__row")
 
-        # As remembered on arrival, and the rows are served with the page
-        # rather than fetched: they are in the DOM either way.
+        # As remembered on arrival — which, since every sign-in resets the
+        # persona (e2e/conftest.py), is the registered default — and the rows
+        # are served with the page rather than fetched: in the DOM either way.
         saved = window.get_attribute("data-disclosure-saved") == "1"
         assert window.evaluate("element => element.open") is saved, f"window {index}"
         assert rows.count() == promised, (
             f"window {index} counts {promised} and holds {rows.count()}"
         )
-        if saved:
-            # Shut it first, so the opening below is the click's doing.
-            summary.click()
+        # Shut first, so the opening below is the click's doing.
+        close_disclosure(window)
         expect(rows.first).to_be_hidden()
 
         was = page.url
-        summary.click()
+        assert toggle_disclosure(window) is True
         assert page.url == was, "opening a window navigated away from the page"
-        assert window.evaluate("element => element.open")
         for row in range(promised):
             expect(rows.nth(row)).to_be_visible()
 
         # And it is a toggle, not a one-way reveal: «Näita veel N» disappeared
         # once opened, and this control has to be able to put the window back.
-        summary.click()
-        assert not window.evaluate("element => element.open")
+        assert toggle_disclosure(window) is False
         expect(rows.first).to_be_hidden()
-        if saved:
-            # Leave the reader's remembered state as it was found.
-            summary.click()
 
 
 def test_the_windows_open_independently_and_the_section_link_still_navigates(page, base_url):
@@ -689,14 +685,13 @@ def test_the_windows_open_independently_and_the_section_link_still_navigates(pag
         pytest.skip("the seeded world holds fewer than two upcoming windows today")
 
     before = [windows.nth(i).evaluate("element => element.open") for i in range(windows.count())]
-    windows.first.locator("summary.uxdl__head").click()
-    assert windows.first.evaluate("element => element.open") is not before[0]
+    assert toggle_disclosure(windows.first) is not before[0]
     for index in range(1, windows.count()):
         assert windows.nth(index).evaluate("element => element.open") is before[index], (
             f"toggling the first window toggled window {index} as well"
         )
     # Put the first one back as the reader had it (docs/adr/0194).
-    windows.first.locator("summary.uxdl__head").click()
+    toggle_disclosure(windows.first)
 
     section = page.locator('section[aria-label="Eesolev"]')
     expect(section.locator("summary a")).to_have_count(0)

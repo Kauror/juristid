@@ -283,8 +283,10 @@ def no_feature_fails_to_start(request):
 def sign_in(page, base_url: str, persona: Persona) -> None:
     """Sign in through the development login page.
 
-    Production uses Entra; this is the only synthetic path and it exists solely
-    so the browser suite can exercise real sessions.
+    Production signs in through the shared gate and a persona (docs/adr/0145);
+    this is the only synthetic path and it exists solely so the browser suite
+    can exercise real sessions. Every sign-in also resets the persona's
+    remembered blocks to their defaults (`reset_disclosures`).
     """
     page.goto(f"{base_url}/konto/arendus-sisselogimine/")
     page.get_by_label(persona.display_name, exact=False).check()
@@ -294,20 +296,129 @@ def sign_in(page, base_url: str, persona: Persona) -> None:
     # (app/core/views.py::home) — so this waits for where that decision leads
     # rather than repeating it.
     page.wait_for_url(f"{base_url}/minu-asjad/")
+    reset_disclosures(page, base_url)
+
+
+#: «Taasta plokkide vaikeseaded» (app/accounts/disclosure_views.py).
+DISCLOSURE_RESET_PATH = "/konto/plokid/taasta/"
+
+#: The remembered blocks on the page `sign_in` lands on (Minu asjad), with
+#: their registered defaults. Copied rather than imported, for the reason at
+#: the top of this file; `tests/test_e2e_contracts.py` holds it to
+#: `app.accounts.disclosures.DISCLOSURES` and to `templates/matters/my_work.html`.
+LANDING_DISCLOSURE_DEFAULTS: dict[str, bool] = {
+    "my_work.recent_activity": True,
+    "my_work.statistics": True,
+}
+
+
+def reset_disclosures(page, base_url: str) -> None:
+    """Forget every remembered block of the persona this page is signed in as.
+
+    Remembered blocks (docs/adr/0194) are stored per person on the server, and
+    the personas are shared by every test in a shard. Without this a test began
+    from whatever the tests before it in its shard left behind — and which
+    tests those are changes whenever `ci/shard-timings.json` or the file set
+    rebalances the shards, so a block left closed by one file failed an
+    unrelated one, and the failure came and went with commits that touched
+    neither (FULL run 40686621037, audit 2026-10-28 E-03).
+
+    So every sign-in starts from the registered defaults: `sign_in` calls this,
+    which makes the start of every test that signs in deterministic whatever
+    ran before it, in its own module or any other. It posts to the product's
+    own reset endpoint, exactly as the Haldus button does, for the signed-in
+    persona only — no other person's choices and no test-only door. The flash
+    message that endpoint stores for the next page is dropped, so no page a
+    test reads afterwards carries «Plokid avanevad jälle vaikimisi viisil».
+    """
+    token = page.locator('input[name="csrfmiddlewaretoken"]').first.input_value()
+    response = page.request.post(
+        f"{base_url}{DISCLOSURE_RESET_PATH}",
+        form={"csrfmiddlewaretoken": token, "next": "/minu-asjad/"},
+        headers={"X-CSRFToken": token, "Referer": page.url},
+        max_redirects=0,
+    )
+    assert response.status == 302, (
+        f"resetting the remembered blocks answered {response.status}, not the redirect "
+        f"the reset form receives: {response.text()[:200]}"
+    )
+    page.context.clear_cookies(name="messages")
+    # The page already open was drawn before the reset. Every other page is
+    # drawn after it; this one is redrawn only when one of its own remembered
+    # blocks shows a state other than its default — which costs nothing on the
+    # usual sign-in, where nobody had changed them.
+    drawn = page.eval_on_selector_all(
+        "details[data-disclosure]",
+        "blocks => blocks.map(b => [b.dataset.disclosure, b.dataset.disclosureSaved === '1'])",
+    )
+    if any(LANDING_DISCLOSURE_DEFAULTS.get(key) is not opened for key, opened in drawn):
+        page.reload()
+        page.wait_for_load_state("networkidle")
+
+
+def _summary_of(details):
+    return details.locator(":scope > summary")
 
 
 def open_disclosure(details) -> None:
     """Open a `<details>` whether or not it already is.
 
-    A remembered block (docs/adr/0194) opens as the persona last left it, and
-    the personas are shared by every test in a shard: a block one test opened
-    arrives open in the next, where a bare click on its summary would *close*
-    it and leave the test reading hidden text as empty. So a test that needs a
-    block open asks for that state rather than for a toggle.
+    A remembered block (docs/adr/0194) opens as the persona last left it. Every
+    sign-in resets the persona to the registered defaults (`reset_disclosures`),
+    but within one test a block may already be open — the default, or an
+    earlier step — and a bare click on its summary would then *close* it and
+    leave the test reading hidden text as empty. So a test that needs a block
+    open asks for that state rather than for a toggle; `tests/test_e2e_contracts.py`
+    refuses a bare `summary` click on a remembered block.
     """
     if details.get_attribute("open") is None:
-        details.locator(":scope > summary").click()
+        _summary_of(details).click()
     expect(details).to_have_attribute("open", "")
+
+
+def close_disclosure(details) -> None:
+    """Close a `<details>` whether or not it already is (see `open_disclosure`)."""
+    if details.get_attribute("open") is not None:
+        _summary_of(details).click()
+    expect(details).not_to_have_attribute("open", "")
+
+
+def toggle_disclosure(details) -> bool:
+    """Click a block's summary once, *as the subject of the test*, and say where it ended.
+
+    For the few tests whose point is the toggle itself — that a click opens
+    and closes the native `<details>`, that it does not navigate. Asserts the
+    state really flipped, so a test cannot mistake a click that landed on
+    nothing for a click that closed the block.
+    """
+    was_open = details.get_attribute("open") is not None
+    _summary_of(details).click()
+    if was_open:
+        expect(details).not_to_have_attribute("open", "")
+    else:
+        expect(details).to_have_attribute("open", "")
+    return not was_open
+
+
+def await_post(page, action, url_part: str = "", timeout: float = 15_000):
+    """Run `action` and wait until the POST it causes has been answered and swapped.
+
+    The condition-based replacement for «click Salvesta, then
+    `wait_for_timeout(800)`, then navigate»: that sleep was a guess at how long
+    the save takes, and on a loaded runner a guess that is short navigates away
+    before the write lands. This waits for the response to the POST whose URL
+    contains `url_part` (any POST when it is empty), and then for HTMX to finish applying it
+    (`wait_for_htmx`), so the next line reads the page the server answered
+    with. An autosave's debounce is included: the wait starts before the input
+    that schedules it.
+    """
+    with page.expect_response(
+        lambda response: response.request.method == "POST" and url_part in response.url,
+        timeout=timeout,
+    ) as answered:
+        action()
+    wait_for_htmx(page, timeout=timeout)
+    return answered.value
 
 
 def pass_the_gate(page, gate_base_url: str) -> None:

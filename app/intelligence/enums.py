@@ -119,16 +119,3 @@ INFORMATIONAL_IMPORTANT_DATE_KINDS: frozenset[str] = frozenset(
 def is_informational_milestone(kind: str | None) -> bool:
     """Whether an `Oluline tähtaeg` of this kind only informs (never a next step, never late)."""
     return (kind or ImportantDateKind.OTHER) in INFORMATIONAL_IMPORTANT_DATE_KINDS
-
-
-class EventKind(models.TextChoices):
-    """What a row in the combined *Olulised tähtajad* calendar came from.
-
-    The two sources stay visibly distinct. A commencement date is not a
-    milestone somebody chose to watch, and merging them into one unlabelled
-    list would lose the difference the department relies on
-    (Stage-2G brief 47, 48).
-    """
-
-    IMPORTANT_DATE = "IMPORTANT_DATE", "Tähtaeg"
-    EFFECTIVE_DATE = "EFFECTIVE_DATE", "Jõustumine"

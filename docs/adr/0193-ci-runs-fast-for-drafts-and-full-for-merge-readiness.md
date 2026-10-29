@@ -1,7 +1,7 @@
 # 0193 — CI runs FAST for drafts and FULL for merge readiness
 
 - Status: Proposed (owner's CI efficiency reform brief, phase 1, 2026-10-28;
-  PR #561, not merged; branch protection unchanged)
+  PR #561, merged 2026-10-28; branch protection unchanged)
 - Amends: the trigger and job conditions of `.github/workflows/ci.yml`; the
   release gate's proofs (ENG-015, `scripts/ci/assert_release_provenance.py`),
   which `main-proof.yml` imports
@@ -130,3 +130,24 @@ filtered away.
   completeness proof exists precisely to refuse a narrowed suite.
 - **Cancelling the run from the preflight.** No wall-clock penalty, but the run
   reads as `cancelled` — indistinguishable from a superseded run.
+
+## Status update 2026-10-29 — merged and in use
+
+This section records what happened after the decision; it does not amend it, and
+the status is unchanged (no formal acceptance was recorded).
+
+- **Merged**: #561 (merge `7a066621`, 2026-10-28 05:39 UTC) and the visual-job
+  amendment above as #562 (merge `580e508a`, 06:09 UTC).
+- **In use**: the tiers are CI configuration, not application code, so there is
+  no production release to name; they took effect for every pull request from
+  the merge. `main-proof.yml` dispatched one FULL run for `7a066621` and then
+  accepted the pull request's own FULL run as the proof for `580e508a` (#562) and
+  `fb37a5ea` (#563) without a dispatch (audit 2026-10-28, §7.1).
+- **Unchanged**: the six required checks, `strict` branch protection with
+  `enforce_admins`, the exact-tree merge verification and the `tier full`
+  requirement in the release gate.
+- **Known limitation**: a FULL run started by hand (`workflow_dispatch`) on a
+  pull-request branch is complete evidence for that head, but the main proof's
+  pull-request proof reads only `pull_request` runs, so it is not reused and the
+  merge costs a second FULL run on `main` (audit E-08; see AGENTS.md "CI tiers"
+  and docs/ci-architecture.md for the normal workflow).
