@@ -137,10 +137,14 @@ class OperationalMatterSnapshot(BaseModel):
     # amendment of 2026-10-30, owner's decision D4). Forward only: a row written
     # before these columns existed holds "" and NULL — its `is_overdue` NULL is
     # what says it predates them. Scoped on the way out like the facts above.
+    #: ``db_default`` as well as ``default``: the column is NOT NULL, and the
+    #: release still serving while 0003 is applied must be able to insert a
+    #: snapshot row without knowing it (app/core/deployment.py, AddField rule).
     next_action_date_precision = models.CharField(
         max_length=16,
         blank=True,
         default="",
+        db_default="",
         verbose_name="tegevuse kuupäeva täpsus",
     )
     next_action_responsible = models.ForeignKey(
