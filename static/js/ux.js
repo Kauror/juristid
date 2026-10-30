@@ -1980,10 +1980,16 @@
    *  - a pointer that rests on a day or a week opens its popover, and leaving
    *    closes it again unless the popover was opened by a click or holds
    *    focus — hover is a shortcut to what the click shows, never the only way;
-   *  - the quarter and year panel (`data-wcal-panel`) takes focus when it
-   *    arrives, keeps Tab inside itself, and Escape or a click on the backdrop
-   *    follows its own «Sulge» link, so closing is the same request as the
-   *    visible control (templates/matters/partials/work_calendar.html).
+   *  - the panel (`data-wcal-panel`) takes focus when it arrives, keeps Tab
+   *    inside itself, and Escape or a click on the backdrop follows its own
+   *    «Sulge» link, so closing is the same request as the visible control
+   *    (templates/matters/partials/work_calendar.html);
+   *  - inside the panel a click (or Enter, or Space) on a busy day lists that
+   *    day under the calendars (`data-wcal-daydetail`) instead of opening its
+   *    popover, and a second click on the same day folds the list away. Hover
+   *    still opens the popover. The list is a copy of the popover's entries
+   *    without «Nihuta kuupäeva», whose form ids must stay unique; that
+   *    control is still in the day's popover (owner's review of 2026-10-30).
    */
   function bindCalendar(scope) {
     var hoverable = window.matchMedia && window.matchMedia("(hover: hover)").matches;
@@ -2086,6 +2092,44 @@
           first.focus();
         }
       });
+      var detail = panel.querySelector("[data-wcal-daydetail]");
+      if (detail) {
+        panel.addEventListener("click", function (event) {
+          var summary = event.target.closest && event.target.closest("summary.wcal__daybtn");
+          if (!summary || !panel.contains(summary)) {
+            return;
+          }
+          var day = summary.parentElement;
+          var pop = day && day.querySelector(":scope > .wcal__pop");
+          if (!pop) {
+            return;
+          }
+          event.preventDefault();
+          day.removeAttribute("data-wcal-hovered");
+          day.open = false;
+          var again = day.classList.contains("is-selected") && !detail.hidden;
+          panel.querySelectorAll(".wcal__day.is-selected").forEach(function (node) {
+            node.classList.remove("is-selected");
+          });
+          detail.textContent = "";
+          if (again) {
+            detail.hidden = true;
+            return;
+          }
+          var copy = pop.cloneNode(true);
+          copy.querySelectorAll("details[data-dateshift]").forEach(function (node) {
+            node.remove();
+          });
+          while (copy.firstChild) {
+            detail.appendChild(copy.firstChild);
+          }
+          day.classList.add("is-selected");
+          detail.hidden = false;
+          if (detail.scrollIntoView) {
+            detail.scrollIntoView({ block: "nearest" });
+          }
+        });
+      }
       var title = panel.querySelector("#wcal-panel-title");
       if (title) {
         title.focus();
