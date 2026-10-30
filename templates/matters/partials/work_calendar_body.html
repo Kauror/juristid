@@ -61,6 +61,17 @@ grid (app/matters/calendar.py).
   </div>
 {% endif %}
 
+{% if calendar.is_wide and calendar.view != "aasta" %}
+  {% comment %}
+    The panel's chosen day (owner's review of 2026-10-30). A click on a busy
+    day lists its records here, under the calendars, where they read more
+    easily than in the floating popover; hover still opens the popover. Filled
+    by static/js/ux.js (`bindCalendar`). Without scripting a click opens the
+    popover as everywhere else, so this stays hidden.
+  {% endcomment %}
+  <section class="wcal__daydetail" data-wcal-daydetail hidden aria-live="polite" aria-label="Valitud päev"></section>
+{% endif %}
+
 {% if calendar.periods %}
   <h4 class="wcal__listlabel">
     {% if calendar.view == "4n" %}Täpsema päevata, puudutab seda ajavahemikku{% else %}Pikem periood, päev teadmata{% endif %}

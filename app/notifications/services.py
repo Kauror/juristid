@@ -360,6 +360,11 @@ def _summary(reminder: CommencementReminder) -> str:
 def acknowledge_reminder(*, reminder: CommencementReminder, actor: Any) -> CommencementReminder:
     """«Kontrollitud» — the person checked the commencement. Closes every stage of that date.
 
+    No page offers this answer since the owner's review of 2026-10-30, which
+    retired its button and route. The service stays, tested, so the answer can
+    come back without rebuilding the date-level closing it shares with the
+    other two.
+
     Records what the person *did*, not what is true of the act: nothing here,
     and nothing that reads it, says the act entered into force.
     """

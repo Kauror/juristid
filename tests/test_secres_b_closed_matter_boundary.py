@@ -70,7 +70,10 @@ CORRECTIONS_ALLOWED_WHEN_CLOSED: dict[tuple[str, str], str] = {
     ),
     # «Kontrolli jõustumist» answers a commencement, which is normally on a
     # closed (in-force) file (docs/adr/0188).
-    ("notifications:acknowledge", "Jõustumise kontroll tehtud"): "docs/adr/0188",
+    # «Kontrollitud» used to close the prompt before the other two answers ran;
+    # since its retirement (2026-10-30) they are what answers it here.
+    ("notifications:defer", "Jõustumise kontrolli edasilükkamine"): "docs/adr/0188",
+    ("notifications:dismiss", "Jõustumise meeldetuletuse sulgemine"): "docs/adr/0188",
 }
 
 

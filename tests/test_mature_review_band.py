@@ -27,7 +27,7 @@ import pytest
 from django.utils import timezone
 
 from app.matters import calendar as cal
-from app.matters import my_work, seis_help
+from app.matters import my_work
 from app.matters import work_items as wi
 from app.matters.models import Matter
 from app.matters.selectors import REVIEW_DUE, filter_by_next_action
@@ -254,11 +254,3 @@ def test_scenario_d_on_minu_asjad(specialist, scenario_d):
     week = next(figure for figure in page.seis if figure.key == "week")
     assert week.value == page.week == 1
     assert next(figure for figure in page.seis if figure.key == "overdue").value == 0
-
-
-def test_the_week_figure_explains_both_rules():
-    text = " ".join(seis_help.MY_WEEK_HELP.paragraphs)
-
-    assert "alates selle perioodi esimesest päevast" in text
-    assert "alles perioodi viimasel päeval" in text
-    assert "ei ole tähtaeg" in text

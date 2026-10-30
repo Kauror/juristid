@@ -102,6 +102,12 @@ VIEWS: tuple[tuple[str, str], ...] = (
 )
 #: The two that need more room than the rail has (an overlay panel).
 WIDE_VIEWS = (VIEW_QUARTER, VIEW_YEAR)
+#: ``1`` — show four weeks or a month in the same panel. Owner's review of
+#: 2026-10-30: «4 nädalat» and «Kuu» pressed inside the panel keep it open, so
+#: every link drawn in the panel carries this. The two wide views are always in
+#: the panel and never carry it.
+WINDOW_PARAM = "kalendri_aken"
+WINDOW_ON = "1"
 
 #: The HTMX target the calendar swaps itself into, and the id it carries.
 ELEMENT_ID = "minu-kalender"
@@ -809,10 +815,13 @@ class Calendar:
     #: The department calendar: work dots coloured by the person responsible, a
     #: legend of those people, and compact popover entries.
     is_department: bool = False
+    #: Four weeks or a month asked for in the panel (`WINDOW_PARAM`).
+    in_window: bool = False
 
     @property
     def is_wide(self) -> bool:
-        return self.view in WIDE_VIEWS
+        """Drawn in the panel over the page rather than in the rail."""
+        return self.view in WIDE_VIEWS or self.in_window
 
     @property
     def work_count(self) -> int:
@@ -862,6 +871,25 @@ class Calendar:
         return ("E", "T", "K", "N", "R", "L", "P")
 
 
+def _close_query(
+    view: str,
+    anchor: date,
+    start: date,
+    end: date,
+    today: date,
+    in_window: bool,
+    address: Callable[..., str],
+) -> str:
+    """Where the panel's «Sulge» goes; empty when the calendar is in the rail."""
+    if in_window:
+        return address(view, anchor, panel=False)
+    if view in WIDE_VIEWS:
+        return address(
+            VIEW_MONTH, today.replace(day=1) if start <= today <= end else anchor, panel=False
+        )
+    return ""
+
+
 def build_calendar(
     user: Any,
     subject: Any,
@@ -884,13 +912,17 @@ def build_calendar(
     view = requested_view(params)
     anchor = anchor_from(view, params.get(PERIOD_PARAM), today)
     start, end = period_range(view, anchor)
+    in_window = view not in WIDE_VIEWS and (params.get(WINDOW_PARAM) or "").strip() == WINDOW_ON
+    # Every link drawn in the panel keeps the panel open (`WINDOW_PARAM`).
+    in_panel = view in WIDE_VIEWS or in_window
 
-    def address(target_view: str, target_anchor: date) -> str:
+    def address(target_view: str, target_anchor: date, *, panel: bool = in_panel) -> str:
         default = target_view == VIEW_WEEKS and target_anchor == default_anchor(VIEW_WEEKS, today)
         return query_for(
             {
                 VIEW_PARAM: None if target_view == VIEW_WEEKS else target_view,
                 PERIOD_PARAM: None if default else period_key(target_view, target_anchor),
+                WINDOW_PARAM: WINDOW_ON if panel and target_view not in WIDE_VIEWS else None,
             }
         )
 
@@ -946,12 +978,12 @@ def build_calendar(
         periods=periods,
         events=events,
         # Closing a wide view lands on the month it was about: today's, when
-        # today is inside the period, else the period's first.
-        close_query=address(VIEW_MONTH, today.replace(day=1) if start <= today <= end else anchor)
-        if view in WIDE_VIEWS
-        else "",
+        # today is inside the period, else the period's first. Closing four
+        # weeks or a month shown in the panel keeps that view and period.
+        close_query=_close_query(view, anchor, start, end, today, in_window, address),
         element_id=DEPARTMENT_ELEMENT_ID if subject is None else ELEMENT_ID,
         is_department=subject is None,
+        in_window=in_window,
     )
 
     if view == VIEW_WEEKS:

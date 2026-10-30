@@ -128,7 +128,11 @@ def test_the_milestone_due_first_is_the_next_step(signed_in, specialist):
         ("Homne tähtaeg", today + timedelta(days=1), DatePrecision.EXACT),
     ):
         start, end = period_bounds(day, precision)
-        if end < today + timedelta(days=1):
+        # A period that ends by tomorrow is skipped: on the second-to-last day
+        # of a month «Kuu tähtaeg» ends tomorrow too, and a tie between two
+        # deadlines on the same day has no «due first» for this test to assert
+        # (it failed on main on 2026-10-30 for exactly that reason).
+        if precision != DatePrecision.EXACT and end <= today + timedelta(days=1):
             continue
         add_important_date(
             matter=matter,

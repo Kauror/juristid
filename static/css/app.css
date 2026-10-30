@@ -14666,6 +14666,19 @@ a.jcal__daynum {
   color: var(--text-primary);
 }
 
+/* The panel's chosen day (owner's review of 2026-10-30): marked like today,
+   with the accent, and listed under the calendars (.wcal__daydetail). */
+.wcal__day.is-selected > .wcal__daybtn {
+  border-color: var(--accent-border);
+  background: var(--surface-hover);
+}
+
+.wcal__daydetail {
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
 .wcal__dots {
   display: flex;
   flex-wrap: wrap;

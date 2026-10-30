@@ -583,6 +583,60 @@ def test_the_wide_views_open_a_labelled_panel(client, specialist):
     assert 'role="dialog"' not in client.get(MY_WORK, {"kalender": "kuu"}).content.decode()
 
 
+# ---------------------------------------------------------------------------
+# Four weeks and a month in the panel (owner's review of 2026-10-30)
+# ---------------------------------------------------------------------------
+
+
+def test_inside_the_panel_four_weeks_and_month_keep_the_panel(specialist):
+    quarter = build(specialist, kalender="kvartal", kalendri_aeg="2026-K4")
+    links = {link.key: link.query for link in quarter.views}
+
+    assert "kalendri_aken=1" in links[cal.VIEW_WEEKS]
+    assert "kalendri_aken=1" in links[cal.VIEW_MONTH]
+    # The wide views are in the panel anyway and never carry the parameter.
+    assert "kalendri_aken" not in links[cal.VIEW_QUARTER]
+    assert "kalendri_aken" not in links[cal.VIEW_YEAR]
+    # The month titles of a quarter keep the panel too.
+    assert all("kalendri_aken=1" in grid.query for grid in quarter.months)
+    # Closing the quarter still lands on the month in the rail.
+    assert "kalendri_aken" not in quarter.close_query
+
+
+@pytest.mark.parametrize(("view", "raw"), [("4n", "2026-11-02"), ("kuu", "2026-11")])
+def test_four_weeks_or_a_month_in_the_panel(specialist, view, raw):
+    calendar = build(specialist, kalender=view, kalendri_aeg=raw, kalendri_aken="1")
+
+    assert calendar.in_window and calendar.is_wide
+    for query in (calendar.previous_query, calendar.next_query, calendar.today_query):
+        assert "kalendri_aken=1" in query, query
+    # «Sulge» returns the same view and period to the rail.
+    assert "kalendri_aken" not in calendar.close_query
+    assert f"kalendri_aeg={raw}" in calendar.close_query
+
+
+def test_the_rail_writes_no_window_parameter(specialist):
+    for view in ("4n", "kuu"):
+        calendar = build(specialist, kalender=view)
+        assert not calendar.is_wide and calendar.close_query == ""
+        assert not any("kalendri_aken" in link.query for link in calendar.views)
+    # A wide view ignores the parameter: it is in the panel either way.
+    assert build(specialist, kalender="aasta", kalendri_aken="1").in_window is False
+
+
+def test_the_panel_draws_a_place_for_the_chosen_day(client, specialist):
+    client.force_login(specialist)
+
+    for params in ({"kalender": "kuu", "kalendri_aken": "1"}, {"kalender": "kvartal"}):
+        body = client.get(MY_WORK, params).content.decode()
+        assert 'role="dialog"' in body, params
+        assert "data-wcal-daydetail" in body, params
+    rail = client.get(MY_WORK, {"kalender": "kuu"}).content.decode()
+    assert "data-wcal-daydetail" not in rail
+    year = client.get(MY_WORK, {"kalender": "aasta"}).content.decode()
+    assert "data-wcal-daydetail" not in year
+
+
 def test_the_calendar_changes_no_work_figure(specialist):
     """Commencements reach no band, no count and no figure (ADR 0158 §6)."""
     matter = factories.MatterFactory(owner=specialist)

@@ -106,27 +106,59 @@ def test_no_horizontal_scroll_on_a_phone(page, base_url, view):
     assert overflow <= 0
 
 
-def test_inside_the_quarter_panel_a_day_opens_on_screen_and_escape_closes_only_it(page, base_url):
-    """Review of #550: the panel must not displace its popovers, and Escape on an
-    open day closes the day, not the panel."""
+def test_inside_the_quarter_panel_a_click_lists_the_day_under_the_calendars(page, base_url):
+    """Owner's review of 2026-10-30: in the panel a click on a day lists it below
+    the calendars, where it reads more easily; hover still opens the popover."""
     _open(page, base_url, path="/minu-asjad/?kalender=kvartal")
     day = page.locator(f"[data-wcal-panel] {TODAY_DAY.removeprefix('#minu-kalender ')}")
     summary = day.locator(":scope > summary")
+    detail = page.locator("[data-wcal-panel] [data-wcal-daydetail]")
+    expect(detail).to_be_hidden()
 
     summary.focus()
     page.keyboard.press("Enter")
-    popover = day.locator(".wcal__pop")
-    expect(popover).to_be_visible()
-    pop = popover.bounding_box()
-    anchor = summary.bounding_box()
-    assert pop is not None and anchor is not None
-    assert 0 <= pop["x"] and pop["x"] + pop["width"] <= 1440
-    # Placed against its own day, not shifted by the panel's offset.
-    assert abs((pop["x"] + pop["width"]) - (anchor["x"] + anchor["width"])) < 40
+
+    expect(detail).to_be_visible()
+    expect(detail).to_contain_text("Konfidentsiaalne järgmine samm")
+    expect(day.locator(".wcal__pop")).to_be_hidden()
+    expect(day).to_have_class(re.compile(r"(^| )is-selected( |$)"))
+    box = detail.bounding_box()
+    calendars = page.locator("[data-wcal-panel] .wcal__months").bounding_box()
+    assert box is not None and calendars is not None
+    assert box["y"] >= calendars["y"] + calendars["height"] - 1
+
+    # The same day again folds the list away.
+    page.keyboard.press("Enter")
+    expect(detail).to_be_hidden()
+
+    # Hover is still the quick look (focus elsewhere, as a pointer user's is).
+    page.locator("#wcal-panel-title").focus()
+    page.mouse.move(5, 5)
+    summary.hover()
+    expect(day.locator(".wcal__pop")).to_be_visible()
+    page.mouse.move(5, 5)
+    expect(day.locator(".wcal__pop")).to_be_hidden()
+    expect(page.get_by_role("dialog")).to_be_visible()
+
+
+@pytest.mark.parametrize(("label", "view"), [("4 nädalat", None), ("Kuu", "kuu")])
+def test_four_weeks_and_month_stay_in_the_panel(page, base_url, label, view):
+    """Owner's review of 2026-10-30: the panel is not only for quarter and year."""
+    _open(page, base_url, path="/minu-asjad/?kalender=kvartal")
+
+    page.locator("[data-wcal-panel] a.wcal__view", has_text=label).click()
+
+    dialog = page.get_by_role("dialog")
+    expect(dialog).to_be_visible()
+    expect(page).to_have_url(re.compile(r"kalendri_aken=1"))
+    expect(page.locator("[data-wcal-panel] .wcal__view.is-active")).to_have_text(label)
+    if view:
+        expect(page).to_have_url(re.compile(rf"kalender={view}"))
 
     page.keyboard.press("Escape")
-    expect(popover).to_be_hidden()
-    expect(page.get_by_role("dialog")).to_be_visible()
+    expect(dialog).to_be_hidden()
+    assert "kalendri_aken" not in page.url
+    expect(page.locator("#minu-kalender .wcal__view.is-active")).to_have_text(label)
 
 
 # ---------------------------------------------------------------------------

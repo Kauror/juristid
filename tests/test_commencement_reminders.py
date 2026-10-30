@@ -14,7 +14,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import Client
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 
 from app.audit.enums import AuthAssurance, AuthMethod, ChangeEventType
 from app.audit.models import ChangeEvent
@@ -784,25 +784,47 @@ def test_minu_asjad_carries_the_block_and_a_colleagues_page_does_not(client):
     client.force_login(head)
     theirs = client.get(reverse("matters:person_work", kwargs={"pk": owner.pk})).content.decode()
 
-    assert reverse("notifications:acknowledge", kwargs={"pk": reminder.pk}) in mine
-    assert reverse("notifications:acknowledge", kwargs={"pk": reminder.pk}) not in theirs
+    assert reverse("notifications:defer", kwargs={"pk": reminder.pk}) in mine
+    assert reverse("notifications:defer", kwargs={"pk": reminder.pk}) not in theirs
 
 
-def test_acknowledging_from_the_list_closes_it_and_returns(client):
+def test_kontrollitud_is_retired_and_a_stale_post_writes_nothing(client):
+    """Owner's review of 2026-10-30: no button, no route, nothing hidden."""
+    owner = factories.UserFactory()
+    reminder = _due_reminder(owner)
+    client.force_login(owner)
+
+    with pytest.raises(NoReverseMatch):
+        reverse("notifications:acknowledge", kwargs={"pk": reminder.pk})
+    response = client.post(f"/teavitused/{reminder.pk}/kontrollitud/", {"tagasi": "minu_asjad"})
+
+    assert response.status_code == 404
+    reminder.refresh_from_db()
+    assert reminder.status == ReminderStatus.OPEN
+    assert not ChangeEvent.objects.filter(event_type__startswith="COMMENCEMENT_CHECK_").exists()
+    page = client.get(reverse("matters:my_work")).content.decode()
+    assert "Kontrollitud</button>" not in page
+    assert "Ametlik allikas on märkimata" not in page
+
+
+def test_dismissing_from_minu_asjad_closes_it_and_returns(client):
     owner = factories.UserFactory()
     reminder = _due_reminder(owner)
     client.force_login(owner)
 
     response = client.post(
-        reverse("notifications:acknowledge", kwargs={"pk": reminder.pk}), {"tagasi": "minu_asjad"}
+        reverse("notifications:dismiss", kwargs={"pk": reminder.pk}),
+        {"tagasi": "minu_asjad", "reason": "Kontrollisin, jõustub nagu kirjas."},
     )
 
     assert response.status_code == 302
     assert response["Location"] == reverse("matters:my_work")
     reminder.refresh_from_db()
-    assert reminder.status == ReminderStatus.ACKNOWLEDGED
+    assert reminder.status == ReminderStatus.DISMISSED
     # A second press finds nothing open to answer.
-    again = client.post(reverse("notifications:acknowledge", kwargs={"pk": reminder.pk}))
+    again = client.post(
+        reverse("notifications:dismiss", kwargs={"pk": reminder.pk}), {"reason": "Uuesti."}
+    )
     assert again.status_code == 404
 
 
@@ -856,7 +878,6 @@ def test_a_non_writer_cannot_answer(client, factory):
     client.force_login(factory())
 
     for name, data in (
-        ("notifications:acknowledge", {}),
         ("notifications:defer", {"until": "1.1.2099"}),
         ("notifications:dismiss", {"reason": "Ei."}),
     ):
@@ -874,11 +895,14 @@ def test_a_colleague_may_answer_and_is_recorded_as_the_one_who_did(client):
     reminder = _due_reminder(owner)
     client.force_login(colleague)
 
-    client.post(reverse("notifications:acknowledge", kwargs={"pk": reminder.pk}))
+    client.post(
+        reverse("notifications:dismiss", kwargs={"pk": reminder.pk}),
+        {"reason": "Kolleegina kontrollitud."},
+    )
 
     reminder.refresh_from_db()
     assert reminder.resolved_by == colleague
-    event = ChangeEvent.objects.get(event_type=ChangeEventType.COMMENCEMENT_CHECK_ACKNOWLEDGED)
+    event = ChangeEvent.objects.get(event_type=ChangeEventType.COMMENCEMENT_CHECK_DISMISSED)
     assert event.actor == colleague
     assert event.object_id == reminder.effective_date_id
 
@@ -902,7 +926,9 @@ def test_anonymous_callers_are_sent_to_sign_in(client):
         reverse("notifications:bell"),
     ):
         assert client.get(url).status_code == 302
-    response = client.post(reverse("notifications:acknowledge", kwargs={"pk": reminder.pk}))
+    response = client.post(
+        reverse("notifications:dismiss", kwargs={"pk": reminder.pk}), {"reason": "Anonüümne."}
+    )
     assert response.status_code == 302
     reminder.refresh_from_db()
     assert reminder.status == ReminderStatus.OPEN
@@ -916,14 +942,16 @@ def test_behind_the_gate_a_persona_less_session_is_sent_to_choose_one(settings):
 
     for response in (
         client.get(reverse("notifications:list")),
-        client.post(reverse("notifications:acknowledge", kwargs={"pk": reminder.pk})),
+        client.post(
+            reverse("notifications:dismiss", kwargs={"pk": reminder.pk}), {"reason": "Ilma."}
+        ),
     ):
         assert response.status_code == 302
         assert response["Location"].startswith(reverse("accounts:choose_persona"))
 
 
 def test_a_shared_gate_check_is_attributed_to_the_chosen_persona_not_verified(settings):
-    """ADR 0180: «Kontrollitud» by a picked persona is attributable, not proof of identity."""
+    """ADR 0180: an answer by a picked persona is attributable, not proof of identity."""
     apply_shared_gate(settings)
     persona = factories.UserFactory(display_name="Mari Näidisjurist")
     reminder = _due_reminder(persona)
@@ -931,10 +959,13 @@ def test_a_shared_gate_check_is_attributed_to_the_chosen_persona_not_verified(se
     assert client.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
     assert client.post(reverse("accounts:act_as"), {"user_id": str(persona.pk)}).status_code == 302
 
-    response = client.post(reverse("notifications:acknowledge", kwargs={"pk": reminder.pk}))
+    response = client.post(
+        reverse("notifications:dismiss", kwargs={"pk": reminder.pk}),
+        {"reason": "Kontrollitud valitud isikuna."},
+    )
 
     assert response.status_code == 302
-    event = ChangeEvent.objects.get(event_type=ChangeEventType.COMMENCEMENT_CHECK_ACKNOWLEDGED)
+    event = ChangeEvent.objects.get(event_type=ChangeEventType.COMMENCEMENT_CHECK_DISMISSED)
     assert event.actor == persona
     assert event.auth_method == AuthMethod.SHARED_GATE
     assert event.auth_assurance == AuthAssurance.SHARED_SECRET

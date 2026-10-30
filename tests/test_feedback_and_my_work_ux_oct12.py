@@ -43,8 +43,6 @@ from app.matters.services import add_engagement, close_matter, record_external_p
 from app.matters.timeline import LAWYER_NOTE_LABEL
 from app.matters.work_items import open_matters
 from app.workflow.enums import Disposition
-from app.workflow.reference_stages import REFERENCE_STAGES
-from app.workflow.stage_flow import TERMINAL_STAGE_KEYS
 from tests import factories
 from tests.test_my_work_opinion_kpis import FRIDAY, MONDAY, drafted, listed, params_of
 
@@ -324,24 +322,29 @@ def test_the_first_figure_is_the_same_open_matter_list(specialist, count, captio
     )
 
 
-def test_a_matter_with_no_hetkeseis_is_counted_and_the_explanation_says_so(specialist):
-    """Why the owner's text gained «hetkeseis on veel määramata»."""
+def test_a_matter_with_no_hetkeseis_is_counted(specialist):
+    """A file whose Hetkeseis is not chosen yet is still in progress."""
     factories.MatterFactory(owner=specialist, is_open=True, stage=None)
 
     figure = _strip(build_my_work(specialist, today=FRIDAY))["open"]
 
     assert figure.value == 1
-    assert "hetkeseis on veel määramata" in " ".join(IN_PROGRESS_HELP.paragraphs)
 
 
-def test_the_explanation_names_every_current_stage_in_the_right_sentence():
-    """The stage list is the vocabulary's, so a renamed stage fails here, not in a review."""
-    in_progress, closed = IN_PROGRESS_HELP.paragraphs[1], IN_PROGRESS_HELP.paragraphs[2]
-    for stage in REFERENCE_STAGES:
-        sentence = closed if stage.key in TERMINAL_STAGE_KEYS else in_progress
-        assert stage.label_et.lower() in sentence.lower(), stage.label_et
+def test_the_explanation_is_the_owners_one_sentence():
+    """Shortened on 2026-10-30: the stage list is no longer in the tooltip."""
     assert IN_PROGRESS_HELP.title == "Menetluses olev teema"
+    assert len(IN_PROGRESS_HELP.paragraphs) == 1
     assert IN_PROGRESS_HELP.paragraphs[0].startswith("Menetluses olev teema on teema, millega")
+
+
+def _figures_with_help(body: str) -> int:
+    """Figures drawn, less the week figure, whose `i` the owner removed (2026-10-30)."""
+    week_drawn = any(
+        f'<span class="seis__caption">{caption}</span>' in body
+        for caption in ("tegevus sel nädalal", "tegevust sel nädalal")
+    )
+    return body.count('class="seis__figure"') - int(week_drawn)
 
 
 def test_the_explanation_is_a_neighbour_of_the_link_never_inside_it(client, specialist):
@@ -350,8 +353,8 @@ def test_the_explanation_is_a_neighbour_of_the_link_never_inside_it(client, spec
 
     body = client.get(reverse("matters:my_work")).content.decode()
 
-    # Every figure drawn is explained (UX package 2026-10-28); the first is this one.
-    assert body.count("data-seishelp") == body.count('class="seis__figure"') >= 1
+    # Every figure drawn but «tegevust sel nädalal» is explained; the first is this one.
+    assert body.count("data-seishelp") == _figures_with_help(body) >= 1
     item = body[body.index('<span class="seis__item" data-seishelp>') :]
     item = item[: item.index('<span class="seis__tip"')]
     link = item[item.index('<a class="seis__figure"') : item.index("</a>") + len("</a>")]
@@ -384,7 +387,7 @@ def test_a_colleagues_desk_carries_the_same_figure(client, department_head, spec
     body = client.get(reverse("matters:person_work", kwargs={"pk": specialist.pk})).content.decode()
 
     assert '<span class="seis__caption">teemat menetluses</span>' in body
-    assert body.count("data-seishelp") == body.count('class="seis__figure"')
+    assert body.count("data-seishelp") == _figures_with_help(body)
     assert 'id="seis-selgitus-menetluses"' in body
 
 

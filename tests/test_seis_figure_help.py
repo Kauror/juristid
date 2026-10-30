@@ -4,8 +4,10 @@ UX package of 2026-10-28, requirement 6. Captions and explanations only — no
 population, count or link moved — so the tests hold three things:
 
 * **the words** — every figure on both strips carries a `FigureHelp`
-  (app/matters/seis_help.py), the captions say what they count, and one reads in
-  the nominative singular («1 tegevus», «1 tähtajaga teema», «1 arvamus …»);
+  (app/matters/seis_help.py) except Minu asjad's «tegevust sel nädalal», whose
+  explanation the owner removed on 2026-10-30; each explanation is one short
+  sentence; the captions say what they count, and one reads in the nominative
+  singular («1 tegevus», «1 tähtajaga teema», «1 arvamus …»);
 * **the meaning the words claim** — a figure the text calls a count of Matters
   counts each Matter once however many deadlines it holds, and the one the text
   calls a count of rows counts each row; Osakond's week runs from today to
@@ -102,7 +104,8 @@ def test_every_minu_asjad_figure_carries_its_explanation(specialist) -> None:
     assert helps == {
         "open": seis_help.IN_PROGRESS_HELP,
         "overdue": seis_help.MY_OVERDUE_HELP,
-        "week": seis_help.MY_WEEK_HELP,
+        # The owner removed this one on 2026-10-30.
+        "week": None,
         "no_action": seis_help.MY_NO_ACTION_HELP,
         "opinions_week": seis_help.MY_OPINIONS_DUE_HELP,
         "opinions_drafting": seis_help.MY_OPINIONS_DRAFTING_HELP,
@@ -121,37 +124,60 @@ def test_every_osakond_figure_carries_its_explanation(department_head) -> None:
 
 
 def test_the_slugs_never_collide_between_the_two_strips(specialist, department_head) -> None:
-    mine = {f.help.slug for f in build_my_work(specialist, today=WEDNESDAY).seis}
+    mine = {f.help.slug for f in build_my_work(specialist, today=WEDNESDAY).seis if f.help}
     theirs = {f.help.slug for f in dd.seis_figures(department_head, WEDNESDAY)}
     assert not mine & theirs
+
+
+#: Every explanation on either strip. The unreviewed one is built with the
+#: window the page uses.
+ALL_HELPS = [
+    seis_help.IN_PROGRESS_HELP,
+    seis_help.MY_OVERDUE_HELP,
+    seis_help.MY_NO_ACTION_HELP,
+    seis_help.MY_OPINIONS_DUE_HELP,
+    seis_help.MY_OPINIONS_DRAFTING_HELP,
+    seis_help.DEPT_OVERDUE_HELP,
+    seis_help.DEPT_WEEK_HELP,
+    seis_help.DEPT_UNASSIGNED_HELP,
+    seis_help.dept_unreviewed_help(dd.UNREVIEWED_WINDOW_DAYS),
+    seis_help.DEPT_NO_ACTION_HELP,
+    seis_help.DEPT_SENT_HELP,
+    seis_help.DEPT_DRAFTING_HELP,
+]
+
+
+@pytest.mark.parametrize("help_text", ALL_HELPS, ids=lambda h: h.slug)
+def test_each_explanation_is_one_short_sentence(help_text) -> None:
+    """The owner's review of 2026-10-30: the long explanations were not read."""
+    assert len(help_text.paragraphs) == 1
+    text = help_text.paragraphs[0]
+    assert text.endswith(".")
+    assert len(text.split()) <= 30, text
 
 
 @pytest.mark.parametrize(
     ("help_text", "unit"),
     [
-        # Matters, each once. The wording is the owner's (2026-10-28); what is
-        # checked is that the first paragraph still names the unit counted.
-        (seis_help.DEPT_OVERDUE_HELP, "iga teema üks kord"),
-        (seis_help.DEPT_WEEK_HELP, "Loeb teemasid, mitte tähtaegu"),
-        (seis_help.DEPT_DRAFTING_HELP, "Loeb teemasid, mitte dokumente"),
-        (seis_help.MY_OPINIONS_DRAFTING_HELP, "Kaks mustandit ühel teemal on üks teema"),
+        # Matters. The wording is the owner's (2026-10-30); what is checked is
+        # that the sentence still names the unit counted.
+        (seis_help.DEPT_OVERDUE_HELP, "teemad"),
+        (seis_help.DEPT_WEEK_HELP, "teemad"),
+        (seis_help.DEPT_DRAFTING_HELP, "teemad"),
+        (seis_help.MY_OPINIONS_DRAFTING_HELP, "teemad"),
         (seis_help.MY_OPINIONS_DUE_HELP, "Loeb teemasid"),
-        # Rows and letters, each one.
+        # Rows and letters.
         (seis_help.MY_OVERDUE_HELP, "Loeb tähtaegu"),
-        (seis_help.MY_WEEK_HELP, "mitu tegevust või tähtaega"),
-        (seis_help.DEPT_SENT_HELP, "Loeb saadetud arvamusi, mitte teemasid"),
+        (seis_help.DEPT_SENT_HELP, "Loeb saadetud arvamusi"),
     ],
 )
 def test_each_explanation_names_what_it_counts(help_text, unit) -> None:
     assert unit in help_text.paragraphs[0]
 
 
-def test_the_week_texts_name_the_week_and_its_ends() -> None:
+def test_the_week_texts_name_the_week() -> None:
     assert "tänasest kuni pühapäevani" in seis_help.DEPT_WEEK_HELP.paragraphs[0]
-    assert "esmaspäevast tänaseni" in " ".join(seis_help.DEPT_SENT_HELP.paragraphs)
-    assert "esmaspäevast pühapäevani" in seis_help.MY_OPINIONS_DUE_HELP.paragraphs[0]
-    # A WAIT's expected date and a MONITOR's review date are never Osakond's week.
-    assert "siia ei kuulu" in seis_help.DEPT_WEEK_HELP.paragraphs[1]
+    assert "käesoleval nädalal" in seis_help.MY_OPINIONS_DUE_HELP.paragraphs[0]
 
 
 def test_sent_due_and_drafting_texts_keep_their_populations_apart() -> None:
@@ -160,8 +186,7 @@ def test_sent_due_and_drafting_texts_keep_their_populations_apart() -> None:
     drafting = " ".join(seis_help.DEPT_DRAFTING_HELP.paragraphs)
     assert "saadetud arvamusi" in sent
     assert "veel koostamisel" in due
-    assert seis_help.DRAFTING_MEANING in drafting
-    assert "Koostan arvamuse" in seis_help.DRAFTING_MEANING
+    assert "on koostamisel" in drafting
 
 
 # ---------------------------------------------------------------------------
@@ -294,12 +319,13 @@ def _strip_markup(body: str) -> str:
     return body[start : body.index("</div>", start)]
 
 
-def _assert_explained_and_never_nested(body: str) -> None:
+def _assert_explained_and_never_nested(body: str, unexplained: int = 0) -> None:
+    """``unexplained`` is how many drawn figures carry no `i` on purpose."""
     strip = _strip_markup(body)
     figures = strip.count('class="seis__figure"')
     assert figures >= 1
-    assert strip.count("data-seishelp") == figures
-    assert strip.count('class="seis__info"') == figures
+    assert strip.count("data-seishelp") == figures - unexplained
+    assert strip.count('class="seis__info"') == figures - unexplained
     # A tooltip is plain text: no link or button inside an explanation…
     for tip in re.findall(r'<span class="seis__tip".*?</span>\s*</span>', strip, re.S):
         assert "<a " not in tip and "<button" not in tip
@@ -335,8 +361,10 @@ def test_minu_asjad_draws_an_explanation_beside_every_figure(client, specialist,
 
     body = client.get(reverse("matters:my_work")).content.decode()
 
-    _assert_explained_and_never_nested(body)
+    # «tegevust sel nädalal» is drawn and is the one figure without an `i`.
+    _assert_explained_and_never_nested(body, unexplained=1)
     assert '<span class="seis__caption">tegevust sel nädalal</span>' in body
+    assert "seis-selgitus-minu-sel-nadalal" not in body
     assert '<span class="seis__caption">arvamus tähtajaga sel nädalal</span>' in body
     assert '<span class="seis__caption">arvamus koostamisel</span>' in body
     assert "arvamust kokku" not in body

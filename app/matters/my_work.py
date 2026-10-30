@@ -52,7 +52,6 @@ from app.matters.seis_help import (
     MY_OPINIONS_DRAFTING_HELP,
     MY_OPINIONS_DUE_HELP,
     MY_OVERDUE_HELP,
-    MY_WEEK_HELP,
     FigureHelp,
 )
 from app.matters.selectors import date_range_q
@@ -547,9 +546,9 @@ class SeisFigure:
     morning is a page people stop reading (01 §3.7).
 
     ``help`` is the explanation a figure carries beside its link
-    (app/matters/seis_help.py). Every figure on this strip sets one, as every
-    figure on Osakond's does; Saabunud and Statistika feed the component
-    dataclasses that leave it empty.
+    (app/matters/seis_help.py). Every figure on this strip sets one except
+    «tegevust sel nädalal», whose explanation the owner removed on 2026-10-30;
+    Saabunud and Statistika feed the component dataclasses that leave it empty.
     """
 
     key: str
@@ -883,6 +882,9 @@ def build_my_work(
     # «tegevust sel nädalal» — the band's rows, not Matters — and the opinion
     # figures say which population they are: «tähtajaga sel nädalal» is due,
     # «koostamisel» is being written; neither is a sent one. No count moved.
+    #
+    # **Shorter explanations, owner's review of 2026-10-30.** Each `i` is one
+    # sentence now, and the week figure has none. No count moved.
     seis = [
         SeisFigure(
             "open",
@@ -905,7 +907,6 @@ def build_my_work(
             _counted(week, "tegevus sel nädalal", "tegevust sel nädalal"),
             f"#{wi.BAND_WEEK}",
             "warning",
-            help=MY_WEEK_HELP,
         ),
         SeisFigure(
             "no_action",

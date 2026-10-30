@@ -8,39 +8,39 @@ that, and the whole point of the reminder is that a person checks.
 
 The Teema link lands on its «Jõustumine» section (`#joustumine`).
 
-Three answers, each its own POST form with the CSRF token and a fixed
+Two answers, each its own POST form with the CSRF token and a fixed
 `tagasi` (where to return), so the row works without scripting and a double
 press is refused by the service rather than recorded twice. «Lükka edasi» and
 «Sulge» open in native disclosures: the date and the reason are asked only of
 somebody who chose that answer. Absent for a reader who may not write
 (`can_answer`), so a READER sees the prompt and is offered nothing that would
 only refuse.
+
+Owner's review of 2026-10-30: «Kontrollitud» is gone (its route is retired),
+the label already says what to do so a bare «Jõustumine» under the title is not
+repeated, and a missing official source is not announced; a recorded one is
+still a link.
 {% endcomment %}
 <li class="notifrow">
   <div class="notifrow__main">
     <span class="notifrow__label">Kontrolli jõustumist</span>
     <a class="notifrow__matter" href="{{ row.matter_url }}">{{ row.matter_title }}</a>
     {% if not row.matter_is_open %}<span class="badge badge--closed">Suletud</span>{% endif %}
-    <span class="notifrow__what">{{ row.description|default:"Jõustumine" }}</span>
+    {% if row.description %}<span class="notifrow__what">{{ row.description }}</span>{% endif %}
     <span class="notifrow__date">
       Kirjas olev jõustumise kuupäev {{ row.date_label }} · {{ row.stage_label }}
     </span>
+    {% if row.source_url or show_owner %}
     <span class="notifrow__source">
       {% if row.source_url %}
         <a href="{{ row.source_url }}" rel="noopener noreferrer external" target="_blank">Ametlik allikas</a>
-      {% else %}
-        Ametlik allikas on märkimata
       {% endif %}
-      {% if show_owner %} · {% if row.owner_name %}Vastutaja {{ row.owner_name }}{% else %}Vastutaja puudub{% endif %}{% endif %}
+      {% if show_owner %}{% if row.source_url %} · {% endif %}{% if row.owner_name %}Vastutaja {{ row.owner_name }}{% else %}Vastutaja puudub{% endif %}{% endif %}
     </span>
+    {% endif %}
   </div>
   {% if can_answer %}
     <div class="notifrow__actions">
-      <form method="post" action="{% url 'notifications:acknowledge' pk=row.pk %}">
-        {% csrf_token %}
-        <input type="hidden" name="tagasi" value="{{ tagasi }}">
-        <button type="submit" class="button button--tiny">Kontrollitud</button>
-      </form>
       <details class="notifrow__more">
         <summary class="button button--quiet button--tiny">Lükka edasi</summary>
         <form class="notifrow__panel" method="post" action="{% url 'notifications:defer' pk=row.pk %}">
