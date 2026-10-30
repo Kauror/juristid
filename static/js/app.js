@@ -3826,13 +3826,13 @@
     if (parsed && parsed < floor) {
       hint.textContent = IMPLAUSIBLE_DATE_HINT;
       /* `aria-describedby` rather than `aria-invalid`: the value is accepted,
-         and marking it invalid would tell a screen reader the save will fail. */
-      input.setAttribute("aria-describedby", hint.id);
+         and marking it invalid would tell a screen reader the save will fail.
+         Added to the list rather than replacing it, so the weekend notice
+         below and a refusal's id stay named beside it. */
+      addDescribedBy(input, hint.id);
     } else {
       hint.textContent = "";
-      if (input.getAttribute("aria-describedby") === hint.id) {
-        input.removeAttribute("aria-describedby");
-      }
+      removeDescribedBy(input, hint.id);
     }
   }
 
@@ -3841,6 +3841,279 @@
     if (input && input.matches && input.matches("input[data-datepicker]")) {
       checkDateAge(input);
     }
+  });
+
+  /* `aria-describedby` is a list of ids, and more than one sentence may
+     describe a date box at once — a refusal, the age check, the weekend
+     notice. Each adds and removes only its own id. */
+  function addDescribedBy(input, id) {
+    var ids = (input.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    if (ids.indexOf(id) === -1) {
+      ids.push(id);
+      input.setAttribute("aria-describedby", ids.join(" "));
+    }
+  }
+
+  function removeDescribedBy(input, id) {
+    var ids = (input.getAttribute("aria-describedby") || "").split(/\s+/).filter(Boolean);
+    var kept = ids.filter(function (each) {
+      return each !== id;
+    });
+    if (kept.length === ids.length) {
+      return;
+    }
+    if (kept.length) {
+      input.setAttribute("aria-describedby", kept.join(" "));
+    } else {
+      input.removeAttribute("aria-describedby");
+    }
+  }
+
+  /* ---- A weekend or a public holiday is pointed out, never refused -------
+   * `24.06.2027 valitud kuupäev on riigipüha (jaanipäev).` under the box, the
+   * moment somebody types, picks in the calendar or presses a quick-date chip
+   * — and nothing else: no `aria-invalid`, no refusal, the save goes through
+   * (docs/adr/0197). It catches a finger one row off in the calendar; a
+   * deadline that genuinely lands on a Sunday is recorded as written.
+   *
+   * **The holidays are the server's.** `app/core/holidays.py` is the only
+   * place a riigipüha is defined; this asks `core:public_holidays` for a year
+   * once, keeps the answer (and the request in flight) in `holidayYears`, and
+   * reads it. A weekend needs no rule and is worked out here. A failed request
+   * leaves the weekend sentences working and is never an error on the page.
+   *
+   * **After a change, never on load.** A box drawn already holding a Saturday
+   * says nothing until somebody changes it: every edit form re-showing a
+   * recorded date would otherwise carry a sentence nobody asked about, and
+   * the moment that matters is the moment a day is chosen. So the listener is
+   * `input` *and* `change` — the calendar fires both, a quick-date chip
+   * (static/js/ux.js `bindQuickDates`) fires only `change`, typing only
+   * `input` — and it is delegated on `document`, so a box an HTMX swap
+   * brings in works without binding.
+   *
+   * **Only for a day somebody chose.** A box in a `Täpsus` control that is
+   * not on «Täpne päev» (matters/partials/period_composer.html), a hidden
+   * `periodfields` group (intelligence/partials/fact_fields.html) or any box
+   * not shown says nothing: the first day of a month or a quarter is the
+   * anchor the server stores, not a day anybody picked. Changing the
+   * precision re-reads the boxes already touched. A filter form (`GET`) is a
+   * search boundary, not a recorded day, and says nothing either. */
+  var HOLIDAYS_URL = "/kuupaevad/riigipuhad/";
+  var NOTICE_FIRST_YEAR = 1990;
+  var NOTICE_LAST_YEAR = 2100;
+  var NOTICE_WEEKEND = { 5: "laupäev", 6: "pühapäev" };
+  var holidayYears = new Map();
+  var knownHolidays = new Map();
+  /* A year whose request failed, and when. Not asked again for a minute —
+     an expired session answers every keystroke with a sign-in page — and
+     the weekend sentences stand meanwhile. */
+  var failedHolidayYears = new Map();
+  var HOLIDAYS_RETRY_MS = 60000;
+  var noticeCount = 0;
+
+  function holidaysFor(year) {
+    var failedAt = failedHolidayYears.get(year);
+    if (failedAt !== undefined && Date.now() - failedAt < HOLIDAYS_RETRY_MS) {
+      return Promise.resolve(null);
+    }
+    if (!holidayYears.has(year)) {
+      var answer = window
+        .fetch(HOLIDAYS_URL + year + "/", {
+          credentials: "same-origin",
+          headers: { Accept: "application/json" },
+        })
+        .then(function (response) {
+          if (!response.ok) {
+            throw new Error("riigipühad " + year + ": " + response.status);
+          }
+          return response.json();
+        })
+        .then(function (body) {
+          var holidays = (body && body.holidays) || {};
+          knownHolidays.set(year, holidays);
+          return holidays;
+        })
+        .catch(function () {
+          /* A refusal, a sign-in page that is not JSON, no network: asked
+             again after `HOLIDAYS_RETRY_MS`, weekends meanwhile. */
+          holidayYears.delete(year);
+          failedHolidayYears.set(year, Date.now());
+          return null;
+        });
+      holidayYears.set(year, answer);
+    }
+    return holidayYears.get(year);
+  }
+
+  function twoDigits(number) {
+    return (number < 10 ? "0" : "") + number;
+  }
+
+  function isoDay(date) {
+    return (
+      date.getFullYear() + "-" + twoDigits(date.getMonth() + 1) + "-" + twoDigits(date.getDate())
+    );
+  }
+
+  function dateNotice(date, holidays) {
+    var written =
+      twoDigits(date.getDate()) + "." + twoDigits(date.getMonth() + 1) + "." + date.getFullYear();
+    var name = holidays ? holidays[isoDay(date)] : null;
+    if (name) {
+      return written + " valitud kuupäev on riigipüha (" + name + ").";
+    }
+    var weekend = NOTICE_WEEKEND[mondayIndex(date)];
+    return weekend ? written + " valitud kuupäev on " + weekend + "." : "";
+  }
+
+  /* Whether the box holds a day somebody chose, rather than an anchor. */
+  function dayIsChosen(input) {
+    if (input.form && (input.form.getAttribute("method") || "").toLowerCase() === "get") {
+      return false;
+    }
+    if (input.closest("[hidden], .is-hidden")) {
+      return false;
+    }
+    var composed = input.closest(".precision__group");
+    if (composed) {
+      var precision = composed.closest(".precision");
+      var chosen = precision ? precision.querySelector(".precision__radio:checked") : null;
+      return (
+        composed.getAttribute("data-precision-for") === "day" &&
+        !!chosen &&
+        chosen.value === "EXACT"
+      );
+    }
+    var periods = input.closest(".periodfields__group");
+    if (periods) {
+      return (periods.getAttribute("data-precision") || "").split(" ").indexOf("EXACT") !== -1;
+    }
+    /* Not laid out at all (a `display: none` ancestor the rules above do not
+       name): `getClientRects` is empty for such a box. */
+    return input.getClientRects().length > 0;
+  }
+
+  function noticeFor(input, create) {
+    var id = input.getAttribute("data-date-notice-id");
+    var hint = id ? document.getElementById(id) : null;
+    if (hint || !create) {
+      return hint;
+    }
+    if (!id) {
+      /* A box without an id — the hand-written header editors — still gets
+         a unique one for its sentence, kept on the box itself. */
+      id = input.id ? input.id + "-paevateade" : "";
+      while (!id || document.getElementById(id)) {
+        noticeCount += 1;
+        id = "kuupaeva-teade-" + noticeCount;
+      }
+      input.setAttribute("data-date-notice-id", id);
+    }
+    hint = document.createElement("span");
+    hint.id = id;
+    hint.className = "field__hint field__hint--check";
+    hint.setAttribute("role", "status");
+    hint.setAttribute("aria-live", "polite");
+    hint.setAttribute("data-date-notice", "");
+    /* One fixed order under the box: the box (and its calendar), the age
+       check, this sentence. The age check always inserts itself straight
+       after the box, so this one goes after the age check when it exists. */
+    var wrap = input.closest(".datepicker") || input;
+    var age = input.id ? document.getElementById(input.id + "-vanus") : null;
+    var after = age && age.parentNode === wrap.parentNode ? age : wrap;
+    if (after.parentNode) {
+      after.parentNode.insertBefore(hint, after.nextSibling);
+    }
+    /* A live region filled in the task that created it is not announced by
+       every screen reader, so a new one starts empty and gets its first text
+       on the next frame (`writeNotice`). */
+    hint.setAttribute("data-date-notice-new", "");
+    window.requestAnimationFrame(function () {
+      hint.removeAttribute("data-date-notice-new");
+      hint.textContent = hint.getAttribute("data-date-notice-text") || "";
+    });
+    return hint;
+  }
+
+  function writeNotice(hint, text) {
+    hint.setAttribute("data-date-notice-text", text);
+    if (!hint.hasAttribute("data-date-notice-new") && hint.textContent !== text) {
+      hint.textContent = text;
+    }
+  }
+
+  function showNotice(input, text) {
+    var hint = noticeFor(input, !!text);
+    if (!hint) {
+      return;
+    }
+    writeNotice(hint, text);
+    if (text) {
+      addDescribedBy(input, hint.id);
+    } else {
+      removeDescribedBy(input, hint.id);
+    }
+  }
+
+  /* `24.06.20` on the way to `24.06.2027` is a whole date to the parser —
+     the year 2020 — and while somebody is typing it is not what they mean.
+     So typing is read only once the year has four digits; `change` (leaving
+     the box, the calendar, a chip) reads a two-digit year too, as the server
+     does. */
+  var YEAR_STILL_BEING_TYPED = /^\s*\d{1,2}\.\d{1,2}\.\d{0,3}\s*$/;
+
+  function checkDateNotice(input, typing) {
+    input.setAttribute("data-date-notice-touched", "");
+    if (typing && YEAR_STILL_BEING_TYPED.test(input.value)) {
+      showNotice(input, "");
+      return;
+    }
+    var parsed = dayIsChosen(input) ? parseEstonian(input.value) : null;
+    var year = parsed ? parsed.getFullYear() : 0;
+    if (!parsed || year < NOTICE_FIRST_YEAR || year > NOTICE_LAST_YEAR) {
+      showNotice(input, "");
+      return;
+    }
+    if (knownHolidays.has(year)) {
+      showNotice(input, dateNotice(parsed, knownHolidays.get(year)));
+      return;
+    }
+    var value = input.value;
+    /* The weekend at once; the holiday when its year has arrived. */
+    showNotice(input, dateNotice(parsed, null));
+    holidaysFor(year).then(function (holidays) {
+      if (holidays && input.value === value) {
+        safeInit("dateNotice", function () {
+          showNotice(input, dayIsChosen(input) ? dateNotice(parsed, holidays) : "");
+        });
+      }
+    });
+  }
+
+  ["input", "change"].forEach(function (type) {
+    document.addEventListener(type, function (event) {
+      var target = event.target;
+      if (!target || !target.matches) {
+        return;
+      }
+      safeInit("dateNotice", function () {
+        if (target.matches("input[data-datepicker]")) {
+          checkDateNotice(target, type === "input");
+        } else if (
+          type === "change" &&
+          target.matches("input[type=radio]") &&
+          target.closest(".precision, .choiceset")
+        ) {
+          /* A precision moved: re-read the boxes already touched in that
+             form, so a hint goes with the day box it described. */
+          (target.form || document)
+            .querySelectorAll("input[data-datepicker][data-date-notice-touched]")
+            .forEach(function (input) {
+              checkDateNotice(input, false);
+            });
+        }
+      });
+    });
   });
 
   function bindDatePickers(scope) {
