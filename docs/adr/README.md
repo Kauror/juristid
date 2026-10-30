@@ -214,9 +214,6 @@ requires every gap in the numbering to be named here:
   It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
   the architecture only on 2026-10-13, with activation not approved. The record
   lands with that PR.
-- 0197 — reserved for the date-warning record (Riigipühad and weekend hints on date
-  fields). It is on `feature/date-holiday-warnings`, part of the same package of
-  2026-10-30, and lands with that branch.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
 
