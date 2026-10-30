@@ -187,10 +187,13 @@ def personal_q(reader: Any, category: Category, today: date) -> Q:
     An advance row is live only before its day: on the day the day itself, or
     the commencement check, takes over.
     """
-    still = _matches(category, category.sources(reader))
-    advance = Q(purpose=NotificationPurpose.ADVANCE, source_date__gt=today)
-    on_day = Q(purpose=NotificationPurpose.ON_DAY)
-    return Q(category=category.key) & (advance | on_day) & Q(still)
+    advance = Q(purpose=NotificationPurpose.ADVANCE, source_date__gt=today) & Q(
+        _matches(category, category.sources(reader))
+    )
+    on_day = Q(purpose=NotificationPurpose.ON_DAY) & Q(
+        _matches(category, category.day_sources(reader))
+    )
+    return Q(category=category.key) & (advance | on_day)
 
 
 def escalation_q(reader: Any, category: Category, today: date) -> Q:
@@ -319,14 +322,26 @@ def _reconcile(day: date, *, dry_run: bool) -> DeadlineReconcileResult:
                 continue
             high = day + timedelta(days=max(preference.offsets, default=0))
             window = {f"{category.date_field}__gte": low, f"{category.date_field}__lte": high}
+            day_ids: set[Any] | None = None
+            if category.on_day_sources is not None:
+                day_ids = set(
+                    category.day_sources(worker).filter(**window).values_list("pk", flat=True)
+                )
             for source_id, matter_id, source_date in (
                 category.sources(worker)
                 .filter(**window)
                 .values_list("pk", category.matter_field, category.date_field)
             ):
                 owed = owed_personal(category, source_date, day, preference, started=started)
-                if owed is not None:
-                    rows.append(_row(worker, category, source_id, matter_id, source_date, owed))
+                if owed is None:
+                    continue
+                if (
+                    owed.purpose == NotificationPurpose.ON_DAY
+                    and day_ids is not None
+                    and source_id not in day_ids
+                ):
+                    continue
+                rows.append(_row(worker, category, source_id, matter_id, source_date, owed))
         if worker.pk in holders and choices.of(ESCALATION_KEY).enabled:
             rows.extend(_escalations(worker, day, started=started))
 
@@ -526,10 +541,26 @@ def _reasons(stale: list[Any], recipient: Any) -> dict[str, list[Any]]:
         by_category[row["category"]].append(row)
     out: dict[str, list[Any]] = defaultdict(list)
     for key, rows in by_category.items():
-        states = CATEGORIES[key].state([row["source_id"] for row in rows])
+        category = CATEGORIES[key]
+        states = category.state([row["source_id"] for row in rows])
+        # An on-the-day row whose obligation still stands but which is not
+        # today's work (a Järgmiseks outranks it, ADR 0050) is not discharged:
+        # it is set aside, and comes back if the step ends first (`_deliver`).
+        set_aside: set[tuple[Any, Any]] = set()
+        if category.on_day_sources is not None:
+            set_aside = set(
+                category.sources(recipient)
+                .filter(pk__in=[row["source_id"] for row in rows])
+                .values_list("pk", category.date_field)
+            )
         for row in rows:
             state = states.get(row["source_id"])
-            if state is None or state.day is None:
+            if (
+                row["purpose"] == NotificationPurpose.ON_DAY
+                and (row["source_id"], row["source_date"]) in set_aside
+            ):
+                reason = RetiredReason.INELIGIBLE
+            elif state is None or state.day is None:
                 reason = RetiredReason.INELIGIBLE
             elif state.day != row["source_date"]:
                 reason = RetiredReason.DATE_CHANGED

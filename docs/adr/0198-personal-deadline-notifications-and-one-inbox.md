@@ -41,7 +41,7 @@ rows, and require a reason with every retirement.
 
 | Category | Source | Population (as the recipient) | Recipient | Default |
 |---|---|---|---|---|
-| `OPINION_DEADLINE` | `Matter.response_deadline` | `response_obligations` (the obligation, not the plan) | active owner | on, 7/3/1 + day |
+| `OPINION_DEADLINE` | `Matter.response_deadline` | advance: `response_obligations` (the obligation, not the plan); the day itself: `outstanding_response_deadlines` (ADR 0050 precedence) | active owner | on, 7/3/1 + day |
 | `FEEDBACK_DEADLINE` | `MatterEngagement.feedback_deadline` | `dated_feedback_waits` | active owner | on, 3 + day |
 | `ACTION_DEADLINE` | `NextAction.target_date` | current step, DO + DEADLINE, day precision | the step's active `responsible`, else the active owner (D2) | on, 3/1 + day |
 | `COMMENCEMENT_CHECK` | `MatterEffectiveDate` | ADR 0188 `eligibility_q` | active owner | on, 7; the day is the existing check (D1) |
@@ -60,6 +60,16 @@ department's population; asking as the recipient means a narrower read rule late
 narrows notifications with it.
 
 ### 3. The schedule (Europe/Tallinn calendar, `timezone.localdate()`)
+
+**Owner decision, 2026-10-30 («Hide under Järgmiseks»).** An `Arvamuse tähtaeg`'s
+on-the-day «Vajab tegevust» row follows ADR 0050's precedence: while the Matter has
+a visible open Järgmiseks other than a WAIT, the deadline is not today's work, so
+the row is neither generated nor shown nor counted, and an existing one is retired
+as `INELIGIBLE`. Its population is `outstanding_response_deadlines`, read, not
+copied, by the generator and the live read path alike. If the step ends while the
+deadline is still unanswered and the day is still inside its window, the row is
+owed again and revived unread (§1). The advance reminders keep following
+`response_obligations`; the escalation already uses the operational definition.
 
 For a source on *D*, chosen intervals *N₁ > … > Nₖ* and today *t*:
 

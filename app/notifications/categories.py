@@ -107,6 +107,20 @@ def _opinion_sources(reader: Any) -> QuerySet[Any]:
     return response_obligations(reader, owner=reader).filter(owner__is_active=True)
 
 
+def _opinion_on_day_sources(reader: Any) -> QuerySet[Any]:
+    """The day itself follows ADR 0050's precedence (owner decision, 2026-10-30).
+
+    «Vajab tegevust» on the day is today's work, and while a visible open
+    Järgmiseks other than a WAIT says what happens next, the `Arvamuse tähtaeg`
+    is not today's work: the operational population,
+    `work_items.outstanding_response_deadlines`, read rather than copied. The
+    advance reminders keep following the obligation (:func:`_opinion_sources`).
+    """
+    from app.matters.work_items import outstanding_response_deadlines
+
+    return outstanding_response_deadlines(reader, owner=reader).filter(owner__is_active=True)
+
+
 def _feedback_sources(reader: Any) -> QuerySet[Any]:
     from app.matters.work_items import dated_feedback_waits
 
@@ -279,12 +293,19 @@ class Category:
     sources: Callable[[Any], QuerySet[Any]]
     state: Callable[[list[Any]], dict[Any, SourceState]]
     overdue: Callable[[Any, date], QuerySet[Any]] | None = None
+    #: The population the on-the-day row follows, when it is narrower than
+    #: :attr:`sources` (an opinion deadline under a Järgmiseks, ADR 0050).
+    on_day_sources: Callable[[Any], QuerySet[Any]] | None = None
     #: Where on the Teema page the source lives.
     anchor: str = ""
 
     @property
     def escalates(self) -> bool:
         return self.overdue is not None
+
+    def day_sources(self, reader: Any) -> QuerySet[Any]:
+        """The population an on-the-day row follows."""
+        return (self.on_day_sources or self.sources)(reader)
 
 
 CATEGORIES: dict[str, Category] = {
@@ -311,6 +332,7 @@ CATEGORIES: dict[str, Category] = {
             sources=_opinion_sources,
             state=_state_of_matters,
             overdue=_opinion_overdue,
+            on_day_sources=_opinion_on_day_sources,
         ),
         Category(
             key=NotificationCategory.FEEDBACK_DEADLINE,

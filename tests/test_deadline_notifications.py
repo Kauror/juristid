@@ -1276,3 +1276,84 @@ def test_hiding_and_the_generator_leave_exactly_one_hidden_row(specialist, order
     assert only.pk == row.pk
     assert only.dismissed_at is not None
     assert _live(specialist, TODAY) == []
+
+
+# ---------------------------------------------------------------------------
+# Owner decision of 2026-10-30: the day itself hides under a Järgmiseks
+# ---------------------------------------------------------------------------
+
+
+def test_the_opinion_day_row_hides_under_a_jargmiseks_and_returns_when_it_ends(specialist):
+    """ADR 0050 precedence for «Vajab tegevust»; the advance notice is unaffected."""
+    _feature_started(TODAY - timedelta(days=10))
+    matter = _opinion(specialist, TODAY)
+    _run(TODAY)
+    (day_row,) = _personal(purpose=NotificationPurpose.ON_DAY)
+    deadlines.mark_read(notification=day_row)
+    step = _step(matter, on=TODAY + timedelta(days=20))
+
+    # Hidden and uncounted at once, before the worker has run.
+    assert _live(specialist, TODAY) == []
+    assert inbox.inbox_count(specialist, TODAY) == 0
+    _run(TODAY)
+    day_row.refresh_from_db()
+    assert day_row.retired_reason == RetiredReason.INELIGIBLE
+
+    later = TODAY + timedelta(days=2)
+    complete_next_action(action=step, actor=specialist)
+    result = _run(later)
+
+    day_row.refresh_from_db()
+    assert result.revived == 1
+    assert (day_row.retired_at, day_row.read_at) == (None, None)
+    assert [item.pk for item in _live(specialist, later)] == [day_row.pk]
+
+
+def test_no_day_row_is_generated_under_a_jargmiseks(specialist):
+    _feature_started(TODAY - timedelta(days=10))
+    matter = _opinion(specialist, TODAY)
+    _step(matter, on=TODAY + timedelta(days=20))
+
+    _run(TODAY)
+
+    assert _personal() == []
+
+
+def test_a_cancelled_jargmiseks_brings_the_day_row(specialist):
+    _feature_started(TODAY - timedelta(days=10))
+    matter = _opinion(specialist, TODAY - timedelta(days=1))
+    step = _step(matter, on=TODAY + timedelta(days=20))
+    _run(TODAY)
+    assert _personal() == []
+
+    type(step).objects.filter(pk=step.pk).update(status=ActionStatus.CANCELLED)
+    _run(TODAY)
+
+    (row,) = _personal(recipient=specialist)
+    assert (row.purpose, row.kind) == (NotificationPurpose.ON_DAY, NotificationKind.ACTION)
+
+
+def test_a_wait_does_not_hide_the_day_row(specialist):
+    _feature_started(TODAY - timedelta(days=10))
+    matter = _opinion(specialist, TODAY)
+    _step(
+        matter,
+        on=TODAY + timedelta(days=20),
+        kind=ActionKind.WAIT,
+        date_semantics=DateSemantics.REVIEW_ON,
+    )
+
+    _run(TODAY)
+
+    assert [row.purpose for row in _personal()] == [NotificationPurpose.ON_DAY]
+
+
+def test_the_advance_opinion_notice_still_shows_under_a_jargmiseks(specialist):
+    matter = _opinion(specialist, TODAY + timedelta(days=3))
+    _step(matter, on=TODAY + timedelta(days=20))
+
+    _run(TODAY)
+
+    (row,) = _rows()
+    assert (row.purpose, row.offset_days) == (NotificationPurpose.ADVANCE, 3)
+    assert len(_live(specialist, TODAY)) == 1
