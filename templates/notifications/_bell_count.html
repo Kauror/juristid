@@ -4,5 +4,8 @@ The visible digit is decoration for the words beside it, which a screen reader
 reads as part of the link. Wrapped in `data-bell-count`, which is all the bell
 selects from a response: a redirect to the gate, the persona list or an
 enrolment page swaps in nothing rather than a whole page.
+
+The number is `app.notifications.inbox.inbox_count`: the same population the
+Minu asjad block and `/teavitused/` list (docs/adr/0198 §6).
 {% endcomment %}
-<span data-bell-count>{% if count %}<span class="notifbell__count" aria-hidden="true">{{ count }}</span><span class="visually-hidden">: {{ count }} kontrollimata</span>{% endif %}</span>
+<span data-bell-count>{% if count %}<span class="notifbell__count" aria-hidden="true">{{ count }}</span><span class="visually-hidden">: {{ count }} teavitust</span>{% endif %}</span>

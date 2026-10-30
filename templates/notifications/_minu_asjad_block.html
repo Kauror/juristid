@@ -1,23 +1,25 @@
 {% comment %}
-«Kontrolli jõustumist» on Minu asjad: the reader's own open prompts, as a rail
-block beside «Uus asi» (docs/adr/0188 §6).
+«Teavitused» on Minu asjad: the reader's own inbox as one rail block
+(docs/adr/0198 §6). It replaces the separate «Uus asi» (ADR 0051) and
+«Kontrolli jõustumist» (ADR 0188) blocks; each item keeps its own answers.
 
 Rendered only when there is something in it — no heading, no empty state, no
-zero — like «Uus asi». Personal: `commencement_reminders_block` reads the
-signed-in reader's own desk, so it belongs inside Minu asjad's `is_self` branch
-and is never drawn on a colleague's page.
+zero. Personal: `notifications_block` reads the signed-in reader, so it belongs
+inside Minu asjad's `is_self` branch and is never drawn on a colleague's page.
+The first few items, then «Kõik teavitused»; the count in the heading is the
+bell's.
 {% endcomment %}
-{% if rows %}
-  <section class="railblock" aria-labelledby="notif-minu-heading">
-    <h2 class="railblock__label" id="notif-minu-heading">
-      Kontrolli jõustumist
-      <span class="railblock__count">{{ rows|length }}</span>
+{% if items %}
+  <section class="railblock notifblock" aria-label="Teavitused" id="teavitused" tabindex="-1">
+    <h2 class="railblock__label">
+      Teavitused
+      <span class="railblock__count">{{ total }}</span>
     </h2>
     <ul class="notiflist notiflist--rail">
-      {% for row in rows %}
-        {% include "notifications/_reminder_row.html" with row=row can_answer=can_answer tagasi=tagasi %}
+      {% for item in items %}
+        {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
       {% endfor %}
     </ul>
-    <a class="railblock__more" href="{% url 'notifications:list' %}">Kõik meeldetuletused</a>
+    <a class="railblock__more" href="{% url 'notifications:list' %}">Kõik teavitused{% if more %} ({{ total }}){% endif %}</a>
   </section>
 {% endif %}

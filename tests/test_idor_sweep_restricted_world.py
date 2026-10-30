@@ -166,6 +166,8 @@ PARAMETER = {
     "step_id": "step",
     "notice_id": "notice",
     "follow_up_id": "follow_up",
+    # A personal deadline notification (docs/adr/0198): the recipient's alone.
+    "notification_id": "deadline_notification",
 }
 
 #: Objects that carry no visibility of their own: they are hidden exactly when
@@ -175,6 +177,7 @@ OWN_VISIBILITY = {
     "matter": False,
     "step": False,
     "notice": True,
+    "deadline_notification": True,
 }
 
 
@@ -352,9 +355,24 @@ def _objects(matter: Any, made: dict[str, Any], world: dict[str, Any], *, restri
         stage="SEVEN_DAYS",
         due_on=effective_date.date_value - timedelta(days=7),
     )
+    # A «Teadmiseks» deadline notice for the owner about the hidden Teema, as
+    # the generator writes it (docs/adr/0198) — personal, so hidden from all.
+    deadline_notification = model("notifications", "DeadlineNotification").objects.create(
+        recipient=owner,
+        matter=matter,
+        category="COMMENCEMENT_CHECK",
+        source_type="EFFECTIVE_DATE",
+        source_id=effective_date.pk,
+        source_date=effective_date.date_value,
+        purpose="ADVANCE",
+        offset_days=7,
+        kind="INFO",
+        due_on=effective_date.date_value - timedelta(days=7),
+    )
     return {
         "restricted_matter": not restrict,
         "matter": matter,
+        "deadline_notification": deadline_notification,
         "other_matter": world["first"],
         "entry": model("matters", "Entry").objects.get(matter=matter, body__contains=HIDDEN_PHRASE),
         "engagement": model("matters", "MatterEngagement").objects.get(
@@ -420,6 +438,9 @@ WATCHED = (
     "intelligence.MatterEffectiveDate",
     "intelligence.MatterWorkVictory",
     "notifications.CommencementReminder",
+    "notifications.DeadlineNotification",
+    "notifications.NotificationPreference",
+    "notifications.NotificationSettings",
     "audit.ChangeEvent",
 )
 

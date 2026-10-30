@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Teavituste seaded · {{ application_name }}{% endblock %}
+
+{% comment %}
+`/teavitused/seaded/` — what the signed-in person wants to be told, and when
+(docs/adr/0198 §5). Presentation state of this account, like a remembered
+block: only what differs from the defaults is stored, and «Taasta vaikimisi»
+forgets it. Turning a category off or pausing changes no business view.
+
+One fieldset per category: on/off, the advance intervals, and the day itself
+where the day is a delivery. A commencement's day is the «Kontrolli
+jõustumist» check, which is not switched here. The management escalation is
+offered only to a holder of `department.view_management`. The e-mail control
+is drawn disabled: the wish cannot be stored until personal sign-in exists.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Teavituste seaded</h1>
+    <span class="pagehead__context">
+      Vali, millest ja mitu päeva ette sulle teada antakse. Seaded kehtivad ainult sinu teavitustele.
+      <a href="{% url 'notifications:list' %}">Teavitused</a>
+    </span>
+  </div>
+
+  <form method="post" action="{% url 'notifications:settings' %}" class="notifsettings">
+    {% csrf_token %}
+    <fieldset class="notifsettings__group">
+      <legend class="sectionlabel">Üldine</legend>
+      <label class="notifsettings__check" for="notif-paused">
+        <input type="checkbox" id="notif-paused" name="paused" value="1"{% if paused %} checked{% endif %}>
+        Peata tähtaegade teavitused
+      </label>
+      <p class="muted notifsettings__help">Peatatuna uusi tähtaegade teavitusi ei teki. Jõustumise kontrollid ja «Uus asi» jäävad alles.</p>
+      <label class="notifsettings__check" for="notif-email">
+        <input type="checkbox" id="notif-email" name="email" value="1" disabled aria-describedby="notif-email-note"{% if email_requested %} checked{% endif %}>
+        Saada teavitused ka e-postiga
+      </label>
+      <p class="muted notifsettings__help" id="notif-email-note">{{ email_note }}</p>
+    </fieldset>
+
+    {% for row in rows %}
+      <fieldset class="notifsettings__group">
+        <legend class="sectionlabel">{{ row.label }}</legend>
+        <p class="muted notifsettings__help" id="notif-{{ row.key }}-help">{{ row.explanation }}</p>
+        <label class="notifsettings__check" for="notif-{{ row.key }}-enabled">
+          <input type="checkbox" id="notif-{{ row.key }}-enabled" name="{{ row.key }}-enabled" value="1"
+                 aria-describedby="notif-{{ row.key }}-help"{% if row.enabled %} checked{% endif %}>
+          Teavita mind
+        </label>
+        <div class="notifsettings__offsets" role="group" aria-label="{{ row.label }}: mitu päeva ette">
+          {% for offset in row.offsets %}
+            <label class="notifsettings__check" for="notif-{{ row.key }}-{{ offset.value }}">
+              <input type="checkbox" id="notif-{{ row.key }}-{{ offset.value }}" name="{{ row.key }}-offsets"
+                     value="{{ offset.value }}"{% if offset.checked %} checked{% endif %}>
+              {% if offset.value == 1 %}1 päev ette{% else %}{{ offset.value }} päeva ette{% endif %}
+            </label>
+          {% endfor %}
+          {% if row.supports_on_day %}
+            <label class="notifsettings__check" for="notif-{{ row.key }}-on_day">
+              <input type="checkbox" id="notif-{{ row.key }}-on_day" name="{{ row.key }}-on_day" value="1"{% if row.on_day %} checked{% endif %}>
+              Tähtpäeval
+            </label>
+          {% endif %}
+        </div>
+        {% if row.is_commencement %}
+          <p class="muted notifsettings__help">Kuupäeval endal tuleb «Kontrolli jõustumist», mida siin välja ei lülitata.</p>
+        {% endif %}
+      </fieldset>
+    {% endfor %}
+
+    {% if shows_escalation %}
+      <fieldset class="notifsettings__group">
+        <legend class="sectionlabel">{{ escalation.label }}</legend>
+        <p class="muted notifsettings__help" id="notif-escalation-help">{{ escalation.explanation }}</p>
+        <label class="notifsettings__check" for="notif-escalation-enabled">
+          <input type="checkbox" id="notif-escalation-enabled" name="{{ escalation.key }}-enabled" value="1"
+                 aria-describedby="notif-escalation-help"{% if escalation.enabled %} checked{% endif %}>
+          Teavita mind
+        </label>
+      </fieldset>
+    {% endif %}
+
+    <div class="notifsettings__actions">
+      <button type="submit" class="button button--primary">Salvesta</button>
+    </div>
+  </form>
+
+  <form method="post" action="{% url 'notifications:reset_settings' %}" class="notifsettings__reset">
+    {% csrf_token %}
+    <button type="submit" class="button button--quiet">Taasta vaikimisi</button>
+  </form>
+</div>
+{% endblock %}

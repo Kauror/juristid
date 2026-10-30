@@ -14295,6 +14295,87 @@ a.jcal__daynum {
   background: var(--surface-elevated);
 }
 
+/* «Teavitused» — one inbox (docs/adr/0198 §6). An unread item carries a thin
+ * accent rule at its start; reading it removes the rule and nothing else. A
+ * «Teadmiseks» item's label is the quiet info colour, a «Vajab tegevust» one
+ * keeps the warning colour above. */
+.notifblock {
+  scroll-margin-top: var(--spacing-5);
+}
+
+.notifrow--unread {
+  box-shadow: inset 2px 0 0 var(--accent-link);
+  padding-left: var(--spacing-2);
+}
+
+.notifrow--info .notifrow__label {
+  color: var(--status-info);
+}
+
+.notifrow .newasjarow {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0;
+  border-bottom: none;
+}
+
+.notifsection__note {
+  margin: var(--spacing-1) 0 0;
+  font-size: var(--typography-size-meta);
+}
+
+.notifempty {
+  margin-top: var(--spacing-5);
+}
+
+.notifsettings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+  max-width: 44rem;
+  margin-top: var(--spacing-4);
+}
+
+.notifsettings__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+  margin: 0;
+  padding: var(--spacing-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.notifsettings__help {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+}
+
+.notifsettings__offsets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2) var(--spacing-4);
+}
+
+.notifsettings__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-base);
+  color: var(--text-body);
+}
+
+.notifsettings__actions,
+.notifsettings__reset {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+.notifsettings__reset {
+  margin-top: var(--spacing-3);
+}
+
 /* ==========================================================================
  * «Nihuta kuupäeva» (templates/matters/partials/date_shift_form.html,
  * app/matters/date_shift.py). A small form inside a row's `⋯` menu and the

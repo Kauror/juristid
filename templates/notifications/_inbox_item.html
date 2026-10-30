@@ -1,0 +1,56 @@
+{% comment %}
+One inbox item (docs/adr/0198 §6), whichever source it comes from. Every item
+carries `data-inbox-item`, which is what the tests count against the bell.
+
+* **Uus asi** (ADR 0051): the Teema title is a POST button — opening it from
+  here is the read receipt, and a GET never is. The red «!» is the unread
+  state; no «Peida», no «Märgi loetuks».
+* **Kontrolli jõustumist** (ADR 0188): the existing row with «Lükka edasi» and
+  «Sulge…», unchanged.
+* **A deadline notice**: the Teema link (a GET that changes nothing), and the
+  recipient's own «Märgi loetuks» and — for «Teadmiseks» only — «Peida», each
+  a POST form with the CSRF token and a fixed `tagasi`.
+{% endcomment %}
+{% if item.type == "commencement" %}
+  {% include "notifications/_reminder_row.html" with row=item.reminder can_answer=can_answer tagasi=tagasi show_owner=show_owner %}
+{% elif item.type == "assignment" %}
+  <li class="notifrow notifrow--unread" data-inbox-item data-inbox-type="assignment">
+    <form class="newasjarow" method="post" action="{{ item.url }}">
+      {% csrf_token %}
+      <span class="notifrow__label">{{ item.label }}</span>
+      <button type="submit" class="newasjarow__title">
+        <span class="newasjarow__mark" aria-hidden="true">!</span>{{ item.title }}
+      </button>
+    </form>
+  </li>
+{% else %}
+  <li class="notifrow{% if item.is_unread %} notifrow--unread{% endif %}{% if item.kind == 'INFO' %} notifrow--info{% endif %}"
+      data-inbox-item data-inbox-type="deadline">
+    <div class="notifrow__main">
+      <span class="notifrow__label">{{ item.label }}{% if item.is_unread %}<span class="visually-hidden"> · lugemata</span>{% endif %}</span>
+      <a class="notifrow__matter" href="{{ item.url }}">{{ item.title }}</a>
+      <span class="notifrow__date">{{ item.date_label }}</span>
+      {% if item.note %}<span class="notifrow__source">{{ item.note }}</span>{% endif %}
+    </div>
+    {% if item.can_read or item.can_hide %}
+      <div class="notifrow__actions">
+        {% if item.can_read %}
+          <form method="post" action="{% url 'notifications:read' notification_id=item.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="tagasi" value="{{ tagasi }}">
+            <button type="submit" class="button button--quiet button--tiny"
+                    aria-label="Märgi loetuks: {{ item.title }}">Märgi loetuks</button>
+          </form>
+        {% endif %}
+        {% if item.can_hide %}
+          <form method="post" action="{% url 'notifications:hide' notification_id=item.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="tagasi" value="{{ tagasi }}">
+            <button type="submit" class="button button--quiet button--tiny"
+                    aria-label="Peida: {{ item.title }}">Peida</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
+  </li>
+{% endif %}

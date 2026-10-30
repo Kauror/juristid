@@ -9,7 +9,9 @@ button.
 
 The commencement is planted through the server's own services and the generator
 is the real management command — exactly what the `notifications` worker runs —
-because there is no button that generates a reminder, by design.
+because there is no button that generates a reminder, by design. The date is
+today: the check itself is generated on the day (owner decision D1,
+docs/adr/0198); the advance reminder is a deadline notice, tested beside it.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from e2e.conftest import MARTIN, REPOSITORY_ROOT, create_matter, sign_in, unique
 
 pytestmark = pytest.mark.e2e
 
-#: Records a commencement three Tallinn days ahead on the Matter
+#: Records a commencement on today's Tallinn date on the Matter
 #: `E2E_REMINDER_MATTER`, through `add_effective_date`.
 _PLANT_SCRIPT = (
     "import os;"
@@ -35,7 +37,7 @@ _PLANT_SCRIPT = (
     "from app.accounts.models import User;"
     "from app.intelligence.services import add_effective_date;"
     "from app.matters.models import Matter;"
-    "day = timezone.localdate() + timedelta(days=3);"
+    "day = timezone.localdate();"
     "add_effective_date(matter=Matter.objects.get(pk=os.environ['E2E_REMINDER_MATTER']),"
     " date_value=day, period_end=day, description='E2E põhiosa jõustub',"
     " actor=User.objects.get(upn='martin@example.invalid'));"
@@ -72,7 +74,8 @@ def test_a_commencement_prompt_is_seen_checked_and_gone(page, base_url):
     # secondary destinations, which at desktop width are inside «Veel»; the
     # integrator moves it beside the theme toggle (docs/adr/0188 §6).
     page.goto(f"{base_url}/minu-asjad/")
-    block = page.locator("section[aria-labelledby='notif-minu-heading']")
+    # One «Teavitused» block since docs/adr/0198; the check is one of its items.
+    block = page.locator("section[aria-label='Teavitused']")
     expect(block).to_contain_text("Kontrolli jõustumist")
     expect(block).to_contain_text(title)
     expect(page.locator(".notifbell__count").first).to_be_attached()

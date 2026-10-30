@@ -72,7 +72,8 @@ def test_alerts_come_before_the_calendar_and_only_when_there_are_any(
 
     blocks = _rail_blocks(client.get(MY_WORK).content.decode())
 
-    assert blocks == ["Uus asi", *SELF_ORDER]
+    # One «Teavitused» block for every alert since docs/adr/0198.
+    assert blocks == ["Teavitused", *SELF_ORDER]
 
 
 def test_a_colleagues_page_has_kiirvaade_in_the_notes_slot_and_no_notes(

@@ -349,7 +349,7 @@ The rail holds only what has no honest place on a timeline.
       {% comment %}
         The rail's order (owner's UX review of 2026-10-26, amended by the UX
         package of 2026-10-28): alerts first and only when there are any — the
-        reader's own «Kontrolli jõustumist» prompts and «Uus asi» —, then the
+        reader's one «Teavitused» block (docs/adr/0198) —, then the
         Kalender, Järgmise tegevuseta, Kuupäevata, the private Märkmed and
         Minu statistika. «Viimati muudetud» left the rail for «Viimased
         tegevused» in the main column. A colleague's page has no alerts and no
@@ -358,51 +358,22 @@ The rail holds only what has no honest place on a timeline.
       {% endcomment %}
       {% if is_self %}
         {% comment %}
-          «Uus asi» — what a colleague has just put on this desk, and nothing
-          else. At the top of the rail because it is the only block on it that
-          is about something that changed while the reader was away; it is
-          noticeable by being here and by being absent the rest of the time,
-          not by being loud.
+          «Teavitused» (docs/adr/0198 §6): one block for everything that is
+          telling this reader something — a hand-over («Uus asi», ADR 0051), a
+          commencement to check (ADR 0188) and their own deadline notices —
+          drawn from `app.notifications.inbox`, the population the bell counts.
 
-          Rendered only when there is something in it. No heading, no empty
-          state, no zero and no reserved gap: the last acknowledged row takes
-          the whole section with it. Inside the `is_self` branch like the desk
-          pad, so a department head reading a colleague's page does not receive
-          it (app/matters/views.py, docs/adr/0051).
+          Rendered only when there is something in it: no heading, no empty
+          state, no zero and no reserved gap. Inside the `is_self` branch like
+          the desk pad, so a department head reading a colleague's page
+          receives none of it (01-EHITUSJUHIS §3.5, docs/adr/0051).
 
-          A form per row rather than a link, because opening the Teema from
-          here is what marks it seen, and a GET must never do that.
-
-          The red «!» is the unread state and nothing else. It is drawn from
-          the notice being in this list at all, so opening the row takes the
-          mark away with the row — there is no second «seen» flag behind it,
-          and there is nothing here for a notice to be marked read *into*.
-
-          `aria-hidden`, because the mark is the visual half of a fact the
-          section already states in words: a screen reader reaches these rows
-          through «Uus asi», and a bare exclamation point announced once per
-          row would only be punctuation read aloud.
+          «Uus asi» rows keep their own POST form: opening the Teema from here
+          is what marks it seen, and a GET never does. The red «!» is that
+          unread state and nothing else, `aria-hidden` because the row's label
+          says it in words.
         {% endcomment %}
-        {% comment %}
-          R1-C (docs/adr/0188): the reader's own «Kontrolli jõustumist»
-          prompts. Inside `is_self`, so a colleague's page never carries it.
-        {% endcomment %}
-        {% commencement_reminders_block tagasi="minu_asjad" %}
-        {% if assignment_notices %}
-          <section class="railblock" aria-label="Uus asi">
-            <h2 class="railblock__label">Uus asi</h2>
-            {% for notice in assignment_notices %}
-              <form class="newasjarow"
-                    method="post"
-                    action="{% url 'matters:open_assignment_notice' notice_id=notice.pk %}">
-                {% csrf_token %}
-                <button type="submit" class="newasjarow__title">
-                  <span class="newasjarow__mark" aria-hidden="true">!</span>{{ notice.matter.title }}
-                </button>
-              </form>
-            {% endfor %}
-          </section>
-        {% endif %}
+        {% notifications_block tagasi="minu_asjad" %}
       {% endif %}
 
       {% comment %}

@@ -84,14 +84,20 @@ MARK = '<span class="newasjarow__mark" aria-hidden="true">!</span>'
 
 
 def _rail(html: str) -> str:
-    """Just the «Uus asi» section, so an unrelated hit elsewhere is not a leak.
+    """Just the rail's «Teavitused» block, so an unrelated hit elsewhere is not a leak.
+
+    «Uus asi» rows live in the one notifications block since docs/adr/0198
+    (owner's brief of 2026-10-30); nothing else in these tests notifies, so
+    the block holds exactly the hand-overs.
 
     The manager's page prints the same Matter titles in the ordinary work
     portfolio, and it is supposed to — a department head may read a colleague's
     work. Searching the whole document for a title would call that a privacy
     breach; the question is only ever whether *this section* is there.
     """
-    match = re.search(r'<section class="railblock" aria-label="Uus asi">.*?</section>', html, re.S)
+    match = re.search(
+        r'<section class="railblock notifblock" aria-label="Teavitused".*?</section>', html, re.S
+    )
     return match.group(0) if match else ""
 
 
@@ -686,6 +692,7 @@ def test_no_unread_renders_no_block_at_all(client, specialist):
     assert "Märkmed" in html
     assert "Uus asi" not in html
     assert 'aria-label="Uus asi"' not in html
+    assert 'aria-label="Teavitused"' not in html
     assert "newasjarow__mark" not in html
 
 
@@ -699,7 +706,7 @@ def test_one_unread_renders_the_block_above_markmed(client, specialist, other_sp
 
     assert block
     assert block.count("Saabunud üksik teema") == 1
-    assert html.index('aria-label="Uus asi"') < html.index('aria-label="Märkmed"')
+    assert html.index('aria-label="Teavitused"') < html.index('aria-label="Märkmed"')
     # The mark, and the title still readable beside it.
     assert MARK in block
     assert block.index(MARK) < block.index("Saabunud üksik teema")
@@ -719,8 +726,8 @@ def test_several_unread_render_one_heading_and_every_row(client, specialist, oth
     html = client.get(MY_WORK).content.decode()
     block = _rail(html)
 
-    assert html.count('aria-label="Uus asi"') == 1
-    assert html.count('<h2 class="railblock__label">Uus asi</h2>') == 1
+    assert html.count('aria-label="Teavitused"') == 1
+    assert html.count('<span class="notifrow__label">Uus asi</span>') == len(titles)
     for title in titles:
         assert title in block
     # One mark per unread row, not one per section. Three arrivals are three
@@ -808,8 +815,9 @@ def test_the_mark_is_hidden_from_a_screen_reader_and_the_title_is_not(
 
     assert 'aria-hidden="true">!</span>' in block
     assert "Ekraanilugeja teema" in block
-    # The section is what names the state, and it still does.
-    assert 'aria-label="Uus asi"' in block
+    # The row's own label names the state in words, inside the one block.
+    assert '<span class="notifrow__label">Uus asi</span>' in block
+    assert 'aria-label="Teavitused"' in block
 
 
 def test_the_mark_is_the_products_own_red_and_nothing_louder() -> None:

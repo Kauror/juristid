@@ -1418,15 +1418,16 @@ def _build_world():
     reopen_matter(matter=restart_matter, actor=author)
     restart_follow_up = restart_check.follow_up
 
-    # «Kontrolli jõustumist» (docs/adr/0188): a commencement three days ahead,
-    # on a Matter of its own, and the open prompt the generator owes for it.
+    # «Kontrolli jõustumist» (docs/adr/0188): a commencement today, on a Matter
+    # of its own, and the open on-the-day prompt the generator owes for it. (The
+    # seven-day stage is no longer generated — owner decision D1, ADR 0198.)
     from app.notifications.models import CommencementReminder
     from app.notifications.services import reconcile_commencement_reminders
 
     reminder_matter = factories.MatterFactory(
         owner=author, title="Jõustumisega teema", reference_year=2099, reference_number=915
     )
-    commencement_day = timezone.localdate() + timedelta(days=3)
+    commencement_day = timezone.localdate()
     commencement = factories.EffectiveDateFactory(
         matter=reminder_matter, date_value=commencement_day, period_end=commencement_day
     )
@@ -1712,6 +1713,16 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # bounded by a registry of keys, with no parameter that names anybody else.
     "accounts:save_disclosure": "C: the signed-in person's own block states",
     "accounts:reset_disclosures": "C: resets the signed-in person's own block states",
+    # C — personal deadline notifications (docs/adr/0198): the recipient's own
+    # read and hidden stamps, and their own notification preferences. Rows are
+    # resolved by `recipient=request.user`, so another person's id is a 404;
+    # no business service is called and no Matter changes. Gated like a
+    # remembered block: a READER may keep their own presentation state
+    # (tests/test_deadline_notifications.py).
+    "notifications:read": "C: the recipient's own read stamp on a deadline notice",
+    "notifications:hide": "C: the recipient's own hidden stamp on a deadline notice",
+    "notifications:settings": "C: the signed-in person's own notification preferences",
+    "notifications:reset_settings": "C: resets the signed-in person's own preferences",
     # D — authentication and session control. Not business content, and two of
     # them must work for somebody who has no role at all yet.
     "accounts:dev_login": "D: synthetic sign-in, development only",
