@@ -342,7 +342,7 @@ DAILY_CAPTURE_HOUR = 3
 
 #: Advisory lock for the automatic daily capture. Distinct from every key in
 #: use: search 24601, organisations 24602, titles 24603, storage quota 24604,
-#: reminders 24605, notifications 24606 (reserved), Lovable sync 24607.
+#: reminders 24605, taxonomy vocabulary 24606, Lovable sync 24607, deadline notifications 24609.
 DAILY_CAPTURE_LOCK = (24608, 1)
 
 
