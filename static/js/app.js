@@ -3904,9 +3904,18 @@
   var NOTICE_WEEKEND = { 5: "laupäev", 6: "pühapäev" };
   var holidayYears = new Map();
   var knownHolidays = new Map();
+  /* A year whose request failed, and when. Not asked again for a minute —
+     an expired session answers every keystroke with a sign-in page — and
+     the weekend sentences stand meanwhile. */
+  var failedHolidayYears = new Map();
+  var HOLIDAYS_RETRY_MS = 60000;
   var noticeCount = 0;
 
   function holidaysFor(year) {
+    var failedAt = failedHolidayYears.get(year);
+    if (failedAt !== undefined && Date.now() - failedAt < HOLIDAYS_RETRY_MS) {
+      return Promise.resolve(null);
+    }
     if (!holidayYears.has(year)) {
       var answer = window
         .fetch(HOLIDAYS_URL + year + "/", {
@@ -3925,8 +3934,10 @@
           return holidays;
         })
         .catch(function () {
-          /* Forgotten, so a later change asks again; weekends meanwhile. */
+          /* A refusal, a sign-in page that is not JSON, no network: asked
+             again after `HOLIDAYS_RETRY_MS`, weekends meanwhile. */
           holidayYears.delete(year);
+          failedHolidayYears.set(year, Date.now());
           return null;
         });
       holidayYears.set(year, answer);
@@ -4004,11 +4015,31 @@
     hint.setAttribute("role", "status");
     hint.setAttribute("aria-live", "polite");
     hint.setAttribute("data-date-notice", "");
+    /* One fixed order under the box: the box (and its calendar), the age
+       check, this sentence. The age check always inserts itself straight
+       after the box, so this one goes after the age check when it exists. */
     var wrap = input.closest(".datepicker") || input;
-    if (wrap.parentNode) {
-      wrap.parentNode.insertBefore(hint, wrap.nextSibling);
+    var age = input.id ? document.getElementById(input.id + "-vanus") : null;
+    var after = age && age.parentNode === wrap.parentNode ? age : wrap;
+    if (after.parentNode) {
+      after.parentNode.insertBefore(hint, after.nextSibling);
     }
+    /* A live region filled in the task that created it is not announced by
+       every screen reader, so a new one starts empty and gets its first text
+       on the next frame (`writeNotice`). */
+    hint.setAttribute("data-date-notice-new", "");
+    window.requestAnimationFrame(function () {
+      hint.removeAttribute("data-date-notice-new");
+      hint.textContent = hint.getAttribute("data-date-notice-text") || "";
+    });
     return hint;
+  }
+
+  function writeNotice(hint, text) {
+    hint.setAttribute("data-date-notice-text", text);
+    if (!hint.hasAttribute("data-date-notice-new") && hint.textContent !== text) {
+      hint.textContent = text;
+    }
   }
 
   function showNotice(input, text) {
@@ -4016,9 +4047,7 @@
     if (!hint) {
       return;
     }
-    if (hint.textContent !== text) {
-      hint.textContent = text;
-    }
+    writeNotice(hint, text);
     if (text) {
       addDescribedBy(input, hint.id);
     } else {
@@ -4026,8 +4055,19 @@
     }
   }
 
-  function checkDateNotice(input) {
+  /* `24.06.20` on the way to `24.06.2027` is a whole date to the parser —
+     the year 2020 — and while somebody is typing it is not what they mean.
+     So typing is read only once the year has four digits; `change` (leaving
+     the box, the calendar, a chip) reads a two-digit year too, as the server
+     does. */
+  var YEAR_STILL_BEING_TYPED = /^\s*\d{1,2}\.\d{1,2}\.\d{0,3}\s*$/;
+
+  function checkDateNotice(input, typing) {
     input.setAttribute("data-date-notice-touched", "");
+    if (typing && YEAR_STILL_BEING_TYPED.test(input.value)) {
+      showNotice(input, "");
+      return;
+    }
     var parsed = dayIsChosen(input) ? parseEstonian(input.value) : null;
     var year = parsed ? parsed.getFullYear() : 0;
     if (!parsed || year < NOTICE_FIRST_YEAR || year > NOTICE_LAST_YEAR) {
@@ -4058,7 +4098,7 @@
       }
       safeInit("dateNotice", function () {
         if (target.matches("input[data-datepicker]")) {
-          checkDateNotice(target);
+          checkDateNotice(target, type === "input");
         } else if (
           type === "change" &&
           target.matches("input[type=radio]") &&
@@ -4068,7 +4108,9 @@
              form, so a hint goes with the day box it described. */
           (target.form || document)
             .querySelectorAll("input[data-datepicker][data-date-notice-touched]")
-            .forEach(checkDateNotice);
+            .forEach(function (input) {
+              checkDateNotice(input, false);
+            });
         }
       });
     });

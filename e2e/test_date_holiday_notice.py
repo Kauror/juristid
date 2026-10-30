@@ -275,19 +275,90 @@ def test_a_year_is_asked_for_once(page, base_url):
     assert asked == [f"{base_url}/kuupaevad/riigipuhad/2027/"]
 
 
-def test_without_the_holidays_the_weekends_still_speak(page, base_url, no_feature_fails_to_start):
-    """A failed request is never an error on the page: weekends only."""
+def _refuse(route) -> None:
+    route.abort()
+
+
+def _sign_in_page(route) -> None:
+    """What an expired session answers: a 200 page of HTML, not JSON."""
+    route.fulfill(status=200, content_type="text/html", body="<!doctype html><p>Logi sisse</p>")
+
+
+@pytest.mark.parametrize(
+    ("failure", "event"), [(_refuse, "requestfailed"), (_sign_in_page, "requestfinished")]
+)
+def test_without_the_holidays_the_weekends_still_speak(
+    page, base_url, no_feature_fails_to_start, failure, event
+):
+    """A failed request is never an error on the page: weekends only, and the
+    year is not asked for again on every keystroke."""
     sign_in(page, base_url, MARTIN)
-    page.route("**/kuupaevad/riigipuhad/**", lambda route: route.abort())
+    asked: list[str] = []
+    page.route("**/kuupaevad/riigipuhad/**", failure)
     create_form(page, base_url)
+    page.on(
+        "request",
+        lambda request: (
+            asked.append(request.url) if "/kuupaevad/riigipuhad/" in request.url else None
+        ),
+    )
     box = page.locator("#id_response_deadline")
     hint = notice(page, "#id_response_deadline")
 
-    box.fill("26.6.2027")
+    with page.expect_event(event):
+        box.fill("26.6.2027")
     expect(hint).to_have_text(SATURDAY)
     # Thursday jaanipäev, unknown without the list: nothing, rather than a guess.
     box.fill("24.6.2027")
     expect(hint).to_have_text("")
     box.fill("27.6.2027")
     expect(hint).to_have_text(SUNDAY)
+    assert asked == [f"{base_url}/kuupaevad/riigipuhad/2027/"]
     assert no_feature_fails_to_start == []
+
+
+def test_a_year_still_being_typed_is_not_read(page, base_url):
+    """`24.06.20` is the year 2020 to the parser; typing waits for four digits."""
+    sign_in(page, base_url, MARTIN)
+    asked: list[str] = []
+    create_form(page, base_url)
+    page.on(
+        "request",
+        lambda request: (
+            asked.append(request.url) if "/kuupaevad/riigipuhad/" in request.url else None
+        ),
+    )
+    box = page.locator("#id_response_deadline")
+    hint = notice(page, "#id_response_deadline")
+
+    box.press_sequentially("24.06.2027")
+    expect(hint).to_have_text(JAANIPAEV)
+    assert asked == [f"{base_url}/kuupaevad/riigipuhad/2027/"]
+
+    # A two-digit year is still read once the box is left, as the server reads it.
+    box.fill("")
+    box.press_sequentially("27.6.26")
+    expect(page.locator("[data-date-notice]:not(:empty)")).to_have_count(0)
+    box.dispatch_event("change")
+    expect(hint).to_have_text("27.06.2026 valitud kuupäev on laupäev.")
+
+
+@pytest.mark.parametrize("first", ["age", "notice"])
+def test_the_age_check_always_comes_before_the_notice(page, base_url, first):
+    """Box, age check, notice — whichever of the two sentences appeared first."""
+    sign_in(page, base_url, MARTIN)
+    create_form(page, base_url)
+    box = page.locator("#id_response_deadline")
+    # 3.1.1990 is an old Wednesday, 26.6.2027 a recent Saturday, 6.1.1990 both.
+    box.fill("3.1.1990" if first == "age" else "26.6.2027")
+    box.fill("6.1.1990")
+    expect(notice(page, "#id_response_deadline")).to_have_text(
+        "06.01.1990 valitud kuupäev on laupäev."
+    )
+    expect(page.locator("#id_response_deadline-vanus")).not_to_be_empty()
+    order = page.locator(".datepicker:has(> #id_response_deadline) ~ .field__hint--check")
+    expect(order).to_have_count(2)
+    assert order.evaluate_all("nodes => nodes.map(node => node.id)") == [
+        "id_response_deadline-vanus",
+        "id_response_deadline-paevateade",
+    ]
