@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Teavitused · {{ application_name }}{% endblock %}
+
+{% comment %}
+`/teavitused/` — the list behind the bell (docs/adr/0198 §6, docs/adr/0188 §6).
+
+Every item is from `app.notifications.inbox.inbox_for`, the population the bell
+counts and the Minu asjad block shows. Sections, each drawn only when it has
+items: «Vajab tegevust»; «Teadmiseks»; the reader's put-off commencement checks
+(quiet, not counted, so they stay findable); and — for
+`department.view_management` only — commencement checks on Teemad with nobody
+responsible, which nobody else would ever be shown. That section is absent
+from everybody else's response, not hidden in it.
+
+A commencement check asks for a check and never states an outcome; the page
+says so once, when there is one.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Teavitused</h1>
+    <span class="pagehead__context">
+      Sinu tähtajad, jõustumise kontrollid ja sulle määratud teemad.
+      <a href="{% url 'notifications:settings' %}">Teavituste seaded</a>
+    </span>
+  </div>
+
+  {% if not items and not deferred_rows %}
+    <p class="muted notifempty">Praegu ei ole ühtegi teavitust. <a href="{% url 'notifications:settings' %}">Teavituste seaded</a></p>
+  {% endif %}
+
+  {% if action_items %}
+    <section class="notifsection" aria-labelledby="notif-action-heading">
+      <h2 class="sectionlabel" id="notif-action-heading">Vajab tegevust</h2>
+      {% if has_commencement %}
+        <p class="muted notifsection__note">
+          Jõustumise kontroll palub kontrollida, kas akt või säte jõustub nii, nagu on kirjas —
+          see ei tähenda, et jõustumine oleks toimunud.
+        </p>
+      {% endif %}
+      <ul class="notiflist">
+        {% for item in action_items %}
+          {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if info_items %}
+    <section class="notifsection" aria-labelledby="notif-info-heading">
+      <h2 class="sectionlabel" id="notif-info-heading">Teadmiseks</h2>
+      <ul class="notiflist">
+        {% for item in info_items %}
+          {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if deferred_rows %}
+    <section class="notifsection" aria-labelledby="notif-deferred-heading">
+      <h2 class="sectionlabel" id="notif-deferred-heading">Edasi lükatud</h2>
+      <ul class="notiflist">
+        {% for row in deferred_rows %}
+          <li class="notifrow">
+            <div class="notifrow__main">
+              <a class="notifrow__matter" href="{{ row.matter_url }}">{{ row.matter_title }}</a>
+              <span class="notifrow__what">{{ row.description|default:"Jõustumine" }}</span>
+              <span class="notifrow__date">
+                Kirjas olev jõustumise kuupäev {{ row.date_label }} · tuleb tagasi {{ row.deferred_label }}
+              </span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if shows_unowned %}
+    <section class="notifsection" id="vastutajata" aria-labelledby="notif-unowned-heading">
+      <h2 class="sectionlabel" id="notif-unowned-heading">Vastutaja puudub</h2>
+      {% if unowned_items %}
+        <ul class="notiflist">
+          {% for item in unowned_items %}
+            {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi show_owner=True %}
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Vastutajata teemadel ei ole kontrollimata jõustumisi.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

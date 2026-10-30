@@ -30,10 +30,20 @@ history of both.
 from __future__ import annotations
 
 from django.conf import settings
+from django.contrib.postgres.fields import ArrayField
 from django.db import models
 
 from app.core.models import BaseModel
-from app.notifications.enums import ObsoleteReason, ReminderStage, ReminderStatus
+from app.notifications.enums import (
+    NotificationCategory,
+    NotificationKind,
+    NotificationPurpose,
+    NotificationSource,
+    ObsoleteReason,
+    ReminderStage,
+    ReminderStatus,
+    RetiredReason,
+)
 
 
 class CommencementReminderQuerySet(models.QuerySet["CommencementReminder"]):
@@ -143,3 +153,228 @@ class CommencementReminder(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.get_stage_display()} {self.source_date.isoformat()}"
+
+
+# ---------------------------------------------------------------------------
+# Personal deadline notifications (docs/adr/0198)
+# ---------------------------------------------------------------------------
+
+#: The advance intervals a person may choose, in days before the date.
+ALLOWED_OFFSETS: tuple[int, ...] = (14, 7, 3, 2, 1)
+
+
+class DeadlineNotification(BaseModel):
+    """One delivery of one dated obligation to one account (docs/adr/0198).
+
+    **A delivery, not a state.** The row says «on this day the system told
+    this person that this source is due on that date». Whether the source is
+    *still* due is never stored here: every list re-reads the source through
+    its canonical selector, as the recipient, and leaves out a row whose source
+    no longer matches — before the worker has retired it.
+
+    **No business text is copied.** The Teema title, the step text, the
+    owner's name are read live, like `MatterAssignmentNotice` (ADR 0051).
+
+    **Once per interval, ever.** ``(recipient, category, source_type,
+    source_id, source_date, purpose, offset_days)`` is unique and *not*
+    partial: a dismissed, read or retired row still holds its slot, so a rerun
+    or a restart never delivers the same interval twice. When today's interval
+    is held by the recipient's own retired row (handed away and back, moved
+    away and back, reopened), the generator revives that row instead; a hidden
+    row is never revived (`deadlines._deliver`). A changed date is a new
+    ``source_date`` and so a new schedule.
+
+    ``read_at`` and ``dismissed_at`` are the recipient's presentation state:
+    neither is a business fact and neither writes a `ChangeEvent`.
+    ``retired_at`` is the system's: the source was done, moved, handed on or
+    superseded by a later interval. Rows are never deleted, except with their
+    Teema (``matter`` CASCADE, app/matters/deletion.py) or their account.
+    """
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="deadline_notifications",
+        verbose_name="saaja",
+    )
+    #: The Teema the source hangs off — for scoping, the title and the cascade.
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="deadline_notifications",
+        verbose_name="teema",
+    )
+    category = models.CharField(
+        max_length=24, choices=NotificationCategory.choices, verbose_name="liik"
+    )
+    source_type = models.CharField(
+        max_length=16, choices=NotificationSource.choices, verbose_name="allika tüüp"
+    )
+    #: The source row's primary key. Not a foreign key: five tables can be the
+    #: source, and the row must survive its source being completed.
+    source_id = models.UUIDField(verbose_name="allikas")
+    #: The date this delivery was generated for. A source moved to another day
+    #: no longer matches it, which is how the row knows it is stale.
+    source_date = models.DateField(verbose_name="kuupäev")
+    purpose = models.CharField(
+        max_length=16, choices=NotificationPurpose.choices, verbose_name="eesmärk"
+    )
+    #: Days before ``source_date`` for ``ADVANCE``; 0 for the others.
+    offset_days = models.PositiveSmallIntegerField(default=0, verbose_name="päevi ette")
+    kind = models.CharField(max_length=8, choices=NotificationKind.choices, verbose_name="tüüp")
+    #: The Tallinn day this delivery became due (``source_date − offset`` for an
+    #: advance row, ``source_date`` on the day, ``source_date + 1`` for an
+    #: escalation). Stored so a late generator still shows the right interval.
+    due_on = models.DateField(verbose_name="tähtpäev")
+
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
+    dismissed_at = models.DateTimeField(null=True, blank=True, verbose_name="peidetud")
+    retired_at = models.DateTimeField(null=True, blank=True, verbose_name="aegunud")
+    retired_reason = models.CharField(
+        max_length=16, choices=RetiredReason.choices, blank=True, verbose_name="aegumise põhjus"
+    )
+
+    class Meta:
+        verbose_name = "tähtaja teavitus"
+        verbose_name_plural = "tähtaegade teavitused"
+        ordering = ["source_date", "due_on", "id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=[
+                    "recipient",
+                    "category",
+                    "source_type",
+                    "source_id",
+                    "source_date",
+                    "purpose",
+                    "offset_days",
+                ],
+                name="notifications_deadline_once_per_interval",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(category__in=NotificationCategory.values),
+                name="notifications_deadline_category_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(source_type__in=NotificationSource.values),
+                name="notifications_deadline_source_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(purpose__in=NotificationPurpose.values),
+                name="notifications_deadline_purpose_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=NotificationKind.values),
+                name="notifications_deadline_kind_vocabulary",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(retired_reason="")
+                | models.Q(retired_reason__in=RetiredReason.values),
+                name="notifications_deadline_retired_reason_vocabulary",
+            ),
+            # An advance row names its interval; the others carry none.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(purpose=NotificationPurpose.ADVANCE, offset_days__in=ALLOWED_OFFSETS)
+                    | (~models.Q(purpose=NotificationPurpose.ADVANCE) & models.Q(offset_days=0))
+                ),
+                name="notifications_deadline_offset_matches_purpose",
+            ),
+            # Only an INFO row can be hidden; an ACTION row leaves when it is done.
+            models.CheckConstraint(
+                condition=models.Q(dismissed_at__isnull=True)
+                | models.Q(kind=NotificationKind.INFO),
+                name="notifications_deadline_only_info_is_hidden",
+            ),
+            # A retirement always says why, and a reason always has a moment.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(retired_at__isnull=True, retired_reason="")
+                    | (models.Q(retired_at__isnull=False) & ~models.Q(retired_reason=""))
+                ),
+                name="notifications_deadline_retirement_has_reason",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["recipient", "retired_at", "dismissed_at", "due_on"],
+                name="notif_deadline_inbox",
+            ),
+            models.Index(fields=["source_type", "source_id"], name="notif_deadline_source"),
+            # The generator's and the bell's population: rows still outstanding.
+            models.Index(
+                fields=["recipient"],
+                condition=models.Q(retired_at__isnull=True),
+                name="notif_deadline_outstanding",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.category} {self.purpose} {self.offset_days} {self.source_date.isoformat()}"
+
+
+class NotificationPreference(BaseModel):
+    """One person's explicit choice about one notification category.
+
+    Like `accounts.DisclosurePreference` (docs/adr/0194): presentation state of
+    the signed-in account, never read by authorization, and only an explicit
+    choice is stored — no row means the registry default
+    (`app.notifications.categories`), so a default changed later reaches
+    everybody who never chose otherwise. «Taasta vaikimisi» deletes the rows.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_preferences",
+        verbose_name="kasutaja",
+    )
+    #: A registered preference key (`categories.PREFERENCE_KEYS`): a category,
+    #: or the management escalation's own key.
+    category = models.CharField(max_length=24, verbose_name="liik")
+    enabled = models.BooleanField(verbose_name="sees")
+    offsets = ArrayField(
+        models.PositiveSmallIntegerField(), default=list, blank=True, verbose_name="päevi ette"
+    )
+    on_day = models.BooleanField(default=False, verbose_name="tähtpäeval")
+
+    class Meta:
+        verbose_name = "teavituse eelistus"
+        verbose_name_plural = "teavituste eelistused"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "category"], name="notifications_preference_user_category"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(offsets__contained_by=list(ALLOWED_OFFSETS)),
+                name="notifications_preference_allowed_offsets",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.category}={'sees' if self.enabled else 'väljas'}"
+
+
+class NotificationSettings(BaseModel):
+    """One person's global notification switches. Absent means the defaults.
+
+    ``email_requested`` is a stored wish and nothing else: no address is read
+    and nothing is sent until personal sign-in and a delivery setting both
+    exist (`app.notifications.email.deliver_email`).
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="notification_settings",
+        verbose_name="kasutaja",
+    )
+    paused = models.BooleanField(default=False, verbose_name="peatatud")
+    email_requested = models.BooleanField(default=False, verbose_name="soovib e-posti")
+
+    class Meta:
+        verbose_name = "teavituste seaded"
+        verbose_name_plural = "teavituste seaded"
+
+    def __str__(self) -> str:
+        return "peatatud" if self.paused else "sees"

@@ -35,7 +35,11 @@ MY_WORK = "/minu-asjad/"
 #: The rail sections, by the labels they carry for a screen reader. Read that
 #: way rather than by CSS class because the accessible name is the contract the
 #: page owes a keyboard user, and a class is not.
-UUS_ASI = "section[aria-label='Uus asi']"
+#: «Uus asi» rows live in the one «Teavitused» block since docs/adr/0198. The
+#: block may also carry other notices from the shared database, so a row of
+#: this file is selected by its type, inside the block.
+TEAVITUSED = "section[aria-label='Teavitused']"
+UUS_ASI = f"{TEAVITUSED} [data-inbox-type='assignment']"
 MARKMED = "section[aria-label='Märkmed']"
 
 #: The unread mark. A browser is the only place the last question about it can
@@ -81,7 +85,7 @@ def _clear_the_block(page, base_url: str) -> None:
         page.wait_for_load_state("networkidle")
         if not _block(page).count():
             return
-        _block(page).locator("button").first.click()
+        _block(page).first.locator("button").first.click()
         page.wait_for_load_state("networkidle")
     raise AssertionError("the Uus asi block never emptied")
 
@@ -102,8 +106,8 @@ def test_an_assigned_matter_appears_opens_and_disappears(page, base_url):
     sign_in(page, base_url, SANDRA)
 
     # -- it is there, and it is above Märkmed ----------------------------
-    expect(_block(page)).to_have_count(1)
-    expect(_block(page).get_by_role("heading", name="Uus asi")).to_be_visible()
+    expect(page.locator(TEAVITUSED)).to_have_count(1)
+    expect(page.locator(TEAVITUSED).get_by_role("heading", name="Teavitused")).to_be_visible()
     expect(_block(page).get_by_role("button", name=title)).to_be_visible()
 
     # -- and it is marked, in red, on the screen -------------------------
@@ -123,7 +127,7 @@ def test_an_assigned_matter_appears_opens_and_disappears(page, base_url):
     ).evaluate("el => getComputedStyle(el).color"), "the mark is the same colour as the title"
     assert mark.get_attribute("aria-hidden") == "true"
 
-    notices = _block(page).bounding_box()
+    notices = page.locator(TEAVITUSED).bounding_box()
     notes = page.locator(MARKMED).bounding_box()
     assert notices is not None and notes is not None
     assert notices["y"] + notices["height"] <= notes["y"] + 1, (
@@ -145,7 +149,6 @@ def test_an_assigned_matter_appears_opens_and_disappears(page, base_url):
     page.goto(f"{base_url}{MY_WORK}")
     page.wait_for_load_state("networkidle")
     expect(_block(page)).to_have_count(0)
-    expect(page.get_by_role("heading", name="Uus asi")).to_have_count(0)
     # The mark is the notice being unread. Nothing was left behind to hide.
     expect(page.locator(MARK)).to_have_count(0)
     # The rail is still a rail: nothing was reserved for the absent block.

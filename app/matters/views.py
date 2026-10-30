@@ -551,12 +551,13 @@ def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) ->
         # Which stored version the box is being filled from, so a second tab's
         # autosave can be refused rather than allowed to overwrite it (QA-09).
         context["scratchpad_revision"] = person_workspace.scratchpad_revision(context["scratchpad"])
-        # «Uus asi», under the same rule and for the same reason. A colleague's
-        # unread hand-overs are their own workflow state: the department head's
-        # branch below does not query them, so there is no section, no heading
-        # and no Matter title from this queue anywhere in that response
+        # «Uus asi» and every other notification are read by the template's
+        # `{% notifications_block %}`, inside the `is_self` branch, for
+        # `request.user` only (docs/adr/0198 §6). A colleague's unread
+        # hand-overs are their own workflow state: the department head's branch
+        # below never draws the block, so there is no section, no heading and no
+        # Matter title from this queue anywhere in that response
         # (app/matters/person_work.py, docs/adr/0051).
-        context["assignment_notices"] = person_workspace.unread_assignment_notices(request.user)
     else:
         context["switcher"] = person_workspace.build_switcher(subject)
         # The switcher's people are the department's workers, which is exactly

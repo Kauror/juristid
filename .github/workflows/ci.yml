@@ -536,6 +536,7 @@ jobs:
         run: |
           uv run python manage.py migrate mcp_writes zero --noinput
           uv run python manage.py migrate mcp_access zero --noinput
+          uv run python manage.py migrate notifications 0001 --noinput
           uv run python manage.py migrate taxonomy 0003 --noinput
           uv run python manage.py migrate workflow 0005 --noinput
           uv run python manage.py migrate submissions 0004 --noinput

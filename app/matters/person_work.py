@@ -220,10 +220,19 @@ def unread_assignment_notices(user: Any) -> list[MatterAssignmentNotice]:
     template prints its title and a rail block is not a place to spend twenty
     queries (docs/adr/0051).
     """
+    return list(unread_assignment_notice_queryset(user))
+
+
+def unread_assignment_notice_queryset(user: Any) -> QuerySet[MatterAssignmentNotice]:
+    """:func:`unread_assignment_notices` as a queryset, so the bell can count it.
+
+    The one statement of the five conditions above; the unified inbox
+    (`app.notifications.inbox`, docs/adr/0198) lists and counts it from here.
+    """
     if user is None or getattr(user, "pk", None) is None:
-        return []
+        return MatterAssignmentNotice.objects.none()
     visible = Matter.objects.visible_to(user).filter(owner=user, is_open=True)
-    return list(
+    return (
         MatterAssignmentNotice.objects.filter(
             recipient=user,
             viewed_at__isnull=True,

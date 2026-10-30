@@ -69,39 +69,41 @@ def _reconcile(day: date):
     return services.reconcile_commencement_reminders(day)
 
 
+def _legacy(record) -> CommencementReminder:
+    """An open seven-day prompt, as the generator wrote them before owner decision
+    D1 (2026-10-30, docs/adr/0198). None is generated any more; the ones that
+    exist keep working exactly as before, which is what these tests hold."""
+    return CommencementReminder.objects.create(
+        effective_date=record,
+        source_date=record.date_value,
+        stage=ReminderStage.SEVEN_DAYS,
+        due_on=record.date_value - timedelta(days=7),
+    )
+
+
 # ---------------------------------------------------------------------------
 # The two stages
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize(
-    ("days_ahead", "expected"),
-    [
-        (8, []),
-        (7, [ReminderStage.SEVEN_DAYS]),
-        (3, [ReminderStage.SEVEN_DAYS]),
-        (1, [ReminderStage.SEVEN_DAYS]),
-    ],
-)
-def test_the_first_prompt_comes_seven_calendar_days_ahead(days_ahead, expected):
+@pytest.mark.parametrize("days_ahead", [8, 7, 3, 1])
+def test_no_seven_day_prompt_is_generated_any_more(days_ahead):
+    """Owner decision D1 (2026-10-30): the advance reminder is a personal deadline
+    notification now (docs/adr/0198); the check itself waits for the day."""
     owner = factories.UserFactory()
     record = _commencement(owner=owner, on=TODAY + timedelta(days=days_ahead))
 
-    _reconcile(TODAY)
+    result = _reconcile(TODAY)
 
-    rows = _rows(record)
-    assert [row.stage for row in rows] == expected
-    for row in rows:
-        assert row.status == ReminderStatus.OPEN
-        assert row.source_date == record.date_value
-        assert row.due_on == record.date_value - timedelta(days=7)
+    assert result.created == 0
+    assert _rows(record) == []
 
 
 def test_on_the_day_an_unanswered_check_is_asked_again_and_replaces_the_first():
     owner = factories.UserFactory()
     day = TODAY + timedelta(days=7)
     record = _commencement(owner=owner, on=day)
-    _reconcile(TODAY)
+    _legacy(record)
 
     result = _reconcile(day)
 
@@ -119,8 +121,7 @@ def test_answering_from_a_page_drawn_before_the_day_answers_the_day():
     owner = factories.UserFactory()
     day = TODAY + timedelta(days=7)
     record = _commencement(owner=owner, on=day)
-    _reconcile(TODAY)
-    (stale,) = _rows(record)
+    stale = _legacy(record)
     _reconcile(day)
 
     services.acknowledge_reminder(reminder=stale, actor=owner)
@@ -154,8 +155,7 @@ def test_an_answered_check_is_not_asked_again_on_the_day(answer):
     owner = factories.UserFactory()
     day = TODAY + timedelta(days=5)
     record = _commencement(owner=owner, on=day)
-    _reconcile(TODAY)
-    (first,) = _rows(record)
+    first = _legacy(record)
     if answer == "acknowledge":
         services.acknowledge_reminder(reminder=first, actor=owner)
     else:
@@ -186,7 +186,7 @@ def test_acknowledging_the_on_the_day_prompt_closes_it():
 
 def test_an_answer_twice_is_refused_and_recorded_once():
     owner = factories.UserFactory()
-    record = _commencement(owner=owner, on=TODAY + timedelta(days=2))
+    record = _commencement(owner=owner, on=TODAY)
     _reconcile(TODAY)
     (row,) = _rows(record)
     services.acknowledge_reminder(reminder=row, actor=owner)
@@ -204,7 +204,7 @@ def test_an_answer_twice_is_refused_and_recorded_once():
 
 def test_a_dismissal_needs_a_reason():
     owner = factories.UserFactory()
-    record = _commencement(owner=owner, on=TODAY + timedelta(days=2))
+    record = _commencement(owner=owner, on=TODAY)
     _reconcile(TODAY)
     (row,) = _rows(record)
 
@@ -220,8 +220,7 @@ def test_a_dismissal_needs_a_reason():
 def test_a_moved_date_retires_the_old_prompt_and_asks_about_the_new_one():
     owner = factories.UserFactory()
     record = _commencement(owner=owner, on=TODAY + timedelta(days=5))
-    _reconcile(TODAY)
-    (old,) = _rows(record)
+    old = _legacy(record)
     new_day = TODAY + timedelta(days=30)
 
     update_effective_date(
@@ -247,17 +246,18 @@ def test_a_moved_date_retires_the_old_prompt_and_asks_about_the_new_one():
     assert [row.status for row in _rows(record)] == [ReminderStatus.OBSOLETE]
 
     _reconcile(new_day - timedelta(days=7))
+    assert [row.source_date for row in _rows(record)] == [TODAY + timedelta(days=5)]
+    _reconcile(new_day)
     fresh = [row for row in _rows(record) if row.source_date == new_day]
     assert [(row.stage, row.status) for row in fresh] == [
-        (ReminderStage.SEVEN_DAYS, ReminderStatus.OPEN)
+        (ReminderStage.ON_DATE, ReminderStatus.OPEN)
     ]
 
 
 def test_an_acknowledged_date_that_moves_is_asked_about_again():
     owner = factories.UserFactory()
     record = _commencement(owner=owner, on=TODAY + timedelta(days=5))
-    _reconcile(TODAY)
-    services.acknowledge_reminder(reminder=_rows(record)[0], actor=owner)
+    services.acknowledge_reminder(reminder=_legacy(record), actor=owner)
     new_day = TODAY + timedelta(days=6)
 
     update_effective_date(
@@ -268,7 +268,7 @@ def test_an_acknowledged_date_that_moves_is_asked_about_again():
         date_precision=DatePrecision.EXACT,
         actor=owner,
     )
-    _reconcile(TODAY)
+    _reconcile(new_day)
 
     statuses = {(row.source_date, row.status) for row in _rows(record)}
     assert statuses == {
@@ -296,7 +296,7 @@ def _move(record, actor, day, precision=DatePrecision.EXACT):
 def test_a_date_moved_away_and_back_is_asked_about_again():
     """D1 -> D2 -> D1: the retired D1 row stays history and a fresh D1 prompt is owed."""
     owner = factories.UserFactory()
-    first = TODAY + timedelta(days=5)
+    first = TODAY
     record = _commencement(owner=owner, on=first)
     _reconcile(TODAY)
     _move(record, owner, TODAY + timedelta(days=40))
@@ -308,8 +308,8 @@ def test_a_date_moved_away_and_back_is_asked_about_again():
     assert result.created == 1
     rows = [(row.source_date, row.stage, row.status) for row in _rows(record)]
     assert sorted(rows, key=lambda r: r[2]) == [
-        (first, ReminderStage.SEVEN_DAYS, ReminderStatus.OBSOLETE),
-        (first, ReminderStage.SEVEN_DAYS, ReminderStatus.OPEN),
+        (first, ReminderStage.ON_DATE, ReminderStatus.OBSOLETE),
+        (first, ReminderStage.ON_DATE, ReminderStatus.OPEN),
     ]
     assert len(selectors.open_reminders_for(owner, today=TODAY)) == 1
     # And again, and the day itself still asks: the history only grows.
@@ -323,7 +323,7 @@ def test_a_date_moved_away_and_back_is_asked_about_again():
 def test_a_day_made_approximate_and_exact_again_is_asked_about_again():
     """EXACT -> MONTH -> EXACT on the same day."""
     owner = factories.UserFactory()
-    day = TODAY + timedelta(days=5)
+    day = TODAY
     record = _commencement(owner=owner, on=day)
     _reconcile(TODAY)
     _move(record, owner, day, precision=DatePrecision.MONTH)
@@ -341,7 +341,7 @@ def test_a_day_made_approximate_and_exact_again_is_asked_about_again():
 
 def test_an_answered_date_moved_away_and_back_stays_answered():
     owner = factories.UserFactory()
-    first = TODAY + timedelta(days=5)
+    first = TODAY
     record = _commencement(owner=owner, on=first)
     _reconcile(TODAY)
     services.acknowledge_reminder(reminder=_rows(record)[0], actor=owner)
@@ -357,7 +357,7 @@ def test_an_answered_date_moved_away_and_back_stays_answered():
 
 def test_a_date_made_approximate_retires_its_prompt():
     owner = factories.UserFactory()
-    day = TODAY + timedelta(days=5)
+    day = TODAY
     record = _commencement(owner=owner, on=day)
     _reconcile(TODAY)
     start = day.replace(day=1)
@@ -380,7 +380,7 @@ def test_a_date_made_approximate_retires_its_prompt():
 
 def test_a_cancelled_commencement_has_no_open_prompt():
     owner = factories.UserFactory()
-    record = _commencement(owner=owner, on=TODAY + timedelta(days=4))
+    record = _commencement(owner=owner, on=TODAY)
     _reconcile(TODAY)
 
     cancel_effective_date(record=record, actor=owner, reason="Eelnõu võeti menetlusest tagasi.")
@@ -398,7 +398,7 @@ def test_a_cancelled_commencement_has_no_open_prompt():
 
 def test_a_superseded_commencement_has_no_open_prompt():
     owner = factories.UserFactory()
-    record = _commencement(owner=owner, on=TODAY + timedelta(days=4))
+    record = _commencement(owner=owner, on=TODAY)
     _reconcile(TODAY)
     type(record).objects.filter(pk=record.pk).update(status=FactStatus.SUPERSEDED)
     _commencement(owner=owner, matter=record.matter, on=TODAY + timedelta(days=40))
@@ -415,7 +415,7 @@ def test_a_commencement_removed_from_its_teema_has_no_open_prompt():
     from django.utils import timezone
 
     owner = factories.UserFactory()
-    record = _commencement(owner=owner, on=TODAY + timedelta(days=4))
+    record = _commencement(owner=owner, on=TODAY)
     _reconcile(TODAY)
     type(record).objects.filter(pk=record.pk).update(removed_at=timezone.now())
 
@@ -454,13 +454,13 @@ def test_general_order_unknown_and_approximate_commencements_get_no_reminder(kin
 def test_a_day_read_out_of_text_counts_as_a_day():
     record = _commencement(
         owner=factories.UserFactory(),
-        on=TODAY + timedelta(days=3),
+        on=TODAY,
         precision=DatePrecision.INFERRED,
     )
 
     _reconcile(TODAY)
 
-    assert [row.stage for row in _rows(record)] == [ReminderStage.SEVEN_DAYS]
+    assert [row.stage for row in _rows(record)] == [ReminderStage.ON_DATE]
 
 
 def test_a_drafts_planned_commencement_is_information_and_gets_no_reminder():
@@ -486,7 +486,7 @@ def test_a_closed_teema_is_still_asked_about():
     from app.matters.services import close_matter
 
     matter = factories.MatterFactory(owner=owner)
-    record = _commencement(matter=matter, on=TODAY + timedelta(days=2))
+    record = _commencement(matter=matter, on=TODAY)
     close_matter(matter=matter, disposition="COMPLETED", actor=owner, follow_ups_confirmed=True)
 
     _reconcile(TODAY)
@@ -504,7 +504,7 @@ def test_a_closed_teema_is_still_asked_about():
 def test_open_reminders_follow_the_current_vastutaja():
     first = factories.UserFactory()
     second = factories.UserFactory()
-    record = _commencement(owner=first, on=TODAY + timedelta(days=3))
+    record = _commencement(owner=first, on=TODAY)
     _reconcile(TODAY)
     assert len(selectors.open_reminders_for(first, today=TODAY)) == 1
 
@@ -521,7 +521,7 @@ def test_open_reminders_follow_the_current_vastutaja():
 def test_an_unowned_teema_is_listed_for_department_management_only():
     head = factories.DepartmentHeadFactory()
     specialist = factories.UserFactory()
-    record = _commencement(owner=None, on=TODAY + timedelta(days=3))
+    record = _commencement(owner=None, on=TODAY)
     _reconcile(TODAY)
 
     assert [
@@ -537,7 +537,7 @@ def test_an_unowned_teema_is_listed_for_department_management_only():
 def test_osakond_shows_unowned_prompts_to_the_head_and_not_to_a_specialist(client):
     from django.utils import timezone
 
-    record = _commencement(owner=None, on=timezone.localdate() + timedelta(days=3))
+    record = _commencement(owner=None, on=timezone.localdate())
     record.matter.__class__.objects.filter(pk=record.matter.pk).update(
         title="Vastutajata jõustumisega teema"
     )
@@ -556,7 +556,7 @@ def test_osakond_shows_unowned_prompts_to_the_head_and_not_to_a_specialist(clien
 def test_osakond_has_no_reminder_block_when_nothing_is_unowned(client):
     from django.utils import timezone
 
-    _commencement(owner=factories.UserFactory(), on=timezone.localdate() + timedelta(days=3))
+    _commencement(owner=factories.UserFactory(), on=timezone.localdate())
     services.reconcile_commencement_reminders()
     client.force_login(factories.DepartmentHeadFactory())
 
@@ -568,7 +568,7 @@ def test_osakond_has_no_reminder_block_when_nothing_is_unowned(client):
 def test_an_inactive_vastutaja_counts_as_nobody():
     head = factories.DepartmentHeadFactory()
     gone = factories.UserFactory()
-    record = _commencement(owner=gone, on=TODAY + timedelta(days=3))
+    record = _commencement(owner=gone, on=TODAY)
     _reconcile(TODAY)
     type(gone).objects.filter(pk=gone.pk).update(is_active=False)
 
@@ -587,8 +587,7 @@ def test_a_deferred_prompt_is_hidden_until_its_day():
     owner = factories.UserFactory()
     day = TODAY + timedelta(days=4)
     record = _commencement(owner=owner, on=day)
-    _reconcile(TODAY)
-    (row,) = _rows(record)
+    row = _legacy(record)
 
     services.defer_reminder(reminder=row, actor=owner, until=TODAY + timedelta(days=2), today=TODAY)
 
@@ -606,8 +605,7 @@ def test_a_seven_day_deferral_past_the_date_is_capped_and_the_day_still_asks():
     owner = factories.UserFactory()
     day = TODAY + timedelta(days=4)
     record = _commencement(owner=owner, on=day)
-    _reconcile(TODAY)
-    (row,) = _rows(record)
+    row = _legacy(record)
 
     deferred = services.defer_reminder(
         reminder=row, actor=owner, until=day + timedelta(days=20), today=TODAY
@@ -663,7 +661,7 @@ def test_a_deferral_must_be_ahead_and_bounded(until, message):
 def test_a_restart_or_a_second_run_creates_nothing_twice():
     owners = [factories.UserFactory() for _ in range(3)]
     for index, owner in enumerate(owners):
-        _commencement(owner=owner, on=TODAY + timedelta(days=index + 1))
+        _commencement(owner=owner, on=TODAY - timedelta(days=index))
 
     first = _reconcile(TODAY)
     second = _reconcile(TODAY)
@@ -678,7 +676,7 @@ def test_a_restart_or_a_second_run_creates_nothing_twice():
 def test_the_unique_constraint_backs_the_generator():
     from django.db import IntegrityError, transaction
 
-    record = _commencement(owner=factories.UserFactory(), on=TODAY + timedelta(days=3))
+    record = _commencement(owner=factories.UserFactory(), on=TODAY)
     _reconcile(TODAY)
     (row,) = _rows(record)
 
@@ -694,20 +692,20 @@ def test_today_is_the_tallinn_date_not_the_utc_one(monkeypatch):
 
     late_evening_utc = datetime(2026, 11, 1, 22, 30, tzinfo=UTC)
     monkeypatch.setattr(django_timezone, "now", lambda: late_evening_utc)
-    # Seven Tallinn days ahead of 2 November; eight UTC days ahead of 1 November.
-    record = _commencement(owner=factories.UserFactory(), on=date(2026, 11, 9))
+    # The Tallinn day itself; still a day ahead on the UTC calendar.
+    record = _commencement(owner=factories.UserFactory(), on=date(2026, 11, 2))
 
     result = services.reconcile_commencement_reminders()
 
     assert result.today == date(2026, 11, 2)
-    assert [row.stage for row in _rows(record)] == [ReminderStage.SEVEN_DAYS]
+    assert [row.stage for row in _rows(record)] == [ReminderStage.ON_DATE]
 
 
 def test_just_before_tallinn_midnight_it_is_still_the_previous_day(monkeypatch):
     from django.utils import timezone as django_timezone
 
     monkeypatch.setattr(django_timezone, "now", lambda: datetime(2026, 11, 1, 21, 59, tzinfo=UTC))
-    record = _commencement(owner=factories.UserFactory(), on=date(2026, 11, 9))
+    record = _commencement(owner=factories.UserFactory(), on=date(2026, 11, 2))
 
     result = services.reconcile_commencement_reminders()
 
@@ -721,7 +719,7 @@ def test_just_before_tallinn_midnight_it_is_still_the_previous_day(monkeypatch):
 
 
 def test_the_command_prints_one_summary_line_and_check_reports_owed_work(capsys):
-    _commencement(owner=factories.UserFactory(), on=TODAY + timedelta(days=3))
+    _commencement(owner=factories.UserFactory(), on=TODAY)
 
     with pytest.raises(CommandError):
         call_command("generate_commencement_reminders", "--check", "--today", TODAY.isoformat())
@@ -745,7 +743,7 @@ def test_the_command_prints_one_summary_line_and_check_reports_owed_work(capsys)
 def _due_reminder(owner):
     from django.utils import timezone
 
-    record = _commencement(owner=owner, on=timezone.localdate() + timedelta(days=3))
+    record = _commencement(owner=owner, on=timezone.localdate())
     services.reconcile_commencement_reminders()
     return _rows(record)[0]
 

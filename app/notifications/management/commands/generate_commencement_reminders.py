@@ -1,4 +1,9 @@
-"""Generate and retire «Kontrolli jõustumist» reminders (docs/adr/0188).
+"""Generate and retire «Kontrolli jõustumist» reminders and deadline notifications.
+
+(docs/adr/0188, docs/adr/0198.) One worker, the `notifications` Compose
+service, does both: each turn reconciles the commencement checks, then the
+personal deadline notifications, each under its own advisory lock. The name is
+kept because the Compose service and the healthcheck call it.
 
     python manage.py generate_commencement_reminders            # one run, one summary line
     python manage.py generate_commencement_reminders --check    # exit 1 if a run is owed
@@ -27,11 +32,13 @@ from __future__ import annotations
 import logging
 import signal
 import time
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +48,60 @@ logger = logging.getLogger(__name__)
 DEFAULT_INTERVAL_SECONDS = 600.0
 
 
+def _reconcile_all(today: date | None, *, dry_run: bool) -> list[Any]:
+    from app.notifications.deadlines import reconcile_deadline_notifications
+    from app.notifications.services import reconcile_commencement_reminders
+
+    return [
+        reconcile_commencement_reminders(today, dry_run=dry_run),
+        reconcile_deadline_notifications(today, dry_run=dry_run),
+    ]
+
+
+def _each_turn() -> list[Any]:
+    """One loop turn. Each reconcile is its own transaction: one failing does not
+    stop the other, and the next turn tries again."""
+    from app.notifications.deadlines import reconcile_deadline_notifications
+    from app.notifications.services import reconcile_commencement_reminders
+
+    results: list[Any] = []
+    for name, run in (
+        ("commencement reminder", reconcile_commencement_reminders),
+        ("deadline notification", reconcile_deadline_notifications),
+    ):
+        try:
+            results.append(run())
+        except DatabaseError:
+            logger.exception("%s reconcile failed", name)
+    # The daily Muudatused photograph rides the same worker (docs/adr/0159 §7,
+    # docs/adr/0198 §8): once per Tallinn day from 03:00, never twice, under its
+    # own lock — so no host cron and no second service.
+    try:
+        results.append(_capture_snapshot())
+    except DatabaseError:
+        logger.exception("daily snapshot capture failed")
+    return results
+
+
+@dataclass(frozen=True)
+class _SnapshotTurn:
+    """The capture's line in the loop's output: said only on the turn it photographs."""
+
+    changed: bool
+
+    @property
+    def summary(self) -> str:
+        return f"Operatiivne hetktõmmis {timezone.localdate().isoformat()}: tehtud."
+
+
+def _capture_snapshot() -> _SnapshotTurn:
+    from app.reporting.selectors.snapshots import capture_daily_if_missing
+
+    return _SnapshotTurn(changed=capture_daily_if_missing())
+
+
 class Command(BaseCommand):
-    help = "Create due «Kontrolli jõustumist» reminders and retire obsolete ones."
+    help = "Create due commencement checks and deadline notifications; retire obsolete ones."
 
     def add_arguments(self, parser: Any) -> None:
         parser.add_argument(
@@ -70,26 +129,25 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from app.notifications.services import reconcile_commencement_reminders
-
         if options["loop"]:
             self._loop(float(options["interval_seconds"]))
             return
 
-        result = reconcile_commencement_reminders(options["today"], dry_run=options["check"])
+        results = _reconcile_all(options["today"], dry_run=options["check"])
         if options["check"]:
-            if result.changed:
-                self.stderr.write(result.summary)
-                raise CommandError("Jõustumise meeldetuletuste genereerimine on tegemata.")
+            if any(result.changed for result in results):
+                for result in results:
+                    self.stderr.write(result.summary)
+                raise CommandError("Teavituste genereerimine on tegemata.")
             if not options["quiet"]:
-                self.stdout.write(self.style.SUCCESS(result.summary))
+                for result in results:
+                    self.stdout.write(self.style.SUCCESS(result.summary))
             return
         if not options["quiet"]:
-            self.stdout.write(result.summary)
+            for result in results:
+                self.stdout.write(result.summary)
 
     def _loop(self, interval: float) -> None:
-        from app.notifications.services import reconcile_commencement_reminders
-
         stopping = {"now": False}
 
         def stop(signum: int, frame: Any) -> None:
@@ -105,11 +163,7 @@ class Command(BaseCommand):
         )
         try:
             while not stopping["now"]:
-                try:
-                    result = reconcile_commencement_reminders()
-                except DatabaseError:
-                    logger.exception("commencement reminder reconcile failed")
-                else:
+                for result in _each_turn():
                     if result.changed:
                         self.stdout.write(result.summary)
                 deadline = time.monotonic() + interval

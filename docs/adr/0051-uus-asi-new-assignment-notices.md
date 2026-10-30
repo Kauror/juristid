@@ -163,3 +163,7 @@ owner holds, because in this authorization model an owner participates in their
 own file (ADR 0042). It is still asked, and asked before any Matter information
 is rendered, because ownership is not authorization and a narrower rule later
 must not have to remember to add it.
+
+## Amendment 2026-10-30 — shown in the one «Teavitused» block and counted by the bell (ADR 0198)
+
+The owner's notifications package of 2026-10-30 amends one sentence of this record: «no notification centre, no bell, no badge in the top bar, no counter». An unread notice is now an item of the single Minu asjad «Teavitused» rail block and of `/teavitused/`, and the top-bar bell counts it (ADR 0198 §6). Everything else stands: the product rule for raising a notice, its personal scope (absent from a colleague's desk, never resolvable by anybody else), acknowledgement only by its own POST «Ava» (a GET of the Matter never acknowledges), retirement on reassignment with a stale POST answering 404, no historical backfill, and no «Peida» — a notice leaves when it is opened. Pausing deadline notifications does not hide it.

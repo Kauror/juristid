@@ -8,6 +8,34 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-10-30
+basis = "deployment"
+prs = [572, 573, 574, 575]
+# Omaniku 30.10 ülevaatuse kolm parandust (#572, ADR 0188 täiendus), riigipüha
+# ja nädalavahetuse vihje kuupäevakastide all (#573, ADR 0197), Osakond →
+# Muudatused arvukaardid, vastutaja tabel, enne/pärast read ja filtrid (#574,
+# ADR 0159 §7, reporting 0003 — neli lisaveergu hetktõmmisele) ning isiklikud
+# tähtaja teavitused, teavituste seaded ja üks teavituste loend (#575, ADR
+# 0198, notifications 0002 — kolm uut tabelit). Otsinguindeksit uuesti ei
+# ehitata. Kui väljalase ei jõua tootmisse 30.10 (Tallinna aja järgi), liigub
+# see kirje väljalaske päeva kuupäevale.
+changes = [
+  "Kell ülariba paremas servas on nüüd «Teavitused»: tähtaja meeldetuletused, jõustumise kontrollid ja «Uus asi» ühes loendis, number näitab ootel olevaid.",
+  "Vastutaja saab meeldetuletuse arvamuse tähtaja, kaasamise tagasiside tähtaja ja tähtajaga järgmise tegevuse eel ning tähtpäeval; vaikimisi 7, 3 ja 1 päeva ette, igaüks eraldi peidetav.",
+  "Teavituste seaded (kell → «Seaded»): iga liigi saab sisse või välja lülitada, valida mitu etteteatamise aega, kõik korraga peatada või vaikeseaded taastada. E-posti teavitused lisanduvad isikupõhise sisselogimisega.",
+  "Osakonna juht saab ületatud arvamuse või tegevuse tähtaja kohta ühe teate järgmisel hommikul; ette teavitusi saab ainult vastutaja.",
+  "Minu asjade paremas ülanurgas on «Uus asi» ja «Kontrolli jõustumist» asemel üks plokk «Teavitused»; «Ava» avab määratud teema nagu enne.",
+  "Jõustumise 7 päeva meeldetuletus on nüüd isiklik ja peidetav; jõustumise päeva kontroll «Lükka edasi» ja «Sulge…» valikutega jääb samaks.",
+  "Kuupäeva valides või sisestades öeldakse kasti all, kui see on laupäev, pühapäev või riigipüha (nt «24.06.2027 valitud kuupäev on riigipüha (jaanipäev).»). Salvestamist see ei takista.",
+  "Osakond → Muudatused algab arvukaartidega: muudetud teemad, muudatusi, uued teemad, välja saadetud arvamused, lõpetatud teemad, menetluses olevate ning tähelepanu vajavate ja tähtaja ületanud teemade muutus; mida ei ole mõõdetud, on kirjas «ei mõõdetud».",
+  "Muudatuste all on tabel praeguse vastutaja kaupa ja üks muudatuste tabel aja, teema, liigi, enne/pärast väärtuse ja tegija veergudega; teadmata varasem väärtus on «teadmata».",
+  "Muudatusi saab filtreerida perioodi, vastutaja, liigi ja otsingusõna järgi, sortida ja lehitseda; filtrid püsivad aadressis.",
+  "Minu asjade ja Osakonna arvude selgitused on ühelauselised.",
+  "Jõustumise meeldetuletuse real ei ole enam nuppu «Kontrollitud»; rida suletakse «Sulge…» (põhjusega) või lükatakse edasi.",
+  "Minu asjade kalendri aknas jäävad «4 nädalat» ja «Kuu» akna lahti; hõivatud päeva klõps loetleb selle päeva kirjed kalendrite all.",
+]
+
+[[day]]
 date = 2026-10-29
 basis = "deployment"
 prs = [564]
