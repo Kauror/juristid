@@ -162,7 +162,7 @@ falls back to the default — where an unknown named key falls back silently, as
 Queries are bounded: one grouped count, one capped row query per category
 (`ROW_LIMIT` = 50, with `truncated` when the count is larger), four coverage
 aggregates, at most three snapshot queries, plus the digest. The count does not
-grow with rows (asserted).
+grow with rows (asserted). *(Superseded 2026-10-30 by §7: the per-category lists became one paginated table.)*
 
 ### 6. The page — `/osakond/muudatused/`
 
@@ -201,6 +201,102 @@ same window, `#tehtud`), «Hetktõmmiste võrdlus», and «Mida see ei näita»
 `/osakond/`, carrying Tehtud's window (Kvartal / Aasta / a custom range travel as
 their dates). It sits inside the digest's own condition, so it is the head's
 exactly as Tehtud is. No top-bar item (the bar is coordinator-owned).
+
+### 7. KPIs, a current-owner table, one filterable change table
+
+> **Amended 2026-10-30 — notifications package, Feature E; owner's decision D4
+> for the work-state history.** The page and its read model stay one
+> (`build_changes`); no export, no second page.
+
+**One scoped population.** The visible current-work Teemad
+(`matter_visibility_q`, FULL), narrowed by the filters, then their curated
+events through `scope_change_events` — authorization first, filters next,
+aggregates last. The category counts, the KPI cards, the per-person table and
+the detail rows are all read from it.
+
+**KPI cards** (`department_changes._kpis`, each with its unit on the card —
+«teemat», «muudatust», «arvamust» — so topics and events are never added):
+
+| Card | Definition |
+| --- | --- |
+| Muudetud teemad | `COUNT(DISTINCT matter)` over the person-made curated events in the window, after the §2 exclusions (system rows, imports, automatic steps); a closure's cancelled steps are its one row, so its Teema counts once |
+| Muudatusi | those events counted, a closure once — the page heading's number and the change table's total |
+| Uued teemad | person-made `MATTER_CREATED` on `MatterOrigin.NATIVE` |
+| Välja saadetud arvamused | `department_dashboard.sent_submissions(...).count()` — one per submission, counted whole (the digest lists at most `DIGEST_LIMIT`) |
+| Lõpetatud teemad | `department_dashboard.closed_matters(...).count()` — *Tehtud*'s «suletud», now one function both use |
+| Menetluses olevad teemad | the §3 snapshot comparison (open Teemad, start → end, net); «ei mõõdetud» without two photographs, never 0 |
+| Tähelepanu vajavad / Tähtaja ületanud | today's value from the live canonical populations for this reader (`work_items.WORK_NEEDS_ATTENTION` / `WORK_OVERDUE`); start → end from the photographs' capture-time memberships (below), «ei mõõdetud» when either boundary did not record them. One isolated function, `work_state_kpis` |
+
+Unfiltered, the two output cards are exactly *Tehtud*'s numbers for the window
+(the rail keeps *Tehtud*'s own digest beside them).
+
+**Per-person table — by the Teema's *current* owner** (`Matter.owner`), never
+the actor: Marko's change on a file now carried by Kati counts on Kati's line,
+while the change row still names Marko. «Vastutajata» is its own line; an
+inactive owner keeps a named line marked «(mitteaktiivne)». Columns: Muudetud
+teemad (distinct), Muudatusi, Uued teemad, Saadetud arvamused, Lõpetatud
+teemad. Every column partitions its card's population by one key, so each sums
+to the card exactly (asserted). Sortable by column (`?isikud=`).
+
+**The change table replaces the five per-category lists.** One server-paginated
+table (`PAGE_SIZE` = 50, `?leht=`), sorted in the database by time (default,
+newest first), Teema title or category (`?sort=`). Columns: Aeg, Teema (link and
+reference), Praegune vastutaja, Liik, Muudatus, Enne, Pärast, Tegija. A closure
+stays one row («sulges teema: lõppes N tegevust»): its cancellations are grouped
+by the §2 rule and represented by their latest event, which is what makes the
+grouping sortable and paginable. The category counts stay above the table as
+links that are the «Liik» filter. Only person acts are rows (system and
+automatic rows stay coverage figures, as before). The rail — «Tehtud samal
+perioodil», «Hetktõmmiste võrdlus», «Mida see ei näita» — is unchanged.
+
+**Evidence rule for «Enne» / «Pärast».** Only what the writing service put in
+the payload for exactly this: the stage labels (`from_label` / `to_label`), the
+Vastutaja names (`from_name` / `to_name`), a re-dating's `from` / `to`, and a new
+step's `target_date` (as «Pärast» only). A key recorded as empty is a recorded
+fact — «määramata», «vastutajata», «kuupäevata». Where nothing recorded the
+earlier value «Enne» is «teadmata»; where nothing recorded the later one
+«Pärast» is empty. A new Teema's «Enne» is «—» (there was no earlier state).
+Nothing is reconstructed from today's data; no free text is shown.
+
+**Filters** (GET; every one is preserved across sort, page and window;
+«Tühjenda filtrid» keeps only the window): the window (§5); `vastutaja` — a
+current owner's id or `puudub`, chosen from the department's active workers plus
+anyone who owns a visible Teema; `liik` — a category key; `otsi` — title
+(case-insensitive) or a `YYYY_N` reference over the visible Teemad. An unknown
+or unreadable value is no filter, never a 500. What each narrows:
+
+* Vastutaja and search narrow the Teemad, so every event figure, both output
+  cards, the work-state cards' current values, the people and the rows;
+* «Liik» narrows the event cards, the people's event columns and the rows; the
+  category counts beside it (so the reader can switch), the outputs and the
+  work-state cards are not change categories and keep their population;
+* the snapshot comparisons are department-wide; the card says so when a filter
+  is active.
+
+**Work-state history (D4).** `OperationalMatterSnapshot` gained four additive
+columns (`reporting` migration 0003, forward only, no backfill):
+`next_action_date_precision`, `next_action_responsible`, and two memberships,
+`is_overdue` and `needs_attention`, decided at capture time by the live
+canonical selectors over the whole department (`snapshots.work_state_memberships`,
+evaluated as a business-read reader that is not a user). A row captured before
+2026-10-30 holds NULL: «ei mõõdetud». A boundary is measured only when every
+row of that day's photograph recorded the flags. Because a membership can be
+caused by a restricted child the row does not name, `visible_snapshots`
+releases the flags only to a scope that sees every restricted child; any other
+scope reads NULL. Since ADR 0181 every business reader's scope does, so the
+rule costs nothing today; it is stated and tested. The step's precision and
+responsible person blank with the other step columns.
+
+**Daily capture.** `snapshots.capture_daily_if_missing(now)` takes the day's
+photograph once, from 03:00 Europe/Tallinn, under advisory lock `(24608, 1)`
+(24607 is the Lovable sync's), and never re-captures later the same day — the
+capture refreshes rows, which would overwrite the early-morning picture. The
+`notifications` loop worker is to call it; the management command stays the
+manual, refreshing path.
+
+**Queries** stay constant in the data's size (asserted, filters included):
+about thirty for the whole page, including the digest and one read of the work
+model.
 
 ## Consequences
 

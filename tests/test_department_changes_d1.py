@@ -50,6 +50,11 @@ TALLINN = ZoneInfo("Europe/Tallinn")
 PAGE = "/osakond/muudatused/"
 
 
+def _rows_of(changes: dc.DepartmentChanges, key: str) -> list[dc.ChangeRow]:
+    """One category's rows, off the detail table's first page (tests hold < 50)."""
+    return [row for row in changes.detail.rows if row.category_key == key]
+
+
 def _tegevused(changes: dc.DepartmentChanges) -> dc.CategoryResult:
     return next(result for result in changes.categories if result.key == "tegevused")
 
@@ -239,7 +244,7 @@ def _hand_written_closure(matter, actor, moment: datetime, steps: int, payload: 
 
 
 def _closure_rows(changes: dc.DepartmentChanges) -> list[dc.ChangeRow]:
-    return [row for row in _tegevused(changes).rows if row.event_type == dc.CLOSURE_ROW]
+    return [row for row in _rows_of(changes, "tegevused") if row.event_type == dc.CLOSURE_ROW]
 
 
 def test_one_closure_is_one_entry_in_the_closers_name(
@@ -423,7 +428,7 @@ def test_closure_entries_are_newest_first_among_the_steps(department_head, speci
     later = create_matter(title="Hilisem", owner=specialist, actor=specialist)
     set_next_action(matter=later, text="Pärast sulgemist", actor=specialist)
 
-    rows = _tegevused(dc.build_changes(department_head)).rows
+    rows = _rows_of(dc.build_changes(department_head), "tegevused")
     assert [row.event_type for row in rows][:2] == [
         ChangeEventType.NEXT_ACTION_SET,
         dc.CLOSURE_ROW,

@@ -55,18 +55,32 @@ Every population begins inside the reader's boundary. Matters through
 visibility — a step restricted below its Matter never reaches a count or a row.
 Counts are computed over that population, never over a wider one filtered later.
 
-Every query is bounded: one grouped count, one capped row query per category,
-and a fixed handful of coverage and snapshot aggregates — no query per row.
+Every query is bounded: one grouped count, a fixed handful of KPI, per-person,
+coverage and snapshot aggregates, and one page of the change table — no query
+per row, and none that grows with the data.
+
+KPIs, filters and the change table
+----------------------------------
+
+Since docs/adr/0159 §7 (amendment of 2026-10-30) the page also carries KPI
+cards (:func:`_kpis`, :func:`work_state_kpis`), a table by the Teema's
+*current* owner (:func:`_people`) and one paginated, sortable change table
+(:func:`_detail_table`) in place of the five per-category lists, all narrowed
+by one filter set (:class:`ChangeFilters`) applied after authorization and
+before any aggregate. «Enne» and «Pärast» come only from what the event
+recorded (:func:`_before_after`).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import uuid
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlencode
 
-from django.db.models import Count, Max, Min, Q, QuerySet
+from django.core.paginator import Paginator
+from django.db.models import Case, Count, IntegerField, Max, Min, Q, QuerySet, Value, When
 from django.urls import reverse
 from django.utils import timezone
 
@@ -90,10 +104,6 @@ PERIOD_CHOICES: tuple[tuple[str, str], ...] = (
     (dd.PERIOD_14, "14 päeva"),
     (dd.PERIOD_30, "30 päeva"),
 )
-
-#: How many rows one category lists. The count beside its heading is the whole
-#: period's, always; this bounds only what is rendered.
-ROW_LIMIT = 50
 
 #: Tehtud's words for a refused range (`department_dashboard.custom_range_refusal`).
 CUSTOM_RANGE_INCOMPLETE = dd.CUSTOM_RANGE_INCOMPLETE
@@ -177,6 +187,16 @@ _BADGES: dict[str, str] = {
     event_type: category.badge for category in CATEGORIES for event_type in category.event_types
 }
 
+_CATEGORY_OF: dict[str, Category] = {
+    event_type: category for category in CATEGORIES for event_type in category.event_types
+}
+CATEGORY_KEYS: frozenset[str] = frozenset(category.key for category in CATEGORIES)
+
+#: What a reader is shown where a value was not recorded.
+UNKNOWN = "teadmata"
+#: The actor column of a row nobody's act wrote (never a counted act).
+SYSTEM_ACTOR = "süsteem"
+
 
 @dataclass(frozen=True)
 class ChangeRow:
@@ -194,6 +214,18 @@ class ChangeRow:
     #: How the row's actor arrived (`AuthMethod`); "" on a row written before
     #: that was recorded (docs/adr/0180).
     auth_method: str = ""
+    #: The category the row belongs to (`Category.key`) and its label.
+    category_key: str = ""
+    category_label: str = ""
+    #: «Enne» and «Pärast», only as the event recorded them (`_before_after`):
+    #: «teadmata» where nothing recorded the earlier value, "" where nothing
+    #: recorded the later one. Never reconstructed from today's data.
+    before: str = ""
+    after: str = ""
+    #: The Teema's reference and its *current* Vastutaja — today's fact, which
+    #: the table says in its heading («Praegune vastutaja»).
+    matter_reference: str = ""
+    owner_name: str = ""
 
     @property
     def when(self) -> date:
@@ -204,14 +236,34 @@ class ChangeRow:
         """The name, and — for a persona chosen behind the shared gate — that it was chosen."""
         return actor_label(self.actor_name, self.auth_method)
 
+    @property
+    def actor_display(self) -> str:
+        """The «Tegija» cell: the person, or «süsteem» for a row with nobody behind it."""
+        return self.actor_label or SYSTEM_ACTOR
+
+    @property
+    def change(self) -> str:
+        """The «Muudatus» cell: the act, and for a closure how many steps it ended."""
+        if self.event_type == CLOSURE_ROW and self.detail:
+            return f"{self.verb}: {self.detail}"
+        return self.verb
+
 
 @dataclass
 class CategoryResult:
+    """One category's count over the filtered population (every filter but «Liik»).
+
+    The rows are no longer listed per category: they are the one paginated
+    detail table (:class:`DetailTable`), which «Liik» narrows to one category.
+    """
+
     category: Category
     count: int = 0
     #: Per event type, for a category that holds several (next actions).
     breakdown: list[tuple[str, int]] = field(default_factory=list)
-    rows: list[ChangeRow] = field(default_factory=list)
+    #: Whether «Liik» currently selects this category, and the URL that does.
+    active: bool = False
+    query: str = ""
 
     @property
     def key(self) -> str:
@@ -220,10 +272,6 @@ class CategoryResult:
     @property
     def label(self) -> str:
         return self.category.label
-
-    @property
-    def truncated(self) -> bool:
-        return self.count > len(self.rows)
 
 
 @dataclass(frozen=True)
@@ -248,6 +296,11 @@ class SnapshotComparison:
     start_date: date | None = None
     end_date: date | None = None
     figures: list[SnapshotFigure] = field(default_factory=list)
+    #: «Tähtaja ületanud» and «Vajab sekkumist» on the same two photographs
+    #: (D4). ``None`` at a boundary whose rows did not record the flag — every
+    #: row captured before 2026-10-30, or a reader whose scope may not read it.
+    overdue: SnapshotFigure | None = None
+    attention: SnapshotFigure | None = None
 
     @property
     def available(self) -> bool:
@@ -288,6 +341,246 @@ class Coverage:
         return self.recorded_since is None or self.recorded_since > period.end
 
 
+# ---------------------------------------------------------------------------
+# Filters (docs/adr/0159, amendment of 2026-10-30)
+# ---------------------------------------------------------------------------
+
+OWNER_PARAM = "vastutaja"
+#: `?vastutaja=puudub`: Teemad nobody carries — the register's own word.
+OWNER_NONE = "puudub"
+CATEGORY_PARAM = "liik"
+SEARCH_PARAM = "otsi"
+SORT_PARAM = "sort"
+PEOPLE_SORT_PARAM = "isikud"
+PAGE_PARAM = "leht"
+
+#: Detail rows per page.
+PAGE_SIZE = 50
+#: A search longer than this is cut, not refused.
+SEARCH_MAX = 200
+
+#: The detail table's sortable columns → their ordering, ascending.
+DETAIL_SORTS: dict[str, tuple[str, ...]] = {
+    "aeg": ("occurred_at", "created_at", "pk"),
+    "teema": ("matter__title", "-occurred_at", "pk"),
+    "liik": ("category_order", "-occurred_at", "pk"),
+}
+DEFAULT_DETAIL_SORT = "-aeg"
+
+#: The per-person table's sortable columns.
+PEOPLE_SORTS: tuple[str, ...] = ("nimi", "teemad", "muudatused", "uued", "arvamused", "lopetatud")
+DEFAULT_PEOPLE_SORT = "-teemad"
+
+
+def _read_sort(raw: str, keys: Any, default: str) -> str:
+    value = (raw or "").strip()
+    return value if value.lstrip("-") in keys and value.count("-") <= 1 else default
+
+
+@dataclass(frozen=True)
+class ChangeFilters:
+    """What the reader narrowed the page to, read from GET and never trusted.
+
+    Every value that cannot be read falls back to «no filter» (an unknown
+    Vastutaja, an unknown «Liik», a non-number page) rather than to an error:
+    a hand-edited link shows the whole page, never a 500.
+    """
+
+    #: "" (anyone), :data:`OWNER_NONE`, or a Vastutaja's primary key as text.
+    owner: str = ""
+    category: str = ""
+    search: str = ""
+    sort: str = DEFAULT_DETAIL_SORT
+    people_sort: str = DEFAULT_PEOPLE_SORT
+    page: str = "1"
+
+    @property
+    def narrows_matters(self) -> bool:
+        """Whether a filter narrows the *Teemad* (Vastutaja, search) — which
+        the outputs and the work-state figures then follow."""
+        return bool(self.owner or self.search)
+
+    @property
+    def active(self) -> bool:
+        return bool(self.owner or self.category or self.search)
+
+    def params(self, period: dd.Period, **overrides: str) -> dict[str, str]:
+        """This page's URL parameters, so a sort or a page keeps every filter."""
+        values = {
+            **_period_params(period),
+            OWNER_PARAM: self.owner,
+            CATEGORY_PARAM: self.category,
+            SEARCH_PARAM: self.search,
+            SORT_PARAM: "" if self.sort == DEFAULT_DETAIL_SORT else self.sort,
+            PEOPLE_SORT_PARAM: "" if self.people_sort == DEFAULT_PEOPLE_SORT else self.people_sort,
+        }
+        values.update(overrides)
+        return {key: value for key, value in values.items() if value}
+
+
+_PERIOD_KEYS = frozenset({dd.PERIOD_PARAM, dd.PERIOD_START_PARAM, dd.PERIOD_END_PARAM})
+
+
+def _period_params(period: dd.Period) -> dict[str, str]:
+    if period.key in dict(dd.PERIOD_NAMES):
+        return {dd.PERIOD_PARAM: period.key}
+    return _range_params(period)
+
+
+def read_filters(params: Any, owner_keys: frozenset[str]) -> ChangeFilters:
+    """The filters from GET, each one checked against what it may be."""
+    owner = (params.get(OWNER_PARAM) or "").strip()
+    if owner != OWNER_NONE and owner not in owner_keys:
+        owner = ""
+    category = (params.get(CATEGORY_PARAM) or "").strip()
+    if category not in CATEGORY_KEYS:
+        category = ""
+    search = " ".join((params.get(SEARCH_PARAM) or "").split())[:SEARCH_MAX]
+    return ChangeFilters(
+        owner=owner,
+        category=category,
+        search=search,
+        sort=_read_sort(params.get(SORT_PARAM), DETAIL_SORTS, DEFAULT_DETAIL_SORT),
+        people_sort=_read_sort(params.get(PEOPLE_SORT_PARAM), PEOPLE_SORTS, DEFAULT_PEOPLE_SORT),
+        page=(params.get(PAGE_PARAM) or "1").strip(),
+    )
+
+
+@dataclass(frozen=True)
+class OwnerChoice:
+    value: str
+    label: str
+    selected: bool
+
+
+@dataclass(frozen=True)
+class SortHeading:
+    """One sortable column heading: its link and its `aria-sort`."""
+
+    key: str
+    label: str
+    query: str
+    direction: str  # "ascending" / "descending" / "none"
+
+
+def _sort_headings(
+    filters: ChangeFilters,
+    period: dd.Period,
+    columns: tuple[tuple[str, str], ...],
+    *,
+    param: str,
+    current: str,
+    descending_first: frozenset[str],
+    keep_page: bool,
+) -> dict[str, SortHeading]:
+    headings = {}
+    active_key = current.lstrip("-")
+    for key, label in columns:
+        if key == active_key:
+            direction = "descending" if current.startswith("-") else "ascending"
+            target = key if current.startswith("-") else f"-{key}"
+        else:
+            direction = "none"
+            target = f"-{key}" if key in descending_first else key
+        overrides = {param: target}
+        if not keep_page:
+            overrides[PAGE_PARAM] = ""
+        headings[key] = SortHeading(
+            key=key,
+            label=label,
+            query=urlencode(filters.params(period, **overrides)),
+            direction=direction,
+        )
+    return headings
+
+
+# ---------------------------------------------------------------------------
+# KPIs, the per-person table, the detail table
+# ---------------------------------------------------------------------------
+
+#: The three things a figure can count, said beside its number so a reader
+#: never adds topics to events.
+UNIT_TOPICS = "teemat"
+UNIT_EVENTS = "muudatust"
+UNIT_OPINIONS = "arvamust"
+
+#: Why a past boundary of a work-state figure is unknown.
+NOT_MEASURED = "ei mõõdetud"
+WORK_STATE_UNMEASURED = (
+    "Perioodi alguse või lõpu hetktõmmis ei salvestanud seda seisu, seega muutust ei mõõdetud."
+)
+SNAPSHOT_UNAVAILABLE = "Perioodi algusest ja lõpust ei ole kahte erinevat hetktõmmist."
+SNAPSHOT_DEPARTMENT_WIDE = "Hetktõmmiste võrdlus on kogu osakonna kohta; filtrid seda ei kitsenda."
+
+
+@dataclass(frozen=True)
+class Kpi:
+    """One card at the top of the page.
+
+    ``value`` is a count over the window (or, for a work-state card, today's
+    value). ``start`` / ``end`` are the two photographs' figures for a card
+    that compares states; ``compared`` says the card is such a card, so a
+    missing photograph reads «ei mõõdetud» rather than 0.
+    """
+
+    key: str
+    label: str
+    unit: str
+    value: int | None = None
+    compared: bool = False
+    start: int | None = None
+    end: int | None = None
+    #: What the card's number is — always printed under it.
+    definition: str = ""
+    #: Why the comparison is missing, or whose population it is.
+    note: str = ""
+    #: Counted from the change record, so «—» in a window nobody was recording.
+    from_events: bool = False
+
+    @property
+    def delta(self) -> int | None:
+        if self.start is None or self.end is None:
+            return None
+        return self.end - self.start
+
+    @property
+    def measured(self) -> bool:
+        return self.delta is not None
+
+
+@dataclass(frozen=True)
+class PersonRow:
+    """One Vastutaja's line: the current owner of the Teemad, never the actor."""
+
+    key: str
+    name: str
+    inactive: bool = False
+    unowned: bool = False
+    matters: int = 0
+    events: int = 0
+    new: int = 0
+    sent: int = 0
+    closed: int = 0
+    #: This page narrowed to the person (`?vastutaja=`).
+    query: str = ""
+
+    @property
+    def label(self) -> str:
+        return f"{self.name} (mitteaktiivne)" if self.inactive else self.name
+
+
+@dataclass
+class DetailTable:
+    """One page of the change rows, newest first unless sorted otherwise."""
+
+    rows: list[ChangeRow] = field(default_factory=list)
+    #: Django's `Page`, for the pagination component.
+    page: Any = None
+    count: int = 0
+    query_string: str = ""
+    headings: dict[str, SortHeading] = field(default_factory=dict)
+
+
 @dataclass
 class DepartmentChanges:
     period: dd.Period
@@ -298,6 +591,14 @@ class DepartmentChanges:
     snapshots: SnapshotComparison = field(default_factory=SnapshotComparison)
     #: Tehtud's own digest for the same window — the outputs, counted once.
     outputs: dd.Digest | None = None
+    filters: ChangeFilters = field(default_factory=ChangeFilters)
+    owner_choices: list[OwnerChoice] = field(default_factory=list)
+    kpis: list[Kpi] = field(default_factory=list)
+    people: list[PersonRow] = field(default_factory=list)
+    people_headings: dict[str, SortHeading] = field(default_factory=dict)
+    #: The per-person table's totals — equal to the KPIs by construction.
+    people_total: PersonRow | None = None
+    detail: DetailTable = field(default_factory=DetailTable)
 
     @property
     def total(self) -> int:
@@ -337,16 +638,37 @@ class DepartmentChanges:
     @property
     def period_options(self) -> list[dd.PeriodOption]:
         """The three named windows. None is selected while a typed range was
-        refused, so the page never claims the reader chose the fallback."""
+        refused, so the page never claims the reader chose the fallback.
+
+        A window chip keeps the filters (Vastutaja, Liik, search, sorts) and
+        starts again from the first page."""
         return [
             dd.PeriodOption(
                 key=key,
                 label=label,
                 active=self.period.key == key and not self.period_error,
-                query=urlencode({dd.PERIOD_PARAM: key}),
+                query=urlencode(
+                    {
+                        dd.PERIOD_PARAM: key,
+                        **{
+                            name: value
+                            for name, value in self.filters.params(self.period).items()
+                            if name not in _PERIOD_KEYS
+                        },
+                    }
+                ),
             )
             for key, label in PERIOD_CHOICES
         ]
+
+    @property
+    def clear_filters_query(self) -> str:
+        """«Tühjenda filtrid»: the same window, nothing else."""
+        return urlencode(_period_params(self.period))
+
+    @property
+    def all_categories_query(self) -> str:
+        return urlencode(self.filters.params(self.period, **{CATEGORY_PARAM: "", PAGE_PARAM: ""}))
 
     @property
     def tehtud_url(self) -> str:
@@ -459,6 +781,45 @@ def _in_window(events: QuerySet[ChangeEvent], period: dd.Period) -> QuerySet[Cha
     return events.filter(local_day_range("occurred_at", period.start, period.end))
 
 
+def _filtered_matters(matters: QuerySet[Matter], filters: ChangeFilters) -> QuerySet[Matter]:
+    """The visible Teemad, narrowed by Vastutaja and search — never widened.
+
+    `otsi` matches the title (case-insensitive) or, when it reads as one, the
+    familiar ``YYYY_N`` reference. Applied to the already-authorized population,
+    so a search can only ever find a Teema the reader may see.
+    """
+    if filters.owner == OWNER_NONE:
+        matters = matters.filter(owner__isnull=True)
+    elif filters.owner:
+        matters = matters.filter(owner_id=uuid.UUID(filters.owner))
+    if filters.search:
+        condition = Q(title__icontains=filters.search)
+        reference = Matter.parse_reference(filters.search)
+        if reference is not None:
+            condition |= Q(reference_year=reference[0], reference_number=reference[1])
+        matters = matters.filter(condition)
+    return matters
+
+
+def _owner_choices(matters: QuerySet[Matter]) -> list[Any]:
+    """Who the Vastutaja filter offers: the department's active workers, and
+    anybody else who currently owns a Teema the reader may see (an inactive
+    colleague's files are still somebody's). One query."""
+    from django.contrib.auth import get_user_model
+
+    from app.accounts.selectors import department_workers
+
+    return list(
+        get_user_model()
+        .objects.filter(
+            Q(pk__in=department_workers().values("pk"))
+            | Q(pk__in=matters.exclude(owner__isnull=True).values("owner"))
+        )
+        .order_by("display_name")
+        .only("pk", "display_name", "is_active")
+    )
+
+
 #: The events that make a Matter stop being current work. A step ended by a
 #: closure belongs to the first of these written on its Matter at or after it
 #: (the closure writes its steps' cancellations first, then itself).
@@ -507,9 +868,60 @@ def _detail(event: ChangeEvent) -> str:
     return ""
 
 
+def _iso_day(value: Any, missing: str) -> str:
+    """An ISO date the event recorded, in Estonian; ``missing`` for a recorded none."""
+    if not value:
+        return missing
+    try:
+        return format_estonian_date(date.fromisoformat(str(value)))
+    except ValueError:
+        return UNKNOWN
+
+
+def _before_after(event: ChangeEvent) -> tuple[str, str]:
+    """«Enne» and «Pärast», only from what the event itself recorded.
+
+    The evidence rule (docs/adr/0159, amendment of 2026-10-30): a value is
+    printed only when the writing service put it in the payload for exactly
+    this — the stage labels, the Vastutaja names, a re-dating's two days, the
+    day a new step was set for. Where nothing recorded the earlier value it is
+    «teadmata»; where nothing recorded the later one the cell is empty. Nothing
+    is reconstructed from today's data, and no free text is read.
+
+    A key the writer recorded as empty is a recorded value: no stage
+    («määramata»), nobody («vastutajata»), no date («kuupäevata»). A new Teema
+    had no earlier state at all, so its «Enne» is «—», not «teadmata».
+    """
+    payload = event.payload or {}
+    kind = event.event_type
+    if kind == ChangeEventType.MATTER_STAGE_CHANGED:
+        before = (payload.get("from_label") or "määramata") if "from_label" in payload else UNKNOWN
+        after = (payload.get("to_label") or "määramata") if "to_label" in payload else ""
+        return before, after
+    if kind == ChangeEventType.MATTER_ASSIGNED:
+        before = (payload.get("from_name") or "vastutajata") if "from_name" in payload else UNKNOWN
+        after = (payload.get("to_name") or "vastutajata") if "to_name" in payload else ""
+        return before, after
+    if kind == ChangeEventType.NEXT_ACTION_RESCHEDULED:
+        before = _iso_day(payload.get("from"), "kuupäevata") if "from" in payload else UNKNOWN
+        after = _iso_day(payload.get("to"), "kuupäevata") if "to" in payload else ""
+        return before, after
+    if kind == ChangeEventType.NEXT_ACTION_SET:
+        after = (
+            _iso_day(payload.get("target_date"), "kuupäevata") if "target_date" in payload else ""
+        )
+        return UNKNOWN, after
+    if kind == ChangeEventType.MATTER_CREATED:
+        return "—", ""
+    return UNKNOWN, ""
+
+
 def _row(event: ChangeEvent) -> ChangeRow:
     actor = event.actor
     matter = event.matter
+    category = _CATEGORY_OF.get(event.event_type)
+    before, after = _before_after(event)
+    owner = matter.owner if matter is not None else None
     return ChangeRow(
         at=event.occurred_at,
         event_type=event.event_type,
@@ -521,11 +933,18 @@ def _row(event: ChangeEvent) -> ChangeRow:
         matter_title=matter.title if matter is not None else "",
         url=reverse("matters:matter_detail", kwargs={"pk": matter.pk}) if matter else "",
         auth_method=event.auth_method,
+        category_key=category.key if category is not None else "",
+        category_label=category.label if category is not None else "",
+        before=before,
+        after=after,
+        matter_reference=matter.display_reference if matter is not None else "",
+        owner_name=owner.display_name if owner is not None else "",
     )
 
 
-def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
-    """One row per closure that ended steps, however many it ended (D1).
+def _closure_groups(closure_acts: QuerySet[ChangeEvent]) -> dict[Any, dict[str, Any]]:
+    """One group per closure that ended steps, however many it ended (D1),
+    keyed by the group's *representative* cancellation — its latest.
 
     The cancellations stay in the audit history one by one; this only reads
     them as the one act they were. Which closure a cancellation belongs to:
@@ -537,18 +956,18 @@ def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
        for closures recorded before that list existed, and for cutovers;
     3. otherwise it stands alone rather than being merged with a stranger.
 
-    Bounded: the cancellations, the closing events on their Matters, then
-    their Matters and people — four queries, whatever the number of rows.
+    The representative makes the grouping something the database can sort and
+    paginate: the detail table is the plain acts plus exactly one row per
+    closure. Bounded: the cancellations, then the closing events on their
+    Matters — two queries, whatever the number of rows.
     """
-    from django.contrib.auth import get_user_model
-
     cancels = list(
         closure_acts.order_by().values(
             "pk", "matter", "actor", "object_id", "occurred_at", "auth_method"
         )
     )
     if not cancels:
-        return []
+        return {}
     closings = list(
         ChangeEvent.objects.filter(
             matter__in={cancel["matter"] for cancel in cancels},
@@ -577,16 +996,7 @@ def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
     grouped: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
     for cancel in cancels:
         key = (closure_of(cancel), cancel["matter"], cancel["actor"])
-        group = grouped.setdefault(
-            key,
-            {
-                "matter": cancel["matter"],
-                "actor": cancel["actor"],
-                "n": 0,
-                "at": None,
-                "auth_method": "",
-            },
-        )
+        group = grouped.setdefault(key, {"n": 0, "at": None, "rep": None, "auth_method": ""})
         group["n"] += 1
         # One closure is one request, so its cancellations share a method; a
         # shared-gate one anywhere in the group is enough to say so.
@@ -594,49 +1004,40 @@ def _closure_rows(closure_acts: QuerySet[ChangeEvent]) -> list[ChangeRow]:
             group["auth_method"] = cancel["auth_method"]
         if group["at"] is None or cancel["occurred_at"] > group["at"]:
             group["at"] = cancel["occurred_at"]
-    groups = sorted(grouped.values(), key=lambda group: group["at"], reverse=True)
-    if not groups:
-        return []
-    matters = Matter.objects.in_bulk({group["matter"] for group in groups})
-    people = get_user_model().objects.in_bulk({group["actor"] for group in groups})
-    rows = []
-    for group in groups:
-        matter = matters.get(group["matter"])
-        actor = people.get(group["actor"])
-        ended = group["n"]
-        rows.append(
-            ChangeRow(
-                at=group["at"],
-                event_type=CLOSURE_ROW,
-                badge=NEXT_ACTIONS.badge,
-                verb=CLOSURE_VERB,
-                detail=f"lõppes {ended} {'tegevus' if ended == 1 else 'tegevust'}",
-                actor_name=actor.display_name if actor is not None else "",
-                initials=actor.initials if actor is not None else "··",
-                matter_title=matter.title if matter is not None else "",
-                url=(reverse("matters:matter_detail", kwargs={"pk": matter.pk}) if matter else ""),
-                auth_method=group["auth_method"],
-            )
-        )
-    return rows
+            group["rep"] = cancel["pk"]
+    return {group["rep"]: group for group in grouped.values()}
+
+
+def _closure_row(event: ChangeEvent, group: dict[str, Any]) -> ChangeRow:
+    """The one row a closure's cancellations read as: «sulges teema: lõppes N tegevust»."""
+    base = _row(event)
+    ended = group["n"]
+    return replace(
+        base,
+        at=group["at"],
+        event_type=CLOSURE_ROW,
+        badge=NEXT_ACTIONS.badge,
+        verb=CLOSURE_VERB,
+        detail=f"lõppes {ended} {'tegevus' if ended == 1 else 'tegevust'}",
+        auth_method=group["auth_method"],
+        before=UNKNOWN,
+        after="",
+    )
 
 
 def _categories(
-    acts: QuerySet[ChangeEvent], closure_acts: QuerySet[ChangeEvent]
+    plain: QuerySet[ChangeEvent],
+    closures: dict[Any, dict[str, Any]],
+    filters: ChangeFilters,
+    period: dd.Period,
 ) -> list[CategoryResult]:
+    """Each category's count — one grouped query; the closures are already read."""
     counts = {
         row["event_type"]: row["n"]
-        for row in acts.order_by().values("event_type").annotate(n=Count("pk"))
+        for row in plain.order_by().values("event_type").annotate(n=Count("pk"))
     }
-    closures = _closure_rows(closure_acts)
     results = []
     for category in CATEGORIES:
-        rows = [
-            _row(event)
-            for event in acts.filter(event_type__in=category.event_types)
-            .select_related("actor", "matter")
-            .order_by("-occurred_at", "-created_at")[:ROW_LIMIT]
-        ]
         count = sum(counts.get(event_type, 0) for event_type in category.event_types)
         breakdown = [
             (verb, counts.get(event_type, 0))
@@ -648,9 +1049,16 @@ def _categories(
             # name and in words that say it was the closure (D1).
             count += len(closures)
             breakdown.append((CLOSURE_VERB, len(closures)))
-            rows = sorted(rows + closures, key=lambda row: row.at, reverse=True)[:ROW_LIMIT]
         results.append(
-            CategoryResult(category=category, count=count, breakdown=breakdown, rows=rows)
+            CategoryResult(
+                category=category,
+                count=count,
+                breakdown=breakdown,
+                active=filters.category == category.key,
+                query=urlencode(
+                    filters.params(period, **{CATEGORY_PARAM: category.key, PAGE_PARAM: ""})
+                ),
+            )
         )
     return results
 
@@ -681,13 +1089,19 @@ def _first_day(events: QuerySet[ChangeEvent]) -> date | None:
 
 
 def _snapshot_comparison(user: Any, period: dd.Period) -> SnapshotComparison:
-    """Open and unowned Teemad on the last photograph at or before each end.
+    """Open and unowned Teemad on the last photograph at or before each end —
+    and, since D4, «Tähtaja ületanud» and «Vajab sekkumist» on the same two.
 
     Which days were photographed is a fact about the capture job, not about any
     record, so the dates are chosen over the whole table; the counts are then
     read through `visible_snapshots`, which authorizes every row against its
-    live Matter. Only Matter-level columns are read — the photographed next
-    step has visibility of its own and is not needed here.
+    live Matter. Only Matter-level columns and the two capture-time memberships
+    are read.
+
+    A membership is measured at a boundary only when **every** row of that
+    day's photograph recorded it — a capture from before the columns existed
+    holds NULL, and a partial count would be a number the record cannot make —
+    and when the reader's scope may read it (`visible_snapshots`).
     """
     from app.reporting.models import OperationalMatterSnapshot
     from app.reporting.selectors.snapshots import visible_snapshots
@@ -711,15 +1125,37 @@ def _snapshot_comparison(user: Any, period: dd.Period) -> SnapshotComparison:
     if start is None or end is None:
         return comparison
 
+    # Days whose capture did not record the memberships — a fact about the
+    # capture, read unscoped like the dates themselves.
+    unrecorded_days = set(
+        OperationalMatterSnapshot.objects.filter(snapshot_date__in=(start, end))
+        .filter(Q(is_overdue__isnull=True) | Q(needs_attention__isnull=True))
+        .order_by()
+        .values_list("snapshot_date", flat=True)
+        .distinct()
+    )
+
     rows = visible_snapshots(user).filter(snapshot_date__in=(start, end))
     totals: dict[tuple[date, str], int] = {}
     for row in (
         rows.order_by()
         .values("snapshot_date")
-        .annotate(open=Count("pk"), unowned=Count("pk", filter=Q(owner__isnull=True)))
+        .annotate(
+            open=Count("pk"),
+            unowned=Count("pk", filter=Q(owner__isnull=True)),
+            overdue=Count("pk", filter=Q(visible_is_overdue=True)),
+            overdue_unknown=Count("pk", filter=Q(visible_is_overdue__isnull=True)),
+            attention=Count("pk", filter=Q(visible_needs_attention=True)),
+            attention_unknown=Count("pk", filter=Q(visible_needs_attention__isnull=True)),
+        )
     ):
-        totals[(row["snapshot_date"], "open")] = int(row["open"])
-        totals[(row["snapshot_date"], "unowned")] = int(row["unowned"])
+        day = row["snapshot_date"]
+        totals[(day, "open")] = int(row["open"])
+        totals[(day, "unowned")] = int(row["unowned"])
+        totals[(day, "overdue")] = int(row["overdue"])
+        totals[(day, "attention")] = int(row["attention"])
+        if row["overdue_unknown"] or row["attention_unknown"]:
+            unrecorded_days.add(day)
 
     comparison.figures = [
         SnapshotFigure(
@@ -734,7 +1170,391 @@ def _snapshot_comparison(user: Any, period: dd.Period) -> SnapshotComparison:
             ("Vastutajata teemasid", "unowned"),
         )
     ]
+
+    def membership(label: str, column: str) -> SnapshotFigure:
+        return SnapshotFigure(
+            label=label,
+            start=None if start in unrecorded_days else totals.get((start, column), 0),
+            end=None if end in unrecorded_days else totals.get((end, column), 0),
+        )
+
+    comparison.overdue = membership("Tähtaja ületanud", "overdue")
+    comparison.attention = membership("Vajab sekkumist", "attention")
     return comparison
+
+
+# ---------------------------------------------------------------------------
+# KPIs
+# ---------------------------------------------------------------------------
+
+
+def _event_totals(detail: QuerySet[ChangeEvent]) -> dict[str, int]:
+    """The three event-based KPIs, over the detail table's own population.
+
+    * **Muudetud teemad** — ``COUNT(DISTINCT matter)`` over the person-made
+      curated events in the window, after every exclusion the categories make
+      (system rows, imports, automatic steps) and with a closure's cancelled
+      steps read as the one closure row (its Teema counts once, as any Teema).
+    * **Muudatusi** — those events counted, a closure once.
+    * **Uued teemad** — the person-made ``MATTER_CREATED`` among them, which
+      `_person_acts` has already limited to ``MatterOrigin.NATIVE``.
+
+    «Liik» narrows all three (they are the events the table lists), as do
+    Vastutaja and search.
+    """
+    totals = detail.order_by().aggregate(
+        matters=Count("matter", distinct=True),
+        events=Count("pk"),
+        new=Count("pk", filter=Q(event_type=ChangeEventType.MATTER_CREATED)),
+    )
+    return {key: int(value or 0) for key, value in totals.items()}
+
+
+def _outputs(
+    user: Any, period: dd.Period, filtered: QuerySet[Matter], filters: ChangeFilters
+) -> tuple[QuerySet[Any], QuerySet[Matter]]:
+    """*Tehtud*'s two canonical output populations, narrowed with the Teemad.
+
+    * **Välja saadetud arvamused** — `department_dashboard.sent_submissions`,
+      one per submission (never per audit row), counted whole rather than at
+      the digest's :data:`department_dashboard.DIGEST_LIMIT`.
+    * **Lõpetatud teemad** — `department_dashboard.closed_matters`, *Tehtud*'s
+      «suletud».
+
+    Unfiltered they are exactly Tehtud's numbers. Vastutaja and search narrow
+    them to the filtered Teemad; «Liik» does not — an opinion and a closure are
+    outputs, not change categories (docs/adr/0159 §2).
+    """
+    sent = dd.sent_submissions(user, since=period.start, until=period.end)
+    closed = dd.closed_matters(user, since=period.start, until=period.end)
+    if filters.narrows_matters:
+        sent = sent.filter(matter__in=filtered.values("pk"))
+        closed = closed.filter(pk__in=filtered.values("pk"))
+    return sent, closed
+
+
+def work_state_kpis(
+    user: Any,
+    filtered: QuerySet[Matter],
+    filters: ChangeFilters,
+    snapshots: SnapshotComparison,
+    *,
+    today: date,
+) -> list[Kpi]:
+    """«Tähtaja ületanud» and «Vajab sekkumist»: today's value, and the window's
+    change where both photographs recorded it.
+
+    Isolated on purpose — the one place these two cards are computed, so the
+    source of either half can change without touching the page.
+
+    **Today's value** is the live canonical population, for this reader:
+    «Tähtaja ületanud» is `work_items.WORK_OVERDUE` (the Matters of
+    `overdue_items`), «Vajab sekkumist» is `WORK_NEEDS_ATTENTION` (overdue ∪
+    ripe for review ∪ no next action ∪ no owner) — the figures Osakond and the
+    register print. Narrowed by Vastutaja and search (current owner); «Liik»
+    does not apply.
+
+    **Start → end** is the snapshot comparison's (D4): the capture-time
+    memberships on the photograph at or before each end of the window,
+    department-wide. A boundary whose photograph did not record the membership
+    — every capture before 2026-10-30 — is «ei mõõdetud», never 0.
+    """
+    from app.matters import work_items as wi
+
+    items = wi.work_items(user, today=today)
+    overdue_ids = wi.work_population_ids(user, wi.WORK_OVERDUE, today=today, items=items)
+    attention_ids = wi.work_population_ids(user, wi.WORK_NEEDS_ATTENTION, today=today, items=items)
+    current = filtered.order_by().aggregate(
+        overdue=Count("pk", filter=Q(pk__in=overdue_ids)),
+        attention=Count("pk", filter=Q(pk__in=attention_ids)),
+    )
+
+    def card(key: str, label: str, figure: SnapshotFigure | None, definition: str) -> Kpi:
+        start = figure.start if figure is not None else None
+        end = figure.end if figure is not None else None
+        if not snapshots.available:
+            note = SNAPSHOT_UNAVAILABLE
+        elif start is None or end is None:
+            note = WORK_STATE_UNMEASURED
+        else:
+            note = SNAPSHOT_DEPARTMENT_WIDE if filters.narrows_matters else ""
+        return Kpi(
+            key=key,
+            label=label,
+            unit=UNIT_TOPICS,
+            value=int(current[key.split("-")[0]] or 0),
+            compared=True,
+            start=start,
+            end=end,
+            definition=definition,
+            note=note,
+        )
+
+    return [
+        card(
+            "attention",
+            "Tähelepanu vajavad",
+            snapshots.attention,
+            "Praegu «Vajab sekkumist»: hilinenud, ülevaatamise aeg käes, "
+            "järgmise tegevuseta või vastutajata.",
+        ),
+        card(
+            "overdue",
+            "Tähtaja ületanud",
+            snapshots.overdue,
+            "Praegu üle tähtaja: tegevus, arvamuse tähtaeg, oluline tähtaeg või tagasiside ootus.",
+        ),
+    ]
+
+
+def _kpis(
+    totals: dict[str, int],
+    sent: int,
+    closed: int,
+    snapshots: SnapshotComparison,
+    filters: ChangeFilters,
+    work_state: list[Kpi],
+) -> list[Kpi]:
+    open_figure = snapshots.figures[0] if snapshots.figures else None
+    if not snapshots.available:
+        open_note = SNAPSHOT_UNAVAILABLE
+    else:
+        open_note = SNAPSHOT_DEPARTMENT_WIDE if filters.active else ""
+    return [
+        Kpi(
+            "matters",
+            "Muudetud teemad",
+            UNIT_TOPICS,
+            totals["matters"],
+            definition="Eri teemad, milles keegi perioodil midagi muutis.",
+            from_events=True,
+        ),
+        Kpi(
+            "events",
+            "Muudatusi",
+            UNIT_EVENTS,
+            totals["events"],
+            definition="Inimeste tehtud muudatused; üks sulgemine on üks muudatus.",
+            from_events=True,
+        ),
+        Kpi(
+            "new",
+            "Uued teemad",
+            UNIT_TOPICS,
+            totals["new"],
+            definition="Siin loodud teemad; imporditud ei ole uued.",
+            from_events=True,
+        ),
+        Kpi(
+            "sent",
+            "Välja saadetud arvamused",
+            UNIT_OPINIONS,
+            sent,
+            definition="Saadetud arvamused, üks arvamus üks kord — nagu Tehtud.",
+        ),
+        Kpi(
+            "closed",
+            "Lõpetatud teemad",
+            UNIT_TOPICS,
+            closed,
+            definition="Perioodil suletud ja praegu suletud teemad — nagu Tehtud.",
+        ),
+        Kpi(
+            "open",
+            "Menetluses olevad teemad",
+            UNIT_TOPICS,
+            compared=True,
+            start=open_figure.start if open_figure is not None else None,
+            end=open_figure.end if open_figure is not None else None,
+            definition="Avatud teemad perioodi alguse ja lõpu hetktõmmisel.",
+            note=open_note,
+        ),
+        *work_state,
+    ]
+
+
+# ---------------------------------------------------------------------------
+# The per-person table and the detail table
+# ---------------------------------------------------------------------------
+
+PEOPLE_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("nimi", "Vastutaja"),
+    ("teemad", "Muudetud teemad"),
+    ("muudatused", "Muudatusi"),
+    ("uued", "Uued teemad"),
+    ("arvamused", "Saadetud arvamused"),
+    ("lopetatud", "Lõpetatud teemad"),
+)
+_PEOPLE_FIELD = {
+    "teemad": "matters",
+    "muudatused": "events",
+    "uued": "new",
+    "arvamused": "sent",
+    "lopetatud": "closed",
+}
+UNOWNED_LABEL = "Vastutajata"
+
+
+def _people(
+    detail: QuerySet[ChangeEvent],
+    sent: QuerySet[Any],
+    closed: QuerySet[Matter],
+    filters: ChangeFilters,
+    period: dd.Period,
+) -> tuple[list[PersonRow], PersonRow]:
+    """One line per **current** Vastutaja of the Teemad (`Matter.owner`).
+
+    Never the event's actor: work Marko did on a file Kati now carries counts on
+    Kati's line, because this table answers «whose files moved», the question
+    Meeskond's columns answer too (`department_dashboard._matters_changed_by_owner`).
+    «Vastutajata» is its own line; an inactive owner keeps a named line marked
+    «(mitteaktiivne)».
+
+    Every column partitions its KPI's population by that one key, so each sums
+    to the KPI exactly: a Teema has one current owner or none, so its distinct
+    count lands on one line. Four queries: events, opinions, closures, people.
+    """
+    from django.contrib.auth import get_user_model
+
+    lines: dict[Any, dict[str, int]] = {}
+
+    def line(owner_id: Any) -> dict[str, int]:
+        return lines.setdefault(
+            owner_id, {"matters": 0, "events": 0, "new": 0, "sent": 0, "closed": 0}
+        )
+
+    for row in (
+        detail.order_by()
+        .values("matter__owner")
+        .annotate(
+            matters=Count("matter", distinct=True),
+            events=Count("pk"),
+            new=Count("pk", filter=Q(event_type=ChangeEventType.MATTER_CREATED)),
+        )
+    ):
+        target = line(row["matter__owner"])
+        for key in ("matters", "events", "new"):
+            target[key] = int(row[key])
+    # Re-wrapped and unordered for the reason `department_dashboard._by_owner`
+    # gives: an incoming ordering or DISTINCT leaks into the GROUP BY.
+    from app.submissions.models import Submission
+
+    for sent_row in (
+        Submission.objects.filter(pk__in=sent.values("pk"))
+        .order_by()
+        .values("matter__owner")
+        .annotate(n=Count("pk"))
+    ):
+        line(sent_row["matter__owner"])["sent"] = int(sent_row["n"])
+    for closed_row in (
+        Matter.objects.filter(pk__in=closed.values("pk"))
+        .order_by()
+        .values("owner")
+        .annotate(n=Count("pk"))
+    ):
+        line(closed_row["owner"])["closed"] = int(closed_row["n"])
+
+    people = get_user_model().objects.in_bulk([key for key in lines if key is not None])
+    rows = []
+    for owner_id, figures in lines.items():
+        person = people.get(owner_id) if owner_id is not None else None
+        key = str(owner_id) if owner_id is not None else OWNER_NONE
+        rows.append(
+            PersonRow(
+                key=key,
+                name=person.display_name if person is not None else UNOWNED_LABEL,
+                inactive=person is not None and not person.is_active,
+                unowned=owner_id is None,
+                query=urlencode(filters.params(period, **{OWNER_PARAM: key, PAGE_PARAM: ""})),
+                **figures,
+            )
+        )
+
+    sort = filters.people_sort
+    column = sort.lstrip("-")
+    descending = sort.startswith("-")
+    if column == "nimi":
+        rows.sort(key=lambda row: (row.unowned, row.name.casefold()), reverse=descending)
+    else:
+        attribute = _PEOPLE_FIELD[column]
+        rows.sort(key=lambda row: row.name.casefold())
+        rows.sort(key=lambda row: getattr(row, attribute), reverse=descending)
+
+    total = PersonRow(
+        key="",
+        name="Kokku",
+        matters=sum(row.matters for row in rows),
+        events=sum(row.events for row in rows),
+        new=sum(row.new for row in rows),
+        sent=sum(row.sent for row in rows),
+        closed=sum(row.closed for row in rows),
+    )
+    return rows, total
+
+
+DETAIL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("aeg", "Aeg"),
+    ("teema", "Teema"),
+    ("liik", "Liik"),
+)
+
+
+def _detail_table(
+    detail: QuerySet[ChangeEvent],
+    closures: dict[Any, dict[str, Any]],
+    filters: ChangeFilters,
+    period: dd.Period,
+) -> DetailTable:
+    """One page of rows: two queries (count, page) whatever the period holds.
+
+    Sorted in the database — by time, by Teema title or by category — so the
+    page is the right fifty of the whole population, not the first fifty
+    re-sorted. A closure is its representative event's row (`_closure_groups`).
+    """
+    column = filters.sort.lstrip("-")
+    descending = filters.sort.startswith("-")
+    fields = DETAIL_SORTS[column]
+    if column == "aeg" and descending:
+        ordering = tuple(f"-{name}" for name in fields)
+    elif descending:
+        ordering = (f"-{fields[0]}", *fields[1:])
+    else:
+        ordering = fields
+    order_of = {category.key: index for index, category in enumerate(CATEGORIES)}
+    queryset = (
+        detail.select_related("actor", "matter", "matter__owner")
+        .annotate(
+            category_order=Case(
+                *(
+                    When(event_type__in=category.event_types, then=Value(order_of[category.key]))
+                    for category in CATEGORIES
+                ),
+                default=Value(len(CATEGORIES)),
+                output_field=IntegerField(),
+            )
+        )
+        .order_by(*ordering)
+    )
+    page = Paginator(queryset, PAGE_SIZE).get_page(filters.page)
+    rows = [
+        _closure_row(event, closures[event.pk]) if event.pk in closures else _row(event)
+        for event in page.object_list
+    ]
+    return DetailTable(
+        rows=rows,
+        page=page,
+        count=page.paginator.count,
+        query_string=urlencode(filters.params(period, **{PAGE_PARAM: ""})),
+        headings=_sort_headings(
+            filters,
+            period,
+            DETAIL_COLUMNS,
+            param=SORT_PARAM,
+            current=filters.sort,
+            descending_first=frozenset({"aeg"}),
+            keep_page=False,
+        ),
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -749,24 +1569,76 @@ def build_changes(
     today: date | None = None,
     with_outputs: bool = True,
 ) -> DepartmentChanges:
-    """Everything the change view prints, for one reader and one window.
+    """Everything the change view prints, for one reader, window and filter set.
 
     ``user`` is who the page is authorized as. Whether this reader may open
     the view at all is the caller's question (docs/adr/0159 §4); this builds
     nothing beyond what ``user`` may see either way.
+
+    **One scoped population.** The visible current-work Teemad
+    (`matter_visibility_q`), narrowed by Vastutaja and search, then their
+    curated events through `scope_change_events` — authorization before any
+    filter and every filter before any aggregate — feed the category counts,
+    the KPIs, the per-person table and the detail rows alike. «Liik» narrows
+    the KPIs, the people and the rows; the category counts beside it keep
+    every category so the reader can switch.
     """
+    params = params if params is not None else {}
     today = today or timezone.localdate()
-    period, error = changes_period(params if params is not None else {}, today)
+    period, error = changes_period(params, today)
     matters = _visible_full_matters(user)
+    owner_users = _owner_choices(matters)
+    filters = read_filters(params, frozenset(str(person.pk) for person in owner_users))
+    filtered = _filtered_matters(matters, filters)
+
     events = _scoped_events(user, matters)
-    acts = _person_acts(_in_window(events, period))
+    acts = _person_acts(_in_window(_scoped_events(user, filtered), period))
+    closures = _closure_groups(acts.filter(closure_cancelled_q()))
+    plain = acts.exclude(closure_cancelled_q())
+    detail = acts.filter(~closure_cancelled_q() | Q(pk__in=list(closures)))
+    if filters.category:
+        category = next(item for item in CATEGORIES if item.key == filters.category)
+        detail = detail.filter(event_type__in=category.event_types)
+
+    snapshots = _snapshot_comparison(user, period)
+    sent, closed = _outputs(user, period, filtered, filters)
+    people, people_total = _people(detail, sent, closed, filters, period)
     return DepartmentChanges(
         period=period,
         period_error=error,
-        categories=_categories(
-            acts.exclude(closure_cancelled_q()), acts.filter(closure_cancelled_q())
-        ),
+        categories=_categories(plain, closures, filters, period),
         coverage=_coverage(matters, events, period),
-        snapshots=_snapshot_comparison(user, period),
+        snapshots=snapshots,
         outputs=dd.build_digest(user, period) if with_outputs else None,
+        filters=filters,
+        owner_choices=[
+            OwnerChoice(
+                value=str(person.pk),
+                label=f"{person.display_name} (mitteaktiivne)"
+                if not person.is_active
+                else person.display_name,
+                selected=filters.owner == str(person.pk),
+            )
+            for person in owner_users
+        ],
+        kpis=_kpis(
+            _event_totals(detail),
+            sent.count(),
+            closed.count(),
+            snapshots,
+            filters,
+            work_state_kpis(user, filtered, filters, snapshots, today=today),
+        ),
+        people=people,
+        people_total=people_total,
+        people_headings=_sort_headings(
+            filters,
+            period,
+            PEOPLE_COLUMNS,
+            param=PEOPLE_SORT_PARAM,
+            current=filters.people_sort,
+            descending_first=frozenset(_PEOPLE_FIELD),
+            keep_page=True,
+        ),
+        detail=_detail_table(detail, closures, filters, period),
     )

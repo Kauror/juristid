@@ -157,13 +157,17 @@ def test_muudatused_tehtud_and_the_feed_name_the_same_person_for_the_one_closure
     matter = _closed_by_colleague(specialist, other_specialist)
 
     changes = dc.build_changes(department_head)
-    tegevused = next(result for result in changes.categories if result.key == "tegevused")
-    closure_rows = [row for row in tegevused.rows if row.event_type == dc.CLOSURE_ROW]
+    closure_rows = [row for row in changes.detail.rows if row.event_type == dc.CLOSURE_ROW]
 
     assert [(row.matter_title, row.actor_name) for row in closure_rows] == [
         (matter.title, other_specialist.display_name)
     ]
-    assert dict(tegevused.breakdown).get("tühistas järgmise tegevuse", 0) == 0
+    assert (
+        dict(next(r for r in changes.categories if r.key == "tegevused").breakdown).get(
+            "tühistas järgmise tegevuse", 0
+        )
+        == 0
+    )
     [feed_closure] = [row for row in _feed_on(matter, specialist) if row.label == CLOSED_LABEL]
     [digest_closure] = _digest_closures(department_head)
     assert (
