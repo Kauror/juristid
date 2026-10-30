@@ -117,8 +117,10 @@ with their Teema or account.
 
 The existing `notifications` Compose service runs both reconciles in each loop
 turn (`generate_commencement_reminders`, name kept); `--check` covers both. No new
-service, broker or cron. A marked hook in the loop is where the daily Muudatused
-snapshot (D4, another branch) is called at integration.
+service, broker or cron. The same turn then calls
+`reporting.selectors.snapshots.capture_daily_if_missing` (D4, docs/adr/0159 §7):
+the daily Muudatused photograph, once per Tallinn day from 03:00, in its own
+transaction, so a failure there stops neither reconcile.
 
 ### 5. Preferences
 

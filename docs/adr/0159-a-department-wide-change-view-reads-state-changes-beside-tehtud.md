@@ -291,9 +291,9 @@ responsible person blank with the other step columns.
 photograph once, from 03:00 Europe/Tallinn, under advisory lock `(24608, 1)`
 (24607 is the Lovable sync's), and never re-captures later the same day — the
 capture refreshes rows, which would overwrite the early-morning picture. The
-`notifications` loop worker is to call it. **Until that call is wired, nothing
-photographs automatically and every snapshot figure on the page reads «ei
-mõõdetud».** The management command stays the manual, refreshing path and is
+`notifications` loop worker calls it on every turn (wired 2026-10-30 with
+docs/adr/0198); history starts the first morning after that release, and a
+window without two photographs reads «ei mõõdetud». The management command stays the manual, refreshing path and is
 not to be scheduled by cron beside the worker. Known limitation: "captured
 today" is read from the rows, and a day with no open Teema writes none, so
 such a day is re-photographed on each call and has no rows to compare —

@@ -32,11 +32,13 @@ from __future__ import annotations
 import logging
 import signal
 import time
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError
 from django.db import DatabaseError
+from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
@@ -71,10 +73,31 @@ def _each_turn() -> list[Any]:
             results.append(run())
         except DatabaseError:
             logger.exception("%s reconcile failed", name)
-    # HOOK (integration, docs/adr/0198 §8): the daily Muudatused snapshot
-    # capture is called here by the coordinator once the reporting branch is
-    # merged — one more bounded, idempotent step per turn, same worker.
+    # The daily Muudatused photograph rides the same worker (docs/adr/0159 §7,
+    # docs/adr/0198 §8): once per Tallinn day from 03:00, never twice, under its
+    # own lock — so no host cron and no second service.
+    try:
+        results.append(_capture_snapshot())
+    except DatabaseError:
+        logger.exception("daily snapshot capture failed")
     return results
+
+
+@dataclass(frozen=True)
+class _SnapshotTurn:
+    """The capture's line in the loop's output: said only on the turn it photographs."""
+
+    changed: bool
+
+    @property
+    def summary(self) -> str:
+        return f"Operatiivne hetktõmmis {timezone.localdate().isoformat()}: tehtud."
+
+
+def _capture_snapshot() -> _SnapshotTurn:
+    from app.reporting.selectors.snapshots import capture_daily_if_missing
+
+    return _SnapshotTurn(changed=capture_daily_if_missing())
 
 
 class Command(BaseCommand):

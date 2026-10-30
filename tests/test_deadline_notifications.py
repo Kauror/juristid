@@ -1357,3 +1357,45 @@ def test_the_advance_opinion_notice_still_shows_under_a_jargmiseks(specialist):
     (row,) = _rows()
     assert (row.purpose, row.offset_days) == (NotificationPurpose.ADVANCE, 3)
     assert len(_live(specialist, TODAY)) == 1
+
+
+# ---------------------------------------------------------------------------
+# The worker also takes the daily Muudatused photograph (docs/adr/0159 §7)
+# ---------------------------------------------------------------------------
+
+
+def test_a_worker_turn_takes_the_daily_snapshot_once(monkeypatch):
+    from app.notifications.management.commands import generate_commencement_reminders as worker
+    from app.reporting.models import OperationalMatterSnapshot
+    from app.reporting.selectors import snapshots
+
+    owner = factories.UserFactory()
+    factories.MatterFactory(owner=owner)
+    # 04:00 Tallinn on 2 November 2026 (EET, UTC+2): past the 03:00 start.
+    moment = datetime(2026, 11, 2, 2, 0, tzinfo=UTC)
+    real = snapshots.capture_daily_if_missing
+    monkeypatch.setattr(snapshots, "capture_daily_if_missing", lambda: real(moment))
+
+    first = [result for result in worker._each_turn() if result.changed]
+    second = [result for result in worker._each_turn() if result.changed]
+
+    assert any(isinstance(result, worker._SnapshotTurn) for result in first)
+    assert not any(isinstance(result, worker._SnapshotTurn) for result in second)
+    assert OperationalMatterSnapshot.objects.filter(snapshot_date=date(2026, 11, 2)).exists()
+
+
+def test_a_failed_snapshot_does_not_stop_the_reconciles(monkeypatch):
+    from django.db import DatabaseError
+
+    from app.notifications.management.commands import generate_commencement_reminders as worker
+    from app.reporting.selectors import snapshots
+
+    def broken() -> bool:
+        raise DatabaseError("snapshot down")
+
+    monkeypatch.setattr(snapshots, "capture_daily_if_missing", broken)
+
+    results = worker._each_turn()
+
+    assert len(results) == 2
+    assert not any(isinstance(result, worker._SnapshotTurn) for result in results)

@@ -14,10 +14,9 @@ photograph of March — it is today's picture with a false caption, and nothing 
 the resulting chart would look wrong (Stage-2E brief 52).
 
 **The schedule** (docs/adr/0159 §7): the daily photograph is taken by
-`snapshots.capture_daily_if_missing`, which the `notifications` loop worker is
-to call — once per Europe/Tallinn day, from 03:00, never re-captured
-automatically. Until that call is wired nothing photographs automatically and
-the comparisons read «ei mõõdetud». This command is the manual path, and a
+`snapshots.capture_daily_if_missing`, which the `notifications` loop worker
+calls on every turn — once per Europe/Tallinn day, from 03:00, never
+re-captured automatically. This command is the manual path, and a
 same-day run *refreshes* that day's rows on purpose — which is why it must not
 also be scheduled by cron beside the worker: it would overwrite the morning
 picture with a later one.
