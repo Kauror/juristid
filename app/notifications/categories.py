@@ -54,7 +54,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from django.db.models import Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 
 from app.intelligence.models import MatterEffectiveDate
 from app.matters.enums import RecordMode
@@ -122,11 +122,28 @@ def _action_sources(reader: Any) -> QuerySet[Any]:
 
 
 def _commencement_sources(reader: Any) -> QuerySet[Any]:
-    # ADR 0188 §2: open and closed Teemad alike; the one eligibility statement.
+    """ADR 0188 §2: open and closed Teemad alike; the one eligibility statement.
+
+    **Not while a legacy seven-day check is open for the same date.** A
+    `CommencementReminder` of stage ``SEVEN_DAYS`` written before owner decision
+    D1 is already the advance prompt for that date; an advance notice beside it
+    would show one commencement twice. Neither generated nor shown until that
+    row is answered or superseded on the day.
+    """
+    from app.notifications.enums import ReminderStage, ReminderStatus
+    from app.notifications.models import CommencementReminder
+
+    legacy = CommencementReminder.objects.filter(
+        effective_date=OuterRef("pk"),
+        source_date=OuterRef("date_value"),
+        stage=ReminderStage.SEVEN_DAYS,
+        status=ReminderStatus.OPEN,
+    )
     return (
         MatterEffectiveDate.objects.visible_to(reader)
         .filter(eligibility_q())
         .filter(matter__owner=reader, matter__owner__is_active=True)
+        .exclude(Exists(legacy))
     )
 
 
