@@ -1,4 +1,6 @@
-"""`/teavitused/` — the compact list of «Kontrolli jõustumist» and its three answers.
+"""`/teavitused/` — the compact list of «Kontrolli jõustumist» and its two answers.
+
+«Kontrollitud», the third, was retired by the owner on 2026-10-30.
 
 Thin on purpose: the population is `app.notifications.selectors`, every answer
 is a named service in `app.notifications.services`, and this module only reads
@@ -88,20 +90,6 @@ def bell_count(request: HttpRequest) -> HttpResponse:
         "notifications/_bell_count.html",
         {"count": selectors.unresolved_count(request.user)},
     )
-
-
-@login_required
-@business_write_required
-@require_http_methods(["POST"])
-def acknowledge(request: HttpRequest, pk: Any) -> HttpResponse:
-    reminder = _reminder_or_404(request, pk)
-    try:
-        services.acknowledge_reminder(reminder=reminder, actor=request.user)
-    except DomainError as refusal:
-        messages.error(request, str(refusal))
-    else:
-        messages.success(request, "Märgitud kontrollituks.")
-    return _back(request)
 
 
 @login_required

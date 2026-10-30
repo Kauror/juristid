@@ -179,13 +179,6 @@ def _defer_payload() -> dict:
 #: other: a READER sees the prompt and cannot answer it.
 REMINDER_ROUTES: tuple[WriteRoute, ...] = (
     WriteRoute(
-        name="notifications:acknowledge",
-        label="Jõustumise kontroll tehtud",
-        request=lambda w: ({"pk": w["reminder"].pk}, {}),
-        probe=_reminder_state,
-        events=(ChangeEventType.COMMENCEMENT_CHECK_ACKNOWLEDGED,),
-    ),
-    WriteRoute(
         name="notifications:defer",
         label="Jõustumise kontrolli edasilükkamine",
         request=lambda w: ({"pk": w["reminder"].pk}, _defer_payload()),

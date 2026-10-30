@@ -2,9 +2,10 @@
 
 `tests/test_commencement_reminders*.py` prove the rules. This proves the pieces
 that exist only on a running server: the bell fetches its number after the page
-has rendered, the Minu asjad block carries the prompt, the list's
-«Kontrollitud» is a real form that closes it, and nothing on the way says the
-act entered into force.
+has rendered, the Minu asjad block carries the prompt, the list's «Sulge…» is
+a real form that closes it, and nothing on the way says the act entered into
+force. «Kontrollitud» was retired on 2026-10-30, so the row offers no such
+button.
 
 The commencement is planted through the server's own services and the generator
 is the real management command — exactly what the `notifications` worker runs —
@@ -86,9 +87,13 @@ def test_a_commencement_prompt_is_seen_checked_and_gone(page, base_url):
     )
     expect(page.locator("main")).not_to_contain_text("jõustus")
 
-    row.get_by_role("button", name="Kontrollitud").click()
+    expect(row.get_by_role("button", name="Kontrollitud")).to_have_count(0)
+    expect(row).not_to_contain_text("Ametlik allikas on märkimata")
+    row.locator("summary", has_text="Sulge…").click()
+    row.get_by_label("Miks suletakse ilma kontrollita?").fill("Kontrollisin, jõustub nagu kirjas.")
+    row.get_by_role("button", name="Sulge meeldetuletus").click()
     page.wait_for_url(f"{base_url}/teavitused/")
-    expect(page.locator(".messages")).to_contain_text("Märgitud kontrollituks.")
+    expect(page.locator(".messages")).to_contain_text("Meeldetuletus suleti.")
     expect(page.locator(".notifrow", has_text=title)).to_have_count(0)
 
     # A second run of the generator does not bring it back.

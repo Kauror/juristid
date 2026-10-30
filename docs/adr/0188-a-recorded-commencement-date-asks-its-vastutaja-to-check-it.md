@@ -154,3 +154,11 @@ This section records what happened after the decision; it does not amend the dec
 - **Merged** 2026-10-23 in #522 (merge `6e195631`, Admin & Workflow R1; migrations `notifications/0001`, `audit/0039`).
 - **Deployed** as production `6e195631` (2026-10-23).
 - **Activated**: the `notifications` worker is a service in `deploy/unraid-main/compose.yml` and was one of the five application services of that release.
+
+## Amendment 2026-10-30 — «Kontrollitud» retired, a quieter row
+
+Owner's review of 2026-10-30. The decision is otherwise unchanged.
+
+- **«Kontrollitud» is retired.** The row offers two answers, «Lükka edasi» and «Sulge…» (with a reason). Its route `notifications:acknowledge` is removed rather than hidden, so a stale POST to `/teavitused/<pk>/kontrollitud/` is a 404 and writes nothing (the ENG-050A rule, tests/test_retired_write_doors.py). The `ACKNOWLEDGED` status and `COMMENCEMENT_CHECK_ACKNOWLEDGED` event stay, because past answers carry them. `services.acknowledge_reminder` stays, tested, so the answer can return without rebuilding the date-level closing it shares with the other two.
+- **No bare «Jõustumine» under the title.** The label «Kontrolli jõustumist» already says what to do. A commencement row's own description is still shown when it has one.
+- **A missing official source is not announced.** «Ametlik allikas on märkimata» is gone; a recorded source is still a link.
