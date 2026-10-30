@@ -204,6 +204,7 @@ consequences and reversibility.
 | [0194](0194-informational-blocks-remember-their-reader.md) | Informational blocks remember their reader | Proposed (owner's UX & workflow brief, 2026-10-28; **additive migration** `accounts/0006`); a registry of semantic keys with defaults, one row per person and explicitly chosen block, keyed to the signed-in principal (the selected persona under the shared gate), drawn on the server, saved by a toggle script that sends only changes and only counts a 204; reset in Haldus → Rakendus; temporary forms, menus, list expansions and state-driven groupings are not remembered |
 | [0195](0195-a-review-that-has-come-round-is-this-weeks-work.md) | A review that has come round is this week's work; an expectation is not a review | Proposed (owner's decision 1 of the post-audit remediation brief, 2026-10-29; audit B-02); a review whose period has begun is in *Sel nädalal* while the period runs, never late; an `EXPECTED_AROUND` date comes round on its period's last day, not its first; `REVIEW_DUE` metric version 2; amends 0121 §7 for ripe reviews |
 | [0196](0196-scheduled-operations-share-the-host-lock-and-checks-become-notifications.md) | Scheduled operations share the host lock, and the application's checks become notifications | Proposed (security and resilience review 2026-10-29; not merged) |
+| [0198](0198-personal-deadline-notifications-and-one-inbox.md) | Personal deadline notifications and one inbox | Proposed (owner's notifications package brief of 2026-10-30, decisions D1–D4); advance, on-the-day and management-escalation notices from the canonical dated work, per-person preferences, one inbox for the bell, Minu asjad and `/teavitused/`; amends 0188 §4/§6 and 0051 |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -212,6 +213,9 @@ requires every gap in the numbering to be named here:
   It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
   the architecture only on 2026-10-13, with activation not approved. The record
   lands with that PR.
+- 0197 — reserved for the date-warning record (Riigipühad and weekend hints on date
+  fields). It is on `feature/date-holiday-warnings`, part of the same package of
+  2026-10-30, and lands with that branch.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
 
