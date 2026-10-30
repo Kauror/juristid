@@ -24,7 +24,7 @@ from e2e.conftest import MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
-#: The «teemat menetluses» figure's own item. Every Minu asjad figure carries an
+#: The «teemat menetluses» figure's own item. Most Minu asjad figures carry an
 #: explanation since the UX package of 2026-10-28, so the item is picked by the
 #: explanation it holds rather than by being the only one.
 ITEM = ".seis__item[data-seishelp]:has(#seis-selgitus-menetluses)"
@@ -61,7 +61,7 @@ def test_hover_opens_it_and_moves_nothing(page, base_url):
     tip = page.locator(TIP)
     expect(tip).to_be_visible()
     expect(tip).to_contain_text("Menetluses olev teema")
-    expect(tip).to_contain_text("hetkeseis on veel määramata")
+    expect(tip).to_contain_text("millega tuleb veel tegeleda")
     assert _boxes(page) == before, "opening the explanation moved the strip"
 
     page.mouse.move(5, 5)
