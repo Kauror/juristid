@@ -1,10 +1,14 @@
 {% comment %}
 The custom-range form of *Muudatused* (docs/adr/0159 §6), drawn in the popover
 normally and inline under the message while a typed range is refused. A refused
-range redisplays what the reader typed.
+range redisplays what the reader typed. The filters travel with it, so a new
+window keeps the Vastutaja, «Liik», search and sorts the reader chose.
 {% endcomment %}
 <form method="get">
   <input type="hidden" name="periood" value="vahemik">
+  {% if page.filters.owner %}<input type="hidden" name="vastutaja" value="{{ page.filters.owner }}">{% endif %}
+  {% if page.filters.category %}<input type="hidden" name="liik" value="{{ page.filters.category }}">{% endif %}
+  {% if page.filters.search %}<input type="hidden" name="otsi" value="{{ page.filters.search }}">{% endif %}
   <label class="field">
     <span class="field__label field__label--plain">Alates</span>
     <input class="field__input field__input--compact dateinput" type="text"
