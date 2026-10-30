@@ -177,10 +177,12 @@ class DeadlineNotification(BaseModel):
 
     **Once per interval, ever.** ``(recipient, category, source_type,
     source_id, source_date, purpose, offset_days)`` is unique and *not*
-    partial: a dismissed, read or retired row still holds its slot, so a rerun,
-    a restart, a reassignment back or a date restored to an old value never
-    delivers the same interval twice. A changed date is a new ``source_date``
-    and so a new schedule.
+    partial: a dismissed, read or retired row still holds its slot, so a rerun
+    or a restart never delivers the same interval twice. When today's interval
+    is held by the recipient's own retired row (handed away and back, moved
+    away and back, reopened), the generator revives that row instead; a hidden
+    row is never revived (`deadlines._deliver`). A changed date is a new
+    ``source_date`` and so a new schedule.
 
     ``read_at`` and ``dismissed_at`` are the recipient's presentation state:
     neither is a business fact and neither writes a `ChangeEvent`.
@@ -299,6 +301,12 @@ class DeadlineNotification(BaseModel):
                 name="notif_deadline_inbox",
             ),
             models.Index(fields=["source_type", "source_id"], name="notif_deadline_source"),
+            # The generator's and the bell's population: rows still outstanding.
+            models.Index(
+                fields=["recipient"],
+                condition=models.Q(retired_at__isnull=True),
+                name="notif_deadline_outstanding",
+            ),
         ]
 
     def __str__(self) -> str:

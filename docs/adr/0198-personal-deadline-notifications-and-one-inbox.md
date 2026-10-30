@@ -25,9 +25,15 @@ negative offset), `offset_days` (*N* for an advance row, 0 otherwise), `kind`
 `dismissed_at`, `retired_at` + `retired_reason`. No business text is copied.
 
 Unique on `(recipient, category, source_type, source_id, source_date, purpose,
-offset_days)`, **not partial**: one delivery per interval per source date, ever. A
-changed date is a new `source_date` and a new schedule; a date moved back, a
-reassignment back or a rerun never re-delivers an interval. Check constraints keep
+offset_days)`, **not partial**: one row per interval per source date, ever, so a
+rerun or a second worker never delivers an interval twice. A changed date is a new
+`source_date` and a new schedule. **Revival (review of 2026-10-30):** when the
+interval owed *today* is held by the recipient's own row retired as `REASSIGNED`,
+`DATE_CHANGED`, `INELIGIBLE` or `DISCHARGED` — the Teema handed away and back, the
+date moved away and back, the person briefly inactive, the step reopened — that row
+is un-retired and shown as new (`read_at` cleared) instead of being lost. A hidden
+(`dismissed_at`) row is never revived, nor a `SUPERSEDED` one, and only today's
+interval is ever touched, so an expired interval is never replayed. Check constraints keep
 the vocabularies, tie `offset_days` to `purpose`, allow `dismissed_at` only on INFO
 rows, and require a reason with every retirement.
 
@@ -73,10 +79,23 @@ For a source on *D*, chosen intervals *N₁ > … > Nₖ* and today *t*:
   own deadline — they have the on-the-day row. A holder can switch it off (its own
   preference key, shown only to holders, on by default).
 
+- **No first-deployment flood (review of 2026-10-30):** a day *D* before the
+  feature's start owes no on-the-day row and no escalation. The start is the Tallinn
+  date of the earliest row ever created (rows are never deleted), or today while the
+  table is empty — no setting, no new state. After the start, the seven-day catch-up
+  for a worker that was down applies as above.
+- **One commencement prompt at a time:** while a legacy open `SEVEN_DAYS`
+  `CommencementReminder` exists for the same commencement and date, no
+  `COMMENCEMENT_CHECK` advance row is generated or shown — the legacy row is that
+  prompt.
+
 ### 4. Generation and retirement
 
 `reconcile_deadline_notifications(today=None, *, dry_run=False)` under a new
-transaction advisory lock `(24609, 1)`, inserting with `ON CONFLICT DO NOTHING`;
+transaction advisory lock `(24609, 1)` (24606–24608 are taken by vocabulary
+administration, the Lovable sync and the daily Muudatused snapshot), inserting with
+`ON CONFLICT DO NOTHING` and counting what it inserted, revived and retired from the
+writes themselves;
 idempotent and concurrency-safe. Windows are bounded (sources dated within
 *today − 7 … today + 14*). Each run retires outstanding rows whose source no longer
 matches, naming why: `DISCHARGED` (same date, same person, no longer outstanding —
@@ -140,7 +159,8 @@ answers keep `@business_write_required` and their events.
 
 ## Consequences
 
-- One additive migration, `notifications/0002` (three tables). No audit vocabulary
+- One additive migration, `notifications/0002` (three tables; a partial index on
+  outstanding rows per recipient serves the generator and the bell). No audit vocabulary
   change. Reversible: drop the includes; the tables are history only.
 - Existing `CommencementReminder` rows, including open seven-day rows, keep working
   and keep their history; only new seven-day rows stop.

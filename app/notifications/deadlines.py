@@ -23,8 +23,19 @@ and today *t* (``d = D − t`` days to go):
   on-the-day row already.
 
 Every row is unique on ``(recipient, category, source, D, purpose, interval)``,
-for good: a rerun, a second worker, a dismissed row or a date moved away and
-back never delivers the same interval twice.
+for good: a rerun or a second worker never delivers an interval twice. When the
+interval owed *today* is held by the person's own retired row — the Teema was
+handed away and back, the date moved away and back, the step reopened — that
+row is brought back as new rather than lost (:func:`_deliver`). A hidden row
+stays hidden, a superseded one stays superseded, and an interval whose window
+has passed is never owed again, so nothing is replayed.
+
+The first run is not a catch-up
+-------------------------------
+A day before the feature's first delivery (:func:`feature_start`) owes no
+on-the-day row and no escalation: on a first deployment the past week is
+history, not a missed delivery. After the start, a worker that was down still
+catches up for seven days.
 
 Retirement, and why a list never waits for it
 ---------------------------------------------
@@ -104,9 +115,19 @@ def owed_advance(source_date: date, today: date, offsets: tuple[int, ...]) -> in
 
 
 def owed_personal(
-    category: Category, source_date: date, today: date, preference: Preference
+    category: Category,
+    source_date: date,
+    today: date,
+    preference: Preference,
+    *,
+    started: date | None = None,
 ) -> Owed | None:
-    """What the responsible person is owed today for one source date, if anything."""
+    """What the responsible person is owed today for one source date, if anything.
+
+    ``started`` is the feature's first day (:func:`feature_start`): a day that
+    passed before it is history, not a missed delivery, so it owes no
+    on-the-day row however short ago it was.
+    """
     offset = owed_advance(source_date, today, preference.offsets)
     if offset is not None:
         return Owed(
@@ -116,13 +137,37 @@ def owed_personal(
             source_date - timedelta(days=offset),
         )
     late = (today - source_date).days
+    if started is not None and source_date < started:
+        return None
     if category.supports_on_day and preference.on_day and 0 <= late <= CATCH_UP_DAYS:
         return Owed(NotificationPurpose.ON_DAY, 0, category.on_day_kind, source_date)
     return None
 
 
-def escalation_is_owed(source_date: date, today: date) -> bool:
+def escalation_is_owed(source_date: date, today: date, *, started: date | None = None) -> bool:
+    if started is not None and source_date < started:
+        return False
     return 1 <= (today - source_date).days <= CATCH_UP_DAYS
+
+
+def feature_start(today: date) -> date:
+    """The first Tallinn day this feature delivered anything — or ``today`` if never.
+
+    The catch-up windows (the day itself *D … D + 7*, escalation *D + 1 … D + 7*)
+    exist so that a worker that was down still delivers. On the first run there
+    was no worker to be down: a deadline that passed before the feature existed
+    is history, and delivering the past week at once would flood every desk. So
+    a day before the feature's first delivery owes neither an on-the-day row nor
+    an escalation. The start is read from the table itself — the earliest row
+    ever created, never deleted — so it needs no setting and no new state.
+    Advance intervals are unaffected: they are always about the future.
+    """
+    from django.db.models import Min
+
+    first = DeadlineNotification.objects.aggregate(first=Min("created_at"))["first"]
+    if first is None:
+        return today
+    return min(timezone.localdate(first), today)
 
 
 # ---------------------------------------------------------------------------
@@ -200,18 +245,20 @@ class DeadlineReconcileResult:
     created: int
     retired: int
     outstanding_after: int
+    revived: int = 0
     dry_run: bool = False
 
     @property
     def changed(self) -> bool:
-        return bool(self.created or self.retired)
+        return bool(self.created or self.retired or self.revived)
 
     @property
     def summary(self) -> str:
         verb = "Loodaks" if self.dry_run else "Loodud"
         return (
             f"Tähtaegade teavitused {self.today.isoformat()}: {verb} {self.created}, "
-            f"aegunud {self.retired}, kehtivad {self.outstanding_after}."
+            f"taastatud {self.revived}, aegunud {self.retired}, "
+            f"kehtivad {self.outstanding_after}."
         )
 
 
@@ -254,7 +301,7 @@ def _reconcile(day: date, *, dry_run: bool) -> DeadlineReconcileResult:
 
     _hold_lock()
     now = timezone.now()
-    before = DeadlineNotification.objects.count()
+    started = feature_start(day)
     workers = _recipients()
     holders = {worker.pk for worker in workers if may_view_department_management(worker)}
 
@@ -277,23 +324,94 @@ def _reconcile(day: date, *, dry_run: bool) -> DeadlineReconcileResult:
                 .filter(**window)
                 .values_list("pk", category.matter_field, category.date_field)
             ):
-                owed = owed_personal(category, source_date, day, preference)
+                owed = owed_personal(category, source_date, day, preference, started=started)
                 if owed is not None:
                     rows.append(_row(worker, category, source_id, matter_id, source_date, owed))
         if worker.pk in holders and choices.of(ESCALATION_KEY).enabled:
-            rows.extend(_escalations(worker, day))
+            rows.extend(_escalations(worker, day, started=started))
 
-    DeadlineNotification.objects.bulk_create(rows, ignore_conflicts=True, batch_size=500)
-    created = DeadlineNotification.objects.count() - before
+    created, revived = _deliver(rows, now)
 
     retired += _supersede(day, now)
     return DeadlineReconcileResult(
         today=day,
         created=created,
+        revived=revived,
         retired=retired,
         outstanding_after=outstanding().count(),
         dry_run=dry_run,
     )
+
+
+#: The retirements a source can come back from: handed away and back, moved
+#: away and back, a person inactive for a while, a step reopened. Never
+#: ``SUPERSEDED`` (a later interval or the day replaced it), and never a row
+#: its recipient hid — a hidden row stays hidden.
+REVIVABLE: frozenset[str] = frozenset(
+    {
+        RetiredReason.REASSIGNED.value,
+        RetiredReason.DATE_CHANGED.value,
+        RetiredReason.INELIGIBLE.value,
+        RetiredReason.DISCHARGED.value,
+    }
+)
+
+_KEY_FIELDS = (
+    "recipient_id",
+    "category",
+    "source_type",
+    "source_id",
+    "source_date",
+    "purpose",
+    "offset_days",
+)
+
+
+def _key(row: Any) -> tuple[Any, ...]:
+    if isinstance(row, dict):
+        return tuple(row[name] for name in _KEY_FIELDS)
+    return tuple(getattr(row, name) for name in _KEY_FIELDS)
+
+
+def _deliver(rows: list[DeadlineNotification], now: Any) -> tuple[int, int]:
+    """Insert what is owed today; bring back a retired row that is owed again.
+
+    The unique key holds a slot for good, so a source handed away and back,
+    moved away and back, or reopened on the same day would otherwise find its
+    *current* interval taken by its own retired row and get nothing. That row is
+    un-retired instead, and shown as new (``read_at`` cleared). Only rows owed
+    today are ever touched, so an expired interval is never replayed; a hidden
+    row and a superseded one stay as they are. Returns (inserted, revived),
+    counted from what was written. The advisory lock is held, so the existence
+    check and the insert cannot interleave with another run.
+    """
+    if not rows:
+        return 0, 0
+    owed = {_key(row): row for row in rows}
+    existing = DeadlineNotification.objects.filter(
+        recipient_id__in={row.recipient_id for row in rows},
+        source_id__in={row.source_id for row in rows},
+    ).values("pk", "retired_at", "retired_reason", "dismissed_at", *_KEY_FIELDS)
+    revive: list[Any] = []
+    for found in existing:
+        key = _key(found)
+        if key not in owed:
+            continue
+        del owed[key]
+        if (
+            found["retired_at"] is not None
+            and found["dismissed_at"] is None
+            and found["retired_reason"] in REVIVABLE
+        ):
+            revive.append(found["pk"])
+    revived = 0
+    if revive:
+        revived = DeadlineNotification.objects.filter(pk__in=revive).update(
+            retired_at=None, retired_reason="", read_at=None, updated_at=now
+        )
+    fresh = list(owed.values())
+    DeadlineNotification.objects.bulk_create(fresh, ignore_conflicts=True, batch_size=500)
+    return len(fresh), revived
 
 
 def _row(
@@ -318,7 +436,9 @@ def _row(
     )
 
 
-def _escalations(holder: Any, day: date) -> list[DeadlineNotification]:
+def _escalations(
+    holder: Any, day: date, *, started: date | None = None
+) -> list[DeadlineNotification]:
     """One INFO row per overdue source to this holder, on *D + 1 … D + 7*."""
     out = []
     owed = Owed(NotificationPurpose.ESCALATION, 0, NotificationKind.INFO, day)
@@ -331,7 +451,7 @@ def _escalations(holder: Any, day: date) -> list[DeadlineNotification]:
         values = list(sources.values_list("pk", category.matter_field, category.date_field))
         states = category.state([pk for pk, _, _ in values])
         for source_id, matter_id, source_date in values:
-            if not escalation_is_owed(source_date, day):
+            if not escalation_is_owed(source_date, day, started=started):
                 continue
             state = states.get(source_id)
             if state is not None and state.responsible_id == holder.pk:
