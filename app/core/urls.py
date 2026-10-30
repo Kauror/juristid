@@ -16,6 +16,13 @@ urlpatterns = [
     # Every keyboard shortcut, on one page, linked from the footer beside
     # Uuendused. The screens themselves carry no hint strips
     # (app/core/keyboard_shortcuts.py).
+    # One year's riigipühad, for the hint under a date box (docs/adr/0197).
+    # Read by static/js/app.js only; app/core/holidays.py is the source.
+    path(
+        "kuupaevad/riigipuhad/<int:year>/",
+        views.public_holidays,
+        name="public_holidays",
+    ),
     path("kiirklahvid/", views.keyboard_shortcuts, name="keyboard_shortcuts"),
     # The v2 rebuild's own worklist. Under `/haldus/` with the other internal
     # tooling and deliberately not on the bar (app/core/development_status.py).

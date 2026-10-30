@@ -119,6 +119,10 @@ def _url(name: str, pattern: URLPattern, ids) -> str:
                 kwargs[key] = uuid.uuid4()
         elif type_name == "SlugConverter":
             kwargs[key] = "teemad"
+        elif type_name == "IntConverter":
+            # `core:public_holidays`'s year: a real one, so the sweep reads
+            # the route's own answer rather than its 404.
+            kwargs[key] = 2027
         else:
             kwargs[key] = "x"
     return reverse(name, kwargs=kwargs)

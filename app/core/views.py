@@ -15,9 +15,11 @@ from django.views.decorators.http import require_safe
 
 from app.core.authorization import is_department_head, may_read_business_content
 from app.core.development_status import ITEMS as DEVELOPMENT_STATUS_ITEMS
+from app.core.holidays import estonian_public_holidays
 from app.core.keyboard_shortcuts import GROUPS as KEYBOARD_SHORTCUT_GROUPS
 from app.core.middleware import FAILURE_HEADER, NO_STORE, is_htmx
 from app.core.release_notes import load_release_notes
+from app.workflow.dates import EARLIEST_DAY, LATEST_DAY
 
 
 def healthz(request: HttpRequest) -> JsonResponse:
@@ -229,6 +231,42 @@ def development_status(request: HttpRequest) -> HttpResponse:
         "core/development_status.html",
         {"items": DEVELOPMENT_STATUS_ITEMS, "nav_active": "haldus"},
     )
+
+
+#: How long a browser may keep one year's holidays. The list changes only
+#: when the law does, and a release that changes it ships a new `app.js` too.
+PUBLIC_HOLIDAYS_CACHE = "private, max-age=86400"
+
+
+@require_safe
+@login_required
+def public_holidays(request: HttpRequest, year: int) -> JsonResponse:
+    """One year's riigipühad as JSON, for the date boxes' hint (docs/adr/0197).
+
+    The browser asks this rather than knowing the rules itself, so
+    `app.core.holidays` stays the one place a holiday is defined. No business
+    content: the same answer for every reader, the READER role included, so
+    `login_required` is the whole gate — like Disainisüsteem beside it.
+
+    Only the years a date box accepts (`EstonianDateField`, 1990–2100); any
+    other year is a 404, so a typo in a script cannot make the server compute
+    Easter for year 40000. ``private`` caching, because the response is still
+    behind the door: the middleware's `no-store` default is for pages that
+    carry records, and this one would otherwise be fetched again on every page.
+    """
+    if not EARLIEST_DAY.year <= year <= LATEST_DAY.year:
+        raise Http404("Riigipühad on teada aastateks 1990–2100.")
+    response = JsonResponse(
+        {
+            "year": year,
+            "holidays": {
+                day.isoformat(): name for day, name in estonian_public_holidays(year).items()
+            },
+        },
+        json_dumps_params={"ensure_ascii": False},
+    )
+    response["Cache-Control"] = PUBLIC_HOLIDAYS_CACHE
+    return response
 
 
 def csrf_failure(request: HttpRequest, reason: str = "") -> HttpResponse:
