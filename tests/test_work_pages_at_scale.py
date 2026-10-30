@@ -79,7 +79,11 @@ OSAKOND_BUDGET = 48
 #: one for the audit rows that group them — fixed, whatever the desk holds
 #: (`tests/test_my_work_recent_activity.py`). «Minu viimased sissekanded»'s
 #: one read went with it.
-MINU_ASJAD_BUDGET = 42
+#: +3 since the one inbox (docs/adr/0198): the reader's notification
+#: preferences, their pause setting and their own live deadline rows — read
+#: once each, whatever the desk holds; «Uus asi» and «Kontrolli jõustumist»
+#: keep the reads they already had.
+MINU_ASJAD_BUDGET = 45
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).

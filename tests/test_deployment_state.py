@@ -735,11 +735,11 @@ SETTLED_LEAVES = {
     # step does — so there is nothing this app could add to it. Recorded here
     # for the same reason `intelligence` above is (docs/adr/0062).
     "related_materials": "0001_initial",
-    # The same for `notifications` (docs/adr/0188): a brand-new app whose
-    # initial migration a deployment applies from nothing. Its one foreign key
-    # is to `intelligence`, which the step already takes back to 0001 — Django
-    # unapplies this app first and the closing plain `migrate` reapplies it.
-    "notifications": "0001_initial",
+    # `notifications` is not here any more: 0002 adds the personal deadline
+    # notifications and their preferences (docs/adr/0198), and the next release
+    # carries it into a database that already has 0001 — with commencement
+    # reminders in it — so CI steps the app back and applies it forwards from
+    # exactly that state.
 }
 
 
