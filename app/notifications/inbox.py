@@ -134,17 +134,41 @@ def deadline_rows(
     )
 
 
-def _deadline_item(row: DeadlineNotification, today: date) -> InboxItem:
+def _responsible_names(rows: list[DeadlineNotification]) -> dict[Any, str]:
+    """Who is responsible for each escalated source, by the category's own rule.
+
+    For a step that is the step's active `responsible`, else the Matter's owner
+    (owner decision D2) — `Category.state`, the rule the generator reads. Two
+    statements per category at most and one for the people, however many rows.
+    """
+    from app.accounts.models import User
+
+    by_category: dict[str, list[Any]] = {}
+    for row in rows:
+        if row.purpose == NotificationPurpose.ESCALATION:
+            by_category.setdefault(row.category, []).append(row.source_id)
+    responsible: dict[Any, Any] = {}
+    for key, ids in by_category.items():
+        for source_id, state in CATEGORIES[key].state(ids).items():
+            responsible[source_id] = state.responsible_id
+    people = dict(
+        User.objects.filter(
+            pk__in={pk for pk in responsible.values() if pk}, is_active=True
+        ).values_list("pk", "display_name")
+    )
+    return {
+        source_id: people.get(person, "") if person else ""
+        for source_id, person in responsible.items()
+    }
+
+
+def _deadline_item(row: DeadlineNotification, today: date, names: dict[Any, str]) -> InboxItem:
     category = CATEGORIES[row.category]
     matter = row.matter
     if row.purpose == NotificationPurpose.ESCALATION:
         label = "Tähtaeg ületatud"
-        owner = matter.owner
-        note = (
-            f"Vastutaja {owner.display_name}"
-            if owner is not None and owner.is_active
-            else "Vastutaja puudub"
-        )
+        name = names.get(row.source_id, "")
+        note = f"Vastutaja {name}" if name else "Vastutaja puudub"
     elif row.purpose == NotificationPurpose.ADVANCE:
         label = category.advance_label
         note = ""
@@ -228,8 +252,9 @@ def inbox_for(user: Any, today: date | None = None) -> list[InboxItem]:
     if not _signed_in(user):
         return []
     day = _today(today)
-    rows = deadline_rows(user, day).select_related("matter", "matter__owner")
-    items = [_deadline_item(row, day) for row in rows]
+    rows = list(deadline_rows(user, day).select_related("matter"))
+    names = _responsible_names(rows)
+    items = [_deadline_item(row, day, names) for row in rows]
     items += _commencement_items(user, day)
     items += _assignment_items(user)
     return sorted(items, key=lambda item: item.sort_key)
