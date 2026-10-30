@@ -8,9 +8,12 @@ from django.db import models
 class ReminderStage(models.TextChoices):
     """Which of the two prompts for one commencement date this row is.
 
-    Two, and fixed. The owner's brief asks for seven calendar days ahead and, if
-    the check is still outstanding, the day itself; a configurable schedule is
-    explicitly out of scope (brief C3).
+    Two, and fixed. The owner's brief asked for seven calendar days ahead and, if
+    the check is still outstanding, the day itself (brief C3).
+
+    Since owner decision D1 (2026-10-30) only ``ON_DATE`` is generated: the
+    advance reminder became a personal, configurable `DeadlineNotification`
+    (docs/adr/0198). ``SEVEN_DAYS`` stays because rows written before carry it.
     """
 
     SEVEN_DAYS = "SEVEN_DAYS", "7 päeva enne"
@@ -52,3 +55,71 @@ class ObsoleteReason(models.TextChoices):
     NOT_ACTIVE = "NOT_ACTIVE", "Jõustumine tühistati või asendati"
     REMOVED = "REMOVED", "Jõustumine eemaldati teemalt"
     NOT_EXACT = "NOT_EXACT", "Jõustumisel ei ole enam täpset kuupäeva"
+
+
+# ---------------------------------------------------------------------------
+# Personal deadline notifications (docs/adr/0198)
+# ---------------------------------------------------------------------------
+
+
+class NotificationCategory(models.TextChoices):
+    """What a personal deadline notification is about. The registry is
+    `app.notifications.categories`; this is only its stored vocabulary."""
+
+    OPINION_DEADLINE = "OPINION_DEADLINE", "Arvamuse tähtaeg"
+    FEEDBACK_DEADLINE = "FEEDBACK_DEADLINE", "Kaasamise tagasiside tähtaeg"
+    ACTION_DEADLINE = "ACTION_DEADLINE", "Tegevuse tähtaeg"
+    COMMENCEMENT_CHECK = "COMMENCEMENT_CHECK", "Jõustumise kontroll"
+    IMPORTANT_DATE = "IMPORTANT_DATE", "Oluline tähtaeg"
+    REVIEW_DATE = "REVIEW_DATE", "Ülevaatamise kuupäev"
+
+
+class NotificationSource(models.TextChoices):
+    """Which table ``source_id`` names. One per category, stored so a row
+    can be read without the registry."""
+
+    MATTER = "MATTER", "Teema"
+    ENGAGEMENT = "ENGAGEMENT", "Kaasamine"
+    NEXT_ACTION = "NEXT_ACTION", "Tegevus"
+    EFFECTIVE_DATE = "EFFECTIVE_DATE", "Jõustumine"
+    IMPORTANT_DATE = "IMPORTANT_DATE", "Oluline tähtaeg"
+
+
+class NotificationPurpose(models.TextChoices):
+    """Which delivery of a source date this row is.
+
+    ``ADVANCE`` — *N* days before (``offset_days`` = *N* > 0);
+    ``ON_DAY`` — the day itself (``offset_days`` = 0);
+    ``ESCALATION`` — the morning after a missed deadline, to the holders of
+    `department.view_management` (``offset_days`` = 0). A purpose rather than a
+    magic negative offset, so the unique key says what it means.
+    """
+
+    ADVANCE = "ADVANCE", "Ette"
+    ON_DAY = "ON_DAY", "Tähtpäeval"
+    ESCALATION = "ESCALATION", "Tähtaeg ületatud"
+
+
+class NotificationKind(models.TextChoices):
+    """Whether the row asks for something or only tells.
+
+    ``ACTION`` rows can be marked read but not hidden: they leave when their
+    source is done. ``INFO`` rows can also be hidden («Peida»)."""
+
+    ACTION = "ACTION", "Vajab tegevust"
+    INFO = "INFO", "Teadmiseks"
+
+
+class RetiredReason(models.TextChoices):
+    """Why the system took a delivered row out of every list. History, kept.
+
+    Disabling a category or pausing is **not** here: those hide rows while they
+    last and retire nothing, so turning a category back on shows what is still
+    true (docs/adr/0198 §5).
+    """
+
+    DISCHARGED = "DISCHARGED", "Tehtud või lõpetatud"
+    DATE_CHANGED = "DATE_CHANGED", "Kuupäev muutus"
+    REASSIGNED = "REASSIGNED", "Vastutaja muutus"
+    INELIGIBLE = "INELIGIBLE", "Ei vasta enam tingimustele"
+    SUPERSEDED = "SUPERSEDED", "Asendatud hilisema teavitusega"

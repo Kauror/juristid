@@ -387,6 +387,10 @@ ACCOUNT_ALLOWED_EMAIL_DOMAINS = env_list("ACCOUNT_ALLOWED_EMAIL_DOMAINS", "koda.
 # delivers nothing — Django's own default would be SMTP to localhost. A later,
 # approved activation step configures both (docs/LOCAL_AUTH_ACTIVATION_RUNBOOK.md).
 ACCOUNT_EMAIL_DELIVERY_ENABLED = env_bool("ACCOUNT_EMAIL_DELIVERY_ENABLED", default=False)
+# Notification e-mail (docs/adr/0198 §5): a stored wish only. Even with this on,
+# `app.notifications.email.deliver_email` refuses outside an individual sign-in
+# mode, and no provider is wired.
+NOTIFICATION_EMAIL_ENABLED = env_bool("NOTIFICATION_EMAIL_ENABLED", default=False)
 EMAIL_BACKEND = env("DJANGO_EMAIL_BACKEND", "app.accounts.mail.DeliveryDisabledBackend")
 EMAIL_HOST = env("DJANGO_EMAIL_HOST", "")
 EMAIL_PORT = env_int("DJANGO_EMAIL_PORT", 587)

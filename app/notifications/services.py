@@ -27,8 +27,14 @@ The two stages, on the Europe/Tallinn calendar
 ----------------------------------------------
 For a commencement on day *D*:
 
-* ``SEVEN_DAYS`` is due on *D − 7* and is generated on any day from *D − 7* to
-  *D − 1*. A date recorded three days ahead gets it at once.
+* ``SEVEN_DAYS`` **is no longer generated** (owner decision D1, 2026-10-30;
+  ADR 0188 amendment of that date). The advance reminder is now a personal,
+  configurable «Teadmiseks» row — `DeadlineNotification` of category
+  ``COMMENCEMENT_CHECK``, seven days ahead by default (docs/adr/0198). Seven-day
+  rows written before that keep working exactly as they did: open ones are
+  listed, answered, deferred (capped at *D*) and superseded by the on-the-day
+  prompt below. The stage stays in the vocabulary and the constraints because
+  history carries it.
 * ``ON_DATE`` is due on *D* and is generated on any day from *D* to
   *D +* ``ON_DATE_CATCH_UP_DAYS`` — only while nobody has answered for that
   date. It replaces an unanswered seven-day row (``SUPERSEDED``, kept) and
@@ -73,7 +79,9 @@ from app.notifications.enums import (
 from app.notifications.models import CommencementReminder
 from app.workflow.enums import DatePrecision
 
-#: How many calendar days ahead the first prompt comes (brief C2).
+#: How many calendar days ahead the retired seven-day prompt came (brief C2).
+#: Still the cap of a legacy seven-day row's deferral and its ``due_on``; no
+#: new row is generated at this lead (owner decision D1, docs/adr/0198).
 LEAD_DAYS = 7
 
 #: How long after the day an unanswered commencement still gets its on-the-day
@@ -128,21 +136,23 @@ def eligibility_q(prefix: str = "") -> Q:
 
 
 def eligible_commencements(today: date) -> QuerySet[MatterEffectiveDate]:
-    """Eligible commencements whose day is inside the window any stage can be due in."""
+    """Eligible commencements whose day is inside the on-the-day prompt's window."""
     return (
         MatterEffectiveDate.objects.filter(eligibility_q())
         .filter(
             date_value__gte=today - timedelta(days=ON_DATE_CATCH_UP_DAYS),
-            date_value__lte=today + timedelta(days=LEAD_DAYS),
+            date_value__lte=today,
         )
         .order_by("date_value", "pk")
     )
 
 
 def due_stage(source_date: date, today: date) -> str | None:
-    """Which prompt a commencement on ``source_date`` is owed today, if any."""
-    if source_date - timedelta(days=LEAD_DAYS) <= today < source_date:
-        return ReminderStage.SEVEN_DAYS
+    """Which prompt a commencement on ``source_date`` is owed today, if any.
+
+    Only ``ON_DATE``: the seven-day stage is no longer generated (owner
+    decision D1); its successor is a personal deadline notification.
+    """
     if source_date <= today <= source_date + timedelta(days=ON_DATE_CATCH_UP_DAYS):
         return ReminderStage.ON_DATE
     return None

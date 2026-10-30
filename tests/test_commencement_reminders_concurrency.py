@@ -61,8 +61,10 @@ def _commencements(count: int) -> list[Any]:
         factories.EffectiveDateFactory(
             matter=factories.MatterFactory(owner=owner),
             kind=EffectiveDateKind.KNOWN_DATE,
-            date_value=TODAY + timedelta(days=1 + index % 7),
-            period_end=TODAY + timedelta(days=1 + index % 7),
+            # Inside the on-the-day prompt's window: the seven-day stage is no
+            # longer generated (owner decision D1, docs/adr/0198).
+            date_value=TODAY - timedelta(days=index % 7),
+            period_end=TODAY - timedelta(days=index % 7),
             date_precision=DatePrecision.EXACT,
         )
         for index in range(count)
@@ -81,7 +83,7 @@ def test_two_generators_at_once_create_each_prompt_exactly_once():
     assert sorted(result.created for result in results) == [0, len(records)]
     assert CommencementReminder.objects.count() == len(records)
     assert set(CommencementReminder.objects.values_list("stage", flat=True)) == {
-        ReminderStage.SEVEN_DAYS
+        ReminderStage.ON_DATE
     }
 
 
@@ -93,8 +95,13 @@ def test_an_answer_racing_the_on_the_day_run_leaves_nothing_open():
     """
     (record,) = _commencements(1)
     assert record.date_value is not None
-    services.reconcile_commencement_reminders(record.date_value - timedelta(days=1))
-    first = CommencementReminder.objects.get(effective_date=record)
+    # A seven-day prompt written before owner decision D1 (docs/adr/0198).
+    first = CommencementReminder.objects.create(
+        effective_date=record,
+        source_date=record.date_value,
+        stage=ReminderStage.SEVEN_DAYS,
+        due_on=record.date_value - timedelta(days=7),
+    )
     owner = record.matter.owner
 
     _, errors = _in_parallel(
@@ -106,3 +113,23 @@ def test_an_answer_racing_the_on_the_day_run_leaves_nothing_open():
     assert not CommencementReminder.objects.filter(
         effective_date=record, status=ReminderStatus.OPEN
     ).exists()
+
+
+def test_two_deadline_generators_at_once_deliver_each_interval_exactly_once():
+    """docs/adr/0198 §4: the advisory lock (24606) and the unique constraint."""
+    from app.notifications.deadlines import reconcile_deadline_notifications
+    from app.notifications.models import DeadlineNotification
+
+    owner = factories.UserFactory()
+    for index in range(6):
+        factories.MatterFactory(owner=owner, response_deadline=TODAY + timedelta(days=1 + index))
+
+    results, errors = _in_parallel(
+        lambda: reconcile_deadline_notifications(TODAY),
+        lambda: reconcile_deadline_notifications(TODAY),
+    )
+
+    assert errors == []
+    created = sorted(result.created for result in results)
+    assert created[0] == 0
+    assert DeadlineNotification.objects.count() == created[1] == 6
