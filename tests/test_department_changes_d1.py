@@ -50,6 +50,11 @@ TALLINN = ZoneInfo("Europe/Tallinn")
 PAGE = "/osakond/muudatused/"
 
 
+def _rows_of(changes: dc.DepartmentChanges, key: str) -> list[dc.ChangeRow]:
+    """One category's rows, off the detail table's first page (tests hold < 50)."""
+    return [row for row in changes.detail.rows if row.category_key == key]
+
+
 def _tegevused(changes: dc.DepartmentChanges) -> dc.CategoryResult:
     return next(result for result in changes.categories if result.key == "tegevused")
 
@@ -239,7 +244,7 @@ def _hand_written_closure(matter, actor, moment: datetime, steps: int, payload: 
 
 
 def _closure_rows(changes: dc.DepartmentChanges) -> list[dc.ChangeRow]:
-    return [row for row in _tegevused(changes).rows if row.event_type == dc.CLOSURE_ROW]
+    return [row for row in _rows_of(changes, "tegevused") if row.event_type == dc.CLOSURE_ROW]
 
 
 def test_one_closure_is_one_entry_in_the_closers_name(
@@ -290,7 +295,10 @@ def test_a_closure_that_ended_one_step_says_one(department_head, specialist):
     assert row.detail == "lõppes 1 tegevus"
 
 
-def test_a_closure_that_ended_nothing_adds_no_entry(department_head, specialist):
+def test_a_closure_that_ended_nothing_is_still_one_entry(department_head, specialist):
+    """One closure is one change whether or not it ended open steps (ADR 0159
+    §7, review of 2026-10-30). It was no entry at all, so a step-less closure
+    vanished from «Muudatusi» and from its owner's line."""
     matter = create_matter(title="Tühi", owner=specialist, actor=specialist)
     close_matter(
         matter=matter,
@@ -300,8 +308,10 @@ def test_a_closure_that_ended_nothing_adds_no_entry(department_head, specialist)
     )
 
     changes = dc.build_changes(department_head)
-    assert _closure_rows(changes) == []
-    assert dc.CLOSURE_VERB not in _breakdown(changes)
+    [row] = _closure_rows(changes)
+    assert (row.verb, row.detail, row.change) == ("sulges teema", "", "sulges teema")
+    assert row.actor_name == specialist.display_name
+    assert _breakdown(changes)[dc.CLOSURE_VERB] == 1
 
 
 def test_closing_twice_is_two_entries_and_a_cancel_is_still_a_cancel(department_head, specialist):
@@ -423,7 +433,7 @@ def test_closure_entries_are_newest_first_among_the_steps(department_head, speci
     later = create_matter(title="Hilisem", owner=specialist, actor=specialist)
     set_next_action(matter=later, text="Pärast sulgemist", actor=specialist)
 
-    rows = _tegevused(dc.build_changes(department_head)).rows
+    rows = _rows_of(dc.build_changes(department_head), "tegevused")
     assert [row.event_type for row in rows][:2] == [
         ChangeEventType.NEXT_ACTION_SET,
         dc.CLOSURE_ROW,

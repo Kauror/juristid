@@ -7,10 +7,14 @@ Muudatused — which states moved in the department's work over a window: new
 Teemad, Hetkeseis moves, hand-overs, next steps, reopenings (docs/adr/0159).
 
 The department head's, beside Tehtud: Tehtud lists what a period *produced*,
-this page what *changed*, and the outputs are not counted a second time — the
-rail carries Tehtud's own numbers for the same window and a link to its rows.
+this page what *changed*. The two output cards (sent opinions, closed Teemad)
+are Tehtud's own populations counted whole, and the rail keeps Tehtud's numbers
+and a link to its rows.
 
-Three kinds of knowledge are kept visibly apart: the recorded changes (main
+Top to bottom: the window, the KPI cards (each says what it counts —
+«teemat», «muudatust», «arvamust»), the filters, the per-person table grouped
+by the Teema's *current* Vastutaja, and one paginated, sortable change table.
+Three kinds of knowledge are kept visibly apart: recorded changes (main
 column), a comparison of two daily photographs, and what the record cannot
 know (both in the rail). Everything is computed by
 `app.matters.department_changes`; this template only draws it.
@@ -69,9 +73,14 @@ know (both in the rail). Everything is computed by
           </div>
         {% endif %}
 
-        <p class="uxdg__sum">
+        {% comment %}
+          The category counts double as the «Liik» filter: each is a link that
+          narrows the page to that category. They count every filter but «Liik»,
+          so the reader can see what switching would show.
+        {% endcomment %}
+        <p class="uxdg__sum chcats" data-categories>
           {% for result in page.categories %}
-            <span><b>{% if page.unrecorded %}—{% else %}{{ result.count }}{% endif %}</b> {{ result.label|lower }}</span>
+            <a class="chcats__item{% if result.active %} is-selected{% endif %}" href="?{{ result.query }}" data-category="{{ result.key }}"{% if result.active %} aria-current="true"{% endif %}><b>{% if page.unrecorded %}—{% else %}{{ result.count }}{% endif %}</b> {{ result.label|lower }}</a>
           {% endfor %}
         </p>
 
@@ -90,46 +99,168 @@ know (both in the rail). Everything is computed by
         {% endif %}
       </section>
 
-      {% for result in page.categories %}
-        <section class="ovsection" aria-label="{{ result.label }}" data-category="{{ result.key }}">
-          <div class="ovsection__head">
-            <h2 class="ovsection__title">{{ result.label }}</h2>
-            <span class="ovsection__meta">{% if page.unrecorded %}—{% else %}{{ result.count }}{% endif %}</span>
-            <span class="ovsection__spacer"></span>
-            {% if result.breakdown and not page.unrecorded %}
-              <span class="ovsection__meta">
-                {% for verb, count in result.breakdown %}{{ verb }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}
-              </span>
-            {% endif %}
+      <section class="ovsection" aria-label="Põhinäitajad" data-kpis>
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Põhinäitajad</h2>
+          {% if page.filters.active %}<span class="ovsection__meta" data-kpis-filtered>filtrite järgi</span>{% endif %}
+        </div>
+        <ul class="chkpis">
+          {% for kpi in page.kpis %}
+            <li class="chkpi" data-kpi="{{ kpi.key }}">
+              <span class="chkpi__label">{{ kpi.label }}</span>
+              {% if kpi.compared and kpi.key == "open" %}
+                {% comment %} Menetluses: a comparison of two photographs, nothing else. {% endcomment %}
+                {% if kpi.measured %}
+                  <span class="chkpi__value">{{ kpi.start }} → {{ kpi.end }}</span>
+                  <span class="chkpi__unit">{{ kpi.unit }} · {% if kpi.delta > 0 %}+{% endif %}{{ kpi.delta }}</span>
+                {% else %}
+                  <span class="chkpi__value chkpi__value--unknown">ei mõõdetud</span>
+                  <span class="chkpi__unit">{{ kpi.unit }}</span>
+                {% endif %}
+              {% else %}
+                <span class="chkpi__value">{% if page.unrecorded and kpi.from_events %}—{% else %}{{ kpi.value }}{% endif %}</span>
+                <span class="chkpi__unit">{% if kpi.compared %}{{ kpi.unit }} praegu{% else %}{{ kpi.unit }}{% endif %}</span>
+                {% if kpi.compared %}
+                  <span class="chkpi__delta" data-kpi-delta>
+                    {% if kpi.measured %}Periood: {{ kpi.start }} → {{ kpi.end }} ({% if kpi.delta > 0 %}+{% endif %}{{ kpi.delta }}){% else %}Periood: ei mõõdetud{% endif %}
+                  </span>
+                {% endif %}
+              {% endif %}
+              <span class="chkpi__def">{{ kpi.definition }}</span>
+              {% if kpi.note %}<span class="chkpi__note" data-kpi-note>{{ kpi.note }}</span>{% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+
+      <section class="ovsection" aria-label="Filtrid" data-filters>
+        <form method="get" class="chfilters">
+          {% include "matters/partials/changes_period_fields.html" %}
+          {% if page.filters.category %}<input type="hidden" name="liik" value="{{ page.filters.category }}">{% endif %}
+          {% if page.filters.sort != "-aeg" %}<input type="hidden" name="sort" value="{{ page.filters.sort }}">{% endif %}
+          {% if page.filters.people_sort != "-teemad" %}<input type="hidden" name="isikud" value="{{ page.filters.people_sort }}">{% endif %}
+          <label class="field">
+            <span class="field__label field__label--plain">Vastutaja</span>
+            <select class="field__input field__input--compact" name="vastutaja">
+              <option value="">Kõik</option>
+              <option value="puudub"{% if page.filters.owner == "puudub" %} selected{% endif %}>Vastutajata</option>
+              {% for choice in page.owner_choices %}
+                <option value="{{ choice.value }}"{% if choice.selected %} selected{% endif %}>{{ choice.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <label class="field">
+            <span class="field__label field__label--plain">Otsi teemat</span>
+            <input class="field__input field__input--compact" type="search" name="otsi"
+                   value="{{ page.filters.search }}" placeholder="pealkiri või 2026_12" maxlength="200">
+          </label>
+          <span class="chfilters__actions">
+            <button class="button button--quiet button--tiny" type="submit">Näita</button>
+            {% if page.filters.active %}<a class="ovsection__link" href="?{{ page.clear_filters_query }}" data-clear-filters>Tühjenda filtrid</a>{% endif %}
+          </span>
+        </form>
+        {% if page.filters.category %}
+          <p class="ovnote">Liik: <b>{% for result in page.categories %}{% if result.active %}{{ result.label }}{% endif %}{% endfor %}</b> · <a class="ovsection__link" href="?{{ page.all_categories_query }}">kõik liigid</a></p>
+        {% endif %}
+      </section>
+
+      <section class="ovsection" aria-label="Vastutajate kaupa" data-people>
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Vastutajate kaupa</h2>
+          <span class="ovsection__meta">teema praeguse vastutaja järgi, mitte tegija järgi</span>
+        </div>
+        {% if page.people %}
+          <div class="tablewrap chtable">
+            <table class="table">
+              <caption class="visually-hidden">Muudatused teema praeguse vastutaja kaupa</caption>
+              <thead>
+                <tr>
+                  {% for key, heading in page.people_headings.items %}
+                    <th scope="col"{% if key != "nimi" %} class="chtable__num"{% endif %} aria-sort="{{ heading.direction }}">
+                      <a class="colhead colhead--sort" href="?{{ heading.query }}">{{ heading.label }}<span class="colhead__mark" aria-hidden="true"></span></a>
+                    </th>
+                  {% endfor %}
+                </tr>
+              </thead>
+              <tbody>
+                {% for person in page.people %}
+                  <tr data-person="{{ person.key }}">
+                    <th scope="row"><a class="table__titlelink" href="?{{ person.query }}">{{ person.label }}</a></th>
+                    <td class="chtable__num">{{ person.matters }}</td>
+                    <td class="chtable__num">{{ person.events }}</td>
+                    <td class="chtable__num">{{ person.new }}</td>
+                    <td class="chtable__num">{{ person.sent }}</td>
+                    <td class="chtable__num">{{ person.closed }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+              <tfoot>
+                <tr data-person-total>
+                  <th scope="row">{{ page.people_total.name }}</th>
+                  <td class="chtable__num">{{ page.people_total.matters }}</td>
+                  <td class="chtable__num">{{ page.people_total.events }}</td>
+                  <td class="chtable__num">{{ page.people_total.new }}</td>
+                  <td class="chtable__num">{{ page.people_total.sent }}</td>
+                  <td class="chtable__num">{{ page.people_total.closed }}</td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
-          <div class="uxdg">
-            {% for row in result.rows %}
-              <a class="uxdg__row" href="{{ row.url }}">
-                <span class="uxdg__date">{{ row.when|date:page.row_date_format }}</span>
-                <span class="uxdg__kind">
-                  <span class="uxtl__kind uxtl__kind--closed">{{ row.badge }}</span>
-                </span>
-                {% comment %}
-                  The change in its own element, and allowed to wrap on this page
-                  only (`.uxdg__text--wrap`): on a phone a one-line ellipsis cut
-                  off exactly the part that says what changed. Tehtud's digest
-                  shares `.uxdg__row` and keeps its single line.
-                {% endcomment %}
-                <span class="uxdg__text uxdg__text--wrap"><span>{{ row.matter_title }}</span> <span class="uxdg__change" data-change>— {{ row.verb }}{% if row.detail %}: {{ row.detail }}{% endif %}</span></span>
-                <span class="uxav" title="{{ row.actor_label|default:'Teadmata' }}">
-                  <span aria-hidden="true">{{ row.initials }}</span>
-                  <span class="visually-hidden">{{ row.actor_label|default:'Teadmata' }}</span>
-                </span>
-              </a>
-            {% empty %}
-              <p class="uxdl__empty">{% if page.unrecorded %}Ei ole teada.{% else %}Valitud perioodil ei ole.{% endif %}</p>
-            {% endfor %}
-            {% if result.truncated %}
-              <p class="ovnote">Näidatud {{ result.rows|length }} uusimat {{ result.count }}-st.</p>
-            {% endif %}
+        {% else %}
+          <p class="uxdl__empty">Valitud perioodil ja filtritega ei ole.</p>
+        {% endif %}
+      </section>
+
+      <section class="ovsection" aria-label="Kõik muudatused" data-detail id="muudatused">
+        <div class="ovsection__head">
+          <h2 class="ovsection__title">Kõik muudatused</h2>
+          <span class="ovsection__meta">{% if page.unrecorded %}—{% else %}{{ page.detail.count }}{% endif %}</span>
+          <span class="ovsection__spacer"></span>
+          <span class="ovsection__meta">«Enne» ja «Pärast» ainult salvestatud andmetest</span>
+        </div>
+        {% if page.detail.rows %}
+          <div class="tablewrap chtable">
+            <table class="table chtable__detail">
+              <caption class="visually-hidden">Muudatused, {{ page.detail.page.number }}. leht</caption>
+              <thead>
+                <tr>
+                  {% with heading=page.detail.headings.aeg %}
+                    <th scope="col" aria-sort="{{ heading.direction }}"><a class="colhead colhead--sort" href="?{{ heading.query }}#muudatused">{{ heading.label }}<span class="colhead__mark" aria-hidden="true"></span></a></th>
+                  {% endwith %}
+                  {% with heading=page.detail.headings.teema %}
+                    <th scope="col" aria-sort="{{ heading.direction }}"><a class="colhead colhead--sort" href="?{{ heading.query }}#muudatused">{{ heading.label }}<span class="colhead__mark" aria-hidden="true"></span></a></th>
+                  {% endwith %}
+                  <th scope="col">Praegune vastutaja</th>
+                  {% with heading=page.detail.headings.liik %}
+                    <th scope="col" aria-sort="{{ heading.direction }}"><a class="colhead colhead--sort" href="?{{ heading.query }}#muudatused">{{ heading.label }}<span class="colhead__mark" aria-hidden="true"></span></a></th>
+                  {% endwith %}
+                  <th scope="col">Muudatus</th>
+                  <th scope="col">Enne</th>
+                  <th scope="col">Pärast</th>
+                  <th scope="col">Tegija</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for row in page.detail.rows %}
+                  <tr data-row="{{ row.category_key }}">
+                    <td class="table__date">{{ row.when|date:page.row_date_format }}</td>
+                    <td class="chtable__topic"><a class="table__titlelink" href="{{ row.url }}">{% if row.matter_reference %}<span class="muted">{{ row.matter_reference }}</span> {% endif %}{{ row.matter_title }}</a></td>
+                    <td>{{ row.owner_name|default:"vastutajata" }}</td>
+                    <td><span class="uxtl__kind uxtl__kind--closed">{{ row.badge }}</span></td>
+                    <td data-change>{{ row.change }}</td>
+                    <td data-before>{{ row.before }}</td>
+                    <td data-after>{{ row.after }}</td>
+                    <td data-actor>{{ row.actor_display }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
           </div>
-        </section>
-      {% endfor %}
+          {% include "components/pagination.html" with page=page.detail.page query_string=page.detail.query_string %}
+        {% else %}
+          <p class="uxdl__empty" data-detail-empty>{% if page.unrecorded %}Ei ole teada.{% else %}Valitud perioodil ja filtritega ei ole.{% endif %}</p>
+        {% endif %}
+      </section>
     </div>
 
     <aside class="ovbody__rail" aria-label="Faktid">
@@ -145,6 +276,7 @@ know (both in the rail). Everything is computed by
             <span><b>{{ page.outputs.closed }}</b> teemat suletud</span>
             <span><b>{{ page.outputs.victories }}</b> töövõitu</span>
           </p>
+          {% if page.filters.narrows_matters %}<p class="ovnote">Kogu osakond, filtriteta.</p>{% endif %}
         </section>
       {% endif %}
 
@@ -155,8 +287,11 @@ know (both in the rail). Everything is computed by
         {% if page.snapshots.available %}
           <p class="ovnote">
             Seis {{ page.snapshots.start_date|date:"j.n.Y" }} ja {{ page.snapshots.end_date|date:"j.n.Y" }}
-            päevase hetktõmmise järgi — kahe seisu võrdlus, mitte muudatuste arv.
+            hommikuse hetktõmmise järgi — kahe seisu võrdlus, mitte muudatuste arv.
           </p>
+          {% if page.snapshots.end_inside_window %}
+            <p class="ovnote" data-snapshot-end-inside>Lõpuseis on perioodi viimase päeva hommikust; selle päeva muudatused ei ole sees.</p>
+          {% endif %}
           <p class="uxdg__sum">
             {% for figure in page.snapshots.figures %}
               <span>{{ figure.label }}: <b>{{ figure.start }} → {{ figure.end }}</b></span>
@@ -201,6 +336,9 @@ know (both in the rail). Everything is computed by
         </p>
         <p class="ovnote">
           Avatud teemasid, mille hetkeseisu algus ei ole teada: <b>{{ page.coverage.stage_start_unknown }}</b>.
+        </p>
+        <p class="ovnote">
+          «Tähelepanu vajavad» ja «Tähtaja ületanud» muutust saab mõõta alates 30.10.2026 hetktõmmistest; varasemad hetktõmmised neid seise ei salvestanud.
         </p>
       </section>
     </aside>

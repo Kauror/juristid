@@ -1,0 +1,12 @@
+{% comment %}
+The window *Muudatused* is showing, as hidden fields, so the filter form keeps
+it (docs/adr/0159, amendment of 2026-10-30). A custom range travels as its two
+dates, a named window as its key.
+{% endcomment %}
+{% if page.period.is_custom %}
+<input type="hidden" name="periood" value="vahemik">
+<input type="hidden" name="alates" value="{{ page.period.start|date:'j.n.Y' }}">
+<input type="hidden" name="kuni" value="{{ page.period.end|date:'j.n.Y' }}">
+{% else %}
+<input type="hidden" name="periood" value="{{ page.period.key }}">
+{% endif %}

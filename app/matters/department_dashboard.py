@@ -287,6 +287,22 @@ def sent_submissions(user: Any, *, since: date, until: date | None = None) -> Qu
     return queryset.filter(local_day_range("sent_at", since, until))
 
 
+def closed_matters(user: Any, *, since: date, until: date | None = None) -> QuerySet[Matter]:
+    """Teemad that ended inside a window, for this reader — *Tehtud*'s «suletud».
+
+    Closed now (``is_open`` false) with a closure date inside the window on the
+    local calendar, current work only (``RecordMode.FULL``). One definition, so
+    *Tehtud*'s digest and *Muudatused*' «Lõpetatud teemad» count one population
+    (docs/adr/0159, amendment of 2026-10-30): the digest lists it capped at
+    :data:`DIGEST_LIMIT`, Muudatused counts it whole.
+    """
+    return Matter.objects.visible_to(user).filter(
+        local_day_range("closed_at", since, until),
+        is_open=False,
+        record_mode=RecordMode.FULL,
+    )
+
+
 def seis_figures(
     user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
 ) -> list[SeisFigure]:
@@ -1373,16 +1389,13 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
     """
     sent = list(
         sent_submissions(user, since=period.start, until=period.end)
-        .select_related("matter", "sent_by")
+        # The owner too: a send recorded without `sent_by` names the file's
+        # owner below, and reading it per row was one query per opinion.
+        .select_related("matter__owner", "sent_by")
         .order_by("-sent_at")[:DIGEST_LIMIT]
     )
     closed = list(
-        Matter.objects.visible_to(user)
-        .filter(
-            local_day_range("closed_at", period.start, period.end),
-            is_open=False,
-            record_mode=RecordMode.FULL,
-        )
+        closed_matters(user, since=period.start, until=period.end)
         .select_related("owner", "closed_by")
         .order_by("-closed_at")[:DIGEST_LIMIT]
     )
@@ -1397,7 +1410,7 @@ def build_digest(user: Any, period: Period, kind: str = KIND_ALL) -> Digest:
             local_day_range("confirmed_at", period.start, period.end),
             status=WorkVictoryStatus.CONFIRMED,
         )
-        .select_related("matter", "confirmed_by")
+        .select_related("matter__owner", "confirmed_by")
         .order_by("-confirmed_at")[:DIGEST_LIMIT]
     )
     entries = list(
