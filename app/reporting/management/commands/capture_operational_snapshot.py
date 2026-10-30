@@ -13,15 +13,14 @@ at last March would write today's portfolio under March's date, which is not a
 photograph of March — it is today's picture with a false caption, and nothing on
 the resulting chart would look wrong (Stage-2E brief 52).
 
-**No scheduler is installed by this branch.** Once Stage 2E is merged and
-deployed, this wants a once-daily run early in the morning, before the working
-day changes anything:
+**The schedule** (docs/adr/0159, amendment of 2026-10-30): the daily photograph
+is taken by `snapshots.capture_daily_if_missing`, which a loop worker calls —
+once per Europe/Tallinn day, from 03:00, never re-captured automatically. This
+command is the manual path, and a same-day run *refreshes* that day's rows on
+purpose. Without the worker, a cron does the same job:
 
     0 3 * * *  docker compose -p juristid-main -f <compose> exec -T web \\
                  python manage.py capture_operational_snapshot
-
-Until then the trend simply has no history, which is the honest state of a
-feature that has not been running.
 """
 
 from __future__ import annotations

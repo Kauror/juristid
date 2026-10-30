@@ -494,10 +494,21 @@ uv run python manage.py capture_operational_snapshot
 ```
 
 It photographs the open FULL portfolio once, for one day, and is idempotent per
-date. It wants a daily run in production — `0 3 * * *` — installed as a
-deployment step. There is deliberately no backfill: pointing it at last March
-would write today's portfolio under March's date, which is today's picture with
-a false caption.
+date. There is deliberately no backfill: pointing it at last March would write
+today's portfolio under March's date, which is today's picture with a false
+caption.
+
+**Schedule.** The daily photograph is meant to be taken by the `notifications`
+loop worker once that wiring lands (it calls
+`app.reporting.selectors.snapshots.capture_daily_if_missing`, docs/adr/0159
+amendment of 2026-10-30): from 03:00 Europe/Tallinn it captures today's
+picture once, under advisory lock `24608`, and never re-captures later the same
+day — a refresh would overwrite the early-morning state. Until it is wired the
+command above is run by hand or by cron (`0 3 * * *`); running it again the
+same day deliberately refreshes the rows. Since 2026-10-30 each row also
+records the step's precision and responsible person and whether the Teema was
+«Tähtaja ületanud» / «Vajab sekkumist» that day; rows captured earlier hold
+NULL there, which *Muudatused* shows as «ei mõõdetud».
 
 See [ADR 0017](docs/adr/0017-statistics-and-the-metric-catalogue.md).
 
