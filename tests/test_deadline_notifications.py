@@ -78,6 +78,36 @@ def _step(matter, *, on: date, responsible=None, **extra):
     )
 
 
+def _feature_started(on: date) -> None:
+    """The feature has been delivering since ``on`` (`deadlines.feature_start`).
+
+    One row of an inactive account, never shown, whose `created_at` is that day.
+    """
+    gone = factories.UserFactory(is_active=False, display_name="Lahkunud kasutaja")
+    matter = factories.MatterFactory(owner=None)
+    row = DeadlineNotification.objects.create(
+        recipient=gone,
+        matter=matter,
+        category=OPINION,
+        source_type="MATTER",
+        source_id=matter.pk,
+        source_date=on,
+        purpose=NotificationPurpose.ON_DAY,
+        kind=NotificationKind.ACTION,
+        due_on=on,
+        retired_at=datetime(2026, 1, 1, tzinfo=UTC),
+        retired_reason=RetiredReason.INELIGIBLE,
+    )
+    DeadlineNotification.objects.filter(pk=row.pk).update(
+        created_at=datetime(on.year, on.month, on.day, 9, 0, tzinfo=UTC)
+    )
+
+
+def _personal(**filters) -> list[DeadlineNotification]:
+    """Rows of real recipients — without `_feature_started`'s marker row."""
+    return [row for row in _rows(**filters) if row.recipient.is_active]
+
+
 def _live(user, day: date) -> list[inbox.InboxItem]:
     return [item for item in inbox.inbox_for(user, day) if item.type == inbox.TYPE_DEADLINE]
 
@@ -181,6 +211,7 @@ def test_a_hidden_row_does_not_come_back_after_reruns(specialist):
 
 
 def test_repeated_runs_create_nothing_twice(specialist, department_head):
+    _feature_started(TODAY - timedelta(days=10))
     _opinion(specialist, TODAY + timedelta(days=3))
     _opinion(specialist, TODAY - timedelta(days=2))
     _step(factories.MatterFactory(owner=specialist), on=TODAY + timedelta(days=1))
@@ -239,6 +270,7 @@ def test_an_answered_deadline_escalates_to_nobody(specialist, department_head):
 
 
 def test_a_step_deadline_escalates_and_a_review_never_does(specialist, department_head):
+    _feature_started(TODAY - timedelta(days=10))
     late = _step(factories.MatterFactory(owner=specialist), on=TODAY - timedelta(days=1))
     _step(
         factories.MatterFactory(owner=specialist),
@@ -265,6 +297,7 @@ def test_management_may_turn_the_escalation_off(specialist, department_head):
 
 
 def test_a_responsible_department_head_gets_no_escalation_of_their_own_deadline(department_head):
+    _feature_started(TODAY - timedelta(days=10))
     _opinion(department_head, TODAY - timedelta(days=1))
 
     _run(TODAY)
@@ -631,9 +664,12 @@ def test_a_legacy_seven_day_check_keeps_working_and_is_superseded_on_the_day(spe
     )
 
     reconcile_commencement_reminders(TODAY)
+    _run(TODAY)
     legacy.refresh_from_db()
     assert legacy.status == ReminderStatus.OPEN
-    assert inbox.inbox_count(specialist, TODAY) >= 1
+    # The legacy row is the advance prompt for that date: no second one beside it.
+    assert _rows() == []
+    assert inbox.inbox_count(specialist, TODAY) == 1
 
     reconcile_commencement_reminders(day)
     legacy.refresh_from_db()
@@ -1027,3 +1063,216 @@ def test_the_migration_is_additive_and_leaves_commencement_history_alone():
         "NotificationSettings",
     }
     assert set(ReminderStage.values) == {"SEVEN_DAYS", "ON_DATE"}
+
+
+# ---------------------------------------------------------------------------
+# Review round of 2026-10-30
+# ---------------------------------------------------------------------------
+
+
+def test_handed_away_and_back_the_same_day_brings_the_current_row_back(
+    specialist, other_specialist
+):
+    """P2-1: the retired row holds the slot, so it is revived rather than lost."""
+    matter = _opinion(specialist, TODAY + timedelta(days=3))
+    _run(TODAY)
+    (row,) = _rows()
+    deadlines.mark_read(notification=row)
+
+    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
+    _run(TODAY)
+    row.refresh_from_db()
+    assert row.retired_reason == RetiredReason.REASSIGNED
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+    result = _run(TODAY)
+
+    row.refresh_from_db()
+    assert (row.retired_at, row.retired_reason, row.read_at) == (None, "", None)
+    assert result.revived == 1
+    assert [item.pk for item in _live(specialist, TODAY)] == [row.pk]
+    assert len(_rows(recipient=specialist)) == 1
+
+
+def test_a_date_moved_away_and_back_the_same_day_is_owed_again(specialist):
+    matter = _opinion(specialist, TODAY + timedelta(days=3))
+    _run(TODAY)
+    Matter.objects.filter(pk=matter.pk).update(response_deadline=TODAY + timedelta(days=30))
+    _run(TODAY)
+    Matter.objects.filter(pk=matter.pk).update(response_deadline=TODAY + timedelta(days=3))
+
+    _run(TODAY)
+
+    (row,) = _rows()
+    assert row.retired_at is None
+    assert len(_live(specialist, TODAY)) == 1
+
+
+def test_a_hidden_row_stays_hidden_after_a_hand_over_back(specialist, other_specialist):
+    matter = _opinion(specialist, TODAY + timedelta(days=3))
+    _run(TODAY)
+    (row,) = _rows()
+    deadlines.dismiss(notification=row)
+    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
+    _run(TODAY)
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+
+    _run(TODAY)
+
+    row.refresh_from_db()
+    assert row.dismissed_at is not None
+    assert _live(specialist, TODAY) == []
+
+
+def test_an_expired_interval_is_never_revived(specialist, other_specialist):
+    """Only today's interval comes back: the 7-day row of the old owner stays retired."""
+    matter = _opinion(specialist, TODAY + timedelta(days=7))
+    _run(TODAY)
+    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
+    later = TODAY + timedelta(days=5)
+    _run(later)
+    assign_matter(matter=matter, owner=specialist, actor=other_specialist)
+
+    _run(later)
+
+    rows = {(row.offset_days, row.retired_reason) for row in _rows(recipient=specialist)}
+    assert rows == {(7, RetiredReason.REASSIGNED), (3, "")}
+
+
+def test_the_escalation_names_the_steps_own_responsible_person(
+    specialist, other_specialist, department_head
+):
+    """P2-2: owner decision D2 decides who is named, not the Matter's owner."""
+    _feature_started(TODAY - timedelta(days=10))
+    _step(
+        factories.MatterFactory(owner=specialist, title="Kolleegi samm"),
+        on=TODAY - timedelta(days=1),
+        responsible=other_specialist,
+    )
+    _step(
+        factories.MatterFactory(owner=None, title="Vastutajata teema samm"),
+        on=TODAY - timedelta(days=1),
+        responsible=specialist,
+    )
+    _run(TODAY)
+
+    notes = {item.title: item.note for item in _live(department_head, TODAY)}
+
+    assert notes == {
+        "Kolleegi samm": f"Vastutaja {other_specialist.display_name}",
+        "Vastutajata teema samm": f"Vastutaja {specialist.display_name}",
+    }
+
+
+def test_the_inbox_names_responsible_people_in_a_bounded_number_of_queries(
+    specialist, department_head, django_assert_max_num_queries
+):
+    _feature_started(TODAY - timedelta(days=10))
+    for index in range(4):
+        _step(
+            factories.MatterFactory(owner=specialist),
+            on=TODAY - timedelta(days=1),
+            responsible=factories.UserFactory(display_name=f"Sammu vastutaja {index}"),
+        )
+    _run(TODAY)
+    inbox.inbox_for(department_head, TODAY)  # warm the per-request caches
+
+    with django_assert_max_num_queries(20):
+        items = inbox.inbox_for(department_head, TODAY)
+
+    assert len(items) == 4
+
+
+def test_the_result_counts_what_was_written(specialist):
+    """P3-2: counted from the inserts and updates, not from the table size."""
+    _feature_started(TODAY - timedelta(days=10))
+    _opinion(specialist, TODAY + timedelta(days=3))
+    _opinion(specialist, TODAY + timedelta(days=1))
+
+    first = _run(TODAY)
+    second = _run(TODAY)
+
+    assert (first.created, first.revived) == (2, 0)
+    assert (second.created, second.revived, second.retired) == (0, 0, 0)
+
+
+def test_the_first_run_does_not_deliver_last_weeks_history(specialist, department_head):
+    """P3-3: on an empty table, a deadline missed before the feature existed
+    owes neither an on-the-day row nor an escalation."""
+    _opinion(specialist, TODAY - timedelta(days=3))
+    _step(factories.MatterFactory(owner=specialist), on=TODAY - timedelta(days=2))
+
+    _run(TODAY)
+
+    assert _personal() == []
+    assert deadlines.feature_start(TODAY) == TODAY
+
+
+def test_after_the_start_a_worker_down_for_two_days_still_delivers_once(
+    specialist, department_head
+):
+    started = TODAY - timedelta(days=10)
+    _feature_started(started)
+    deadline = TODAY - timedelta(days=2)
+    _opinion(specialist, deadline)
+
+    _run(TODAY)
+    _run(TODAY)
+
+    assert deadlines.feature_start(TODAY) == started
+    assert {(row.recipient_id, row.purpose) for row in _personal()} == {
+        (specialist.pk, NotificationPurpose.ON_DAY),
+        (department_head.pk, NotificationPurpose.ESCALATION),
+    }
+
+
+def test_a_removed_round_is_neither_shown_nor_counted(specialist):
+    from django.utils import timezone as django_timezone
+
+    matter = factories.MatterFactory(owner=specialist)
+    engagement = MatterEngagement.objects.create(
+        matter=matter,
+        kind=EngagementKind.EMAIL_CAMPAIGN,
+        title="Eemaldatav kaasamine",
+        created_by=specialist,
+        lifecycle_tracked=True,
+        feedback_deadline=TODAY + timedelta(days=3),
+    )
+    _run(TODAY)
+    assert inbox.inbox_count(specialist, TODAY) == 1
+
+    MatterEngagement.objects.filter(pk=engagement.pk).update(removed_at=django_timezone.now())
+
+    assert inbox.inbox_count(specialist, TODAY) == 0
+    assert _live(specialist, TODAY) == []
+
+
+def test_a_cancelled_step_is_neither_shown_nor_counted(specialist):
+    action = _step(factories.MatterFactory(owner=specialist), on=TODAY + timedelta(days=1))
+    _run(TODAY)
+    assert inbox.inbox_count(specialist, TODAY) == 1
+
+    type(action).objects.filter(pk=action.pk).update(status=ActionStatus.CANCELLED)
+
+    assert inbox.inbox_count(specialist, TODAY) == 0
+    _run(TODAY)
+    assert _rows()[0].retired_reason == RetiredReason.DISCHARGED
+
+
+@pytest.mark.parametrize("order", ["hide-then-run", "run-then-hide"])
+def test_hiding_and_the_generator_leave_exactly_one_hidden_row(specialist, order):
+    _opinion(specialist, TODAY + timedelta(days=3))
+    _run(TODAY)
+    (row,) = _rows()
+
+    if order == "hide-then-run":
+        deadlines.dismiss(notification=row)
+        _run(TODAY)
+    else:
+        _run(TODAY)
+        deadlines.dismiss(notification=row)
+    _run(TODAY)
+
+    (only,) = _rows()
+    assert only.pk == row.pk
+    assert only.dismissed_at is not None
+    assert _live(specialist, TODAY) == []

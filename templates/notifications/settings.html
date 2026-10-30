@@ -32,7 +32,7 @@ is drawn disabled: the wish cannot be stored until personal sign-in exists.
         <input type="checkbox" id="notif-paused" name="paused" value="1"{% if paused %} checked{% endif %}>
         Peata tähtaegade teavitused
       </label>
-      <p class="muted notifsettings__help">Peatatuna uusi tähtaegade teavitusi ei teki. Jõustumise kontrollid ja «Uus asi» jäävad alles.</p>
+      <p class="muted notifsettings__help">Peatatuna uusi tähtaegade teavitusi ei teki ja olemasolevad on peidetud. Jõustumise kontrollid ja «Uus asi» jäävad alles.</p>
       <label class="notifsettings__check" for="notif-email">
         <input type="checkbox" id="notif-email" name="email" value="1" disabled aria-describedby="notif-email-note"{% if email_requested %} checked{% endif %}>
         Saada teavitused ka e-postiga

@@ -116,7 +116,7 @@ def test_an_answer_racing_the_on_the_day_run_leaves_nothing_open():
 
 
 def test_two_deadline_generators_at_once_deliver_each_interval_exactly_once():
-    """docs/adr/0198 §4: the advisory lock (24606) and the unique constraint."""
+    """docs/adr/0198 §4: the advisory lock (24609) and the unique constraint."""
     from app.notifications.deadlines import reconcile_deadline_notifications
     from app.notifications.models import DeadlineNotification
 
