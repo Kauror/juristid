@@ -1,7 +1,8 @@
 # 0195 — A review that has come round is this week's work; an expectation is not a review
 
 - Status: Proposed (owner's decision 1 of the post-audit remediation brief,
-  2026-10-29; 2026-10-28 audit finding B-02; not merged)
+  2026-10-29; 2026-10-28 audit finding B-02); merged 2026-10-29 in #564
+  (merge `359e34bf`) and deployed the same day
 - Amends: 0121 §7 (a period that has not ended is never this week's) for
   reviews that have come round; the review rule's table in
   `app/workflow/lateness.py` for `EXPECTED_AROUND`
