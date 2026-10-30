@@ -13,14 +13,14 @@ at last March would write today's portfolio under March's date, which is not a
 photograph of March — it is today's picture with a false caption, and nothing on
 the resulting chart would look wrong (Stage-2E brief 52).
 
-**The schedule** (docs/adr/0159, amendment of 2026-10-30): the daily photograph
-is taken by `snapshots.capture_daily_if_missing`, which a loop worker calls —
-once per Europe/Tallinn day, from 03:00, never re-captured automatically. This
-command is the manual path, and a same-day run *refreshes* that day's rows on
-purpose. Without the worker, a cron does the same job:
-
-    0 3 * * *  docker compose -p juristid-main -f <compose> exec -T web \\
-                 python manage.py capture_operational_snapshot
+**The schedule** (docs/adr/0159 §7): the daily photograph is taken by
+`snapshots.capture_daily_if_missing`, which the `notifications` loop worker is
+to call — once per Europe/Tallinn day, from 03:00, never re-captured
+automatically. Until that call is wired nothing photographs automatically and
+the comparisons read «ei mõõdetud». This command is the manual path, and a
+same-day run *refreshes* that day's rows on purpose — which is why it must not
+also be scheduled by cron beside the worker: it would overwrite the morning
+picture with a later one.
 """
 
 from __future__ import annotations

@@ -358,9 +358,15 @@ def capture_daily_if_missing(now: datetime | None = None) -> bool:
 
     Europe/Tallinn local time decides both the hour and the day. Concurrency-
     safe: the existence check and the capture run under one transaction-scoped
-    advisory lock, so two workers that wake together write one photograph. A
-    day whose portfolio is empty writes no rows, so a later call that day finds
-    none and photographs again — harmless, there was nothing to overwrite.
+    advisory lock, so two workers that wake together write one photograph.
+
+    **Known limitation, accepted:** "already captured today" is read from the
+    rows themselves, and a day with no open FULL Teema writes none. Such a day
+    is therefore photographed again on every call (harmless — there is nothing
+    to overwrite) and has no rows for a comparison to find, so a boundary that
+    falls on it borrows the nearest other photograph. A department with no open
+    Teema at all is not a production state; recording empty days would need a
+    capture-log table, which is not worth one (docs/adr/0159 §7).
     """
     now = now or timezone.now()
     local = timezone.localtime(now)

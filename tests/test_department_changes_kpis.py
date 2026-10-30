@@ -49,9 +49,10 @@ from app.reporting.selectors.snapshots import (
     visible_snapshots,
 )
 from app.submissions.enums import SubmissionStatus
-from app.workflow.enums import ActionKind, DateSemantics, Disposition
-from app.workflow.models import StageVocabulary
-from app.workflow.services import set_next_action
+from app.workflow.enums import ActionKind, ActionStatus, DateSemantics, Disposition
+from app.workflow.models import NextAction, StageVocabulary
+from app.workflow.services import add_planned_action, set_next_action
+from app.workflow.step_markers import CLOSED_WITH_MATTER
 from tests import factories
 
 pytestmark = pytest.mark.django_db
@@ -654,8 +655,8 @@ def test_more_changes_cost_no_more_queries_with_filters(
     many = _queries(department_head, params)
 
     assert many == few
-    # No photographs here; two more queries read them where they exist.
-    assert few <= 32
+    # No photographs here; a few more queries read them where they exist.
+    assert few <= 34
 
 
 # =========================================================================
@@ -736,3 +737,135 @@ def test_the_daily_capture_reads_the_tallinn_day(specialist):
     assert set(OperationalMatterSnapshot.objects.values_list("snapshot_date", flat=True)) == {
         date(2026, 10, 31)
     }
+
+
+# =========================================================================
+# Review of 2026-10-30
+# =========================================================================
+
+
+@pytest.mark.parametrize("planned", [None, 2], ids=["no-open-step", "three-open-steps"])
+def test_one_closure_is_one_change_whatever_it_ended(department_head, specialist, planned):
+    """A step-less closure used to be no change at all; one with three open
+    steps was one. Both are one now — in the cards, the owner's line and the
+    table."""
+    matter = create_matter(title="Suletav teema", owner=specialist, actor=specialist)
+    if planned is not None:
+        set_next_action(matter=matter, text="Praegune", actor=specialist)
+        for offset in range(planned):
+            add_planned_action(
+                matter=matter,
+                text=f"Plaan {offset}",
+                target_date=timezone.localdate() + timedelta(days=10 + offset),
+                actor=specialist,
+            )
+    before = _values(dc.build_changes(department_head))["events"]
+    close_matter(
+        matter=matter,
+        disposition=Disposition.COMPLETED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
+
+    changes = dc.build_changes(department_head)
+
+    assert _values(changes)["events"] == before + 1
+    assert _values(changes)["matters"] == 1
+    assert _people(changes)[str(specialist.pk)].events == before + 1
+    closures = [row for row in changes.detail.rows if row.event_type == dc.CLOSURE_ROW]
+    assert len(closures) == 1
+    expected = "sulges teema" if planned is None else "sulges teema: lõppes 3 tegevust"
+    assert closures[0].change == expected
+    assert closures[0].category_key == "tegevused"
+    # The output stays Tehtud's: one closed Teema, counted there and on its card.
+    assert _values(changes)["closed"] == 1
+    tegevused = dc.build_changes(department_head, {"liik": "tegevused"})
+    assert [row.event_type for row in tegevused.detail.rows].count(dc.CLOSURE_ROW) == 1
+
+
+def test_a_closures_representative_is_deterministic_on_a_tie(department_head, specialist):
+    """Cancellations grouped under a closing event nobody's act wrote (a
+    cutover) are represented by their latest; a tie goes to the larger key."""
+    matter = factories.MatterFactory(owner=specialist, title="Üleminek")
+    moment = timezone.now() - timedelta(minutes=5)
+    cancels = []
+    for number in range(3):
+        step = NextAction.objects.create(
+            matter=matter,
+            text=f"Samm {number}",
+            created_by=specialist,
+            status=ActionStatus.CANCELLED,
+            ended_at=moment,
+        )
+        cancels.append(
+            ChangeEvent.objects.create(
+                event_type=ChangeEventType.NEXT_ACTION_CANCELLED,
+                matter=matter,
+                actor=specialist,
+                occurred_at=moment,
+                object_type="workflow.NextAction",
+                object_id=step.pk,
+                payload={"reason": CLOSED_WITH_MATTER},
+            )
+        )
+    ChangeEvent.objects.create(
+        event_type=ChangeEventType.MATTER_HISTORICAL_CUTOVER_CLOSED,
+        matter=matter,
+        actor=None,
+        occurred_at=moment + timedelta(seconds=1),
+        payload={},
+    )
+
+    groups = [
+        dc._closure_groups(
+            ChangeEvent.objects.filter(pk__in=[cancel.pk for cancel in order]),
+            ChangeEvent.objects.none(),
+        )
+        for order in (cancels, list(reversed(cancels)))
+    ]
+
+    expected = max(cancels, key=lambda cancel: str(cancel.pk)).pk
+    assert [list(group) for group in groups] == [[expected], [expected]]
+    assert groups[0][expected]["n"] == 3
+
+
+def test_the_end_photograph_is_the_morning_after_the_window(department_head, specialist):
+    today = timezone.localdate()
+    period = {"periood": "vahemik", "alates": f"{(today - timedelta(days=6)):%d.%m.%Y}"}
+    period["kuni"] = f"{(today - timedelta(days=2)):%d.%m.%Y}"
+    create_matter(title="Esimene", owner=specialist, actor=specialist)
+    capture(on=today - timedelta(days=6))
+    capture(on=today - timedelta(days=2))
+    create_matter(title="Viimase päeva teema", owner=specialist, actor=specialist)
+
+    inside = dc.build_changes(department_head, period)
+    assert inside.snapshots.end_date == today - timedelta(days=2)
+    assert inside.snapshots.end_inside_window
+    assert dc.SNAPSHOT_END_INSIDE in _kpis(inside)["open"].note
+
+    capture(on=today - timedelta(days=1))
+    after = dc.build_changes(department_head, period)
+    assert after.snapshots.start_date == today - timedelta(days=6)
+    assert after.snapshots.end_date == today - timedelta(days=1)
+    assert not after.snapshots.end_inside_window
+    assert (_kpis(after)["open"].start, _kpis(after)["open"].end) == (1, 2)
+    assert _kpis(after)["open"].note == ""
+
+
+def test_a_filter_narrows_the_sent_opinions_without_changing_their_kind(
+    department_head, specialist, other_specialist
+):
+    """Tehtud's sent opinions include a send on an archive Teema; a Vastutaja
+    filter narrows that population by owner, it does not drop the archive."""
+    archive = factories.ArchiveMatterFactory(owner=specialist, title="Arhiivis saadetud")
+    _sent(archive)
+    _sent(create_matter(title="Muu omanik", owner=other_specialist, actor=other_specialist))
+
+    whole = dc.build_changes(department_head)
+    mine = dc.build_changes(department_head, {"vastutaja": str(specialist.pk)})
+    by_title = dc.build_changes(department_head, {"otsi": "arhiivis"})
+
+    assert whole.outputs is not None
+    assert _values(whole)["sent"] == whole.outputs.sent == 2
+    assert _values(mine)["sent"] == 1
+    assert _values(by_title)["sent"] == 1

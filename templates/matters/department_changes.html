@@ -287,8 +287,11 @@ know (both in the rail). Everything is computed by
         {% if page.snapshots.available %}
           <p class="ovnote">
             Seis {{ page.snapshots.start_date|date:"j.n.Y" }} ja {{ page.snapshots.end_date|date:"j.n.Y" }}
-            päevase hetktõmmise järgi — kahe seisu võrdlus, mitte muudatuste arv.
+            hommikuse hetktõmmise järgi — kahe seisu võrdlus, mitte muudatuste arv.
           </p>
+          {% if page.snapshots.end_inside_window %}
+            <p class="ovnote" data-snapshot-end-inside>Lõpuseis on perioodi viimase päeva hommikust; selle päeva muudatused ei ole sees.</p>
+          {% endif %}
           <p class="uxdg__sum">
             {% for figure in page.snapshots.figures %}
               <span>{{ figure.label }}: <b>{{ figure.start }} → {{ figure.end }}</b></span>

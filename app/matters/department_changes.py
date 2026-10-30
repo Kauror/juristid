@@ -187,9 +187,25 @@ _BADGES: dict[str, str] = {
     event_type: category.badge for category in CATEGORIES for event_type in category.event_types
 }
 
+#: A person's `MATTER_CLOSED` is read as the one closure row (ADR 0159 §7,
+#: review of 2026-10-30): one closure is one change whether or not it ended
+#: open steps. It is not a type of its own in any category's breakdown — the
+#: closure row is «sulges teema» in «Järgmised tegevused», as D1 drew it.
+CLOSURE_EVENT = ChangeEventType.MATTER_CLOSED
+
 _CATEGORY_OF: dict[str, Category] = {
     event_type: category for category in CATEGORIES for event_type in category.event_types
 }
+_CATEGORY_OF[CLOSURE_EVENT] = NEXT_ACTIONS
+
+
+def _category_types(category: Category) -> tuple[str, ...]:
+    """The event types a category's rows are read from, the closing event included."""
+    if category is NEXT_ACTIONS:
+        return (*category.event_types, CLOSURE_EVENT)
+    return category.event_types
+
+
 CATEGORY_KEYS: frozenset[str] = frozenset(category.key for category in CATEGORIES)
 
 #: What a reader is shown where a value was not recorded.
@@ -296,6 +312,8 @@ class SnapshotComparison:
     start_date: date | None = None
     end_date: date | None = None
     figures: list[SnapshotFigure] = field(default_factory=list)
+    #: The window's last day, to say which side of it the end photograph is on.
+    period_end: date | None = None
     #: «Tähtaja ületanud» and «Vajab sekkumist» on the same two photographs
     #: (D4). ``None`` at a boundary whose rows did not record the flag — every
     #: row captured before 2026-10-30, or a reader whose scope may not read it.
@@ -305,6 +323,16 @@ class SnapshotComparison:
     @property
     def available(self) -> bool:
         return self.start_date is not None and self.end_date is not None
+
+    @property
+    def end_inside_window(self) -> bool:
+        """The end photograph is from inside the window (its last day's morning
+        or earlier), so the last day's changes are not in it."""
+        return (
+            self.end_date is not None
+            and self.period_end is not None
+            and self.end_date <= self.period_end
+        )
 
 
 @dataclass
@@ -511,6 +539,20 @@ WORK_STATE_UNMEASURED = (
 )
 SNAPSHOT_UNAVAILABLE = "Perioodi algusest ja lõpust ei ole kahte erinevat hetktõmmist."
 SNAPSHOT_DEPARTMENT_WIDE = "Hetktõmmiste võrdlus on kogu osakonna kohta; filtrid seda ei kitsenda."
+#: The end photograph is the window's last day's morning: that day's changes
+#: are not in it (the next morning's photograph does not exist yet).
+SNAPSHOT_END_INSIDE = (
+    "Lõpuseis on perioodi viimase päeva hommikust; selle päeva muudatused ei ole sees."
+)
+
+
+def _snapshot_note(snapshots: SnapshotComparison, narrowed: bool) -> str:
+    notes = []
+    if snapshots.end_inside_window:
+        notes.append(SNAPSHOT_END_INSIDE)
+    if narrowed:
+        notes.append(SNAPSHOT_DEPARTMENT_WIDE)
+    return " ".join(notes)
 
 
 @dataclass(frozen=True)
@@ -756,16 +798,19 @@ def _visible_full_matters(user: Any) -> QuerySet[Matter]:
     )
 
 
-def _scoped_events(user: Any, matters: QuerySet[Matter]) -> QuerySet[ChangeEvent]:
+def _scoped_events(
+    user: Any, matters: QuerySet[Matter], *, with_closures: bool = False
+) -> QuerySet[ChangeEvent]:
     """Curated events on visible Matters whose own subject is visible too.
 
     Not yet narrowed to a window or to people: coverage reads the same
     population for its earliest act and its system rows, so the boundary is
     written once.
     """
+    types = CURATED_EVENT_TYPES | {CLOSURE_EVENT} if with_closures else CURATED_EVENT_TYPES
     return scope_change_events(
         ChangeEvent.objects.filter(
-            event_type__in=CURATED_EVENT_TYPES,
+            event_type__in=types,
             matter__in=matters.values("pk"),
         ),
         user,
@@ -781,24 +826,41 @@ def _in_window(events: QuerySet[ChangeEvent], period: dd.Period) -> QuerySet[Cha
     return events.filter(local_day_range("occurred_at", period.start, period.end))
 
 
+def matter_filter_q(filters: ChangeFilters, prefix: str = "") -> Q:
+    """Vastutaja and search as one condition on a Teema reached by ``prefix``.
+
+    `otsi` matches the title (case-insensitive) or, when it reads as one, the
+    familiar ``YYYY_N`` reference. Written once and applied to *whichever*
+    population a figure counts — the visible Teemad, a sent opinion's Teema —
+    so a filter only ever narrows that population and never changes its kind
+    (the outputs keep Tehtud's own definition, archive Teemad included).
+    """
+    condition = Q()
+    if filters.owner == OWNER_NONE:
+        condition &= Q(**{f"{prefix}owner__isnull": True})
+    elif filters.owner:
+        condition &= Q(**{f"{prefix}owner_id": uuid.UUID(filters.owner)})
+    if filters.search:
+        found = Q(**{f"{prefix}title__icontains": filters.search})
+        reference = Matter.parse_reference(filters.search)
+        if reference is not None:
+            found |= Q(
+                **{
+                    f"{prefix}reference_year": reference[0],
+                    f"{prefix}reference_number": reference[1],
+                }
+            )
+        condition &= found
+    return condition
+
+
 def _filtered_matters(matters: QuerySet[Matter], filters: ChangeFilters) -> QuerySet[Matter]:
     """The visible Teemad, narrowed by Vastutaja and search — never widened.
 
-    `otsi` matches the title (case-insensitive) or, when it reads as one, the
-    familiar ``YYYY_N`` reference. Applied to the already-authorized population,
-    so a search can only ever find a Teema the reader may see.
+    Applied to the already-authorized population, so a search can only ever
+    find a Teema the reader may see.
     """
-    if filters.owner == OWNER_NONE:
-        matters = matters.filter(owner__isnull=True)
-    elif filters.owner:
-        matters = matters.filter(owner_id=uuid.UUID(filters.owner))
-    if filters.search:
-        condition = Q(title__icontains=filters.search)
-        reference = Matter.parse_reference(filters.search)
-        if reference is not None:
-            condition |= Q(reference_year=reference[0], reference_number=reference[1])
-        matters = matters.filter(condition)
-    return matters
+    return matters.filter(matter_filter_q(filters)) if filters.narrows_matters else matters
 
 
 def _owner_choices(matters: QuerySet[Matter]) -> list[Any]:
@@ -925,8 +987,8 @@ def _row(event: ChangeEvent) -> ChangeRow:
     return ChangeRow(
         at=event.occurred_at,
         event_type=event.event_type,
-        badge=_BADGES[event.event_type],
-        verb=_VERBS[event.event_type],
+        badge=_BADGES.get(event.event_type, NEXT_ACTIONS.badge),
+        verb=_VERBS.get(event.event_type, CLOSURE_VERB),
         detail=_detail(event),
         actor_name=actor.display_name if actor is not None else "",
         initials=actor.initials if actor is not None else "··",
@@ -942,12 +1004,17 @@ def _row(event: ChangeEvent) -> ChangeRow:
     )
 
 
-def _closure_groups(closure_acts: QuerySet[ChangeEvent]) -> dict[Any, dict[str, Any]]:
-    """One group per closure that ended steps, however many it ended (D1),
-    keyed by the group's *representative* cancellation — its latest.
+def _closure_groups(
+    closure_acts: QuerySet[ChangeEvent], closing_acts: QuerySet[ChangeEvent]
+) -> dict[Any, dict[str, Any]]:
+    """One group per closure, however many steps it ended — none included —
+    keyed by the group's *representative* event.
 
-    The cancellations stay in the audit history one by one; this only reads
-    them as the one act they were. Which closure a cancellation belongs to:
+    **One closure is one change** (D1, and the review of 2026-10-30). A
+    person's `MATTER_CLOSED` in the window is the closure's row itself, and the
+    step cancellations it caused fold into it («lõppes N tegevust»; a closure
+    with no open step is the same one row with N = 0). Which closure a
+    cancellation belongs to:
 
     1. **the closure that names it** — `MATTER_CLOSED.payload.ended.actions`
        lists the ids of the steps that closure ended (docs/adr/0152 §7);
@@ -956,34 +1023,40 @@ def _closure_groups(closure_acts: QuerySet[ChangeEvent]) -> dict[Any, dict[str, 
        for closures recorded before that list existed, and for cutovers;
     3. otherwise it stands alone rather than being merged with a stranger.
 
-    The representative makes the grouping something the database can sort and
-    paginate: the detail table is the plain acts plus exactly one row per
-    closure. Bounded: the cancellations, then the closing events on their
-    Matters — two queries, whatever the number of rows.
+    A group whose closing event is not a person's act in this window (a
+    cutover, an unrecorded closer) is represented by its latest cancellation,
+    ties broken by primary key so a page is the same page every time. The
+    representative makes the grouping something the database can sort and
+    paginate. Bounded: the cancellations, the closing events on their Matters,
+    and the window's person-made closures — three queries.
     """
     cancels = list(
         closure_acts.order_by().values(
             "pk", "matter", "actor", "object_id", "occurred_at", "auth_method"
         )
     )
-    if not cancels:
-        return {}
-    closings = list(
-        ChangeEvent.objects.filter(
-            matter__in={cancel["matter"] for cancel in cancels},
-            event_type__in=CLOSING_EVENT_TYPES,
+    own_closings = {
+        closing["pk"]: closing
+        for closing in closing_acts.order_by().values(
+            "pk", "matter", "actor", "occurred_at", "auth_method"
         )
-        .order_by("occurred_at", "created_at", "pk")
-        .values("pk", "matter", "occurred_at", "payload")
-    )
+    }
     named: dict[str, Any] = {}
     by_matter: dict[Any, list[Any]] = {}
-    for closing in closings:
-        by_matter.setdefault(closing["matter"], []).append(closing)
-        ended = (closing["payload"] or {}).get("ended")
-        actions = ended.get("actions") if isinstance(ended, dict) else None
-        for action_id in actions if isinstance(actions, list) else ():
-            named.setdefault(str(action_id), closing["pk"])
+    if cancels:
+        for closing in (
+            ChangeEvent.objects.filter(
+                matter__in={cancel["matter"] for cancel in cancels},
+                event_type__in=CLOSING_EVENT_TYPES,
+            )
+            .order_by("occurred_at", "created_at", "pk")
+            .values("pk", "matter", "occurred_at", "payload")
+        ):
+            by_matter.setdefault(closing["matter"], []).append(closing)
+            ended = (closing["payload"] or {}).get("ended")
+            actions = ended.get("actions") if isinstance(ended, dict) else None
+            for action_id in actions if isinstance(actions, list) else ():
+                named.setdefault(str(action_id), closing["pk"])
 
     def closure_of(cancel: Any) -> Any:
         if cancel["object_id"] is not None and str(cancel["object_id"]) in named:
@@ -993,23 +1066,40 @@ def _closure_groups(closure_acts: QuerySet[ChangeEvent]) -> dict[Any, dict[str, 
                 return closing["pk"]
         return cancel["pk"]
 
-    grouped: dict[tuple[Any, Any, Any], dict[str, Any]] = {}
+    def order(event: Any) -> tuple[Any, str]:
+        return (event["occurred_at"], str(event["pk"]))
+
+    grouped: dict[Any, dict[str, Any]] = {}
+    for pk, own in own_closings.items():
+        grouped[pk] = {
+            "n": 0,
+            "at": own["occurred_at"],
+            "rep": pk,
+            "auth_method": own["auth_method"],
+        }
     for cancel in cancels:
-        key = (closure_of(cancel), cancel["matter"], cancel["actor"])
-        group = grouped.setdefault(key, {"n": 0, "at": None, "rep": None, "auth_method": ""})
+        closure = closure_of(cancel)
+        if closure in own_closings:
+            grouped[closure]["n"] += 1
+            continue
+        key = (closure, cancel["matter"], cancel["actor"])
+        group = grouped.setdefault(
+            key, {"n": 0, "at": None, "rep": None, "auth_method": "", "_order": None}
+        )
         group["n"] += 1
         # One closure is one request, so its cancellations share a method; a
         # shared-gate one anywhere in the group is enough to say so.
         if cancel["auth_method"] == AuthMethod.SHARED_GATE or not group["auth_method"]:
             group["auth_method"] = cancel["auth_method"]
-        if group["at"] is None or cancel["occurred_at"] > group["at"]:
+        if group["_order"] is None or order(cancel) > group["_order"]:
+            group["_order"] = order(cancel)
             group["at"] = cancel["occurred_at"]
             group["rep"] = cancel["pk"]
     return {group["rep"]: group for group in grouped.values()}
 
 
 def _closure_row(event: ChangeEvent, group: dict[str, Any]) -> ChangeRow:
-    """The one row a closure's cancellations read as: «sulges teema: lõppes N tegevust»."""
+    """A closure's one row: «sulges teema», and «lõppes N tegevust» when it ended any."""
     base = _row(event)
     ended = group["n"]
     return replace(
@@ -1018,7 +1108,7 @@ def _closure_row(event: ChangeEvent, group: dict[str, Any]) -> ChangeRow:
         event_type=CLOSURE_ROW,
         badge=NEXT_ACTIONS.badge,
         verb=CLOSURE_VERB,
-        detail=f"lõppes {ended} {'tegevus' if ended == 1 else 'tegevust'}",
+        detail=f"lõppes {ended} {'tegevus' if ended == 1 else 'tegevust'}" if ended else "",
         auth_method=group["auth_method"],
         before=UNKNOWN,
         after="",
@@ -1113,10 +1203,25 @@ def _snapshot_comparison(user: Any, period: dd.Period) -> SnapshotComparison:
             .aggregate(last=Max("snapshot_date"))["last"]
         )
 
+    def first_after(day: date) -> date | None:
+        return (
+            OperationalMatterSnapshot.objects.filter(snapshot_date__gt=day)
+            .order_by()
+            .aggregate(first=Min("snapshot_date"))["first"]
+        )
+
+    # The capture runs early in the morning, so a photograph shows the state
+    # *before* its day's work. The start's own morning is therefore the state
+    # the window began from; the end is the next morning's photograph — the
+    # state after the window's last day — when it exists, and otherwise the
+    # last one inside the window, which the page labels as the last day's
+    # morning (its changes are not in it).
+    after_end = first_after(period.end)
     comparison = SnapshotComparison(
         start_date=last_on_or_before(period.start),
-        end_date=last_on_or_before(period.end),
+        end_date=after_end if after_end is not None else last_on_or_before(period.end),
     )
+    comparison.period_end = period.end
     if comparison.start_date == comparison.end_date:
         # One photograph cannot be compared with itself: the window holds no
         # capture after the one its start falls on, or none at all.
@@ -1193,9 +1298,10 @@ def _event_totals(detail: QuerySet[ChangeEvent]) -> dict[str, int]:
 
     * **Muudetud teemad** — ``COUNT(DISTINCT matter)`` over the person-made
       curated events in the window, after every exclusion the categories make
-      (system rows, imports, automatic steps) and with a closure's cancelled
-      steps read as the one closure row (its Teema counts once, as any Teema).
-    * **Muudatusi** — those events counted, a closure once.
+      (system rows, imports, automatic steps), a person's closure included as
+      its one row (its Teema counts once, as any Teema).
+    * **Muudatusi** — those events counted, a closure once whether or not it
+      ended open steps (`_closure_groups`).
     * **Uued teemad** — the person-made ``MATTER_CREATED`` among them, which
       `_person_acts` has already limited to ``MatterOrigin.NATIVE``.
 
@@ -1211,7 +1317,7 @@ def _event_totals(detail: QuerySet[ChangeEvent]) -> dict[str, int]:
 
 
 def _outputs(
-    user: Any, period: dd.Period, filtered: QuerySet[Matter], filters: ChangeFilters
+    user: Any, period: dd.Period, filters: ChangeFilters
 ) -> tuple[QuerySet[Any], QuerySet[Matter]]:
     """*Tehtud*'s two canonical output populations, narrowed with the Teemad.
 
@@ -1221,15 +1327,20 @@ def _outputs(
     * **Lõpetatud teemad** — `department_dashboard.closed_matters`, *Tehtud*'s
       «suletud».
 
-    Unfiltered they are exactly Tehtud's numbers. Vastutaja and search narrow
-    them to the filtered Teemad; «Liik» does not — an opinion and a closure are
-    outputs, not change categories (docs/adr/0159 §2).
+    Unfiltered they are exactly Tehtud's numbers — `sent_submissions` reads
+    every visible sent opinion, on an archive Teema too (an imported send).
+    Vastutaja and search narrow that same population by its Teema's owner and
+    title; «Liik» does not — an opinion and a closure are outputs, not change
+    categories (docs/adr/0159 §2).
     """
     sent = dd.sent_submissions(user, since=period.start, until=period.end)
     closed = dd.closed_matters(user, since=period.start, until=period.end)
     if filters.narrows_matters:
-        sent = sent.filter(matter__in=filtered.values("pk"))
-        closed = closed.filter(pk__in=filtered.values("pk"))
+        # The filter's condition on each output's own Teema — never a join to
+        # the FULL-only population the events read, which would quietly drop a
+        # sent opinion on an archive Teema the unfiltered card counts.
+        sent = sent.filter(matter_filter_q(filters, "matter__"))
+        closed = closed.filter(matter_filter_q(filters))
     return sent, closed
 
 
@@ -1277,7 +1388,7 @@ def work_state_kpis(
         elif start is None or end is None:
             note = WORK_STATE_UNMEASURED
         else:
-            note = SNAPSHOT_DEPARTMENT_WIDE if filters.narrows_matters else ""
+            note = _snapshot_note(snapshots, filters.narrows_matters)
         return Kpi(
             key=key,
             label=label,
@@ -1319,7 +1430,7 @@ def _kpis(
     if not snapshots.available:
         open_note = SNAPSHOT_UNAVAILABLE
     else:
-        open_note = SNAPSHOT_DEPARTMENT_WIDE if filters.active else ""
+        open_note = _snapshot_note(snapshots, filters.active)
     return [
         Kpi(
             "matters",
@@ -1526,7 +1637,10 @@ def _detail_table(
         .annotate(
             category_order=Case(
                 *(
-                    When(event_type__in=category.event_types, then=Value(order_of[category.key]))
+                    When(
+                        event_type__in=_category_types(category),
+                        then=Value(order_of[category.key]),
+                    )
                     for category in CATEGORIES
                 ),
                 default=Value(len(CATEGORIES)),
@@ -1592,16 +1706,21 @@ def build_changes(
     filtered = _filtered_matters(matters, filters)
 
     events = _scoped_events(user, matters)
-    acts = _person_acts(_in_window(_scoped_events(user, filtered), period))
-    closures = _closure_groups(acts.filter(closure_cancelled_q()))
+    all_acts = _person_acts(_in_window(_scoped_events(user, filtered, with_closures=True), period))
+    acts = all_acts.exclude(event_type=CLOSURE_EVENT)
+    closures = _closure_groups(
+        acts.filter(closure_cancelled_q()), all_acts.filter(event_type=CLOSURE_EVENT)
+    )
     plain = acts.exclude(closure_cancelled_q())
-    detail = acts.filter(~closure_cancelled_q() | Q(pk__in=list(closures)))
+    detail = all_acts.filter(
+        (~closure_cancelled_q() & ~Q(event_type=CLOSURE_EVENT)) | Q(pk__in=list(closures))
+    )
     if filters.category:
         category = next(item for item in CATEGORIES if item.key == filters.category)
-        detail = detail.filter(event_type__in=category.event_types)
+        detail = detail.filter(event_type__in=_category_types(category))
 
     snapshots = _snapshot_comparison(user, period)
-    sent, closed = _outputs(user, period, filtered, filters)
+    sent, closed = _outputs(user, period, filters)
     people, people_total = _people(detail, sent, closed, filters, period)
     return DepartmentChanges(
         period=period,

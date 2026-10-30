@@ -291,11 +291,45 @@ responsible person blank with the other step columns.
 photograph once, from 03:00 Europe/Tallinn, under advisory lock `(24608, 1)`
 (24607 is the Lovable sync's), and never re-captures later the same day — the
 capture refreshes rows, which would overwrite the early-morning picture. The
-`notifications` loop worker is to call it; the management command stays the
-manual, refreshing path.
+`notifications` loop worker is to call it. **Until that call is wired, nothing
+photographs automatically and every snapshot figure on the page reads «ei
+mõõdetud».** The management command stays the manual, refreshing path and is
+not to be scheduled by cron beside the worker. Known limitation: "captured
+today" is read from the rows, and a day with no open Teema writes none, so
+such a day is re-photographed on each call and has no rows to compare —
+accepted, because a department with no open Teema is not a production state.
+
+**Which photograph is each end** (review of 2026-10-30). A photograph is
+taken in the morning, so it shows the state *before* its day's work. The start
+of the window is the last photograph on or before its first day — that
+morning is the state the window began from. The end is the first photograph
+*after* the window's last day (the next morning: the state after the window)
+when it exists; otherwise the last one inside the window, which the page
+labels — «Lõpuseis on perioodi viimase päeva hommikust; selle päeva
+muudatused ei ole sees» — rather than letting it pass for the end of the day.
+
+**One closure is one change** (review of 2026-10-30, extending D1). A
+person's `MATTER_CLOSED` in the window is itself the closure's row in
+«Järgmised tegevused» — «sulges teema», with «lõppes N tegevust» when it ended
+open steps — and those cancellations fold into it. A closure that ended no
+step was no row at all, and so was missing from «Muudatusi», «Muudetud
+teemad», its owner's line and the table; it is one row now, exactly as one with
+three open steps is. §2 still holds: the closure *output* (a Teema closed now,
+closed in the window) is *Tehtud*'s and is counted only on the «Lõpetatud
+teemad» card from *Tehtud*'s own definition; here the act is one change among
+the others. Cancellations grouped under a closing event that is nobody's act
+in the window (a cutover) keep being represented by their latest event, ties
+broken by primary key so a page is the same page every time.
+
+**The outputs keep their kind under a filter.** *Tehtud*'s `sent_submissions`
+reads every visible sent opinion, archive Teemad included (an imported send).
+Vastutaja and search are applied as a condition on each output's own Teema
+(`department_changes.matter_filter_q`), so they only narrow that population;
+they used to join it to the FULL-only Teemad the events read and dropped
+archive sends the unfiltered card counted.
 
 **Queries** stay constant in the data's size (asserted, filters included):
-about thirty for the whole page, including the digest and one read of the work
+about thirty-three for the whole page, including the digest and one read of the work
 model.
 
 ## Consequences

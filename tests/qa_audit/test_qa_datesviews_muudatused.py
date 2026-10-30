@@ -212,9 +212,12 @@ def test_distinct_changes_in_one_minute_are_not_merged(department_head, speciali
 
     assert _category(changes, "hetkeseis").count == 2
     assert _category(changes, "taasavatud").count == 2
-    # Every displayed row is one canonical event: the rows equal the events.
+    # Every displayed row is one canonical event: the rows equal the events,
+    # each person's closure counted once as its own row (review of 2026-10-30).
     events = ChangeEvent.objects.filter(
-        matter=matter, event_type__in=dc.CURATED_EVENT_TYPES, actor__isnull=False
+        matter=matter,
+        event_type__in=dc.CURATED_EVENT_TYPES | {ChangeEventType.MATTER_CLOSED},
+        actor__isnull=False,
     ).count()
     assert sum(r.count for r in changes.categories) == events
 

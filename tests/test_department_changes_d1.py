@@ -295,7 +295,10 @@ def test_a_closure_that_ended_one_step_says_one(department_head, specialist):
     assert row.detail == "lõppes 1 tegevus"
 
 
-def test_a_closure_that_ended_nothing_adds_no_entry(department_head, specialist):
+def test_a_closure_that_ended_nothing_is_still_one_entry(department_head, specialist):
+    """One closure is one change whether or not it ended open steps (ADR 0159
+    §7, review of 2026-10-30). It was no entry at all, so a step-less closure
+    vanished from «Muudatusi» and from its owner's line."""
     matter = create_matter(title="Tühi", owner=specialist, actor=specialist)
     close_matter(
         matter=matter,
@@ -305,8 +308,10 @@ def test_a_closure_that_ended_nothing_adds_no_entry(department_head, specialist)
     )
 
     changes = dc.build_changes(department_head)
-    assert _closure_rows(changes) == []
-    assert dc.CLOSURE_VERB not in _breakdown(changes)
+    [row] = _closure_rows(changes)
+    assert (row.verb, row.detail, row.change) == ("sulges teema", "", "sulges teema")
+    assert row.actor_name == specialist.display_name
+    assert _breakdown(changes)[dc.CLOSURE_VERB] == 1
 
 
 def test_closing_twice_is_two_entries_and_a_cancel_is_still_a_cancel(department_head, specialist):

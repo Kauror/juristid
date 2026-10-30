@@ -104,11 +104,13 @@ def test_every_category_is_its_own_canonical_events(department_head, specialist,
 
     changes = dc.build_changes(department_head)
 
+    # «tegevused»: two set, one finished, one cancelled — and the closure, which
+    # ended no open step, as its own one row (review of 2026-10-30).
     assert _counts(changes) == {
         "uued": 1,
         "hetkeseis": 2,
         "vastutaja": 1,
-        "tegevused": 4,
+        "tegevused": 5,
         "taasavatud": 1,
     }
     breakdown = dict(_category(changes, "tegevused").breakdown)
@@ -144,10 +146,12 @@ def test_a_hand_over_names_both_people(department_head, specialist, other_specia
 
 
 def test_what_changes_no_state_is_not_counted(department_head, specialist, today):
-    """A rename, a review and a closure are not this view's.
+    """A rename and a review are not this view's; a closure is one row.
 
-    The title is not a state; «Vaatasin üle» confirms a step without moving it;
-    and a closure is Tehtud's output, counted there once.
+    The title is not a state; «Vaatasin üle» confirms a step without moving it.
+    A closure is Tehtud's *output* (closed now, closed in the window) and is
+    read here as one *act* — «sulges teema», once, whatever it ended (ADR 0159
+    §7, review of 2026-10-30) — never as a category of its own.
     """
     matter = create_matter(title="Vana pealkiri", owner=specialist, actor=specialist)
     ChangeEvent.objects.create(
@@ -174,9 +178,10 @@ def test_what_changes_no_state_is_not_counted(department_head, specialist, today
         "uued": 2,
         "hetkeseis": 0,
         "vastutaja": 0,
-        "tegevused": 1,
+        "tegevused": 2,
         "taasavatud": 0,
     }
+    assert dict(_category(changes, "tegevused").breakdown)[dc.CLOSURE_VERB] == 1
     assert ChangeEventType.NEXT_ACTION_REVIEWED not in dc.CURATED_EVENT_TYPES
     assert ChangeEventType.MATTER_CLOSED not in dc.CURATED_EVENT_TYPES
     assert ChangeEventType.MATTER_TITLE_CHANGED not in dc.CURATED_EVENT_TYPES
@@ -593,7 +598,7 @@ def test_more_changes_cost_no_more_queries(department_head, specialist, other_sp
     # 30 since the amendment of 2026-10-30: the KPI cards (Tehtud's two output
     # counts, the work-state model for «Tähelepanu vajavad» / «Tähtaja
     # ületanud»), the per-person table and one page of the change table.
-    assert few <= 32
+    assert few <= 34
 
 
 # =========================================================================
