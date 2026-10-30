@@ -178,6 +178,15 @@ OWN_VISIBILITY = {
 }
 
 
+#: Routes whose path parameter names no record, so there is nothing to hide
+#: behind it and nothing for this sweep to cross.
+NOT_A_RECORD = {
+    # A calendar year: the public holidays are the same for every reader
+    # (docs/adr/0197), and no Teema or child stands behind the number.
+    "core:public_holidays",
+}
+
+
 def _routes() -> list[tuple[str, list[str]]]:
     found: list[tuple[str, list[str]]] = []
 
@@ -192,7 +201,11 @@ def _routes() -> list[tuple[str, list[str]]]:
                     found.append((name, sorted(converters)))
 
     walk(get_resolver().url_patterns, None)
-    return [(name, params) for name, params in found if not name.startswith("admin:")]
+    return [
+        (name, params)
+        for name, params in found
+        if not name.startswith("admin:") and name not in NOT_A_RECORD
+    ]
 
 
 #: Routes that name a second record in the POST body rather than the path.
