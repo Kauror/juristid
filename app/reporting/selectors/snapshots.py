@@ -25,9 +25,10 @@ is the one thing docs/adr/0038 forbids. Closed here; the reasoning is in
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from typing import Any
 
+from django.db import connection, transaction
 from django.db.models import (
     BooleanField,
     Case,
@@ -37,11 +38,13 @@ from django.db.models import (
     F,
     OuterRef,
     QuerySet,
+    UUIDField,
     Value,
     When,
 )
 from django.utils import timezone
 
+from app.accounts.enums import UserRole
 from app.core.authorization import Scope, child_scope_q, matter_visibility_q, scope_for_user
 from app.core.authorization import apply as apply_scope
 from app.matters.enums import RecordMode
@@ -180,10 +183,96 @@ def visible_snapshots(viewer: Any) -> QuerySet[OperationalMatterSnapshot]:
             default=Value(None, output_field=DateField()),
             output_field=DateField(),
         ),
+        visible_next_action_date_precision=Case(
+            When(next_action_is_visible=True, then=F("next_action_date_precision")),
+            default=Value(""),
+            output_field=CharField(max_length=16),
+        ),
+        visible_next_action_responsible_id=Case(
+            When(next_action_is_visible=True, then=F("next_action_responsible")),
+            default=Value(None, output_field=UUIDField()),
+            output_field=UUIDField(),
+        ),
+        **_work_state_annotations(scope),
     )
 
 
-def capture(*, on: date | None = None) -> tuple[int, int]:
+def _work_state_annotations(scope: Scope) -> dict[str, Any]:
+    """«Tähtaja ületanud» and «Vajab sekkumist» memberships, as this scope may read them.
+
+    The two flags were decided at capture time over the **whole** department,
+    restricted children included (:func:`work_state_memberships`). Unlike the
+    step columns they do not name the child that decided them — a Teema can be
+    overdue because of a restricted step, a restricted important date or a
+    restricted round — so no per-row probe can tell whether this reader may see
+    the reason. The rule is therefore the conservative one: a scope that sees
+    every restricted child reads the flags; any other scope reads NULL, which
+    every consumer treats as «ei mõõdetud», never as False. Since docs/adr/0181
+    every business reader's scope sees every restricted child, so in practice
+    the department reads the flags and the rule costs nothing; it is stated (and
+    tested) so that a narrower scope can never get a count derived from a child
+    it may not see.
+    """
+    if scope.sees_all_restricted:
+        return {
+            "visible_is_overdue": F("is_overdue"),
+            "visible_needs_attention": F("needs_attention"),
+        }
+    unknown = Value(None, output_field=BooleanField())
+    return {"visible_is_overdue": unknown, "visible_needs_attention": unknown}
+
+
+class _WholeDepartment:
+    """The reader the capture evaluates work-state membership as.
+
+    The capture is unauthorized by design (:func:`snapshot_population`): the
+    photograph records the department, and :func:`visible_snapshots` decides
+    who may read it. The canonical work-state selectors
+    (`app.matters.work_items`) take a reader, so the capture hands them this
+    one — a business-read role, so `scope_for_user` gives the scope that sees
+    every Matter and every restricted child, which is exactly the whole
+    department. It is not a `User`: no primary key, never an actor, never
+    written anywhere.
+    """
+
+    is_authenticated = True
+    is_active = True
+    is_anonymous = False
+    is_staff = False
+    is_superuser = False
+    pk = None
+    id = None
+    role = UserRole.DEPARTMENT_HEAD.value
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging aid
+        return "<WholeDepartment>"
+
+
+WHOLE_DEPARTMENT = _WholeDepartment()
+
+
+def work_state_memberships(on: date) -> tuple[set[Any], set[Any]]:
+    """Which Teemad were «Tähtaja ületanud» and «Vajab sekkumist» on ``on``.
+
+    The live canonical populations, unchanged and over the whole department:
+    «Tähtaja ületanud» is `work_items.WORK_OVERDUE` (the Matters of
+    `overdue_items` — a DO + DEADLINE step late by `app.workflow.lateness`,
+    planned follow-up checks included; an outstanding response deadline past;
+    an important date past; a feedback wait past). «Vajab sekkumist» is
+    `WORK_NEEDS_ATTENTION` (overdue ∪ ripe for review ∪ no next action ∪ no
+    owner). One read of the work model serves both.
+    """
+    from app.matters import work_items as wi
+
+    items = wi.work_items(WHOLE_DEPARTMENT, today=on)
+    overdue = wi.work_population_ids(WHOLE_DEPARTMENT, wi.WORK_OVERDUE, today=on, items=items)
+    attention = wi.work_population_ids(
+        WHOLE_DEPARTMENT, wi.WORK_NEEDS_ATTENTION, today=on, items=items
+    )
+    return overdue, attention
+
+
+def capture(*, on: date | None = None, now: datetime | None = None) -> tuple[int, int]:
     """Photograph the operational portfolio for one day. Idempotent.
 
     Returns ``(created, updated)``. Re-running for the same date refreshes the
@@ -197,17 +286,20 @@ def capture(*, on: date | None = None) -> tuple[int, int]:
     Deliberately unauthorized, and it stays that way: it records the whole
     department, restricted steps included, and :func:`visible_snapshots` decides
     who may read what. What it now also records is *which* step each row copied,
-    so that decision has something to derive from.
+    so that decision has something to derive from — and, since the amendment of
+    2026-10-30 (docs/adr/0159, D4), the step's precision and responsible person
+    and the Teema's two work-state memberships (:func:`work_state_memberships`).
     """
     snapshot_date = on or timezone.localdate()
-    now = timezone.now()
+    now = now or timezone.now()
 
     open_actions = {
         action.matter_id: action
         for action in NextAction.objects.filter(status=ActionStatus.OPEN).only(
-            "matter_id", "kind", "date_semantics", "target_date"
+            "matter_id", "kind", "date_semantics", "target_date", "date_precision", "responsible"
         )
     }
+    overdue, attention = work_state_memberships(snapshot_date)
 
     created = 0
     updated = 0
@@ -224,7 +316,11 @@ def capture(*, on: date | None = None) -> tuple[int, int]:
             "next_action_kind": action.kind if action is not None else "",
             "next_action_date_semantics": action.date_semantics if action is not None else "",
             "next_action_date": action.target_date if action is not None else None,
+            "next_action_date_precision": action.date_precision if action is not None else "",
+            "next_action_responsible_id": action.responsible_id if action is not None else None,
             "response_deadline": matter.response_deadline,
+            "is_overdue": matter.pk in overdue,
+            "needs_attention": matter.pk in attention,
             "captured_at": now,
         }
         _, was_created = OperationalMatterSnapshot.objects.update_or_create(
@@ -236,3 +332,50 @@ def capture(*, on: date | None = None) -> tuple[int, int]:
             updated += 1
 
     return created, updated
+
+
+#: The local hour from which the day's photograph may be taken automatically —
+#: early, before the working day changes anything (the schedule the capture
+#: command's docstring has always asked for).
+DAILY_CAPTURE_HOUR = 3
+
+#: Advisory lock for the automatic daily capture. Distinct from every key in
+#: use: search 24601, organisations 24602, titles 24603, storage quota 24604,
+#: reminders 24605, taxonomy vocabulary 24606, Lovable sync 24607, deadline notifications 24609.
+DAILY_CAPTURE_LOCK = (24608, 1)
+
+
+def capture_daily_if_missing(now: datetime | None = None) -> bool:
+    """Take today's photograph once, if it is late enough and none exists yet.
+
+    Meant for a loop worker that calls it every few minutes. Returns whether it
+    captured. Never a second capture on the same local day: :func:`capture`
+    *refreshes* an existing day's rows, so an automatic re-run at noon would
+    overwrite the early-morning picture with the afternoon's, and a trend would
+    compare two different times of day. A deliberate same-day refresh stays the
+    management command's, run by a person.
+
+    Europe/Tallinn local time decides both the hour and the day. Concurrency-
+    safe: the existence check and the capture run under one transaction-scoped
+    advisory lock, so two workers that wake together write one photograph.
+
+    **Known limitation, accepted:** "already captured today" is read from the
+    rows themselves, and a day with no open FULL Teema writes none. Such a day
+    is therefore photographed again on every call (harmless — there is nothing
+    to overwrite) and has no rows for a comparison to find, so a boundary that
+    falls on it borrows the nearest other photograph. A department with no open
+    Teema at all is not a production state; recording empty days would need a
+    capture-log table, which is not worth one (docs/adr/0159 §7).
+    """
+    now = now or timezone.now()
+    local = timezone.localtime(now)
+    if local.hour < DAILY_CAPTURE_HOUR:
+        return False
+    day = local.date()
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", list(DAILY_CAPTURE_LOCK))
+        if OperationalMatterSnapshot.objects.filter(snapshot_date=day).exists():
+            return False
+        capture(on=day, now=now)
+    return True

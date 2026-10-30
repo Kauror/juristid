@@ -133,7 +133,36 @@ class OperationalMatterSnapshot(BaseModel):
         verbose_name="järgmine tegevus",
     )
 
+    # The photographed step's date precision and responsible person (ADR 0159,
+    # amendment of 2026-10-30, owner's decision D4). Forward only: a row written
+    # before these columns existed holds "" and NULL — its `is_overdue` NULL is
+    # what says it predates them. Scoped on the way out like the facts above.
+    next_action_date_precision = models.CharField(
+        max_length=16,
+        blank=True,
+        default="",
+        verbose_name="tegevuse kuupäeva täpsus",
+    )
+    next_action_responsible = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="operational_snapshot_steps",
+        verbose_name="tegevuse vastutaja",
+    )
+
     response_deadline = models.DateField(null=True, blank=True, verbose_name="arvamuse tähtaeg")
+
+    # Two memberships, decided at capture time by the live canonical selectors
+    # over the whole department (`snapshots.work_state_memberships`): whether
+    # the Teema was in «Tähtaja ületanud» (`work_items.overdue_items`) and in
+    # «Vajab sekkumist» (`WORK_NEEDS_ATTENTION`) that day. A Teema's membership
+    # can depend on a child a reader may not see, so the read releases these
+    # only to a scope that sees every restricted child (`visible_snapshots`).
+    # NULL on a row captured before they existed: «ei mõõdetud», never False.
+    is_overdue = models.BooleanField(null=True, blank=True, verbose_name="tähtaja ületanud")
+    needs_attention = models.BooleanField(null=True, blank=True, verbose_name="vajab sekkumist")
 
     captured_at = models.DateTimeField(verbose_name="hõivatud")
 

@@ -102,7 +102,8 @@ def lent_reader():
 
 
 def stage_rows(page):
-    return page.locator("section[data-category='hetkeseis'] .uxdg__row")
+    """The change table's «Hetkeseis» rows (one table since 2026-10-30)."""
+    return page.locator("section[data-detail] tr[data-row='hetkeseis']")
 
 
 @pytest.mark.parametrize("width", [1440, 375])
@@ -116,25 +117,25 @@ def test_the_head_reaches_the_page_from_tehtud(page, base_url, planted, width):
 
     assert page.url.startswith(f"{base_url}{PAGE_PATH}?periood=")
     expect(page.get_by_role("heading", level=1, name="Muudatused")).to_be_visible()
-    for label in (
-        "Uued teemad",
-        "Hetkeseisu muutused",
-        "Vastutaja muutused",
-        "Järgmised tegevused",
-        "Taasavatud teemad",
-    ):
+    for key in ("uued", "hetkeseis", "vastutaja", "tegevused", "taasavatud"):
+        expect(page.locator(f"[data-categories] a[data-category='{key}']")).to_be_visible()
+    for label in ("Põhinäitajad", "Vastutajate kaupa", "Kõik muudatused"):
         expect(page.get_by_role("heading", level=2, name=label)).to_be_visible()
+    expect(page.locator("[data-kpis] [data-kpi]")).to_have_count(8)
     row = stage_rows(page).filter(has_text=planted["open"])
     expect(row).to_have_count(1)
-    expect(row).to_contain_text("muutis hetkeseisu: määramata → Idee")
+    expect(row.locator("[data-change]")).to_have_text("muutis hetkeseisu")
+    expect(row.locator("[data-before]")).to_have_text("määramata")
+    expect(row.locator("[data-after]")).to_have_text("Idee")
     expect(page.locator("[data-outputs]")).to_be_visible()
     expect(page.locator("[data-snapshots]")).to_be_visible()
     expect(page.locator("[data-coverage]")).to_be_visible()
     assert not document_overflows(page)
 
-    href = row.get_attribute("href") or ""
+    link = row.get_by_role("link")
+    href = link.get_attribute("href") or ""
     assert href.startswith("/teemad/")
-    row.click()
+    link.click()
     page.wait_for_load_state("networkidle")
     assert page.url.startswith(f"{base_url}{href}")
     expect(page.get_by_text(planted["open"]).first).to_be_visible()
@@ -189,7 +190,8 @@ def test_an_empty_window_says_so(page, base_url):
     expect(page.locator("[data-unrecorded]")).to_be_visible()
     expect(page.locator("[data-partial]")).to_have_count(0)
     expect(page.get_by_role("heading", name="Muudatuste arv teadmata")).to_be_visible()
-    expect(page.locator(".uxdg__row")).to_have_count(0)
+    expect(page.locator("[data-detail] tbody tr")).to_have_count(0)
+    expect(page.locator("[data-detail-empty]")).to_have_text("Ei ole teada.")
 
 
 def test_a_reversed_range_is_refused_in_words(page, base_url):
@@ -219,20 +221,38 @@ _UNCOVERED = """el => {
 }"""
 
 
-def test_the_change_itself_is_readable_on_a_phone(page, base_url, planted):
+def test_the_change_table_scrolls_inside_its_wrapper_on_a_phone(page, base_url, planted):
     page.set_viewport_size({"width": 375, "height": 900})
     sign_in(page, base_url, HEAD)
     page.goto(f"{base_url}{PAGE_PATH}?periood=30")
 
     row = stage_rows(page).filter(has_text=planted["open"])
-    change = row.locator("[data-change]")
-    expect(change).to_have_text("— muutis hetkeseisu: määramata → Idee")
-    expect(change).to_be_visible()
-    text = row.locator(".uxdg__text").evaluate(_NOT_CLIPPED)
-    assert not text["clipped"], "the row text is still cut to one line"
-    box = change.evaluate(_NOT_CLIPPED)
+    expect(row.locator("[data-change]")).to_have_text("muutis hetkeseisu")
+    wrapper = page.locator("section[data-detail] .tablewrap")
+    box = wrapper.evaluate(_NOT_CLIPPED)
+    # The table is wider than a phone; its wrapper scrolls, the page does not.
     assert box["right"] <= box["width"], box
     assert not document_overflows(page)
+
+
+def test_a_filter_narrows_the_page_and_survives_a_sort(page, base_url, planted):
+    sign_in(page, base_url, HEAD)
+    page.goto(f"{base_url}{PAGE_PATH}?periood=30")
+
+    page.locator("input[name='otsi']").fill(planted["open"])
+    page.get_by_role("button", name="Näita").click()
+    page.wait_for_load_state("networkidle")
+    expect(stage_rows(page)).to_have_count(1)
+
+    page.locator("section[data-detail] th a.colhead", has_text="Teema").click()
+    page.wait_for_load_state("networkidle")
+    assert "otsi=" in page.url and "sort=teema" in page.url
+    expect(stage_rows(page)).to_have_count(1)
+    expect(page.locator("section[data-detail] th[aria-sort='ascending']")).to_have_count(1)
+
+    page.locator("[data-clear-filters]").click()
+    page.wait_for_load_state("networkidle")
+    assert "otsi=" not in page.url
 
 
 @pytest.mark.parametrize("width", [1440, 1024, 375])

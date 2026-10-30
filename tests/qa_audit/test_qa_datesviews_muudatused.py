@@ -48,6 +48,11 @@ UTC = ZoneInfo("UTC")
 PAGE = "/osakond/muudatused/"
 
 
+def _rows_of(changes: dc.DepartmentChanges, key: str) -> list[dc.ChangeRow]:
+    """One category's rows, off the detail table's first page (tests hold < 50)."""
+    return [row for row in changes.detail.rows if row.category_key == key]
+
+
 def _at(day: date, clock: time) -> datetime:
     return datetime.combine(day, clock, tzinfo=TALLINN)
 
@@ -64,8 +69,7 @@ def _stage_event(matter, actor, moment: datetime, label: str) -> None:
 
 
 def _labels(changes: dc.DepartmentChanges) -> set[str]:
-    result = next(r for r in changes.categories if r.key == "hetkeseis")
-    return {row.detail.split(" → ", 1)[1] for row in result.rows}
+    return {row.detail.split(" → ", 1)[1] for row in _rows_of(changes, "hetkeseis")}
 
 
 def _category(changes: dc.DepartmentChanges, key: str) -> dc.CategoryResult:
@@ -109,7 +113,7 @@ def test_a_one_day_window_on_a_clock_change_day_holds_exactly_that_local_day(
 
     assert _labels(changes) == {"00:00", "repeated hour", "23:59"}
     # Every displayed row is dated, in Tallinn, on the day the window names.
-    assert {row.when for row in _category(changes, "hetkeseis").rows} == {transition}
+    assert {row.when for row in _rows_of(changes, "hetkeseis")} == {transition}
 
 
 @pytest.mark.parametrize("key,days", [("7", 7), ("14", 14), ("30", 30), ("kvartal", 91)])
@@ -208,9 +212,12 @@ def test_distinct_changes_in_one_minute_are_not_merged(department_head, speciali
 
     assert _category(changes, "hetkeseis").count == 2
     assert _category(changes, "taasavatud").count == 2
-    # Every displayed row is one canonical event: the rows equal the events.
+    # Every displayed row is one canonical event: the rows equal the events,
+    # each person's closure counted once as its own row (review of 2026-10-30).
     events = ChangeEvent.objects.filter(
-        matter=matter, event_type__in=dc.CURATED_EVENT_TYPES, actor__isnull=False
+        matter=matter,
+        event_type__in=dc.CURATED_EVENT_TYPES | {ChangeEventType.MATTER_CLOSED},
+        actor__isnull=False,
     ).count()
     assert sum(r.count for r in changes.categories) == events
 
@@ -233,7 +240,7 @@ def test_a_test_matter_is_counted_as_the_adr_says(department_head, specialist):
 def _set_rows(changes) -> list[dc.ChangeRow]:
     return [
         row
-        for row in _category(changes, "tegevused").rows
+        for row in _rows_of(changes, "tegevused")
         if row.event_type == ChangeEventType.NEXT_ACTION_SET
     ]
 
@@ -401,7 +408,7 @@ def test_one_closure_reads_as_one_entry_not_one_cancellation_per_step(department
     assert after["tühistas järgmise tegevuse"] == before["tühistas järgmise tegevuse"]
     assert after[dc.CLOSURE_VERB] == 1
     closure_rows = [
-        row for row in _category(changes, "tegevused").rows if row.event_type == dc.CLOSURE_ROW
+        row for row in _rows_of(changes, "tegevused") if row.event_type == dc.CLOSURE_ROW
     ]
     assert [(row.verb, row.detail) for row in closure_rows] == [
         ("sulges teema", "lõppes 3 tegevust")

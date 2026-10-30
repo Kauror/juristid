@@ -59,6 +59,11 @@ pytestmark = pytest.mark.django_db
 TALLINN = ZoneInfo("Europe/Tallinn")
 
 
+def _rows_of(changes: dc.DepartmentChanges, key: str) -> list[dc.ChangeRow]:
+    """One category's rows, off the detail table's first page (tests hold < 50)."""
+    return [row for row in changes.detail.rows if row.category_key == key]
+
+
 def _stage(key: str) -> StageVocabulary:
     return StageVocabulary.objects.get(key=key)
 
@@ -99,11 +104,13 @@ def test_every_category_is_its_own_canonical_events(department_head, specialist,
 
     changes = dc.build_changes(department_head)
 
+    # «tegevused»: two set, one finished, one cancelled — and the closure, which
+    # ended no open step, as its own one row (review of 2026-10-30).
     assert _counts(changes) == {
         "uued": 1,
         "hetkeseis": 2,
         "vastutaja": 1,
-        "tegevused": 4,
+        "tegevused": 5,
         "taasavatud": 1,
     }
     breakdown = dict(_category(changes, "tegevused").breakdown)
@@ -120,11 +127,11 @@ def test_a_row_says_before_and_after_from_the_events_own_payload(department_head
 
     changes = dc.build_changes(department_head)
 
-    stage_rows = _category(changes, "hetkeseis").rows
+    stage_rows = _rows_of(changes, "hetkeseis")
     assert [row.detail for row in stage_rows] == ["Idee → Kooskõlastusringil", "määramata → Idee"]
     assert stage_rows[0].actor_name == specialist.display_name
     assert stage_rows[0].matter_title == "Hetkeseisu teema"
-    transfer = _category(changes, "vastutaja").rows[0]
+    transfer = _rows_of(changes, "vastutaja")[0]
     assert transfer.detail == f"→ {specialist.display_name}"
     assert transfer.actor_name == department_head.display_name
 
@@ -133,16 +140,18 @@ def test_a_hand_over_names_both_people(department_head, specialist, other_specia
     matter = create_matter(title="Üleantav", owner=specialist, actor=specialist)
     assign_matter(matter=matter, owner=other_specialist, actor=department_head)
 
-    row = _category(dc.build_changes(department_head), "vastutaja").rows[0]
+    row = _rows_of(dc.build_changes(department_head), "vastutaja")[0]
 
     assert row.detail == f"{specialist.display_name} → {other_specialist.display_name}"
 
 
 def test_what_changes_no_state_is_not_counted(department_head, specialist, today):
-    """A rename, a review and a closure are not this view's.
+    """A rename and a review are not this view's; a closure is one row.
 
-    The title is not a state; «Vaatasin üle» confirms a step without moving it;
-    and a closure is Tehtud's output, counted there once.
+    The title is not a state; «Vaatasin üle» confirms a step without moving it.
+    A closure is Tehtud's *output* (closed now, closed in the window) and is
+    read here as one *act* — «sulges teema», once, whatever it ended (ADR 0159
+    §7, review of 2026-10-30) — never as a category of its own.
     """
     matter = create_matter(title="Vana pealkiri", owner=specialist, actor=specialist)
     ChangeEvent.objects.create(
@@ -169,9 +178,10 @@ def test_what_changes_no_state_is_not_counted(department_head, specialist, today
         "uued": 2,
         "hetkeseis": 0,
         "vastutaja": 0,
-        "tegevused": 1,
+        "tegevused": 2,
         "taasavatud": 0,
     }
+    assert dict(_category(changes, "tegevused").breakdown)[dc.CLOSURE_VERB] == 1
     assert ChangeEventType.NEXT_ACTION_REVIEWED not in dc.CURATED_EVENT_TYPES
     assert ChangeEventType.MATTER_CLOSED not in dc.CURATED_EVENT_TYPES
     assert ChangeEventType.MATTER_TITLE_CHANGED not in dc.CURATED_EVENT_TYPES
@@ -207,7 +217,7 @@ def test_an_imported_teema_is_coverage_and_never_new(department_head, specialist
 
     changes = dc.build_changes(department_head)
 
-    assert [row.matter_title for row in _category(changes, "uued").rows] == ["Siin loodud"]
+    assert [row.matter_title for row in _rows_of(changes, "uued")] == ["Siin loodud"]
     assert changes.coverage.imported_matters == 1
     # The import's own MATTER_CREATED has nobody behind it.
     assert changes.coverage.system_events == 1
@@ -278,7 +288,7 @@ def test_both_ends_of_the_window_are_inclusive_in_tallinn(department_head, speci
         today=date(2026, 3, 20),
     )
 
-    details = {row.detail for row in _category(changes, "hetkeseis").rows}
+    details = {row.detail for row in _rows_of(changes, "hetkeseis")}
     assert details == {"Idee → first day, first minute", "Idee → last day, last minute"}
     # 23:59 in Tallinn is 21:59 UTC the same day, and 00:00:30 is the previous
     # UTC day: a UTC `__date` would have moved both rows across the boundary.
@@ -379,11 +389,11 @@ def test_a_restricted_teemas_changes_count_for_every_reader_and_reach_no_outside
     assert _counts(for_owner)["hetkeseis"] == 1
     assert _counts(for_owner)["uued"] == 2
     assert _counts(for_reader) == _counts(for_owner)
-    titles = {row.matter_title for result in for_reader.categories for row in result.rows}
+    titles = {row.matter_title for row in for_reader.detail.rows}
     assert "SALAJANE-TEEMA-311" in titles
 
     assert set(_counts(for_outsider).values()) == {0}
-    assert not [row for result in for_outsider.categories for row in result.rows]
+    assert not for_outsider.detail.rows
 
 
 def test_a_restricted_step_on_an_ordinary_teema_reaches_every_reader_and_no_outsider(
@@ -449,7 +459,7 @@ def test_an_empty_department_says_so_and_claims_no_coverage(department_head):
 
     assert changes.is_empty
     assert changes.total == 0
-    assert all(result.rows == [] for result in changes.categories)
+    assert changes.detail.rows == []
     assert changes.coverage.recorded_since is None
     assert changes.coverage.starts_after(changes.period)
     assert not changes.snapshots.available
@@ -473,22 +483,24 @@ def test_every_row_opens_its_teema(department_head, specialist):
     changes = dc.build_changes(department_head)
 
     expected = reverse("matters:matter_detail", kwargs={"pk": matter.pk})
-    rows = [row for result in changes.categories for row in result.rows]
+    rows = changes.detail.rows
     assert rows
     assert {row.url for row in rows} == {expected}
 
 
-def test_a_long_category_is_capped_and_says_so(department_head, specialist, monkeypatch):
-    monkeypatch.setattr(dc, "ROW_LIMIT", 2)
+def test_a_long_list_is_paginated_and_counts_the_whole(department_head, specialist, monkeypatch):
+    monkeypatch.setattr(dc, "PAGE_SIZE", 2)
     for number in range(3):
         create_matter(title=f"Teema {number}", owner=specialist, actor=specialist)
 
-    result = _category(dc.build_changes(department_head), "uued")
+    first = dc.build_changes(department_head, {"liik": "uued"})
+    second = dc.build_changes(department_head, {"liik": "uued", "leht": "2"})
 
-    assert result.count == 3
-    assert len(result.rows) == 2
-    assert result.truncated
-    assert [row.matter_title for row in result.rows] == ["Teema 2", "Teema 1"]
+    assert _category(first, "uued").count == 3
+    assert first.detail.count == 3
+    assert [row.matter_title for row in first.detail.rows] == ["Teema 2", "Teema 1"]
+    assert [row.matter_title for row in second.detail.rows] == ["Teema 0"]
+    assert first.detail.page.paginator.num_pages == 2
 
 
 # =========================================================================
@@ -583,7 +595,10 @@ def test_more_changes_cost_no_more_queries(department_head, specialist, other_sp
     many = _queries(department_head)
 
     assert many == few
-    assert few <= 25
+    # 30 since the amendment of 2026-10-30: the KPI cards (Tehtud's two output
+    # counts, the work-state model for «Tähelepanu vajavad» / «Tähtaja
+    # ületanud»), the per-person table and one page of the change table.
+    assert few <= 34
 
 
 # =========================================================================
@@ -619,12 +634,13 @@ def test_the_head_reads_the_page(client, department_head, specialist):
     assert '<h1 class="ovhead__title">Muudatused</h1>' in body
     for result in response.context["page"].categories:
         assert f'data-category="{result.key}"' in body
-        assert result.label in body
-    # The change is its own element now (visual QA round 2c), after the title.
-    assert (
-        "Pealik näeb seda</span> "
-        '<span class="uxdg__change" data-change>— muutis hetkeseisu: määramata → Idee</span>'
-    ) in body
+        assert result.label.lower() in body
+    # One row of the change table: the act, and «Enne» / «Pärast» in their own cells.
+    assert "<td data-change>muutis hetkeseisu</td>" in body
+    assert "<td data-before>määramata</td>" in body
+    assert "<td data-after>Idee</td>" in body
+    assert f"<td data-actor>{specialist.display_name}</td>" in body
+    assert "data-kpis" in body and "data-people" in body and "data-detail" in body
     assert reverse("matters:matter_detail", kwargs={"pk": matter.pk}) in body
     assert "data-outputs" in body and "data-snapshots" in body and "data-coverage" in body
     assert "data-changes-empty" not in body
@@ -819,7 +835,7 @@ def _stage_event(matter, actor, moment: datetime, label: str) -> None:
 
 def _hetkeseis(user, params) -> set[str]:
     changes = dc.build_changes(user, params, today=EDGE_TODAY)
-    return {row.detail.split(" → ", 1)[1] for row in _category(changes, "hetkeseis").rows}
+    return {row.detail.split(" → ", 1)[1] for row in _rows_of(changes, "hetkeseis")}
 
 
 def test_muudatused_seven_days_stop_at_today_minus_six_in_tallinn(department_head, specialist):
@@ -1051,9 +1067,11 @@ def test_a_window_wholly_after_recording_began_is_fully_covered(
     assert "Muudatuste arv teadmata" not in body
 
 
-def test_the_change_is_its_own_wrapping_element_here_and_not_on_tehtud(
+def test_the_change_table_is_its_own_component_and_tehtud_keeps_its_rows(
     client, department_head, specialist
 ):
+    """The per-category row lists are one table now (amendment of 2026-10-30);
+    Tehtud's digest rows are unchanged."""
     matter = create_matter(title="Mähkimise teema", owner=specialist, actor=specialist)
     change_stage(matter=matter, stage=_stage("idea"), actor=specialist)
     factories.EntryFactory(matter=matter, author=specialist)
@@ -1062,12 +1080,9 @@ def test_the_change_is_its_own_wrapping_element_here_and_not_on_tehtud(
     changes = client.get(PAGE).content.decode()
     tehtud = client.get(OSAKOND).content.decode()
 
-    assert '<span class="uxdg__text uxdg__text--wrap"><span>Mähkimise teema' in changes
-    assert (
-        '<span class="uxdg__change" data-change>— muutis hetkeseisu: määramata → Idee</span>'
-        in changes
-    )
-    assert "uxdg__text--wrap" not in tehtud
+    assert '<table class="table chtable__detail">' in changes
+    assert "uxdg__row" not in changes.split('aria-label="Faktid"')[0]
+    assert "chtable__detail" not in tehtud
     assert "Mähkimise teema" in tehtud
 
 
