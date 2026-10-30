@@ -243,7 +243,6 @@ class _WholeDepartment:
     pk = None
     id = None
     role = UserRole.DEPARTMENT_HEAD.value
-    capability_overrides: dict[str, str] = {}
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return "<WholeDepartment>"
