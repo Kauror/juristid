@@ -400,15 +400,24 @@ def test_last_week_still_counts_when_there_is_also_work_today(matter, specialist
 
 
 def test_an_approximate_record_moves_last_activity_but_no_bounded_window(
-    matter, specialist, department_head
+    specialist, department_head
 ):
     """`period_in_window`: a window bounded in days never holds a period (docs/adr/0122 §2).
 
     A `+ Märge` remembered as «last month», recorded today, is work done — its
     anchor orders «Viimane tegevus» and its precision is how it is printed — but
     no day in last week is a day anybody named, so Osakond does not count it.
+
+    Not the shared `matter` fixture: its entry is `OLD` (60) days back, and the
+    first of last month is 28–61 days back, so on about twelve month-ends a year
+    the two met or crossed and the exact-day entry rightly won the tie (first
+    seen 31.10.2026). This file's history starts 90 days back instead.
     """
+    matter = factories.MatterFactory(owner=specialist)
+    older = timezone.now() - dt.timedelta(days=90)
+    factories.EntryFactory(matter=matter, author=specialist, occurred_at=older)
     first_of_last_month = (_today().replace(day=1) - dt.timedelta(days=1)).replace(day=1)
+    assert timezone.localdate(older) < first_of_last_month
     record_procedural_development(
         matter=matter,
         title="Kohtumine ministeeriumis",
