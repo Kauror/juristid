@@ -1,6 +1,6 @@
 # ADR 0198 — Personal deadline notifications and one inbox
 
-- Status: Proposed (owner's notifications package brief of 2026-10-30, features A, B and D; owner decisions D1–D4 of the same day)
+- Status: Proposed (owner's notifications package brief of 2026-10-30, features A, B and D; owner decisions D1–D4 of the same day); merged 2026-10-30 in #575 (merge `e94f3cff`) and deployed the same day
 - Amends: 0188 §4 and §6 (owner decision D1: no seven-day reminder row is generated; the surfaces are unified) and 0051 («no bell, no badge»: «Uus asi» is now shown in the unified block and counted by the bell)
 - Related, unchanged: 0050 (an open Järgmiseks outranks the Arvamuse tähtaeg as today's work), 0079 (dates at the precision they are known to), 0120 (informational milestones), 0181 (one internal read policy), 0194 (remembered blocks — the preference pattern)
 
