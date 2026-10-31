@@ -809,7 +809,7 @@ jobs:
       - run: uv sync --frozen
 
       - name: Collect the coverage fragments
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: test-report-tests-*
           path: fragments
@@ -1290,7 +1290,7 @@ jobs:
       # 1..N. `SHARD_COUNT` is held to the workflow's --shard-count by
       # tests/test_ci_sharding.py.
       - name: Collect the shard reports
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shard-reports-browser-*
           path: reports
@@ -1353,14 +1353,14 @@ jobs:
       # informational report that crashed would block a release.
       - name: This run's PostgreSQL shard reports
         continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: test-report-tests-*
           path: junit
 
       - name: This run's browser shard reports
         continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shard-reports-browser-*
           path: junit
