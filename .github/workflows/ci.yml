@@ -49,7 +49,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -239,7 +239,7 @@ jobs:
       E2E_BASE_URL: http://127.0.0.1:8000
       E2E_GATE_BASE_URL: http://127.0.0.1:8001
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -310,7 +310,7 @@ jobs:
       # Two commits deep: a pull request's checkout is GitHub's test merge, and
       # its first parent is main — so `HEAD^1..HEAD` is exactly what the pull
       # request changes.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
           persist-credentials: false
@@ -342,7 +342,7 @@ jobs:
 
       - name: Cache the OCR packages
         if: steps.choose.outputs.services == 'true'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -382,7 +382,7 @@ jobs:
       ui: ${{ steps.ui.outputs.ui }}
     steps:
       # The test merge's first parent is main, so `HEAD^1..HEAD` is the change.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 2
           persist-credentials: false
@@ -440,7 +440,7 @@ jobs:
       POSTGRES_SSLMODE: disable
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -467,7 +467,7 @@ jobs:
         run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache the OCR packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -664,7 +664,7 @@ jobs:
       POSTGRES_SSLMODE: disable
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -691,7 +691,7 @@ jobs:
         run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache the OCR packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -798,7 +798,7 @@ jobs:
           done
           echo "all 14 shards (7 runners) and the safety checks passed"
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -809,7 +809,7 @@ jobs:
       - run: uv sync --frozen
 
       - name: Collect the coverage fragments
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: test-report-tests-*
           path: fragments
@@ -877,7 +877,7 @@ jobs:
     env:
       PIP_AUDIT: pip-audit==2.9.0
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -986,7 +986,7 @@ jobs:
       E2E_UPDATE_BASELINES: "0"
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -1004,7 +1004,7 @@ jobs:
       # browser binary is all that has to be fetched, and it is cached between
       # runs.
       - name: Cache the browser binary
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ hashFiles('uv.lock') }}
@@ -1161,7 +1161,7 @@ jobs:
       E2E_UPDATE_BASELINES: "0"
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -1179,7 +1179,7 @@ jobs:
       # browser binary is all that has to be fetched, and it is cached between
       # runs.
       - name: Cache the browser binary
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ hashFiles('uv.lock') }}
@@ -1290,7 +1290,7 @@ jobs:
       # 1..N. `SHARD_COUNT` is held to the workflow's --shard-count by
       # tests/test_ci_sharding.py.
       - name: Collect the shard reports
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shard-reports-browser-*
           path: reports
@@ -1337,7 +1337,7 @@ jobs:
       # This run's own job and step times. Nothing else.
       actions: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -1353,14 +1353,14 @@ jobs:
       # informational report that crashed would block a release.
       - name: This run's PostgreSQL shard reports
         continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: test-report-tests-*
           path: junit
 
       - name: This run's browser shard reports
         continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: shard-reports-browser-*
           path: junit
@@ -1443,7 +1443,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
@@ -2161,7 +2161,7 @@ jobs:
             exit 1
           fi
 
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # Nothing after this checkout talks to the remote with git, so the
           # token is not left in .git/config for later steps to read.
