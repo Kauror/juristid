@@ -1,9 +1,10 @@
 # 0191 — The Lovable pilot adds reviewed current Teemad beside the existing ones
 
 **Status:** proposed (2026-10-26) — built and tested on synthetic data and
-dry-run against an isolated copy; not merged. Applying it to the KOCORP
-lawyer-testing database is a separate, owner-authorised operation behind the
-Secure Pilot Gate.
+dry-run against an isolated copy; merged 2026-10-27 in #557 (merge
+`98c8c81c`). Applying it to the KOCORP lawyer-testing database was a separate,
+owner-authorised operation behind the Secure Pilot Gate, performed on
+27.10.2026 (status update below).
 **Date:** 2026-10-26
 
 The owner's brief «Import 100 Real Lovable Matters for Lawyer Testing»

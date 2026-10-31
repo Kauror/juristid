@@ -1,6 +1,7 @@
 # 0196 — Scheduled operations share the host lock, and the application's checks become notifications
 
-- Status: Proposed (security and resilience review 2026-10-29; not merged)
+- Status: Proposed (security and resilience review 2026-10-29); merged
+  2026-10-29 in #565 (merge `71242453`) and deployed the same day
 - Relates to: 0022 (backup is taken by hand, not scheduled), 0179 (restore
   refuses unsafe objects; the db/tunnel recreate step), 0183 (credential
   changes end sessions), 0185 §6 and 0189 (the MCP processes' own checks),

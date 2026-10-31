@@ -342,7 +342,7 @@ jobs:
 
       - name: Cache the OCR packages
         if: steps.choose.outputs.services == 'true'
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -467,7 +467,7 @@ jobs:
         run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache the OCR packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -691,7 +691,7 @@ jobs:
         run: echo "key=${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
 
       - name: Cache the OCR packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/ocr-debs
           key: ocr-debs-${{ steps.runner-image.outputs.key }}-v1
@@ -1004,7 +1004,7 @@ jobs:
       # browser binary is all that has to be fetched, and it is cached between
       # runs.
       - name: Cache the browser binary
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ hashFiles('uv.lock') }}
@@ -1179,7 +1179,7 @@ jobs:
       # browser binary is all that has to be fetched, and it is cached between
       # runs.
       - name: Cache the browser binary
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ hashFiles('uv.lock') }}
