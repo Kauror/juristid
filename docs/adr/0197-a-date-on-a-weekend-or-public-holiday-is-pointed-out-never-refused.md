@@ -1,7 +1,7 @@
 # 0197 — A date on a weekend or a public holiday is pointed out, never refused
 
-- Status: Proposed (owner's date-warning brief, 2026-10-30; **no migrations**;
-  not merged)
+- Status: Proposed (owner's date-warning brief, 2026-10-30; **no migrations**);
+  merged 2026-10-30 in #573 (merge `56bdb6c8`) and deployed the same day
 - Relates to: 0146 (a sent opinion is checked on thirty days later — its day is
   not moved for weekends or holidays, and that is unchanged), 0171 (one
   delegated script, each feature failing on its own), QA-015 (an implausibly
