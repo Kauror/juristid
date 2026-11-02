@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from django.db.models import Count, Max
+from django.db.models import Count, Max, prefetch_related_objects
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date
@@ -135,6 +135,19 @@ def load_facts(
     ids = [matter.pk for matter in matters]
     if not ids:
         return facts
+    # Many-to-many values the row partial does not already load, once for all
+    # rows (a relation the queryset prefetched is not read again).
+    relations = [
+        relation
+        for key, relation in (
+            ("valdkond", "policy_areas"),
+            ("oigusakt", "legal_instruments"),
+            ("saatja", "source_organisations"),
+        )
+        if _needs(columns, key)
+    ]
+    if relations:
+        prefetch_related_objects(list(matters), *relations)
     if _needs(columns, "saadetud"):
         from app.submissions.models import Submission
 
@@ -395,19 +408,12 @@ def _state(matter: Matter, facts: Facts) -> str:
 # The catalogue
 # ---------------------------------------------------------------------------
 
-#: In display order. The six `base` columns are matter_row.html's own cells;
-#: the default set is exactly the register as it was before «Vali veerud».
+#: In display order. The six `base` columns are matter_row.html's own cells
+#: and come first, in the order they always had; every added column follows
+#: them, so the table and its Excel have one order. The default set is exactly
+#: the register as it was before «Vali veerud».
 CATALOGUE: tuple[Column, ...] = (
     Column(TITLE, "Pealkiri", True, True, (Cell("Pealkiri", _title, 60, True),), sort="title"),
-    Column(
-        "viide",
-        "Viide",
-        False,
-        False,
-        (Cell("Viide", _reference, 12),),
-        sort="reference",
-        help_text="Registri viitenumber, nt 2026_14.",
-    ),
     Column("hetkeseis", "Hetkeseis", True, True, (Cell("Hetkeseis", _stage, 24),)),
     Column("vastutaja", "Vastutaja", True, True, (Cell("Vastutaja", _owner, 22),)),
     Column("jargmiseks", "Järgmiseks", True, True, (Cell("Järgmiseks", _next, 50, True),)),
@@ -426,6 +432,15 @@ CATALOGUE: tuple[Column, ...] = (
         True,
         (Cell("Viimane tegevus", _activity, 14), Cell("Viimase tegevuse liik", _activity_kind, 24)),
         sorts_needing=("viimane_uusim", "viimane_vanim"),
+    ),
+    Column(
+        "viide",
+        "Viide",
+        False,
+        False,
+        (Cell("Viide", _reference, 12),),
+        sort="reference",
+        help_text="Registri viitenumber, nt 2026_14.",
     ),
     Column("valdkond", "Valdkond", False, False, (Cell("Valdkond", _areas, 28, True),)),
     Column("oigusakt", "Õigusakt", False, False, (Cell("Õigusakt", _instruments, 28, True),)),
