@@ -4364,6 +4364,12 @@ a.barchart__row:hover {
   margin-bottom: 0;
 }
 
+/* The signer line under the preview: as wide as a name list needs. */
+.reportbuilder__signers {
+  max-width: 32rem;
+  margin-top: var(--spacing-3);
+}
+
 .reportbuilder__actions {
   display: flex;
   flex-wrap: wrap;
