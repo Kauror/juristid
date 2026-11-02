@@ -223,6 +223,9 @@ class LovableSourceEventField(BaseModel):
     old_value = models.TextField(blank=True)
     new_value = models.TextField(blank=True)
     withheld = models.BooleanField(default=False)
+    #: The stored value was cut to `lovable_observation.AUDIT_VALUE_LIMIT`
+    #: characters; the original was longer. Shown wherever the value is.
+    truncated = models.BooleanField(default=False)
 
     class Meta:
         verbose_name = "Lovable'i lähtesündmuse väli"
@@ -230,6 +233,32 @@ class LovableSourceEventField(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["event", "field"], name="lovable_event_field_once"),
         ]
+
+
+class RetentionRunStatus(models.TextChoices):
+    SUCCEEDED = "SUCCEEDED", "Õnnestus"
+    FAILED = "FAILED", "Ebaõnnestus"
+
+
+class LovableRetentionRun(BaseModel):
+    """One pruning of raw observation data, independent of any source reading.
+
+    Runs every night whether or not the wider observation is on or Lovable can
+    be reached, so the 30-day limit holds when observation is paused or keeps
+    failing (review of PR #586). ``run_key`` is ``prune:<Tallinn date>``.
+    Counts only; never business text."""
+
+    run_key = models.CharField(max_length=48, unique=True)
+    started_at = models.DateTimeField()
+    finished_at = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=16, choices=RetentionRunStatus.choices)
+    #: ``{"snapshots": n, "changes": n, "events": n, "kept_baseline": bool}``.
+    counts = models.JSONField(default=dict, blank=True)
+    error = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = "Lovable vaatluse säilitustähtaja käivitus"
+        ordering = ["-started_at"]
 
 
 class LovableAuditCursor(models.Model):

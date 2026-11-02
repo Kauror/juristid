@@ -386,6 +386,7 @@ from app.legacy_import.lovable_observation_models import (  # noqa: E402
     LovableObservationRun,
     LovableObservationSnapshot,
     LovableObservedChange,
+    LovableRetentionRun,
     LovableSourceEvent,
     LovableSourceEventField,
 )
@@ -759,6 +760,7 @@ __all__ = [
     "LovableObservationRun",
     "LovableObservationSnapshot",
     "LovableObservedChange",
+    "LovableRetentionRun",
     "LovableSourceEvent",
     "LovableSourceEventField",
     "LovableSyncControl",
