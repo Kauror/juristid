@@ -30,7 +30,7 @@
 
   document.addEventListener("change", function (event) {
     var target = event.target;
-    if (!(target instanceof HTMLInputElement) || target.name !== "veerud") {
+    if (!target || target.type !== "checkbox" || target.name !== "veerud") {
       return;
     }
     var chooser = target.closest("[data-column-chooser]");
