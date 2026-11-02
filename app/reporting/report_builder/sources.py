@@ -38,14 +38,16 @@ of an opinion, another organisation's position (`MatterExternalPosition`, a
 feedback reply), or anything planned or cancelled.
 
 **Who it went to (KELLELE)** is the Submission's ADDRESSEE rows only, joined in
-organisation-name order — never a «teadmiseks» copy and never a meeting's
-counterpart (which goes into the explanation instead). A `VÄLJA` event names
+organisation-name order — never a «teadmiseks» copy. For a Chamber activity
+(a meeting, call, hearing, working group) it is the Entry's organisation, the
+one it was held with, as the department's own reports have always written it;
+an activity with no organisation recorded has none. A `VÄLJA` event names
 `Matter.addressee_organisation` only when the same register row's `KELLELE`
 names exactly that one organisation; otherwise it is blank.
 
 **The explanation (SELGITUS)** is prefilled from human-authored text only: a
-Submission's ``summary``; an Entry's ``body`` as plain text, after its
-organisation; an overview's title and address. Nothing is generated, nothing
+Submission's ``summary``; an Entry's ``body`` as plain text; an overview's
+title and address. Nothing is generated, nothing
 is summarised, and «Kojal ei olnud kommentaare…» is never written for anybody.
 
 Identity is canonical: ``(type, uuid)``, never a title. Every query is scoped
@@ -321,11 +323,11 @@ def _submission_events(
 
 
 def _entry_text(entry: Entry) -> str:
-    body = plain_text(entry.body)
-    if entry.organisation is not None:
-        name = entry.organisation.name
-        return bounded(f"{name}: {body}" if body else name)
-    return bounded(body)
+    return bounded(plain_text(entry.body))
+
+
+def _entry_recipients(entry: Entry) -> tuple[str, ...]:
+    return (entry.organisation.name,) if entry.organisation is not None else ()
 
 
 def _entry_events(
@@ -349,6 +351,7 @@ def _entry_events(
             day=timezone.localdate(entry.occurred_at),
             precision=DatePrecision.EXACT,
             kind_label=str(EntryKind(entry.kind).label),
+            recipients=_entry_recipients(entry),
             source_text=_entry_text(entry),
         )
         for entry in rows

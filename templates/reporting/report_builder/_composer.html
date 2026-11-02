@@ -186,8 +186,8 @@ than downloading.
     <h2 class="reportbuilder__heading" id="report-preview-heading">Eelvaade</h2>
     <p class="field__help">Ülevaates on {{ report.selected_count }} teemat. Eelvaade ja Wordi fail koostatakse samadest ridadest.</p>
     <div class="reportpreview">
-      <p class="reportpreview__title">Majanduspoliitika ülevaade</p>
-      <p class="reportpreview__period">{{ report.period_label }}</p>
+      <p class="field__help">Wordi fail algab osakonna tegevuskava püsiosaga (tegevused ja eesmärgid); selle all on see tabel.</p>
+      <p class="reportpreview__title">{{ report.execution_line }}</p>
       {% if rows %}
         <div class="tablewrap">
           <table class="data-table reportpreview__table" data-report-preview>
@@ -197,7 +197,7 @@ than downloading.
             <tbody>
               {% for row in rows %}
                 <tr>
-                  {% if row.topic_span %}<td class="reportpreview__topic" rowspan="{{ row.topic_span }}">{{ row.topic }}</td>{% endif %}
+                  <td class="reportpreview__topic">{{ row.topic }}</td>
                   <td>{{ row.date_label }}{% if row.kind_label %}<span class="reportpreview__meta">{{ row.kind_label }}</span>{% endif %}{% if row.provenance %}<span class="reportpreview__meta">{{ row.provenance }}</span>{% endif %}</td>
                   <td>{{ row.recipients }}</td>
                   <td class="reportpreview__text">{{ row.text|linebreaksbr }}</td>
@@ -210,6 +210,11 @@ than downloading.
         <p class="empty">Ülevaates pole ühtki valitud teemat.</p>
       {% endif %}
     </div>
+    <label class="field reportbuilder__signers">
+      <span class="field__label">Allkirjastajad</span>
+      <input class="field__input" type="text" name="allkirjastajad" maxlength="200" autocomplete="off" value="{{ report.signers }}">
+      <span class="field__help">Tabeli alla kirjutatakse koostamise kuupäev ja need nimed.</span>
+    </label>
   </section>
 
   <div class="reportbuilder__actions">

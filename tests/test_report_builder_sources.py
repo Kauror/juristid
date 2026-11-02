@@ -155,7 +155,7 @@ def test_withdrawn_and_superseded_sends_stay_with_their_later_state_said(
     ]
 
 
-def test_kellele_is_the_addressees_only_and_a_meeting_has_none(specialist, capture_evidence):
+def test_kellele_is_the_addressees_and_a_meetings_counterpart(specialist, capture_evidence):
     zeta = factories.OrganisationFactory(name="Sotsiaalministeerium")
     alpha = factories.OrganisationFactory(name="Majandus- ja Kommunikatsiooniministeerium")
     copy = factories.OrganisationFactory(name="Riigikogu majanduskomisjon")
@@ -174,8 +174,10 @@ def test_kellele_is_the_addressees_only_and_a_meeting_has_none(specialist, captu
     assert (
         send.recipients_label == "Majandus- ja Kommunikatsiooniministeerium, Sotsiaalministeerium"
     )
-    assert meeting.recipients == ()
-    assert meeting.source_text == "Kaubanduskoja partner: Arutasime eelnõu."
+    # A meeting's KELLELE is whom it was held with, as the department's
+    # reports write it; the explanation is the body alone.
+    assert meeting.recipients == ("Kaubanduskoja partner",)
+    assert meeting.source_text == "Arutasime eelnõu."
     assert "<" not in meeting.source_text
 
 

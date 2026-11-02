@@ -43,7 +43,7 @@ def test_a_crlf_summary_is_still_the_source_text_after_a_round_trip(signed_in, c
     assert export.status_code == 200
     text = "\n".join(
         paragraph.text
-        for cell in Document(io.BytesIO(export.content)).tables[0]._cells
+        for cell in Document(io.BytesIO(export.content)).tables[1]._cells
         for paragraph in cell.paragraphs
     )
     assert "Rida 1" in text and "\r" not in text

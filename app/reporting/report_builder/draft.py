@@ -58,7 +58,7 @@ from django.utils import timezone
 from app.core.dates import format_estonian_date, parse_estonian_date
 from app.reporting.report_builder import sources
 from app.reporting.report_builder.sources import EventRef, MatterEvents, ReportEvent
-from app.workflow.enums import ESTONIAN_MONTHS
+from app.workflow.enums import ESTONIAN_MONTHS, DatePrecision
 
 TEXT_LIMIT = sources.TEXT_LIMIT
 MAX_BLOCKS = 300
@@ -78,6 +78,11 @@ F_INCLUDED = "kaasa"
 F_MANUAL = "lisatud"
 F_ACTION = "toiming"
 F_SEARCH = "otsing"
+F_SIGNERS = "allkirjastajad"
+
+#: Who signs the report under its table; the reader may change it per report.
+DEFAULT_SIGNERS = "Marko Udras, Mait Palts"
+SIGNERS_LIMIT = 200
 
 
 def events_field(matter_id: object) -> str:
@@ -166,6 +171,7 @@ class ReportDraft:
     search: str = ""
     problems: list[str] = field(default_factory=list)
     notices: list[str] = field(default_factory=list)
+    signers: str = DEFAULT_SIGNERS
 
     def matter_ids(self) -> list[uuid.UUID]:
         return [block.matter_id for block in self.blocks]
@@ -204,6 +210,22 @@ def period_label(start: date, end: date) -> str:
     if start == end:
         return format_estonian_date(start)
     return f"{format_estonian_date(start)}–{format_estonian_date(end)}"
+
+
+def execution_line(start: date, end: date) -> str:
+    """«Täitmine: 12.08.2026 – 02.09.2026», the line above the report table."""
+    return f"Täitmine: {start:%d.%m.%Y} – {end:%d.%m.%Y}"
+
+
+def short_date(event: ReportEvent, start: date, end: date) -> str:
+    """«12.08» for an exact day in a one-year period; otherwise the full label.
+
+    A month or a year (a `VÄLJA` date known only that precisely) keeps its own
+    label, so no day is invented; a period across New Year keeps the year.
+    """
+    if event.precision == DatePrecision.EXACT and start.year == end.year:
+        return f"{event.day:%d.%m}"
+    return event.date_label
 
 
 def filename(start: date, end: date) -> str:
@@ -272,6 +294,14 @@ def _clean_text(raw: str) -> str:
     return raw.replace("\r\n", "\n").replace("\r", "\n").strip()
 
 
+def _signers(post: _PostLike) -> str:
+    """The signer line as posted (one line, bounded); the default when absent."""
+    raw = post.get(F_SIGNERS)
+    if raw is None:
+        return DEFAULT_SIGNERS
+    return " ".join(str(raw).split())[:SIGNERS_LIMIT]
+
+
 def parse(
     post: _PostLike,
     user: object,
@@ -302,6 +332,7 @@ def parse(
         else:
             draft = fresh(user, start, end, now=now, start_input=start_input, end_input=end_input)
         draft.search = search
+        draft.signers = _signers(post)
         return draft
 
     applied_start = _iso_day(post.get(F_APPLIED_START))
@@ -314,6 +345,7 @@ def parse(
         draft = fresh(user, start, end, now=now)
         draft.problems.append(BAD_APPLIED_PERIOD)
         draft.search = search
+        draft.signers = _signers(post)
         return draft
 
     draft = ReportDraft(
@@ -324,6 +356,7 @@ def parse(
         composed=True,
         search=search,
         problems=problems,
+        signers=_signers(post),
     )
     draft.blocks = _parse_blocks(post, problems)
     return draft
@@ -622,11 +655,14 @@ class ComposedBlock:
 
 @dataclass(frozen=True)
 class TableRow:
-    """One row of the report table, exactly as the preview and the DOCX print it."""
+    """One row of the report table, exactly as the preview and the DOCX print it.
+
+    ``kind_label`` and ``provenance`` are the preview's reading aids only — the
+    document's «Kuupäev» cell is ``date_label`` alone, as the department's
+    reports have always been.
+    """
 
     topic: str
-    #: How many rows the topic cell spans; 0 on a row the cell above covers.
-    topic_span: int
     date_label: str
     kind_label: str
     provenance: str
@@ -646,10 +682,15 @@ class ComposedReport:
     unavailable: int
     search: str = ""
     review: RefreshReview | None = None
+    signers: str = DEFAULT_SIGNERS
 
     @property
     def period_label(self) -> str:
         return period_label(self.start, self.end)
+
+    @property
+    def execution_line(self) -> str:
+        return execution_line(self.start, self.end)
 
     @property
     def filename(self) -> str:
@@ -694,22 +735,23 @@ class ComposedReport:
         return reasons
 
     def table_rows(self) -> list[TableRow]:
-        """The report table: a row per included event, the topic spanning them.
+        """The report table: a row per included event, each carrying its topic.
 
-        A topic with no included event is one row with the title alone.
+        Rows follow the reader's order of topics (by default the earliest event
+        first) and each topic's events by date. A topic with no included event
+        is one row with the title alone.
         """
         rows: list[TableRow] = []
         for block in self.exported_blocks:
             events = block.exported_events
             if not events:
-                rows.append(TableRow(block.title, 1, "", "", "", "", ""))
+                rows.append(TableRow(block.title, "", "", "", "", ""))
                 continue
-            for index, item in enumerate(events):
+            for item in events:
                 rows.append(
                     TableRow(
                         topic=block.title,
-                        topic_span=len(events) if index == 0 else 0,
-                        date_label=item.event.date_label,
+                        date_label=short_date(item.event, self.start, self.end),
                         kind_label=item.event.kind_label,
                         provenance=item.event.provenance,
                         recipients=item.event.recipients_label,
@@ -809,4 +851,5 @@ def compose(
         unavailable=unavailable,
         search=draft.search,
         review=review,
+        signers=draft.signers,
     )

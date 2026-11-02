@@ -47,16 +47,17 @@ send: only a same-day send or the pilot's own row counts as the same send.
 
 **KELLELE** is the Submission's `ADDRESSEE` rows only (`addressee_prefetch`, in
 organisation-name order), joined with commas. A «teadmiseks» copy is not a
-recipient; a meeting's organisation is not a recipient and goes into the
-explanation instead. A `VÄLJA` event shows `Matter.addressee_organisation` only
+recipient. For a Chamber activity (meeting, call, hearing, working group,
+statement) KELLELE is the Entry's organisation — the one it was held with — as
+the department's reports have always written it (owner, 2026-11-02, amending
+the first decision B); an activity with no organisation has none. A `VÄLJA` event shows `Matter.addressee_organisation` only
 when the same register row's `KELLELE` names exactly one organisation and it is
 that one (`addressee_cardinality = SINGLE`, names equal ignoring case) — then the
 canonical field and the row agree on who the opinion went to. Anything else is
 blank; nothing is guessed.
 
 **SELGITUS** is prefilled from human-authored text only: a Submission's
-`summary`; an Entry's `body` as plain text (`richtext.plain_text`), after its
-organisation's name; an overview's title and address; nothing for a `VÄLJA` date.
+`summary`; an Entry's `body` as plain text (`richtext.plain_text`); an overview's title and address; nothing for a `VÄLJA` date.
 At most 2000 characters. Nothing is generated, and «Kojal ei olnud kommentaare ega
 muudatusettepanekuid.» is never written automatically. Editing it changes the
 report only: no Submission, Entry or Matter is written (tested: `ChangeEvent`
@@ -100,13 +101,23 @@ applied period differ.
 
 `draft.compose` resolves the draft into a `ComposedReport`, and
 `ComposedReport.table_rows()` is what both the preview table and the DOCX writer
-print: one row per included event with the topic cell spanning them, or one
-title-only row for a topic with no included event — no date is made up. The DOCX
-(`report_builder/docx.py`, python-docx's own default document, nothing fetched)
-is A4 portrait with 2 cm margins, a heading «Majanduspoliitika ülevaade», the
-period («1.–31. oktoober 2026» for a whole month), one table «Teema | Kuupäev |
-Kellele | Selgitus» with the topic cell merged vertically (`w:vMerge`), the header
-row repeated (`w:tblHeader`), no `cantSplit` on any row, document language et-EE.
+print: one row per included event, each carrying its topic, in the reader's
+topic order, or one title-only row for a topic with no included event — no date
+is made up. The day is «12.08» (an exact day in a one-year period; a month or a
+year keeps its own label). The preview also shows each event's kind and, for a
+`VÄLJA` date, its sheet and row; the document does not.
+
+The DOCX (`report_builder/docx.py`, python-docx's own default document, nothing
+fetched) is the department's report as it has been sent to the board (owner,
+2026-11-02): A4 portrait, 2.5 cm margins, Times New Roman 12; the fixed opening
+of the yearly action plan (`report_builder/plan_text.py` — two bold lines,
+«Tegevused ja eesmärgid» and the two-column plan table, changed once a year by
+editing that file); «Täitmine: 01.10.2026 – 31.10.2026» in bold; one table
+«Teema | Kuupäev | Kellele | Selgitus», nothing merged, the header row repeated
+(`w:tblHeader`), no `cantSplit` on any row; then the day it was made and the
+signers in bold. The signers are a field of the draft («Allkirjastajad», default
+«Marko Udras, Mait Palts»), one line, at most 200 characters. Document language
+et-EE.
 The response is `private, no-store` with an RFC 6266 filename
 (`Majanduspoliitika_ulevaade_2026-10.docx`).
 

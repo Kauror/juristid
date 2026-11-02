@@ -91,7 +91,7 @@ def order(fields):
 
 def docx_rows(response):
     document = Document(io.BytesIO(response.content))
-    table = document.tables[0]
+    table = document.tables[1]  # [0] is the fixed action-plan table
     rows = []
     for row in table.rows[1:]:
         rows.append(["\n".join(p.text for p in cell.paragraphs).strip() for cell in row.cells])
@@ -276,7 +276,7 @@ def test_an_excluded_event_is_left_out_and_its_topic_stays(signed_in, world):
     fields = [(k, v) for k, v in fields if not (k == f"sundmus-kaasa-{beta}" and v == meeting_key)]
     rows = preview_rows(post(signed_in, fields))
     beta_rows = [row for row in rows if row[0] == "Beeta määrus"]
-    assert [row[1].split("\n")[0] for row in beta_rows] == ["20.10.2026"]
+    assert [row[1].split("\n")[0] for row in beta_rows] == ["20.10"]
 
 
 def test_up_down_and_drag_produce_the_same_order(signed_in, world):
@@ -354,22 +354,31 @@ def test_the_export_matches_the_preview_row_for_row(signed_in, world):
         'attachment; filename="Majanduspoliitika_ulevaade_2026-10.docx"'
     )
     document, table, rows = docx_rows(response)
-    assert rows == preview
+    # The same rows; the preview's kind and source labels stay on the page.
+    assert rows == [[row[0], row[1].split("\n")[0], *row[2:]] for row in preview]
+    assert preview[3][1] == "09.10\nExceli VÄLJA-kuupäev\nleht 2026, rida 14"
     assert rows == [
         [
             "Alfa seaduse muutmine",
-            "2.10.2026\nAmetlik arvamus",
+            "02.10",
             "Majandus- ja Kommunikatsiooniministeerium",
             "Toetame eelnõu.",
         ],
-        ["Beeta määrus", "5.10.2026\nKohtumine", "", "Kohtumine ministriga."],
-        ["Beeta määrus", "20.10.2026\nAmetlik arvamus", "", "Täiendav seisukoht."],
-        ["Gamma kontseptsioon", "9.10.2026\nExceli VÄLJA-kuupäev\nleht 2026, rida 14", "", ""],
+        ["Beeta määrus", "05.10", "", "Kohtumine ministriga."],
+        ["Beeta määrus", "20.10", "", "Täiendav seisukoht."],
+        ["Gamma kontseptsioon", "09.10", "", ""],
     ]
-    assert [p.text for p in document.paragraphs[:2]] == [
-        "Majanduspoliitika ülevaade",
-        "1.–31. oktoober 2026",
+    texts = [p.text for p in document.paragraphs if p.text]
+    # The department's usual report: the action-plan opening, «Täitmine»,
+    # the table, then the day it was made and the signers.
+    assert texts[:3] == [
+        "Poliitikakujundamise – ja õigusosakonna tegevuskava 2026",
+        "1. valdkond – osalemine poliitikakujundamises",
+        "Tegevused ja eesmärgid",
     ]
+    assert texts[3] == "Täitmine: 01.10.2026 – 31.10.2026"
+    assert texts[4:] == [f"{timezone.localdate():%d.%m.%Y}", "Marko Udras, Mait Palts"]
+    assert document.tables[0].rows[1].cells[0].text == "Tegevuse kirjeldus:"
     assert [cell.text for cell in table.rows[0].cells] == [
         "Teema",
         "Kuupäev",
@@ -394,9 +403,21 @@ def test_the_document_is_a4_estonian_with_a_repeating_header(signed_in, world):
     lang = document.styles.element.find(qn("w:docDefaults")).find(".//" + qn("w:lang"))
     assert lang.get(qn("w:val")) == "et-EE"
     assert document.core_properties.language == "et-EE"
-    # The topic cell is merged down its two events (w:vMerge).
-    beta_cells = [row.cells[0]._tc for row in table.rows[2:4]]
-    assert beta_cells[0] is beta_cells[1]
+    assert round(section.left_margin.cm, 1) == 2.5
+    assert document.styles["Normal"].font.name == "Times New Roman"
+    # Every row carries its own topic: nothing is merged.
+    assert [row.cells[0].text for row in table.rows[2:4]] == ["Beeta määrus"] * 2
+    assert "w:vMerge" not in table._tbl.xml
+
+
+def test_the_signers_are_the_readers_to_change(signed_in, world):
+    fields = replace(form_fields(open_page(signed_in)), "allkirjastajad", "  Mari   Maasikas ")
+    preview = post(signed_in, fields)
+    assert values(form_fields(preview), "allkirjastajad") == ["Mari Maasikas"]
+
+    document, _, _ = docx_rows(post(signed_in, form_fields(preview), route=EXPORT))
+
+    assert [p.text for p in document.paragraphs if p.text][-1] == "Mari Maasikas"
 
 
 def test_a_long_report_flows_over_pages_with_its_text_intact(signed_in, capture_evidence):
@@ -527,7 +548,7 @@ def test_a_restricted_child_never_reaches_the_page_or_the_file(
     export = post(client, form_fields(response), route=EXPORT)
     assert b"PIIRATUD" not in export.content
     document = Document(io.BytesIO(export.content))
-    assert all("PIIRATUD" not in cell.text for row in document.tables[0].rows for cell in row.cells)
+    assert all("PIIRATUD" not in cell.text for row in document.tables[1].rows for cell in row.cells)
 
 
 def test_composing_and_exporting_changes_no_canonical_record(signed_in, world):
