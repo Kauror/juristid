@@ -8,6 +8,28 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-03
+basis = "deployment"
+prs = [585, 586]
+# Teavituste parandused, Teemade mitmikfiltrid, «Vali veerud», kolm Exceli
+# väljavõtet ja «Majanduspoliitika ülevaade» Wordis (#585, ADR 0188/0198
+# täiendused, 0199, 0200, notifications 0003 — üks uus tabel) ning Lovable'i
+# laiem vaatlus, muutuste vaated ja MCP lugemistööriistad (#586, ADR 0201,
+# legacy_import 0020 — seitse uut tabelit; laiem vaatlus ja Lovable'i
+# muutmisajalugu on vaikimisi välja lülitatud). Otsinguindeksit uuesti ei
+# ehitata. Kui väljalase ei jõua tootmisse 03.11 (Tallinna aja järgi), liigub
+# see kirje väljalaske päeva kuupäevale.
+changes = [
+  "Teavitustes on «Märgi loetuks» nüüd sinu isiklik: teadmiseks mõeldud teavitus kaob loendist ja kellukesest, jõustumise kontroll kaob ainult sinu loendist ning «Lükka edasi» lükkab selle edasi ainult sinu jaoks.",
+  "Teemade täpsemas otsingus saab ühe välja kohta valida mitu väärtust ning otsida õigusakti, arvamuse saatmise, järgmise sammu, viimase tegevuse ja kirje muutmise kuupäeva järgi.",
+  "«Vali veerud» lisab teemade tabelisse viite, valdkonna, õigusakti, aruandlusaasta jt veerge; valik ja filtrid jäävad alles ka siis, kui ühtki teemat ei leita.",
+  "Teemade lehelt saab alla laadida Exceli: tabelis kuvatud info, kõik andmed või vana Exceli veerupaigutus.",
+  "Statistikas on uus «Majanduspoliitika ülevaade»: vali periood, vaata üle saadetud arvamused ja Koja tegevused, muuda järjekorda ja selgitusi ning laadi alla juhatusele tavapärases vormis Wordi fail. Fail on alati täpselt see, mida eelvaade viimati näitas.",
+  "Uuendused → Lovable on nüüd kuues vaates: ülevaade, öised võrdlused, Lovable'i muutmisajalugu, ülevaatust ootavad muudatused, vaadeldud muudatused ja valmisolek. Igal arvul on kirjas, mida ja millise aja kohta see loeb; tulemused saab alla laadida Excelina.",
+  "«Ülevaatust ootavad muudatused» näitab iga Lovable'i muudatust, mida Juristides pole veel üle kantud, ühe korra koos esimese ja viimase nägemise ajaga ning põhjusega, miks seda automaatselt üle ei kanta.",
+]
+
+[[day]]
 date = 2026-10-30
 basis = "deployment"
 prs = [572, 573, 574, 575]
