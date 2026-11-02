@@ -159,40 +159,9 @@ def _plan_revision(matter) -> str:
     return plan_revision(plan_steps_of(matter))
 
 
-def _reminder_state(world) -> tuple:
-    from app.notifications.models import CommencementReminder
-
-    return tuple(
-        CommencementReminder.objects.filter(pk=world["reminder"].pk).values_list(
-            "status", "deferred_until", "resolution_note"
-        )
-    )
-
-
-def _defer_payload() -> dict:
-    until = timezone.localdate() + timedelta(days=2)
-    return {"until": format_estonian_date(until)}
-
-
-#: «Kontrolli jõustumist» (docs/adr/0188). Answering a reminder is a business
-#: write on a Matter's record, so it is behind the one write gate like every
-#: other: a READER sees the prompt and cannot answer it.
-REMINDER_ROUTES: tuple[WriteRoute, ...] = (
-    WriteRoute(
-        name="notifications:defer",
-        label="Jõustumise kontrolli edasilükkamine",
-        request=lambda w: ({"pk": w["reminder"].pk}, _defer_payload()),
-        probe=_reminder_state,
-        events=(ChangeEventType.COMMENCEMENT_CHECK_DEFERRED,),
-    ),
-    WriteRoute(
-        name="notifications:dismiss",
-        label="Jõustumise meeldetuletuse sulgemine",
-        request=lambda w: ({"pk": w["reminder"].pk}, {"reason": "Loata sulgemine"}),
-        probe=_reminder_state,
-        events=(ChangeEventType.COMMENCEMENT_CHECK_DISMISSED,),
-    ),
-)
+#: «Kontrolli jõustumist» (docs/adr/0188) has no business write left on a page:
+#: «Kontrollitud» and «Sulge…» are retired, and since 2026-11-02 «Lükka edasi»
+#: and «Märgi loetuks» are the reader's own state (registered below as C).
 
 
 WRITE_ROUTES: tuple[WriteRoute, ...] = (
@@ -1204,7 +1173,6 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: RelatedSuggestionDismissal.objects.count(),
     ),
-    *REMINDER_ROUTES,
 )
 
 
@@ -1720,7 +1688,13 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # remembered block: a READER may keep their own presentation state
     # (tests/test_deadline_notifications.py).
     "notifications:read": "C: the recipient's own read stamp on a deadline notice",
-    "notifications:hide": "C: the recipient's own hidden stamp on a deadline notice",
+    # The reader's own read and postponed state on a commencement prompt (ADR
+    # 0188 amendment 2026-11-02): not an answer, the reminder stays open for
+    # everybody else, no `ChangeEvent`.
+    # Resolved within the reader's own inbox population, so a colleague's
+    # prompt is a 404 (tests/test_commencement_reminders.py).
+    "notifications:reminder_read": "C: the reader's own read state on a commencement prompt",
+    "notifications:defer": "C: the reader's own postponement of a commencement prompt",
     "notifications:settings": "C: the signed-in person's own notification preferences",
     "notifications:reset_settings": "C: resets the signed-in person's own preferences",
     # D — authentication and session control. Not business content, and two of
@@ -1785,6 +1759,13 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # statement it runs. Anybody who may read Matters may ask it, exactly as
     # before, and what it answers is scoped by `visible_to`.
     "related_materials:draft_suggestions": "F: a read sent by POST; writes nothing",
+    # F — «Majanduspoliitika ülevaade» (docs/adr/0199 §3): the draft is the
+    # posted form, so composing and downloading travel by POST to keep the
+    # reader's explanations out of addresses and logs. Both write nothing
+    # (`tests/test_report_builder_composer.py` compares `ChangeEvent` and every
+    # `updated_at`) and 404 for anybody `may_read_business_content` refuses.
+    "reporting:report_preview": "F: a read sent by POST; recomposes the posted draft",
+    "reporting:report_export": "F: a read sent by POST; writes the DOCX, nothing stored",
     # D — personal sign-in and the signed-in person's own credentials
     # (docs/adr/0145). Not business content; every one of them 404s outside
     # `AUTH_MODE=local_password`, and the ones behind sign-in act only on

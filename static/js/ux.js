@@ -2227,6 +2227,82 @@
     }
   }
 
+  /* ---- «Majanduspoliitika ülevaade»: drag to reorder (docs/adr/0199) ----
+   * templates/reporting/report_builder/_composer.html. A block is dragged by
+   * its handle (`data-report-handle`) — not by the whole row, which would make
+   * the text in its explanation boxes hard to select. The «↑ Üles» / «↓ Alla»
+   * buttons are the keyboard and no-script equivalent, and both end in the
+   * same draft: the order the server reads is the order of the `teema`
+   * inputs, so moving the block moves its input. A drop asks for a fresh
+   * preview through the composer's own «Uuenda eelvaadet» button
+   * (`data-report-refresh`), and any change marks the draft as unsaved
+   * (`data-report-dirty`, read by app.js before the page is left). */
+  var reportDragged = null;
+
+  function markReportDirty(element) {
+    var body = element && element.closest ? element.closest("[data-report-body]") : null;
+    if (body) {
+      body.setAttribute("data-report-dirty", "");
+    }
+  }
+
+  document.addEventListener("dragstart", function (event) {
+    var handle = event.target && event.target.closest ? event.target.closest("[data-report-handle]") : null;
+    var block = handle ? handle.closest("[data-report-block]") : null;
+    if (!block) {
+      return;
+    }
+    reportDragged = block;
+    block.classList.add("is-dragging");
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", block.id);
+    }
+  });
+
+  document.addEventListener("dragover", function (event) {
+    if (!reportDragged || !event.target || !event.target.closest) {
+      return;
+    }
+    var over = event.target.closest("[data-report-block]");
+    if (!over || over === reportDragged || over.parentNode !== reportDragged.parentNode) {
+      return;
+    }
+    event.preventDefault();
+    var box = over.getBoundingClientRect();
+    var after = event.clientY > box.top + box.height / 2;
+    over.parentNode.insertBefore(reportDragged, after ? over.nextSibling : over);
+  });
+
+  document.addEventListener("drop", function (event) {
+    if (reportDragged) {
+      event.preventDefault();
+    }
+  });
+
+  document.addEventListener("dragend", function () {
+    if (!reportDragged) {
+      return;
+    }
+    var block = reportDragged;
+    reportDragged = null;
+    block.classList.remove("is-dragging");
+    markReportDirty(block);
+    var body = block.closest("[data-report-body]");
+    var refresh = body ? body.querySelector("[data-report-refresh]") : null;
+    if (refresh) {
+      refresh.click();
+    }
+  });
+
+  document.addEventListener("input", function (event) {
+    markReportDirty(event.target);
+  });
+
+  document.addEventListener("change", function (event) {
+    markReportDirty(event.target);
+  });
+
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     [

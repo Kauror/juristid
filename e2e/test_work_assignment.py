@@ -39,6 +39,17 @@ pytestmark = pytest.mark.e2e
 CREATE_PATH = "/teemad/uus/"
 
 
+def _owner_box_names(page) -> list[str]:
+    """The words beside Täpsem otsing's Vastutaja boxes, read from the DOM.
+
+    The group is checkboxes since the multi-value round (2026-11-02); read with
+    `textContent` for the reason `_option_names` gives.
+    """
+    return page.locator("label.checkline:has(input[name='vastutaja'])").evaluate_all(
+        "labels => labels.map(label => label.textContent.trim())"
+    )
+
+
 def _option_names(page, selector: str) -> list[str]:
     """The words in a select, read from the DOM rather than from the layout.
 
@@ -189,7 +200,7 @@ def test_the_register_filter_offers_the_department_and_not_the_administrator(pag
     page.wait_for_load_state("networkidle")
     page.locator(".filterpanel__trigger").click()
 
-    options = _option_names(page, "select[name='vastutaja']")
+    options = _owner_box_names(page)
 
     assert SANDRA.short_name in options
     assert HEAD.short_name in options
@@ -221,14 +232,16 @@ def test_a_register_filtered_on_a_departed_colleague_still_finds_their_work(page
     # shortest name that is unambiguous among the others on the list, so neither
     # the display name nor a first name is reliably its label, and the
     # identifier a value would need is not something a browser test may know.
-    options = _option_names(page, "select[name='vastutaja']")
+    options = _owner_box_names(page)
     position = next(
         (index for index, name in enumerate(options) if FORMER_NAME.split()[0] in name), None
     )
     assert position is not None, options
-    panel.locator("select[name='vastutaja']").select_option(index=position)
+    panel.locator("input[name='vastutaja']").nth(position).check()
     panel.get_by_role("button", name="Filtreeri").click()
     page.wait_for_load_state("networkidle")
 
     assert "vastutaja=" in page.url
-    expect(page.locator("select[name='vastutaja']")).to_contain_text(FORMER_NAME.split()[0])
+    # The group still offers — and has ticked — the departed colleague.
+    assert any(FORMER_NAME.split()[0] in name for name in _owner_box_names(page))
+    expect(page.locator("input[name='vastutaja']:checked")).to_have_count(1)

@@ -523,7 +523,9 @@ def test_tapsem_otsing_opens_on_the_state_a_heading_set(page, base_url):
     page.wait_for_load_state("networkidle")
     page.locator(".filterpanel__trigger").click()
 
-    assert page.locator("select[name='hetkeseis']").input_value() == "consultation"
+    expect(
+        page.locator("input[type='checkbox'][name='hetkeseis'][value='consultation']")
+    ).to_be_checked()
 
 
 def test_the_panel_does_not_undo_a_sort_chosen_from_a_heading(page, base_url):

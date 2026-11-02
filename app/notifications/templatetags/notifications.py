@@ -22,7 +22,7 @@ from typing import Any
 
 from django import template
 
-from app.core.authorization import may_read_business_content, may_write_business_content
+from app.core.authorization import may_read_business_content
 from app.notifications import inbox, selectors
 
 register = template.Library()
@@ -52,7 +52,6 @@ def notifications_block(context: Any, tagasi: str = "minu_asjad") -> dict[str, A
         "items": items[:BLOCK_LIMIT],
         "total": len(items),
         "more": len(items) > BLOCK_LIMIT,
-        "can_answer": may_write_business_content(user),
         "tagasi": tagasi,
         "csrf_token": context.get("csrf_token"),
     }

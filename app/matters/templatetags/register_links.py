@@ -58,3 +58,9 @@ def owner_revision(owner_id: Any) -> str:
     from app.matters.services import owner_revision_for
 
     return owner_revision_for(owner_id)
+
+
+@register.filter
+def value_listed(options: Any, value: Any) -> bool:
+    """Whether ``value`` is one of the ``(value, words)`` pairs a choice group lists."""
+    return any(str(option) == str(value) for option, _words in options)

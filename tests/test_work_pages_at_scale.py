@@ -94,8 +94,10 @@ STATISTIKA_BUDGET = 33
 #: `tests/test_matter_workflow.py::test_the_register_does_not_query_per_row`;
 #: this is the page's whole count, measured at 27 after D-04 (one organisation
 #: catalogue read for the three choosers, one worker list for the row control
-#: and `colleagues`), 30 before.
-TEEMAD_BUDGET = 27
+#: and `colleagues`), 30 before. +1 since the 2026-11-02 package (ADR 0200):
+#: Täpsem otsing's «Õigusakt» checkbox group reads the legal-instrument
+#: vocabulary once — a fixed cost of the page, never per row.
+TEEMAD_BUDGET = 28
 
 
 def _days_ago(days: int) -> datetime.datetime:

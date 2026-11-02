@@ -76,7 +76,7 @@ from app.notifications.enums import (
     ReminderStage,
     ReminderStatus,
 )
-from app.notifications.models import CommencementReminder
+from app.notifications.models import CommencementReminder, CommencementReminderPersonalState
 from app.workflow.enums import DatePrecision
 
 #: How many calendar days ahead the retired seven-day prompt came (brief C2).
@@ -428,7 +428,11 @@ def dismiss_reminder(
 def defer_reminder(
     *, reminder: CommencementReminder, actor: Any, until: date, today: date | None = None
 ) -> CommencementReminder:
-    """Hide the prompt until ``until`` (a Tallinn date). It stays open.
+    """Hide the prompt for everybody until ``until`` (a Tallinn date). It stays open.
+
+    No page calls this since 2026-11-02: «Lükka edasi» is personal
+    (:func:`defer_for_reader`). Kept, tested, because the deferrals it recorded
+    still apply and its `ChangeEvent`s are history.
 
     **A seven-day prompt is put off at most until the commencement date.** The
     on-the-day prompt is the second ask the brief requires and must not be
@@ -454,3 +458,49 @@ def defer_reminder(
     )
     locked.refresh_from_db()
     return locked
+
+
+def _personal_state(reminder: CommencementReminder, reader: Any) -> Any:
+    """The reader's own state row for ``reminder``, created if absent.
+
+    ``ignore_conflicts`` on the unique (reminder, user) pair makes two concurrent
+    first presses meet the same row instead of an error.
+    """
+    CommencementReminderPersonalState.objects.bulk_create(
+        [CommencementReminderPersonalState(reminder=reminder, user=reader)], ignore_conflicts=True
+    )
+    return CommencementReminderPersonalState.objects.filter(reminder=reminder, user=reader)
+
+
+def mark_reminder_read(*, reminder: CommencementReminder, reader: Any) -> None:
+    """«Märgi loetuks» on a commencement prompt — this reader's own, nothing else.
+
+    Not an answer: the reminder stays ``OPEN``, no `ChangeEvent` is written and
+    no lock is taken, because nothing shared changes (ADR 0188 amendment
+    2026-11-02). The first press's moment is kept; a repeat is a no-op.
+    """
+    now = timezone.now()
+    _personal_state(reminder, reader).filter(read_at__isnull=True).update(
+        read_at=now, updated_at=now
+    )
+
+
+def defer_for_reader(
+    *, reminder: CommencementReminder, reader: Any, until: date, today: date | None = None
+) -> date:
+    """«Lükka edasi» — out of this reader's lists until ``until``; everybody else unaffected.
+
+    The same bounds as the shared deferral it replaces: ahead of today, at most
+    :data:`MAX_DEFER_DAYS`, and a legacy seven-day prompt at most until its
+    commencement day. Returns the date stored. Personal like reading, so no
+    lock on the reminder and no `ChangeEvent`; a later press replaces the date.
+    """
+    day = today or timezone.localdate()
+    if reminder.stage == ReminderStage.SEVEN_DAYS and until > reminder.source_date:
+        until = reminder.source_date
+    if until <= day:
+        raise DomainError(DEFER_NOT_AHEAD)
+    if until > day + timedelta(days=MAX_DEFER_DAYS):
+        raise DomainError(DEFER_TOO_FAR)
+    _personal_state(reminder, reader).update(deferred_until=until, updated_at=timezone.now())
+    return until

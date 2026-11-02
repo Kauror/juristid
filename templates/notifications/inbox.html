@@ -12,8 +12,8 @@ items: «Vajab tegevust»; «Teadmiseks»; the reader's put-off commencement che
 responsible, which nobody else would ever be shown. That section is absent
 from everybody else's response, not hidden in it.
 
-A commencement check asks for a check and never states an outcome; the page
-says so once, when there is one.
+Owner's review of 2026-11-02: no explanatory line under the title and no
+note about what a commencement check means — each item says what it is.
 {% endcomment %}
 
 {% block content %}
@@ -21,7 +21,6 @@ says so once, when there is one.
   <div class="pagehead">
     <h1 class="pagehead__title">Teavitused</h1>
     <span class="pagehead__context">
-      Sinu tähtajad, jõustumise kontrollid ja sulle määratud teemad.
       <a href="{% url 'notifications:settings' %}">Teavituste seaded</a>
     </span>
   </div>
@@ -33,15 +32,9 @@ says so once, when there is one.
   {% if action_items %}
     <section class="notifsection" aria-labelledby="notif-action-heading">
       <h2 class="sectionlabel" id="notif-action-heading">Vajab tegevust</h2>
-      {% if has_commencement %}
-        <p class="muted notifsection__note">
-          Jõustumise kontroll palub kontrollida, kas akt või säte jõustub nii, nagu on kirjas —
-          see ei tähenda, et jõustumine oleks toimunud.
-        </p>
-      {% endif %}
       <ul class="notiflist">
         {% for item in action_items %}
-          {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+          {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}
         {% endfor %}
       </ul>
     </section>
@@ -52,7 +45,7 @@ says so once, when there is one.
       <h2 class="sectionlabel" id="notif-info-heading">Teadmiseks</h2>
       <ul class="notiflist">
         {% for item in info_items %}
-          {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+          {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}
         {% endfor %}
       </ul>
     </section>
@@ -66,9 +59,8 @@ says so once, when there is one.
           <li class="notifrow">
             <div class="notifrow__main">
               <a class="notifrow__matter" href="{{ row.matter_url }}">{{ row.matter_title }}</a>
-              <span class="notifrow__what">{{ row.description|default:"Jõustumine" }}</span>
               <span class="notifrow__date">
-                Kirjas olev jõustumise kuupäev {{ row.date_label }} · tuleb tagasi {{ row.deferred_label }}
+                Jõustumise kuupäev {{ row.date_label }} · tuleb tagasi {{ row.deferred_label }}
               </span>
             </div>
           </li>
@@ -83,7 +75,7 @@ says so once, when there is one.
       {% if unowned_items %}
         <ul class="notiflist">
           {% for item in unowned_items %}
-            {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi show_owner=True %}
+            {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}
           {% endfor %}
         </ul>
       {% else %}

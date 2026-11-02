@@ -36,6 +36,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 from django.db.models import Count, Exists, OuterRef, Q, QuerySet
+from django.http import QueryDict
 from django.utils import timezone
 
 from app.core.authorization import distinct_if_fans_out
@@ -73,9 +74,13 @@ def register_url(**params: Any) -> str:
     """
     from django.urls import reverse
 
-    query = "&".join(
-        f"{key}={value}" for key, value in params.items() if value is not None and value != ""
-    )
+    pairs = []
+    for key, value in params.items():
+        # A list or tuple is several values of one dimension (OR within it).
+        for one in value if isinstance(value, list | tuple) else [value]:
+            if one is not None and one != "":
+                pairs.append(f"{key}={one}")
+    query = "&".join(pairs)
     base = reverse("matters:matter_list")
     return f"{base}?{query}{RESULTS_ANCHOR}" if query else f"{base}{RESULTS_ANCHOR}"
 
@@ -99,6 +104,8 @@ SOURCE_SEVERAL = "mitu"
 #: open, FULL, visible — is asked by the ordinary parameters beside it.
 OPINION_DRAFTING = "koostamisel"
 OPINION_SENT = "saadetud"
+#: Every `?arvamus=` word; anything else is unreadable and empties the list.
+OPINION_STATES = (OPINION_DRAFTING, OPINION_SENT)
 
 #: What `?too=` selects: a named population of the shared dated-work read model
 #: (:mod:`app.matters.work_items`), as Matters.
@@ -195,6 +202,65 @@ ORGANISATION_FILTERS = {
     "adressaat": ("addressee_organisation", False),
 }
 
+#: Dimensions a reader may choose several values of (owner's brief of
+#: 2026-11-02). Values of one dimension are alternatives — OR — and different
+#: dimensions narrow each other — AND. Each repeats its parameter in the
+#: address (``?hetkeseis=a&hetkeseis=b``), so a single-valued link written
+#: before still means what it meant. `puudub` is one of the values, never «all»:
+#: ``?vastutaja=puudub&vastutaja=<id>`` is «nobody, or this person».
+#: ``paritolu`` keeps its older comma form and is not listed here.
+LEGAL_INSTRUMENT_PARAM = "oigusakt"
+MULTI_VALUE_PARAMS: tuple[str, ...] = (
+    "vastutaja",
+    "hetkeseis",
+    "menetlusliik",
+    "valdkond",
+    "silt",
+    "liik",
+    "arvamus",
+    LEGAL_INSTRUMENT_PARAM,
+)
+
+#: Windows over a child record rather than a Matter column, each read as this
+#: reader may see that record. Both ends inclusive, Tallinn days.
+SENT_START_PARAM = "saadetud_alates"
+SENT_END_PARAM = "saadetud_kuni"
+STEP_START_PARAM = "samm_alates"
+STEP_END_PARAM = "samm_kuni"
+ACTIVITY_START_PARAM = "viimane_alates"
+ACTIVITY_END_PARAM = "viimane_kuni"
+CHILD_WINDOWS: tuple[tuple[str, str], ...] = (
+    (SENT_START_PARAM, SENT_END_PARAM),
+    (STEP_START_PARAM, STEP_END_PARAM),
+    (ACTIVITY_START_PARAM, ACTIVITY_END_PARAM),
+)
+
+#: Said under the date boxes when a window ends before it begins. The register
+#: is emptied rather than the two ends swapped: a guess is a different question.
+RANGE_ERROR = "Vahemiku algus on hilisem kui lõpp."
+
+
+def values_of(params: Any, name: str) -> list[str]:
+    """Every value of one parameter, in the order given, without blanks or repeats.
+
+    ``QueryDict.get`` returns the *last* value only, and ``dict(params)`` or
+    ``params.items()`` do the same — the trap that would quietly turn
+    «Ettevalmistus või Kooskõlastus» into «Kooskõlastus». A plain mapping may
+    hold a string or a list.
+    """
+    if hasattr(params, "getlist"):
+        raw: list[Any] = list(params.getlist(name))
+    else:
+        value = params.get(name) if hasattr(params, "get") else None
+        raw = list(value) if isinstance(value, list | tuple) else [value]
+    chosen: list[str] = []
+    for value in raw:
+        text = "" if value is None else str(value).strip()
+        if text and text not in chosen:
+            chosen.append(text)
+    return chosen
+
+
 #: Which parameters hold a date, and which column each pair narrows. Both ends
 #: of each pair are inclusive — see `selectors.date_range_q`.
 DATE_FILTERS = {
@@ -210,6 +276,12 @@ DATE_FILTERS = {
     # the local date, exactly as `sent_at` is on the department digest.
     "loodud_alates": ("created_at__date", "start"),
     "loodud_kuni": ("created_at__date", "end"),
+    # The last time the record itself was saved — any field, by anybody or by
+    # the importer. Deliberately not «viimane tegevus» (`viimane_*`), which is
+    # the last piece of *work* (app/matters/activity.py): a typo fixed in a
+    # title is a modification and is not activity.
+    "muudetud_alates": ("updated_at__date", "start"),
+    "muudetud_kuni": ("updated_at__date", "end"),
 }
 
 
@@ -319,9 +391,113 @@ def apply_date_filters(queryset: Any, params: Any) -> tuple[Any, dict[str, str]]
         bounds.setdefault(field, {})[edge] = parsed
 
     for field, edges in bounds.items():
+        if edges.get("start") and edges.get("end") and edges["start"] > edges["end"]:
+            echo["vahemik_viga"] = RANGE_ERROR
+            return queryset.none(), echo
         queryset = queryset.filter(
             selectors.date_range_q(field, start=edges.get("start"), end=edges.get("end"))
         )
+    return queryset, echo
+
+
+def _window(params: Any, start_name: str, end_name: str) -> tuple[Any, Any, dict[str, str], bool]:
+    """Read one child-record window: (start, end, echo, readable)."""
+    from app.core.dates import format_estonian_date, parse_flexible_date
+
+    edges: dict[str, Any] = {}
+    echo: dict[str, str] = {}
+    readable = True
+    for name in (start_name, end_name):
+        given = values_of(params, name)
+        if len(given) > 1:
+            # Two different start dates is a question with no one answer.
+            echo[name] = " / ".join(given)
+            readable = False
+            continue
+        raw = given[0] if given else ""
+        if not raw:
+            continue
+        parsed = parse_flexible_date(raw)
+        if parsed is None:
+            echo[name] = raw
+            readable = False
+        else:
+            echo[name] = format_estonian_date(parsed)
+            edges[name] = parsed
+    start, end = edges.get(start_name), edges.get(end_name)
+    if start and end and start > end:
+        echo["vahemik_viga"] = RANGE_ERROR
+        readable = False
+    return start, end, echo, readable
+
+
+def apply_child_windows(
+    queryset: QuerySet[Matter], user: Any, params: Any
+) -> tuple[QuerySet[Matter], dict[str, str]]:
+    """The three windows over child records, each scoped to this reader first.
+
+    * ``saadetud_*`` — an opinion or response **actually sent** in the window:
+      `Submission.historically_sent()` (sent, including one later withdrawn or
+      superseded; never a draft), read through ``visible_to`` so a restricted
+      send cannot surface its Matter. A recorded Excel VÄLJA date is not a send
+      (`CurrentRegisterState`, ADR 0021) and does not count here.
+    * ``samm_*`` — the open next step's date (`NextAction.target_date`) in the
+      window. By the one window rule (`workflow.dates.period_in_window`, ADR
+      0122 §2) a window bounded in days never holds «oktoober 2026»: only a
+      day-precise date can fall inside it.
+    * ``viimane_*`` — the last substantive activity, the very fact the
+      «Viimane tegevus» column names (`activity.last_activity_within`): a day
+      inside the window, or a period (month, quarter, half-year, year) that
+      lies **wholly** inside it — never its anchor read as a day. A Matter
+      whose only date is the native-record ``updated_at`` fallback has no
+      substantive activity and is in no window; the modification stamp is
+      ``muudetud_*``.
+
+    An unreadable date or an inverted range empties the register and says so —
+    it never widens it.
+    """
+    from app.matters.activity import annotate_last_activity, last_activity_within
+    from app.submissions.models import Submission
+    from app.workflow.enums import ActionStatus, DatePrecision
+    from app.workflow.models import NextAction
+
+    echo: dict[str, str] = {}
+    start, end, part, readable = _window(params, SENT_START_PARAM, SENT_END_PARAM)
+    echo |= part
+    if not readable:
+        return queryset.none(), echo
+    if start or end:
+        sends = Submission.objects.visible_to(user).historically_sent()
+        if start:
+            sends = sends.filter(sent_at__date__gte=start)
+        if end:
+            sends = sends.filter(sent_at__date__lte=end)
+        queryset = queryset.filter(Exists(sends.filter(matter=OuterRef("pk"))))
+
+    start, end, part, readable = _window(params, STEP_START_PARAM, STEP_END_PARAM)
+    echo |= part
+    if not readable:
+        return queryset.none(), echo
+    if start or end:
+        steps = NextAction.objects.visible_to(user).filter(
+            status=ActionStatus.OPEN,
+            target_date__isnull=False,
+            date_precision__in=(DatePrecision.EXACT, DatePrecision.INFERRED),
+        )
+        if start:
+            steps = steps.filter(target_date__gte=start)
+        if end:
+            steps = steps.filter(target_date__lte=end)
+        queryset = queryset.filter(Exists(steps.filter(matter=OuterRef("pk"))))
+
+    start, end, part, readable = _window(params, ACTIVITY_START_PARAM, ACTIVITY_END_PARAM)
+    echo |= part
+    if not readable:
+        return queryset.none(), echo
+    if start or end:
+        if "activity_entry_at" not in queryset.query.annotations:
+            queryset = annotate_last_activity(queryset, user)
+        queryset = last_activity_within(queryset, start, end)
     return queryset, echo
 
 
@@ -702,6 +878,76 @@ def status_q(key: str) -> Q:
     return Q()
 
 
+def _keys_q(relation: str, keys: list[str]) -> Q:
+    """Matters linked to any of ``keys`` over a many-to-many, without a fan-out.
+
+    A subquery rather than a join: a Teema in two chosen Valdkonnad is one row,
+    not two, and the register's count needs no ``DISTINCT`` for it. `puudub`
+    is «no link at all».
+    """
+    condition = Q()
+    named = [key for key in keys if key != selectors.MISSING]
+    if named:
+        condition |= Q(pk__in=Matter.objects.filter(**{f"{relation}__key__in": named}).values("pk"))
+    if selectors.MISSING in keys:
+        condition |= Q(**{f"{relation}__isnull": True})
+    return condition
+
+
+def _apply_multi_value(queryset: QuerySet[Matter], user: Any, params: Any) -> QuerySet[Matter]:
+    """Every dimension of :data:`MULTI_VALUE_PARAMS`: OR within one, AND across them.
+
+    A value that cannot be read (a malformed person id, an unknown opinion
+    word) empties the register rather than being skipped: dropping it would
+    show *more* rows than the address asks for, which is the one direction a
+    filter must never err in.
+    """
+    owners = values_of(params, "vastutaja")
+    if owners:
+        condition = Q()
+        for value in owners:
+            if value == selectors.MISSING:
+                condition |= Q(owner__isnull=True)
+                continue
+            # A hand-edited URL must not reach the database as a malformed UUID.
+            try:
+                condition |= Q(owner_id=uuid.UUID(value))
+            except ValueError:
+                return queryset.none()
+        queryset = queryset.filter(condition)
+    stages = values_of(params, "hetkeseis")
+    if stages:
+        condition = Q(stage__key__in=[key for key in stages if key != selectors.MISSING])
+        if selectors.MISSING in stages:
+            condition |= Q(stage__isnull=True)
+        queryset = queryset.filter(condition)
+    tracks = values_of(params, "menetlusliik")
+    if tracks:
+        queryset = queryset.filter(
+            track__in=["" if value == selectors.MISSING else value for value in tracks]
+        )
+    for name, relation in (
+        ("valdkond", "policy_areas"),
+        ("silt", "tags"),
+        (LEGAL_INSTRUMENT_PARAM, "legal_instruments"),
+    ):
+        keys = values_of(params, name)
+        if keys:
+            queryset = queryset.filter(_keys_q(relation, keys))
+    modes = values_of(params, "liik")
+    if modes:
+        queryset = queryset.filter(record_mode__in=modes)
+    opinions = values_of(params, "arvamus")
+    if opinions:
+        if any(value not in OPINION_STATES for value in opinions):
+            return queryset.none()
+        condition = Q()
+        for value in opinions:
+            condition |= opinion_state_q(user, value)
+        queryset = queryset.filter(condition)
+    return queryset
+
+
 def apply_register_filters(
     queryset: QuerySet[Matter],
     user: Any,
@@ -728,31 +974,7 @@ def apply_register_filters(
     # `puudub` is the one word every dimension uses for "this field is empty",
     # so that the *Määramata* bucket on a chart is a link like any other bar
     # rather than a number the reader has to take on trust (Stage-2E brief 42).
-    if owner_id := params.get("vastutaja"):
-        if owner_id == selectors.MISSING:
-            queryset = queryset.filter(owner__isnull=True)
-        else:
-            # A hand-edited URL must not reach the database as a malformed UUID.
-            try:
-                queryset = queryset.filter(owner_id=uuid.UUID(owner_id))
-            except ValueError:
-                queryset = queryset.none()
-    if stage_key := params.get("hetkeseis"):
-        if stage_key == selectors.MISSING:
-            queryset = queryset.filter(stage__isnull=True)
-        else:
-            queryset = queryset.filter(stage__key=stage_key)
-    if track := params.get("menetlusliik"):
-        queryset = queryset.filter(track="" if track == selectors.MISSING else track)
-    if area_key := params.get("valdkond"):
-        if area_key == selectors.MISSING:
-            queryset = queryset.filter(policy_areas__isnull=True)
-        else:
-            queryset = queryset.filter(policy_areas__key=area_key)
-    if tag_key := params.get("silt"):
-        queryset = queryset.filter(tags__key=tag_key)
-    if mode := params.get("liik"):
-        queryset = queryset.filter(record_mode=mode)
+    queryset = _apply_multi_value(queryset, user, params)
     if origin := params.get("paritolu"):
         # Comma-separated, because one statistic legitimately means two origins:
         # a register row is `LEGACY_IMPORT` or an archive row somebody activated
@@ -792,8 +1014,6 @@ def apply_register_filters(
             )
     if action_filter := params.get("tegevus"):
         queryset = selectors.filter_by_next_action(queryset, user, action_filter, today)
-    if opinion := params.get("arvamus"):
-        queryset = filter_by_opinion_state(queryset, user, opinion)
     if work_state := params.get(WORK_PARAM):
         queryset = filter_by_work_state(
             queryset,
@@ -866,6 +1086,9 @@ def apply_register_filters(
     )
 
     queryset, echo = apply_date_filters(queryset, params)
+    if not echo.get("vahemik_viga"):
+        queryset, window_echo = apply_child_windows(queryset, user, params)
+        echo |= window_echo
     # One echo for the controls to redisplay. The commencement window keeps its
     # own reader because it narrows a child table rather than a Matter column,
     # but what it hands back is the same shape and is merged here so the view
@@ -907,8 +1130,8 @@ def register_query(params: Any, **changes: str | None) -> str:
     return str(query.urlencode())
 
 
-def as_text(params: Any) -> dict[str, str]:
-    """A parameter mapping as the register reads one: every value a string.
+def as_text(params: Any) -> QueryDict:
+    """A parameter mapping as the register reads one: every value a string, none lost.
 
     The view is handed a ``QueryDict``, where every value already is one. A KPI
     counting *through* this pipeline is handed a plain dict it built itself, and
@@ -916,11 +1139,20 @@ def as_text(params: Any) -> dict[str, str]:
     or ``.split(",")`` on it and raises. Normalising once here means a caller can
     write ``{"suletud": year}`` and get the same answer as the URL it links to
     — which is the whole point of counting through the same call.
+
+    A ``QueryDict`` in, or a dict whose value is a list, keeps **every** value:
+    the earlier ``{key: value for key, value in params.items()}`` kept the last
+    one only, so a count over ``?hetkeseis=a&hetkeseis=b`` counted ``b``.
     """
-    return {
-        key: "" if value is None else str(value)
-        for key, value in (params.items() if hasattr(params, "items") else ())
-    }
+    text = QueryDict(mutable=True)
+    if hasattr(params, "lists"):
+        for key, values in params.lists():
+            text.setlist(key, ["" if value is None else str(value) for value in values])
+    elif hasattr(params, "items"):
+        for key, value in params.items():
+            many = value if isinstance(value, list | tuple) else [value]
+            text.setlist(key, ["" if one is None else str(one) for one in many])
+    return text
 
 
 def register_population(
@@ -1039,7 +1271,17 @@ def saved_view_definitions(today: date) -> list[tuple[str, str, dict[str, str], 
     ]
 
 
-def _current_view_params(params: Any) -> dict[str, str]:
+def _comparable(params: Any) -> dict[str, tuple[str, ...]]:
+    """A parameter mapping as a set of values per key, ignoring order and blanks."""
+    text = as_text(params)
+    return {
+        key: tuple(sorted(set(values)))
+        for key, values in ((key, [v for v in text.getlist(key) if v]) for key in text)
+        if values
+    }
+
+
+def _current_view_params(params: Any) -> dict[str, tuple[str, ...]]:
     """What the reader is looking at now, comparably to a view's definition.
 
     `?leht=` is pagination rather than a narrowing, and an absent `olek` means
@@ -1047,12 +1289,9 @@ def _current_view_params(params: Any) -> dict[str, str]:
     `/teemad/?olek=avatud` are the same view and must not light up two
     different chips.
     """
-    current = {
-        str(key): str(value)
-        for key, value in (params.items() if hasattr(params, "items") else ())
-        if value and str(key) != "leht"
-    }
-    current.setdefault("olek", "avatud")
+    current = _comparable(params)
+    current.pop("leht", None)
+    current.setdefault("olek", ("avatud",))
     return current
 
 
@@ -1075,7 +1314,7 @@ def saved_views(user: Any, params: Any, *, today: date | None = None) -> list[Sa
             count=register_population(
                 user, view_params, today=today, population=population
             ).count(),
-            active=current == view_params,
+            active=current == _comparable(view_params),
             warn=warn,
         )
         for key, label, view_params, warn in saved_view_definitions(today)

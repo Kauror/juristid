@@ -467,7 +467,7 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # the institution chooser as well, and "+ Filter" undersold it.
     page.locator("summary", has_text="Täpsem otsing").click()
     page.locator("select[name='ulatus']").select_option("minu")
-    page.locator("select[name='hetkeseis']").select_option("consultation")
+    page.locator("input[type='checkbox'][name='hetkeseis'][value='consultation']").check()
     page.get_by_role("button", name="Filtreeri").click()
     expect(register_row(page, MATTER_TITLE)).to_be_visible()
     assert "ulatus=minu" in page.url

@@ -4,11 +4,13 @@ Three sources, each through its own authorization and its own rules, and
 nothing else:
 
 1. the reader's live `DeadlineNotification` rows — not retired, not hidden,
-   re-validated against their source *as the reader* (`deadlines.live_q`), and
-   shown as the reader's preferences currently say;
-2. open «Kontrolli jõustumist» checks (ADR 0188 unchanged): the reader's own,
-   and — for `department.view_management` — the ones on Teemad nobody is
-   responsible for, exactly the population the bell has counted since 0188;
+   not a «Teadmiseks» row the reader has marked read, re-validated against
+   their source *as the reader* (`deadlines.live_q`), and shown as the
+   reader's preferences currently say;
+2. open «Kontrolli jõustumist» checks (ADR 0188): the reader's own, and — for
+   `department.view_management` — the ones on Teemad nobody is responsible
+   for, less those this reader has marked read (a personal receipt; the check
+   stays open for everybody else — ADR 0188 amendment 2026-11-02);
 3. unread «Uus asi» receipts (ADR 0051 unchanged: personal, acknowledged only
    by its own POST).
 
@@ -33,7 +35,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -74,7 +76,6 @@ class InboxItem:
     pk: Any
     section: str
     can_read: bool = False
-    can_hide: bool = False
     #: The commencement row the existing answer forms render (ADR 0188).
     reminder: Any = None
     #: Extra context words: who is responsible, for a management notice.
@@ -128,6 +129,11 @@ def deadline_rows(
     return (
         outstanding()
         .filter(recipient=user, dismissed_at__isnull=True)
+        # «Märgi loetuks» on a «Teadmiseks» row is the reader saying «seen»:
+        # it leaves the list and the count. A «Vajab tegevust» row stays until
+        # its work is done. Each interval is its own row, so reading the
+        # seven-day notice leaves the three-day one owed.
+        .exclude(Q(kind=INFO) & Q(read_at__isnull=False))
         .filter(
             live_q(user, day, choices=chosen, holds_management=may_view_department_management(user))
         )
@@ -191,7 +197,6 @@ def _deadline_item(row: DeadlineNotification, today: date, names: dict[Any, str]
         pk=row.pk,
         section=SECTION_ACTION if row.kind == ACTION else SECTION_INFO,
         can_read=row.read_at is None,
-        can_hide=row.kind == INFO,
         note=note,
     )
 
@@ -200,7 +205,7 @@ def _commencement_items(user: Any, today: date) -> list[InboxItem]:
     rows = [(row, SECTION_ACTION) for row in commencement.open_reminders_for(user, today=today)]
     rows += [
         (row, SECTION_UNOWNED)
-        for row in commencement.department_unowned_reminders(user, today=today)
+        for row in commencement.department_unowned_reminders(user, today=today, unread_only=True)
     ]
     return [
         InboxItem(
@@ -209,11 +214,12 @@ def _commencement_items(user: Any, today: date) -> list[InboxItem]:
             title=row.matter_title,
             label=commencement.CHECK_LABEL,
             date=row.reminder.source_date,
-            date_label=f"Kirjas olev jõustumise kuupäev {row.date_label} · {row.stage_label}",
+            date_label=f"Jõustumise kuupäev {row.date_label} · {row.stage_label}",
             url=row.matter_url,
-            is_unread=False,
+            is_unread=True,
             pk=row.pk,
             section=section,
+            can_read=True,
             reminder=row,
         )
         for row, section in rows

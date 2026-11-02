@@ -1,0 +1,241 @@
+{% comment %}
+The composer body: period, topics, «Lisa teema», preview, download.
+
+Swapped whole by every htmx button (`#report-body`, outerHTML), and rendered
+inside `page.html`'s form for a navigation. `data-report-dirty` is set by the
+server on every render of a posted draft and by the script on any change, and
+the page asks before it is left while it is set — the page is the only place
+the draft exists (docs/adr/0199 §3).
+
+The first button is the form's default: Enter in a text box previews rather
+than downloading.
+{% endcomment %}
+<div id="report-body" class="reportbuilder__body" data-report-body {% if dirty %}data-report-dirty{% endif %}>
+  <button type="submit" class="visually-hidden" tabindex="-1" aria-hidden="true"
+          name="toiming" value="eelvaade" formaction="{{ preview_url }}"
+          hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML">Uuenda eelvaadet</button>
+  <input type="hidden" name="koostatud" value="1">
+  <input type="hidden" name="kehtiv_algus" value="{{ report.start.isoformat }}">
+  <input type="hidden" name="kehtiv_lopp" value="{{ report.end.isoformat }}">
+  {% comment %} What this render's preview shows, signed: the download must be exactly it. {% endcomment %}
+  <input type="hidden" name="eelvaade_tunnus" value="{{ preview_token }}">
+
+  {% if refusals %}
+    <div class="notice notice--warning" role="alert">
+      <p>Wordi faili ei koostatud.</p>
+      <ul class="reportbuilder__reasons">
+        {% for reason in refusals %}<li>{{ reason }}</li>{% endfor %}
+        {% for notice in report.notices %}<li>{{ notice }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% else %}
+    {% if report.problems or report.notices %}
+      <div class="notice notice--warning" role="alert">
+        <ul class="reportbuilder__reasons">
+          {% for problem in report.problems %}<li>{{ problem }}</li>{% endfor %}
+          {% for notice in report.notices %}<li>{{ notice }}</li>{% endfor %}
+        </ul>
+      </div>
+    {% endif %}
+    {% if report.unavailable or report.changed_titles %}
+      <div class="notice notice--warning" role="status">
+        <ul class="reportbuilder__reasons">
+          {% if report.unavailable %}<li>Mõni varem valitud teema ei ole enam kättesaadav ja jäeti ülevaatest välja.</li>{% endif %}
+          {% if report.changed_titles %}<li>Nende teemade allikaandmed on muutunud. Vaata need üle: {{ report.changed_titles|join:", " }}.</li>{% endif %}
+        </ul>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  <section class="reportbuilder__section" aria-labelledby="report-period-heading">
+    <h2 class="reportbuilder__heading" id="report-period-heading">Periood</h2>
+    <div class="reportbuilder__period">
+      <fieldset class="field daterange">
+        <legend class="field__label">Ülevaate periood</legend>
+        <label class="daterange__end">
+          <span class="field__help">Alates</span>
+          <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="algus" value="{{ report.start_input }}">
+        </label>
+        <label class="daterange__end">
+          <span class="field__help">Kuni</span>
+          <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="lopp" value="{{ report.end_input }}">
+        </label>
+      </fieldset>
+      <button type="submit" class="button button--secondary" name="toiming" value="uuenda"
+              formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML">Uuenda ettepanekuid</button>
+    </div>
+    <p class="field__help">Ettepanekud on perioodi {{ report.period_label }} kohta. Perioodi muutmine ei kustuta käsitsi lisatud teemasid, järjekorda ega kirjutatud selgitusi: enne muutmist näed, mis lisandub ja mis välja jääb.</p>
+    {% if report.period_pending and not report.review %}
+      <p class="notice notice--warning">Periood on muudetud, kuid ettepanekud on veel perioodi {{ report.period_label }} kohta. Vajuta «Uuenda ettepanekuid».</p>
+    {% endif %}
+
+    {% if report.review %}
+      <div class="reportbuilder__review notice" role="status">
+        <p><strong>Uus periood: {{ report.review.label }}</strong></p>
+        {% if report.review.changes_anything %}
+          {% if report.review.added %}
+            <p>Lisandub {{ report.review.added|length }} teemat:</p>
+            <ul class="reportbuilder__reasons">{% for title in report.review.added %}<li>{{ title }}</li>{% endfor %}</ul>
+          {% endif %}
+          {% if report.review.removed %}
+            <p>Välja jääb {{ report.review.removed|length }} ettepanekut, millel uues perioodis sündmusi pole:</p>
+            <ul class="reportbuilder__reasons">{% for title in report.review.removed %}<li>{{ title }}</li>{% endfor %}</ul>
+          {% endif %}
+          {% if report.review.dropped_texts %}
+            <p>{{ report.review.dropped_texts }} kirjutatud selgitust kuulub sündmustele, mis jäävad uuest perioodist välja, ja need kaovad.</p>
+          {% endif %}
+        {% else %}
+          <p>Teemade valik ei muutu.</p>
+        {% endif %}
+        <p class="field__help">Käsitsi lisatud teemad, järjekord ja ülejäänud selgitused jäävad alles.</p>
+        <div class="reportbuilder__actions">
+          <button type="submit" class="button button--primary" name="toiming" value="rakenda"
+                  formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML">Rakenda uus periood</button>
+          <button type="submit" class="button button--quiet" name="toiming" value="loobu"
+                  formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML">Loobu</button>
+        </div>
+      </div>
+    {% endif %}
+  </section>
+
+  <section class="reportbuilder__section" aria-labelledby="report-topics-heading">
+    <h2 class="reportbuilder__heading" id="report-topics-heading">Teemad</h2>
+    <p class="field__help">Valitud {{ report.selected_count }} teemat {{ report.blocks|length }}-st. Järjekorda saab muuta lohistades või nuppudega «Üles» ja «Alla».</p>
+
+    {% if not report.blocks %}
+      <p class="empty">Valitud perioodil ei leitud ühtki saadetud arvamust, vastust ega Koja tegevust. Teema saab lisada käsitsi allpool.</p>
+    {% else %}
+      <ol class="reportblocks" data-report-order>
+        {% for block in report.blocks %}
+          <li class="reportblock" id="plokk-{{ block.matter_id }}" data-report-block>
+            <input type="hidden" name="teema" value="{{ block.matter_id }}">
+            <input type="hidden" name="sormejalg-{{ block.matter_id }}" value="{{ block.fingerprint }}">
+            {% if block.manual %}<input type="hidden" name="lisatud" value="{{ block.matter_id }}">{% endif %}
+            <div class="reportblock__head">
+              <span class="reportblock__handle" aria-hidden="true" draggable="true" data-report-handle title="Lohista järjekorra muutmiseks">⠿</span>
+              <label class="reportblock__include">
+                <input type="checkbox" name="kaasa" value="{{ block.matter_id }}" {% if block.included %}checked{% endif %}>
+                <span class="visually-hidden">Kaasa ülevaatesse:</span>
+                <span class="reportblock__title">{{ block.title }}</span>
+              </label>
+              {% if block.manual %}<span class="badge badge--quiet">Lisatud käsitsi</span>{% endif %}
+              {% if block.changed %}<span class="badge badge--warning">Allikas muutus</span>{% endif %}
+              <span class="reportblock__moves">
+                <a class="button button--quiet button--tiny" href="{% url 'matters:matter_detail' block.matter_id %}" target="_blank" rel="noopener">Ava teema</a>
+                <button type="submit" class="button button--quiet button--tiny" name="toiming" value="ules:{{ block.matter_id }}"
+                        formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML"
+                        {% if forloop.first %}disabled{% endif %}>↑ Üles<span class="visually-hidden">: {{ block.title }}</span></button>
+                <button type="submit" class="button button--quiet button--tiny" name="toiming" value="alla:{{ block.matter_id }}"
+                        formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML"
+                        {% if forloop.last %}disabled{% endif %}>↓ Alla<span class="visually-hidden">: {{ block.title }}</span></button>
+                <button type="submit" class="button button--quiet button--tiny" name="toiming" value="eemalda:{{ block.matter_id }}"
+                        formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML">Eemalda ülevaatest<span class="visually-hidden">: {{ block.title }}</span></button>
+              </span>
+            </div>
+
+            {% if block.topic_only %}
+              {% if not block.events %}
+                <p class="reportblock__empty muted">Sellel teemal pole perioodis ühtki arvestatavat sündmust. Ülevaatesse tuleb teema pealkiri ilma kuupäevata ja sinu selgitus.</p>
+              {% else %}
+                <p class="reportblock__empty muted">Ükski selle teema sündmus pole ülevaates. Ülevaatesse tuleb teema pealkiri ilma kuupäevata ja sinu selgitus.</p>
+              {% endif %}
+              <label class="field">
+                <span class="field__label field__label--plain">Selgitus ülevaates</span>
+                <textarea class="field__input reportevent__text" name="selgitus-{{ block.matter_id }}-teema" rows="3" maxlength="{{ text_limit }}">{{ block.text }}</textarea>
+              </label>
+              {% if block.text_too_long %}<p class="field__error">Selgitus on pikem kui {{ text_limit }} märki. Lühenda seda enne allalaadimist.</p>{% endif %}
+            {% elif block.text %}
+              {% comment %} Kept while an event is in the report, for when none is again. {% endcomment %}
+              <input type="hidden" name="selgitus-{{ block.matter_id }}-teema" value="{{ block.text }}">
+            {% endif %}
+            {% if block.events %}
+              <ul class="reportevents">
+                {% for item in block.events %}
+                  <li class="reportevent">
+                    <input type="hidden" name="sundmus-{{ block.matter_id }}" value="{{ item.key }}">
+                    <input type="hidden" name="allikas-{{ block.matter_id }}-{{ item.key }}" value="{{ item.source_digest }}">
+                    <div class="reportevent__meta">
+                      <label class="reportevent__include">
+                        <input type="checkbox" name="sundmus-kaasa-{{ block.matter_id }}" value="{{ item.key }}" {% if item.included %}checked{% endif %}>
+                        <span class="reportevent__date">{{ item.event.date_label }}</span>
+                        <span class="reportevent__kind">{{ item.event.kind_label }}</span>
+                      </label>
+                      {% if item.event.provenance %}<span class="reportevent__note">{{ item.event.provenance }}</span>{% endif %}
+                      <span class="reportevent__note">Kellele: {% if item.event.recipients_label %}{{ item.event.recipients_label }}{% else %}—{% endif %}</span>
+                    </div>
+                    {% if item.event.uncertainty %}
+                      <p class="reportevent__warning">{{ item.event.uncertainty }}</p>
+                    {% endif %}
+                    <label class="field">
+                      <span class="field__label field__label--plain">Selgitus{% if item.edited %} (muudetud){% endif %}</span>
+                      <textarea class="field__input reportevent__text" name="selgitus-{{ block.matter_id }}-{{ item.key }}" rows="3" maxlength="{{ text_limit }}">{{ item.text }}</textarea>
+                    </label>
+                    {% if item.too_long %}<p class="field__error">Selgitus on pikem kui {{ text_limit }} märki. Lühenda seda enne allalaadimist.</p>{% endif %}
+                  </li>
+                {% endfor %}
+              </ul>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    {% endif %}
+  </section>
+
+  <section class="reportbuilder__section" aria-labelledby="report-add-heading">
+    <h2 class="reportbuilder__heading" id="report-add-heading">Lisa teema</h2>
+    <div class="reportbuilder__search">
+      <label class="field">
+        <span class="field__label field__label--plain">Otsi teemat pealkirja või teemaviite järgi</span>
+        <input class="field__input" type="search" name="otsing" value="{{ search_query }}" autocomplete="off"
+               hx-get="{{ search_url }}" hx-trigger="input changed delay:300ms, search" hx-target="#report-search-results">
+      </label>
+      <button type="submit" class="button button--secondary" name="toiming" value="otsi"
+              formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML">Otsi</button>
+    </div>
+    <div id="report-search-results">
+      {% include "reporting/report_builder/_search_results.html" %}
+    </div>
+  </section>
+
+  <section class="reportbuilder__section" aria-labelledby="report-preview-heading">
+    <h2 class="reportbuilder__heading" id="report-preview-heading">Eelvaade</h2>
+    <p class="field__help">Ülevaates on {{ report.selected_count }} teemat. Eelvaade ja Wordi fail koostatakse samadest ridadest.</p>
+    <div class="reportpreview">
+      <p class="field__help">Wordi fail algab osakonna tegevuskava püsiosaga (tegevused ja eesmärgid); selle all on see tabel.</p>
+      {% if report.plan_problem %}<p class="notice notice--warning">{{ report.plan_problem }}</p>{% endif %}
+      <p class="reportpreview__title">{{ report.execution_line }}</p>
+      {% if rows %}
+        <div class="tablewrap">
+          <table class="data-table reportpreview__table" data-report-preview>
+            <thead>
+              <tr><th scope="col">Teema</th><th scope="col">Kuupäev</th><th scope="col">Kellele</th><th scope="col">Selgitus</th></tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  <td class="reportpreview__topic">{{ row.topic }}</td>
+                  <td>{{ row.date_label }}{% for note in row.date_notes %}<span class="reportpreview__meta">{{ note }}</span>{% endfor %}</td>
+                  <td>{{ row.recipients }}</td>
+                  <td class="reportpreview__text">{{ row.text|linebreaksbr }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% else %}
+        <p class="empty">Ülevaates pole ühtki valitud teemat.</p>
+      {% endif %}
+    </div>
+    <label class="field reportbuilder__signers">
+      <span class="field__label">Allkirjastajad</span>
+      <input class="field__input" type="text" name="allkirjastajad" maxlength="200" autocomplete="off" value="{{ report.signers }}">
+      <span class="field__help">Tabeli alla kirjutatakse koostamise kuupäev ja need nimed.</span>
+    </label>
+  </section>
+
+  <div class="reportbuilder__actions">
+    <button type="submit" class="button button--secondary" name="toiming" value="eelvaade"
+            formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML" data-report-refresh>Uuenda eelvaadet</button>
+    <button type="submit" class="button button--primary" name="toiming" value="laadi">Laadi Wordi ülevaade</button>
+  </div>
+</div>

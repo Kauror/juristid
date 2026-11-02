@@ -266,16 +266,29 @@ def test_a_restricted_matter_reaches_neither_the_rows_nor_the_count(page, base_u
     expect(page.locator(".registercount strong")).to_have_text("0")
     # No rows, and no link to a Matter — the word itself is legitimately on the
     # page twice, in the box that was typed into and in the count echoing it.
+    # «Laadi Excel» stays above an empty answer and its addresses start with
+    # /teemad/eksport/ — downloads, not Matters, so they are not counted here.
     expect(page.locator(".table--register")).to_have_count(0)
-    expect(page.locator("#teemad-tulemused a[href*='/teemad/']")).to_have_count(0)
+    expect(
+        page.locator("#teemad-tulemused a[href*='/teemad/']:not(.exportmenu__option)")
+    ).to_have_count(0)
 
 
 # -- Täpsem otsing -----------------------------------------------------------
 
 
+def owner_box(page, name: str):
+    """One person's box in Täpsem otsing's Vastutaja group (multi-valued since 2026-11-02)."""
+    return (
+        page.locator("label.checkline", has=page.locator("input[name='vastutaja']"))
+        .filter(has_text=re.compile(rf"^\s*{re.escape(name)}\s*$"))
+        .locator("input")
+    )
+
+
 def open_advanced(page):
     page.locator("summary", has_text="Täpsem otsing").click()
-    expect(page.locator("select[name='vastutaja']")).to_be_visible()
+    expect(page.locator("input[name='vastutaja']").first).to_be_visible()
 
 
 def test_the_advanced_panel_opens(page, base_url, screenshots):
@@ -290,7 +303,7 @@ def test_the_owner_filter_narrows_the_register(page, base_url):
     open_register(page, base_url)
     open_advanced(page)
 
-    page.locator("select[name='vastutaja']").select_option(label=MARTIN.short_name)
+    owner_box(page, MARTIN.short_name).check()
     page.get_by_role("button", name="Filtreeri").click()
 
     page.wait_for_url(re.compile(r"vastutaja="))
@@ -363,7 +376,7 @@ def test_a_query_and_a_filter_mean_both(page, base_url):
     open_register(page, base_url)
     open_advanced(page)
 
-    page.locator("select[name='vastutaja']").select_option(label=MARTIN.short_name)
+    owner_box(page, MARTIN.short_name).check()
     page.get_by_role("button", name="Filtreeri").click()
     page.wait_for_url(re.compile(r"vastutaja="))
 

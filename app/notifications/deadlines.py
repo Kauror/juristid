@@ -596,7 +596,13 @@ def mark_read(*, notification: DeadlineNotification) -> None:
 
 
 def dismiss(*, notification: DeadlineNotification) -> bool:
-    """«Peida» — an INFO row only. Also marks it read. ``False`` for an ACTION row."""
+    """Hide an INFO row. Also marks it read. ``False`` for an ACTION row.
+
+    No page offers «Peida» since the owner's review of 2026-11-02: «Märgi
+    loetuks» now takes a «Teadmiseks» row out of the list. Rows hidden before
+    keep ``dismissed_at`` and stay out, and a hidden row is still never revived
+    (`_deliver`), so the stamp's meaning is unchanged.
+    """
     if notification.kind != NotificationKind.INFO:
         return False
     now = timezone.now()

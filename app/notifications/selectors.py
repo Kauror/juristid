@@ -14,6 +14,19 @@ moved, cancelled, replaced, removed or made approximate is out of every list
 here at once, through :func:`app.notifications.services.eligibility_q` and the
 ``source_date`` comparison, without waiting for the generator to retire it.
 
+**Read or put off by one person, still open for the rest.** «Märgi loetuks»
+and «Lükka edasi» are a `CommencementReminderPersonalState` of the reader's
+own: they take the prompt out of *their* populations here (``_active_for``)
+and leave the reminder ``OPEN`` for a new owner and for every other manager
+(ADR 0188 amendment 2026-11-02). A deferral recorded before that day on the
+reminder itself (``CommencementReminder.deferred_until``) still applies to
+everybody, as it did when it was made.
+
+**``status=OPEN`` is not a count of unchecked commencements.** Nobody closes a
+prompt any more — reading and postponing are personal and «Kontrollitud» and
+«Sulge…» are retired — so open rows accumulate by design. No metric may be
+built on that status alone.
+
 **Authorization first.** Every population starts from the commencements the
 reader may see (`MatterEffectiveDate.objects.visible_to`), so a restricted
 record never reaches a count or a list (ADR 0181, ADR 0158 §3).
@@ -25,7 +38,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from django.db.models import F, Q, QuerySet
+from django.db.models import Exists, F, OuterRef, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -33,7 +46,7 @@ from app.core.authorization import may_view_department_management
 from app.core.dates import format_estonian_date
 from app.intelligence.models import MatterEffectiveDate
 from app.notifications.enums import ReminderStatus
-from app.notifications.models import CommencementReminder
+from app.notifications.models import CommencementReminder, CommencementReminderPersonalState
 from app.notifications.services import eligibility_q
 
 #: The wording, once. A reminder asks for a check and never states an outcome.
@@ -54,6 +67,22 @@ def _live_open(user: Any, today: date) -> QuerySet[CommencementReminder]:
         .filter(effective_date__in=readable)
         .filter(Q(deferred_until__isnull=True) | Q(deferred_until__lte=today))
     )
+
+
+def _states(user: Any) -> QuerySet[CommencementReminderPersonalState]:
+    return CommencementReminderPersonalState.objects.filter(
+        reminder=OuterRef("pk"), user_id=user.pk
+    )
+
+
+def _active_for(user: Any, today: date) -> Q:
+    """Leaves out what this reader has read, or put off past ``today`` — theirs only."""
+    return ~Q(Exists(_states(user).filter(Q(read_at__isnull=False) | Q(deferred_until__gt=today))))
+
+
+def _deferred_by(user: Any, today: date) -> Q:
+    """The prompts this reader has put off past ``today`` and not read."""
+    return Q(Exists(_states(user).filter(read_at__isnull=True, deferred_until__gt=today)))
 
 
 def _owned_by(user: Any) -> Q:
@@ -92,6 +121,12 @@ class ReminderRow:
         return CHECK_LABEL
 
 
+def _later(first: date | None, second: date | None) -> date | None:
+    """The later of two optional dates — when a put-off prompt comes back."""
+    dates = [day for day in (first, second) if day is not None]
+    return max(dates) if dates else None
+
+
 def _when(source_date: date, today: date) -> str:
     """How far off the date is, in words. Never what happened on it."""
     days = (source_date - today).days
@@ -101,13 +136,22 @@ def _when(source_date: date, today: date) -> str:
         return "homme"
     if days > 1:
         return f"{days} päeva pärast"
-    return "kirjas olev kuupäev on möödunud"
+    return "kuupäev on möödunud"
 
 
-def _rows(queryset: QuerySet[CommencementReminder], today: date) -> list[ReminderRow]:
+def _rows(
+    queryset: QuerySet[CommencementReminder], today: date, *, reader: Any = None
+) -> list[ReminderRow]:
     reminders = queryset.select_related(
         "effective_date", "effective_date__matter", "effective_date__matter__owner"
     ).order_by("source_date", "effective_date__matter__title", "pk")
+    personal: dict[Any, date | None] = {}
+    if reader is not None:
+        personal = dict(
+            CommencementReminderPersonalState.objects.filter(
+                user_id=reader.pk, reminder__in=reminders
+            ).values_list("reminder_id", "deferred_until")
+        )
     rows = []
     for reminder in reminders:
         record = reminder.effective_date
@@ -129,7 +173,9 @@ def _rows(queryset: QuerySet[CommencementReminder], today: date) -> list[Reminde
                 source_url=record.source_url,
                 matter_is_open=matter.is_open,
                 owner_name=owner.display_name if owner is not None and owner.is_active else "",
-                deferred_label=format_estonian_date(reminder.deferred_until),
+                deferred_label=format_estonian_date(
+                    _later(personal.get(reminder.pk), reminder.deferred_until)
+                ),
             )
         )
     return rows
@@ -140,7 +186,7 @@ def open_reminders_for(user: Any, *, today: date | None = None) -> list[Reminder
     if not getattr(user, "is_authenticated", False):
         return []
     day = _today(today)
-    return _rows(_live_open(user, day).filter(_owned_by(user)), day)
+    return _rows(_live_open(user, day).filter(_owned_by(user), _active_for(user, day)), day)
 
 
 def unresolved_count(user: Any, *, today: date | None = None) -> int:
@@ -155,10 +201,12 @@ def unresolved_count(user: Any, *, today: date | None = None) -> int:
     scope = _owned_by(user)
     if may_view_department_management(user):
         scope = scope | _unowned()
-    return _live_open(user, day).filter(scope).count()
+    return _live_open(user, day).filter(scope).filter(_active_for(user, day)).count()
 
 
-def department_unowned_reminders(user: Any, *, today: date | None = None) -> list[ReminderRow]:
+def department_unowned_reminders(
+    user: Any, *, today: date | None = None, unread_only: bool = False
+) -> list[ReminderRow]:
     """Open prompts on Matters with nobody responsible — for the management view only.
 
     Empty for anybody without `department.view_management`, so the caller does not
@@ -167,23 +215,41 @@ def department_unowned_reminders(user: Any, *, today: date | None = None) -> lis
     if not may_view_department_management(user):
         return []
     day = _today(today)
-    return _rows(_live_open(user, day).filter(_unowned()), day)
+    queryset = _live_open(user, day).filter(_unowned())
+    if unread_only:
+        # The inbox: this manager's own reading or postponing leaves it.
+        # Osakond's summary is the department's open work, which one person's
+        # notification state does not end.
+        queryset = queryset.filter(_active_for(user, day))
+    return _rows(queryset, day)
 
 
 def deferred_reminders_for(user: Any, *, today: date | None = None) -> list[ReminderRow]:
-    """The user's own prompts that are open but put off — shown, quietly, on the list page."""
+    """The prompts put off for this reader — shown, quietly and uncounted, on the list page.
+
+    Two kinds, both still open and still describing their commencement: the
+    reader's own personal deferrals (on their desk, or unowned ones for
+    management), and the deferrals recorded on a reminder of their desk before
+    deferring became personal (2026-11-02), which still hold for everybody.
+    """
     if not getattr(user, "is_authenticated", False):
         return []
     day = _today(today)
     readable = MatterEffectiveDate.objects.visible_to(user).values("pk")
+    scope = _owned_by(user)
+    if may_view_department_management(user):
+        scope = scope | _unowned()
     queryset = (
         CommencementReminder.objects.open()
         .filter(eligibility_q("effective_date__"))
         .filter(source_date=F("effective_date__date_value"))
-        .filter(effective_date__in=readable, deferred_until__gt=day)
-        .filter(_owned_by(user))
+        .filter(effective_date__in=readable)
+        .filter(
+            (scope & _deferred_by(user, day))
+            | (_owned_by(user) & Q(deferred_until__gt=day) & _active_for(user, day))
+        )
     )
-    return _rows(queryset, day)
+    return _rows(queryset, day, reader=user)
 
 
 def answerable_reminder(user: Any, pk: Any) -> CommencementReminder | None:
@@ -206,5 +272,30 @@ def answerable_reminder(user: Any, pk: Any) -> CommencementReminder | None:
         .filter(source_date=F("effective_date__date_value"))
         .filter(effective_date__in=readable, pk=pk)
         .select_related("effective_date", "effective_date__matter")
+        .first()
+    )
+
+
+def readable_inbox_reminder(user: Any, pk: Any) -> CommencementReminder | None:
+    """The prompt a «Märgi loetuks» or «Lükka edasi» POST names, if it is in this reader's inbox.
+
+    Narrower than :func:`answerable_reminder`: the reader's own desk, plus the
+    unowned prompts for `department.view_management` — the populations the
+    bell counts. A colleague's prompt is ``None`` (a 404), so viewing somebody's
+    Minu asjad never lets anybody clear what that person is shown. Deferred
+    prompts count: a receipt for one is harmless and the POST may race the date.
+    """
+    if not getattr(user, "is_authenticated", False) or getattr(user, "pk", None) is None:
+        return None
+    readable = MatterEffectiveDate.objects.visible_to(user).values("pk")
+    scope = _owned_by(user)
+    if may_view_department_management(user):
+        scope = scope | _unowned()
+    return (
+        CommencementReminder.objects.open()
+        .filter(eligibility_q("effective_date__"))
+        .filter(source_date=F("effective_date__date_value"))
+        .filter(effective_date__in=readable, pk=pk)
+        .filter(scope)
         .first()
     )

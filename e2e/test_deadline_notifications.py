@@ -3,8 +3,8 @@
 `tests/test_deadline_notifications.py` proves the rules. This proves what only a
 running server shows: the bell fetches its number after the page has drawn,
 the one «Teavitused» block on Minu asjad carries a notice and can be worked from
-the keyboard, and «Märgi loetuks» and «Peida» are real forms that do different
-things.
+the keyboard, and «Märgi loetuks» is a real form that takes a «Teadmiseks»
+notice off the list («Peida» was retired on 2026-11-02).
 
 The deadline is planted through the ORM on a Teema made through the UI, and the
 generator is the real management command the `notifications` worker runs.
@@ -63,7 +63,7 @@ def _planted(page, base_url: str, label: str) -> str:
     return title
 
 
-def test_a_notice_is_counted_read_and_hidden(page, base_url):
+def test_a_notice_is_counted_and_read_off_the_list(page, base_url):
     sign_in(page, base_url, MARTIN)
     title = _planted(page, base_url, "Tähtaja teavitus")
 
@@ -74,20 +74,14 @@ def test_a_notice_is_counted_read_and_hidden(page, base_url):
     expect(row).to_contain_text("3 päeva pärast")
     expect(page.locator(".notifbell__count").first).to_be_attached()
 
-    # The list: read is not hide.
+    # The list: a «Teadmiseks» notice has «Märgi loetuks» and no «Peida»,
+    # and reading it takes it off the list.
     page.goto(f"{base_url}/teavitused/")
     row = page.locator(".notifrow", has_text=title)
     expect(row).to_have_class(re.compile("notifrow--unread"))
+    expect(row.get_by_role("button", name=re.compile("^Peida"))).to_have_count(0)
     row.get_by_role("button", name=f"Märgi loetuks: {title}").click()
     page.wait_for_url(f"{base_url}/teavitused/")
-    row = page.locator(".notifrow", has_text=title)
-    expect(row).to_have_count(1)
-    expect(row).not_to_have_class(re.compile("notifrow--unread"))
-    expect(row.get_by_role("button", name=re.compile("^Märgi loetuks"))).to_have_count(0)
-
-    row.get_by_role("button", name=f"Peida: {title}").click()
-    page.wait_for_url(f"{base_url}/teavitused/")
-    expect(page.locator(".messages")).to_contain_text("Teavitus peideti.")
     expect(page.locator(".notifrow", has_text=title)).to_have_count(0)
 
     # A second run of the generator does not bring it back.
@@ -101,7 +95,7 @@ def test_the_minu_asjad_block_works_from_the_keyboard(page, base_url):
     title = _planted(page, base_url, "Klaviatuuri teavitus")
 
     page.goto(f"{base_url}/minu-asjad/")
-    button = page.locator(BLOCK).get_by_role("button", name=f"Peida: {title}")
+    button = page.locator(BLOCK).get_by_role("button", name=f"Märgi loetuks: {title}")
     expect(button).to_be_visible()
     button.focus()
     expect(button).to_be_focused()

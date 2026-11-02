@@ -44,6 +44,49 @@ somebody is typing into would move the caret on every keystroke.
     {% endif %}
   </p>
 
+  {% if register_interactive and not commencement_view %}
+    {% comment %}
+      «Vali veerud» (owner's brief of 2026-11-02; app/matters/register_columns.py).
+      A GET form carrying the whole current address except the columns, so a
+      column change keeps every filter, the search, the sort and the page size —
+      and a filter change keeps the columns (the panel carries `veerud`).
+      Nothing changes until «Rakenda»; «Vaikimisi veerud» drops only `veerud`.
+
+      Drawn whatever the row count. An answer of zero rows still has columns a
+      reader may want to set before widening the filter, the filtered download
+      is then a valid file that says it holds 0 rows, and the other two
+      downloads ignore the table's narrowing altogether — hiding them behind an
+      empty filter hid every visible Teema with it (review of PR #585, P3).
+    {% endcomment %}
+    <div class="columnbar">
+      <details class="columnchooser" data-column-chooser>
+        <summary class="columnbar__trigger">Vali veerud{% if not columns_are_default %} · muudetud{% endif %}</summary>
+        <form class="columnchooser__body" method="get" action="#tulemused">
+          {% for name, value in chooser_carried %}
+            <input type="hidden" name="{{ name }}" value="{{ value }}">
+          {% endfor %}
+          <fieldset class="columnchooser__options">
+            <legend class="field__label">Tabeli veerud</legend>
+            <span class="checkline checkline--fixed">Pealkiri <span class="muted">(alati)</span></span>
+            {% for option in column_chooser %}
+              <label class="checkline">
+                <input type="checkbox" name="veerud" value="{{ option.key }}" data-heading="{{ option.heading }}" {% if option.checked %}checked{% endif %}>
+                {{ option.heading }}{% if option.help %} <span class="muted">— {{ option.help }}</span>{% endif %}
+              </label>
+            {% endfor %}
+          </fieldset>
+          <p class="columnchooser__preview" data-column-preview aria-live="polite">Tabelis: {{ column_preview }}</p>
+          <div class="filterpanel__actions">
+            <button class="button button--primary" type="submit" name="veerud" value="pealkiri">Rakenda</button>
+            {% if not columns_are_default %}<a class="button button--quiet" href="?{{ columns_reset_query }}#tulemused">Vaikimisi veerud</a>{% endif %}
+          </div>
+        </form>
+      </details>
+      {% include "matters/partials/register_exports.html" %}
+    </div>
+    {% if sort_notice %}<p class="registernotice" role="status">{{ sort_notice }}</p>{% endif %}
+  {% endif %}
+
   {% if active_filters or query %}
     <div class="filterbar filterbar--chips">
       {% if query %}

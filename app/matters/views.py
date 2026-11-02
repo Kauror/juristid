@@ -15,6 +15,7 @@ Two conventions worth knowing:
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import unicodedata
 import uuid
@@ -47,6 +48,7 @@ from django.utils.functional import cached_property
 from django.views.decorators.http import require_http_methods
 
 from app.accounts.models import User
+from app.accounts.naming import disambiguated_names
 from app.accounts.selectors import (
     assignable_business_users,
     assignable_including,
@@ -98,14 +100,14 @@ from app.legacy_import.register_display import (
     source_instructions_for,
 )
 from app.matters import (
-    activity,
     date_order,
     department_dashboard,
     duplicate_intake,
     intake_staging,
     legal_process,
-    register_dates,
+    register_columns,
     register_filters,
+    register_selection,
     selectors,
     step_launch,
     timeline_links,
@@ -339,7 +341,7 @@ from app.submissions.opinions import (
     unregistered_opinion_documents,
 )
 from app.taxonomy.legal_instruments import OTHER_LEGAL_INSTRUMENT_KEYS
-from app.taxonomy.models import PolicyArea
+from app.taxonomy.models import LegalInstrumentType, PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.consistency import current_work_alerts
@@ -952,6 +954,20 @@ FILTER_LABELS = {
     "saabus_kuni": "Saabus kuni",
     "tahtaeg_alates": "Tähtaeg alates",
     "tahtaeg_kuni": "Tähtaeg kuni",
+    # Owner's brief of 2026-11-02. The legal instrument is a governed
+    # vocabulary (taxonomy.LegalInstrumentType); the windows read child records
+    # as this reader may see them (register_filters.apply_child_windows), and
+    # «Muudetud» is the record's own modification stamp, never «Viimane
+    # tegevus».
+    register_filters.LEGAL_INSTRUMENT_PARAM: "Õigusakt",
+    register_filters.SENT_START_PARAM: "Saadetud alates",
+    register_filters.SENT_END_PARAM: "Saadetud kuni",
+    register_filters.STEP_START_PARAM: "Järgmise sammu kuupäev alates",
+    register_filters.STEP_END_PARAM: "Järgmise sammu kuupäev kuni",
+    register_filters.ACTIVITY_START_PARAM: "Viimane tegevus alates",
+    register_filters.ACTIVITY_END_PARAM: "Viimane tegevus kuni",
+    "muudetud_alates": "Muudetud alates",
+    "muudetud_kuni": "Muudetud kuni",
     "materjalid": "Materjalid",
     # Real business data or development data. Sits with the other dimensions
     # rather than beside the status segments, because it narrows the population
@@ -1117,42 +1133,15 @@ def _status_options(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     return options
 
 
-#: The sorts that order on a stored column, as the column names to order by.
-#:
-#: Every one of these four is an address somebody may already hold. `reference`
-#: is what a bare `/teemad/` means and what the Järjestus control posts;
-#: `deadline` orders on `Matter.response_deadline` and is **not** the Kuupäev
-#: column — the column shows the open step's own date whenever the visible step
-#: has one, and the two coincide on only some of the register. Neither value's
-#: meaning changes here: the interactive headings add values beside these rather
-#: than redefining them, because a bookmark that silently starts answering a
-#: different question is worse than one that stops working (brief 18).
-SORT_FIELDS = {
-    "reference": ("-reference_year", "-reference_number"),
-    "title": ("title",),
-    "updated": ("-updated_at",),
-    "deadline": ("response_deadline",),
-}
-
-#: The register's ordering when nobody has chosen one. Newest reference first —
-#: the department's own filing order, and the list a lawyer expects to open on.
-#: A clickable heading does not change it: the two new columns are sortable, not
-#: the new default (brief 19).
-DEFAULT_SORT = "reference"
-
-#: What the **Kuupäev** heading sorts by, in the order its activations cycle
-#: through. The key is the effective date the row displays, never a hidden
-#: column beside it (app/matters/register_dates.py).
-DATE_SORT_ASC = "kuupaev_asc"
-DATE_SORT_DESC = "kuupaev_desc"
-
-#: What the **Viimane tegevus** heading sorts by. Named for the column rather
-#: than for `?tegevus=`, which is a different dimension one column to the left:
-#: `?tegevus=` narrows by the *next* step and this orders by the *last* thing
-#: that happened, and one vocabulary answering both would be two questions
-#: wearing one word (app/matters/views.py `FILTER_LABELS`).
-ACTIVITY_SORT_NEWEST = "viimane_uusim"
-ACTIVITY_SORT_OLDEST = "viimane_vanim"
+#: The sort vocabulary is the selection pipeline's (app/matters/register_selection.py),
+#: so the table and its export cannot order differently. Re-exported under the
+#: names this module has always used.
+SORT_FIELDS = register_selection.SORT_FIELDS
+DEFAULT_SORT = register_selection.DEFAULT_SORT
+DATE_SORT_ASC = register_selection.DATE_SORT_ASC
+DATE_SORT_DESC = register_selection.DATE_SORT_DESC
+ACTIVITY_SORT_NEWEST = register_selection.ACTIVITY_SORT_NEWEST
+ACTIVITY_SORT_OLDEST = register_selection.ACTIVITY_SORT_OLDEST
 
 #: How each sort reads in the Järjestus control. Every value the register
 #: understands is offered there, including the four a heading sets: a sort a
@@ -1285,7 +1274,32 @@ def _sort_column(
     }
 
 
-def register_columns(params: Any) -> dict[str, Any]:
+#: Which catalogue column each filtering heading belongs to.
+_FILTER_COLUMN = {"hetkeseis": "hetkeseis", "vastutaja": "vastutaja", "tegevus": "jargmiseks"}
+
+
+def _column_headings(params: Any, keys: Any) -> dict[str, Any]:
+    """The interactive headings for the columns actually shown."""
+    headings = register_heading_controls(params)
+    headings["column_filters"] = {
+        name: column
+        for name, column in headings["column_filters"].items()
+        if _FILTER_COLUMN[name] in keys
+    }
+    return headings
+
+
+def _extra_heading(params: Any, column: Any, sort: str) -> dict[str, Any]:
+    """One added column's heading: its words, and a sort link where the register sorts it."""
+    return {
+        "key": column.key,
+        "heading": column.heading,
+        "sort_query": register_query(params, jarjestus=column.sort) if column.sort else "",
+        "is_sorted": bool(column.sort) and sort == column.sort,
+    }
+
+
+def register_heading_controls(params: Any) -> dict[str, Any]:
     """What the interactive headings need, beside the option lists they share.
 
     Built before the fragment branch in :func:`matter_list`, because the live
@@ -1297,7 +1311,11 @@ def register_columns(params: Any) -> dict[str, Any]:
     return {
         "column_filters": {
             name: {
-                "value": params.get(name, ""),
+                "value": (
+                    register_filters.values_of(params, name)
+                    if name in register_filters.MULTI_VALUE_PARAMS
+                    else params.get(name, "")
+                ),
                 "label": label,
                 "cell": cell,
                 "accessible": accessible,
@@ -1372,6 +1390,9 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
     if name == "valdkond":
         area = PolicyArea.objects.filter(key=value).first()
         return area.name_et if area else value
+    if name == register_filters.LEGAL_INSTRUMENT_PARAM:
+        instrument = LegalInstrumentType.objects.filter(key=value).first()
+        return instrument.label_et if instrument else value
     if name == "liik":
         return dict(RecordMode.choices).get(value, value)
     if name == "ulatus":
@@ -1417,6 +1438,7 @@ def _filter_display(request: HttpRequest, name: str, value: str) -> str:
             register_filters.COMMENCEMENT_END_PARAM,
         )
         or name in register_filters.DATE_FILTERS
+        or any(name in pair for pair in register_filters.CHILD_WINDOWS)
     ):
         # The parameter may carry either form — the control submits Estonian and
         # an older link carries ISO — and the chip reads back the one way this
@@ -1451,9 +1473,42 @@ def _without_dimension(params: Any, name: str, also: tuple[str, ...] = ()) -> st
     return without.urlencode()
 
 
+def _owner_choices(owners: Any) -> list[tuple[str, str]]:
+    """Vastutaja as (id, name) pairs, each name told apart among the same people."""
+    people = list(owners)
+    names = disambiguated_names(people)
+    return [(str(person.pk), names.get(person.pk, str(person))) for person in people]
+
+
+def _without_value(params: Any, name: str, value: str) -> str:
+    """The same address minus one value of a multi-valued dimension (the chip `×`).
+
+    «Hetkeseis: Ettevalmistus ×» beside «Hetkeseis: Kooskõlastus ×» removes the
+    first and keeps the second; only the last value's `×` stops narrowing by the
+    dimension altogether. `leht` goes for the reason `_without_dimension` gives.
+    """
+    without = params.copy()
+    without.setlist(name, [kept for kept in params.getlist(name) if kept.strip() != value])
+    if not without.getlist(name):
+        without.pop(name, None)
+    without.pop("leht", None)
+    return without.urlencode()
+
+
 def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     chips = []
     for name, label in FILTER_LABELS.items():
+        if name in register_filters.MULTI_VALUE_PARAMS:
+            for value in register_filters.values_of(params, name):
+                chips.append(
+                    {
+                        "name": name,
+                        "label": label,
+                        "value": _filter_display(request, name, value),
+                        "remove_query": _without_value(params, name, value),
+                    }
+                )
+            continue
         value = params.get(name, "")
         if not value or (name == "ulatus" and value == "koik"):
             continue
@@ -1488,42 +1543,8 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
     return chips
 
 
-def _ordered(queryset: Any, sort: str, user: Any) -> Any:
-    """The register in the chosen order, with the derived keys it needs.
-
-    Two rules the headings rest on.
-
-    **A missing date is last in both directions.** PostgreSQL's own default puts
-    NULLs last ascending and *first* descending, so "latest first" would have
-    opened on every row that has no date at all — a page of em dashes, above the
-    rows somebody clicked the heading to see. ``nulls_last=True`` on both sides
-    says what the column means instead: rows with a known date, in order, then
-    the rows without one.
-
-    **The derived keys are annotated only when they are ordered on.** Each costs
-    a correlated subquery (`register_display_date`) or re-reads seven of them
-    (`last_activity_on`), and the register's ordinary page reads neither — the
-    row renders both facts from what
-    ``selectors.matter_list_queryset`` has already loaded.
-
-    ``-created_at`` stays the final tie-break for every sort, so two rows sharing
-    a date have one stable order rather than whatever the planner returns
-    (brief 22: a page boundary that moves between requests loses rows).
-    """
-    chosen: tuple[Any, ...]
-    if sort in (DATE_SORT_ASC, DATE_SORT_DESC):
-        queryset = register_dates.annotate_display_date(queryset, user)
-        key = F(register_dates.DISPLAY_DATE)
-        chosen = (key.asc(nulls_last=True) if sort == DATE_SORT_ASC else key.desc(nulls_last=True),)
-    elif sort in (ACTIVITY_SORT_NEWEST, ACTIVITY_SORT_OLDEST):
-        queryset = activity.annotate_activity_date(queryset)
-        key = F(activity.ACTIVITY_DATE)
-        chosen = (
-            key.desc(nulls_last=True) if sort == ACTIVITY_SORT_NEWEST else key.asc(nulls_last=True),
-        )
-    else:
-        chosen = SORT_FIELDS.get(sort, SORT_FIELDS[DEFAULT_SORT])
-    return queryset.order_by(*chosen, "-created_at")
+#: The one ordering, shared with every export of the table (register_selection).
+_ordered = register_selection.ordered
 
 
 def _wants_fragment(request: HttpRequest) -> bool:
@@ -1843,66 +1864,38 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     once (Stage-2E.1 brief 8, 9, 10).
     """
     params = request.GET
-    queryset = selectors.matter_list_queryset(request.user)
-
-    # Applied first, so everything below narrows an already-searched population
-    # and the count beside the box is the count of the list under it.
-    # Through the search module's own gate (E-07): a query it refuses — longer
-    # than `MAX_QUERY_CHARACTERS` — is never run, and the page says so in the
-    # words `/otsing/` uses rather than «0 teemat … ei andnud tulemusi», which
-    # would claim the register holds nothing for a question nobody asked it.
-    raw_query = params.get("q") or ""
-    query = search_services.clean_query(raw_query)
-    query_was_refused = bool(raw_query.strip()) and not query
-    if query_was_refused:
-        queryset = queryset.none()
-    if query:
-        # **Searched once per request** (QRY-06). Composed as a subquery, the
-        # search ran inside every statement that read the register — the rows,
-        # the count beside the box, and on an empty page `_matches_elsewhere`
-        # again — and each run is a scan of the whole projection. The Matters it
-        # reaches are bounded by the corpus, so they are read once here and the
-        # register narrows by the ids. Same population, same authorization: the
-        # search is scoped to this reader, and so is the queryset it narrows.
-        matched = {
-            matter_id
-            for matter_id in search_services.matching_matter_ids(
-                query=query, user=request.user
-            ).values_list("matter_id", flat=True)
-            if matter_id is not None
-        }
-        queryset = queryset.filter(pk__in=matched)
-
-    # One call, and it is the same call the Ülevaade cards count through. The
-    # register and the KPI above it therefore cannot disagree about what
-    # "Arvamusi koostamisel" means — there is one definition, in one place
-    # (app/matters/register_filters.py).
-    #
-    # The status has two defaults and the address says which applies: with no
-    # `?olek=`, the register opens on `avatud` and a commencement presentation
-    # on `koik` (docs/adr/0158 §2). `status_params` is the address with that
-    # default written in, read wherever the *population* is decided; `params`
-    # stays what the reader actually has, so every link built from it keeps
-    # «not chosen» as not chosen.
-    status, status_defaulted = commencements.status_scope(params)
-    status_params: Any = params
-    if status_defaulted and status != "avatud":
-        status_params = params.copy()
-        status_params["olek"] = status
+    # Contract A: search, status default, filters and sort are read once, by
+    # the pipeline «Laadi Excel tabelis kuvatud infoga» reads too, so the
+    # export cannot hold a row the table does not (app/matters/register_selection.py).
+    selection = register_selection.selection_from(request.user, params)
+    # Contract B: which columns Teemad shows. A heading sort that reads a
+    # column the reader has hidden falls back to the default order, visibly,
+    # and the export applies the same rule (app/matters/register_columns.py).
+    column_keys = register_columns.chosen_keys(params)
+    effective, sort_notice = register_columns.effective_sort(selection.sort, column_keys)
+    if effective != selection.sort:
+        selection = dataclasses.replace(selection, sort=effective)
+    query = selection.query
+    query_was_refused = selection.query_was_refused
+    status, status_defaulted = selection.status, selection.status_defaulted
+    status_params = selection.status_params
+    sort = selection.sort
     scope = params.get("ulatus", "koik")
+    # Applied first, so everything below narrows an already-searched population
+    # and the count beside the box is the count of the list under it. A query
+    # the search refuses is never run, and the page says so in the words
+    # `/otsing/` uses rather than «0 teemat … ei andnud tulemusi».
+    #
     # Held before the status filter narrows it, so an empty answer can ask the
     # one further question that is worth asking: «are the matches simply in
     # another status» (`_matches_elsewhere`, QA-019). Nothing is evaluated here.
-    before_status = queryset
-    queryset, date_echo = register_filters.apply_register_filters(
-        queryset, request.user, status_params
-    )
+    before_status = selection.searched(selectors.matter_list_queryset(request.user))
+    queryset, date_echo = selection.filtered(before_status)
 
     # The database orders, and it orders before the page boundary is drawn. A
     # sort applied to `page.object_list` would order the twenty-five rows that
     # happened to land on this page and call the result a sorted register
     # (brief 26).
-    sort = params.get("jarjestus", DEFAULT_SORT)
     queryset = _ordered(queryset, sort, request.user)
 
     per_page, page_size_key = page_size_from(params.get(PAGE_SIZE_PARAM))
@@ -1925,6 +1918,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         cleared.pop(parameter, None)
 
     chips = _active_filters(request, params)
+    extra_columns = [
+        column for column in register_columns.columns_for(column_keys) if not column.base
+    ]
+    if extra_columns and page.object_list:
+        rows = list(page.object_list)
+        facts = register_columns.load_facts(request.user, rows, extra_columns)
+        cells = register_columns.row_cells(rows, column_keys, facts)
+        for matter in rows:
+            matter.register_cells = cells[matter.pk]
     workers = list(assignable_business_users())
     context: dict[str, Any] = {
         "page": page,
@@ -1945,7 +1947,8 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # chosen filters rather than silently widening the population.
         "carried_params": [
             (name, value)
-            for name, value in params.items()
+            for name, values in params.lists()
+            for value in values
             if name not in {"q", "leht"} and value and not _is_control_param(name)
         ],
         # The «näita korraga» control. Each option carries the whole current
@@ -1977,22 +1980,23 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             "materjalid": params.get("materjalid", ""),
             "andmed": params.get("andmed", selectors.DATA_CLASS_ALL),
             **date_echo,
-            "vastutaja": params.get("vastutaja", ""),
-            "hetkeseis": params.get("hetkeseis", ""),
-            "menetlusliik": params.get("menetlusliik", ""),
-            "valdkond": params.get("valdkond", ""),
-            "silt": params.get("silt", ""),
-            "liik": params.get("liik", ""),
+            "vastutaja": register_filters.values_of(params, "vastutaja"),
+            "hetkeseis": register_filters.values_of(params, "hetkeseis"),
+            "menetlusliik": register_filters.values_of(params, "menetlusliik"),
+            "valdkond": register_filters.values_of(params, "valdkond"),
+            "silt": register_filters.values_of(params, "silt"),
+            "liik": register_filters.values_of(params, "liik"),
             "paritolu": params.get("paritolu", ""),
             "aasta": params.get("aasta", ""),
             "allikas": params.get("allikas", ""),
             "tegevus": params.get("tegevus", ""),
-            "arvamus": params.get("arvamus", ""),
+            "arvamus": register_filters.values_of(params, "arvamus"),
             "toovoit": params.get(register_filters.VICTORY_PARAM, ""),
             "joustumine": params.get(register_filters.COMMENCEMENT_PARAM, ""),
             "too": params.get("too", ""),
             "saatja": params.get("saatja", ""),
             "adressaat": params.get("adressaat", ""),
+            "oigusakt": register_filters.values_of(params, register_filters.LEGAL_INSTRUMENT_PARAM),
             "jarjestus": sort,
         },
         "nav_active": "teemad",
@@ -2023,7 +2027,28 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "owners": owner_filter_choices(Matter.objects.visible_to(request.user)),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "next_action_options": list(NEXT_ACTION_LABELS.items()),
-        **register_columns(params),
+        **_column_headings(params, column_keys),
+        # «Vali veerud» (Teemad only): the chosen keys, the extra columns'
+        # headings, the chooser and its reset. `columns` is what
+        # matter_row.html reads; Saabunud passes none and keeps its six.
+        "columns": column_keys,
+        "extra_columns": [_extra_heading(params, column, sort) for column in extra_columns],
+        "column_chooser": register_columns.chooser_options(column_keys),
+        "columns_param": register_columns.columns_value(column_keys),
+        "columns_are_default": register_columns.is_default(column_keys),
+        "column_preview": " · ".join(
+            column.heading for column in register_columns.columns_for(column_keys)
+        ),
+        "columns_reset_query": register_query(params, **{register_columns.COLUMNS_PARAM: None}),
+        "chooser_carried": [
+            (name, value)
+            for name, values in params.lists()
+            for value in values
+            if name not in {register_columns.COLUMNS_PARAM, "leht"}
+            and value
+            and not _is_control_param(name)
+        ],
+        "sort_notice": sort_notice,
         # Jõustumised as a presentation of this same filtered register, never
         # a page of its own (docs/adr/0158). Inside the fragment, because the
         # switch and the calendar sit in the results region a keystroke in the
@@ -2057,6 +2082,17 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # The governed vocabulary, so the register's filter offers exactly what
         # Uus teema and the Teema header offer (app/taxonomy/vocabulary.py).
         "policy_areas": selectable_policy_areas(),
+        # The checkbox groups of Täpsem otsing (register_choice_group.html):
+        # (value, words) pairs, values as the address carries them.
+        "owner_choices": _owner_choices(context["owners"]),
+        "stage_choices": [(stage.key, stage.label_et) for stage in context["stages"]],
+        "area_choices": [(area.key, area.name_et) for area in selectable_policy_areas()],
+        "instrument_choices": list(
+            LegalInstrumentType.objects.filter(is_active=True)
+            .order_by("sort_order", "label_et")
+            .values_list("key", "label_et")
+        ),
+        "page_size_param": params.get(PAGE_SIZE_PARAM, ""),
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
         # Every ordering the register understands, including the four a column

@@ -1085,7 +1085,8 @@ p.formnote {
   min-width: 0;
 }
 
-.filterpanel__trigger {
+.filterpanel__trigger,
+.columnbar__trigger {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-1);
@@ -1101,16 +1102,20 @@ p.formnote {
   list-style: none;
 }
 
-.filterpanel__trigger::-webkit-details-marker {
+.filterpanel__trigger::-webkit-details-marker,
+.columnbar__trigger::-webkit-details-marker {
   display: none;
 }
 
-.filterpanel__trigger:hover {
+.filterpanel__trigger:hover,
+.columnbar__trigger:hover {
   color: var(--text-primary);
   border-color: var(--text-secondary);
 }
 
-.filterpanel[open] > .filterpanel__trigger {
+.filterpanel[open] > .filterpanel__trigger,
+.columnchooser[open] > .columnbar__trigger,
+.exportmenu[open] > .columnbar__trigger {
   color: var(--text-primary);
   border-style: solid;
   border-color: var(--accent-border);
@@ -1129,6 +1134,32 @@ p.formnote {
 
 .filterpanel__body .formgrid {
   align-items: start;
+}
+
+/* A multi-valued dimension in Täpsem otsing: a short scrolling list of
+   checkboxes, so twelve stages do not push the rest of the panel off screen. */
+.choicegroup {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.choicegroup__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  max-height: 10.5rem;
+  overflow-y: auto;
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-control);
+  background: var(--surface-base);
+}
+
+.filterpanel__error {
+  grid-column: 1 / -1;
+  margin: 0;
 }
 
 /* The panel's own actions sit across the full grid, not in a column of it. */
@@ -1299,6 +1330,24 @@ p.formnote {
  * Nothing below 1200px is affected — this column is not rendered there. */
 .table--register .table__lastactivity {
   width: 132px;
+}
+
+/* Columns added with «Vali veerud». Each has a width, and the table's
+   minimum grows by that width per added column (`--extra-columns`, the count
+   the template writes), so the layout stays fixed and the title keeps what is
+   left. Past the box `.tablewrap` scrolls sideways — the page itself never
+   does. */
+.table--register .table__extra {
+  width: 150px;
+}
+
+.table--register.table--extended {
+  --extra-columns: 0;
+  min-width: calc(66rem + var(--extra-columns) * 150px);
+}
+
+.table--extended .table__title {
+  width: 18rem;
 }
 
 /* A flex wrapper inside the cell, not on the cell: a <td> that stops being a
@@ -4264,6 +4313,244 @@ a.barchart__row:hover {
   flex-wrap: wrap;
 }
 
+/* -- «Majanduspoliitika ülevaade» (docs/adr/0199) ------------------------- *
+ *
+ * A composer, not an editor: the period, the proposed topics as an ordered
+ * list of blocks, «Lisa teema», and a preview table built from the same rows
+ * as the Word file. Dense, one column, the existing field and button
+ * components inside; nothing here styles a fact the server did not send.
+ */
+
+.reportbuilder {
+  max-width: 72rem;
+}
+
+.reportbuilder__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-4);
+}
+
+.reportbuilder__section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.reportbuilder__heading {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.reportbuilder__reasons {
+  margin: var(--spacing-1) 0 0;
+  padding-left: var(--spacing-4);
+}
+
+.reportbuilder__period,
+.reportbuilder__search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  align-items: flex-end;
+}
+
+.reportbuilder__search > .field {
+  flex: 1 1 20rem;
+}
+
+.reportbuilder__review {
+  margin-bottom: 0;
+}
+
+/* The signer line under the preview: as wide as a name list needs. */
+.reportbuilder__signers {
+  max-width: 32rem;
+  margin-top: var(--spacing-3);
+}
+
+.reportbuilder__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
+.reportblocks {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.reportblock {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  padding: var(--spacing-2) var(--spacing-3);
+}
+
+/* The block being dragged, said by more than colour: it is dashed. */
+.reportblock.is-dragging {
+  border-style: dashed;
+  border-color: var(--accent-border);
+  opacity: 0.7;
+}
+
+.reportblock__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+}
+
+.reportblock__handle {
+  cursor: grab;
+  color: var(--text-muted);
+  user-select: none;
+}
+
+.reportblock__include {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: baseline;
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.reportblock__title {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.reportblock__moves {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+}
+
+.reportblock__empty {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--typography-size-meta);
+}
+
+.reportevents {
+  list-style: none;
+  margin: var(--spacing-2) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.reportevent {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--spacing-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.reportevent__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  align-items: baseline;
+  font-size: var(--typography-size-meta);
+}
+
+.reportevent__include {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: baseline;
+}
+
+.reportevent__date {
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.reportevent__kind,
+.reportevent__note {
+  color: var(--text-secondary);
+}
+
+/* «Võib korrata arvamust …»: a sentence that says it is a warning. */
+.reportevent__warning {
+  margin: 0;
+  padding: var(--spacing-1) var(--spacing-2);
+  border-left: 3px solid var(--status-warning);
+  background: var(--status-warning-soft);
+  font-size: var(--typography-size-meta);
+}
+
+.reportevent__text {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.reportsearch {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.reportsearch__row {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--spacing-1) 0;
+}
+
+.reportsearch__title {
+  min-width: 0;
+}
+
+.reportpreview {
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  background: var(--surface-panel);
+  padding: var(--spacing-3);
+}
+
+.reportpreview__title {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-bold);
+}
+
+.reportpreview__period {
+  margin: 0 0 var(--spacing-2);
+  color: var(--text-secondary);
+}
+
+.reportpreview__table td {
+  vertical-align: top;
+}
+
+.reportpreview__topic {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.reportpreview__meta {
+  display: block;
+  font-style: italic;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+.reportpreview__text {
+  overflow-wrap: anywhere;
+}
+
 
 /* -- every year, directly selectable -------------------------------------- *
  *
@@ -4450,6 +4737,100 @@ a.barchart__row:hover {
 
 .filterbar--chips {
   margin-bottom: var(--spacing-3);
+}
+
+/* «Vali veerud» and «Laadi Excel» above the Teemad table (owner's brief of
+   2026-11-02). Both open in the flow, under their trigger, rather than as
+   floating menus: the chooser holds twenty boxes and the export menu three
+   explanations, and neither should be clipped by the table's scroll box or a
+   phone's width. */
+.columnbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-2);
+}
+
+.columnchooser,
+.exportmenu {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.columnchooser[open],
+.exportmenu[open] {
+  flex: 1 1 100%;
+}
+
+.columnchooser__body,
+.exportmenu__body {
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-3);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-card);
+  max-width: 62rem;
+}
+
+.columnchooser__options {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--spacing-1) var(--spacing-3);
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.columnchooser__options > .field__label {
+  grid-column: 1 / -1;
+}
+
+.checkline--fixed {
+  cursor: default;
+}
+
+.columnchooser__preview {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.exportmenu__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.exportmenu__option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-2);
+  border-radius: var(--radius-control);
+  text-decoration: none;
+}
+
+.exportmenu__option:hover {
+  background: var(--surface-hover);
+}
+
+.exportmenu__label {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.exportmenu__help {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.registernotice {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--status-warning);
 }
 
 .filterchip--clear {
@@ -14214,12 +14595,14 @@ a.jcal__daynum {
   margin-top: 0;
 }
 
+/* The actions sit on their own line directly under the item's text, never at
+ * the far edge of a wide page (owner's review of 2026-11-02), and an opened
+ * «Lükka edasi» panel takes the full width under the item it belongs to. */
 .notifrow {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--spacing-2) var(--spacing-4);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--spacing-1);
   padding: var(--spacing-2) 0;
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -14233,7 +14616,7 @@ a.jcal__daynum {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  flex: 1 1 280px;
+  overflow-wrap: anywhere;
 }
 
 .notifrow__label {
@@ -14252,11 +14635,6 @@ a.jcal__daynum {
 
 .notifrow__matter:hover {
   color: var(--accent-link);
-}
-
-.notifrow__what {
-  font-size: var(--typography-size-meta);
-  color: var(--text-body);
 }
 
 .notifrow__date,
@@ -14278,6 +14656,10 @@ a.jcal__daynum {
 
 .notifrow__more > summary {
   list-style: none;
+}
+
+.notifrow__more[open] {
+  flex-basis: 100%;
 }
 
 .notifrow__more > summary::-webkit-details-marker {
@@ -14317,11 +14699,6 @@ a.jcal__daynum {
   min-width: 0;
   padding: 0;
   border-bottom: none;
-}
-
-.notifsection__note {
-  margin: var(--spacing-1) 0 0;
-  font-size: var(--typography-size-meta);
 }
 
 .notifempty {

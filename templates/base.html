@@ -33,6 +33,11 @@
       idempotently, and again after every HTMX swap (static/js/ux.js).
     {% endcomment %}
     <script src="{% static 'js/ux.js' %}" defer></script>
+    {% comment %}
+      «Vali veerud»'s preview line (static/js/register_columns.js). Inert on
+      every page without the chooser.
+    {% endcomment %}
+    <script src="{% static 'js/register_columns.js' %}" defer></script>
     {% if user.is_authenticated %}
       {% comment %}
         Remembered blocks (docs/adr/0194): where a reader's open/closed choice

@@ -1127,15 +1127,10 @@ def test_a_heading_filter_is_already_chosen_in_tapsem_otsing(signed_in, stages, 
     body = body_of(
         signed_in.get(REGISTER, {"hetkeseis": chosen.key, "vastutaja": str(specialist.pk)})
     )
-    panel = body.split('<select class="field__input" name="hetkeseis">', 1)[1].split(
-        "</select>", 1
-    )[0]
-    owner_panel = body.split('<select class="field__input" name="vastutaja">', 1)[1].split(
-        "</select>", 1
-    )[0]
-
-    assert re.search(rf'value="{chosen.key}"\s+selected', panel)
-    assert re.search(rf'value="{specialist.pk}"\s+selected', owner_panel)
+    # Täpsem otsing draws these two as checkbox groups since the
+    # multi-value round (owner's brief of 2026-11-02).
+    assert re.search(rf'name="hetkeseis" value="{chosen.key}" checked', body)
+    assert re.search(rf'name="vastutaja" value="{specialist.pk}" checked', body)
 
 
 def test_a_heading_filter_produces_the_ordinary_chip(signed_in, stages):
