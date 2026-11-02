@@ -247,3 +247,6 @@ class LovableAuditCursor(models.Model):
         constraints = [
             models.CheckConstraint(condition=models.Q(id=1), name="lovable_audit_cursor_singleton"),
         ]
+
+    def __str__(self) -> str:
+        return f"audit cursor {self.last_occurred_at} {self.last_event_id}"
