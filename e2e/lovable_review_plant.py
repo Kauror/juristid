@@ -1,5 +1,10 @@
 """Plant two synthetic nights of Lovable history for `e2e/test_lovable_review_page.py`.
 
+Since docs/adr/0201 it also plants two wider readings (every live topic) with
+three observed changes — one pilot Teema, one Teema with the same number but no
+confirmed link, and one Lovable topic with no Juristid match — for the
+«Vaadeldud muudatused» view.
+
 Run inside the server's own Django (`manage.py shell`), the way the other
 planting helpers in `e2e/conftest.py` are. Every value is invented; the three
 Teemad are the first three the e2e seed numbered. Idempotent: a second call
@@ -17,6 +22,13 @@ from django.utils import timezone
 
 from app.legacy_import import lovable_source
 from app.legacy_import.integrity import canonical_sha256
+from app.legacy_import.lovable_observation_models import (
+    LovableObservationRun,
+    LovableObservedChange,
+    MappingStatus,
+    ObservationRunStatus,
+    ObservedChangeKind,
+)
 from app.legacy_import.lovable_sync import MAPPING_VERSION, TALLINN
 from app.legacy_import.lovable_sync_models import (
     LovableSyncDecision,
@@ -135,4 +147,68 @@ if not LovableSyncRun.objects.filter(run_key__startswith="e2e-").exists():
             reason=reason,
             source=source,
         )
+
+if not LovableObservationRun.objects.filter(run_key__startswith="e2e-obs-").exists():
+    known = list(
+        Matter.objects.filter(reference_year__isnull=False).order_by(
+            "reference_year", "reference_number"
+        )[:4]
+    )
+    pilot_state = LovableSyncState.objects.filter(matter=known[0]).first()
+    today = timezone.localdate(timezone=TALLINN)
+    readings = []
+    for days, baseline in ((1, None), (0, "first")):
+        at = dt.datetime.combine(today - dt.timedelta(days=days), dt.time(0, 30), tzinfo=TALLINN)
+        readings.append(
+            LovableObservationRun.objects.create(
+                run_key=f"e2e-obs-{at:%Y-%m-%d}",
+                trigger=SyncTrigger.SCHEDULED,
+                status=ObservationRunStatus.SUCCEEDED,
+                started_at=at,
+                finished_at=at + dt.timedelta(seconds=40),
+                taken_at=at,
+                sha256="e" * 64,
+                baseline=readings[0] if baseline else None,
+                counts={"live": 12, "operational": 5, "detailed": 6},
+            )
+        )
+    newest = readings[1]
+    if pilot_state is not None:
+        LovableObservedChange.objects.create(
+            run=newest,
+            source_id=pilot_state.source_id,
+            reference=pilot_state.reference,
+            kind=ObservedChangeKind.CHANGED,
+            in_pilot=True,
+            operational=True,
+            detailed=True,
+            field_names=["stage"],
+            fields=[{"field": "stage", "before": "Ministeeriumis", "after": "Riigikogus"}],
+            mapping=MappingStatus.PILOT_LINKED,
+            matter=known[0],
+        )
+    if len(known) > 3:
+        LovableObservedChange.objects.create(
+            run=newest,
+            source_id=uuid.uuid5(uuid.NAMESPACE_URL, "e2e-lovable/candidate"),
+            reference=known[3].display_reference,
+            kind=ObservedChangeKind.CHANGED,
+            operational=True,
+            detailed=True,
+            field_names=["next_action_text"],
+            fields=[
+                {"field": "next_action_text", "before": "E2E-PEIDETUD-A", "after": "E2E-PEIDETUD-B"}
+            ],
+            mapping=MappingStatus.REFERENCE_CANDIDATE,
+            matter=known[3],
+        )
+    LovableObservedChange.objects.create(
+        run=newest,
+        source_id=uuid.uuid5(uuid.NAMESPACE_URL, "e2e-lovable/unmatched"),
+        reference="2099_901",
+        kind=ObservedChangeKind.NEW,
+        operational=True,
+        field_names=["title"],
+        mapping=MappingStatus.UNMATCHED,
+    )
 print("planted")

@@ -1,0 +1,15 @@
+{% comment %}
+  A named list of (label, value) facts from the readiness assessment
+  (`app.core.views.readiness_summary`): counts, times and yes/no only.
+  Shared with Haldus → Lovable sünkroonimine.
+{% endcomment %}
+<table class="data-table lovfacts">
+  <caption class="lovfacts__caption">{{ caption }}</caption>
+  <tbody>
+    {% for label, value in rows %}
+      <tr><th scope="row">{{ label }}</th><td>{{ value }}</td></tr>
+    {% empty %}
+      <tr><td colspan="2">—</td></tr>
+    {% endfor %}
+  </tbody>
+</table>

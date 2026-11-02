@@ -16101,3 +16101,175 @@ a.jcal__daynum {
   white-space: normal;
   overflow-wrap: anywhere;
 }
+
+/* ====================================================================
+ * Uuendused → Lovable views (docs/adr/0201): the second tab strip, the
+ * filter form, the overview's legend, one topic's summary and its closed
+ * field table, and the queue, ledger and readiness tables. Every wide table
+ * sits in `.tablewrap`, which scrolls locally so the document never does.
+ * ==================================================================== */
+
+.lovtabs {
+  margin: var(--spacing-2) 0 var(--spacing-4);
+}
+
+.lovfilters {
+  margin-bottom: var(--spacing-2);
+}
+
+.lovfilters__date {
+  width: 8.5rem;
+}
+
+.lovfilters__ref {
+  width: 7.5rem;
+}
+
+.lovfilters__check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-15);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  min-height: 2rem;
+}
+
+.lovfilters__export {
+  white-space: nowrap;
+}
+
+.lovfilters__hint {
+  margin: 0 0 var(--spacing-4);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.lovlist {
+  margin: 0;
+  padding-left: var(--spacing-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.lovsection {
+  margin-bottom: var(--spacing-6);
+}
+
+.lovsection__title {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.lovsection__group {
+  margin: var(--spacing-4) 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.lovsection__lead {
+  margin: 0 0 var(--spacing-1);
+  max-width: 76ch;
+}
+
+/* The four kinds of fact, side by side where there is room. */
+.lovlegend {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: var(--spacing-3) var(--spacing-4);
+  margin: 0 0 var(--spacing-3);
+}
+
+.lovlegend dt {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+}
+
+.lovlegend dd {
+  margin: var(--spacing-05) 0 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.lovtopic__summary {
+  margin: 0 0 var(--spacing-1);
+  color: var(--text-body);
+  max-width: 76ch;
+}
+
+.lovtopic {
+  margin-top: var(--spacing-1);
+}
+
+.lovtopic__toggle {
+  cursor: pointer;
+  color: var(--accent-link);
+  font-size: var(--typography-size-meta);
+  padding: var(--spacing-1) 0;
+}
+
+.lovtopic__results {
+  margin-left: var(--spacing-2);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.lovwithheld {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.lovfields {
+  margin: 0;
+  padding-left: var(--spacing-4);
+}
+
+.lovfields__name {
+  color: var(--text-secondary);
+}
+
+/* Wide tables read as tables and scroll inside their wrapper on a phone. */
+.lovevents,
+.lovqueue,
+.lovready {
+  min-width: 44rem;
+}
+
+.lovevents td,
+.lovqueue td,
+.lovready td {
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+
+.lovqueue__action {
+  min-width: 14rem;
+  color: var(--text-secondary);
+}
+
+.lovready__facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--spacing-4);
+  margin-top: var(--spacing-3);
+}
+
+.lovfacts th[scope="row"] {
+  color: var(--text-secondary);
+  font-weight: var(--typography-weight-medium);
+  text-align: left;
+}
+
+.lovfacts td {
+  font-variant-numeric: tabular-nums;
+}
+
+.lovfacts__caption {
+  caption-side: top;
+  text-align: left;
+  font-weight: var(--typography-weight-semibold);
+  padding-bottom: var(--spacing-1);
+}

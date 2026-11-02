@@ -235,6 +235,8 @@ class Reading(_AsDict):
     outcomes: dict[str, int]
     topics: list[TopicDiff]
     hidden: int = 0
+    #: The pilot run's `SyncMode` ("" for a wider reading), for its note.
+    mode: str = ""
 
 
 @dataclass
@@ -1069,6 +1071,7 @@ def _pilot_readings(user: Any, now: dt.datetime, *, full: bool) -> list[Reading]
                 outcomes=dict(sorted(outcomes.items())),
                 topics=topics,
                 hidden=night.hidden,
+                mode=run.mode,
             )
         )
     return readings
@@ -1659,6 +1662,7 @@ def nights(
     text: str = "",
     page: int = 1,
     now: dt.datetime | None = None,
+    full: bool = False,
 ) -> Page:
     """Readings newest first (`Reading` items). ``population`` PILOT gives the
     pilot's scheduled nights (wrapping `lovable_review.nightly_history`);
@@ -1676,7 +1680,7 @@ def nights(
     if population == ObservationScope.PILOT:
         wanted = _outcome_key(outcome)
         readings = []
-        for reading in _pilot_readings(user, moment, full=False):
+        for reading in _pilot_readings(user, moment, full=full):
             taken = reading.taken_at
             if taken is None or not (start <= taken < end):
                 continue
@@ -1721,7 +1725,7 @@ def nights(
     readings = []
     for run in runs:
         reading = _observation_reading(
-            run, by_run.get(run.pk, []), hidden[run.pk], visible, population, full=False
+            run, by_run.get(run.pk, []), hidden[run.pk], visible, population, full=full
         )
         reading.topics = [
             t
@@ -1746,6 +1750,7 @@ def observed_changes(
     text: str = "",
     page: int = 1,
     now: dt.datetime | None = None,
+    full: bool = False,
 ) -> Page:
     """`TopicDiff` items from wider readings, newest first, with totals by kind
     and mapping in the page's ``items`` order.
@@ -1792,7 +1797,7 @@ def observed_changes(
         ),
     }
     return Page(
-        items=[_observed_topic(c, visible, full=False) for c in rows],
+        items=[_observed_topic(c, visible, full=full) for c in rows],
         page=number,
         pages=pages,
         total=total,

@@ -1,0 +1,24 @@
+{% comment %}
+  Lovable → Vaadeldud muudatused: `lovable_observability.observed_changes()`,
+  the wider readings' per-topic changes. Each topic says how it maps to
+  Juristid: a pilot Teema (linked), a Teema with the same number but no
+  confirmed link (a link labelled as unconfirmed, no title or values), or none.
+{% endcomment %}
+<p class="lovnight__note">
+  Muutused, mida Juristid nägi kahe laiema Lovable'i lugemise vahel, uuemad eespool.
+  Neid teemasid ei sünkroonita: siin ainult vaadeldakse.
+</p>
+{% if kind_totals or mapping_totals %}
+  <p class="lovnight__note">
+    {% for label, count in kind_totals %}{{ label }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}
+    {% if kind_totals and mapping_totals %}<br>{% endif %}
+    {% for label, count in mapping_totals %}{{ label }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}
+  </p>
+{% endif %}
+{% if page.hidden %}<p class="lovnight__note">Veel {{ page.hidden }} muutus{{ page.hidden|pluralize:",t" }} teemadel, mida sa ei näe.</p>{% endif %}
+{% for topic in page.items %}
+  {% include "core/lovable/_topic.html" with topic=topic pilot=False %}
+{% empty %}
+  <p class="empty">{% if filters.active %}Valitud filtriga muudatusi pole.{% else %}Laiemates lugemistes pole muudatusi (või laiem vaatlus pole veel töötanud).{% endif %}</p>
+{% endfor %}
+{% include "core/lovable/_pager.html" %}

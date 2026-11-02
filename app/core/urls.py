@@ -13,6 +13,12 @@ urlpatterns = [
     # (docs/release-notes/README.md).
     path("uuendused/", views.release_notes, name="release_notes"),
     path("uuendused/lovable/", views.release_notes_lovable, name="release_notes_lovable"),
+    # The current Lovable view's filtered rows as a workbook (docs/adr/0201 §6).
+    path(
+        "uuendused/lovable/excel/",
+        views.release_notes_lovable_export,
+        name="release_notes_lovable_export",
+    ),
     # Every keyboard shortcut, on one page, linked from the footer beside
     # Uuendused. The screens themselves carry no hint strips
     # (app/core/keyboard_shortcuts.py).

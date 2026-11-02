@@ -1,0 +1,56 @@
+{% comment %}
+  Lovable → Ülevaatust ootavad muudatused: `lovable_observability.review_queue()`.
+  Pilot fields whose newest Lovable value differs from the last applied one and
+  is not settled, oldest first. The suggested step is advice in words; nothing
+  on this page does it.
+{% endcomment %}
+<p class="lovnight__note">
+  Piloodi väljad, mille viimati nähtud Lovable'i väärtus erineb viimati rakendatust ja mis pole lahendatud — vanimad eespool.
+  «Soovitatud samm» on ainult soovitus: siit ei muudeta midagi.
+</p>
+{% if page.hidden %}<p class="lovnight__note">Veel {{ page.hidden }} ootel välja teemadel, mida sa ei näe.</p>{% endif %}
+{% if page.items %}
+  <div class="tablewrap">
+    <table class="data-table lovqueue">
+      <thead>
+        <tr>
+          <th scope="col">Ootel</th>
+          <th scope="col">Teema</th>
+          <th scope="col">Väli</th>
+          <th scope="col">Viimati rakendatud</th>
+          <th scope="col">Juristides praegu</th>
+          <th scope="col">Lovable'is praegu</th>
+          <th scope="col">Tulemus</th>
+          <th scope="col">Soovitatud samm</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in page.items %}
+          <tr>
+            <td>
+              {{ item.first_observed_at|date:"d.m.Y"|default:"—" }}
+              {% if item.last_observed_at and item.last_observed_at != item.first_observed_at %}<span class="lovnight__why">viimati {{ item.last_observed_at|date:"d.m.Y" }}</span>{% endif %}
+              <span class="lovnight__why">{% if item.age_days is not None %}{{ item.age_days }} päeva · {% endif %}{{ item.nights_pending }} öö{{ item.nights_pending|pluralize:",d" }}</span>
+            </td>
+            <td>
+              {% if item.matter_url %}<a href="{{ item.matter_url }}">{{ item.reference }}</a>{% else %}{{ item.reference }}{% endif %}
+              {% if item.title %}<span class="lovnight__why">{{ item.title }}</span>{% endif %}
+            </td>
+            <td>{{ item.label }}</td>
+            <td>{{ item.last_applied }}</td>
+            <td>{{ item.juristid_now }}</td>
+            <td>{{ item.lovable_now }}</td>
+            <td>
+              <span class="statechip {% if item.outcome == 'CONFLICT' or item.outcome == 'FAILED' %}statechip--problem{% else %}statechip--waiting{% endif %}">{{ item.outcome_label }}</span>
+              {% if item.explanation and item.explanation != item.outcome_label %}<span class="lovnight__why">{{ item.explanation }}</span>{% endif %}
+            </td>
+            <td class="lovqueue__action">{{ item.suggested_action }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "core/lovable/_pager.html" %}
+{% else %}
+  <p class="empty">{% if filters.active %}Valitud filtriga ootel muudatusi pole.{% else %}Ülevaatust ootavaid muudatusi pole.{% endif %}</p>
+{% endif %}

@@ -71,6 +71,19 @@ def _fields(topic: lovable_review.TopicChange) -> dict[str, lovable_review.Field
     return {f.name: f for f in topic.fields}
 
 
+@pytest.fixture(autouse=True)
+def page_clock(monkeypatch):
+    """The page asks the read service at a fixed moment, after every night here,
+    whatever day the suite runs on."""
+    from app.core import views as core_views
+
+    monkeypatch.setattr(core_views, "_lovable_now", lambda: _night(10))
+
+
+#: The nights moved to their own view of the page (docs/adr/0201).
+NIGHTS = "?vaade=oised"
+
+
 @pytest.fixture
 def reader(cohort, settings):
     # The cohort was applied with the pilot's real-data switch on; a synthetic
@@ -326,7 +339,7 @@ def test_a_deleted_teema_is_left_out_entirely(cohort, reader):
 def test_the_page_answers_a_business_reader(client, cohort, reader):
     _nights(cohort, {}, {"2026_501": {"hetkeseis": "Valitsuses"}})
     client.force_login(reader)
-    response = client.get(reverse("core:release_notes_lovable"))
+    response = client.get(reverse("core:release_notes_lovable") + NIGHTS)
     body = response.content.decode()
     assert response.status_code == 200
     assert "Valitsuses" in body and "Riigikogus" in body and "Hetkeseis" in body
@@ -370,7 +383,7 @@ def test_the_page_takes_no_post(client, cohort, reader):
 def test_source_text_is_escaped(client, cohort, reader):
     _nights(cohort, {}, {"2026_501": {"hetkeseis": "<script>alert(1)</script>"}})
     client.force_login(reader)
-    body = client.get(reverse("core:release_notes_lovable")).content.decode()
+    body = client.get(reverse("core:release_notes_lovable") + NIGHTS).content.decode()
     assert "<script>alert(1)</script>" not in body
     assert "&lt;script&gt;alert(1)&lt;/script&gt;" in body
 
@@ -378,14 +391,14 @@ def test_source_text_is_escaped(client, cohort, reader):
 def test_an_excluded_source_field_never_reaches_the_page(client, cohort, reader):
     _nights(cohort, {}, {"2026_501": {"markmed": "SISEMINE-MARGE-7781", "hetkeseis": "Valitsuses"}})
     client.force_login(reader)
-    body = client.get(reverse("core:release_notes_lovable")).content.decode()
+    body = client.get(reverse("core:release_notes_lovable") + NIGHTS).content.decode()
     assert "SISEMINE-MARGE-7781" not in body and "Valitsuses" in body
 
 
 def test_the_page_shows_no_identifiers_or_raw_structures(client, cohort, reader):
     _nights(cohort, {}, {"2026_501": {"hetkeseis": "Valitsuses"}})
     client.force_login(reader)
-    body = client.get(reverse("core:release_notes_lovable")).content.decode()
+    body = client.get(reverse("core:release_notes_lovable") + NIGHTS).content.decode()
     state = LovableSyncState.objects.get(reference="2026_501")
     assert str(state.source_id) not in body
     assert '"source"' not in body and "REVIEW_REQUIRED" not in body
@@ -410,14 +423,18 @@ def test_viewing_writes_nothing(client, cohort, reader, monkeypatch):
 
     before = fingerprint()
     monkeypatch.setattr(FakeLovable, "select", unreachable)
-    assert client.get(reverse("core:release_notes_lovable")).status_code == 200
-    assert client.get(reverse("core:release_notes_lovable") + "?koik=1").status_code == 200
+    for view in ("ulevaade", "oised", "ajalugu", "ootel", "vaadeldud", "valmisolek"):
+        url = reverse("core:release_notes_lovable") + f"?vaade={view}"
+        assert client.get(url).status_code == 200, view
+    for view in ("oised", "ootel", "vaadeldud"):
+        url = reverse("core:release_notes_lovable_export") + f"?vaade={view}"
+        assert client.get(url).status_code == 200, view
     assert fingerprint() == before
 
 
 def test_no_nights_yet_says_so(client, cohort, reader):
     client.force_login(reader)
-    body = client.get(reverse("core:release_notes_lovable")).content.decode()
+    body = client.get(reverse("core:release_notes_lovable") + NIGHTS).content.decode()
     assert "Öiseid sünkroonimisi ei ole veel olnud." in body
 
 

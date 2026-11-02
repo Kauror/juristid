@@ -268,12 +268,14 @@ def lovable(request: HttpRequest) -> HttpResponse:
                     "source": _shown(decision.source),
                 }
             )
+    observation = _observation_summary(request)
     return render(
         request,
         "haldus/lovable.html",
         _context(
             request,
             "lovable",
+            observation=observation,
             health=health,
             # The verdict's own run, never a `Kontrolli muudatusi` that came after
             # a failed night and would read like a success.
@@ -284,6 +286,26 @@ def lovable(request: HttpRequest) -> HttpResponse:
             hidden=hidden,
         ),
     )
+
+
+def _observation_summary(request: HttpRequest) -> dict[str, Any]:
+    """The wider observation and the readiness assessment, in counts only
+    (docs/adr/0201 §5, §7): the same read service Uuendused → Lovable asks.
+
+    `status()` and `readiness()` give every caller their counts — they name no
+    Teema — and the per-Teema plan rows, which do, are left out here whoever is
+    reading. So a technical administrator sees how much there is, never what it
+    says."""
+    from app.core.views import readiness_summary
+    from app.legacy_import import lovable_observability as obs
+
+    status = obs.status(request.user)
+    readiness = obs.readiness(request.user)
+    return {
+        "status": status,
+        "readiness": readiness,
+        "ready": readiness_summary(readiness),
+    }
 
 
 def _shown(value: Any) -> str:

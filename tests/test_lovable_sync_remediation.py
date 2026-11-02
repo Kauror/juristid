@@ -36,11 +36,13 @@ from app.matters.services import set_matter_title
 from tests import factories
 from tests.test_lovable_pilot import pilot_on, world  # noqa: F401
 from tests.test_lovable_review import (  # noqa: F401
+    NIGHTS,
     _fields,
     _history,
     _night,
     _nights,
     _topic,
+    page_clock,
     reader,
 )
 from tests.test_lovable_sync import NIGHT, _matter, _run, cohort  # noqa: F401
@@ -265,7 +267,7 @@ def test_every_outcome_is_distinguishable_on_the_page(client, cohort, reader, mo
     )
 
     client.force_login(reader)
-    body = client.get(reverse("core:release_notes_lovable")).content.decode()
+    body = client.get(reverse("core:release_notes_lovable") + NIGHTS).content.decode()
     for label in (
         "Uuendatud",
         "Juristides juba sama",
@@ -275,7 +277,9 @@ def test_every_outcome_is_distinguishable_on_the_page(client, cohort, reader, mo
         "Viga",
     ):
         assert label in body, label
-    assert body.count("Juristides juba sama") == 1
+    # One field was already the same: one result chip says so (the label is
+    # also a filter option and part of the topic's one-line result list).
+    assert body.count('statechip--ok">Juristides juba sama<') == 1
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +424,9 @@ def test_a_business_reader_reads_the_restricted_teemas_changes(client, restricte
     night = lovable_review.nightly_history(reader_role, now=_night(10)).nights[0]
     assert _fields(_topic(night, "2026_501"))["stage"].after == SECRET_STAGE
     client.force_login(reader_role)
-    assert SECRET_STAGE in client.get(reverse("core:release_notes_lovable")).content.decode()
+    assert (
+        SECRET_STAGE in client.get(reverse("core:release_notes_lovable") + NIGHTS).content.decode()
+    )
 
 
 @pytest.mark.parametrize("who", ["nobody", "no_role", "technical_admin"])
