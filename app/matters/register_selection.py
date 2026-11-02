@@ -104,8 +104,8 @@ def ordered(queryset: Any, sort: str, user: Any) -> Any:
     a correlated subquery (`register_display_date`) or re-reads seven of them
     (`last_activity_on`), and the register's ordinary page reads neither — the
     row renders both facts from what
-    ``selectors.matter_list_queryset`` has already loaded. A key a filter has
-    already annotated (`?viimane_alates=`) is reused, not annotated twice.
+    ``selectors.matter_list_queryset`` has already loaded. A key already
+    annotated on the queryset is reused, not annotated twice.
 
     ``-created_at`` and then the primary key are the final tie-breaks for every
     sort, so two rows sharing a date — or a creation instant — have one stable

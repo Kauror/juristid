@@ -113,20 +113,23 @@ raises rather than printing a wrong date.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from django.db.models import (
+    BooleanField,
     Case,
     CharField,
     DateField,
     Exists,
+    F,
     IntegerField,
     Max,
     OuterRef,
     Q,
     QuerySet,
     Subquery,
+    Value,
     When,
 )
 from django.db.models.functions import Coalesce, Greatest, TruncDate
@@ -148,7 +151,7 @@ from app.matters.models import (
 from app.submissions.models import Submission
 from app.workflow.dates import format_at_precision, is_approximate
 from app.workflow.enums import DatePrecision
-from app.workflow.lateness import APPROXIMATE_PRECISIONS
+from app.workflow.lateness import APPROXIMATE_PRECISIONS, period_end_for, period_start_for
 from app.workflow.models import NextAction
 
 
@@ -633,6 +636,37 @@ def activity_of(matter: Matter) -> MatterActivityFact | None:
 #: and for the same reason.
 ACTIVITY_DATE = "last_activity_on"
 
+#: The bases that may be a period, in :data:`BASIS_PRECEDENCE` order, each with
+#: the annotation of its latest anchor and of that anchor's precision. Every
+#: other basis is always a day.
+_PERIOD_SOURCES: tuple[tuple[str, str], ...] = (
+    ("activity_engagement_on", "activity_engagement_precision"),
+    ("activity_development_on", "activity_development_precision"),
+    ("activity_position_on", "activity_position_precision"),
+)
+
+
+def _day_dates() -> list[Any]:
+    """Every basis that is always a day, as a local date (see :func:`activity_of`)."""
+    return [
+        TruncDate("closed_at"),
+        TruncDate("activity_submission_at"),
+        TruncDate("activity_entry_at"),
+        TruncDate("activity_action_created_at"),
+        TruncDate("activity_action_ended_at"),
+        "activity_overview_on",
+        "received_date",
+        TruncDate("activity_page_modified_at"),
+        TruncDate("activity_page_created_at"),
+    ]
+
+
+def _latest_substantive_date() -> Greatest:
+    """The latest qualifying fact — :func:`activity_of` before its ``NATIVE_RECORD`` branch."""
+    return Greatest(
+        *_day_dates(), *(on for on, _precision in _PERIOD_SOURCES), output_field=DateField()
+    )
+
 
 def annotate_activity_date(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
     """The date :func:`activity_of` would return, computed by the database.
@@ -673,21 +707,7 @@ def annotate_activity_date(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
     return queryset.annotate(
         **{
             ACTIVITY_DATE: Coalesce(
-                Greatest(
-                    TruncDate("closed_at"),
-                    TruncDate("activity_submission_at"),
-                    TruncDate("activity_entry_at"),
-                    TruncDate("activity_action_created_at"),
-                    TruncDate("activity_action_ended_at"),
-                    "activity_engagement_on",
-                    "activity_development_on",
-                    "activity_overview_on",
-                    "activity_position_on",
-                    "received_date",
-                    TruncDate("activity_page_modified_at"),
-                    TruncDate("activity_page_created_at"),
-                    output_field=DateField(),
-                ),
+                _latest_substantive_date(),
                 Case(
                     When(origin=MatterOrigin.NATIVE, then=TruncDate("updated_at")),
                     default=None,
@@ -696,6 +716,139 @@ def annotate_activity_date(queryset: QuerySet[Matter]) -> QuerySet[Matter]:
                 output_field=DateField(),
             )
         }
+    )
+
+
+#: The names :func:`last_activity_within` aliases. Aliases, not annotations:
+#: they exist for the ``WHERE`` and add nothing to the select list.
+_LATEST_ON = "last_substantive_activity_on"
+_LATEST_DAY_ON = "last_day_activity_on"
+_IN_WINDOW = "last_activity_in_window"
+
+
+def _period_thresholds(
+    precision: str, start: date | None, end: date | None
+) -> tuple[date | None, date | None]:
+    """The anchors whose whole ``precision`` period lies on or after ``start``
+    and on or before ``end``.
+
+    Periods of one precision partition the calendar, so «the period's first day
+    is on or after ``start``» is «the anchor is on or after the first period
+    that begins on or after ``start``», and the same at the other end — two
+    constants per precision, compared with the stored anchor whether or not it
+    was normalised to the period's first day (:func:`lateness.period_start_for`).
+    """
+    low = high = None
+    if start is not None:
+        low = start
+        if period_start_for(start, precision) != start:
+            low = period_end_for(start, precision) + timedelta(days=1)
+    if end is not None:
+        high = end
+        if period_end_for(end, precision) != end:
+            high = period_start_for(end, precision) - timedelta(days=1)
+    return low, high
+
+
+def _within(field: str, start: date | None, end: date | None) -> Q:
+    bounds: dict[str, date] = {}
+    if start is not None:
+        bounds[f"{field}__gte"] = start
+    if end is not None:
+        bounds[f"{field}__lte"] = end
+    return Q(**bounds)
+
+
+def _period_contained(on: str, precision: str, start: date | None, end: date | None) -> Case:
+    """Whether the fact ``on`` names lies wholly inside the window.
+
+    Already known to be inside it as a day; what is left is a period's extent.
+    A ``NULL`` precision is :func:`_latest_precision`'s «every row here is
+    exact», and ``EXACT`` / ``INFERRED`` are days, so the default is true.
+    """
+    whens = []
+    for approximate in APPROXIMATE_PRECISIONS:
+        low, high = _period_thresholds(approximate, start, end)
+        whens.append(When(Q(**{precision: approximate}) & _within(on, low, high), then=Value(True)))
+    whens.append(When(Q(**{f"{precision}__in": APPROXIMATE_PRECISIONS}), then=Value(False)))
+    return Case(*whens, default=Value(True), output_field=BooleanField())
+
+
+def last_activity_within(
+    queryset: QuerySet[Matter], start: date | None, end: date | None
+) -> QuerySet[Matter]:
+    """The Matters whose **last substantive activity** lies inside ``start``–``end``.
+
+    The register's ``?viimane_alates`` / ``?viimane_kuni`` (docs/adr/0200 §3).
+    It asks about the very fact «Viimane tegevus» names — :func:`activity_of`'s
+    latest date, the basis precedence picks on a tie, and that basis's
+    precision — and changes neither the column nor its sort. Three things it
+    keeps apart from that column:
+
+    * **Only a qualifying fact decides it.** The ``NATIVE_RECORD`` fallback
+      prints something true for a Matter with nothing else and is not work, so a
+      Matter whose only date is its ``updated_at`` matches no window (as in
+      :func:`work_activity_between`). Neither does a technical edit: the record's
+      own modification stamp is ``?muudetud_*``.
+    * **A period counts only when its whole period lies inside the window.**
+      «oktoober 2026» is in 01.10–31.10.2026, in «2026» and in «alates
+      01.10.2026»; it is in no window that holds only part of October, because
+      nobody said which day it was, and its anchor (the 1st) is not that day.
+      Containment, unlike in a deadline window (docs/adr/0122 §2), is the
+      honest reading here: the question is «was the last work in this range»,
+      typed by a reader, not which of a set of consecutive windows beginning
+      today a period belongs to, and a contained period certainly was.
+    * **The latest fact, not any fact.** A Matter worked on in the window and
+      again after it is not in it; «any work in the range» is
+      :func:`work_activity_between`'s question.
+
+    One ``CASE`` per row in SQL — the ``WHERE`` reads the same correlated
+    maxima :func:`annotate_last_activity` puts in the select list, which must
+    already be on ``queryset``. The cheap test (the latest date as a day inside
+    the window) runs first, so the extra comparisons that find the winning
+    basis run only for rows already inside it.
+    """
+    if start is None and end is None:
+        return queryset
+    missing = [name for name in ANNOTATIONS if name not in queryset.query.annotations]
+    if missing:
+        raise ValueError(
+            "last_activity_within needs annotate_last_activity on the queryset; "
+            f"missing {', '.join(missing)}."
+        )
+    # Which basis won, in `activity_of`'s order: a day ties ahead of every period
+    # (BASIS_PRECEDENCE), then the period sources in precedence order. A `NULL`
+    # source never equals anything, so it is never the winner.
+    winner = Case(
+        When(**{_LATEST_DAY_ON: F(_LATEST_ON)}, then=Value(True)),
+        *(
+            When(
+                **{on: F(_LATEST_ON)},
+                then=_period_contained(on, precision, start, end),
+            )
+            for on, precision in _PERIOD_SOURCES
+        ),
+        default=Value(False),
+        output_field=BooleanField(),
+    )
+    return (
+        queryset.alias(
+            **{
+                _LATEST_ON: _latest_substantive_date(),
+                _LATEST_DAY_ON: Greatest(*_day_dates(), output_field=DateField()),
+            }
+        )
+        .alias(
+            **{
+                _IN_WINDOW: Case(
+                    # `NULL` — no qualifying fact at all — is not inside.
+                    When(_within(_LATEST_ON, start, end), then=winner),
+                    default=Value(False),
+                    output_field=BooleanField(),
+                )
+            }
+        )
+        .filter(**{_IN_WINDOW: True})
     )
 
 
@@ -795,6 +948,7 @@ __all__ = [
     "annotate_last_activity",
     "annotated_slice",
     "known_active_since",
+    "last_activity_within",
     "work_activity_between",
     "work_sources",
 ]

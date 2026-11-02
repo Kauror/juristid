@@ -37,6 +37,35 @@ second copy of that sequence; and the shared table partial is also Saabunud's.
    (last substantive activity, 0026) and `muudetud_*` (the record's own
    modification stamp — deliberately separate). An inverted range is refused
    with a sentence, not answered with an empty guess.
+
+   **`viimane_*` reads the last activity at its precision** (amended after
+   review, `activity.last_activity_within`). It asks about the very fact
+   «Viimane tegevus» names — `activity_of`'s latest date, the basis the
+   precedence picks on a tie, and that basis's precision — in the database,
+   one `CASE` per row over the correlated maxima the register already reads:
+   - a **day** (every basis but the three below, and an `EXACT` / `INFERRED`
+     one of them) matches when it lies inside the window;
+   - a **period** — a `Kaasamine`, `Märge` or `Väline seisukoht` known to a
+     month, quarter, half-year or year — matches **only when its whole period
+     lies inside the window**: «juuni 2024» is in 01.06–30.06.2024, in «alates
+     01.06.2024» and in «2024», and in no window that holds only part of June.
+     Its anchor (the 1st) is a place in the ordering, never the day it
+     happened (0079 §2, 0134 §5);
+   - the **native-record `updated_at` fallback** is not work (0026, 0134 §2):
+     a Matter whose only date is that fallback is in no `viimane_*` window,
+     though the column still prints it. A technical edit after old work moves
+     nothing; that is `muudetud_*`;
+   - the **latest** activity decides: a Matter worked on in the window and
+     again after it is not in it. «Any work in a period» stays
+     `work_activity_between` (Osakond), which this filter does not borrow.
+
+   Containment differs from 0122 §2 on purpose. There, a bounded deadline
+   window never holds a period, because the windows are a consecutive set
+   beginning today and containment would place one period in different
+   windows on different surfaces. A `viimane_*` range is one interval a reader
+   typed about the past, and a period wholly inside it certainly falls inside
+   it; refusing it would hide a Matter whose last work is known to be «2024»
+   from every 2024 range. The sort and the column's display are unchanged.
 4. **A column catalogue** (`app/matters/register_columns.py`) defines each
    column once: key, heading, default or not, sort (only where the register
    already sorts correctly), and typed spreadsheet cells. `?veerud=` carries the

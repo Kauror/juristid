@@ -445,18 +445,18 @@ def apply_child_windows(
       window. By the one window rule (`workflow.dates.period_in_window`, ADR
       0122 §2) a window bounded in days never holds «oktoober 2026»: only a
       day-precise date can fall inside it.
-    * ``viimane_*`` — the last substantive activity
-      (`activity.annotate_activity_date`, the same reading the «Viimane
-      tegevus» column sorts on), never the modification stamp.
+    * ``viimane_*`` — the last substantive activity, the very fact the
+      «Viimane tegevus» column names (`activity.last_activity_within`): a day
+      inside the window, or a period (month, quarter, half-year, year) that
+      lies **wholly** inside it — never its anchor read as a day. A Matter
+      whose only date is the native-record ``updated_at`` fallback has no
+      substantive activity and is in no window; the modification stamp is
+      ``muudetud_*``.
 
     An unreadable date or an inverted range empties the register and says so —
     it never widens it.
     """
-    from app.matters.activity import (
-        ACTIVITY_DATE,
-        annotate_activity_date,
-        annotate_last_activity,
-    )
+    from app.matters.activity import annotate_last_activity, last_activity_within
     from app.submissions.models import Submission
     from app.workflow.enums import ActionStatus, DatePrecision
     from app.workflow.models import NextAction
@@ -497,12 +497,7 @@ def apply_child_windows(
     if start or end:
         if "activity_entry_at" not in queryset.query.annotations:
             queryset = annotate_last_activity(queryset, user)
-        if ACTIVITY_DATE not in queryset.query.annotations:
-            queryset = annotate_activity_date(queryset)
-        if start:
-            queryset = queryset.filter(**{f"{ACTIVITY_DATE}__gte": start})
-        if end:
-            queryset = queryset.filter(**{f"{ACTIVITY_DATE}__lte": end})
+        queryset = last_activity_within(queryset, start, end)
     return queryset, echo
 
 
