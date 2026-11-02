@@ -141,6 +141,18 @@ NOT_MATTER_DATA = {
     "mcp_writes:approve": "MCP proposal",
 }
 
+#: Routes that answer only the person a record is *addressed to*, so the
+#: sweep's owner — who reads the hidden Teema but is not responsible for it —
+#: rightly gets a 404. Still swept for every outsider persona; their own
+#: positive cases are in tests/test_commencement_read_receipts.py.
+PERSONAL_INBOX = {
+    # «Märgi loetuks» / «Lükka edasi» on a commencement check are the reader's
+    # own state since 2026-11-02 (ADR 0188 amendment): the prompt must be on
+    # the reader's desk, or unowned and the reader a manager.
+    "notifications:reminder_read": "the responsible person's own inbox",
+    "notifications:defer": "the responsible person's own inbox",
+}
+
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.
 REMOVABLE = {
     "sissekanne": "entry",
@@ -451,6 +463,7 @@ WATCHED = (
     "intelligence.MatterEffectiveDate",
     "intelligence.MatterWorkVictory",
     "notifications.CommencementReminder",
+    "notifications.CommencementReminderPersonalState",
     "notifications.DeadlineNotification",
     "notifications.NotificationPreference",
     "notifications.NotificationSettings",
@@ -636,7 +649,7 @@ def test_the_sweep_ids_reach_their_records(world, hidden):  # noqa: F811
         for method in ("get", "post"):
             with contextlib.suppress(_RolledBack), transaction.atomic():
                 response = _call(owner, method, candidate)
-                if response.status_code == 404:
+                if response.status_code == 404 and candidate.route not in PERSONAL_INBOX:
                     misses.append((world_name, method, candidate.route, candidate.kwargs))
                 raise _RolledBack
     assert misses == [], "\n".join(map(str, misses))
