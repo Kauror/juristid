@@ -1,4 +1,4 @@
-"""The eight tools' input and output schemas (docs/adr/0185 §2).
+"""The read tools' input and output schemas (docs/adr/0185 §2, docs/adr/0201 §9).
 
 Inputs are strict: every model forbids properties it does not name
 (`additionalProperties: false`), every string has a length bound, dates have
@@ -295,6 +295,228 @@ class ListMattersOutput(_ReaderAnswer):
 
 class UpcomingCommencementsOutput(_ReaderAnswer):
     """What enters into force in the window, and separately the planned or estimated dates."""
+
+
+# -- Lovable synchronisation and observation (docs/adr/0201 §9) -------------------
+#
+# Five read-only tools over `app.legacy_import.lovable_observability`. Every
+# vocabulary below comes from the code that owns it, so the schema lists the
+# values inline and cannot drift from what the service understands.
+
+#: Pages the Lovable list tools serve (each page is the service's own size).
+LOVABLE_MAX_PAGE = 100
+
+
+def _lovable_vocabulary() -> dict[str, tuple[str, ...]]:
+    from app.legacy_import import lovable_review
+    from app.legacy_import.lovable_observation_models import MappingStatus, ObservedChangeKind
+
+    return {
+        "population": ("PILOT", "OPERATIONAL", "ALL_LIVE"),
+        "outcome": tuple(lovable_review.RESULT_LABELS),
+        "field": tuple(lovable_review.FIELD_ORDER),
+        "kind": tuple(str(value) for value in ObservedChangeKind.values),
+        "mapping": tuple(str(value) for value in MappingStatus.values),
+    }
+
+
+#: The values each Lovable filter accepts, from the code that owns them.
+LOVABLE_VOCABULARY = _lovable_vocabulary()
+
+
+def _one_of(name: str) -> Any:
+    return Literal.__getitem__(LOVABLE_VOCABULARY[name])
+
+
+def _max_window_days() -> int:
+    from app.legacy_import.lovable_observability import MAX_WINDOW_DAYS
+
+    return int(MAX_WINDOW_DAYS)
+
+
+LOVABLE_MAX_WINDOW_DAYS = _max_window_days()
+
+LovablePage = Annotated[
+    int,
+    Field(
+        strict=True,
+        ge=1,
+        le=LOVABLE_MAX_PAGE,
+        description=f"Page number, 1 to {LOVABLE_MAX_PAGE}.",
+    ),
+]
+_SINCE = (
+    "Window start, YYYY-MM-DD (Europe/Tallinn days). Default: "
+    f"{LOVABLE_MAX_WINDOW_DAYS} days before the end. The window may span at most "
+    f"{LOVABLE_MAX_WINDOW_DAYS} days."
+)
+_UNTIL = "Window end, YYYY-MM-DD, inclusive. Default: today."
+_FIELD = (
+    "Only topics where this field changed: title, owner, stage (Hetkeseis), "
+    "next_action_text, next_action_date, opinion_deadline and the other source fields."
+)
+
+
+def _optional(vocabulary: str, description: str, default: str | None = None) -> Any:
+    """One optional filter over a Lovable vocabulary, for `create_model`."""
+    return (_one_of(vocabulary) | None, Field(default, description=description))
+
+
+class GetLovableSyncStatusArguments(StrictArguments):
+    """No arguments: the status is the same question every time."""
+
+
+class GetLovableSyncReadinessArguments(StrictArguments):
+    """No arguments: the readiness assessment is the same question every time."""
+
+
+_window_fields: dict[str, Any] = {
+    "since": (IsoDate | None, Field(None, description=_SINCE)),
+    "until": (IsoDate | None, Field(None, description=_UNTIL)),
+}
+
+GetLovableSyncHistoryArguments: type[StrictArguments] = create_model(
+    "GetLovableSyncHistoryArguments",
+    __base__=StrictArguments,
+    **_window_fields,
+    population=_optional(
+        "population",
+        "PILOT (default): the pilot's nightly comparisons of its linked Teemad; "
+        "OPERATIONAL or ALL_LIVE: the wider readings of Lovable's register, narrowed "
+        "to that population.",
+        "PILOT",
+    ),
+    outcome=_optional(
+        "outcome",
+        "PILOT only: topics with a field whose comparison result is this, e.g. REVIEW or CONFLICT.",
+    ),
+    field=_optional("field", _FIELD),
+    page=(LovablePage | None, 1),
+)
+
+GetLovableObservedChangesArguments: type[StrictArguments] = create_model(
+    "GetLovableObservedChangesArguments",
+    __base__=StrictArguments,
+    **_window_fields,
+    population=_optional("population", "ALL_LIVE (default), OPERATIONAL or PILOT.", "ALL_LIVE"),
+    kind=_optional("kind", "Only this kind of change: NEW, CHANGED, MISSING, BACK, RENUMBERED."),
+    field=_optional("field", _FIELD),
+    mapping=_optional(
+        "mapping",
+        "Only topics with this link to Juristid: PILOT_LINKED (a pilot Teema), "
+        "REFERENCE_CANDIDATE (same number, link not confirmed) or UNMATCHED.",
+    ),
+    page=(LovablePage | None, 1),
+)
+
+
+class GetLovableSyncMatterChangesArguments(StrictArguments):
+    matter: Annotated[
+        str,
+        Field(
+            min_length=1,
+            max_length=ID_MAX_LENGTH,
+            description=(
+                "A pilot Teema's reference such as 2026_243, or its Matter id (a UUID, or "
+                "matter:<uuid> as other tools return it)."
+            ),
+        ),
+    ]
+
+
+class _LovableAnswer(_ReaderAnswer):
+    """Every Lovable answer: bounded in size, and saying so when a list was cut."""
+
+    truncated: bool = Field(
+        default=False,
+        description=(
+            "true when the answer was too large and items were left out from the end of "
+            "its lists; `omitted` says how many from which list."
+        ),
+    )
+    omitted: dict[str, int] = Field(default_factory=dict)
+
+
+class LovableSyncStatusOutput(_LovableAnswer):
+    """The synchronisation and the wider observation at a glance: mode, freshness, the
+    last runs' times and failure codes, source counts, outstanding review, whether
+    Lovable's change history is available, and warnings in Estonian. Counts and
+    times only, never a Teema's title or values."""
+
+    mode: str
+    mode_label: str
+    apply_authorised: bool
+    cut_over: bool
+    observe_enabled: bool
+    snapshot_freshness: str
+    observation_freshness: str
+    audit: dict[str, Any]
+    cohort_size: int
+    pending_review: int
+    warnings: list[str]
+    indicators: list[dict[str, Any]]
+
+
+class _LovablePageOutput(_LovableAnswer):
+    items: list[dict[str, Any]]
+    page: int
+    pages: int
+    total: int
+    page_size: int
+    hidden: int = Field(
+        description="Items left out because their Teema is not one you may open: a count only."
+    )
+    totals: dict[str, dict[str, int]]
+    has_more: bool
+
+
+class LovableSyncHistoryOutput(_LovablePageOutput):
+    """One page of readings, newest first: pilot nights or wider readings, each with its
+    status, comparison, counts by outcome and the changed topics with their fields
+    (before and after where you may see them; withheld otherwise)."""
+
+
+class LovableObservedChangesOutput(_LovablePageOutput):
+    """One page of changed source topics from the wider readings, newest first, with
+    totals by kind and by mapping over every page. A topic with no approved link to a
+    Juristid Teema shows its source number and field names only."""
+
+
+class LovableSyncMatterChangesOutput(_LovableAnswer):
+    """One pilot Teema's retained synchronisation history: per field the last applied,
+    the Juristid and the last observed Lovable value; its nights, decisions, pending
+    review and Lovable's change history where available. Values are whole here."""
+
+    matter_id: str
+    reference: str
+    title: str
+    matter_url: str
+    source_id: str
+    fields: list[dict[str, Any]]
+    nights: list[dict[str, Any]]
+    decisions: list[dict[str, Any]]
+    source_events: list[dict[str, Any]]
+    pending: list[dict[str, Any]]
+    audit: dict[str, Any]
+
+
+class LovableSyncReadinessOutput(_LovableAnswer):
+    """What stands between today and automatic synchronisation (APPLY): the source's
+    state, identity coverage, per-field rules and risks, a simulated plan of what the
+    existing rules would do (nothing changes), conflicts, blockers and the owner's open
+    decisions. An assessment, never an activation."""
+
+    generated_at: str
+    source: dict[str, Any]
+    identity: dict[str, Any]
+    fields: list[dict[str, Any]]
+    coverage: list[dict[str, Any]]
+    simulation: dict[str, int]
+    simulation_rows: list[dict[str, Any]]
+    conflicts: int
+    oldest_conflict_days: int | None
+    blockers: list[str]
+    owner_decisions: list[str]
 
 
 # -- write tools (MCP Phase 2, docs/adr/0189; CONTRACT §6) --------------------------

@@ -42,6 +42,16 @@ READ_TOOL_NAMES = {
     "list_matters",
 }
 
+#: The Lovable synchronisation tools (docs/adr/0201 §9), read-only, listed writes on
+#: or off. Not in the digest below: it holds the Phase 1 read contract unchanged.
+LOVABLE_TOOL_NAMES = {
+    "get_lovable_sync_status",
+    "get_lovable_sync_history",
+    "get_lovable_sync_matter_changes",
+    "get_lovable_observed_changes",
+    "get_lovable_sync_readiness",
+}
+
 #: sha256 of the eight read tools' `tools/list` entries (sorted by name, canonical
 #: JSON) as Phase 1 published them (f01af05a). Writes on or off, they must not move:
 #: ChatGPT keeps a frozen snapshot and the read contract is docs/adr/0185 §2.
@@ -249,9 +259,9 @@ NOTE = {"matter": "2026_225", "text": "Ministeerium saatis eelnõu", "happened_o
 # -- the tool list -------------------------------------------------------------------
 
 
-def test_with_writes_off_the_list_is_exactly_the_eight_read_tools_as_before(writes_off):
+def test_with_writes_off_the_list_is_exactly_the_read_tools_as_before(writes_off):
     tools = _tools()
-    assert set(tools) == READ_TOOL_NAMES
+    assert set(tools) == READ_TOOL_NAMES | LOVABLE_TOOL_NAMES
     assert _read_tools_digest(tools) == READ_TOOLS_SHA256
 
 
@@ -279,7 +289,7 @@ def test_with_writes_off_a_write_tool_name_is_an_unknown_tool(writes_off, gatewa
 
 def test_with_writes_on_the_read_tools_are_unchanged_and_the_write_tools_are_added(writes_on):
     tools = _tools()
-    assert set(tools) == READ_TOOL_NAMES | {
+    assert set(tools) == READ_TOOL_NAMES | LOVABLE_TOOL_NAMES | {
         "prepare_add_matter_note",
         "prepare_response_deadline",
         "commit_prepared_action",
@@ -817,7 +827,7 @@ def test_the_real_tools_are_listed_with_writes_on(settings, monkeypatch, gateway
     _configure(settings, writes=True)
     _install(monkeypatch)
     tools = _tools()
-    assert set(tools) == READ_TOOL_NAMES | {f"prepare_{name}" for name in REGISTRY} | {
-        write_tools.COMMIT_TOOL_NAME
-    }
+    assert set(tools) == READ_TOOL_NAMES | LOVABLE_TOOL_NAMES | {
+        f"prepare_{name}" for name in REGISTRY
+    } | {write_tools.COMMIT_TOOL_NAME}
     assert _read_tools_digest(tools) == READ_TOOLS_SHA256

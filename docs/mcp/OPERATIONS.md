@@ -36,7 +36,10 @@ workspace, the questions Juristid's pages answer: search the register and the
 documents' extracted text, fetch one record, show a Teema's snapshot, its
 chronology and its documents, list what enters into force in a window, and list
 the matters a colleague is responsible for or Koda is waiting on an organisation
-for (`list_matters`). Eight tools, every one read-only, every answer carrying links back to the records.
+for (`list_matters`) — and, since docs/adr/0201 §9, how the Lovable synchronisation
+stands and what changed in Lovable's register, from Juristid's own records
+(five `get_lovable_*` tools, [`LOVABLE-TOOLS.md`](LOVABLE-TOOLS.md); Lovable
+itself is never contacted). Thirteen tools, every one read-only, every answer carrying links back to the records.
 Every call runs **as the person who connected**, through the same visibility
 rules as the browser (ADR 0181): nothing they could not open in Juristid comes
 back, and an unknown id and a forbidden one look the same.
@@ -344,8 +347,8 @@ By a workspace admin of **Kaubanduskoda** who has Tunnels **Read** + **Use**
    `https://juristid.orgusaar.ee` as the authorization server and opens it in
    the admin's browser.
 4. Complete the sign-in (step 8 must have been done for the admin's own account
-   first, or this step is refused — correctly). ChatGPT then lists the eight
-   tools; every one should show as read-only.
+   first, or this step is refused — correctly). ChatGPT then lists the
+   thirteen read tools; every one should show as read-only.
 5. **Confirm the resource.** If the sign-in fails with a resource refusal
    (`invalid_target`), the `web` log has one WARNING
    `MCP authorize refused resource '…'` naming the resource ChatGPT asked for
@@ -633,6 +636,23 @@ name, description or schema is not seen by anybody until a workspace admin:
 
 A release whose notes do not mention the MCP tools needs none of this.
 
+**The release with the five Lovable tools** (docs/adr/0201 §9, migration
+`legacy_import` 0020) mentions them, so after deploying it:
+
+1. prove the `mcp` role reads the new tables, as that role:
+   `docker compose -p juristid-main -f deploy/unraid-main/compose.yml exec -T mcp python manage.py lovable_sync report --json`
+   must print one JSON object (counts and codes only). `permission denied for
+   table legacy_import_…` means re-running step 5's idempotent `mcp_db_role
+   --apply --password-stdin` from `web`, then `restart mcp`;
+2. `check_mcp_server` inside `mcp`, and *After recreating `mcp`*;
+3. steps 2–4 above: **Refresh**, check that the five `get_lovable_*` tools are
+   listed beside the eight, all read-only, and **publish**;
+4. one question from a granted colleague's ChatGPT, e.g. «Mis seis on Lovable'i
+   sünkroonimisega?», answered through `get_lovable_sync_status`.
+
+[`LOVABLE-TOOLS.md`](LOVABLE-TOOLS.md) has the tools' arguments, bounds and
+permission rules.
+
 ## Phase 2: AI writes — prepare, approve in Juristid, commit (docs/adr/0189)
 
 A colleague can ask ChatGPT to *prepare* an ordinary, reversible change — a
@@ -839,7 +859,7 @@ ettevalmistamine»). `mcp_access list` shows the write state.
 
 On the host, after step 6, nothing changing any record:
 
-- the eight read tools still answer (a `search` from ChatGPT, as in step 9 of
+- the read tools still answer (a `search` from ChatGPT, as in step 9 of
   Phase 1);
 - `mcp-writer` is `healthy` and `check_mcp_write_gateway` passes;
 - step 5's two commands fail from `juristid-main-mcp-tunnel`;
