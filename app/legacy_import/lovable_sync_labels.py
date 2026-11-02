@@ -45,3 +45,80 @@ LOVABLE_REASONS = {
     "VERIFY_STOPPED": "Jäi kirjutamata: varasema teema tagasilugemine ebaõnnestus ja öö peatati.",
     "VERIFY_MISMATCH": "Kirjutati, kuid tagasilugemine ei vastanud kirjutatule.",
 }
+
+#: Lovable's own column names, as its audit ledger (`topic_change_field`) names
+#: them, to the canonical field they feed (`lovable_sync.SOURCE_FIELDS`). A
+#: column not listed here is shown by its own name only, never by its value.
+LOVABLE_SOURCE_COLUMNS = {
+    "teema": "title",
+    "vastutaja": "owner",
+    "uus_vastutaja": "owner",
+    "jargmiseks": "next_action_text",
+    "tegevuse_tahtaeg": "next_action_date",
+    "onenote_link": "onenote_link",
+    "hetkeseis": "stage",
+    "arvamuse_tahtaeg": "opinion_deadline",
+    "valja": "sent",
+    "valja_kuupaev": "sent_date",
+    "kellele": "addressee",
+    "koja_ettepanek": "koda_initiative",
+    "oigusakt": "legal_act",
+    "sisse": "received",
+    "operatiivne_ulatus": "operational_scope",
+}
+
+#: Lovable audit-ledger actions, in the page's words (any case).
+LOVABLE_SOURCE_ACTIONS = {
+    "muutmine": "Muudetud",
+    "lisamine": "Loodud",
+    "kustutamine": "Kustutatud",
+    "taastamine": "Taastatud",
+    "insert": "Loodud",
+    "create": "Loodud",
+    "update": "Muudetud",
+    "delete": "Kustutatud",
+    "restore": "Taastatud",
+}
+
+#: What a wider reading saw happen to a source topic (`ObservedChangeKind`).
+LOVABLE_OBSERVED_KINDS = {
+    "NEW": "Uus teema",
+    "CHANGED": "Muutunud",
+    "MISSING": "Kadus lugemisest",
+    "BACK": "Taas lugemises",
+    "RENUMBERED": "Number muutus",
+}
+
+#: The readiness simulation's categories: what the *existing* rules would do
+#: with the newest observation if APPLY were on. Never an activation.
+LOVABLE_SIMULATION_LABELS = {
+    "SAFE_UPDATE_CANDIDATE": "Ohutu uuenduse kandidaat",
+    "LOCAL_KEPT": "Juristide muudatus jääb alles",
+    "CONFLICT": "Vastuolu",
+    "MANUAL_REVIEW": "Vajab inimese otsust",
+    "MISSING_BASELINE": "Viimati rakendatud väärtus pole teada",
+    "UNSUPPORTED_FIELD": "Välja ei uuendata automaatselt",
+    "UNKNOWN_SOURCE": "Allikateema puudub või number muutus",
+    "CONVERGED": "Juba kooskõlas",
+    "UNCHANGED": "Muutusteta",
+}
+
+#: Fields only the wider observation reads (`lovable_observation.OBSERVE_FIELDS`)
+#: and the ledger's composite names, as the observation pages label them.
+LOVABLE_FIELD_LABELS.update(
+    {
+        "commencements_managed": "Jõustumisi hallatakse",
+        "responsible_changes": "Vastutaja vahetused",
+        "stage_links": "Menetlusetappide seosed",
+        "topic_links": "Seotud teemad",
+    }
+)
+LOVABLE_SOURCE_COLUMNS.update(
+    {
+        "nr": "reference",
+        "joustumised": "commencements",
+        "joustumised_hallatud": "commencements_managed",
+        "menetlusetapid": "stage_links",
+        "seosed": "topic_links",
+    }
+)
