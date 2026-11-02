@@ -10,7 +10,7 @@ Minu töö — is linked to rather than reimplemented (Stage-2E brief 39).
 
 from django.urls import path
 
-from app.reporting import views
+from app.reporting import legacy_views, views
 
 urlpatterns = [
     path("", views.overview, name="overview"),
@@ -23,4 +23,9 @@ urlpatterns = [
     path("loend/", views.metric_rows, name="metric_rows"),
     path("definitsioonid/", views.definitions, name="definitions"),
     path("eksport/<slug:slug>.csv", views.export, name="export"),
+    path(
+        "eksport/vana-excel.xlsx",
+        legacy_views.export_legacy_xlsx,
+        name="export_legacy_xlsx",
+    ),
 ]

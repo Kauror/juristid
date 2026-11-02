@@ -9,6 +9,7 @@ historical source, or out of it to a consumer.
 | [`excel-era-2011.toml`](excel-era-2011.toml) … [`excel-era-2026.toml`](excel-era-2026.toml) | The per-year contracts the parser actually reads. Machine-readable, validated on load. | Complete, 2011–2026 |
 | [`excel-era-overview.md`](excel-era-overview.md) | Human overview of all sixteen contracts. **Generated** — never edit by hand. | Generated from the TOML |
 | [`excel-era-contract-template.md`](excel-era-contract-template.md) | The scheme, the era boundaries and the real column names. | Superseded as a contract |
+| [`legacy-register-export.md`](legacy-register-export.md) | The «vana Exceli formaadis» download: the register in the 2026 layout, column by column. Not era-faithful, not round-trip. | Implemented |
 | [`import-mapping-template.toml`](import-mapping-template.toml) | Template for the reviewed owner/organisation/record-mode answers an operator supplies to the importer. | Template, synthetic values only |
 | [`source-snapshot-manifest.md`](source-snapshot-manifest.md) | The manifest format and directory convention for immutable source snapshots. | Convention agreed |
 
