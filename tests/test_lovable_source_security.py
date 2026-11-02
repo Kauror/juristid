@@ -6,11 +6,10 @@ value is invented.
 * C-02 — the service login, its bearer token and the API key go to one
   authorised origin only; a redirect is never followed; a column the source
   sends beyond the allowlist never reaches a snapshot.
-* C-01 — the access probe passes only on an explicit refusal. ``200 []`` from a
-  PATCH/DELETE under row-level security looks exactly like a permitted write
-  that matched nothing, and a 404 means a path is missing, not that it refuses:
-  both are INDETERMINATE, which blocks activation like a failure until the
-  read-only catalogue inspection (`GRANT_INSPECTION_SQL`) settles it.
+* C-01 — the access probe is GET-only (owner rule 2026-11-02): it sends nothing
+  write-shaped, so the write side is INDETERMINATE and blocks activation like a
+  failure until the read-only catalogue inspection (`GRANT_INSPECTION_SQL`)
+  settles it; the transport itself refuses any method but GET and sign-in.
 """
 
 from __future__ import annotations
@@ -224,30 +223,30 @@ def test_a_normal_authorised_read_is_get_only_and_carries_its_credentials_home()
 
 
 # ---------------------------------------------------------------------------
-# C-01: only an explicit refusal proves the identity cannot write
+# C-01, as tightened by the owner on 2026-11-02: the probe is GET-only. Nothing
+# write-shaped is ever sent — no write RPC, no PATCH/DELETE, no rpc/topic_writer
+# or rpc/can_access_admin_view, not even at a UUID that cannot exist — so the
+# write side is INDETERMINATE and the verdict is never PASS from HTTP alone.
 # ---------------------------------------------------------------------------
 
 
-def _probe(write_answer: Any, *, hidden_answer: Any = None, overrides: Any = None):
-    """The probe against a stub whose write paths all answer ``write_answer``:
-    a status code (raised as an HTTP error), or a JSON body (a 2xx)."""
-    overrides = overrides or {}
+def _probe(*, hidden_answer: Any = None, topics: Any = None, seen: list | None = None):
+    """The probe against a stub that answers every read; ``seen`` records
+    (method, path) of everything the probe sent."""
+    log = seen if seen is not None else []
 
     def opener(request, timeout):
         url, method = request.full_url, request.get_method()
+        log.append((method, url[len(ORIGIN) :]))
         if "/auth/v1/token" in url:
             return _Answer({"access_token": _jwt()}, url=url)
-        for needle, answer in overrides.items():
-            if needle in url and (method != "GET" or needle.startswith("GET ")):
-                return _respond(url, answer)
-        if "/rpc/can_access_admin_view" in url:
-            return _Answer(False, url=url)
-        if "/rpc/" in url or method in ("PATCH", "DELETE"):
-            return _respond(url, write_answer)
+        if method != "GET":
+            raise AssertionError(f"the probe sent {method} {url}")
         if "topic_change" in url or "deleted_at" in url:
             return _respond(url, [] if hidden_answer is None else hidden_answer)
         if "/rest/v1/topic?" in url:
-            return _Answer([{"id": GHOST_TOPIC, "nr": "2026_1", "version": 1}], url=url)
+            rows = [{"id": GHOST_TOPIC, "nr": "2026_1", "version": 1}] if topics is None else topics
+            return _Answer(rows, url=url)
         return _Answer([], url=url)
 
     return lovable_source.access_probe(_config(), opener=opener)
@@ -266,81 +265,84 @@ def _status(result: Any, name: str) -> str:
     return next(c.status for c in result.checks if c.name == name)
 
 
-def test_explicit_refusals_everywhere_prove_least_privilege():
-    for refusal in (401, 403, (400, {"code": "42501", "message": "permission denied"})):
-        result = _probe(refusal)
-        assert result.verdict == PASS and result.passed, [c for c in result.checks if not c.ok]
+def test_the_probe_sends_only_gets_after_the_sign_in():
+    seen: list[tuple[str, str]] = []
+    _probe(seen=seen)
+    assert seen[0] == ("POST", lovable_source.SIGN_IN_PATH)
+    assert {method for method, _path in seen[1:]} == {"GET"}
+    assert not any("/rpc/" in path for _m, path in seen)
+    assert not any(m in ("PATCH", "DELETE", "PUT") for m, _p in seen)
 
 
-def test_patch_answering_200_empty_proves_nothing():
-    result = _probe(403)
-    patched = _probe_with_method("PATCH", [])
-    assert _status(patched, "refused: PATCH topic") == INDETERMINATE
-    assert patched.verdict == INDETERMINATE and not patched.passed
-    assert result.passed  # the same probe with an explicit refusal passes
-
-
-def test_delete_answering_200_empty_proves_nothing():
-    deleted = _probe_with_method("DELETE", [])
-    assert _status(deleted, "refused: DELETE topic") == INDETERMINATE
-    assert deleted.verdict == INDETERMINATE and not deleted.passed
-
-
-def test_a_table_write_that_returns_rows_fails():
-    patched = _probe_with_method("PATCH", [{"id": GHOST_TOPIC}])
-    assert _status(patched, "refused: PATCH topic") == FAIL
-    assert patched.verdict == FAIL
-
-
-def test_a_missing_rpc_is_not_evidence_of_refusal():
-    result = _probe(403, overrides={"/rpc/save_topic": 404})
-    assert _status(result, "refused: rpc save_topic") == INDETERMINATE
+def test_a_clean_read_side_is_still_never_a_pass():
+    result = _probe()
+    reads = [c for c in result.checks if c.name != lovable_source.WRITE_SIDE_CHECK]
+    assert reads and all(c.status == PASS for c in reads), reads
+    assert _status(result, lovable_source.WRITE_SIDE_CHECK) == INDETERMINATE
     assert result.verdict == INDETERMINATE and not result.passed
 
 
-def test_a_missing_route_everywhere_is_indeterminate_not_a_pass():
-    result = _probe((404, {"code": "PGRST202", "message": "Could not find the function"}))
-    write_checks = [c for c in result.checks if c.name.startswith("refused:")]
-    assert write_checks and {c.status for c in write_checks} == {INDETERMINATE}
+@pytest.mark.parametrize("refusal", [401, 403, (400, {"code": "42501", "message": "denied"})])
+def test_an_explicit_refusal_of_the_history_proves_it_hidden(refusal):
+    result = _probe(hidden_answer=refusal)
+    assert _status(result, "hidden: topic_change_event") == PASS
     assert result.verdict == INDETERMINATE
 
 
-def test_a_write_function_that_runs_for_the_caller_fails():
-    result = _probe(403, overrides={"/rpc/delete_topic": None})
-    assert _status(result, "refused: rpc delete_topic") == FAIL
-    assert result.verdict == FAIL
-
-
-def test_an_unexpected_answer_is_indeterminate():
-    for answer in (500, 405, (400, {"code": "P0001", "message": "Teema puudub"})):
-        result = _probe(answer)
-        assert result.verdict == INDETERMINATE, answer
-        details = " ".join(c.detail for c in result.checks)
-        assert "Teema puudub" not in details  # an error's words are never carried
-
-
 def test_a_visible_history_row_fails_and_a_missing_history_table_is_indeterminate():
-    assert _probe(403, hidden_answer=[{"id": "h1"}]).verdict == FAIL
-    assert _probe(403, hidden_answer=404).verdict == INDETERMINATE
+    assert _probe(hidden_answer=[{"id": "h1"}]).verdict == FAIL
+    missing = _probe(hidden_answer=404)
+    assert _status(missing, "hidden: topic_change_event") == INDETERMINATE
+    assert missing.verdict == INDETERMINATE
 
 
-def test_an_administrator_identity_fails():
-    result = _probe(403, overrides={"/rpc/can_access_admin_view": True})
-    assert _status(result, "not an administrator") == FAIL
+def test_an_identity_that_reads_nothing_fails():
+    assert _probe(topics=[]).verdict == FAIL
+
+
+def test_an_error_body_is_never_carried_into_a_detail():
+    result = _probe(hidden_answer=(400, {"code": "P0001", "message": "Teema puudub"}))
+    assert "Teema puudub" not in " ".join(c.detail for c in result.checks)
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PATCH", f"/rest/v1/topic?id=eq.{GHOST_TOPIC}"),
+        ("DELETE", f"/rest/v1/topic?id=eq.{GHOST_TOPIC}"),
+        ("POST", "/rest/v1/rpc/save_topic"),
+        ("POST", "/rest/v1/rpc/topic_writer"),
+        ("POST", "/rest/v1/rpc/can_access_admin_view"),
+        ("PUT", "/rest/v1/topic"),
+    ],
+)
+def test_the_transport_refuses_to_send_anything_write_shaped(method, path):
+    sent: list[str] = []
+
+    def opener(request, timeout):
+        sent.append(request.get_method())
+        return _Answer([], url=request.full_url)
+
+    transport = lovable_source.HttpTransport(_config(), opener=opener)
+    with pytest.raises(SourceError) as refused:
+        transport._request(method, path, body={}, headers={})
+    assert refused.value.code == "NOT_READ_ONLY"
+    assert sent == []
 
 
 def test_the_probe_command_blocks_activation_when_indeterminate(monkeypatch, capsys):
     from django.core.management import call_command
     from django.core.management.base import CommandError
 
-    indeterminate = lovable_source.ProbeResult(
-        [lovable_source.ProbeCheck("refused: PATCH topic", INDETERMINATE, "2xx with no rows")]
-    )
     monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
-    monkeypatch.setattr(lovable_source, "access_probe", lambda _c: indeterminate)
-    with pytest.raises(CommandError, match="INDETERMINATE"):
+    result = _probe()
+    monkeypatch.setattr(lovable_source, "access_probe", lambda _c: result)
+    with pytest.raises(CommandError, match="INDETERMINATE") as blocked:
         call_command("lovable_sync", "access-probe")
-    assert "ACCESS PROBE PASSED" not in capsys.readouterr().out
+    assert "access-sql" in str(blocked.value)
+    out = capsys.readouterr().out
+    assert "ACCESS PROBE PASSED" not in out
+    assert "write refusal: not probed over HTTP" in out
 
 
 def test_the_read_only_inspection_is_select_only():
@@ -365,21 +367,24 @@ def test_the_read_only_inspection_is_select_only():
     assert not any(word in lowered for word in forbidden)
 
 
-def _probe_with_method(method: str, answer: Any) -> Any:
-    def opener(request, timeout):
-        url = request.full_url
-        if "/auth/v1/token" in url:
-            return _Answer({"access_token": _jwt()}, url=url)
-        if request.get_method() == method:
-            return _respond(url, answer)
-        if "/rpc/can_access_admin_view" in url:
-            return _Answer(False, url=url)
-        if "/rpc/" in url or request.get_method() in ("PATCH", "DELETE"):
-            return _respond(url, 403)
-        if "topic_change" in url or "deleted_at" in url:
-            return _Answer([], url=url)
-        if "/rest/v1/topic?" in url:
-            return _Answer([{"id": GHOST_TOPIC, "nr": "2026_1", "version": 1}], url=url)
-        return _Answer([], url=url)
+def test_the_audit_access_proposal_grants_select_to_one_identity_only(capsys):
+    from django.core.management import call_command
 
-    return lovable_source.access_probe(_config(), opener=opener)
+    sql = lovable_source.AUDIT_ACCESS_SQL
+    executable = "\n".join(
+        line for line in sql.splitlines() if not line.lstrip().startswith("--")
+    ).lower()
+    statements = [s.strip() for s in executable.split(";") if s.strip()]
+    creates = [s for s in statements if s.startswith("create")]
+    assert len(creates) == 2
+    for statement in creates:
+        assert statement.startswith("create policy")
+        assert "for select" in statement and "auth.uid() = '<service uid>'::uuid" in statement
+    others = [s for s in statements if not s.startswith("create")]
+    assert others and all(s.startswith("select") for s in others)
+    lowered = executable.replace("'insert', 'update', 'delete', 'all'", "")
+    for word in ("grant ", "insert ", "update ", "delete ", "alter ", "drop ", "truncate"):
+        assert word not in lowered, word
+    assert "actor_id" not in executable
+    call_command("lovable_sync", "audit-sql")
+    assert capsys.readouterr().out.strip() == sql.strip()

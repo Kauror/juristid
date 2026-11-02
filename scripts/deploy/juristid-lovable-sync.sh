@@ -15,6 +15,10 @@
 # not retried: the run goes ahead with no backup set and writes nothing
 # (REVIEW_ONLY), which Haldus and production_status then show.
 #
+# After the pilot run, when it was due, the wider observation (`lovable_sync
+# observe`, docs/adr/0201) runs in the same way; it gates itself on the control
+# row and its failure never changes this script's exit status.
+#
 # Pause: `touch $SYNC_DIR/PAUSED` (host) or `lovable_sync control --mode off`
 # (database; also what Haldus shows). Final cutover: `lovable_sync control
 # --cut-over …`, then remove the cron file. The credentials stay on the host:
@@ -108,5 +112,20 @@ say "run"
 rc=0
 one_off run --trigger "$TRIGGER" ${SET:+--backup-set "$SET"} || rc=$?
 say "END rc=$rc"
+
+# The wider observation (docs/adr/0201), the same night and the same container
+# pattern, after the pilot run. `observe` itself refuses unless
+# `lovable_sync control --observe on` (OBSERVE_OFF, exit 2) — that is the gate.
+# Its outcome is logged and never changes the pilot run's exit status.
+OBSERVE_ARGS=(observe)
+if [ "$TRIGGER" = manual ]; then OBSERVE_ARGS+=(--manual); fi
+say "observe"
+orc=0
+one_off "${OBSERVE_ARGS[@]}" || orc=$?
+case "$orc" in
+  0) say "observe END ok" ;;
+  2) say "observe SKIP refused (off, duplicate or locked; see the line above)" ;;
+  *) say "WARN observe failed rc=$orc (the pilot run's status is unchanged)" ;;
+esac
 find "$LOG_DIR" -maxdepth 1 -type f -name '*.log*' -mtime +"$LOG_RETENTION_DAYS" -delete || true
 exit "$rc"

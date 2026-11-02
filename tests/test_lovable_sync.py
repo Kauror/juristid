@@ -866,21 +866,19 @@ def test_a_service_role_sign_in_stops_before_any_read(tmp_path):
     assert refused.value.code == "PRIVILEGED_TOKEN"
 
 
-def test_the_access_probe_fails_an_identity_that_can_write(tmp_path):
-    import urllib.error
+def test_the_access_probe_is_get_only_and_never_passes(tmp_path):
+    """Owner rule 2026-11-02: no write-shaped request, not even a probe. The
+    identity's write side is left to `access-sql`, so the verdict is never PASS."""
+    methods: list[str] = []
 
-    def opener(request, timeout, *, writes_allowed: bool):
+    def opener(request, timeout, *, history_visible: bool):
         url = request.full_url
+        methods.append(request.get_method())
         if "/auth/v1/token" in url:
             return _Response({"access_token": _jwt("authenticated")})
-        if "/rpc/can_access_admin_view" in url:
-            return _Response(False)
-        if "/rpc/" in url or request.get_method() in ("PATCH", "DELETE"):
-            if writes_allowed:
-                return _Response([{"id": "x"}])
-            raise urllib.error.HTTPError(url, 403, "denied", {}, None)
+        assert request.get_method() == "GET" and "/rpc/" not in url
         if "topic_change" in url or "deleted_at" in url:
-            return _Response([])
+            return _Response([{"id": "h"}] if history_visible else [])
         if "topic?" in url:
             return _Response(
                 [{"id": "00000000-0000-0000-0000-000000000001", "nr": "2026_1", "version": 1}]
@@ -889,11 +887,14 @@ def test_the_access_probe_fails_an_identity_that_can_write(tmp_path):
 
     config = lovable_source.load_config(_credentials(tmp_path))
     good = lovable_source.access_probe(
-        config, opener=lambda r, t: opener(r, t, writes_allowed=False)
+        config, opener=lambda r, t: opener(r, t, history_visible=False)
     )
-    assert good.passed, [c for c in good.checks if not c[1]]
-    bad = lovable_source.access_probe(config, opener=lambda r, t: opener(r, t, writes_allowed=True))
-    assert not bad.passed
+    assert good.verdict == lovable_source.INDETERMINATE and not good.passed
+    assert set(methods) == {"POST", "GET"} and methods.count("POST") == 1
+    bad = lovable_source.access_probe(
+        config, opener=lambda r, t: opener(r, t, history_visible=True)
+    )
+    assert bad.verdict == lovable_source.FAIL
 
 
 # ---------------------------------------------------------------------------

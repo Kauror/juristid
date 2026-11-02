@@ -19,6 +19,9 @@ only ever issues ``GET`` against a fixed allowlist of tables and columns.
   read, then the cohort's versions and children are read again; any difference
   is a concurrent edit and the whole read is retried, a bounded number of times
   (`take_snapshot`).
+* **Read-only on the wire.** `HttpTransport` sends ``GET`` and the one sign-in
+  ``POST`` and refuses any other method; the access probe sends nothing
+  write-shaped (owner rule 2026-11-02).
 
 The credentials never reach a log, a report or the snapshot.
 """
@@ -78,12 +81,48 @@ TABLES: dict[str, tuple[str, ...]] = {
     "topic_stage_link": ("prev_topic_id", "next_topic_id"),
 }
 
+#: The wider observation (docs/adr/0201) reads every live topic. Its topic
+#: allowlist is the pilot's plus ``joustumised_hallatud`` (whether the topic's
+#: commencements are managed); the pilot snapshot (`TOPIC_COLUMNS`) is
+#: unchanged. Never read: ``allikas``, ``raw_hyperlink``, ``vastutaja_user_id``,
+#: ``*_by`` (identity or raw import data), ``markmed``, ``mitteametlik_arvamus``,
+#: and the raw import tables ``topic_source_row`` / ``topic_raw_rows``.
+OBSERVE_TOPIC_COLUMNS = (*TOPIC_COLUMNS, "joustumised_hallatud")
+OBSERVE_TABLES: dict[str, tuple[str, ...]] = {
+    "topic": OBSERVE_TOPIC_COLUMNS,
+    "topic_commencement": TABLES["topic_commencement"],
+    "topic_responsible_change": TABLES["topic_responsible_change"],
+    "topic_stage_link": TABLES["topic_stage_link"],
+    #: Related topics («seosed»), readable when both topics are visible.
+    "topic_link": ("topic_id", "linked_topic_id"),
+}
+#: Lovable's own audit ledger, read only by the audit reader
+#: (`lovable_observation`) and only when ``LOVABLE_AUDIT_ENABLED`` is on and an
+#: owner-approved read path exists (`AUDIT_ACCESS_SQL`). ``actor_id`` is never
+#: read: an event keeps only the actor's kind.
+AUDIT_TABLES: dict[str, tuple[str, ...]] = {
+    "topic_change_event": ("id", "topic_id", "action", "actor_kind", "version", "occurred_at"),
+    "topic_change_field": ("event_id", "field", "old_value", "new_value"),
+}
+
+
+def allowlisted(table: str, columns: Iterable[str]) -> bool:
+    """Whether ``columns`` of ``table`` are on one of the read allowlists."""
+    wanted = set(columns)
+    return any(
+        table in allow and wanted <= set(allow[table])
+        for allow in (TABLES, OBSERVE_TABLES, AUDIT_TABLES)
+    )
+
+
 TIMEOUT_SECONDS = 30
 PAGE_SIZE = 1000
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_INDEX_ROWS = 20_000
 ID_CHUNK = 50
 CONSISTENCY_ATTEMPTS = 3
+#: The only non-GET request ever sent: the service login's password sign-in.
+SIGN_IN_PATH = "/auth/v1/token?grant_type=password"
 
 
 logger = logging.getLogger("app.legacy_import.lovable")
@@ -276,8 +315,17 @@ class HttpTransport:
         self.config = config
         self.opener = opener
         self.token = ""
+        #: What this transport has asked for, for the run's counts: requests made
+        #: and response bytes received. Never a row.
+        self.requests = 0
+        self.bytes_read = 0
 
     def _request(self, method: str, path: str, *, body: dict | None = None, headers: dict) -> Any:
+        # Read-only by construction (owner rule 2026-11-02): GET, and the one
+        # password sign-in POST. No write-shaped request is ever sent, not even
+        # as a probe.
+        if not (method == "GET" or (method == "POST" and path.startswith(SIGN_IN_PATH))):
+            raise SourceError("NOT_READ_ONLY", f"{method} is never sent to Lovable.")
         origin = authorised_origin(self.config.url)
         target = origin + path
         if not path.startswith("/") or urllib.parse.urlsplit(target).netloc != origin[8:]:
@@ -296,7 +344,10 @@ class HttpTransport:
                         "REDIRECT_REFUSED", "Lovable answered from another origin; nothing read."
                     )
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
+                self.requests += 1
+                self.bytes_read += len(raw or b"")
         except urllib.error.HTTPError as error:
+            self.requests += 1
             if 300 <= error.code < 400:
                 raise SourceError(
                     "REDIRECT_REFUSED",
@@ -321,7 +372,7 @@ class HttpTransport:
     def sign_in(self) -> None:
         answer = self._request(
             "POST",
-            "/auth/v1/token?grant_type=password",
+            SIGN_IN_PATH,
             body={"email": self.config.email, "password": self.config.password},
             headers={"apikey": self.config.publishable_key, "Content-Type": "application/json"},
         )
@@ -335,32 +386,57 @@ class HttpTransport:
         self, table: str, columns: Iterable[str], *, filters: dict[str, str], order: str
     ) -> list[dict[str, Any]]:
         columns = tuple(columns)
-        if table not in TABLES or not set(columns) <= set(TABLES[table]):
-            raise SourceError("NOT_ALLOWLISTED", f"Reading {table} is not allowlisted.")
-        if not self.token:
-            self.sign_in()
         rows: list[dict[str, Any]] = []
         offset = 0
         while True:
-            query = {"select": ",".join(columns), "order": order, **filters}
-            query.update({"limit": str(PAGE_SIZE), "offset": str(offset)})
-            page = self._request(
-                "GET",
-                f"/rest/v1/{table}?{urllib.parse.urlencode(query)}",
-                headers={
-                    "apikey": self.config.publishable_key,
-                    "Authorization": f"Bearer {self.token}",
-                    "Accept": "application/json",
-                },
-            )
-            if not isinstance(page, list):
-                raise SourceError("RESPONSE_SHAPE", f"{table} did not answer with rows.")
-            rows.extend(only_columns(page, columns, table=table))
+            page = self._page(table, columns, filters=filters, order=order, offset=offset)
+            rows.extend(page)
             if len(rows) > MAX_INDEX_ROWS:
                 raise SourceError("TOO_MANY_ROWS", f"{table} returned more rows than the cap.")
             if len(page) < PAGE_SIZE:
                 return rows
             offset += PAGE_SIZE
+
+    def select_page(
+        self,
+        table: str,
+        columns: Iterable[str],
+        *,
+        filters: dict[str, str],
+        order: str,
+        limit: int = PAGE_SIZE,
+    ) -> list[dict[str, Any]]:
+        """One page only — what the audit reader commits before asking for more."""
+        return self._page(table, tuple(columns), filters=filters, order=order, limit=limit)
+
+    def _page(
+        self,
+        table: str,
+        columns: tuple[str, ...],
+        *,
+        filters: dict[str, str],
+        order: str,
+        offset: int = 0,
+        limit: int = PAGE_SIZE,
+    ) -> list[dict[str, Any]]:
+        if not allowlisted(table, columns):
+            raise SourceError("NOT_ALLOWLISTED", f"Reading {table} is not allowlisted.")
+        if not self.token:
+            self.sign_in()
+        query = {"select": ",".join(columns), "order": order, **filters}
+        query.update({"limit": str(min(limit, PAGE_SIZE)), "offset": str(offset)})
+        page = self._request(
+            "GET",
+            f"/rest/v1/{table}?{urllib.parse.urlencode(query)}",
+            headers={
+                "apikey": self.config.publishable_key,
+                "Authorization": f"Bearer {self.token}",
+                "Accept": "application/json",
+            },
+        )
+        if not isinstance(page, list):
+            raise SourceError("RESPONSE_SHAPE", f"{table} did not answer with rows.")
+        return only_columns(page, columns, table=table)
 
 
 def only_columns(
@@ -546,33 +622,26 @@ def verify_snapshot(document: dict[str, Any]) -> None:
 # the actual account before the job is switched on
 # ---------------------------------------------------------------------------
 
-#: The source's write paths. Each is called with a UUID that cannot exist, so
-#: even a write path that wrongly let the identity in would find nothing to
-#: change; what is checked is that it refuses the caller.
-WRITE_RPCS: tuple[tuple[str, dict[str, Any]], ...] = (
-    ("save_topic", {"p_id": None, "p_expected_version": 0, "p_fields": {}}),
-    ("save_topic_with_stages", {"p_id": None, "p_expected_version": 0, "p_fields": {}}),
-    ("delete_topic", {"p_id": None, "p_expected_version": 0}),
-    ("restore_topic", {"p_id": None, "p_expected_version": 0}),
-    ("testala_save_topic", {"p_id": None, "p_expected_version": 0, "p_fields": {}}),
-    ("testala_delete_topic", {"p_id": None, "p_expected_version": 0}),
-    ("testala_restore_topic", {"p_id": None, "p_expected_version": 0}),
-    ("testala_purge_topic", {"p_id": None}),
-)
-
-#: A probe check's verdict. Only PASS proves anything; INDETERMINATE means HTTP
-#: could not tell a refusal from something else, and blocks activation exactly
-#: as FAIL does until the read-only inspection (`GRANT_INSPECTION_SQL`) settles it.
+#: A probe check's verdict. Only PASS proves anything; INDETERMINATE means the
+#: probe could not prove the point, and blocks activation exactly as FAIL does
+#: until the read-only inspection (`GRANT_INSPECTION_SQL`) settles it.
 PASS, FAIL, INDETERMINATE = "PASS", "FAIL", "INDETERMINATE"
 
 #: The status codes that are the source refusing *this caller*: not signed in
 #: enough (401) or not allowed (403). Anything else — a 404 for a path that does
-#: not exist, a 400 from a function that raised for its own reasons, a 405 — says
-#: nothing about whether the identity may write.
+#: not exist, a 400, a 405 — says nothing about what the identity may see.
 REFUSAL_STATUS = {"HTTP_401", "HTTP_403"}
 #: PostgreSQL's own refusals, as PostgREST reports them in an error body:
 #: insufficient privilege, and invalid authorization.
 REFUSAL_SQLSTATE = {"42501", "28000"}
+
+#: The write side is never probed over HTTP (owner rule 2026-11-02): no write
+#: RPC, no PATCH/DELETE, no ``rpc/topic_writer`` or ``rpc/can_access_admin_view``
+#: — not even against a UUID that cannot exist. It is settled only by the
+#: read-only catalogue inspection, so the probe's verdict is never PASS.
+WRITE_SIDE_CHECK = (
+    "write refusal: not probed over HTTP (owner rule 2026-11-02) — run `lovable_sync access-sql`"
+)
 
 
 @dataclass(frozen=True)
@@ -607,55 +676,6 @@ class ProbeResult:
         return PASS if statuses == {PASS} else INDETERMINATE
 
 
-def write_probe_verdict(
-    error: SourceError | None, answer: Any = None, *, kind: str
-) -> tuple[str, str]:
-    """What one write attempt's answer proves, with no business content.
-
-    ``kind`` is ``"rpc"`` (a write function) or ``"table"`` (PATCH/DELETE on a
-    table, aimed at a UUID that cannot exist).
-
-    * 401/403, or PostgreSQL's own permission refusal in the error body → PASS.
-    * Any 2xx from a write *function* → FAIL: it ran for this caller.
-    * A 2xx from a table write that returned rows → FAIL: something changed.
-    * ``200 []`` from a table write → INDETERMINATE: under row-level security a
-      forbidden UPDATE and a permitted one that matched no row answer alike.
-    * 404 (a missing route or function), any other 4xx, a 5xx, an unreachable
-      source or an unexpected body → INDETERMINATE: absence is not refusal.
-    """
-    if error is not None:
-        if error.code in REFUSAL_STATUS or error.postgrest_code in REFUSAL_SQLSTATE:
-            return PASS, f"{error.code} {error.postgrest_code}".strip()
-        return INDETERMINATE, f"{error.code} {error.postgrest_code}".strip() + " proves no refusal"
-    if kind == "rpc":
-        return FAIL, "ACCEPTED: the function ran for this caller"
-    if isinstance(answer, list) and answer:
-        return FAIL, f"ACCEPTED: {len(answer)} row(s) returned"
-    if answer in ([], None):
-        return INDETERMINATE, "2xx with no rows: a hidden refusal and a no-match look the same"
-    return INDETERMINATE, f"unexpected answer ({type(answer).__name__})"
-
-
-def _attempt(transport: HttpTransport, method: str, path: str, body: Any) -> tuple[Any, Any]:
-    try:
-        answer = transport._request(
-            method,
-            path,
-            body=body,
-            headers={
-                "apikey": transport.config.publishable_key,
-                "Authorization": f"Bearer {transport.token}",
-                "Content-Type": "application/json",
-                "Prefer": "return=representation",
-            },
-        )
-    except SourceError as error:
-        if error.code in ("CREDENTIALS_HOST", "REDIRECT_REFUSED"):
-            raise
-        return error, None
-    return None, answer
-
-
 def _hidden_verdict(error: SourceError | None, rows: Any) -> tuple[str, str]:
     """A read the identity must not see: no rows, or an explicit refusal."""
     if error is not None:
@@ -670,19 +690,18 @@ def _hidden_verdict(error: SourceError | None, rows: Any) -> tuple[str, str]:
 
 
 def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> ProbeResult:
-    """Read what the job needs, and try to show nothing more is possible. Counts only.
+    """Read what the job needs, and show the hidden reads stay hidden. GET only.
 
-    Over HTTP alone a write the identity may not make cannot always be told
-    from one that found nothing, so this can end INDETERMINATE: the job then
-    stays off until `GRANT_INSPECTION_SQL` has been run read-only in Lovable's
-    SQL editor and shows no write path for the identity."""
-    import uuid
-
+    Sign-in (the one POST), the token's role, the live topics and their
+    children, and ``GET … limit=1`` on the admin-only history and on deleted
+    topics. The write side is reported as one INDETERMINATE check and nothing
+    write-shaped is sent (owner rule 2026-11-02): whether the identity can
+    write is shown only by `GRANT_INSPECTION_SQL`, run read-only in Lovable's SQL
+    editor. So the verdict is at best INDETERMINATE, never PASS. Counts only."""
     transport = HttpTransport(config, opener=opener)
     checks: list[ProbeCheck] = []
     transport.sign_in()
-    claims = _jwt_claims(transport.token)
-    role = claims.get("role")
+    role = _jwt_claims(transport.token).get("role")
     checks.append(
         ProbeCheck(
             "token role is authenticated", PASS if role == "authenticated" else FAIL, str(role)
@@ -702,28 +721,13 @@ def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> P
         )
     )
 
-    # 2. It cannot write: every write path must refuse it, explicitly.
-    ghost = str(uuid.uuid4())
-    for name, body in WRITE_RPCS:
-        payload = {k: (ghost if v is None else v) for k, v in body.items()}
-        error, answer = _attempt(transport, "POST", f"/rest/v1/rpc/{name}", payload)
-        status, detail = write_probe_verdict(error, answer, kind="rpc")
-        checks.append(ProbeCheck(f"refused: rpc {name}", status, detail))
-    for method in ("PATCH", "DELETE"):
-        error, answer = _attempt(
-            transport,
-            method,
-            f"/rest/v1/topic?id=eq.{ghost}",
-            {"teema": "x"} if method == "PATCH" else None,
-        )
-        status, detail = write_probe_verdict(error, answer, kind="table")
-        checks.append(ProbeCheck(f"refused: {method} topic", status, detail))
-
-    # 3. No administrative history, no deleted topics.
-    reads = [(f"hidden: {t}", f"/rest/v1/{t}?select=*&limit=1") for t in HIDDEN_TABLES]
-    reads.append(
-        ("hidden: deleted topics", "/rest/v1/topic?select=id&deleted_at=not.is.null&limit=1")
-    )
+    # 2. No administrative history, no deleted topics (GET, one row at most,
+    #    identity columns only: a visible row is counted, never kept).
+    reads = [
+        ("hidden: topic_change_event", "/rest/v1/topic_change_event?select=id&limit=1"),
+        ("hidden: topic_change_field", "/rest/v1/topic_change_field?select=event_id&limit=1"),
+        ("hidden: deleted topics", "/rest/v1/topic?select=id&deleted_at=not.is.null&limit=1"),
+    ]
     for name, path in reads:
         try:
             rows, failure = (
@@ -738,29 +742,16 @@ def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> P
                 None,
             )
         except SourceError as refusal:
-            if refusal.code in ("CREDENTIALS_HOST", "REDIRECT_REFUSED"):
+            if refusal.code in ("CREDENTIALS_HOST", "REDIRECT_REFUSED", "NOT_READ_ONLY"):
                 raise
             rows, failure = None, refusal
         status, detail = _hidden_verdict(failure, rows)
         checks.append(ProbeCheck(name, status, detail))
 
-    # 4. No administrative standing: not an admin, and no staff profile at all.
-    admin_error, admin = _attempt(
-        transport, "POST", "/rest/v1/rpc/can_access_admin_view", {"_user_id": claims.get("sub")}
+    # 3. The write side: not probed over HTTP at all.
+    checks.append(
+        ProbeCheck(WRITE_SIDE_CHECK, INDETERMINATE, "nothing write-shaped was sent to Lovable")
     )
-    if admin_error is not None:
-        checks.append(ProbeCheck("not an administrator", INDETERMINATE, admin_error.code))
-    else:
-        checks.append(
-            ProbeCheck(
-                "not an administrator",
-                PASS if admin is False else FAIL if admin is True else INDETERMINATE,
-                str(admin) if isinstance(admin, bool) or admin is None else type(admin).__name__,
-            )
-        )
-    writer_error, answer = _attempt(transport, "POST", "/rest/v1/rpc/topic_writer", {})
-    status, detail = write_probe_verdict(writer_error, answer, kind="rpc")
-    checks.append(ProbeCheck("no staff profile (topic_writer refuses)", status, detail))
     return ProbeResult(checks)
 
 
@@ -817,4 +808,62 @@ order by 1;
 select pg_get_functiondef(p.oid)
 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
 where n.nspname = 'public' and p.proname = 'topic_writer';
+"""
+
+#: A **proposal**, text only: nothing in Juristid executes it, and it is not to
+#: be run in Lovable unless the owner has reviewed and approved it (docs/adr/0201).
+#: It gives ONE service identity a SELECT-only path to the audit ledger —
+#: ``topic_change_event`` (Juristid's reader never asks for ``actor_id``) and
+#: ``topic_change_field`` — through an RLS SELECT policy keyed to that identity's
+#: auth uid. No write grant, no admin role, no ``user_profiles`` row; every other
+#: caller's access is unchanged. Then the verification queries, read-only.
+#: Replace ``<service uid>`` with the uid from `GRANT_INSPECTION_SQL` query 1.
+#: With access in place, Juristid still reads it only when the container has
+#: ``JURISTID_LOVABLE_AUDIT=1``.
+AUDIT_ACCESS_SQL = """\
+-- PROPOSAL — review before running. Juristid never runs this. Run in Lovable's
+-- SQL editor only with the owner's approval. Replace <service uid>.
+
+-- A. One SELECT policy per audit table, for the one service identity only.
+--    Permissive policies are OR-ed, so the existing admin policy is unchanged;
+--    no INSERT/UPDATE/DELETE policy and no grant beyond SELECT is added.
+create policy juristid_audit_read_event on public.topic_change_event
+  as permissive for select to authenticated
+  using (auth.uid() = '<service uid>'::uuid);
+
+create policy juristid_audit_read_field on public.topic_change_field
+  as permissive for select to authenticated
+  using (auth.uid() = '<service uid>'::uuid);
+
+-- (The identity could technically select actor_id too; Juristid's allowlist
+--  never asks for it. If actor_id must be unreadable even in principle, the
+--  alternative is a view without actor_id owned by a non-superuser, granted
+--  SELECT to authenticated and filtered on the same auth.uid(); the reader's
+--  table name would then change — an owner decision, not made here.)
+
+-- B. Verification (read-only).
+-- B1. The two policies exist, are SELECT-only and name only the service uid.
+select tablename, policyname, cmd, roles, qual
+from pg_policies
+where schemaname = 'public' and tablename in ('topic_change_event', 'topic_change_field')
+order by 1, 2;
+
+-- B2. Still no write policy for a signed-in user on any topic table (no rows).
+select tablename, policyname, cmd
+from pg_policies
+where schemaname = 'public'
+  and tablename in ('topic', 'topic_commencement', 'topic_responsible_change',
+    'topic_stage_link', 'topic_link', 'topic_change_event', 'topic_change_field')
+  and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+  and (roles && array['authenticated', 'public']::name[]);
+
+-- B3. Still no staff profile and no admin standing for the identity
+--     (expected: profiles = 0, is_admin = false).
+select (select count(*) from public.user_profiles p
+        where p.user_id = '<service uid>'::uuid) as profiles,
+       public.can_access_admin_view('<service uid>'::uuid) as is_admin;
+
+-- C. Withdrawal, if ever needed.
+-- drop policy juristid_audit_read_event on public.topic_change_event;
+-- drop policy juristid_audit_read_field on public.topic_change_field;
 """
