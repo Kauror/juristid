@@ -8,7 +8,7 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-11-03
+date = 2026-11-02
 basis = "deployment"
 prs = [585, 586]
 # Teavituste parandused, Teemade mitmikfiltrid, «Vali veerud», kolm Exceli
@@ -17,7 +17,7 @@ prs = [585, 586]
 # laiem vaatlus, muutuste vaated ja MCP lugemistööriistad (#586, ADR 0201,
 # legacy_import 0020 — seitse uut tabelit; laiem vaatlus ja Lovable'i
 # muutmisajalugu on vaikimisi välja lülitatud). Otsinguindeksit uuesti ei
-# ehitata. Kui väljalase ei jõua tootmisse 03.11 (Tallinna aja järgi), liigub
+# ehitata. Kui väljalase ei jõua tootmisse 02.11 (Tallinna aja järgi), liigub
 # see kirje väljalaske päeva kuupäevale.
 changes = [
   "Teavitustes on «Märgi loetuks» nüüd sinu isiklik: teadmiseks mõeldud teavitus kaob loendist ja kellukesest, jõustumise kontroll kaob ainult sinu loendist ning «Lükka edasi» lükkab selle edasi ainult sinu jaoks.",
