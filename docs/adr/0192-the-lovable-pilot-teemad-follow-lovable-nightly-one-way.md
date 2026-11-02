@@ -325,3 +325,15 @@ PASS, run the `access-sql` queries and confirm every expected answer; record the
 result. Until then the identity is not shown to be unable to write, and APPLY
 stays off. (Juristid itself only ever reads Lovable, so this concerns the
 Lovable side if the credential ever leaked.)
+
+## Status update 2026-11-02 — the access probe is GET-only
+
+The owner's absolute read-only rule of 2026-11-02 forbids write-shaped probes
+against Lovable, including calls aimed at UUIDs that cannot exist. §2's probe
+and the 2026-10-29 update's C-01 description are superseded: `access-probe`
+now signs in and only reads (topics, children, the hidden history tables and
+deleted topics with `limit=1`), the transport refuses every other method, and
+the write side is a single INDETERMINATE check that points to `access-sql`.
+The probe can therefore never PASS on its own; before APPLY is ever
+considered, the owner runs the `access-sql` catalogue queries and records the
+result. See docs/adr/0201 §1.
