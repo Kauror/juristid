@@ -1192,12 +1192,29 @@
     return false;
   }
 
+  /* «Majanduspoliitika ülevaade» (docs/adr/0199 §3): the composer's form is
+     the draft and nothing else keeps it, so a composed or changed draft
+     (`data-report-dirty`, set by the server on a posted draft and by ux.js on
+     any change) asks before the page is left — except for the form's own
+     native submit, the download, which leaves the page where it is. */
+  function holdsUnsavedReport() {
+    var recent = Date.now() - submittedNatively.at < 2000 ? submittedNatively.form : null;
+    var bodies = document.querySelectorAll("[data-report-dirty]");
+    for (var i = 0; i < bodies.length; i += 1) {
+      if (recent && bodies[i].closest("form") === recent) {
+        continue;
+      }
+      return true;
+    }
+    return false;
+  }
+
   /* Asked from the page's one `beforeunload` listener, below the note's flush. */
   function askBeforeLeaving(event) {
     /* A download click excuses the one unload it starts, and only that one. */
     var downloading = Date.now() - downloadClickedAt < 2000;
     downloadClickedAt = 0;
-    if (downloading || !holdsTextNobodySaved()) {
+    if (downloading || (!holdsTextNobodySaved() && !holdsUnsavedReport())) {
       return;
     }
     event.preventDefault();

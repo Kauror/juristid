@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Majanduspoliitika ülevaade · {{ application_name }}{% endblock %}
+
+{% comment %}
+«Majanduspoliitika ülevaade» — choose a period, review the proposed topics,
+order and annotate them, download a Word document (docs/adr/0199).
+
+The form is the draft. Every control below is posted with every button, and
+the server re-reads every fact from the canonical records; nothing is kept
+anywhere else. The form's own action is the export, so a plain submit
+downloads; every other button names the preview route with `formaction` (and
+`hx-post`, so with script it swaps the composer instead of reloading).
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Majanduspoliitika ülevaade</h1>
+    <span class="pagehead__context">{{ report.period_label }}</span>
+    <div class="pagehead__actions statspage__actions">
+      <a class="button button--quiet" href="{% url 'reporting:overview' %}">Tagasi statistikasse</a>
+    </div>
+  </div>
+
+  <form class="reportbuilder" id="report-composer" method="post" action="{{ export_url }}" data-report-draft>
+    {% csrf_token %}
+    {% include "reporting/report_builder/_composer.html" %}
+  </form>
+</div>
+{% endblock %}

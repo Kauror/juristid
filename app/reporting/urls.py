@@ -11,6 +11,7 @@ Minu töö — is linked to rather than reimplemented (Stage-2E brief 39).
 from django.urls import path
 
 from app.reporting import legacy_views, views
+from app.reporting.report_builder import views as report_views
 
 urlpatterns = [
     path("", views.overview, name="overview"),
@@ -28,4 +29,10 @@ urlpatterns = [
         legacy_views.export_legacy_xlsx,
         name="export_legacy_xlsx",
     ),
+    # «Majanduspoliitika ülevaade» (docs/adr/0199): the composer, its preview
+    # and refresh, the «Lisa teema» search, and the Word export.
+    path("ulevaade/", report_views.composer, name="report_builder"),
+    path("ulevaade/eelvaade/", report_views.preview, name="report_preview"),
+    path("ulevaade/lisa/", report_views.search_topics, name="report_search"),
+    path("ulevaade/laadi/", report_views.export, name="report_export"),
 ]

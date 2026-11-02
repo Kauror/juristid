@@ -1759,6 +1759,13 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # statement it runs. Anybody who may read Matters may ask it, exactly as
     # before, and what it answers is scoped by `visible_to`.
     "related_materials:draft_suggestions": "F: a read sent by POST; writes nothing",
+    # F — «Majanduspoliitika ülevaade» (docs/adr/0199 §3): the draft is the
+    # posted form, so composing and downloading travel by POST to keep the
+    # reader's explanations out of addresses and logs. Both write nothing
+    # (`tests/test_report_builder_composer.py` compares `ChangeEvent` and every
+    # `updated_at`) and 404 for anybody `may_read_business_content` refuses.
+    "reporting:report_preview": "F: a read sent by POST; recomposes the posted draft",
+    "reporting:report_export": "F: a read sent by POST; writes the DOCX, nothing stored",
     # D — personal sign-in and the signed-in person's own credentials
     # (docs/adr/0145). Not business content; every one of them 404s outside
     # `AUTH_MODE=local_password`, and the ones behind sign-in act only on
