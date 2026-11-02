@@ -22,9 +22,12 @@ from app.legacy_import.lovable_observation_models import (
     LovableObservationRun,
     LovableObservationSnapshot,
     LovableObservedChange,
+    LovableRetentionRun,
+    LovableSourceEvent,
     MappingStatus,
     ObservationRunStatus,
     ObservedChangeKind,
+    RetentionRunStatus,
 )
 from app.legacy_import.lovable_source import (
     AUDIT_TABLES,
@@ -97,6 +100,12 @@ class FakeRegister:
         self.fail: Exception | None = None
         self.audit_fail: Exception | None = None
         self.on_select: Any = None
+        #: Every ledger field read as it reached the source: (columns, filters),
+        #: and every answer Juristid was handed for it.
+        self.field_requests: list[tuple[tuple[str, ...], dict[str, str]]] = []
+        self.field_answers: list[list[dict[str, Any]]] = []
+        #: A misbehaving source that ignores the ``field`` filter.
+        self.ignore_field_filter = False
         self.requests = 0
         self.bytes_read = 0
 
@@ -118,11 +127,19 @@ class FakeRegister:
         elif table == "topic_change_field":
             if self.audit_fail is not None:
                 raise self.audit_fail
+            self.field_requests.append((columns, dict(filters)))
             wanted = set(filters["event_id"][4:-1].split(","))
             rows = [r for r in self.fields if r["event_id"] in wanted]
+            spec = filters.get("field")
+            if spec and not self.ignore_field_filter:
+                negate = spec.startswith("not.")
+                names = set(spec.removeprefix("not.")[4:-1].split(","))
+                rows = [r for r in rows if (r["field"] in names) != negate]
         else:
             raise AssertionError(f"unexpected table {table}")
         out = [{**{c: r.get(c) for c in columns}, "extra": "x"} for r in rows]
+        if table == "topic_change_field":
+            self.field_answers.append(out)
         self.requests += max(1, -(-len(out) // PAGE_SIZE))
         self.bytes_read += len(json.dumps(out, default=str))
         return out
@@ -471,7 +488,10 @@ def test_the_reading_links_the_nights_pilot_run_and_writes_nothing_of_the_pilots
     assert list(LovableSyncState.objects.values()) == states
 
 
-def test_old_readings_are_pruned_but_the_newest_verified_one_stays(observing):
+def test_a_reading_prunes_nothing_retention_is_its_own_job(observing):
+    """The observation run deletes nothing (one owner of retention:
+    `prune_observations`); the independent job then prunes both old snapshots
+    and the old change, and keeps the newest verified snapshot."""
     source = _register()
     old = _observe(source, NIGHT - dt.timedelta(days=45))
     source.edit(1, hetkeseis="Valitsuses")
@@ -480,28 +500,113 @@ def test_old_readings_are_pruned_but_the_newest_verified_one_stays(observing):
         created_at=NIGHT - dt.timedelta(days=40)
     )
     assert older_change_run.changes.count() == 1
-    # A failed reading prunes nothing and keeps nothing.
-    source.fail = SourceError("HTTP_503", "down")
-    failed = _observe(source, NIGHT - dt.timedelta(days=1))
-    assert failed.status == ObservationRunStatus.FAILED
-    assert LovableObservationSnapshot.objects.filter(run=old).exists()
-    # The next verified reading prunes both old snapshots — compared with the
-    # newest of them first — and keeps its own, the newest verified one.
-    source.fail = None
     latest = _observe(source, NIGHT)
+    assert "pruned" not in latest.counts
+    assert LovableObservationSnapshot.objects.filter(run=old).exists()
+
+    pruned = lovable_observation.prune_observations(now=NIGHT)
+    assert pruned.status == RetentionRunStatus.SUCCEEDED and pruned.run_key == "prune:2026-11-02"
     assert set(LovableObservationSnapshot.objects.values_list("run", flat=True)) == {latest.pk}
     assert not LovableObservedChange.objects.filter(run=older_change_run).exists()
-    assert LovableObservationRun.objects.count() == 4  # run rows and counts are kept
-    assert latest.counts["pruned"]["snapshots"] == 2
-    assert latest.counts["pruned"]["changes"] == 1
+    assert LovableObservationRun.objects.count() == 3  # run rows and counts are kept
+    assert pruned.counts == {"snapshots": 2, "changes": 1, "events": 0, "kept_baseline": False}
+
+
+def _old_raw_data(source: FakeRegister) -> LovableObservationRun:
+    """A verified reading 60 days ago, an older one with a change, and an
+    expired source event: everything past the 30 days."""
+    _observe(source, NIGHT - dt.timedelta(days=61))
+    source.edit(1, hetkeseis="Valitsuses")
+    newest = _observe(source, NIGHT - dt.timedelta(days=60))
+    LovableObservedChange.objects.filter(run=newest).update(
+        created_at=NIGHT - dt.timedelta(days=60)
+    )
+    LovableSourceEvent.objects.create(
+        source_event_id=str(uuid.UUID(int=7)),
+        topic_id=_id(1),
+        action="muutmine",
+        occurred_at=NIGHT - dt.timedelta(days=50),
+        sha256="0" * 64,
+    )
+    return newest
+
+
+def test_retention_runs_with_observation_off_and_every_recent_reading_failed(observing):
+    source = _register()
+    newest = _old_raw_data(source)
+    source.fail = SourceError("UNREACHABLE", "Lovable could not be reached (TimeoutError).")
+    for days in (3, 2, 1):
+        failed = _observe(source, NIGHT - dt.timedelta(days=days))
+        assert failed.status == ObservationRunStatus.FAILED
+    set_observe(False, reason="paused")
+    source.calls.clear()
+
+    pruned = lovable_observation.prune_observations(now=NIGHT)
+    assert pruned.status == RetentionRunStatus.SUCCEEDED, pruned.error
+    assert source.calls == []  # retention never reads Lovable
+    # The newest verified snapshot stays although it is 60 days old; nothing
+    # else past the 30 days does.
+    assert list(LovableObservationSnapshot.objects.values_list("run", flat=True)) == [newest.pk]
+    assert not LovableObservedChange.objects.exists()
+    assert not LovableSourceEvent.objects.exists()
+    assert pruned.counts == {"snapshots": 1, "changes": 1, "events": 1, "kept_baseline": True}
+    assert LovableObservationRun.objects.count() == 5
 
 
 def test_pruning_never_removes_the_only_verified_snapshot(observing):
     source = _register()
     only = _observe(source, NIGHT - dt.timedelta(days=60))
     pruned = lovable_observation.prune_observations(now=NIGHT)
-    assert pruned["snapshots"] == 0
+    assert pruned.counts["snapshots"] == 0 and pruned.counts["kept_baseline"] is True
     assert LovableObservationSnapshot.objects.filter(run=only).exists()
+
+
+def test_a_second_pruning_of_the_night_is_refused_and_a_manual_one_is_not():
+    first = lovable_observation.prune_observations(now=NIGHT)
+    assert first.status == RetentionRunStatus.SUCCEEDED
+    with pytest.raises(SyncRefused) as twice:
+        lovable_observation.prune_observations(now=NIGHT + dt.timedelta(hours=1))
+    assert twice.value.code == "DUPLICATE"
+    manual = lovable_observation.prune_observations(trigger=SyncTrigger.MANUAL, now=NIGHT)
+    assert manual.run_key.startswith("prune-manual:")
+    assert LovableRetentionRun.objects.count() == 2
+
+
+def test_a_failed_pruning_is_recorded_with_its_code(monkeypatch, observing):
+    source = _register()
+    _old_raw_data(source)
+
+    def broken(_now):
+        raise SourceError("DB_DOWN", "nope")
+
+    monkeypatch.setattr(lovable_observation, "_prune", broken)
+    run = lovable_observation.prune_observations(now=NIGHT)
+    assert run.status == RetentionRunStatus.FAILED
+    assert run.error == "DB_DOWN: SourceError" and run.finished_at is not None
+
+    monkeypatch.setattr(lovable_observation, "_prune", lambda _now: 1 / 0)
+    other = lovable_observation.prune_observations(
+        trigger=SyncTrigger.MANUAL, now=NIGHT + dt.timedelta(minutes=1)
+    )
+    assert (
+        other.status == RetentionRunStatus.FAILED and other.error == "INTERNAL: ZeroDivisionError"
+    )
+    assert LovableObservationSnapshot.objects.count() == 2  # nothing half-deleted
+
+
+def test_the_prune_command_needs_no_credentials_and_refuses_a_second_night(capsys):
+    from django.core.management import call_command
+
+    call_command("lovable_sync", "prune-observations")
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "SUCCEEDED" and out["run_key"].startswith("prune:")
+    with pytest.raises(SystemExit) as again:
+        call_command("lovable_sync", "prune-observations")
+    assert again.value.code == 2
+    call_command("lovable_sync", "prune-observations", "--manual")
+    assert json.loads(capsys.readouterr().out)["run_key"].startswith("prune-manual:")
+    status = lovable_observation.observation_status()
+    assert status["last_retention"]["status"] == "SUCCEEDED"
 
 
 def test_observe_status_reads_without_creating_the_control_row():

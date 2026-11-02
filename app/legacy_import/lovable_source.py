@@ -106,6 +106,55 @@ AUDIT_TABLES: dict[str, tuple[str, ...]] = {
 }
 
 
+#: Ledger field names whose ``old_value`` / ``new_value`` may be **requested**
+#: at all (review of PR #586: the prohibition is on collection, not only on
+#: storage): the topic's allowlisted columns minus identity and bookkeeping,
+#: and the ledger's own composite names. A constant — never caller text.
+AUDIT_VALUE_FIELDS = frozenset(
+    {c for c in TOPIC_COLUMNS if c not in ("id", "version", "updated_at")}
+    | {"joustumised", "joustumised_hallatud", "menetlusetapid", "seosed"}
+)
+#: Never requested with a value, whatever an allowlist says.
+AUDIT_FIELD_NEVER = frozenset({"markmed", "mitteametlik_arvamus"})
+if AUDIT_VALUE_FIELDS & AUDIT_FIELD_NEVER:  # pragma: no cover - a constant
+    raise RuntimeError("An excluded ledger field is on the value allowlist.")
+#: The two value columns of ``topic_change_field``.
+AUDIT_VALUE_COLUMNS = ("old_value", "new_value")
+#: What a value read selects, and what a names-only read selects.
+AUDIT_FIELD_VALUE_SELECT = ("event_id", "field", "old_value", "new_value")
+AUDIT_FIELD_NAME_SELECT = ("event_id", "field")
+_FIELD_NAME_LIST = re.compile(r"in\.\(([a-z_]+(?:,[a-z_]+)*)\)")
+
+
+def audit_value_filter() -> str:
+    """The source-side filter a value read must carry: ``in.(<allowlisted>)``."""
+    return "in.(" + ",".join(sorted(AUDIT_VALUE_FIELDS)) + ")"
+
+
+def audit_name_filter() -> str:
+    """The names-only read's filter: every field *not* on the value allowlist."""
+    return "not.in.(" + ",".join(sorted(AUDIT_VALUE_FIELDS)) + ")"
+
+
+def check_audit_query(table: str, columns: Iterable[str], filters: dict[str, str]) -> None:
+    """Refuse, before any request, a ledger read that could collect a value of
+    a field off the allowlist: ``old_value`` / ``new_value`` are selectable
+    only with a positive ``field=in.(…)`` filter naming allowlisted fields
+    only, and no other filter beside it and ``event_id``."""
+    if table != "topic_change_field" or not set(columns) & set(AUDIT_VALUE_COLUMNS):
+        return
+    names = _FIELD_NAME_LIST.fullmatch(filters.get("field", ""))
+    if (
+        set(filters) - {"event_id", "field"}
+        or names is None
+        or not set(names.group(1).split(",")) <= AUDIT_VALUE_FIELDS
+    ):
+        raise SourceError(
+            "NOT_ALLOWLISTED",
+            "Ledger values are read only for allowlisted field names, filtered at the source.",
+        )
+
+
 def allowlisted(table: str, columns: Iterable[str]) -> bool:
     """Whether ``columns`` of ``table`` are on one of the read allowlists."""
     wanted = set(columns)
@@ -421,6 +470,7 @@ class HttpTransport:
     ) -> list[dict[str, Any]]:
         if not allowlisted(table, columns):
             raise SourceError("NOT_ALLOWLISTED", f"Reading {table} is not allowlisted.")
+        check_audit_query(table, columns, filters)
         if not self.token:
             self.sign_in()
         query = {"select": ",".join(columns), "order": order, **filters}

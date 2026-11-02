@@ -23,7 +23,13 @@ The document (format ``juristid.lovable-observation``):
 Lovable's own audit ledger is a separate, **disabled** capability
 (``LOVABLE_AUDIT_ENABLED``): with it off nothing is requested from the ledger and
 the run says ``audit_access=DISABLED``; with it on and the identity refused, it
-says ``UNAVAILABLE`` and no event is ever inferred.
+says ``UNAVAILABLE`` and no event is ever inferred. Field values are requested
+only for allowlisted field names, filtered at the source; other names are read
+without their values.
+
+Retention is its own job (`prune_observations`, ``lovable_sync
+prune-observations``), run every night whatever the observation's state; the
+observation run itself deletes nothing.
 """
 
 from __future__ import annotations
@@ -51,22 +57,31 @@ from app.legacy_import.lovable_observation_models import (
     LovableObservationRun,
     LovableObservationSnapshot,
     LovableObservedChange,
+    LovableRetentionRun,
     LovableSourceEvent,
     LovableSourceEventField,
     MappingStatus,
     ObservationRunStatus,
     ObservedChangeKind,
+    RetentionRunStatus,
 )
 from app.legacy_import.lovable_source import (
+    AUDIT_FIELD_NAME_SELECT,
+    AUDIT_FIELD_NEVER,
+    AUDIT_FIELD_VALUE_SELECT,
     AUDIT_TABLES,
+    AUDIT_VALUE_COLUMNS,
+    AUDIT_VALUE_FIELDS,
     CONSISTENCY_ATTEMPTS,
     ID_CHUNK,
     LOVABLE_PROJECT,
     OBSERVE_TABLES,
     OBSERVE_TOPIC_COLUMNS,
-    TOPIC_COLUMNS,
     SourceError,
     Transport,
+    audit_name_filter,
+    audit_value_filter,
+    check_audit_query,
     only_columns,
 )
 from app.legacy_import.lovable_sync import (
@@ -114,20 +129,27 @@ OBSERVE_FIELDS: dict[str, Callable[[dict[str, Any]], Any]] = {
     "topic_links": lambda b: sorted(b.get("topic_links") or []),
 }
 
-#: Ledger field names whose values may be kept: the topic's allowlisted columns
-#: (minus identity and bookkeeping) and the ledger's own composite names. Any
-#: other field is kept as *changed* with its values withheld.
-AUDIT_FIELD_ALLOWLIST = frozenset(
-    {c for c in TOPIC_COLUMNS if c not in ("id", "version", "updated_at")}
-    | {"joustumised", "joustumised_hallatud", "menetlusetapid", "seosed"}
-)
-#: Never kept, whatever an allowlist says.
-AUDIT_FIELD_NEVER = frozenset({"markmed", "mitteametlik_arvamus"})
-AUDIT_VALUE_MAX = 2000
+#: Ledger field names whose values may be requested and kept
+#: (`lovable_source.AUDIT_VALUE_FIELDS`); any other field is read by *name*
+#: only and kept as changed with its values withheld.
+AUDIT_FIELD_ALLOWLIST = AUDIT_VALUE_FIELDS
+#: A ledger value is kept up to this many characters of its canonical JSON
+#: text; a longer one is cut and its field row marked ``truncated``.
+AUDIT_VALUE_LIMIT = 2000
 #: Audit events per page; pages per ordinary run, and per ``--backfill`` run.
 AUDIT_PAGE_SIZE = 500
 AUDIT_PAGES_PER_RUN = 20
 AUDIT_BACKFILL_PAGES = 400
+#: Each run reads again from this long before the cursor, so an event that
+#: became visible late (committed after a later one was read) is still picked
+#: up; events already stored are skipped by their source id. An event that
+#: appears more than this far behind the cursor is still missed (ADR 0201 §4).
+AUDIT_OVERLAP = dt.timedelta(hours=48)
+#: Ledger actions that may carry no field rows. Any other action — an edit
+#: (``muutmine``) or anything unknown — without a visible field row is
+#: incomplete, and the reader stops before it (fail closed).
+AUDIT_ACTIONS_WITHOUT_FIELDS = frozenset({"lisamine", "kustutamine", "taastamine"})
+_NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
 _REFERENCE = re.compile(r"(\d{4})_(\d+)")
 _UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
@@ -555,8 +577,6 @@ def run_observation(
             logger.error("Lovable audit ingestion failed (%s)", type(error).__name__)
             run.audit_access, run.audit_error = AuditAccess.UNAVAILABLE, "INTERNAL"
             run.save(update_fields=["audit_access", "audit_error", "updated_at"])
-        pruned = prune_observations(now=clock())
-        run.counts = {**run.counts, "pruned": pruned}
         run.finished_at = clock()
         run.counts["seconds"] = round((run.finished_at - run.started_at).total_seconds(), 1)
         run.save(update_fields=["counts", "finished_at", "updated_at"])
@@ -663,23 +683,32 @@ def _execute(
 # ---------------------------------------------------------------------------
 
 
-def _ledger_value(value: Any) -> str:
-    """A JSONB value as canonical JSON text, bounded."""
+def _ledger_value(value: Any) -> tuple[str, bool]:
+    """A JSONB value as canonical JSON text, bounded at `AUDIT_VALUE_LIMIT`;
+    the second item says whether it was cut."""
     if value is None:
-        return ""
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)[:AUDIT_VALUE_MAX]
+        return "", False
+    text = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+    return text[:AUDIT_VALUE_LIMIT], len(text) > AUDIT_VALUE_LIMIT
+
+
+def _after(moment: dt.datetime, event_id: str) -> dict[str, str]:
+    """Strictly after (``moment``, ``event_id``): later in time, or the same
+    moment with a greater id. Built only from stored values, never caller text."""
+    if not _UUID.fullmatch(event_id):
+        raise SourceError("AUDIT_CURSOR", "The stored audit cursor is not an event id.")
+    at = moment.astimezone(dt.UTC).isoformat()
+    return {"or": f'(occurred_at.gt."{at}",and(occurred_at.eq."{at}",id.gt.{event_id.lower()}))'}
 
 
 def _cursor_filter(cursor: LovableAuditCursor) -> dict[str, str]:
-    """Strictly after the last stored event: later in time, or the same moment
-    with a greater id. Built only from stored values, never caller text."""
+    """Where a run starts reading: `AUDIT_OVERLAP` before the stored cursor
+    (every event at or after that moment), or the beginning of the ledger."""
     if cursor.last_occurred_at is None or not cursor.last_event_id:
         return {}
     if not _UUID.fullmatch(cursor.last_event_id):
         raise SourceError("AUDIT_CURSOR", "The stored audit cursor is not an event id.")
-    moment = cursor.last_occurred_at.astimezone(dt.UTC).isoformat()
-    event = cursor.last_event_id.lower()
-    return {"or": f'(occurred_at.gt."{moment}",and(occurred_at.eq."{moment}",id.gt.{event}))'}
+    return _after(cursor.last_occurred_at - AUDIT_OVERLAP, _NIL_UUID)
 
 
 def _refused(error: SourceError) -> bool:
@@ -693,15 +722,20 @@ def ingest_audit(
     backfill: bool = False,
     now: dt.datetime | None = None,
 ) -> None:
-    """Read Lovable's audit ledger forward from the cursor, page by page.
+    """Read Lovable's audit ledger forward, page by page (docs/adr/0201 §4).
 
-    Disabled (the default): nothing is requested. Each page and its field rows
-    are stored, and the cursor advanced, in one transaction, so an interrupted
-    backfill resumes after the last committed page. An event already stored is
-    skipped (idempotent). Events older than the retention window are not kept.
+    Disabled (the default): nothing is requested. A run starts `AUDIT_OVERLAP`
+    before the stored cursor, so a late-visible event is still picked up; an
+    event already stored is skipped (idempotent). Each page's new events and
+    their field rows are stored, and the cursor advanced to the last
+    *complete* event, in one transaction, so an interrupted backfill resumes
+    after the last committed page. Field rows the identity cannot see
+    (``FIELDS_NOT_VISIBLE``) or an edit with none (``INCOMPLETE_EVENT``) stop
+    the reading there: nothing incomplete is stored and the cursor does not
+    pass it. Events older than the retention window are not kept.
     """
     counts = {"pages": 0, "events_new": 0, "events_seen": 0, "events_expired": 0}
-    counts.update({"fields": 0, "withheld": 0})
+    counts.update({"late": 0, "fields": 0, "withheld": 0, "truncated": 0})
     if not getattr(settings, "LOVABLE_AUDIT_ENABLED", False):
         run.audit_access, run.audit_error = AuditAccess.DISABLED, ""
         run.save(update_fields=["audit_access", "audit_error", "updated_at"])
@@ -710,14 +744,20 @@ def ingest_audit(
     cutoff = moment - dt.timedelta(days=OBSERVATION_RETENTION_DAYS)
     cursor, _ = LovableAuditCursor.objects.get_or_create(pk=1)
     first_ever = cursor.last_occurred_at is None and not cursor.backfill_complete
+    previous = (
+        (cursor.last_occurred_at, cursor.last_event_id.lower())
+        if cursor.last_occurred_at is not None and cursor.last_event_id
+        else None
+    )
     page_cap = AUDIT_BACKFILL_PAGES if backfill else AUDIT_PAGES_PER_RUN
     access, error_code = AuditAccess.AVAILABLE, ""
     try:
+        filters = _cursor_filter(cursor)
         for _ in range(page_cap):
             events = transport.select_page(
                 "topic_change_event",
                 AUDIT_TABLES["topic_change_event"],
-                filters=_cursor_filter(cursor),
+                filters=filters,
                 order="occurred_at,id",
                 limit=AUDIT_PAGE_SIZE,
             )
@@ -731,8 +771,13 @@ def ingest_audit(
                     cursor.backfill_complete = True
                     cursor.save(update_fields=["backfill_complete", "updated_at"])
                 break
-            _store_page(run, transport, events, cursor, cutoff, counts)
+            stopped = _store_page(run, transport, events, cursor, cutoff, counts, previous)
             counts["pages"] += 1
+            if stopped:
+                access, error_code = AuditAccess.UNAVAILABLE, stopped
+                break
+            last = events[-1]
+            filters = _after(_parse_moment(last.get("occurred_at")), str(last["id"]))
             if len(events) < AUDIT_PAGE_SIZE:
                 cursor.backfill_complete = True
                 cursor.save(update_fields=["backfill_complete", "updated_at"])
@@ -759,6 +804,46 @@ def _parse_moment(raw: Any) -> dt.datetime:
     return moment
 
 
+def _misbehaving() -> SourceError:
+    return SourceError(
+        "SOURCE_FILTER_IGNORED",
+        "Lovable answered a ledger read outside its filter; nothing from the page is kept.",
+    )
+
+
+def _read_fields(transport: Any, ids: list[str], *, values: bool) -> list[dict[str, Any]]:
+    """The field rows of ``ids``: with values, only for allowlisted field
+    names (filtered at the source); without, the other names only. Every
+    answer is checked against its own filter, so a source that ignored one
+    fails the page (``SOURCE_FILTER_IGNORED``) and nothing of it is kept."""
+    columns = AUDIT_FIELD_VALUE_SELECT if values else AUDIT_FIELD_NAME_SELECT
+    wanted = set(ids)
+    rows: list[dict[str, Any]] = []
+    for start in range(0, len(ids), ID_CHUNK):
+        chunk = ids[start : start + ID_CHUNK]
+        filters = {
+            "event_id": "in.(" + ",".join(chunk) + ")",
+            "field": audit_value_filter() if values else audit_name_filter(),
+        }
+        check_audit_query("topic_change_field", columns, filters)
+        answer = transport.select(
+            "topic_change_field", columns, filters=filters, order="event_id,field"
+        )
+        for row in answer:
+            if not isinstance(row, dict):
+                raise SourceError("RESPONSE_SHAPE", "topic_change_field answered a non-row.")
+            name = text_value(row.get("field"))
+            on_allowlist = name in AUDIT_VALUE_FIELDS and name not in AUDIT_FIELD_NEVER
+            if (
+                str(row.get("event_id")).lower() not in wanted
+                or on_allowlist != values
+                or (not values and any(c in row for c in AUDIT_VALUE_COLUMNS))
+            ):
+                raise _misbehaving()
+        rows += only_columns(answer, columns, table="topic_change_field")
+    return rows
+
+
 def _store_page(
     run: LovableObservationRun,
     transport: Any,
@@ -766,94 +851,133 @@ def _store_page(
     cursor: LovableAuditCursor,
     cutoff: dt.datetime,
     counts: dict[str, int],
-) -> None:
+    previous: tuple[dt.datetime, str] | None,
+) -> str:
+    """Store one page's new, complete events and advance the cursor to the last
+    complete one. Returns ``""``, or the code that stopped the reading."""
     for event in events:
         if not _UUID.fullmatch(str(event.get("id") or "")):
             raise SourceError("AUDIT_SHAPE", "An audit event has no id.")
         if not _UUID.fullmatch(str(event.get("topic_id") or "")):
             raise SourceError("AUDIT_SHAPE", "An audit event has no topic.")
-    ids = [str(e["id"]).lower() for e in events]
-    field_rows: list[dict[str, Any]] = []
-    for start in range(0, len(ids), ID_CHUNK):
-        chunk = ids[start : start + ID_CHUNK]
-        field_rows += only_columns(
-            transport.select(
-                "topic_change_field",
-                AUDIT_TABLES["topic_change_field"],
-                filters={"event_id": "in.(" + ",".join(chunk) + ")"},
-                order="event_id,field",
-            ),
-            AUDIT_TABLES["topic_change_field"],
-            table="topic_change_field",
+    moments = {str(e["id"]).lower(): _parse_moment(e.get("occurred_at")) for e in events}
+    ids = list(moments)
+    existing = set(
+        LovableSourceEvent.objects.filter(source_event_id__in=ids).values_list(
+            "source_event_id", flat=True
         )
-    by_event: dict[str, list[dict[str, Any]]] = {}
-    for row in field_rows:
-        by_event.setdefault(str(row.get("event_id")).lower(), []).append(row)
+    )
+    fresh = [
+        e
+        for e in events
+        if str(e["id"]).lower() not in existing and moments[str(e["id"]).lower()] >= cutoff
+    ]
+    fresh_ids = [str(e["id"]).lower() for e in fresh]
+    valued = _read_fields(transport, fresh_ids, values=True) if fresh_ids else []
+    named = _read_fields(transport, fresh_ids, values=False) if fresh_ids else []
+    by_event: dict[str, list[tuple[dict[str, Any], bool]]] = {}
+    for row, withheld in [(r, False) for r in valued] + [(r, True) for r in named]:
+        by_event.setdefault(str(row.get("event_id")).lower(), []).append((row, withheld))
 
+    def needs_fields(event: dict[str, Any]) -> bool:
+        return text_value(event.get("action")) not in AUDIT_ACTIONS_WITHOUT_FIELDS
+
+    # Under row-level security a refused field read is `200 []`: a page whose
+    # edits have no field row at all cannot be told from a denied read.
+    if any(needs_fields(e) for e in fresh) and not valued and not named:
+        return "FIELDS_NOT_VISIBLE"
+
+    stopped = ""
+    complete: tuple[dt.datetime, str] | None = None
     with transaction.atomic():
-        existing = set(
-            LovableSourceEvent.objects.filter(source_event_id__in=ids).values_list(
-                "source_event_id", flat=True
-            )
-        )
         for event in events:
             event_id = str(event["id"]).lower()
-            occurred = _parse_moment(event.get("occurred_at"))
+            occurred = moments[event_id]
             if event_id in existing:
                 counts["events_seen"] += 1
-                continue
-            if occurred < cutoff:
+            elif occurred < cutoff:
                 counts["events_expired"] += 1
-                continue
-            fields = sorted(by_event.get(event_id, []), key=lambda r: str(r.get("field")))
-            stored = LovableSourceEvent.objects.create(
-                source_event_id=event_id,
-                topic_id=uuid.UUID(str(event["topic_id"])),
-                action=text_value(event.get("action"))[:32],
-                actor_kind=text_value(event.get("actor_kind"))[:32],
-                version=event.get("version") if isinstance(event.get("version"), int) else None,
-                occurred_at=occurred,
-                run=run,
-                sha256=canonical_sha256({"event": event, "fields": fields}),
+            elif needs_fields(event) and not by_event.get(event_id):
+                stopped = "INCOMPLETE_EVENT"
+                break
+            else:
+                _store_event(run, event, occurred, by_event.get(event_id, []), counts)
+                if previous is not None and (occurred, event_id) < previous:
+                    counts["late"] += 1
+            complete = (occurred, event_id)
+        if complete is not None and (
+            cursor.last_occurred_at is None
+            or complete > (cursor.last_occurred_at, cursor.last_event_id.lower())
+        ):
+            cursor.last_occurred_at, cursor.last_event_id = complete
+            cursor.save(update_fields=["last_occurred_at", "last_event_id", "updated_at"])
+    return stopped
+
+
+def _store_event(
+    run: LovableObservationRun,
+    event: dict[str, Any],
+    occurred: dt.datetime,
+    rows: list[tuple[dict[str, Any], bool]],
+    counts: dict[str, int],
+) -> None:
+    rows = sorted(rows, key=lambda pair: str(pair[0].get("field")))
+    stored = LovableSourceEvent.objects.create(
+        source_event_id=str(event["id"]).lower(),
+        topic_id=uuid.UUID(str(event["topic_id"])),
+        action=text_value(event.get("action"))[:32],
+        actor_kind=text_value(event.get("actor_kind"))[:32],
+        version=event.get("version") if isinstance(event.get("version"), int) else None,
+        occurred_at=occurred,
+        run=run,
+        sha256=canonical_sha256({"event": event, "fields": [row for row, _w in rows]}),
+    )
+    kept: list[LovableSourceEventField] = []
+    names: set[str] = set()
+    for row, named_only in rows:
+        name = text_value(row.get("field"))[:64]
+        if not name or name in names:
+            continue
+        names.add(name)
+        withheld = named_only or name in AUDIT_FIELD_NEVER or name not in AUDIT_FIELD_ALLOWLIST
+        old, old_cut = ("", False) if withheld else _ledger_value(row.get("old_value"))
+        new, new_cut = ("", False) if withheld else _ledger_value(row.get("new_value"))
+        kept.append(
+            LovableSourceEventField(
+                event=stored,
+                field=name,
+                old_value=old,
+                new_value=new,
+                withheld=withheld,
+                truncated=old_cut or new_cut,
             )
-            kept: list[LovableSourceEventField] = []
-            names: set[str] = set()
-            for row in fields:
-                name = text_value(row.get("field"))[:64]
-                if not name or name in names:
-                    continue
-                names.add(name)
-                withheld = name in AUDIT_FIELD_NEVER or name not in AUDIT_FIELD_ALLOWLIST
-                kept.append(
-                    LovableSourceEventField(
-                        event=stored,
-                        field=name,
-                        old_value="" if withheld else _ledger_value(row.get("old_value")),
-                        new_value="" if withheld else _ledger_value(row.get("new_value")),
-                        withheld=withheld,
-                    )
-                )
-                counts["withheld"] += withheld
-            LovableSourceEventField.objects.bulk_create(kept)
-            counts["fields"] += len(kept)
-            counts["events_new"] += 1
-        last = events[-1]
-        cursor.last_occurred_at = _parse_moment(last.get("occurred_at"))
-        cursor.last_event_id = str(last["id"]).lower()
-        cursor.save(update_fields=["last_occurred_at", "last_event_id", "updated_at"])
+        )
+        counts["withheld"] += withheld
+        counts["truncated"] += old_cut or new_cut
+    LovableSourceEventField.objects.bulk_create(kept)
+    counts["fields"] += len(kept)
+    counts["events_new"] += 1
 
 
 # ---------------------------------------------------------------------------
-# Retention and status
+# Retention (independent of any reading) and status
 # ---------------------------------------------------------------------------
 
 
-def prune_observations(*, now: dt.datetime) -> dict[str, int]:
+def retention_key_for(trigger: str, moment: dt.datetime) -> str:
+    local = moment.astimezone(TALLINN)
+    if trigger == SyncTrigger.SCHEDULED:
+        return f"prune:{local.date().isoformat()}"
+    return f"prune-manual:{local:%Y-%m-%dT%H:%M:%S}"
+
+
+def _prune(now: dt.datetime) -> dict[str, Any]:
     """Raw observation data older than the retention goes; the newest verified
     snapshot always stays, and run rows with their counts are kept."""
     cutoff = now - dt.timedelta(days=OBSERVATION_RETENTION_DAYS)
     keep = baseline_runs().values_list("snapshot__pk", flat=True).first()
     stale = LovableObservationSnapshot.objects.filter(taken_at__lt=cutoff)
+    kept_baseline = keep is not None and stale.filter(pk=keep).exists()
     if keep is not None:
         stale = stale.exclude(pk=keep)
     _, snapshots = stale.delete()
@@ -863,7 +987,44 @@ def prune_observations(*, now: dt.datetime) -> dict[str, int]:
         "snapshots": snapshots.get(LovableObservationSnapshot._meta.label, 0),
         "changes": changes.get(LovableObservedChange._meta.label, 0),
         "events": events.get(LovableSourceEvent._meta.label, 0),
+        "kept_baseline": kept_baseline,
     }
+
+
+def prune_observations(
+    *, trigger: str = SyncTrigger.SCHEDULED, now: dt.datetime | None = None
+) -> LovableRetentionRun:
+    """The retention job (`lovable_sync prune-observations`, docs/adr/0201 §8):
+    its own ledger row, every night, whether the observation is on, off, paused
+    or failing and whether Lovable can be reached — it never reads Lovable. A
+    scheduled night is once (``prune:<Tallinn date>``; a second firing is
+    refused ``DUPLICATE``). Once its row exists it never raises: a failure is a
+    FAILED run with a code."""
+    if trigger not in (SyncTrigger.SCHEDULED, SyncTrigger.MANUAL):
+        raise SyncRefused("UNKNOWN_TRIGGER", "A pruning is scheduled or manual.")
+    started = now or timezone.now()
+    key = retention_key_for(trigger, started)
+    if LovableRetentionRun.objects.filter(run_key=key).exists():
+        raise SyncRefused("DUPLICATE", f"Pruning {key} already exists.")
+    try:
+        with transaction.atomic():
+            run = LovableRetentionRun.objects.create(
+                run_key=key, started_at=started, status=RetentionRunStatus.FAILED
+            )
+    except IntegrityError as error:
+        raise SyncRefused("DUPLICATE", f"Pruning {key} already exists.") from error
+    try:
+        with transaction.atomic():
+            run.counts = _prune(started)
+        run.status, run.error = RetentionRunStatus.SUCCEEDED, ""
+    except Exception as error:
+        code = str(getattr(error, "code", "") or "INTERNAL")
+        logger.error("Lovable observation pruning failed (%s %s)", code, type(error).__name__)
+        run.status = RetentionRunStatus.FAILED
+        run.error = f"{code}: {type(error).__name__}"[:300]
+    run.finished_at = started if now is not None else timezone.now()
+    run.save(update_fields=["status", "error", "counts", "finished_at", "updated_at"])
+    return run
 
 
 def observation_status() -> dict[str, Any]:
@@ -904,4 +1065,16 @@ def observation_status() -> dict[str, Any]:
         "last_run": brief(runs.first()),
         "last_success": brief(runs.filter(status=ObservationRunStatus.SUCCEEDED).first()),
         "events_stored": LovableSourceEvent.objects.count(),
+        "last_retention": (
+            {
+                "run_key": retention.run_key,
+                "status": retention.status,
+                "started_at": retention.started_at,
+                "finished_at": retention.finished_at,
+                "error": retention.error,
+                "counts": retention.counts,
+            }
+            if (retention := LovableRetentionRun.objects.order_by("-started_at").first())
+            else None
+        ),
     }

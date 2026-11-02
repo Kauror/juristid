@@ -9,6 +9,7 @@
     python manage.py lovable_sync audit-sql
     python manage.py lovable_sync observe [--manual] [--backfill] --credentials F
     python manage.py lovable_sync observe-status
+    python manage.py lovable_sync prune-observations [--manual]
     python manage.py lovable_sync report [--json]
     python manage.py lovable_sync control --observe on|off --reason R
     python manage.py lovable_sync control --mode off|compare|apply --reason R
@@ -35,7 +36,10 @@ runs in Lovable's SQL editor — shows no write path for the identity.
 the MCP tools give) reduced to counts, codes and times — no sentence, title,
 reference or value. It reads only and asks as nobody, so no Teema is shown.
 `audit-sql` prints the owner's *proposal* for a SELECT-only audit-ledger path —
-text only, nothing runs it.
+text only, nothing runs it. `prune-observations` is the observation's retention
+job (docs/adr/0201 §8): it never reads Lovable, needs no credentials, and runs
+every night whether the observation is on, off, paused or failing; a second
+firing on the same Tallinn date is refused (DUPLICATE, exit 2).
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 3 held for review (circuit breaker or no backup), 1 failed.
@@ -52,7 +56,10 @@ from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from app.legacy_import import lovable_observation, lovable_source, lovable_sync
-from app.legacy_import.lovable_observation_models import ObservationRunStatus
+from app.legacy_import.lovable_observation_models import (
+    ObservationRunStatus,
+    RetentionRunStatus,
+)
 from app.legacy_import.lovable_sync_models import LovableSyncRun, SyncRunStatus, SyncTrigger
 
 CUTOVER_INTENT = "lovable-sync-cutover"
@@ -74,6 +81,7 @@ class Command(BaseCommand):
                 "audit-sql",
                 "observe",
                 "observe-status",
+                "prune-observations",
                 "report",
                 "control",
                 "resolve",
@@ -94,7 +102,11 @@ class Command(BaseCommand):
         parser.add_argument("--field", default="")
         parser.add_argument("--note", default="")
         parser.add_argument("--json", action="store_true")
-        parser.add_argument("--manual", action="store_true", help="observe: a manual reading.")
+        parser.add_argument(
+            "--manual",
+            action="store_true",
+            help="observe / prune-observations: a manual run, not the night's.",
+        )
         parser.add_argument(
             "--backfill", action="store_true", help="observe: read the audit ledger to the end."
         )
@@ -227,6 +239,24 @@ class Command(BaseCommand):
             )
         )
         if run.status == ObservationRunStatus.FAILED:
+            sys.exit(1)
+
+    def _prune_observations(self, options: dict[str, Any]) -> None:
+        """The retention job. Local only: never reads Lovable, no credentials."""
+        trigger = SyncTrigger.MANUAL if options["manual"] else SyncTrigger.SCHEDULED
+        run = lovable_observation.prune_observations(trigger=trigger)
+        self.stdout.write(
+            json.dumps(
+                {
+                    "run_key": run.run_key,
+                    "status": run.status,
+                    "error": run.error,
+                    "counts": run.counts,
+                },
+                default=str,
+            )
+        )
+        if run.status == RetentionRunStatus.FAILED:
             sys.exit(1)
 
     def _check(self, options: dict[str, Any]) -> None:

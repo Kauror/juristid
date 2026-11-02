@@ -72,15 +72,48 @@ Teema carries the same number but nothing links them — a person confirms) or
 ### 4. The audit ledger
 
 `topic_change_event` / `topic_change_field` are readable only by Lovable
-administrators (`can_access_admin_view`). Ingestion is built — cursor by
-(`occurred_at`, id), idempotent per source event id, resumable after an
-interruption, A → B → A kept as two events, the actor kept only as its kind,
-`markmed` and `mitteametlik_arvamus` and any field outside the allowlist kept
-as *withheld* (that it changed, never its value) — and **disabled**
+administrators (`can_access_admin_view`). Ingestion is built and **disabled**
 (`JURISTID_LOVABLE_AUDIT`, default off). Enabling it needs an owner-approved,
 Lovable-side, SELECT-only path for the service identity; the service identity
 is never made an administrator and no `service_role` key is used. Until then
-every surface says the history is unavailable, and no event is inferred.
+every surface says the history is unavailable, and no event is inferred. As
+built (corrected after the review of PR #586):
+
+* **Excluded values are never collected, not only never stored.** Field rows
+  are read in two GETs per chunk of at most 50 events:
+  `select=event_id,field,old_value,new_value&event_id=in.(…)&field=in.(<allowlist>)`
+  and `select=event_id,field&event_id=in.(…)&field=not.in.(<allowlist>)`. The
+  allowlist (`lovable_source.AUDIT_VALUE_FIELDS`) is a constant — the topic's
+  allowlisted columns without `id`/`version`/`updated_at`, plus `joustumised`,
+  `joustumised_hallatud`, `menetlusetapid`, `seosed` — and never holds
+  `markmed` or `mitteametlik_arvamus`. The transport refuses
+  (`NOT_ALLOWLISTED`, before any request) a read that selects `old_value` or
+  `new_value` without a positive `field=in.(…)` filter of allowlisted names
+  only. Fields outside the allowlist are kept by name as *withheld*. An answer
+  outside its own filter (a value row for an unlisted name, a name row for a
+  listed one, a row for another event) is source misbehaviour: the page is
+  dropped and the run says `UNAVAILABLE` / `SOURCE_FILTER_IGNORED`.
+* **Completeness before the cursor moves.** Under row-level security a
+  denied read is `200 []`. A page with edits whose field reads return no row
+  at all stores nothing and says `FIELDS_NOT_VISIBLE`. An edit (`muutmine`,
+  or any action other than `lisamine` / `kustutamine` / `taastamine`) with no
+  visible field row stops the reading at that event: the events before it are
+  stored, the cursor advances only to the last complete event, and the run
+  says `UNAVAILABLE` / `INCOMPLETE_EVENT`. Once the fields are visible the
+  same events are read again and stored with their fields.
+* **Late-arriving events.** The cursor is (`occurred_at`, id) of the last
+  complete event; each run reads again from 48 hours before it
+  (`AUDIT_OVERLAP`) and skips events already stored by their source id, so an
+  event committed late with an earlier `occurred_at` is still picked up
+  (`late` in the counts, beside `events_new` and `events_seen`). **Residual
+  limitation:** an event that becomes visible with an `occurred_at` more than
+  48 hours behind the cursor is missed, and nothing in Juristid can detect it;
+  only a full re-read (a lost cursor) would find it.
+* **Bounded values are marked.** A value is kept as canonical JSON text up to
+  2,000 characters (`AUDIT_VALUE_LIMIT`); a longer one is cut and its field row
+  says `truncated`, wherever the value is shown.
+* A → B → A is two events; the actor is kept only as its kind; an interrupted
+  backfill resumes after the last committed page.
 
 ### 5. One read service
 
@@ -110,9 +143,21 @@ or approve anything, and it never widens synchronisation to new topics.
 
 Raw observation (snapshots, per-topic changes, audit rows) is deleted after
 30 days, the window approved for the pilot's snapshots, pending any longer
-approval; the newest verified reading is always kept. Run rows and their
-aggregate counts carry no business text and are kept. Projected storage at
-today's size: about 1.5 MB per reading, about 45 MB for 30 days.
+approval; the newest verified reading (a SUCCEEDED run's snapshot) is always
+kept, however old. Run rows and their aggregate counts carry no business text
+and are kept. Projected storage at today's size: about 1.5 MB per reading,
+about 45 MB for 30 days.
+
+Retention is its own job, independent of reading (review of PR #586):
+`lovable_sync prune-observations` records a `LovableRetentionRun`
+(`prune:<Tallinn date>`, once a night — a second firing is refused
+`DUPLICATE`, exit 2; `--manual` for an extra run), `SUCCEEDED` with counts or
+`FAILED` with a code. It never reads Lovable and needs no credentials, so it
+runs whether the observation is on or off and whether Lovable is reachable. The
+host script runs it every night right after the host lock and the web health
+check, before the pause file, the credentials and the due check — so it holds
+while the pilot is OFF or paused — and its failure is logged without changing
+the pilot's exit status. The observation run itself deletes nothing.
 
 ### 9. MCP
 

@@ -18,6 +18,7 @@ import base64
 import io
 import json
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any
 
@@ -388,3 +389,75 @@ def test_the_audit_access_proposal_grants_select_to_one_identity_only(capsys):
     assert "actor_id" not in executable
     call_command("lovable_sync", "audit-sql")
     assert capsys.readouterr().out.strip() == sql.strip()
+
+
+# ---------------------------------------------------------------------------
+# Review of PR #586 (P1): a ledger value is never even requested for a field
+# off the allowlist. `old_value` / `new_value` go out only with a positive
+# `field=in.(…)` filter of allowlisted names; anything else is refused before
+# a single request (the stub opener records every one).
+# ---------------------------------------------------------------------------
+
+EVENT = "e0000000-0000-4000-8000-000000000001"
+
+
+def _recording_transport() -> tuple[lovable_source.HttpTransport, list[str]]:
+    sent: list[str] = []
+
+    def opener(request, timeout):
+        sent.append(request.full_url)
+        if "/auth/v1/token" in request.full_url:
+            return _Answer({"access_token": _jwt()}, url=request.full_url)
+        return _Answer([], url=request.full_url)
+
+    return lovable_source.HttpTransport(_config(), opener=opener), sent
+
+
+VALUES = ("event_id", "field", "old_value", "new_value")
+
+
+@pytest.mark.parametrize(
+    "filters",
+    [
+        {"event_id": f"in.({EVENT})"},
+        {"event_id": f"in.({EVENT})", "field": "in.(hetkeseis,markmed)"},
+        {"event_id": f"in.({EVENT})", "field": "in.(mitteametlik_arvamus)"},
+        {"event_id": f"in.({EVENT})", "field": "in.(tundmatu)"},
+        {"event_id": f"in.({EVENT})", "field": "not.in.(hetkeseis)"},
+        {"event_id": f"in.({EVENT})", "field": "in.(hetkeseis)", "or": "(field.eq.markmed)"},
+        {"event_id": f"in.({EVENT})", "field": "in.(hetkeseis),markmed"},
+        {"event_id": f"in.({EVENT})", "field": "eq.hetkeseis"},
+    ],
+)
+def test_a_value_read_without_the_allowlist_filter_is_refused_before_any_request(filters):
+    transport, sent = _recording_transport()
+    for columns in (VALUES, ("event_id", "field", "new_value"), ("old_value",)):
+        with pytest.raises(SourceError) as refused:
+            transport.select("topic_change_field", columns, filters=filters, order="event_id")
+        assert refused.value.code == "NOT_ALLOWLISTED"
+    assert sent == []
+
+
+def test_the_two_ledger_field_reads_have_exactly_these_shapes():
+    transport, sent = _recording_transport()
+    assert lovable_source.AUDIT_FIELD_NEVER.isdisjoint(lovable_source.AUDIT_VALUE_FIELDS)
+    allowed = lovable_source.audit_value_filter()
+    transport.select(
+        "topic_change_field",
+        lovable_source.AUDIT_FIELD_VALUE_SELECT,
+        filters={"event_id": f"in.({EVENT})", "field": allowed},
+        order="event_id,field",
+    )
+    transport.select(
+        "topic_change_field",
+        lovable_source.AUDIT_FIELD_NAME_SELECT,
+        filters={"event_id": f"in.({EVENT})", "field": lovable_source.audit_name_filter()},
+        order="event_id,field",
+    )
+    reads = [urllib.parse.parse_qs(urllib.parse.urlsplit(u).query) for u in sent[1:]]
+    assert reads[0]["select"] == ["event_id,field,old_value,new_value"]
+    assert reads[0]["field"] == [allowed] and allowed.startswith("in.(")
+    names = set(allowed[4:-1].split(","))
+    assert "hetkeseis" in names and not names & {"markmed", "mitteametlik_arvamus", "allikas"}
+    assert reads[1]["select"] == ["event_id,field"]
+    assert reads[1]["field"] == ["not." + allowed]
