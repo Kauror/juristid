@@ -7,13 +7,12 @@ möödunud». The description, the official source, the closed badge and the
 owner are on the Teema page, not repeated in every item (owner's review of
 2026-11-02). The type label stays, because the list mixes kinds.
 
-* «Märgi loetuks» — the reader's own receipt (`notifications:reminder_read`).
-  It is not a check, writes no `ChangeEvent`, and leaves the prompt open for a
-  new owner and for every other manager. Offered to everybody the item is
-  listed for: it is presentation state.
-* «Lükka edasi» — a business write, put off for everybody; its date field
-  opens directly under the item. Absent for a reader who may not write
-  (`can_answer`).
+* «Märgi loetuks» (`notifications:reminder_read`) and «Lükka edasi»
+  (`notifications:defer`) — both the reader's own state. Neither is a check,
+  neither writes a `ChangeEvent`, and both leave the prompt open for a new
+  owner and for every other manager. Offered to everybody the item is listed
+  for: they are presentation state. The date field opens directly under the
+  item.
 
 «Kontrollitud» (2026-10-30) and «Sulge…» (2026-11-02) are retired; their routes
 are 404s. Each answer is its own POST form with the CSRF token and a fixed
@@ -32,7 +31,6 @@ are 404s. Each answer is its own POST form with the CSRF token and a fixed
       <button type="submit" class="button button--quiet button--tiny"
               aria-label="Märgi loetuks: {{ row.matter_title }}">Märgi loetuks</button>
     </form>
-    {% if can_answer %}
       <details class="notifrow__more">
         <summary class="button button--quiet button--tiny"
                  aria-label="Lükka edasi: {{ row.matter_title }}">Lükka edasi</summary>
@@ -46,6 +44,5 @@ are 404s. Each answer is its own POST form with the CSRF token and a fixed
           <button type="submit" class="button button--quiet button--tiny">Lükka edasi</button>
         </form>
       </details>
-    {% endif %}
   </div>
 </li>

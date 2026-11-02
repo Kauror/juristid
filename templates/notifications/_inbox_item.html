@@ -13,7 +13,7 @@ carries `data-inbox-item`, which is what the tests count against the bell.
   «Peida» was retired on 2026-11-02.
 {% endcomment %}
 {% if item.type == "commencement" %}
-  {% include "notifications/_reminder_row.html" with row=item.reminder can_answer=can_answer tagasi=tagasi %}
+  {% include "notifications/_reminder_row.html" with row=item.reminder tagasi=tagasi %}
 {% elif item.type == "assignment" %}
   <li class="notifrow notifrow--unread" data-inbox-item data-inbox-type="assignment">
     <form class="newasjarow" method="post" action="{{ item.url }}">

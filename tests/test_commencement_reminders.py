@@ -16,7 +16,7 @@ from django.core.management.base import CommandError
 from django.test import Client
 from django.urls import NoReverseMatch, reverse
 
-from app.audit.enums import AuthAssurance, AuthMethod, ChangeEventType
+from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.intelligence.enums import EffectiveDateKind, FactStatus, ImportantDateKind
 from app.intelligence.services import cancel_effective_date, update_effective_date
@@ -853,7 +853,7 @@ def test_reading_from_minu_asjad_takes_it_off_the_readers_desk_and_returns(clien
     # A second press is a no-op, not an error.
     again = client.post(reverse("notifications:reminder_read", kwargs={"pk": reminder.pk}))
     assert again.status_code == 302
-    assert reminder.receipts.count() == 1
+    assert reminder.personal_states.count() == 1
 
 
 def test_a_return_address_cannot_be_chosen_by_the_form(client):
@@ -869,7 +869,7 @@ def test_a_return_address_cannot_be_chosen_by_the_form(client):
     assert response["Location"] == reverse("notifications:list")
 
 
-def test_defer_through_the_route(client):
+def test_defer_through_the_route_is_personal(client):
     from django.utils import timezone
 
     owner = factories.UserFactory()
@@ -877,20 +877,44 @@ def test_defer_through_the_route(client):
     client.force_login(owner)
     until = timezone.localdate() + timedelta(days=2)
 
-    client.post(
+    response = client.post(
         reverse("notifications:defer", kwargs={"pk": reminder.pk}),
         {"until": f"{until.day}.{until.month}.{until.year}"},
     )
+
+    assert response.status_code == 302
     reminder.refresh_from_db()
-    assert reminder.deferred_until == until
-    assert reminder.status == ReminderStatus.OPEN
+    # The shared reminder is untouched: no global deferral, no event.
+    assert (reminder.status, reminder.deferred_until) == (ReminderStatus.OPEN, None)
+    assert not ChangeEvent.objects.filter(event_type__startswith="COMMENCEMENT_CHECK_").exists()
+    (state,) = reminder.personal_states.all()
+    assert (state.user, state.deferred_until, state.read_at) == (owner, until, None)
     assert selectors.open_reminders_for(owner) == []
+    assert [row.pk for row in selectors.deferred_reminders_for(owner)] == [reminder.pk]
+
+
+def test_a_reader_may_put_off_their_own_prompt(client):
+    """Personal state, gated like «Märgi loetuks»: a READER owner may defer their own."""
+    from django.utils import timezone
+
+    reader = factories.ReaderFactory()
+    reminder = _due_reminder(reader)
+    client.force_login(reader)
+    until = timezone.localdate() + timedelta(days=2)
+
+    response = client.post(
+        reverse("notifications:defer", kwargs={"pk": reminder.pk}),
+        {"until": f"{until.day}.{until.month}.{until.year}"},
+    )
+
+    assert response.status_code == 302
+    assert reminder.personal_states.get().deferred_until == until
 
 
 @pytest.mark.parametrize(
     "factory", [factories.ReaderFactory, factories.AdministratorFactory], ids=["READER", "ADMIN"]
 )
-def test_a_non_writer_cannot_defer(client, factory):
+def test_nobody_can_put_off_a_prompt_that_is_not_in_their_inbox(client, factory):
     reminder = _due_reminder(factories.UserFactory())
     client.force_login(factory())
 
@@ -901,26 +925,25 @@ def test_a_non_writer_cannot_defer(client, factory):
     assert response.status_code == 404
     reminder.refresh_from_db()
     assert (reminder.status, reminder.deferred_until) == (ReminderStatus.OPEN, None)
-    assert not ChangeEvent.objects.filter(event_type__startswith="COMMENCEMENT_CHECK_").exists()
+    assert not reminder.personal_states.exists()
 
 
-def test_a_colleague_may_defer_and_is_recorded_as_the_one_who_did(client):
+def test_a_defer_date_is_bounded_and_a_refusal_writes_nothing(client):
     from django.utils import timezone
 
     owner = factories.UserFactory()
-    colleague = factories.UserFactory()
     reminder = _due_reminder(owner)
-    client.force_login(colleague)
-    until = timezone.localdate() + timedelta(days=3)
+    client.force_login(owner)
+    today = timezone.localdate()
 
-    client.post(
-        reverse("notifications:defer", kwargs={"pk": reminder.pk}),
-        {"until": f"{until.day}.{until.month}.{until.year}"},
-    )
+    for until in (today, today + timedelta(days=31)):
+        client.post(
+            reverse("notifications:defer", kwargs={"pk": reminder.pk}),
+            {"until": f"{until.day}.{until.month}.{until.year}"},
+        )
 
-    event = ChangeEvent.objects.get(event_type=ChangeEventType.COMMENCEMENT_CHECK_DEFERRED)
-    assert event.actor == colleague
-    assert event.object_id == reminder.effective_date_id
+    assert not reminder.personal_states.filter(deferred_until__isnull=False).exists()
+    assert len(selectors.open_reminders_for(owner)) == 1
 
 
 def test_a_colleague_cannot_mark_somebody_elses_prompt_read(client):
@@ -932,7 +955,7 @@ def test_a_colleague_cannot_mark_somebody_elses_prompt_read(client):
     response = client.post(reverse("notifications:reminder_read", kwargs={"pk": reminder.pk}))
 
     assert response.status_code == 404
-    assert not reminder.receipts.exists()
+    assert not reminder.personal_states.exists()
     assert len(selectors.open_reminders_for(owner)) == 1
 
 
@@ -957,7 +980,7 @@ def test_anonymous_callers_are_sent_to_sign_in(client):
         assert client.get(url).status_code == 302
     response = client.post(reverse("notifications:reminder_read", kwargs={"pk": reminder.pk}))
     assert response.status_code == 302
-    assert not reminder.receipts.exists()
+    assert not reminder.personal_states.exists()
 
 
 def test_behind_the_gate_a_persona_less_session_is_sent_to_choose_one(settings):
@@ -975,33 +998,6 @@ def test_behind_the_gate_a_persona_less_session_is_sent_to_choose_one(settings):
     ):
         assert response.status_code == 302
         assert response["Location"].startswith(reverse("accounts:choose_persona"))
-
-
-def test_a_shared_gate_deferral_is_attributed_to_the_chosen_persona_not_verified(settings):
-    """ADR 0180: an answer by a picked persona is attributable, not proof of identity."""
-    from django.utils import timezone
-
-    apply_shared_gate(settings)
-    persona = factories.UserFactory(display_name="Mari Näidisjurist")
-    reminder = _due_reminder(persona)
-    client = Client()
-    assert client.post(reverse("accounts:shared_gate"), {"password": PASSWORD}).status_code == 302
-    assert client.post(reverse("accounts:act_as"), {"user_id": str(persona.pk)}).status_code == 302
-    until = timezone.localdate() + timedelta(days=2)
-
-    response = client.post(
-        reverse("notifications:defer", kwargs={"pk": reminder.pk}),
-        {"until": f"{until.day}.{until.month}.{until.year}"},
-    )
-
-    assert response.status_code == 302
-    event = ChangeEvent.objects.get(event_type=ChangeEventType.COMMENCEMENT_CHECK_DEFERRED)
-    assert event.actor == persona
-    assert event.auth_method == AuthMethod.SHARED_GATE
-    assert event.auth_assurance == AuthAssurance.SHARED_SECRET
-    assert event.authenticated_principal is None
-    assert event.acting_persona == persona
-    assert event.payload["date"] == reminder.source_date.isoformat()
 
 
 def test_the_generator_never_writes_an_answer():

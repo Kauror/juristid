@@ -34,7 +34,7 @@ note about what a commencement check means — each item says what it is.
       <h2 class="sectionlabel" id="notif-action-heading">Vajab tegevust</h2>
       <ul class="notiflist">
         {% for item in action_items %}
-          {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+          {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}
         {% endfor %}
       </ul>
     </section>
@@ -45,7 +45,7 @@ note about what a commencement check means — each item says what it is.
       <h2 class="sectionlabel" id="notif-info-heading">Teadmiseks</h2>
       <ul class="notiflist">
         {% for item in info_items %}
-          {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+          {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}
         {% endfor %}
       </ul>
     </section>
@@ -75,7 +75,7 @@ note about what a commencement check means — each item says what it is.
       {% if unowned_items %}
         <ul class="notiflist">
           {% for item in unowned_items %}
-            {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+            {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}
           {% endfor %}
         </ul>
       {% else %}

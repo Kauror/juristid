@@ -68,11 +68,6 @@ CORRECTIONS_ALLOWED_WHEN_CLOSED: dict[tuple[str, str], str] = {
     ("related_materials:restore", "Soovituse taastamine"): (
         "app/related_materials/services.py `_lock_pair(require_open=False)`"
     ),
-    # «Kontrolli jõustumist» answers a commencement, which is normally on a
-    # closed (in-force) file (docs/adr/0188).
-    # «Kontrollitud» (2026-10-30) and «Sulge…» (2026-11-02) are retired;
-    # «Lükka edasi» is the one answer left.
-    ("notifications:defer", "Jõustumise kontrolli edasilükkamine"): "docs/adr/0188",
 }
 
 

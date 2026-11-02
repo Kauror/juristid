@@ -17,7 +17,7 @@ bell's.
     </h2>
     <ul class="notiflist notiflist--rail">
       {% for item in items %}
-        {% include "notifications/_inbox_item.html" with item=item can_answer=can_answer tagasi=tagasi %}
+        {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}
       {% endfor %}
     </ul>
     <a class="railblock__more" href="{% url 'notifications:list' %}">Kõik teavitused{% if more %} ({{ total }}){% endif %}</a>

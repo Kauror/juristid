@@ -21,7 +21,7 @@ from app.intelligence.services import update_effective_date
 from app.matters.models import Matter
 from app.notifications import inbox, selectors, services
 from app.notifications.enums import ReminderStatus
-from app.notifications.models import CommencementReminder, CommencementReminderReceipt
+from app.notifications.models import CommencementReminder, CommencementReminderPersonalState
 from app.workflow.enums import DatePrecision
 from tests import factories
 
@@ -99,7 +99,7 @@ def test_a_specialist_cannot_read_an_unowned_prompt(client):
     response = client.post(reverse("notifications:reminder_read", kwargs={"pk": reminder.pk}))
 
     assert response.status_code == 404
-    assert not CommencementReminderReceipt.objects.exists()
+    assert not CommencementReminderPersonalState.objects.exists()
 
 
 def test_a_moved_date_is_asked_about_afresh():
@@ -146,7 +146,9 @@ def test_repeated_reads_store_one_receipt():
     for _ in range(3):
         services.mark_reminder_read(reminder=reminder, reader=owner)
 
-    assert CommencementReminderReceipt.objects.filter(reminder=reminder, user=owner).count() == 1
+    assert (
+        CommencementReminderPersonalState.objects.filter(reminder=reminder, user=owner).count() == 1
+    )
 
 
 def test_a_deferred_prompt_stays_out_until_due_then_returns_unless_read():
@@ -199,4 +201,97 @@ def test_reading_a_stale_page_after_the_prompt_was_answered_elsewhere_is_a_404(c
     assert response.status_code == 404
     reminder.refresh_from_db()
     assert reminder.status == ReminderStatus.ACKNOWLEDGED
-    assert not reminder.receipts.exists()
+    assert not reminder.personal_states.exists()
+
+
+# ---------------------------------------------------------------------------
+# «Lükka edasi» is personal too (owner's correction of 2026-11-02)
+# ---------------------------------------------------------------------------
+
+
+def _items_on(user, day):
+    return [item.pk for item in inbox.inbox_for(user, day) if item.type == "commencement"]
+
+
+def test_one_managers_postponement_leaves_the_prompt_with_the_others():
+    head = factories.DepartmentHeadFactory()
+    other_head = factories.DepartmentHeadFactory()
+    reminder = _due(matter=factories.MatterFactory(owner=None))
+    today = timezone.localdate()
+
+    services.defer_for_reader(reminder=reminder, reader=head, until=today + timedelta(days=3))
+
+    assert _items_on(head, today) == []
+    assert _items_on(other_head, today) == [reminder.pk]
+    assert inbox.inbox_count(other_head) == 1
+    # Osakond's summary is the department's work, not one person's inbox.
+    assert len(selectors.department_unowned_reminders(head)) == 1
+    reminder.refresh_from_db()
+    assert reminder.deferred_until is None
+
+
+def test_a_colleagues_postponement_does_not_hide_the_owners_prompt():
+    owner = factories.UserFactory()
+    head = factories.DepartmentHeadFactory()
+    reminder = _due(owner)
+    today = timezone.localdate()
+    # The head may not even reach the owner's prompt through the route; the
+    # service is called directly to show the state is per person regardless.
+    services.defer_for_reader(reminder=reminder, reader=head, until=today + timedelta(days=3))
+
+    assert _items_on(owner, today) == [reminder.pk]
+
+
+def test_a_personal_postponement_returns_on_its_date():
+    owner = factories.UserFactory()
+    reminder = _due(owner)
+    today = timezone.localdate()
+
+    services.defer_for_reader(reminder=reminder, reader=owner, until=today + timedelta(days=2))
+
+    assert _items_on(owner, today + timedelta(days=1)) == []
+    assert _items_on(owner, today + timedelta(days=2)) == [reminder.pk]
+    assert [row.pk for row in selectors.deferred_reminders_for(owner, today=today)] == [reminder.pk]
+
+
+def test_postponing_again_replaces_the_date_and_reading_wins():
+    owner = factories.UserFactory()
+    reminder = _due(owner)
+    today = timezone.localdate()
+
+    services.defer_for_reader(reminder=reminder, reader=owner, until=today + timedelta(days=5))
+    services.defer_for_reader(reminder=reminder, reader=owner, until=today + timedelta(days=1))
+    assert reminder.personal_states.get().deferred_until == today + timedelta(days=1)
+
+    services.mark_reminder_read(reminder=reminder, reader=owner)
+    assert _items_on(owner, today + timedelta(days=10)) == []
+    assert selectors.deferred_reminders_for(owner, today=today) == []
+
+
+def test_a_global_deferral_recorded_before_keeps_applying_to_everybody():
+    """Deferrals made while «Lükka edasi» was shared keep their recorded meaning."""
+    owner = factories.UserFactory()
+    reminder = _due(owner)
+    today = timezone.localdate()
+    services.defer_reminder(reminder=reminder, actor=owner, until=today + timedelta(days=2))
+
+    assert _items_on(owner, today) == []
+    assert [row.pk for row in selectors.deferred_reminders_for(owner, today=today)] == [reminder.pk]
+    assert _items_on(owner, today + timedelta(days=2)) == [reminder.pk]
+
+
+def test_postponing_records_no_check_and_no_event():
+    owner = factories.UserFactory()
+    reminder = _due(owner)
+
+    services.defer_for_reader(
+        reminder=reminder, reader=owner, until=timezone.localdate() + timedelta(days=2)
+    )
+
+    reminder.refresh_from_db()
+    assert (reminder.status, reminder.deferred_until, reminder.resolved_at) == (
+        ReminderStatus.OPEN,
+        None,
+        None,
+    )
+    assert not ChangeEvent.objects.filter(event_type__startswith="COMMENCEMENT_CHECK_").exists()
