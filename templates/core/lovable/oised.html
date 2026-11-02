@@ -1,0 +1,71 @@
+{% comment %}
+  Lovable → Öised võrdlused: `lovable_observability.nights()`. One accordion
+  per reading, the newest open — the same native `<details>` the Juristid
+  section uses. The pilot's nights say what Juristid did with each change; a
+  wider reading (operational or every live topic) is only the difference
+  between two Lovable readings, never synchronised.
+{% endcomment %}
+<p class="lovnight__note">
+  {% if filters.population == "PILOT" %}
+    Piloodi teemad: iga öö lugemist võrreldakse eelmise öö lugemisega ja öeldakse, mida Juristid muudatusega tegi.
+    Kuni omanik pole APPLY-režiimi lubanud, ei kirjutata Juristidesse midagi: «Rakendamata» on ohutu, kuid üle kandmata muudatus.
+  {% else %}
+    Laiemad lugemised: ainult kahe Lovable'i lugemise vahe. Neid teemasid Juristidesse ei sünkroonita.
+  {% endif %}
+</p>
+
+<div class="relnotes">
+  {% for row in readings %}
+    {% with night=row.reading %}
+      <details class="accordion relnotes__day" {% if forloop.first and pager.page == 1 %}open{% endif %}>
+        <summary class="accordion__head">
+          <span class="accordion__caret" aria-hidden="true"></span>
+          <h2 class="accordion__title">{{ night.taken_at|date:"d.m.Y" }} kell {{ night.taken_at|date:"H.i" }}</h2>
+          <span class="accordion__summary">
+            {% if night.comparison == "COMPARED" %}
+              {% if night.changed_topics %}{{ night.changed_topics }} teema{{ night.changed_topics|pluralize:",t" }} muudetud{% else %}muudatusi ei olnud{% endif %}
+            {% elif night.comparison == "BASELINE" %}lähtepunkt{% else %}võrdlust ei ole{% endif %}
+            · {{ night.status_label }}
+          </span>
+        </summary>
+        <div class="accordion__body">
+          <dl class="lovnight__stats">
+            <div><dt>{% if row.pilot %}Sünkroonimine{% else %}Lugemine{% endif %}</dt><dd><span class="statechip {% if night.status == 'FAILED' %}statechip--problem{% elif night.status == 'SUCCEEDED' %}statechip--ok{% else %}statechip--waiting{% endif %}">{{ night.status_label }}</span></dd></div>
+            {% if night.cohort_size is not None %}<div><dt>{% if row.pilot %}Piloodi teemasid{% else %}Teemasid lugemises{% endif %}</dt><dd>{{ night.cohort_size }}</dd></div>{% endif %}
+            {% if night.comparison == "COMPARED" %}
+              <div><dt>Muudetud teemasid</dt><dd>{{ night.changed_topics }}</dd></div>
+              {% if not row.pilot %}<div><dt>Uusi teemasid</dt><dd>{{ night.new_topics }}</dd></div>{% endif %}
+              <div><dt>Kadunud teemasid</dt><dd>{{ night.missing_topics }}</dd></div>
+              <div><dt>Muudetud välju</dt><dd>{{ night.changed_fields }}</dd></div>
+              {% if row.pilot %}
+                <div><dt>Juristides uuendatud</dt><dd>{{ row.applied }}</dd></div>
+                <div><dt>Vajab tähelepanu</dt><dd>{{ row.attention }}</dd></div>
+              {% endif %}
+            {% endif %}
+          </dl>
+          {% if row.outcomes %}
+            <p class="lovnight__note">{% if row.pilot %}Tulemused Juristides:{% else %}Muutuste liigid:{% endif %} {% for label, count in row.outcomes %}{{ label }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
+          {% endif %}
+          {% if row.pilot and night.mode == "COMPARE" %}<p class="lovnight__note">Võrdlusrežiim: Juristidesse ei kirjutata.</p>{% endif %}
+          {% if night.status == "FAILED" %}<p class="lovnight__note lovnight__note--problem">{% if row.pilot %}Sünkroonimine{% else %}Lugemine{% endif %} ebaõnnestus. Allpool on ainult see, mis enne katkemist loeti.</p>{% endif %}
+          {% if night.baseline_taken_at %}<p class="lovnight__note">Võrreldud lugemisega {{ night.baseline_taken_at|date:"d.m.Y" }} kell {{ night.baseline_taken_at|date:"H.i" }}.</p>{% endif %}
+          {% if night.message %}<p class="empty">{{ night.message }}</p>{% endif %}
+          {% if night.hidden %}<p class="lovnight__note">Veel {{ night.hidden }} muudetud teema{{ night.hidden|pluralize:",t" }} ei ole sulle nähtav.</p>{% endif %}
+          {% include "core/lovable/_unlinked.html" with unlinked=row.unlinked %}
+          {% if filters.active and night.comparison == "COMPARED" and row.topics|length < night.changed_topics %}
+            <p class="lovnight__note">Filtriga sobib {{ row.topics|length }} teema{{ row.topics|length|pluralize:",t" }}.</p>
+          {% endif %}
+
+          {% for topic in row.topics %}
+            {% include "core/lovable/_topic.html" with topic=topic pilot=row.pilot %}
+          {% endfor %}
+        </div>
+      </details>
+    {% endwith %}
+  {% empty %}
+    <p class="empty">{% if filters.active %}Valitud filtriga lugemisi pole.{% elif filters.population == "PILOT" %}Öiseid sünkroonimisi ei ole veel olnud.{% else %}Laiemaid lugemisi pole veel tehtud.{% endif %}</p>
+  {% endfor %}
+</div>
+
+{% include "core/lovable/_pager.html" %}
+<p class="lovnight__note">Lugemisi hoitakse {{ retention_days }} päeva; vanemaid ei saa võrrelda.</p>

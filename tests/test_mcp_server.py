@@ -32,6 +32,13 @@ TOOL_NAMES = {
     # The eighth, added deliberately: «what is Marko responsible for?» and «what are
     # we waiting for from X?» had no tool that could answer them (QA evaluation).
     "list_matters",
+    # Five more, deliberately (docs/adr/0201 §9): the Lovable synchronisation and the
+    # wider observation, read-only over `app.legacy_import.lovable_observability`.
+    "get_lovable_sync_status",
+    "get_lovable_sync_history",
+    "get_lovable_sync_matter_changes",
+    "get_lovable_observed_changes",
+    "get_lovable_sync_readiness",
 }
 
 
@@ -113,10 +120,10 @@ def _tools(fakes) -> list[dict[str, Any]]:
     return tools
 
 
-def test_exactly_the_eight_read_only_tools_are_listed(fakes):
+def test_exactly_the_thirteen_read_only_tools_are_listed(fakes):
     tools = _tools(fakes)
     assert {tool["name"] for tool in tools} == TOOL_NAMES
-    assert len(tools) == 8
+    assert len(tools) == 13
     for tool in tools:
         annotations = tool["annotations"]
         assert annotations["readOnlyHint"] is True, tool["name"]
@@ -150,14 +157,28 @@ def test_every_input_schema_is_strict_and_names_no_identity(fakes):
             "include_test_data",
             "page",
         },
+        "get_lovable_sync_status": set(),
+        "get_lovable_sync_history": {"since", "until", "population", "outcome", "field", "page"},
+        "get_lovable_sync_matter_changes": {"matter"},
+        "get_lovable_observed_changes": {
+            "since",
+            "until",
+            "population",
+            "kind",
+            "field",
+            "mapping",
+            "page",
+        },
+        "get_lovable_sync_readiness": set(),
     }
+    assert set(expected) == set(tools)
     for name, properties in expected.items():
         schema = tools[name]["inputSchema"]
         assert schema["type"] == "object"
         assert schema["additionalProperties"] is False, name
-        assert set(schema["properties"]) == properties, name
+        assert set(schema.get("properties", {})) == properties, name
         for forbidden in ("user", "user_id", "persona", "email", "role", "sql", "path", "url"):
-            assert forbidden not in schema["properties"], (name, forbidden)
+            assert forbidden not in schema.get("properties", {}), (name, forbidden)
 
     def flat(schema: dict[str, Any]) -> str:
         return json.dumps(schema)

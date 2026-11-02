@@ -1,0 +1,70 @@
+{% comment %}
+  Lovable → Lovable'i muutmisajalugu: `lovable_observability.source_events()`,
+  Lovable's own audit ledger. Until the owner approves read access it is not
+  available, and the page says so — no event is ever inferred from the
+  differences between readings.
+{% endcomment %}
+{% if not audit.available %}
+  <div class="notice notice--warning" role="status">
+    <p class="lovsection__lead">{{ audit.message }}</p>
+  </div>
+  <p class="empty">Muutmisajaloo sündmusi ei näidata. Lugemiste vahelised erinevused on vaates «Öised võrdlused» ja «Vaadeldud muudatused».</p>
+{% else %}
+  <p class="lovnight__note">
+    Salvestatud sündmusi {{ audit.events_stored }}{% if audit.last_event_at %}, viimane {{ audit.last_event_at|date:"d.m.Y" }} kell {{ audit.last_event_at|date:"H.i" }}{% endif %}.
+    {% if unlinked_listed %}Väärtused on näha ainult piloodi teemadel, mida sa näed; teistel ainult väljade nimed.{% else %}Loetletakse ainult piloodi teemade sündmused, mida sa näed; väärtused on näha ainult neil.{% endif %}
+  </p>
+  {% if page.hidden %}<p class="lovnight__note">Veel {{ page.hidden }} sündmus{{ page.hidden|pluralize:",t" }} teemadel, mida sa ei näe.</p>{% endif %}
+  {% include "core/lovable/_unlinked.html" %}
+  {% if page.items %}
+    <div class="tablewrap">
+      <table class="data-table lovevents">
+        <thead>
+          <tr>
+            <th scope="col">Aeg</th>
+            <th scope="col">Teema</th>
+            <th scope="col">Tegevus</th>
+            <th scope="col">Muutja</th>
+            <th scope="col">Väljad</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for event in page.items %}
+            <tr>
+              <td>{{ event.occurred_at|date:"d.m.Y H.i" }}</td>
+              <td>
+                {% if event.mapping == "PILOT_LINKED" and event.matter_url %}
+                  <a href="{{ event.matter_url }}">{{ event.reference }}{% if event.title %} — {{ event.title }}{% endif %}</a>
+                {% else %}
+                  {{ event.reference|default:"—" }}
+                  {% if event.mapping == "REFERENCE_CANDIDATE" and event.matter_url %}
+                    <span class="lovnight__why"><a href="{{ event.matter_url }}">Sama numbriga teema (seos kinnitamata)</a></span>
+                  {% elif event.mapping == "REFERENCE_CANDIDATE" %}
+                    <span class="lovnight__why">Sama numbriga teema, seos kinnitamata</span>
+                  {% else %}
+                    <span class="lovnight__why">Juristides vastet pole</span>
+                  {% endif %}
+                {% endif %}
+              </td>
+              <td>{{ event.action_label }}{% if event.version %} <span class="muted">(versioon {{ event.version }})</span>{% endif %}</td>
+              <td>{{ event.actor_kind|default:"—" }}</td>
+              <td>
+                <ul class="lovfields">
+                  {% for change in event.fields %}
+                    <li>
+                      <span class="lovfields__name">{{ change.label }}</span>:
+                      {% if change.withheld %}<span class="muted">väärtust ei näidata</span>{% else %}{{ change.before }} → {{ change.after }}{% if change.source_truncated %} <span class="badge badge--quiet" title="Lovable'i väärtus oli pikem kui Juristides hoitav koopia; ka teema üksikasjades pole see terviklik.">lühendatud</span>{% elif change.truncated %} <span class="muted">(loetelus lühendatud)</span>{% endif %}{% endif %}
+                    </li>
+                  {% endfor %}
+                </ul>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "core/lovable/_pager.html" %}
+  {% else %}
+    <p class="empty">Valitud ajal sündmusi pole.</p>
+  {% endif %}
+{% endif %}

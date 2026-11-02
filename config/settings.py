@@ -1048,6 +1048,19 @@ LOVABLE_PILOT_ENABLED = env_bool("JURISTID_LOVABLE_PILOT", default=False)
 # carries it, so the running application never reaches Lovable.
 LOVABLE_SYNC_ENABLED = env_bool("JURISTID_LOVABLE_SYNC", default=False)
 
+# Reading Lovable's own audit ledger (topic_change_event / topic_change_field)
+# during the wider observation (docs/adr/0201). Off by default: the ledger is
+# admin-only in Lovable, and it is read only after the owner has approved a
+# SELECT-only path for the service login (`lovable_sync audit-sql`). Off means
+# nothing is requested from the ledger and no event is ever inferred.
+LOVABLE_AUDIT_ENABLED = env_bool("JURISTID_LOVABLE_AUDIT", default=False)
+
+# How much Juristid shows of a Lovable topic with no approved link to a Juristid
+# Teema (docs/adr/0201 §6): AGGREGATE (the default) shows counts only; FIELD_NAMES
+# (an owner-approvable alternative) also lists each topic's number, change kind and
+# changed field names. Never values or titles either way.
+LOVABLE_UNLINKED_DETAIL = env("JURISTID_LOVABLE_UNLINKED_DETAIL", default="AGGREGATE")
+
 # -- Cloudflare Access ------------------------------------------------------
 #
 # The production authenticator. Cloudflare authenticates a person against the

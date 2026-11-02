@@ -71,7 +71,8 @@ CHATGPT_JWKS = "https://chatgpt.com/oauth/jwks.json"
 PKCE_VERIFIER = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
 PKCE_CHALLENGE = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
 
-TOOL_NAMES = frozenset(
+#: The register's eight read tools (docs/adr/0185 §2).
+READ_TOOL_NAMES = frozenset(
     {
         "search",
         "fetch",
@@ -83,6 +84,18 @@ TOOL_NAMES = frozenset(
         "list_matters",
     }
 )
+#: The five read-only Lovable synchronisation tools (docs/adr/0201 §9).
+LOVABLE_TOOL_NAMES = frozenset(
+    {
+        "get_lovable_sync_status",
+        "get_lovable_sync_history",
+        "get_lovable_sync_matter_changes",
+        "get_lovable_observed_changes",
+        "get_lovable_sync_readiness",
+    }
+)
+#: Every tool the server lists with writes off.
+TOOL_NAMES = READ_TOOL_NAMES | LOVABLE_TOOL_NAMES
 
 #: The planted instruction. Estonian and English, because a model reads both.
 INJECTION = (

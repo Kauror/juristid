@@ -1,0 +1,119 @@
+{% comment %}
+  Lovable → Valmisolek: `lovable_observability.readiness()`, an assessment of
+  what stands between today and a live synchronisation. It plans what the
+  existing pilot rules would do with the newest reading; it writes nothing,
+  switches nothing on and never widens the synchronisation to new topics.
+{% endcomment %}
+<div class="notice notice--warning" role="note">
+  <p class="lovsection__lead"><strong>See on hinnang, mitte sisselülitamine.</strong>
+    Siin arvutatakse, mida praegused piloodi reeglid viimase lugemisega teeksid. Midagi ei kirjutata,
+    APPLY-režiimi ei lülitata sisse ja sünkroonimist ei laiendata uutele teemadele.</p>
+  <p class="lovsection__lead">Hinnatud {{ readiness.generated_at|date:"d.m.Y" }} kell {{ readiness.generated_at|date:"H.i" }}.</p>
+</div>
+
+<section class="lovsection" aria-labelledby="lov-takistused">
+  <h2 class="lovsection__title" id="lov-takistused">Takistused ({{ readiness.blockers|length }})</h2>
+  {% if readiness.blockers %}
+    <ul class="lovlist">{% for line in readiness.blockers %}<li>{{ line }}</li>{% endfor %}</ul>
+  {% else %}
+    <p class="lovnight__note">Hinnang takistusi ei leidnud. See ei tähenda, et sünkroonimine oleks lubatud: selle otsustab omanik.</p>
+  {% endif %}
+</section>
+
+<section class="lovsection" aria-labelledby="lov-allikas">
+  <h2 class="lovsection__title" id="lov-allikas">Allikas ja tunnused</h2>
+  <div class="lovready__facts">
+    {% include "core/lovable/_facts.html" with caption="Piloodi lugemine" rows=ready.pilot %}
+    {% include "core/lovable/_facts.html" with caption="Laiem lugemine" rows=ready.observation %}
+    {% include "core/lovable/_facts.html" with caption="Teemade vastavus" rows=ready.identity %}
+  </div>
+  {% if ready.audit.message %}<p class="lovnight__note">{{ ready.audit.message }}</p>{% endif %}
+</section>
+
+<section class="lovsection" aria-labelledby="lov-katvus">
+  <h2 class="lovsection__title" id="lov-katvus">Katvus</h2>
+  <ul class="chkpis">
+    {% for item in readiness.coverage %}
+      <li class="chkpi" data-indicator="{{ item.key }}">
+        <span class="chkpi__label">{{ item.label }}</span>
+        {% if item.value is None %}
+          <span class="chkpi__value chkpi__value--unknown">—</span>
+          <span class="chkpi__note">{{ item.unavailable_reason }}</span>
+        {% else %}
+          <span class="chkpi__value">{{ item.value }}</span>
+          <span class="chkpi__def">{{ item.denominator }}</span>
+        {% endif %}
+        <span class="chkpi__note">{{ item.window }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="lovsection" aria-labelledby="lov-valjad">
+  <h2 class="lovsection__title" id="lov-valjad">Väljad</h2>
+  <div class="tablewrap">
+    <table class="data-table lovready">
+      <thead>
+        <tr>
+          <th scope="col">Väli</th>
+          <th scope="col">Vastendus</th>
+          <th scope="col">Automaatne</th>
+          <th scope="col">Riskid</th>
+          <th scope="col">Miks mitte automaatselt</th>
+          <th scope="col">Simulatsioon</th>
+          <th scope="col">Reeglita muudatusi</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in ready.fields %}
+          <tr>
+            <th scope="row">{{ row.field.label }}</th>
+            <td>{{ row.mapping }}</td>
+            <td>{% if row.field.automatic %}jah{% else %}ei{% endif %}</td>
+            <td>{% if row.field.risks %}<ul class="lovfields">{% for risk in row.field.risks %}<li>{{ risk }}</li>{% endfor %}</ul>{% else %}—{% endif %}</td>
+            <td>{{ row.field.blocking_reason|default:"—" }}</td>
+            <td>{% for label, count in row.simulated %}<span class="lovnight__why">{{ label }}: {{ count }}</span>{% empty %}—{% endfor %}</td>
+            <td>{{ row.field.uncovered_changes }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="lovsection" aria-labelledby="lov-simulatsioon">
+  <h2 class="lovsection__title" id="lov-simulatsioon">Simulatsioon</h2>
+  <p class="lovnight__note">Mida olemasolevad reeglid viimase võrreldava piloodi lugemisega teeksid, välja kaupa.{% if readiness.conflicts %} Lahendamata vastuolusid {{ readiness.conflicts }}{% if readiness.oldest_conflict_days is not None %}, vanim {{ readiness.oldest_conflict_days }} päeva{% endif %}.{% endif %}</p>
+  {% if ready.simulation %}
+    <ul class="lovlist">{% for label, count in ready.simulation %}<li>{{ label }}: {{ count }}</li>{% endfor %}</ul>
+  {% else %}
+    <p class="empty">Simulatsiooni ei tehtud: võrreldavat ja kontrollitud piloodi lugemist pole.</p>
+  {% endif %}
+  {% if readiness.simulation_rows %}
+    <details class="lovtopic">
+      <summary class="lovtopic__toggle">Teemade kaupa ({{ readiness.simulation_rows|length }})</summary>
+      <div class="tablewrap">
+        <table class="data-table lovready">
+          <thead>
+            <tr><th scope="col">Teema</th><th scope="col">Väli</th><th scope="col">Tulemus</th><th scope="col">Põhjus</th></tr>
+          </thead>
+          <tbody>
+            {% for row in readiness.simulation_rows %}
+              <tr>
+                <td>{% if row.matter_url %}<a href="{{ row.matter_url }}">{{ row.reference }}</a>{% else %}{{ row.reference }}{% endif %}<span class="lovnight__why">{{ row.title }}</span></td>
+                <td>{{ row.label }}</td>
+                <td>{{ row.category_label }}</td>
+                <td>{{ row.reason_label|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
+</section>
+
+<section class="lovsection" aria-labelledby="lov-otsused">
+  <h2 class="lovsection__title" id="lov-otsused">Omaniku otsused</h2>
+  <ul class="lovlist">{% for line in readiness.owner_decisions %}<li>{{ line }}</li>{% endfor %}</ul>
+</section>

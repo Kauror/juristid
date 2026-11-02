@@ -1,0 +1,60 @@
+{% comment %}
+  Lovable → Ülevaade: `lovable_observability.status()` as a grid of numbers,
+  grouped by the kind of fact each counts. Every number says what it counts
+  and over which window; a number that cannot be known says why instead.
+{% endcomment %}
+<section class="lovsection" aria-labelledby="lov-seis">
+  <h2 class="lovsection__title" id="lov-seis">Seis</h2>
+  <p class="lovnight__note">
+    Režiim «{{ status.mode_label }}»{% if not status.apply_authorised %}: Juristidesse ei kirjutata{% endif %}.
+    Laiem vaatlus (kõik Lovable'i teemad) on {% if status.observe_enabled %}sisse{% else %}välja{% endif %} lülitatud.
+    Ülevaatust ootab {{ status.pending_review }} välja.
+  </p>
+  {% if status.warnings %}
+    <div class="notice notice--warning" role="status">
+      <ul class="lovlist">{% for line in status.warnings %}<li>{{ line }}</li>{% endfor %}</ul>
+    </div>
+  {% endif %}
+
+  {% for title, indicators in indicator_groups %}
+    <h3 class="lovsection__group">{{ title }}</h3>
+    <ul class="chkpis">
+      {% for item in indicators %}
+        <li class="chkpi" data-indicator="{{ item.key }}">
+          <span class="chkpi__label">{{ item.label }}</span>
+          {% if item.value is None %}
+            <span class="chkpi__value chkpi__value--unknown">—</span>
+            <span class="chkpi__note">{{ item.unavailable_reason }}</span>
+          {% else %}
+            <span class="chkpi__value">{{ item.value }}</span>
+            <span class="chkpi__def">{{ item.denominator }}</span>
+          {% endif %}
+          <span class="chkpi__note">{{ item.window }}</span>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endfor %}
+</section>
+
+<section class="lovsection" aria-labelledby="lov-legend">
+  <h2 class="lovsection__title" id="lov-legend">Neli eri asja</h2>
+  <dl class="lovlegend">
+    <div>
+      <dt>Lovable'i muutmisajalugu</dt>
+      <dd>Lovable'i enda kirjed iga muudatuse kohta: millal, milline väli ja kas muutja oli inimene või süsteem. Need on nähtavad ainult siis, kui omanik on lugemisõiguse kinnitanud.</dd>
+    </div>
+    <div>
+      <dt>Lugemiste vahelised erinevused</dt>
+      <dd>Juristid loeb Lovable'it igal ööl ja võrdleb lugemist eelmisega. Näha on vahe kahe lugemise vahel, mitte iga vahepealne muudatus.</dd>
+    </div>
+    <div>
+      <dt>Juristide otsused</dt>
+      <dd>Mida piloodi reeglid iga muutunud väljaga teeksid: ohutu uuendus, ülevaatus, vastuolu või juba sama. Ainult piloodi teemadel.</dd>
+    </div>
+    <div>
+      <dt>Rakendatud kirjutused</dt>
+      <dd>Muudatused, mis on tegelikult Juristidesse kirjutatud. Kuni omanik pole APPLY-režiimi lubanud, on neid null.</dd>
+    </div>
+  </dl>
+  <p class="lovnight__note">Neid arve ei liideta: üks Lovable'i muudatus võib olla mitu sündmust, üks erinevus või mitte ükski otsus.</p>
+</section>

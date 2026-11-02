@@ -546,6 +546,11 @@ def _every_answer(world: w.EvalWorld, mcp: w.Mcp) -> list[tuple[str, dict[str, A
             "list_matters",
             {"organisation": "Kliimaministeerium", "open": None, "record_mode": "ALL"},
         ),
+        ("get_lovable_sync_status", {}),
+        ("get_lovable_sync_history", {}),
+        ("get_lovable_sync_history", {"population": "ALL_LIVE"}),
+        ("get_lovable_observed_changes", {}),
+        ("get_lovable_sync_readiness", {}),
     ]
     for key in world.matters:
         reference = world.reference(key)
@@ -666,7 +671,14 @@ def test_the_whole_tool_set_runs_on_read_only_connections(world, mcp, read_only_
     assert listed.status_code == 200
     assert {tool["name"] for tool in listed.json()["result"]["tools"]} == w.TOOL_NAMES
     answers = _every_answer(world, mcp)
-    assert {name for name, _ in answers} == w.TOOL_NAMES
+    # This world has no Lovable pilot: a Teema's synchronisation history is «not
+    # found» (checked, read-only too, below), so it is not among the answers.
+    assert {name for name, _ in answers} == w.TOOL_NAMES - {"get_lovable_sync_matter_changes"}
+    refused = mcp.call("get_lovable_sync_matter_changes", {"matter": world.reference("wait")})
+    assert (
+        w.error_text(refused)
+        == "Nothing with this id or reference is available to you in Juristid."
+    )
     for name, result in answers:
         w.structured(result, name)
     assert w.row_counts() == before

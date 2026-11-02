@@ -1,6 +1,7 @@
 """What the MCP tools answer, as plain Python over the services the pages use.
 
-Eight readers, one per tool (docs/adr/0185 §2), each a pure function of the
+One reader per read tool (docs/adr/0185 §2; the five Lovable ones,
+docs/adr/0201 §9, at the end), each a pure function of the
 authenticated `User` and the tool's arguments that returns a JSON-ready dict.
 No MCP SDK here and nothing asynchronous: `app.mcp_server.server` calls these
 in its worker threads, exactly as a view would call a selector.
@@ -39,11 +40,12 @@ record id (`app.mcp_server.links`).
 from __future__ import annotations
 
 import html
+import json
 import re
 import uuid
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from django.conf import settings
@@ -2706,6 +2708,234 @@ def _wait_naming(user: Any, fragment: str) -> Any:
     )
 
 
+# ---------------------------------------------------------------------------
+# Lovable synchronisation and observation (docs/adr/0201 §9)
+# ---------------------------------------------------------------------------
+#
+# Five readers over `app.legacy_import.lovable_observability`, the one read
+# service the Uuendused page, Haldus and `lovable_sync report` also ask. Nothing
+# here compares, counts or decides: each reader checks its arguments, asks the
+# service as the authenticated user, and returns the service's own `as_dict()`
+# with three presentational changes only — links made absolute, a page past the
+# end answered empty, and the whole answer held to `LOVABLE_ANSWER_MAX_CHARS`
+# by leaving items out from the end of its lists, saying so (``truncated`` and
+# ``omitted``). Who sees what is the service's: a Teema the reader may not open
+# is counted in ``hidden``, never named; a source topic with no approved link
+# is only counted in ``unlinked`` (docs/adr/0201 §6, the default AGGREGATE
+# policy). Nothing reaches Lovable.
+
+#: The largest Lovable answer, in characters of JSON. A list is cut from its end
+#: to fit, deterministically, and the answer says so.
+LOVABLE_ANSWER_MAX_CHARS = 60_000
+#: Pages the Lovable list tools serve (each page is the service's own size).
+MAX_LOVABLE_PAGES = 100
+LOVABLE_POPULATIONS = ("PILOT", "OPERATIONAL", "ALL_LIVE")
+TOO_LARGE_TEXT = "The answer is too large to return; narrow the dates, the field or the page."
+
+
+def _lovable() -> Any:
+    from app.legacy_import import lovable_observability
+
+    return lovable_observability
+
+
+def _json_size(value: Any) -> int:
+    return len(json.dumps(value, ensure_ascii=False, default=str))
+
+
+def _choice(value: Any, name: str, allowed: Sequence[str], default: str = "") -> str:
+    if value is None or value == "":
+        return default
+    if not isinstance(value, str) or value not in allowed:
+        raise InvalidArgument(f"{name} must be one of: {', '.join(allowed)}.")
+    return value
+
+
+def _lovable_window(since: Any, until: Any) -> tuple[date | None, date | None]:
+    """The dates as given, refused when reversed or wider than the service's window.
+
+    The service would silently swap a reversed window and narrow a wide one;
+    a caller is told instead, so an answer never covers less than was asked."""
+    limit = int(_lovable().MAX_WINDOW_DAYS)
+    first = _parse_iso_date(since, "since")
+    last = _parse_iso_date(until, "until")
+    if first is not None and last is not None and first > last:
+        raise InvalidArgument("since must be on or before until.")
+    end = last or _today()
+    start = first or end - timedelta(days=limit)
+    if abs((end - start).days) > limit:
+        raise InvalidArgument(f"The window may span at most {limit} days.")
+    return first, last
+
+
+def _absolute_links(value: Any) -> Any:
+    """Every ``…_url`` the service built as a path, made absolute (`links.absolute`)."""
+    if isinstance(value, dict):
+        return {
+            key: (
+                links.absolute(item)
+                if key.endswith("_url") and isinstance(item, str) and item.startswith("/")
+                else _absolute_links(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_absolute_links(item) for item in value]
+    return value
+
+
+def _fit(answer: dict[str, Any], groups: Sequence[tuple[str, list[Any]]]) -> dict[str, Any]:
+    """Hold ``answer`` to `LOVABLE_ANSWER_MAX_CHARS`, never silently.
+
+    ``groups`` are the answer's own lists, in the order they give way: items
+    leave from the end of the first list, then the next. ``truncated`` and
+    ``omitted`` (label → how many) say what was left out. An answer that still
+    does not fit is refused with a safe message rather than cut further."""
+    omitted: dict[str, int] = {}
+    budget = LOVABLE_ANSWER_MAX_CHARS
+    size = _json_size(answer)
+    for label, items in groups:
+        while items and size > budget:
+            size -= _json_size(items.pop()) + 1
+            omitted[label] = omitted.get(label, 0) + 1
+            if size <= budget:
+                # The estimate counts separators approximately: measure again.
+                size = _json_size(answer)
+    answer["truncated"] = bool(omitted)
+    answer["omitted"] = omitted
+    if _json_size(answer) > budget:
+        raise ReaderError(TOO_LARGE_TEXT)
+    return answer
+
+
+def _lovable_page(page: Any, requested: int) -> dict[str, Any]:
+    """The service's `Page`, with ``has_more``; a page past the end is empty.
+
+    The service answers a page past the end with its last page; here that is an
+    empty page with the number asked for, as every other paged tool answers."""
+    answer: dict[str, Any] = _absolute_links(page.as_dict())
+    if requested > int(answer["pages"]):
+        answer["items"] = []
+        answer["page"] = requested
+    answer["has_more"] = int(answer["page"]) < int(answer["pages"])
+    return answer
+
+
+def lovable_sync_status(user: Any) -> dict[str, Any]:
+    """`get_lovable_sync_status`: `lovable_observability.status` as the reader."""
+    _require_reader(user)
+    answer: dict[str, Any] = _absolute_links(_lovable().status(user).as_dict())
+    return _fit(answer, [("indicators", answer.get("indicators") or [])])
+
+
+def lovable_sync_history(
+    user: Any,
+    *,
+    since: Any = None,
+    until: Any = None,
+    population: Any = "PILOT",
+    outcome: Any = None,
+    field: Any = None,
+    page: Any = 1,
+) -> dict[str, Any]:
+    """`get_lovable_sync_history`: readings newest first (`lovable_observability.nights`)."""
+    _require_reader(user)
+    from app.legacy_import import lovable_review
+
+    number = _page_number(page, maximum=MAX_LOVABLE_PAGES)
+    first, last = _lovable_window(since, until)
+    chosen = _choice(population, "population", LOVABLE_POPULATIONS, "PILOT")
+    wanted = _choice(outcome, "outcome", tuple(lovable_review.RESULT_LABELS))
+    if wanted and chosen != "PILOT":
+        raise InvalidArgument("outcome applies only to population PILOT.")
+    name = _choice(field, "field", tuple(lovable_review.FIELD_ORDER))
+    answer = _lovable_page(
+        _lovable().nights(
+            user,
+            since=first,
+            until=last,
+            population=chosen,
+            outcome=wanted,
+            field_name=name,
+            page=number,
+        ),
+        number,
+    )
+    readings = answer["items"]
+    # The newest reading keeps its topics longest; whole readings go last.
+    groups = [("topics", reading.get("topics") or []) for reading in reversed(readings)]
+    return _fit(answer, [*groups, ("items", readings)])
+
+
+def lovable_observed_changes(
+    user: Any,
+    *,
+    since: Any = None,
+    until: Any = None,
+    population: Any = "ALL_LIVE",
+    kind: Any = None,
+    field: Any = None,
+    mapping: Any = None,
+    page: Any = 1,
+) -> dict[str, Any]:
+    """`get_lovable_observed_changes`: `lovable_observability.observed_changes`."""
+    _require_reader(user)
+    from app.legacy_import import lovable_review
+    from app.legacy_import.lovable_observation_models import MappingStatus, ObservedChangeKind
+
+    number = _page_number(page, maximum=MAX_LOVABLE_PAGES)
+    first, last = _lovable_window(since, until)
+    answer = _lovable_page(
+        _lovable().observed_changes(
+            user,
+            since=first,
+            until=last,
+            population=_choice(population, "population", LOVABLE_POPULATIONS, "ALL_LIVE"),
+            kind=_choice(kind, "kind", tuple(ObservedChangeKind.values)),
+            field_name=_choice(field, "field", tuple(lovable_review.FIELD_ORDER)),
+            mapping=_choice(mapping, "mapping", tuple(MappingStatus.values)),
+            page=number,
+        ),
+        number,
+    )
+    return _fit(answer, [("items", answer["items"])])
+
+
+def lovable_sync_matter_changes(user: Any, matter: Any) -> dict[str, Any]:
+    """`get_lovable_sync_matter_changes`: one pilot Teema's history, or `NotFound`.
+
+    Unknown, not visible to this reader, deleted, or not in the pilot: the same
+    `NotFound`, because the service answers None for all of them alike."""
+    _require_reader(user)
+    if not isinstance(matter, str) or not matter.strip():
+        raise InvalidArgument("matter must be a Matter id or a reference such as 2026_243.")
+    value = matter.strip()
+    if len(value) > ids.MAX_ID_LENGTH:
+        raise InvalidArgument(f"matter must be at most {ids.MAX_ID_LENGTH} characters.")
+    if value.lower().startswith("matter:"):
+        value = value[len("matter:") :]
+    changes = _lovable().matter_changes(user, value)
+    if changes is None:
+        raise NotFound()
+    answer: dict[str, Any] = _absolute_links(changes.as_dict())
+    return _fit(
+        answer,
+        [
+            ("decisions", answer.get("decisions") or []),
+            ("source_events", answer.get("source_events") or []),
+            ("nights", answer.get("nights") or []),
+            ("pending", answer.get("pending") or []),
+        ],
+    )
+
+
+def lovable_sync_readiness(user: Any) -> dict[str, Any]:
+    """`get_lovable_sync_readiness`: `lovable_observability.readiness`. Writes nothing."""
+    _require_reader(user)
+    answer: dict[str, Any] = _absolute_links(_lovable().readiness(user).as_dict())
+    return _fit(answer, [("simulation_rows", answer.get("simulation_rows") or [])])
+
+
 __all__ = [
     "CONFIRMED",
     "ESTIMATED",
@@ -2717,6 +2947,11 @@ __all__ = [
     "ReaderError",
     "fetch_source",
     "list_matters",
+    "lovable_observed_changes",
+    "lovable_sync_history",
+    "lovable_sync_matter_changes",
+    "lovable_sync_readiness",
+    "lovable_sync_status",
     "matter_activity",
     "matter_documents",
     "matter_snapshot",

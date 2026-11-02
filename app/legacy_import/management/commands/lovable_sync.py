@@ -6,6 +6,12 @@
     python manage.py lovable_sync check
     python manage.py lovable_sync access-probe --credentials F
     python manage.py lovable_sync access-sql
+    python manage.py lovable_sync audit-sql
+    python manage.py lovable_sync observe [--manual] [--backfill] --credentials F
+    python manage.py lovable_sync observe-status
+    python manage.py lovable_sync prune-observations [--manual]
+    python manage.py lovable_sync report [--json]
+    python manage.py lovable_sync control --observe on|off --reason R
     python manage.py lovable_sync control --mode off|compare|apply --reason R
     python manage.py lovable_sync control --cut-over \\
         --operator-intent lovable-sync-cutover --reason R
@@ -17,10 +23,23 @@ reconciles the pilot's 100 Teemad. It needs ``JURISTID_LOVABLE_SYNC`` and
 obeys the control row: OFF refuses, COMPARE writes nothing, APPLY writes the
 allowlisted changes when a verified backup set is named. `check` compares the
 newest stored snapshot with Juristid now, without reaching Lovable.
-`access-probe` shows the service login reads, and tries to prove it can do
-nothing else: PASS, FAIL, or INDETERMINATE when HTTP cannot tell a refusal from
-a write that matched nothing — then `access-sql` prints the read-only catalogue
-inspection the owner runs in Lovable's SQL editor before the job may be enabled.
+`access-probe` shows, with GET requests only, that the service login reads what
+the job needs and not the hidden history or deleted topics. It sends nothing
+write-shaped (owner rule 2026-11-02), so it never PASSes: the write side is
+INDETERMINATE until `access-sql` — the read-only catalogue inspection the owner
+runs in Lovable's SQL editor — shows no write path for the identity.
+
+`observe` reads the whole live register for the wider observation
+(docs/adr/0201): counts only on output; refused unless `control --observe on`.
+`report` is the approved diagnostic: the read service's status and readiness
+(`lovable_observability.status` / `.readiness`, the same answers the pages and
+the MCP tools give) reduced to counts, codes and times — no sentence, title,
+reference or value. It reads only and asks as nobody, so no Teema is shown.
+`audit-sql` prints the owner's *proposal* for a SELECT-only audit-ledger path —
+text only, nothing runs it. `prune-observations` is the observation's retention
+job (docs/adr/0201 §8): it never reads Lovable, needs no credentials, and runs
+every night whether the observation is on, off, paused or failing; a second
+firing on the same Tallinn date is refused (DUPLICATE, exit 2).
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 3 held for review (circuit breaker or no backup), 1 failed.
@@ -29,13 +48,18 @@ Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 from __future__ import annotations
 
 import json
+import re
 import sys
 from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from app.legacy_import import lovable_source, lovable_sync
+from app.legacy_import import lovable_observation, lovable_source, lovable_sync
+from app.legacy_import.lovable_observation_models import (
+    ObservationRunStatus,
+    RetentionRunStatus,
+)
 from app.legacy_import.lovable_sync_models import LovableSyncRun, SyncRunStatus, SyncTrigger
 
 CUTOVER_INTENT = "lovable-sync-cutover"
@@ -54,6 +78,11 @@ class Command(BaseCommand):
                 "check",
                 "access-probe",
                 "access-sql",
+                "audit-sql",
+                "observe",
+                "observe-status",
+                "prune-observations",
+                "report",
                 "control",
                 "resolve",
             ],
@@ -73,6 +102,15 @@ class Command(BaseCommand):
         parser.add_argument("--field", default="")
         parser.add_argument("--note", default="")
         parser.add_argument("--json", action="store_true")
+        parser.add_argument(
+            "--manual",
+            action="store_true",
+            help="observe / prune-observations: a manual run, not the night's.",
+        )
+        parser.add_argument(
+            "--backfill", action="store_true", help="observe: read the audit ledger to the end."
+        )
+        parser.add_argument("--observe", choices=["on", "off"], default="")
 
     def handle(self, *args: Any, **options: Any) -> None:
         try:
@@ -108,8 +146,15 @@ class Command(BaseCommand):
                 "The service login is not read-only as required; do not enable the job."
             )
         if result.verdict != lovable_source.PASS:
+            reads = all(
+                c.status == lovable_source.PASS
+                for c in result.checks
+                if c.name != lovable_source.WRITE_SIDE_CHECK
+            )
             raise CommandError(
-                "ACCESS PROBE INDETERMINATE: HTTP could not prove every write is refused. "
+                "ACCESS PROBE INDETERMINATE: "
+                + ("every read check passed; " if reads else "a read check was not proven; ")
+                + "the write side is never probed over HTTP (owner rule 2026-11-02). "
                 "Do not enable the job (and never APPLY) until the read-only inspection "
                 "(`lovable_sync access-sql`) has been run in Lovable's SQL editor and shows "
                 "no write path for this identity."
@@ -119,6 +164,32 @@ class Command(BaseCommand):
     def _access_sql(self, options: dict[str, Any]) -> None:
         """The read-only catalogue inspection that settles what HTTP cannot."""
         self.stdout.write(lovable_source.GRANT_INSPECTION_SQL)
+
+    def _audit_sql(self, options: dict[str, Any]) -> None:
+        """The owner's proposal for a SELECT-only audit-ledger path. Text only."""
+        self.stdout.write(lovable_source.AUDIT_ACCESS_SQL)
+
+    def _observe_status(self, options: dict[str, Any]) -> None:
+        """Reads only; creates no control row (safe in a read-only smoke)."""
+        self._emit(options, lovable_observation.observation_status())
+
+    def _report(self, options: dict[str, Any]) -> None:
+        """Counts, codes and times from the one read service; writes nothing.
+
+        Asked as nobody (`AnonymousUser`): the service then names no Teema and
+        lists no plan row, and `codes_only` drops every remaining sentence."""
+        from django.contrib.auth.models import AnonymousUser
+
+        from app.legacy_import import lovable_observability
+
+        nobody = AnonymousUser()
+        self._emit(
+            options,
+            {
+                "status": codes_only(lovable_observability.status(nobody).as_dict()),
+                "readiness": codes_only(lovable_observability.readiness(nobody).as_dict()),
+            },
+        )
 
     def _due(self, options: dict[str, Any]) -> None:
         """For the host scheduler, which has no Tallinn clock of its own: whether
@@ -141,6 +212,52 @@ class Command(BaseCommand):
             backup_set=options["backup_set"],
         )
         self._finish(options, run)
+
+    def _observe(self, options: dict[str, Any]) -> None:
+        if not (settings.LOVABLE_SYNC_ENABLED and settings.REAL_DATA_ALLOWED):
+            raise CommandError(
+                "observe needs JURISTID_LOVABLE_SYNC and REAL_DATA_ALLOWED on this container."
+            )
+        config = lovable_source.load_config(self._credentials(options))
+        trigger = SyncTrigger.MANUAL if options["manual"] else SyncTrigger.SCHEDULED
+        run = lovable_observation.run_observation(
+            trigger=trigger,
+            transport=lovable_source.HttpTransport(config),
+            backfill=options["backfill"],
+        )
+        self.stdout.write(
+            json.dumps(
+                {
+                    "run_key": run.run_key,
+                    "status": run.status,
+                    "audit_access": run.audit_access,
+                    "audit_error": run.audit_error,
+                    "error": run.error,
+                    "counts": run.counts,
+                },
+                default=str,
+            )
+        )
+        if run.status == ObservationRunStatus.FAILED:
+            sys.exit(1)
+
+    def _prune_observations(self, options: dict[str, Any]) -> None:
+        """The retention job. Local only: never reads Lovable, no credentials."""
+        trigger = SyncTrigger.MANUAL if options["manual"] else SyncTrigger.SCHEDULED
+        run = lovable_observation.prune_observations(trigger=trigger)
+        self.stdout.write(
+            json.dumps(
+                {
+                    "run_key": run.run_key,
+                    "status": run.status,
+                    "error": run.error,
+                    "counts": run.counts,
+                },
+                default=str,
+            )
+        )
+        if run.status == RetentionRunStatus.FAILED:
+            sys.exit(1)
 
     def _check(self, options: dict[str, Any]) -> None:
         self._finish(options, lovable_sync.run_sync(trigger=SyncTrigger.CHECK))
@@ -167,11 +284,14 @@ class Command(BaseCommand):
             if options["operator_intent"] != CUTOVER_INTENT:
                 raise CommandError(f"Final cutover needs --operator-intent {CUTOVER_INTENT}.")
             row = lovable_sync.cut_over(reason=reason)
-        elif options["mode"]:
-            row = lovable_sync.set_mode(options["mode"].upper(), reason=reason)
+        elif options["mode"] or options["observe"]:
+            if options["mode"]:
+                row = lovable_sync.set_mode(options["mode"].upper(), reason=reason)
+            if options["observe"]:
+                row = lovable_observation.set_observe(options["observe"] == "on", reason=reason)
         else:
-            raise CommandError("control needs --mode or --cut-over.")
-        self.stdout.write(f"mode={row.mode} cut_over={row.cut_over}")
+            raise CommandError("control needs --mode, --observe or --cut-over.")
+        self.stdout.write(f"mode={row.mode} cut_over={row.cut_over} observe={row.observe}")
 
     def _resolve(self, options: dict[str, Any]) -> None:
         if not (options["reference"] and options["field"] and options["note"].strip()):
@@ -190,6 +310,47 @@ class Command(BaseCommand):
 
     def _emit(self, options: dict[str, Any], data: dict[str, Any]) -> None:
         self.stdout.write(json.dumps(data, indent=None if options["json"] else 2, default=str))
+
+
+#: A string `report` prints: a code (``COMPARE``, ``HTTP_401``) or an ISO moment.
+_CODE = re.compile(r"[A-Z][A-Z0-9_]{0,63}")
+#: A machine name (an indicator key, a field name): lower-case words.
+_CODE_OR_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
+_DROPPED = object()
+_MOMENT = re.compile(r"\d{4}-\d{2}-\d{2}(T[0-9:.]+([+-]\d{2}:\d{2}|Z)?)?")
+
+
+def codes_only(value: Any) -> Any:
+    """``value`` with only numbers, booleans, None, codes and ISO times kept.
+
+    A list of mappings with a ``key`` (indicators, coverage) or a ``field``
+    (per-field readiness) becomes a mapping by that name; any other list
+    becomes its length. Every other string — an Estonian sentence, a title, a
+    reference, a value — is dropped, so nothing here can carry business text."""
+    if isinstance(value, dict):
+        kept = {str(k): codes_only(v) for k, v in value.items()}
+        return {k: v for k, v in kept.items() if v is not _DROPPED}
+    if isinstance(value, list):
+        named = [item for item in value if isinstance(item, dict)]
+        for name in ("key", "field"):
+            if (
+                value
+                and len(named) == len(value)
+                and all(
+                    isinstance(item.get(name), str) and _CODE_OR_NAME.fullmatch(item[name])
+                    for item in named
+                )
+            ):
+                return {
+                    item[name]: codes_only({k: v for k, v in item.items() if k != name})
+                    for item in named
+                }
+        return len(value)
+    if value is None or isinstance(value, bool | int | float):
+        return value
+    if isinstance(value, str) and (_CODE.fullmatch(value) or _MOMENT.fullmatch(value)):
+        return value
+    return _DROPPED
 
 
 def _run_dict(run: LovableSyncRun | None) -> dict[str, Any] | None:

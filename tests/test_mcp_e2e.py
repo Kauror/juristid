@@ -33,6 +33,7 @@ from app.mcp_access import oauth
 from app.mcp_access.models import GrantStatus, McpAccessGrant, McpToken, TokenKind
 from app.mcp_access.verification import verify_access_token
 from app.mcp_access.views import GENERIC_REFUSAL
+from app.mcp_server import server as mcp_server
 from tests import factories
 from tests import mcp_access_support as support
 from tests import mcp_eval_world as w
@@ -259,7 +260,7 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     wait = world.reference("wait")
     answers = dict(
         zip(
-            sorted(w.TOOL_NAMES),
+            sorted(w.READ_TOOL_NAMES),
             mcp.batch(
                 [
                     ("fetch", {"id": world.matter_id("wait")}),
@@ -284,6 +285,31 @@ def test_a_colleague_connects_chatgpt_reads_everything_and_is_disconnected(clien
     assert world.matter_id("wait") in [r["id"] for r in facts["list_matters"]["matters"]]
     assert world.matter_id("packaging") in [r["id"] for r in facts["search"]["results"]]
     assert world.matter_id("wait") in [r["id"] for r in facts["search_records"]["results"]]
+    # The Lovable synchronisation tools answer through the same connection, as the
+    # same person; this world has no pilot, so a Teema's history is «not found».
+    lovable = dict(
+        zip(
+            sorted(w.LOVABLE_TOOL_NAMES),
+            mcp.batch(
+                [
+                    ("get_lovable_observed_changes", {}),
+                    ("get_lovable_sync_history", {}),
+                    ("get_lovable_sync_matter_changes", {"matter": wait}),
+                    ("get_lovable_sync_readiness", {}),
+                    ("get_lovable_sync_status", {}),
+                ]
+            ),
+            strict=True,
+        )
+    )
+    assert w.error_text(lovable.pop("get_lovable_sync_matter_changes")) == (
+        mcp_server.NOT_FOUND_TEXT
+    )
+    lovable_facts = {name: w.structured(result, name) for name, result in lovable.items()}
+    assert lovable_facts["get_lovable_sync_status"]["cohort_size"] == 0
+    assert lovable_facts["get_lovable_sync_history"]["items"] == []
+    assert lovable_facts["get_lovable_observed_changes"]["total"] == 0
+    assert lovable_facts["get_lovable_sync_readiness"]["simulation_rows"] == []
 
     # Refresh: a new pair; the old access token stands until it expires.
     assert _refresh(first_refresh, **PUBLIC_CLIENT_AUTH).status_code == 401

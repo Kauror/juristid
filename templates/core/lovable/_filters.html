@@ -1,0 +1,104 @@
+{% comment %}
+  The filter form of one Lovable view (`app.core.views.LOVABLE_FILTERS` says
+  which fields it offers). A plain GET: the address is the state, so a filtered
+  view can be bookmarked, shared and paged. `Laadi Excel` writes exactly these
+  filtered rows, with the same permission as the page.
+{% endcomment %}
+<form method="get" class="chfilters lovfilters" role="search" aria-label="Filtrid">
+  <input type="hidden" name="vaade" value="{{ lovable_view }}">
+  {% if "dates" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Algus</span>
+      <input class="field__input field__input--compact lovfilters__date" type="text" name="algus"
+             value="{{ filters.slugs.algus|default:'' }}" placeholder="pp.kk.aaaa" maxlength="40" autocomplete="off">
+    </label>
+    <label class="field">
+      <span class="field__label field__label--plain">Lõpp</span>
+      <input class="field__input field__input--compact lovfilters__date" type="text" name="lopp"
+             value="{{ filters.slugs.lopp|default:'' }}" placeholder="pp.kk.aaaa" maxlength="40" autocomplete="off">
+    </label>
+  {% endif %}
+  {% if "population" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Hulk</span>
+      <select class="field__input field__input--compact" name="ulatus">
+        <option value="">{% if lovable_view == "oised" %}Piloot (vaikimisi){% else %}Kõik elavad teemad (vaikimisi){% endif %}</option>
+        {% for slug, label in choices.population %}
+          <option value="{{ slug }}"{% if slug == filters.slugs.ulatus %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  {% endif %}
+  {% if "outcome" in offered or "queue_outcome" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Tulemus</span>
+      <select class="field__input field__input--compact" name="tulemus">
+        <option value="">Kõik</option>
+        {% for slug, label in choices.outcome %}
+          <option value="{{ slug }}"{% if slug == filters.slugs.tulemus %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  {% endif %}
+  {% if "kind" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Muutuse liik</span>
+      <select class="field__input field__input--compact" name="liik">
+        <option value="">Kõik</option>
+        {% for slug, label in choices.kind %}
+          <option value="{{ slug }}"{% if slug == filters.slugs.liik %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  {% endif %}
+  {% if "mapping" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Seos Juristidega</span>
+      <select class="field__input field__input--compact" name="seos">
+        <option value="">Kõik</option>
+        {% for slug, label in choices.mapping %}
+          <option value="{{ slug }}"{% if slug == filters.slugs.seos %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  {% endif %}
+  {% if "field" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Väli</span>
+      <select class="field__input field__input--compact" name="vali">
+        <option value="">Kõik</option>
+        {% for name, label in choices.field %}
+          <option value="{{ name }}"{% if name == filters.slugs.vali %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  {% endif %}
+  {% if "reference" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Teema number</span>
+      <input class="field__input field__input--compact lovfilters__ref" type="text" name="viide"
+             value="{{ filters.slugs.viide|default:'' }}" placeholder="2026/243" maxlength="20" autocomplete="off">
+    </label>
+  {% endif %}
+  {% if "text" in offered %}
+    <label class="field">
+      <span class="field__label field__label--plain">Otsi</span>
+      <input class="field__input field__input--compact" type="search" name="otsi"
+             value="{{ filters.slugs.otsi|default:'' }}" maxlength="200" autocomplete="off">
+    </label>
+  {% endif %}
+  {% if "attention" in offered %}
+    <label class="lovfilters__check">
+      <input type="checkbox" name="tahelepanu" value="1"{% if filters.attention %} checked{% endif %}>
+      Ainult tähelepanu vajavad
+    </label>
+  {% endif %}
+  <span class="chfilters__actions">
+    <button class="button button--quiet button--tiny" type="submit">Näita</button>
+    {% if filters.active %}<a href="?vaade={{ lovable_view }}">Tühjenda</a>{% endif %}
+    {% if exportable %}<a class="lovfilters__export" href="{% url 'core:release_notes_lovable_export' %}?{{ filters.query }}">Laadi Excel</a>{% endif %}
+  </span>
+</form>
+{% if "dates" in offered %}
+  <p class="lovfilters__hint">Kuupäevad kujul 7.9.2026. Ilma kuupäevata näidatakse viimased 31 päeva; periood on kuni 31 päeva.</p>
+{% endif %}

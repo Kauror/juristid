@@ -9,11 +9,20 @@
 # The host keeps UTC and has no Tallinn zone, so cron fires twice and the
 # container says which firing is 00:15 Europe/Tallinn (`lovable_sync due`).
 #
-# Order: one runner (flock) → pause file → no release in progress (host lock) →
-# web healthy → credentials file present and root-only → due? → in APPLY mode a
-# backup set taken AND level-2 verified → the run → log. A backup that fails is
+# Order: one runner (flock) → no release in progress (host lock) → web healthy →
+# the observation's retention (`lovable_sync prune-observations`, docs/adr/0201
+# §8: local only, no credentials, every firing; the second firing of a Tallinn
+# night is refused DUPLICATE and skipped quietly; its failure is logged and never
+# changes this script's exit status) → pause file → credentials file present and
+# root-only → due? → in APPLY mode a backup set taken AND level-2 verified → the
+# run → log. Retention comes before every check that can end the night early, so
+# it holds while the pilot is OFF or paused and the observation is off or failing. A backup that fails is
 # not retried: the run goes ahead with no backup set and writes nothing
 # (REVIEW_ONLY), which Haldus and production_status then show.
+#
+# After the pilot run, when it was due, the wider observation (`lovable_sync
+# observe`, docs/adr/0201) runs in the same way; it gates itself on the control
+# row and its failure never changes this script's exit status.
 #
 # Pause: `touch $SYNC_DIR/PAUSED` (host) or `lovable_sync control --mode off`
 # (database; also what Haldus shows). Final cutover: `lovable_sync control
@@ -48,7 +57,6 @@ say() { echo "$(date -u +%FT%TZ) $*"; }
 exec 9>/tmp/juristid-lovable-sync.lock
 flock -n 9 || { say "SKIP another synchronisation is running"; exit 0; }
 
-if [ -e "$SYNC_DIR/PAUSED" ]; then say "SKIP paused on the host ($SYNC_DIR/PAUSED)"; exit 0; fi
 # The release lock, taken (not only looked at): a release cannot start under a run.
 if ! mkdir /tmp/juristid-host-lock 2>/dev/null; then
   say "SKIP a release holds /tmp/juristid-host-lock ($(cat /tmp/juristid-host-lock/owner 2>/dev/null))"
@@ -61,6 +69,23 @@ trap 'rm -rf /tmp/juristid-host-lock' EXIT
 IMAGE="$(docker inspect -f '{{.Image}}' juristid-main-web 2>/dev/null)" || IMAGE=""
 HEALTH="$(docker inspect -f '{{.State.Health.Status}}' juristid-main-web 2>/dev/null)" || HEALTH=""
 if [ -z "$IMAGE" ] || [ "$HEALTH" != healthy ]; then say "FAIL web is not healthy (${HEALTH:-absent})"; exit 1; fi
+
+# Retention of the observation's raw data (docs/adr/0201 §8). No credentials
+# and no Lovable: the same image and database only.
+PRUNE_ARGS=(prune-observations)
+if [ "$TRIGGER" = manual ]; then PRUNE_ARGS+=(--manual); fi
+prc=0
+timeout "$RUN_TIMEOUT" docker run --rm --name "juristid-main-lovable-prune-$$" \
+  --network juristid-main-internal --env-file "$ENV_FILE" \
+  --cpus 1 --memory 1g --pids-limit 256 --log-driver none \
+  --entrypoint python "$IMAGE" manage.py lovable_sync "${PRUNE_ARGS[@]}" </dev/null || prc=$?
+case "$prc" in
+  0) say "prune END ok" ;;
+  2) say "prune SKIP already done for this night" ;;
+  *) say "WARN prune failed rc=$prc (the pilot run's status is unchanged)" ;;
+esac
+
+if [ -e "$SYNC_DIR/PAUSED" ]; then say "SKIP paused on the host ($SYNC_DIR/PAUSED)"; exit 0; fi
 
 if [ ! -f "$CREDENTIALS" ]; then say "FAIL $CREDENTIALS is missing"; exit 1; fi
 if [ "$(stat -c '%u %a' "$CREDENTIALS" 2>/dev/null || true)" != "0 600" ]; then
@@ -108,5 +133,20 @@ say "run"
 rc=0
 one_off run --trigger "$TRIGGER" ${SET:+--backup-set "$SET"} || rc=$?
 say "END rc=$rc"
+
+# The wider observation (docs/adr/0201), the same night and the same container
+# pattern, after the pilot run. `observe` itself refuses unless
+# `lovable_sync control --observe on` (OBSERVE_OFF, exit 2) — that is the gate.
+# Its outcome is logged and never changes the pilot run's exit status.
+OBSERVE_ARGS=(observe)
+if [ "$TRIGGER" = manual ]; then OBSERVE_ARGS+=(--manual); fi
+say "observe"
+orc=0
+one_off "${OBSERVE_ARGS[@]}" || orc=$?
+case "$orc" in
+  0) say "observe END ok" ;;
+  2) say "observe SKIP refused (off, duplicate or locked; see the line above)" ;;
+  *) say "WARN observe failed rc=$orc (the pilot run's status is unchanged)" ;;
+esac
 find "$LOG_DIR" -maxdepth 1 -type f -name '*.log*' -mtime +"$LOG_RETENTION_DAYS" -delete || true
 exit "$rc"

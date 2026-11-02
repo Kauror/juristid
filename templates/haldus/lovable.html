@@ -90,6 +90,52 @@
     {% endif %}
   </section>
 
+  {% with status=observation.status readiness=observation.readiness ready=observation.ready %}
+  <section class="panel" aria-labelledby="sunk-vaatlus">
+    <h2 class="acctsection__title" id="sunk-vaatlus">Vaatlus ja valmisolek</h2>
+    <p class="acctnote">Arvud samast lugemisteenusest, mida kasutab Uuendused → Lovable (docs/adr/0201). Siin on ainult arvud ja ajad, mitte teemade sisu; sisu näeb juriidilise osakonna kasutaja Uuenduste Lovable'i vaates.</p>
+    <dl class="detailgrid">
+      <dt>Režiim</dt><dd>{{ status.mode_label }}{% if status.cut_over %} · lõplik üleminek tehtud{% endif %}</dd>
+      <dt>Laiem vaatlus</dt><dd>{% if status.observe_enabled %}sisse lülitatud{% else %}välja lülitatud{% endif %}</dd>
+      <dt>Piloodi teemad</dt><dd>{{ status.cohort_size }}</dd>
+      <dt>Elavaid teemasid Lovable'is</dt><dd>{{ status.live_topics|default_if_none:"—" }}</dd>
+      <dt>Operatiivseid teemasid</dt><dd>{{ status.operational_topics|default_if_none:"—" }}</dd>
+      <dt>Ülevaatust ootavaid välju</dt><dd>{{ status.pending_review }}</dd>
+      <dt>Lahendamata vastuolusid</dt><dd>{{ readiness.conflicts }}</dd>
+      <dt>Muutmisajalugu</dt><dd>{% if status.audit.available %}<span class="statechip statechip--ok">Loetav</span>{% else %}<span class="statechip statechip--waiting">Pole kättesaadav</span>{% endif %}</dd>
+      <dt>Vaatluse seire</dt>
+      <dd>
+        {% if status.observation_health_ok %}<span class="statechip statechip--ok">Korras</span>{% else %}<span class="statechip statechip--problem">Vajab tähelepanu</span>{% endif %}
+        <span class="mono">{{ status.observation_health_detail }}</span>
+      </dd>
+      <dt>Toorandmete viimane kustutamine</dt><dd>{% if status.retention_last_success_at %}{{ status.retention_last_success_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+    </dl>
+    <p class="acctnote">Vaatluse seire on punane, kui laiem vaatlus on sisse lülitatud ja viimane lugemine ebaõnnestus, käib üle kahe tunni, õnnestunud lugemist pole {{ stale_hours }} tunni jooksul või lubatud muutmisajalugu pole loetav — ning alati, kui vaatluse toorandmeid on, kuid nende kustutamine ebaõnnestus või pole {{ stale_hours }} tunni jooksul õnnestunud. Sama rida on käsu production_status väljundis («Lovable observation»).</p>
+    {% if status.warnings %}
+      <h3 class="acctsection__title">Hoiatused</h3>
+      <ul class="linklist">{% for line in status.warnings %}<li>{{ line }}</li>{% endfor %}</ul>
+    {% endif %}
+    <h3 class="acctsection__title">Valmisoleku hinnang (mitte sisselülitamine)</h3>
+    {% if ready.simulation %}
+      <dl class="detailgrid">
+        {% for label, count in ready.simulation %}<dt>{{ label }}</dt><dd>{{ count }}</dd>{% endfor %}
+      </dl>
+    {% else %}
+      <p class="acctnote">Simulatsiooni ei tehtud: võrreldavat ja kontrollitud piloodi lugemist pole.</p>
+    {% endif %}
+    <dl class="detailgrid">
+      {% for item in readiness.coverage %}<dt>{{ item.label }}</dt><dd>{% if item.value is None %}—{% else %}{{ item.value }}{% endif %} <span class="acctnote">{% if item.value is None %}{{ item.unavailable_reason }}{% else %}{{ item.denominator }}{% endif %}</span></dd>{% endfor %}
+    </dl>
+    <h3 class="acctsection__title">Takistused ({{ readiness.blockers|length }})</h3>
+    <ul class="linklist">{% for line in readiness.blockers %}<li>{{ line }}</li>{% endfor %}</ul>
+    <div class="lovready__facts">
+      {% include "core/lovable/_facts.html" with caption="Piloodi lugemine" rows=ready.pilot %}
+      {% include "core/lovable/_facts.html" with caption="Laiem lugemine" rows=ready.observation %}
+      {% include "core/lovable/_facts.html" with caption="Teemade vastavus" rows=ready.identity %}
+    </div>
+  </section>
+  {% endwith %}
+
   <section class="panel" aria-labelledby="sunk-juhtimine">
     <h2 class="acctsection__title" id="sunk-juhtimine">Juhtimine serveris</h2>
     <ul class="linklist mono">

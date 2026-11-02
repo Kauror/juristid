@@ -1,7 +1,8 @@
-"""The MCP server: eight read-only tools over Juristid, and the ASGI application around them.
+"""The MCP server: thirteen read-only tools over Juristid, and the ASGI application around them.
 
 `build_server()` is the `MCPServer` (the official SDK, `mcp` 2.x) with the
-eight tools of docs/adr/0185 §2 and nothing else — no resources, prompts or
+eight tools of docs/adr/0185 §2, the five Lovable synchronisation tools of docs/adr/0201 §9
+and nothing else — no resources, prompts or
 subscriptions. With MCP_WRITES_ENABLED it also lists the write tools of
 `app.mcp_server.write_tools` (docs/adr/0189): they only *prepare* proposals
 and *commit* ones the person approved in Juristid, through the separate write
@@ -381,6 +382,146 @@ def tool_specs() -> list[ToolSpec]:
             ),
             count=_length_of("commencements", "informational"),
         ),
+        *_lovable_tool_specs(schemas),
+    ]
+
+
+#: Said by every Lovable tool: where the data comes from, and what it never does.
+_LOVABLE_SOURCE = (
+    "From Juristid's own records of the Lovable register's nightly readings "
+    "(docs/adr/0192, 0201); Lovable itself is never contacted."
+)
+
+
+def _lovable_tool_specs(schemas: Any) -> list[ToolSpec]:
+    """The five read-only Lovable synchronisation tools (docs/adr/0201 §9)."""
+    return [
+        ToolSpec(
+            name="get_lovable_sync_status",
+            title="Lovable synchronisation status",
+            description=(
+                "The state of the Lovable → Juristid synchronisation and of the wider "
+                "observation of Lovable's register: mode (OFF, COMPARE, APPLY), whether "
+                "automatic changes are authorised, the last scheduled, successful and failed "
+                "runs with failure codes, how fresh the last reading is, the pilot's size, "
+                "the register's live and operational topic counts, how many changes await "
+                "review, whether Lovable's change history is available, and warnings in "
+                "Estonian. Counts and times only, no Teema titles or values. "
+                + _LOVABLE_SOURCE
+                + " Read-only."
+            ),
+            arguments=schemas.GetLovableSyncStatusArguments,
+            output=schemas.LovableSyncStatusOutput,
+            invoking="Checking the Lovable synchronisation…",
+            invoked="Checked the Lovable synchronisation",
+            read=lambda readers, user, a: readers.lovable_sync_status(user),
+            count=_one,
+        ),
+        ToolSpec(
+            name="get_lovable_sync_history",
+            title="Lovable synchronisation history",
+            description=(
+                "What changed in Lovable, night by night, newest first. population PILOT "
+                "(default): the pilot's nightly comparisons of its linked Teemad, each topic "
+                "with its changed fields, before and after, and what Juristid did with each "
+                "(APPLIED, NOT_APPLIED, REVIEW, CONFLICT, SAME, …). OPERATIONAL or ALL_LIVE: "
+                "the wider readings of the whole register, narrowed to that population. "
+                "Optionally only one field or (PILOT) one comparison result. `since` and "
+                "`until` are ISO dates (YYYY-MM-DD), at most "
+                f"{schemas.LOVABLE_MAX_WINDOW_DAYS} days apart; default the last "
+                f"{schemas.LOVABLE_MAX_WINDOW_DAYS} days. 10 readings per page, pages 1 to "
+                f"{schemas.LOVABLE_MAX_PAGE}. Teemad you may not open are counted in `hidden`, "
+                "never named; topics with no approved link to a Juristid Teema are only "
+                "counted in each reading's `unlinked`; long values are cut (truncated) — "
+                "get_lovable_sync_matter_changes has them uncut. " + _LOVABLE_SOURCE + " Read-only."
+            ),
+            arguments=schemas.GetLovableSyncHistoryArguments,
+            output=schemas.LovableSyncHistoryOutput,
+            invoking="Reading the Lovable synchronisation history…",
+            invoked="Read the Lovable synchronisation history",
+            read=lambda readers, user, a: readers.lovable_sync_history(
+                user,
+                since=a.get("since"),
+                until=a.get("until"),
+                population=a.get("population") or "PILOT",
+                outcome=a.get("outcome"),
+                field=a.get("field"),
+                page=_page(a),
+            ),
+            count=_length_of("items"),
+        ),
+        ToolSpec(
+            name="get_lovable_sync_matter_changes",
+            title="One Teema's Lovable synchronisation",
+            description=(
+                "One pilot Teema's synchronisation with Lovable, by its reference such as "
+                "2026_243 or its id: per field the value last applied, the value in Juristid "
+                "now and the value last observed in Lovable; its nightly changes, the "
+                "comparison decisions, what still awaits review and why, and Lovable's own "
+                "change history where it is available. Values are not cut here, except a "
+                "change-history value Juristid stored cut (source_truncated). A Teema that is "
+                "not in the pilot is answered like one that does not exist. "
+                + _LOVABLE_SOURCE
+                + " Read-only."
+            ),
+            arguments=schemas.GetLovableSyncMatterChangesArguments,
+            output=schemas.LovableSyncMatterChangesOutput,
+            invoking="Reading the Teema's Lovable history…",
+            invoked="Read the Teema's Lovable history",
+            read=lambda readers, user, a: readers.lovable_sync_matter_changes(user, a["matter"]),
+            count=_one,
+        ),
+        ToolSpec(
+            name="get_lovable_observed_changes",
+            title="Changes observed in Lovable",
+            description=(
+                "Changed topics from the wider readings of Lovable's whole register, newest "
+                "first, with totals by kind and by link over every page: each topic's source "
+                "number, kind (NEW, CHANGED, MISSING, BACK, RENUMBERED), population, its link "
+                "to Juristid and the changed fields. A topic with no approved link to a "
+                "Juristid Teema (REFERENCE_CANDIDATE, UNMATCHED) is not listed: `unlinked` "
+                "counts them by kind, link and field, until the owner decides what may be "
+                "shown; never a title or values. Optionally narrowed by population, kind, "
+                "field or link. `since`/`until` ISO dates at most "
+                f"{schemas.LOVABLE_MAX_WINDOW_DAYS} days apart. 50 per page, pages 1 to "
+                f"{schemas.LOVABLE_MAX_PAGE}. " + _LOVABLE_SOURCE + " Read-only."
+            ),
+            arguments=schemas.GetLovableObservedChangesArguments,
+            output=schemas.LovableObservedChangesOutput,
+            invoking="Reading changes observed in Lovable…",
+            invoked="Read changes observed in Lovable",
+            read=lambda readers, user, a: readers.lovable_observed_changes(
+                user,
+                since=a.get("since"),
+                until=a.get("until"),
+                population=a.get("population") or "ALL_LIVE",
+                kind=a.get("kind"),
+                field=a.get("field"),
+                mapping=a.get("mapping"),
+                page=_page(a),
+            ),
+            count=_length_of("items"),
+        ),
+        ToolSpec(
+            name="get_lovable_sync_readiness",
+            title="Lovable synchronisation readiness",
+            description=(
+                "What stands between today and automatic synchronisation from Lovable (APPLY): "
+                "the source's freshness and verification, how many topics are linked, "
+                "candidates or unmatched, per field the rule, its risks and why it is held, "
+                "a simulated plan of what the existing rules would do with the latest reading "
+                "(simulated only: nothing changes), coverage, conflicts, blockers and the "
+                "owner's open decisions. An assessment, never an activation. "
+                + _LOVABLE_SOURCE
+                + " Read-only."
+            ),
+            arguments=schemas.GetLovableSyncReadinessArguments,
+            output=schemas.LovableSyncReadinessOutput,
+            invoking="Assessing Lovable synchronisation readiness…",
+            invoked="Assessed Lovable synchronisation readiness",
+            read=lambda readers, user, a: readers.lovable_sync_readiness(user),
+            count=_one,
+        ),
     ]
 
 
@@ -615,7 +756,7 @@ WRITES_DESCRIPTION = (
 def build_server(
     *, runtime: ReaderRuntime | None = None, token_verifier: TokenVerifier | None = None
 ) -> MCPServer:
-    """The MCP server with Juristid's eight read-only tools, and the write tools when enabled.
+    """The MCP server with Juristid's read-only tools, and the write tools when enabled.
 
     MCP_WRITES_ENABLED is read here, once: ``tools/list`` names the write tools
     exactly when the server was built with writes on, and a call to one of

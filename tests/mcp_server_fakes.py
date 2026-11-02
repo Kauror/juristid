@@ -119,6 +119,12 @@ CANNED: dict[str, dict[str, Any]] = {
     "matter_documents": {"documents": [{"title": "Eelnõu", "fetch_id": "doc:1"}], "page": 1},
     "upcoming_commencements": {"commencements": [], "planned": [], "window": ["a", "b"]},
     "list_matters": {"matters": [{"reference": "2026_225", "owner": "Marko"}], "total": 1},
+    # The Lovable synchronisation readers (docs/adr/0201 §9).
+    "lovable_sync_status": {"mode": "COMPARE", "pending_review": 2, "warnings": []},
+    "lovable_sync_history": {"items": [{"run_id": "r1", "topics": []}], "page": 1, "pages": 1},
+    "lovable_sync_matter_changes": {"reference": "2026_243", "fields": [], "nights": []},
+    "lovable_observed_changes": {"items": [{"reference": "2026_900"}, {}], "page": 1},
+    "lovable_sync_readiness": {"simulation": {}, "simulation_rows": [], "blockers": []},
 }
 
 

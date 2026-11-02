@@ -63,6 +63,16 @@ EXPECTED_SKIPS: tuple[ExpectedSkip, ...] = (
         ),
     ),
     ExpectedSkip(
+        node="tests/test_lovable_observation_collector.py::test_measure_a_register_of_2600_topics",
+        reason_starts_with="measurement; set LOVABLE_OBSERVE_PERF=1",
+        why=(
+            "An opt-in measurement, not a check: it times a synthetic 2,600-topic reading "
+            "for the storage and run-time projection in docs/adr/0201 §8. The reading's "
+            "behaviour at that size is covered by the collector tests beside it; timing on "
+            "a shared runner would only be noise."
+        ),
+    ),
+    ExpectedSkip(
         node="tests/test_test_isolation.py::*",
         reason_starts_with="symlink creation needs a privilege on Windows",
         why="A platform skip. CI runs on Linux, where it never fires.",

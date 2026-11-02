@@ -197,6 +197,20 @@ def _lovable_sync() -> CheckResult:
     return CheckResult("lovable_sync", "Lovable sync", health.ok, health.detail)
 
 
+def _lovable_observation() -> CheckResult:
+    """The wider Lovable observation and its raw-data retention (docs/adr/0201).
+
+    Separate from the pilot's row: the nightly script keeps the pilot's exit
+    status when observation fails, so this is where a failing, stale or stuck
+    observation — or a retention job that stopped pruning — becomes red. Off
+    with no raw data (or with healthy retention) is green, detail ``off``. Reads
+    only; never creates the control row."""
+    from app.legacy_import.lovable_observability import observation_health
+
+    health = observation_health()
+    return CheckResult("lovable_observation", "Lovable observation", health.ok, health.detail)
+
+
 #: The checks, in the order they are printed. Order is part of the output
 #: contract: an operator reading two runs side by side compares rows by
 #: position, and a set would reorder between them.
@@ -207,6 +221,7 @@ CHECKS: tuple[Callable[[], CheckResult], ...] = (
     _era_contracts,
     _archive_projection,
     _lovable_sync,
+    _lovable_observation,
 )
 
 

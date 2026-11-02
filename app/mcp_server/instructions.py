@@ -53,6 +53,19 @@ Tools:
   next_action_kind WAIT) and «which matters have no next step?» (NONE). Default: open
   current work, 20 per page with the total.
 
+Lovable synchronisation (what changed in the Lovable register and what Juristid did
+with it, from Juristid's own records; Lovable is never contacted):
+- get_lovable_sync_status(): mode, freshness, failures, counts awaiting review.
+- get_lovable_sync_history(since?, until?, population?, outcome?, field?, page?):
+  night by night, newest first; at most 31 days per question.
+- get_lovable_sync_matter_changes(matter): one pilot Teema's fields and history.
+- get_lovable_observed_changes(since?, until?, population?, kind?, field?, mapping?,
+  page?): changes across the whole register; unlinked topics are only counted.
+- get_lovable_sync_readiness(): what blocks automatic synchronisation; simulated only.
+Keep apart what Lovable's own change history says, what a comparison of two readings
+found, what Juristid decided and what was applied; «hidden» counts Teemad you may
+not open.
+
 Values are labelled confirmed, planned, estimated, previous or missing where the
 register distinguishes them; keep the label in your answer. A date in the past is
 not proof that something entered into force. An id or matter you cannot see is
