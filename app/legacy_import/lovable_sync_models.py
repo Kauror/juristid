@@ -67,7 +67,7 @@ class LovableSyncControl(models.Model):
     #: Whether the nightly job also reads the whole live register for
     #: observation (docs/adr/0201). Observation writes no business record and
     #: is never a pilot baseline; off until the owner switches it on.
-    observe = models.BooleanField(default=False)
+    observe = models.BooleanField(default=False, db_default=False)
     changed_at = models.DateTimeField(null=True, blank=True)
     changed_reason = models.CharField(max_length=300, blank=True)
 
