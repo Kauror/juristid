@@ -44,17 +44,18 @@ somebody is typing into would move the caret on every keystroke.
     {% endif %}
   </p>
 
-  {% if register_interactive and not commencement_view %}
+  {% if register_interactive and not commencement_view and page.object_list %}
     {% comment %}
       «Vali veerud» (owner's brief of 2026-11-02; app/matters/register_columns.py).
       A GET form carrying the whole current address except the columns, so a
       column change keeps every filter, the search, the sort and the page size —
       and a filter change keeps the columns (the panel carries `veerud`).
       Nothing changes until «Rakenda»; «Vaikimisi veerud» drops only `veerud`.
+      Drawn only above rows: an empty answer has no table to shape or export.
     {% endcomment %}
     <div class="columnbar">
       <details class="columnchooser" data-column-chooser>
-        <summary class="filterpanel__trigger">Vali veerud{% if not columns_are_default %} · muudetud{% endif %}</summary>
+        <summary class="columnbar__trigger">Vali veerud{% if not columns_are_default %} · muudetud{% endif %}</summary>
         <form class="columnchooser__body" method="get" action="#tulemused">
           {% for name, value in chooser_carried %}
             <input type="hidden" name="{{ name }}" value="{{ value }}">

@@ -1085,7 +1085,8 @@ p.formnote {
   min-width: 0;
 }
 
-.filterpanel__trigger {
+.filterpanel__trigger,
+.columnbar__trigger {
   display: inline-flex;
   align-items: center;
   gap: var(--spacing-1);
@@ -1101,16 +1102,20 @@ p.formnote {
   list-style: none;
 }
 
-.filterpanel__trigger::-webkit-details-marker {
+.filterpanel__trigger::-webkit-details-marker,
+.columnbar__trigger::-webkit-details-marker {
   display: none;
 }
 
-.filterpanel__trigger:hover {
+.filterpanel__trigger:hover,
+.columnbar__trigger:hover {
   color: var(--text-primary);
   border-color: var(--text-secondary);
 }
 
-.filterpanel[open] > .filterpanel__trigger {
+.filterpanel[open] > .filterpanel__trigger,
+.columnchooser[open] > .columnbar__trigger,
+.exportmenu[open] > .columnbar__trigger {
   color: var(--text-primary);
   border-style: solid;
   border-color: var(--accent-border);
