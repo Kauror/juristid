@@ -82,7 +82,7 @@ jobs:
           cat tested/tested-tree.txt
 
       - name: Upload the tested tree
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: tested-tree
           path: tested/tested-tree.txt
@@ -749,7 +749,7 @@ jobs:
       # a report to read when a shard is red.
       - name: Upload this runner's reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-report-tests-runner-${{ matrix.runner }}
           path: |
@@ -852,7 +852,7 @@ jobs:
 
       - name: Upload the combined coverage
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-combined
           path: .coverage
@@ -1051,7 +1051,7 @@ jobs:
       # screenshots and traces beside them.
       - name: Upload this runner's shard reports
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-reports-browser-runner-${{ matrix.runner }}
           path: |
@@ -1062,7 +1062,7 @@ jobs:
 
       - name: Upload screenshots and traces
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-report-browser-runner-${{ matrix.runner }}
           path: |
@@ -1246,7 +1246,7 @@ jobs:
 
       - name: Upload renderings and traces
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: test-report-visual
           path: |
@@ -1378,7 +1378,7 @@ jobs:
       - name: Upload the numbers
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shard-health
           path: shard-health.json
@@ -2590,7 +2590,7 @@ jobs:
 
       - name: Upload the image scan
         if: ${{ !cancelled() && steps.build.outcome == 'success' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: image-scan
           path: image-scan/
