@@ -601,3 +601,22 @@ def test_a_planned_meeting_is_not_proposed_on_the_page(signed_in):
 
 def _estonian(day: date) -> str:
     return f"{day.day}.{day.month}.{day.year}"
+
+
+def test_a_typed_full_title_is_found_ahead_of_ranked_namesakes(signed_in):
+    """«Lisa teema» lists ten topics: one whose title holds the whole typed text
+    comes first, even when the search projection has not indexed it yet and
+    eleven indexed topics share its words (CI 2026-11-02)."""
+    from app.reporting.report_builder import search
+    from app.search.indexing import indexable_matters, refresh_matters
+
+    for index in range(11):
+        factories.MatterFactory(title=f"Ülevaate teine {index:02d}")
+    refresh_matters(indexable_matters())
+    wanted = factories.MatterFactory(title="Ülevaate teine cda53214")
+
+    user = signed_in.get(reverse(PAGE), OCTOBER).wsgi_request.user
+    found = search.matters(user, "Ülevaate teine cda53214", exclude=set())
+
+    assert found[0].matter_id == wanted.pk
+    assert len({item.matter_id for item in found}) == len(found)

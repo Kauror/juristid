@@ -43,7 +43,13 @@ def matters(user: object, raw_query: str, *, exclude: set[uuid.UUID]) -> list[Fo
         .order_by("title", "pk")
         .values_list("pk", flat=True)[:30]
     )
-    wanted = [pk for pk in ranked + by_title if pk not in exclude]
+    # A topic whose title holds the whole typed text comes first: a person who
+    # typed a title must see that topic even when the search projection has not
+    # indexed it yet and ten other ranked topics share its words.
+    titled = set(readable.filter(title__icontains=query).values_list("pk", flat=True)[:30])
+    first = [pk for pk in ranked if pk in titled] + by_title
+    wanted = [pk for pk in first + ranked if pk not in exclude]
+    wanted = list(dict.fromkeys(wanted))
     # `readable` again: the search projection is scoped, but data class is
     # this report's own rule, and the second read is what states it.
     found = {matter.pk: matter for matter in readable.filter(pk__in=wanted)}
