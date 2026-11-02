@@ -381,6 +381,14 @@ from app.legacy_import.current_state import (  # noqa: E402
     CurrentRegisterState,
     RegisterCurrency,
 )
+from app.legacy_import.lovable_observation_models import (  # noqa: E402
+    LovableAuditCursor,
+    LovableObservationRun,
+    LovableObservationSnapshot,
+    LovableObservedChange,
+    LovableSourceEvent,
+    LovableSourceEventField,
+)
 from app.legacy_import.lovable_sync_models import (  # noqa: E402
     LovableSyncControl,
     LovableSyncDecision,
