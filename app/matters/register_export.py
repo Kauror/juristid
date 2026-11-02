@@ -125,8 +125,13 @@ def table_workbook(
             "Juristid · Teemad — tabelis kuvatud info",
             f"Koostatud {format_estonian_date(today)} {timezone.localtime(now):%H:%M}, "
             f"koostaja {getattr(user, 'display_name', '')}.",
-            f"Ridu: {len(ids)} — kõik praegusele otsingule ja filtritele vastavad teemad, "
-            "mitte ainult ekraanil olev lehekülg.",
+            (
+                f"Ridu: {len(ids)} — kõik praegusele otsingule ja filtritele vastavad teemad, "
+                "mitte ainult ekraanil olev lehekülg."
+                if ids
+                else "Ridu: 0 — praegusele otsingule ja filtritele ei vasta ühtegi teemat. "
+                "Lehel «Teemad» on ainult valitud veergude pealkirjad."
+            ),
             "Tingimused: " + ("; ".join(conditions) if conditions else "filtreid ei ole."),
             "Veerud: " + ", ".join(column.heading for column in register_columns.columns_for(keys)),
             *([notice] if notice else []),

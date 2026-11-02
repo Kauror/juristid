@@ -266,8 +266,12 @@ def test_a_restricted_matter_reaches_neither_the_rows_nor_the_count(page, base_u
     expect(page.locator(".registercount strong")).to_have_text("0")
     # No rows, and no link to a Matter — the word itself is legitimately on the
     # page twice, in the box that was typed into and in the count echoing it.
+    # «Laadi Excel» stays above an empty answer and its addresses start with
+    # /teemad/eksport/ — downloads, not Matters, so they are not counted here.
     expect(page.locator(".table--register")).to_have_count(0)
-    expect(page.locator("#teemad-tulemused a[href*='/teemad/']")).to_have_count(0)
+    expect(
+        page.locator("#teemad-tulemused a[href*='/teemad/']:not(.exportmenu__option)")
+    ).to_have_count(0)
 
 
 # -- Täpsem otsing -----------------------------------------------------------
