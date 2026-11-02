@@ -1,0 +1,22 @@
+{% comment %}
+«Lisa teema» results. Each result is a button in the composer's form, so
+choosing one posts the whole draft with `toiming=lisa:<id>`; the draft refuses
+a topic it already holds.
+{% endcomment %}
+{% if search_results %}
+  <ul class="reportsearch">
+    {% for found in search_results %}
+      <li class="reportsearch__row">
+        <span class="reportsearch__title">{{ found.title }}{% if found.reference %} <span class="muted">{{ found.reference }}</span>{% endif %}</span>
+        <button type="submit" class="button button--quiet button--tiny" name="toiming" value="lisa:{{ found.matter_id }}"
+                formaction="{{ preview_url }}" hx-post="{{ preview_url }}" hx-target="#report-body" hx-swap="outerHTML">Lisa<span class="visually-hidden">: {{ found.title }}</span></button>
+      </li>
+    {% endfor %}
+  </ul>
+{% elif search_query %}
+  {% if search_query|length < min_search %}
+    <p class="muted">Kirjuta vähemalt {{ min_search }} märki.</p>
+  {% else %}
+    <p class="muted">Ühtki teemat ei leitud.</p>
+  {% endif %}
+{% endif %}
