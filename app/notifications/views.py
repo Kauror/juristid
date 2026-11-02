@@ -12,16 +12,18 @@ Three gates, each the one its write belongs to:
   (ADR 0181). Behind the shared gate a session with no persona is sent to
   choose one; an administrator without a business role reads an empty inbox —
   every population starts from `visible_to`, which gives that caller nothing.
-* **The commencement answers** («Lükka edasi», «Sulge…») are business writes
-  and use the one write gate (`@business_write_required`): a READER or a
-  technical administrator gets the same 404 every other business write gives
-  them (tests/test_business_write_boundary.py). «Kontrollitud», the third, was
-  retired by the owner on 2026-10-30.
-* **«Märgi loetuks», «Peida» and the settings** are the signed-in person's own
+* **«Lükka edasi»** on a commencement check is a business write and uses the
+  one write gate (`@business_write_required`): a READER or a technical
+  administrator gets the same 404 every other business write gives them
+  (tests/test_business_write_boundary.py). «Kontrollitud» was retired by the
+  owner on 2026-10-30, «Sulge…» and «Peida» on 2026-11-02.
+* **«Märgi loetuks» and the settings** are the signed-in person's own
   presentation state, gated like a remembered block (`accounts:save_disclosure`,
   ADR 0194): `@login_required`, rows resolved by ``recipient=request.user``
   (another person's row is a 404), no parameter naming anybody else, no
-  business service called and no `ChangeEvent` written (docs/adr/0198 §7).
+  business service called and no `ChangeEvent` written (docs/adr/0198 §7). On
+  a commencement check it is a receipt of the reader's own, never an answer:
+  the check stays open (ADR 0188 amendment 2026-11-02).
 """
 
 from __future__ import annotations
@@ -48,7 +50,7 @@ from app.notifications.categories import (
 )
 from app.notifications.email import EMAIL_NOT_YET
 from app.notifications.enums import NotificationCategory
-from app.notifications.forms import DeferForm, DismissForm
+from app.notifications.forms import DeferForm
 from app.notifications.models import ALLOWED_OFFSETS
 
 #: Where an answer returns to. A fixed map rather than a `next` URL, so a
@@ -93,7 +95,6 @@ def reminder_list(request: HttpRequest) -> HttpResponse:
         "action_items": [item for item in items if item.section == inbox.SECTION_ACTION],
         "info_items": [item for item in items if item.section == inbox.SECTION_INFO],
         "unowned_items": [item for item in items if item.section == inbox.SECTION_UNOWNED],
-        "has_commencement": any(item.type == inbox.TYPE_COMMENCEMENT for item in items),
         "deferred_rows": selectors.deferred_reminders_for(user),
         "shows_unowned": may_view_department_management(user),
         "can_answer": may_write_business_content(user),
@@ -145,23 +146,20 @@ def defer(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@business_write_required
 @require_http_methods(["POST"])
-def dismiss(request: HttpRequest, pk: Any) -> HttpResponse:
-    reminder = _reminder_or_404(request, pk)
-    form = DismissForm(request.POST)
-    if not form.is_valid():
-        messages.error(request, services.DISMISS_NEEDS_REASON)
-        return _back(request)
-    try:
-        services.dismiss_reminder(
-            reminder=reminder, actor=request.user, reason=form.cleaned_data["reason"]
-        )
-    except DomainError as refusal:
-        messages.error(request, str(refusal))
-    else:
-        messages.success(request, "Meeldetuletus suleti.")
-    return _back(request)
+def mark_reminder_read(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Märgi loetuks» on a commencement check: this reader has seen it.
+
+    Only a prompt in the reader's own inbox (their desk, or the unowned ones for
+    management) — anything else is a 404. The check stays ``OPEN`` and no
+    `ChangeEvent` is written: reading is not checking, and the next owner or
+    another manager is still asked.
+    """
+    reminder = selectors.readable_inbox_reminder(request.user, pk)
+    if reminder is None:
+        raise Http404("Meeldetuletust ei leitud.")
+    services.mark_reminder_read(reminder=reminder, reader=request.user)
+    return _back(request, anchor=True)
 
 
 # ---------------------------------------------------------------------------
@@ -179,24 +177,13 @@ def _own_row_or_404(request: HttpRequest, notification_id: Any) -> Any:
 @login_required
 @require_http_methods(["POST"])
 def mark_read(request: HttpRequest, notification_id: Any) -> HttpResponse:
-    """«Märgi loetuks» — the recipient's own row only. Changes nothing about the work."""
-    row = _own_row_or_404(request, notification_id)
-    deadlines.mark_read(notification=row)
-    return _back(request, anchor=True)
+    """«Märgi loetuks» — the recipient's own row only. Changes nothing about the work.
 
-
-@login_required
-@require_http_methods(["POST"])
-def hide(request: HttpRequest, notification_id: Any) -> HttpResponse:
-    """«Peida» — a «Teadmiseks» row of the recipient's own.
-
-    A «Vajab tegevust» row is not hidden: it leaves when its work is done, so
-    the request is refused like any unknown row, and nothing is written.
+    A «Teadmiseks» row then leaves the list and the bell (`inbox.deadline_rows`);
+    a «Vajab tegevust» row stays until its work is done.
     """
     row = _own_row_or_404(request, notification_id)
-    if not deadlines.dismiss(notification=row):
-        raise Http404("Seda teavitust ei saa peita.")
-    messages.success(request, "Teavitus peideti.")
+    deadlines.mark_read(notification=row)
     return _back(request, anchor=True)
 
 

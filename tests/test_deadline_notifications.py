@@ -614,7 +614,7 @@ def test_a_review_date_is_information_never_late_and_never_escalated(specialist,
     assert (row.kind, row.purpose) == (NotificationKind.INFO, NotificationPurpose.ON_DAY)
     (item,) = _live(specialist, TODAY + timedelta(days=2))
     assert item.label == "On aeg üle vaadata"
-    assert item.can_hide
+    assert item.can_read
     for word in ("hilinenud", "ületatud", "möödas"):
         assert word not in f"{item.label} {item.date_label}".lower()
 
@@ -760,12 +760,13 @@ def test_the_order_is_by_date_with_action_before_information(specialist, other_s
     ]
 
 
-def test_reading_and_hiding_are_different_and_neither_completes_work(
+def test_reading_an_info_row_takes_it_off_the_list_and_completes_no_work(
     client, specialist, now_is_today
 ):
     matter = _opinion(specialist, TODAY + timedelta(days=3), title="Loetav teema")
     deadlines.reconcile_deadline_notifications()
     (row,) = _rows()
+    assert row.kind == NotificationKind.INFO
     client.force_login(specialist)
 
     # Opening the Teema is a GET: it marks nothing.
@@ -774,43 +775,77 @@ def test_reading_and_hiding_are_different_and_neither_completes_work(
     assert row.read_at is None
     listing = client.get(reverse("notifications:list")).content.decode()
     assert "notifrow--unread" in listing
+    assert "Peida" not in listing
+    assert inbox.inbox_count(specialist) == 1
 
     response = client.post(
-        reverse("notifications:read", kwargs={"notification_id": row.pk}), {"tagasi": "teavitused"}
-    )
-    assert response.status_code == 302
-    row.refresh_from_db()
-    assert row.read_at is not None and row.dismissed_at is None
-    listing = client.get(reverse("notifications:list")).content.decode()
-    assert "Loetav teema" in listing
-    assert "notifrow--unread" not in listing
-
-    response = client.post(
-        reverse("notifications:hide", kwargs={"notification_id": row.pk}), {"tagasi": "minu_asjad"}
+        reverse("notifications:read", kwargs={"notification_id": row.pk}), {"tagasi": "minu_asjad"}
     )
     assert response["Location"] == reverse("matters:my_work") + "#teavitused"
     row.refresh_from_db()
-    assert row.dismissed_at is not None
+    # History survives: the row is read, not deleted, hidden or retired.
+    assert row.read_at is not None
+    assert (row.dismissed_at, row.retired_at) == (None, None)
     assert "Loetav teema" not in client.get(reverse("notifications:list")).content.decode()
+    assert inbox.inbox_count(specialist) == 0
+    bell = client.get(reverse("notifications:bell")).content.decode()
+    assert "notifbell__count" not in bell
     matter.refresh_from_db()
     assert matter.response_deadline == TODAY + timedelta(days=3)
 
+    # A second press changes nothing.
+    first = row.read_at
+    client.post(reverse("notifications:read", kwargs={"notification_id": row.pk}))
+    row.refresh_from_db()
+    assert row.read_at == first
 
-def test_an_action_row_cannot_be_hidden(client, specialist, now_is_today):
-    _opinion(specialist, TODAY)
+
+def test_reading_an_action_row_marks_it_read_and_keeps_it_listed(client, specialist, now_is_today):
+    _opinion(specialist, TODAY, title="Tänane tähtaeg")
     deadlines.reconcile_deadline_notifications()
     (row,) = _rows()
     assert row.kind == NotificationKind.ACTION
     client.force_login(specialist)
 
-    response = client.post(reverse("notifications:hide", kwargs={"notification_id": row.pk}))
+    client.post(reverse("notifications:read", kwargs={"notification_id": row.pk}))
+
+    row.refresh_from_db()
+    assert row.read_at is not None
+    listing = client.get(reverse("notifications:list")).content.decode()
+    assert "Tänane tähtaeg" in listing
+    assert inbox.inbox_count(specialist) == 1
+
+
+def test_peida_is_retired_and_a_stale_post_writes_nothing(client, specialist, now_is_today):
+    from django.urls import NoReverseMatch
+
+    _opinion(specialist, TODAY + timedelta(days=3))
+    deadlines.reconcile_deadline_notifications()
+    (row,) = _rows()
+    client.force_login(specialist)
+
+    with pytest.raises(NoReverseMatch):
+        reverse("notifications:hide", kwargs={"notification_id": row.pk})
+    response = client.post(f"/teavitused/teade/{row.pk}/peida/")
 
     assert response.status_code == 404
     row.refresh_from_db()
-    assert row.dismissed_at is None
+    assert (row.read_at, row.dismissed_at) == (None, None)
 
 
-def test_reading_or_hiding_writes_no_change_event(client, specialist, now_is_today):
+def test_a_row_hidden_before_peida_was_retired_stays_out(client, specialist, now_is_today):
+    """Historical «Peida» stamps keep their meaning: the row stays out and unrevived."""
+    _opinion(specialist, TODAY + timedelta(days=3), title="Varem peidetud")
+    deadlines.reconcile_deadline_notifications()
+    (row,) = _rows()
+    deadlines.dismiss(notification=row)
+    client.force_login(specialist)
+
+    assert "Varem peidetud" not in client.get(reverse("notifications:list")).content.decode()
+    assert inbox.inbox_count(specialist) == 0
+
+
+def test_reading_writes_no_change_event(client, specialist, now_is_today):
     from app.audit.models import ChangeEvent
 
     _opinion(specialist, TODAY + timedelta(days=3))
@@ -820,7 +855,6 @@ def test_reading_or_hiding_writes_no_change_event(client, specialist, now_is_tod
     client.force_login(specialist)
 
     client.post(reverse("notifications:read", kwargs={"notification_id": row.pk}))
-    client.post(reverse("notifications:hide", kwargs={"notification_id": row.pk}))
 
     assert ChangeEvent.objects.count() == before
 
@@ -840,9 +874,8 @@ def test_a_colleagues_desk_carries_none_of_their_notifications(
     assert "data-inbox-item" not in html
     assert reverse("notifications:read", kwargs={"notification_id": row.pk}) not in html
 
-    for name in ("notifications:read", "notifications:hide"):
-        response = client.post(reverse(name, kwargs={"notification_id": row.pk}))
-        assert response.status_code == 404
+    response = client.post(reverse("notifications:read", kwargs={"notification_id": row.pk}))
+    assert response.status_code == 404
     row.refresh_from_db()
     assert (row.read_at, row.dismissed_at) == (None, None)
 

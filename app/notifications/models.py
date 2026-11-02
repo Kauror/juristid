@@ -378,3 +378,48 @@ class NotificationSettings(BaseModel):
 
     def __str__(self) -> str:
         return "peatatud" if self.paused else "sees"
+
+
+class CommencementReminderReceipt(BaseModel):
+    """One person has read one «Kontrolli jõustumist» prompt (docs/adr/0188 amendment 2026-11-02).
+
+    **Reading is not checking.** A `CommencementReminder` is shared — its
+    recipient is whoever is responsible now — so a person's «Märgi loetuks»
+    cannot be stored on it without ending the prompt for everybody. This row
+    says only «this account has seen this prompt»: it takes the prompt out of
+    *that* account's bell, rail and list, and nothing else. The reminder stays
+    ``OPEN``; no `ChangeEvent` is written; the act is not said to have entered
+    into force and the Teema is not touched. Historical ``ACKNOWLEDGED`` and
+    ``DISMISSED`` rows keep their own meanings.
+
+    Per reminder row, so a moved date (a new row) or a new owner (no receipt of
+    their own) is asked afresh, and one manager's reading leaves the unowned
+    prompt in every other manager's list. Presentation state like
+    `DeadlineNotification.read_at` (docs/adr/0198 §7): never read by
+    authorization.
+    """
+
+    reminder = models.ForeignKey(
+        CommencementReminder,
+        on_delete=models.CASCADE,
+        related_name="receipts",
+        verbose_name="meeldetuletus",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="commencement_receipts",
+        verbose_name="lugeja",
+    )
+
+    class Meta:
+        verbose_name = "jõustumise meeldetuletuse lugemine"
+        verbose_name_plural = "jõustumise meeldetuletuste lugemised"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["reminder", "user"], name="notifications_receipt_once_per_reader"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"loetud {self.created_at:%Y-%m-%d}"

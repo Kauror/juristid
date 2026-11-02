@@ -185,13 +185,6 @@ REMINDER_ROUTES: tuple[WriteRoute, ...] = (
         probe=_reminder_state,
         events=(ChangeEventType.COMMENCEMENT_CHECK_DEFERRED,),
     ),
-    WriteRoute(
-        name="notifications:dismiss",
-        label="Jõustumise meeldetuletuse sulgemine",
-        request=lambda w: ({"pk": w["reminder"].pk}, {"reason": "Loata sulgemine"}),
-        probe=_reminder_state,
-        events=(ChangeEventType.COMMENCEMENT_CHECK_DISMISSED,),
-    ),
 )
 
 
@@ -1720,7 +1713,11 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # remembered block: a READER may keep their own presentation state
     # (tests/test_deadline_notifications.py).
     "notifications:read": "C: the recipient's own read stamp on a deadline notice",
-    "notifications:hide": "C: the recipient's own hidden stamp on a deadline notice",
+    # The reader's own receipt on a commencement prompt (ADR 0188 amendment
+    # 2026-11-02): not an answer, the reminder stays open, no `ChangeEvent`.
+    # Resolved within the reader's own inbox population, so a colleague's
+    # prompt is a 404 (tests/test_commencement_reminders.py).
+    "notifications:reminder_read": "C: the reader's own receipt on a commencement prompt",
     "notifications:settings": "C: the signed-in person's own notification preferences",
     "notifications:reset_settings": "C: resets the signed-in person's own preferences",
     # D — authentication and session control. Not business content, and two of

@@ -2,10 +2,10 @@
 
 `tests/test_commencement_reminders*.py` prove the rules. This proves the pieces
 that exist only on a running server: the bell fetches its number after the page
-has rendered, the Minu asjad block carries the prompt, the list's «Sulge…» is
-a real form that closes it, and nothing on the way says the act entered into
-force. «Kontrollitud» was retired on 2026-10-30, so the row offers no such
-button.
+has rendered, the Minu asjad block carries the prompt, the list's «Märgi
+loetuks» is a real form that takes it off the reader's list without answering
+it, and nothing on the way says the act entered into force. «Kontrollitud»
+(2026-10-30) and «Sulge…» (2026-11-02) are retired, so the row offers neither.
 
 The commencement is planted through the server's own services and the generator
 is the real management command — exactly what the `notifications` worker runs —
@@ -59,7 +59,7 @@ def _manage(*args: str, **env: str) -> str:
     return result.stdout
 
 
-def test_a_commencement_prompt_is_seen_checked_and_gone(page, base_url):
+def test_a_commencement_prompt_is_seen_read_and_gone(page, base_url):
     sign_in(page, base_url, MARTIN)
     title = unique_title("Jõustumise meeldetuletus")
     url = create_matter(page, base_url, title, owner=MARTIN)
@@ -83,8 +83,9 @@ def test_a_commencement_prompt_is_seen_checked_and_gone(page, base_url):
     # The list: the row, its link to the Teema's Jõustumine section, no verdict.
     page.goto(f"{base_url}/teavitused/")
     row = page.locator(".notifrow", has_text=title)
-    expect(row).to_contain_text("E2E põhiosa jõustub")
-    expect(row).to_contain_text("Kirjas olev jõustumise kuupäev")
+    # Two lines: the title and the date. The description is on the Teema page.
+    expect(row).not_to_contain_text("E2E põhiosa jõustub")
+    expect(row).to_contain_text("Jõustumise kuupäev")
     expect(row.get_by_role("link", name=title)).to_have_attribute(
         "href", re.compile("#joustumine$")
     )
@@ -92,11 +93,12 @@ def test_a_commencement_prompt_is_seen_checked_and_gone(page, base_url):
 
     expect(row.get_by_role("button", name="Kontrollitud")).to_have_count(0)
     expect(row).not_to_contain_text("Ametlik allikas on märkimata")
-    row.locator("summary", has_text="Sulge…").click()
-    row.get_by_label("Miks suletakse ilma kontrollita?").fill("Kontrollisin, jõustub nagu kirjas.")
-    row.get_by_role("button", name="Sulge meeldetuletus").click()
+    expect(row.locator("summary", has_text="Sulge")).to_have_count(0)
+    # «Lükka edasi» opens its date field directly under the item.
+    row.locator("summary", has_text="Lükka edasi").click()
+    expect(row.get_by_label("Kuni")).to_be_visible()
+    row.get_by_role("button", name=f"Märgi loetuks: {title}").click()
     page.wait_for_url(f"{base_url}/teavitused/")
-    expect(page.locator(".messages")).to_contain_text("Meeldetuletus suleti.")
     expect(page.locator(".notifrow", has_text=title)).to_have_count(0)
 
     # A second run of the generator does not bring it back.

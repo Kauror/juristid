@@ -76,7 +76,7 @@ from app.notifications.enums import (
     ReminderStage,
     ReminderStatus,
 )
-from app.notifications.models import CommencementReminder
+from app.notifications.models import CommencementReminder, CommencementReminderReceipt
 from app.workflow.enums import DatePrecision
 
 #: How many calendar days ahead the retired seven-day prompt came (brief C2).
@@ -454,3 +454,16 @@ def defer_reminder(
     )
     locked.refresh_from_db()
     return locked
+
+
+def mark_reminder_read(*, reminder: CommencementReminder, reader: Any) -> None:
+    """«Märgi loetuks» on a commencement prompt — this reader's receipt, nothing else.
+
+    Not an answer: the reminder stays ``OPEN``, no `ChangeEvent` is written and
+    no lock is taken, because nothing shared changes (ADR 0188 amendment
+    2026-11-02). ``ignore_conflicts`` on the unique (reminder, user) pair makes
+    a repeated or concurrent press a no-op rather than an error.
+    """
+    CommencementReminderReceipt.objects.bulk_create(
+        [CommencementReminderReceipt(reminder=reminder, user=reader)], ignore_conflicts=True
+    )

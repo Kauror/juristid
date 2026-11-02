@@ -14,6 +14,11 @@ moved, cancelled, replaced, removed or made approximate is out of every list
 here at once, through :func:`app.notifications.services.eligibility_q` and the
 ``source_date`` comparison, without waiting for the generator to retire it.
 
+**Read by one person, still open for the rest.** A reader's «Märgi loetuks»
+is a `CommencementReminderReceipt` of their own: it takes the prompt out of
+*their* populations here (``_not_read_by``) and leaves the reminder ``OPEN``
+for a new owner and for every other manager (ADR 0188 amendment 2026-11-02).
+
 **Authorization first.** Every population starts from the commencements the
 reader may see (`MatterEffectiveDate.objects.visible_to`), so a restricted
 record never reaches a count or a list (ADR 0181, ADR 0158 §3).
@@ -25,7 +30,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
-from django.db.models import F, Q, QuerySet
+from django.db.models import Exists, F, OuterRef, Q, QuerySet
 from django.urls import reverse
 from django.utils import timezone
 
@@ -33,7 +38,7 @@ from app.core.authorization import may_view_department_management
 from app.core.dates import format_estonian_date
 from app.intelligence.models import MatterEffectiveDate
 from app.notifications.enums import ReminderStatus
-from app.notifications.models import CommencementReminder
+from app.notifications.models import CommencementReminder, CommencementReminderReceipt
 from app.notifications.services import eligibility_q
 
 #: The wording, once. A reminder asks for a check and never states an outcome.
@@ -53,6 +58,13 @@ def _live_open(user: Any, today: date) -> QuerySet[CommencementReminder]:
         .filter(source_date=F("effective_date__date_value"))
         .filter(effective_date__in=readable)
         .filter(Q(deferred_until__isnull=True) | Q(deferred_until__lte=today))
+    )
+
+
+def _not_read_by(user: Any) -> Q:
+    """Leaves out the prompts this reader has marked read — theirs only."""
+    return ~Q(
+        Exists(CommencementReminderReceipt.objects.filter(reminder=OuterRef("pk"), user_id=user.pk))
     )
 
 
@@ -101,7 +113,7 @@ def _when(source_date: date, today: date) -> str:
         return "homme"
     if days > 1:
         return f"{days} päeva pärast"
-    return "kirjas olev kuupäev on möödunud"
+    return "kuupäev on möödunud"
 
 
 def _rows(queryset: QuerySet[CommencementReminder], today: date) -> list[ReminderRow]:
@@ -140,7 +152,7 @@ def open_reminders_for(user: Any, *, today: date | None = None) -> list[Reminder
     if not getattr(user, "is_authenticated", False):
         return []
     day = _today(today)
-    return _rows(_live_open(user, day).filter(_owned_by(user)), day)
+    return _rows(_live_open(user, day).filter(_owned_by(user), _not_read_by(user)), day)
 
 
 def unresolved_count(user: Any, *, today: date | None = None) -> int:
@@ -155,10 +167,12 @@ def unresolved_count(user: Any, *, today: date | None = None) -> int:
     scope = _owned_by(user)
     if may_view_department_management(user):
         scope = scope | _unowned()
-    return _live_open(user, day).filter(scope).count()
+    return _live_open(user, day).filter(scope).filter(_not_read_by(user)).count()
 
 
-def department_unowned_reminders(user: Any, *, today: date | None = None) -> list[ReminderRow]:
+def department_unowned_reminders(
+    user: Any, *, today: date | None = None, unread_only: bool = False
+) -> list[ReminderRow]:
     """Open prompts on Matters with nobody responsible — for the management view only.
 
     Empty for anybody without `department.view_management`, so the caller does not
@@ -167,7 +181,12 @@ def department_unowned_reminders(user: Any, *, today: date | None = None) -> lis
     if not may_view_department_management(user):
         return []
     day = _today(today)
-    return _rows(_live_open(user, day).filter(_unowned()), day)
+    queryset = _live_open(user, day).filter(_unowned())
+    if unread_only:
+        # The inbox: this manager's own receipts leave it. Osakond's summary is
+        # the department's open work, which one person's reading does not end.
+        queryset = queryset.filter(_not_read_by(user))
+    return _rows(queryset, day)
 
 
 def deferred_reminders_for(user: Any, *, today: date | None = None) -> list[ReminderRow]:
@@ -181,7 +200,7 @@ def deferred_reminders_for(user: Any, *, today: date | None = None) -> list[Remi
         .filter(eligibility_q("effective_date__"))
         .filter(source_date=F("effective_date__date_value"))
         .filter(effective_date__in=readable, deferred_until__gt=day)
-        .filter(_owned_by(user))
+        .filter(_owned_by(user), _not_read_by(user))
     )
     return _rows(queryset, day)
 
@@ -206,5 +225,30 @@ def answerable_reminder(user: Any, pk: Any) -> CommencementReminder | None:
         .filter(source_date=F("effective_date__date_value"))
         .filter(effective_date__in=readable, pk=pk)
         .select_related("effective_date", "effective_date__matter")
+        .first()
+    )
+
+
+def readable_inbox_reminder(user: Any, pk: Any) -> CommencementReminder | None:
+    """The prompt a «Märgi loetuks» POST names, if it is in this reader's own inbox.
+
+    Narrower than :func:`answerable_reminder`: the reader's own desk, plus the
+    unowned prompts for `department.view_management` — the populations the
+    bell counts. A colleague's prompt is ``None`` (a 404), so viewing somebody's
+    Minu asjad never lets anybody clear what that person is shown. Deferred
+    prompts count: a receipt for one is harmless and the POST may race the date.
+    """
+    if not getattr(user, "is_authenticated", False) or getattr(user, "pk", None) is None:
+        return None
+    readable = MatterEffectiveDate.objects.visible_to(user).values("pk")
+    scope = _owned_by(user)
+    if may_view_department_management(user):
+        scope = scope | _unowned()
+    return (
+        CommencementReminder.objects.open()
+        .filter(eligibility_q("effective_date__"))
+        .filter(source_date=F("effective_date__date_value"))
+        .filter(effective_date__in=readable, pk=pk)
+        .filter(scope)
         .first()
     )
