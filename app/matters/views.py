@@ -1488,7 +1488,7 @@ def _without_value(params: Any, name: str, value: str) -> str:
     dimension altogether. `leht` goes for the reason `_without_dimension` gives.
     """
     without = params.copy()
-    without.setlist(name, [kept for kept in params.getlist(name) if kept != value])
+    without.setlist(name, [kept for kept in params.getlist(name) if kept.strip() != value])
     if not without.getlist(name):
         without.pop(name, None)
     without.pop("leht", None)

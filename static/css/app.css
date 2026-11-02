@@ -1337,7 +1337,8 @@ p.formnote {
 }
 
 .table--register.table--extended {
-  min-width: calc(66rem + var(--extra-columns, 0) * 150px);
+  --extra-columns: 0;
+  min-width: calc(66rem + var(--extra-columns) * 150px);
 }
 
 .table--extended .table__title {

@@ -23,6 +23,7 @@ than downloading.
       <p>Wordi faili ei koostatud.</p>
       <ul class="reportbuilder__reasons">
         {% for reason in refusals %}<li>{{ reason }}</li>{% endfor %}
+        {% for notice in report.notices %}<li>{{ notice }}</li>{% endfor %}
       </ul>
     </div>
   {% else %}

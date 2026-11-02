@@ -208,8 +208,14 @@ class MatterEvents:
 
 
 def bounded(text: str, limit: int = TEXT_LIMIT) -> str:
-    """``text`` cut to ``limit`` characters, marked when it was cut."""
-    text = (text or "").strip()
+    """``text`` cut to ``limit`` characters, marked when it was cut.
+
+    Line endings are normalised to ``\n`` first: a summary typed in a browser
+    is stored with ``\r\n``, and the copy the textarea posts back is cleaned
+    to ``\n`` (`draft._clean_text`). Comparing the two unnormalised would
+    read every multi-line source text as the reader's own edit.
+    """
+    text = (text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"

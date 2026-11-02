@@ -109,6 +109,12 @@ BAD_MATTER_ID = "Üks teema viide oli vigane ja jäeti välja."
 DUPLICATE_MATTER = "Sama teema oli ülevaates mitu korda; alles jäeti esimene."
 TOO_MANY_BLOCKS = f"Ülevaates saab olla kuni {MAX_BLOCKS} teemat."
 TOO_MANY_EVENTS = f"Ühe teema all saab olla kuni {MAX_EVENTS} sündmust."
+#: A qualifying event recorded after the draft was composed. Never added by
+#: itself — the reader decides, through «Uuenda ettepanekuid».
+NEW_EVENTS = (
+    "Teemal «{title}» on perioodis {count} uut sündmust, mida ülevaates ei ole. "
+    "Vajuta «Uuenda ettepanekuid», et need üle vaadata."
+)
 TEXT_TOO_LONG = f"Selgitus on pikem kui {TEXT_LIMIT} märki. Lühenda seda enne allalaadimist."
 ALREADY_ADDED = "See teema on juba ülevaates."
 NOT_FOUND = "Seda teemat ei leitud."
@@ -235,13 +241,24 @@ def fresh(
 ) -> ReportDraft:
     """The proposals for a period, in their deterministic order."""
     candidates = sources.collect(user, start, end, now=now)
-    return ReportDraft(
+    draft = ReportDraft(
         start=start,
         end=end,
         start_input=start_input or format_estonian_date(start),
         end_input=end_input or format_estonian_date(end),
         blocks=_blocks_from(candidates.values()),
     )
+    _note_truncation(draft, candidates.values())
+    return draft
+
+
+def _note_truncation(draft: ReportDraft, candidates: Iterable[MatterEvents]) -> None:
+    """Say so when the proposals were cut to the limits — never cut silently."""
+    found = list(candidates)
+    if len(found) > MAX_BLOCKS:
+        _once(draft.notices, TOO_MANY_BLOCKS)
+    if any(len(item.events) > MAX_EVENTS for item in found):
+        _once(draft.notices, TOO_MANY_EVENTS)
 
 
 def _iso_day(raw: object) -> date | None:
@@ -460,6 +477,8 @@ def add(
         return
     found = sources.collect(user, draft.start, draft.end, now=now, matter_ids=[matter_id])
     events = found[matter_id].events if matter_id in found else []
+    if len(events) > MAX_EVENTS:
+        _once(draft.notices, TOO_MANY_EVENTS)
     draft.blocks.append(
         DraftBlock(
             matter_id=matter_id,
@@ -700,10 +719,15 @@ class ComposedReport:
         return rows
 
 
-def fingerprint(title: str, events: Iterable[ReportEvent]) -> str:
-    """The hash of the canonical facts a block shows."""
+def fingerprint(title: str, events: Iterable[ReportEvent], pending: Iterable[str] = ()) -> str:
+    """The hash of the canonical facts a block shows, and of the ones it does not yet.
+
+    ``pending`` are the refs of qualifying events in the period that the draft
+    does not hold — recorded after the draft was composed. They are part of the
+    hash so that their arrival is a change the export stops on.
+    """
     payload = json.dumps(
-        [title, [list(event.fingerprint_parts()) for event in events]],
+        [title, [list(event.fingerprint_parts()) for event in events], sorted(pending)],
         ensure_ascii=False,
         separators=(",", ":"),
     )
@@ -730,6 +754,7 @@ def compose(
     )
     candidates = sources.collect(user, draft.start, draft.end, now=now, matter_ids=list(titles))
     blocks: list[ComposedBlock] = []
+    notices = list(draft.notices)
     unavailable = 0
     for block in draft.blocks:
         title = titles.get(block.matter_id)
@@ -757,7 +782,11 @@ def compose(
                     too_long=len(text) > TEXT_LIMIT,
                 )
             )
-        facts = fingerprint(title, [item.event for item in composed_events])
+        held = {item.ref for item in block.events}
+        pending = [str(ref) for ref in available if ref not in held]
+        if pending:
+            notices.append(NEW_EVENTS.format(title=title, count=len(pending)))
+        facts = fingerprint(title, [item.event for item in composed_events], pending)
         blocks.append(
             ComposedBlock(
                 matter_id=block.matter_id,
@@ -776,7 +805,7 @@ def compose(
         end_input=draft.end_input or format_estonian_date(draft.end),
         blocks=blocks,
         problems=list(draft.problems),
-        notices=list(draft.notices),
+        notices=notices,
         unavailable=unavailable,
         search=draft.search,
         review=review,

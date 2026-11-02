@@ -34,6 +34,7 @@ from docx.oxml.ns import qn
 from docx.shared import Cm, Pt
 from docx.table import _Cell
 
+from app.core.xlsx_safety import xml_safe
 from app.reporting.report_builder.draft import ComposedReport
 
 TITLE = "Majanduspoliitika ülevaade"
@@ -83,7 +84,7 @@ def _write_lines(cell: _Cell, lines: list[tuple[str, str]]) -> None:
             paragraph = cell.paragraphs[0] if first else cell.add_paragraph()
             first = False
             paragraph.paragraph_format.space_after = Pt(2)
-            run = paragraph.add_run(line)
+            run = paragraph.add_run(xml_safe(line))
             if style == "meta":
                 run.italic = True
                 run.font.size = Pt(8)

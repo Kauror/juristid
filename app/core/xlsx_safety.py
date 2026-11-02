@@ -32,6 +32,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from openpyxl import Workbook
 from openpyxl.cell import WriteOnlyCell
+from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
 from openpyxl.styles import Alignment, Font
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet._write_only import WriteOnlyWorksheet
@@ -52,7 +53,6 @@ DATE_FORMAT = "dd.mm.yyyy"
 
 _HEADER_FONT = Font(bold=True)
 _WRAP = Alignment(wrap_text=True, vertical="top")
-_TOP = Alignment(vertical="top")
 
 
 def looks_like_formula(value: str) -> bool:
@@ -116,7 +116,19 @@ class SheetWriter:
             self.sheet.auto_filter.ref = f"A1:{last}{self.rows + 1}"
 
 
+def xml_safe(text: str) -> str:
+    """``text`` with the control characters XML cannot hold replaced by a space.
+
+    A vertical tab or form feed pasted from Word or a PDF is ordinary in a
+    title or a summary, and openpyxl refuses it with an exception — one such
+    character anywhere in a population would otherwise fail the whole export.
+    Tab and newline are kept.
+    """
+    return ILLEGAL_CHARACTERS_RE.sub(" ", text)
+
+
 def _set_text(cell: Any, text: str) -> None:
+    text = xml_safe(text)
     text = text[:CELL_LIMIT] if len(text) > CELL_LIMIT else text
     cell.value = text
     # Set after the value: openpyxl infers "f" for a leading "=", and this
@@ -143,7 +155,11 @@ def typed_cell(sheet: WriteOnlyWorksheet, value: Any, *, wrap: bool = False) -> 
         cell.value = value
     else:
         _set_text(cell, str(value))
-    cell.alignment = _WRAP if wrap else _TOP
+    # Only wrapped columns carry an alignment: each style assignment is hashed
+    # into the workbook's style table, and doing it for every cell was half
+    # the cost of a large export.
+    if wrap:
+        cell.alignment = _WRAP
     return cell
 
 

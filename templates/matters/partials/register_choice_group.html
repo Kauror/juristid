@@ -1,3 +1,4 @@
+{% load register_links %}
 {% comment %}
 One multi-valued register dimension in Täpsem otsing (owner's brief of 2026-11-02).
 
@@ -25,6 +26,19 @@ pressed: the form is a plain GET and nothing here changes the list by itself.
         <input type="checkbox" name="{{ name }}" value="{{ value }}" {% if value in chosen %}checked{% endif %}>
         {{ text }}
       </label>
+    {% endfor %}
+    {% comment %}
+      A value the address carries that this list no longer offers — a retired
+      stage, an inactive area, a chart link — stays ticked, so submitting the
+      panel never quietly widens the list (register_filters.values_of).
+    {% endcomment %}
+    {% for value in chosen %}
+      {% if value != "puudub" %}{% with listed=options|value_listed:value %}{% if not listed %}
+        <label class="checkline">
+          <input type="checkbox" name="{{ name }}" value="{{ value }}" checked>
+          {{ value }} <span class="muted">(ei ole valikus)</span>
+        </label>
+      {% endif %}{% endwith %}{% endif %}
     {% endfor %}
   </div>
 </fieldset>

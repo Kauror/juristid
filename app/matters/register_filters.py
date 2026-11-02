@@ -408,7 +408,13 @@ def _window(params: Any, start_name: str, end_name: str) -> tuple[Any, Any, dict
     echo: dict[str, str] = {}
     readable = True
     for name in (start_name, end_name):
-        raw = (params.get(name) or "").strip()
+        given = values_of(params, name)
+        if len(given) > 1:
+            # Two different start dates is a question with no one answer.
+            echo[name] = " / ".join(given)
+            readable = False
+            continue
+        raw = given[0] if given else ""
         if not raw:
             continue
         parsed = parse_flexible_date(raw)
