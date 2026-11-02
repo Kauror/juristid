@@ -358,4 +358,5 @@ def test_the_register_control_offers_the_values_the_definition_answers(
 
     assert response.status_code == 200
     assert {row.pk for row in response.context["page"].object_list} == {matter.pk}
-    assert 'value="koostamisel" selected' in response.content.decode()
+    # A checkbox group since the multi-value round (ADR 0200).
+    assert 'name="arvamus" value="koostamisel" checked' in response.content.decode()

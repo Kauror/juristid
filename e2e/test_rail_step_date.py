@@ -91,7 +91,9 @@ def test_the_panel_opens_on_today_and_follows_a_typed_day(page, base_url):
     month = panel.locator("select[name='kp_month']")
     quarter = panel.locator("select[name='kp_quarter']")
     year = panel.locator("input[name='kp_year']")
-    expect(day).to_have_value(f"{today.day:02d}.{today.month:02d}.{today.year}")
+    # The application writes an Estonian date unpadded («2.11.2026»), so a
+    # zero-padded expectation only ever passed on the 10th–31st of a month.
+    expect(day).to_have_value(f"{today.day}.{today.month}.{today.year}")
     expect(month).to_have_value(str(today.month))
     expect(quarter).to_have_value(str((today.month - 1) // 3 + 1))
     expect(year).to_have_value(str(today.year))
