@@ -1327,22 +1327,21 @@ p.formnote {
   width: 132px;
 }
 
-/* Columns added with «Vali veerud». Each has a width, and so does the title
-   once there are any: in a fixed layout an unsized title would absorb only
-   what is left, which with eight added columns is nothing. The table then
-   grows past its box and `.tablewrap` scrolls it sideways — the page itself
-   never does. */
+/* Columns added with «Vali veerud». Each has a width, and the table's
+   minimum grows by that width per added column (`--extra-columns`, the count
+   the template writes), so the layout stays fixed and the title keeps what is
+   left. Past the box `.tablewrap` scrolls sideways — the page itself never
+   does. */
 .table--register .table__extra {
   width: 150px;
 }
 
-.table--extended .table__title {
-  width: 20rem;
+.table--register.table--extended {
+  min-width: calc(66rem + var(--extra-columns, 0) * 150px);
 }
 
-.table--register.table--extended {
-  width: auto;
-  min-width: 100%;
+.table--extended .table__title {
+  width: 18rem;
 }
 
 /* A flex wrapper inside the cell, not on the cell: a <td> that stops being a

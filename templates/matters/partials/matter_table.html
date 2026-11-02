@@ -12,7 +12,7 @@ the title eighty-four pixels on every surface to show something nobody reads a
 list by.
 {% endcomment %}
 <div class="tablewrap">
-  <table class="table table--register{% if extra_columns %} table--extended{% endif %}">
+  <table class="table table--register{% if extra_columns %} table--extended{% endif %}"{% if extra_columns %} style="--extra-columns: {{ extra_columns|length }}"{% endif %}>
     <thead>
       {% comment %}
         Teemad's headings filter and sort; every other surface's state the
