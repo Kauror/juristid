@@ -12,9 +12,10 @@
 {% else %}
   <p class="lovnight__note">
     Salvestatud sündmusi {{ audit.events_stored }}{% if audit.last_event_at %}, viimane {{ audit.last_event_at|date:"d.m.Y" }} kell {{ audit.last_event_at|date:"H.i" }}{% endif %}.
-    Väärtused on näha ainult piloodi teemadel, mida sa näed; teistel ainult väljade nimed.
+    {% if unlinked_listed %}Väärtused on näha ainult piloodi teemadel, mida sa näed; teistel ainult väljade nimed.{% else %}Loetletakse ainult piloodi teemade sündmused, mida sa näed; väärtused on näha ainult neil.{% endif %}
   </p>
   {% if page.hidden %}<p class="lovnight__note">Veel {{ page.hidden }} sündmus{{ page.hidden|pluralize:",t" }} teemadel, mida sa ei näe.</p>{% endif %}
+  {% include "core/lovable/_unlinked.html" %}
   {% if page.items %}
     <div class="tablewrap">
       <table class="data-table lovevents">
@@ -52,7 +53,7 @@
                   {% for change in event.fields %}
                     <li>
                       <span class="lovfields__name">{{ change.label }}</span>:
-                      {% if change.withheld %}<span class="muted">väärtust ei näidata</span>{% else %}{{ change.before }} → {{ change.after }}{% endif %}
+                      {% if change.withheld %}<span class="muted">väärtust ei näidata</span>{% else %}{{ change.before }} → {{ change.after }}{% if change.source_truncated %} <span class="badge badge--quiet" title="Lovable'i väärtus oli pikem kui Juristides hoitav koopia; ka teema üksikasjades pole see terviklik.">lühendatud</span>{% elif change.truncated %} <span class="muted">(loetelus lühendatud)</span>{% endif %}{% endif %}
                     </li>
                   {% endfor %}
                 </ul>

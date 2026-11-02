@@ -1055,6 +1055,12 @@ LOVABLE_SYNC_ENABLED = env_bool("JURISTID_LOVABLE_SYNC", default=False)
 # nothing is requested from the ledger and no event is ever inferred.
 LOVABLE_AUDIT_ENABLED = env_bool("JURISTID_LOVABLE_AUDIT", default=False)
 
+# How much Juristid shows of a Lovable topic with no approved link to a Juristid
+# Teema (docs/adr/0201 §6): AGGREGATE (the default) shows counts only; FIELD_NAMES
+# (an owner-approvable alternative) also lists each topic's number, change kind and
+# changed field names. Never values or titles either way.
+LOVABLE_UNLINKED_DETAIL = env("JURISTID_LOVABLE_UNLINKED_DETAIL", default="AGGREGATE")
+
 # -- Cloudflare Access ------------------------------------------------------
 #
 # The production authenticator. Cloudflare authenticates a person against the

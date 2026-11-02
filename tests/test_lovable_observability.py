@@ -40,6 +40,7 @@ from tests.lovable_observability_support import (
     night_at,
     observation_run,
     observed,
+    retention_run,
     row_counts,
     source_event,
     write_statements,
@@ -59,6 +60,13 @@ def reader():
 def pilot():
     control(SyncMode.COMPARE)
     return Pilot()
+
+
+@pytest.fixture
+def field_names_policy(settings):
+    """The owner-approvable alternative to the default (docs/adr/0201 §6)."""
+    settings.LOVABLE_UNLINKED_DETAIL = "FIELD_NAMES"
+    assert obs.unlinked_detail() == obs.FIELD_NAMES
 
 
 def _dump(value: object) -> str:
@@ -294,7 +302,84 @@ def test_a_failed_night_and_a_missing_earlier_baseline(pilot, reader):
 # ---------------------------------------------------------------------------
 
 
-def test_unmatched_values_are_withheld_and_candidates_unconfirmed(pilot, reader):
+def _three_mappings(pilot):
+    """One unmatched, one same-number candidate and one pilot topic, changed."""
+    pilot.add(501)
+    candidate = factories.MatterFactory(
+        reference_year=2026, reference_number=777, title="Kandidaat X"
+    )
+    first = observation_run(night_at(0))
+    run = observation_run(night_at(1), baseline=first)
+    observed(
+        run,
+        "2026_900",
+        fields=[("title", "Salajane vana", "Salajane uus")],
+    )
+    observed(
+        run,
+        "2026_777",
+        mapping=MappingStatus.REFERENCE_CANDIDATE,
+        matter=candidate,
+        fields=[("next_action_text", "Väärtus A", "Väärtus B")],
+    )
+    observed(
+        run,
+        "2026_501",
+        mapping=MappingStatus.PILOT_LINKED,
+        matter=pilot.matter("2026_501"),
+        source_id=pilot.states["2026_501"].source_id,
+        in_pilot=True,
+        fields=[("stage", "Ministeeriumis", "Valitsuses")],
+    )
+    return candidate
+
+
+def test_unlinked_topics_are_counted_only_by_default(pilot, reader):
+    """AGGREGATE (the default): no unlinked item anywhere — no number, field
+    name or candidate link — only counts and the sentence."""
+    assert obs.unlinked_detail() == obs.AGGREGATE
+    candidate = _three_mappings(pilot)
+    page = obs.observed_changes(reader, now=LATER)
+    assert [t.reference for t in page.items] == ["2026_501"]
+    assert page.total == 1
+    assert page.totals["mapping"] == {"PILOT_LINKED": 1}
+    assert page.unlinked.policy == obs.AGGREGATE
+    assert page.unlinked.total == 2
+    assert page.unlinked.kind == {"CHANGED": 2}
+    assert page.unlinked.mapping == {"REFERENCE_CANDIDATE": 1, "UNMATCHED": 1}
+    assert page.unlinked.field == {"next_action_text": 1, "title": 1}
+    assert page.unlinked.note == (
+        "2 muudatust teemades, millel pole Juristides kinnitatud vastet; "
+        "üksikasju ei näidata, kuni omanik on nähtavuse otsustanud."
+    )
+    dumped = _dump(page.as_dict())
+    for secret in ("2026_900", "2026_777", "Salajane", "Väärtus A", "Kandidaat X"):
+        assert secret not in dumped
+    assert str(candidate.pk) not in dumped
+    # Text and reference never match an unlinked topic, nor move its count.
+    for probe in (
+        obs.observed_changes(reader, text="2026_900", now=LATER),
+        obs.observed_changes(reader, reference="2026_777", now=LATER),
+    ):
+        assert probe.total == 0 and probe.unlinked.total == 2
+    # A mapping filter for unlinked topics lists nothing; the count stays.
+    only = obs.observed_changes(reader, mapping=MappingStatus.UNMATCHED, now=LATER)
+    assert only.items == [] and only.unlinked.total == 1
+    # The wider readings: the same, per reading, with the reading's own totals.
+    reading = obs.nights(reader, population="ALL_LIVE", now=LATER).items[0]
+    assert [t.reference for t in reading.topics] == ["2026_501"]
+    assert reading.changed_topics == 3 and reading.unlinked.total == 2
+    assert reading.changed_fields == 3
+    assert "2026_900" not in _dump(reading.as_dict())
+    assert "2026_777" not in _dump(reading.as_dict())
+    by_field = obs.nights(reader, population="ALL_LIVE", field_name="title", now=LATER).items[0]
+    assert by_field.topics == [] and by_field.unlinked.total == 1
+
+
+def test_unmatched_values_are_withheld_and_candidates_unconfirmed(
+    pilot, reader, field_names_policy
+):
+    """FIELD_NAMES (owner-approvable): number, kind and field names, never values."""
     pilot.add(501)
     candidate = factories.MatterFactory(
         reference_year=2026, reference_number=777, title="Kandidaat X"
@@ -352,7 +437,18 @@ def test_unmatched_values_are_withheld_and_candidates_unconfirmed(pilot, reader)
     assert obs.observed_changes(reader, text="Näidisteema", now=LATER).total == 1
 
 
-def test_populations_are_kept_apart(pilot, reader):
+def test_populations_are_kept_apart_in_the_counts(pilot, reader):
+    first = observation_run(night_at(0))
+    run = observation_run(night_at(1), baseline=first)
+    observed(run, "2026_901", operational=True, field_names=["stage"])
+    observed(run, "2026_902", operational=False, field_names=["stage"])
+    everything = obs.observed_changes(reader, population="ALL_LIVE", now=LATER)
+    operational = obs.observed_changes(reader, population="OPERATIONAL", now=LATER)
+    assert (everything.unlinked.total, operational.unlinked.total) == (2, 1)
+    assert everything.items == [] and operational.items == []
+
+
+def test_populations_are_kept_apart(pilot, reader, field_names_policy):
     first = observation_run(night_at(0))
     run = observation_run(night_at(1), baseline=first)
     observed(run, "2026_901", operational=True, field_names=["stage"])
@@ -371,7 +467,9 @@ def test_populations_are_kept_apart(pilot, reader):
     assert obs.observed_changes(reader, field_name="operational_scope", now=LATER).total == 1
 
 
-def test_2026_2_stage_given_up_while_work_continues_under_a_new_number(pilot, reader):
+def test_2026_2_stage_given_up_while_work_continues_under_a_new_number(
+    pilot, reader, field_names_policy
+):
     from app.submissions.models import Submission
 
     pilot.add(2, hetkeseis="Ministeeriumis")
@@ -402,6 +500,18 @@ def test_2026_2_stage_given_up_while_work_continues_under_a_new_number(pilot, re
     assert Submission.objects.count() == submissions
 
 
+def test_a_new_unlinked_topic_is_only_counted_by_default(pilot, reader):
+    first = observation_run(night_at(0))
+    run = observation_run(night_at(1), baseline=first)
+    observed(run, "2026_250", kind=ObservedChangeKind.NEW, field_names=[])
+    new = obs.observed_changes(reader, kind=ObservedChangeKind.NEW, now=LATER)
+    assert new.items == [] and new.unlinked.kind == {"NEW": 1}
+    assert "2026_250" not in _dump(new.as_dict())
+    reading = obs.nights(reader, population="ALL_LIVE", now=LATER).items[0]
+    assert reading.new_topics == 1 and reading.topics == []
+    assert reading.message == ""  # not «no changes»: there was one, counted
+
+
 def test_a_renumbered_pilot_topic_is_linked_through_its_state(pilot, reader):
     state = pilot.add(310)
     pilot.night(night_at(0))
@@ -428,7 +538,77 @@ def test_audit_unavailable_shows_no_event(pilot, reader):
     assert audit.message.startswith("Lovable'i muutmisajalugu pole kättesaadav:")
 
 
-def test_audit_events_with_values_only_for_an_openable_pilot_teema(pilot, monkeypatch):
+def _audit_world(pilot):
+    open_state = pilot.add(501)
+    closed_state = pilot.add(502, visibility=Visibility.RESTRICTED, teema="Varjatud teema")
+    run = observation_run(night_at(0), audit=AuditAccess.AVAILABLE)
+    other = uuid.uuid4()
+    first = observation_run(night_at(-1))
+    observed(first, "2026_950", source_id=other, field_names=["title"])
+    source_event(
+        open_state.source_id,
+        night_at(0),
+        fields=[("jargmiseks", "Vana tegevus", "Uus tegevus", False), ("markmed", "", "", True)],
+        run=run,
+    )
+    source_event(
+        closed_state.source_id, night_at(0), fields=[("teema", "Varjatud", "Varjatud 2", False)]
+    )
+    source_event(
+        other,
+        night_at(0) + dt.timedelta(minutes=5),
+        fields=[("teema", "Võõras vana", "Võõras uus", False)],
+        action="lisamine",
+    )
+    return other
+
+
+def test_audit_events_of_unlinked_topics_are_counted_only_by_default(pilot, monkeypatch):
+    restricted_reader = narrowed_reader(monkeypatch)
+    other = _audit_world(pilot)
+    audit, page = obs.source_events(restricted_reader, now=LATER)
+    assert audit.available and audit.events_stored == 3
+    assert page.total == 1 and page.hidden == 1
+    assert [e.reference for e in page.items] == ["2026_501"]
+    assert page.unlinked.total == 1
+    assert page.unlinked.kind == {"lisamine": 1}
+    assert page.unlinked.field == {"teema": 1}
+    assert page.unlinked.note.startswith("1 sündmus teemades, millel pole Juristides")
+    dumped = _dump(page.as_dict())
+    for secret in ("2026_950", "Võõras", str(other), "Varjatud"):
+        assert secret not in dumped
+    # The reference filter never reaches an unlinked topic, nor narrows its count.
+    _, by_ref = obs.source_events(restricted_reader, reference="2026_950", now=LATER)
+    assert by_ref.items == [] and by_ref.unlinked.total == 1
+    _, by_field = obs.source_events(restricted_reader, field_name="next_action_text", now=LATER)
+    assert [e.reference for e in by_field.items] == ["2026_501"]
+    assert by_field.unlinked.total == 0
+
+
+def test_a_value_cut_at_ingestion_says_so_everywhere(pilot, reader):
+    state = pilot.add(501)
+    observation_run(night_at(0), audit=AuditAccess.AVAILABLE)
+    source_event(
+        state.source_id,
+        night_at(0),
+        fields=[("jargmiseks", "Lühike", "Pikk " * 10, False), ("teema", "a", "b", False)],
+        truncated=("jargmiseks",),
+    )
+    _, page = obs.source_events(reader, now=LATER)
+    listed = {f.field: f for f in page.items[0].fields}
+    assert listed["jargmiseks"].source_truncated and not listed["jargmiseks"].truncated
+    assert not listed["teema"].source_truncated
+    detail = obs.matter_changes(reader, "2026_501", now=LATER)
+    assert detail is not None
+    whole = {f.field: f for f in detail.source_events[0].fields}
+    assert whole["jargmiseks"].source_truncated is True
+    assert whole["jargmiseks"].truncated is False
+    assert whole["teema"].source_truncated is False
+
+
+def test_audit_events_with_values_only_for_an_openable_pilot_teema(
+    pilot, monkeypatch, field_names_policy
+):
     restricted_reader = narrowed_reader(monkeypatch)
     open_state = pilot.add(501)
     closed_state = pilot.add(502, visibility=Visibility.RESTRICTED, teema="Varjatud teema")
@@ -850,3 +1030,103 @@ def test_estonian_ledger_actions_have_labels(pilot, reader):
     _, page = obs.source_events(reader, now=LATER)
     assert {e.action_label for e in page.items} == {"Muudetud", "Loodud", "Kustutatud", "Taastatud"}
     assert {e.actor_kind for e in page.items} == {"kasutaja"}
+
+
+# ---------------------------------------------------------------------------
+# observation_health(): the monitoring verdict (production_status, overview)
+# ---------------------------------------------------------------------------
+
+SOON = night_at(1) + dt.timedelta(hours=1)
+
+
+def _health(**kwargs):
+    before = row_counts()
+    with CaptureQueriesContext(connection) as queries:
+        health = obs.observation_health(**kwargs)
+    assert write_statements(queries.captured_queries) == []
+    assert row_counts() == before
+    return health
+
+
+def test_health_off_and_empty_is_green_and_creates_nothing():
+    health = _health(now=SOON)
+    assert health.ok and health.detail == "off" and not health.observe
+    assert not LovableSyncControl.objects.exists()
+
+
+def test_health_off_with_raw_data_needs_a_fresh_retention_run(reader):
+    control(SyncMode.OFF, observe=False)
+    first = observation_run(night_at(0))
+    observed(observation_run(night_at(1), baseline=first), "2026_901", field_names=["stage"])
+    stale = _health(now=SOON)
+    assert not stale.ok
+    assert stale.detail == "no successful retention run in the last 26 hours"
+    retention_run(night_at(1))
+    assert _health(now=SOON).ok and _health(now=SOON).detail == "off"
+    retention_run(night_at(1) + dt.timedelta(minutes=30), status="FAILED", error="DB_ERROR: x")
+    failed = _health(now=SOON)
+    assert not failed.ok and failed.detail == "retention failed (DB_ERROR)"
+    assert failed.retention_failure_code == "DB_ERROR"
+    status = obs.status(reader, now=SOON)
+    assert not status.observation_health_ok
+    assert any("kustutamine" in w and "DB_ERROR" in w for w in status.warnings)
+    by_key = {i.key: i for i in status.indicators}
+    assert by_key["retention_freshness"].value == 1  # hours since the good run
+
+
+def test_health_on_and_failed_is_red():
+    control(SyncMode.COMPARE, observe=True)
+    observation_run(night_at(0))
+    retention_run(night_at(1))
+    observation_run(night_at(1), status=ObservationRunStatus.FAILED, error="HTTP_401: secret")
+    health = _health(now=SOON)
+    assert not health.ok
+    assert health.problems == ["last observation failed (HTTP_401)"]
+    assert "secret" not in health.detail
+
+
+def test_health_on_and_stale_is_red():
+    control(SyncMode.COMPARE, observe=True)
+    observation_run(night_at(0))
+    retention_run(night_at(2))
+    health = _health(now=night_at(2) + dt.timedelta(hours=1))
+    assert health.problems == ["no successful observation in the last 26 hours"]
+
+
+def test_health_on_and_fresh_is_green():
+    control(SyncMode.COMPARE, observe=True)
+    run = observation_run(night_at(1))
+    retention_run(night_at(1))
+    health = _health(now=SOON)
+    assert health.ok and health.detail == f"on, last success {run.run_key}"
+
+
+def test_health_on_and_stuck_running_is_red():
+    control(SyncMode.COMPARE, observe=True)
+    observation_run(night_at(1))
+    observation_run(night_at(1) + dt.timedelta(minutes=5), status=ObservationRunStatus.RUNNING)
+    retention_run(night_at(1))
+    assert _health(now=night_at(1) + dt.timedelta(hours=1)).ok  # running, not stuck
+    stuck = _health(now=night_at(1) + dt.timedelta(hours=3))
+    assert stuck.problems == ["an observation has been running over 2 hours"]
+
+
+def test_health_audit_enabled_but_unreadable_is_red(settings):
+    control(SyncMode.COMPARE, observe=True)
+    retention_run(night_at(1))
+    observation_run(night_at(1), audit=AuditAccess.DISABLED)
+    assert _health(now=SOON).ok  # audit not enabled: DISABLED is expected
+    settings.LOVABLE_AUDIT_ENABLED = True
+    assert _health(now=SOON).problems == ["audit history DISABLED"]
+    observation_run(
+        night_at(1) + dt.timedelta(minutes=1),
+        audit=AuditAccess.UNAVAILABLE,
+        audit_error="EMPTY_UNDER_RLS",
+    )
+    assert _health(now=SOON).problems == ["audit history UNAVAILABLE, EMPTY_UNDER_RLS"]
+    # The run itself says the ledger was tried, even where this process's flag is off.
+    settings.LOVABLE_AUDIT_ENABLED = False
+    assert not _health(now=SOON).ok
+    observation_run(night_at(1) + dt.timedelta(minutes=2), audit=AuditAccess.AVAILABLE)
+    settings.LOVABLE_AUDIT_ENABLED = True
+    assert _health(now=SOON).ok

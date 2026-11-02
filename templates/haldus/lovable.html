@@ -103,7 +103,14 @@
       <dt>Ülevaatust ootavaid välju</dt><dd>{{ status.pending_review }}</dd>
       <dt>Lahendamata vastuolusid</dt><dd>{{ readiness.conflicts }}</dd>
       <dt>Muutmisajalugu</dt><dd>{% if status.audit.available %}<span class="statechip statechip--ok">Loetav</span>{% else %}<span class="statechip statechip--waiting">Pole kättesaadav</span>{% endif %}</dd>
+      <dt>Vaatluse seire</dt>
+      <dd>
+        {% if status.observation_health_ok %}<span class="statechip statechip--ok">Korras</span>{% else %}<span class="statechip statechip--problem">Vajab tähelepanu</span>{% endif %}
+        <span class="mono">{{ status.observation_health_detail }}</span>
+      </dd>
+      <dt>Toorandmete viimane kustutamine</dt><dd>{% if status.retention_last_success_at %}{{ status.retention_last_success_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
     </dl>
+    <p class="acctnote">Vaatluse seire on punane, kui laiem vaatlus on sisse lülitatud ja viimane lugemine ebaõnnestus, käib üle kahe tunni, õnnestunud lugemist pole {{ stale_hours }} tunni jooksul või lubatud muutmisajalugu pole loetav — ning alati, kui vaatluse toorandmeid on, kuid nende kustutamine ebaõnnestus või pole {{ stale_hours }} tunni jooksul õnnestunud. Sama rida on käsu production_status väljundis («Lovable observation»).</p>
     {% if status.warnings %}
       <h3 class="acctsection__title">Hoiatused</h3>
       <ul class="linklist">{% for line in status.warnings %}<li>{{ line }}</li>{% endfor %}</ul>

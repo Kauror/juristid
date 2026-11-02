@@ -22,10 +22,14 @@ Four kinds of fact are kept apart in every answer, never added together:
 reader it refuses). A pilot Teema's values and title are shown only when the
 Teema passes `Matter.objects.visible_to(reader)`; otherwise it is counted in
 ``hidden``. A source topic with no approved link to a Juristid Teema
-(`MappingStatus.REFERENCE_CANDIDATE` / ``UNMATCHED``) is shown by its source
-number, change kind and *field names* only — never its title or values —
-until the owner decides a detail policy for it (`UNMATCHED_DETAIL`). Every
-list is paginated server-side with a fixed page size and deterministic order.
+(`MappingStatus.REFERENCE_CANDIDATE` / ``UNMATCHED``) is, by default
+(`unlinked_detail()` → `AGGREGATE`), never an item anywhere — no number, no
+timestamp, no action, no field name, no candidate link — only counted in
+``unlinked`` (`UnlinkedSummary`) until the owner decides a detail policy
+(docs/adr/0201 §6). The owner-approvable alternative `FIELD_NAMES`
+(``LOVABLE_UNLINKED_DETAIL``) lists it by source number, change kind and
+field *names*; never its title or values either way. Every list is paginated
+server-side with a fixed page size and deterministic order.
 
 Every dataclass has ``as_dict()`` giving JSON-safe primitives (ISO strings for
 moments and dates), which the MCP tools return unchanged.
@@ -40,6 +44,7 @@ from collections import Counter
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from django.conf import settings
 from django.db.models import Count, F, Max, Q
 from django.urls import reverse
 from django.utils import timezone
@@ -47,15 +52,19 @@ from django.utils import timezone
 from app.core.authorization import may_read_business_content
 from app.legacy_import import lovable_review, lovable_sync
 from app.legacy_import.lovable_observation_models import (
+    OBSERVATION_RETENTION_DAYS,
     AuditAccess,
     LovableObservationRun,
     LovableObservationSnapshot,
     LovableObservedChange,
+    LovableRetentionRun,
     LovableSourceEvent,
+    LovableSourceEventField,
     MappingStatus,
     ObservationRunStatus,
     ObservationScope,
     ObservedChangeKind,
+    RetentionRunStatus,
 )
 from app.legacy_import.lovable_pilot import SOURCE_SYSTEM
 from app.legacy_import.lovable_source import SourceError, verify_snapshot
@@ -83,9 +92,20 @@ from app.legacy_import.lovable_sync_models import (
 PAGE_SIZE = 50
 #: The longest window any history question may ask about.
 MAX_WINDOW_DAYS = 31
-#: How a source topic with no approved Juristid link is shown: field names
-#: only. An owner decision may later widen it (docs/adr/0201 §6).
-UNMATCHED_DETAIL = "FIELD_NAMES_ONLY"
+#: How a source topic with no approved Juristid link (REFERENCE_CANDIDATE or
+#: UNMATCHED) is shown (docs/adr/0201 §6). AGGREGATE: counts only, never an item.
+AGGREGATE = "AGGREGATE"
+#: The owner-approvable alternative: number, change kind and field names per
+#: topic (and a REFERENCE_CANDIDATE's link) — never a title or a value.
+FIELD_NAMES = "FIELD_NAMES"
+#: The default until the owner decides; ``settings.LOVABLE_UNLINKED_DETAIL``
+#: (``JURISTID_LOVABLE_UNLINKED_DETAIL``) selects the policy.
+UNMATCHED_DETAIL = AGGREGATE
+#: Said wherever unlinked changes are only counted.
+UNLINKED_NOTE = (
+    "{n} {noun} teemades, millel pole Juristides kinnitatud vastet; "
+    "üksikasju ei näidata, kuni omanik on nähtavuse otsustanud."
+)
 #: Longest value shown in a list; the full allowed value is in the detail.
 SHORT_VALUE = 160
 
@@ -110,6 +130,26 @@ class _AsDict:
 # ---------------------------------------------------------------------------
 # Shapes
 # ---------------------------------------------------------------------------
+
+
+@dataclass
+class UnlinkedSummary(_AsDict):
+    """Changes of source topics with no approved Juristid link, counted only.
+
+    Under `AGGREGATE` these topics are never items; this says how many there
+    were, by change kind (source events: by action), by mapping and by field
+    name — counts across all of them, never one topic's number, time or link.
+    Reference and text filters never narrow it, so a search cannot probe for
+    one topic. Empty (``total`` 0, ``policy`` FIELD_NAMES) when the owner has
+    chosen `FIELD_NAMES` and the topics are listed instead."""
+
+    policy: str = AGGREGATE
+    total: int = 0
+    kind: dict[str, int] = field(default_factory=dict)
+    mapping: dict[str, int] = field(default_factory=dict)
+    field: dict[str, int] = field(default_factory=dict)
+    #: The Estonian sentence for the page («N muudatust teemades, …»), or "".
+    note: str = ""
 
 
 @dataclass
@@ -167,6 +207,13 @@ class SyncStatus(_AsDict):
     #: Estonian sentences: what is red and why. Empty does not mean «ready».
     warnings: list[str] = field(default_factory=list)
     indicators: list[Indicator] = field(default_factory=list)
+    #: `observation_health`: the same verdict `production_status` reports in its
+    #: ``lovable_observation`` row (codes only).
+    observation_health_ok: bool = True
+    observation_health_detail: str = ""
+    #: The newest successful pruning of raw observation data, and FRESH/STALE/NONE.
+    retention_last_success_at: dt.datetime | None = None
+    retention_freshness: str = "NONE"
 
 
 @dataclass
@@ -182,9 +229,14 @@ class FieldDiff(_AsDict):
     result: str = ""
     result_label: str = ""
     reason: str = ""
-    #: In a list, a value longer than `SHORT_VALUE` is cut and this is True; the
-    #: full allowed value is in `matter_changes` (the detail).
+    #: In a list, a value longer than `SHORT_VALUE` is cut for display and this
+    #: is True; the stored value is in `matter_changes` (the detail).
     truncated: bool = False
+    #: The *stored* value itself is incomplete: Lovable's audit value was longer
+    #: than `lovable_observation.AUDIT_VALUE_LIMIT` and was cut when Juristid
+    #: copied it (`LovableSourceEventField.truncated`). Not even the detail has
+    #: the original. Independent of `truncated`.
+    source_truncated: bool = False
 
 
 @dataclass
@@ -237,6 +289,8 @@ class Reading(_AsDict):
     hidden: int = 0
     #: The pilot run's `SyncMode` ("" for a wider reading), for its note.
     mode: str = ""
+    #: Changes of unlinked source topics in this reading, counted only.
+    unlinked: UnlinkedSummary = field(default_factory=UnlinkedSummary)
 
 
 @dataclass
@@ -250,8 +304,10 @@ class Page(_AsDict):
     #: count only, never a reference or a title.
     hidden: int = 0
     #: Totals over every page (not just this one), e.g. ``{"kind": {"NEW": 3},
-    #: "mapping": {"UNMATCHED": 2}}`` — counts, never identities.
+    #: "mapping": {"PILOT_LINKED": 2}}`` — counts, never identities.
     totals: dict[str, dict[str, int]] = field(default_factory=dict)
+    #: Changes of unlinked source topics, counted only (`AGGREGATE`).
+    unlinked: UnlinkedSummary = field(default_factory=UnlinkedSummary)
 
 
 @dataclass
@@ -482,6 +538,57 @@ OBSERVATION_MESSAGES = {
 
 def _reads(user: Any) -> bool:
     return bool(may_read_business_content(user))
+
+
+def unlinked_detail() -> str:
+    """The policy for unlinked source topics (docs/adr/0201 §6): `AGGREGATE`
+    unless ``settings.LOVABLE_UNLINKED_DETAIL`` names `FIELD_NAMES`. Anything
+    else — a typo included — is the safe default."""
+    raw = str(getattr(settings, "LOVABLE_UNLINKED_DETAIL", UNMATCHED_DETAIL) or "")
+    return FIELD_NAMES if raw.strip().upper() in (FIELD_NAMES, "FIELD_NAMES_ONLY") else AGGREGATE
+
+
+def _aggregate_only() -> bool:
+    return unlinked_detail() == AGGREGATE
+
+
+def unlinked_note(total: int, *, events: bool = False) -> str:
+    """«N muudatust teemades, millel pole Juristides kinnitatud vastet; …»."""
+    if not total:
+        return ""
+    if events:
+        noun = "sündmus" if total == 1 else "sündmust"
+    else:
+        noun = "muudatus" if total == 1 else "muudatust"
+    return UNLINKED_NOTE.format(n=total, noun=noun)
+
+
+def _change_field_names(names: Any, values: Any) -> set[str]:
+    found = {str(n) for n in (names or [])}
+    found |= {str(v.get("field")) for v in (values or []) if isinstance(v, dict)}
+    return found
+
+
+def _unlinked_summary(rows: list[tuple[str, str, Any, Any]]) -> UnlinkedSummary:
+    """Counts over (kind, mapping, field_names, fields) of unlinked changes."""
+    if not _aggregate_only():
+        return UnlinkedSummary(policy=FIELD_NAMES)
+    kinds: Counter[str] = Counter()
+    mappings: Counter[str] = Counter()
+    names: Counter[str] = Counter()
+    for kind, mapping, field_names, values in rows:
+        kinds[kind] += 1
+        mappings[mapping] += 1
+        names.update(_change_field_names(field_names, values))
+    total = sum(kinds.values())
+    return UnlinkedSummary(
+        policy=AGGREGATE,
+        total=total,
+        kind=dict(sorted(kinds.items())),
+        mapping=dict(sorted(mappings.items())),
+        field=dict(sorted(names.items())),
+        note=unlinked_note(total),
+    )
 
 
 def _now(now: dt.datetime | None) -> dt.datetime:
@@ -765,6 +872,108 @@ def _audit() -> AuditStatus:
         message=AUDIT_MESSAGES[AuditAccess.AVAILABLE],
         last_event_at=stats["last"],
         events_stored=stats["n"] or 0,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Operational health of the wider observation and its retention (monitoring)
+# ---------------------------------------------------------------------------
+
+#: A wider reading still RUNNING after this long is stuck.
+OBSERVATION_RUNNING_LIMIT = dt.timedelta(hours=2)
+
+
+@dataclass
+class ObservationHealth(_AsDict):
+    """`production_status`'s ``lovable_observation`` row, and the overview's.
+
+    ``problems`` are short codes with counts only — never business text."""
+
+    ok: bool
+    detail: str
+    observe: bool
+    problems: list[str]
+    last_success_at: dt.datetime | None
+    retention_last_success_at: dt.datetime | None
+    retention_last_status: str
+    retention_failure_code: str
+
+
+def _observation_data_exists() -> bool:
+    return (
+        LovableObservationSnapshot.objects.exists()
+        or LovableObservedChange.objects.exists()
+        or LovableSourceEvent.objects.exists()
+    )
+
+
+def observation_health(*, now: dt.datetime | None = None) -> ObservationHealth:
+    """Is the wider observation (when on) and its retention job healthy?
+
+    Red when observation is ON and: it has never run; the newest reading
+    FAILED; a reading has been RUNNING over `OBSERVATION_RUNNING_LIMIT`; no
+    reading SUCCEEDED within `lovable_sync.STALE_AFTER` (26 h); or the audit
+    ledger is expected (``LOVABLE_AUDIT_ENABLED``, or the newest finished
+    reading tried it) and the newest finished reading could not read it. Red,
+    whether observation is on or off, when raw observation data exists and the
+    newest retention run FAILED or none SUCCEEDED within 26 h — paused
+    observation must not stop the 30-day limit. Reads only: the control row is
+    looked up, never created (no `lovable_sync.control()`)."""
+    moment = _now(now)
+    ctl = LovableSyncControl.objects.filter(pk=1).first()
+    observe = bool(ctl and ctl.observe)
+    runs = LovableObservationRun.objects.order_by("-started_at")
+    newest = runs.first()
+    success = runs.filter(status=ObservationRunStatus.SUCCEEDED).first()
+    success_at = (success.taken_at or success.started_at) if success else None
+    problems: list[str] = []
+    if observe:
+        if newest is None:
+            problems.append("observation on but never ran")
+        elif newest.status == ObservationRunStatus.FAILED:
+            problems.append(f"last observation failed ({_failure_code(newest.error) or '?'})")
+        elif (
+            newest.status == ObservationRunStatus.RUNNING
+            and moment - newest.started_at > OBSERVATION_RUNNING_LIMIT
+        ):
+            problems.append("an observation has been running over 2 hours")
+        if newest is not None and (
+            success is None or moment - success.started_at > lovable_sync.STALE_AFTER
+        ):
+            problems.append("no successful observation in the last 26 hours")
+        finished = runs.exclude(status=ObservationRunStatus.RUNNING).first()
+        if finished is not None:
+            expected = bool(getattr(settings, "LOVABLE_AUDIT_ENABLED", False)) or (
+                finished.audit_access == AuditAccess.UNAVAILABLE
+            )
+            if expected and finished.audit_access != AuditAccess.AVAILABLE:
+                code = f", {finished.audit_error}" if finished.audit_error else ""
+                problems.append(f"audit history {finished.audit_access}{code}")
+    retention = LovableRetentionRun.objects.order_by("-started_at")
+    last_prune = retention.first()
+    good_prune = retention.filter(status=RetentionRunStatus.SUCCEEDED).first()
+    if _observation_data_exists():
+        if last_prune is not None and last_prune.status == RetentionRunStatus.FAILED:
+            problems.append(f"retention failed ({_failure_code(last_prune.error) or '?'})")
+        elif good_prune is None or moment - good_prune.started_at > lovable_sync.STALE_AFTER:
+            problems.append("no successful retention run in the last 26 hours")
+    if problems:
+        detail = "; ".join(problems)
+    elif observe:
+        detail = f"on, last success {success.run_key}" if success else "on"
+    else:
+        detail = "off"
+    return ObservationHealth(
+        ok=not problems,
+        detail=detail,
+        observe=observe,
+        problems=problems,
+        last_success_at=success_at,
+        retention_last_success_at=good_prune.started_at if good_prune else None,
+        retention_last_status=last_prune.status if last_prune else "",
+        retention_failure_code=_failure_code(last_prune.error)
+        if last_prune is not None and last_prune.status == RetentionRunStatus.FAILED
+        else "",
     )
 
 
@@ -1156,7 +1365,9 @@ def _observed_topic(change: LovableObservedChange, visible: set[Any], *, full: b
             fields.append(FieldDiff(name, _label(name), "", "", withheld=True))
     matter_id: str | None = None
     if linked or (
-        change.mapping == MappingStatus.REFERENCE_CANDIDATE
+        # The candidate's link identifies the source record: `FIELD_NAMES` only.
+        not _aggregate_only()
+        and change.mapping == MappingStatus.REFERENCE_CANDIDATE
         and change.matter_id is not None
         and change.matter_id in visible
     ):
@@ -1234,7 +1445,11 @@ def _observation_reading(
     population: str,
     *,
     full: bool,
+    unlinked: list[LovableObservedChange] | None = None,
 ) -> Reading:
+    """``changes`` become topics; ``unlinked`` (`AGGREGATE`) are only counted —
+    in the reading's totals and in ``Reading.unlinked``, never as topics."""
+    unlinked = unlinked or []
     counts = run.counts or {}
     if run.status == ObservationRunStatus.FAILED:
         comparison = "NO_SNAPSHOT"
@@ -1245,9 +1460,10 @@ def _observation_reading(
         comparison, message = "BASELINE", OBSERVATION_MESSAGES["BASELINE"]
     else:
         comparison = "COMPARED"
-        message = "" if changes or hidden else OBSERVATION_MESSAGES["COMPARED_EMPTY"]
+        message = "" if changes or hidden or unlinked else OBSERVATION_MESSAGES["COMPARED_EMPTY"]
     topics = [_observed_topic(c, visible, full=full) for c in changes]
-    kinds = Counter(c.kind for c in changes)
+    summary = _unlinked_summary([(c.kind, c.mapping, c.field_names, c.fields) for c in unlinked])
+    kinds = Counter(c.kind for c in [*changes, *unlinked])
     size_key = "operational" if population == ObservationScope.OPERATIONAL else "live"
     size = counts.get(size_key)
     return Reading(
@@ -1265,12 +1481,13 @@ def _observation_reading(
         message=message,
         cohort_size=size if isinstance(size, int) else None,
         new_topics=kinds.get(ObservedChangeKind.NEW, 0),
-        changed_topics=len(changes) + hidden,
+        changed_topics=len(changes) + hidden + len(unlinked),
         missing_topics=kinds.get(ObservedChangeKind.MISSING, 0),
-        changed_fields=sum(len(t.fields) for t in topics),
+        changed_fields=sum(len(t.fields) for t in topics) + sum(summary.field.values()),
         outcomes=dict(sorted(kinds.items())),
         topics=topics,
         hidden=hidden,
+        unlinked=summary,
     )
 
 
@@ -1382,6 +1599,24 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
             warnings.append("Õnnestunud laiem lugemine on vanem kui 26 tundi või puudub.")
     if not audit.available:
         warnings.append(audit.message)
+    health = observation_health(now=moment)
+    if (
+        observe
+        and last_observation is not None
+        and last_observation.status == ObservationRunStatus.RUNNING
+        and moment - last_observation.started_at > OBSERVATION_RUNNING_LIMIT
+    ):
+        warnings.append("Laiem lugemine algas üle kahe tunni tagasi ega lõppenud.")
+    if health.retention_failure_code:
+        warnings.append(
+            "Vaatluse toorandmete kustutamine (säilitustähtaeg "
+            f"{OBSERVATION_RETENTION_DAYS} päeva) ebaõnnestus: {health.retention_failure_code}."
+        )
+    elif any(p.startswith("no successful retention") for p in health.problems):
+        warnings.append(
+            "Vaatluse toorandmete kustutamine (säilitustähtaeg "
+            f"{OBSERVATION_RETENTION_DAYS} päeva) pole viimase 26 tunni jooksul õnnestunud."
+        )
 
     indicators = _status_indicators(
         user,
@@ -1397,6 +1632,17 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         cohort=cohort,
         live=live,
         operational=operational,
+    )
+    indicators.insert(
+        8,
+        _indicator(
+            "retention_freshness",
+            "Toorandmete viimane kustutamine",
+            _hours_since(health.retention_last_success_at, moment),
+            f"tundi tagasi (piir 26 tundi; säilitustähtaeg {OBSERVATION_RETENTION_DAYS} päeva)",
+            _local(health.retention_last_success_at) or "—",
+            "Õnnestunud kustutamist pole olnud.",
+        ),
     )
     return SyncStatus(
         mode=mode,
@@ -1420,6 +1666,10 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         pending_review=pending,
         warnings=warnings,
         indicators=indicators,
+        observation_health_ok=health.ok,
+        observation_health_detail=health.detail,
+        retention_last_success_at=health.retention_last_success_at,
+        retention_freshness=_freshness(health.retention_last_success_at, moment),
     )
 
 
@@ -1671,7 +1921,9 @@ def nights(
     no matching topic is still listed (its counts say why).
 
     `NIGHTS_PAGE` readings per page. In a list a value longer than
-    `SHORT_VALUE` is cut (``FieldDiff.truncated``); `matter_changes` has it whole."""
+    `SHORT_VALUE` is cut (``FieldDiff.truncated``); `matter_changes` has it
+    uncut. Under `AGGREGATE` a wider reading's unlinked topics are counted in
+    ``Reading.unlinked`` (and in its totals), never listed."""
     if not _reads(user):
         return _empty(NIGHTS_PAGE)
     moment = _now(now)
@@ -1711,8 +1963,18 @@ def nights(
     )
     visible = _visible_set(user, {c.matter_id for c in every if c.matter_id is not None})
     by_run: dict[Any, list[LovableObservedChange]] = {}
+    unlinked: dict[Any, list[LovableObservedChange]] = {}
     hidden: Counter[Any] = Counter()
+    aggregate = _aggregate_only()
     for change in every:
+        if aggregate and change.mapping != MappingStatus.PILOT_LINKED:
+            # Counted only; the field filter (a fixed vocabulary) narrows the
+            # count, a reference or text filter never does.
+            if not field_name or field_name in _change_field_names(
+                change.field_names, change.fields
+            ):
+                unlinked.setdefault(change.run_id, []).append(change)
+            continue
         if change.mapping == MappingStatus.PILOT_LINKED and (
             change.matter_id is None
             or change.matter_id not in visible
@@ -1725,7 +1987,13 @@ def nights(
     readings = []
     for run in runs:
         reading = _observation_reading(
-            run, by_run.get(run.pk, []), hidden[run.pk], visible, population, full=full
+            run,
+            by_run.get(run.pk, []),
+            hidden[run.pk],
+            visible,
+            population,
+            full=full,
+            unlinked=unlinked.get(run.pk, []),
         )
         reading.topics = [
             t
@@ -1757,7 +2025,9 @@ def observed_changes(
 
     Totals are in ``Page.totals`` (``{"kind": {...}, "mapping": {...}}``) over
     every page; ``Page.hidden`` counts pilot topics whose Teema the reader may
-    not open."""
+    not open. Under `AGGREGATE` an unlinked topic is never an item: it is
+    counted in ``Page.unlinked`` (narrowed by kind, mapping and field, never by
+    reference or text)."""
     if not _reads(user):
         return _empty()
     moment = _now(now)
@@ -1781,6 +2051,21 @@ def observed_changes(
             text=text,
         )
     )
+    unlinked = UnlinkedSummary(policy=FIELD_NAMES)
+    if _aggregate_only():
+        qs = qs.filter(mapping=MappingStatus.PILOT_LINKED)
+        rest = window.filter(_population_q(population)).exclude(mapping=MappingStatus.PILOT_LINKED)
+        if kind:
+            rest = rest.filter(kind=kind)
+        if mapping:
+            rest = rest.filter(mapping=mapping)
+        if field_name:
+            rest = rest.filter(
+                Q(field_names__contains=[field_name]) | Q(fields__contains=[{"field": field_name}])
+            )
+        unlinked = _unlinked_summary(
+            list(rest.values_list("kind", "mapping", "field_names", "fields"))
+        )
     total = qs.count()
     pages = _pages(total, PAGE_SIZE)
     number = min(max(1, page), pages)
@@ -1804,6 +2089,7 @@ def observed_changes(
         page_size=PAGE_SIZE,
         hidden=hidden.count(),
         totals={k: dict(sorted(v.items())) for k, v in totals.items()},
+        unlinked=unlinked,
     )
 
 
@@ -1843,7 +2129,8 @@ def _event_views(
             title, open_values = "", False
             matter_id = (
                 str(seen.matter_id)
-                if seen is not None
+                if not _aggregate_only()
+                and seen is not None
                 and mapping == MappingStatus.REFERENCE_CANDIDATE
                 and seen.matter_id in candidates
                 else None
@@ -1859,7 +2146,16 @@ def _event_views(
             cut_b = cut_a = False
             if not full:
                 (before, cut_b), (after, cut_a) = _cut(before), _cut(after)
-            fields.append(FieldDiff(row.field, label, before, after, truncated=cut_b or cut_a))
+            fields.append(
+                FieldDiff(
+                    row.field,
+                    label,
+                    before,
+                    after,
+                    truncated=cut_b or cut_a,
+                    source_truncated=bool(row.truncated),
+                )
+            )
         views.append(
             SourceEventView(
                 source_event_id=event.source_event_id,
@@ -1899,14 +2195,28 @@ def source_events(
 
     ``field_name`` is a Lovable column (``jargmiseks``) or a canonical field
     (``next_action_text``). Events of a pilot Teema the reader may not open are
-    counted in ``Page.hidden``, never listed."""
+    counted in ``Page.hidden``, never listed. Under `AGGREGATE` an event of a
+    topic outside the pilot is never listed either: ``Page.unlinked`` counts
+    them by action and field (the field filter narrows that count, the
+    reference filter never does)."""
     audit = _audit()
     if not audit.available or not _reads(user):
         return audit, _empty()
     moment = _now(now)
     start, end = _window(since, until, moment)
     sight = _sight(user)
-    qs = LovableSourceEvent.objects.filter(occurred_at__gte=start, occurred_at__lt=end)
+    aggregate = _aggregate_only()
+    window = LovableSourceEvent.objects.filter(occurred_at__gte=start, occurred_at__lt=end)
+    columns: list[str] = []
+    if field_name:
+        columns = [c for c, f in LOVABLE_SOURCE_COLUMNS.items() if f == field_name] or [field_name]
+        window = window.filter(fields__field__in=columns).distinct()
+    qs = window
+    unlinked = UnlinkedSummary(policy=FIELD_NAMES)
+    if aggregate:
+        pilot_ids = [s.source_id for s in sight.states.values()]
+        qs = qs.filter(topic_id__in=pilot_ids)
+        unlinked = _unlinked_events(window.exclude(topic_id__in=pilot_ids))
     reference = _norm_ref(reference)
     if reference:
         ids = {str(s.source_id) for s in sight.states.values() if s.reference == reference}
@@ -1917,9 +2227,6 @@ def source_events(
             ).values_list("source_id", flat=True)
         }
         qs = qs.filter(topic_id__in=ids)
-    if field_name:
-        columns = [c for c, f in LOVABLE_SOURCE_COLUMNS.items() if f == field_name] or [field_name]
-        qs = qs.filter(fields__field__in=columns).distinct()
     hidden_ids = _hidden_sources(sight)
     hidden = qs.filter(topic_id__in=hidden_ids).count() if hidden_ids else 0
     shown = qs.exclude(topic_id__in=hidden_ids) if hidden_ids else qs
@@ -1938,6 +2245,34 @@ def source_events(
         total=total,
         page_size=PAGE_SIZE,
         hidden=hidden,
+        unlinked=unlinked,
+    )
+
+
+def _unlinked_events(events: Any) -> UnlinkedSummary:
+    """Source events of unlinked topics, counted by action and by field."""
+    ids = events.values("pk")
+    actions = dict(
+        events.order_by()
+        .values_list("action")
+        .annotate(n=Count("pk", distinct=True))
+        .values_list("action", "n")
+    )
+    names = dict(
+        LovableSourceEventField.objects.filter(event_id__in=ids)
+        .order_by()
+        .values_list("field")
+        .annotate(n=Count("pk"))
+        .values_list("field", "n")
+    )
+    total = events.order_by().values("pk").distinct().count()
+    return UnlinkedSummary(
+        policy=AGGREGATE,
+        total=total,
+        kind=dict(sorted(actions.items())),
+        mapping={},
+        field=dict(sorted(names.items())),
+        note=unlinked_note(total, events=True),
     )
 
 
@@ -2010,7 +2345,9 @@ def matter_changes(
     """``None`` for an unknown Teema, one the reader may not open, or one not in
     the pilot — the caller says «not found» for all three alike.
 
-    Values here are whole (never cut): this is the detail the lists point to."""
+    Values here are never cut for display: this is the detail the lists point
+    to. A source event's value is still incomplete where Juristid's copy was
+    cut at ingestion — ``FieldDiff.source_truncated`` says so."""
     if not _reads(user):
         return None
     moment = _now(now)
@@ -2217,8 +2554,8 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
 }
 
 OWNER_DECISIONS = [
-    "Kas ja kui palju võib näidata Juristidega sidumata Lovable'i teemade sisu "
-    "(praegu ainult number, muutuse liik ja väljade nimed).",
+    "Kas ja kui palju võib näidata Juristidega sidumata Lovable'i teemade muudatusi "
+    "(praegu ainult koondarvud; valikuna number, muutuse liik ja väljade nimed).",
     "Kas laiema vaatluse toorandmeid võib hoida kauem kui 30 päeva.",
     "Lovable'i muutmisajaloo lugemisõigus: `lovable_sync access-sql` päringute heakskiit ja "
     "tulemuse kirja panek.",

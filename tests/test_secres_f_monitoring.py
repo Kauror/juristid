@@ -234,7 +234,8 @@ def test_production_status_json_has_the_shape_a_monitor_can_parse(capsys, monkey
 
 
 def test_the_real_roll_up_includes_the_rows_the_inventory_cites() -> None:
-    """The six rows a monitor would get: readiness, search ×2, era, archive, Lovable."""
+    """The seven rows a monitor would get: readiness, search ×2, era, archive, and
+    Lovable twice (the pilot sync, then the wider observation, appended last)."""
     names = [check.__name__ for check in status_module.CHECKS]
     assert names == [
         "_deployment_readiness",
@@ -243,6 +244,7 @@ def test_the_real_roll_up_includes_the_rows_the_inventory_cites() -> None:
         "_era_contracts",
         "_archive_projection",
         "_lovable_sync",
+        "_lovable_observation",
     ]
     # And what it deliberately leaves out, which a monitor must schedule separately.
     excluded = {name for name, _reason in status_module.EXCLUDED}

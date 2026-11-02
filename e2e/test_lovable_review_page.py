@@ -117,14 +117,18 @@ def test_every_lovable_view_opens_from_its_tab(page, base_url, planted, width):
         )
         assert not document_overflows(page), f"{name}: the document scrolls sideways"
 
-    # «Vaadeldud muudatused»: the mapping is said in words, an unmatched topic
-    # has no link and no values, and a pilot Teema's fields open on a click.
+    # «Vaadeldud muudatused»: topics with no confirmed link are only counted
+    # (docs/adr/0201 §6) — no number, link or values — and a pilot Teema's
+    # fields open on a click.
     page.goto(f"{base_url}/uuendused/lovable/?vaade=vaadeldud")
     page.wait_for_load_state("networkidle")
-    unmatched = page.locator("section.lovnight__topic", has_text="2099_901")
-    expect(unmatched).to_contain_text("Juristides vastet pole")
-    expect(unmatched.get_by_role("link")).to_have_count(0)
+    expect(page.locator(".lovunlinked").first).to_contain_text(
+        "teemades, millel pole Juristides kinnitatud vastet"
+    )
+    expect(page.locator("section.lovnight__topic", has_text="2099_901")).to_have_count(0)
+    expect(page.locator("body")).not_to_contain_text("2099_901")
     expect(page.locator("body")).not_to_contain_text("E2E-PEIDETUD")
+    expect(page.locator("body")).not_to_contain_text("seos kinnitamata)")
     linked = page.locator("section.lovnight__topic:has(h3 a)").first
     open_disclosure(linked.locator("details.lovtopic"))
     expect(linked.locator("table.lovnight__table")).to_contain_text("Riigikogus")

@@ -246,7 +246,7 @@ def test_the_queue_lists_pending_fields_with_a_suggestion_and_no_button(client, 
     assert "Valitsuses" in _get(client, "ootel", viide="2026/501")
 
 
-def test_observed_changes_show_mapping_and_never_unmatched_values(client, pilot, reader):
+def _observed_world(pilot: Pilot) -> Any:
     pilot.add(501)
     candidate = factories.MatterFactory(
         reference_year=2026, reference_number=777, title="KANDIDAADI-PEALKIRI-6601"
@@ -271,6 +271,55 @@ def test_observed_changes_show_mapping_and_never_unmatched_values(client, pilot,
         fields=[("stage", "Ministeeriumis", "Valitsuses")],
     )
     observed(run, "2026_950", kind=ObservedChangeKind.NEW, field_names=[])
+    return candidate
+
+
+UNLINKED_SENTENCE = (
+    "teemades, millel pole Juristides kinnitatud vastet; "
+    "üksikasju ei näidata, kuni omanik on nähtavuse otsustanud."
+)
+
+
+def test_unlinked_topics_are_only_counted_in_html_and_xlsx(client, pilot, reader):
+    """The default (docs/adr/0201 §6): no unlinked topic's number, field name
+    or candidate link in the page, the nights or the workbook — a count only."""
+    candidate = _observed_world(pilot)
+    client.force_login(reader)
+    unlinked = ("2026_900", "2026_777", "2026_950")
+    secrets = ("SALAJANE", "VAARTUS-A", "VAARTUS-B", "KANDIDAADI-PEALKIRI", *unlinked)
+    candidate_url = reverse("matters:matter_detail", args=[candidate.pk])
+    pages = {
+        "vaadeldud": _get(client, "vaadeldud"),
+        "oised-koik": _get(client, "oised", ulatus="koik"),
+        "oised-operatiivsed": _get(client, "oised", ulatus="operatiivsed"),
+    }
+    # A search for an unlinked topic finds no topic (the query is only echoed
+    # in the form) and leaves the count where it was.
+    for probe in ({"otsi": "2026_900"}, {"viide": "2026_777"}):
+        found = _get(client, "vaadeldud", **probe)
+        assert 'class="lovnight__topic"' not in found, probe
+        assert f"3 muudatust {UNLINKED_SENTENCE}" in found, probe
+    for name, body in pages.items():
+        for secret in secrets:
+            assert secret not in body, (name, secret)
+        assert candidate_url not in body, name
+        assert f"3 muudatust {UNLINKED_SENTENCE}" in body, name
+    body = pages["vaadeldud"]
+    assert "Valitsuses" in body and "Näidisteema 2026_501" in body
+    assert "Muutunud väljad kokku:" in body
+    for view, params in (("vaadeldud", {}), ("oised", {"ulatus": "koik"})):
+        text = _xlsx_text(client.get(_url(view, name=EXPORT, **params)))
+        for secret in secrets:
+            assert secret not in text, (view, secret)
+        assert f"3 muudatust {UNLINKED_SENTENCE}" in text, view
+        assert "ainult nende koguarv" in text
+    assert "Valitsuses" in _xlsx_text(client.get(_url("vaadeldud", name=EXPORT)))
+
+
+def test_observed_changes_show_mapping_and_never_unmatched_values(client, pilot, reader, settings):
+    """The owner-approvable FIELD_NAMES policy: number, kind and field names."""
+    settings.LOVABLE_UNLINKED_DETAIL = "FIELD_NAMES"
+    candidate = _observed_world(pilot)
     client.force_login(reader)
     body = _get(client, "vaadeldud")
     for secret in ("SALAJANE", "VAARTUS-A", "VAARTUS-B", "KANDIDAADI-PEALKIRI"):
@@ -322,6 +371,23 @@ def test_available_audit_events_are_listed(client, pilot, reader):
     assert "Vana tegevus → Uus tegevus" in body
     assert "väärtust ei näidata" in body
     assert "VOORAS-6612" not in body
+    assert f"1 sündmus {UNLINKED_SENTENCE}" in body
+
+
+def test_a_value_cut_at_ingestion_is_marked_in_the_history(client, pilot, reader):
+    state = pilot.add(501)
+    run = observation_run(night_at(0), audit=AuditAccess.AVAILABLE)
+    source_event(
+        state.source_id,
+        night_at(0),
+        fields=[("jargmiseks", "Vana", "PIKK-ALGUS-6613", False)],
+        run=run,
+        truncated=("jargmiseks",),
+    )
+    client.force_login(reader)
+    body = _get(client, "ajalugu")
+    assert "PIKK-ALGUS-6613" in body
+    assert ">lühendatud</span>" in body
 
 
 def test_readiness_is_an_assessment(client, pilot, reader):
@@ -441,3 +507,7 @@ def test_haldus_shows_observation_counts_but_no_business_text(client, settings, 
     assert "Elavaid teemasid Lovable'is</dt><dd>400</dd>" in body
     assert "HALDUS-" not in body
     assert "2026_501" not in body
+    # Raw observation data with no retention run: the monitoring row is red.
+    assert "<dt>Vaatluse seire</dt>" in body
+    assert "no successful retention run in the last 26 hours" in body
+    assert "2026_900" not in body

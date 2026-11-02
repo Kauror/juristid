@@ -455,6 +455,15 @@ class LovableSyncStatusOutput(_LovableAnswer):
     pending_review: int
     warnings: list[str]
     indicators: list[dict[str, Any]]
+    observation_health_ok: bool = Field(
+        default=True,
+        description=(
+            "The wider observation and its raw-data retention are healthy (the same "
+            "verdict as production_status's lovable_observation row)."
+        ),
+    )
+    observation_health_detail: str = ""
+    retention_freshness: str = ""
 
 
 class _LovablePageOutput(_LovableAnswer):
@@ -467,25 +476,36 @@ class _LovablePageOutput(_LovableAnswer):
         description="Items left out because their Teema is not one you may open: a count only."
     )
     totals: dict[str, dict[str, int]]
+    unlinked: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Changes of source topics with no approved link to a Juristid Teema, counted "
+            "only: total, by kind (source events: by action), by link and by field name, "
+            "and an Estonian note. They are never items until the owner decides what may "
+            "be shown (policy AGGREGATE)."
+        ),
+    )
     has_more: bool
 
 
 class LovableSyncHistoryOutput(_LovablePageOutput):
     """One page of readings, newest first: pilot nights or wider readings, each with its
     status, comparison, counts by outcome and the changed topics with their fields
-    (before and after where you may see them; withheld otherwise)."""
+    (before and after where you may see them; withheld otherwise). A wider reading's
+    topics with no approved Juristid link are only counted, in its `unlinked`."""
 
 
 class LovableObservedChangesOutput(_LovablePageOutput):
     """One page of changed source topics from the wider readings, newest first, with
     totals by kind and by mapping over every page. A topic with no approved link to a
-    Juristid Teema shows its source number and field names only."""
+    Juristid Teema is not listed; `unlinked` counts such changes."""
 
 
 class LovableSyncMatterChangesOutput(_LovableAnswer):
     """One pilot Teema's retained synchronisation history: per field the last applied,
     the Juristid and the last observed Lovable value; its nights, decisions, pending
-    review and Lovable's change history where available. Values are whole here."""
+    review and Lovable's change history where available. Values are not cut here; a
+    change-history value Juristid stored cut at ingestion says so (source_truncated)."""
 
     matter_id: str
     reference: str

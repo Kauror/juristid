@@ -12,10 +12,10 @@ process, as its SELECT-only role, on read-only connections.
 
 | Tool | Arguments | Answer |
 | --- | --- | --- |
-| `get_lovable_sync_status` | none | `status(user).as_dict()`: mode, APPLY authorised, cut-over, observation on, last scheduled / successful / failed run with the failure **code**, snapshot and observation freshness, the audit ledger's availability, pilot size, live and operational topic counts, pending review, Estonian warnings, the overview's indicators |
+| `get_lovable_sync_status` | none | `status(user).as_dict()`: mode, APPLY authorised, cut-over, observation on, last scheduled / successful / failed run with the failure **code**, snapshot and observation freshness, the audit ledger's availability, pilot size, live and operational topic counts, pending review, Estonian warnings, the overview's indicators, and `observation_health_ok` / `observation_health_detail` / `retention_freshness` (the same verdict as `production_status`'s `lovable_observation` row) |
 | `get_lovable_sync_history` | `since?`, `until?` (YYYY-MM-DD), `population?` `PILOT` (default) \| `OPERATIONAL` \| `ALL_LIVE`, `outcome?` (PILOT only: `APPLIED`, `NOT_APPLIED`, `REVIEW`, `CONFLICT`, `SAME`, `RESOLVED`, `NOT_COMPARED`, `LOCAL`, `FAILED`, `UNKNOWN`), `field?`, `page?` 1–100 | `nights(...)` as a page: 10 readings per page, newest first, each with its topics and fields |
-| `get_lovable_sync_matter_changes` | `matter`: a reference such as `2026_243` (also `2026/243`), a Matter UUID or `matter:<uuid>` | `matter_changes(...)`: per field last applied / Juristid now / Lovable last observed, nights, decisions, source events, pending review — values whole |
-| `get_lovable_observed_changes` | `since?`, `until?`, `population?` (default `ALL_LIVE`), `kind?` `NEW` \| `CHANGED` \| `MISSING` \| `BACK` \| `RENUMBERED`, `field?`, `mapping?` `PILOT_LINKED` \| `REFERENCE_CANDIDATE` \| `UNMATCHED`, `page?` 1–100 | `observed_changes(...)` as a page: 50 topics per page, totals by kind and mapping over every page |
+| `get_lovable_sync_matter_changes` | `matter`: a reference such as `2026_243` (also `2026/243`), a Matter UUID or `matter:<uuid>` | `matter_changes(...)`: per field last applied / Juristid now / Lovable last observed, nights, decisions, source events, pending review — values not cut for display; a source-event value Juristid stored cut at ingestion carries `source_truncated: true` |
+| `get_lovable_observed_changes` | `since?`, `until?`, `population?` (default `ALL_LIVE`), `kind?` `NEW` \| `CHANGED` \| `MISSING` \| `BACK` \| `RENUMBERED`, `field?`, `mapping?` `PILOT_LINKED` \| `REFERENCE_CANDIDATE` \| `UNMATCHED`, `page?` 1–100 | `observed_changes(...)` as a page: 50 topics per page, totals by kind and mapping over every page; unlinked topics only counted in `unlinked` |
 | `get_lovable_sync_readiness` | none | `readiness(user).as_dict()`: source, identity, per-field rules and risks, coverage, the **simulated** plan, conflicts, blockers, owner decisions. An assessment, never an activation |
 
 `field` is one of `lovable_review.FIELD_ORDER` (title, owner, stage,
@@ -57,7 +57,19 @@ nothing. They:
 Who sees what is the service's (ADR 0201 §6): a pilot Teema's title and values
 only when `Matter.objects.visible_to(user)` allows; otherwise counted in
 `hidden`, never named. A source topic with no approved link to a Juristid Teema
-shows its source number, kind and field **names** only.
+(`REFERENCE_CANDIDATE`, `UNMATCHED`) is, by default (`AGGREGATE`), never an
+item in any tool — no number, time, action, field name or candidate link — and
+is counted only in the page's or reading's `unlinked`: `total`, by `kind` (for
+source events: by action), by `mapping`, by `field` name, and an Estonian
+`note`. Reference and text filters never narrow those counts. The
+owner-approvable alternative `FIELD_NAMES`
+(`JURISTID_LOVABLE_UNLINKED_DETAIL=FIELD_NAMES`) lists such a topic by source
+number, kind and field **names** — never a title or a value either way.
+
+Two different "cut" markers: `truncated` on a field means the list cut a long
+value for display (the Teema's detail has it uncut); `source_truncated` means
+Juristid's stored copy of a Lovable audit value was itself cut at ingestion
+(`AUDIT_VALUE_LIMIT`), so not even the detail has the original.
 
 The call log line (`app.mcp_server.calls`) carries the tool, the user id, the
 outcome, the duration and the item count — never a reference, title or value.

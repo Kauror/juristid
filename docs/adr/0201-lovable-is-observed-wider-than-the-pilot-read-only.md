@@ -126,11 +126,37 @@ call `control()`, `sync_health()` or `due()`, which create the control row.
 ### 6. Who sees what
 
 `may_read_business_content` first; a pilot Teema's title and values only
-through `Matter.objects.visible_to`; otherwise counted, never named. A source
-topic with no approved link to a Juristid Teema is shown by its source number,
-change kind and field *names* only, never its title or values
-(`UNMATCHED_DETAIL = "FIELD_NAMES_ONLY"`), until the owner decides a detail
-policy. The same rules hold for HTML, XLSX, MCP, search and counts.
+through `Matter.objects.visible_to`; otherwise counted, never named.
+
+A source topic with no approved link to a Juristid Teema (`REFERENCE_CANDIDATE`,
+`UNMATCHED`) is, by default (`AGGREGATE`; `JURISTID_LOVABLE_UNLINKED_DETAIL`
+unset), never an item in any answer — no source number, timestamp, action,
+field name or candidate link, in HTML, XLSX, MCP, search or `lovable_sync
+report` — until the owner decides a detail policy (review of PR #586). Its
+changes are counted only (`UnlinkedSummary`: total, by change kind or source
+action, by mapping, by field name across all such topics), with «N muudatust
+teemades, millel pole Juristides kinnitatud vastet; üksikasju ei näidata, kuni
+omanik on nähtavuse otsustanud.» Reference and text filters never narrow those
+counts, so a search cannot probe for one topic. The owner-approvable
+alternative `FIELD_NAMES` lists such a topic by number, change kind and field
+names (and a same-number Teema as an unconfirmed link); never a title or a
+value under either policy.
+
+### 6a. Monitoring
+
+`production_status` has a `lovable_observation` row, appended after
+`lovable_sync`, from `lovable_observability.observation_health()` (read-only;
+it never creates the control row). With observation on it fails when the
+newest reading failed, a reading has run for over 2 hours, no reading
+succeeded within 26 hours, or the audit ledger is expected
+(`LOVABLE_AUDIT_ENABLED`, or the newest finished reading tried it) and the
+newest finished reading could not read it. On or off, once raw observation
+data exists it fails when the newest retention run (`LovableRetentionRun`,
+§8) failed or none succeeded within 26 hours. Off with no data, or with
+healthy retention, is green («off»). Its detail is codes and counts only. The
+daily monitor (`juristid-monitor.sh`, `check_status`) alerts on any failing
+row, so observation and retention failures reach alerting independently of
+the pilot's exit status. Uuendused → Lovable and Haldus show the same verdict.
 
 ### 7. Readiness is an assessment, not an activation
 

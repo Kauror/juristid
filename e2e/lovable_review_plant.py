@@ -202,6 +202,8 @@ if not LovableObservationRun.objects.filter(run_key__startswith="e2e-obs-").exis
             mapping=MappingStatus.REFERENCE_CANDIDATE,
             matter=known[3],
         )
+    # Unlinked (candidate above, unmatched here): only counted on the page by
+    # default (docs/adr/0201 §6, AGGREGATE); their numbers never appear.
     LovableObservedChange.objects.create(
         run=newest,
         source_id=uuid.uuid5(uuid.NAMESPACE_URL, "e2e-lovable/unmatched"),

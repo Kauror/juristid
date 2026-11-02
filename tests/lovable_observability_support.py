@@ -26,6 +26,7 @@ from app.legacy_import.lovable_observation_models import (
     AuditAccess,
     LovableObservationRun,
     LovableObservedChange,
+    LovableRetentionRun,
     LovableSourceEvent,
     LovableSourceEventField,
     MappingStatus,
@@ -337,7 +338,9 @@ def source_event(
     fields: list[tuple[str, str, str, bool]],
     action: str = "muutmine",
     run: LovableObservationRun | None = None,
+    truncated: tuple[str, ...] = (),
 ) -> LovableSourceEvent:
+    """``truncated`` names fields whose stored value was cut at ingestion."""
     event = LovableSourceEvent.objects.create(
         source_event_id=uuid.uuid4().hex,
         topic_id=topic_id,
@@ -355,8 +358,22 @@ def source_event(
             old_value="" if withheld else old,
             new_value="" if withheld else new,
             withheld=withheld,
+            truncated=name in truncated,
         )
     return event
+
+
+def retention_run(
+    at: dt.datetime, *, status: str = "SUCCEEDED", error: str = ""
+) -> LovableRetentionRun:
+    """One pruning of raw observation data (synthetic; nothing is pruned)."""
+    return LovableRetentionRun.objects.create(
+        run_key=f"prune:{uuid.uuid4().hex[:12]}",
+        started_at=at,
+        finished_at=at,
+        status=status,
+        error=error,
+    )
 
 
 # ---------------------------------------------------------------------------

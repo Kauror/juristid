@@ -60,7 +60,7 @@ with it, from Juristid's own records; Lovable is never contacted):
   night by night, newest first; at most 31 days per question.
 - get_lovable_sync_matter_changes(matter): one pilot Teema's fields and history.
 - get_lovable_observed_changes(since?, until?, population?, kind?, field?, mapping?,
-  page?): changes across the whole register; unlinked topics show field names only.
+  page?): changes across the whole register; unlinked topics are only counted.
 - get_lovable_sync_readiness(): what blocks automatic synchronisation; simulated only.
 Keep apart what Lovable's own change history says, what a comparison of two readings
 found, what Juristid decided and what was applied; «hidden» counts Teemad you may

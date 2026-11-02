@@ -16273,3 +16273,10 @@ a.jcal__daynum {
   font-weight: var(--typography-weight-semibold);
   padding-bottom: var(--spacing-1);
 }
+
+/* Lovable: changes of unlinked source topics, counted only (docs/adr/0201 §6). */
+.lovunlinked {
+  border-left: 2px solid var(--border-subtle);
+  padding-left: var(--spacing-2);
+  margin-block: var(--spacing-2);
+}

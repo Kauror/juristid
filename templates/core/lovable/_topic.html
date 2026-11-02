@@ -1,7 +1,8 @@
 {% comment %}
   One Lovable topic's change in a reading (`TopicDiff`). The summary sentence
   first; the fields, before and after, in a closed `<details>`. A topic with no
-  confirmed link to a Juristid Teema has no title, no link to it as its own and
+  confirmed link to a Juristid Teema reaches here only under the owner-approvable
+  FIELD_NAMES policy (docs/adr/0201 §6): no title, no link to it as its own and
   no values — only its number, kind and field names. `pilot` adds the
   reconciliation's result per field.
 {% endcomment %}
@@ -56,7 +57,7 @@
                   <td colspan="2" class="lovwithheld">Väärtust ei näidata</td>
                 {% else %}
                   <td>{{ change.before }}</td>
-                  <td>{{ change.after }}{% if change.truncated %}<span class="lovnight__why">Pikk väärtus on lühendatud.</span>{% endif %}</td>
+                  <td>{{ change.after }}{% if change.source_truncated %}<span class="lovnight__why">lühendatud: Lovable'i väärtus oli pikem kui Juristides hoitav koopia.</span>{% elif change.truncated %}<span class="lovnight__why">Pikk väärtus on lühendatud.</span>{% endif %}</td>
                 {% endif %}
                 {% if pilot %}
                   <td>

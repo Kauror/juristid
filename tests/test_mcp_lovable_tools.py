@@ -467,11 +467,17 @@ def test_every_answer_is_the_services_own(mcp, world, reader):
     observed_page = _without_bounds(mcp.ok(reader, "get_lovable_observed_changes"))
     assert observed_page.pop("has_more") is False
     assert observed_page == _service(obs.observed_changes(reader))
-    assert observed_page["totals"]["mapping"] == {"PILOT_LINKED": 2, "UNMATCHED": 1}
+    assert observed_page["totals"]["mapping"] == {"PILOT_LINKED": 2}
+    # The unlinked topic is only counted (docs/adr/0201 §6, AGGREGATE).
+    assert observed_page["unlinked"]["total"] == 1
+    assert observed_page["unlinked"]["mapping"] == {"UNMATCHED": 1}
+    assert "2026_900" not in _dump(observed_page)
+    schemas.LovableObservedChangesOutput.model_validate({**observed_page, "has_more": False})
     narrowed = mcp.ok(reader, "get_lovable_observed_changes", {"mapping": "UNMATCHED"})
-    [unmatched] = narrowed["items"]
-    assert unmatched["title"] == "" and all(f["withheld"] for f in unmatched["fields"])
-    assert UNMATCHED_VALUE not in _dump(narrowed)
+    assert narrowed["items"] == [] and narrowed["unlinked"]["total"] == 1
+    assert UNMATCHED_VALUE not in _dump(narrowed) and "2026_900" not in _dump(narrowed)
+    wider = mcp.ok(reader, "get_lovable_sync_history", {"population": "ALL_LIVE"})
+    assert "2026_900" not in _dump(wider)
 
     changes = _without_bounds(
         mcp.ok(reader, "get_lovable_sync_matter_changes", {"matter": "2026_243"})
@@ -490,6 +496,19 @@ def test_every_answer_is_the_services_own(mcp, world, reader):
     schemas.LovableSyncReadinessOutput.model_validate({**readiness, "generated_at": "x"})
 
 
+def test_unlinked_topics_are_listed_by_field_names_only_under_the_owner_policy(
+    mcp, world, reader, settings
+):
+    settings.LOVABLE_UNLINKED_DETAIL = "FIELD_NAMES"
+    narrowed = mcp.ok(reader, "get_lovable_observed_changes", {"mapping": "UNMATCHED"})
+    [unmatched] = narrowed["items"]
+    assert unmatched["reference"] == "2026_900"
+    assert unmatched["title"] == "" and all(f["withheld"] for f in unmatched["fields"])
+    assert UNMATCHED_VALUE not in _dump(narrowed)
+    assert narrowed["unlinked"]["policy"] == "FIELD_NAMES"
+    assert narrowed["unlinked"]["total"] == 0
+
+
 def test_a_page_past_the_end_is_empty_rather_than_the_last_again(mcp, world, reader):
     first = mcp.ok(reader, "get_lovable_sync_history")
     assert first["pages"] == 1 and first["items"] and first["has_more"] is False
@@ -497,11 +516,13 @@ def test_a_page_past_the_end_is_empty_rather_than_the_last_again(mcp, world, rea
     assert (beyond["page"], beyond["items"], beyond["has_more"]) == (5, [], False)
     assert beyond["total"] == first["total"]
     beyond = mcp.ok(reader, "get_lovable_observed_changes", {"page": 100})
-    assert (beyond["page"], beyond["items"], beyond["total"]) == (100, [], 3)
+    assert (beyond["page"], beyond["items"], beyond["total"]) == (100, [], 2)
 
 
 def test_a_large_answer_is_cut_from_the_end_and_says_so(world, reader, monkeypatch, settings):
     fx.configure(settings)
+    # Unlinked topics are items only under the owner-approvable FIELD_NAMES policy.
+    settings.LOVABLE_UNLINKED_DETAIL = "FIELD_NAMES"
     run = observation_run(timezone.now() - dt.timedelta(hours=2))
     for number in range(30):
         observed(run, f"2026_{700 + number}", field_names=["title", "stage", "owner"])
@@ -577,7 +598,7 @@ def test_the_call_log_names_the_tool_and_counts_never_the_content(mcp, world, re
     lines = [r.getMessage() for r in caplog.records if r.name == "app.mcp_server.calls"]
     logged = [json.loads(line.split(" ", 1)[1]) for line in lines]
     assert [(e["tool"], e["outcome"], e["result_count"]) for e in logged] == [
-        ("get_lovable_observed_changes", "ok", 3),
+        ("get_lovable_observed_changes", "ok", 2),
         ("get_lovable_sync_matter_changes", "not_found", None),
     ]
     assert "2026_" not in " ".join(lines)

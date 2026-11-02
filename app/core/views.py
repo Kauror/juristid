@@ -217,6 +217,7 @@ LOVABLE_INDICATOR_GROUPS = (
             "pilot_coverage",
             "operational_observed",
             "live_indexed",
+            "retention_freshness",
         ),
     ),
     ("Lovable'i muutmisajalugu (allika sündmused)", ("audit_freshness", "source_events")),
@@ -422,6 +423,36 @@ def _pager(page: Any, filters: LovableFilters) -> dict[str, Any]:
     }
 
 
+def _unlinked_rows(summary: Any, *, events: bool = False) -> dict[str, Any]:
+    """An `UnlinkedSummary` laid out: the sentence, and counts by kind (or
+    action), mapping and field name with Estonian labels. Counts only."""
+    from app.legacy_import.lovable_sync_labels import (
+        LOVABLE_OBSERVED_KINDS,
+        LOVABLE_SOURCE_ACTIONS,
+        LOVABLE_SOURCE_COLUMNS,
+    )
+
+    if summary is None or not summary.total:
+        return {}
+    mappings = dict(LOVABLE_MAPPINGS.values())
+
+    def field_label(name: str) -> str:
+        canonical = LOVABLE_SOURCE_COLUMNS.get(name, name) if events else name
+        return LOVABLE_FIELD_LABELS.get(canonical, canonical)
+
+    def kind_label(name: str) -> str:
+        if events:
+            return LOVABLE_SOURCE_ACTIONS.get(name.lower(), name)
+        return LOVABLE_OBSERVED_KINDS.get(name, name)
+
+    return {
+        "note": summary.note,
+        "kinds": [(kind_label(k), n) for k, n in summary.kind.items()],
+        "mappings": [(mappings.get(k, k), n) for k, n in summary.mapping.items()],
+        "fields": [(field_label(k), n) for k, n in summary.field.items()],
+    }
+
+
 def _topic_needs_attention(topic: Any) -> bool:
     return topic.kind != "CHANGED" or any(
         f.result in LOVABLE_ATTENTION_RESULTS for f in topic.fields
@@ -450,6 +481,7 @@ def _night_rows(readings: list[Any], *, attention: bool) -> list[dict[str, Any]]
                     n for k, n in reading.outcomes.items() if k in LOVABLE_ATTENTION_RESULTS
                 ),
                 "outcomes": [(labels.get(k, k), n) for k, n in reading.outcomes.items()],
+                "unlinked": _unlinked_rows(reading.unlinked),
             }
         )
     return rows
@@ -514,7 +546,13 @@ def _lovable_history(user: Any, filters: LovableFilters) -> dict[str, Any]:
         page=filters.page,
         now=_lovable_now(),
     )
-    return {"audit": audit, "page": page, "pager": _pager(page, filters)}
+    return {
+        "audit": audit,
+        "page": page,
+        "pager": _pager(page, filters),
+        "unlinked": _unlinked_rows(page.unlinked, events=True),
+        "unlinked_listed": obs.unlinked_detail() == obs.FIELD_NAMES,
+    }
 
 
 def _lovable_queue(user: Any, filters: LovableFilters, page: int = 0) -> Any:
@@ -566,6 +604,7 @@ def _lovable_observed_view(user: Any, filters: LovableFilters) -> dict[str, Any]
         "mapping_totals": [
             (mappings.get(k, k), n) for k, n in (page.totals.get("mapping") or {}).items()
         ],
+        "unlinked": _unlinked_rows(page.unlinked),
     }
 
 
@@ -769,6 +808,28 @@ def _all_pages(fetch: Any, info: list[str]) -> tuple[list[Any], Any]:
     return items, first
 
 
+def _unlinked_policy_line() -> str:
+    """The information sheet's sentence on unlinked topics (docs/adr/0201 §6)."""
+    from app.legacy_import import lovable_observability as obs
+
+    if obs.unlinked_detail() == obs.AGGREGATE:
+        return (
+            "Juristidega sidumata Lovable'i teemade muudatusi ei loetleta: "
+            "ainult nende koguarv (omaniku otsuseni)."
+        )
+    return (
+        "Juristidega sidumata Lovable'i teemade pealkirju ja väärtusi ei näidata "
+        "(ainult number, muutuse liik ja väljade nimed)."
+    )
+
+
+def _unlinked_info(info: list[str], total: int) -> None:
+    from app.legacy_import import lovable_observability as obs
+
+    if total:
+        info.append(obs.unlinked_note(total))
+
+
 @require_safe
 @login_required
 def release_notes_lovable_export(request: HttpRequest) -> HttpResponse:
@@ -795,8 +856,7 @@ def release_notes_lovable_export(request: HttpRequest) -> HttpResponse:
         f"Uuendused → Lovable: {LOVABLE_VIEWS[view]}",
         f"Koostatud {lovable_export.moment(moment)} (Tallinna aeg).",
         "Koostatud Juristides salvestatud lugemistest; Lovable'it ei loetud ega muudetud.",
-        "Juristidega sidumata Lovable'i teemade pealkirju ja väärtusi ei näidata "
-        "(ainult number, muutuse liik ja väljade nimed).",
+        _unlinked_policy_line(),
         "Pikad väärtused on loetelus lühendatud (veerg «Lühendatud»).",
         *(filters.describe() or ["Filtreid pole."]),
         *filters.errors,
@@ -810,6 +870,7 @@ def release_notes_lovable_export(request: HttpRequest) -> HttpResponse:
         hidden = sum(r.hidden for r in readings)
         if hidden:
             info.append(f"Lisaks {hidden} muudetud teemat, mida sa ei näe: ainult arv.")
+        _unlinked_info(info, sum(r.unlinked.total for r in readings))
         workbook = lovable_export.nights_workbook(readings, info=info)
     elif view == "ootel":
         items, first = _all_pages(lambda n: _lovable_queue(user, filters, n), info)
@@ -820,6 +881,7 @@ def release_notes_lovable_export(request: HttpRequest) -> HttpResponse:
         items, first = _all_pages(lambda n: _lovable_observed(user, filters, n), info)
         if first.hidden:
             info.append(f"Lisaks {first.hidden} muutust teemadel, mida sa ei näe: ainult arv.")
+        _unlinked_info(info, first.unlinked.total)
         workbook = lovable_export.observed_workbook(items, info=info)
     return workbook_response(workbook, lovable_export.filename(view, timezone.localdate(moment)))
 

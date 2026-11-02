@@ -395,3 +395,60 @@ def test_the_default_status_does_not_read_evidence_bytes() -> None:
     source = Path(status_module.__file__).read_text(encoding="utf-8")
     assert "app.documents.integrity" not in source, "the evidence checker is imported"
     assert "check_evidence(" not in source, "the evidence checker is called"
+
+
+# --------------------------------------------------------------------------
+# The Lovable observation row (docs/adr/0201; review of PR #586)
+# --------------------------------------------------------------------------
+
+
+def test_the_lovable_observation_row_comes_last_so_the_older_rows_keep_their_place() -> None:
+    names = [check.__name__ for check in status_module.CHECKS]
+    assert names[-2:] == ["_lovable_sync", "_lovable_observation"]
+
+
+def test_the_lovable_observation_row_is_green_when_off_and_writes_nothing() -> None:
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from app.legacy_import.lovable_sync_models import LovableSyncControl
+    from tests.lovable_observability_support import row_counts, write_statements
+
+    before = row_counts()
+    with CaptureQueriesContext(connection) as queries:
+        row = status_module._lovable_observation()
+    assert write_statements(queries.captured_queries) == []
+    assert row_counts() == before
+    assert not LovableSyncControl.objects.exists()  # read, never get_or_create
+    assert (row.key, row.label, row.ok, row.detail) == (
+        "lovable_observation",
+        "Lovable observation",
+        True,
+        "off",
+    )
+
+
+def test_a_failed_observation_fails_the_roll_up(capsys) -> None:
+    import datetime as dt
+
+    from django.utils import timezone
+
+    from app.legacy_import.lovable_observation_models import ObservationRunStatus
+    from app.legacy_import.lovable_sync_models import SyncMode
+    from tests.lovable_observability_support import control, observation_run, retention_run
+
+    now = timezone.now()
+    control(SyncMode.OFF, observe=True)
+    observation_run(now - dt.timedelta(hours=20))
+    retention_run(now - dt.timedelta(hours=1))
+    assert status_module._lovable_observation().ok
+    observation_run(
+        now - dt.timedelta(hours=1), status=ObservationRunStatus.FAILED, error="HTTP_401: x"
+    )
+    row = status_module._lovable_observation()
+    assert not row.ok and row.detail == "last observation failed (HTTP_401)"
+    with pytest.raises(SystemExit):
+        call_command("production_status", "--json")
+    body = json.loads(capsys.readouterr().out)
+    [failing] = [c for c in body["checks"] if c["key"] == "lovable_observation"]
+    assert failing["ok"] is False and ": x" not in failing["detail"]

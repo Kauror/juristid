@@ -431,8 +431,9 @@ def _lovable_tool_specs(schemas: Any) -> list[ToolSpec]:
                 f"{schemas.LOVABLE_MAX_WINDOW_DAYS} days apart; default the last "
                 f"{schemas.LOVABLE_MAX_WINDOW_DAYS} days. 10 readings per page, pages 1 to "
                 f"{schemas.LOVABLE_MAX_PAGE}. Teemad you may not open are counted in `hidden`, "
-                "never named; long values are cut (truncated) — get_lovable_sync_matter_changes "
-                "has them whole. " + _LOVABLE_SOURCE + " Read-only."
+                "never named; topics with no approved link to a Juristid Teema are only "
+                "counted in each reading's `unlinked`; long values are cut (truncated) — "
+                "get_lovable_sync_matter_changes has them uncut. " + _LOVABLE_SOURCE + " Read-only."
             ),
             arguments=schemas.GetLovableSyncHistoryArguments,
             output=schemas.LovableSyncHistoryOutput,
@@ -457,7 +458,8 @@ def _lovable_tool_specs(schemas: Any) -> list[ToolSpec]:
                 "2026_243 or its id: per field the value last applied, the value in Juristid "
                 "now and the value last observed in Lovable; its nightly changes, the "
                 "comparison decisions, what still awaits review and why, and Lovable's own "
-                "change history where it is available. Values are whole here. A Teema that is "
+                "change history where it is available. Values are not cut here, except a "
+                "change-history value Juristid stored cut (source_truncated). A Teema that is "
                 "not in the pilot is answered like one that does not exist. "
                 + _LOVABLE_SOURCE
                 + " Read-only."
@@ -476,9 +478,10 @@ def _lovable_tool_specs(schemas: Any) -> list[ToolSpec]:
                 "Changed topics from the wider readings of Lovable's whole register, newest "
                 "first, with totals by kind and by link over every page: each topic's source "
                 "number, kind (NEW, CHANGED, MISSING, BACK, RENUMBERED), population, its link "
-                "to Juristid (PILOT_LINKED, REFERENCE_CANDIDATE, UNMATCHED) and the changed "
-                "fields. A topic with no approved link to a Juristid Teema shows field names "
-                "only, never its title or values. Optionally narrowed by population, kind, "
+                "to Juristid and the changed fields. A topic with no approved link to a "
+                "Juristid Teema (REFERENCE_CANDIDATE, UNMATCHED) is not listed: `unlinked` "
+                "counts them by kind, link and field, until the owner decides what may be "
+                "shown; never a title or values. Optionally narrowed by population, kind, "
                 "field or link. `since`/`until` ISO dates at most "
                 f"{schemas.LOVABLE_MAX_WINDOW_DAYS} days apart. 50 per page, pages 1 to "
                 f"{schemas.LOVABLE_MAX_PAGE}. " + _LOVABLE_SOURCE + " Read-only."

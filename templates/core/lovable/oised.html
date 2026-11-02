@@ -51,6 +51,7 @@
           {% if night.baseline_taken_at %}<p class="lovnight__note">Võrreldud lugemisega {{ night.baseline_taken_at|date:"d.m.Y" }} kell {{ night.baseline_taken_at|date:"H.i" }}.</p>{% endif %}
           {% if night.message %}<p class="empty">{{ night.message }}</p>{% endif %}
           {% if night.hidden %}<p class="lovnight__note">Veel {{ night.hidden }} muudetud teema{{ night.hidden|pluralize:",t" }} ei ole sulle nähtav.</p>{% endif %}
+          {% include "core/lovable/_unlinked.html" with unlinked=row.unlinked %}
           {% if filters.active and night.comparison == "COMPARED" and row.topics|length < night.changed_topics %}
             <p class="lovnight__note">Filtriga sobib {{ row.topics|length }} teema{{ row.topics|length|pluralize:",t" }}.</p>
           {% endif %}

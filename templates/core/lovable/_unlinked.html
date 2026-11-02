@@ -1,0 +1,18 @@
+{% comment %}
+  Changes of Lovable topics with no confirmed link to a Juristid Teema, counted
+  only (docs/adr/0201 §6, `UnlinkedSummary` laid out by `_unlinked_rows`): no
+  number, time, action per record, field name per record or link — only totals
+  across all of them, until the owner decides what may be shown.
+{% endcomment %}
+{% if unlinked %}
+  <div class="lovunlinked" role="note">
+    <p class="lovnight__note">{{ unlinked.note }}</p>
+    {% if unlinked.kinds or unlinked.mappings or unlinked.fields %}
+      <p class="lovnight__note">
+        {% if unlinked.kinds %}{% for label, count in unlinked.kinds %}{{ label }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}{% endif %}
+        {% if unlinked.mappings %}{% if unlinked.kinds %}<br>{% endif %}{% for label, count in unlinked.mappings %}{{ label }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}{% endif %}
+        {% if unlinked.fields %}{% if unlinked.kinds or unlinked.mappings %}<br>{% endif %}Muutunud väljad kokku: {% for label, count in unlinked.fields %}{{ label }} {{ count }}{% if not forloop.last %} · {% endif %}{% endfor %}{% endif %}
+      </p>
+    {% endif %}
+  </div>
+{% endif %}

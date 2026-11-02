@@ -1,8 +1,10 @@
 {% comment %}
   Lovable → Vaadeldud muudatused: `lovable_observability.observed_changes()`,
   the wider readings' per-topic changes. Each topic says how it maps to
-  Juristid: a pilot Teema (linked), a Teema with the same number but no
-  confirmed link (a link labelled as unconfirmed, no title or values), or none.
+  Juristid. By default (docs/adr/0201 §6) only pilot Teemad are listed and
+  topics with no confirmed link are counted (`_unlinked.html`); under the
+  owner-approvable FIELD_NAMES policy they are listed by number, kind and
+  field names (a same-number Teema as an unconfirmed link), never values.
 {% endcomment %}
 <p class="lovnight__note">
   Muutused, mida Juristid nägi kahe laiema Lovable'i lugemise vahel, uuemad eespool.
@@ -16,6 +18,7 @@
   </p>
 {% endif %}
 {% if page.hidden %}<p class="lovnight__note">Veel {{ page.hidden }} muutus{{ page.hidden|pluralize:",t" }} teemadel, mida sa ei näe.</p>{% endif %}
+{% include "core/lovable/_unlinked.html" %}
 {% for topic in page.items %}
   {% include "core/lovable/_topic.html" with topic=topic pilot=False %}
 {% empty %}

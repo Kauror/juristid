@@ -2721,7 +2721,8 @@ def _wait_naming(user: Any, fragment: str) -> Any:
 # by leaving items out from the end of its lists, saying so (``truncated`` and
 # ``omitted``). Who sees what is the service's: a Teema the reader may not open
 # is counted in ``hidden``, never named; a source topic with no approved link
-# shows field names only. Nothing reaches Lovable.
+# is only counted in ``unlinked`` (docs/adr/0201 §6, the default AGGREGATE
+# policy). Nothing reaches Lovable.
 
 #: The largest Lovable answer, in characters of JSON. A list is cut from its end
 #: to fit, deterministically, and the answer says so.
