@@ -479,7 +479,7 @@ def test_a_native_draft_is_counted_and_opens_in_the_drafting_list(page, base_url
 
     panel = page.locator("#tapsem-otsing")
     panel.locator("summary.filterpanel__trigger").click()
-    panel.locator("select[name='arvamus']").select_option("koostamisel")
+    panel.locator("input[name='arvamus'][value='koostamisel']").check()
     panel.get_by_role("button", name="Filtreeri").click()
     page.wait_for_load_state("networkidle")
 

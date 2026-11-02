@@ -1,0 +1,30 @@
+{% comment %}
+One multi-valued register dimension in Täpsem otsing (owner's brief of 2026-11-02).
+
+Checkboxes rather than `<select multiple>`: a lawyer should not have to know
+Ctrl-click to choose two stages. Ticked values are alternatives (OR); the
+different groups narrow each other (AND) — register_filters.MULTI_VALUE_PARAMS.
+Nothing ticked means the dimension is not narrowed. «Määramata» (`puudub`) is
+one of the values, never «kõik».
+
+Each box repeats the parameter (`?hetkeseis=a&hetkeseis=b`), so a link written
+before, with one value, still reads the same. Draft until «Filtreeri» is
+pressed: the form is a plain GET and nothing here changes the list by itself.
+{% endcomment %}
+<fieldset class="field choicegroup">
+  <legend class="field__label">{{ label }}</legend>
+  <div class="choicegroup__options">
+    {% if missing %}
+      <label class="checkline">
+        <input type="checkbox" name="{{ name }}" value="puudub" {% if "puudub" in chosen %}checked{% endif %}>
+        Määramata
+      </label>
+    {% endif %}
+    {% for value, text in options %}
+      <label class="checkline">
+        <input type="checkbox" name="{{ name }}" value="{{ value }}" {% if value in chosen %}checked{% endif %}>
+        {{ text }}
+      </label>
+    {% endfor %}
+  </div>
+</fieldset>

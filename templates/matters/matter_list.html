@@ -153,6 +153,14 @@ localStorage (Stage-2E.1 brief 12).
         <input type="hidden" name="q" value="{{ query }}">
         <input type="hidden" name="olek" value="{{ filters.olek }}">
         {% comment %}
+          Not filters, so not controls here — but a narrowing must not throw
+          them away: the page size and the chosen columns ride along
+          (owner's brief of 2026-11-02, «column changes must not clear filters;
+          filter changes must not discard column choices»).
+        {% endcomment %}
+        {% if page_size_param %}<input type="hidden" name="kaupa" value="{{ page_size_param }}">{% endif %}
+        {% if columns_param %}<input type="hidden" name="veerud" value="{{ columns_param }}">{% endif %}
+        {% comment %}
           The commencement presentation survives a narrowing, as `olek` does.
           The month does not: a changed window re-anchors the calendar on its
           own first month (docs/adr/0158).
@@ -189,61 +197,16 @@ localStorage (Stage-2E.1 brief 12).
           {% endif %}
         </label>
 
-        <label class="field">
-          <span class="field__label">Vastutaja</span>
-          <select class="field__input" name="vastutaja">
-            <option value="">Kõik</option>
-            <option value="puudub" {% if filters.vastutaja == "puudub" %}selected{% endif %}>Määramata</option>
-            {% for owner in owners %}
-              <option value="{{ owner.pk }}"
-                      {% if filters.vastutaja == owner.pk|stringformat:"s" %}selected{% endif %}>
-                {{ owner|name_among:owners }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
+        {% include "matters/partials/register_choice_group.html" with name="vastutaja" label="Vastutaja" options=owner_choices chosen=filters.vastutaja missing=True %}
 
-        <label class="field">
-          <span class="field__label">Hetkeseis</span>
-          <select class="field__input" name="hetkeseis">
-            <option value="">Kõik</option>
-            {% for stage in stages %}
-              <option value="{{ stage.key }}" {% if filters.hetkeseis == stage.key %}selected{% endif %}>
-                {{ stage.label_et }}
-              </option>
-            {% endfor %}
-          </select>
-        </label>
+        {% include "matters/partials/register_choice_group.html" with name="hetkeseis" label="Hetkeseis" options=stage_choices chosen=filters.hetkeseis missing=True %}
 
-        <label class="field">
-          <span class="field__label">Menetlusliik</span>
-          <select class="field__input" name="menetlusliik">
-            <option value="">Kõik</option>
-            {% for value, label in tracks %}
-              <option value="{{ value }}" {% if filters.menetlusliik == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
+        {% include "matters/partials/register_choice_group.html" with name="menetlusliik" label="Menetlusliik" options=tracks chosen=filters.menetlusliik %}
 
-        <label class="field">
-          <span class="field__label">Valdkond</span>
-          <select class="field__input" name="valdkond">
-            <option value="">Kõik</option>
-            {% for area in policy_areas %}
-              <option value="{{ area.key }}" {% if filters.valdkond == area.key %}selected{% endif %}>{{ area.name_et }}</option>
-            {% endfor %}
-          </select>
-        </label>
+        {% include "matters/partials/register_choice_group.html" with name="valdkond" label="Valdkond" options=area_choices chosen=filters.valdkond missing=True %}
+        {% include "matters/partials/register_choice_group.html" with name="oigusakt" label="Õigusakt" options=instrument_choices chosen=filters.oigusakt missing=True %}
 
-        <label class="field">
-          <span class="field__label">Kirje liik</span>
-          <select class="field__input" name="liik">
-            <option value="">Kõik</option>
-            {% for value, label in record_modes %}
-              <option value="{{ value }}" {% if filters.liik == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
+        {% include "matters/partials/register_choice_group.html" with name="liik" label="Kirje liik" options=record_modes chosen=filters.liik %}
 
         <label class="field">
           <span class="field__label">Päritolu</span>
@@ -275,15 +238,24 @@ localStorage (Stage-2E.1 brief 12).
           can set and the panel cannot is a filter somebody can arrive at and
           never reproduce.
         {% endcomment %}
-        <label class="field">
-          <span class="field__label">Arvamus</span>
-          <select class="field__input" name="arvamus">
-            <option value="">Kõik</option>
-            {% for value, label in opinion_options %}
-              <option value="{{ value }}" {% if filters.arvamus == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
+        {% include "matters/partials/register_choice_group.html" with name="arvamus" label="Arvamus" options=opinion_options chosen=filters.arvamus %}
+
+        {% comment %}
+          When an opinion or response actually went out: a sent Submission
+          (including one later withdrawn or superseded), never a draft and never
+          an Excel VÄLJA note (register_filters.apply_child_windows).
+        {% endcomment %}
+        <fieldset class="field daterange">
+          <legend class="field__label">Arvamus saadetud</legend>
+          <label class="daterange__end">
+            <span class="field__help">Alates</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saadetud_alates" value="{{ filters.saadetud_alates }}">
+          </label>
+          <label class="daterange__end">
+            <span class="field__help">Kuni</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saadetud_kuni" value="{{ filters.saadetud_kuni }}">
+          </label>
+        </fieldset>
 
         {% comment %}
           The dated-work populations Osakond counts, as a control. Beside
@@ -416,6 +388,54 @@ localStorage (Stage-2E.1 brief 12).
             <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="tahtaeg_kuni" value="{{ filters.tahtaeg_kuni }}">
           </label>
         </fieldset>
+
+        {% comment %}
+          The open next step's own date. A window of days holds only a step
+          dated to a day: «oktoober 2026» is in no bounded window (ADR 0122 §2).
+        {% endcomment %}
+        <fieldset class="field daterange">
+          <legend class="field__label">Järgmise sammu kuupäev</legend>
+          <label class="daterange__end">
+            <span class="field__help">Alates</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="samm_alates" value="{{ filters.samm_alates }}">
+          </label>
+          <label class="daterange__end">
+            <span class="field__help">Kuni</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="samm_kuni" value="{{ filters.samm_kuni }}">
+          </label>
+        </fieldset>
+
+        {% comment %}
+          Two different «last» dates, deliberately side by side: the last piece
+          of work (Viimane tegevus, app/matters/activity.py) and the last time
+          the record was saved for any reason (Muudetud).
+        {% endcomment %}
+        <fieldset class="field daterange">
+          <legend class="field__label">Viimane tegevus</legend>
+          <label class="daterange__end">
+            <span class="field__help">Alates</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="viimane_alates" value="{{ filters.viimane_alates }}">
+          </label>
+          <label class="daterange__end">
+            <span class="field__help">Kuni</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="viimane_kuni" value="{{ filters.viimane_kuni }}">
+          </label>
+        </fieldset>
+
+        <fieldset class="field daterange">
+          <legend class="field__label">Kirjet muudetud</legend>
+          <label class="daterange__end">
+            <span class="field__help">Alates</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="muudetud_alates" value="{{ filters.muudetud_alates }}">
+          </label>
+          <label class="daterange__end">
+            <span class="field__help">Kuni</span>
+            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="muudetud_kuni" value="{{ filters.muudetud_kuni }}">
+          </label>
+        </fieldset>
+        {% if filters.vahemik_viga %}
+          <p class="field__error filterpanel__error" role="alert">{{ filters.vahemik_viga }}</p>
+        {% endif %}
 
         {% comment %}
           Three institution controls, never one. `asutus` is the convenience —

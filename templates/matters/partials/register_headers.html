@@ -63,7 +63,7 @@ and a terrible one to hear repeated in front of every cell in the column.
 
           {% if name == "hetkeseis" %}
             {% for stage in stages %}
-              <a class="colhead__option{% if filters.hetkeseis == stage.key %} is-chosen{% endif %}"
+              <a class="colhead__option{% if stage.key in filters.hetkeseis %} is-chosen{% endif %}"
                  href="?{% register_filter_query 'hetkeseis' stage.key %}#tulemused">{{ stage.label_et }}</a>
             {% endfor %}
           {% elif name == "vastutaja" %}
@@ -73,10 +73,10 @@ and a terrible one to hear repeated in front of every cell in the column.
               bucket a reader cannot click is a bucket they have to take on
               trust (Stage-2E brief 42).
             {% endcomment %}
-            <a class="colhead__option{% if filters.vastutaja == 'puudub' %} is-chosen{% endif %}"
+            <a class="colhead__option{% if 'puudub' in filters.vastutaja %} is-chosen{% endif %}"
                href="?{% register_filter_query 'vastutaja' 'puudub' %}#tulemused">Määramata</a>
             {% for owner in owners %}
-              <a class="colhead__option{% if filters.vastutaja == owner.pk|stringformat:'s' %} is-chosen{% endif %}"
+              <a class="colhead__option{% if owner.pk|stringformat:'s' in filters.vastutaja %} is-chosen{% endif %}"
                  href="?{% register_filter_query 'vastutaja' owner.pk %}#tulemused">{{ owner|name_among:owners }}</a>
             {% endfor %}
           {% else %}
