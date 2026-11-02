@@ -1,0 +1,30 @@
+{% comment %}
+«Laadi Excel» on Teemad (owner's brief of 2026-11-02). Three downloads, each
+saying what it holds, because they answer three different questions:
+
+* the table as shown — every row of the *applied* address (not just this page),
+  the chosen columns, the current order (app/matters/register_export.py);
+* every supported field of every Teema the reader may see, whatever the table
+  is narrowed to, one sheet per reporting year;
+* the unified 2026 register layout (A–L), which is not the old workbooks era
+  by era (docs/data-contracts/legacy-register-export.md).
+
+Plain links: a download is a read and changes nothing.
+{% endcomment %}
+<details class="exportmenu">
+  <summary class="filterpanel__trigger">Laadi Excel</summary>
+  <div class="exportmenu__body">
+    <a class="exportmenu__option" href="{% url 'matters:export_table' %}?{{ query_string }}">
+      <span class="exportmenu__label">Laadi Excel tabelis kuvatud infoga</span>
+      <span class="exportmenu__help">Kõik praegusele otsingule ja filtritele vastavad teemad (mitte ainult see lehekülg), valitud veerud ja järjestus.</span>
+    </a>
+    <a class="exportmenu__option" href="{% url 'matters:export_full' %}">
+      <span class="exportmenu__label">Laadi Excel kõikide andmetega</span>
+      <span class="exportmenu__help">Kõik sulle nähtavad teemad koos kõigi toetatud väljadega, aruandlusaastate kaupa. Tabeli filtrid ei kehti.</span>
+    </a>
+    <a class="exportmenu__option" href="{% url 'reporting:export_legacy_xlsx' %}">
+      <span class="exportmenu__label">Laadi Excel vana Exceli formaadis</span>
+      <span class="exportmenu__help">Ühtne 2026. aasta registri veerupaigutus (A–L) aastate kaupa; mitte iga vana tööraamatu täpne koopia.</span>
+    </a>
+  </div>
+</details>

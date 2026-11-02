@@ -15,6 +15,7 @@ Two conventions worth knowing:
 
 from __future__ import annotations
 
+import dataclasses
 import functools
 import unicodedata
 import uuid
@@ -104,6 +105,7 @@ from app.matters import (
     duplicate_intake,
     intake_staging,
     legal_process,
+    register_columns,
     register_filters,
     register_selection,
     selectors,
@@ -1272,7 +1274,32 @@ def _sort_column(
     }
 
 
-def register_columns(params: Any) -> dict[str, Any]:
+#: Which catalogue column each filtering heading belongs to.
+_FILTER_COLUMN = {"hetkeseis": "hetkeseis", "vastutaja": "vastutaja", "tegevus": "jargmiseks"}
+
+
+def _column_headings(params: Any, keys: Any) -> dict[str, Any]:
+    """The interactive headings for the columns actually shown."""
+    headings = register_heading_controls(params)
+    headings["column_filters"] = {
+        name: column
+        for name, column in headings["column_filters"].items()
+        if _FILTER_COLUMN[name] in keys
+    }
+    return headings
+
+
+def _extra_heading(params: Any, column: Any, sort: str) -> dict[str, Any]:
+    """One added column's heading: its words, and a sort link where the register sorts it."""
+    return {
+        "key": column.key,
+        "heading": column.heading,
+        "sort_query": register_query(params, jarjestus=column.sort) if column.sort else "",
+        "is_sorted": bool(column.sort) and sort == column.sort,
+    }
+
+
+def register_heading_controls(params: Any) -> dict[str, Any]:
     """What the interactive headings need, beside the option lists they share.
 
     Built before the fragment branch in :func:`matter_list`, because the live
@@ -1841,6 +1868,13 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     # the pipeline «Laadi Excel tabelis kuvatud infoga» reads too, so the
     # export cannot hold a row the table does not (app/matters/register_selection.py).
     selection = register_selection.selection_from(request.user, params)
+    # Contract B: which columns Teemad shows. A heading sort that reads a
+    # column the reader has hidden falls back to the default order, visibly,
+    # and the export applies the same rule (app/matters/register_columns.py).
+    column_keys = register_columns.chosen_keys(params)
+    effective, sort_notice = register_columns.effective_sort(selection.sort, column_keys)
+    if effective != selection.sort:
+        selection = dataclasses.replace(selection, sort=effective)
     query = selection.query
     query_was_refused = selection.query_was_refused
     status, status_defaulted = selection.status, selection.status_defaulted
@@ -1884,6 +1918,15 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         cleared.pop(parameter, None)
 
     chips = _active_filters(request, params)
+    extra_columns = [
+        column for column in register_columns.columns_for(column_keys) if not column.base
+    ]
+    if extra_columns and page.object_list:
+        rows = list(page.object_list)
+        facts = register_columns.load_facts(request.user, rows, extra_columns)
+        cells = register_columns.row_cells(rows, column_keys, facts)
+        for matter in rows:
+            matter.register_cells = cells[matter.pk]
     workers = list(assignable_business_users())
     context: dict[str, Any] = {
         "page": page,
@@ -1984,7 +2027,28 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "owners": owner_filter_choices(Matter.objects.visible_to(request.user)),
         "stages": StageVocabulary.objects.filter(is_active=True).order_by("sort_order"),
         "next_action_options": list(NEXT_ACTION_LABELS.items()),
-        **register_columns(params),
+        **_column_headings(params, column_keys),
+        # «Vali veerud» (Teemad only): the chosen keys, the extra columns'
+        # headings, the chooser and its reset. `columns` is what
+        # matter_row.html reads; Saabunud passes none and keeps its six.
+        "columns": column_keys,
+        "extra_columns": [_extra_heading(params, column, sort) for column in extra_columns],
+        "column_chooser": register_columns.chooser_options(column_keys),
+        "columns_param": register_columns.columns_value(column_keys),
+        "columns_are_default": register_columns.is_default(column_keys),
+        "column_preview": " · ".join(
+            column.heading for column in register_columns.columns_for(column_keys)
+        ),
+        "columns_reset_query": register_query(params, **{register_columns.COLUMNS_PARAM: None}),
+        "chooser_carried": [
+            (name, value)
+            for name, values in params.lists()
+            for value in values
+            if name not in {register_columns.COLUMNS_PARAM, "leht"}
+            and value
+            and not _is_control_param(name)
+        ],
+        "sort_notice": sort_notice,
         # Jõustumised as a presentation of this same filtered register, never
         # a page of its own (docs/adr/0158). Inside the fragment, because the
         # switch and the calendar sit in the results region a keystroke in the
@@ -2029,7 +2093,6 @@ def matter_list(request: HttpRequest) -> HttpResponse:
             .values_list("key", "label_et")
         ),
         "page_size_param": params.get(PAGE_SIZE_PARAM, ""),
-        "columns_param": params.get("veerud", ""),
         "record_modes": RecordMode.choices,
         "origins": MatterOrigin.choices,
         # Every ordering the register understands, including the four a column

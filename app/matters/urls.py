@@ -1,7 +1,7 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
-from app.matters import department_views, views
+from app.matters import department_views, export_views, views
 
 urlpatterns = [
     # The department page. One route where there were two: `/ulevaade/` and
@@ -64,6 +64,10 @@ urlpatterns = [
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),
+    # The register as Excel (owner's brief of 2026-11-02): the table as shown,
+    # and every supported field. Reads; app/matters/export_views.py.
+    path("teemad/eksport/tabel.xlsx", export_views.export_table, name="export_table"),
+    path("teemad/eksport/koik.xlsx", export_views.export_full, name="export_full"),
     path("teemad/uus/", views.matter_create, name="matter_create"),
     # Reading the files a Teema is being created from, before it exists.
     #

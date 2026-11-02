@@ -99,15 +99,37 @@ and a terrible one to hear repeated in front of every cell in the column.
 
   {% comment %}
     Both sorts are links, so Back returns to the previous ordering and the
-    address somebody copies carries it.
+    address somebody copies carries it. Each is drawn only while its column is
+    shown («Vali veerud»); the filtering headings above are already narrowed to
+    the shown columns by the view.
   {% endcomment %}
+  {% if "kuupaev" in columns %}
   <th scope="col" class="table__date" aria-label="{{ column_sorts.kuupaev.label }}" aria-sort="{{ column_sorts.kuupaev.direction }}">
     <a class="colhead colhead--sort"
        href="?{{ column_sorts.kuupaev.query }}#tulemused">{{ column_sorts.kuupaev.label }}<span class="visually-hidden"> — {{ column_sorts.kuupaev.hint }}</span><span class="colhead__mark" aria-hidden="true"></span></a>
   </th>
 
+  {% endif %}
+
+  {% if "viimane" in columns %}
   <th scope="col" class="table__date table__lastactivity" aria-label="{{ column_sorts.viimane.label }}" aria-sort="{{ column_sorts.viimane.direction }}">
     <a class="colhead colhead--sort"
        href="?{{ column_sorts.viimane.query }}#tulemused">{{ column_sorts.viimane.label }}<span class="visually-hidden"> — {{ column_sorts.viimane.hint }}</span><span class="colhead__mark" aria-hidden="true"></span></a>
   </th>
+  {% endif %}
+
+  {% comment %}
+    The columns «Vali veerud» added, in catalogue order (app/matters/register_columns.py).
+    A heading is a sort link only where the register already sorts that value
+    correctly; otherwise it is its word.
+  {% endcomment %}
+  {% for column in extra_columns %}
+    <th scope="col" class="table__extra" aria-label="{{ column.heading }}"{% if column.sort_query %} aria-sort="{% if column.is_sorted %}other{% else %}none{% endif %}"{% endif %}>
+      {% if column.sort_query %}
+        <a class="colhead colhead--sort" href="?{{ column.sort_query }}#tulemused">{{ column.heading }}<span class="visually-hidden"> — järjesta selle veeru järgi</span></a>
+      {% else %}
+        {{ column.heading }}
+      {% endif %}
+    </th>
+  {% endfor %}
 </tr>

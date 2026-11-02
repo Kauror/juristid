@@ -59,6 +59,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
     register nobody can scan. The affordance is the underline on hover, which
     is the treatment the title cell beside it already uses.
   {% endcomment %}
+  {% if not columns or "hetkeseis" in columns %}
   <td class="table__stage">
     {% if matter.stage %}
       {% if register_interactive %}
@@ -79,6 +80,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
       {% endif %}
     {% else %}<span class="muted">—</span>{% endif %}
   </td>
+  {% endif %}
 
   {% comment %}
     The short name in the cell, the full one in the tooltip. The model
@@ -88,6 +90,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
     Sandras never read as one owner (`colleagues`,
     app/core/context_processors.py).
   {% endcomment %}
+  {% if not columns or "vastutaja" in columns %}
   <td class="table__owner">
     {% if matter.owner %}
       {% if register_interactive %}
@@ -132,7 +135,9 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
       </details>
     {% else %}<span class="table__missing">Vastutajata</span>{% endif %}
   </td>
+  {% endif %}
 
+  {% if not columns or "jargmiseks" in columns %}
   <td class="table__action">
     <span class="table__actioncell">
       {% if action %}
@@ -174,6 +179,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
       {% endif %}{% endwith %}{% endif %}
     </span>
   </td>
+  {% endif %}
 
   {% comment %}
     Meaning and value on one line. What kind of date this is stays
@@ -187,6 +193,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
     12.09, 15.09, 13.09 while insisting it was sorted by date — so the
     row and the ORDER BY read one definition (docs/adr/0071).
   {% endcomment %}
+  {% if not columns or "kuupaev" in columns %}
   <td class="table__date">
     {% with shown=matter|register_date %}
       {% if shown %}
@@ -244,6 +251,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
       {% endif %}
     {% endwith %}
   </td>
+  {% endif %}
 
   {% comment %}
     The derived activity fact, not `updated_at`. For an imported row
@@ -265,6 +273,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
     same `j.n.Y` this cell has always rendered
     (app/matters/activity.py, docs/adr/0079 §3).
   {% endcomment %}
+  {% if not columns or "viimane" in columns %}
   <td class="table__date table__lastactivity">
     {% with activity=matter|last_activity %}
       {% if activity %}
@@ -276,5 +285,14 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
       {% endif %}
     {% endwith %}
   </td>
+  {% endif %}
+  {% comment %}
+    The columns «Vali veerud» added (Teemad only): plain words from the
+    catalogue, never a link or a control, clipped like every other cell with the
+    whole text in the tooltip. Empty is an em dash — a column never hides a row.
+  {% endcomment %}
+  {% for cell in matter.register_cells %}
+    <td class="table__extra">{% if cell.text %}<span class="table__clip" title="{{ cell.text }}">{{ cell.text }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+  {% endfor %}
 </tr>
 {% endwith %}
