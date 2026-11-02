@@ -7,13 +7,18 @@ topics are in (docs/adr/0199 §4).
 What the document is, deliberately: **the department's report as it has
 always been sent to the board** —
 
-* the fixed opening from the yearly action plan (`plan_text`): two bold
-  lines, «Tegevused ja eesmärgid» and the two-column plan table;
+* the opening from the action plan of the report's year
+  (`plan_text.plan_for`): its bold lines, «Tegevused ja eesmärgid» and the
+  two-column plan table. A period with no registered plan is refused before
+  this writer is called (`ComposedReport.refusals`);
 * **«Täitmine: 12.08.2026 – 02.09.2026»** in bold, then one table
   «Teema» | «Kuupäev» | «Kellele» | «Selgitus», a row per event, the topic
-  written on each row and the day as «12.08». The preview's kind and source
-  labels are not written; a topic with nothing in the period is one row with
-  the title alone — no date is invented to fill it;
+  written on each row and the day as «12.08». Under the day, in small italic
+  type, what the event is, where a historical Excel date came from and a
+  short duplicate warning (`TableRow.date_notes`) — so an imported `VÄLJA`
+  date is never read as a confirmed send. A topic with no event in the
+  report is one row with its title and the reader's own explanation — no
+  date is invented to fill it;
 * the day it was made and the signers, in bold, under the table;
 * **real, editable Word content** — no image of a table, no fields, no
   macros, no template from outside the package; A4 portrait, 2.5 cm margins,
@@ -53,6 +58,8 @@ WIDTHS_CM = (4.2, 2.1, 6.0, 6.8)
 PLAN_WIDTHS_CM = (5.7, 13.1)
 LANGUAGE = "et-EE"
 FONT = "Times New Roman"
+#: The event's kind and source under its day: readable, never wider than the day.
+NOTE_SIZE_PT = 8
 CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 
 
@@ -96,6 +103,16 @@ def _write_lines(cell: _Cell, text: str, *, bold: bool = False) -> None:
         run.bold = bold or None
 
 
+def _write_notes(cell: _Cell, notes: list[str]) -> None:
+    """Small italic lines under a cell's text — the event's kind and source."""
+    for note in notes:
+        paragraph = cell.add_paragraph()
+        paragraph.paragraph_format.space_after = Pt(0)
+        run = paragraph.add_run(xml_safe(note))
+        run.italic = True
+        run.font.size = Pt(NOTE_SIZE_PT)
+
+
 def _bold_line(document: Document, text: str) -> None:  # type: ignore[valid-type]
     document.add_paragraph().add_run(xml_safe(text)).bold = True  # type: ignore[attr-defined]
 
@@ -119,15 +136,15 @@ def _add_row(table: Table, widths: tuple[float, ...]) -> list[_Cell]:
     return list(cells)
 
 
-def _plan(document: Document) -> None:  # type: ignore[valid-type]
-    """The fixed opening from the department's action plan."""
-    for heading in plan_text.HEADINGS:
+def _plan(document: Document, plan: plan_text.Plan) -> None:  # type: ignore[valid-type]
+    """The opening from the department's action plan for the report's year."""
+    for heading in plan.headings:
         _bold_line(document, heading)
-    document.add_paragraph(plan_text.INTRODUCTION)  # type: ignore[attr-defined]
+    document.add_paragraph(plan.introduction)  # type: ignore[attr-defined]
     table = _table(document, PLAN_WIDTHS_CM)
     first, second = _add_row(table, PLAN_WIDTHS_CM)
-    _write_lines(first.merge(second), plan_text.TABLE_TITLE, bold=True)
-    for label, text in plan_text.ROWS:
+    _write_lines(first.merge(second), plan.table_title, bold=True)
+    for label, text in plan.rows:
         label_cell, text_cell = _add_row(table, PLAN_WIDTHS_CM)
         _write_lines(label_cell, label)
         _write_lines(text_cell, text)
@@ -135,7 +152,14 @@ def _plan(document: Document) -> None:  # type: ignore[valid-type]
 
 
 def render(report: ComposedReport, *, today: date | None = None) -> bytes:
-    """The report as DOCX bytes; ``today`` is the day printed above the signers."""
+    """The report as DOCX bytes; ``today`` is the day printed above the signers.
+
+    The caller has checked `ComposedReport.refusals`; a report without a plan
+    for its year is never written.
+    """
+    plan = report.plan
+    if plan is None:
+        raise ValueError(report.plan_problem)
     today = today or timezone.localdate()
     document = Document()
     _set_language(document)
@@ -153,7 +177,7 @@ def render(report: ComposedReport, *, today: date | None = None) -> bytes:
     normal.font.name = FONT
     normal.font.size = Pt(12)
 
-    _plan(document)
+    _plan(document, plan)
     _bold_line(document, report.execution_line)
 
     table = _table(document, WIDTHS_CM)
@@ -167,6 +191,7 @@ def render(report: ComposedReport, *, today: date | None = None) -> bytes:
         for cell, text in zip(cells, texts, strict=True):
             if text:
                 _write_lines(cell, text)
+        _write_notes(cells[1], row.date_notes)
 
     document.add_paragraph()
     _bold_line(document, f"{today:%d.%m.%Y}")

@@ -1,25 +1,44 @@
 """The fixed opening of «Majanduspoliitika ülevaade»: the department's action plan.
 
-Every report the board receives opens with the same section of the
-Poliitikakujundamise ja õigusosakond's yearly action plan, then the
-«Täitmine» table for the period. The text is the department's own, copied
-from its reports as written; it changes once a year, by a change to this file
-(docs/adr/0199 §4). Nothing here is read from a record.
+Every report the board receives opens with the section of the
+Poliitikakujundamise ja õigusosakond's action plan **for the report's year**,
+then the «Täitmine» table for the period. The text is the department's own,
+copied from its reports as written; nothing here is read from a record and
+nothing is generated (docs/adr/0199 §4).
+
+A year's plan is registered in `PLANS` once it is approved — a new `Plan`
+for 2027, nothing else changes. A period in a year with no registered plan,
+or one across New Year (whose plan would be a guess), is refused for export
+with `problem_for`'s sentence; the draft is kept.
 """
 
 from __future__ import annotations
 
-#: The bold lines above the plan table.
-HEADINGS = (
+from dataclasses import dataclass
+from datetime import date
+
+
+@dataclass(frozen=True)
+class Plan:
+    year: int
+    #: The bold lines above the plan table.
+    headings: tuple[str, ...]
+    #: The plain line introducing the plan table.
+    introduction: str
+    #: The plan table's first row, spanning both columns.
+    table_title: str
+    #: ``(label, text)`` rows of the plan table; ``\n`` separates paragraphs.
+    rows: tuple[tuple[str, str], ...]
+
+
+# -- 2026, as in the department's reports ---------------------------------------
+_HEADINGS_2026 = (
     "Poliitikakujundamise – ja õigusosakonna tegevuskava 2026",
     "1. valdkond – osalemine poliitikakujundamises",
 )
-#: The plain line introducing the plan table.
-INTRODUCTION = "Tegevused ja eesmärgid"
-#: The plan table's first row, spanning both columns.
-TABLE_TITLE = "Tegevuse pealkiri"
-#: ``(label, text)`` rows of the plan table; ``\n`` separates paragraphs.
-ROWS: tuple[tuple[str, str], ...] = (
+_INTRODUCTION_2026 = "Tegevused ja eesmärgid"
+_TABLE_TITLE_2026 = "Tegevuse pealkiri"
+_ROWS_2026: tuple[tuple[str, str], ...] = (
     (
         "Tegevuse kirjeldus:",
         "A. Osalemine õigusloomes\n"
@@ -63,3 +82,37 @@ ROWS: tuple[tuple[str, str], ...] = (
     ),
     ("Projektijuht/vastutaja:", "Mait Palts"),
 )
+
+
+#: The approved plans by year. Add a year's `Plan` here when it is approved.
+PLANS: dict[int, Plan] = {
+    2026: Plan(
+        year=2026,
+        headings=_HEADINGS_2026,
+        introduction=_INTRODUCTION_2026,
+        table_title=_TABLE_TITLE_2026,
+        rows=_ROWS_2026,
+    ),
+}
+
+
+def plan_for(start: date, end: date) -> Plan | None:
+    """The plan of the period's year; ``None`` when that is not one known plan."""
+    if start.year != end.year:
+        return None
+    return PLANS.get(start.year)
+
+
+def problem_for(start: date, end: date) -> str:
+    """Why no plan opens this period's report, or ``""`` when one does."""
+    if start.year != end.year:
+        return (
+            "Periood ulatub üle aastavahetuse, aga ülevaade algab ühe aasta tegevuskavaga. "
+            "Vali periood ühe aasta piires."
+        )
+    if start.year not in PLANS:
+        return (
+            f"{start.year}. aasta tegevuskava pole Juristidis seadistatud, seega selle "
+            "perioodi Wordi ülevaadet ei koostata. Valitud teemad ja tekstid jäävad alles."
+        )
+    return ""

@@ -49,14 +49,14 @@ import hashlib
 import json
 import uuid
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import astuple, dataclass, field
 from datetime import date, datetime, timedelta
 from typing import Any, Protocol
 
 from django.utils import timezone
 
 from app.core.dates import format_estonian_date, parse_estonian_date
-from app.reporting.report_builder import sources
+from app.reporting.report_builder import plan_text, sources
 from app.reporting.report_builder.sources import EventRef, MatterEvents, ReportEvent
 from app.workflow.enums import ESTONIAN_MONTHS, DatePrecision
 
@@ -79,6 +79,8 @@ F_MANUAL = "lisatud"
 F_ACTION = "toiming"
 F_SEARCH = "otsing"
 F_SIGNERS = "allkirjastajad"
+#: The signed digest of the report the page last showed (`views.preview_token`).
+F_PREVIEWED = "eelvaade_tunnus"
 
 #: Who signs the report under its table; the reader may change it per report.
 DEFAULT_SIGNERS = "Marko Udras, Mait Palts"
@@ -95,6 +97,11 @@ def event_included_field(matter_id: object) -> str:
 
 def text_field(matter_id: object, key: str) -> str:
     return f"selgitus-{matter_id}-{key}"
+
+
+def topic_text_field(matter_id: object) -> str:
+    """The explanation of a topic written in the report without any event."""
+    return f"selgitus-{matter_id}-teema"
 
 
 def source_field(matter_id: object, key: str) -> str:
@@ -121,6 +128,11 @@ NEW_EVENTS = (
     "Vajuta «Uuenda ettepanekuid», et need üle vaadata."
 )
 TEXT_TOO_LONG = f"Selgitus on pikem kui {TEXT_LIMIT} märki. Lühenda seda enne allalaadimist."
+#: The export was asked for a report that differs from the preview last shown.
+PREVIEW_STALE = (
+    "Ülevaadet on pärast eelvaadet muudetud. Eelvaade on nüüd uuendatud: "
+    "vaata see üle ja vajuta uuesti «Laadi Wordi ülevaade»."
+)
 ALREADY_ADDED = "See teema on juba ülevaates."
 NOT_FOUND = "Seda teemat ei leitud."
 UNAVAILABLE = "Mõni varem valitud teema ei ole enam kättesaadav ja jäeti ülevaatest välja."
@@ -158,6 +170,9 @@ class DraftBlock:
     #: The fingerprint the page was rendered with; ``None`` for a block built
     #: by this request, which has nothing to be compared with.
     fingerprint: str | None = None
+    #: The reader's explanation for the topic's row when no event of it is in
+    #: the report — report text only, never written to any record.
+    text: str = ""
 
 
 @dataclass
@@ -389,6 +404,7 @@ def _parse_blocks(post: _PostLike, problems: list[str]) -> list[DraftBlock]:
                 manual=str(matter_id) in manual,
                 events=_parse_events(post, matter_id, problems),
                 fingerprint=str(post.get(fingerprint_field(matter_id), "") or ""),
+                text=_clean_text(str(post.get(topic_text_field(matter_id), "") or "")),
             )
         )
     return blocks
@@ -603,6 +619,7 @@ def apply_refresh(draft: ReportDraft, user: object, *, now: datetime | None = No
                 included=block.included,
                 manual=block.manual,
                 events=events,
+                text=block.text,
             )
         )
     present = {block.matter_id for block in blocks}
@@ -647,19 +664,31 @@ class ComposedBlock:
     events: list[ComposedEvent]
     fingerprint: str
     changed: bool
+    text: str = ""
 
     @property
     def exported_events(self) -> list[ComposedEvent]:
         return [event for event in self.events if event.included]
+
+    @property
+    def topic_only(self) -> bool:
+        """Whether the report shows this topic as one row of its own text."""
+        return not self.exported_events
+
+    @property
+    def text_too_long(self) -> bool:
+        return len(self.text) > TEXT_LIMIT
 
 
 @dataclass(frozen=True)
 class TableRow:
     """One row of the report table, exactly as the preview and the DOCX print it.
 
-    ``kind_label`` and ``provenance`` are the preview's reading aids only — the
-    document's «Kuupäev» cell is ``date_label`` alone, as the department's
-    reports have always been.
+    The «Kuupäev» cell is the day and, under it in small type, what the event
+    is (``kind_label``), where a historical Excel date came from
+    (``provenance``) and a short duplicate warning (``warning``) — the same in
+    the preview and the document, so imported evidence is never presented as
+    a confirmed send.
     """
 
     topic: str
@@ -668,6 +697,11 @@ class TableRow:
     provenance: str
     recipients: str
     text: str
+    warning: str = ""
+
+    @property
+    def date_notes(self) -> list[str]:
+        return [note for note in (self.kind_label, self.provenance, self.warning) if note]
 
 
 @dataclass
@@ -717,7 +751,18 @@ class ComposedReport:
 
     @property
     def text_too_long(self) -> bool:
-        return any(event.too_long for block in self.blocks for event in block.events)
+        return any(
+            block.text_too_long or any(event.too_long for event in block.events)
+            for block in self.blocks
+        )
+
+    @property
+    def plan(self) -> plan_text.Plan | None:
+        return plan_text.plan_for(self.start, self.end)
+
+    @property
+    def plan_problem(self) -> str:
+        return plan_text.problem_for(self.start, self.end)
 
     def refusals(self) -> list[str]:
         """Why this draft may not be exported now; empty when it may."""
@@ -730,6 +775,8 @@ class ComposedReport:
             reasons.append(PERIOD_PENDING)
         if self.text_too_long:
             reasons.append(TEXT_TOO_LONG)
+        if self.plan_problem:
+            reasons.append(self.plan_problem)
         if not self.exported_blocks:
             reasons.append(NOTHING_SELECTED)
         return reasons
@@ -745,7 +792,7 @@ class ComposedReport:
         for block in self.exported_blocks:
             events = block.exported_events
             if not events:
-                rows.append(TableRow(block.title, "", "", "", "", ""))
+                rows.append(TableRow(block.title, "", "", "", "", block.text))
                 continue
             for item in events:
                 rows.append(
@@ -756,9 +803,35 @@ class ComposedReport:
                         provenance=item.event.provenance,
                         recipients=item.event.recipients_label,
                         text=item.text,
+                        warning=item.event.uncertainty_note,
                     )
                 )
         return rows
+
+
+def output_digest(report: ComposedReport) -> str:
+    """The hash of everything the Word file would hold, as the reader was shown it.
+
+    The period, the plan year, every row in order with its text and notes, the
+    signers, and each exported block's source fingerprint. A preview carries
+    it (signed, `views.preview_token`); an export recomputes it and refuses a
+    report that is not the one last previewed — a checkbox ticked, a text
+    edited or a topic moved after the preview, with or without script.
+    """
+    plan = report.plan
+    payload = json.dumps(
+        [
+            report.start.isoformat(),
+            report.end.isoformat(),
+            plan.year if plan else None,
+            report.signers,
+            [list(astuple(row)) for row in report.table_rows()],
+            [block.fingerprint for block in report.exported_blocks],
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def fingerprint(title: str, events: Iterable[ReportEvent], pending: Iterable[str] = ()) -> str:
@@ -838,6 +911,7 @@ def compose(
                 events=composed_events,
                 fingerprint=facts,
                 changed=block.fingerprint is not None and block.fingerprint != facts,
+                text=block.text,
             )
         )
     return ComposedReport(

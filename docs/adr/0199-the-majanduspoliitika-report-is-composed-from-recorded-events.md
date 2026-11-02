@@ -30,7 +30,7 @@ aruandlusse»), on Europe/Tallinn days, both ends of the period inclusive:
 | A send | `Submission.objects.visible_to(user).historically_sent()` | SENT, WITHDRAWN or SUPERSEDED with `sent_at`; never a DRAFT. A later state is said beside the kind («hiljem tagasi võetud»). `NO_OBJECTION_RESPONSE` keeps its own label «Vastus: märkusi ja ettepanekuid ei ole» and is never called an opinion. Date only, whatever `sent_at_precision` (a DATE send never shows a time). |
 | A Chamber activity | `Entry.objects.visible_to(user)` (live) | MEETING, CALL, HEARING, WORKING_GROUP, JOINT_COORDINATION with `occurred_at` ≤ now. A future entry is a plan. |
 | A public statement | `Entry` PUBLIC_STATEMENT; `MatterWebsiteOverview` PUBLISHED | The overview only when its effective kind is **Ülevaade** (Koda's own `Hetkel käsil` page) **and** `published_on` is recorded. An **Uudis** may be anybody's article about Koda; an undated publication has no date to report. |
-| A historical Excel `VÄLJA` date | `CurrentRegisterState`, `opinion_sent_state = DATE` | Labelled «Exceli VÄLJA-kuupäev» with «leht …, rida …». Suppressed when a visible sent Submission on that Matter falls on the same Tallinn day, or when the 2026 pilot's placeholder Submission (`ExcelPilotImport.submission`) was imported from the same sheet and row. Otherwise kept — and, when the Matter has a visible send on another day, flagged in the preview «Võib korrata arvamust «…» (päev)». |
+| A historical Excel `VÄLJA` date | `CurrentRegisterState`, `opinion_sent_state = DATE` | Labelled «Ajalooline Exceli VÄLJA-kuupäev» with «leht …, rida …» (in the Word file too). Suppressed when a visible sent Submission on that Matter falls on the same Tallinn day, or when the 2026 pilot's placeholder Submission (`ExcelPilotImport.submission`) was imported from the same sheet and row. Otherwise kept — and, when the Matter has a visible send on another day, flagged in the preview «Võib korrata arvamust «…» (päev)». |
 
 **Excluded, with reasons.** `NOTE` (narrative about the file) and `OTHER` («Muu»
 is too broad to be read as substantive work without a person saying so; the
@@ -102,17 +102,31 @@ applied period differ.
 `draft.compose` resolves the draft into a `ComposedReport`, and
 `ComposedReport.table_rows()` is what both the preview table and the DOCX writer
 print: one row per included event, each carrying its topic, in the reader's
-topic order, or one title-only row for a topic with no included event — no date
-is made up. The day is «12.08» (an exact day in a one-year period; a month or a
-year keeps its own label). The preview also shows each event's kind and, for a
-`VÄLJA` date, its sheet and row; the document does not.
+topic order, or one row for a topic with no included event — its title and the
+reader's own explanation for it (`DraftBlock.text`, form field
+`selgitus-<teema>-teema`, at most 2000 characters, report text only: no Entry,
+Submission, Matter or `ChangeEvent` is written), with no date or recipient made
+up. The field is offered whenever no event of the topic is in the report — a
+hand-added topic with none in the period, or one whose events the reader all
+left out — and is carried unseen while an event is in, so it is never a second
+explanation beside the events' own. The day is «12.08» (an exact day in a
+one-year period; a month or a year keeps its own label). Under it, in small
+italic type in both the preview and the document (`TableRow.date_notes`): what
+the event is («Ametlik arvamus», «Vastus: märkusi ja ettepanekuid ei ole»,
+«Kohtumine» …), for a `VÄLJA` date «Ajalooline Exceli VÄLJA-kuupäev» with its
+sheet and row, and where the preview flags a possible duplicate, «Võimalik
+kordus: arvamus 2.10.2026». Owner's review of PR #585: a bare imported date in
+the board's file would read as a confirmed send.
 
 The DOCX (`report_builder/docx.py`, python-docx's own default document, nothing
 fetched) is the department's report as it has been sent to the board (owner,
 2026-11-02): A4 portrait, 2.5 cm margins, Times New Roman 12; the fixed opening
-of the yearly action plan (`report_builder/plan_text.py` — two bold lines,
-«Tegevused ja eesmärgid» and the two-column plan table, changed once a year by
-editing that file); «Täitmine: 01.10.2026 – 31.10.2026» in bold; one table
+of the action plan **of the report's year** (`report_builder/plan_text.py`,
+`PLANS` — two bold lines, «Tegevused ja eesmärgid» and the two-column plan
+table; a newly approved year is one more `Plan` there). Only 2026 is
+registered. A period in a year without a plan, or across New Year, says so on
+the page and is refused for export (`plan_text.problem_for`), the draft kept —
+no other year's plan is ever put in front of a period; «Täitmine: 01.10.2026 – 31.10.2026» in bold; one table
 «Teema | Kuupäev | Kellele | Selgitus», nothing merged, the header row repeated
 (`w:tblHeader`), no `cantSplit` on any row; then the day it was made and the
 signers in bold. The signers are a field of the draft («Allkirjastajad», default
@@ -129,7 +143,19 @@ sources changed. An export re-authorizes every topic and event as the requesting
 user and refuses with 409 — returning the composer with the reasons and the
 reader's draft intact, now carrying the new fingerprints — when any block changed,
 any topic became unreadable (counted, never named), the period is pending, an
-explanation is too long, or nothing is selected. Every route is `@login_required`
+explanation is too long, the period has no action plan, or nothing is selected.
+
+**The download is the report last previewed** (owner's review of PR #585). Every
+render carries `eelvaade_tunnus`, the digest of exactly what its preview shows
+(`draft.output_digest`: period, plan year, every row with its text and notes,
+signers, the exported blocks' fingerprints) signed with Django's signer, salted
+with the reader's id. The export recomputes the digest from what is posted and,
+when it differs — a box ticked, a text typed, a topic moved or the signers
+changed after the preview, with or without script, or a token from another
+reader — refuses with 409 and the composer brought up to date, saying
+«Ülevaadet on pärast eelvaadet muudetud…». The next press downloads exactly
+that. The first page is a preview like any other, so an untouched report
+downloads at once. Nothing is stored on the server. Every route is `@login_required`
 and answers 404 to anybody `may_read_business_content` refuses (an administrator
 without a business role); a persona-less shared-gate session is sent to choose a
 persona.

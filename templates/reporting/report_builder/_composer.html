@@ -17,6 +17,8 @@ than downloading.
   <input type="hidden" name="koostatud" value="1">
   <input type="hidden" name="kehtiv_algus" value="{{ report.start.isoformat }}">
   <input type="hidden" name="kehtiv_lopp" value="{{ report.end.isoformat }}">
+  {% comment %} What this render's preview shows, signed: the download must be exactly it. {% endcomment %}
+  <input type="hidden" name="eelvaade_tunnus" value="{{ preview_token }}">
 
   {% if refusals %}
     <div class="notice notice--warning" role="alert">
@@ -131,9 +133,22 @@ than downloading.
               </span>
             </div>
 
-            {% if not block.events %}
-              <p class="reportblock__empty muted">Sellel teemal pole perioodis ühtki arvestatavat sündmust. Ülevaatesse tuleb ainult teema pealkiri, ilma kuupäevata.</p>
-            {% else %}
+            {% if block.topic_only %}
+              {% if not block.events %}
+                <p class="reportblock__empty muted">Sellel teemal pole perioodis ühtki arvestatavat sündmust. Ülevaatesse tuleb teema pealkiri ilma kuupäevata ja sinu selgitus.</p>
+              {% else %}
+                <p class="reportblock__empty muted">Ükski selle teema sündmus pole ülevaates. Ülevaatesse tuleb teema pealkiri ilma kuupäevata ja sinu selgitus.</p>
+              {% endif %}
+              <label class="field">
+                <span class="field__label field__label--plain">Selgitus ülevaates</span>
+                <textarea class="field__input reportevent__text" name="selgitus-{{ block.matter_id }}-teema" rows="3" maxlength="{{ text_limit }}">{{ block.text }}</textarea>
+              </label>
+              {% if block.text_too_long %}<p class="field__error">Selgitus on pikem kui {{ text_limit }} märki. Lühenda seda enne allalaadimist.</p>{% endif %}
+            {% elif block.text %}
+              {% comment %} Kept while an event is in the report, for when none is again. {% endcomment %}
+              <input type="hidden" name="selgitus-{{ block.matter_id }}-teema" value="{{ block.text }}">
+            {% endif %}
+            {% if block.events %}
               <ul class="reportevents">
                 {% for item in block.events %}
                   <li class="reportevent">
@@ -187,6 +202,7 @@ than downloading.
     <p class="field__help">Ülevaates on {{ report.selected_count }} teemat. Eelvaade ja Wordi fail koostatakse samadest ridadest.</p>
     <div class="reportpreview">
       <p class="field__help">Wordi fail algab osakonna tegevuskava püsiosaga (tegevused ja eesmärgid); selle all on see tabel.</p>
+      {% if report.plan_problem %}<p class="notice notice--warning">{{ report.plan_problem }}</p>{% endif %}
       <p class="reportpreview__title">{{ report.execution_line }}</p>
       {% if rows %}
         <div class="tablewrap">
@@ -198,7 +214,7 @@ than downloading.
               {% for row in rows %}
                 <tr>
                   <td class="reportpreview__topic">{{ row.topic }}</td>
-                  <td>{{ row.date_label }}{% if row.kind_label %}<span class="reportpreview__meta">{{ row.kind_label }}</span>{% endif %}{% if row.provenance %}<span class="reportpreview__meta">{{ row.provenance }}</span>{% endif %}</td>
+                  <td>{{ row.date_label }}{% for note in row.date_notes %}<span class="reportpreview__meta">{{ note }}</span>{% endfor %}</td>
                   <td>{{ row.recipients }}</td>
                   <td class="reportpreview__text">{{ row.text|linebreaksbr }}</td>
                 </tr>

@@ -24,8 +24,9 @@ user:
    article *about* Koda, and a page whose day nobody wrote down has no date to
    put in the report (docs/adr/0089 §8).
 4. **A historical Excel `VÄLJA` date** — `CurrentRegisterState` with
-   ``opinion_sent_state = DATE``. Labelled as what it is, «Exceli
-   VÄLJA-kuupäev», with its sheet and row. Suppressed only where the same
+   ``opinion_sent_state = DATE``. Labelled as what it is, «Ajalooline
+   Exceli VÄLJA-kuupäev», with its sheet and row, in the preview and the Word
+   file alike. Suppressed only where the same
    send is canonically recorded: a visible sent `Submission` on that Matter on
    that Tallinn day, or the 2026 pilot's placeholder Submission imported from
    the same sheet and row (`ExcelPilotImport`). Where a send exists on
@@ -98,8 +99,9 @@ ACTIVITY_KINDS: tuple[str, ...] = (
 #: Published statements (rule 3).
 STATEMENT_KINDS: tuple[str, ...] = (EntryKind.PUBLIC_STATEMENT,)
 
-#: What a `VÄLJA` event is called, everywhere it is shown.
-REGISTER_LABEL = "Exceli VÄLJA-kuupäev"
+#: What a `VÄLJA` event is called, everywhere it is shown — in the board's
+#: Word file too, so imported evidence is never read as a confirmed send.
+REGISTER_LABEL = "Ajalooline Exceli VÄLJA-kuupäev"
 
 #: What a published overview is called.
 OVERVIEW_LABEL = "Ülevaade avaldatud"
@@ -170,6 +172,8 @@ class ReportEvent:
     provenance: str = ""
     #: The preview's warning that this may be the same send as another record.
     uncertainty: str = ""
+    #: The same warning in a few words, for the narrow «Kuupäev» cell.
+    uncertainty_note: str = ""
 
     @property
     def date_label(self) -> str:
@@ -447,7 +451,7 @@ def _register_events(
             continue
         if (state.matter_id, state.source_sheet, state.source_row_number) in pilot_rows:
             continue
-        uncertainty = ""
+        uncertainty = note = ""
         if known:
             nearest_day, nearest_title = min(
                 known, key=lambda send: (abs((send[0] - day).days), send[0], send[1])
@@ -456,6 +460,7 @@ def _register_events(
                 f"Võib korrata arvamust «{nearest_title}» ({format_estonian_date(nearest_day)}): "
                 "registri kuupäev ja saadetud arvamuse kuupäev erinevad."
             )
+            note = f"Võimalik kordus: arvamus {format_estonian_date(nearest_day)}"
         events.append(
             ReportEvent(
                 ref=EventRef(EventType.REGISTER, state.pk),
@@ -466,6 +471,7 @@ def _register_events(
                 recipients=_register_addressee(state),
                 provenance=_provenance(state),
                 uncertainty=uncertainty,
+                uncertainty_note=note,
             )
         )
     return events

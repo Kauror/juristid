@@ -13,6 +13,14 @@ as the reader (`draft.compose`) and render — the whole page for a navigation,
 the composer body for htmx. The export does the same and then either writes
 the file or, when anything changed or is not ready, answers 409 with the
 composer and the reader's draft intact.
+
+**The download is the report last previewed.** Every render carries a signed
+digest of exactly what its preview shows (`draft.output_digest`, signed for
+this user); the export recomputes it from what is posted and, when the two
+differ — a checkbox, a text, the order or the signers changed after the
+preview, with or without script — refuses with the preview brought up to date.
+The page's first render is a preview like any other, so an untouched report
+downloads at once. Nothing is stored on the server.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.contrib.auth.decorators import login_required
+from django.core import signing
 from django.http import Http404, HttpRequest, HttpResponse, QueryDict
 from django.shortcuts import render
 from django.urls import reverse
@@ -40,6 +49,25 @@ RESULTS_TEMPLATE = "reporting/report_builder/_search_results.html"
 NOT_HERE = "Lehte ei leitud."
 
 
+def _preview_salt(request: HttpRequest) -> str:
+    return f"reporting.report_builder.preview:{request.user.pk}"
+
+
+def preview_token(request: HttpRequest, report: draft.ComposedReport) -> str:
+    """The signed digest of the report this render shows, bound to the reader."""
+    return signing.dumps(draft.output_digest(report), salt=_preview_salt(request))
+
+
+def _was_previewed(request: HttpRequest, report: draft.ComposedReport) -> bool:
+    try:
+        shown = signing.loads(
+            str(request.POST.get(draft.F_PREVIEWED, "")), salt=_preview_salt(request)
+        )
+    except signing.BadSignature:
+        return False
+    return bool(shown == draft.output_digest(report))
+
+
 def _require_reader(request: HttpRequest) -> None:
     if not may_read_business_content(getattr(request, "user", None)):
         raise Http404(NOT_HERE)
@@ -54,6 +82,7 @@ def _context(request: HttpRequest, report: draft.ComposedReport, **extra: Any) -
     return {
         "report": report,
         "rows": report.table_rows(),
+        "preview_token": preview_token(request, report),
         "search_results": results,
         "search_query": report.search,
         "min_search": draft.MIN_SEARCH_CHARACTERS,
@@ -142,6 +171,8 @@ def export(request: HttpRequest) -> HttpResponse:
     refusals = report.refusals()
     if refusals:
         return _render(request, report, status=409, dirty=True, refusals=refusals)
+    if not _was_previewed(request, report):
+        return _render(request, report, status=409, dirty=True, refusals=[draft.PREVIEW_STALE])
     response = HttpResponse(docx.render(report), content_type=docx.CONTENT_TYPE)
     response["Content-Disposition"] = content_disposition("attachment", report.filename)
     response["Cache-Control"] = "private, no-store"

@@ -354,19 +354,23 @@ def test_the_export_matches_the_preview_row_for_row(signed_in, world):
         'attachment; filename="Majanduspoliitika_ulevaade_2026-10.docx"'
     )
     document, table, rows = docx_rows(response)
-    # The same rows; the preview's kind and source labels stay on the page.
-    assert rows == [[row[0], row[1].split("\n")[0], *row[2:]] for row in preview]
-    assert preview[3][1] == "09.10\nExceli VÄLJA-kuupäev\nleht 2026, rida 14"
+    # The same rows, the event's kind and source under its day in both.
+    assert rows == preview
     assert rows == [
         [
             "Alfa seaduse muutmine",
-            "02.10",
+            "02.10\nAmetlik arvamus",
             "Majandus- ja Kommunikatsiooniministeerium",
             "Toetame eelnõu.",
         ],
-        ["Beeta määrus", "05.10", "", "Kohtumine ministriga."],
-        ["Beeta määrus", "20.10", "", "Täiendav seisukoht."],
-        ["Gamma kontseptsioon", "09.10", "", ""],
+        ["Beeta määrus", "05.10\nKohtumine", "", "Kohtumine ministriga."],
+        ["Beeta määrus", "20.10\nAmetlik arvamus", "", "Täiendav seisukoht."],
+        [
+            "Gamma kontseptsioon",
+            "09.10\nAjalooline Exceli VÄLJA-kuupäev\nleht 2026, rida 14",
+            "",
+            "",
+        ],
     ]
     texts = [p.text for p in document.paragraphs if p.text]
     # The department's usual report: the action-plan opening, «Täitmine»,
