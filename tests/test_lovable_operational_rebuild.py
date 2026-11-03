@@ -353,7 +353,9 @@ def test_the_plan_resolves_every_change_three_ways(world):
         "TITLE": 2,
         "STAGE": 1,
         "RESPONSE_REQUEST": 1,
-        "NEXT_ACTION": 5,  # 601's, and every open rebased Teema with a step: 501 502 505 506
+        # 601's, and each rebased Teema whose step is the rebuild's: 501 and 502 keep the
+        # pilot's untouched step, 506 gets a new one; 505's is the lawyer's own.
+        "NEXT_ACTION": 4,
         "MatterImportantDate": 1,
         "CONTINUATION": 1,
     }
@@ -405,7 +407,6 @@ def test_the_rebuild_writes_the_plan_and_nothing_else(world):
         by_ref[r].pk for r in ("2026_501", "2026_502", "2026_503", "2026_505", "2026_506")
     ]
     untouched_before = preserved_digests()
-    local_before = local_digests(rebased_ids)
     steps_before = {
         r: derived_values(by_ref[r])["next_action_id"] for r in ("2026_501", "2026_502", "2026_505")
     }
@@ -463,14 +464,14 @@ def test_the_rebuild_writes_the_plan_and_nothing_else(world):
         r.matter.display_reference: str(r.target_id)
         for r in records.filter(record_kind="NEXT_ACTION")
     }
-    assert next_records["2026_505"] == steps_before["2026_505"]  # the lawyer's step
+    assert "2026_505" not in next_records  # the lawyer's step stays local
     assert next_records["2026_501"] == steps_before["2026_501"]
     assert next_records["2026_506"] == str(step.pk)
     assert "2026_503" not in next_records
     assert records.filter(record_kind="REBASE").count() == 5
 
     # Local work survived, everything outside the package is byte for byte the same.
-    assert local_digests(rebased_ids, drop_ids=[created.pk]) == local_before
+    assert local_digests(report.local_specs, drop_ids=[created.pk]) == report.local_before
     assert list(m["2026_506"].policy_areas.all()) == [world["area"]]
     assert Document.objects.filter(pk=world["document"].pk, matter=m["2026_506"]).exists()
     after = preserved_digests()
@@ -753,7 +754,7 @@ def test_the_records_name_what_each_write_wrote(world):
     package = _rebuild(
         _rebase(
             "2026_502",
-            [_change("owner", "Kati"), _change("stage", "parliament")],
+            [_change("owner", "Kati", TAKE_SOURCE), _change("stage", "parliament")],
         ),
         _rebase(
             "2026_501",
@@ -804,3 +805,242 @@ def test_snapshot_out_and_before_are_one_or_the_other(tmp_path):
             "--snapshot-out",
             str(tmp_path / "b.json"),
         )
+
+
+# ---------------------------------------------------------------------------
+# Review fixes: A from the pilot's provenance, step identity, owner effects,
+# local digest per field, locks
+# ---------------------------------------------------------------------------
+
+
+def _open_step(matter: Matter) -> NextAction:
+    return NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+
+
+def _state(matter: Matter):
+    from app.legacy_import.lovable_sync_models import LovableSyncState
+
+    return LovableSyncState.objects.get(matter=matter)
+
+
+def _needs_decision(package: dict[str, Any], reference: str, field: str) -> None:
+    plan = build_plan(package)
+    wanted = (
+        f"{reference}: {field} was changed in Juristid and in Lovable; the package needs a "
+        "decision (KEEP_LOCAL, TAKE_SOURCE or HOLD)."
+    )
+    assert wanted in plan.problems, plan.problems
+
+
+def test_a_title_resolved_to_the_lawyers_is_not_the_pilots(world):
+    """`resolve_field` moves the baseline's target to the lawyer's title; A stays
+    the pilot's own, so the rebuild needs a decision rather than overwriting it."""
+    teema = world["by_ref"]["2026_501"]
+    set_matter_title(matter=teema, value="Juristi nimi", actor=world["mari"])
+    state = _state(teema)
+    state.applied["title"]["target"] = "Juristi nimi"
+    state.save(update_fields=["applied"])
+    package = _rebuild(_rebase("2026_501", [_change("title", "Uus")], title="Uus"))
+    _needs_decision(package, "2026_501", "title")
+
+
+def test_a_step_converged_on_a_night_is_not_the_pilots(world):
+    """ALREADY_CONVERGED moves the baseline's step to the lawyer's; a later source
+    step must not replace the lawyer's without a decision."""
+    teema = world["by_ref"]["2026_501"]
+    step = set_next_action(
+        matter=teema,
+        text="ootan, Lovable'iga sama",
+        kind="WAIT",
+        date_semantics="REVIEW_ON",
+        target_date=dt.date(2026, 11, 30),
+        responsible=world["mari"],
+        actor=world["mari"],
+    )
+    state = _state(teema)
+    state.applied["next_action"]["target"] = lovable_sync._action_dict(step)
+    state.save(update_fields=["applied"])
+    _needs_decision(
+        _rebuild(_rebase("2026_501", [_change("next_action", NEW_STEP)])), "2026_501", "next_action"
+    )
+
+
+def test_a_reassigned_step_with_the_same_words_is_not_the_pilots(world):
+    teema = world["by_ref"]["2026_501"]
+    NextAction.objects.filter(pk=_open_step(teema).pk).update(responsible=world["kati"])
+    _needs_decision(
+        _rebuild(_rebase("2026_501", [_change("next_action", NEW_STEP)])), "2026_501", "next_action"
+    )
+
+
+def test_a_restricted_step_is_not_the_pilots(world):
+    teema = world["by_ref"]["2026_501"]
+    NextAction.objects.filter(pk=_open_step(teema).pk).update(visibility_override="RESTRICTED")
+    _needs_decision(
+        _rebuild(_rebase("2026_501", [_change("next_action", NEW_STEP)])), "2026_501", "next_action"
+    )
+
+
+def test_a_step_reviewed_in_place_is_not_the_pilots(world):
+    from app.workflow.services import acknowledge_review
+
+    teema = world["by_ref"]["2026_501"]
+    # Looked at, moved, and moved back: the same words and day, edited in place.
+    for day in (dt.date(2026, 11, 20), dt.date(2026, 11, 15)):
+        acknowledge_review(action=_open_step(teema), actor=world["mari"], next_review_date=day)
+    assert _open_step(teema).target_date == dt.date(2026, 11, 15)
+    _needs_decision(
+        _rebuild(_rebase("2026_501", [_change("next_action", NEW_STEP)])), "2026_501", "next_action"
+    )
+
+
+def test_an_untouched_pilot_step_is_still_written(world):
+    plan = build_plan(_rebuild(_rebase("2026_501", [_change("next_action", NEW_STEP)])))
+    assert plan.problems == []
+    assert _actions(plan) == {"2026_501": [("next_action", WRITE)]}
+
+
+def test_an_owner_is_written_only_on_take_source(world):
+    package = _rebuild(_rebase("2026_502", [_change("owner", "Kati")]))
+    plan = build_plan(package)
+    assert any(
+        "2026_502: an owner change moves its steps and notices" in p for p in plan.problems
+    ), plan.problems
+
+
+def test_an_owner_taken_from_the_source_moves_its_steps_as_declared(world):
+    teema = world["by_ref"]["2026_502"]
+    package = _rebuild(_rebase("2026_502", [_change("owner", "Kati", TAKE_SOURCE)]))
+    report = _apply(package)
+    assert report.verify.ok
+    assert Matter.objects.get(pk=teema.pk).owner == world["kati"]
+    assert _open_step(teema).responsible == world["kati"]
+
+
+def _touch_during_the_rebuild(monkeypatch, effect) -> None:
+    from app.matters import services
+
+    original = services.set_matter_title
+
+    def and_then(**kwargs: Any) -> Any:
+        effect()
+        return original(**kwargs)
+
+    monkeypatch.setattr(services, "set_matter_title", and_then)
+
+
+def test_a_stage_period_of_a_teema_whose_stage_is_not_written_stays_covered(world, monkeypatch):
+    from app.matters.models import MatterStageEpisode
+
+    teema = world["by_ref"]["2026_505"]
+    _touch_during_the_rebuild(
+        monkeypatch,
+        lambda: MatterStageEpisode.objects.filter(matter=teema).update(
+            updated_at=dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+        ),
+    )
+    with pytest.raises(LovablePilotError, match="local work changed: 2026_505"):
+        _apply(_rebuild())
+
+
+def test_a_superseded_step_of_a_teema_whose_step_is_kept_stays_covered(world, monkeypatch):
+    teema = world["by_ref"]["2026_505"]
+    old = NextAction.objects.filter(matter=teema).exclude(status=ActionStatus.OPEN).get()
+    _touch_during_the_rebuild(
+        monkeypatch, lambda: NextAction.objects.filter(pk=old.pk).update(text="muudetud")
+    )
+    with pytest.raises(LovablePilotError, match="local work changed: 2026_505"):
+        _apply(_rebuild())
+
+
+def test_a_planned_step_beside_a_written_one_stays_covered(world, monkeypatch):
+    teema = world["by_ref"]["2026_506"]
+    planned = factories.NextActionFactory(
+        matter=teema, status=ActionStatus.PLANNED, target_date=dt.date(2027, 1, 10)
+    )
+    _touch_during_the_rebuild(
+        monkeypatch, lambda: NextAction.objects.filter(pk=planned.pk).update(text="muudetud")
+    )
+    with pytest.raises(LovablePilotError, match="local work changed: 2026_506"):
+        _apply(_rebuild())
+
+
+def test_a_lawyer_save_slipping_past_the_plan_is_refused_before_writing(world, monkeypatch):
+    original = lovable_pilot._hold_and_replan
+    teema = world["by_ref"]["2026_501"]
+
+    def replan_then_a_save(plan, expect):
+        current = original(plan, expect)
+        Matter.all_objects.filter(pk=teema.pk).update(title="Juristi salvestus")
+        return current
+
+    monkeypatch.setattr(lovable_pilot, "_hold_and_replan", replan_then_a_save)
+    with pytest.raises(LovablePilotError, match="2026_501 changed since it was approved"):
+        _apply(_rebuild())
+    # Everything rolled back, the save included (it ran inside the test's transaction).
+    assert Matter.all_objects.get(pk=teema.pk).title == "Näidisteema 2026_501"
+    assert not EvidencePilotRecord.objects.filter(pilot=OPERATIONAL_COHORT).exists()
+
+
+def test_the_rebase_teemad_are_locked_in_order_before_the_table(world):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    with CaptureQueriesContext(connection) as queries:
+        _apply(_rebuild())
+    sql = [q["sql"] for q in queries.captured_queries]
+    row_lock = next(
+        i
+        for i, q in enumerate(sql)
+        if 'FROM "matters_matter"' in q and "FOR NO KEY UPDATE" in q and "ORDER BY" in q
+    )
+    table_lock = next(i for i, q in enumerate(sql) if 'LOCK TABLE "matters_matter"' in q)
+    sequence_lock = next(
+        i for i, q in enumerate(sql) if "matterreferencesequence" in q and "FOR UPDATE" in q
+    )
+    assert sequence_lock < row_lock < table_lock
+
+
+def test_the_apply_waits_for_no_synchronisation_run(world):
+    import psycopg
+    from django.db import connection
+
+    params = connection.get_connection_params()
+    other = psycopg.connect(**{k: v for k, v in params.items() if k != "cursor_factory"})
+    try:
+        other.execute(
+            "SELECT pg_advisory_lock(%s, %s)", [lovable_sync.LOCK_NAMESPACE, lovable_sync.LOCK_KEY]
+        )
+        with pytest.raises(LovablePilotError, match="a synchronisation run is in progress"):
+            _apply(_rebuild())
+        with pytest.raises(LovablePilotError, match="a synchronisation run is in progress"):
+            lovable_pilot.dry_run(build_plan(_rebuild()))
+    finally:
+        other.close()
+    assert not EvidencePilotRecord.objects.filter(pilot=OPERATIONAL_COHORT).exists()
+
+
+def test_a_title_reading_is_the_entrys_title_exactly():
+    topic = _rebase(
+        "2026_501",
+        [_change("title", "Näidisteema 2026_501 (uus).")],
+        title="Näidisteema 2026_501 (uus)",
+    )
+    assert any("is the entry's reviewed title" in p for p in _problems(_rebuild(topic)))
+
+
+def test_an_open_request_on_a_chamber_initiative_is_a_plan_problem(world):
+    teema = world["by_ref"]["2026_501"]
+    Matter.all_objects.filter(pk=teema.pk).update(track="KODA_INITIATIVE")
+    package = _rebuild(_rebase("2026_501", [_change("open_request", {"deadline": "2026-11-25"})]))
+    plan = build_plan(package)
+    assert any("2026_501: a Chamber initiative takes no new request" in p for p in plan.problems), (
+        plan.problems
+    )
+
+
+def test_a_lawyers_step_with_no_listed_change_gets_no_record(world):
+    _apply(_rebuild(_rebase("2026_505", [])))
+    assert not EvidencePilotRecord.objects.filter(
+        pilot=OPERATIONAL_COHORT, record_kind="NEXT_ACTION"
+    ).exists()

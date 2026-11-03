@@ -37,6 +37,12 @@ synchronisation's GET-only transport and service login, the version and number
 of every package topic and lists those Lovable changed, renumbered or no longer
 shows since the snapshot — references and counts only.
 
+A rebuild (docs/adr/0202 §5) runs in this order: stop the web and MCP services
+(or pause their traffic) for the apply window; take and verify the backup set
+(`preserved --snapshot-out` at it); `apply --preserved-out F`; `preserved
+--before F`; only then `lovable_sync enroll`; then restart the services. The
+apply refuses while a synchronisation run holds its lock.
+
 The package holds the Chamber's content: keep it outside the repository, CI and
 every ordinary development database.
 """
@@ -56,7 +62,9 @@ from app.legacy_import.limits import load_json_document
 class Command(BaseCommand):
     help = (
         "Validate, plan, dry-run, apply or verify a Lovable package; check preserved Teemad "
-        "or source drift (docs/adr/0191, docs/adr/0202)."
+        "or source drift (docs/adr/0191, docs/adr/0202). A rebuild: stop web and MCP for "
+        "the apply window, then apply --preserved-out F, preserved --before F, and only then "
+        "lovable_sync enroll."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:

@@ -52,9 +52,11 @@ gate) → `verify` (reads back and compares, record by record).
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import hashlib
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -784,8 +786,8 @@ def _validate_rebase(
                 continue  # nothing is written, so nothing need be read
         if name == "title" and not str(reading or "").strip():
             out.append(f"{where}: a title reading is the title.")
-        elif name == "title" and _wording(reading) != _wording(topic.get("title")):
-            out.append(f"{where}: the title reading is the entry's reviewed title.")
+        elif name == "title" and reading != topic.get("title"):
+            out.append(f"{where}: the title reading is the entry's reviewed title, exactly.")
         elif name == "owner":
             if not str(reading or "").strip():
                 out.append(f"{where}: an owner reading names a person.")
@@ -1259,18 +1261,23 @@ def derived_values(matter: Any) -> dict[str, Any]:
     }
 
 
-def _pilot_values(matter: Any, state: Any) -> dict[str, Any]:
-    """A: what the pilot import wrote — the sync baseline's targets for title, owner
-    and step, the stage the Teema was created in, the pilot's request record and
-    the commencements the pilot added (as their creation events say)."""
+def _pilot_values(matter: Any, state: Any, source: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+    """A — what the pilot import wrote, from its own immutable provenance, never
+    from the synchronisation's baseline (a resolved or converged field moves that
+    to the lawyer's value): the pilot source reference's title, the owner and
+    step the pilot's own events record, the stage the Teema was created in, the
+    pilot's request record and the commencements the pilot added.
+
+    Also what B must satisfy to count as A for a field (``meta``): ``diverged``
+    names the fields whose sync baseline no longer says what the pilot wrote, and
+    ``step_id`` is the pilot's step."""
     from app.audit.models import ChangeEvent
-    from app.legacy_import.lovable_sync import text_value
+    from app.legacy_import.lovable_sync import _imported_action, _imported_owner_id, text_value
     from app.matters.enums import StageEpisodeOrigin
     from app.matters.models import MatterStageEpisode
 
     from .models import EvidencePilotRecord
 
-    applied = state.applied or {}
     first = (
         MatterStageEpisode.objects.filter(matter=matter)
         .select_related("stage")
@@ -1297,17 +1304,85 @@ def _pilot_values(matter: Any, state: Any) -> dict[str, Any]:
         )
         for oid, payload in added
     ]
-    owner = (applied.get("owner") or {}).get("target")
-    return {
-        "title": text_value((applied.get("title") or {}).get("target")),
-        "owner": str(owner) if owner else None,
+    action, _treatment = _imported_action(matter, PILOT)
+    owner = _imported_owner_id(matter)
+    a = {
+        "title": text_value(source.source_title),
+        "owner": owner,
         "stage": stage,
-        "next_action": _step_value((applied.get("next_action") or {}).get("target")),
-        "open_request": str((request.evidence or {}).get("deadline") or "")[:10] or None
-        if request
-        else None,
+        "next_action": _step_value(action),
+        "open_request": (
+            str((request.evidence or {}).get("deadline") or "")[:10] or None if request else None
+        ),
         "commencements": sorted(commencements, key=lambda d: (d[0], d[1], d[2] or "")),
     }
+    applied = state.applied or {}
+    baseline_owner = (applied.get("owner") or {}).get("target")
+    baseline_step = (applied.get("next_action") or {}).get("target")
+    diverged = set()
+    if text_value((applied.get("title") or {}).get("target")) != a["title"]:
+        diverged.add("title")
+    if (str(baseline_owner) if baseline_owner else None) != owner:
+        diverged.add("owner")
+    if _step_value(baseline_step) != a["next_action"] or (baseline_step or {}).get("id") != (
+        action or {}
+    ).get("id"):
+        diverged.add("next_action")
+    meta = {
+        "diverged": sorted(diverged),
+        "step_id": (action or {}).get("id"),
+        "step_edited": (action or {}).get("date_precision") == "?",
+    }
+    return a, meta
+
+
+def _step_is_pilots(
+    matter: Any, a: dict[str, Any], meta: dict[str, Any], b: dict[str, Any]
+) -> bool:
+    """Whether the open step is still exactly the pilot's: the same row, never
+    edited in place (no event on it but the one that set it — a review, a moved
+    day, a reworded check), its words what the setting event said, the pilot's
+    owner responsible and no restriction of its own (docs/adr/0202 §3)."""
+    from app.audit.models import ChangeEvent
+    from app.workflow.models import NextAction
+
+    if b["next_action_id"] is None or meta["step_id"] is None:
+        return b["next_action_id"] is None and meta["step_id"] is None
+    if b["next_action_id"] != meta["step_id"] or meta["step_edited"]:
+        return False
+    if "next_action" in meta["diverged"] or b["next_action"] != a["next_action"]:
+        return False
+    step = NextAction.objects.filter(pk=b["next_action_id"]).first()
+    if step is None:
+        return False
+    events = list(
+        ChangeEvent.objects.filter(matter=matter, object_id=step.pk).order_by("occurred_at")
+    )
+    if [e.event_type for e in events] != ["NEXT_ACTION_SET"]:
+        return False
+    if (events[0].summary or "") != step.text[:200]:
+        return False
+    return str(step.responsible_id) == str(a["owner"]) and not step.visibility_override
+
+
+def _require_unchanged_since_plan(t: TopicPlan) -> None:
+    """Just before a REBASE writes: every B its resolution relied on is still B."""
+    from app.matters.models import Matter
+
+    now = derived_values(Matter.all_objects.get(pk=t.matter.pk))
+    moved = [
+        e["field"]
+        for e in t.resolution
+        if now["commencements" if e["field"] == "commencement_add" else e["field"]] != e["b"]
+    ]
+    for name in ("next_action_id", "superseded_by"):
+        if now[name] != t.relied.get(name):
+            moved.append(name)
+    if moved:
+        raise LovablePilotError(
+            f"{t.reference} changed since it was approved ({', '.join(moved)}); nothing was "
+            "written. Plan again and review it."
+        )
 
 
 def _write_kind(entry: dict[str, Any]) -> str:
@@ -1358,12 +1433,12 @@ def _plan_rebases(plan: LovablePlan, rebases: list[TopicPlan]) -> list[str]:
         pilot_matter = EvidencePilotRecord.objects.filter(
             pilot=PILOT, matter=m, record_kind="MATTER"
         ).count()
-        pilot_sources = [
-            (s.source_row_raw or {}).get("lovable", {}).get("id")
-            for s in MatterSourceReference.objects.filter(
+        pilot_refs = list(
+            MatterSourceReference.objects.filter(
                 matter=m, source_system=SOURCE_SYSTEM, source_parser_version__startswith=f"{PILOT}/"
             )
-        ]
+        )
+        pilot_sources = [(s.source_row_raw or {}).get("lovable", {}).get("id") for s in pilot_refs]
         state = LovableSyncState._base_manager.filter(matter=m).first()
         if pilot_matter != 1:
             problems.append(f"{ref}: not a Teema the pilot (lovable-pilot) created; no REBASE.")
@@ -1387,23 +1462,39 @@ def _plan_rebases(plan: LovablePlan, rebases: list[TopicPlan]) -> list[str]:
         if m.deleted_at is not None:
             problems.append(f"{ref}: the pilot Teema is deleted; nothing is written to it.")
             continue
-        problems += _resolve_rebase(plan, t, _pilot_values(m, state), derived_values(m))
+        a, meta = _pilot_values(m, state, pilot_refs[0])
+        problems += _resolve_rebase(plan, t, a, meta, derived_values(m))
     return problems
 
 
 def _resolve_rebase(
-    plan: LovablePlan, t: TopicPlan, a: dict[str, Any], b: dict[str, Any]
+    plan: LovablePlan,
+    t: TopicPlan,
+    a: dict[str, Any],
+    meta: dict[str, Any],
+    b: dict[str, Any],
 ) -> list[str]:
-    """The three-way table of docs/adr/0202 §3, one change at a time."""
+    """The three-way table of docs/adr/0202 §3, one change at a time.
+
+    B counts as A only when Juristid holds exactly what the pilot wrote: never
+    for a field whose sync baseline has moved off the pilot's value, and for the
+    step only when it is still the pilot's own row, unedited (`_step_is_pilots`)."""
     from app.accounts.models import User
     from app.accounts.selectors import is_assignable_business_user
     from app.legacy_import.lovable_sync import text_value
+    from app.matters.initiative import is_koda_initiative
     from app.workflow.models import StageVocabulary
 
     problems: list[str] = []
     ref = t.reference
     people = plan.package.get("people") or {}
-    t.relied = {"next_action_id": b["next_action_id"], "superseded_by": b["superseded_by"]}
+    pilots_step = _step_is_pilots(t.matter, a, meta, b)
+    t.relied = {
+        "next_action_id": b["next_action_id"],
+        "superseded_by": b["superseded_by"],
+        "pilots_step": pilots_step,
+        "diverged": meta["diverged"],
+    }
     today = _today()
     for change in t.topic.get("changes") or []:
         name, reading, decision = change["field"], change.get("reading"), change.get("decision")
@@ -1454,12 +1545,15 @@ def _resolve_rebase(
         else:
             a_value, b_value = a[name], b[name]
             same_as_a, same_as_b = c == a_value, c == b_value
+        b_is_a = b_value == a_value and name not in meta["diverged"]
+        if name == "next_action":
+            b_is_a = b_is_a and pilots_step
         if same_as_a or same_as_b:
             # Nothing to write: the snapshot says what the pilot wrote, or what
             # Juristid already holds (a lawyer's value equal to the source's).
             action = NOTHING
-        elif b_value == a_value:
-            action = decision if decision in {KEEP_LOCAL, HOLD} else WRITE
+        elif b_is_a:
+            action = decision if decision in {KEEP_LOCAL, HOLD, TAKE_SOURCE} else WRITE
         elif decision is None:
             problems.append(
                 f"{ref}: {name} was changed in Juristid and in Lovable; the package needs a "
@@ -1468,6 +1562,16 @@ def _resolve_rebase(
             continue
         else:
             action = decision
+        if action == WRITE and name == "owner":
+            problems.append(
+                f"{ref}: an owner change moves its steps and notices; the package writes it "
+                "only with TAKE_SOURCE."
+            )
+        if action in WRITING and name == "open_request" and is_koda_initiative(t.matter):
+            problems.append(
+                f"{ref}: a Chamber initiative takes no new request (docs/adr/0151 §2); "
+                "decide HOLD or KEEP_LOCAL."
+            )
         if action in WRITING:
             if not t.is_open and name != "title":
                 problems.append(
@@ -1495,7 +1599,9 @@ def _resolve_rebase(
             }
         )
     step_written = any(e["field"] == "next_action" for e in t.writes())
-    t.next_record = t.is_open and (step_written or b["next_action"] is not None)
+    # A NEXT_ACTION record names the rebuild's step: one it wrote, or the pilot's
+    # own still untouched. A lawyer's step gets none and stays local.
+    t.next_record = t.is_open and (step_written or (b["next_action"] is not None and pilots_step))
     return problems
 
 
@@ -1767,23 +1873,22 @@ class _PreservedState:
     local_settled: dict[str, str] = field(default_factory=dict)
 
 
-#: The Matter columns a REBASE writes through its services; the local digest of
-#: a rebased Teema is everything else.
-REBASE_MATTER_COLUMNS = frozenset(
-    {
-        "title",
-        "owner_id",
-        "stage_id",
-        "response_deadline",
-        "response_requested_at",
-        "updated_at",
-        "current_stage_episode_id",
-    }
-)
-#: The related records a REBASE writes (steps, periods, dates, the new source
-#: reference and its records, the assignment notices `assign_matter` retires);
-#: change events are kept in the local digest when a person wrote them.
-REBASE_WRITTEN_LABELS = frozenset(
+#: The Matter columns each REBASE field's service writes. A rebased Teema's local
+#: digest leaves out only the columns of the fields it actually writes (and
+#: `updated_at` when it writes anything).
+REBASE_MATTER_COLUMNS: dict[str, frozenset[str]] = {
+    "title": frozenset({"title"}),
+    "owner": frozenset({"owner_id"}),
+    "stage": frozenset({"stage_id"}),
+    "open_request": frozenset({"response_deadline", "response_requested_at"}),
+    "next_action": frozenset(),
+    "commencement_add": frozenset(),
+}
+#: Related tables a rebase may add rows to (steps, periods, request history,
+#: dates, its source reference and records, notices); a row created at or after
+#: the apply's own moment (the spec's ``cutoff``) is the rebase's, every older
+#: row stays covered.
+REBASE_NEW_ROW_LABELS = frozenset(
     {
         "next_actions",
         "stage_episodes",
@@ -1793,9 +1898,47 @@ REBASE_WRITTEN_LABELS = frozenset(
         "source_references",
         "pilot_records",
         "assignment_notices",
-        "change_events",
     }
 )
+
+
+def local_spec(*, fields: Any, step: Any, episode: Any, cutoff: Any) -> dict[str, Any]:
+    """What a rebased Teema's local digest leaves out, as JSON: the fields it writes,
+    the B step a step write supersedes, the current stage period a stage write
+    ends, and the moment from which rows are the rebase's own."""
+    return {
+        "fields": sorted(fields),
+        "step": str(step) if step else None,
+        "episode": str(episode) if episode else None,
+        "cutoff": cutoff.isoformat() if hasattr(cutoff, "isoformat") else cutoff,
+    }
+
+
+def _local_row(
+    label: str, ident: str, value: dict[str, Any], spec: dict[str, Any]
+) -> tuple[bool, frozenset[str]]:
+    """Whether a related row of a rebased Teema is in its local digest, and which of
+    its columns are not: exactly the rows and columns its declared writes change."""
+    from app.workflow.enums import ActionStatus
+
+    fields = set(spec.get("fields") or ())
+    cutoff = spec.get("cutoff")
+    created = value.get("created_at")
+    if label in REBASE_NEW_ROW_LABELS and cutoff and created is not None:
+        moment = dt.datetime.fromisoformat(cutoff) if isinstance(cutoff, str) else cutoff
+        if created >= moment:
+            return False, frozenset()
+    if label == "next_actions":
+        if "next_action" in fields and ident == spec.get("step"):
+            return False, frozenset()  # the B step a step write supersedes
+        if "owner" in fields and value.get("status") in {ActionStatus.OPEN, ActionStatus.PLANNED}:
+            # `assign_matter` hands the open and planned steps to the new owner.
+            return True, frozenset({"responsible_id", "updated_at"})
+    if label == "stage_episodes" and "stage" in fields and ident == spec.get("episode"):
+        return False, frozenset()  # the current period a stage write ends
+    if label == "assignment_notices" and "owner" in fields:
+        return False, frozenset()  # `assign_matter` retires the previous owner's notice
+    return True, frozenset()
 
 
 def _preserved_state(
@@ -1807,7 +1950,12 @@ def _preserved_state(
     from app.matters.models import Matter
 
     exclude = {str(pk) for pk in exclude_matter_ids or ()}
-    local_owners = {str(pk) for pk in local_for or ()}
+    specs: dict[str, dict[str, Any]] = (
+        {str(pk): dict(spec) for pk, spec in local_for.items()}
+        if isinstance(local_for, dict)
+        else {str(pk): {} for pk in local_for or ()}
+    )
+    local_owners = set(specs)
     dropped = {str(pk) for pk in drop_ids or ()}
     columns = [f.attname for f in Matter._meta.concrete_fields]
     full: dict[str, dict[str, Any]] = {}
@@ -1825,7 +1973,11 @@ def _preserved_state(
         full[pk] = {"matter": matter}
         settled[pk] = {"matter": matter}
         if pk in local_owners:
-            kept = {k: v for k, v in matter.items() if k not in REBASE_MATTER_COLUMNS}
+            written = set(specs[pk].get("fields") or ())
+            left_out = {c for name in written for c in REBASE_MATTER_COLUMNS.get(name, ())}
+            if written:
+                left_out.add("updated_at")
+            kept = {k: v for k, v in matter.items() if k not in left_out}
             local[pk] = {"matter": kept}
             local_settled[pk] = {"matter": kept}
     for covered in _preserved_sources():
@@ -1849,13 +2001,17 @@ def _preserved_state(
                 (full, covered.mode, frozenset()),
                 (settled, covered.settled, covered.settled_drop),
             ]
-            if owner in local_owners and (
-                covered.label not in REBASE_WRITTEN_LABELS or (human and actor is not None)
-            ):
-                if not (covered.label == "continued_by" and ident in dropped):
+            if owner in local_owners:
+                if human:
+                    keep, unwritten = actor is not None, frozenset[str]()  # a person's events only
+                elif covered.label == "continued_by":
+                    keep, unwritten = ident not in dropped, frozenset[str]()
+                else:
+                    keep, unwritten = _local_row(covered.label, ident, row, specs[owner])
+                if keep:
                     targets += [
-                        (local, covered.mode, frozenset()),
-                        (local_settled, covered.settled, covered.settled_drop),
+                        (local, covered.mode, unwritten),
+                        (local_settled, covered.settled, covered.settled_drop | unwritten),
                     ]
             for target, mode, drop in targets:
                 if mode == "skip":
@@ -1892,14 +2048,12 @@ def preserved_digests(*, exclude_matter_ids: Any = None, settled: bool = False) 
     return state.settled if settled else state.full
 
 
-def local_digests(
-    matter_ids: Any, *, drop_ids: Any = None, settled: bool = False
-) -> dict[str, str]:
+def local_digests(specs: Any, *, drop_ids: Any = None, settled: bool = False) -> dict[str, str]:
     """A rebased Teema's local digest (docs/adr/0202 §4): Valdkond, collaborators,
     tags, documents, entries, notes, submissions, every change event a person
     wrote and every related row the rebase never writes, and the Matter row less
     the columns the rebase's services write."""
-    state = _preserved_state(local_for=matter_ids, drop_ids=drop_ids)
+    state = _preserved_state(local_for=specs, drop_ids=drop_ids)
     return state.local_settled if settled else state.local
 
 
@@ -2024,7 +2178,8 @@ def check_preserved(document: Any) -> PreservedComparison:
     before, references = dict(body["matters"]), dict(body.get("references") or {})
     local = dict(body.get("local") or {})
     declared = dict(body.get("declared") or {})
-    now = _preserved_state(local_for=list(local), drop_ids=body.get("created") or [])
+    specs = {pk: (declared.get(pk) or {}).get("local_spec") or {} for pk in local}
+    now = _preserved_state(local_for=specs, drop_ids=body.get("created") or [])
     names: dict[str, str] = {**now.references, **references}
     result = compare_preserved(before, now.settled, names)
     result.local_checked = len(local)
@@ -2121,6 +2276,9 @@ class ApplyReport:
     #: Rebased Teemad: their local digests (settled), and per pk the fields the
     #: rebase declared and a digest of the Lovable-derived values it left.
     preserved_local_before: dict[str, str] = field(default_factory=dict)
+    #: The same local digests in the transaction's scope, and what each leaves out.
+    local_before: dict[str, str] = field(default_factory=dict)
+    local_specs: dict[str, dict[str, Any]] = field(default_factory=dict)
     declared: dict[str, dict[str, Any]] = field(default_factory=dict)
     created_ids: list[str] = field(default_factory=list)
     verify: Any = None
@@ -2195,7 +2353,7 @@ def apply_plan(
 
     from app.search.indexing import indexable_matters, refresh_matters
 
-    with transaction.atomic():
+    with _no_synchronisation_run(), transaction.atomic():
         current = _hold_and_replan(plan, expect_plan_sha256)
         if current.database_state == "applied":  # another apply won the lock
             return ApplyReport(already_applied=True)
@@ -2211,6 +2369,24 @@ def apply_plan(
                 + "\n  ".join(report.verify.discrepancies)
             )
     return report
+
+
+@contextlib.contextmanager
+def _no_synchronisation_run() -> Iterator[None]:
+    """The synchronisation's own run lock, held for the whole apply: a nightly run
+    never reads or writes a Teema the rebuild is changing, and an apply never
+    starts while one is running."""
+    from app.legacy_import.lovable_sync import SyncRefused, run_lock
+
+    stack = contextlib.ExitStack()
+    try:
+        stack.enter_context(run_lock())
+    except SyncRefused as error:
+        raise LovablePilotError(
+            "a synchronisation run is in progress; nothing was written. Apply when it has finished."
+        ) from error
+    with stack:
+        yield
 
 
 class _RolledBack(Exception):
@@ -2238,7 +2414,7 @@ def dry_run(plan: LovablePlan) -> ApplyReport:
     from app.search.indexing import indexable_matters, refresh_matters
 
     try:
-        with transaction.atomic():
+        with _no_synchronisation_run(), transaction.atomic():
             current = _hold_and_replan(plan, plan_digest(plan))
             _require_writable(current, plan_digest(plan))
             writer = _Writer(current, backup_set="dry-run", plan_sha256=plan_digest(plan))
@@ -2278,6 +2454,26 @@ def _hold_and_replan(plan: LovablePlan, expect_plan_sha256: str) -> LovablePlan:
     list(
         MatterReferenceSequence.objects.select_for_update().filter(year__in=years).order_by("year")
     )
+    # Every Teema a REBASE writes, row by row and in one order, before the table:
+    # a lawyer's save on it (which locks the row first) waits for the apply, so
+    # the B the re-plan reads is the B the writer writes over.
+    rebased = [
+        parse_reference(str(t.get("reference") or ""))
+        for t in plan.package.get("topics") or []
+        if topic_action(t) == REBASE
+    ]
+    if rebased:
+        from django.db.models import Q
+
+        query = Q()
+        for year, number in [pair for pair in rebased if pair]:
+            query |= Q(reference_year=year, reference_number=number)
+        list(
+            Matter.all_objects.select_for_update(no_key=True)
+            .filter(query)
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
     with connection.cursor() as cursor:
         cursor.execute(f'LOCK TABLE "{Matter._meta.db_table}" IN SHARE ROW EXCLUSIVE MODE')
     return build_plan(plan.package)
@@ -2356,7 +2552,21 @@ class _Writer:
         self.report.fingerprint_before = existing_fingerprint(
             exclude_references={t.reference for t in rebases}
         )
-        state = _preserved_state(local_for=rebased_ids)
+        from app.matters.models import MatterStageEpisode
+
+        cutoff = timezone.now()
+        self.report.local_specs = {
+            str(t.matter.pk): local_spec(
+                fields={e["field"] for e in t.writes()},
+                step=t.relied.get("next_action_id"),
+                episode=MatterStageEpisode.objects.filter(matter=t.matter, is_current=True)
+                .values_list("pk", flat=True)
+                .first(),
+                cutoff=cutoff,
+            )
+            for t in rebases
+        }
+        state = _preserved_state(local_for=self.report.local_specs)
         before = {pk: v for pk, v in state.full.items() if pk not in rebased_ids}
         names = state.references
         self.report.preserved_before, self.report.preserved_references = before, names
@@ -2364,6 +2574,7 @@ class _Writer:
             pk: v for pk, v in state.settled.items() if pk not in rebased_ids
         }
         self.report.preserved_local_before = state.local_settled
+        self.report.local_before = state.local
         derived_before = {
             str(t.matter.pk): derived_values(Matter.all_objects.get(pk=t.matter.pk))
             for t in rebases
@@ -2396,6 +2607,7 @@ class _Writer:
         # rebased successor resolves; the rebased Teema itself is not linked.
         rebased: dict[str, Any] = {}
         for topic_plan in rebases:
+            _require_unchanged_since_plan(topic_plan)
             rebased[topic_plan.reference] = self.write_rebase(topic_plan)
         linkable = {**created, **rebased}
 
@@ -2420,7 +2632,9 @@ class _Writer:
         self.report.matters_after = Matter.all_objects.count()
         created_ids = [m.pk for m in created.values()]
         after = _preserved_state(
-            exclude_matter_ids=created_ids, local_for=rebased_ids, drop_ids=created_ids
+            exclude_matter_ids=created_ids,
+            local_for=self.report.local_specs,
+            drop_ids=created_ids,
         )
         untouched = {pk: v for pk, v in after.full.items() if pk not in rebased_ids}
         comparison = compare_preserved(before, untouched, names, new_allowed=False)
@@ -2437,6 +2651,7 @@ class _Writer:
             str(t.matter.pk): {
                 "reference": t.reference,
                 "fields": sorted(_declared_fields(t)),
+                "local_spec": self.report.local_specs[str(t.matter.pk)],
                 # A digest, never the values: they are the Teema's title and step
                 # wording — a lawyer's own, where the rebase kept it — and the file
                 # names Teemad by reference only.

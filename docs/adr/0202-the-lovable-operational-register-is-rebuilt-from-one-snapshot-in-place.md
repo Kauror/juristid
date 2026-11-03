@@ -100,7 +100,18 @@ that is the Teema's new provenance and carries the OneNote link byte for byte.
   entries, personal notes, submissions, every human-authored change event, and
   every related row the rebase does not declare — must be equal; and every field
   the rebase did change must be exactly a change the approved plan declared
-  (`lovable_pilot preserved` reports both).
+  (`lovable_pilot preserved` reports both). The local digest leaves out only what
+  the Teema's own declared writes change: the columns of the fields it writes,
+  the one step a step write supersedes, the one stage period a stage write ends,
+  the steps' `responsible` and the notices an owner write (`TAKE_SOURCE` only)
+  moves, and the rows the rebase itself adds; planned, completed and superseded
+  steps, ended deadlines, cancelled dates and earlier stage periods stay covered.
+- **A is the pilot's own provenance** — the pilot source reference's title, the
+  owner and step its events record, its first stage period, request and date
+  records — never the synchronisation's baseline, which a person's resolution or
+  a converged night moves to the lawyer's value. Where the baseline has moved,
+  or the step is no longer the pilot's own unedited row, B counts as changed and
+  the package must decide.
 
 Nothing is deleted. The irreversible operations (listed in the runbook) are: a
 superseded step, a recorded stage period, a moved reference sequence, the new
@@ -115,8 +126,18 @@ under the lock must hash to the approved plan digest, which binds every B the
 rebase relied on (a lawyer's save after planning changes B and refuses the apply);
 `verify` before commit; `JURISTID_LOVABLE_PILOT`, `REAL_DATA_ALLOWED`, the
 operator intent (the cohort key), the package and plan digests and a backup set
-are required. `source-drift` (GET only) reports what Lovable changed after the
-snapshot; drift does not invalidate the package — the first night reports it.
+are required. Every rebased Teema's row is locked (`FOR NO KEY UPDATE`, in one
+order) before the table, and each is checked against the B its plan relied on
+just before it is written. The apply holds the synchronisation's run lock for its
+whole transaction and refuses while a run is in progress. `source-drift` (GET
+only) reports what Lovable changed after the snapshot; drift does not invalidate
+the package — the first night reports it.
+
+**Order of operations.** Stop the web and MCP services (or pause their traffic)
+for the apply window; take and verify the backup set (and `preserved
+--snapshot-out` at it); `apply --preserved-out`; `preserved --before` against
+that file; only then `lovable_sync enroll`; then restart the services. A failed
+`preserved --before` means no enrolment: restore the backup set.
 
 ### 6. One baseline for the nightly comparison
 
