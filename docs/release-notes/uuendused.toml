@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-11-04
 basis = "deployment"
-prs = []
+prs = [591]
 # Lovable'i operatiivse registri allikapõhine asendus (ADR 0203, audit 0041 —
 # ainult uus turvasündmuse liik). Väljalase ise ühtegi teemat ei muuda;
 # asendus ja uus võrdluskogum on eraldi, omaniku kinnitatud toimingud.
