@@ -17,7 +17,7 @@
         --operator-intent lovable-sync-cutover --reason R
     python manage.py lovable_sync resolve --reference 2026_501 --field stage --note N
     python manage.py lovable_sync enroll --cohort lovable-operational \\
-        --package-sha256 SHA --expect N --reason R
+        --package-sha256 SHA --expect N --reason R [--supersede lovable-pilot]
 
 `run` reads Lovable as the service login named in the credentials file and
 reconciles the pilot's 100 Teemad and every enrolled cohort (docs/adr/0202). It
@@ -47,7 +47,10 @@ firing on the same Tallinn date is refused (DUPLICATE, exit 2).
 `enroll` (docs/adr/0202 §6) adds an imported cohort to the nightly comparison
 after its import has verified: exactly the Teemad its approved provenance
 names, with baselines from the import snapshot, under the run lock. It prints
-counts only; the same enrolment again says so and changes nothing.
+counts only; the same enrolment again says so and changes nothing. With
+``--supersede lovable-pilot`` (a rebuild, docs/adr/0202 §6) every pilot state
+must be rebased by the package: each is archived and re-seeded in place, and
+the pilot cohort is retired.
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 3 held for review (circuit breaker or no backup), 1 failed.
@@ -126,6 +129,9 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--expect", type=int, default=0, help="enroll: how many Teemad the cohort holds."
+        )
+        parser.add_argument(
+            "--supersede", default="", help="enroll: the cohort a rebuild retires (lovable-pilot)."
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -329,6 +335,7 @@ class Command(BaseCommand):
             package_sha256=options["package_sha256"],
             expect=options["expect"],
             reason=options["reason"],
+            supersede=options["supersede"],
         )
         if done.already:
             self.stdout.write(
@@ -339,6 +346,7 @@ class Command(BaseCommand):
         self.stdout.write(
             f"enrolled: cohort={done.cohort} expected={done.expected} seeded={done.seeded}"
             f" import_held_fields={done.import_held_fields}"
+            + (f" reseeded={done.reseeded} superseded={done.superseded}" if done.superseded else "")
         )
 
     # -- helpers ---------------------------------------------------------------

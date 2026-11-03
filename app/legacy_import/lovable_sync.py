@@ -57,6 +57,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from app.legacy_import.lovable_pilot import (
@@ -74,6 +75,7 @@ from app.legacy_import.lovable_source import (
 )
 from app.legacy_import.lovable_sync_labels import LOVABLE_COHORT_LABELS
 from app.legacy_import.lovable_sync_models import (
+    LovableSyncBaselineArchive,
     LovableSyncCohort,
     LovableSyncControl,
     LovableSyncDecision,
@@ -101,6 +103,11 @@ EXPECTED_COHORT = 100
 #: enrolled (`enroll`).
 PILOT_COHORT = PILOT
 ENROLLABLE_COHORTS = (OPERATIONAL_COHORT,)
+#: Cohorts a rebuild may supersede (`enroll --supersede`): only the pilot.
+SUPERSEDABLE_COHORTS = (PILOT_COHORT,)
+#: The provenance kinds that make a Teema a member of an enrolled cohort: a
+#: Teema the package created, and a pilot Teema it rebased in place (ADR 0202 §1).
+MEMBER_KINDS = ("MATTER", "REBASE")
 
 #: The import's own review hold (docs/adr/0202 §3): a Lovable column the
 #: package's `field_decisions` marks thus is seeded ``import_held``.
@@ -311,12 +318,16 @@ def pilot_cohort() -> Cohort:
 
 
 def cohorts() -> list[Cohort]:
-    """The pilot, then every enrolled cohort. Reads only: no control row, no state."""
+    """The pilot (until a rebuild retires it), then every enrolled cohort that is
+    not retired. Reads only: no control row, no state."""
+    rows = list(LovableSyncCohort.objects.order_by("enrolled_at", "key"))
+    retired = {row.key for row in rows if row.retired_at is not None}
     enrolled = [
         Cohort(row.key, row.pilot, row.package_sha256, row.expected)
-        for row in LovableSyncCohort.objects.order_by("enrolled_at", "key")
+        for row in rows
+        if row.retired_at is None and row.key != PILOT_COHORT
     ]
-    return [pilot_cohort(), *enrolled]
+    return ([] if PILOT_COHORT in retired else [pilot_cohort()]) + enrolled
 
 
 def expected_cohorts() -> dict[str, int]:
@@ -330,19 +341,14 @@ def expected_total() -> int:
     return sum(expected_cohorts().values())
 
 
-def cohort_references(cohort: Cohort | None = None) -> Any:
-    """A cohort's canonical Lovable source references — one per Teema its
-    approved provenance names, never one of the 13 that were there before (they
-    have no record) and never a Teema found by its reference number."""
-    from app.legacy_import.models import EvidencePilotRecord, MatterSourceReference
+def _canonical_references(matter_ids: Any) -> Any:
+    """The canonical Lovable source references of these Teemad: an import's own
+    (never one the synchronisation appended for a new OneNote link)."""
+    from app.legacy_import.models import MatterSourceReference
 
-    cohort = cohort or pilot_cohort()
-    records = EvidencePilotRecord.objects.filter(pilot=cohort.pilot, record_kind="MATTER")
-    if cohort.package_sha256:
-        records = records.filter(package_sha256=cohort.package_sha256)
     return (
         MatterSourceReference.objects.filter(
-            matter_id__in=records.values("matter_id"),
+            matter_id__in=matter_ids,
             source_system=SOURCE_SYSTEM,
             source_file_name=SOURCE_TABLE,
             import_batch__isnull=False,
@@ -351,6 +357,47 @@ def cohort_references(cohort: Cohort | None = None) -> Any:
         .select_related("matter")
         .order_by("created_at")
     )
+
+
+def cohort_references(cohort: Cohort | None = None) -> list[Any]:
+    """A cohort's canonical Lovable source references — one per Teema its
+    approved provenance names, never one of the 13 that were there before (they
+    have no record) and never a Teema found by its reference number.
+
+    For an enrolled cohort the members are the package's MATTER (created) and
+    REBASE (a pilot Teema brought to the snapshot in place) records, and each
+    member's reference is the one the package wrote — its import batch — not the
+    pilot's older one (docs/adr/0202 §6)."""
+    from app.legacy_import.models import EvidencePilotRecord, ImportBatch
+
+    cohort = cohort or pilot_cohort()
+    if cohort.builtin:
+        records = EvidencePilotRecord.objects.filter(pilot=PILOT, record_kind="MATTER")
+        return list(_canonical_references(records.values("matter_id")))
+    members = list(
+        EvidencePilotRecord.objects.filter(
+            pilot=cohort.pilot,
+            package_sha256=cohort.package_sha256,
+            record_kind__in=MEMBER_KINDS,
+        ).values_list("matter_id", "record_kind", "target_model", "target_id")
+    )
+    created = {matter for matter, kind, *_ in members if kind == "MATTER"}
+    references = list(_canonical_references({matter for matter, *_ in members}))
+    # The package's import batch: the one its created Teemad's references are
+    # in, and the batch the importer named after the package.
+    batches = {r.import_batch_id for r in references if r.matter_id in created}
+    batches |= set(
+        ImportBatch.objects.filter(
+            importer_version__startswith=f"{cohort.pilot}/",
+            notes__contains=cohort.package_sha256,
+        ).values_list("pk", flat=True)
+    )
+    named = {
+        str(target)
+        for _, kind, model, target in members
+        if kind == "REBASE" and model == "legacy_import.MatterSourceReference" and target
+    }
+    return [r for r in references if r.import_batch_id in batches or str(r.pk) in named]
 
 
 def _action_dict(action: Any) -> dict[str, Any] | None:
@@ -366,7 +413,9 @@ def _action_dict(action: Any) -> dict[str, Any] | None:
     }
 
 
-def _imported_action(matter: Any, pilot: str = PILOT) -> tuple[dict[str, Any] | None, str]:
+def _imported_action(
+    matter: Any, pilot: str = PILOT, package_sha256: str = ""
+) -> tuple[dict[str, Any] | None, str]:
     """The step the import wrote and the treatment its package stated. ``pilot``
     is the cohort's provenance key: the step is looked up under it, never under
     another importer's.
@@ -381,9 +430,12 @@ def _imported_action(matter: Any, pilot: str = PILOT) -> tuple[dict[str, Any] | 
     from app.legacy_import.models import EvidencePilotRecord
     from app.workflow.models import NextAction
 
-    record = EvidencePilotRecord.objects.filter(
+    records = EvidencePilotRecord.objects.filter(
         pilot=pilot, matter=matter, record_kind="NEXT_ACTION"
-    ).first()
+    )
+    if package_sha256:
+        records = records.filter(package_sha256=package_sha256)
+    record = records.order_by("-created_at").first()
     if record is None or record.target_id is None:
         return None, ""
     action = NextAction.objects.filter(pk=record.target_id).first()
@@ -434,37 +486,101 @@ def _imported_owner_id(matter: Any) -> str | None:
     return str(users[0]) if len(users) == 1 else "?"
 
 
-def seed_state(reference: Any, cohort: Cohort | None = None) -> LovableSyncState:
+def seed_values(
+    reference: Any, cohort: Cohort | None = None, previous: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """A's first value, from what the import wrote — never from the current row,
     which may already hold a lawyer's edit.
 
     For an enrolled cohort, every field the package held for review
     (`HELD_FOR_REVIEW`) is marked ``import_held`` (docs/adr/0202 §6). The pilot's
-    baselines are seeded exactly as 0192 seeds them."""
+    baselines are seeded exactly as 0192 seeds them.
+
+    ``previous`` is a rebased Teema's pilot baseline. Where the snapshot says
+    what the pilot's snapshot said, the rebuild wrote nothing, so what the pilot
+    import gave Juristid stays the target: a lawyer's value since then is still
+    a local value, never a silent convergence. Where the source moved, the
+    rebuild wrote it (or held it), and the target is what Juristid holds now."""
     cohort = cohort or pilot_cohort()
     matter = reference.matter
     raw = reference.source_row_raw or {}
     bundle = {"row": raw.get("row") or {}, "commencements": raw.get("commencements") or []}
     source = canonical_source(bundle)
-    action, treatment = _imported_action(matter, cohort.pilot)
+    action, treatment = _imported_action(matter, cohort.pilot, cohort.package_sha256)
     applied: dict[str, Any] = {key: {"source": value} for key, value in source.items()}
     applied["title"]["target"] = text_value(reference.source_title)
     applied["owner"]["target"] = _imported_owner_id(matter)
     applied["onenote_link"]["target"] = reference.onenote_url
     applied["next_action"] = {"target": action, "treatment": treatment}
+    if previous is not None:
+        for name in ("title", "owner", "onenote_link"):
+            before = previous.get(name) or {}
+            if "target" not in before:
+                continue
+            if before.get("source") == source[name]:
+                applied[name]["target"] = before["target"]
+            elif name == "owner":
+                applied[name]["target"] = str(matter.owner_id) if matter.owner_id else None
     if not cohort.builtin:
         for name in import_held_fields(raw):
             applied[name]["import_held"] = True
     lovable = raw.get("lovable") or {}
+    return {
+        "source_id": lovable["id"],
+        "reference": f"{matter.reference_year}_{matter.reference_number}",
+        "cohort": cohort.key,
+        "applied": applied,
+        "applied_version": lovable.get("version"),
+        "applied_snapshot_sha256": reference.source_snapshot_sha256,
+    }
+
+
+def seed_state(reference: Any, cohort: Cohort | None = None) -> LovableSyncState:
+    """A new state for a Teema, seeded by `seed_values`."""
     return LovableSyncState.objects.create(
-        matter=matter,
-        source_id=lovable["id"],
-        reference=f"{matter.reference_year}_{matter.reference_number}",
-        cohort=cohort.key,
-        applied=applied,
-        applied_version=lovable.get("version"),
-        applied_snapshot_sha256=reference.source_snapshot_sha256,
+        matter=reference.matter, **seed_values(reference, cohort)
     )
+
+
+def reseed_state(
+    state: LovableSyncState, reference: Any, cohort: Cohort, *, reason: str
+) -> LovableSyncBaselineArchive:
+    """A rebased Teema's state, brought to the rebuild's snapshot in place
+    (docs/adr/0202 §6): its baseline and last observation are archived exactly as
+    they were, then the same row takes the rebuild's baseline, with nothing
+    observed yet. Its runs and decisions keep pointing at it."""
+    archive = LovableSyncBaselineArchive.objects.create(
+        state=state,
+        matter_id=state.matter_id,
+        cohort_before=state.cohort,
+        cohort_after=cohort.key,
+        applied=state.applied,
+        applied_version=state.applied_version,
+        applied_snapshot_sha256=state.applied_snapshot_sha256,
+        observed=state.observed,
+        observed_version=state.observed_version,
+        observed_run_id=state.observed_run_id,
+        archived_at=timezone.now(),
+        reason=reason[:300],
+        package_sha256=cohort.package_sha256,
+    )
+    values = seed_values(reference, cohort, previous=state.applied)
+    if str(values["source_id"]) != str(state.source_id):
+        raise SyncRefused(
+            "IDENTITY_MISMATCH", "A rebased Teema's new reference names another Lovable topic."
+        )
+    LovableSyncState.objects.filter(pk=state.pk).update(
+        cohort=values["cohort"],
+        reference=values["reference"],
+        applied=values["applied"],
+        applied_version=values["applied_version"],
+        applied_snapshot_sha256=values["applied_snapshot_sha256"],
+        observed={},
+        observed_version=None,
+        observed_run=None,
+        updated_at=timezone.now(),
+    )
+    return archive
 
 
 def import_held_fields(raw: dict[str, Any]) -> list[str]:
@@ -505,18 +621,17 @@ def population() -> list[LovableSyncState]:
 
 
 def not_yet_read(states: Iterable[LovableSyncState], snapshot: LovableSyncSnapshot) -> set[Any]:
-    """The states a stored reading never held because their cohort was enrolled
-    after it was taken. A check (`Kontrolli muudatusi`) skips them — no decision,
-    not missing — until the next run reads them."""
+    """The states whose cohort was enrolled after a stored reading was taken. A
+    created Teema was never in that reading; a rebased one was, but against the
+    pilot's baseline, which the rebuild has replaced. A check (`Kontrolli
+    muudatusi`) skips both — no decision, not missing, no spurious change —
+    until the next run reads them against their new baseline."""
     late = set(
-        LovableSyncCohort.objects.filter(enrolled_at__gt=snapshot.taken_at).values_list(
-            "key", flat=True
-        )
+        LovableSyncCohort.objects.filter(
+            enrolled_at__gt=snapshot.taken_at, retired_at__isnull=True
+        ).values_list("key", flat=True)
     )
-    if not late:
-        return set()
-    held = (snapshot.document or {}).get("cohort") or {}
-    return {s.pk for s in states if s.cohort in late and str(s.source_id) not in held}
+    return {s.pk for s in states if s.cohort in late}
 
 
 def cohort_size_problem(states: Iterable[LovableSyncState]) -> tuple[str, int, int] | None:
@@ -1798,17 +1913,33 @@ class Enrolment:
     seeded: int
     import_held_fields: int
     already: bool = False
+    #: Rebased Teemad whose state was archived and re-seeded in place.
+    reseeded: int = 0
+    #: The cohort the enrolment retired (`--supersede`), or "".
+    superseded: str = ""
 
 
-def enroll(*, cohort: str, package_sha256: str, expect: int, reason: str) -> Enrolment:
+def enroll(
+    *, cohort: str, package_sha256: str, expect: int, reason: str, supersede: str = ""
+) -> Enrolment:
     """Enrol an imported cohort in the nightly comparison (docs/adr/0202 §6).
 
     The cohort's Teemad are exactly the Matters its approved provenance names
-    (`EvidencePilotRecord(pilot=cohort, package_sha256=…, record_kind="MATTER")`),
-    each with exactly one canonical Lovable source reference. The row and every
-    state are written in one transaction, under the run lock, with baselines
-    from the import snapshot (`seed_state`). No Teema is written; no existing
-    state is touched. The same enrolment again is a no-op."""
+    (`EvidencePilotRecord(pilot=cohort, package_sha256=…, record_kind=MATTER or
+    REBASE)`), each with exactly one canonical Lovable source reference written by
+    the package. Everything happens in one transaction, under the run lock, and
+    no Teema is written.
+
+    * A created Teema gets a state seeded from its import (`seed_state`).
+    * A rebased pilot Teema keeps its state row: with ``supersede`` naming the
+      pilot, its baseline and last observation are archived
+      (`LovableSyncBaselineArchive`) and the same row is re-seeded from the
+      rebuild's reference (`reseed_state`). Every pilot state must be rebased,
+      and the pilot is retired. Without ``supersede`` a Teema that already has a
+      state refuses the enrolment.
+    * The run and decision ledger is never touched.
+
+    The same enrolment again is a no-op."""
     from app.legacy_import.models import EvidencePilotRecord
 
     reason = text_value(reason)
@@ -1816,6 +1947,8 @@ def enroll(*, cohort: str, package_sha256: str, expect: int, reason: str) -> Enr
         raise SyncRefused("PILOT_BUILT_IN", "The pilot is the built-in cohort; it is not enrolled.")
     if cohort not in ENROLLABLE_COHORTS:
         raise SyncRefused("UNKNOWN_COHORT", f"Unknown cohort {cohort!r}.")
+    if supersede and supersede not in SUPERSEDABLE_COHORTS:
+        raise SyncRefused("UNKNOWN_SUPERSEDE", f"Cohort {supersede!r} cannot be superseded.")
     if not re.fullmatch(r"[0-9a-f]{64}", package_sha256 or ""):
         raise SyncRefused("BAD_DIGEST", "The package digest must be 64 lower-case hex digits.")
     if expect <= 0:
@@ -1837,15 +1970,24 @@ def enroll(*, cohort: str, package_sha256: str, expect: int, reason: str) -> Enr
                     LovableSyncState.objects.filter(cohort=cohort).count(),
                     0,
                     already=True,
+                    superseded=supersede,
                 )
             raise SyncRefused(
                 "COHORT_ENROLLED", f"Cohort {cohort} is already enrolled with another package."
             )
+        if (
+            supersede
+            and LovableSyncCohort.objects.filter(key=supersede, retired_at__isnull=False).exists()
+        ):
+            raise SyncRefused("ALREADY_RETIRED", f"Cohort {supersede} is already retired.")
         target = Cohort(cohort, cohort, package_sha256, expect)
-        records = EvidencePilotRecord.objects.filter(
-            pilot=cohort, package_sha256=package_sha256, record_kind="MATTER"
+        members = list(
+            EvidencePilotRecord.objects.filter(
+                pilot=cohort, package_sha256=package_sha256, record_kind__in=MEMBER_KINDS
+            ).values_list("matter_id", "record_kind")
         )
-        matter_ids = list(records.values_list("matter_id", flat=True))
+        matter_ids = [matter for matter, _ in members]
+        rebased = {matter for matter, kind in members if kind == "REBASE"}
         if len(matter_ids) != expect or len(set(matter_ids)) != expect:
             raise SyncRefused(
                 "COUNT_MISMATCH",
@@ -1854,7 +1996,7 @@ def enroll(*, cohort: str, package_sha256: str, expect: int, reason: str) -> Enr
         references: dict[Any, list[Any]] = {}
         for reference in cohort_references(target):
             references.setdefault(reference.matter_id, []).append(reference)
-        source_ids: list[str] = []
+        source_ids: dict[Any, str] = {}
         for matter_id in matter_ids:
             found = references.get(matter_id, [])
             source_id = (
@@ -1868,13 +2010,31 @@ def enroll(*, cohort: str, package_sha256: str, expect: int, reason: str) -> Enr
                     f"{len(found)} canonical Lovable source references (with a Lovable id) "
                     "for one of the cohort's Teemad, not exactly one.",
                 )
-            source_ids.append(str(source_id))
-        if len(set(source_ids)) != len(source_ids):
+            source_ids[matter_id] = str(source_id)
+        if len(set(source_ids.values())) != len(source_ids):
             raise SyncRefused("DUPLICATE_SOURCE", "Two of the cohort's Teemad name one source.")
-        taken = LovableSyncState.objects.filter(source_id__in=source_ids).count()
-        taken += (
-            LovableSyncState.objects.filter(matter_id__in=matter_ids)
-            .exclude(source_id__in=source_ids)
+
+        superseded: dict[Any, LovableSyncState] = {}
+        if supersede:
+            old = list(LovableSyncState.objects.select_for_update().filter(cohort=supersede))
+            missing = [s for s in old if s.matter_id not in rebased]
+            if missing:
+                raise SyncRefused(
+                    "SUPERSEDE_INCOMPLETE",
+                    f"{len(missing)} Teemad of {supersede} are not rebased by this package.",
+                )
+            for state in old:
+                if str(state.source_id) != source_ids[state.matter_id]:
+                    raise SyncRefused(
+                        "IDENTITY_MISMATCH",
+                        "A rebased Teema's new reference names another Lovable topic.",
+                    )
+            superseded = {state.matter_id: state for state in old}
+        taken = (
+            LovableSyncState.objects.filter(
+                Q(source_id__in=list(source_ids.values())) | Q(matter_id__in=matter_ids)
+            )
+            .exclude(pk__in=[s.pk for s in superseded.values()])
             .count()
         )
         if taken:
@@ -1882,19 +2042,54 @@ def enroll(*, cohort: str, package_sha256: str, expect: int, reason: str) -> Enr
                 "ALREADY_SYNCHRONISED",
                 f"{taken} of the cohort's Teemad are already synchronised (in another cohort).",
             )
+
+        now = timezone.now()
         LovableSyncCohort.objects.create(
             key=cohort,
             pilot=cohort,
             package_sha256=package_sha256,
             expected=expect,
-            enrolled_at=timezone.now(),
+            enrolled_at=now,
             reason=reason[:300],
         )
-        held = 0
+        held = reseeded = 0
+        archive_reason = f"Asendatud kohordiga {cohort} (pakett {package_sha256}): {reason}"
         for matter_id in matter_ids:
-            state = seed_state(references[matter_id][0], target)
-            held += len(held_by_import(state.applied))
-    return Enrolment(cohort, expect, len(matter_ids), held)
+            reference = references[matter_id][0]
+            if matter_id in superseded:
+                reseed_state(superseded[matter_id], reference, target, reason=archive_reason)
+                applied = LovableSyncState.objects.get(pk=superseded[matter_id].pk).applied
+                reseeded += 1
+            else:
+                applied = seed_state(reference, target).applied
+            held += len(held_by_import(applied))
+        if supersede:
+            first = (
+                LovableSyncState.objects.filter(pk__in=[s.pk for s in superseded.values()])
+                .order_by("created_at")
+                .values_list("created_at", flat=True)
+                .first()
+            )
+            LovableSyncCohort.objects.update_or_create(
+                key=supersede,
+                defaults={
+                    "pilot": supersede,
+                    "package_sha256": "",
+                    "expected": EXPECTED_COHORT if supersede == PILOT_COHORT else len(superseded),
+                    "enrolled_at": first or now,
+                    "reason": "Sisseehitatud piloodikohort (docs/adr/0192).",
+                    "retired_at": now,
+                    "retired_reason": archive_reason[:300],
+                },
+            )
+    return Enrolment(
+        cohort,
+        expect,
+        len(matter_ids),
+        held,
+        reseeded=reseeded,
+        superseded=supersede,
+    )
 
 
 def summary_lines(run: LovableSyncRun) -> list[str]:
@@ -1919,8 +2114,8 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
     if run.mode != SyncMode.APPLY or run.status == SyncRunStatus.REVIEW_ONLY:
         lines.append(f"Ohutuid uuendusi rakendamata: {c.get('eligible_unapplied', 0)}")
     by_cohort = c.get("by_cohort") or {}
-    if len(by_cohort) > 1:
-        # Only when a cohort has joined the pilot: the pilot alone reads as before.
+    if by_cohort and set(by_cohort) != {PILOT_COHORT}:
+        # Only when the population is not the pilot alone: the pilot reads as before.
         for key, part in by_cohort.items():
             lines.append(
                 f"{LOVABLE_COHORT_LABELS.get(key, key)}: kontrollitud {part.get('checked', 0)}"

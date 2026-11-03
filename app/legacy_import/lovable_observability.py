@@ -221,6 +221,9 @@ class SyncStatus(_AsDict):
     #: ``states`` now, and the newest reconciled run's ``checked``, ``review``,
     #: ``import_held``, ``stopped_active`` and ``activity``. Counts only.
     cohorts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: Whether the population is other than the pilot alone (the pages then show
+    #: the per-cohort rows).
+    per_cohort: bool = False
 
 
 @dataclass
@@ -1768,8 +1771,10 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         ),
     )
     cohorts = _cohort_status(expected, held_by_cohort, last_run)
-    if len(cohorts) > 1:
-        # Per cohort only once one has joined the pilot: the pilot alone reads as before.
+    per_cohort = set(cohorts) != {lovable_sync.PILOT_COHORT}
+    if per_cohort:
+        # Per cohort once the population is not the pilot alone (enrolled, or
+        # rebuilt): the pilot alone reads as before.
         indicators += [_cohort_indicator(key, part, last_run) for key, part in cohorts.items()]
     return SyncStatus(
         mode=mode,
@@ -1798,6 +1803,7 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         retention_last_success_at=health.retention_last_success_at,
         retention_freshness=_freshness(health.retention_last_success_at, moment),
         cohorts=cohorts,
+        per_cohort=per_cohort,
     )
 
 

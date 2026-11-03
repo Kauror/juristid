@@ -1,6 +1,6 @@
 """The nightly Lovable synchronisation's records (docs/adr/0192, 0202).
 
-Five tables, kept apart from the importers' immutable provenance:
+Six tables, kept apart from the importers' immutable provenance:
 
 * `LovableSyncControl` — one row: whether the job may run, and whether it may
   write. Final cutover sets ``cut_over`` and nothing turns it back;
@@ -14,7 +14,11 @@ Five tables, kept apart from the importers' immutable provenance:
 * `LovableSyncCohort` — each cohort **enrolled** after the pilot (docs/adr/0202
   §6): the approved package digest whose provenance defines it and how many
   Teemad it must hold. The pilot (`lovable-pilot`, 100 Teemad) is built in and
-  has no row; `LovableSyncState.cohort` says which cohort a state belongs to.
+  has a row only once a rebuild retires it (``retired_at``);
+  `LovableSyncState.cohort` says which cohort a state belongs to;
+* `LovableSyncBaselineArchive` — a rebased Teema's baseline and last
+  observation exactly as they were before the rebuild re-seeded its state in
+  place (docs/adr/0202 §6). Written once; never changed, never deleted.
 """
 
 from __future__ import annotations
@@ -207,6 +211,10 @@ class LovableSyncCohort(BaseModel):
     expected = models.PositiveIntegerField()
     enrolled_at = models.DateTimeField()
     reason = models.CharField(max_length=300)
+    #: When a rebuild superseded this cohort (`enroll --supersede`): its Teemad
+    #: belong to the rebuilt cohort since, and the size check no longer expects it.
+    retired_at = models.DateTimeField(null=True, blank=True)
+    retired_reason = models.CharField(max_length=300, blank=True)
 
     class Meta:
         verbose_name = "Lovable sünkroonimise kohort"
@@ -214,3 +222,41 @@ class LovableSyncCohort(BaseModel):
 
     def __str__(self) -> str:
         return self.key
+
+
+class LovableSyncBaselineArchive(BaseModel):
+    """A state's baseline and last observation before a rebuild re-seeded it.
+
+    An exact copy of the `LovableSyncState` columns at that moment, so the
+    evidence of what the pilot's comparison knew stays readable. The run and
+    decision ledger is not copied: it keeps pointing at the same state row."""
+
+    state = models.ForeignKey(
+        LovableSyncState, on_delete=models.PROTECT, related_name="baseline_archives"
+    )
+    matter = models.ForeignKey(
+        "matters.Matter", on_delete=models.PROTECT, related_name="lovable_baseline_archives"
+    )
+    cohort_before = models.CharField(max_length=64)
+    cohort_after = models.CharField(max_length=64)
+    applied = models.JSONField(default=dict)
+    applied_version = models.IntegerField(null=True, blank=True)
+    applied_snapshot_sha256 = models.CharField(max_length=64, blank=True)
+    observed = models.JSONField(default=dict, blank=True)
+    observed_version = models.IntegerField(null=True, blank=True)
+    observed_run = models.ForeignKey(
+        LovableSyncRun, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    archived_at = models.DateTimeField()
+    reason = models.CharField(max_length=300)
+    #: The rebuild package whose enrolment re-seeded the state.
+    package_sha256 = models.CharField(max_length=64)
+
+    class Meta:
+        verbose_name = "Lovable sünkroonimise arhiveeritud lähtekoht"
+        ordering = ["archived_at"]
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ImmutableRecordError("Arhiveeritud lähtekohta ei muudeta.")
+        super().save(*args, **kwargs)

@@ -391,6 +391,7 @@ from app.legacy_import.lovable_observation_models import (  # noqa: E402
     LovableSourceEventField,
 )
 from app.legacy_import.lovable_sync_models import (  # noqa: E402
+    LovableSyncBaselineArchive,
     LovableSyncCohort,
     LovableSyncControl,
     LovableSyncDecision,
@@ -764,6 +765,7 @@ __all__ = [
     "LovableRetentionRun",
     "LovableSourceEvent",
     "LovableSourceEventField",
+    "LovableSyncBaselineArchive",
     "LovableSyncCohort",
     "LovableSyncControl",
     "LovableSyncDecision",

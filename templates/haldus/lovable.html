@@ -111,7 +111,7 @@
       <dt>Toorandmete viimane kustutamine</dt><dd>{% if status.retention_last_success_at %}{{ status.retention_last_success_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
     </dl>
     <p class="acctnote">Vaatluse seire on punane, kui laiem vaatlus on sisse lülitatud ja viimane lugemine ebaõnnestus, käib üle kahe tunni, õnnestunud lugemist pole {{ stale_hours }} tunni jooksul või lubatud muutmisajalugu pole loetav — ning alati, kui vaatluse toorandmeid on, kuid nende kustutamine ebaõnnestus või pole {{ stale_hours }} tunni jooksul õnnestunud. Sama rida on käsu production_status väljundis («Lovable observation»).</p>
-    {% if status.cohorts|length > 1 %}
+    {% if status.per_cohort %}
       <div class="accttable">
         <table class="data-table">
           <caption>Sünkroonitavad kohordid (viimane võrdlus)</caption>

@@ -59,6 +59,7 @@ from app.legacy_import.lovable_sync import (
 )
 from app.legacy_import.lovable_sync_labels import LOVABLE_FIELD_LABELS, LOVABLE_REASONS
 from app.legacy_import.lovable_sync_models import (
+    LovableSyncBaselineArchive,
     LovableSyncDecision,
     LovableSyncRun,
     LovableSyncSnapshot,
@@ -162,6 +163,10 @@ VERIFY_STOPPED_NIGHT = (
     "ei kirjutatud. Seda lugemist ei kasutata järgmise öö võrdluses."
 )
 UNEXPLAINED_NOTE = "Selle öö võrdlus ei salvestanud selle välja kohta otsust."
+REBASED_NOTE = (
+    "Lovable'i registri ümberehitus viis teema selle lugemise seisu; "
+    "uus lähtekoht ja Juristid on kooskõlas."
+)
 
 NO_CHANGES = "Lovable'is ei tuvastatud muudatusi."
 FIRST_READING = "Esimene öine lugemine: see on lähtepunkt. Muudatusi näeb alates järgmisest ööst."
@@ -331,6 +336,7 @@ def _result(
     resolved_at: dt.datetime | None,
     night: LovableSyncRun,
     reconciled: bool,
+    rebased: bool = False,
 ) -> tuple[str, str]:
     """One changed field's answer, from recorded evidence only.
 
@@ -352,6 +358,11 @@ def _result(
     if decision is None:
         if converged_in is not None:
             return SAME, _elsewhere(converged_in, night)
+        if rebased:
+            # The rebuild re-seeded this Teema's baseline from a reading that
+            # already held the value (docs/adr/0202 §6), and the night found
+            # nothing to record: Lovable, the baseline and Juristid agree.
+            return SAME, REBASED_NOTE
         # Not recorded, with no write, convergence or resolution to explain it:
         # the night gives no evidence either way, so it is not said to be «sama».
         return UNKNOWN, UNEXPLAINED_NOTE
@@ -395,6 +406,7 @@ def _compare(
     converged: dict[tuple[Any, str], list[tuple[LovableSyncRun, Any]]],
     resolutions: dict[tuple[Any, str], list[tuple[dt.datetime, Any]]],
     baseline_started: dt.datetime | None = None,
+    rebased: frozenset[Any] = frozenset(),
 ) -> None:
     run = night.run
     reconciled = run_reconciled(run)
@@ -441,6 +453,7 @@ def _compare(
                     ),
                     night=run,
                     reconciled=reconciled,
+                    rebased=state.pk in rebased,
                 )
                 topic.fields.append(
                     FieldChange(
@@ -549,6 +562,8 @@ def nightly_history(
         .order_by("run__started_at")
     )
 
+    # When each rebased Teema's baseline was re-seeded (docs/adr/0202 §6).
+    archives = list(LovableSyncBaselineArchive.objects.values_list("state_id", "archived_at"))
     nights = []
     for run in shown_runs:
         night = Night(
@@ -612,6 +627,13 @@ def nightly_history(
             converged=window_converged,
             resolutions=resolutions,
             baseline_started=baseline.snapshot_taken_at or baseline.started_at,
+            rebased=frozenset(
+                state_id
+                for state_id, at in archives
+                if (baseline.snapshot_taken_at or baseline.started_at)
+                < at
+                <= (run.snapshot_taken_at or run.started_at)
+            ),
         )
         if not night.changed_topics and not night.hidden:
             night.message = NO_CHANGES
