@@ -73,6 +73,17 @@ EXPECTED_SKIPS: tuple[ExpectedSkip, ...] = (
         ),
     ),
     ExpectedSkip(
+        node="tests/test_lovable_pending_history.py::test_scale_250_teemad_by_30_nights",
+        reason_starts_with="scale measurement, run on demand",
+        why=(
+            "An opt-in measurement, not a check: it times the pending-history read at "
+            "250 synchronised Teemad over 30 nights (docs/adr/0202 §6). Its behaviour is "
+            "pinned by the two tests beside it — the answers agree with the reference walk "
+            "and the query count does not grow with nights; timing on a shared runner "
+            "would only be noise."
+        ),
+    ),
+    ExpectedSkip(
         node="tests/test_test_isolation.py::*",
         reason_starts_with="symlink creation needs a privilege on Windows",
         why="A platform skip. CI runs on Linux, where it never fires.",
