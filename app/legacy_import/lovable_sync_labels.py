@@ -107,6 +107,7 @@ LOVABLE_ACTIVITY_LABELS = {
 LOVABLE_COHORT_LABELS = {
     "lovable-pilot": "Piloot",
     "lovable-operational": "Operatiivne register",
+    "lovable-register": "Lovable'i register",
 }
 
 #: The readiness simulation's categories: what the *existing* rules would do
