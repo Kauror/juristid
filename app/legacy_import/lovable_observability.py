@@ -165,6 +165,8 @@ class Indicator(_AsDict):
     window: str
     #: ``None`` value + a reason when the number cannot be known.
     unavailable_reason: str = ""
+    #: Shown instead of the number when the value is a yes/no (e.g. «ei»).
+    display: str = ""
 
 
 @dataclass
@@ -444,70 +446,69 @@ NOT_COMPARED_IN_JURISTID = "Juristides seda välja Lovable'iga ei võrrelda."
 #: Advice only: nothing here does it.
 SUGGESTED_ACTIONS = {
     lovable_sync.TEXT_CHANGED: (
-        "Ava teema ja otsusta uus järgmine tegevus (tee/oota/jälgi); "
-        "seejärel `lovable_sync resolve`."
+        "Ava teema ja otsusta uus järgmine tegevus (tee/oota/jälgi). Rea märgib lahendatuks haldur."
     ),
     lovable_sync.WITH_TEXT: (
-        "Kuupäev käib koos uue sõnastusega: otsusta järgmine tegevus teemas; "
-        "seejärel `lovable_sync resolve`."
+        "Kuupäev käib koos uue sõnastusega: otsusta järgmine tegevus teemas. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.HELD: (
-        "Seda välja ei uuendata automaatselt: kanna muudatus vajadusel teemasse käsitsi; "
-        "seejärel `lovable_sync resolve`."
+        "Seda välja ei uuendata automaatselt: kanna muudatus vajadusel teemasse käsitsi. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.MATTER_CLOSED: (
-        "Teema on Juristides suletud: kontrolli, kas Lovable'i muudatus puudutab seda teemat; "
-        "seejärel `lovable_sync resolve`."
+        "Teema on Juristides suletud: kontrolli, kas Lovable'i muudatus puudutab seda teemat. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.NO_BASELINE: (
         "Viimati rakendatud väärtus pole teada: võrdle teemat Lovable'iga ja "
-        "kinnita väärtus käsuga `lovable_sync resolve`."
+        "teata haldurile, milline väärtus kehtib."
     ),
     lovable_sync.UNRESOLVED_OWNER: (
-        "Vastutaja nimi ei vasta üheselt ühele kasutajale: määra vastutaja teemas käsitsi; "
-        "seejärel `lovable_sync resolve`."
+        "Vastutaja nimi ei vasta üheselt ühele kasutajale: määra vastutaja teemas käsitsi. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.NOT_ASSIGNABLE: (
-        "Sellele inimesele ei saa praegu tööd määrata: määra vastutaja teemas käsitsi; "
-        "seejärel `lovable_sync resolve`."
+        "Sellele inimesele ei saa praegu tööd määrata: määra vastutaja teemas käsitsi. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.TITLE_REVIEWED: (
-        "Pealkiri vaadati impordil üle: otsusta, kas Lovable'i uus pealkiri kehtib; "
-        "seejärel `lovable_sync resolve`."
+        "Pealkiri vaadati impordil üle: otsusta, kas Lovable'i uus pealkiri kehtib. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.TITLE_EMPTY: "Lovable'i pealkiri on tühi: jäta Juristide pealkiri alles.",
     lovable_sync.NO_STEP: (
-        "Juristides pole Lovable'ist tulnud tegevust: lisa tegevus teemas käsitsi; "
-        "seejärel `lovable_sync resolve`."
+        "Juristides pole Lovable'ist tulnud tegevust: lisa tegevus teemas käsitsi. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.NOT_SOURCE_STEP: (
-        "Juristide tegevus pole Lovable'i sõnastus: muuda kuupäeva vajadusel käsitsi; "
-        "seejärel `lovable_sync resolve`."
+        "Juristide tegevus pole Lovable'i sõnastus: muuda kuupäeva vajadusel käsitsi. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.DATE_CLEARED: (
-        "Lovable'is kustutati kuupäev: otsusta, kas tegevus jääb tähtajaga; "
-        "seejärel `lovable_sync resolve`."
+        "Lovable'is kustutati kuupäev: otsusta, kas tegevus jääb tähtajaga. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.DATE_PAST: (
-        "Uus kuupäev on möödas: otsusta teemas uus tähtaeg; seejärel `lovable_sync resolve`."
+        "Uus kuupäev on möödas: otsusta teemas uus tähtaeg. Rea märgib lahendatuks haldur."
     ),
     lovable_sync.NOT_EXACT: (
-        "Tegevuse kuupäev pole täpne päev: muuda kuupäeva vajadusel käsitsi; "
-        "seejärel `lovable_sync resolve`."
+        "Tegevuse kuupäev pole täpne päev: muuda kuupäeva vajadusel käsitsi. "
+        "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.LINK_NOT_HTTPS: "Link pole https-aadress: kontrolli linki Lovable'is.",
 }
 _SUGGESTED_BY_OUTCOME: dict[str, str] = {
     SyncOutcome.CONFLICT: (
-        "Juristides ja Lovable'is on erinev väärtus: võrdle neid teemas ja otsusta, kumb kehtib; "
-        "seejärel `lovable_sync resolve`."
+        "Juristides ja Lovable'is on erinev väärtus: võrdle neid teemas ja otsusta, kumb kehtib. "
+        "Rea märgib lahendatuks haldur."
     ),
     SyncOutcome.ELIGIBLE: (
         "Ohutu uuendus: rakendub alles siis, kui omanik lubab APPLY-režiimi; "
         "seni võib selle teemas käsitsi teha."
     ),
 }
-_SUGGESTED_DEFAULT = "Vaata muudatus teemas üle; seejärel `lovable_sync resolve`."
+_SUGGESTED_DEFAULT = "Vaata muudatus teemas üle. Rea märgib lahendatuks haldur."
 
 AUDIT_MESSAGES = {
     AuditAccess.DISABLED: (
@@ -522,6 +523,12 @@ AUDIT_MESSAGES = {
 }
 AUDIT_NOT_AVAILABLE_SHORT = "Lovable'i muutmisajalugu pole kättesaadav."
 NO_OBSERVATION = "Laiemat lugemist pole veel tehtud."
+#: Each night re-decides every pilot field still differing from what was last
+#: applied, so a night's tally is the whole open backlog, not that night's change.
+PENDING_TALLY_UNIT = (
+    "välja viimase võrdluse seisuga (kõik seni lahendamata erinevused, "
+    "mitte ainult selle öö muudatused)"
+)
 
 OBSERVATION_MESSAGES = {
     "BASELINE": "Esimene laiem lugemine: see on lähtepunkt. Muudatusi näeb alates järgmisest.",
@@ -1673,6 +1680,37 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
     )
 
 
+def _source_size(
+    key: str,
+    label: str,
+    noun: str,
+    observed: int | None,
+    observation: LovableObservationRun | None,
+    last_run: LovableSyncRun | None,
+    count_key: str,
+) -> Indicator:
+    """A source size from the newest wider reading, else from the pilot reading's
+    topic index (every pilot night reads the index of all live topics)."""
+    if observation is not None:
+        return _indicator(
+            key,
+            label,
+            observed,
+            f"{noun} viimases laiemas lugemises",
+            _local(observation.taken_at or observation.started_at),
+            NO_OBSERVATION,
+        )
+    counted = (last_run.counts or {}).get(count_key) if last_run is not None else None
+    return _indicator(
+        key,
+        label,
+        counted if isinstance(counted, int) else None,
+        f"{noun} piloodi lugemise teemaindeksis",
+        _local(last_run.started_at) if last_run is not None else "—",
+        NO_OBSERVATION,
+    )
+
+
 def _status_indicators(
     user: Any,
     moment: dt.datetime,
@@ -1692,7 +1730,7 @@ def _status_indicators(
     expected = lovable_sync.EXPECTED_COHORT
     start = moment - dt.timedelta(days=STATUS_PERIOD_DAYS)
     period = f"viimased {STATUS_PERIOD_DAYS} päeva ({_local(start)} – {_local(moment)})"
-    no_obs = "Laiemat lugemist pole veel tehtud."
+    no_obs = NO_OBSERVATION
     out = [
         _indicator(
             "latest_scheduled",
@@ -1715,12 +1753,13 @@ def _status_indicators(
             _local(last_success.started_at) if last_success else "—",
             "Õnnestunud käivitust pole olnud.",
         ),
-        _indicator(
+        Indicator(
             "mode",
             f"Režiim: {SyncMode(mode).label}",
             1 if apply_authorised else 0,
-            "Juristidesse kirjutamine lubatud (1 = jah, 0 = ei)",
+            "Juristidesse kirjutamine lubatud",
             "praegu",
+            display="jah" if apply_authorised else "ei",
         ),
         _indicator(
             "snapshot_freshness",
@@ -1745,21 +1784,23 @@ def _status_indicators(
             f"piloodi {expected} teemast",
             "praegu",
         ),
-        _indicator(
+        _source_size(
             "operational_observed",
             "Operatiivsed teemad Lovable'is",
+            "operatiivset teemat",
             operational,
-            "operatiivset teemat viimases laiemas lugemises",
-            _local(observation.taken_at or observation.started_at) if observation else "—",
-            no_obs,
+            observation,
+            last_run,
+            "source_operational",
         ),
-        _indicator(
+        _source_size(
             "live_indexed",
             "Kõik elavad teemad Lovable'is",
+            "elavat teemat",
             live,
-            "elavat teemat viimases laiemas lugemises",
-            _local(observation.taken_at or observation.started_at) if observation else "—",
-            no_obs,
+            observation,
+            last_run,
+            "source_live",
         ),
     ]
 
@@ -1843,7 +1884,7 @@ def _status_indicators(
                 key,
                 label,
                 tally.get(outcome, 0) if newest is not None else None,
-                "välja otsust viimases võrdluses",
+                PENDING_TALLY_UNIT,
                 night_window,
                 "Võrdlust pole veel salvestatud.",
             )
@@ -3030,7 +3071,7 @@ def _coverage(
                 f"outcome_{outcome.lower()}",
                 str(outcome.label),
                 tally.get(outcome, 0) if last_run is not None else None,
-                "välja otsust viimases piloodi võrdluses",
+                PENDING_TALLY_UNIT,
                 night,
                 "Võrdlust pole veel salvestatud.",
             )

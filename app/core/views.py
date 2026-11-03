@@ -366,6 +366,10 @@ def _lovable_filters(request: HttpRequest, view: str) -> LovableFilters:
                     found.since = reading.value
                 else:
                     found.until = reading.value
+        if found.since is not None and found.until is not None and found.since > found.until:
+            found.since, found.until = found.until, found.since
+            found.slugs["algus"], found.slugs["lopp"] = found.slugs["lopp"], found.slugs["algus"]
+            found.notes.append("Algus oli hiljem kui lõpp: kuupäevad vahetati.")
         last = found.until or _lovable_now().astimezone(TALLINN).date()
         if found.since is not None and abs((last - found.since).days) > MAX_WINDOW_DAYS:
             found.notes.append(

@@ -212,6 +212,16 @@ def test_an_unreadable_date_is_said_and_ignored(client, pilot, reader):
     assert "Valitsuses" in body
 
 
+def test_a_start_after_the_end_is_swapped_and_said(client, pilot, reader):
+    # Bug hunt 2026-11-03: «Algus» after «Lõpp» was taken silently.
+    _two_nights(pilot)
+    client.force_login(reader)
+    body = _get(client, "oised", algus="31.10.2026", lopp="27.10.2026")
+    assert "Algus oli hiljem kui lõpp: kuupäevad vahetati." in body
+    assert "Valitsuses" in body
+    assert 'value="27.10.2026"' in body and 'value="31.10.2026"' in body
+
+
 def test_a_date_window_outside_the_nights_shows_none(client, pilot, reader):
     _two_nights(pilot)
     client.force_login(reader)
@@ -240,7 +250,7 @@ def test_the_queue_lists_pending_fields_with_a_suggestion_and_no_button(client, 
     client.force_login(reader)
     body = _get(client, "ootel")
     assert "Hetkeseis" in body and "Valitsuses" in body
-    assert "lovable_sync resolve" in body
+    assert "Rea märgib lahendatuks haldur." in body and "lovable_sync" not in body
     assert "<button" not in body.split("lovqueue", 1)[1]
     assert "Valitsuses" not in _get(client, "ootel", viide="2026_502")
     assert "Valitsuses" in _get(client, "ootel", viide="2026/501")
@@ -409,7 +419,7 @@ def test_the_export_writes_the_filtered_nights(client, pilot, reader):
     assert "Valitsuses" in text and "Uus sõnastus 2026_502" not in text
     assert "Väli: Hetkeseis" in text
     queue = _xlsx_text(client.get(_url("ootel", name=EXPORT)))
-    assert "Valitsuses" in queue and "lovable_sync resolve" in queue
+    assert "Valitsuses" in queue and "Rea märgib lahendatuks haldur." in queue
 
 
 def test_a_formula_looking_value_is_text_in_the_workbook(client, pilot, reader):

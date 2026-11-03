@@ -2976,15 +2976,26 @@ fieldset.field > legend {
 
 /* The register gives up its columns in the order the design names: "viimane
    tegevus" first, then "hetkeseis" — rather than shrinking every column into
-   illegibility (UI_DESIGN_SPEC §viewports). */
+   illegibility (UI_DESIGN_SPEC §viewports). Only the default set does: columns
+   a reader ticked in «Vali veerud» (`.table--chosen`) stay, and the table
+   scrolls sideways inside its wrapper instead. */
+/* The chooser says so only where it happens. */
+.columnchooser__narrow {
+  display: none;
+}
+
 @media (max-width: 1200px) {
-  .table__lastactivity {
+  .table:not(.table--chosen) .table__lastactivity {
     display: none;
+  }
+
+  .columnchooser__narrow {
+    display: block;
   }
 }
 
 @media (max-width: 1000px) {
-  .table__stage {
+  .table:not(.table--chosen) .table__stage {
     display: none;
   }
 }
@@ -3021,7 +3032,7 @@ fieldset.field > legend {
     padding: var(--spacing-3) var(--spacing-3) 0;
   }
 
-  .table__stage {
+  .table:not(.table--chosen) .table__stage {
     display: none;
   }
 

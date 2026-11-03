@@ -76,6 +76,7 @@ somebody is typing into would move the caret on every keystroke.
             {% endfor %}
           </fieldset>
           <p class="columnchooser__preview" data-column-preview aria-live="polite">Tabelis: {{ column_preview }}</p>
+          {% if columns_are_default %}<p class="columnchooser__narrow muted">Kitsas aknas jätab vaikimisi tabel «Viimane tegevus» ja «Hetkeseis» veeru välja. Kui valid veerud ise, näidatakse kõiki valituid.</p>{% endif %}
           <div class="filterpanel__actions">
             <button class="button button--primary" type="submit" name="veerud" value="pealkiri">Rakenda</button>
             {% if not columns_are_default %}<a class="button button--quiet" href="?{{ columns_reset_query }}#tulemused">Vaikimisi veerud</a>{% endif %}

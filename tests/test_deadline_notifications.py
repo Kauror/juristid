@@ -227,6 +227,9 @@ def test_repeated_runs_create_nothing_twice(specialist, department_head):
 def test_management_gets_one_escalation_the_morning_after_and_never_again(
     specialist, department_head
 ):
+    # Without it the feature "starts" on the real day the test runs, and from
+    # 2026-11-03 on that is after this deadline, so no escalation was owed.
+    _feature_started(TODAY - timedelta(days=10))
     deadline = TODAY
     matter = _opinion(specialist, deadline)
     _run(TODAY)
