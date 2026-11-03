@@ -1,12 +1,15 @@
-"""The Lovable pilot (docs/adr/0191).
+"""The Lovable pilot and the active cohort (docs/adr/0191, docs/adr/0202).
 
     python manage.py lovable_pilot validate --package P
     python manage.py lovable_pilot plan     --package P
     python manage.py lovable_pilot dry-run  --package P
     python manage.py lovable_pilot apply    --package P \\
         --expect-package-sha256 D --expect-plan-sha256 E \\
-        --operator-intent lovable-pilot --backup-set sets/YYYYMMDDTHHMMSSZ
+        --operator-intent COHORT --backup-set sets/YYYYMMDDTHHMMSSZ \\
+        [--preserved-out F]
     python manage.py lovable_pilot verify   --package P
+    python manage.py lovable_pilot preserved --before F
+    python manage.py lovable_pilot source-drift --package P [--config F]
 
 `validate` checks the package with no database and prints its digest. `plan`
 resolves every person, stage, instrument and organisation, checks that every
@@ -18,6 +21,16 @@ package digest, the reviewed plan digest (recomputed under a lock), a named
 backup set and every reference free. Run again, it writes nothing. `verify`
 reads back what was written and compares it with the package.
 
+The package names its cohort (docs/adr/0202 §1): a version-1 package is
+``lovable-pilot``, a version-2 one ``lovable-active``; the intent typed at
+`apply` is the cohort. `apply --preserved-out` writes the per-Teema digests of
+every Teema that was already there, taken inside the transaction before the
+writes; `preserved --before` recomputes them afterwards and fails on any
+difference, naming references only. `source-drift` reads, through the
+synchronisation's GET-only transport and service login, the version and number
+of every package topic and lists those Lovable changed, renumbered or no longer
+shows since the snapshot — references and counts only.
+
 The package holds the Chamber's content: keep it outside the repository, CI and
 every ordinary development database.
 """
@@ -25,38 +38,78 @@ every ordinary development database.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from app.legacy_import import lovable_pilot
+from app.legacy_import import lovable_pilot, lovable_source
+from app.legacy_import.limits import load_json_document
 
 
 class Command(BaseCommand):
-    help = "Validate, plan, dry-run, apply or verify a Lovable-pilot package (docs/adr/0191)."
+    help = (
+        "Validate, plan, dry-run, apply or verify a Lovable package; check preserved Teemad "
+        "or source drift (docs/adr/0191, docs/adr/0202)."
+    )
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument("mode", choices=["validate", "plan", "dry-run", "apply", "verify"])
-        parser.add_argument("--package", required=True, help="The package file or directory.")
+        parser.add_argument(
+            "mode",
+            choices=[
+                "validate",
+                "plan",
+                "dry-run",
+                "apply",
+                "verify",
+                "preserved",
+                "source-drift",
+            ],
+        )
+        parser.add_argument("--package", default="", help="The package file or directory.")
         parser.add_argument("--expect-package-sha256", default="")
         parser.add_argument(
             "--expect-plan-sha256",
             default="",
             help="apply: the plan digest `plan` printed and a person reviewed. Required.",
         )
-        parser.add_argument("--operator-intent", default="")
+        parser.add_argument("--operator-intent", default="", help="apply: the package's cohort.")
         parser.add_argument(
             "--backup-set",
             default="",
             help="apply: the verified backup set taken before the import, sets/YYYYMMDDTHHMMSSZ.",
         )
+        parser.add_argument(
+            "--preserved-out",
+            default="",
+            help="apply: write the pre-existing Teemad's digests (taken before the writes) here.",
+        )
+        parser.add_argument(
+            "--before",
+            default="",
+            help="preserved: the digest file `apply --preserved-out` wrote.",
+        )
+        parser.add_argument(
+            "--config",
+            "--credentials",
+            dest="config",
+            default="",
+            help=(
+                "source-drift: the Lovable service-login file; without it the LOVABLE_SYNC_* "
+                "environment is read."
+            ),
+        )
         parser.add_argument("--json", action="store_true", help="Print a JSON summary.")
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["mode"] != "preserved" and not options["package"]:
+            raise CommandError(f"{options['mode']} needs --package.")
         try:
             getattr(self, "_" + options["mode"].replace("-", "_"))(options)
         except lovable_pilot.LovablePilotError as error:
             raise CommandError(str(error)) from error
+        except lovable_source.SourceError as error:
+            raise CommandError(f"{error.code}: {error}") from error
 
     def _validate(self, options: dict[str, Any]) -> None:
         package = lovable_pilot.load_package(options["package"])
@@ -65,6 +118,7 @@ class Command(BaseCommand):
             options,
             {
                 "package_sha256": lovable_pilot.package_digest(package),
+                "cohort": lovable_pilot.package_cohort(package),
                 "topics": report.topics,
                 "open_topics": report.open_topics,
                 "steps": report.steps,
@@ -82,6 +136,7 @@ class Command(BaseCommand):
     def _summary(self, plan: lovable_pilot.LovablePlan) -> dict[str, Any]:
         return {
             "package_sha256": plan.digest,
+            "cohort": plan.cohort,
             "plan_sha256": lovable_pilot.plan_digest(plan),
             "database_state": plan.database_state,
             "existing_matters": plan.existing_matters,
@@ -111,6 +166,7 @@ class Command(BaseCommand):
                 "matters_before": report.matters_before,
                 "matters_after_inside_transaction": report.matters_after,
                 "existing_unchanged": report.fingerprint_before == report.fingerprint_after,
+                "preserved_checked": len(report.preserved_before),
                 "verified": verify.checked,
                 "discrepancies": verify.discrepancies,
                 "held": verify.held,
@@ -131,20 +187,31 @@ class Command(BaseCommand):
         if report.already_applied:
             self.stdout.write(
                 self.style.WARNING(
-                    "Already applied: this package is in the database. Nothing was written."
+                    f"Already applied: this package ({plan.cohort}) is in the database. Nothing "
+                    "was written."
                 )
             )
             return
-        self._emit(
-            options,
-            {
-                "batch": str(report.batch_id),
-                "written": report.written,
-                "matters_before": report.matters_before,
-                "matters_after": report.matters_after,
-                "existing_unchanged": report.fingerprint_before == report.fingerprint_after,
-            },
-        )
+        summary: dict[str, Any] = {
+            "cohort": plan.cohort,
+            "batch": str(report.batch_id),
+            "written": report.written,
+            "matters_before": report.matters_before,
+            "matters_after": report.matters_after,
+            "existing_unchanged": report.fingerprint_before == report.fingerprint_after,
+            "preserved_checked": len(report.preserved_before),
+        }
+        if options["preserved_out"]:
+            document = lovable_pilot.preserved_document(
+                report.preserved_before, report.preserved_references
+            )
+            Path(options["preserved_out"]).write_text(
+                json.dumps(document, ensure_ascii=False, indent=1, sort_keys=True),
+                encoding="utf-8",
+            )
+            summary["preserved_out"] = options["preserved_out"]
+            summary["preserved_sha256"] = document["sha256"]
+        self._emit(options, summary)
 
     def _verify(self, options: dict[str, Any]) -> None:
         plan = self._build(options)
@@ -152,6 +219,7 @@ class Command(BaseCommand):
         self._emit(
             options,
             {
+                "cohort": plan.cohort,
                 "database_state": plan.database_state,
                 "checked": report.checked,
                 "discrepancies": report.discrepancies,
@@ -160,6 +228,50 @@ class Command(BaseCommand):
         )
         if not report.ok:
             raise CommandError(f"{len(report.discrepancies)} discrepancy(ies).")
+
+    def _preserved(self, options: dict[str, Any]) -> None:
+        if not options["before"]:
+            raise CommandError("preserved needs --before, the file `apply --preserved-out` wrote.")
+        try:
+            data = Path(options["before"]).read_bytes()
+        except OSError as error:
+            raise CommandError(f"The digest file cannot be read: {error}") from error
+        document = load_json_document(data, what="The preserved-digest file")
+        result = lovable_pilot.check_preserved(document)
+        self._emit(
+            options,
+            {
+                "checked": result.checked,
+                "unchanged": result.checked - len(result.changed) - len(result.missing),
+                "changed": sorted(result.changed),
+                "missing": sorted(result.missing),
+            },
+        )
+        if not result.ok:
+            raise CommandError(
+                f"{len(result.changed) + len(result.missing)} pre-existing Teema(s) differ."
+            )
+
+    def _source_drift(self, options: dict[str, Any]) -> None:
+        package = lovable_pilot.load_package(options["package"])
+        config = lovable_source.load_config(options["config"] or None)
+        drift = lovable_pilot.source_drift(package, lovable_source.HttpTransport(config))
+
+        def having(kind: str) -> list[str]:
+            return [d["reference"] for d in drift if kind in d["kinds"]]
+
+        self._emit(
+            options,
+            {
+                "package_sha256": lovable_pilot.package_digest(package),
+                "cohort": lovable_pilot.package_cohort(package),
+                "topics": len(package.get("topics") or []),
+                "drifted": len(drift),
+                "changed_version": having("VERSION"),
+                "renumbered": having("RENUMBERED"),
+                "missing": having("MISSING"),
+            },
+        )
 
     def _emit(self, options: dict[str, Any], summary: dict[str, Any]) -> None:
         if options["json"]:

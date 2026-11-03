@@ -551,9 +551,8 @@ def test_the_archive_notice_names_the_same_pilot_constant():
     # so it spells the pilot's name; this keeps the two from drifting apart.
     import inspect
 
-    assert f'"{lovable_pilot.PILOT}"' in inspect.getsource(
-        Matter.shows_register_archive_notice.fget
-    )
+    source = inspect.getsource(Matter.shows_register_archive_notice.fget)
+    assert all(f'"{cohort}"' in source for cohort in lovable_pilot.COHORTS)
 
 
 def test_the_edit_page_names_lovable_without_a_row_number(world, pilot_on):

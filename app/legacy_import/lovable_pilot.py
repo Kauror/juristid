@@ -33,6 +33,17 @@ not need an empty database: it needs every one of its references to be free.
 A reference that exists — native, imported, archived or deleted — stops the
 whole apply; nothing already there is read for writing, updated or linked to.
 
+**Two cohorts, one importer** (docs/adr/0202). A version-1 package is the
+pilot's (``lovable-pilot``) and reads exactly as it always did. A version-2
+package names ``"cohort": "lovable-active"``: the active register's ongoing
+topics, read by 0202 §3's rules (a live stage with «ei saatnud» stays open, an
+unreadable step is held rather than guessed, a continuation needs Lovable's
+structured stage link). The cohort is the `EvidencePilotRecord.pilot` of every
+record, the intent typed at `apply`, and what the nightly synchronisation
+enrols. Besides the fingerprint, every pre-existing Teema and the records
+hanging off it are digested before and after the writes, inside the
+transaction (`preserved_digests`), and any difference refuses the apply.
+
 `validate` (no database) → `plan` (resolves people, stages, instruments and
 organisations; checks every reference; prints the plan digest) → `dry_run`
 (writes everything, verifies it, rolls back) → `apply` (one transaction, every
@@ -58,10 +69,23 @@ from app.legacy_import.limits import load_json_document
 from app.workflow.services import OPINION_PREPARATION_TEXT
 
 PILOT = "lovable-pilot"
+#: The active register's second cohort (docs/adr/0202 §1). The same importer;
+#: the cohort is the `EvidencePilotRecord.pilot` of everything a package writes,
+#: the intent typed at `apply` and the key the nightly synchronisation enrols.
+ACTIVE_COHORT = "lovable-active"
+COHORTS = (PILOT, ACTIVE_COHORT)
 PILOT_VERSION = "1.0"
+#: The importer version each cohort's records carry. The pilot's stays "1.0" so
+#: that a version-1 package writes exactly the records it always wrote.
+COHORT_VERSIONS = {PILOT: PILOT_VERSION, ACTIVE_COHORT: "2.0"}
 PACKAGE_FORMAT = "juristid.lovable-pilot"
 PACKAGE_FORMAT_VERSION = 1
+#: Version 2 is the active cohort's reading (docs/adr/0202 §3); version 1 reads
+#: exactly as before and means `lovable-pilot`.
+ACTIVE_FORMAT_VERSION = 2
+FORMAT_COHORTS = {PACKAGE_FORMAT_VERSION: PILOT, ACTIVE_FORMAT_VERSION: ACTIVE_COHORT}
 #: Typed by the operator at `apply`, the same discipline as the other pilots.
+#: It is the package's cohort; this is the pilot's.
 OPERATOR_INTENT = "lovable-pilot"
 #: `MATTER_CREATED`, `NEXT_ACTION_SET` and the security event name this source.
 PROVENANCE_SOURCE = "LOVABLE_PILOT"
@@ -90,6 +114,16 @@ COMMENCEMENT_TITLES = {
 }
 FIELD_DECISIONS = frozenset(
     {"APPLIED", "PRESERVED_AS_SOURCE_ONLY", "HELD_FOR_REVIEW", "NOT_PRESENT"}
+)
+HELD_FOR_REVIEW = "HELD_FOR_REVIEW"
+#: Lovable's `hetkeseis` values that end a topic's work. Anything else is a live
+#: stage, on which «ei saatnud» concludes nothing (docs/adr/0202 §3).
+TERMINAL_STATUSES = frozenset({"jõustunud", "rohkem ei tegele", "lõpetatud"})
+NOT_SENT = "ei saatnud"
+#: Columns a version-2 package's source row must not carry: identity or raw
+#: import data and the source's own notes, which no reader of 0201/0202 reads.
+EXCLUDED_SOURCE_FIELDS = frozenset(
+    {"markmed", "mitteametlik_arvamus", "raw_hyperlink", "allikas", "vastutaja_user_id"}
 )
 
 #: No leading zero: `2026_05` would be stored, and displayed, as `2026_5`.
@@ -142,6 +176,16 @@ def package_digest(package: dict[str, Any]) -> str:
     return canonical_sha256(package)
 
 
+def package_cohort(package: dict[str, Any]) -> str:
+    """The cohort a package writes: its own ``cohort``, or the pilot's when it names
+    none (every version-1 package). `validate_package` refuses anything else."""
+    return str(package.get("cohort") or PILOT)
+
+
+def _is_v2(package: dict[str, Any]) -> bool:
+    return package.get("format_version") == ACTIVE_FORMAT_VERSION
+
+
 @dataclass
 class ValidationReport:
     topics: int = 0
@@ -159,8 +203,18 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
     out = report.problems
     if package.get("format") != PACKAGE_FORMAT:
         out.append(f"format is {package.get('format')!r}, not {PACKAGE_FORMAT!r}.")
-    if package.get("format_version") != PACKAGE_FORMAT_VERSION:
-        out.append(f"format_version {package.get('format_version')!r} is not supported.")
+    version = package.get("format_version")
+    if version not in FORMAT_COHORTS:
+        out.append(f"format_version {version!r} is not supported.")
+    cohort = package.get("cohort")
+    if cohort is not None and cohort not in COHORTS:
+        out.append(f"cohort {cohort!r} is unknown; a package is one of {', '.join(COHORTS)}.")
+    elif version in FORMAT_COHORTS and package_cohort(package) != FORMAT_COHORTS[version]:
+        out.append(
+            f"format_version {version} is the {FORMAT_COHORTS[version]} cohort's, not "
+            f"{package_cohort(package)!r}."
+        )
+    v2 = _is_v2(package)
     snapshot = package.get("snapshot") or {}
     as_of = _day(snapshot.get("as_of"))
     if as_of is None:
@@ -183,6 +237,8 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
         reference = str(topic.get("reference") or "")
         report.topics += 1
         problems = _validate_topic(topic, people=people, as_of=as_of)
+        if v2:
+            problems += _validate_active_topic(topic, as_of=as_of)
         out.extend(f"{reference}: {p}" for p in problems)
         parsed = parse_reference(reference)
         if parsed is None:
@@ -213,8 +269,87 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
             out.append(f"{reference}: a topic cannot continue under itself.")
         elif successor and successors.get(successor) == reference:
             out.append(f"{reference}: continues under {successor}, which continues under it.")
+        elif _cycle_length(reference, successors) > 2:
+            # A longer loop is as impossible as a two-topic one; an acyclic package
+            # never reaches this, so no version-1 result changes.
+            out.append(f"{reference}: its continuations lead back to it (a cycle).")
     out.extend(_validate_reserve(package, highest))
     return report
+
+
+def _cycle_length(start: str, successors: dict[str, str]) -> int:
+    """How many continuations lead from `start` back to it; 0 when they never do."""
+    current, steps = start, 0
+    while steps <= len(successors):
+        current = successors.get(current, "")
+        steps += 1
+        if not current:
+            return 0
+        if current == start:
+            return steps
+    return 0
+
+
+def _source_text(value: Any) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
+def _validate_active_topic(topic: dict[str, Any], *, as_of: dt.date | None) -> list[str]:
+    """The version-2 reading rules (docs/adr/0202 §3), on top of every version-1 one.
+
+    What version 1 already allows stays allowed: an open topic with no current
+    step (a step the reviewer could not read is held, not guessed), a WAIT or
+    MONITOR whose review day has passed (a review that has come round, never
+    overdue). What is added is refused here.
+    """
+    out: list[str] = []
+    source = topic.get("source") or {}
+    raw = source.get("row")
+    row: dict[str, Any] = raw if isinstance(raw, dict) else {}
+    excluded = sorted(
+        key for key in row if key in EXCLUDED_SOURCE_FIELDS or str(key).endswith("_by")
+    )
+    if excluded:
+        out.append(
+            f"source.row carries {', '.join(excluded)}, which a version-2 package never "
+            "copies (identity, raw import data or the source's own notes)."
+        )
+
+    decisions = topic.get("field_decisions") or {}
+    notes = topic.get("review_notes")
+    held = sorted(name for name, decision in decisions.items() if decision == HELD_FOR_REVIEW)
+    if held and not (isinstance(notes, list) and notes and all(notes)):
+        out.append(
+            f"field(s) {', '.join(held)} are HELD_FOR_REVIEW without the reviewer's reason in "
+            "review_notes."
+        )
+
+    statuses = {_source_text(topic.get("status_raw")), _source_text(row.get("hetkeseis"))}
+    live = not statuses & TERMINAL_STATUSES
+    if live and _source_text(row.get("valja")) == NOT_SENT:
+        # «ei saatnud» is a source assertion: on a live stage it concludes nothing
+        # (0148's rule is for a finished stage) and is never a SENT opinion.
+        if topic.get("lifecycle") != "ACTIVE":
+            out.append(
+                "«ei saatnud» on a live stage concludes nothing: the topic is ACTIVE at its stage."
+            )
+        if decisions.get("valja") != HELD_FOR_REVIEW:
+            out.append("«ei saatnud» on a live stage is held for review (field_decisions.valja).")
+
+    deadline = topic.get("deadline") or {}
+    day = _day(deadline.get("deadline"))
+    if deadline.get("treatment") == "OPEN_REQUEST" and as_of and day and day < as_of:
+        out.append(
+            "an open request whose day is before the snapshot is history, held for review — "
+            "never an overdue obligation."
+        )
+
+    if topic.get("successor") and not source.get("successor_id"):
+        out.append(
+            "a continuation needs source.successor_id, the successor's Lovable identity from "
+            "the structured stage link."
+        )
+    return out
 
 
 def _record_keys(topic: dict[str, Any]) -> list[str]:
@@ -418,6 +553,10 @@ class LovablePlan:
     collisions: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
 
+    @property
+    def cohort(self) -> str:
+        return package_cohort(self.package)
+
     def expected_writes(self) -> dict[str, int]:
         counts = {"MATTER": len(self.topics)}
         for topic_plan in self.topics:
@@ -457,6 +596,8 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
     instruments = {item.key: item for item in LegalInstrumentType.objects.all()}
     mappings = MappingTables.empty()
     references = {t["reference"] for t in package["topics"]}
+    v2 = _is_v2(package)
+    source_ids = {t["reference"]: str(t["source"]["id"]) for t in package["topics"]}
 
     for topic in package["topics"]:
         topic_plan = TopicPlan(topic=topic)
@@ -510,7 +651,17 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
             topic_plan.addressee = resolved[0]
 
         successor = topic.get("successor") or ""
-        if successor and successor in references:
+        if successor and successor in references and v2:
+            # Version 2 links only what Lovable's structured stage link proves:
+            # the successor's identity, written by this same package.
+            if source_ids.get(successor) == str(topic["source"].get("successor_id") or ""):
+                topic_plan.successor_in_batch = successor
+            else:
+                topic_plan.warnings.append(
+                    f"continues under {successor}, but the package's {successor} is not the "
+                    "topic the stage link names; the link is kept as source text only."
+                )
+        elif successor and successor in references:
             topic_plan.successor_in_batch = successor
         elif successor:
             topic_plan.warnings.append(
@@ -538,11 +689,13 @@ def _read_database(plan: LovablePlan) -> None:
         query |= Q(reference_year=year, reference_number=number)
     taken = Matter.all_objects.filter(query) if pairs else Matter.all_objects.none()
     mine = taken.filter(
-        evidence_pilot_records__pilot=PILOT,
+        evidence_pilot_records__pilot=plan.cohort,
         evidence_pilot_records__package_sha256=plan.digest,
         evidence_pilot_records__record_kind="MATTER",
     ).distinct()
-    written = EvidencePilotRecord.objects.filter(pilot=PILOT, package_sha256=plan.digest).count()
+    written = EvidencePilotRecord.objects.filter(
+        pilot=plan.cohort, package_sha256=plan.digest
+    ).count()
     taken_refs = sorted({m.display_reference for m in taken} | _deleted_references(plan.topics))
     if not taken_refs and written == 0:
         plan.database_state = "ready"
@@ -628,6 +781,251 @@ def existing_fingerprint(*, exclude_references: set[str] | None = None) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Nothing existing changes, proven per Teema (docs/adr/0202 §4)
+# ---------------------------------------------------------------------------
+
+PRESERVED_FORMAT = "juristid.lovable-preserved"
+PRESERVED_FORMAT_VERSION = 1
+
+
+def _preserved_sources() -> list[tuple[str, Any, str, bool, dict[str, Any]]]:
+    """``(label, model, matter column, ids only, filter)`` for everything a Teema
+    holds that the digest covers. Whole rows where the row is the fact (steps,
+    dates, provenance, synchronisation state); identities where the row is an
+    append-only record or someone else's content (events, documents, notes)."""
+    from app.audit.models import ChangeEvent, SecurityAuditEvent
+    from app.documents.models import Document
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.matters.models import (
+        Entry,
+        Matter,
+        MatterPersonalNote,
+        MatterResponseDeadline,
+        MatterSourceOrganisation,
+        MatterStageEpisode,
+        TagAssignment,
+    )
+    from app.submissions.models import Submission
+    from app.workflow.models import NextAction
+
+    from .lovable_sync_models import LovableSyncDecision, LovableSyncState
+    from .models import EvidencePilotRecord, MatterSourceReference
+
+    whole, ids = False, True
+    return [
+        ("legal_instruments", Matter.legal_instruments.through, "matter_id", whole, {}),
+        ("policy_areas", Matter.policy_areas.through, "matter_id", whole, {}),
+        ("collaborators", Matter.collaborators.through, "matter_id", whole, {}),
+        ("tags", TagAssignment, "matter_id", whole, {}),
+        ("source_organisations", MatterSourceOrganisation, "matter_id", whole, {}),
+        ("next_actions", NextAction, "matter_id", whole, {}),
+        ("effective_dates", MatterEffectiveDate, "matter_id", whole, {}),
+        ("important_dates", MatterImportantDate, "matter_id", whole, {}),
+        ("response_deadlines", MatterResponseDeadline, "matter_id", whole, {}),
+        ("stage_episodes", MatterStageEpisode, "matter_id", whole, {}),
+        ("source_references", MatterSourceReference, "matter_id", whole, {}),
+        ("pilot_records", EvidencePilotRecord, "matter_id", whole, {}),
+        ("sync_state", LovableSyncState, "matter_id", whole, {}),
+        ("sync_decisions", LovableSyncDecision, "state__matter_id", whole, {}),
+        ("change_events", ChangeEvent, "matter_id", ids, {}),
+        (
+            "security_events",
+            SecurityAuditEvent,
+            "subject_id",
+            ids,
+            {"subject_type": "matters.Matter"},
+        ),
+        ("submissions", Submission, "matter_id", ids, {}),
+        ("documents", Document, "matter_id", ids, {}),
+        ("entries", Entry, "matter_id", ids, {}),
+        ("personal_notes", MatterPersonalNote, "matter_id", ids, {}),
+    ]
+
+
+def _digest_value(value: Any) -> Any:
+    """A column value in a form `canonical_sha256` takes, whatever its type."""
+    if isinstance(value, (bytes, memoryview)):
+        return hashlib.sha256(bytes(value)).hexdigest()
+    if isinstance(value, dt.timedelta):
+        return value.total_seconds()
+    if isinstance(value, (list, tuple)):
+        return [_digest_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(k): _digest_value(v) for k, v in value.items()}
+    return value
+
+
+def _preserved_state(
+    exclude_matter_ids: Any = None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Per Matter: its digest, and its reference (to name it — never its title)."""
+    from app.matters.models import Matter
+
+    exclude = {str(pk) for pk in exclude_matter_ids or ()}
+    columns = [f.attname for f in Matter._meta.concrete_fields]
+    held: dict[str, dict[str, Any]] = {}
+    references: dict[str, str] = {}
+    key = Matter._meta.pk.attname
+    for row in Matter.all_objects.order_by("pk").values(*columns):
+        pk = str(row[key])
+        if pk in exclude:
+            continue
+        references[pk] = f"{row['reference_year']}_{row['reference_number']}"
+        held[pk] = {"matter": {k: _digest_value(v) for k, v in row.items()}}
+    for label, model, column, ids_only, filters in _preserved_sources():
+        names = ["pk"] if ids_only else [f.attname for f in model._meta.concrete_fields]
+        names = [name for name in names if name != column]
+        rows = model._base_manager.filter(**filters).order_by("pk").values(column, *names)
+        for row in rows:
+            owner = str(row.pop(column))
+            if owner not in held:
+                continue
+            entry = str(row["pk"]) if ids_only else {k: _digest_value(v) for k, v in row.items()}
+            held[owner].setdefault(label, []).append(entry)
+    return {pk: canonical_sha256(value) for pk, value in held.items()}, references
+
+
+def preserved_digests(*, exclude_matter_ids: Any = None) -> dict[str, str]:
+    """One SHA-256 per pre-existing Matter (deleted ones included) over the Matter
+    row and everything hanging off it: instruments, Valdkond, collaborators, tags,
+    senders, steps, dates, response deadlines, stage periods, source references,
+    pilot records, synchronisation state and decisions, and the identities of its
+    change and security events, submissions, documents, entries and personal
+    notes. A fixed handful of queries, whatever the number of Matters."""
+    return _preserved_state(exclude_matter_ids)[0]
+
+
+def preserved_document(digests: dict[str, str], references: dict[str, str]) -> dict[str, Any]:
+    """What `apply --preserved-out` writes and `preserved --before` reads: the
+    digests, the references that name them, and the SHA-256 of both."""
+    body = {
+        "format": PRESERVED_FORMAT,
+        "format_version": PRESERVED_FORMAT_VERSION,
+        "matters": dict(sorted(digests.items())),
+        "references": {pk: references.get(pk, "") for pk in sorted(digests)},
+    }
+    return {**body, "sha256": canonical_sha256(body)}
+
+
+def read_preserved_document(document: Any) -> tuple[dict[str, str], dict[str, str]]:
+    if not isinstance(document, dict) or document.get("format") != PRESERVED_FORMAT:
+        raise LovablePilotError(f"The file is not a {PRESERVED_FORMAT} document.")
+    body = {k: v for k, v in document.items() if k != "sha256"}
+    if document.get("format_version") != PRESERVED_FORMAT_VERSION:
+        raise LovablePilotError(f"format_version {document.get('format_version')!r} is unknown.")
+    if canonical_sha256(body) != document.get("sha256"):
+        raise LovablePilotError("The digest file's sha256 does not match its content.")
+    return dict(document["matters"]), dict(document.get("references") or {})
+
+
+@dataclass
+class PreservedComparison:
+    checked: int = 0
+    changed: list[str] = field(default_factory=list)
+    missing: list[str] = field(default_factory=list)
+    added: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not (self.changed or self.missing or self.added)
+
+    def summary(self) -> str:
+        parts = [
+            f"{label}: {', '.join(sorted(refs))}"
+            for label, refs in (
+                ("changed", self.changed),
+                ("missing", self.missing),
+                ("appeared", self.added),
+            )
+            if refs
+        ]
+        return "; ".join(parts)
+
+
+def compare_preserved(
+    before: dict[str, str],
+    after: dict[str, str],
+    references: dict[str, str],
+    *,
+    new_allowed: bool = True,
+) -> PreservedComparison:
+    """Every Matter of `before` against `after`, named by reference only."""
+    result = PreservedComparison(checked=len(before))
+    for pk, digest in before.items():
+        name = references.get(pk) or pk
+        if pk not in after:
+            result.missing.append(name)
+        elif after[pk] != digest:
+            result.changed.append(name)
+    if not new_allowed:
+        result.added = [references.get(pk) or pk for pk in after if pk not in before]
+    return result
+
+
+def check_preserved(document: Any) -> PreservedComparison:
+    """`lovable_pilot preserved --before`: the digest file against the database now,
+    outside any import. Matters created since are not in the file and not judged."""
+    before, references = read_preserved_document(document)
+    after, now = _preserved_state()
+    return compare_preserved(before, after, {**now, **references})
+
+
+# ---------------------------------------------------------------------------
+# Source drift (docs/adr/0202 §5)
+# ---------------------------------------------------------------------------
+
+DRIFT_COLUMNS = ("id", "nr", "version", "updated_at")
+
+
+def source_drift(package: dict[str, Any], transport: Any) -> list[dict[str, Any]]:
+    """Every package topic Lovable changed, renumbered or no longer shows since the
+    snapshot. Reads `topic` (``id, nr, version, updated_at`` only) through the
+    GET-only snapshot path, in chunks; never writes, never reads a value."""
+    from app.legacy_import import lovable_source
+
+    expected: dict[str, tuple[str, Any]] = {}
+    for topic in package.get("topics") or []:
+        source = topic.get("source") or {}
+        if source.get("id"):
+            expected[str(source["id"])] = (str(topic.get("reference") or ""), source.get("version"))
+    seen: dict[str, dict[str, Any]] = {}
+    for chunk in lovable_source._chunks(sorted(expected)):
+        for row in lovable_source._select(
+            transport,
+            "topic",
+            DRIFT_COLUMNS,
+            filters={"id": lovable_source._in(chunk)},
+            order="id",
+        ):
+            seen[str(row.get("id"))] = row
+    drift: list[dict[str, Any]] = []
+    for source_id in sorted(expected, key=lambda i: expected[i][0]):
+        reference, version = expected[source_id]
+        found = seen.get(source_id)
+        if found is None:
+            drift.append({"reference": reference, "source_id": source_id, "kinds": ["MISSING"]})
+            continue
+        kinds = []
+        if found.get("version") != version:
+            kinds.append("VERSION")
+        if str(found.get("nr") or "") != reference:
+            kinds.append("RENUMBERED")
+        if kinds:
+            drift.append(
+                {
+                    "reference": reference,
+                    "source_id": source_id,
+                    "kinds": kinds,
+                    "package_version": version,
+                    "source_version": found.get("version"),
+                    "source_nr": found.get("nr"),
+                    "source_updated_at": found.get("updated_at"),
+                }
+            )
+    return drift
+
+
+# ---------------------------------------------------------------------------
 # Applying it
 # ---------------------------------------------------------------------------
 
@@ -637,11 +1035,16 @@ class ApplyReport:
     already_applied: bool = False
     dry_run: bool = False
     batch_id: Any = None
+    cohort: str = ""
     written: dict[str, int] = field(default_factory=dict)
     matters_before: int = 0
     matters_after: int = 0
     fingerprint_before: str = ""
     fingerprint_after: str = ""
+    #: Per pre-existing Matter, taken inside the transaction before the writes;
+    #: the same digests after the writes matched them, or nothing was written.
+    preserved_before: dict[str, str] = field(default_factory=dict)
+    preserved_references: dict[str, str] = field(default_factory=dict)
     verify: Any = None
 
     def count(self, kind: str) -> None:
@@ -666,8 +1069,8 @@ def _refuse_unless_authorised(
             "REAL_DATA_ALLOWED is off. Real Chamber content may only enter an environment that "
             "has passed the Secure Pilot Gate (docs/secure-pilot-gate.md)."
         )
-    if operator_intent != OPERATOR_INTENT:
-        raise LovablePilotError(f"Type --operator-intent {OPERATOR_INTENT} to apply the package.")
+    if operator_intent != plan.cohort:
+        raise LovablePilotError(f"Type --operator-intent {plan.cohort} to apply the package.")
     if (expect_package_sha256 or "").strip().lower() != plan.digest:
         raise LovablePilotError(
             f"The package digest is {plan.digest}; pass exactly that as --expect-package-sha256."
@@ -827,20 +1230,29 @@ class _Writer:
         self.package = plan.package
         self.backup_set = backup_set
         self.plan_sha256 = plan_sha256
-        self.report = ApplyReport()
-        self.base = {
+        self.cohort = plan.cohort
+        self.version = COHORT_VERSIONS[self.cohort]
+        self.format_version = int(self.package.get("format_version") or PACKAGE_FORMAT_VERSION)
+        self.report = ApplyReport(cohort=self.cohort)
+        self.base: dict[str, Any] = {
             "source": PROVENANCE_SOURCE,
-            "pilot": PILOT,
-            "pilot_version": PILOT_VERSION,
+            "pilot": self.cohort,
+            "pilot_version": self.version,
             "package_sha256": plan.digest,
         }
+        self.decisions = "docs/adr/0191"
+        if self.cohort != PILOT:
+            # The pilot's provenance stays exactly what version 1 always wrote.
+            self.decisions = "docs/adr/0191, docs/adr/0202"
+            self.base["cohort"] = self.cohort
+            self.base["format_version"] = self.format_version
 
     def remember(self, *, matter: Any, key: str, kind: str, target: Any, evidence: Any) -> None:
         from .models import EvidencePilotRecord
 
         EvidencePilotRecord.objects.create(
-            pilot=PILOT,
-            pilot_version=PILOT_VERSION,
+            pilot=self.cohort,
+            pilot_version=self.version,
             package_sha256=self.plan.digest,
             record_key=key,
             record_kind=kind,
@@ -861,22 +1273,24 @@ class _Writer:
         references = {t.reference for t in self.plan.topics}
         self.report.matters_before = Matter.all_objects.count()
         self.report.fingerprint_before = existing_fingerprint()
+        before, names = _preserved_state()
+        self.report.preserved_before, self.report.preserved_references = before, names
         snapshot = self.package["snapshot"]
         self.batch = ImportBatch.objects.create(
             source_system=SOURCE_SYSTEM,
             source_file_name=SOURCE_TABLE,
             source_snapshot_sha256=snapshot["snapshot_sha256"],
-            importer_version=f"{PILOT}/{PILOT_VERSION}",
-            contract_version=f"{PACKAGE_FORMAT}/{PACKAGE_FORMAT_VERSION}",
+            importer_version=f"{self.cohort}/{self.version}",
+            contract_version=f"{PACKAGE_FORMAT}/{self.format_version}",
             started_at=timezone.now(),
             source_row_count=len(self.plan.topics),
             reconciliation_status=ReconciliationStatus.RUNNING,
             notes=(
-                f"{PILOT}: {len(self.plan.topics)} teemat Lovable'i hetktõmmisest "
+                f"{self.cohort}: {len(self.plan.topics)} teemat Lovable'i hetktõmmisest "
                 f"{snapshot['snapshot_sha256']} (seis {snapshot.get('as_of')}); pakett "
                 f"{self.plan.digest}; plan-sha256 {self.plan_sha256}; varukoopia "
                 f"{self.backup_set}; teemasid enne {self.report.matters_before} "
-                f"(docs/adr/0191)."
+                f"({self.decisions})."
             ),
         )
         self.report.batch_id = self.batch.pk
@@ -903,6 +1317,13 @@ class _Writer:
             reserve_matter_reference(int(year), int(through))
 
         self.report.matters_after = Matter.all_objects.count()
+        after, _ = _preserved_state(exclude_matter_ids=[m.pk for m in created.values()])
+        comparison = compare_preserved(before, after, names, new_allowed=False)
+        if not comparison.ok:
+            raise LovablePilotError(
+                "A Teema that was already in Juristid, or a record of one, changed during the "
+                f"import; nothing was written ({comparison.summary()})."
+            )
         self.report.fingerprint_after = existing_fingerprint(exclude_references=references)
         if self.report.fingerprint_after != self.report.fingerprint_before:
             raise LovablePilotError(
@@ -1014,10 +1435,10 @@ class _Writer:
                 OneNoteContentStatus.NOT_IMPORTED if url else OneNoteContentStatus.NOT_APPLICABLE
             ),
             source_era=str(year),
-            source_contract_version=f"{PACKAGE_FORMAT}/{PACKAGE_FORMAT_VERSION}",
+            source_contract_version=f"{PACKAGE_FORMAT}/{self.format_version}",
             # The parser only proposed; a person decided (the package's
             # `mapping_version` names the review). 50 characters, so the short form.
-            source_parser_version=f"{PILOT}/{PILOT_VERSION}+reviewed",
+            source_parser_version=f"{self.cohort}/{self.version}+reviewed",
             match_method=MatchMethod.REFERENCE_TOKEN,
             conflict_state="NONE",
             reviewed_by=str(self.package.get("reviewer") or "")[:200],
@@ -1176,7 +1597,7 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
             continue
         m = matters[0]
         marked = m.evidence_pilot_records.filter(
-            pilot=PILOT, package_sha256=plan.digest, record_kind="MATTER"
+            pilot=plan.cohort, package_sha256=plan.digest, record_kind="MATTER"
         ).count()
         if marked != 1:
             out.append(f"{ref}: not marked as this package's Matter.")
@@ -1289,7 +1710,7 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
 
     from .models import EvidencePilotRecord
 
-    rows = list(EvidencePilotRecord.objects.filter(pilot=PILOT, package_sha256=plan.digest))
+    rows = list(EvidencePilotRecord.objects.filter(pilot=plan.cohort, package_sha256=plan.digest))
     written: dict[str, int] = {}
     for row in rows:
         written[row.record_kind] = written.get(row.record_kind, 0) + 1
