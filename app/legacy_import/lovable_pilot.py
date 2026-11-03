@@ -1913,8 +1913,8 @@ def preserved_document(
 ) -> dict[str, Any]:
     """What `apply --preserved-out` writes and `preserved --before` reads: the
     digests of every Teema the package did not touch, the local digests of the
-    rebased ones with the values the rebase left (``declared``), the references
-    that name them, and the SHA-256 of it all."""
+    rebased ones with a digest of the values the rebase left (``declared``), the
+    references that name them, and the SHA-256 of it all."""
     local = local or {}
     named = sorted(set(digests) | set(local))
     body = {
@@ -2035,7 +2035,8 @@ def check_preserved(document: Any) -> PreservedComparison:
     result.undeclared = [
         names.get(pk) or pk
         for pk, entry in declared.items()
-        if pk not in present or derived_values(present[pk]) != entry.get("values")
+        if pk not in present
+        or canonical_sha256(derived_values(present[pk])) != entry.get("values_sha256")
     ]
     return result
 
@@ -2118,7 +2119,7 @@ class ApplyReport:
     #: The same moment's after-the-fact digests, for `apply --preserved-out`.
     preserved_settled_before: dict[str, str] = field(default_factory=dict)
     #: Rebased Teemad: their local digests (settled), and per pk the fields the
-    #: rebase declared and the Lovable-derived values it left.
+    #: rebase declared and a digest of the Lovable-derived values it left.
     preserved_local_before: dict[str, str] = field(default_factory=dict)
     declared: dict[str, dict[str, Any]] = field(default_factory=dict)
     created_ids: list[str] = field(default_factory=list)
@@ -2436,7 +2437,12 @@ class _Writer:
             str(t.matter.pk): {
                 "reference": t.reference,
                 "fields": sorted(_declared_fields(t)),
-                "values": derived_values(Matter.all_objects.get(pk=t.matter.pk)),
+                # A digest, never the values: they are the Teema's title and step
+                # wording — a lawyer's own, where the rebase kept it — and the file
+                # names Teemad by reference only.
+                "values_sha256": canonical_sha256(
+                    derived_values(Matter.all_objects.get(pk=t.matter.pk))
+                ),
             }
             for t in rebases
         }
