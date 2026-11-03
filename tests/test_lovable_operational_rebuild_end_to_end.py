@@ -491,10 +491,17 @@ def test_enrolment_archives_the_pilot_and_reseeds_the_same_rows(enrolled):
         "next_action_date",
     }
     assert lovable_sync.held_by_import(states[FINISHED].applied) == {"stage"}
-    # The KEEP_LOCAL step's baseline is the lawyer's step, named by the rebuild's record.
-    assert states[LAWYER_STEP].applied["next_action"]["target"]["id"] == str(
-        enrolled["lawyer_step"].pk
-    )
+    # The KEEP_LOCAL step's baseline is the pilot's own step (the rebuild writes no
+    # NEXT_ACTION record for a lawyer's step), so the lawyer's step keeps reading as
+    # Juristid's own and never becomes the baseline (ADR 0202 §6, review of the rebuild).
+    pilot_step = EvidencePilotRecord.objects.get(
+        pilot=PILOT, matter=states[LAWYER_STEP].matter, record_kind="NEXT_ACTION"
+    ).target_id
+    target = states[LAWYER_STEP].applied["next_action"]["target"]
+    assert target["id"] == str(pilot_step) != str(enrolled["lawyer_step"].pk)
+    assert not EvidencePilotRecord.objects.filter(
+        pilot=OPERATIONAL_COHORT, matter=states[LAWYER_STEP].matter, record_kind="NEXT_ACTION"
+    ).exists()
     pilot = LovableSyncCohort.objects.get(key=PILOT_COHORT)
     assert pilot.retired_at is not None and enrolled["digest"] in pilot.retired_reason
     assert lovable_sync.expected_cohorts() == {OPERATIONAL_COHORT: 9}
