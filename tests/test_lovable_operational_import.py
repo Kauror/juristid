@@ -939,6 +939,21 @@ def test_a_past_opinion_deadline_with_nothing_sent_is_held():
     assert _problems(_active_package(topic)) == []
 
 
+def test_a_finished_topics_past_opinion_deadline_is_history_not_held():
+    """A closed file carries no obligation: its unsent deadline is history (0191 §4)."""
+    topic = _not_sent()
+    topic["source"]["row"].update(valja_kuupaev=None, hetkeseis="rohkem ei tegele")
+    topic.update(
+        lifecycle="CONCLUDED",
+        disposition="NO_POSITION_FORMED",
+        status_raw="rohkem ei tegele",
+        next_action=None,
+        deadline={"treatment": "SOURCE_ONLY", "deadline": "2026-09-15", "reason": "NOT_SENT"},
+    )
+    topic["field_decisions"]["arvamuse_tahtaeg"] = "PRESERVED_AS_SOURCE_ONLY"
+    assert not [p for p in _problems(_active_package(topic)) if "arvamuse_tahtaeg" in p]
+
+
 def test_a_past_opinion_deadline_after_a_send_is_history():
     topic = _active("2026_630")
     topic["source"]["row"].update(arvamuse_tahtaeg="2026-09-15", valja="2026-09-10")

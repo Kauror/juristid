@@ -438,8 +438,11 @@ def _validate_active_topic(
                 "an open one."
             )
     requested = _day(row.get("arvamuse_tahtaeg"))
+    # Only an open file can carry an obligation; a finished one keeps its old
+    # deadline as history (0191 §4) and has nothing to hold.
     if (
-        not sent
+        topic.get("lifecycle") == "ACTIVE"
+        and not sent
         and as_of
         and requested
         and requested < as_of
