@@ -1,6 +1,6 @@
-"""The nightly Lovable synchronisation's records (docs/adr/0192).
+"""The nightly Lovable synchronisation's records (docs/adr/0192, 0202).
 
-Four tables, kept apart from the pilot's immutable provenance:
+Five tables, kept apart from the importers' immutable provenance:
 
 * `LovableSyncControl` — one row: whether the job may run, and whether it may
   write. Final cutover sets ``cut_over`` and nothing turns it back;
@@ -10,7 +10,11 @@ Four tables, kept apart from the pilot's immutable provenance:
   until somebody resolves it rather than vanishing the night after it appeared;
 * `LovableSyncDecision` — what each run decided about each field and why. The
   values it compares are business content and are shown only through
-  `Matter.objects.visible_to`.
+  `Matter.objects.visible_to`;
+* `LovableSyncCohort` — each cohort **enrolled** after the pilot (docs/adr/0202
+  §6): the approved package digest whose provenance defines it and how many
+  Teemad it must hold. The pilot (`lovable-pilot`, 100 Teemad) is built in and
+  has no row; `LovableSyncState.cohort` says which cohort a state belongs to.
 """
 
 from __future__ import annotations
@@ -146,6 +150,9 @@ class LovableSyncState(BaseModel):
     )
     source_id = models.UUIDField(unique=True)
     reference = models.CharField(max_length=20)
+    #: The cohort this Teema was enrolled with (docs/adr/0202 §6): the pilot's
+    #: states are ``lovable-pilot`` by default and are never re-seeded.
+    cohort = models.CharField(max_length=64, default="lovable-pilot", db_default="lovable-pilot")
     #: Field key → ``{"source": canonical source value, "target": what Juristid
     #: was given for it}``. Advanced field by field, only when a field is applied,
     #: converges, or a person resolves it.
@@ -182,3 +189,28 @@ class LovableSyncDecision(BaseModel):
     class Meta:
         verbose_name = "Lovable sünkroonimise otsus"
         ordering = ["state__reference", "field"]
+
+
+class LovableSyncCohort(BaseModel):
+    """One cohort enrolled after the pilot (docs/adr/0202 §6).
+
+    Written once by `lovable_sync enroll`, in the transaction that seeds its
+    states. Its Teemad are found only through approved provenance —
+    `EvidencePilotRecord(pilot=pilot, package_sha256=package_sha256,
+    record_kind="MATTER")` — never by a reference number."""
+
+    key = models.CharField(max_length=64, unique=True)
+    #: The `EvidencePilotRecord.pilot` whose records define the cohort.
+    pilot = models.CharField(max_length=64)
+    package_sha256 = models.CharField(max_length=64)
+    #: How many Teemad the cohort must hold; a run with any other number stops.
+    expected = models.PositiveIntegerField()
+    enrolled_at = models.DateTimeField()
+    reason = models.CharField(max_length=300)
+
+    class Meta:
+        verbose_name = "Lovable sünkroonimise kohort"
+        ordering = ["enrolled_at"]
+
+    def __str__(self) -> str:
+        return self.key

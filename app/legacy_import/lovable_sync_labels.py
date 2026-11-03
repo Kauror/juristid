@@ -44,6 +44,7 @@ LOVABLE_REASONS = {
     "LINK_NOT_HTTPS": "Link pole https-aadress.",
     "VERIFY_STOPPED": "Jäi kirjutamata: varasema teema tagasilugemine ebaõnnestus ja öö peatati.",
     "VERIFY_MISMATCH": "Kirjutati, kuid tagasilugemine ei vastanud kirjutatule.",
+    "IMPORT_HELD": "Imporditud ülevaatamiseks: impordil jäeti see väli inimese otsustada.",
 }
 
 #: Lovable's own column names, as its audit ledger (`topic_change_field`) names
@@ -87,6 +88,25 @@ LOVABLE_OBSERVED_KINDS = {
     "MISSING": "Kadus lugemisest",
     "BACK": "Taas lugemises",
     "RENUMBERED": "Number muutus",
+    #: A Teema whose cohort was enrolled after the previous night (docs/adr/0202
+    #: §6): it enters the comparison; nothing changed in Lovable.
+    "ENROLLED": "Lisandus võrdlusesse",
+}
+
+#: A synchronised topic's source activity, as Lovable's dashboard counts
+#: «ongoing» (docs/adr/0202 §6). Counts only.
+LOVABLE_ACTIVITY_LABELS = {
+    "ONGOING": "Käimas",
+    "FINISHED": "Lõpetatud (jõustunud või rohkem ei tegele)",
+    "CONTINUES": "Jätkub teise teema all",
+    "NOT_OPERATIONAL": "Väljaspool operatiivset ulatust",
+    "MISSING": "Lugemises puudu",
+}
+
+#: The synchronised cohorts, in the pages' words (docs/adr/0202 §6).
+LOVABLE_COHORT_LABELS = {
+    "lovable-pilot": "Piloot",
+    "lovable-active": "Aktiivne register",
 }
 
 #: The readiness simulation's categories: what the *existing* rules would do

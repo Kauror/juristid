@@ -22,7 +22,7 @@
     <label class="field">
       <span class="field__label field__label--plain">Hulk</span>
       <select class="field__input field__input--compact" name="ulatus">
-        <option value="">{% if lovable_view == "oised" %}Piloot (vaikimisi){% else %}Kõik elavad teemad (vaikimisi){% endif %}</option>
+        <option value="">{% if lovable_view == "oised" %}Sünkroonitavad teemad (vaikimisi){% else %}Kõik elavad teemad (vaikimisi){% endif %}</option>
         {% for slug, label in choices.population %}
           <option value="{{ slug }}"{% if slug == filters.slugs.ulatus %} selected{% endif %}>{{ label }}</option>
         {% endfor %}

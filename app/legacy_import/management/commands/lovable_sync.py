@@ -16,10 +16,13 @@
     python manage.py lovable_sync control --cut-over \\
         --operator-intent lovable-sync-cutover --reason R
     python manage.py lovable_sync resolve --reference 2026_501 --field stage --note N
+    python manage.py lovable_sync enroll --cohort lovable-active \\
+        --package-sha256 SHA --expect N --reason R
 
 `run` reads Lovable as the service login named in the credentials file and
-reconciles the pilot's 100 Teemad. It needs ``JURISTID_LOVABLE_SYNC`` and
-``REAL_DATA_ALLOWED`` — set only on the host scheduler's one-off container — and
+reconciles the pilot's 100 Teemad and every enrolled cohort (docs/adr/0202). It
+needs ``JURISTID_LOVABLE_SYNC`` and ``REAL_DATA_ALLOWED`` — set only on the
+host scheduler's one-off container — and
 obeys the control row: OFF refuses, COMPARE writes nothing, APPLY writes the
 allowlisted changes when a verified backup set is named. `check` compares the
 newest stored snapshot with Juristid now, without reaching Lovable.
@@ -40,6 +43,11 @@ text only, nothing runs it. `prune-observations` is the observation's retention
 job (docs/adr/0201 §8): it never reads Lovable, needs no credentials, and runs
 every night whether the observation is on, off, paused or failing; a second
 firing on the same Tallinn date is refused (DUPLICATE, exit 2).
+
+`enroll` (docs/adr/0202 §6) adds an imported cohort to the nightly comparison
+after its import has verified: exactly the Teemad its approved provenance
+names, with baselines from the import snapshot, under the run lock. It prints
+counts only; the same enrolment again says so and changes nothing.
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 3 held for review (circuit breaker or no backup), 1 failed.
@@ -85,6 +93,7 @@ class Command(BaseCommand):
                 "report",
                 "control",
                 "resolve",
+                "enroll",
             ],
         )
         parser.add_argument("--trigger", choices=["scheduled", "manual"], default="manual")
@@ -111,6 +120,13 @@ class Command(BaseCommand):
             "--backfill", action="store_true", help="observe: read the audit ledger to the end."
         )
         parser.add_argument("--observe", choices=["on", "off"], default="")
+        parser.add_argument("--cohort", default="", help="enroll: the cohort key.")
+        parser.add_argument(
+            "--package-sha256", default="", help="enroll: the approved package digest."
+        )
+        parser.add_argument(
+            "--expect", type=int, default=0, help="enroll: how many Teemad the cohort holds."
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         try:
@@ -302,6 +318,28 @@ class Command(BaseCommand):
             note=options["note"].strip(),
         )
         self.stdout.write(f"resolved {options['reference']} {options['field']}")
+
+    def _enroll(self, options: dict[str, Any]) -> None:
+        if not (options["cohort"] and options["package_sha256"] and options["expect"]):
+            raise CommandError("enroll needs --cohort, --package-sha256, --expect and --reason.")
+        if not options["reason"].strip():
+            raise CommandError("enroll needs --reason.")
+        done = lovable_sync.enroll(
+            cohort=options["cohort"],
+            package_sha256=options["package_sha256"],
+            expect=options["expect"],
+            reason=options["reason"],
+        )
+        if done.already:
+            self.stdout.write(
+                f"already enrolled: cohort={done.cohort} expected={done.expected}"
+                f" states={done.seeded}; nothing changed"
+            )
+            return
+        self.stdout.write(
+            f"enrolled: cohort={done.cohort} expected={done.expected} seeded={done.seeded}"
+            f" import_held_fields={done.import_held_fields}"
+        )
 
     # -- helpers ---------------------------------------------------------------
 

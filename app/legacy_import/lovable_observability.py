@@ -70,6 +70,7 @@ from app.legacy_import.lovable_pilot import SOURCE_SYSTEM
 from app.legacy_import.lovable_source import SourceError, verify_snapshot
 from app.legacy_import.lovable_sync import FIELDS, TALLINN
 from app.legacy_import.lovable_sync_labels import (
+    LOVABLE_COHORT_LABELS,
     LOVABLE_FIELD_LABELS,
     LOVABLE_REASONS,
     LOVABLE_SIMULATION_LABELS,
@@ -216,6 +217,10 @@ class SyncStatus(_AsDict):
     #: The newest successful pruning of raw observation data, and FRESH/STALE/NONE.
     retention_last_success_at: dt.datetime | None = None
     retention_freshness: str = "NONE"
+    #: Per synchronised cohort (docs/adr/0202 §6), keyed by cohort: ``expected``,
+    #: ``states`` now, and the newest reconciled run's ``checked``, ``review``,
+    #: ``import_held``, ``stopped_active`` and ``activity``. Counts only.
+    cohorts: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 @dataclass
@@ -497,6 +502,10 @@ SUGGESTED_ACTIONS = {
         "Rea märgib lahendatuks haldur."
     ),
     lovable_sync.LINK_NOT_HTTPS: "Link pole https-aadress: kontrolli linki Lovable'is.",
+    lovable_sync.IMPORT_HELD: (
+        "Import jättis selle välja ülevaatamiseks: võrdle teemat Lovable'iga ja kanna vajalik "
+        "teemasse käsitsi. Rea märgib lahendatuks haldur."
+    ),
 }
 _SUGGESTED_BY_OUTCOME: dict[str, str] = {
     SyncOutcome.CONFLICT: (
@@ -777,6 +786,8 @@ def summary_sentence(
         parts.append("Teema kadus Lovable'i lugemisest")
     elif kind == ObservedChangeKind.BACK:
         parts.append("Teema on taas Lovable'i lugemises")
+    elif kind == lovable_review.ENROLLED:
+        parts.append("Teema lisandus võrdlusesse (Lovable'is ei muutunud midagi)")
     elif kind == ObservedChangeKind.RENUMBERED:
         parts.append(
             f"Lovable'i number muutus: {previous_reference} → {reference}"
@@ -1081,11 +1092,16 @@ def _pending_fields(states: list[LovableSyncState]) -> list[_Pending]:
     candidates: list[tuple[LovableSyncState, str, Any, Any]] = []
     for state in states:
         observed = state.observed or {}
+        # The import's own review hold waits for a person even when Lovable has
+        # not changed since (docs/adr/0202 §6).
+        held = lovable_sync.held_by_import(state.applied)
         for name in FIELDS:
             if name not in observed:
                 continue
             applied = (state.applied.get(name) or {}).get("source")
-            if lovable_review._key(name, applied) == lovable_review._key(name, observed[name]):
+            if name not in held and lovable_review._key(name, applied) == lovable_review._key(
+                name, observed[name]
+            ):
                 continue
             candidates.append((state, name, applied, observed[name]))
     rows = _decision_rows(sorted({s.pk for s, *_ in candidates}, key=str))
@@ -1281,7 +1297,9 @@ def _pilot_readings(user: Any, now: dt.datetime, *, full: bool) -> list[Reading]
                 message=" ".join(p for p in (night.warning, night.message) if p),
                 cohort_size=(run.counts or {}).get("checked"),
                 new_topics=0,
-                changed_topics=len(topics) + night.hidden,
+                # A Teema entering the comparison (`ENROLLED`) is not a change.
+                changed_topics=sum(1 for t in topics if t.kind != lovable_review.ENROLLED)
+                + night.hidden,
                 missing_topics=sum(1 for t in topics if t.kind == ObservedChangeKind.MISSING),
                 changed_fields=sum(len(t.fields) for t in topics),
                 outcomes=dict(sorted(outcomes.items())),
@@ -1589,10 +1607,14 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         )
     elif snapshot_at is None and last_run is not None:
         warnings.append("Võrreldavat Lovable'i lugemist pole.")
-    if cohort != lovable_sync.EXPECTED_COHORT:
-        warnings.append(
-            f"Piloodi sünkroonitavaid teemasid on {cohort}, mitte {lovable_sync.EXPECTED_COHORT}."
-        )
+    expected = lovable_sync.expected_cohorts()
+    held_by_cohort = Counter(LovableSyncState.objects.values_list("cohort", flat=True))
+    for key, wanted in expected.items():
+        if held_by_cohort.get(key, 0) != wanted:
+            warnings.append(
+                f"{_cohort_name(key)}: sünkroonitavaid teemasid on "
+                f"{held_by_cohort.get(key, 0)}, mitte {wanted}."
+            )
     if not observe:
         warnings.append("Laiem vaatlus (kõik Lovable'i teemad) on välja lülitatud.")
     elif last_observation is None:
@@ -1637,6 +1659,7 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         observation=observation,
         audit=audit,
         cohort=cohort,
+        expected=expected,
         live=live,
         operational=operational,
     )
@@ -1651,6 +1674,10 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
             "Õnnestunud kustutamist pole olnud.",
         ),
     )
+    cohorts = _cohort_status(expected, held_by_cohort, last_run)
+    if len(cohorts) > 1:
+        # Per cohort only once one has joined the pilot: the pilot alone reads as before.
+        indicators += [_cohort_indicator(key, part, last_run) for key, part in cohorts.items()]
     return SyncStatus(
         mode=mode,
         mode_label=SyncMode(mode).label,
@@ -1677,7 +1704,66 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         observation_health_detail=health.detail,
         retention_last_success_at=health.retention_last_success_at,
         retention_freshness=_freshness(health.retention_last_success_at, moment),
+        cohorts=cohorts,
     )
+
+
+def _cohort_indicator(key: str, part: dict[str, Any], last_run: LovableSyncRun | None) -> Indicator:
+    """One cohort's size, with the newest run's review and activity counts."""
+    unit = f"{part['expected']} teemast"
+    if part.get("checked") is not None:
+        unit += (
+            f"; viimases võrdluses vajab ülevaatamist {part.get('review') or 0}"
+            f" (neist impordil ootele jäetud {part.get('import_held') or 0}),"
+            f" Lovable'is lõppenud, kuid Juristides avatud {part.get('stopped_active') or 0}"
+        )
+    return _indicator(
+        "cohort_" + key.replace("-", "_"),
+        f"{part['label']}: sünkroonitavad teemad",
+        part["states"],
+        unit,
+        _local(last_run.started_at) if last_run is not None else "praegu",
+    )
+
+
+def _cohort_name(key: str) -> str:
+    """A cohort in the pages' words: «Piloot», «Aktiivne register»."""
+    return LOVABLE_COHORT_LABELS.get(key, key)
+
+
+def _population_phrase(expected: dict[str, int], *, partitive: bool = False) -> str:
+    """The synchronised population as a denominator. With only the pilot it reads
+    as it always has («piloodi 100 teemast»); with enrolled cohorts it names the
+    total («246 sünkroonitavast teemast»)."""
+    total = sum(expected.values())
+    if list(expected) == [lovable_sync.PILOT_COHORT]:
+        return f"piloodi {total} teemat" if partitive else f"piloodi {total} teemast"
+    return f"{total} sünkroonitavat teemat" if partitive else f"{total} sünkroonitavast teemast"
+
+
+def _cohort_status(
+    expected: dict[str, int], held: Counter[str], last_run: LovableSyncRun | None
+) -> dict[str, dict[str, Any]]:
+    """Per cohort: its size now and the newest reconciled run's counts."""
+    by_cohort = (
+        ((last_run.counts or {}).get("by_cohort") or {})
+        if last_run is not None and lovable_sync.run_reconciled(last_run)
+        else {}
+    )
+    out: dict[str, dict[str, Any]] = {}
+    for key, wanted in expected.items():
+        part = by_cohort.get(key) or {}
+        out[key] = {
+            "label": _cohort_name(key),
+            "expected": wanted,
+            "states": held.get(key, 0),
+            "checked": part.get("checked"),
+            "review": part.get("review"),
+            "import_held": part.get("import_held"),
+            "stopped_active": part.get("stopped_active"),
+            "activity": dict(part.get("activity") or {}),
+        }
+    return out
 
 
 def _source_size(
@@ -1724,10 +1810,10 @@ def _status_indicators(
     observation: LovableObservationRun | None,
     audit: AuditStatus,
     cohort: int,
+    expected: dict[str, int],
     live: int | None,
     operational: int | None,
 ) -> list[Indicator]:
-    expected = lovable_sync.EXPECTED_COHORT
     start = moment - dt.timedelta(days=STATUS_PERIOD_DAYS)
     period = f"viimased {STATUS_PERIOD_DAYS} päeva ({_local(start)} – {_local(moment)})"
     no_obs = NO_OBSERVATION
@@ -1779,9 +1865,9 @@ def _status_indicators(
         ),
         _indicator(
             "pilot_coverage",
-            "Piloodi teemad",
+            "Sünkroonitavad teemad",
             cohort,
-            f"piloodi {expected} teemast",
+            _population_phrase(expected),
             "praegu",
         ),
         _source_size(
@@ -1818,7 +1904,8 @@ def _status_indicators(
             "pilot_topics_changed",
             "Muutunud piloodi teemad (öised võrdlused)",
             pilot_changed if _reads(user) else None,
-            f"teemamuutust {len(readings)} öö võrdluses (piloodi {expected} teemat)",
+            f"teemamuutust {len(readings)} öö võrdluses"
+            f" ({_population_phrase(expected, partitive=True)})",
             period,
             "Lugejal pole ärisisu lugemise õigust.",
         )
@@ -2907,8 +2994,12 @@ def readiness(user: Any, *, now: dt.datetime | None = None) -> Readiness:
         blockers.append("Viimane võrreldav piloodi lugemine on vanem kui 26 tundi.")
     if last_run is not None and last_run.status == SyncRunStatus.FAILED:
         blockers.append(f"Viimane käivitus ebaõnnestus ({_failure_code(last_run.error)}).")
-    if len(states) != lovable_sync.EXPECTED_COHORT:
-        blockers.append(f"Piloodi teemasid on {len(states)}, mitte {lovable_sync.EXPECTED_COHORT}.")
+    held_by_cohort = Counter(s.cohort for s in states)
+    for key, wanted in lovable_sync.expected_cohorts().items():
+        if held_by_cohort.get(key, 0) != wanted:
+            blockers.append(
+                f"{_cohort_name(key)}: teemasid on {held_by_cohort.get(key, 0)}, mitte {wanted}."
+            )
     if conflicts:
         blockers.append(f"Lahendamata vastuolusid: {len(conflicts)}.")
     if not (ctl and ctl.observe):
@@ -2960,7 +3051,7 @@ def _coverage(
     when: str,
 ) -> list[Indicator]:
     n = len(states)
-    expected = lovable_sync.EXPECTED_COHORT
+    expected = lovable_sync.expected_cohorts()
     operational = [r for r in index if _is_operational(r)]
     linked = sum(1 for r in operational if str(r.get("id")) in cohort_ids)
     names: dict[str, bool] = {}
@@ -2993,7 +3084,7 @@ def _coverage(
     )
     pilot = f"piloodi {n} teemast"
     out = [
-        _indicator("pilot_coverage", "Piloodi katvus", n, f"piloodi {expected} teemast", when),
+        _indicator("pilot_coverage", "Piloodi katvus", n, _population_phrase(expected), when),
         _indicator(
             "operational_source_coverage",
             "Operatiivsed teemad piloodis",

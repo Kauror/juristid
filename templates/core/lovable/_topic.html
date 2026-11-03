@@ -16,6 +16,7 @@
     {% if topic.kind == "NEW" %}<span class="badge badge--warning">Uus teema</span>
     {% elif topic.kind == "MISSING" %}<span class="badge badge--warning">Kadus lugemisest</span>
     {% elif topic.kind == "BACK" %}<span class="badge badge--warning">Taas lugemises</span>
+    {% elif topic.kind == "ENROLLED" %}<span class="badge badge--quiet">Lisandus võrdlusesse</span>
     {% elif topic.kind == "RENUMBERED" %}<span class="badge badge--warning">Number muutus</span>{% endif %}
     {% if topic.mapping == "REFERENCE_CANDIDATE" %}<span class="badge badge--quiet">Sama numbriga teema, seos kinnitamata</span>
     {% elif topic.mapping == "UNMATCHED" %}<span class="badge badge--quiet">Juristides vastet pole</span>{% endif %}
@@ -29,6 +30,8 @@
     <p class="lovnight__note lovnight__note--problem">Lovable'is seda teemat enam ei ole (kustutatud või peidetud). Juristides ei muudetud midagi.</p>
   {% elif topic.kind == "BACK" %}
     <p class="lovnight__note">Teema on Lovable'is jälle nähtav.</p>
+  {% elif topic.kind == "ENROLLED" %}
+    <p class="lovnight__note">Teema lisati öisesse võrdlusse; Lovable'is ei muutunud midagi.</p>
   {% elif topic.kind == "RENUMBERED" %}
     <p class="lovnight__note lovnight__note--problem">Lovable'is muutus teema number: {{ topic.previous_reference|default:"?" }} → {{ topic.reference }}.{% if topic.mapping == "PILOT_LINKED" %} Juristides jääb tunnus samaks;{% endif %} vaata üle.</p>
   {% endif %}

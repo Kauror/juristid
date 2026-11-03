@@ -1,7 +1,9 @@
-"""The nightly Lovable → Juristid synchronisation (docs/adr/0192).
+"""The nightly Lovable → Juristid synchronisation (docs/adr/0192, 0202).
 
-One way, for the 100 Teemad the Lovable pilot created (docs/adr/0191) and for
-nothing else. Every run reads a consistent snapshot of those rows
+One way, for the Teemad of the approved cohorts and for nothing else: the 100
+Teemad the Lovable pilot created (docs/adr/0191) — the built-in cohort — and
+every cohort enrolled since (`LovableSyncCohort`, `enroll`), each found only
+through its approved provenance. Every run reads a consistent snapshot of those rows
 (`app.legacy_import.lovable_source`), compares three values per field and writes
 only what is safe:
 
@@ -28,6 +30,11 @@ opinion deadline, `valja`/`valja_kuupaev`, the addressee, commencements, the
 received date, the act, and lifecycle. A held change stays pending — the
 baseline does not move — until the source returns to it, Juristid converges on
 it, or an operator resolves it (`resolve_field`).
+
+A field the import itself held for review (``HELD_FOR_REVIEW`` in the package's
+``field_decisions``) is seeded with ``import_held`` and reported
+``REVIEW_REQUIRED`` / ``IMPORT_HELD`` every night until an operator resolves it;
+a convergence never clears it (docs/adr/0202 §6).
 
 Writes go through the domain services with ``actor=None`` and a ``LOVABLE_SYNC``
 provenance; nothing here sets a model field directly.
@@ -59,7 +66,9 @@ from app.legacy_import.lovable_source import (
     take_snapshot,
     verify_snapshot,
 )
+from app.legacy_import.lovable_sync_labels import LOVABLE_COHORT_LABELS
 from app.legacy_import.lovable_sync_models import (
+    LovableSyncCohort,
     LovableSyncControl,
     LovableSyncDecision,
     LovableSyncRun,
@@ -77,7 +86,54 @@ MAPPING_VERSION = "lovable-sync/1"
 PROVENANCE_SOURCE = "LOVABLE_SYNC"
 TALLINN = ZoneInfo("Europe/Tallinn")
 LOCK_NAMESPACE, LOCK_KEY = 24607, 1
+#: The pilot's size (docs/adr/0191): the built-in cohort. Every reader of the
+#: whole population's size uses `expected_cohorts()` instead.
 EXPECTED_COHORT = 100
+
+#: The cohort keys (docs/adr/0202 §1): the `EvidencePilotRecord.pilot` each
+#: importer writes. The pilot is built in; any other is synchronised only once
+#: enrolled (`enroll`).
+PILOT_COHORT = PILOT
+ACTIVE_COHORT = "lovable-active"
+ENROLLABLE_COHORTS = (ACTIVE_COHORT,)
+
+#: The import's own review hold (docs/adr/0202 §3): a Lovable column the
+#: package's `field_decisions` marks thus is seeded ``import_held``.
+HELD_FOR_REVIEW = "HELD_FOR_REVIEW"
+#: Lovable's column → the synchronised field it feeds.
+IMPORT_HELD_COLUMNS = {
+    "jargmiseks": "next_action_text",
+    "tegevuse_tahtaeg": "next_action_date",
+    "hetkeseis": "stage",
+    "arvamuse_tahtaeg": "opinion_deadline",
+    "valja": "sent",
+    "valja_kuupaev": "sent_date",
+    "kellele": "addressee",
+    "oigusakt": "legal_act",
+    "sisse": "received",
+    "koja_ettepanek": "koda_initiative",
+    "teema": "title",
+    "vastutaja": "owner",
+    "joustumised": "commencements",
+    "onenote_link": "onenote_link",
+}
+
+#: A topic's source activity (docs/adr/0202 §6), as Lovable's dashboard counts
+#: «ongoing». Counts only; nothing is written because of it.
+ACTIVITY_ONGOING = "ONGOING"
+ACTIVITY_FINISHED = "FINISHED"
+ACTIVITY_CONTINUES = "CONTINUES"
+ACTIVITY_NOT_OPERATIONAL = "NOT_OPERATIONAL"
+ACTIVITY_MISSING = "MISSING"
+ACTIVITIES = (
+    ACTIVITY_ONGOING,
+    ACTIVITY_FINISHED,
+    ACTIVITY_CONTINUES,
+    ACTIVITY_NOT_OPERATIONAL,
+    ACTIVITY_MISSING,
+)
+#: `hetkeseis` values (as `name_key`) that end a topic's ongoing work.
+FINISHED_STAGES = frozenset({"joustunud", "rohkem ei tegele"})
 
 #: Circuit breakers (docs/adr/0192 §7): a night that would touch more Teemad than
 #: this, or raise more conflicts, writes nothing and waits for a person.
@@ -109,6 +165,8 @@ HELD_FIELDS = (
     "operational_scope",
 )
 FIELDS = AUTO_FIELDS + HELD_FIELDS
+#: The current step's wording and day: one operation (`_step_decisions`).
+STEP_FIELDS = ("next_action_text", "next_action_date")
 
 #: Why a source change was held. Codes, never business text.
 HELD = "HELD_FIELD"
@@ -126,6 +184,8 @@ DATE_CLEARED = "DATE_CLEARED"
 DATE_PAST = "DATE_IN_PAST"
 NOT_EXACT = "STEP_DATE_NOT_EXACT"
 LINK_NOT_HTTPS = "LINK_NOT_HTTPS"
+#: The import held the field for a person (docs/adr/0202 §6); only `resolve_field` clears it.
+IMPORT_HELD = "IMPORT_HELD"
 BREAKER = "CIRCUIT_BREAKER"
 PARTIAL = "PARTIAL_FAILURE"
 NO_BACKUP = "NO_VERIFIED_BACKUP"
@@ -215,22 +275,84 @@ def canonical_source(bundle: dict[str, Any]) -> dict[str, Any]:
     return {key: extract(bundle) for key, extract in SOURCE_FIELDS.items()}
 
 
+def source_activity(bundle: dict[str, Any] | None) -> str:
+    """Whether Lovable counts the topic as ongoing work (docs/adr/0202 §6).
+
+    Lovable's own classification: a live topic with `operatiivne_ulatus`, whose
+    `hetkeseis` is neither «jõustunud» nor «rohkem ei tegele», and which is not
+    the predecessor (`prev`) of a stage link — its work continues elsewhere."""
+    if bundle is None:
+        return ACTIVITY_MISSING
+    row = bundle.get("row") or {}
+    if not row.get("operatiivne_ulatus"):
+        return ACTIVITY_NOT_OPERATIONAL
+    if name_key(row.get("hetkeseis")) in FINISHED_STAGES:
+        return ACTIVITY_FINISHED
+    me = str(row.get("id"))
+    if any(str(link.get("prev")) == me for link in bundle.get("stage_links") or []):
+        return ACTIVITY_CONTINUES
+    return ACTIVITY_ONGOING
+
+
 # ---------------------------------------------------------------------------
-# The cohort and its baselines
+# The cohorts and their baselines
 # ---------------------------------------------------------------------------
 
 
-def cohort_references() -> Any:
-    """The pilot's Lovable source references — one per pilot Teema, never one of
-    the 13 that were there before (they have no pilot record)."""
+@dataclass(frozen=True)
+class Cohort:
+    """One synchronised population (docs/adr/0202 §6)."""
+
+    key: str
+    #: The `EvidencePilotRecord.pilot` whose MATTER records select it.
+    pilot: str
+    #: The approved package digest; ``""`` for the built-in pilot (every pilot record).
+    package_sha256: str
+    expected: int
+
+    @property
+    def builtin(self) -> bool:
+        return self.key == PILOT_COHORT
+
+
+def pilot_cohort() -> Cohort:
+    # Read at call time: tests (and only tests) size the pilot down.
+    return Cohort(PILOT_COHORT, PILOT, "", EXPECTED_COHORT)
+
+
+def cohorts() -> list[Cohort]:
+    """The pilot, then every enrolled cohort. Reads only: no control row, no state."""
+    enrolled = [
+        Cohort(row.key, row.pilot, row.package_sha256, row.expected)
+        for row in LovableSyncCohort.objects.order_by("enrolled_at", "key")
+    ]
+    return [pilot_cohort(), *enrolled]
+
+
+def expected_cohorts() -> dict[str, int]:
+    """Each synchronised cohort's required size, by key. Read-only (docs/adr/0201:
+    observability never creates the control row; this touches no control row)."""
+    return {cohort.key: cohort.expected for cohort in cohorts()}
+
+
+def expected_total() -> int:
+    """How many Teemad the synchronisation must hold across every cohort."""
+    return sum(expected_cohorts().values())
+
+
+def cohort_references(cohort: Cohort | None = None) -> Any:
+    """A cohort's canonical Lovable source references — one per Teema its
+    approved provenance names, never one of the 13 that were there before (they
+    have no record) and never a Teema found by its reference number."""
     from app.legacy_import.models import EvidencePilotRecord, MatterSourceReference
 
-    pilot_matters = EvidencePilotRecord.objects.filter(pilot=PILOT, record_kind="MATTER").values(
-        "matter_id"
-    )
+    cohort = cohort or pilot_cohort()
+    records = EvidencePilotRecord.objects.filter(pilot=cohort.pilot, record_kind="MATTER")
+    if cohort.package_sha256:
+        records = records.filter(package_sha256=cohort.package_sha256)
     return (
         MatterSourceReference.objects.filter(
-            matter_id__in=pilot_matters,
+            matter_id__in=records.values("matter_id"),
             source_system=SOURCE_SYSTEM,
             source_file_name=SOURCE_TABLE,
             import_batch__isnull=False,
@@ -254,8 +376,10 @@ def _action_dict(action: Any) -> dict[str, Any] | None:
     }
 
 
-def _imported_action(matter: Any) -> tuple[dict[str, Any] | None, str]:
-    """The step the pilot wrote and the treatment its package stated.
+def _imported_action(matter: Any, pilot: str = PILOT) -> tuple[dict[str, Any] | None, str]:
+    """The step the import wrote and the treatment its package stated. ``pilot``
+    is the cohort's provenance key: the step is looked up under it, never under
+    another importer's.
 
     Read off the pilot's own ``NEXT_ACTION_SET`` event, not off the row as it is
     now: «Vaatasin üle» and a rescheduled check change a step's day **in place**,
@@ -268,7 +392,7 @@ def _imported_action(matter: Any) -> tuple[dict[str, Any] | None, str]:
     from app.workflow.models import NextAction
 
     record = EvidencePilotRecord.objects.filter(
-        pilot=PILOT, matter=matter, record_kind="NEXT_ACTION"
+        pilot=pilot, matter=matter, record_kind="NEXT_ACTION"
     ).first()
     if record is None or record.target_id is None:
         return None, ""
@@ -320,38 +444,84 @@ def _imported_owner_id(matter: Any) -> str | None:
     return str(users[0]) if len(users) == 1 else "?"
 
 
-def seed_state(reference: Any) -> LovableSyncState:
-    """A's first value, from what the pilot wrote — never from the current row,
-    which may already hold a lawyer's edit."""
+def seed_state(reference: Any, cohort: Cohort | None = None) -> LovableSyncState:
+    """A's first value, from what the import wrote — never from the current row,
+    which may already hold a lawyer's edit.
+
+    For an enrolled cohort, every field the package held for review
+    (`HELD_FOR_REVIEW`) is marked ``import_held`` (docs/adr/0202 §6). The pilot's
+    baselines are seeded exactly as 0192 seeds them."""
+    cohort = cohort or pilot_cohort()
     matter = reference.matter
     raw = reference.source_row_raw or {}
     bundle = {"row": raw.get("row") or {}, "commencements": raw.get("commencements") or []}
     source = canonical_source(bundle)
-    action, treatment = _imported_action(matter)
+    action, treatment = _imported_action(matter, cohort.pilot)
     applied: dict[str, Any] = {key: {"source": value} for key, value in source.items()}
     applied["title"]["target"] = text_value(reference.source_title)
     applied["owner"]["target"] = _imported_owner_id(matter)
     applied["onenote_link"]["target"] = reference.onenote_url
     applied["next_action"] = {"target": action, "treatment": treatment}
+    if not cohort.builtin:
+        for name in import_held_fields(raw):
+            applied[name]["import_held"] = True
     lovable = raw.get("lovable") or {}
     return LovableSyncState.objects.create(
         matter=matter,
         source_id=lovable["id"],
         reference=f"{matter.reference_year}_{matter.reference_number}",
+        cohort=cohort.key,
         applied=applied,
         applied_version=lovable.get("version"),
         applied_snapshot_sha256=reference.source_snapshot_sha256,
     )
 
 
+def import_held_fields(raw: dict[str, Any]) -> list[str]:
+    """The synchronised fields a package's `field_decisions` held for review.
+    The step's wording and its day are one operation: held together."""
+    decisions = raw.get("field_decisions") or {}
+    held = {
+        IMPORT_HELD_COLUMNS[column]
+        for column, decision in decisions.items()
+        if decision == HELD_FOR_REVIEW and column in IMPORT_HELD_COLUMNS
+    }
+    if held & set(STEP_FIELDS):
+        held |= set(STEP_FIELDS)
+    return sorted(held)
+
+
 def ensure_states() -> list[LovableSyncState]:
+    """Seed any cohort Teema that has no state yet; the population afterwards.
+
+    An existing state — the pilot's 100 above all — is never re-seeded or changed."""
     existing = set(LovableSyncState.objects.values_list("matter_id", flat=True))
     with transaction.atomic():
-        for reference in cohort_references():
-            if reference.matter_id not in existing:
-                seed_state(reference)
-                existing.add(reference.matter_id)
-    return list(LovableSyncState.objects.select_related("matter").order_by("reference"))
+        for cohort in cohorts():
+            for reference in cohort_references(cohort):
+                if reference.matter_id not in existing:
+                    seed_state(reference, cohort)
+                    existing.add(reference.matter_id)
+    return population()
+
+
+def population() -> list[LovableSyncState]:
+    """Every state of the pilot and the enrolled cohorts, by reference."""
+    return list(
+        LovableSyncState.objects.filter(cohort__in=list(expected_cohorts()))
+        .select_related("matter")
+        .order_by("reference")
+    )
+
+
+def cohort_size_problem(states: Iterable[LovableSyncState]) -> tuple[str, int, int] | None:
+    """The first cohort that does not hold exactly its recorded number of Teemad:
+    ``(key, held, expected)``, or ``None`` when every cohort is whole."""
+    held = Counter(state.cohort for state in states)
+    for key, expected in expected_cohorts().items():
+        if held.get(key, 0) != expected:
+            return key, held.get(key, 0), expected
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +580,10 @@ class MatterPlan:
     verify_failed: bool = False
     #: Eligible, but not written: an earlier Teema's read-back failed this run.
     not_executed: bool = False
+    #: The source's activity tonight (`source_activity`) and whether the Teema is
+    #: open in Juristid: counted, never acted on (docs/adr/0202 §6).
+    activity: str = ""
+    open: bool = False
 
     def outcomes(self) -> set[str]:
         return {d.outcome for d in self.decisions} | ({self.status} if self.status else set())
@@ -600,19 +774,22 @@ def plan_matter(
     today: dt.date,
     current: dict[str, Any] | None = None,
 ) -> MatterPlan:
-    plan = MatterPlan(state=state)
+    plan = MatterPlan(state=state, activity=source_activity(bundle))
     if bundle is None:
         plan.status = SyncOutcome.SOURCE_MISSING
+        plan.open = _is_open(state.matter)
         return plan
     row = bundle["row"]
     if f"{row.get('nr')}" != state.reference or str(row.get("id")) != str(state.source_id):
         plan.status = SyncOutcome.IDENTIFIER_CHANGED
+        plan.open = _is_open(state.matter)
         return plan
     src = canonical_source(bundle)
     plan.source, plan.version = src, row.get("version")
     b = current if current is not None else current_values(state.matter)
     applied = state.applied
     closed = not b["is_open"]
+    plan.open = not closed
 
     def a(name: str, part: str = "source") -> Any:
         return (applied.get(name) or {}).get(part)
@@ -687,7 +864,34 @@ def plan_matter(
         if name not in applied:
             continue  # started below, on first observation
         plan.decisions.append(_three_way(name, a(name), src[name], None, None, None, HELD))
+    _hold_imported(plan, applied)
     return plan
+
+
+def held_by_import(applied: dict[str, Any]) -> set[str]:
+    """The fields still under the import's review hold. The step's wording and
+    its day are one operation: if either is held, both are."""
+    held = {name for name in FIELDS if (applied.get(name) or {}).get("import_held")}
+    if held & set(STEP_FIELDS):
+        held |= set(STEP_FIELDS)
+    return held
+
+
+def _hold_imported(plan: MatterPlan, applied: dict[str, Any]) -> None:
+    """An import-held field is a person's call every night, whatever A, B and C
+    say — never eligible, never applied, and never cleared by a convergence."""
+    held = held_by_import(applied)
+    if not held:
+        return
+    for decision in plan.decisions:
+        if decision.field in held:
+            decision.outcome = SyncOutcome.REVIEW_REQUIRED
+            decision.reason = IMPORT_HELD
+            decision.target = None
+
+
+def _is_open(matter: Any) -> bool:
+    return bool(matter.is_open) and getattr(matter, "deleted_at", None) is None
 
 
 # ---------------------------------------------------------------------------
@@ -1002,10 +1206,31 @@ class RunCounts:
     outside_cohort: int = 0
     new_since_previous: int = 0
     operational_not_in_juristid: int = 0
+    #: Teemad with a field still under the import's review hold.
+    import_held: int = 0
+    #: Open Teemad whose source is no longer ongoing work (`source_activity`).
+    stopped_active: int = 0
+    #: The same per cohort (`cohort_counts`), with each cohort's activity.
+    by_cohort: dict[str, dict[str, Any]] = field(default_factory=dict)
     duration_seconds: float = 0.0
 
     def add(self, plan: MatterPlan) -> None:
         outcomes = plan.outcomes()
+        held = sum(1 for d in plan.decisions if d.reason == IMPORT_HELD)
+        stopped = plan.open and plan.activity != ACTIVITY_ONGOING
+        self.import_held += bool(held)
+        self.stopped_active += stopped
+        part = self.by_cohort.setdefault(plan.state.cohort or PILOT_COHORT, cohort_counts())
+        part["checked"] += 1
+        part["unchanged"] += outcomes <= {SyncOutcome.UNCHANGED}
+        part["review"] += SyncOutcome.REVIEW_REQUIRED in outcomes
+        part["conflicts"] += SyncOutcome.CONFLICT in outcomes
+        part["eligible_unapplied"] += SyncOutcome.ELIGIBLE in outcomes
+        part["import_held"] += bool(held)
+        part["import_held_fields"] += held
+        part["stopped_active"] += stopped
+        if plan.activity:
+            part["activity"][plan.activity] = part["activity"].get(plan.activity, 0) + 1
         self.checked += 1
         if outcomes <= {SyncOutcome.UNCHANGED}:
             self.unchanged += 1
@@ -1028,6 +1253,22 @@ class RunCounts:
 
     def as_dict(self) -> dict[str, Any]:
         return dict(self.__dict__)
+
+
+def cohort_counts(expected: int | None = None) -> dict[str, Any]:
+    """One cohort's counts in `RunCounts.by_cohort`. Numbers only."""
+    return {
+        "expected": expected,
+        "checked": 0,
+        "unchanged": 0,
+        "review": 0,
+        "conflicts": 0,
+        "eligible_unapplied": 0,
+        "import_held": 0,
+        "import_held_fields": 0,
+        "stopped_active": 0,
+        "activity": dict.fromkeys(ACTIVITIES, 0),
+    }
 
 
 def _observe_index(
@@ -1226,15 +1467,14 @@ def _execute(
     check = run.trigger == SyncTrigger.CHECK
     # `Kontrolli muudatusi` reads only: it seeds nothing, advances no baseline,
     # observes nothing and prunes nothing; it records its own findings, no more.
-    states = (
-        list(LovableSyncState.objects.select_related("matter").order_by("reference"))
-        if check
-        else ensure_states()
-    )
-    if len(states) != EXPECTED_COHORT:
+    states = population() if check else ensure_states()
+    expected = expected_cohorts()
+    problem = cohort_size_problem(states)
+    if problem is not None:
+        key, held, wanted = problem
         raise SyncRefused(
             "COHORT_SIZE",
-            f"The synchronised cohort holds {len(states)} Teemad, not {EXPECTED_COHORT}.",
+            f"The synchronised cohort {key} holds {held} Teemad, not {wanted}.",
         )
     cohort_ids = {str(s.source_id) for s in states}
     # Only a run that finished without failing is a baseline (`is_baseline_run`).
@@ -1348,7 +1588,7 @@ def _execute(
     if applied_ids:
         refresh_matters(Matter.objects.filter(pk__in=applied_ids))
 
-    counts = RunCounts()
+    counts = RunCounts(by_cohort={key: cohort_counts(n) for key, n in expected.items()})
     for plan in final:
         counts.add(plan)
         _record(run, plan)
@@ -1442,8 +1682,8 @@ def _identical_check(clock: Callable[[], dt.datetime]) -> LovableSyncRun | None:
         verify_snapshot(snapshot.document)
     except SourceError:
         return None
-    states = list(LovableSyncState.objects.select_related("matter").order_by("reference"))
-    if len(states) != EXPECTED_COHORT:
+    states = population()
+    if cohort_size_problem(states) is not None:
         return None
     today = clock().astimezone(TALLINN).date()
     resolver = OwnerResolver(states)
@@ -1472,7 +1712,9 @@ def prune_snapshots(*, now: dt.datetime) -> int:
 
 def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncDecision:
     """An operator's resolution of a held change: the baseline takes the last
-    observed source value, and the Teema keeps whatever Juristid holds."""
+    observed source value, and the Teema keeps whatever Juristid holds. It is
+    also the only thing that lifts the import's review hold (``import_held``,
+    docs/adr/0202 §6) — for the step, from both its wording and its day."""
     if field_name not in FIELDS:
         raise SyncRefused("UNKNOWN_FIELD", f"Unknown field {field_name!r}.")
     with transaction.atomic():
@@ -1490,8 +1732,12 @@ def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncD
         b = current_values(state.matter)
         value = state.observed[field_name]
         before = (applied.get(field_name) or {}).get("source")
-        if field_name in ("next_action_text", "next_action_date"):
+        if field_name in STEP_FIELDS:
             applied[field_name] = {"source": value}
+            # One operation: resolving either half lifts the import's hold on both.
+            for half in STEP_FIELDS:
+                if half != field_name and half in applied:
+                    applied[half] = {k: v for k, v in applied[half].items() if k != "import_held"}
             step = b["next_action"]
             # The step Juristid keeps is the source's only if it reads as the
             # source's sentence; otherwise a later day change of that sentence
@@ -1523,6 +1769,114 @@ def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncD
         )
 
 
+@dataclass(frozen=True)
+class Enrolment:
+    """What `enroll` did, in counts only."""
+
+    cohort: str
+    expected: int
+    seeded: int
+    import_held_fields: int
+    already: bool = False
+
+
+def enroll(*, cohort: str, package_sha256: str, expect: int, reason: str) -> Enrolment:
+    """Enrol an imported cohort in the nightly comparison (docs/adr/0202 §6).
+
+    The cohort's Teemad are exactly the Matters its approved provenance names
+    (`EvidencePilotRecord(pilot=cohort, package_sha256=…, record_kind="MATTER")`),
+    each with exactly one canonical Lovable source reference. The row and every
+    state are written in one transaction, under the run lock, with baselines
+    from the import snapshot (`seed_state`). No Teema is written; no existing
+    state is touched. The same enrolment again is a no-op."""
+    from app.legacy_import.models import EvidencePilotRecord
+
+    reason = text_value(reason)
+    if cohort == PILOT_COHORT:
+        raise SyncRefused("PILOT_BUILT_IN", "The pilot is the built-in cohort; it is not enrolled.")
+    if cohort not in ENROLLABLE_COHORTS:
+        raise SyncRefused("UNKNOWN_COHORT", f"Unknown cohort {cohort!r}.")
+    if not re.fullmatch(r"[0-9a-f]{64}", package_sha256 or ""):
+        raise SyncRefused("BAD_DIGEST", "The package digest must be 64 lower-case hex digits.")
+    if expect <= 0:
+        raise SyncRefused("BAD_EXPECT", "The expected number of Teemad must be positive.")
+    if not reason:
+        raise SyncRefused("NO_REASON", "An enrolment needs a reason.")
+    ctl = LovableSyncControl.objects.filter(pk=1).first()
+    if ctl is not None and ctl.cut_over:
+        raise SyncRefused(
+            "CUT_OVER", "Final cutover is recorded; the synchronisation never runs again."
+        )
+    with run_lock(), transaction.atomic():
+        existing = LovableSyncCohort.objects.select_for_update().filter(key=cohort).first()
+        if existing is not None:
+            if existing.package_sha256 == package_sha256 and existing.expected == expect:
+                return Enrolment(
+                    cohort,
+                    expect,
+                    LovableSyncState.objects.filter(cohort=cohort).count(),
+                    0,
+                    already=True,
+                )
+            raise SyncRefused(
+                "COHORT_ENROLLED", f"Cohort {cohort} is already enrolled with another package."
+            )
+        target = Cohort(cohort, cohort, package_sha256, expect)
+        records = EvidencePilotRecord.objects.filter(
+            pilot=cohort, package_sha256=package_sha256, record_kind="MATTER"
+        )
+        matter_ids = list(records.values_list("matter_id", flat=True))
+        if len(matter_ids) != expect or len(set(matter_ids)) != expect:
+            raise SyncRefused(
+                "COUNT_MISMATCH",
+                f"The package's provenance names {len(set(matter_ids))} Teemad, not {expect}.",
+            )
+        references: dict[Any, list[Any]] = {}
+        for reference in cohort_references(target):
+            references.setdefault(reference.matter_id, []).append(reference)
+        source_ids: list[str] = []
+        for matter_id in matter_ids:
+            found = references.get(matter_id, [])
+            source_id = (
+                ((found[0].source_row_raw or {}).get("lovable") or {}).get("id")
+                if len(found) == 1
+                else None
+            )
+            if not source_id:
+                raise SyncRefused(
+                    "NO_CANONICAL_SOURCE",
+                    f"{len(found)} canonical Lovable source references (with a Lovable id) "
+                    "for one of the cohort's Teemad, not exactly one.",
+                )
+            source_ids.append(str(source_id))
+        if len(set(source_ids)) != len(source_ids):
+            raise SyncRefused("DUPLICATE_SOURCE", "Two of the cohort's Teemad name one source.")
+        taken = LovableSyncState.objects.filter(source_id__in=source_ids).count()
+        taken += (
+            LovableSyncState.objects.filter(matter_id__in=matter_ids)
+            .exclude(source_id__in=source_ids)
+            .count()
+        )
+        if taken:
+            raise SyncRefused(
+                "ALREADY_SYNCHRONISED",
+                f"{taken} of the cohort's Teemad are already synchronised (in another cohort).",
+            )
+        LovableSyncCohort.objects.create(
+            key=cohort,
+            pilot=cohort,
+            package_sha256=package_sha256,
+            expected=expect,
+            enrolled_at=timezone.now(),
+            reason=reason[:300],
+        )
+        held = 0
+        for matter_id in matter_ids:
+            state = seed_state(references[matter_id][0], target)
+            held += len(held_by_import(state.applied))
+    return Enrolment(cohort, expect, len(matter_ids), held)
+
+
 def summary_lines(run: LovableSyncRun) -> list[str]:
     """The night in a few Estonian lines (docs/adr/0192 §9). Counts only."""
     c = run.counts or {}
@@ -1542,6 +1896,16 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
     ]
     if run.mode != SyncMode.APPLY or run.status == SyncRunStatus.REVIEW_ONLY:
         lines.append(f"Ohutuid uuendusi rakendamata: {c.get('eligible_unapplied', 0)}")
+    by_cohort = c.get("by_cohort") or {}
+    if len(by_cohort) > 1:
+        # Only when a cohort has joined the pilot: the pilot alone reads as before.
+        for key, part in by_cohort.items():
+            lines.append(
+                f"{LOVABLE_COHORT_LABELS.get(key, key)}: kontrollitud {part.get('checked', 0)}"
+                f"/{part.get('expected') or 0}, vajab ülevaatamist {part.get('review', 0)}"
+                f" (impordil ootele jäetud {part.get('import_held', 0)}), Lovable'is lõppenud"
+                f" kuid Juristides avatud {part.get('stopped_active', 0)}"
+            )
     return lines
 
 

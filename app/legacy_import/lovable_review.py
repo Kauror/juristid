@@ -26,6 +26,11 @@ and named when it carried a change the next night shows. Nothing here reaches
 Lovable, writes a row, or reads a field ADR 0192 excludes: the snapshot never
 held `markmed` or `mitteametlik_arvamus`, and only `SOURCE_FIELDS` are compared.
 
+A Teema whose cohort was enrolled after the night it is compared with
+(docs/adr/0202 §6) is not a Lovable change: it is shown as entering the
+comparison (``ENROLLED``), never as a field edit, a new topic or one back in
+the reading.
+
 Every Teema passes `Matter.objects.visible_to(reader)`. One that does not is
 neither named nor linked nor counted on its own: the night says only how many
 it held back. A deleted (tombstoned) Teema is left out entirely, as every other
@@ -85,6 +90,10 @@ FIELD_ORDER = (
     "commencements",
     "onenote_link",
 )
+
+#: A topic that entered the comparison because its cohort was enrolled after
+#: the previous night (docs/adr/0202 §6): nothing changed in Lovable.
+ENROLLED = "ENROLLED"
 
 #: What Juristid did with a change, in the page's words.
 APPLIED = "APPLIED"
@@ -226,7 +235,8 @@ class TopicChange:
     reference: str
     title: str
     matter_id: Any
-    #: CHANGED (fields moved), MISSING (gone from the reading), BACK (in it again).
+    #: CHANGED (fields moved), MISSING (gone from the reading), BACK (in it
+    #: again), ENROLLED (its cohort joined the comparison since the last night).
     kind: str = "CHANGED"
     fields: list[FieldChange] = field(default_factory=list)
     #: Lovable's `nr` before → after, when the topic was re-numbered there.
@@ -249,10 +259,13 @@ class Night:
     baseline_local: str = ""
     topics: list[TopicChange] = field(default_factory=list)
     hidden: int = 0
+    #: Teemad that entered the comparison this night (`ENROLLED`), shown or
+    #: not; never counted as changed or hidden changes.
+    enrolled: int = 0
 
     @property
     def changed_topics(self) -> int:
-        return len(self.topics)
+        return sum(1 for t in self.topics if t.kind != ENROLLED)
 
     @property
     def changed_fields(self) -> int:
@@ -266,7 +279,7 @@ class Night:
     def attention(self) -> int:
         return sum(
             1 for t in self.topics for f in t.fields if f.result in (REVIEW, CONFLICT, FAILED)
-        ) + sum(1 for t in self.topics if t.kind != "CHANGED" or t.renumbered)
+        ) + sum(1 for t in self.topics if t.kind not in ("CHANGED", ENROLLED) or t.renumbered)
 
 
 @dataclass
@@ -381,6 +394,7 @@ def _compare(
     applied: dict[tuple[Any, str], list[tuple[LovableSyncRun, Any]]],
     converged: dict[tuple[Any, str], list[tuple[LovableSyncRun, Any]]],
     resolutions: dict[tuple[Any, str], list[tuple[dt.datetime, Any]]],
+    baseline_started: dt.datetime | None = None,
 ) -> None:
     run = night.run
     reconciled = run_reconciled(run)
@@ -395,6 +409,13 @@ def _compare(
             title=matter.title if matter is not None else "",
             matter_id=state.matter_id,
         )
+        if old is None and new is not None and _enrolled_since(state, baseline_started):
+            # Not in the earlier reading because it was not synchronised then.
+            topic.kind = ENROLLED
+            night.enrolled += 1
+            if matter is not None:
+                night.topics.append(topic)
+            continue
         if old is None or new is None:
             topic.kind = "MISSING" if new is None else "BACK"
         else:
@@ -439,6 +460,12 @@ def _compare(
             continue
         night.topics.append(topic)
     night.topics.sort(key=lambda t: _reference_order(t.reference))
+
+
+def _enrolled_since(state: LovableSyncState, moment: dt.datetime | None) -> bool:
+    """Whether the state was enrolled after the earlier reading was taken (its
+    snapshot moment: a run seeds its states before it reads)."""
+    return moment is not None and state.created_at > moment
 
 
 def _reference_order(reference: str) -> tuple[int, int, str]:
@@ -584,7 +611,8 @@ def nightly_history(
             applied=window_applied,
             converged=window_converged,
             resolutions=resolutions,
+            baseline_started=baseline.snapshot_taken_at or baseline.started_at,
         )
-        if not night.topics and not night.hidden:
+        if not night.changed_topics and not night.hidden:
             night.message = NO_CHANGES
     return History(nights=nights, older=older, showing_all=show_all)

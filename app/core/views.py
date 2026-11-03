@@ -164,7 +164,7 @@ LOVABLE_FILTERS = {
 
 #: Estonian slugs in the address → (the service's value, the label).
 LOVABLE_POPULATIONS = {
-    "piloot": ("PILOT", "Piloot (100 teemat)"),
+    "piloot": ("PILOT", "Sünkroonitavad teemad"),
     "operatiivsed": ("OPERATIONAL", "Operatiivsed teemad"),
     "koik": ("ALL_LIVE", "Kõik elavad teemad"),
 }
@@ -235,9 +235,11 @@ LOVABLE_INDICATOR_GROUPS = (
         ),
     ),
     (
-        "Juristide otsused (piloot)",
+        "Juristide otsused (sünkroonitavad teemad)",
         ("eligible", "review_required", "conflicts", "already_converged"),
     ),
+    # Shown only once a cohort has joined the pilot (docs/adr/0202 §6).
+    ("Sünkroonitavad kohordid", ("cohort_lovable_pilot", "cohort_lovable_active")),
     ("Rakendatud kirjutused", ("applied",)),
 )
 
