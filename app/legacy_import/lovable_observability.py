@@ -45,7 +45,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from django.conf import settings
-from django.db.models import Count, F, Max, Q
+from django.db.models import Count, F, Max, Min, Q
 from django.urls import reverse
 from django.utils import timezone
 
@@ -1065,15 +1065,22 @@ class _Pending:
     nights: int
 
 
-def _decision_rows(state_ids: list[Any]) -> dict[tuple[Any, str], list[dict[str, Any]]]:
-    """Every night's decision per (state, field), oldest first. Checks are not nights."""
-    rows: dict[tuple[Any, str], list[dict[str, Any]]] = {}
-    if not state_ids:
-        return rows
-    for row in (
-        LovableSyncDecision.objects.filter(state_id__in=state_ids, field__in=FIELDS)
-        .exclude(run__trigger=SyncTrigger.CHECK)
-        .order_by("run__started_at", "created_at")
+def _decided(pairs: set[tuple[Any, str]]) -> Any:
+    """Every night's decision on these (state, field) pairs. Checks are not nights."""
+    return LovableSyncDecision.objects.filter(
+        state_id__in=sorted({state for state, _ in pairs}, key=str),
+        field__in=sorted({name for _, name in pairs}),
+    ).exclude(run__trigger=SyncTrigger.CHECK)
+
+
+def _newest_decisions(pairs: set[tuple[Any, str]]) -> dict[tuple[Any, str], dict[str, Any]]:
+    """The newest decision per (state, field): one row per pair, however many nights."""
+    if not pairs:
+        return {}
+    rows = (
+        _decided(pairs)
+        .order_by("state_id", "field", "-run__started_at", "-created_at")
+        .distinct("state_id", "field")
         .values(
             "state_id",
             "field",
@@ -1083,12 +1090,88 @@ def _decision_rows(state_ids: list[Any]) -> dict[tuple[Any, str], list[dict[str,
             "run_id",
             run_started=F("run__started_at"),
         )
-    ):
-        rows.setdefault((row["state_id"], row["field"]), []).append(dict(row))
-    return rows
+    )
+    return {
+        (r["state_id"], r["field"]): dict(r) for r in rows if (r["state_id"], r["field"]) in pairs
+    }
+
+
+def _sources_since_settled(
+    pairs: set[tuple[Any, str]],
+) -> dict[tuple[Any, str], list[tuple[Any, dt.datetime]]]:
+    """Per (state, field), after its last settled decision (`_SETTLED`): each
+    distinct source value and the first night it was decided on. One row per
+    distinct value, not per night — a field held for months is still one row."""
+    if not pairs:
+        return {}
+    # The last settled decision per pair: few rows (settling is rare).
+    last_settled = {
+        (r["state_id"], r["field"]): (r["run_started"], r["created_at"])
+        for r in _decided(pairs)
+        .filter(outcome__in=_SETTLED)
+        .order_by("state_id", "field", "-run__started_at", "-created_at")
+        .distinct("state_id", "field")
+        .values("state_id", "field", "created_at", run_started=F("run__started_at"))
+    }
+    # Pairs never settled share one condition per field; a settled pair its own.
+    unsettled: dict[str, list[Any]] = {}
+    condition = Q()
+    for state, name in pairs:
+        if (state, name) not in last_settled:
+            unsettled.setdefault(name, []).append(state)
+            continue
+        at, created = last_settled[(state, name)]
+        condition |= Q(state_id=state, field=name) & (
+            Q(run__started_at__gt=at) | Q(run__started_at=at, created_at__gt=created)
+        )
+    for name, states in unsettled.items():
+        condition |= Q(field=name, state_id__in=states)
+    rows = (
+        _decided(pairs)
+        .filter(condition)
+        .values("state_id", "field", "source")
+        .annotate(first=Min("run__started_at"))
+        .order_by()
+    )
+    out: dict[tuple[Any, str], list[tuple[Any, dt.datetime]]] = {}
+    for row in rows:
+        key = (row["state_id"], row["field"])
+        if key in pairs:
+            out.setdefault(key, []).append((row["source"], row["first"]))
+    return out
+
+
+def _nights_since(firsts: dict[tuple[Any, str], dt.datetime]) -> dict[tuple[Any, str], int]:
+    """How many nights decided on each pair from its first moment on. Pairs that
+    share a field and a first night — the usual case: a held field is first seen
+    the same night across a cohort — share one condition, so the query stays
+    small; the answer is one count per pair."""
+    if not firsts:
+        return {}
+    groups: dict[tuple[str, dt.datetime], list[Any]] = {}
+    for (state, name), first in firsts.items():
+        groups.setdefault((name, first), []).append(state)
+    condition = Q()
+    for (name, first), states in groups.items():
+        condition |= Q(field=name, state_id__in=states, run__started_at__gte=first)
+    rows = (
+        _decided(set(firsts))
+        .filter(condition)
+        .values("state_id", "field")
+        .annotate(n=Count("run_id", distinct=True))
+        .order_by()
+    )
+    return {(r["state_id"], r["field"]): r["n"] for r in rows}
 
 
 def _pending_fields(states: list[LovableSyncState]) -> list[_Pending]:
+    """Every field whose last applied source differs from the last observed one,
+    or that the import holds for review, unless its newest decision settled it.
+
+    A bounded number of queries whose rows do not grow with the nights: the
+    newest decision per pair, the distinct source values since the last settled
+    decision, and a count of nights (audit 2026-11-03 P2-5) — the same answers
+    as reading every night's row, without reading them."""
     candidates: list[tuple[LovableSyncState, str, Any, Any]] = []
     for state in states:
         observed = state.observed or {}
@@ -1104,23 +1187,33 @@ def _pending_fields(states: list[LovableSyncState]) -> list[_Pending]:
             ):
                 continue
             candidates.append((state, name, applied, observed[name]))
-    rows = _decision_rows(sorted({s.pk for s, *_ in candidates}, key=str))
+    newest_of = _newest_decisions({(s.pk, name) for s, name, *_ in candidates})
+    open_pairs = {
+        (s.pk, name)
+        for s, name, *_ in candidates
+        if (newest_of.get((s.pk, name)) or {}).get("outcome") not in _SETTLED
+    }
+    sources = _sources_since_settled(open_pairs)
+    firsts: dict[tuple[Any, str], dt.datetime] = {}
+    for state, name, _applied, observed in candidates:
+        key = (state.pk, name)
+        values = sources.get(key)
+        if key not in open_pairs or not values:
+            continue
+        want = lovable_review._key(name, observed)
+        matching = [at for value, at in values if lovable_review._key(name, value) == want]
+        firsts[key] = min(matching) if matching else min(at for _, at in values)
+    nights = _nights_since(firsts)
     out: list[_Pending] = []
     for state, name, applied, observed in candidates:
-        history = rows.get((state.pk, name), [])
-        newest = history[-1] if history else None
-        if newest is not None and newest["outcome"] in _SETTLED:
+        key = (state.pk, name)
+        if key not in open_pairs:
             continue
-        settled = [i for i, r in enumerate(history) if r["outcome"] in _SETTLED]
-        since = history[settled[-1] + 1 :] if settled else history
-        want = lovable_review._key(name, observed)
-        first = next((r for r in since if lovable_review._key(name, r["source"]) == want), None)
-        if first is None and since:
-            first = since[0]
-        tail = since[since.index(first) :] if first is not None else []
+        newest = newest_of.get(key)
         last_at = newest["run_started"] if newest is not None else None
         if last_at is None and state.observed_run_id is not None:
             last_at = state.observed_run.started_at if state.observed_run else None
+        first_at = firsts.get(key)
         out.append(
             _Pending(
                 state=state,
@@ -1128,9 +1221,9 @@ def _pending_fields(states: list[LovableSyncState]) -> list[_Pending]:
                 applied=applied,
                 observed=observed,
                 newest=newest,
-                first_at=first["run_started"] if first is not None else last_at,
+                first_at=first_at if first_at is not None else last_at,
                 last_at=last_at,
-                nights=len({r["run_id"] for r in tail}),
+                nights=nights.get(key, 0) if first_at is not None else 0,
             )
         )
     return out

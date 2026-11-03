@@ -504,6 +504,21 @@ def population() -> list[LovableSyncState]:
     )
 
 
+def not_yet_read(states: Iterable[LovableSyncState], snapshot: LovableSyncSnapshot) -> set[Any]:
+    """The states a stored reading never held because their cohort was enrolled
+    after it was taken. A check (`Kontrolli muudatusi`) skips them — no decision,
+    not missing — until the next run reads them."""
+    late = set(
+        LovableSyncCohort.objects.filter(enrolled_at__gt=snapshot.taken_at).values_list(
+            "key", flat=True
+        )
+    )
+    if not late:
+        return set()
+    held = (snapshot.document or {}).get("cohort") or {}
+    return {s.pk for s in states if s.cohort in late and str(s.source_id) not in held}
+
+
 def cohort_size_problem(states: Iterable[LovableSyncState]) -> tuple[str, int, int] | None:
     """The first cohort that does not hold exactly its recorded number of Teemad:
     ``(key, held, expected)``, or ``None`` when every cohort is whole."""
@@ -617,6 +632,8 @@ class OwnerResolver:
             owner = state.applied.get("owner") or {}
             if owner.get("resolved"):
                 continue  # an operator's resolution says who kept the file, not who a name is
+            if owner.get("import_held"):
+                continue  # the import's reviewer did not vouch for this pairing (ADR 0202 §3)
             if owner.get("source") and owner.get("target") not in (None, "?"):
                 pairs.setdefault(name_key(owner["source"]), set()).add(owner["target"])
         self.pairs = pairs
@@ -1200,6 +1217,8 @@ class RunCounts:
     import_held: int = 0
     #: Open Teemad whose source is no longer ongoing work (`source_activity`).
     stopped_active: int = 0
+    #: A check only: Teemad enrolled after the stored reading, so not in it (`not_yet_read`).
+    not_yet_read: int = 0
     #: The same per cohort (`cohort_counts`), with each cohort's activity.
     by_cohort: dict[str, dict[str, Any]] = field(default_factory=dict)
     duration_seconds: float = 0.0
@@ -1257,6 +1276,7 @@ def cohort_counts(expected: int | None = None) -> dict[str, Any]:
         "import_held": 0,
         "import_held_fields": 0,
         "stopped_active": 0,
+        "not_yet_read": 0,
         "activity": dict.fromkeys(ACTIVITIES, 0),
     }
 
@@ -1491,9 +1511,13 @@ def _execute(
 
     today = clock().astimezone(TALLINN).date()
     resolver = OwnerResolver(states)
+    # A check compares the stored reading; a cohort enrolled after it was taken
+    # was never read there — «not yet read», never «missing» (ADR 0202 §6).
+    unread = not_yet_read(states, previous_snapshot) if check and previous_snapshot else set()
     plans = [
         plan_matter(s, snapshot["cohort"].get(str(s.source_id)), resolver=resolver, today=today)
         for s in states
+        if s.pk not in unread
     ]
 
     missing = sum(1 for p in plans if p.status == SyncOutcome.SOURCE_MISSING)
@@ -1579,6 +1603,10 @@ def _execute(
         refresh_matters(Matter.objects.filter(pk__in=applied_ids))
 
     counts = RunCounts(by_cohort={key: cohort_counts(n) for key, n in expected.items()})
+    for state in states:
+        if state.pk in unread:
+            counts.not_yet_read += 1
+            counts.by_cohort[state.cohort]["not_yet_read"] += 1
     for plan in final:
         counts.add(plan)
         _record(run, plan)
@@ -1677,11 +1705,13 @@ def _identical_check(clock: Callable[[], dt.datetime]) -> LovableSyncRun | None:
         return None
     today = clock().astimezone(TALLINN).date()
     resolver = OwnerResolver(states)
+    unread = not_yet_read(states, snapshot)
     plans = [
         plan_matter(
             s, snapshot.document["cohort"].get(str(s.source_id)), resolver=resolver, today=today
         )
         for s in states
+        if s.pk not in unread
     ]
     return latest if _findings(plans) == _findings(latest) else None
 
@@ -1884,6 +1914,8 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
         f"Vajab ülevaatamist: {c.get('review', 0)}",
         f"Vigu: {c.get('failed', 0)}",
     ]
+    if c.get("not_yet_read"):
+        lines.append(f"Veel lugemata (lisati pärast viimast lugemist): {c['not_yet_read']}")
     if run.mode != SyncMode.APPLY or run.status == SyncRunStatus.REVIEW_ONLY:
         lines.append(f"Ohutuid uuendusi rakendamata: {c.get('eligible_unapplied', 0)}")
     by_cohort = c.get("by_cohort") or {}

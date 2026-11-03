@@ -644,6 +644,12 @@ def test_the_first_night_after_enrolment_shows_teemad_entering_not_changes(activ
     topic = next(t for t in reading.topics if t.reference == "2026_510")
     assert topic.kind == lovable_review.ENROLLED and topic.fields == []
     assert "lisandus võrdlusesse" in topic.summary
+    # «Ainult tähelepanu vajavad» agrees with the night's count: entering is not attention.
+    from app.core import views as core_views
+
+    assert not any(core_views._topic_needs_attention(t) for t in reading.topics)
+    [row] = core_views._night_rows([reading], attention=True)
+    assert row["topics"] == []
 
     # The next night compares the new cohort like any other.
     active["source"].edit("2026_511", kellele="Ministeerium")
@@ -708,3 +714,46 @@ def test_the_new_cohort_is_counted_not_named_for_a_reader_who_may_not_open_it(
     body = client.get(reverse("haldus:lovable")).content.decode()
     assert "Sünkroonitavad kohordid" in body and "Aktiivne register" in body
     assert "SALAJANE" not in body and "VARJATUD" not in body and "2026_510" not in body
+
+
+# ---------------------------------------------------------------------------
+# «Kontrolli muudatusi» between enrolment and the next night (review P3-8)
+# ---------------------------------------------------------------------------
+
+
+def test_a_check_before_the_first_night_skips_the_unread_cohort(active, monkeypatch):
+    assert _run(active, SyncTrigger.SCHEDULED, at=NIGHT).status == SyncRunStatus.SUCCEEDED
+    _enroll(active)
+    # Three missing Teemad would stop the run; «not yet read» must not count.
+    monkeypatch.setattr(lovable_sync, "MAX_MISSING", 1)
+    check = lovable_sync.run_sync(trigger=SyncTrigger.CHECK, now=lambda: NIGHT + HOUR)
+    assert check.status == SyncRunStatus.SUCCEEDED, check.error
+    assert (check.counts["checked"], check.counts["missing"]) == (4, 0)
+    assert check.counts["not_yet_read"] == 3
+    assert check.counts["by_cohort"][ACTIVE_COHORT]["not_yet_read"] == 3
+    assert check.counts["by_cohort"][ACTIVE_COHORT]["checked"] == 0
+    assert not check.decisions.filter(state__cohort=ACTIVE_COHORT).exists()
+    assert "Veel lugemata (lisati pärast viimast lugemist): 3" in lovable_sync.summary_lines(check)
+
+    # The next run reads them fresh: nothing missing, the breaker stays quiet.
+    run = _run(active, at=NIGHT + 2 * HOUR)
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert (run.counts["checked"], run.counts["missing"], run.counts["not_yet_read"]) == (7, 0, 0)
+    again = lovable_sync.run_sync(trigger=SyncTrigger.CHECK, now=lambda: NIGHT + 3 * HOUR)
+    assert again.status == SyncRunStatus.SUCCEEDED, again.error
+    assert (again.counts["checked"], again.counts["not_yet_read"]) == (7, 0)
+
+
+# ---------------------------------------------------------------------------
+# The owner resolver never learns from an import-held owner (review P3-10)
+# ---------------------------------------------------------------------------
+
+
+def test_an_import_held_owner_is_not_learnt_as_a_name():
+    def state(**owner: Any) -> LovableSyncState:
+        return LovableSyncState(applied={"owner": owner})
+
+    learnt = lovable_sync.OwnerResolver([state(source="Peeter", target="u-1")])
+    assert learnt.pairs == {"peeter": {"u-1"}}
+    held = lovable_sync.OwnerResolver([state(source="Peeter", target="u-1", import_held=True)])
+    assert held.pairs == {}

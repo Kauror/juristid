@@ -460,7 +460,11 @@ def _unlinked_rows(summary: Any, *, events: bool = False) -> dict[str, Any]:
 
 
 def _topic_needs_attention(topic: Any) -> bool:
-    return topic.kind != "CHANGED" or any(
+    """As `lovable_review.Night.attention` counts it: a Teema entering the
+    comparison (``ENROLLED``, docs/adr/0202 §6) is not a change to look at."""
+    from app.legacy_import.lovable_review import ENROLLED
+
+    return topic.kind not in ("CHANGED", ENROLLED) or any(
         f.result in LOVABLE_ATTENTION_RESULTS for f in topic.fields
     )
 
