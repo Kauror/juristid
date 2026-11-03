@@ -202,6 +202,15 @@ def world(db):
     return {"mari": mari, "jaan": jaan}
 
 
+@pytest.fixture(autouse=True)
+def apply_day(monkeypatch):
+    """The plan's "today", pinned the day after the snapshot: every date here is
+    fixed, so no test turns red when the calendar passes one of them."""
+    day = {"today": dt.date(2026, 10, 27)}
+    monkeypatch.setattr(lovable_pilot, "_today", lambda: day["today"])
+    return day
+
+
 @pytest.fixture
 def pilot_on(settings):
     settings.LOVABLE_PILOT_ENABLED = True
@@ -623,13 +632,13 @@ def test_an_estimated_commencement_stays_an_estimate(world, pilot_on):
 def test_a_version_2_row_carries_no_excluded_column(column):
     package = _active_package()
     package["topics"][0]["source"]["row"][column] = "x"
-    _refused(package, f"source.row carries {column}")
+    _refused(package, f"source.row.{column} is carried")
 
 
 def test_a_version_2_row_carries_no_by_column():
     package = _active_package()
     package["topics"][0]["source"]["row"]["created_by"] = "x"
-    _refused(package, "source.row carries created_by")
+    _refused(package, "source.row.created_by is carried")
 
 
 # ---------------------------------------------------------------------------
@@ -825,3 +834,260 @@ def test_the_source_drift_command_prints_references_and_counts(tmp_path, monkeyp
     assert printed["missing"] == ["2025_88"]
     assert "Näidisteema" not in json.dumps(printed)
     assert all(line.startswith("GET ") for line in seen if "/auth/v1/token" not in line)
+
+
+# ---------------------------------------------------------------------------
+# Review fixes: identity, held fields, coverage, sends, apply day
+# ---------------------------------------------------------------------------
+
+
+def test_a_topic_listed_twice_under_two_references_is_refused():
+    twin = _active("2026_620")
+    twin["source"]["id"] = _sid("2026_601")
+    _refused(_active_package(_past_review(), twin), "its Lovable identity is also 2026_601's")
+
+
+def test_a_pilot_topic_renumbered_in_the_source_is_refused_at_plan(world, pilot_on):
+    _apply(_pilot_package())
+    pilot_id = MatterSourceReference.objects.get(matter__reference_number=501).source_row_raw[
+        "lovable"
+    ]["id"]
+    renumbered = _active("2026_630")
+    renumbered["source"]["id"] = pilot_id
+    plan = build_plan(_active_package(renumbered))
+    assert plan.database_state == "conflict"
+    assert plan.identity_collisions == ["2026_630 (Juristid 2026_501)"]
+    assert any("under their Lovable identity" in p for p in plan.problems)
+    assert not any("Näidisteema" in p for p in plan.problems)
+    with pytest.raises(LovablePilotError, match="never imported twice"):
+        _apply(_active_package(renumbered))
+
+
+def test_an_identity_held_by_a_deleted_teema_is_refused(world, pilot_on):
+    _apply(_pilot_package())
+    held = Matter.all_objects.get(reference_number=502)
+    pilot_id = MatterSourceReference.objects.get(matter=held).source_row_raw["lovable"]["id"]
+    Matter.all_objects.filter(pk=held.pk).update(
+        deleted_at=dt.datetime(2026, 10, 30, tzinfo=dt.UTC)
+    )
+    renumbered = _active("2026_631")
+    renumbered["source"]["id"] = pilot_id
+    assert build_plan(_active_package(renumbered)).identity_collisions == [
+        "2026_631 (Juristid 2026_502)"
+    ]
+
+
+def test_an_identity_held_by_a_synchronisation_state_is_refused(world, pilot_on):
+    from app.legacy_import.lovable_sync_models import LovableSyncState
+
+    native = factories.MatterFactory(reference_year=2026, reference_number=8)
+    LovableSyncState.objects.create(matter=native, source_id=_sid("2026_601"), reference="2026_8")
+    plan = build_plan(_active_package())
+    assert plan.identity_collisions == ["2026_601 (Juristid 2026_8)"]
+
+
+def test_an_applied_package_is_not_its_own_identity_collision(world, pilot_on):
+    _apply(_active_package())
+    plan = build_plan(_active_package())
+    assert plan.database_state == "applied" and plan.identity_collisions == []
+
+
+def test_the_held_columns_are_one_set_with_the_synchronisation():
+    from app.legacy_import import lovable_sync
+
+    assert lovable_sync.IMPORT_HELD_COLUMNS is lovable_pilot.HELD_FIELD_COLUMNS
+    assert lovable_pilot.HELD_FIELD_COLUMNS["uus_vastutaja"] == "owner"
+
+
+def test_a_held_field_nobody_would_hold_is_refused():
+    topic = _not_sent()
+    topic["field_decisions"]["markus"] = "HELD_FOR_REVIEW"
+    _refused(_active_package(topic), "field(s) markus cannot be HELD_FOR_REVIEW")
+
+
+@pytest.mark.parametrize(
+    ("values", "sent"),
+    [
+        ({"valja": "2026-10-01"}, True),
+        ({"valja": "saadetud"}, True),
+        ({"valja_kuupaev": "2026-10-01"}, True),
+        ({"valja": "Ei saatnud."}, False),
+        ({"valja": ""}, False),
+    ],
+)
+def test_an_open_request_the_source_answered_is_refused(values, sent):
+    topic = _older_year()
+    topic["source"]["row"].update(values)
+    problems = _problems(_active_package(topic))
+    assert any("the source records a send" in p for p in problems) is sent, problems
+
+
+@pytest.mark.parametrize("wording", ["Ei saatnud.", "  ei   SAATNUD ", "«ei saatnud»"])
+def test_not_sent_is_read_whatever_its_case_spacing_or_punctuation(wording):
+    topic = _not_sent()
+    topic["source"]["row"]["valja"] = wording
+    topic["field_decisions"]["valja"] = "PRESERVED_AS_SOURCE_ONLY"
+    _refused(_active_package(topic), "is held for review (field_decisions.valja)")
+
+
+def test_a_past_opinion_deadline_with_nothing_sent_is_held():
+    topic = _not_sent()
+    topic["source"]["row"].update(valja_kuupaev=None)
+    topic["field_decisions"].pop("arvamuse_tahtaeg")
+    _refused(_active_package(topic), "(field_decisions.arvamuse_tahtaeg)")
+    topic["field_decisions"]["arvamuse_tahtaeg"] = "HELD_FOR_REVIEW"
+    assert _problems(_active_package(topic)) == []
+
+
+def test_a_past_opinion_deadline_after_a_send_is_history():
+    topic = _active("2026_630")
+    topic["source"]["row"].update(arvamuse_tahtaeg="2026-09-15", valja="2026-09-10")
+    assert _problems(_active_package(topic)) == []
+
+
+def test_lopetatud_stays_terminal():
+    topic = _not_sent()
+    topic.update(
+        lifecycle="INACTIVE",
+        disposition="COMPLETED",
+        status_raw="Lõpetatud",
+        stage="",
+        next_action=None,
+    )
+    topic["source"]["row"]["hetkeseis"] = "Lõpetatud"
+    assert _problems(_active_package(topic)) == []
+
+
+@pytest.mark.parametrize(
+    ("where", "change"),
+    [
+        ("excel_source_row", lambda s: s.update(excel_source_row={"markmed": "x"})),
+        (
+            "history.fields",
+            lambda s: s.update(
+                history=[{"occurred_at": "2026-09-01", "action": "muutmine", "fields": ["markmed"]}]
+            ),
+        ),
+        (
+            "history",
+            lambda s: s.update(history=[{"occurred_at": "2026-09-01", "changed_by": "x"}]),
+        ),
+        (
+            "responsible_changes",
+            lambda s: s.update(responsible_changes=[{"id": 1, "allikas": "x"}]),
+        ),
+    ],
+)
+def test_no_excluded_column_anywhere_in_the_source_copy(where, change):
+    package = _active_package()
+    change(package["topics"][0]["source"])
+    _refused(package, f"source.{where}.")
+
+
+def test_responsible_changes_as_the_package_carries_them_pass():
+    package = _active_package()
+    package["topics"][0]["source"]["responsible_changes"] = [
+        {
+            "id": 1,
+            "topic_id": _sid("2026_601"),
+            "vana_vastutaja": "Mari",
+            "uus_vastutaja": "Jaan",
+            "alates": "2026-09-01",
+        }
+    ]
+    assert _problems(package) == []
+
+
+@pytest.mark.parametrize("today", [dt.date(2026, 11, 21), dt.date(2026, 12, 1)])
+def test_a_deadline_passed_by_the_apply_day_is_a_plan_problem(world, pilot_on, apply_day, today):
+    apply_day["today"] = today
+    plan = build_plan(_active_package())
+    assert "2025_88: the step's deadline 2026-11-20 is before today; it would be overdue on " in (
+        " ".join(plan.problems)
+    )
+    assert any("the open request's day 2026-11-20 is before today" in p for p in plan.problems)
+    with pytest.raises(LovablePilotError, match="would be overdue on arrival"):
+        _apply(_active_package())
+
+
+def test_a_deadline_on_the_apply_day_itself_is_current(world, pilot_on, apply_day):
+    apply_day["today"] = dt.date(2026, 11, 20)
+    assert build_plan(_active_package()).problems == []
+
+
+def test_a_version_1_plan_ignores_the_apply_day(world, apply_day):
+    apply_day["today"] = dt.date(2027, 1, 1)
+    assert build_plan(_pilot_package()).problems == []
+
+
+def test_a_new_teema_continuing_under_an_existing_one_is_caught(existing):
+    native = existing["native"]
+    before = preserved_digests()
+    factories.MatterFactory(reference_year=2026, reference_number=9, superseded_by=native)
+    after = preserved_digests()
+    assert after[str(native.pk)] != before[str(native.pk)]
+
+
+def test_the_digest_covers_relations_from_either_side(existing, world):
+    from app.related_materials.models import MatterRelation
+
+    native = existing["native"]
+    pilot_teema = Matter.objects.get(reference_number=501)
+    before = preserved_digests()
+    first, second = sorted([native, pilot_teema], key=lambda m: str(m.pk))
+    MatterRelation.objects.create(
+        matter_a=first,
+        matter_b=second,
+        linked_by=world["mari"],
+        linked_at=dt.datetime(2026, 11, 1, tzinfo=dt.UTC),
+    )
+    after = preserved_digests()
+    assert after[str(native.pk)] != before[str(native.pk)]
+    assert after[str(pilot_teema.pk)] != before[str(pilot_teema.pk)]
+
+
+def test_preserved_after_the_fact_ignores_nightly_observations(existing, tmp_path):
+    from app.legacy_import.lovable_sync_models import LovableSyncState
+
+    native = existing["native"]
+    state = LovableSyncState.objects.create(
+        matter=native, source_id=_sid("2026_699"), reference="2026_7", applied={"a": 1}
+    )
+    report = _apply(_active_package())
+    document = lovable_pilot.preserved_document(
+        report.preserved_settled_before, report.preserved_references
+    )
+    LovableSyncState.objects.filter(pk=state.pk).update(
+        observed={"b": 2}, observed_version=9, updated_at=dt.datetime(2026, 11, 2, tzinfo=dt.UTC)
+    )
+    assert lovable_pilot.check_preserved(document).ok
+    # Inside the transaction the same change is a difference.
+    assert preserved_digests()[str(native.pk)] != report.preserved_before[str(native.pk)]
+    LovableSyncState.objects.filter(pk=state.pk).update(applied={"a": 2})
+    result = lovable_pilot.check_preserved(document)
+    assert result.changed == ["2026_7"]
+
+
+def test_apply_refuses_an_unwritable_digest_path_before_writing(world, pilot_on, tmp_path):
+    package = _active_package()
+    path = tmp_path / "package.json"
+    path.write_text(json.dumps(package, ensure_ascii=False), encoding="utf-8")
+    plan = build_plan(package)
+    with pytest.raises(CommandError, match="nothing was applied"):
+        call_command(
+            "lovable_pilot",
+            "apply",
+            "--package",
+            str(path),
+            "--expect-package-sha256",
+            plan.digest,
+            "--expect-plan-sha256",
+            plan_digest(plan),
+            "--operator-intent",
+            ACTIVE_COHORT,
+            "--backup-set",
+            BACKUP,
+            "--preserved-out",
+            str(tmp_path / "puudub" / "preserved.json"),
+        )
+    assert Matter.all_objects.count() == 0

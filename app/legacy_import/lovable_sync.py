@@ -59,7 +59,13 @@ from zoneinfo import ZoneInfo
 from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.utils import timezone
 
-from app.legacy_import.lovable_pilot import ACTIVE_COHORT, PILOT, SOURCE_SYSTEM, SOURCE_TABLE
+from app.legacy_import.lovable_pilot import (
+    ACTIVE_COHORT,
+    HELD_FIELD_COLUMNS,
+    PILOT,
+    SOURCE_SYSTEM,
+    SOURCE_TABLE,
+)
 from app.legacy_import.lovable_source import (
     SourceError,
     Transport,
@@ -99,23 +105,8 @@ ENROLLABLE_COHORTS = (ACTIVE_COHORT,)
 #: The import's own review hold (docs/adr/0202 §3): a Lovable column the
 #: package's `field_decisions` marks thus is seeded ``import_held``.
 HELD_FOR_REVIEW = "HELD_FOR_REVIEW"
-#: Lovable's column → the synchronised field it feeds.
-IMPORT_HELD_COLUMNS = {
-    "jargmiseks": "next_action_text",
-    "tegevuse_tahtaeg": "next_action_date",
-    "hetkeseis": "stage",
-    "arvamuse_tahtaeg": "opinion_deadline",
-    "valja": "sent",
-    "valja_kuupaev": "sent_date",
-    "kellele": "addressee",
-    "oigusakt": "legal_act",
-    "sisse": "received",
-    "koja_ettepanek": "koda_initiative",
-    "teema": "title",
-    "vastutaja": "owner",
-    "joustumised": "commencements",
-    "onenote_link": "onenote_link",
-}
+#: Lovable's column → the synchronised field it feeds (one set with the importer).
+IMPORT_HELD_COLUMNS = HELD_FIELD_COLUMNS
 
 #: A topic's source activity (docs/adr/0202 §6), as Lovable's dashboard counts
 #: «ongoing». Counts only; nothing is written because of it.

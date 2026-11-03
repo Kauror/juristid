@@ -116,6 +116,27 @@ FIELD_DECISIONS = frozenset(
     {"APPLIED", "PRESERVED_AS_SOURCE_ONLY", "HELD_FOR_REVIEW", "NOT_PRESENT"}
 )
 HELD_FOR_REVIEW = "HELD_FOR_REVIEW"
+#: The Lovable columns a version-2 package may hold for review, and the
+#: synchronised field each feeds. One set for the importer and the nightly
+#: synchronisation (`lovable_sync.IMPORT_HELD_COLUMNS` is this): a held column
+#: outside it would be held by nobody, so `validate_package` refuses it.
+HELD_FIELD_COLUMNS: dict[str, str] = {
+    "jargmiseks": "next_action_text",
+    "tegevuse_tahtaeg": "next_action_date",
+    "hetkeseis": "stage",
+    "arvamuse_tahtaeg": "opinion_deadline",
+    "valja": "sent",
+    "valja_kuupaev": "sent_date",
+    "kellele": "addressee",
+    "oigusakt": "legal_act",
+    "sisse": "received",
+    "koja_ettepanek": "koda_initiative",
+    "teema": "title",
+    "vastutaja": "owner",
+    "uus_vastutaja": "owner",
+    "joustumised": "commencements",
+    "onenote_link": "onenote_link",
+}
 #: Lovable's `hetkeseis` values that end a topic's work. Anything else is a live
 #: stage, on which «ei saatnud» concludes nothing (docs/adr/0202 §3).
 TERMINAL_STATUSES = frozenset({"jõustunud", "rohkem ei tegele", "lõpetatud"})
@@ -231,6 +252,7 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
     people = package.get("people") or {}
 
     seen: set[str] = set()
+    identities: dict[str, str] = {}
     keys: set[str] = set()
     highest: dict[str, int] = {}
     for topic in topics:
@@ -246,6 +268,13 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
         if reference in seen:
             out.append(f"{reference}: listed twice.")
         seen.add(reference)
+        source_id = str((topic.get("source") or {}).get("id") or "")
+        if source_id and source_id in identities:
+            out.append(
+                f"{reference}: its Lovable identity is also {identities[source_id]}'s; one "
+                "topic is one Teema."
+            )
+        identities.setdefault(source_id, reference)
         highest[str(parsed[0])] = max(highest.get(str(parsed[0]), 0), parsed[1])
         # Every provenance key the writer will use, once each and short enough.
         for key in _record_keys(topic):
@@ -294,6 +323,45 @@ def _source_text(value: Any) -> str:
     return " ".join(str(value or "").split()).casefold()
 
 
+#: Stripped from both ends before a source wording is compared: «Ei saatnud.»
+#: is «ei saatnud».
+_WORDING_PUNCTUATION = " .,;:!?…\"'«»„“”"
+
+
+def _wording(value: Any) -> str:
+    return _source_text(value).strip(_WORDING_PUNCTUATION)
+
+
+def _excluded(name: Any) -> bool:
+    return str(name) in EXCLUDED_SOURCE_FIELDS or str(name).endswith("_by")
+
+
+def _excluded_source_columns(source: dict[str, Any]) -> list[str]:
+    """Every excluded column the package's source copy carries, wherever it is:
+    the row, the Excel-source row, the change history (its entries' keys and the
+    field names they list) and the responsible changes."""
+    found: set[str] = set()
+
+    def keys(where: str, value: Any) -> None:
+        if isinstance(value, dict):
+            found.update(f"{where}.{k}" for k in value if _excluded(k))
+
+    keys("row", source.get("row"))
+    keys("excel_source_row", source.get("excel_source_row"))
+    for entry in source.get("responsible_changes") or []:
+        keys("responsible_changes", entry)
+    for entry in source.get("history") or []:
+        keys("history", entry)
+        if not isinstance(entry, dict):
+            continue
+        for item in entry.get("fields") or []:
+            name = item.get("field") or item.get("name") if isinstance(item, dict) else item
+            if _excluded(name):
+                found.add(f"history.fields.{name}")
+            keys("history.fields", item)
+    return sorted(found)
+
+
 def _validate_active_topic(topic: dict[str, Any], *, as_of: dt.date | None) -> list[str]:
     """The version-2 reading rules (docs/adr/0202 §3), on top of every version-1 one.
 
@@ -306,12 +374,10 @@ def _validate_active_topic(topic: dict[str, Any], *, as_of: dt.date | None) -> l
     source = topic.get("source") or {}
     raw = source.get("row")
     row: dict[str, Any] = raw if isinstance(raw, dict) else {}
-    excluded = sorted(
-        key for key in row if key in EXCLUDED_SOURCE_FIELDS or str(key).endswith("_by")
-    )
+    excluded = _excluded_source_columns(source)
     if excluded:
         out.append(
-            f"source.row carries {', '.join(excluded)}, which a version-2 package never "
+            f"source.{', source.'.join(excluded)} is carried, which a version-2 package never "
             "copies (identity, raw import data or the source's own notes)."
         )
 
@@ -323,10 +389,18 @@ def _validate_active_topic(topic: dict[str, Any], *, as_of: dt.date | None) -> l
             f"field(s) {', '.join(held)} are HELD_FOR_REVIEW without the reviewer's reason in "
             "review_notes."
         )
+    unheld = [name for name in held if name not in HELD_FIELD_COLUMNS]
+    if unheld:
+        out.append(
+            f"field(s) {', '.join(unheld)} cannot be HELD_FOR_REVIEW: no synchronised field "
+            "would hold them (HELD_FIELD_COLUMNS)."
+        )
 
     statuses = {_source_text(topic.get("status_raw")), _source_text(row.get("hetkeseis"))}
     live = not statuses & TERMINAL_STATUSES
-    if live and _source_text(row.get("valja")) == NOT_SENT:
+    sent_wording = _wording(row.get("valja"))
+    sent = bool(sent_wording and sent_wording != NOT_SENT) or bool(row.get("valja_kuupaev"))
+    if live and sent_wording == NOT_SENT:
         # «ei saatnud» is a source assertion: on a live stage it concludes nothing
         # (0148's rule is for a finished stage) and is never a SENT opinion.
         if topic.get("lifecycle") != "ACTIVE":
@@ -338,10 +412,28 @@ def _validate_active_topic(topic: dict[str, Any], *, as_of: dt.date | None) -> l
 
     deadline = topic.get("deadline") or {}
     day = _day(deadline.get("deadline"))
-    if deadline.get("treatment") == "OPEN_REQUEST" and as_of and day and day < as_of:
+    if deadline.get("treatment") == "OPEN_REQUEST":
+        if as_of and day and day < as_of:
+            out.append(
+                "an open request whose day is before the snapshot is history, held for review — "
+                "never an overdue obligation."
+            )
+        if sent:
+            out.append(
+                "the source records a send (valja / valja_kuupaev); an answered request is not "
+                "an open one."
+            )
+    requested = _day(row.get("arvamuse_tahtaeg"))
+    if (
+        not sent
+        and as_of
+        and requested
+        and requested < as_of
+        and decisions.get("arvamuse_tahtaeg") != HELD_FOR_REVIEW
+    ):
         out.append(
-            "an open request whose day is before the snapshot is history, held for review — "
-            "never an overdue obligation."
+            "an opinion deadline before the snapshot with nothing sent is held for review "
+            "(field_decisions.arvamuse_tahtaeg), never an overdue obligation."
         )
 
     if topic.get("successor") and not source.get("successor_id"):
@@ -551,6 +643,8 @@ class LovablePlan:
     database_state: str = ""
     existing_matters: int = 0
     collisions: list[str] = field(default_factory=list)
+    #: Package references whose Lovable identity Juristid already holds.
+    identity_collisions: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
 
     @property
@@ -668,10 +762,36 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
                 f"continues under {successor}, which this package does not hold; the link is "
                 "kept as source text and nothing outside the package is touched."
             )
+        if v2:
+            plan.problems.extend(f"{reference}: {p}" for p in _overdue_on_arrival(topic, _today()))
         plan.topics.append(topic_plan)
 
     _read_database(plan)
     return plan
+
+
+def _today() -> dt.date:
+    """The apply's own day, in Tallinn (``TIME_ZONE``)."""
+    return timezone.localdate()
+
+
+def _overdue_on_arrival(topic: dict[str, Any], today: dt.date) -> list[str]:
+    """Version 2: a deadline that has passed by the day the plan is made — and the
+    plan is made again under the lock at apply — would arrive overdue. The
+    snapshot's own day is checked by `validate_package`; this is the gap between
+    the snapshot and the apply (docs/adr/0202 §3)."""
+    out: list[str] = []
+    step = topic.get("next_action") or {}
+    step_day = _day(step.get("target_date"))
+    if step.get("date_semantics") == "DEADLINE" and step_day and step_day < today:
+        out.append(
+            f"the step's deadline {step_day} is before today; it would be overdue on arrival."
+        )
+    deadline = topic.get("deadline") or {}
+    day = _day(deadline.get("deadline"))
+    if deadline.get("treatment") == "OPEN_REQUEST" and day and day < today:
+        out.append(f"the open request's day {day} is before today; it would be overdue on arrival.")
+    return out
 
 
 def _read_database(plan: LovablePlan) -> None:
@@ -717,6 +837,52 @@ def _read_database(plan: LovablePlan) -> None:
                 f"The database holds {written} record(s) of this package but not the whole of "
                 "it — a partial or removed import. Nothing is repaired here; investigate first."
             )
+    held = _identities_held(plan, exclude_matters=[m.pk for m in mine])
+    if held:
+        plan.identity_collisions = [f"{ref} (Juristid {held[ref]})" for ref in sorted(held)]
+        plan.database_state = "conflict"
+        plan.problems.append(
+            "These topics are already in Juristid under their Lovable identity — renumbered "
+            "in the source or imported before; a topic is never imported twice: "
+            + ", ".join(plan.identity_collisions)
+        )
+
+
+def _identities_held(plan: LovablePlan, *, exclude_matters: list[Any]) -> dict[str, str]:
+    """The package's topics whose Lovable identity a Juristid record already holds —
+    a synchronisation state or a Lovable source reference, deleted Teemad included
+    — other than this package's own Teemad. Package reference → Juristid reference."""
+    from app.matters.models import Matter
+
+    from .lovable_sync_models import LovableSyncState
+    from .models import MatterSourceReference
+
+    wanted = {str(t.topic["source"]["id"]): t.reference for t in plan.topics}
+    holders: dict[str, set[Any]] = {}
+    states = LovableSyncState._base_manager.filter(source_id__in=list(wanted)).exclude(
+        matter_id__in=exclude_matters
+    )
+    for source_id, matter_id in states.values_list("source_id", "matter_id"):
+        holders.setdefault(str(source_id), set()).add(matter_id)
+    sources = MatterSourceReference._base_manager.filter(
+        source_system=SOURCE_SYSTEM, source_row_raw__lovable__id__in=list(wanted)
+    ).exclude(matter_id__in=exclude_matters)
+    for raw, matter_id in sources.values_list("source_row_raw", "matter_id"):
+        holders.setdefault(str((raw.get("lovable") or {}).get("id")), set()).add(matter_id)
+    if not holders:
+        return {}
+    pks = {pk for found in holders.values() for pk in found}
+    names = {
+        m["pk"]: f"{m['reference_year']}_{m['reference_number']}"
+        for m in Matter.all_objects.filter(pk__in=pks).values(
+            "pk", "reference_year", "reference_number"
+        )
+    }
+    return {
+        wanted[source_id]: ", ".join(sorted(names.get(pk, str(pk)) for pk in found))
+        for source_id, found in holders.items()
+        if source_id in wanted
+    }
 
 
 def _deleted_references(topics: list[TopicPlan]) -> set[str]:
@@ -788,57 +954,152 @@ PRESERVED_FORMAT = "juristid.lovable-preserved"
 PRESERVED_FORMAT_VERSION = 1
 
 
-def _preserved_sources() -> list[tuple[str, Any, str, bool, dict[str, Any]]]:
-    """``(label, model, matter column, ids only, filter)`` for everything a Teema
-    holds that the digest covers. Whole rows where the row is the fact (steps,
-    dates, provenance, synchronisation state); identities where the row is an
-    append-only record or someone else's content (events, documents, notes)."""
+@dataclass(frozen=True)
+class _Covered:
+    """One kind of record a Teema holds, as the per-Teema digest reads it.
+
+    ``mode`` is what the digest inside the apply transaction takes: ``whole``
+    rows where the row is the fact, ``ids`` where the row is an append-only
+    record or somebody's own content. ``settled`` is what `preserved --before`
+    takes afterwards, outside any import: the nightly synchronisation and
+    ordinary reading go on, so what they legitimately move (a state's last
+    observation, a run's decisions, a notification being read) is left out
+    there, and only there.
+    """
+
+    label: str
+    model: Any
+    column: str
+    mode: str = "whole"
+    settled: str = "whole"
+    filters: tuple[tuple[str, Any], ...] = ()
+    settled_drop: frozenset[str] = frozenset()
+
+
+def _preserved_sources() -> list[_Covered]:
+    """Everything hanging off a Teema that the digest covers, one query each."""
     from app.audit.models import ChangeEvent, SecurityAuditEvent
     from app.documents.models import Document
-    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.intelligence.models import (
+        MatterEffectiveDate,
+        MatterImportantDate,
+        MatterWorkVictory,
+    )
     from app.matters.models import (
         Entry,
         Matter,
+        MatterAssignmentNotice,
+        MatterEngagement,
+        MatterExternalPosition,
         MatterPersonalNote,
+        MatterProceduralDevelopment,
+        MatterProceduralLink,
         MatterResponseDeadline,
         MatterSourceOrganisation,
         MatterStageEpisode,
+        MatterTimelineStep,
+        MatterWebsiteOverview,
         TagAssignment,
     )
+    from app.notifications.models import DeadlineNotification
+    from app.related_materials.models import (
+        MatterBackgroundMaterial,
+        MatterRelation,
+        RelatedSuggestionDismissal,
+    )
     from app.submissions.models import Submission
-    from app.workflow.models import NextAction
+    from app.workflow.models import MatterPlanStep, NextAction
 
     from .lovable_sync_models import LovableSyncDecision, LovableSyncState
-    from .models import EvidencePilotRecord, MatterSourceReference
+    from .models import (
+        CurrentRegisterState,
+        EvidencePilotRecord,
+        ExcelPilotImport,
+        HistoricalMatchCandidate,
+        ImportRowLedger,
+        MatterSourcePage,
+        MatterSourceReference,
+        OpinionArchiveMatterLink,
+        OpinionMatchCandidate,
+        RegisterEngagementImport,
+    )
 
-    whole, ids = False, True
+    m = "matter_id"
     return [
-        ("legal_instruments", Matter.legal_instruments.through, "matter_id", whole, {}),
-        ("policy_areas", Matter.policy_areas.through, "matter_id", whole, {}),
-        ("collaborators", Matter.collaborators.through, "matter_id", whole, {}),
-        ("tags", TagAssignment, "matter_id", whole, {}),
-        ("source_organisations", MatterSourceOrganisation, "matter_id", whole, {}),
-        ("next_actions", NextAction, "matter_id", whole, {}),
-        ("effective_dates", MatterEffectiveDate, "matter_id", whole, {}),
-        ("important_dates", MatterImportantDate, "matter_id", whole, {}),
-        ("response_deadlines", MatterResponseDeadline, "matter_id", whole, {}),
-        ("stage_episodes", MatterStageEpisode, "matter_id", whole, {}),
-        ("source_references", MatterSourceReference, "matter_id", whole, {}),
-        ("pilot_records", EvidencePilotRecord, "matter_id", whole, {}),
-        ("sync_state", LovableSyncState, "matter_id", whole, {}),
-        ("sync_decisions", LovableSyncDecision, "state__matter_id", whole, {}),
-        ("change_events", ChangeEvent, "matter_id", ids, {}),
-        (
+        _Covered("legal_instruments", Matter.legal_instruments.through, m),
+        _Covered("policy_areas", Matter.policy_areas.through, m),
+        _Covered("collaborators", Matter.collaborators.through, m),
+        _Covered("tags", TagAssignment, m),
+        _Covered("source_organisations", MatterSourceOrganisation, m),
+        # A Matter continuing under this one: a new Teema linking to an existing
+        # one changes the existing one's record, even when not its row.
+        _Covered(
+            "continued_by",
+            Matter,
+            "superseded_by_id",
+            filters=(("superseded_by__isnull", False),),
+            mode="ids",
+            settled="ids",
+        ),
+        _Covered("next_actions", NextAction, m),
+        _Covered("plan_steps", MatterPlanStep, m),
+        _Covered("effective_dates", MatterEffectiveDate, m),
+        _Covered("important_dates", MatterImportantDate, m),
+        _Covered("work_victories", MatterWorkVictory, m),
+        _Covered("response_deadlines", MatterResponseDeadline, m),
+        _Covered("stage_episodes", MatterStageEpisode, m),
+        _Covered("engagements", MatterEngagement, m),
+        _Covered("website_overviews", MatterWebsiteOverview, m),
+        _Covered("external_positions", MatterExternalPosition, m),
+        _Covered("procedural_developments", MatterProceduralDevelopment, m),
+        _Covered("procedural_links", MatterProceduralLink, m),
+        _Covered("timeline_steps", MatterTimelineStep, m),
+        _Covered("assignment_notices", MatterAssignmentNotice, m),
+        _Covered("relations_a", MatterRelation, "matter_a_id"),
+        _Covered("relations_b", MatterRelation, "matter_b_id"),
+        _Covered("background_materials", MatterBackgroundMaterial, m),
+        _Covered("dismissed_suggestions", RelatedSuggestionDismissal, m),
+        _Covered("dismissed_as_candidate", RelatedSuggestionDismissal, "candidate_matter_id"),
+        _Covered("deadline_notifications", DeadlineNotification, m, settled="ids"),
+        _Covered("source_references", MatterSourceReference, m),
+        _Covered("register_state", CurrentRegisterState, m),
+        _Covered("pilot_records", EvidencePilotRecord, m),
+        _Covered("excel_pilot", ExcelPilotImport, m),
+        _Covered("source_pages", MatterSourcePage, m, mode="ids", settled="ids"),
+        _Covered("row_ledger", ImportRowLedger, m, mode="ids", settled="ids"),
+        _Covered("opinion_candidates", OpinionMatchCandidate, m, mode="ids", settled="ids"),
+        _Covered("opinion_links", OpinionArchiveMatterLink, m, mode="ids", settled="ids"),
+        _Covered("historical_candidates", HistoricalMatchCandidate, m, mode="ids", settled="ids"),
+        _Covered(
+            "historical_results",
+            HistoricalMatchCandidate,
+            "resulting_matter_id",
+            mode="ids",
+            settled="ids",
+        ),
+        _Covered("engagement_imports", RegisterEngagementImport, m, mode="ids", settled="ids"),
+        _Covered(
+            "sync_state",
+            LovableSyncState,
+            m,
+            settled_drop=frozenset(
+                {"observed", "observed_version", "observed_run_id", "updated_at"}
+            ),
+        ),
+        _Covered("sync_decisions", LovableSyncDecision, "state__matter_id", settled="skip"),
+        _Covered("change_events", ChangeEvent, m, mode="ids", settled="ids"),
+        _Covered(
             "security_events",
             SecurityAuditEvent,
             "subject_id",
-            ids,
-            {"subject_type": "matters.Matter"},
+            filters=(("subject_type", "matters.Matter"),),
+            mode="ids",
+            settled="ids",
         ),
-        ("submissions", Submission, "matter_id", ids, {}),
-        ("documents", Document, "matter_id", ids, {}),
-        ("entries", Entry, "matter_id", ids, {}),
-        ("personal_notes", MatterPersonalNote, "matter_id", ids, {}),
+        _Covered("submissions", Submission, m, mode="ids", settled="ids"),
+        _Covered("documents", Document, m, mode="ids", settled="ids"),
+        _Covered("entries", Entry, m, mode="ids", settled="ids"),
+        _Covered("personal_notes", MatterPersonalNote, m, mode="ids", settled="ids"),
     ]
 
 
@@ -855,15 +1116,23 @@ def _digest_value(value: Any) -> Any:
     return value
 
 
-def _preserved_state(
-    exclude_matter_ids: Any = None,
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Per Matter: its digest, and its reference (to name it — never its title)."""
+@dataclass
+class _PreservedState:
+    #: Per Matter pk: the digest the apply transaction compares (everything).
+    full: dict[str, str]
+    #: The same, less what ordinary activity moves afterwards (`_Covered.settled`).
+    settled: dict[str, str]
+    #: Per Matter pk: its reference, to name it; never its title.
+    references: dict[str, str]
+
+
+def _preserved_state(exclude_matter_ids: Any = None) -> _PreservedState:
     from app.matters.models import Matter
 
     exclude = {str(pk) for pk in exclude_matter_ids or ()}
     columns = [f.attname for f in Matter._meta.concrete_fields]
-    held: dict[str, dict[str, Any]] = {}
+    full: dict[str, dict[str, Any]] = {}
+    settled: dict[str, dict[str, Any]] = {}
     references: dict[str, str] = {}
     key = Matter._meta.pk.attname
     for row in Matter.all_objects.order_by("pk").values(*columns):
@@ -871,28 +1140,56 @@ def _preserved_state(
         if pk in exclude:
             continue
         references[pk] = f"{row['reference_year']}_{row['reference_number']}"
-        held[pk] = {"matter": {k: _digest_value(v) for k, v in row.items()}}
-    for label, model, column, ids_only, filters in _preserved_sources():
-        names = ["pk"] if ids_only else [f.attname for f in model._meta.concrete_fields]
-        names = [name for name in names if name != column]
-        rows = model._base_manager.filter(**filters).order_by("pk").values(column, *names)
-        for row in rows:
-            owner = str(row.pop(column))
-            if owner not in held:
+        matter = {k: _digest_value(v) for k, v in row.items()}
+        full[pk] = {"matter": matter}
+        settled[pk] = {"matter": matter}
+    for covered in _preserved_sources():
+        model = covered.model
+        whole = "whole" in (covered.mode, covered.settled)
+        names = [f.attname for f in model._meta.concrete_fields] if whole else []
+        names = [name for name in names if name != covered.column]
+        manager: Any = Matter.all_objects if model is Matter else model._base_manager
+        query = manager.filter(**dict(covered.filters)).order_by("pk")
+        for row in query.values(covered.column, "pk", *names):
+            owner = str(row.pop(covered.column))
+            if owner not in full:
                 continue
-            entry = str(row["pk"]) if ids_only else {k: _digest_value(v) for k, v in row.items()}
-            held[owner].setdefault(label, []).append(entry)
-    return {pk: canonical_sha256(value) for pk, value in held.items()}, references
+            ident = str(row.pop("pk"))
+            value = {k: _digest_value(v) for k, v in row.items()}
+            for target, mode, drop in (
+                (full, covered.mode, frozenset()),
+                (settled, covered.settled, covered.settled_drop),
+            ):
+                if mode == "skip":
+                    continue
+                entry: Any = (
+                    ident if mode == "ids" else {k: v for k, v in value.items() if k not in drop}
+                )
+                target[owner].setdefault(covered.label, []).append(entry)
+    return _PreservedState(
+        full={pk: canonical_sha256(value) for pk, value in full.items()},
+        settled={pk: canonical_sha256(value) for pk, value in settled.items()},
+        references=references,
+    )
 
 
-def preserved_digests(*, exclude_matter_ids: Any = None) -> dict[str, str]:
+def preserved_digests(*, exclude_matter_ids: Any = None, settled: bool = False) -> dict[str, str]:
     """One SHA-256 per pre-existing Matter (deleted ones included) over the Matter
-    row and everything hanging off it: instruments, Valdkond, collaborators, tags,
-    senders, steps, dates, response deadlines, stage periods, source references,
-    pilot records, synchronisation state and decisions, and the identities of its
-    change and security events, submissions, documents, entries and personal
-    notes. A fixed handful of queries, whatever the number of Matters."""
-    return _preserved_state(exclude_matter_ids)[0]
+    row and everything hanging off it (`_preserved_sources`): instruments,
+    Valdkond, collaborators, tags, senders, the Teemad continuing under it,
+    steps, plan steps, dates, victories, deadlines, stage periods, engagements,
+    positions, developments, links, timeline, notices, related materials,
+    notifications, source and register records, pilot records, synchronisation
+    state and decisions, and the identities of its events, submissions,
+    documents, entries and personal notes. A fixed number of queries, whatever
+    the number of Matters.
+
+    ``settled`` leaves out what the nightly synchronisation and ordinary reading
+    move after an import (a state's last observation, a run's decisions, a
+    notification being read): what `preserved --before` compares afterwards.
+    """
+    state = _preserved_state(exclude_matter_ids)
+    return state.settled if settled else state.full
 
 
 def preserved_document(digests: dict[str, str], references: dict[str, str]) -> dict[str, Any]:
@@ -901,6 +1198,8 @@ def preserved_document(digests: dict[str, str], references: dict[str, str]) -> d
     body = {
         "format": PRESERVED_FORMAT,
         "format_version": PRESERVED_FORMAT_VERSION,
+        # The after-the-fact digests (`preserved_digests(settled=True)`).
+        "scope": "settled",
         "matters": dict(sorted(digests.items())),
         "references": {pk: references.get(pk, "") for pk in sorted(digests)},
     }
@@ -913,6 +1212,8 @@ def read_preserved_document(document: Any) -> tuple[dict[str, str], dict[str, st
     body = {k: v for k, v in document.items() if k != "sha256"}
     if document.get("format_version") != PRESERVED_FORMAT_VERSION:
         raise LovablePilotError(f"format_version {document.get('format_version')!r} is unknown.")
+    if document.get("scope") != "settled":
+        raise LovablePilotError("The digest file does not hold the after-the-fact digests.")
     if canonical_sha256(body) != document.get("sha256"):
         raise LovablePilotError("The digest file's sha256 does not match its content.")
     return dict(document["matters"]), dict(document.get("references") or {})
@@ -966,8 +1267,8 @@ def check_preserved(document: Any) -> PreservedComparison:
     """`lovable_pilot preserved --before`: the digest file against the database now,
     outside any import. Matters created since are not in the file and not judged."""
     before, references = read_preserved_document(document)
-    after, now = _preserved_state()
-    return compare_preserved(before, after, {**now, **references})
+    now = _preserved_state()
+    return compare_preserved(before, now.settled, {**now.references, **references})
 
 
 # ---------------------------------------------------------------------------
@@ -1045,6 +1346,8 @@ class ApplyReport:
     #: the same digests after the writes matched them, or nothing was written.
     preserved_before: dict[str, str] = field(default_factory=dict)
     preserved_references: dict[str, str] = field(default_factory=dict)
+    #: The same moment's after-the-fact digests, for `apply --preserved-out`.
+    preserved_settled_before: dict[str, str] = field(default_factory=dict)
     verify: Any = None
 
     def count(self, kind: str) -> None:
@@ -1273,8 +1576,10 @@ class _Writer:
         references = {t.reference for t in self.plan.topics}
         self.report.matters_before = Matter.all_objects.count()
         self.report.fingerprint_before = existing_fingerprint()
-        before, names = _preserved_state()
+        state = _preserved_state()
+        before, names = state.full, state.references
         self.report.preserved_before, self.report.preserved_references = before, names
+        self.report.preserved_settled_before = state.settled
         snapshot = self.package["snapshot"]
         self.batch = ImportBatch.objects.create(
             source_system=SOURCE_SYSTEM,
@@ -1317,7 +1622,7 @@ class _Writer:
             reserve_matter_reference(int(year), int(through))
 
         self.report.matters_after = Matter.all_objects.count()
-        after, _ = _preserved_state(exclude_matter_ids=[m.pk for m in created.values()])
+        after = _preserved_state(exclude_matter_ids=[m.pk for m in created.values()]).full
         comparison = compare_preserved(before, after, names, new_allowed=False)
         if not comparison.ok:
             raise LovablePilotError(

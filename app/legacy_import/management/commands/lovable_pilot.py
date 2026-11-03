@@ -23,10 +23,15 @@ reads back what was written and compares it with the package.
 
 The package names its cohort (docs/adr/0202 §1): a version-1 package is
 ``lovable-pilot``, a version-2 one ``lovable-active``; the intent typed at
-`apply` is the cohort. `apply --preserved-out` writes the per-Teema digests of
-every Teema that was already there, taken inside the transaction before the
-writes; `preserved --before` recomputes them afterwards and fails on any
-difference, naming references only. `source-drift` reads, through the
+`apply` is the cohort. Inside the transaction, `apply` digests every Teema
+that was already there before and after the writes, everything included, and
+refuses on any difference. `apply --preserved-out` (its directory checked
+writable before anything is applied) writes the same moment's after-the-fact
+digests, and `preserved --before` recomputes those later and fails on any
+difference, naming references only. The after-the-fact digests leave out what
+the nightly synchronisation and ordinary reading legitimately move: a state's
+last observation (`observed*`, `updated_at`), the runs' decisions, and
+notifications beyond their identities. `source-drift` reads, through the
 synchronisation's GET-only transport and service login, the version and number
 of every package topic and lists those Lovable changed, renumbered or no longer
 shows since the snapshot — references and counts only.
@@ -82,12 +87,19 @@ class Command(BaseCommand):
         parser.add_argument(
             "--preserved-out",
             default="",
-            help="apply: write the pre-existing Teemad's digests (taken before the writes) here.",
+            help=(
+                "apply: write the pre-existing Teemad's after-the-fact digests (taken before the "
+                "writes) here; the directory is checked writable before anything is applied."
+            ),
         )
         parser.add_argument(
             "--before",
             default="",
-            help="preserved: the digest file `apply --preserved-out` wrote.",
+            help=(
+                "preserved: the digest file `apply --preserved-out` wrote. Compared without the "
+                "synchronisation's own observations and decisions and notification states, which "
+                "nightly runs and reading change; everything else must be identical."
+            ),
         )
         parser.add_argument(
             "--config",
@@ -176,6 +188,8 @@ class Command(BaseCommand):
             raise CommandError(f"{len(verify.discrepancies)} discrepancy(ies) in the dry run.")
 
     def _apply(self, options: dict[str, Any]) -> None:
+        if options["preserved_out"]:
+            _require_writable(Path(options["preserved_out"]))
         plan = self._build(options)
         report = lovable_pilot.apply_plan(
             plan,
@@ -203,7 +217,7 @@ class Command(BaseCommand):
         }
         if options["preserved_out"]:
             document = lovable_pilot.preserved_document(
-                report.preserved_before, report.preserved_references
+                report.preserved_settled_before, report.preserved_references
             )
             Path(options["preserved_out"]).write_text(
                 json.dumps(document, ensure_ascii=False, indent=1, sort_keys=True),
@@ -279,3 +293,20 @@ class Command(BaseCommand):
             return
         for key, value in summary.items():
             self.stdout.write(f"{key}: {value}")
+
+
+def _require_writable(target: Path) -> None:
+    """Refuse before the apply, not after it: a digest file that cannot be written
+    once the transaction has committed is a check nobody can run."""
+    import tempfile
+
+    if target.exists() and not target.is_file():
+        raise CommandError(f"--preserved-out {target} is not a file.")
+    directory = target.parent if str(target.parent) else Path(".")
+    try:
+        with tempfile.NamedTemporaryFile(dir=directory, prefix=".preserved-", delete=True):
+            pass
+    except OSError as error:
+        raise CommandError(
+            f"--preserved-out: {directory} is not writable ({error.strerror}); nothing was applied."
+        ) from error
