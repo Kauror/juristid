@@ -8,33 +8,25 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-11-04
-basis = "deployment"
-prs = [589]
-# Lovable'i operatiivse registri ümberehitus ühest hetktõmmisest ja öise võrdluse
-# laiendus (#589, ADR 0202, legacy_import 0021 — kaks uut tabelit ja üks
-# lisaveerg). Väljalase ise ühtegi teemat ei muuda ega impordi; ümberehitus ja
-# võrdlusesse lisamine on eraldi, omaniku kinnitatud toimingud. Otsinguindeksit
-# uuesti ei ehitata. Kui väljalase ei jõua tootmisse 04.11, liigub kirje
-# väljalaske päeva kuupäevale.
-changes = [
-  "Uuendused → Lovable räägib nüüd «sünkroonitavatest teemadest», mitte ainult pilootteemadest: kui võrdlusesse lisandub uusi teemasid, on iga selline teema esimesel ööl märgitud «Lisandus võrdlusesse», mitte Lovable'i muudatusena.",
-  "Imporditud teema väljad, mida importimisel ei saanud kindlalt tõlgendada või mille Juristides tehtud muudatus jäeti alles, on «Ülevaatust ootavate muudatuste» all märgitud «Imporditud ülevaatamiseks» ja jäävad sinna, kuni keegi need üle vaatab.",
-]
-
-[[day]]
 date = 2026-11-03
 basis = "deployment"
-prs = [588]
+prs = [588, 589]
 # 03.11 vigade otsingu parandused (#588): Lovable'i vaadete sõnastus ja arvud,
 # vahetatud kuupäevad, valitud veerud kitsas aknas, menetlusliigi «Määramata».
-# Migratsiooni pole. Kui väljalase ei jõua tootmisse 03.11, liigub kirje
-# väljalaske päeva kuupäevale.
+# Migratsiooni pole.
+# Sama päeva teine väljalase (#589, ADR 0202, legacy_import 0021 — kaks uut
+# tabelit ja üks lisaveerg): Lovable'i operatiivse registri ümberehitus ühest
+# hetktõmmisest ja öise võrdluse laiendus. Väljalase ise ühtegi teemat ei muuda
+# ega impordi; ümberehitus ja võrdlusesse lisamine on eraldi, omaniku kinnitatud
+# toimingud. Otsinguindeksit uuesti ei ehitata. Kui see väljalase ei jõua
+# tootmisse 03.11, liiguvad selle kaks punkti väljalaske päeva kirjesse.
 changes = [
   "Uuendused → Lovable: ülevaatust ootavate väljade arv on nüüd kirjas kui kõik seni lahendamata erinevused, mitte ainult viimase öö muudatused; operatiivsete ja kõigi Lovable'i teemade arv on näha ka siis, kui laiem vaatlus on välja lülitatud.",
   "Kui alguskuupäev on hilisem kui lõppkuupäev, vahetatakse need ära ja leht ütleb seda.",
   "Teemade tabelis jäävad «Vali veerud» all ise valitud veerud näha ka kitsas aknas; tabelit saab siis külgsuunas kerida.",
   "Teemade täpsemas otsingus saab menetlusliigi järgi valida ka «Määramata».",
+  "Uuendused → Lovable räägib nüüd «sünkroonitavatest teemadest», mitte ainult pilootteemadest: kui võrdlusesse lisandub uusi teemasid, on iga selline teema esimesel ööl märgitud «Lisandus võrdlusesse», mitte Lovable'i muudatusena.",
+  "Imporditud teema väljad, mida importimisel ei saanud kindlalt tõlgendada või mille Juristides tehtud muudatus jäeti alles, on «Ülevaatust ootavate muudatuste» all märgitud «Imporditud ülevaatamiseks» ja jäävad sinna, kuni keegi need üle vaatab.",
 ]
 
 [[day]]
