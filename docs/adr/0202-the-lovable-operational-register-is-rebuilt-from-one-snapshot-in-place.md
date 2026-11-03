@@ -133,6 +133,21 @@ snapshot; drift does not invalidate the package — the first night reports it.
 - retires the pilot cohort (its row says when and by which rebuild), so the
   nightly size check expects the rebuilt cohort only.
 
+A rebased Teema's targets are what the rebuild wrote, by its own records (the
+`TITLE`, `OWNER` and `NEXT_ACTION` provenance); where it wrote nothing they are
+the pilot's (its own step included), unless Juristid already holds exactly the
+snapshot's value — a genuine convergence. A lawyer's value is never made the
+baseline.
+
+**Order.** The enrolment comes after the rebuild's apply and before the next
+night, in this order: `lovable_pilot preserved --before <file>` first (it compares
+the synchronisation state too, so after enrolment it reports the re-seeded
+baselines as differences), then `enroll --supersede`. A nightly or manual run
+that reconciled after the rebuild was applied would already have converged the
+rebuild's writes into the pilot's baselines, so it refuses the enrolment
+(`SYNC_RAN_SINCE_REBUILD`): the operator restores the pre-rebuild backup set, or
+the owner decides.
+
 Thereafter the nightly run is the 0192 run over one cohort: COMPARE only;
 `IMPORT_HELD` fields reported every night until a person resolves them; source
 activity (ongoing, finished, continues, not operational, missing) counted; a

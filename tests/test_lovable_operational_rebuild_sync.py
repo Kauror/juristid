@@ -82,8 +82,18 @@ def _ledger() -> tuple[list[Any], list[Any]]:
     return decisions, runs
 
 
-def _write_rebase(world_: dict[str, Any], *, skip: tuple[str, ...] = ()) -> None:
-    """The importer's REBASE output for every pilot Teema (contract of ADR 0202 §6)."""
+def _write_rebase(
+    world_: dict[str, Any],
+    *,
+    skip: tuple[str, ...] = (),
+    decisions: dict[str, dict[str, str]] | None = None,
+    no_step: tuple[str, ...] = (),
+) -> None:
+    """The importer's REBASE output for every pilot Teema (contract of ADR 0202 §6).
+
+    ``no_step``: Teemad whose step the rebuild did not write (a lawyer's step it
+    kept), so it records no ``NEXT_ACTION`` for them."""
+    held = {**REBASE_DECISIONS, **(decisions or {})}
     digest = world_["digest"]
     created = EvidencePilotRecord.objects.filter(
         pilot=OPERATIONAL_COHORT, package_sha256=digest, record_kind="MATTER"
@@ -114,7 +124,7 @@ def _write_rebase(world_: dict[str, Any], *, skip: tuple[str, ...] = ()) -> None
                 "lovable": {"id": source_id, "version": version},
                 "row": row,
                 "commencements": [],
-                "field_decisions": REBASE_DECISIONS[reference],
+                "field_decisions": held[reference],
                 "review_notes": [],
             },
             source_title=row["teema"],
@@ -148,7 +158,7 @@ def _write_rebase(world_: dict[str, Any], *, skip: tuple[str, ...] = ()) -> None
                 target_id=target,
             )
         step = NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).first()
-        if step is not None:
+        if step is not None and reference not in no_step:
             EvidencePilotRecord.objects.create(
                 pilot=OPERATIONAL_COHORT,
                 pilot_version="2.0",
@@ -167,6 +177,12 @@ def rebuild(active):
     moved 501's stage and owner and 505's title, a lawyer retitled 502 before it,
     and the rebuild wrote 505's title and 501's owner (B was A) and held 501's
     stage and addressee."""
+    return _rebuild_world(active)
+
+
+def _rebuild_world(active: dict[str, Any], before: Any = None, **rebase: Any) -> dict[str, Any]:
+    """The `rebuild` fixture's world; ``before`` runs just before the rebuild is
+    written, ``rebase`` goes to `_write_rebase`."""
     source = active["source"]
     assert _run(active, SyncTrigger.SCHEDULED, at=NIGHT).status == SyncRunStatus.SUCCEEDED
     source.edit("2026_501", kellele="Ministeerium")
@@ -177,7 +193,9 @@ def rebuild(active):
     Matter.all_objects.filter(pk=_matter("2026_502").pk).update(title="Juristi pealkiri")
     Matter.all_objects.filter(pk=_matter("2026_505").pk).update(title="Uus 505")
     Matter.all_objects.filter(pk=_matter("2026_501").pk).update(owner=active["world"]["jaan"])
-    _write_rebase(active)
+    if before is not None:
+        before(active)
+    _write_rebase(active, **rebase)
     return active
 
 
@@ -405,15 +423,118 @@ def test_a_lawyer_edit_between_the_apply_and_the_enrolment_stays_local(rebuild):
     assert _decisions(night, "2026_505")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
 
 
-def test_without_a_written_record_the_pilot_target_stays(rebuild):
+def test_without_a_written_record_a_genuine_convergence_is_the_target(rebuild):
+    """Nothing written by the rebuild, and Juristid already says what the snapshot
+    says: that is a convergence, as ALREADY_CONVERGED would record it — never a
+    permanent false local change."""
     EvidencePilotRecord.objects.filter(record_kind__in=("TITLE", "OWNER")).delete()
     _supersede(rebuild)
-    # 505: the rebuild's title is not recorded as written, so the pilot's target
-    # stays and Juristid's new title is a local value, not the baseline.
+    title = LovableSyncState.objects.get(reference="2026_505").applied["title"]
+    assert title == {"source": "Uus 505", "target": "Uus 505"}
+    owner = LovableSyncState.objects.get(reference="2026_501").applied["owner"]
+    assert owner["target"] == str(rebuild["world"]["jaan"].pk)
+    night = _run(rebuild, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
+    assert night.status == SyncRunStatus.SUCCEEDED, night.error
+    assert "title" not in _decisions(night, "2026_505")
+    assert "owner" not in _decisions(night, "2026_501")
+
+
+def test_without_a_written_record_a_different_local_value_keeps_the_pilot_target(rebuild):
+    EvidencePilotRecord.objects.filter(record_kind__in=("TITLE", "OWNER")).delete()
+    Matter.all_objects.filter(pk=_matter("2026_505").pk).update(title="Juristi 505")
+    Matter.all_objects.filter(pk=_matter("2026_501").pk).update(owner=rebuild["world"]["mari"])
+    _supersede(rebuild)
     title = LovableSyncState.objects.get(reference="2026_505").applied["title"]
     assert title == {"source": "Uus 505", "target": "Näidisteema 2026_505"}
     owner = LovableSyncState.objects.get(reference="2026_501").applied["owner"]
-    assert owner["target"] == str(rebuild["world"]["mari"].pk)
+    assert owner["target"] == str(rebuild["world"]["mari"].pk)  # the pilot's own target
+    night = _run(rebuild, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
+    assert _decisions(night, "2026_505")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+
+
+def _lawyer_step(world_: dict[str, Any]) -> None:
+    """A lawyer replaces 505's step before the rebuild."""
+    import datetime as dt
+
+    from app.workflow.services import set_next_action
+
+    set_next_action(
+        matter=_matter("2026_505"),
+        text="Juristi oma samm",
+        target_date=dt.date(2026, 12, 1),
+        actor=world_["world"]["jaan"],
+    )
+
+
+def _pilot_step_id(reference: str) -> str:
+    record = EvidencePilotRecord.objects.get(
+        pilot=PILOT_COHORT, matter=_matter(reference), record_kind="NEXT_ACTION"
+    )
+    return str(record.target_id)
+
+
+def test_a_kept_lawyer_step_with_no_rebuild_record_stays_local(active):
+    """C = A, B ≠ A: the rebuild keeps the lawyer's step and records no step; the
+    baseline is the pilot's own step, so the lawyer's reads as a local change."""
+    _rebuild_world(active, before=_lawyer_step, no_step=("2026_505",))
+    _supersede(active)
+    step = LovableSyncState.objects.get(reference="2026_505").applied["next_action"]
+    assert step["target"]["id"] == _pilot_step_id("2026_505")
+    night = _run(active, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
+    assert night.status == SyncRunStatus.SUCCEEDED, night.error
+    found = _decisions(night, "2026_505")
+    assert found["next_action_text"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    assert found["next_action_date"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+
+
+def test_a_keep_local_step_with_no_rebuild_record_is_held(active):
+    """C ≠ A, B ≠ A, KEEP_LOCAL: the step is held for review, its baseline the
+    pilot's step — never the lawyer's."""
+
+    def before(world_: dict[str, Any]) -> None:
+        _lawyer_step(world_)
+        world_["source"].edit("2026_505", jargmiseks="Lovable'i uus sõnastus")
+
+    _rebuild_world(
+        active,
+        before=before,
+        no_step=("2026_505",),
+        decisions={"2026_505": {"teema": "APPLIED", "jargmiseks": HELD}},
+    )
+    _supersede(active)
+    applied = LovableSyncState.objects.get(reference="2026_505").applied
+    assert applied["next_action"]["target"]["id"] == _pilot_step_id("2026_505")
+    assert applied["next_action_text"]["import_held"] is True
+    night = _run(active, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
+    found = _decisions(night, "2026_505")
+    for name in ("next_action_text", "next_action_date"):
+        assert (found[name].outcome, found[name].reason) == (
+            SyncOutcome.REVIEW_REQUIRED,
+            lovable_sync.IMPORT_HELD,
+        )
+
+
+def test_a_night_reconciled_after_the_rebuild_refuses_the_enrolment(rebuild):
+    from app.legacy_import.models import ImportBatch
+
+    batch = ImportBatch.objects.get(
+        pk=MatterSourceReference.objects.filter(source_snapshot_sha256=REBUILD_SNAPSHOT)
+        .values_list("import_batch_id", flat=True)
+        .first()
+    )
+    applied_at = batch.finished_at or batch.started_at
+    # A check after the rebuild compares, but converges nothing: no refusal.
+    check = lovable_sync.run_sync(trigger=SyncTrigger.CHECK, now=lambda: applied_at + HOUR)
+    assert check.status == SyncRunStatus.SUCCEEDED, check.error
+    run = _run(rebuild, at=applied_at + 2 * HOUR)
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    before = _state_dump(_pilot_pks())
+    with pytest.raises(SyncRefused, match="Restore the pre-rebuild backup set") as refused:
+        _supersede(rebuild)
+    assert refused.value.code == "SYNC_RAN_SINCE_REBUILD"
+    assert not LovableSyncCohort.objects.exists()
+    assert not LovableSyncBaselineArchive.objects.exists()
+    assert _state_dump(_pilot_pks()) == before
 
 
 def test_a_rebased_teema_can_still_be_deleted_permanently(rebuild):

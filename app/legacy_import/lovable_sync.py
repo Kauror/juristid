@@ -497,7 +497,10 @@ def _imported_owner_id(matter: Any) -> str | None:
 
 
 def seed_values(
-    reference: Any, cohort: Cohort | None = None, previous: dict[str, Any] | None = None
+    reference: Any,
+    cohort: Cohort | None = None,
+    previous: dict[str, Any] | None = None,
+    resolver: OwnerResolver | None = None,
 ) -> dict[str, Any]:
     """A's first value, from what the import wrote — never from the current row,
     which may already hold a lawyer's edit.
@@ -511,8 +514,13 @@ def seed_values(
     new reference's `source_title`; ``OWNER``: the user it assigned), and
     otherwise what the pilot import gave Juristid — never Juristid's value read
     now, so a lawyer's edit before or after the rebuild stays a local value,
-    never a silent convergence. The OneNote link's target is the pilot's when
-    the source did not move, else the new reference's."""
+    never a silent convergence — unless Juristid already says exactly what the
+    snapshot says, which is a convergence the nightly run would record anyway
+    (``ALREADY_CONVERGED``), so the target is that value. The OneNote link's
+    target is the pilot's when the source did not move, else the new
+    reference's. A rebased Teema whose step the rebuild did not write (no
+    ``NEXT_ACTION`` record: a lawyer's step it kept) keeps the pilot's own step
+    as the baseline, so the lawyer's step still reads as a local change."""
     cohort = cohort or pilot_cohort()
     matter = reference.matter
     raw = reference.source_row_raw or {}
@@ -526,12 +534,23 @@ def seed_values(
     applied["next_action"] = {"target": action, "treatment": treatment}
     if previous is not None:
         written = _rebuild_writes(matter, cohort, reference)
+        now = {
+            "title": text_value(matter.title),
+            "owner": str(matter.owner_id) if matter.owner_id else None,
+        }
         for name in ("title", "owner"):
             before = previous.get(name) or {}
             if name in written:
                 applied[name]["target"] = written[name]
+            elif now[name] is not None and now[name] == _source_target(
+                name, source[name], resolver
+            ):
+                applied[name]["target"] = now[name]
             elif "target" in before:
                 applied[name]["target"] = before["target"]
+        if not _has_step_record(matter, cohort):
+            action, treatment = _imported_action(matter, PILOT)
+            applied["next_action"] = {"target": action, "treatment": treatment}
         link = previous.get("onenote_link") or {}
         if "target" in link and link.get("source") == source["onenote_link"]:
             applied["onenote_link"]["target"] = link["target"]
@@ -547,6 +566,26 @@ def seed_values(
         "applied_version": lovable.get("version"),
         "applied_snapshot_sha256": reference.source_snapshot_sha256,
     }
+
+
+def _source_target(name: str, value: Any, resolver: OwnerResolver | None) -> Any:
+    """What Juristid would hold for the source's value: the title itself, or the
+    one user the owner's name resolves to (`OwnerResolver`), else ``None``."""
+    if name == "title":
+        return value or None
+    target, _reason = (resolver or OwnerResolver([])).resolve(value)
+    return target
+
+
+def _has_step_record(matter: Any, cohort: Cohort) -> bool:
+    from app.legacy_import.models import EvidencePilotRecord
+
+    return EvidencePilotRecord.objects.filter(
+        pilot=cohort.pilot,
+        package_sha256=cohort.package_sha256,
+        matter=matter,
+        record_kind="NEXT_ACTION",
+    ).exists()
 
 
 def _rebuild_writes(matter: Any, cohort: Cohort, reference: Any) -> dict[str, Any]:
@@ -577,7 +616,12 @@ def seed_state(reference: Any, cohort: Cohort | None = None) -> LovableSyncState
 
 
 def reseed_state(
-    state: LovableSyncState, reference: Any, cohort: Cohort, *, reason: str
+    state: LovableSyncState,
+    reference: Any,
+    cohort: Cohort,
+    *,
+    reason: str,
+    resolver: OwnerResolver | None = None,
 ) -> LovableSyncBaselineArchive:
     """A rebased Teema's state, brought to the rebuild's snapshot in place
     (docs/adr/0202 §6): its baseline and last observation are archived exactly as
@@ -598,7 +642,7 @@ def reseed_state(
         reason=reason[:300],
         package_sha256=cohort.package_sha256,
     )
-    values = seed_values(reference, cohort, previous=state.applied)
+    values = seed_values(reference, cohort, previous=state.applied, resolver=resolver)
     if str(values["source_id"]) != str(state.source_id):
         raise SyncRefused(
             "IDENTITY_MISMATCH", "A rebased Teema's new reference names another Lovable topic."
@@ -2064,6 +2108,7 @@ def enroll(
                         "A rebased Teema's new reference names another Lovable topic.",
                     )
             superseded = {state.matter_id: state for state in old}
+            _refuse_runs_since_rebuild(references, rebased)
         taken = (
             LovableSyncState.objects.filter(
                 Q(source_id__in=list(source_ids.values())) | Q(matter_id__in=matter_ids)
@@ -2087,11 +2132,20 @@ def enroll(
             reason=reason[:300],
         )
         held = reseeded = 0
+        # Owner names resolve as the nightly run resolves them, through the
+        # pairs the pilot's reviewed people map produced.
+        resolver = OwnerResolver(superseded.values())
         archive_reason = f"Asendatud kohordiga {cohort} (pakett {package_sha256}): {reason}"
         for matter_id in matter_ids:
             reference = references[matter_id][0]
             if matter_id in superseded:
-                reseed_state(superseded[matter_id], reference, target, reason=archive_reason)
+                reseed_state(
+                    superseded[matter_id],
+                    reference,
+                    target,
+                    reason=archive_reason,
+                    resolver=resolver,
+                )
                 applied = LovableSyncState.objects.get(pk=superseded[matter_id].pk).applied
                 reseeded += 1
             else:
@@ -2124,6 +2178,42 @@ def enroll(
         reseeded=reseeded,
         superseded=supersede,
     )
+
+
+def _refuse_runs_since_rebuild(references: dict[Any, list[Any]], rebased: set[Any]) -> None:
+    """A night that reconciled after the rebuild was applied has already compared
+    the rebuild's writes with the pilot's baselines, and converged some of them
+    into those baselines: archiving them now would archive a mixture. Refuse;
+    the operator restores the pre-rebuild state or the owner decides."""
+    batches = {
+        found[0].import_batch_id
+        for matter, found in references.items()
+        if matter in rebased and found
+    }
+    from app.legacy_import.models import ImportBatch
+
+    applied = [
+        batch.finished_at or batch.started_at
+        for batch in ImportBatch.objects.filter(pk__in=batches)
+        if batch.finished_at or batch.started_at
+    ]
+    if not applied:
+        return
+    since = min(applied)
+    runs = [
+        run
+        for run in LovableSyncRun.objects.exclude(trigger=SyncTrigger.CHECK).filter(
+            started_at__gt=since
+        )
+        if run_reconciled(run)
+    ]
+    if runs:
+        raise SyncRefused(
+            "SYNC_RAN_SINCE_REBUILD",
+            f"{len(runs)} synchronisation run(s) reconciled after the rebuild was applied "
+            "and may have moved the pilot baselines. Restore the pre-rebuild backup set and "
+            "enrol before the next night, or have the owner decide; nothing was enrolled.",
+        )
 
 
 def summary_lines(run: LovableSyncRun) -> list[str]:

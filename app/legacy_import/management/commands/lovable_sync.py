@@ -50,7 +50,12 @@ names, with baselines from the import snapshot, under the run lock. It prints
 counts only; the same enrolment again says so and changes nothing. With
 ``--supersede lovable-pilot`` (a rebuild, docs/adr/0202 §6) every pilot state
 must be rebased by the package: each is archived and re-seeded in place, and
-the pilot cohort is retired.
+the pilot cohort is retired. Order, after the rebuild's apply and before the
+next night: (1) `lovable_pilot preserved --before <file>` — it compares the
+synchronisation state too, so it reports differences once enrolment has
+re-seeded it; (2) `enroll --supersede`. A nightly or manual run that reconciled
+after the rebuild was applied refuses the enrolment (SYNC_RAN_SINCE_REBUILD):
+restore the pre-rebuild backup set, or the owner decides.
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 3 held for review (circuit breaker or no backup), 1 failed.
@@ -131,7 +136,12 @@ class Command(BaseCommand):
             "--expect", type=int, default=0, help="enroll: how many Teemad the cohort holds."
         )
         parser.add_argument(
-            "--supersede", default="", help="enroll: the cohort a rebuild retires (lovable-pilot)."
+            "--supersede",
+            default="",
+            help=(
+                "enroll: the cohort a rebuild retires (lovable-pilot). Run "
+                "`lovable_pilot preserved --before` first, and enrol before the next night."
+            ),
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
