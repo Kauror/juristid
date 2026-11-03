@@ -2051,6 +2051,11 @@ def enroll(
             "REPLACES_REQUIRED",
             "The register replaces every earlier cohort: name them with --replaces.",
         )
+    if replaced and cohort != REGISTER_COHORT:
+        raise SyncRefused(
+            "REPLACES_ONLY_REGISTER",
+            f"Only the register ({REGISTER_COHORT}) replaces earlier cohorts.",
+        )
     if replaced:
         if supersede:
             raise SyncRefused(

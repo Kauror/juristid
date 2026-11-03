@@ -944,6 +944,11 @@ class LovablePlan:
     #: it releases.
     retirement: list[dict[str, Any]] = field(default_factory=list)
     released: list[str] = field(default_factory=list)
+    #: Pair rows (MatterRelation, RelatedSuggestionDismissal) between two retiring
+    #: Teemad, removed before any retirement; and the stored objects the retired
+    #: Teemad leave as orphans (counts and a digest of their keys).
+    pair_rows: dict[str, list[str]] = field(default_factory=dict)
+    orphaned: dict[str, Any] = field(default_factory=dict)
 
     @property
     def cohort(self) -> str:
@@ -1238,18 +1243,27 @@ def _plan_retirement(plan: LovablePlan, retiring: list[Any]) -> None:
         "pk", "superseded_by"
     ):
         referrers.setdefault(successor, set()).add(pk)
+    plan.pair_rows = _pair_rows_between(ids)
+    ignored = {label: set(rows) for label, rows in plan.pair_rows.items()}
+    evidence: set[str] = set()
+    derivatives: set[str] = set()
+    blocked_by: list[Any] = []
     for m in retiring:
-        deletion = plan_matter_deletion(m)
-        codes = sorted(
-            {
-                b.code
-                for b in deletion.blockers
-                if not (
-                    b.code == BLOCKED_BY_RELATED_MATTER
-                    and (referrers.get(m.pk, set()) - {m.pk}) <= ids
-                )
-            }
-        )
+        # The pair rows between two retiring Teemad go first (`write_replacement`),
+        # so neither Teema's deletion counts them: retiring the first must not
+        # change the second's plan (docs/adr/0096 §4.2).
+        deletion = plan_matter_deletion(m, ignore_rows=ignored)
+        evidence.update(deletion.evidence_keys)
+        derivatives.update(deletion.derivative_keys)
+        kept = [
+            b
+            for b in deletion.blockers
+            if not (
+                b.code == BLOCKED_BY_RELATED_MATTER and (referrers.get(m.pk, set()) - {m.pk}) <= ids
+            )
+        ]
+        codes = sorted({b.code for b in kept})
+        blocked_by.append(kept)
         origin = next((o for o in ORIGIN_ORDER if o in pilots.get(m.pk, set())), "other")
         reference = m.display_reference
         plan.retirement.append(
@@ -1262,11 +1276,59 @@ def _plan_retirement(plan: LovablePlan, retiring: list[Any]) -> None:
                 "blockers": codes,
             }
         )
-        if codes:
-            plan.problems.append(
-                f"{reference or m.pk}: cannot be retired ({', '.join(codes)}); nothing is replaced."
+    far = {pk for kept in blocked_by for b in kept for pk in b.matters}
+    names = {str(pk): ref for pk, ref in _reference_names(far).items()}
+    for entry, kept in zip(plan.retirement, blocked_by, strict=True):
+        if not kept:
+            continue
+        # Each kind, the record it is, how many, and the other Teemad involved —
+        # references only (fail safe: a cross-Teema record is never cut).
+        reasons = "; ".join(
+            f"{b.code} {b.label} ×{b.count}"
+            + (
+                " with " + ", ".join(sorted(names.get(pk, pk) for pk in b.matters))
+                if b.matters
+                else ""
             )
+            for b in sorted(kept)
+        )
+        plan.problems.append(
+            f"{entry['reference'] or entry['pk']}: cannot be retired ({reasons}); nothing is "
+            "replaced."
+        )
     plan.released = sorted(r["reference"] for r in plan.retirement if r["reference"])
+    keys = sorted(f"evidence:{k}" for k in evidence) + sorted(
+        f"derivative:{k}" for k in derivatives
+    )
+    plan.orphaned = {
+        "orphaned_evidence_objects": len(evidence),
+        "orphaned_derivative_objects": len(derivatives),
+        "orphaned_keys_sha256": hashlib.sha256("\n".join(keys).encode()).hexdigest(),
+    }
+
+
+#: The two models that exist to name two Matters (`deletion.MATTER_PAIR_MODELS`),
+#: and their two Matter keys.
+_PAIR_KEYS = {
+    "related_materials.MatterRelation": ("matter_a_id", "matter_b_id"),
+    "related_materials.RelatedSuggestionDismissal": ("matter_id", "candidate_matter_id"),
+}
+
+
+def _pair_rows_between(ids: set[Any]) -> dict[str, list[str]]:
+    """Pair rows whose two Matters are both retiring, by model label."""
+    from django.apps import apps
+
+    out: dict[str, list[str]] = {}
+    for label, (first, second) in _PAIR_KEYS.items():
+        model = apps.get_model(label)
+        rows = model._base_manager.filter(
+            **{f"{first}__in": list(ids), f"{second}__in": list(ids)}
+        ).values_list("pk", flat=True)
+        found = sorted(str(pk) for pk in rows)
+        if found:
+            out[label] = found
+    return out
 
 
 def replacement_counts(plan: LovablePlan) -> dict[str, Any]:
@@ -1280,38 +1342,69 @@ def replacement_counts(plan: LovablePlan) -> dict[str, Any]:
         "created": sum(1 for t in plan.topics if t.action == CREATE),
         "blockers": sum(1 for r in plan.retirement if r["blockers"]),
         "by_origin": dict(sorted(by_origin.items())),
+        **plan.orphaned,
     }
 
 
 #: Everything outside the business dataset the replacement must leave as it was
-#: (docs/adr/0203 §2): ``(label, rows created before the apply only)``. A table
-#: whose rows are written and never changed (events, runs, batches, records) is
-#: compared on the rows that were there before; the rest whole.
-OUTSIDE_DATASET: tuple[tuple[str, bool], ...] = (
-    ("auth.Group", False),
-    ("auth.Permission", False),
-    ("accounts.User", False),
-    ("accounts.BreakGlassGrant", False),
-    ("accounts.DisclosurePreference", False),
-    ("organisations.Organisation", False),
-    ("organisations.OrganisationAlias", False),
-    ("taxonomy.PolicyArea", False),
-    ("taxonomy.LegalInstrumentType", False),
-    ("taxonomy.Tag", False),
-    ("taxonomy.TagAlias", False),
-    ("workflow.StageVocabulary", False),
-    ("workflow.LegacyStatusMapping", False),
-    ("mcp_access.McpAccessGrant", False),
-    ("mcp_access.McpAuthenticator", False),
-    ("notifications.NotificationPreference", False),
-    ("notifications.NotificationSettings", False),
-    ("legacy_import.LovableSyncCohort", False),
-    ("legacy_import.ImportBatch", True),
-    ("legacy_import.EvidencePilotRecord", True),
-    ("legacy_import.LovableSyncRun", True),
-    ("legacy_import.LovableSyncSnapshot", True),
-    ("audit.SecurityAuditEvent", True),
-    ("audit.ChangeEvent", True),
+#: (docs/adr/0203 §2), and how each is compared: ``rows`` — every row there
+#: before the apply, whole; ``ids`` — every row there before the apply must still
+#: exist (event and log tables, which ordinary use only appends to). A table with
+#: a ``created_at`` is compared on the rows created before the apply, so a sign-in
+#: or a token issued afterwards never reads as a change. None of these is owned by
+#: a Teema (tests/test_lovable_register_replacement.py proves it).
+OUTSIDE_DATASET: tuple[tuple[str, str], ...] = (
+    ("contenttypes.ContentType", "rows"),
+    ("auth.Group", "rows"),
+    ("auth.Permission", "rows"),
+    ("accounts.User", "rows"),
+    ("accounts.BreakGlassGrant", "rows"),
+    ("accounts.DisclosurePreference", "rows"),
+    ("accounts.TotpDevice", "rows"),
+    ("accounts.RecoveryCode", "rows"),
+    ("accounts.TrustedSignInSource", "rows"),
+    ("accounts.AccountCredentialToken", "rows"),
+    ("organisations.Organisation", "rows"),
+    ("organisations.OrganisationAlias", "rows"),
+    ("taxonomy.PolicyArea", "rows"),
+    ("taxonomy.LegalInstrumentType", "rows"),
+    ("taxonomy.Tag", "rows"),
+    ("taxonomy.TagAlias", "rows"),
+    ("workflow.StageVocabulary", "rows"),
+    ("workflow.LegacyStatusMapping", "rows"),
+    ("mcp_access.McpAccessGrant", "rows"),
+    ("mcp_access.McpAuthenticator", "rows"),
+    ("mcp_access.McpToken", "rows"),
+    ("mcp_access.McpEnrolmentLink", "rows"),
+    ("mcp_access.McpAuthorizationCode", "rows"),
+    ("mcp_access.McpAccessEvent", "ids"),
+    ("mcp_writes.McpWriteProposal", "rows"),
+    ("mcp_writes.McpWriteApproval", "rows"),
+    ("mcp_writes.McpWriteEvent", "ids"),
+    ("notifications.NotificationPreference", "rows"),
+    ("notifications.NotificationSettings", "rows"),
+    ("matters.PersonalScratchpad", "rows"),
+    ("legacy_import.LovableSyncCohort", "rows"),
+    ("legacy_import.LovableSyncControl", "rows"),
+    ("legacy_import.LovableAuditCursor", "rows"),
+    ("legacy_import.ImportBatch", "rows"),
+    ("legacy_import.EvidencePilotRecord", "rows"),
+    ("legacy_import.LovableSyncSnapshot", "rows"),
+    ("legacy_import.LovableObservationSnapshot", "rows"),
+    ("legacy_import.OpinionArchiveBatch", "rows"),
+    ("legacy_import.OpinionArchiveItem", "rows"),
+    ("legacy_import.OpinionArchiveMetadata", "rows"),
+    ("legacy_import.OpinionArchiveBinary", "rows"),
+    ("legacy_import.OpinionArchiveText", "rows"),
+    ("legacy_import.LegacySourcePage", "rows"),
+    ("legacy_import.LegacySourceResource", "rows"),
+    ("legacy_import.LovableSyncRun", "ids"),
+    ("legacy_import.LovableObservationRun", "ids"),
+    ("legacy_import.LovableSourceEvent", "ids"),
+    ("legacy_import.LovableSourceEventField", "ids"),
+    ("legacy_import.LovableRetentionRun", "ids"),
+    ("audit.SecurityAuditEvent", "rows"),
+    ("audit.ChangeEvent", "ids"),
 )
 
 
@@ -1329,27 +1422,28 @@ def outside_digests(cutoff: Any, *, settled: bool = False) -> dict[str, str]:
 
     moment = dt.datetime.fromisoformat(cutoff) if isinstance(cutoff, str) else cutoff
     out: dict[str, str] = {}
-    tables: list[tuple[str, Any, bool]] = []
-    for label, before_only in OUTSIDE_DATASET:
+    tables: list[tuple[str, Any, str]] = []
+    for label, mode in OUTSIDE_DATASET:
         try:
-            tables.append((label, apps.get_model(label), before_only))
+            tables.append((label, apps.get_model(label), mode))
         except LookupError:  # pragma: no cover - an app this deployment lacks
             continue
     user = apps.get_model("accounts.User")
     group = apps.get_model("auth.Group")
     tables += [
-        ("accounts.User.groups", user.groups.through, False),
-        ("accounts.User.user_permissions", user.user_permissions.through, False),
-        ("auth.Group.permissions", group.permissions.through, False),
+        ("accounts.User.groups", user.groups.through, "rows"),
+        ("accounts.User.user_permissions", user.user_permissions.through, "rows"),
+        ("auth.Group.permissions", group.permissions.through, "rows"),
     ]
-    for label, model, before_only in tables:
+    for label, model, mode in tables:
         names = [f.attname for f in model._meta.concrete_fields]
         if settled:
             names = [n for n in names if not _volatile(n)]
-        if label == "audit.ChangeEvent":
-            names = ["id", "created_at"]  # identities: none may go
+        if mode == "ids":
+            names = [model._meta.pk.attname]  # identities: none may go
         query = model._base_manager.all()
-        if before_only and moment is not None:
+        dated = any(f.name == "created_at" for f in model._meta.concrete_fields)
+        if dated and moment is not None:
             query = query.filter(created_at__lt=moment)
         rows = [
             {k: _digest_value(v) for k, v in row.items()}
@@ -1936,6 +2030,7 @@ def plan_digest(plan: LovablePlan) -> str:
                             for r in plan.retirement
                         ],
                         "released": plan.released,
+                        "pair_rows": plan.pair_rows,
                     }
                 }
                 if plan.replace
@@ -2450,6 +2545,7 @@ class PreservedComparison:
                 ("appeared", self.added),
                 ("local work changed", self.local_changed),
                 ("undeclared changes", self.undeclared),
+                ("outside the dataset", self.outside_changed),
             )
             if refs
         ]
@@ -2605,6 +2701,7 @@ class ApplyReport:
     released: int = 0
     outside_before: dict[str, str] = field(default_factory=dict)
     outside_cutoff: str = ""
+    orphaned: dict[str, Any] = field(default_factory=dict)
 
     def count_retired(self, origin: str, *, released: bool) -> None:
         self.retired[origin] = self.retired.get(origin, 0) + 1
@@ -2913,13 +3010,25 @@ class _Writer:
             ),
         )
         self.report.batch_id = self.batch.pk
+        self.report.orphaned = dict(self.plan.orphaned)
 
         # Continuations among the retired Teemad first, so no deletion finds
         # another Teema naming it; then each retired, then its reference released.
         retiring = [r["pk"] for r in self.plan.retirement]
+        # No change event for the unlink: the predecessor and its successor are
+        # both retired in this transaction, and each one's MATTER_DELETED (with
+        # this package's provenance) is the record of what happened to it; an
+        # event saying "no longer continues under …" would describe a state no
+        # reader can ever see.
         Matter.all_objects.filter(pk__in=retiring, superseded_by__isnull=False).update(
             superseded_by=None
         )
+        # The pair rows between two retiring Teemad, exactly those the plan named,
+        # so each deletion is the one its plan digest describes.
+        from django.apps import apps
+
+        for label, rows in sorted(self.plan.pair_rows.items()):
+            apps.get_model(label)._base_manager.filter(pk__in=rows).delete()
         for entry in self.plan.retirement:
             matter = Matter.all_objects.get(pk=entry["pk"])
             retire_for_source_replacement(
@@ -3000,6 +3109,7 @@ class _Writer:
                 "topics": len(created),
                 "retired": len(self.plan.retirement),
                 "released": len(self.plan.released),
+                **self.plan.orphaned,
                 "backup_set": self.backup_set,
                 "written": self.report.written,
                 "matters_before": self.report.matters_before,

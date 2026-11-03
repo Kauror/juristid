@@ -257,7 +257,10 @@ def test_a_legal_hold_blocks_the_plan(world):
 
     Document.objects.filter(matter=world["evidence"]).update(legal_hold=True)
     plan = build_plan(_replacement())
-    assert "2026_300: cannot be retired (LEGAL_HOLD); nothing is replaced." in plan.problems
+    assert any(
+        p.startswith("2026_300: cannot be retired (LEGAL_HOLD documents.Document")
+        for p in plan.problems
+    ), plan.problems
     with pytest.raises(LovablePilotError, match="The plan has problems"):
         _apply(_replacement())
     assert Matter.objects.count() == 9
@@ -440,11 +443,14 @@ def test_the_command_runs_the_replacement_and_checks_what_stayed(world, tmp_path
     )
     call_command("lovable_pilot", "preserved", "--before", str(out), "--json")
     capsys.readouterr()
-    # A changed organisation is caught.
+    # A new row afterwards is ordinary use; a changed one is caught.
     factories.OrganisationFactory()
+    call_command("lovable_pilot", "preserved", "--before", str(out), "--json")
+    capsys.readouterr()
+    type(world["area"]).objects.filter(pk=world["area"].pk).update(name_et="Muudetud")
     with pytest.raises(CommandError, match="pre-existing Teema"):
         call_command("lovable_pilot", "preserved", "--before", str(out), "--json")
-    assert json.loads(capsys.readouterr().out)["outside_changed"] == ["organisations.Organisation"]
+    assert json.loads(capsys.readouterr().out)["outside_changed"] == ["taxonomy.PolicyArea"]
 
 
 # ---------------------------------------------------------------------------
@@ -483,3 +489,126 @@ def test_the_system_door_refuses_without_the_replacements_provenance(db):
     with refused(deletion.DELETION_REFUSED):
         deletion.delete_matter(matter=matter, retain=frozenset({"documents.Document"}))
     assert Matter.objects.filter(pk=matter.pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# Review fixes
+# ---------------------------------------------------------------------------
+
+NOW = dt.datetime(2026, 11, 1, tzinfo=dt.UTC)
+
+
+def test_pair_rows_between_two_retiring_teemad_do_not_stale_the_apply(world):
+    from app.related_materials.models import MatterRelation, RelatedSuggestionDismissal
+
+    a, b = sorted([world["native"], world["evidence"]], key=lambda m: str(m.pk))
+    MatterRelation.objects.create(matter_a=a, matter_b=b, linked_by=world["mari"], linked_at=NOW)
+    RelatedSuggestionDismissal.objects.create(
+        matter=world["native"],
+        candidate_matter=world["evidence"],
+        dismissed_by=world["mari"],
+        dismissed_at=NOW,
+    )
+    plan = build_plan(_replacement())
+    assert plan.problems == [], plan.problems
+    report = _apply(_replacement())
+    assert report.verify.ok, report.verify.discrepancies
+    assert not MatterRelation.objects.exists()
+    assert not RelatedSuggestionDismissal.objects.exists()
+
+
+def test_a_cross_teema_blocker_names_its_kind_and_the_other_teema(world):
+    from app.related_materials.models import MatterBackgroundMaterial
+    from app.submissions.models import Submission
+
+    cited = Submission.objects.get(matter=world["evidence"])
+    MatterBackgroundMaterial.objects.create(
+        matter=world["native"], submission=cited, added_by=world["mari"], added_at=NOW
+    )
+    plan = build_plan(_replacement())
+    problem = next(p for p in plan.problems if p.startswith("2026_300:"))
+    assert "OUTSIDE_REFERENCE" in problem or "STRADDLING_ROW" in problem
+    assert "related_materials.MatterBackgroundMaterial" in problem
+    assert "2026_7" in problem, problem
+
+
+def test_the_orphaned_evidence_is_counted(world):
+    plan = build_plan(_replacement())
+    counts = lovable_pilot.replacement_counts(plan)
+    assert counts["orphaned_evidence_objects"] == 1
+    assert len(counts["orphaned_keys_sha256"]) == 64
+    report = _apply(_replacement())
+    run = SecurityAuditEvent.objects.filter(event_type="IMPORT_RUN").latest("created_at")
+    assert run.detail["orphaned_evidence_objects"] == 1
+    assert run.detail["orphaned_keys_sha256"] == counts["orphaned_keys_sha256"]
+    assert report.orphaned["orphaned_evidence_objects"] == 1
+
+
+def test_a_colleagues_scratchpad_is_outside_the_dataset(world, monkeypatch):
+    from app.matters.models import PersonalScratchpad
+
+    pad = PersonalScratchpad.objects.create(user=world["colleague"])
+    original = lovable_pilot._Writer.write_topic
+
+    def and_touch(self, topic_plan):
+        PersonalScratchpad.objects.filter(pk=pad.pk).delete()
+        return original(self, topic_plan)
+
+    monkeypatch.setattr(lovable_pilot._Writer, "write_topic", and_touch)
+    with pytest.raises(LovablePilotError, match=r"matters\.PersonalScratchpad"):
+        _apply(_replacement())
+
+
+def test_nothing_outside_the_dataset_is_owned_by_a_teema():
+    from django.apps import apps
+
+    from app.matters.purge import OWNING_BEHAVIOURS, reverse_relations
+
+    owned: set[str] = set()
+    queue = [Matter]
+    while queue:
+        model = queue.pop()
+        for relation in reverse_relations(model):
+            child = relation.related_model
+            if relation.on_delete in OWNING_BEHAVIOURS and child is not Matter:
+                if child._meta.label not in owned:
+                    owned.add(child._meta.label)
+                    queue.append(child)
+    outside = {label for label, _mode in lovable_pilot.OUTSIDE_DATASET}
+    # Owned but retained under a tombstone: the audit trail and the pilots' records.
+    assert outside & owned <= {"audit.ChangeEvent", "legacy_import.EvidencePilotRecord"}
+    for label in outside:
+        apps.get_model(label)
+
+
+def test_only_the_importer_opens_the_replacement_door():
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "app"
+    callers = [
+        path.relative_to(root).as_posix()
+        for path in root.rglob("*.py")
+        if re.search(r"(?<![\w.])retire_for_source_replacement\(", path.read_text(encoding="utf-8"))
+        and path.name != "deletion.py"
+    ]
+    assert callers == ["legacy_import/lovable_pilot.py"]
+
+
+def test_the_summary_names_a_moved_outside_table():
+    comparison = lovable_pilot.PreservedComparison(outside_changed=["auth.Group"])
+    assert "auth.Group" in comparison.summary()
+
+
+def test_only_the_register_enrolment_replaces_cohorts(db):
+    from app.legacy_import.lovable_sync import SyncRefused, enroll
+
+    with pytest.raises(SyncRefused) as refused_:
+        enroll(
+            cohort="lovable-operational",
+            package_sha256="a" * 64,
+            expect=1,
+            reason="näide",
+            replaces=["lovable-pilot"],
+        )
+    assert refused_.value.code == "REPLACES_ONLY_REGISTER"

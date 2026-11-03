@@ -273,6 +273,7 @@ class Command(BaseCommand):
                     "released": report.released,
                     "created": report.written.get("MATTER", 0),
                     "outside_checked": len(report.outside_before),
+                    **report.orphaned,
                 }
                 if plan.replace
                 else {}

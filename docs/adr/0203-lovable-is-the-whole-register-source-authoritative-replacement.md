@@ -54,7 +54,23 @@ and plan digests, a named verified backup set):
 **Evidence bytes are not deleted by the replacement.** Documents' rows go with their Teemad;
 their stored files stay in the evidence store as orphans (reclaimable later by the existing
 `prune_orphaned_evidence`, a separate owner decision). The replacement is therefore reversed
-completely by restoring the database from the verified set taken immediately before it.
+completely by restoring the database from the verified set taken immediately before it. The plan
+and the `IMPORT_RUN` event count the orphaned objects and digest their keys
+(`orphaned_evidence_objects`, `orphaned_derivative_objects`, `orphaned_keys_sha256`); afterwards
+`check_evidence_integrity` WARNs `ORPHAN_OBJECT` for exactly those, which is expected. **Running
+`prune_orphaned_evidence` deletes the bytes the rollback relies on** and stays a separate owner
+decision, taken only once the replacement is accepted.
+
+**Pair rows between two retiring Teemad** (`MatterRelation`, `RelatedSuggestionDismissal`) are
+removed first, exactly those the plan named, so each retirement is the deletion its plan digest
+describes. Any other record linking two Teemad (a background citation, a shared final file, an
+attachment link, a dismissed candidate opinion) is a plan problem naming its kind and both
+references: it fails safe and is resolved by a person before the replacement runs.
+
+**How it is run:** `lovable_pilot replace --package P --step validate|plan|dry-run|apply|verify`
+(the ordinary `dry-run` and `apply` refuse a replacement package); `--preserved-out` at apply and
+`preserved --before` afterwards; `--json` gives retired, released, created, blockers, orphaned
+objects and the counts by origin.
 
 ### 2. What stays
 
@@ -64,6 +80,25 @@ batches and pilot provenance records whose Teema is a tombstone; the synchronisa
 and stored snapshots; backups and fingerprints. Per-Teema synchronisation state, decisions and
 archives are owned by their Teema and go with it (0192's ledger keeps the run rows; the backup set
 keeps everything).
+
+**Owned history goes with the old Teemad** — the backup set is its only copy afterwards:
+`reporting.OperationalMatterSnapshot` (so past «Muudatused» KPI periods read differently),
+`OpinionArchiveMatterLink`, `OpinionSubmissionImport`, `OpinionMatchCandidate`, each Teema's
+`LovableSyncState`, its decisions and baseline archives, its source references and register rows.
+
+**What is proven unchanged** (`lovable_pilot.OUTSIDE_DATASET`, inside the transaction and again
+with `preserved --before`): content types, groups, permissions and their links; users and their
+second factors, recovery codes, trusted sign-in sources and credential tokens; break-glass grants
+and disclosure preferences; organisations and aliases; the taxonomy, stage vocabulary and status
+mapping; MCP grants, authenticators, tokens, enrolment links, authorisation codes and write
+proposals and approvals; notification preferences and settings; personal scratchpads; the sync
+cohorts, control and audit cursor; import batches, pilot records, sync and observation snapshots;
+the opinion archive's batches, items, metadata, binaries and texts; legacy source pages and
+resources; security events — each on the rows that existed before the apply, whole. Event and log
+tables (change events, MCP access and write events, sync, observation and retention runs, source
+events and fields) are compared by identity: every row there before must still exist. A row created
+afterwards (a sign-in, a token) is ordinary use and never a difference; `updated_at` and `last_*`
+columns are not compared afterwards.
 
 ### 3. One clean comparison cohort
 

@@ -172,6 +172,9 @@ class DeletionBlocker:
     label: str
     count: int
     detail: str = ""
+    #: The other Teemad the blocking rows belong to (pks), where they can be told
+    #: — for an operator who must see which pair of files is involved.
+    matters: tuple[str, ...] = ()
 
     @property
     def message(self) -> str:
@@ -397,6 +400,34 @@ def _related_matters(matter: Matter) -> list[DeletionBlocker]:
     ]
 
 
+def _matter_path(model: type[models.Model], depth: int = 3) -> str | None:
+    """The shortest forward-key lookup from ``model`` to `Matter` (``matter``,
+    ``document__matter``, …), or None when there is none within ``depth``."""
+    queue: list[tuple[type[models.Model], str]] = [(model, "")]
+    for _ in range(depth):
+        following: list[tuple[type[models.Model], str]] = []
+        for current, prefix in queue:
+            for key in current._meta.concrete_fields:
+                if not key.is_relation or key.related_model is None:
+                    continue
+                path = f"{prefix}{key.name}"
+                if key.related_model is Matter:
+                    return path
+                following.append((key.related_model, f"{path}__"))
+        queue = following
+    return None
+
+
+def _matters_of(model: type[models.Model], ids: Iterable[Any]) -> tuple[str, ...]:
+    if model is Matter:
+        return tuple(sorted({str(pk) for pk in ids if pk}))
+    path = _matter_path(model)
+    if path is None:
+        return ()
+    found = model._base_manager.filter(pk__in=list(ids)).values_list(path, flat=True)
+    return tuple(sorted({str(pk) for pk in found if pk}))
+
+
 def _outside_references(owned: _Owned) -> list[DeletionBlocker]:
     """Rows outside the owned set that point into it.
 
@@ -437,6 +468,7 @@ def _outside_references(owned: _Owned) -> list[DeletionBlocker]:
                         f"{behaviour_name(relation.on_delete)} onto {label}; "
                         "the referring row is outside this matter"
                     ),
+                    matters=_matters_of(relation.related_model, outside),
                 )
             )
     return blockers
@@ -493,9 +525,12 @@ def _straddling_rows(owned: _Owned) -> list[DeletionBlocker]:
             column = cast(Any, key).attname
             inside = owned.ids[related._meta.label]
             outside = 0
+            far: set[Any] = set()
             for chunk in _chunked(ids):
                 targets = model._base_manager.filter(pk__in=chunk).values_list(column, flat=True)
-                outside += sum(1 for target in targets if target and target not in inside)
+                strays = [target for target in targets if target and target not in inside]
+                outside += len(strays)
+                far.update(strays)
             if not outside:
                 continue
             blockers.append(
@@ -504,6 +539,7 @@ def _straddling_rows(owned: _Owned) -> list[DeletionBlocker]:
                     label=f"{label}.{key.name}",
                     count=outside,
                     detail=f"also holds a {related._meta.label} outside this matter",
+                    matters=_matters_of(related, far),
                 )
             )
     return blockers
@@ -656,7 +692,9 @@ def deletion_may_be_offered(matter: Matter) -> bool:
     return not any(queryset.exists() for queryset in blocked)
 
 
-def plan_matter_deletion(matter: Matter) -> DeletionPlan:
+def plan_matter_deletion(
+    matter: Matter, *, ignore_rows: dict[str, set[Any]] | None = None
+) -> DeletionPlan:
     """Inventory what deleting this Matter would do. Reads only.
 
     Deterministic by construction: every collection is a set of primary keys and
@@ -665,6 +703,15 @@ def plan_matter_deletion(matter: Matter) -> DeletionPlan:
     a moment later.
     """
     owned = _collect_owned(matter)
+    # Rows another operation removes before this deletion runs (the source
+    # replacement's pair rows between two retiring Teemad): the plan is the plan
+    # of the deletion that will actually happen, so they are not in it.
+    for label, ignored in (ignore_rows or {}).items():
+        if label in owned.ids:
+            wanted = {str(pk) for pk in ignored}
+            owned.ids[label] -= {pk for pk in owned.ids[label] if str(pk) in wanted}
+            if not owned.ids[label]:
+                del owned.ids[label]  # as if the walk had never found any
     blockers = (
         _legal_holds(owned)
         + _related_matters(matter)

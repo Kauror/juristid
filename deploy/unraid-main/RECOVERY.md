@@ -1249,6 +1249,17 @@ Code rollback does nothing: the rows are written. This needs either the backup
 or a reviewed corrective migration, and it is the case that most deserves an
 hour of thought before a command.
 
+### After the Lovable register replacement (docs/adr/0203)
+
+The replacement deletes every earlier Teema's rows but **not their stored
+files**: those stay in the evidence store as orphans, so restoring the database
+from the set taken just before reverses it completely. Until the replacement is
+accepted, `check_evidence_integrity` WARNs `ORPHAN_OBJECT` for exactly the
+objects its `IMPORT_RUN` event counts (`orphaned_evidence_objects`,
+`orphaned_keys_sha256`) — expected, not damage. Do **not** run
+`prune_orphaned_evidence` before that: it deletes the bytes the rollback relies
+on, and pruning is a separate owner decision.
+
 ### Real work happened after the bad deployment
 
 Then restoring the database is not a rollback; it is a second data loss. Say so
