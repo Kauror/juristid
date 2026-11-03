@@ -11,14 +11,15 @@
 date = 2026-11-04
 basis = "deployment"
 prs = [589]
-# Lovable'i aktiivse registri teine kohort ja selle öine võrdlus (#589, ADR
-# 0202, legacy_import 0021 — üks uus tabel ja üks lisaveerg). Väljalase ise ei
-# impordi ühtegi teemat; import ja võrdlusesse lisamine on eraldi, omaniku
-# kinnitatud toimingud. Otsinguindeksit uuesti ei ehitata. Kui väljalase ei
-# jõua tootmisse 04.11, liigub kirje väljalaske päeva kuupäevale.
+# Lovable'i operatiivse registri ümberehitus ühest hetktõmmisest ja öise võrdluse
+# laiendus (#589, ADR 0202, legacy_import 0021 — kaks uut tabelit ja üks
+# lisaveerg). Väljalase ise ühtegi teemat ei muuda ega impordi; ümberehitus ja
+# võrdlusesse lisamine on eraldi, omaniku kinnitatud toimingud. Otsinguindeksit
+# uuesti ei ehitata. Kui väljalase ei jõua tootmisse 04.11, liigub kirje
+# väljalaske päeva kuupäevale.
 changes = [
-  "Uuendused → Lovable räägib nüüd «sünkroonitavatest teemadest», mitte ainult pilootteemadest: kui võrdlusesse lisandub uus teemade kogum, on iga selline teema esimesel ööl märgitud «Lisandus võrdlusesse», mitte Lovable'i muudatusena.",
-  "Imporditud teema väljad, mida importimisel ei saanud kindlalt tõlgendada, on «Ülevaatust ootavate muudatuste» all märgitud «Imporditud ülevaatamiseks» ja jäävad sinna, kuni keegi need üle vaatab.",
+  "Uuendused → Lovable räägib nüüd «sünkroonitavatest teemadest», mitte ainult pilootteemadest: kui võrdlusesse lisandub uusi teemasid, on iga selline teema esimesel ööl märgitud «Lisandus võrdlusesse», mitte Lovable'i muudatusena.",
+  "Imporditud teema väljad, mida importimisel ei saanud kindlalt tõlgendada või mille Juristides tehtud muudatus jäeti alles, on «Ülevaatust ootavate muudatuste» all märgitud «Imporditud ülevaatamiseks» ja jäävad sinna, kuni keegi need üle vaatab.",
 ]
 
 [[day]]
