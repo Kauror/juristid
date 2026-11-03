@@ -64,6 +64,7 @@ from app.legacy_import.lovable_pilot import (
     HELD_FIELD_COLUMNS,
     OPERATIONAL_COHORT,
     PILOT,
+    REGISTER_COHORT,
     SOURCE_SYSTEM,
     SOURCE_TABLE,
 )
@@ -102,9 +103,6 @@ EXPECTED_COHORT = 100
 #: importer writes. The pilot is built in; any other is synchronised only once
 #: enrolled (`enroll`).
 PILOT_COHORT = PILOT
-#: The source-authoritative replacement's cohort (docs/adr/0203 §3). Defined
-#: here until the importer exports it.
-REGISTER_COHORT = "lovable-register"
 ENROLLABLE_COHORTS = (OPERATIONAL_COHORT, REGISTER_COHORT)
 #: Cohorts a rebuild may supersede (`enroll --supersede`): only the pilot.
 SUPERSEDABLE_COHORTS = (PILOT_COHORT,)
