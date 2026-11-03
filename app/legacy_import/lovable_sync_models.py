@@ -18,7 +18,8 @@ Six tables, kept apart from the importers' immutable provenance:
   `LovableSyncState.cohort` says which cohort a state belongs to;
 * `LovableSyncBaselineArchive` — a rebased Teema's baseline and last
   observation exactly as they were before the rebuild re-seeded its state in
-  place (docs/adr/0202 §6). Written once; never changed, never deleted.
+  place (docs/adr/0202 §6). Written once and never changed;
+  removed only with its Teema.
 """
 
 from __future__ import annotations
@@ -231,11 +232,14 @@ class LovableSyncBaselineArchive(BaseModel):
     evidence of what the pilot's comparison knew stays readable. The run and
     decision ledger is not copied: it keeps pointing at the same state row."""
 
+    #: Both follow their Teema, as the state and its decisions do: the archive is
+    #: evidence of the synchronisation, never a reason to keep a Teema a person
+    #: decided to delete permanently.
     state = models.ForeignKey(
-        LovableSyncState, on_delete=models.PROTECT, related_name="baseline_archives"
+        LovableSyncState, on_delete=models.CASCADE, related_name="baseline_archives"
     )
     matter = models.ForeignKey(
-        "matters.Matter", on_delete=models.PROTECT, related_name="lovable_baseline_archives"
+        "matters.Matter", on_delete=models.CASCADE, related_name="lovable_baseline_archives"
     )
     cohort_before = models.CharField(max_length=64)
     cohort_after = models.CharField(max_length=64)

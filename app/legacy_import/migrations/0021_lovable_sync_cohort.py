@@ -54,9 +54,9 @@ class Migration(migrations.Migration):
                 ('archived_at', models.DateTimeField()),
                 ('reason', models.CharField(max_length=300)),
                 ('package_sha256', models.CharField(max_length=64)),
-                ('matter', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='lovable_baseline_archives', to='matters.matter')),
+                ('matter', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='lovable_baseline_archives', to='matters.matter')),
                 ('observed_run', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='+', to='legacy_import.lovablesyncrun')),
-                ('state', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='baseline_archives', to='legacy_import.lovablesyncstate')),
+                ('state', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='baseline_archives', to='legacy_import.lovablesyncstate')),
             ],
             options={
                 'verbose_name': 'Lovable sünkroonimise arhiveeritud lähtekoht',

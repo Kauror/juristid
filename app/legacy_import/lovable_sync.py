@@ -392,12 +392,22 @@ def cohort_references(cohort: Cohort | None = None) -> list[Any]:
             notes__contains=cohort.package_sha256,
         ).values_list("pk", flat=True)
     )
+    # A REBASE record that names its new reference decides for its Teema; the
+    # batch is the fallback for one that does not.
     named = {
-        str(target)
-        for _, kind, model, target in members
+        matter: str(target)
+        for matter, kind, model, target in members
         if kind == "REBASE" and model == "legacy_import.MatterSourceReference" and target
     }
-    return [r for r in references if r.import_batch_id in batches or str(r.pk) in named]
+    return [
+        r
+        for r in references
+        if (
+            str(r.pk) == named[r.matter_id]
+            if r.matter_id in named
+            else r.import_batch_id in batches
+        )
+    ]
 
 
 def _action_dict(action: Any) -> dict[str, Any] | None:
@@ -496,11 +506,13 @@ def seed_values(
     (`HELD_FOR_REVIEW`) is marked ``import_held`` (docs/adr/0202 §6). The pilot's
     baselines are seeded exactly as 0192 seeds them.
 
-    ``previous`` is a rebased Teema's pilot baseline. Where the snapshot says
-    what the pilot's snapshot said, the rebuild wrote nothing, so what the pilot
-    import gave Juristid stays the target: a lawyer's value since then is still
-    a local value, never a silent convergence. Where the source moved, the
-    rebuild wrote it (or held it), and the target is what Juristid holds now."""
+    ``previous`` is a rebased Teema's pilot baseline. The title's and the
+    owner's target is what the rebuild wrote, by its own record (``TITLE``: the
+    new reference's `source_title`; ``OWNER``: the user it assigned), and
+    otherwise what the pilot import gave Juristid — never Juristid's value read
+    now, so a lawyer's edit before or after the rebuild stays a local value,
+    never a silent convergence. The OneNote link's target is the pilot's when
+    the source did not move, else the new reference's."""
     cohort = cohort or pilot_cohort()
     matter = reference.matter
     raw = reference.source_row_raw or {}
@@ -513,14 +525,16 @@ def seed_values(
     applied["onenote_link"]["target"] = reference.onenote_url
     applied["next_action"] = {"target": action, "treatment": treatment}
     if previous is not None:
-        for name in ("title", "owner", "onenote_link"):
+        written = _rebuild_writes(matter, cohort, reference)
+        for name in ("title", "owner"):
             before = previous.get(name) or {}
-            if "target" not in before:
-                continue
-            if before.get("source") == source[name]:
+            if name in written:
+                applied[name]["target"] = written[name]
+            elif "target" in before:
                 applied[name]["target"] = before["target"]
-            elif name == "owner":
-                applied[name]["target"] = str(matter.owner_id) if matter.owner_id else None
+        link = previous.get("onenote_link") or {}
+        if "target" in link and link.get("source") == source["onenote_link"]:
+            applied["onenote_link"]["target"] = link["target"]
     if not cohort.builtin:
         for name in import_held_fields(raw):
             applied[name]["import_held"] = True
@@ -533,6 +547,26 @@ def seed_values(
         "applied_version": lovable.get("version"),
         "applied_snapshot_sha256": reference.source_snapshot_sha256,
     }
+
+
+def _rebuild_writes(matter: Any, cohort: Cohort, reference: Any) -> dict[str, Any]:
+    """What a rebuild package wrote to a rebased Teema's title and owner, by its
+    own records: ``TITLE`` (the written title is the new reference's
+    `source_title`) and ``OWNER`` (the user it assigned)."""
+    from app.legacy_import.models import EvidencePilotRecord
+
+    out: dict[str, Any] = {}
+    for kind, target in EvidencePilotRecord.objects.filter(
+        pilot=cohort.pilot,
+        package_sha256=cohort.package_sha256,
+        matter=matter,
+        record_kind__in=("TITLE", "OWNER"),
+    ).values_list("record_kind", "target_id"):
+        if kind == "TITLE":
+            out["title"] = text_value(reference.source_title)
+        elif target is not None:
+            out["owner"] = str(target)
+    return out
 
 
 def seed_state(reference: Any, cohort: Cohort | None = None) -> LovableSyncState:

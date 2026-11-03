@@ -91,23 +91,18 @@ def _write_rebase(world_: dict[str, Any], *, skip: tuple[str, ...] = ()) -> None
     assert created is not None
     batch = MatterSourceReference.objects.get(matter_id=created.matter_id).import_batch
     rows = {row["nr"]: row for row in world_["source"].rows.values()}
+    # What the rebuild wrote, by its own records: 505's title and 501's owner.
+    written = {
+        "2026_505": [("TITLE", "matters.Matter", _matter("2026_505").pk)],
+        "2026_501": [("OWNER", "accounts.User", world_["world"]["jaan"].pk)],
+    }
     for reference in PILOT_REFERENCES:
         if reference in skip:
             continue
         matter = _matter(reference)
         row = copy.deepcopy(rows[reference])
         source_id, version = row.pop("id"), row.pop("version")
-        EvidencePilotRecord.objects.create(
-            pilot=OPERATIONAL_COHORT,
-            pilot_version="2.0",
-            package_sha256=digest,
-            record_key=f"{reference}:rebase",
-            record_kind="REBASE",
-            matter=matter,
-            target_model="matters.Matter",
-            target_id=matter.pk,
-        )
-        MatterSourceReference.objects.create(
+        new_reference = MatterSourceReference.objects.create(
             matter=matter,
             import_batch=batch,
             source_system="LOVABLE",
@@ -128,6 +123,30 @@ def _write_rebase(world_: dict[str, Any], *, skip: tuple[str, ...] = ()) -> None
             match_method="REFERENCE_TOKEN",
             conflict_state="NONE",
         )
+        # The record names its new reference; 503's names only the Teema, so the
+        # package's batch is what finds its reference (the fallback).
+        named = reference != "2026_503"
+        EvidencePilotRecord.objects.create(
+            pilot=OPERATIONAL_COHORT,
+            pilot_version="2.0",
+            package_sha256=digest,
+            record_key=f"{reference}:rebase",
+            record_kind="REBASE",
+            matter=matter,
+            target_model="legacy_import.MatterSourceReference" if named else "matters.Matter",
+            target_id=new_reference.pk if named else matter.pk,
+        )
+        for kind, model, target in written.get(reference, ()):
+            EvidencePilotRecord.objects.create(
+                pilot=OPERATIONAL_COHORT,
+                pilot_version="2.0",
+                package_sha256=digest,
+                record_key=f"{reference}:{kind.lower()}",
+                record_kind=kind,
+                matter=matter,
+                target_model=model,
+                target_id=target,
+            )
         step = NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).first()
         if step is not None:
             EvidencePilotRecord.objects.create(
@@ -145,16 +164,19 @@ def _write_rebase(world_: dict[str, Any], *, skip: tuple[str, ...] = ()) -> None
 @pytest.fixture
 def rebuild(active):
     """Two pilot nights (the second with a held change), then the rebuild: Lovable
-    moved 501's stage and 505's title, a lawyer retitled 502 before it, and the
-    rebuild wrote 505's title (B was A) and held 501's stage and addressee."""
+    moved 501's stage and owner and 505's title, a lawyer retitled 502 before it,
+    and the rebuild wrote 505's title and 501's owner (B was A) and held 501's
+    stage and addressee."""
     source = active["source"]
     assert _run(active, SyncTrigger.SCHEDULED, at=NIGHT).status == SyncRunStatus.SUCCEEDED
     source.edit("2026_501", kellele="Ministeerium")
     assert _run(active, SyncTrigger.SCHEDULED, at=NIGHT + DAY).status == SyncRunStatus.SUCCEEDED
     source.edit("2026_501", hetkeseis="Valitsuses")
+    source.edit("2026_501", vastutaja="Jaan")
     source.edit("2026_505", teema="Uus 505")
     Matter.all_objects.filter(pk=_matter("2026_502").pk).update(title="Juristi pealkiri")
     Matter.all_objects.filter(pk=_matter("2026_505").pk).update(title="Uus 505")
+    Matter.all_objects.filter(pk=_matter("2026_501").pk).update(owner=active["world"]["jaan"])
     _write_rebase(active)
     return active
 
@@ -364,3 +386,62 @@ def test_uuendused_reads_the_nights_before_and_after_the_rebuild(rebuild):
     title = fields[("2026_505", "title")]
     assert (title.result, title.note) == (lovable_review.SAME, lovable_review.REBASED_NOTE)
     assert after.enrolled == 3
+
+
+def test_a_lawyer_edit_between_the_apply_and_the_enrolment_stays_local(rebuild):
+    """The targets are what the rebuild wrote, by its records — never Juristid's
+    value read at enrolment."""
+    mari = rebuild["world"]["mari"]
+    Matter.all_objects.filter(pk=_matter("2026_501").pk).update(owner=mari)
+    Matter.all_objects.filter(pk=_matter("2026_505").pk).update(title="Juristi 505")
+    _supersede(rebuild)
+    owner = LovableSyncState.objects.get(reference="2026_501").applied["owner"]
+    assert owner == {"source": "Jaan", "target": str(rebuild["world"]["jaan"].pk)}
+    title = LovableSyncState.objects.get(reference="2026_505").applied["title"]
+    assert title == {"source": "Uus 505", "target": "Uus 505"}
+    night = _run(rebuild, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
+    assert night.status == SyncRunStatus.SUCCEEDED, night.error
+    assert _decisions(night, "2026_501")["owner"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    assert _decisions(night, "2026_505")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+
+
+def test_without_a_written_record_the_pilot_target_stays(rebuild):
+    EvidencePilotRecord.objects.filter(record_kind__in=("TITLE", "OWNER")).delete()
+    _supersede(rebuild)
+    # 505: the rebuild's title is not recorded as written, so the pilot's target
+    # stays and Juristid's new title is a local value, not the baseline.
+    title = LovableSyncState.objects.get(reference="2026_505").applied["title"]
+    assert title == {"source": "Uus 505", "target": "Näidisteema 2026_505"}
+    owner = LovableSyncState.objects.get(reference="2026_501").applied["owner"]
+    assert owner["target"] == str(rebuild["world"]["mari"].pk)
+
+
+def test_a_rebased_teema_can_still_be_deleted_permanently(rebuild):
+    from app.matters.deletion import permanently_delete_matter, plan_matter_deletion
+
+    _supersede(rebuild)
+    doomed = _matter("2026_502")
+    state = LovableSyncState.objects.get(matter=doomed)
+    others = sorted(
+        str(pk)
+        for pk in LovableSyncBaselineArchive.objects.exclude(state=state).values_list(
+            "pk", flat=True
+        )
+    )
+    states_before = _state_dump(
+        list(LovableSyncState.objects.exclude(pk=state.pk).values_list("pk", flat=True))
+    )
+    assert LovableSyncBaselineArchive.objects.filter(state=state).count() == 1
+
+    head = factories.DepartmentHeadFactory()
+    permanently_delete_matter(
+        matter=doomed, actor=head, confirmation=plan_matter_deletion(doomed).digest
+    )
+    assert not Matter.objects.filter(pk=doomed.pk).exists()
+    assert not LovableSyncState.objects.filter(pk=state.pk).exists()
+    assert not LovableSyncBaselineArchive.objects.filter(state_id=state.pk).exists()
+    assert (
+        sorted(str(pk) for pk in LovableSyncBaselineArchive.objects.values_list("pk", flat=True))
+        == others
+    )
+    assert _state_dump(list(states_before)) == states_before
