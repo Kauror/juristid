@@ -258,9 +258,18 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
     for topic in topics:
         reference = str(topic.get("reference") or "")
         report.topics += 1
-        problems = _validate_topic(topic, people=people, as_of=as_of)
-        if v2:
-            problems += _validate_active_topic(topic, as_of=as_of)
+        action = topic_action(topic)
+        if not v2 and "action" in topic:
+            problems = ["a topic action is a version-2 reading; version 1 only creates."]
+        elif action not in TOPIC_ACTIONS:
+            problems = [f"action {action!r} is neither CREATE nor REBASE."]
+        elif action == REBASE:
+            problems = _validate_rebase(topic, people=people, as_of=as_of)
+            problems += _validate_active_topic(topic, as_of=as_of, rebase=True)
+        else:
+            problems = _validate_topic(topic, people=people, as_of=as_of)
+            if v2:
+                problems += _validate_active_topic(topic, as_of=as_of)
         out.extend(f"{reference}: {p}" for p in problems)
         parsed = parse_reference(reference)
         if parsed is None:
@@ -277,7 +286,7 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
         identities.setdefault(source_id, reference)
         highest[str(parsed[0])] = max(highest.get(str(parsed[0]), 0), parsed[1])
         # Every provenance key the writer will use, once each and short enough.
-        for key in _record_keys(topic):
+        for key in _rebase_record_keys(topic) if action == REBASE else _record_keys(topic):
             if not key or len(key) > RECORD_KEY_LENGTH:
                 out.append(f"{reference}: record key {key!r} is empty or too long.")
             elif key in keys:
@@ -362,7 +371,9 @@ def _excluded_source_columns(source: dict[str, Any]) -> list[str]:
     return sorted(found)
 
 
-def _validate_active_topic(topic: dict[str, Any], *, as_of: dt.date | None) -> list[str]:
+def _validate_active_topic(
+    topic: dict[str, Any], *, as_of: dt.date | None, rebase: bool = False
+) -> list[str]:
     """The version-2 reading rules (docs/adr/0202 §3), on top of every version-1 one.
 
     What version 1 already allows stays allowed: an open topic with no current
@@ -395,6 +406,9 @@ def _validate_active_topic(topic: dict[str, Any], *, as_of: dt.date | None) -> l
             f"field(s) {', '.join(unheld)} cannot be HELD_FOR_REVIEW: no synchronised field "
             "would hold them (HELD_FIELD_COLUMNS)."
         )
+    if rebase:
+        # A REBASE states its readings in `changes`; the rest concerns CREATE.
+        return out
 
     statuses = {_source_text(topic.get("status_raw")), _source_text(row.get("hetkeseis"))}
     live = not statuses & TERMINAL_STATUSES
@@ -520,34 +534,7 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
     if step:
         if not active:
             out.append("a finished topic carries no current step.")
-        if step.get("review") != READY:
-            out.append("next_action must be READY; a held step is left out of the package.")
-        if step.get("treatment") not in STEP_TREATMENTS:
-            out.append(f"next_action.treatment {step.get('treatment')!r} is unknown.")
-        if not (step.get("text") or "").strip():
-            out.append("next_action has no text.")
-        shape_input = {
-            "kind": step.get("kind"),
-            "date_semantics": step.get("date_semantics"),
-            "date_precision": step.get("date_precision") or None,
-        }
-        if step.get("date_semantics") == "REVIEW_ON":
-            shape_input["review_date"] = step.get("target_date")
-        else:
-            shape_input["target_date"] = step.get("target_date")
-        for name in ("kind", "date_semantics"):
-            # The package states the reading; a default never stands in for it.
-            if not step.get(name):
-                out.append(f"next_action.{name} is required.")
-        _shape, shape_problems = step_shape(shape_input)
-        out.extend(shape_problems)
-        if step.get("kind") in {"WAIT", "MONITOR"} and step.get("date_semantics") != "REVIEW_ON":
-            out.append("a WAIT or MONITOR step is a review date (REVIEW_ON).")
-        step_day = _day(step.get("target_date"))
-        if step.get("date_semantics") == "DEADLINE" and as_of and step_day and step_day < as_of:
-            out.append("a deadline before the snapshot would be overdue on arrival; not current.")
-        if not step.get("reason"):
-            out.append("next_action needs the reviewer's reason.")
+        out.extend(_validate_step(step, as_of=as_of))
 
     deadline = topic.get("deadline") or {"treatment": "NONE"}
     treatment = deadline.get("treatment")
@@ -587,18 +574,7 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
             continue
         if not active:
             out.append(f"{key}: a finished topic's dates cannot be written; keep them as source.")
-        target, kind = record.get("target"), record.get("kind")
-        if target == T_EFFECTIVE_DATE and kind not in EFFECTIVE_KINDS:
-            out.append(f"{key}: effective-date kind {kind!r} is not one this pilot writes.")
-        elif target == T_IMPORTANT_DATE and kind not in IMPORTANT_KINDS:
-            out.append(f"{key}: important-date kind {kind!r} is not a commencement.")
-        elif target not in {T_EFFECTIVE_DATE, T_IMPORTANT_DATE}:
-            out.append(f"{key}: target {target!r} cannot be written.")
-        dated = kind != "GENERAL_ORDER"
-        if dated and (_day(record.get("date")) is None or record.get("date_precision") != "EXACT"):
-            out.append(f"{key}: a dated commencement needs its exact day.")
-        if not dated and record.get("date"):
-            out.append(f"{key}: «üldises korras» carries no date; none is invented.")
+        out.extend(_validate_commencement(record, key))
 
     url = topic.get("onenote_url") or ""
     if url and not url.startswith("https://"):
@@ -607,6 +583,267 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
         if decision not in FIELD_DECISIONS:
             out.append(f"field_decisions[{name}] = {decision!r} is unknown.")
     return out
+
+
+def _validate_step(step: dict[str, Any], *, as_of: dt.date | None) -> list[str]:
+    """A reviewed step's own shape: what CREATE and a REBASE reading share."""
+    out: list[str] = []
+    if step.get("review") != READY:
+        out.append("next_action must be READY; a held step is left out of the package.")
+    if step.get("treatment") not in STEP_TREATMENTS:
+        out.append(f"next_action.treatment {step.get('treatment')!r} is unknown.")
+    if not (step.get("text") or "").strip():
+        out.append("next_action has no text.")
+    shape_input = {
+        "kind": step.get("kind"),
+        "date_semantics": step.get("date_semantics"),
+        "date_precision": step.get("date_precision") or None,
+    }
+    if step.get("date_semantics") == "REVIEW_ON":
+        shape_input["review_date"] = step.get("target_date")
+    else:
+        shape_input["target_date"] = step.get("target_date")
+    for name in ("kind", "date_semantics"):
+        # The package states the reading; a default never stands in for it.
+        if not step.get(name):
+            out.append(f"next_action.{name} is required.")
+    _shape, shape_problems = step_shape(shape_input)
+    out.extend(shape_problems)
+    if step.get("kind") in {"WAIT", "MONITOR"} and step.get("date_semantics") != "REVIEW_ON":
+        out.append("a WAIT or MONITOR step is a review date (REVIEW_ON).")
+    step_day = _day(step.get("target_date"))
+    if step.get("date_semantics") == "DEADLINE" and as_of and step_day and step_day < as_of:
+        out.append("a deadline before the snapshot would be overdue on arrival; not current.")
+    if not step.get("reason"):
+        out.append("next_action needs the reviewer's reason.")
+    return out
+
+
+def _validate_commencement(record: dict[str, Any], key: str) -> list[str]:
+    """A READY commencement record's target, kind and day."""
+    out: list[str] = []
+    target, kind = record.get("target"), record.get("kind")
+    if target == T_EFFECTIVE_DATE and kind not in EFFECTIVE_KINDS:
+        out.append(f"{key}: effective-date kind {kind!r} is not one this pilot writes.")
+    elif target == T_IMPORTANT_DATE and kind not in IMPORTANT_KINDS:
+        out.append(f"{key}: important-date kind {kind!r} is not a commencement.")
+    elif target not in {T_EFFECTIVE_DATE, T_IMPORTANT_DATE}:
+        out.append(f"{key}: target {target!r} cannot be written.")
+    dated = kind != "GENERAL_ORDER"
+    if dated and (_day(record.get("date")) is None or record.get("date_precision") != "EXACT"):
+        out.append(f"{key}: a dated commencement needs its exact day.")
+    if not dated and record.get("date"):
+        out.append(f"{key}: «üldises korras» carries no date; none is invented.")
+    return out
+
+
+# ---------------------------------------------------------------------------
+# REBASE: a pilot Teema brought to the snapshot in place (docs/adr/0202 §3)
+# ---------------------------------------------------------------------------
+
+CREATE = "CREATE"
+REBASE = "REBASE"
+TOPIC_ACTIONS = frozenset({CREATE, REBASE})
+#: What a REBASE may change, each through its own service.
+REBASE_FIELDS = (
+    "title",
+    "owner",
+    "next_action",
+    "stage",
+    "open_request",
+    "commencement_add",
+)
+KEEP_LOCAL = "KEEP_LOCAL"
+TAKE_SOURCE = "TAKE_SOURCE"
+HOLD = "HOLD"
+REBASE_DECISIONS = frozenset({KEEP_LOCAL, TAKE_SOURCE, HOLD})
+#: A change's outcome in the plan. WRITE and TAKE_SOURCE write C; the rest nothing.
+NOTHING = "NOTHING"
+WRITE = "WRITE"
+WRITING = frozenset({WRITE, TAKE_SOURCE})
+#: The writes a REBASE makes, as `EvidencePilotRecord.record_kind` and key suffix.
+REBASE_RECORDS = {
+    "title": ("TITLE", "TITLE"),
+    "owner": ("OWNER", "OWNER"),
+    "next_action": ("NEXT_ACTION", "NEXT"),
+    "stage": ("STAGE", "STAGE"),
+    "open_request": ("RESPONSE_REQUEST", "REQUEST"),
+}
+#: Provenance of every service call a REBASE makes.
+REBUILD_PROVENANCE = "LOVABLE_REBUILD"
+#: Keys a REBASE topic never carries: it states its changes in ``changes``, and
+#: nothing it writes is a link (a rebased Teema's continuation is never touched).
+_CREATE_ONLY = ("successor", "next_action", "deadline", "commencements", "lifecycle")
+
+
+#: The Lovable-derived values `derived_values` reads, and which of them each
+#: written field changes.
+_DERIVED_FIELDS = (
+    "title",
+    "owner",
+    "stage",
+    "next_action",
+    "next_action_id",
+    "open_request",
+    "commencements",
+    "superseded_by",
+)
+_CHANGES_DERIVED = {
+    "title": {"title"},
+    "owner": {"owner"},
+    "stage": {"stage"},
+    "next_action": {"next_action", "next_action_id"},
+    "open_request": {"open_request"},
+    "commencement_add": {"commencements"},
+}
+
+
+def _declared_fields(topic_plan: Any) -> set[str]:
+    return {name for e in topic_plan.writes() for name in _CHANGES_DERIVED[e["field"]]}
+
+
+def _change_reason(topic_plan: Any, name: str) -> str:
+    for change in topic_plan.topic.get("changes") or []:
+        if change.get("field") == name:
+            return str(change.get("reason") or "")
+    return ""
+
+
+def topic_action(topic: dict[str, Any]) -> str:
+    return str(topic.get("action") or CREATE)
+
+
+def _validate_rebase(
+    topic: dict[str, Any], *, people: dict[str, Any], as_of: dt.date | None
+) -> list[str]:
+    """A REBASE entry, without a database: what it names and the readings it states."""
+    from app.legacy_import.lovable_source import TOPIC_COLUMNS
+    from app.workflow.stage_flow import TERMINAL_STAGE_KEYS
+
+    out: list[str] = []
+    reference = str(topic.get("reference") or "")
+    if parse_reference(reference) is None:
+        return [f"reference {reference!r} is not YYYY_N."]
+    if not (topic.get("title") or "").strip():
+        out.append("no title.")
+    source = topic.get("source") or {}
+    row = source.get("row")
+    if not source.get("id") or not isinstance(row, dict):
+        out.append("source.id and source.row (the Lovable row as read) are required.")
+    else:
+        extra = sorted(set(row) - set(TOPIC_COLUMNS))
+        if extra:
+            out.append(f"source.row carries {', '.join(extra)}, which is not a topic column read.")
+    carried = [key for key in _CREATE_ONLY if topic.get(key)]
+    if carried:
+        out.append(
+            f"a REBASE carries no {', '.join(carried)}; it states its readings in `changes`."
+        )
+    url = topic.get("onenote_url") or ""
+    if url and not url.startswith("https://"):
+        out.append("onenote_url is not an https address; fix the package.")
+    for name, decision in (topic.get("field_decisions") or {}).items():
+        if decision not in FIELD_DECISIONS:
+            out.append(f"field_decisions[{name}] = {decision!r} is unknown.")
+
+    changes = topic.get("changes")
+    if not isinstance(changes, list):
+        return [*out, "changes must be a list (empty when nothing differs)."]
+    seen: set[str] = set()
+    decisions = topic.get("field_decisions") or {}
+    for index, change in enumerate(changes):
+        if not isinstance(change, dict):
+            out.append(f"changes[{index}] is not an object.")
+            continue
+        name = str(change.get("field") or "")
+        where = f"changes[{index}] ({name or '?'})"
+        if name not in REBASE_FIELDS:
+            out.append(f"{where}: {name!r} is not a field a REBASE may change.")
+            continue
+        if name in seen and name != "commencement_add":
+            out.append(f"{where}: listed twice.")
+        seen.add(name)
+        decision = change.get("decision")
+        if decision is not None and decision not in REBASE_DECISIONS:
+            out.append(f"{where}: decision {decision!r} is not KEEP_LOCAL, TAKE_SOURCE or HOLD.")
+        if not str(change.get("reason") or "").strip():
+            out.append(f"{where}: the reviewer's reason is required.")
+        reading = change.get("reading")
+        held = decision == HOLD
+        if decision in {KEEP_LOCAL, HOLD}:
+            columns = REBASE_HELD_COLUMNS[name]
+            if not any(decisions.get(column) == HELD_FOR_REVIEW for column in columns):
+                out.append(
+                    f"{where}: {decision} keeps Juristid's value; field_decisions marks "
+                    f"{' or '.join(columns)} HELD_FOR_REVIEW."
+                )
+            if reading is None and name != "commencement_add":
+                continue  # nothing is written, so nothing need be read
+        if name == "title" and not str(reading or "").strip():
+            out.append(f"{where}: a title reading is the title.")
+        elif name == "title" and _wording(reading) != _wording(topic.get("title")):
+            out.append(f"{where}: the title reading is the entry's reviewed title.")
+        elif name == "owner":
+            if not str(reading or "").strip():
+                out.append(f"{where}: an owner reading names a person.")
+            elif reading not in people and reading not in people.values():
+                out.append(f"{where}: {reading!r} is not in the reviewed people map.")
+        elif name == "next_action":
+            if reading is None and not held:
+                out.append(f"{where}: no readable step is HOLD, never a cleared step.")
+            elif isinstance(reading, dict):
+                out.extend(f"{where}: {p}" for p in _validate_step(reading, as_of=as_of))
+            elif reading is not None:
+                out.append(f"{where}: a step reading is a next_action object.")
+        elif name == "stage":
+            if not isinstance(reading, str) or not reading:
+                out.append(f"{where}: a stage reading is a vocabulary key.")
+            elif reading in TERMINAL_STAGE_KEYS and not held:
+                out.append(
+                    f"{where}: {reading!r} ends the work and would close the Teema; a closure is "
+                    "never inferred — the decision is HOLD (docs/adr/0202 §3)."
+                )
+        elif name == "open_request":
+            day = _day((reading or {}).get("deadline")) if isinstance(reading, dict) else None
+            if reading is None and not held:
+                out.append(f"{where}: no request is HOLD, never a cleared one.")
+            elif reading is not None and day is None:
+                out.append(f"{where}: an open request reading is {{deadline}}.")
+            elif day and as_of and day < as_of:
+                out.append(
+                    f"{where}: an open request whose day is before the snapshot is history, "
+                    "held for review — never an overdue obligation."
+                )
+        elif name == "commencement_add":
+            if not isinstance(reading, dict) or not reading.get("key"):
+                out.append(f"{where}: a commencement reading is a record with its key.")
+            else:
+                out.extend(_validate_commencement(reading, str(reading["key"])))
+    return out
+
+
+#: The Lovable columns behind each REBASE field: a KEEP_LOCAL or HOLD holds one of
+#: them for review, so the synchronisation reports it every night.
+REBASE_HELD_COLUMNS = {
+    "title": ("teema",),
+    "owner": ("vastutaja", "uus_vastutaja"),
+    "next_action": ("jargmiseks", "tegevuse_tahtaeg"),
+    "stage": ("hetkeseis",),
+    "open_request": ("arvamuse_tahtaeg",),
+    "commencement_add": ("joustumised",),
+}
+
+
+def _rebase_record_keys(topic: dict[str, Any]) -> list[str]:
+    reference = str(topic.get("reference") or "")
+    keys = [reference]
+    keys += [f"{reference}-{suffix}" for _kind, suffix in REBASE_RECORDS.values()]
+    keys += [
+        str((change.get("reading") or {}).get("key") or "")
+        for change in topic.get("changes") or []
+        if isinstance(change, dict) and change.get("field") == "commencement_add"
+    ]
+    return keys
 
 
 # ---------------------------------------------------------------------------
@@ -623,6 +860,21 @@ class TopicPlan:
     addressee: Any = None
     successor_in_batch: str = ""
     warnings: list[str] = field(default_factory=list)
+    #: CREATE or REBASE (docs/adr/0202 §1).
+    action: str = CREATE
+    #: REBASE: the pilot Teema it brings to the snapshot.
+    matter: Any = None
+    #: REBASE: one entry per change — field, record key, outcome (NOTHING, WRITE,
+    #: TAKE_SOURCE, KEEP_LOCAL, HOLD), the decision, A, B and C, and the reading.
+    resolution: list[dict[str, Any]] = field(default_factory=list)
+    #: REBASE: B for what every outcome relies on beyond its own field — the open
+    #: step's identity and the continuation, which the rebase never touches.
+    relied: dict[str, Any] = field(default_factory=dict)
+    #: REBASE: whether the Teema has a current step after the rebase, which then
+    #: gets a NEXT_ACTION record (the synchronisation's baseline finds it there).
+    next_record: bool = False
+    #: REBASE: this package's REBASE record is already there (read back, not re-planned).
+    rebased: bool = False
 
     @property
     def reference(self) -> str:
@@ -630,7 +882,16 @@ class TopicPlan:
 
     @property
     def is_open(self) -> bool:
+        if self.action == REBASE:
+            return bool(
+                self.matter is not None
+                and self.matter.is_open
+                and getattr(self.matter, "deleted_at", None) is None
+            )
         return self.topic["lifecycle"] == "ACTIVE"
+
+    def writes(self) -> list[dict[str, Any]]:
+        return [entry for entry in self.resolution if entry["action"] in WRITING]
 
 
 @dataclass
@@ -652,9 +913,19 @@ class LovablePlan:
         return package_cohort(self.package)
 
     def expected_writes(self) -> dict[str, int]:
-        counts = {"MATTER": len(self.topics)}
+        creates = sum(1 for t in self.topics if t.action == CREATE)
+        counts = {"MATTER": creates} if creates else {}
         for topic_plan in self.topics:
             topic = topic_plan.topic
+            if topic_plan.action == REBASE:
+                counts["REBASE"] = counts.get("REBASE", 0) + 1
+                for entry in topic_plan.writes():
+                    kind = _write_kind(entry)
+                    if kind != "NEXT_ACTION":
+                        counts[kind] = counts.get(kind, 0) + 1
+                if topic_plan.next_record:
+                    counts["NEXT_ACTION"] = counts.get("NEXT_ACTION", 0) + 1
+                continue
             if topic.get("next_action"):
                 counts["NEXT_ACTION"] = counts.get("NEXT_ACTION", 0) + 1
             if (topic.get("deadline") or {}).get("treatment") == "OPEN_REQUEST":
@@ -694,8 +965,12 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
     source_ids = {t["reference"]: str(t["source"]["id"]) for t in package["topics"]}
 
     for topic in package["topics"]:
-        topic_plan = TopicPlan(topic=topic)
+        topic_plan = TopicPlan(topic=topic, action=topic_action(topic))
         reference = topic_plan.reference
+        if topic_plan.action == REBASE:
+            # Resolved against the Teema it names, in `_read_database`.
+            plan.topics.append(topic_plan)
+            continue
 
         owner_raw = topic.get("owner_raw") or ""
         name = people.get(owner_raw)
@@ -795,15 +1070,20 @@ def _overdue_on_arrival(topic: dict[str, Any], today: dt.date) -> list[str]:
 
 
 def _read_database(plan: LovablePlan) -> None:
-    """Which of the package's references the database already holds, and what that means."""
+    """Which of the package's references the database already holds, and what that means.
+
+    CREATE references must be free; a REBASE names a pilot Teema that must be
+    exactly what the pilot wrote it as, and is resolved three ways against it."""
     from django.db.models import Q
 
     from app.matters.models import Matter
 
     from .models import EvidencePilotRecord
 
+    creates = [t for t in plan.topics if t.action == CREATE]
+    rebases = [t for t in plan.topics if t.action == REBASE]
     plan.existing_matters = Matter.all_objects.count()
-    pairs = [parse_reference(t.reference) for t in plan.topics]
+    pairs = [parse_reference(t.reference) for t in creates]
     query = Q()
     for year, number in pairs:  # type: ignore[misc]
         query |= Q(reference_year=year, reference_number=number)
@@ -816,11 +1096,17 @@ def _read_database(plan: LovablePlan) -> None:
     written = EvidencePilotRecord.objects.filter(
         pilot=plan.cohort, package_sha256=plan.digest
     ).count()
-    taken_refs = sorted({m.display_reference for m in taken} | _deleted_references(plan.topics))
+
+    rebase_problems = _plan_rebases(plan, rebases)
+    rebased = sum(1 for t in rebases if t.rebased)
+
+    taken_refs = sorted({m.display_reference for m in taken} | _deleted_references(creates))
     if not taken_refs and written == 0:
         plan.database_state = "ready"
-    elif mine.count() == len(plan.topics) == len(taken_refs) and written == sum(
-        plan.expected_writes().values()
+    elif (
+        mine.count() == len(creates) == len(taken_refs)
+        and rebased == len(rebases)
+        and written == sum(plan.expected_writes().values())
     ):
         plan.database_state = "applied"
     else:
@@ -837,7 +1123,8 @@ def _read_database(plan: LovablePlan) -> None:
                 f"The database holds {written} record(s) of this package but not the whole of "
                 "it — a partial or removed import. Nothing is repaired here; investigate first."
             )
-    held = _identities_held(plan, exclude_matters=[m.pk for m in mine])
+    plan.problems.extend(rebase_problems)
+    held = _identities_held(plan, creates, exclude_matters=[m.pk for m in mine])
     if held:
         plan.identity_collisions = [f"{ref} (Juristid {held[ref]})" for ref in sorted(held)]
         plan.database_state = "conflict"
@@ -848,41 +1135,365 @@ def _read_database(plan: LovablePlan) -> None:
         )
 
 
-def _identities_held(plan: LovablePlan, *, exclude_matters: list[Any]) -> dict[str, str]:
-    """The package's topics whose Lovable identity a Juristid record already holds —
-    a synchronisation state or a Lovable source reference, deleted Teemad included
-    — other than this package's own Teemad. Package reference → Juristid reference."""
-    from app.matters.models import Matter
-
+def _identity_holders(topics: list[TopicPlan]) -> dict[str, set[Any]]:
+    """Package reference → every Matter whose sync state or Lovable source reference
+    records that topic's Lovable identity (deleted Teemad included)."""
     from .lovable_sync_models import LovableSyncState
     from .models import MatterSourceReference
 
-    wanted = {str(t.topic["source"]["id"]): t.reference for t in plan.topics}
+    wanted = {str(t.topic["source"]["id"]): t.reference for t in topics}
+    if not wanted:
+        return {}
     holders: dict[str, set[Any]] = {}
-    states = LovableSyncState._base_manager.filter(source_id__in=list(wanted)).exclude(
-        matter_id__in=exclude_matters
-    )
+    states = LovableSyncState._base_manager.filter(source_id__in=list(wanted))
     for source_id, matter_id in states.values_list("source_id", "matter_id"):
-        holders.setdefault(str(source_id), set()).add(matter_id)
+        if str(source_id) in wanted:
+            holders.setdefault(wanted[str(source_id)], set()).add(matter_id)
     sources = MatterSourceReference._base_manager.filter(
         source_system=SOURCE_SYSTEM, source_row_raw__lovable__id__in=list(wanted)
-    ).exclude(matter_id__in=exclude_matters)
+    )
     for raw, matter_id in sources.values_list("source_row_raw", "matter_id"):
-        holders.setdefault(str((raw.get("lovable") or {}).get("id")), set()).add(matter_id)
-    if not holders:
-        return {}
-    pks = {pk for found in holders.values() for pk in found}
-    names = {
+        found = str((raw.get("lovable") or {}).get("id"))
+        if found in wanted:
+            holders.setdefault(wanted[found], set()).add(matter_id)
+    return holders
+
+
+def _reference_names(pks: Any) -> dict[Any, str]:
+    from app.matters.models import Matter
+
+    return {
         m["pk"]: f"{m['reference_year']}_{m['reference_number']}"
-        for m in Matter.all_objects.filter(pk__in=pks).values(
+        for m in Matter.all_objects.filter(pk__in=list(pks)).values(
             "pk", "reference_year", "reference_number"
         )
     }
-    return {
-        wanted[source_id]: ", ".join(sorted(names.get(pk, str(pk)) for pk in found))
-        for source_id, found in holders.items()
-        if source_id in wanted
+
+
+def _identities_held(
+    plan: LovablePlan, topics: list[TopicPlan], *, exclude_matters: list[Any]
+) -> dict[str, str]:
+    """The CREATE topics whose Lovable identity a Juristid record already holds,
+    other than this package's own Teemad. Package reference → Juristid reference."""
+    exclude = set(exclude_matters)
+    holders = {
+        ref: found - exclude for ref, found in _identity_holders(topics).items() if found - exclude
     }
+    names = _reference_names({pk for found in holders.values() for pk in found})
+    return {
+        ref: ", ".join(sorted(names.get(pk, str(pk)) for pk in found))
+        for ref, found in holders.items()
+    }
+
+
+# -- REBASE: A, B and C ---------------------------------------------------------
+
+
+def _iso(value: Any) -> str | None:
+    return value.isoformat() if value else None
+
+
+def _step_value(step: Any) -> dict[str, Any] | None:
+    """A step as the three-way plan compares it: what it says and when."""
+    from app.legacy_import.lovable_sync import text_value
+
+    if step is None:
+        return None
+    if isinstance(step, dict):
+        day = step.get("target_date")
+        return {
+            "text": text_value(step.get("text")),
+            "kind": step.get("kind") or "",
+            "date_semantics": step.get("date_semantics") or "",
+            "target_date": str(day)[:10] if day else None,
+        }
+    return {
+        "text": text_value(step.text),
+        "kind": step.kind,
+        "date_semantics": step.date_semantics,
+        "target_date": _iso(step.target_date),
+    }
+
+
+def _commencement_value(target: str, kind: Any, day: Any) -> list[Any]:
+    return [target, str(kind or ""), str(day)[:10] if day else None]
+
+
+def derived_values(matter: Any) -> dict[str, Any]:
+    """B: the Lovable-derived values of a Teema as Juristid holds them now."""
+    from app.intelligence.enums import FactStatus
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.legacy_import.lovable_sync import text_value
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    step = (
+        NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
+        .order_by("created_at")
+        .first()
+    )
+    dates = [
+        _commencement_value(T_EFFECTIVE_DATE, kind, day)
+        for kind, day in MatterEffectiveDate.objects.filter(
+            matter=matter, status=FactStatus.ACTIVE
+        ).values_list("kind", "date_value")
+    ] + [
+        _commencement_value(T_IMPORTANT_DATE, kind, day)
+        for kind, day in MatterImportantDate.objects.filter(
+            matter=matter, status=FactStatus.ACTIVE
+        ).values_list("kind", "date_value")
+    ]
+    stage = matter.stage.key if matter.stage_id else ""
+    return {
+        "title": text_value(matter.title),
+        "owner": str(matter.owner_id) if matter.owner_id else None,
+        "stage": stage,
+        "next_action": _step_value(step),
+        "next_action_id": str(step.pk) if step is not None else None,
+        "open_request": _iso(matter.response_deadline),
+        "commencements": sorted(dates, key=lambda d: (d[0], d[1], d[2] or "")),
+        "superseded_by": str(matter.superseded_by_id) if matter.superseded_by_id else None,
+    }
+
+
+def _pilot_values(matter: Any, state: Any) -> dict[str, Any]:
+    """A: what the pilot import wrote — the sync baseline's targets for title, owner
+    and step, the stage the Teema was created in, the pilot's request record and
+    the commencements the pilot added (as their creation events say)."""
+    from app.audit.models import ChangeEvent
+    from app.legacy_import.lovable_sync import text_value
+    from app.matters.enums import StageEpisodeOrigin
+    from app.matters.models import MatterStageEpisode
+
+    from .models import EvidencePilotRecord
+
+    applied = state.applied or {}
+    first = (
+        MatterStageEpisode.objects.filter(matter=matter)
+        .select_related("stage")
+        .order_by("sequence")
+    ).first()
+    # The pilot created the Teema in its stage, an IMPORTED period with no start;
+    # a first period somebody recorded later means the pilot wrote no stage.
+    stage = first.stage.key if first and first.origin == StageEpisodeOrigin.IMPORTED else ""
+    records = list(EvidencePilotRecord.objects.filter(pilot=PILOT, matter=matter))
+    request = next((r for r in records if r.record_kind == "RESPONSE_REQUEST"), None)
+    dated = {
+        str(r.target_id): r.record_kind
+        for r in records
+        if r.record_kind in {T_EFFECTIVE_DATE, T_IMPORTANT_DATE} and r.target_id
+    }
+    added = ChangeEvent.objects.filter(
+        matter=matter,
+        object_id__in=list(dated),
+        event_type__in=("EFFECTIVE_DATE_ADDED", "IMPORTANT_DATE_ADDED"),
+    ).values_list("object_id", "payload")
+    commencements = [
+        _commencement_value(
+            dated[str(oid)], (payload or {}).get("kind"), (payload or {}).get("date")
+        )
+        for oid, payload in added
+    ]
+    owner = (applied.get("owner") or {}).get("target")
+    return {
+        "title": text_value((applied.get("title") or {}).get("target")),
+        "owner": str(owner) if owner else None,
+        "stage": stage,
+        "next_action": _step_value((applied.get("next_action") or {}).get("target")),
+        "open_request": str((request.evidence or {}).get("deadline") or "")[:10] or None
+        if request
+        else None,
+        "commencements": sorted(commencements, key=lambda d: (d[0], d[1], d[2] or "")),
+    }
+
+
+def _write_kind(entry: dict[str, Any]) -> str:
+    if entry["field"] == "commencement_add":
+        return str(entry["reading"]["target"])
+    return REBASE_RECORDS[entry["field"]][0]
+
+
+def _plan_rebases(plan: LovablePlan, rebases: list[TopicPlan]) -> list[str]:
+    """Locate every REBASE's pilot Teema and resolve its changes. Problems name
+    references and fields only."""
+    if not rebases:
+        return []
+    from app.matters.models import Matter
+
+    from .lovable_sync_models import LovableSyncState
+    from .models import EvidencePilotRecord, MatterSourceReference
+
+    problems: list[str] = []
+    holders = _identity_holders(rebases)
+    done = {
+        str(r.matter_id): r
+        for r in EvidencePilotRecord.objects.filter(
+            pilot=plan.cohort, package_sha256=plan.digest, record_kind="REBASE"
+        )
+    }
+    for t in rebases:
+        ref, uuid = t.reference, str(t.topic["source"]["id"])
+        year, number = parse_reference(ref)  # type: ignore[misc]
+        found = list(
+            Matter.all_objects.select_related("stage").filter(
+                reference_year=year, reference_number=number
+            )
+        )
+        if len(found) != 1:
+            problems.append(f"{ref}: a REBASE names a pilot Teema; Juristid holds none at {ref}.")
+            continue
+        m = t.matter = found[0]
+        record = done.get(str(m.pk))
+        if record is not None:
+            # Already rebased by this package: read back what was decided.
+            stored = record.evidence or {}
+            t.rebased = True
+            t.resolution = list(stored.get("resolution") or [])
+            t.relied = dict(stored.get("relied") or {})
+            t.next_record = bool(stored.get("next_record"))
+            continue
+        pilot_matter = EvidencePilotRecord.objects.filter(
+            pilot=PILOT, matter=m, record_kind="MATTER"
+        ).count()
+        pilot_sources = [
+            (s.source_row_raw or {}).get("lovable", {}).get("id")
+            for s in MatterSourceReference.objects.filter(
+                matter=m, source_system=SOURCE_SYSTEM, source_parser_version__startswith=f"{PILOT}/"
+            )
+        ]
+        state = LovableSyncState._base_manager.filter(matter=m).first()
+        if pilot_matter != 1:
+            problems.append(f"{ref}: not a Teema the pilot (lovable-pilot) created; no REBASE.")
+            continue
+        if pilot_sources != [uuid]:
+            problems.append(
+                f"{ref}: its pilot source reference does not record this Lovable identity "
+                "(exactly one is required)."
+            )
+            continue
+        if state is None or str(state.source_id) != uuid:
+            problems.append(
+                f"{ref}: its synchronisation state does not hold this Lovable identity."
+            )
+            continue
+        others = (holders.get(ref) or set()) - {m.pk}
+        if others:
+            names = ", ".join(sorted(_reference_names(others).values()))
+            problems.append(f"{ref}: its Lovable identity is also recorded on {names}.")
+            continue
+        if m.deleted_at is not None:
+            problems.append(f"{ref}: the pilot Teema is deleted; nothing is written to it.")
+            continue
+        problems += _resolve_rebase(plan, t, _pilot_values(m, state), derived_values(m))
+    return problems
+
+
+def _resolve_rebase(
+    plan: LovablePlan, t: TopicPlan, a: dict[str, Any], b: dict[str, Any]
+) -> list[str]:
+    """The three-way table of docs/adr/0202 §3, one change at a time."""
+    from app.accounts.models import User
+    from app.accounts.selectors import is_assignable_business_user
+    from app.legacy_import.lovable_sync import text_value
+    from app.workflow.models import StageVocabulary
+
+    problems: list[str] = []
+    ref = t.reference
+    people = plan.package.get("people") or {}
+    t.relied = {"next_action_id": b["next_action_id"], "superseded_by": b["superseded_by"]}
+    today = _today()
+    for change in t.topic.get("changes") or []:
+        name, reading, decision = change["field"], change.get("reading"), change.get("decision")
+        key = (
+            str(reading["key"])
+            if name == "commencement_add"
+            else f"{ref}-{REBASE_RECORDS[name][1]}"
+        )
+        if reading is None and decision in {KEEP_LOCAL, HOLD} and name != "commencement_add":
+            # Kept or held without a reading: nothing to compare, nothing written.
+            b_value = b["commencements"] if name == "commencement_add" else b[name]
+            t.resolution.append(
+                {
+                    "field": name,
+                    "key": key,
+                    "action": decision,
+                    "decision": decision,
+                    "a": a[name],
+                    "b": b_value,
+                    "c": None,
+                    "reading": None,
+                }
+            )
+            continue
+        if name == "title":
+            c: Any = text_value(reading)
+        elif name == "owner":
+            display = people.get(reading, reading)
+            users = list(User.objects.filter(display_name=display, is_active=True)[:2])
+            if len(users) != 1 or not is_assignable_business_user(users[0]):
+                problems.append(f"{ref}: owner is not exactly one assignable active account.")
+                continue
+            c = str(users[0].pk)
+        elif name == "next_action":
+            c = _step_value(reading)
+        elif name == "stage":
+            if not StageVocabulary.objects.filter(key=reading).exists():
+                problems.append(f"{ref}: stage {reading!r} is not in the vocabulary.")
+                continue
+            c = reading
+        elif name == "open_request":
+            c = str(reading["deadline"])[:10] if reading else None
+        else:
+            c = _commencement_value(reading["target"], reading.get("kind"), reading.get("date"))
+        if name == "commencement_add":
+            a_value, b_value = a["commencements"], b["commencements"]
+            same_as_a, same_as_b = c in a_value, c in b_value
+        else:
+            a_value, b_value = a[name], b[name]
+            same_as_a, same_as_b = c == a_value, c == b_value
+        if same_as_a or same_as_b:
+            # Nothing to write: the snapshot says what the pilot wrote, or what
+            # Juristid already holds (a lawyer's value equal to the source's).
+            action = NOTHING
+        elif b_value == a_value:
+            action = decision if decision in {KEEP_LOCAL, HOLD} else WRITE
+        elif decision is None:
+            problems.append(
+                f"{ref}: {name} was changed in Juristid and in Lovable; the package needs a "
+                "decision (KEEP_LOCAL, TAKE_SOURCE or HOLD)."
+            )
+            continue
+        else:
+            action = decision
+        if action in WRITING:
+            if not t.is_open and name != "title":
+                problems.append(
+                    f"{ref}: {name} cannot be written on a closed Teema; decide HOLD or KEEP_LOCAL."
+                )
+            day = None
+            if name == "next_action" and (reading or {}).get("date_semantics") == "DEADLINE":
+                day = _day((reading or {}).get("target_date"))
+            elif name == "open_request":
+                day = _day(c)
+            if day and day < today:
+                problems.append(
+                    f"{ref}: {name} {day} is before today; it would be overdue on arrival."
+                )
+        t.resolution.append(
+            {
+                "field": name,
+                "key": key,
+                "action": action,
+                "decision": decision,
+                "a": a_value,
+                "b": b_value,
+                "c": c,
+                "reading": reading,
+            }
+        )
+    step_written = any(e["field"] == "next_action" for e in t.writes())
+    t.next_record = t.is_open and (step_written or b["next_action"] is not None)
+    return problems
 
 
 def _deleted_references(topics: list[TopicPlan]) -> set[str]:
@@ -927,6 +1538,29 @@ def plan_digest(plan: LovablePlan) -> str:
                 for t in plan.topics
             ],
             "reserve_through": plan.package.get("reserve_through") or {},
+            # Only a package that rebases has this key, so a version-1 (and a
+            # CREATE-only) plan hashes exactly as it always did.
+            **(
+                {
+                    "rebase": [
+                        {
+                            "reference": t.reference,
+                            "matter": str(t.matter.pk) if t.matter is not None else "",
+                            "rebased": t.rebased,
+                            "relied": t.relied,
+                            "next_record": t.next_record,
+                            "resolution": [
+                                {k: entry[k] for k in ("field", "key", "action", "b", "c")}
+                                for entry in t.resolution
+                            ],
+                        }
+                        for t in plan.topics
+                        if t.action == REBASE
+                    ]
+                }
+                if any(t.action == REBASE for t in plan.topics)
+                else {}
+            ),
         }
     )
 
@@ -1124,15 +1758,59 @@ class _PreservedState:
     settled: dict[str, str]
     #: Per Matter pk: its reference, to name it; never its title.
     references: dict[str, str]
+    #: Per rebased Matter pk (`local_for`): the local digest, everything the rebase
+    #: never writes (docs/adr/0202 §4) — in the transaction's scope and settled.
+    local: dict[str, str] = field(default_factory=dict)
+    local_settled: dict[str, str] = field(default_factory=dict)
 
 
-def _preserved_state(exclude_matter_ids: Any = None) -> _PreservedState:
+#: The Matter columns a REBASE writes through its services; the local digest of
+#: a rebased Teema is everything else.
+REBASE_MATTER_COLUMNS = frozenset(
+    {
+        "title",
+        "owner_id",
+        "stage_id",
+        "response_deadline",
+        "response_requested_at",
+        "updated_at",
+        "current_stage_episode_id",
+    }
+)
+#: The related records a REBASE writes (steps, periods, dates, the new source
+#: reference and its records, the assignment notices `assign_matter` retires);
+#: change events are kept in the local digest when a person wrote them.
+REBASE_WRITTEN_LABELS = frozenset(
+    {
+        "next_actions",
+        "stage_episodes",
+        "response_deadlines",
+        "effective_dates",
+        "important_dates",
+        "source_references",
+        "pilot_records",
+        "assignment_notices",
+        "change_events",
+    }
+)
+
+
+def _preserved_state(
+    exclude_matter_ids: Any = None, *, local_for: Any = None, drop_ids: Any = None
+) -> _PreservedState:
+    """Per Matter: the full and settled digests; for each Matter of ``local_for``
+    also its local digest (``drop_ids``: Matters of the package that may continue
+    under it, which a rebased Teema's local digest does not count)."""
     from app.matters.models import Matter
 
     exclude = {str(pk) for pk in exclude_matter_ids or ()}
+    local_owners = {str(pk) for pk in local_for or ()}
+    dropped = {str(pk) for pk in drop_ids or ()}
     columns = [f.attname for f in Matter._meta.concrete_fields]
     full: dict[str, dict[str, Any]] = {}
     settled: dict[str, dict[str, Any]] = {}
+    local: dict[str, dict[str, Any]] = {}
+    local_settled: dict[str, dict[str, Any]] = {}
     references: dict[str, str] = {}
     key = Matter._meta.pk.attname
     for row in Matter.all_objects.order_by("pk").values(*columns):
@@ -1143,11 +1821,18 @@ def _preserved_state(exclude_matter_ids: Any = None) -> _PreservedState:
         matter = {k: _digest_value(v) for k, v in row.items()}
         full[pk] = {"matter": matter}
         settled[pk] = {"matter": matter}
+        if pk in local_owners:
+            kept = {k: v for k, v in matter.items() if k not in REBASE_MATTER_COLUMNS}
+            local[pk] = {"matter": kept}
+            local_settled[pk] = {"matter": kept}
     for covered in _preserved_sources():
         model = covered.model
         whole = "whole" in (covered.mode, covered.settled)
         names = [f.attname for f in model._meta.concrete_fields] if whole else []
         names = [name for name in names if name != covered.column]
+        human = covered.label == "change_events"
+        if human and "actor_id" not in names:
+            names.append("actor_id")
         manager: Any = Matter.all_objects if model is Matter else model._base_manager
         query = manager.filter(**dict(covered.filters)).order_by("pk")
         for row in query.values(covered.column, "pk", *names):
@@ -1155,11 +1840,21 @@ def _preserved_state(exclude_matter_ids: Any = None) -> _PreservedState:
             if owner not in full:
                 continue
             ident = str(row.pop("pk"))
+            actor = row.pop("actor_id", None) if human else None
             value = {k: _digest_value(v) for k, v in row.items()}
-            for target, mode, drop in (
+            targets = [
                 (full, covered.mode, frozenset()),
                 (settled, covered.settled, covered.settled_drop),
+            ]
+            if owner in local_owners and (
+                covered.label not in REBASE_WRITTEN_LABELS or (human and actor is not None)
             ):
+                if not (covered.label == "continued_by" and ident in dropped):
+                    targets += [
+                        (local, covered.mode, frozenset()),
+                        (local_settled, covered.settled, covered.settled_drop),
+                    ]
+            for target, mode, drop in targets:
                 if mode == "skip":
                     continue
                 entry: Any = (
@@ -1170,6 +1865,8 @@ def _preserved_state(exclude_matter_ids: Any = None) -> _PreservedState:
         full={pk: canonical_sha256(value) for pk, value in full.items()},
         settled={pk: canonical_sha256(value) for pk, value in settled.items()},
         references=references,
+        local={pk: canonical_sha256(value) for pk, value in local.items()},
+        local_settled={pk: canonical_sha256(value) for pk, value in local_settled.items()},
     )
 
 
@@ -1192,21 +1889,60 @@ def preserved_digests(*, exclude_matter_ids: Any = None, settled: bool = False) 
     return state.settled if settled else state.full
 
 
-def preserved_document(digests: dict[str, str], references: dict[str, str]) -> dict[str, Any]:
+def local_digests(
+    matter_ids: Any, *, drop_ids: Any = None, settled: bool = False
+) -> dict[str, str]:
+    """A rebased Teema's local digest (docs/adr/0202 §4): Valdkond, collaborators,
+    tags, documents, entries, notes, submissions, every change event a person
+    wrote and every related row the rebase never writes, and the Matter row less
+    the columns the rebase's services write."""
+    state = _preserved_state(local_for=matter_ids, drop_ids=drop_ids)
+    return state.local_settled if settled else state.local
+
+
+def preserved_document(
+    digests: dict[str, str],
+    references: dict[str, str],
+    *,
+    local: dict[str, str] | None = None,
+    declared: dict[str, dict[str, Any]] | None = None,
+    created: list[str] | None = None,
+) -> dict[str, Any]:
     """What `apply --preserved-out` writes and `preserved --before` reads: the
-    digests, the references that name them, and the SHA-256 of both."""
+    digests of every Teema the package did not touch, the local digests of the
+    rebased ones with the values the rebase left (``declared``), the references
+    that name them, and the SHA-256 of it all."""
+    local = local or {}
+    named = sorted(set(digests) | set(local))
     body = {
         "format": PRESERVED_FORMAT,
         "format_version": PRESERVED_FORMAT_VERSION,
         # The after-the-fact digests (`preserved_digests(settled=True)`).
         "scope": "settled",
         "matters": dict(sorted(digests.items())),
-        "references": {pk: references.get(pk, "") for pk in sorted(digests)},
+        "references": {pk: references.get(pk, "") for pk in named},
+        "local": dict(sorted(local.items())),
+        "declared": dict(sorted((declared or {}).items())),
+        # The package's new Teemad, which may continue under a rebased one.
+        "created": sorted(created or []),
     }
     return {**body, "sha256": canonical_sha256(body)}
 
 
+def preserved_snapshot() -> dict[str, Any]:
+    """`preserved --snapshot-out`: every Teema's after-the-fact digest now, in the
+    `preserved_document` format, applying nothing. Taken at a backup, it proves a
+    restore of that backup later (`preserved --before` against the restored copy)."""
+    state = _preserved_state()
+    return preserved_document(state.settled, state.references)
+
+
 def read_preserved_document(document: Any) -> tuple[dict[str, str], dict[str, str]]:
+    body = _checked_preserved_body(document)
+    return dict(body["matters"]), dict(body.get("references") or {})
+
+
+def _checked_preserved_body(document: Any) -> dict[str, Any]:
     if not isinstance(document, dict) or document.get("format") != PRESERVED_FORMAT:
         raise LovablePilotError(f"The file is not a {PRESERVED_FORMAT} document.")
     body = {k: v for k, v in document.items() if k != "sha256"}
@@ -1216,7 +1952,7 @@ def read_preserved_document(document: Any) -> tuple[dict[str, str], dict[str, st
         raise LovablePilotError("The digest file does not hold the after-the-fact digests.")
     if canonical_sha256(body) != document.get("sha256"):
         raise LovablePilotError("The digest file's sha256 does not match its content.")
-    return dict(document["matters"]), dict(document.get("references") or {})
+    return body
 
 
 @dataclass
@@ -1225,10 +1961,17 @@ class PreservedComparison:
     changed: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     added: list[str] = field(default_factory=list)
+    #: Rebased Teemad: how many were checked, whose local digest differs, and
+    #: whose Lovable-derived values are not exactly what the rebase left.
+    local_checked: int = 0
+    local_changed: list[str] = field(default_factory=list)
+    undeclared: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return not (self.changed or self.missing or self.added)
+        return not (
+            self.changed or self.missing or self.added or self.local_changed or self.undeclared
+        )
 
     def summary(self) -> str:
         parts = [
@@ -1237,6 +1980,8 @@ class PreservedComparison:
                 ("changed", self.changed),
                 ("missing", self.missing),
                 ("appeared", self.added),
+                ("local work changed", self.local_changed),
+                ("undeclared changes", self.undeclared),
             )
             if refs
         ]
@@ -1265,10 +2010,31 @@ def compare_preserved(
 
 def check_preserved(document: Any) -> PreservedComparison:
     """`lovable_pilot preserved --before`: the digest file against the database now,
-    outside any import. Matters created since are not in the file and not judged."""
-    before, references = read_preserved_document(document)
-    now = _preserved_state()
-    return compare_preserved(before, now.settled, {**now.references, **references})
+    outside any import. Matters created since are not in the file and not judged.
+
+    Every Teema the package did not touch must hash as it did; every rebased one
+    must keep its local digest and hold exactly the Lovable-derived values the
+    rebase left (docs/adr/0202 §4)."""
+    from app.matters.models import Matter
+
+    body = _checked_preserved_body(document)
+    before, references = dict(body["matters"]), dict(body.get("references") or {})
+    local = dict(body.get("local") or {})
+    declared = dict(body.get("declared") or {})
+    now = _preserved_state(local_for=list(local), drop_ids=body.get("created") or [])
+    names: dict[str, str] = {**now.references, **references}
+    result = compare_preserved(before, now.settled, names)
+    result.local_checked = len(local)
+    result.local_changed = [
+        names.get(pk) or pk for pk, digest in local.items() if now.local_settled.get(pk) != digest
+    ]
+    present = {str(m.pk): m for m in Matter.all_objects.filter(pk__in=list(declared))}
+    result.undeclared = [
+        names.get(pk) or pk
+        for pk, entry in declared.items()
+        if pk not in present or derived_values(present[pk]) != entry.get("values")
+    ]
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -1348,6 +2114,11 @@ class ApplyReport:
     preserved_references: dict[str, str] = field(default_factory=dict)
     #: The same moment's after-the-fact digests, for `apply --preserved-out`.
     preserved_settled_before: dict[str, str] = field(default_factory=dict)
+    #: Rebased Teemad: their local digests (settled), and per pk the fields the
+    #: rebase declared and the Lovable-derived values it left.
+    preserved_local_before: dict[str, str] = field(default_factory=dict)
+    declared: dict[str, dict[str, Any]] = field(default_factory=dict)
+    created_ids: list[str] = field(default_factory=list)
     verify: Any = None
 
     def count(self, kind: str) -> None:
@@ -1574,12 +2345,25 @@ class _Writer:
         from app.matters.services import reserve_matter_reference
 
         references = {t.reference for t in self.plan.topics}
+        rebases = [t for t in self.plan.topics if t.action == REBASE]
+        rebased_ids = [str(t.matter.pk) for t in rebases]
         self.report.matters_before = Matter.all_objects.count()
-        self.report.fingerprint_before = existing_fingerprint()
-        state = _preserved_state()
-        before, names = state.full, state.references
+        # The rebased Teemad are judged by their local digest, not by their row.
+        self.report.fingerprint_before = existing_fingerprint(
+            exclude_references={t.reference for t in rebases}
+        )
+        state = _preserved_state(local_for=rebased_ids)
+        before = {pk: v for pk, v in state.full.items() if pk not in rebased_ids}
+        names = state.references
         self.report.preserved_before, self.report.preserved_references = before, names
-        self.report.preserved_settled_before = state.settled
+        self.report.preserved_settled_before = {
+            pk: v for pk, v in state.settled.items() if pk not in rebased_ids
+        }
+        self.report.preserved_local_before = state.local_settled
+        derived_before = {
+            str(t.matter.pk): derived_values(Matter.all_objects.get(pk=t.matter.pk))
+            for t in rebases
+        }
         snapshot = self.package["snapshot"]
         self.batch = ImportBatch.objects.create(
             source_system=SOURCE_SYSTEM,
@@ -1602,13 +2386,21 @@ class _Writer:
 
         created: dict[str, Any] = {}
         for topic_plan in self.plan.topics:
-            created[topic_plan.reference] = self.write_topic(topic_plan)
+            if topic_plan.action == CREATE:
+                created[topic_plan.reference] = self.write_topic(topic_plan)
+        # The rebased Teemad after the new ones, so a new predecessor's link to a
+        # rebased successor resolves; the rebased Teema itself is not linked.
+        rebased: dict[str, Any] = {}
+        for topic_plan in rebases:
+            rebased[topic_plan.reference] = self.write_rebase(topic_plan)
+        linkable = {**created, **rebased}
 
-        # Successors exist now; only a successor inside this package is linked.
+        # Successors exist now; only a successor inside this package is linked,
+        # and only the new predecessor's row changes.
         for topic_plan in self.plan.topics:
             if topic_plan.successor_in_batch:
                 matter = created[topic_plan.reference]
-                matter.superseded_by = created[topic_plan.successor_in_batch]
+                matter.superseded_by = linkable[topic_plan.successor_in_batch]
                 matter.save(update_fields=["superseded_by", "updated_at"])
                 self.remember(
                     matter=matter,
@@ -1622,13 +2414,30 @@ class _Writer:
             reserve_matter_reference(int(year), int(through))
 
         self.report.matters_after = Matter.all_objects.count()
-        after = _preserved_state(exclude_matter_ids=[m.pk for m in created.values()]).full
-        comparison = compare_preserved(before, after, names, new_allowed=False)
+        created_ids = [m.pk for m in created.values()]
+        after = _preserved_state(
+            exclude_matter_ids=created_ids, local_for=rebased_ids, drop_ids=created_ids
+        )
+        untouched = {pk: v for pk, v in after.full.items() if pk not in rebased_ids}
+        comparison = compare_preserved(before, untouched, names, new_allowed=False)
+        comparison.local_changed = [
+            names[pk] for pk, digest in state.local.items() if after.local.get(pk) != digest
+        ]
+        comparison.undeclared = self._undeclared(rebases, derived_before)
         if not comparison.ok:
             raise LovablePilotError(
                 "A Teema that was already in Juristid, or a record of one, changed during the "
                 f"import; nothing was written ({comparison.summary()})."
             )
+        self.report.declared = {
+            str(t.matter.pk): {
+                "reference": t.reference,
+                "fields": sorted(_declared_fields(t)),
+                "values": derived_values(Matter.all_objects.get(pk=t.matter.pk)),
+            }
+            for t in rebases
+        }
+        self.report.created_ids = [str(pk) for pk in created_ids]
         self.report.fingerprint_after = existing_fingerprint(exclude_references=references)
         if self.report.fingerprint_after != self.report.fingerprint_before:
             raise LovablePilotError(
@@ -1642,6 +2451,8 @@ class _Writer:
             f" Teemasid pärast {self.report.matters_after}; olemasolevate sõrmejälg "
             f"{self.report.fingerprint_before} muutumatu."
         )
+        if rebases:
+            self.batch.notes += f" Pilootteemasid viidud hetktõmmisele {len(rebases)}."
         self.batch.save(
             update_fields=[
                 "finished_at",
@@ -1660,17 +2471,214 @@ class _Writer:
                 "plan_sha256": self.plan_sha256,
                 "snapshot_sha256": snapshot["snapshot_sha256"],
                 "topics": len(created),
+                **({"rebased": len(rebases)} if rebases else {}),
                 "backup_set": self.backup_set,
                 "written": self.report.written,
                 "matters_before": self.report.matters_before,
                 "matters_after": self.report.matters_after,
             },
         )
-        return self.report, [m.pk for m in created.values()]
+        return self.report, [m.pk for m in [*created.values(), *rebased.values()]]
 
-    def write_topic(self, topic_plan: TopicPlan) -> Any:
+    def _undeclared(self, rebases: list[TopicPlan], before: dict[str, dict[str, Any]]) -> list[str]:
+        """Rebased Teemad whose Lovable-derived values changed other than exactly as
+        the plan declared."""
+        from app.matters.models import Matter
+
+        out = []
+        for t in rebases:
+            now = derived_values(Matter.all_objects.get(pk=t.matter.pk))
+            was = before[str(t.matter.pk)]
+            changed = {name for name in _DERIVED_FIELDS if now[name] != was[name]}
+            if changed != _declared_fields(t):
+                out.append(t.reference)
+        return out
+
+    def write_rebase(self, topic_plan: TopicPlan) -> Any:
+        """Bring one pilot Teema to the snapshot: every WRITE through its service,
+        then a new canonical source reference and the records that say so."""
+        from app.accounts.models import User
+        from app.matters.enums import ResponseDeadlineChange, StageEpisodeOrigin
+        from app.matters.models import Matter
+        from app.matters.response_deadlines import (
+            change_response_deadline,
+            request_response_deadline,
+        )
+        from app.matters.services import assign_matter, change_stage, set_matter_title
+        from app.workflow.enums import ActionStatus
+        from app.workflow.models import NextAction, StageVocabulary
+        from app.workflow.services import set_next_action
+
+        matter = Matter.all_objects.get(pk=topic_plan.matter.pk)
+        ref = topic_plan.reference
+        provenance = {
+            "source": REBUILD_PROVENANCE,
+            "cohort": self.cohort,
+            "package_sha256": self.plan.digest,
+            "plan": self.plan_sha256,
+            "reference": ref,
+        }
+        order = {name: index for index, name in enumerate(REBASE_FIELDS)}
+        step_written = None
+        for entry in sorted(topic_plan.writes(), key=lambda e: order[e["field"]]):
+            name, reading, c = entry["field"], entry["reading"], entry["c"]
+            target: Any = matter
+            extra: dict[str, Any] = {}
+            if name == "title":
+                set_matter_title(
+                    matter=matter, value=str(reading), actor=None, provenance=provenance
+                )
+            elif name == "owner":
+                owner = User.objects.get(pk=c, is_active=True)
+                assign_matter(matter=matter, owner=owner, actor=None, provenance=provenance)
+                target = owner
+            elif name == "stage":
+                extra = {"from": matter.stage.key if matter.stage is not None else "", "to": c}
+                change_stage(
+                    matter=matter,
+                    stage=StageVocabulary.objects.get(key=c),
+                    actor=None,
+                    origin=StageEpisodeOrigin.IMPORTED,
+                )
+            elif name == "open_request":
+                day = _day(c)
+                if day is None:  # `_resolve_rebase` never writes an empty request
+                    raise LovablePilotError(f"{ref}: the open request has no date.")
+                if matter.response_deadline is None:
+                    request_response_deadline(matter=matter, deadline=day, actor=None)
+                else:
+                    change_response_deadline(
+                        matter=matter, deadline=day, actor=None, change=ResponseDeadlineChange.MOVED
+                    )
+            elif name == "next_action":
+                matter.refresh_from_db()
+                step_written = target = set_next_action(
+                    matter=matter,
+                    text=str(reading["text"]).strip(),
+                    kind=reading["kind"],
+                    date_semantics=reading["date_semantics"],
+                    target_date=_day(reading.get("target_date")),
+                    date_precision=reading.get("date_precision") or "EXACT",
+                    source_text=reading.get("source_text") or reading["text"],
+                    responsible=matter.owner,
+                    actor=None,
+                    provenance={
+                        **provenance,
+                        "treatment": reading.get("treatment", ""),
+                        "kind_basis": "REVIEWED_PACKAGE",
+                    },
+                )
+                continue  # its record is the Teema's NEXT_ACTION record, below
+            else:
+                self.write_commencement(matter, topic_plan, reading)
+                continue  # `write_commencement` keeps its own record
+            kind, _suffix = REBASE_RECORDS[name]
+            self.remember(
+                matter=matter,
+                key=entry["key"],
+                kind=kind,
+                target=target,
+                evidence={
+                    "action": entry["action"],
+                    "decision": entry["decision"],
+                    "reason": _change_reason(topic_plan, name),
+                    **extra,
+                },
+            )
+            matter.refresh_from_db()
+
+        matter.refresh_from_db()
+        year, number = parse_reference(ref)  # type: ignore[misc]
+        source = self._source_reference(matter, topic_plan.topic, year, number)
+        if topic_plan.next_record:
+            step = step_written or (
+                NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN)
+                .order_by("created_at")
+                .first()
+            )
+            self.remember(
+                matter=matter,
+                key=f"{ref}-NEXT",
+                kind="NEXT_ACTION",
+                target=step,
+                evidence={
+                    "written": step_written is not None,
+                    "reason": _change_reason(topic_plan, "next_action"),
+                    "source_text": str((topic_plan.topic["source"]["row"]).get("jargmiseks") or ""),
+                },
+            )
+        self.remember(
+            matter=matter,
+            key=ref,
+            kind="REBASE",
+            target=source,
+            evidence={
+                "lovable_id": topic_plan.topic["source"]["id"],
+                "lovable_version": topic_plan.topic["source"].get("version"),
+                "resolution": topic_plan.resolution,
+                "relied": topic_plan.relied,
+                "next_record": topic_plan.next_record,
+            },
+        )
+        return matter
+
+    def _source_reference(self, matter: Any, topic: dict[str, Any], year: int, number: int) -> Any:
+        """The canonical source reference of a Teema the package wrote or rebased:
+        the snapshot's row exactly as read, the reviewer's decisions, and the
+        OneNote link byte for byte."""
         from app.legacy_import.enums import OneNoteContentStatus
         from app.legacy_import.models import MatchMethod, MatterSourceReference
+
+        source = topic["source"]
+        snapshot = self.package["snapshot"]
+        url = topic.get("onenote_url") or ""
+        return MatterSourceReference.objects.create(
+            matter=matter,
+            import_batch=self.batch,
+            source_system=SOURCE_SYSTEM,
+            source_file_name=SOURCE_TABLE,
+            source_snapshot_sha256=snapshot["snapshot_sha256"],
+            source_sheet=f"{SOURCE_TABLE}:{year}",
+            source_row_number=number,
+            source_row_raw={
+                "lovable": {
+                    "project": snapshot.get("project", ""),
+                    "id": source["id"],
+                    "version": source.get("version"),
+                    "updated_at": source.get("updated_at"),
+                    "as_of": snapshot.get("as_of"),
+                },
+                "row": source["row"],
+                "excel_source_row": source.get("excel_source_row"),
+                "history": source.get("history") or [],
+                "commencements": source.get("commencements") or [],
+                "responsible_changes": source.get("responsible_changes") or [],
+                "field_decisions": topic.get("field_decisions") or {},
+                "review_notes": topic.get("review_notes") or [],
+                # Version 2 keeps Lovable's structured stage links as read.
+                **(
+                    {"stage_links": source.get("stage_links") or []}
+                    if self.format_version == ACTIVE_FORMAT_VERSION
+                    else {}
+                ),
+            },
+            source_title=topic["title"],
+            source_date_raw=str(source["row"].get("sisse") or "")[:200],
+            onenote_url=url,
+            onenote_content_status=(
+                OneNoteContentStatus.NOT_IMPORTED if url else OneNoteContentStatus.NOT_APPLICABLE
+            ),
+            source_era=str(year),
+            source_contract_version=f"{PACKAGE_FORMAT}/{self.format_version}",
+            # The parser only proposed; a person decided (the package's
+            # `mapping_version` names the review). 50 characters, so the short form.
+            source_parser_version=f"{self.cohort}/{self.version}+reviewed",
+            match_method=MatchMethod.REFERENCE_TOKEN,
+            conflict_state="NONE",
+            reviewed_by=str(self.package.get("reviewer") or "")[:200],
+        )
+
+    def write_topic(self, topic_plan: TopicPlan) -> Any:
         from app.matters.enums import DataQualityTier, RecordMode
         from app.matters.response_deadlines import request_response_deadline
         from app.matters.services import create_imported_matter
@@ -1707,47 +2715,7 @@ class _Writer:
             **fields,
         )
         source = topic["source"]
-        snapshot = self.package["snapshot"]
-        url = topic.get("onenote_url") or ""
-        MatterSourceReference.objects.create(
-            matter=matter,
-            import_batch=self.batch,
-            source_system=SOURCE_SYSTEM,
-            source_file_name=SOURCE_TABLE,
-            source_snapshot_sha256=snapshot["snapshot_sha256"],
-            source_sheet=f"{SOURCE_TABLE}:{year}",
-            source_row_number=number,
-            source_row_raw={
-                "lovable": {
-                    "project": snapshot.get("project", ""),
-                    "id": source["id"],
-                    "version": source.get("version"),
-                    "updated_at": source.get("updated_at"),
-                    "as_of": snapshot.get("as_of"),
-                },
-                "row": source["row"],
-                "excel_source_row": source.get("excel_source_row"),
-                "history": source.get("history") or [],
-                "commencements": source.get("commencements") or [],
-                "responsible_changes": source.get("responsible_changes") or [],
-                "field_decisions": topic.get("field_decisions") or {},
-                "review_notes": topic.get("review_notes") or [],
-            },
-            source_title=topic["title"],
-            source_date_raw=str(source["row"].get("sisse") or "")[:200],
-            onenote_url=url,
-            onenote_content_status=(
-                OneNoteContentStatus.NOT_IMPORTED if url else OneNoteContentStatus.NOT_APPLICABLE
-            ),
-            source_era=str(year),
-            source_contract_version=f"{PACKAGE_FORMAT}/{self.format_version}",
-            # The parser only proposed; a person decided (the package's
-            # `mapping_version` names the review). 50 characters, so the short form.
-            source_parser_version=f"{self.cohort}/{self.version}+reviewed",
-            match_method=MatchMethod.REFERENCE_TOKEN,
-            conflict_state="NONE",
-            reviewed_by=str(self.package.get("reviewer") or "")[:200],
-        )
+        self._source_reference(matter, topic, year, number)
         self.remember(
             matter=matter,
             key=topic_plan.reference,
@@ -1878,6 +2846,65 @@ class VerifyReport:
         return not self.discrepancies
 
 
+def _verify_rebase(plan: LovablePlan, topic_plan: TopicPlan, m: Any) -> list[str]:
+    """A rebased Teema against its resolved plan: every write is now C, everything
+    else is still B, the continuation and a kept step untouched, the snapshot's
+    source reference there."""
+    from app.legacy_import.models import MatterSourceReference
+
+    out: list[str] = []
+    ref = topic_plan.reference
+    if m.deleted_at is not None:
+        out.append(f"{ref}: the Matter is deleted.")
+    marked = m.evidence_pilot_records.filter(
+        pilot=plan.cohort, package_sha256=plan.digest, record_kind="REBASE"
+    ).count()
+    if marked != 1:
+        out.append(f"{ref}: not marked as rebased by this package.")
+    now = derived_values(m)
+    dated: list[Any] | None = None
+    for entry in topic_plan.resolution:
+        name = entry["field"]
+        writes = entry["action"] in WRITING
+        if name == "commencement_add":
+            dated = list(entry["b"]) if dated is None else dated
+            if writes and entry["c"] not in dated:
+                dated.append(entry["c"])
+            continue
+        wanted = entry["c"] if writes else entry["b"]
+        if now[name] != wanted:
+            out.append(f"{ref}: {name} is not what the plan left ({entry['action']}).")
+    if dated is not None and now["commencements"] != sorted(
+        dated, key=lambda d: (d[0], d[1], d[2] or "")
+    ):
+        out.append(f"{ref}: commencements are not what the plan left.")
+    relied = topic_plan.relied
+    if now["superseded_by"] != relied.get("superseded_by"):
+        out.append(f"{ref}: its continuation changed; a rebase never touches it.")
+    step_written = any(e["field"] == "next_action" for e in topic_plan.writes())
+    if not step_written and now["next_action_id"] != relied.get("next_action_id"):
+        out.append(f"{ref}: its current step changed; the plan kept it.")
+    sources = list(
+        MatterSourceReference.objects.filter(
+            matter=m,
+            source_system=SOURCE_SYSTEM,
+            source_snapshot_sha256=plan.package["snapshot"]["snapshot_sha256"],
+            source_parser_version__startswith=f"{plan.cohort}/",
+        )
+    )
+    if len(sources) != 1:
+        out.append(f"{ref}: {len(sources)} snapshot source references, not 1.")
+    else:
+        source = sources[0]
+        if (source.source_row_raw.get("lovable") or {}).get("id") != topic_plan.topic["source"][
+            "id"
+        ]:
+            out.append(f"{ref}: Lovable identity not recorded.")
+        if source.onenote_url != (topic_plan.topic.get("onenote_url") or ""):
+            out.append(f"{ref}: OneNote link not preserved exactly.")
+    return out
+
+
 def verify_applied(plan: LovablePlan) -> VerifyReport:
     """Every topic against what the database holds. Read-only; fails on any difference."""
     from app.audit.enums import ChangeEventType
@@ -1901,6 +2928,9 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
             out.append(f"{ref}: {len(matters)} Matters hold this reference, not 1.")
             continue
         m = matters[0]
+        if topic_plan.action == REBASE:
+            out.extend(_verify_rebase(plan, topic_plan, m))
+            continue
         marked = m.evidence_pilot_records.filter(
             pilot=plan.cohort, package_sha256=plan.digest, record_kind="MATTER"
         ).count()

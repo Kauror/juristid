@@ -9,6 +9,7 @@
         [--preserved-out F]
     python manage.py lovable_pilot verify   --package P
     python manage.py lovable_pilot preserved --before F
+    python manage.py lovable_pilot preserved --snapshot-out F
     python manage.py lovable_pilot source-drift --package P [--config F]
 
 `validate` checks the package with no database and prints its digest. `plan`
@@ -99,6 +100,15 @@ class Command(BaseCommand):
                 "preserved: the digest file `apply --preserved-out` wrote. Compared without the "
                 "synchronisation's own observations and decisions and notification states, which "
                 "nightly runs and reading change; everything else must be identical."
+            ),
+        )
+        parser.add_argument(
+            "--snapshot-out",
+            default="",
+            help=(
+                "preserved: write the current after-the-fact digests of every Teema here, in "
+                "the --preserved-out format, applying nothing (e.g. at a backup, to prove a "
+                "restore later with --before)."
             ),
         )
         parser.add_argument(
@@ -214,10 +224,15 @@ class Command(BaseCommand):
             "matters_after": report.matters_after,
             "existing_unchanged": report.fingerprint_before == report.fingerprint_after,
             "preserved_checked": len(report.preserved_before),
+            "rebased_local_checked": len(report.preserved_local_before),
         }
         if options["preserved_out"]:
             document = lovable_pilot.preserved_document(
-                report.preserved_settled_before, report.preserved_references
+                report.preserved_settled_before,
+                report.preserved_references,
+                local=report.preserved_local_before,
+                declared=report.declared,
+                created=report.created_ids,
             )
             Path(options["preserved_out"]).write_text(
                 json.dumps(document, ensure_ascii=False, indent=1, sort_keys=True),
@@ -244,8 +259,30 @@ class Command(BaseCommand):
             raise CommandError(f"{len(report.discrepancies)} discrepancy(ies).")
 
     def _preserved(self, options: dict[str, Any]) -> None:
+        if options["snapshot_out"] and options["before"]:
+            raise CommandError("preserved takes --before or --snapshot-out, not both.")
+        if options["snapshot_out"]:
+            target = Path(options["snapshot_out"])
+            _require_writable(target)
+            document = lovable_pilot.preserved_snapshot()
+            target.write_text(
+                json.dumps(document, ensure_ascii=False, indent=1, sort_keys=True),
+                encoding="utf-8",
+            )
+            self._emit(
+                options,
+                {
+                    "snapshot_out": str(target),
+                    "matters": len(document["matters"]),
+                    "preserved_sha256": document["sha256"],
+                },
+            )
+            return
         if not options["before"]:
-            raise CommandError("preserved needs --before, the file `apply --preserved-out` wrote.")
+            raise CommandError(
+                "preserved needs --before (the file `apply --preserved-out` or "
+                "`preserved --snapshot-out` wrote) or --snapshot-out."
+            )
         try:
             data = Path(options["before"]).read_bytes()
         except OSError as error:
@@ -259,12 +296,21 @@ class Command(BaseCommand):
                 "unchanged": result.checked - len(result.changed) - len(result.missing),
                 "changed": sorted(result.changed),
                 "missing": sorted(result.missing),
+                "rebased_checked": result.local_checked,
+                "local_unchanged": result.local_checked - len(result.local_changed),
+                "local_changed": sorted(result.local_changed),
+                "declared_changes_only": not result.undeclared,
+                "undeclared": sorted(result.undeclared),
             },
         )
         if not result.ok:
-            raise CommandError(
-                f"{len(result.changed) + len(result.missing)} pre-existing Teema(s) differ."
+            differing = (
+                len(result.changed)
+                + len(result.missing)
+                + len(result.local_changed)
+                + len(result.undeclared)
             )
+            raise CommandError(f"{differing} pre-existing Teema(s) differ.")
 
     def _source_drift(self, options: dict[str, Any]) -> None:
         package = lovable_pilot.load_package(options["package"])
@@ -301,12 +347,12 @@ def _require_writable(target: Path) -> None:
     import tempfile
 
     if target.exists() and not target.is_file():
-        raise CommandError(f"--preserved-out {target} is not a file.")
+        raise CommandError(f"{target} is not a file.")
     directory = target.parent if str(target.parent) else Path(".")
     try:
         with tempfile.NamedTemporaryFile(dir=directory, prefix=".preserved-", delete=True):
             pass
     except OSError as error:
         raise CommandError(
-            f"--preserved-out: {directory} is not writable ({error.strerror}); nothing was applied."
+            f"{target}: {directory} is not writable ({error.strerror}); nothing was applied."
         ) from error
