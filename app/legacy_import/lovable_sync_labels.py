@@ -106,7 +106,7 @@ LOVABLE_ACTIVITY_LABELS = {
 #: The synchronised cohorts, in the pages' words (docs/adr/0202 §6).
 LOVABLE_COHORT_LABELS = {
     "lovable-pilot": "Piloot",
-    "lovable-active": "Aktiivne register",
+    "lovable-operational": "Operatiivne register",
 }
 
 #: The readiness simulation's categories: what the *existing* rules would do

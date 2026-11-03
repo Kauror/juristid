@@ -158,7 +158,7 @@ def _world(n_states: int, n_nights: int, *, first_number: int = 700) -> list[Lov
                 matter=matter,
                 source_id=uuid.uuid4(),
                 reference=f"2026_{first_number + i}",
-                cohort="lovable-active",
+                cohort="lovable-operational",
                 applied=applied,
                 observed=observed,
             )

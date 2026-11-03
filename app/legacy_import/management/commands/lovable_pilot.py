@@ -22,7 +22,7 @@ backup set and every reference free. Run again, it writes nothing. `verify`
 reads back what was written and compares it with the package.
 
 The package names its cohort (docs/adr/0202 §1): a version-1 package is
-``lovable-pilot``, a version-2 one ``lovable-active``; the intent typed at
+``lovable-pilot``, a version-2 one ``lovable-operational``; the intent typed at
 `apply` is the cohort. Inside the transaction, `apply` digests every Teema
 that was already there before and after the writes, everything included, and
 refuses on any difference. `apply --preserved-out` (its directory checked

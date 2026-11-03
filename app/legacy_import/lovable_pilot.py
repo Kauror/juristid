@@ -35,7 +35,7 @@ whole apply; nothing already there is read for writing, updated or linked to.
 
 **Two cohorts, one importer** (docs/adr/0202). A version-1 package is the
 pilot's (``lovable-pilot``) and reads exactly as it always did. A version-2
-package names ``"cohort": "lovable-active"``: the active register's ongoing
+package names ``"cohort": "lovable-operational"``: the active register's ongoing
 topics, read by 0202 §3's rules (a live stage with «ei saatnud» stays open, an
 unreadable step is held rather than guessed, a continuation needs Lovable's
 structured stage link). The cohort is the `EvidencePilotRecord.pilot` of every
@@ -72,18 +72,18 @@ PILOT = "lovable-pilot"
 #: The active register's second cohort (docs/adr/0202 §1). The same importer;
 #: the cohort is the `EvidencePilotRecord.pilot` of everything a package writes,
 #: the intent typed at `apply` and the key the nightly synchronisation enrols.
-ACTIVE_COHORT = "lovable-active"
-COHORTS = (PILOT, ACTIVE_COHORT)
+OPERATIONAL_COHORT = "lovable-operational"
+COHORTS = (PILOT, OPERATIONAL_COHORT)
 PILOT_VERSION = "1.0"
 #: The importer version each cohort's records carry. The pilot's stays "1.0" so
 #: that a version-1 package writes exactly the records it always wrote.
-COHORT_VERSIONS = {PILOT: PILOT_VERSION, ACTIVE_COHORT: "2.0"}
+COHORT_VERSIONS = {PILOT: PILOT_VERSION, OPERATIONAL_COHORT: "2.0"}
 PACKAGE_FORMAT = "juristid.lovable-pilot"
 PACKAGE_FORMAT_VERSION = 1
 #: Version 2 is the active cohort's reading (docs/adr/0202 §3); version 1 reads
 #: exactly as before and means `lovable-pilot`.
 ACTIVE_FORMAT_VERSION = 2
-FORMAT_COHORTS = {PACKAGE_FORMAT_VERSION: PILOT, ACTIVE_FORMAT_VERSION: ACTIVE_COHORT}
+FORMAT_COHORTS = {PACKAGE_FORMAT_VERSION: PILOT, ACTIVE_FORMAT_VERSION: OPERATIONAL_COHORT}
 #: Typed by the operator at `apply`, the same discipline as the other pilots.
 #: It is the package's cohort; this is the pilot's.
 OPERATOR_INTENT = "lovable-pilot"

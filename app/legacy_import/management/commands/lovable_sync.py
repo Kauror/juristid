@@ -16,7 +16,7 @@
     python manage.py lovable_sync control --cut-over \\
         --operator-intent lovable-sync-cutover --reason R
     python manage.py lovable_sync resolve --reference 2026_501 --field stage --note N
-    python manage.py lovable_sync enroll --cohort lovable-active \\
+    python manage.py lovable_sync enroll --cohort lovable-operational \\
         --package-sha256 SHA --expect N --reason R
 
 `run` reads Lovable as the service login named in the credentials file and

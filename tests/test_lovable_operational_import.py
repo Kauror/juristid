@@ -26,7 +26,7 @@ from app.intelligence.models import MatterImportantDate
 from app.legacy_import import lovable_pilot, lovable_source
 from app.legacy_import.integrity import canonical_sha256
 from app.legacy_import.lovable_pilot import (
-    ACTIVE_COHORT,
+    OPERATIONAL_COHORT,
     PILOT,
     LovablePilotError,
     apply_plan,
@@ -154,7 +154,7 @@ def _active_package(*topics: dict[str, Any]) -> dict[str, Any]:
     return {
         "format": lovable_pilot.PACKAGE_FORMAT,
         "format_version": lovable_pilot.ACTIVE_FORMAT_VERSION,
-        "cohort": ACTIVE_COHORT,
+        "cohort": OPERATIONAL_COHORT,
         "reviewer": "näidisülevaataja",
         "snapshot": {
             "as_of": AS_OF,
@@ -296,7 +296,7 @@ def test_a_version_1_package_writes_the_pilots_records_exactly(world, pilot_on):
 
 def test_a_version_1_package_still_types_the_pilot_intent(world, pilot_on):
     with pytest.raises(LovablePilotError, match="--operator-intent lovable-pilot"):
-        _apply(_pilot_package(), operator_intent=ACTIVE_COHORT)
+        _apply(_pilot_package(), operator_intent=OPERATIONAL_COHORT)
 
 
 def test_a_version_1_row_is_not_held_to_the_version_2_exclusions():
@@ -319,8 +319,8 @@ def test_the_active_package_validates():
 @pytest.mark.parametrize(
     ("change", "message"),
     [
-        (lambda p: p.pop("cohort"), "is the lovable-active cohort's"),
-        (lambda p: p.update(cohort=PILOT), "is the lovable-active cohort's"),
+        (lambda p: p.pop("cohort"), "is the lovable-operational cohort's"),
+        (lambda p: p.update(cohort=PILOT), "is the lovable-operational cohort's"),
         (lambda p: p.update(cohort="lovable-muu"), "cohort 'lovable-muu' is unknown"),
         (lambda p: p.update(format_version=3), "format_version 3 is not supported"),
         (lambda p: p.update(format_version=1), "is the lovable-pilot cohort's"),
@@ -333,29 +333,29 @@ def test_the_cohort_and_the_format_version_belong_together(change, message):
 
 
 def test_the_active_cohort_writes_its_own_records(world, pilot_on):
-    with pytest.raises(LovablePilotError, match="--operator-intent lovable-active"):
+    with pytest.raises(LovablePilotError, match="--operator-intent lovable-operational"):
         _apply(_active_package(), operator_intent=PILOT)
     assert Matter.all_objects.count() == 0
 
     report = _apply(_active_package())
-    assert report.cohort == ACTIVE_COHORT
+    assert report.cohort == OPERATIONAL_COHORT
     assert set(EvidencePilotRecord.objects.values_list("pilot", "pilot_version")) == {
-        (ACTIVE_COHORT, "2.0")
+        (OPERATIONAL_COHORT, "2.0")
     }
     digest = package_digest(_active_package())
     marked = EvidencePilotRecord.objects.filter(
-        pilot=ACTIVE_COHORT, package_sha256=digest, record_kind="MATTER"
+        pilot=OPERATIONAL_COHORT, package_sha256=digest, record_kind="MATTER"
     )
     assert sorted(r.record_key for r in marked) == ["2025_88", "2026_601", "2026_602"]
     created = _created_payload(Matter.objects.get(reference_year=2026, reference_number=601))
     assert (created["source"], created["pilot"], created["cohort"]) == (
         "LOVABLE_PILOT",
-        ACTIVE_COHORT,
-        ACTIVE_COHORT,
+        OPERATIONAL_COHORT,
+        OPERATIONAL_COHORT,
     )
     assert created["format_version"] == 2
     batch = ImportBatch.objects.get()
-    assert batch.importer_version == "lovable-active/2.0"
+    assert batch.importer_version == "lovable-operational/2.0"
     assert batch.contract_version == "juristid.lovable-pilot/2"
     assert verify_applied(build_plan(_active_package())).ok
     # The pilot's own records are not this cohort's and vice versa.
@@ -443,10 +443,10 @@ def test_the_digest_sees_a_change_the_fingerprint_does_not(existing):
 def test_the_dry_run_digests_every_existing_teema_and_leaves_nothing(existing):
     before = preserved_digests()
     report = lovable_pilot.dry_run(build_plan(_active_package()))
-    assert report.dry_run and report.verify.ok and report.cohort == ACTIVE_COHORT
+    assert report.dry_run and report.verify.ok and report.cohort == OPERATIONAL_COHORT
     assert report.preserved_before == before
     assert preserved_digests() == before
-    assert not EvidencePilotRecord.objects.filter(pilot=ACTIVE_COHORT).exists()
+    assert not EvidencePilotRecord.objects.filter(pilot=OPERATIONAL_COHORT).exists()
 
 
 def test_a_change_to_an_existing_teema_inside_the_import_rolls_it_back(existing, monkeypatch):
@@ -511,13 +511,13 @@ def test_apply_writes_the_digests_and_preserved_checks_them(existing, tmp_path, 
         "--expect-plan-sha256",
         plan_digest(plan),
         "--operator-intent",
-        ACTIVE_COHORT,
+        OPERATIONAL_COHORT,
         "--backup-set",
         BACKUP,
         "--preserved-out",
         str(out),
     )
-    assert "cohort: lovable-active" in capsys.readouterr().out
+    assert "cohort: lovable-operational" in capsys.readouterr().out
     document = json.loads(out.read_text(encoding="utf-8"))
     assert len(document["matters"]) == 5
     assert "2026_7" in document["references"].values()
@@ -827,7 +827,7 @@ def test_the_source_drift_command_prints_references_and_counts(tmp_path, monkeyp
         "--json",
     )
     printed = json.loads(capsys.readouterr().out)
-    assert printed["cohort"] == ACTIVE_COHORT
+    assert printed["cohort"] == OPERATIONAL_COHORT
     assert (printed["topics"], printed["drifted"]) == (3, 3)
     assert printed["changed_version"] == ["2026_601"]
     assert printed["renumbered"] == ["2026_602"]
@@ -1084,7 +1084,7 @@ def test_apply_refuses_an_unwritable_digest_path_before_writing(world, pilot_on,
             "--expect-plan-sha256",
             plan_digest(plan),
             "--operator-intent",
-            ACTIVE_COHORT,
+            OPERATIONAL_COHORT,
             "--backup-set",
             BACKUP,
             "--preserved-out",

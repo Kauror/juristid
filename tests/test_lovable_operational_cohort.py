@@ -3,7 +3,7 @@
 
 The pilot cohort is the synthetic one of tests/test_lovable_sync.py (four
 Teemad, `EXPECTED_COHORT` sized down to 4). The active cohort is three more
-Teemad written by the same importer and then relabelled ``lovable-active`` —
+Teemad written by the same importer and then relabelled ``lovable-operational`` —
 exactly what the active importer writes (its own `EvidencePilotRecord.pilot`, its
 own package digest, `field_decisions` with `HELD_FOR_REVIEW`). Every title,
 name and link is invented; nothing reaches Lovable.
@@ -29,7 +29,7 @@ from app.legacy_import import lovable_review, lovable_source, lovable_sync
 from app.legacy_import.lovable_observation import _Mapper
 from app.legacy_import.lovable_observation_models import MappingStatus
 from app.legacy_import.lovable_pilot import build_plan
-from app.legacy_import.lovable_sync import ACTIVE_COHORT, PILOT_COHORT, SyncRefused
+from app.legacy_import.lovable_sync import OPERATIONAL_COHORT, PILOT_COHORT, SyncRefused
 from app.legacy_import.lovable_sync_models import (
     LovableSyncCohort,
     LovableSyncState,
@@ -92,7 +92,7 @@ def _active_topics() -> list[dict[str, Any]]:
 
 @pytest.fixture
 def active(cohort):
-    """The pilot of four, plus three Teemad imported as ``lovable-active``."""
+    """The pilot of four, plus three Teemad imported as ``lovable-operational``."""
     topics = _active_topics()
     package = _package(*topics)
     package["snapshot"]["snapshot_sha256"] = "d" * 64
@@ -100,12 +100,12 @@ def active(cohort):
     digest = build_plan(package).digest
     _apply(package)
     relabelled = EvidencePilotRecord.objects.filter(package_sha256=digest).update(
-        pilot=ACTIVE_COHORT
+        pilot=OPERATIONAL_COHORT
     )
     assert relabelled > 3
     assert (
         EvidencePilotRecord.objects.filter(
-            pilot=ACTIVE_COHORT, package_sha256=digest, record_kind="MATTER"
+            pilot=OPERATIONAL_COHORT, package_sha256=digest, record_kind="MATTER"
         ).count()
         == 3
     )
@@ -119,7 +119,7 @@ def active(cohort):
 
 def _enroll(active: dict[str, Any], **kw: Any) -> lovable_sync.Enrolment:
     arguments = {
-        "cohort": ACTIVE_COHORT,
+        "cohort": OPERATIONAL_COHORT,
         "package_sha256": active["digest"],
         "expect": 3,
         "reason": "Aktiivne register, impordi kontroll läbitud",
@@ -186,18 +186,23 @@ def test_enrolment_seeds_baselines_from_the_import_snapshot(active):
     # A lawyer's edit made before enrolment is a local change, never the baseline.
     Matter.all_objects.filter(pk=_matter("2026_510").pk).update(title="Juristi pealkiri")
     done = _enroll(active)
-    assert (done.cohort, done.expected, done.seeded, done.already) == (ACTIVE_COHORT, 3, 3, False)
+    assert (done.cohort, done.expected, done.seeded, done.already) == (
+        OPERATIONAL_COHORT,
+        3,
+        3,
+        False,
+    )
     # 510: stage + «Välja»; 511: the step's wording, so its day too; 512: the title.
     assert done.import_held_fields == 5
     row = LovableSyncCohort.objects.get()
     assert (row.key, row.pilot, row.package_sha256, row.expected) == (
-        ACTIVE_COHORT,
-        ACTIVE_COHORT,
+        OPERATIONAL_COHORT,
+        OPERATIONAL_COHORT,
         active["digest"],
         3,
     )
     state = _state("2026_510")
-    assert state.cohort == ACTIVE_COHORT
+    assert state.cohort == OPERATIONAL_COHORT
     assert state.applied["title"] == {
         "source": "Näidisteema 2026_510",
         "target": "Näidisteema 2026_510",
@@ -281,11 +286,11 @@ def test_enrolment_refuses_a_provenance_teema_with_no_lovable_source(active):
         reference_year=2026, reference_number=519, title="Ilma allikata"
     )
     template = EvidencePilotRecord.objects.filter(
-        pilot=ACTIVE_COHORT, package_sha256=active["digest"], record_kind="MATTER"
+        pilot=OPERATIONAL_COHORT, package_sha256=active["digest"], record_kind="MATTER"
     ).first()
     assert template is not None
     EvidencePilotRecord.objects.create(
-        pilot=ACTIVE_COHORT,
+        pilot=OPERATIONAL_COHORT,
         pilot_version=template.pilot_version,
         package_sha256=active["digest"],
         record_key="2026_519",
@@ -360,7 +365,7 @@ def test_the_enroll_command_prints_counts_only(active):
         "lovable_sync",
         "enroll",
         "--cohort",
-        ACTIVE_COHORT,
+        OPERATIONAL_COHORT,
         "--package-sha256",
         active["digest"],
         "--expect",
@@ -370,11 +375,11 @@ def test_the_enroll_command_prints_counts_only(active):
     ]
     call_command(*arguments, stdout=out)
     assert out.getvalue().strip() == (
-        "enrolled: cohort=lovable-active expected=3 seeded=3 import_held_fields=5"
+        "enrolled: cohort=lovable-operational expected=3 seeded=3 import_held_fields=5"
     )
     again = io.StringIO()
     call_command(*arguments, stdout=again)
-    assert again.getvalue().startswith("already enrolled: cohort=lovable-active")
+    assert again.getvalue().startswith("already enrolled: cohort=lovable-operational")
     assert "2026_51" not in out.getvalue() + again.getvalue()
     err = io.StringIO()
     with pytest.raises(SystemExit) as stopped:
@@ -398,7 +403,7 @@ def test_the_size_check_is_per_cohort(active):
     run = _run(active, at=NIGHT + HOUR)
     assert run.status == SyncRunStatus.FAILED
     assert run.error.startswith("COHORT_SIZE")
-    assert "lovable-active holds 2 Teemad, not 3" in run.error
+    assert "lovable-operational holds 2 Teemad, not 3" in run.error
 
 
 def test_import_held_fields_wait_every_night_and_only_a_resolution_clears_them(active):
@@ -420,7 +425,7 @@ def test_import_held_fields_wait_every_night_and_only_a_resolution_clears_them(a
         d.outcome == SyncOutcome.REVIEW_REQUIRED
         for d in first.decisions.filter(reason=lovable_sync.IMPORT_HELD)
     )
-    part = first.counts["by_cohort"][ACTIVE_COHORT]
+    part = first.counts["by_cohort"][OPERATIONAL_COHORT]
     assert (part["expected"], part["checked"], part["review"]) == (3, 3, 3)
     assert (part["import_held"], part["import_held_fields"]) == (3, 5)
     assert first.counts["by_cohort"][PILOT_COHORT]["import_held"] == 0
@@ -510,7 +515,7 @@ def test_open_teemad_whose_source_stopped_are_counted_not_acted_on(active):
     source.edit("2026_512", operatiivne_ulatus=False)
     run = _run(active)
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
-    part = run.counts["by_cohort"][ACTIVE_COHORT]
+    part = run.counts["by_cohort"][OPERATIONAL_COHORT]
     assert part["activity"] == {
         "ONGOING": 0,
         "FINISHED": 1,
@@ -684,9 +689,9 @@ def test_the_new_cohort_is_counted_not_named_for_a_reader_who_may_not_open_it(
     assert obs.matter_changes(narrowed, "2026_510", now=later) is None
     assert lovable_review.nightly_history(narrowed, now=later).nights[0].hidden == 1
     status = answers[0].as_dict()
-    assert status["cohorts"][ACTIVE_COHORT]["expected"] == 3
-    assert status["cohorts"][ACTIVE_COHORT]["states"] == 3
-    indicator = {i.key: i for i in answers[0].indicators}["cohort_lovable_active"]
+    assert status["cohorts"][OPERATIONAL_COHORT]["expected"] == 3
+    assert status["cohorts"][OPERATIONAL_COHORT]["states"] == 3
+    indicator = {i.key: i for i in answers[0].indicators}["cohort_lovable_operational"]
     assert indicator.value == 3 and "ootele jäetud 3" in indicator.denominator
     assert {i.key: i for i in answers[0].indicators}["pilot_coverage"].denominator == (
         "7 sünkroonitavast teemast"
@@ -701,7 +706,7 @@ def test_the_new_cohort_is_counted_not_named_for_a_reader_who_may_not_open_it(
     out = io.StringIO()
     call_command("lovable_sync", "report", "--json", stdout=out)
     report = json.loads(out.getvalue())
-    assert report["status"]["cohorts"][ACTIVE_COHORT]["expected"] == 3
+    assert report["status"]["cohorts"][OPERATIONAL_COHORT]["expected"] == 3
     assert "2026_51" not in out.getvalue() and "SALAJANE" not in out.getvalue()
 
     # Haldus: a technical administrator sees the cohorts' counts, never the content.
@@ -712,7 +717,7 @@ def test_the_new_cohort_is_counted_not_named_for_a_reader_who_may_not_open_it(
     admin, secret = technical_admin()
     verified(client, admin, secret)
     body = client.get(reverse("haldus:lovable")).content.decode()
-    assert "Sünkroonitavad kohordid" in body and "Aktiivne register" in body
+    assert "Sünkroonitavad kohordid" in body and "Operatiivne register" in body
     assert "SALAJANE" not in body and "VARJATUD" not in body and "2026_510" not in body
 
 
@@ -730,9 +735,9 @@ def test_a_check_before_the_first_night_skips_the_unread_cohort(active, monkeypa
     assert check.status == SyncRunStatus.SUCCEEDED, check.error
     assert (check.counts["checked"], check.counts["missing"]) == (4, 0)
     assert check.counts["not_yet_read"] == 3
-    assert check.counts["by_cohort"][ACTIVE_COHORT]["not_yet_read"] == 3
-    assert check.counts["by_cohort"][ACTIVE_COHORT]["checked"] == 0
-    assert not check.decisions.filter(state__cohort=ACTIVE_COHORT).exists()
+    assert check.counts["by_cohort"][OPERATIONAL_COHORT]["not_yet_read"] == 3
+    assert check.counts["by_cohort"][OPERATIONAL_COHORT]["checked"] == 0
+    assert not check.decisions.filter(state__cohort=OPERATIONAL_COHORT).exists()
     assert "Veel lugemata (lisati pärast viimast lugemist): 3" in lovable_sync.summary_lines(check)
 
     # The next run reads them fresh: nothing missing, the breaker stays quiet.

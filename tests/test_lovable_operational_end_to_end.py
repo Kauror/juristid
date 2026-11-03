@@ -1,10 +1,10 @@
 # ruff: noqa: F811 - pytest fixtures imported from the sync suite are used as arguments
 """The seam between the active importer and the nightly synchronisation (docs/adr/0202).
 
-tests/test_lovable_active_import.py drives the importer alone, and
-tests/test_lovable_active_cohort.py drives the synchronisation over a cohort
+tests/test_lovable_operational_import.py drives the importer alone, and
+tests/test_lovable_operational_cohort.py drives the synchronisation over a cohort
 that a version-1 package wrote and a test relabelled. Here neither half is
-faked: a real version-2 ``lovable-active`` package goes through the real
+faked: a real version-2 ``lovable-operational`` package goes through the real
 `plan` → `apply` → `verify` → `preserved`, the real `lovable_sync enroll` takes
 the digest the import approved, and the real nightly run reads a fake Lovable
 through the real GET-only `HttpTransport` — night after night, first COMPARE,
@@ -31,7 +31,7 @@ from django.core.management import call_command
 from app.audit.models import ChangeEvent
 from app.legacy_import import lovable_pilot, lovable_review, lovable_source, lovable_sync
 from app.legacy_import.lovable_pilot import (
-    ACTIVE_COHORT,
+    OPERATIONAL_COHORT,
     LovablePilotError,
     apply_plan,
     build_plan,
@@ -56,9 +56,9 @@ from app.submissions.models import Submission
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from tests import factories
-from tests.test_lovable_active_cohort import _pilot_dump
-from tests.test_lovable_active_import import BACKUP, _active_package, _sid
-from tests.test_lovable_active_import import _apply as _apply_package
+from tests.test_lovable_operational_cohort import _pilot_dump
+from tests.test_lovable_operational_import import BACKUP, _active_package, _sid
+from tests.test_lovable_operational_import import _apply as _apply_package
 from tests.test_lovable_pilot import _topic, pilot_on, world  # noqa: F401
 from tests.test_lovable_source_security import _Answer, _config, _jwt
 from tests.test_lovable_sync import NIGHT, _decisions, _matter, _row, _run, cohort  # noqa: F401
@@ -317,10 +317,10 @@ def imported(e2e):
     package = _the_package()
     plan = build_plan(package)
     assert plan.problems == [], plan.problems
-    assert (plan.cohort, plan.database_state, plan.collisions) == (ACTIVE_COHORT, "ready", [])
+    assert (plan.cohort, plan.database_state, plan.collisions) == (OPERATIONAL_COHORT, "ready", [])
     report = apply_plan(
         plan,
-        operator_intent=ACTIVE_COHORT,
+        operator_intent=OPERATIONAL_COHORT,
         expect_package_sha256=plan.digest,
         expect_plan_sha256=plan_digest(plan),
         backup_set=BACKUP,
@@ -333,7 +333,7 @@ def _enroll_arguments(digest: str, expect: int = 5) -> list[str]:
         "lovable_sync",
         "enroll",
         "--cohort",
-        ACTIVE_COHORT,
+        OPERATIONAL_COHORT,
         "--package-sha256",
         digest,
         "--expect",
@@ -375,7 +375,7 @@ def second_night(first_night, monkeypatch):
 
 def test_the_import_verifies_and_every_existing_teema_is_preserved(imported):
     report = imported["report"]
-    assert report.cohort == ACTIVE_COHORT and not report.already_applied
+    assert report.cohort == OPERATIONAL_COHORT and not report.already_applied
     assert report.written["MATTER"] == 5
     assert verify_applied(build_plan(imported["package"])).ok
     # `apply --preserved-out`, then `preserved --before`, through the API.
@@ -405,11 +405,15 @@ def test_the_import_verifies_and_every_existing_teema_is_preserved(imported):
 
 def test_enrolment_seeds_the_new_cohort_from_the_import_and_leaves_the_pilot(enrolled):
     assert enrolled["enrol_output"] == (
-        "enrolled: cohort=lovable-active expected=5 seeded=5 import_held_fields=3"
+        "enrolled: cohort=lovable-operational expected=5 seeded=5 import_held_fields=3"
     )
     row = LovableSyncCohort.objects.get()
-    assert (row.key, row.package_sha256, row.expected) == (ACTIVE_COHORT, enrolled["digest"], 5)
-    states = {s.reference: s for s in LovableSyncState.objects.filter(cohort=ACTIVE_COHORT)}
+    assert (row.key, row.package_sha256, row.expected) == (
+        OPERATIONAL_COHORT,
+        enrolled["digest"],
+        5,
+    )
+    states = {s.reference: s for s in LovableSyncState.objects.filter(cohort=OPERATIONAL_COHORT)}
     assert set(states) == set(NEW)
     for reference, state in states.items():
         assert state.matter == _matter(reference)
@@ -434,7 +438,7 @@ def test_enrolment_seeds_the_new_cohort_from_the_import_and_leaves_the_pilot(enr
     # A reference is never an identity.
     assert not LovableSyncState.objects.filter(matter=enrolled["same"]).exists()
     assert not LovableSyncState.objects.filter(matter=enrolled["native"]).exists()
-    assert lovable_sync.expected_cohorts() == {PILOT_COHORT: 4, ACTIVE_COHORT: 5}
+    assert lovable_sync.expected_cohorts() == {PILOT_COHORT: 4, OPERATIONAL_COHORT: 5}
 
 
 # ---------------------------------------------------------------------------
@@ -451,7 +455,7 @@ def test_the_first_night_holds_only_what_the_import_held(first_night):
         (NO_STEP, "next_action_date", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD),
     }
     assert not _found(run, PILOT_REFS)
-    part = run.counts["by_cohort"][ACTIVE_COHORT]
+    part = run.counts["by_cohort"][OPERATIONAL_COHORT]
     assert part == {
         "expected": 5,
         "checked": 5,
@@ -503,7 +507,7 @@ def test_a_lovable_edit_after_the_snapshot_is_a_source_change_on_the_first_night
         "Näidisteema 2026_530",
         "Näidisteema 2026_530 (parandatud)",
     )
-    assert run.counts["by_cohort"][ACTIVE_COHORT]["eligible_unapplied"] == 1
+    assert run.counts["by_cohort"][OPERATIONAL_COHORT]["eligible_unapplied"] == 1
     assert _matter(REVIEW).title == "Näidisteema 2026_530"
     reader = factories.UserFactory(display_name="Lugeja Näidis")
     night = lovable_review.nightly_history(reader, now=NIGHT + 3 * DAY).nights[0]
@@ -526,7 +530,7 @@ def test_the_second_night_reports_a_date_and_a_finished_topic(second_night):
     assert step.target_date == dt.date(2027, 1, 15)
     before, after = second_night["digests"]
     assert after == before
-    part = run.counts["by_cohort"][ACTIVE_COHORT]
+    part = run.counts["by_cohort"][OPERATIONAL_COHORT]
     assert part["stopped_active"] == 1 and run.counts["stopped_active"] == 1
     assert part["activity"]["FINISHED"] == 1 and part["activity"]["ONGOING"] == 4
     assert part["eligible_unapplied"] == 1 and part["conflicts"] == 0
@@ -654,7 +658,7 @@ def test_the_same_import_and_enrolment_again_change_nothing(first_night):
     assert build_plan(package).database_state == "applied"
     assert _apply_package(package).already_applied
     again = lovable_sync.enroll(
-        cohort=ACTIVE_COHORT,
+        cohort=OPERATIONAL_COHORT,
         package_sha256=first_night["digest"],
         expect=5,
         reason="uuesti",
@@ -662,7 +666,7 @@ def test_the_same_import_and_enrolment_again_change_nothing(first_night):
     assert again.already and again.seeded == 5
     out = io.StringIO()
     call_command(*_enroll_arguments(first_night["digest"]), stdout=out)
-    assert out.getvalue().startswith("already enrolled: cohort=lovable-active expected=5")
+    assert out.getvalue().startswith("already enrolled: cohort=lovable-operational expected=5")
     assert (
         Matter.all_objects.count(),
         EvidencePilotRecord.objects.count(),
@@ -695,4 +699,4 @@ def test_a_reference_a_teema_already_holds_is_refused_at_plan(e2e):
     with pytest.raises(LovablePilotError, match="never overwritten"):
         _apply_package(clash)
     assert Matter.all_objects.count() == matters
-    assert not EvidencePilotRecord.objects.filter(pilot=ACTIVE_COHORT).exists()
+    assert not EvidencePilotRecord.objects.filter(pilot=OPERATIONAL_COHORT).exists()

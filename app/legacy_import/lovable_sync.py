@@ -60,8 +60,8 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.utils import timezone
 
 from app.legacy_import.lovable_pilot import (
-    ACTIVE_COHORT,
     HELD_FIELD_COLUMNS,
+    OPERATIONAL_COHORT,
     PILOT,
     SOURCE_SYSTEM,
     SOURCE_TABLE,
@@ -100,7 +100,7 @@ EXPECTED_COHORT = 100
 #: importer writes. The pilot is built in; any other is synchronised only once
 #: enrolled (`enroll`).
 PILOT_COHORT = PILOT
-ENROLLABLE_COHORTS = (ACTIVE_COHORT,)
+ENROLLABLE_COHORTS = (OPERATIONAL_COHORT,)
 
 #: The import's own review hold (docs/adr/0202 §3): a Lovable column the
 #: package's `field_decisions` marks thus is seeded ``import_held``.

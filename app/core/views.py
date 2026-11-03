@@ -239,7 +239,7 @@ LOVABLE_INDICATOR_GROUPS = (
         ("eligible", "review_required", "conflicts", "already_converged"),
     ),
     # Shown only once a cohort has joined the pilot (docs/adr/0202 §6).
-    ("Sünkroonitavad kohordid", ("cohort_lovable_pilot", "cohort_lovable_active")),
+    ("Sünkroonitavad kohordid", ("cohort_lovable_pilot", "cohort_lovable_operational")),
     ("Rakendatud kirjutused", ("applied",)),
 )
 
