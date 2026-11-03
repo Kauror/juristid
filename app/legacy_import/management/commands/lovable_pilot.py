@@ -8,6 +8,7 @@
         --operator-intent COHORT --backup-set sets/YYYYMMDDTHHMMSSZ \\
         [--preserved-out F]
     python manage.py lovable_pilot verify   --package P
+    python manage.py lovable_pilot replace  --package P --step validate|plan|dry-run|apply|verify
     python manage.py lovable_pilot preserved --before F
     python manage.py lovable_pilot preserved --snapshot-out F
     python manage.py lovable_pilot source-drift --package P [--config F]
@@ -64,7 +65,7 @@ class Command(BaseCommand):
         "Validate, plan, dry-run, apply or verify a Lovable package; check preserved Teemad "
         "or source drift (docs/adr/0191, docs/adr/0202). A rebuild: stop web and MCP for "
         "the apply window, then apply --preserved-out F, preserved --before F, and only then "
-        "lovable_sync enroll."
+        "lovable_sync enroll. A replacement (docs/adr/0203): lovable_pilot replace --step …."
     )
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -78,7 +79,17 @@ class Command(BaseCommand):
                 "verify",
                 "preserved",
                 "source-drift",
+                "replace",
             ],
+        )
+        parser.add_argument(
+            "--step",
+            choices=["validate", "plan", "dry-run", "apply", "verify"],
+            default="plan",
+            help=(
+                "replace: which step of the source-authoritative replacement (docs/adr/0203) "
+                "to run; the same gates as the ordinary step, for a replace package only."
+            ),
         )
         parser.add_argument("--package", default="", help="The package file or directory.")
         parser.add_argument("--expect-package-sha256", default="")
@@ -134,8 +145,20 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         if options["mode"] != "preserved" and not options["package"]:
             raise CommandError(f"{options['mode']} needs --package.")
+        mode = options["mode"]
         try:
-            getattr(self, "_" + options["mode"].replace("-", "_"))(options)
+            if mode == "replace":
+                package = lovable_pilot.load_package(options["package"])
+                if package.get("replace") is not True:
+                    raise CommandError("replace takes a replacement package (replace: true).")
+                mode = options["step"]
+            elif mode in {"dry-run", "apply"}:
+                package = lovable_pilot.load_package(options["package"])
+                if package.get("replace") is True:
+                    raise CommandError(
+                        f"A replacement package runs only as `lovable_pilot replace --step {mode}`."
+                    )
+            getattr(self, "_" + mode.replace("-", "_"))(options)
         except lovable_pilot.LovablePilotError as error:
             raise CommandError(str(error)) from error
         except lovable_source.SourceError as error:
@@ -175,6 +198,7 @@ class Command(BaseCommand):
             "reserve_through": plan.package.get("reserve_through") or {},
             "warnings": {t.reference: t.warnings for t in plan.topics if t.warnings},
             "problems": plan.problems,
+            **({"replace": lovable_pilot.replacement_counts(plan)} if plan.replace else {}),
         }
 
     def _plan(self, options: dict[str, Any]) -> None:
@@ -197,6 +221,15 @@ class Command(BaseCommand):
                 "matters_after_inside_transaction": report.matters_after,
                 "existing_unchanged": report.fingerprint_before == report.fingerprint_after,
                 "preserved_checked": len(report.preserved_before),
+                **(
+                    {
+                        "retired_by_origin": report.retired,
+                        "released": report.released,
+                        "outside_checked": len(report.outside_before),
+                    }
+                    if plan.replace
+                    else {}
+                ),
                 "verified": verify.checked,
                 "discrepancies": verify.discrepancies,
                 "held": verify.held,
@@ -233,6 +266,17 @@ class Command(BaseCommand):
             "existing_unchanged": report.fingerprint_before == report.fingerprint_after,
             "preserved_checked": len(report.preserved_before),
             "rebased_local_checked": len(report.preserved_local_before),
+            **(
+                {
+                    "retired": sum(report.retired.values()),
+                    "retired_by_origin": report.retired,
+                    "released": report.released,
+                    "created": report.written.get("MATTER", 0),
+                    "outside_checked": len(report.outside_before),
+                }
+                if plan.replace
+                else {}
+            ),
         }
         if options["preserved_out"]:
             document = lovable_pilot.preserved_document(
@@ -241,6 +285,8 @@ class Command(BaseCommand):
                 local=report.preserved_local_before,
                 declared=report.declared,
                 created=report.created_ids,
+                outside=report.outside_before,
+                outside_cutoff=report.outside_cutoff,
             )
             Path(options["preserved_out"]).write_text(
                 json.dumps(document, ensure_ascii=False, indent=1, sort_keys=True),
@@ -308,6 +354,8 @@ class Command(BaseCommand):
                 "local_unchanged": result.local_checked - len(result.local_changed),
                 "local_changed": sorted(result.local_changed),
                 "declared_changes_only": not result.undeclared,
+                "outside_checked": result.outside_checked,
+                "outside_changed": result.outside_changed,
                 "undeclared": sorted(result.undeclared),
             },
         )
@@ -317,6 +365,7 @@ class Command(BaseCommand):
                 + len(result.missing)
                 + len(result.local_changed)
                 + len(result.undeclared)
+                + len(result.outside_changed)
             )
             raise CommandError(f"{differing} pre-existing Teema(s) differ.")
 

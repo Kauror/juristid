@@ -930,6 +930,9 @@ def delete_matter(
     expected_digest: str | None = None,
     ip_address: str | None = None,
     user_agent: str = "",
+    provenance: dict[str, Any] | None = None,
+    forget_storage: bool = True,
+    retain: frozenset[str] = frozenset(),
 ) -> DeletionPlan:
     """Delete one Teema. All of it, or none of it.
 
@@ -958,7 +961,17 @@ def delete_matter(
     so there is no partial state to undo. Any failure *during* the deletion
     rolls the whole transaction back, and no stored object has been touched
     yet: bytes are removed only after the commit.
+
+    Three parameters exist for the one system operation that is not a person's
+    deletion (`retire_for_source_replacement`, docs/adr/0203) and default to the
+    product's behaviour: ``provenance`` is carried on both deletion events;
+    ``forget_storage=False`` leaves the stored bytes as orphans (reclaimed only
+    by the pruners, a separate decision); ``retain`` keeps provenance rows
+    (`RETAINABLE_PROVENANCE` only) under the tombstone. None of them weakens a
+    blocker, the digest check or the order of the purge.
     """
+    if not retain <= RETAINABLE_PROVENANCE:
+        raise DomainError(DELETION_REFUSED)
     with transaction.atomic():
         try:
             locked = Matter.all_objects.select_for_update(no_key=True).get(pk=matter.pk)
@@ -1009,7 +1022,11 @@ def delete_matter(
         with suspend_indexing():
             for label in _deletion_order(owned):
                 model = owned.models[label]
-                if issubclass(model, AppendOnlyModel) or label in RETAINED_WITH_AUDIT:
+                if (
+                    issubclass(model, AppendOnlyModel)
+                    or label in RETAINED_WITH_AUDIT
+                    or label in retain
+                ):
                     # Retained under the tombstone. Only the direct audit
                     # children — and the `Hetkeseis` periods they point at —
                     # reach this line; anything else append-only was a blocker.
@@ -1046,6 +1063,7 @@ def delete_matter(
                 "reference": reference,
                 "counts": counts,
                 "rows": {group.label: group.count for group in plan.owned},
+                **({"provenance": provenance} if provenance else {}),
             },
         )
         record_security_event(
@@ -1054,19 +1072,56 @@ def delete_matter(
             subject=locked,
             ip_address=ip_address,
             user_agent=user_agent,
-            detail={"reference": reference, "counts": counts},
+            detail={
+                "reference": reference,
+                "counts": counts,
+                **({"provenance": provenance} if provenance else {}),
+            },
         )
         matter_id = locked.pk
         actor_id = getattr(actor, "pk", None)
-        transaction.on_commit(
-            lambda: _forget_storage(
-                plan.evidence_keys,
-                plan.derivative_keys,
-                matter_id=matter_id,
-                actor_id=actor_id,
+        if forget_storage:
+            transaction.on_commit(
+                lambda: _forget_storage(
+                    plan.evidence_keys,
+                    plan.derivative_keys,
+                    matter_id=matter_id,
+                    actor_id=actor_id,
+                )
             )
-        )
     return plan
+
+
+#: Owned rows the source replacement keeps under a tombstone: the pilots'
+#: provenance records, which say what an import wrote (docs/adr/0203 §2).
+RETAINABLE_PROVENANCE: frozenset[str] = frozenset({"legacy_import.EvidencePilotRecord"})
+#: The provenance source the replacement names; nothing else uses this door.
+SOURCE_REPLACEMENT = "LOVABLE_REPLACEMENT"
+
+
+def retire_for_source_replacement(
+    *, matter: Matter, provenance: dict[str, Any], expected_digest: str
+) -> DeletionPlan:
+    """Retire one Teema for the source-authoritative replacement (docs/adr/0203 §1).
+
+    The second door onto `delete_matter`, and a system one: no person, so
+    ``actor=None``, with the replacement's provenance on both deletion events
+    instead. Every blocker and the digest the approved plan recorded still
+    apply. The stored bytes are **not** deleted — they stay as orphans, so a
+    database restore reverses the replacement completely — and the pilots'
+    provenance records stay under the tombstone. Called only from
+    `app.legacy_import.lovable_pilot` inside its gated, locked transaction.
+    """
+    if (provenance or {}).get("source") != SOURCE_REPLACEMENT or not expected_digest:
+        raise DomainError(DELETION_REFUSED)
+    return delete_matter(
+        matter=matter,
+        actor=None,
+        expected_digest=expected_digest,
+        provenance=provenance,
+        forget_storage=False,
+        retain=RETAINABLE_PROVENANCE,
+    )
 
 
 def permanently_delete_matter(

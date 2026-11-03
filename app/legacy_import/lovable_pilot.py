@@ -75,17 +75,26 @@ PILOT = "lovable-pilot"
 #: the cohort is the `EvidencePilotRecord.pilot` of everything a package writes,
 #: the intent typed at `apply` and the key the nightly synchronisation enrols.
 OPERATIONAL_COHORT = "lovable-operational"
-COHORTS = (PILOT, OPERATIONAL_COHORT)
+#: The source-authoritative replacement's cohort (docs/adr/0203): a package that
+#: retires every current Teema and creates Lovable's whole operational register.
+REGISTER_COHORT = "lovable-register"
+COHORTS = (PILOT, OPERATIONAL_COHORT, REGISTER_COHORT)
 PILOT_VERSION = "1.0"
 #: The importer version each cohort's records carry. The pilot's stays "1.0" so
 #: that a version-1 package writes exactly the records it always wrote.
-COHORT_VERSIONS = {PILOT: PILOT_VERSION, OPERATIONAL_COHORT: "2.0"}
+COHORT_VERSIONS = {PILOT: PILOT_VERSION, OPERATIONAL_COHORT: "2.0", REGISTER_COHORT: "3.0"}
 PACKAGE_FORMAT = "juristid.lovable-pilot"
 PACKAGE_FORMAT_VERSION = 1
 #: Version 2 is the active cohort's reading (docs/adr/0202 §3); version 1 reads
 #: exactly as before and means `lovable-pilot`.
 ACTIVE_FORMAT_VERSION = 2
 FORMAT_COHORTS = {PACKAGE_FORMAT_VERSION: PILOT, ACTIVE_FORMAT_VERSION: OPERATIONAL_COHORT}
+#: Every cohort a format version may name: version 2 is the operational rebuild
+#: or, with ``"replace": true``, the register replacement (docs/adr/0203).
+FORMAT_ALLOWED_COHORTS = {
+    PACKAGE_FORMAT_VERSION: frozenset({PILOT}),
+    ACTIVE_FORMAT_VERSION: frozenset({OPERATIONAL_COHORT, REGISTER_COHORT}),
+}
 #: Typed by the operator at `apply`, the same discipline as the other pilots.
 #: It is the package's cohort; this is the pilot's.
 OPERATOR_INTENT = "lovable-pilot"
@@ -232,11 +241,29 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
     cohort = package.get("cohort")
     if cohort is not None and cohort not in COHORTS:
         out.append(f"cohort {cohort!r} is unknown; a package is one of {', '.join(COHORTS)}.")
-    elif version in FORMAT_COHORTS and package_cohort(package) != FORMAT_COHORTS[version]:
+    elif (
+        version in FORMAT_COHORTS
+        and package_cohort(package) not in (FORMAT_ALLOWED_COHORTS[version])
+    ):
         out.append(
             f"format_version {version} is the {FORMAT_COHORTS[version]} cohort's, not "
             f"{package_cohort(package)!r}."
         )
+    replace = package.get("replace")
+    if replace not in (None, True):
+        out.append("replace is true or absent.")
+    if (replace is True) != (package_cohort(package) == REGISTER_COHORT):
+        out.append(
+            f"a replacement (replace: true) is exactly the {REGISTER_COHORT} cohort "
+            "(docs/adr/0203)."
+        )
+    if replace is True:
+        for topic in package.get("topics") or []:
+            if topic_action(topic) != CREATE or "action" not in topic:
+                out.append(
+                    f"{topic.get('reference')}: a replacement creates every topic "
+                    "(action: CREATE); nothing is rebased."
+                )
     v2 = _is_v2(package)
     snapshot = package.get("snapshot") or {}
     as_of = _day(snapshot.get("as_of"))
@@ -912,10 +939,19 @@ class LovablePlan:
     #: Package references whose Lovable identity Juristid already holds.
     identity_collisions: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    #: A replacement (docs/adr/0203): every live Teema it retires — pk, reference,
+    #: `updated_at`, its deletion digest, origin and blockers — and the references
+    #: it releases.
+    retirement: list[dict[str, Any]] = field(default_factory=list)
+    released: list[str] = field(default_factory=list)
 
     @property
     def cohort(self) -> str:
         return package_cohort(self.package)
+
+    @property
+    def replace(self) -> bool:
+        return self.package.get("replace") is True
 
     def expected_writes(self) -> dict[str, int]:
         creates = sum(1 for t in self.topics if t.action == CREATE)
@@ -1088,11 +1124,26 @@ def _read_database(plan: LovablePlan) -> None:
     creates = [t for t in plan.topics if t.action == CREATE]
     rebases = [t for t in plan.topics if t.action == REBASE]
     plan.existing_matters = Matter.all_objects.count()
+    retiring: list[Any] = []
+    waived: set[str] = set()
+    if plan.replace:
+        # Every live Teema but this package's own is retired, and the references
+        # they hold — exactly those, and those this package already released —
+        # are free for it (docs/adr/0203 §1.2).
+        own = EvidencePilotRecord.objects.filter(
+            pilot=plan.cohort, package_sha256=plan.digest, record_kind="MATTER"
+        ).values_list("matter_id", flat=True)
+        retiring = list(
+            Matter.all_objects.filter(deleted_at__isnull=True).exclude(pk__in=own).order_by("pk")
+        )
+        _plan_retirement(plan, retiring)
+        waived = set(plan.released) | _released_by(plan.digest)
     pairs = [parse_reference(t.reference) for t in creates]
     query = Q()
     for year, number in pairs:  # type: ignore[misc]
         query |= Q(reference_year=year, reference_number=number)
     taken = Matter.all_objects.filter(query) if pairs else Matter.all_objects.none()
+    taken = taken.exclude(pk__in=[m.pk for m in retiring])
     mine = taken.filter(
         evidence_pilot_records__pilot=plan.cohort,
         evidence_pilot_records__package_sha256=plan.digest,
@@ -1105,12 +1156,15 @@ def _read_database(plan: LovablePlan) -> None:
     rebase_problems = _plan_rebases(plan, rebases)
     rebased = sum(1 for t in rebases if t.rebased)
 
-    taken_refs = sorted({m.display_reference for m in taken} | _deleted_references(creates))
+    taken_refs = sorted(
+        {m.display_reference for m in taken} | (_deleted_references(creates) - waived)
+    )
     if not taken_refs and written == 0:
         plan.database_state = "ready"
     elif (
         mine.count() == len(creates) == len(taken_refs)
         and rebased == len(rebases)
+        and not retiring
         and written == sum(plan.expected_writes().values())
     ):
         plan.database_state = "applied"
@@ -1129,7 +1183,9 @@ def _read_database(plan: LovablePlan) -> None:
                 "it — a partial or removed import. Nothing is repaired here; investigate first."
             )
     plan.problems.extend(rebase_problems)
-    held = _identities_held(plan, creates, exclude_matters=[m.pk for m in mine])
+    held = _identities_held(
+        plan, creates, exclude_matters=[m.pk for m in mine] + [m.pk for m in retiring]
+    )
     if held:
         plan.identity_collisions = [f"{ref} (Juristid {held[ref]})" for ref in sorted(held)]
         plan.database_state = "conflict"
@@ -1138,6 +1194,229 @@ def _read_database(plan: LovablePlan) -> None:
             "in the source or imported before; a topic is never imported twice: "
             + ", ".join(plan.identity_collisions)
         )
+
+
+# ---------------------------------------------------------------------------
+# The source-authoritative replacement (docs/adr/0203)
+# ---------------------------------------------------------------------------
+
+#: How a retired Teema came to be, for the counts: the newest cohort first.
+ORIGIN_ORDER = (OPERATIONAL_COHORT, PILOT, "evidence-pilot")
+
+
+def _released_by(digest: str) -> set[str]:
+    """The references this package's replacement has already released."""
+    from app.audit.models import SecurityAuditEvent
+
+    return set(
+        SecurityAuditEvent.objects.filter(
+            event_type="REFERENCE_RELEASED", detail__package_sha256=digest
+        ).values_list("detail__reference", flat=True)
+    )
+
+
+def _plan_retirement(plan: LovablePlan, retiring: list[Any]) -> None:
+    """Every live Teema the replacement retires, with its deletion plan.
+
+    A continuation between two retired Teemad is not a blocker: the replacement
+    unlinks them itself before deleting. Any other blocker — a legal hold, a
+    corrected entry, a record outside the Teema, a tombstone naming it as its
+    successor — is a plan problem named by reference."""
+    from app.matters.deletion import BLOCKED_BY_RELATED_MATTER, plan_matter_deletion
+    from app.matters.models import Matter
+
+    from .models import EvidencePilotRecord
+
+    ids = {m.pk for m in retiring}
+    pilots: dict[Any, set[str]] = {}
+    for matter_id, pilot in EvidencePilotRecord.objects.filter(
+        matter_id__in=list(ids), record_kind="MATTER"
+    ).values_list("matter_id", "pilot"):
+        pilots.setdefault(matter_id, set()).add(pilot)
+    referrers: dict[Any, set[Any]] = {}
+    for pk, successor in Matter.all_objects.filter(superseded_by__in=list(ids)).values_list(
+        "pk", "superseded_by"
+    ):
+        referrers.setdefault(successor, set()).add(pk)
+    for m in retiring:
+        deletion = plan_matter_deletion(m)
+        codes = sorted(
+            {
+                b.code
+                for b in deletion.blockers
+                if not (
+                    b.code == BLOCKED_BY_RELATED_MATTER
+                    and (referrers.get(m.pk, set()) - {m.pk}) <= ids
+                )
+            }
+        )
+        origin = next((o for o in ORIGIN_ORDER if o in pilots.get(m.pk, set())), "other")
+        reference = m.display_reference
+        plan.retirement.append(
+            {
+                "pk": str(m.pk),
+                "reference": reference,
+                "updated_at": m.updated_at.isoformat(),
+                "deletion_digest": deletion.digest,
+                "origin": origin,
+                "blockers": codes,
+            }
+        )
+        if codes:
+            plan.problems.append(
+                f"{reference or m.pk}: cannot be retired ({', '.join(codes)}); nothing is replaced."
+            )
+    plan.released = sorted(r["reference"] for r in plan.retirement if r["reference"])
+
+
+def replacement_counts(plan: LovablePlan) -> dict[str, Any]:
+    """What the replacement retires, releases and creates, by origin. Counts only."""
+    by_origin: dict[str, int] = {}
+    for r in plan.retirement:
+        by_origin[r["origin"]] = by_origin.get(r["origin"], 0) + 1
+    return {
+        "retired": len(plan.retirement),
+        "released": len(plan.released),
+        "created": sum(1 for t in plan.topics if t.action == CREATE),
+        "blockers": sum(1 for r in plan.retirement if r["blockers"]),
+        "by_origin": dict(sorted(by_origin.items())),
+    }
+
+
+#: Everything outside the business dataset the replacement must leave as it was
+#: (docs/adr/0203 §2): ``(label, rows created before the apply only)``. A table
+#: whose rows are written and never changed (events, runs, batches, records) is
+#: compared on the rows that were there before; the rest whole.
+OUTSIDE_DATASET: tuple[tuple[str, bool], ...] = (
+    ("auth.Group", False),
+    ("auth.Permission", False),
+    ("accounts.User", False),
+    ("accounts.BreakGlassGrant", False),
+    ("accounts.DisclosurePreference", False),
+    ("organisations.Organisation", False),
+    ("organisations.OrganisationAlias", False),
+    ("taxonomy.PolicyArea", False),
+    ("taxonomy.LegalInstrumentType", False),
+    ("taxonomy.Tag", False),
+    ("taxonomy.TagAlias", False),
+    ("workflow.StageVocabulary", False),
+    ("workflow.LegacyStatusMapping", False),
+    ("mcp_access.McpAccessGrant", False),
+    ("mcp_access.McpAuthenticator", False),
+    ("notifications.NotificationPreference", False),
+    ("notifications.NotificationSettings", False),
+    ("legacy_import.LovableSyncCohort", False),
+    ("legacy_import.ImportBatch", True),
+    ("legacy_import.EvidencePilotRecord", True),
+    ("legacy_import.LovableSyncRun", True),
+    ("legacy_import.LovableSyncSnapshot", True),
+    ("audit.SecurityAuditEvent", True),
+    ("audit.ChangeEvent", True),
+)
+
+
+def _volatile(name: str) -> bool:
+    """A column ordinary use moves after the apply (a sign-in, a save)."""
+    return name == "updated_at" or name.startswith("last_")
+
+
+def outside_digests(cutoff: Any, *, settled: bool = False) -> dict[str, str]:
+    """One SHA-256 per table outside the business dataset (plus the user-group and
+    permission links), over its rows — for append-only kinds the rows that existed
+    before ``cutoff``. ``settled`` leaves out `updated_at` and `last_*` columns,
+    which a person signing in moves (`preserved --before`)."""
+    from django.apps import apps
+
+    moment = dt.datetime.fromisoformat(cutoff) if isinstance(cutoff, str) else cutoff
+    out: dict[str, str] = {}
+    tables: list[tuple[str, Any, bool]] = []
+    for label, before_only in OUTSIDE_DATASET:
+        try:
+            tables.append((label, apps.get_model(label), before_only))
+        except LookupError:  # pragma: no cover - an app this deployment lacks
+            continue
+    user = apps.get_model("accounts.User")
+    group = apps.get_model("auth.Group")
+    tables += [
+        ("accounts.User.groups", user.groups.through, False),
+        ("accounts.User.user_permissions", user.user_permissions.through, False),
+        ("auth.Group.permissions", group.permissions.through, False),
+    ]
+    for label, model, before_only in tables:
+        names = [f.attname for f in model._meta.concrete_fields]
+        if settled:
+            names = [n for n in names if not _volatile(n)]
+        if label == "audit.ChangeEvent":
+            names = ["id", "created_at"]  # identities: none may go
+        query = model._base_manager.all()
+        if before_only and moment is not None:
+            query = query.filter(created_at__lt=moment)
+        rows = [
+            {k: _digest_value(v) for k, v in row.items()}
+            for row in query.order_by(*(["pk"] if names else [])).values(*names)
+        ]
+        out[label] = canonical_sha256(rows)
+    return out
+
+
+def _verify_replacement(plan: LovablePlan) -> list[str]:
+    """After a replacement: exactly the package is live, each topic once by its
+    Lovable identity with its canonical register reference, and every Teema it
+    retired a reference-free tombstone with its deletion and release events."""
+    from app.audit.models import SecurityAuditEvent
+    from app.matters.models import Matter
+
+    from .models import MatterSourceReference
+
+    out: list[str] = []
+    wanted = {t.reference for t in plan.topics}
+    live = list(Matter.all_objects.filter(deleted_at__isnull=True))
+    live_refs = {m.display_reference for m in live}
+    if live_refs != wanted or len(live) != len(wanted):
+        out.append(
+            f"live Teemad are not exactly the package: {len(live)} live, {len(wanted)} in it; "
+            f"outside it: {', '.join(sorted(live_refs - wanted)) or '-'}."
+        )
+    sources = MatterSourceReference.objects.filter(
+        matter__in=live,
+        source_system=SOURCE_SYSTEM,
+        source_parser_version__startswith=f"{REGISTER_COHORT}/",
+    ).values_list("matter_id", "source_row_raw")
+    by_matter: dict[Any, list[str]] = {}
+    for matter_id, raw in sources:
+        by_matter.setdefault(matter_id, []).append(str((raw.get("lovable") or {}).get("id")))
+    identities = {t.reference: str(t.topic["source"]["id"]) for t in plan.topics}
+    seen: set[str] = set()
+    for m in live:
+        ids = by_matter.get(m.pk, [])
+        if ids != [identities.get(m.display_reference)]:
+            out.append(f"{m.display_reference}: not exactly one register reference with its UUID.")
+        seen.update(ids)
+    if len(seen) != len(live):
+        out.append("a Lovable identity is held by more than one live Teema.")
+    deleted = {
+        str(subject): detail
+        for subject, detail in SecurityAuditEvent.objects.filter(
+            event_type="MATTER_DELETED", detail__provenance__package_sha256=plan.digest
+        ).values_list("subject_id", "detail")
+    }
+    released = {
+        str(subject)
+        for subject in SecurityAuditEvent.objects.filter(
+            event_type="REFERENCE_RELEASED", detail__package_sha256=plan.digest
+        ).values_list("subject_id", flat=True)
+    }
+    tombstones = {str(m.pk): m for m in Matter.all_objects.filter(pk__in=list(deleted))}
+    for pk, detail in deleted.items():
+        tomb = tombstones.get(pk)
+        if tomb is None or tomb.deleted_at is None:
+            out.append(f"{detail.get('reference')}: retired but not a tombstone.")
+            continue
+        if tomb.reference_year is not None or tomb.reference_number is not None:
+            out.append(f"{detail.get('reference')}: its tombstone still holds the reference.")
+        if detail.get("reference") and pk not in released:
+            out.append(f"{detail.get('reference')}: no REFERENCE_RELEASED event.")
+    return out
 
 
 def _identity_holders(topics: list[TopicPlan]) -> dict[str, set[Any]]:
@@ -1647,6 +1926,21 @@ def plan_digest(plan: LovablePlan) -> str:
                 for t in plan.topics
             ],
             "reserve_through": plan.package.get("reserve_through") or {},
+            # Only a replacement has this key: every Teema it retires, as the plan
+            # read it, and the references it releases (docs/adr/0203).
+            **(
+                {
+                    "replace": {
+                        "retire": [
+                            [r["pk"], r["updated_at"], r["deletion_digest"]]
+                            for r in plan.retirement
+                        ],
+                        "released": plan.released,
+                    }
+                }
+                if plan.replace
+                else {}
+            ),
             # Only a package that rebases has this key, so a version-1 (and a
             # CREATE-only) plan hashes exactly as it always did.
             **(
@@ -2064,6 +2358,8 @@ def preserved_document(
     local: dict[str, str] | None = None,
     declared: dict[str, dict[str, Any]] | None = None,
     created: list[str] | None = None,
+    outside: dict[str, str] | None = None,
+    outside_cutoff: str = "",
 ) -> dict[str, Any]:
     """What `apply --preserved-out` writes and `preserved --before` reads: the
     digests of every Teema the package did not touch, the local digests of the
@@ -2082,6 +2378,13 @@ def preserved_document(
         "declared": dict(sorted((declared or {}).items())),
         # The package's new Teemad, which may continue under a rebased one.
         "created": sorted(created or []),
+        # A replacement: the settled digests of everything outside the business
+        # dataset, over the rows that existed before ``outside_cutoff``.
+        **(
+            {"outside": dict(sorted(outside.items())), "outside_cutoff": outside_cutoff}
+            if outside
+            else {}
+        ),
     }
     return {**body, "sha256": canonical_sha256(body)}
 
@@ -2123,11 +2426,19 @@ class PreservedComparison:
     local_checked: int = 0
     local_changed: list[str] = field(default_factory=list)
     undeclared: list[str] = field(default_factory=list)
+    #: A replacement: the tables outside the business dataset checked, and any moved.
+    outside_checked: int = 0
+    outside_changed: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
         return not (
-            self.changed or self.missing or self.added or self.local_changed or self.undeclared
+            self.changed
+            or self.missing
+            or self.added
+            or self.local_changed
+            or self.undeclared
+            or self.outside_changed
         )
 
     def summary(self) -> str:
@@ -2187,6 +2498,13 @@ def check_preserved(document: Any) -> PreservedComparison:
         names.get(pk) or pk for pk, digest in local.items() if now.local_settled.get(pk) != digest
     ]
     present = {str(m.pk): m for m in Matter.all_objects.filter(pk__in=list(declared))}
+    outside = dict(body.get("outside") or {})
+    if outside:
+        now_outside = outside_digests(body.get("outside_cutoff"), settled=True)
+        result.outside_checked = len(outside)
+        result.outside_changed = sorted(
+            label for label, digest in outside.items() if now_outside.get(label) != digest
+        )
     result.undeclared = [
         names.get(pk) or pk
         for pk, entry in declared.items()
@@ -2281,6 +2599,17 @@ class ApplyReport:
     local_specs: dict[str, dict[str, Any]] = field(default_factory=dict)
     declared: dict[str, dict[str, Any]] = field(default_factory=dict)
     created_ids: list[str] = field(default_factory=list)
+    #: A replacement: what it retired (by origin) and released, and the settled
+    #: digests of everything outside the business dataset, taken before it.
+    retired: dict[str, int] = field(default_factory=dict)
+    released: int = 0
+    outside_before: dict[str, str] = field(default_factory=dict)
+    outside_cutoff: str = ""
+
+    def count_retired(self, origin: str, *, released: bool) -> None:
+        self.retired[origin] = self.retired.get(origin, 0) + 1
+        self.released += int(released)
+
     verify: Any = None
 
     def count(self, kind: str) -> None:
@@ -2462,6 +2791,14 @@ def _hold_and_replan(plan: LovablePlan, expect_plan_sha256: str) -> LovablePlan:
         for t in plan.package.get("topics") or []
         if topic_action(t) == REBASE
     ]
+    if plan.package.get("replace") is True:
+        # A replacement retires every live Teema: each row, in one order.
+        list(
+            Matter.all_objects.select_for_update(no_key=True)
+            .filter(deleted_at__isnull=True)
+            .order_by("pk")
+            .values_list("pk", flat=True)
+        )
     if rebased:
         from django.db.models import Q
 
@@ -2538,6 +2875,140 @@ class _Writer:
         self.report.count(kind)
 
     def write(self) -> tuple[ApplyReport, list[Any]]:
+        if self.plan.replace:
+            return self.write_replacement()
+        return self.write_import()
+
+    def write_replacement(self) -> tuple[ApplyReport, list[Any]]:
+        """Retire every current Teema, release their references, create the register
+        — and prove nothing outside the business dataset moved (docs/adr/0203)."""
+        from app.audit.enums import SecurityEventType
+        from app.audit.services import record_security_event
+        from app.legacy_import.models import ImportBatch, ReconciliationStatus
+        from app.matters.deletion import SOURCE_REPLACEMENT, retire_for_source_replacement
+        from app.matters.models import Matter
+        from app.matters.services import reserve_matter_reference
+
+        snapshot = self.package["snapshot"]
+        cutoff = timezone.now()
+        self.report.matters_before = Matter.all_objects.count()
+        self.report.outside_cutoff = cutoff.isoformat()
+        outside_before = outside_digests(cutoff)
+        self.report.outside_before = outside_digests(cutoff, settled=True)
+        self.batch = ImportBatch.objects.create(
+            source_system=SOURCE_SYSTEM,
+            source_file_name=SOURCE_TABLE,
+            source_snapshot_sha256=snapshot["snapshot_sha256"],
+            importer_version=f"{self.cohort}/{self.version}",
+            contract_version=f"{PACKAGE_FORMAT}/{self.format_version}",
+            started_at=cutoff,
+            source_row_count=len(self.plan.topics),
+            reconciliation_status=ReconciliationStatus.RUNNING,
+            notes=(
+                f"{self.cohort}: asendus Lovable'i hetktõmmisest {snapshot['snapshot_sha256']} "
+                f"(seis {snapshot.get('as_of')}); pakett {self.plan.digest}; plan-sha256 "
+                f"{self.plan_sha256}; varukoopia {self.backup_set}; teemasid enne "
+                f"{self.report.matters_before}, eemaldatakse {len(self.plan.retirement)} "
+                "(docs/adr/0203)."
+            ),
+        )
+        self.report.batch_id = self.batch.pk
+
+        # Continuations among the retired Teemad first, so no deletion finds
+        # another Teema naming it; then each retired, then its reference released.
+        retiring = [r["pk"] for r in self.plan.retirement]
+        Matter.all_objects.filter(pk__in=retiring, superseded_by__isnull=False).update(
+            superseded_by=None
+        )
+        for entry in self.plan.retirement:
+            matter = Matter.all_objects.get(pk=entry["pk"])
+            retire_for_source_replacement(
+                matter=matter,
+                provenance={
+                    "source": SOURCE_REPLACEMENT,
+                    "cohort": self.cohort,
+                    "package_sha256": self.plan.digest,
+                    "plan_sha256": self.plan_sha256,
+                },
+                expected_digest=entry["deletion_digest"],
+            )
+            if entry["reference"]:
+                Matter.all_objects.filter(pk=matter.pk).update(
+                    reference_year=None, reference_number=None
+                )
+                record_security_event(
+                    event_type=SecurityEventType.REFERENCE_RELEASED,
+                    actor=None,
+                    subject=matter,
+                    detail={
+                        "reference": entry["reference"],
+                        "tombstone": entry["pk"],
+                        "package_sha256": self.plan.digest,
+                        "plan_sha256": self.plan_sha256,
+                    },
+                )
+            self.report.count_retired(entry["origin"], released=bool(entry["reference"]))
+
+        created: dict[str, Any] = {}
+        for topic_plan in self.plan.topics:
+            created[topic_plan.reference] = self.write_topic(topic_plan)
+        for topic_plan in self.plan.topics:
+            if topic_plan.successor_in_batch:
+                matter = created[topic_plan.reference]
+                matter.superseded_by = created[topic_plan.successor_in_batch]
+                matter.save(update_fields=["superseded_by", "updated_at"])
+                self.remember(
+                    matter=matter,
+                    key=f"{topic_plan.reference}-CONTINUES",
+                    kind="CONTINUATION",
+                    target=matter.superseded_by,
+                    evidence={"successor": topic_plan.successor_in_batch},
+                )
+        for year, through in sorted((self.package.get("reserve_through") or {}).items()):
+            reserve_matter_reference(int(year), int(through))
+
+        self.report.matters_after = Matter.all_objects.count()
+        after = outside_digests(cutoff)
+        moved = sorted(label for label, digest in outside_before.items() if after[label] != digest)
+        if moved:
+            raise LovablePilotError(
+                "Something outside the business dataset changed during the replacement; "
+                f"nothing was written ({', '.join(moved)})."
+            )
+        self.batch.finished_at = timezone.now()
+        self.batch.created_matter_count = len(created)
+        self.batch.reconciliation_status = ReconciliationStatus.COMPLETED
+        self.batch.notes += f" Teemasid pärast {self.report.matters_after}."
+        self.batch.save(
+            update_fields=[
+                "finished_at",
+                "created_matter_count",
+                "reconciliation_status",
+                "notes",
+                "updated_at",
+            ]
+        )
+        record_security_event(
+            event_type=SecurityEventType.IMPORT_RUN,
+            actor=None,
+            subject=self.batch,
+            detail={
+                **self.base,
+                "replace": True,
+                "plan_sha256": self.plan_sha256,
+                "snapshot_sha256": snapshot["snapshot_sha256"],
+                "topics": len(created),
+                "retired": len(self.plan.retirement),
+                "released": len(self.plan.released),
+                "backup_set": self.backup_set,
+                "written": self.report.written,
+                "matters_before": self.report.matters_before,
+                "matters_after": self.report.matters_after,
+            },
+        )
+        return self.report, [m.pk for m in created.values()]
+
+    def write_import(self) -> tuple[ApplyReport, list[Any]]:
         from app.audit.enums import SecurityEventType
         from app.audit.services import record_security_event
         from app.legacy_import.models import ImportBatch, ReconciliationStatus
@@ -3279,4 +3750,6 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
                 out.append(f"{row.record_key}: its {row.target_model} no longer exists.")
     if written != plan.expected_writes():
         out.append(f"provenance rows {written} ≠ expected {plan.expected_writes()}.")
+    if plan.replace:
+        out.extend(_verify_replacement(plan))
     return report
