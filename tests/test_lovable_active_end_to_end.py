@@ -257,20 +257,12 @@ def _night(world: dict[str, Any], at: dt.datetime, trigger: str = SyncTrigger.SC
 
 
 def _business_digests(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
-    """`preserved_digests` of every Matter without the synchronisation's own
-    ledger (its states and decisions): what a lawyer could see change.
-
-    The full digest covers that ledger on purpose — nothing may touch it during
-    an import — so every night moves it for every synchronised Teema (`observed`,
-    `observed_run`, `updated_at`). Judging a nightly run needs it left out."""
-    every = lovable_pilot._preserved_sources
-    with monkeypatch.context() as patched:
-        patched.setattr(
-            lovable_pilot,
-            "_preserved_sources",
-            lambda: [s for s in every() if s[0] not in ("sync_state", "sync_decisions")],
-        )
-        return lovable_pilot.preserved_digests()
+    """`preserved_digests` of every Matter in its settled scope: without what the
+    synchronisation moves every night (a state's last observation, a run's
+    decisions) — what a lawyer could see change, and what `preserved --before`
+    compares after an import. The full digest, which covers that ledger on
+    purpose, is the one compared inside the apply transaction."""
+    return lovable_pilot.preserved_digests(settled=True)
 
 
 def _by_reference(digests: dict[str, str]) -> dict[str, str]:
@@ -387,7 +379,7 @@ def test_the_import_verifies_and_every_existing_teema_is_preserved(imported):
     assert report.written["MATTER"] == 5
     assert verify_applied(build_plan(imported["package"])).ok
     # `apply --preserved-out`, then `preserved --before`, through the API.
-    document = preserved_document(report.preserved_before, report.preserved_references)
+    document = preserved_document(report.preserved_settled_before, report.preserved_references)
     existing = {NATIVE, SAME_REF, *PILOT_REFS}
     assert set(document["references"].values()) == existing
     comparison = check_preserved(json.loads(json.dumps(document)))
@@ -470,6 +462,7 @@ def test_the_first_night_holds_only_what_the_import_held(first_night):
         "import_held": 2,
         "import_held_fields": 3,
         "stopped_active": 0,
+        "not_yet_read": 0,
         "activity": {
             "ONGOING": 5,
             "FINISHED": 0,
