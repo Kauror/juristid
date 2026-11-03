@@ -599,7 +599,11 @@ class Matter(BaseModel):
             return False
         if self.pilot_imports.exists():
             return False
-        return not self.evidence_pilot_records.filter(pilot="lovable-pilot").exists()
+        # Both Lovable cohorts (docs/adr/0202 §1), spelled out: importing the
+        # module's `COHORTS` here would be a cycle.
+        return not self.evidence_pilot_records.filter(
+            pilot__in=("lovable-pilot", "lovable-operational")
+        ).exists()
 
     @property
     def sender_names(self) -> str:

@@ -20,7 +20,8 @@ record is written from it. Four kinds of record:
   (`audit_access`). Disabled until then: no row is ever invented.
 
 Populations (`ObservationScope`) are kept apart everywhere they are counted:
-PILOT (the 100 Teemad of docs/adr/0191), OPERATIONAL (live topics with
+PILOT (the synchronised Teemad: the 100 of docs/adr/0191 and every cohort
+enrolled since, docs/adr/0202 — `LovableSyncState`), OPERATIONAL (live topics with
 ``operatiivne_ulatus``), ALL_LIVE (every live topic) and SOURCE_HISTORY (the
 audit ledger). A count of one is never compared with a count of another
 without naming both.
@@ -42,7 +43,7 @@ OBSERVATION_RETENTION_DAYS = 30
 
 
 class ObservationScope(models.TextChoices):
-    PILOT = "PILOT", "Piloot (100 teemat)"
+    PILOT = "PILOT", "Sünkroonitavad teemad"
     OPERATIONAL = "OPERATIONAL", "Operatiivsed teemad"
     ALL_LIVE = "ALL_LIVE", "Kõik elavad teemad"
     SOURCE_HISTORY = "SOURCE_HISTORY", "Lovable'i muutmisajalugu"

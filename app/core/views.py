@@ -164,7 +164,7 @@ LOVABLE_FILTERS = {
 
 #: Estonian slugs in the address → (the service's value, the label).
 LOVABLE_POPULATIONS = {
-    "piloot": ("PILOT", "Piloot (100 teemat)"),
+    "piloot": ("PILOT", "Sünkroonitavad teemad"),
     "operatiivsed": ("OPERATIONAL", "Operatiivsed teemad"),
     "koik": ("ALL_LIVE", "Kõik elavad teemad"),
 }
@@ -235,9 +235,11 @@ LOVABLE_INDICATOR_GROUPS = (
         ),
     ),
     (
-        "Juristide otsused (piloot)",
+        "Juristide otsused (sünkroonitavad teemad)",
         ("eligible", "review_required", "conflicts", "already_converged"),
     ),
+    # Shown only once a cohort has joined the pilot (docs/adr/0202 §6).
+    ("Sünkroonitavad kohordid", ("cohort_lovable_pilot", "cohort_lovable_operational")),
     ("Rakendatud kirjutused", ("applied",)),
 )
 
@@ -458,7 +460,11 @@ def _unlinked_rows(summary: Any, *, events: bool = False) -> dict[str, Any]:
 
 
 def _topic_needs_attention(topic: Any) -> bool:
-    return topic.kind != "CHANGED" or any(
+    """As `lovable_review.Night.attention` counts it: a Teema entering the
+    comparison (``ENROLLED``, docs/adr/0202 §6) is not a change to look at."""
+    from app.legacy_import.lovable_review import ENROLLED
+
+    return topic.kind not in ("CHANGED", ENROLLED) or any(
         f.result in LOVABLE_ATTENTION_RESULTS for f in topic.fields
     )
 

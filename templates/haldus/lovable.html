@@ -97,7 +97,7 @@
     <dl class="detailgrid">
       <dt>Režiim</dt><dd>{{ status.mode_label }}{% if status.cut_over %} · lõplik üleminek tehtud{% endif %}</dd>
       <dt>Laiem vaatlus</dt><dd>{% if status.observe_enabled %}sisse lülitatud{% else %}välja lülitatud{% endif %}</dd>
-      <dt>Piloodi teemad</dt><dd>{{ status.cohort_size }}</dd>
+      <dt>Sünkroonitavad teemad</dt><dd>{{ status.cohort_size }}</dd>
       <dt>Elavaid teemasid Lovable'is</dt><dd>{{ status.live_topics|default_if_none:"—" }}</dd>
       <dt>Operatiivseid teemasid</dt><dd>{{ status.operational_topics|default_if_none:"—" }}</dd>
       <dt>Ülevaatust ootavaid välju</dt><dd>{{ status.pending_review }}</dd>
@@ -111,6 +111,29 @@
       <dt>Toorandmete viimane kustutamine</dt><dd>{% if status.retention_last_success_at %}{{ status.retention_last_success_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
     </dl>
     <p class="acctnote">Vaatluse seire on punane, kui laiem vaatlus on sisse lülitatud ja viimane lugemine ebaõnnestus, käib üle kahe tunni, õnnestunud lugemist pole {{ stale_hours }} tunni jooksul või lubatud muutmisajalugu pole loetav — ning alati, kui vaatluse toorandmeid on, kuid nende kustutamine ebaõnnestus või pole {{ stale_hours }} tunni jooksul õnnestunud. Sama rida on käsu production_status väljundis («Lovable observation»).</p>
+    {% if status.per_cohort %}
+      <div class="accttable">
+        <table class="data-table">
+          <caption>Sünkroonitavad kohordid (viimane võrdlus)</caption>
+          <thead>
+            <tr><th scope="col">Kohort</th><th scope="col">Oodatud</th><th scope="col">Seiseid</th><th scope="col">Kontrollitud</th><th scope="col">Vajab ülevaatamist</th><th scope="col">Neist impordil ootele jäetud</th><th scope="col">Lovable'is lõppenud, Juristides avatud</th></tr>
+          </thead>
+          <tbody>
+            {% for key, part in status.cohorts.items %}
+              <tr>
+                <th scope="row">{{ part.label }} <span class="mono">{{ key }}</span></th>
+                <td>{{ part.expected }}</td>
+                <td>{{ part.states }}</td>
+                <td>{{ part.checked|default_if_none:"—" }}</td>
+                <td>{{ part.review|default_if_none:"—" }}</td>
+                <td>{{ part.import_held|default_if_none:"—" }}</td>
+                <td>{{ part.stopped_active|default_if_none:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
     {% if status.warnings %}
       <h3 class="acctsection__title">Hoiatused</h3>
       <ul class="linklist">{% for line in status.warnings %}<li>{{ line }}</li>{% endfor %}</ul>
