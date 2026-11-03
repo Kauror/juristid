@@ -18,6 +18,8 @@
     python manage.py lovable_sync resolve --reference 2026_501 --field stage --note N
     python manage.py lovable_sync enroll --cohort lovable-operational \\
         --package-sha256 SHA --expect N --reason R [--supersede lovable-pilot]
+    python manage.py lovable_sync enroll --cohort lovable-register \\
+        --package-sha256 SHA --expect N --reason R --replaces lovable-operational
 
 `run` reads Lovable as the service login named in the credentials file and
 reconciles the pilot's 100 Teemad and every enrolled cohort (docs/adr/0202). It
@@ -134,6 +136,15 @@ class Command(BaseCommand):
         )
         parser.add_argument(
             "--expect", type=int, default=0, help="enroll: how many Teemad the cohort holds."
+        )
+        parser.add_argument(
+            "--replaces",
+            action="append",
+            default=[],
+            help=(
+                "enroll: a cohort the source-authoritative replacement retires "
+                "(docs/adr/0203 §3); repeat it or give a comma list."
+            ),
         )
         parser.add_argument(
             "--supersede",
@@ -346,6 +357,7 @@ class Command(BaseCommand):
             expect=options["expect"],
             reason=options["reason"],
             supersede=options["supersede"],
+            replaces=[key for value in options["replaces"] for key in value.split(",")],
         )
         if done.already:
             self.stdout.write(

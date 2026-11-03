@@ -64,6 +64,7 @@ from app.legacy_import.lovable_pilot import (
     HELD_FIELD_COLUMNS,
     OPERATIONAL_COHORT,
     PILOT,
+    REGISTER_COHORT,
     SOURCE_SYSTEM,
     SOURCE_TABLE,
 )
@@ -102,7 +103,7 @@ EXPECTED_COHORT = 100
 #: importer writes. The pilot is built in; any other is synchronised only once
 #: enrolled (`enroll`).
 PILOT_COHORT = PILOT
-ENROLLABLE_COHORTS = (OPERATIONAL_COHORT,)
+ENROLLABLE_COHORTS = (OPERATIONAL_COHORT, REGISTER_COHORT)
 #: Cohorts a rebuild may supersede (`enroll --supersede`): only the pilot.
 SUPERSEDABLE_COHORTS = (PILOT_COHORT,)
 #: The provenance kinds that make a Teema a member of an enrolled cohort: a
@@ -1998,7 +1999,13 @@ class Enrolment:
 
 
 def enroll(
-    *, cohort: str, package_sha256: str, expect: int, reason: str, supersede: str = ""
+    *,
+    cohort: str,
+    package_sha256: str,
+    expect: int,
+    reason: str,
+    supersede: str = "",
+    replaces: Iterable[str] = (),
 ) -> Enrolment:
     """Enrol an imported cohort in the nightly comparison (docs/adr/0202 §6).
 
@@ -2037,6 +2044,29 @@ def enroll(
     if ctl is not None and ctl.cut_over:
         raise SyncRefused(
             "CUT_OVER", "Final cutover is recorded; the synchronisation never runs again."
+        )
+    replaced = sorted({key.strip() for key in replaces if key and key.strip()})
+    if cohort == REGISTER_COHORT and not replaced:
+        raise SyncRefused(
+            "REPLACES_REQUIRED",
+            "The register replaces every earlier cohort: name them with --replaces.",
+        )
+    if replaced and cohort != REGISTER_COHORT:
+        raise SyncRefused(
+            "REPLACES_ONLY_REGISTER",
+            f"Only the register ({REGISTER_COHORT}) replaces earlier cohorts.",
+        )
+    if replaced:
+        if supersede:
+            raise SyncRefused(
+                "SUPERSEDE_AND_REPLACE", "A replacement replaces cohorts; it supersedes none."
+            )
+        return _enroll_replacement(
+            cohort=cohort,
+            package_sha256=package_sha256,
+            expect=expect,
+            reason=reason,
+            replaced=replaced,
         )
     with run_lock(), transaction.atomic():
         existing = LovableSyncCohort.objects.select_for_update().filter(key=cohort).first()
@@ -2178,6 +2208,167 @@ def enroll(
         reseeded=reseeded,
         superseded=supersede,
     )
+
+
+def _enroll_replacement(
+    *, cohort: str, package_sha256: str, expect: int, reason: str, replaced: list[str]
+) -> Enrolment:
+    """The source-authoritative replacement's enrolment (docs/adr/0203 §3).
+
+    The replacement made every earlier Teema a tombstone (`delete_matter`, which
+    removes their states, decisions and archives with them) and created the
+    register as new Teemad. This enrols exactly those — the package's MATTER
+    records — and retires every cohort it replaces; it deletes nothing (a
+    state left on a tombstone with one of the register's ids refuses it). Refused
+    unless every active cohort is replaced, no replaced state is still on a live
+    Teema, each new Teema is live with exactly one canonical reference and a
+    Lovable id no live state holds, and no night reconciled since the
+    replacement. The same enrolment again is a no-op."""
+    from app.legacy_import.models import EvidencePilotRecord, ImportBatch
+    from app.matters.models import Matter
+
+    with run_lock(), transaction.atomic():
+        existing = LovableSyncCohort.objects.select_for_update().filter(key=cohort).first()
+        if existing is not None:
+            if existing.package_sha256 == package_sha256 and existing.expected == expect:
+                return Enrolment(
+                    cohort,
+                    expect,
+                    LovableSyncState.objects.filter(cohort=cohort).count(),
+                    0,
+                    already=True,
+                )
+            raise SyncRefused(
+                "COHORT_ENROLLED", f"Cohort {cohort} is already enrolled with another package."
+            )
+        rows = {row.key: row for row in LovableSyncCohort.objects.select_for_update()}
+        known = {PILOT_COHORT, *rows}
+        unknown = [key for key in replaced if key not in known or key == cohort]
+        if unknown:
+            raise SyncRefused("UNKNOWN_REPLACES", f"Unknown cohort(s) to replace: {unknown}.")
+        active = {c.key for c in cohorts()}
+        left = sorted(active - set(replaced))
+        if left:
+            raise SyncRefused(
+                "REPLACES_INCOMPLETE",
+                f"Active cohort(s) {left} are not replaced; the register must be the only one.",
+            )
+        live = set(Matter.objects.values_list("pk", flat=True))
+        remaining = LovableSyncState.objects.filter(cohort__in=replaced, matter_id__in=live)
+        if remaining.exists():
+            raise SyncRefused(
+                "LIVE_STATE_REMAINS",
+                f"{remaining.count()} state(s) of a replaced cohort are on a live Teema; "
+                "the replacement did not retire them.",
+            )
+
+        target = Cohort(cohort, cohort, package_sha256, expect)
+        matter_ids = list(
+            EvidencePilotRecord.objects.filter(
+                pilot=cohort, package_sha256=package_sha256, record_kind="MATTER"
+            ).values_list("matter_id", flat=True)
+        )
+        if len(matter_ids) != expect or len(set(matter_ids)) != expect:
+            raise SyncRefused(
+                "COUNT_MISMATCH",
+                f"The package's provenance names {len(set(matter_ids))} Teemad, not {expect}.",
+            )
+        if set(matter_ids) - live:
+            raise SyncRefused("NOT_LIVE", "A Teema of the replacement is not live.")
+        references: dict[Any, list[Any]] = {}
+        for reference in cohort_references(target):
+            references.setdefault(reference.matter_id, []).append(reference)
+        source_ids: dict[Any, str] = {}
+        for matter_id in matter_ids:
+            found = references.get(matter_id, [])
+            source_id = (
+                ((found[0].source_row_raw or {}).get("lovable") or {}).get("id")
+                if len(found) == 1
+                else None
+            )
+            if not source_id:
+                raise SyncRefused(
+                    "NO_CANONICAL_SOURCE",
+                    f"{len(found)} canonical Lovable source references (with a Lovable id) "
+                    "for one of the cohort's Teemad, not exactly one.",
+                )
+            source_ids[matter_id] = str(source_id)
+        if len(set(source_ids.values())) != len(source_ids):
+            raise SyncRefused("DUPLICATE_SOURCE", "Two of the cohort's Teemad name one source.")
+        held_live = LovableSyncState.objects.filter(
+            Q(source_id__in=list(source_ids.values())) | Q(matter_id__in=matter_ids),
+            matter_id__in=live,
+        ).count()
+        if held_live:
+            raise SyncRefused(
+                "ALREADY_SYNCHRONISED",
+                f"{held_live} of the cohort's Teemad or Lovable ids are already synchronised.",
+            )
+        batches = {found[0].import_batch_id for found in references.values() if found}
+        finished = [
+            b.finished_at or b.started_at
+            for b in ImportBatch.objects.filter(pk__in=batches)
+            if b.finished_at or b.started_at
+        ]
+        if finished:
+            runs = (
+                LovableSyncRun.objects.exclude(trigger=SyncTrigger.CHECK)
+                .filter(started_at__gt=min(finished))
+                .count()
+            )
+            if runs:
+                raise SyncRefused(
+                    "SYNC_RAN_SINCE_REBUILD",
+                    f"{runs} synchronisation run(s) started after the replacement was "
+                    "applied. Restore the pre-replacement backup set and enrol before the next "
+                    "night, or have the owner decide; nothing was enrolled.",
+                )
+        # A replaced state still on a tombstone (the deletion walk keeps none
+        # today) would hold one of the register's Lovable ids. Enrolment deletes
+        # nothing: it refuses, naming only the states' references.
+        stale = sorted(
+            LovableSyncState.objects.filter(source_id__in=list(source_ids.values()))
+            .exclude(matter_id__in=live)
+            .values_list("reference", flat=True)
+        )
+        if stale:
+            raise SyncRefused(
+                "STALE_STATE_ON_TOMBSTONE",
+                f"Synchronisation state(s) {', '.join(stale)} of a retired Teema still hold a "
+                "Lovable id of the register; nothing was enrolled.",
+            )
+
+        now = timezone.now()
+        retired = f"Asendatud kohordiga {cohort} (pakett {package_sha256}): {reason}"[:300]
+        for key in replaced:
+            row = rows.get(key)
+            if row is None:
+                # The built-in pilot, never rebuilt here: its row records the retirement.
+                LovableSyncCohort.objects.create(
+                    key=key,
+                    pilot=key,
+                    package_sha256="",
+                    expected=EXPECTED_COHORT,
+                    enrolled_at=now,
+                    reason="Sisseehitatud piloodikohort (docs/adr/0192).",
+                    retired_at=now,
+                    retired_reason=retired,
+                )
+            elif row.retired_at is None:
+                row.retired_at, row.retired_reason = now, retired
+                row.save(update_fields=["retired_at", "retired_reason", "updated_at"])
+        LovableSyncCohort.objects.create(
+            key=cohort,
+            pilot=cohort,
+            package_sha256=package_sha256,
+            expected=expect,
+            enrolled_at=now,
+            reason=reason[:300],
+        )
+        held = 0
+        for matter_id in matter_ids:
+            held += len(held_by_import(seed_state(references[matter_id][0], target).applied))
+    return Enrolment(cohort, expect, len(matter_ids), held, superseded=",".join(replaced))
 
 
 def _refuse_runs_since_rebuild(references: dict[Any, list[Any]], rebased: set[Any]) -> None:

@@ -587,6 +587,11 @@ class SecurityEventType(models.TextChoices):
         "MATTER_DELETION_STORAGE_PENDING",
         "Kustutatud teema failide eemaldamine ootab kordamist",
     )
+    # A retired Teema's tombstone gave up its `YYYY_N` (docs/adr/0203 §1.2): the
+    # source-authoritative replacement releases each reference it retires so the
+    # register's own topic can hold it. The original reference, the tombstone and
+    # the package and plan digests; never a title.
+    REFERENCE_RELEASED = "REFERENCE_RELEASED", "Kustutatud teema viide vabastati"
 
 
 class AuthMethod(models.TextChoices):

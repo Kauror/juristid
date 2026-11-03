@@ -60,6 +60,7 @@ from app.legacy_import.lovable_sync import (
 from app.legacy_import.lovable_sync_labels import LOVABLE_FIELD_LABELS, LOVABLE_REASONS
 from app.legacy_import.lovable_sync_models import (
     LovableSyncBaselineArchive,
+    LovableSyncCohort,
     LovableSyncDecision,
     LovableSyncRun,
     LovableSyncSnapshot,
@@ -169,6 +170,10 @@ REBASED_NOTE = (
 )
 
 NO_CHANGES = "Lovable'is ei tuvastatud muudatusi."
+GONE_NOTE = (
+    "{n} muudatust teemadel, mida Juristides enam ei sünkroonita (asendatud või kustutatud); "
+    "neid siin ei näidata."
+)
 FIRST_READING = "Esimene öine lugemine: see on lähtepunkt. Muudatusi näeb alates järgmisest ööst."
 NOT_READ = "Sel ööl Lovable'i andmeid ei loetud, seega ei saa öelda, kas midagi muutus."
 EXPIRED = "Eelmise öö andmeid enam ei hoita, seega võrdlust ei saa näidata."
@@ -267,6 +272,9 @@ class Night:
     #: Teemad that entered the comparison this night (`ENROLLED`), shown or
     #: not; never counted as changed or hidden changes.
     enrolled: int = 0
+    #: Source changes this night on topics whose state that night no longer
+    #: exists (a replaced or deleted Teema, docs/adr/0203): counted, not shown.
+    gone: int = 0
 
     @property
     def changed_topics(self) -> int:
@@ -407,13 +415,28 @@ def _compare(
     resolutions: dict[tuple[Any, str], list[tuple[dt.datetime, Any]]],
     baseline_started: dt.datetime | None = None,
     rebased: frozenset[Any] = frozenset(),
+    late: frozenset[Any] = frozenset(),
+    entering: frozenset[Any] = frozenset(),
 ) -> None:
     run = night.run
     reconciled = run_reconciled(run)
     for source_id in sorted(set(before) | set(after)):
         state = states.get(source_id)
-        if state is None or state.matter_id not in live:
-            continue  # not a cohort Teema any more, or deleted in Juristid
+        if state is None or state.matter_id not in live or state.pk in late:
+            # Not a synchronised Teema any more (deleted, or replaced by a later
+            # cohort whose state did not exist when this night ran): its change
+            # is counted, never attributed to whatever holds the topic now.
+            old, new = before.get(source_id), after.get(source_id)
+            if (
+                old is None
+                or new is None
+                or any(
+                    _key(n, a) != _key(n, b)
+                    for n, a, b in ((n, canonical(old)[n], canonical(new)[n]) for n in FIELD_ORDER)
+                )
+            ):
+                night.gone += 1
+            continue
         matter = visible.get(state.matter_id)
         old, new = before.get(source_id), after.get(source_id)
         topic = TopicChange(
@@ -421,8 +444,11 @@ def _compare(
             title=matter.title if matter is not None else "",
             matter_id=state.matter_id,
         )
-        if old is None and new is not None and _enrolled_since(state, baseline_started):
-            # Not in the earlier reading because it was not synchronised then.
+        if new is not None and (
+            (old is None and _enrolled_since(state, baseline_started)) or state.pk in entering
+        ):
+            # Not synchronised at the earlier reading — whether or not Lovable's
+            # topic was in it under an earlier Teema (docs/adr/0203): it enters.
             topic.kind = ENROLLED
             night.enrolled += 1
             if matter is not None:
@@ -564,6 +590,20 @@ def nightly_history(
 
     # When each rebased Teema's baseline was re-seeded (docs/adr/0202 §6).
     archives = list(LovableSyncBaselineArchive.objects.values_list("state_id", "archived_at"))
+    # A state whose cohort was enrolled after a night read Lovable — and that a
+    # rebuild did not carry over in place — did not exist that night: the topic
+    # then belonged to a Teema since replaced (docs/adr/0203).
+    archived = {state_id for state_id, _ in archives}
+    enrolled = dict(LovableSyncCohort.objects.values_list("key", "enrolled_at"))
+    state_cohorts = [(s.pk, s.cohort) for s in states.values()]
+
+    def _joined_after(moment: dt.datetime) -> frozenset[Any]:
+        return frozenset(
+            pk
+            for pk, cohort in state_cohorts
+            if pk not in archived and enrolled.get(cohort) is not None and enrolled[cohort] > moment
+        )
+
     nights = []
     for run in shown_runs:
         night = Night(
@@ -627,6 +667,8 @@ def nightly_history(
             converged=window_converged,
             resolutions=resolutions,
             baseline_started=baseline.snapshot_taken_at or baseline.started_at,
+            late=_joined_after(run.snapshot_taken_at or run.started_at),
+            entering=_joined_after(baseline.snapshot_taken_at or baseline.started_at),
             rebased=frozenset(
                 state_id
                 for state_id, at in archives
@@ -637,4 +679,7 @@ def nightly_history(
         )
         if not night.changed_topics and not night.hidden:
             night.message = NO_CHANGES
+        if night.gone:
+            kept = "" if night.message == NO_CHANGES else night.message
+            night.message = " ".join(p for p in (kept, GONE_NOTE.format(n=night.gone)) if p)
     return History(nights=nights, older=older, showing_all=show_all)
