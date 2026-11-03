@@ -59,7 +59,7 @@ from zoneinfo import ZoneInfo
 from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.utils import timezone
 
-from app.legacy_import.lovable_pilot import PILOT, SOURCE_SYSTEM, SOURCE_TABLE
+from app.legacy_import.lovable_pilot import ACTIVE_COHORT, PILOT, SOURCE_SYSTEM, SOURCE_TABLE
 from app.legacy_import.lovable_source import (
     SourceError,
     Transport,
@@ -94,7 +94,6 @@ EXPECTED_COHORT = 100
 #: importer writes. The pilot is built in; any other is synchronised only once
 #: enrolled (`enroll`).
 PILOT_COHORT = PILOT
-ACTIVE_COHORT = "lovable-active"
 ENROLLABLE_COHORTS = (ACTIVE_COHORT,)
 
 #: The import's own review hold (docs/adr/0202 §3): a Lovable column the
