@@ -2215,7 +2215,8 @@ def _enroll_replacement(
     The replacement made every earlier Teema a tombstone (`delete_matter`, which
     removes their states, decisions and archives with them) and created the
     register as new Teemad. This enrols exactly those — the package's MATTER
-    records — and retires every cohort it replaces; it deletes nothing. Refused
+    records — and retires every cohort it replaces; it deletes nothing (a
+    state left on a tombstone with one of the register's ids refuses it). Refused
     unless every active cohort is replaced, no replaced state is still on a live
     Teema, each new Teema is live with exactly one canonical reference and a
     Lovable id no live state holds, and no night reconciled since the
@@ -2320,12 +2321,19 @@ def _enroll_replacement(
                     "night, or have the owner decide; nothing was enrolled.",
                 )
         # A replaced state still on a tombstone (the deletion walk keeps none
-        # today) would hold its Lovable id: it goes with its Teema, as
-        # `delete_matter` would have removed it.
-        stale = LovableSyncState.objects.filter(
-            cohort__in=replaced, source_id__in=list(source_ids.values())
-        ).exclude(matter_id__in=live)
-        stale.delete()
+        # today) would hold one of the register's Lovable ids. Enrolment deletes
+        # nothing: it refuses, naming only the states' references.
+        stale = sorted(
+            LovableSyncState.objects.filter(source_id__in=list(source_ids.values()))
+            .exclude(matter_id__in=live)
+            .values_list("reference", flat=True)
+        )
+        if stale:
+            raise SyncRefused(
+                "STALE_STATE_ON_TOMBSTONE",
+                f"Synchronisation state(s) {', '.join(stale)} of a retired Teema still hold a "
+                "Lovable id of the register; nothing was enrolled.",
+            )
 
         now = timezone.now()
         retired = f"Asendatud kohordiga {cohort} (pakett {package_sha256}): {reason}"[:300]

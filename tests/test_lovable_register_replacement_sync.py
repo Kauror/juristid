@@ -251,3 +251,27 @@ def test_a_run_since_the_replacement_refuses(replaced):
         _enroll(replaced)
     assert refused.value.code == "SYNC_RAN_SINCE_REBUILD"
     assert not LovableSyncCohort.objects.filter(key=REGISTER_COHORT).exists()
+
+
+def test_a_state_left_on_a_tombstone_refuses_and_nothing_is_written(replaced):
+    """The deletion walk removes states today; one left behind with a register
+    id must stop the enrolment, never be deleted by it."""
+    tombstone = Matter.all_objects.filter(deleted_at__isnull=False).first()
+    assert tombstone is not None
+    register_id = MatterSourceReference.objects.get(
+        source_snapshot_sha256="f" * 64, source_title="Näidisteema 2026_601"
+    ).source_row_raw["lovable"]["id"]
+    LovableSyncState.objects.create(
+        matter=tombstone,
+        source_id=register_id,
+        reference="2026_501",
+        cohort=OPERATIONAL_COHORT,
+        applied={},
+    )
+    cohorts_before = list(LovableSyncCohort.objects.order_by("key").values())
+    with pytest.raises(SyncRefused, match="2026_501") as refused:
+        _enroll(replaced)
+    assert refused.value.code == "STALE_STATE_ON_TOMBSTONE"
+    assert "Näidisteema" not in str(refused.value)
+    assert list(LovableSyncCohort.objects.order_by("key").values()) == cohorts_before
+    assert list(LovableSyncState.objects.values_list("reference", flat=True)) == ["2026_501"]
