@@ -27,6 +27,7 @@ from app.legacy_import.lovable_observation_models import (
 )
 from app.legacy_import.lovable_sync_models import (
     LovableSyncControl,
+    LovableSyncRun,
     LovableSyncState,
     SyncMode,
     SyncOutcome,
@@ -148,6 +149,15 @@ def test_status_after_nights_is_compare_and_fresh(pilot, reader):
     assert by_key["source_events"].value is None
     assert "muutmisajalugu" in by_key["source_events"].unavailable_reason
     assert by_key["mode"].value == 0
+    assert by_key["mode"].display == "ei"  # words on the page, 0/1 in the answer
+    # Without a wider reading the pilot night's own topic index still counts the
+    # source (bug hunt 2026-11-03: «—» beside «416 operational not in Juristid»).
+    night_counts = LovableSyncRun.objects.order_by("-started_at").first().counts
+    assert by_key["live_indexed"].value == night_counts["source_live"] > 0
+    assert by_key["operational_observed"].value == night_counts["source_operational"]
+    assert "piloodi lugemise teemaindeksis" in by_key["operational_observed"].denominator
+    # A night re-decides the whole open backlog, and the unit says so.
+    assert by_key["review_required"].denominator == obs.PENDING_TALLY_UNIT
     # Pilot nights and wider readings are never one number.
     assert (
         by_key["pilot_topics_changed"].denominator != by_key["observed_topics_changed"].denominator
@@ -667,7 +677,8 @@ def test_2026_243_preparing_an_opinion_becomes_monitoring(pilot, reader):
     assert item.lovable_now == "Jälgida menetlust"
     assert item.juristid_now == "Valmistada ette arvamus"
     assert "tee/oota/jälgi" in item.suggested_action
-    assert "lovable_sync resolve" in item.suggested_action
+    assert item.suggested_action.endswith("Rea märgib lahendatuks haldur.")
+    assert "lovable_sync" not in item.suggested_action  # no server command for a lawyer
     assert item.explanation.startswith("Järgmise tegevuse sõnastus muutus")
     assert item.age_days == 2
     # Still held: nothing in Juristid moved.

@@ -226,6 +226,18 @@ def test_saabunud_keeps_its_static_headings(signed_in, stages):
     assert "table__quietlink" not in body
 
 
+def test_chosen_columns_are_never_given_up_on_a_narrow_window(signed_in, a_row):
+    # Bug hunt 2026-11-03: ticked «Hetkeseis» and «Viimane tegevus» vanished
+    # below 1200/1000 px. Only the default set gives columns up; a chosen set is
+    # marked and scrolls sideways instead, and the chooser says which is which.
+    default = body_of(signed_in.get(REGISTER))
+    assert "table--chosen" not in default
+    assert "columnchooser__narrow" in default
+    chosen = body_of(signed_in.get(REGISTER, {"veerud": "hetkeseis,viimane,valdkond"}))
+    assert "table--chosen" in chosen
+    assert "columnchooser__narrow" not in chosen
+
+
 def test_the_register_marks_itself_as_the_interactive_table(signed_in):
     assert signed_in.get(REGISTER).context["register_interactive"] is True
 

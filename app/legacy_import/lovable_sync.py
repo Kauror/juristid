@@ -998,6 +998,7 @@ class RunCounts:
     not_executed: int = 0
     fields: dict[str, int] = field(default_factory=dict)
     source_live: int = 0
+    source_operational: int = 0
     outside_cohort: int = 0
     new_since_previous: int = 0
     operational_not_in_juristid: int = 0
@@ -1039,6 +1040,7 @@ def _observe_index(
 
     index = snapshot.get("index") or []
     counts.source_live = len(index)
+    counts.source_operational = sum(1 for row in index if row.get("operatiivne_ulatus"))
     counts.outside_cohort = sum(1 for row in index if str(row["id"]) not in cohort_ids)
     if previous is not None:
         before = {str(row["id"]) for row in previous.get("index") or []}

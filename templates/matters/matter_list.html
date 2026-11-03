@@ -201,7 +201,7 @@ localStorage (Stage-2E.1 brief 12).
 
         {% include "matters/partials/register_choice_group.html" with name="hetkeseis" label="Hetkeseis" options=stage_choices chosen=filters.hetkeseis missing=True %}
 
-        {% include "matters/partials/register_choice_group.html" with name="menetlusliik" label="Menetlusliik" options=tracks chosen=filters.menetlusliik %}
+        {% include "matters/partials/register_choice_group.html" with name="menetlusliik" label="Menetlusliik" options=tracks chosen=filters.menetlusliik missing=True %}
 
         {% include "matters/partials/register_choice_group.html" with name="valdkond" label="Valdkond" options=area_choices chosen=filters.valdkond missing=True %}
         {% include "matters/partials/register_choice_group.html" with name="oigusakt" label="Õigusakt" options=instrument_choices chosen=filters.oigusakt missing=True %}

@@ -26,7 +26,7 @@
             <span class="chkpi__value chkpi__value--unknown">—</span>
             <span class="chkpi__note">{{ item.unavailable_reason }}</span>
           {% else %}
-            <span class="chkpi__value">{{ item.value }}</span>
+            <span class="chkpi__value">{% if item.display %}{{ item.display }}{% else %}{{ item.value }}{% endif %}</span>
             <span class="chkpi__def">{{ item.denominator }}</span>
           {% endif %}
           <span class="chkpi__note">{{ item.window }}</span>

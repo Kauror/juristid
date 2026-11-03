@@ -119,6 +119,21 @@ def test_missing_is_a_value_of_its_own_not_all(signed_in, specialist):
     assert len(_titles(nothing_chosen)) == 3
 
 
+def test_a_teema_without_menetlusliik_can_be_chosen(signed_in):
+    # Bug hunt 2026-11-03: most Teemad carry no menetlusliik, and the panel
+    # offered every kind but «Määramata», so none of them could be listed.
+    factories.MatterFactory(title="Liigita", track="")
+    factories.MatterFactory(title="Koja algatus", track="KODA_INITIATIVE")
+
+    panel = signed_in.get(REGISTER).content.decode()
+    group = panel.split('<legend class="field__label">Menetlusliik</legend>', 1)[1]
+    group = group.split("</fieldset>", 1)[0]
+    assert 'value="puudub"' in group and "Määramata" in group
+    assert _titles(signed_in.get(REGISTER, {"menetlusliik": "puudub"})) == ["Liigita"]
+    both = signed_in.get(f"{REGISTER}?menetlusliik=puudub&menetlusliik=KODA_INITIATIVE")
+    assert sorted(_titles(both)) == ["Koja algatus", "Liigita"]
+
+
 @pytest.mark.parametrize(
     "address",
     [
