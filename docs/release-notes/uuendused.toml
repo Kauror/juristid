@@ -17,7 +17,7 @@ prs = [592, 593]
 # eraldi, omaniku kinnitatud andmetoiming samal päeval. Kui see ei jõua 05.11 lõpuni,
 # parandatakse punkti sõnastust sama päeva kirjes.
 changes = [
-  "Teemadel on nüüd nende OneNote'i lehelt pärit failid: «Teema käik» näitab iga faili päeval, mil see OneNote'i lisati, ja ilma teadaoleva lisamise ajata failid eraldi real «lisamise kuupäev teadmata»; faili lehel on OneNote'i asukoht ja faili juurde kirjutatud märkus.",
+  "Teemadel on nüüd nende OneNote'i lehelt pärit failid: «Tegevused» näitab iga faili päeval, mil see OneNote'i lisati, ja ilma teadaoleva lisamise ajata failid eraldi real «lisamise kuupäev teadmata»; faili lehel on OneNote'i asukoht ja faili juurde kirjutatud märkus.",
 ]
 
 [[day]]
