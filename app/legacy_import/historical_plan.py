@@ -127,10 +127,6 @@ class HistoricalPlan:
     def onenote_only_matters(self) -> list[SourcePagePlan]:
         return [plan for plan in self.source_pages if plan.becomes_matter]
 
-    @property
-    def skipped_pages(self) -> list[SourcePagePlan]:
-        return [plan for plan in self.source_pages if plan.skip_reason]
-
     def summary(self) -> dict[str, object]:
         roles: dict[str, int] = defaultdict(int)
         for plan in self.source_pages:

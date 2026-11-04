@@ -200,11 +200,6 @@ class EraContract:
         return tuple(c for c in self.columns if c.canonical_field == canonical_field)
 
     @property
-    def expected_headers(self) -> dict[int, str]:
-        """Column index to the exact header string the sheet must carry."""
-        return {column.index: column.header for column in self.columns}
-
-    @property
     def last_contracted_index(self) -> int:
         return max((column.index for column in self.columns), default=0)
 
