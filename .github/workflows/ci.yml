@@ -2431,7 +2431,7 @@ jobs:
           docker inspect -f '{{.State.Running}}' juristid-mcp-ci-tunnel-wait | grep -qx true
           docker top juristid-mcp-ci-tunnel-wait -o pid,comm | tee tunnel-top.txt
           if grep -q 'tunnel-client' tunnel-top.txt; then echo "client started without mcp"; exit 1; fi
-          grep -qE '(sleep|wget)' tunnel-top.txt
+          grep -qwE '(sleep|wget)' tunnel-top.txt
           started=$(date +%s)
           docker stop -t 30 juristid-mcp-ci-tunnel-wait
           took=$(( $(date +%s) - started ))
