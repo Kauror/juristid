@@ -294,9 +294,15 @@ nor read the SharePoint library's *Modified* times:
 * Edge was granted view-only, and driving it by script would have bypassed
   that grant.
 
-This needs one owner sign-in in the in-app browser, then a short follow-up:
-open the four baseline web links, and read the test folder's *Modified*
-column, which is the freshness reference of ADR 0204 §8.2.
+These are two separate items:
+
+* **Web links.** Opening the legacy web links is a compatibility check, not
+  an ingestion prerequisite: the desktop reader resolves by page GUID. It is
+  done only when the owner opens them in their own browser.
+* **Freshness.** Freshness (ADR 0204 §8.2) needs the current server
+  *Modified* time of each `.one` file from an authorized read-only source,
+  without browser automation. The candidates and their limits are in the
+  Phase 1 report §9e.
 
 Evidence (private): `C:\CC\_onenote_p1_data\d2\` has the per-step
 hierarchy, page XML, file hashes and links (`s00`–`s09`) and

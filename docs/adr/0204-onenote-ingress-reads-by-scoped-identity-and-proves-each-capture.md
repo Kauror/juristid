@@ -146,8 +146,16 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
       * The local hierarchy is a replica. Two identical local scans prove only
         local stability.
       * Before a section is read, its local `lastModifiedTime` is compared with
-        a server-side reference: the SharePoint library's *Modified* time for
-        that `.one` file, read in the owner's signed-in browser.
+        a server-side reference: the current SharePoint *Modified* time of
+        that `.one` file.
+        * It is read through an authorized read-only metadata source, never
+          by browser automation and never through a new Graph application.
+        * The source must be proven to report the current *Modified* value.
+          Version-history timestamps, or a search index's copy, are not
+          accepted as a substitute until a test shows they are equivalent.
+        * Status 2026-11-04: no such source is verified yet (Phase 1 report
+          §9e). Until one is, no section's freshness can be established, so
+          no run is `RUN_COMPLETE`.
       * A section whose replica is older than the server is `PENDING_SYNC` and
         is not read in that run.
       * A run records the freshness it saw for each section. If freshness
