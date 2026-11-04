@@ -109,9 +109,17 @@ Every one of these has a plan phase that writes nothing and an apply phase that
 commits. Run the plan, read the aggregate output, then decide. None of them is
 implied by a deployment.
 
+**Since ADR 0203 (2026-11-03) the operational register's source is Lovable.**
+3.1–3.3 belong to the Excel-register era and are not run against the production
+register: its Teemad are Lovable's topics (cohort `lovable-register`), and an
+Excel import or cutover would write workbook data into it. The register's own
+data operation is 3.11; its recurring comparison is `lovable_sync`, under the
+host lock and in COMPARE mode
+([ADR 0192](adr/0192-the-lovable-pilot-teemad-follow-lovable-nightly-one-way.md)).
+
 | | Operation | Plan | Apply | Owner decides |
 | --- | --- | --- | --- | --- |
-| 3.1 | Register import | `import_legacy_register --dry-run` | `--apply --expect-plan-sha256 …` | The plan digest: workbook, mapping and contract bytes, every row decision and the rows it resolved to (ADR 0184) |
+| 3.1 | Register import (Excel era) | `import_legacy_register --dry-run` | `--apply --expect-plan-sha256 …` | The plan digest: workbook, mapping and contract bytes, every row decision and the rows it resolved to (ADR 0184) |
 | 3.2 | Current portfolio | `final_register_cutover --snapshot <sha> --dry-run` | `--apply` | The snapshot digest must be in `REVIEWED_SNAPSHOT_SHA256` |
 | 3.3 | Historical cutover | `historical_cutover_state --cutover-year 2026 --dry-run` | `--apply` | The cutover year is a reviewed constant |
 | 3.4 | Opinion archive catalogue | `opinion_archive plan --opinions … --expect-archive-sha256 …` | `opinion_archive catalogue --expect-archive-sha256 …` (required, ADR 0184) | Archive digest |
@@ -120,6 +128,7 @@ implied by a deployment.
 | 3.7 | Archive text and search | `opinion_archive_search status` | `extract-text`, then `rebuild` | Not blocked by any gate, and no longer performed by anything running on its own (ADR 0072). There is no scan state in front of a parser, and corpus-wide extraction is not a deployed service: draining this backlog is what took production's checkpoint `fsync` from 2.5 s to 155 s on 2026-09-10. Run `run_extraction_worker --once --limit N` deliberately, outside working hours, and watch the array; the rebuild after it remains a separate owner-decided operation |
 | 3.8 | Second-pass proposals | `opinion_archive content-plan` | `content-apply` | Proposals only; nothing files (ADR 0023) |
 | 3.10 | Counterparty coverage — diagnostic only | `reference_data coverage --expect-register-snapshot-sha256 <sha>` | *(none — it never writes)* | Whether the reviewed institutions resolve enough of the register to be worth a backfill decision |
+| 3.11 | Lovable register replacement | `lovable_pilot replace --package P --step validate`, `plan`, `dry-run` | `--step apply` with `JURISTID_LOVABLE_PILOT=1` on that one-off container only, then `--step verify` and `lovable_sync enroll --cohort lovable-register` | Package and plan digests, operator intent and a named, verified backup set; site and MCP stopped for the window (ADR 0203 §1, §4) |
 
 **3.4, 3.5 and 3.6 are three different acts, and the order is fixed.**
 Cataloguing records what the archive holds; materialising holds the bytes;
@@ -184,7 +193,7 @@ takes to notice.
 | 4.5 | Archive search matches what is held | `manage.py opinion_archive_search verify` |
 | 4.6 | Era contracts still describe the workbook | `manage.py check_era_contracts` |
 | 4.6a | No row breaks a rule the services keep | `manage.py check_domain_invariants` |
-| 4.6b | The derived register state is what today's code would derive | `manage.py check_current_register_state` — a difference means a cutover rerun is owed |
+| 4.6b | The derived register state is what today's code would derive | `manage.py check_current_register_state` — a difference means a cutover rerun is owed (Excel era: since ADR 0203 that is an owner decision, never run against the Lovable register) |
 | 4.7 | Canonical state changed the way the plan said | `manage.py recovery_fingerprint --compare /tmp/fp-before.json`, after the 2.5 file has been copied into the container on stdin (`exec -T web sh -c 'cat > /tmp/fp-before.json' < "$FP"`) — RECOVERY.md §"Fingerprinting the live system". A data operation exits non-zero by design; read the differences against its plan |
 | 4.8 | It is usable | the A–M browser list in `deploy/unraid-main/README.md` |
 

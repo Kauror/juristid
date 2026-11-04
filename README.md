@@ -123,6 +123,21 @@ EIS and Riigikogu integration, advocacy outcomes and attribution, and anything
 involving embeddings, semantic search or AI summarisation. Each is authorized by
 its own written brief; nothing is built ahead of one.
 
+**The operational register comes from Lovable.** By the owner's decision of
+2026-11-03 Lovable is the source of truth for the operational register: the
+live Teemad are exactly Lovable's operational topics, each with a verified
+Lovable identity, enrolled in the synchronisation cohort `lovable-register`
+([ADR 0203](docs/adr/0203-lovable-is-the-whole-register-source-authoritative-replacement.md)).
+The Excel register import and its weekly refresh
+([ADR 0012](docs/adr/0012-legacy-register-import.md),
+[ADR 0045](docs/adr/0045-the-repeatable-current-register-refresh.md)), the
+final register cutover, the import pilots below and the earlier
+`lovable-pilot` and `lovable-operational` cohorts
+([ADR 0202](docs/adr/0202-the-lovable-operational-register-is-rebuilt-from-one-snapshot-in-place.md))
+are earlier phases. Their code stays — it interprets the provenance and audit
+history those phases wrote, and the tests and recovery rehearsals use it — but
+none of their write commands is to be run against the production register.
+
 **Kept, but not active.** Three kinds of code are in the repository on purpose
 and do nothing in production:
 
@@ -134,12 +149,15 @@ and do nothing in production:
   is a separate product decision.
 - *The one-off import pilots* — `excel_pilot_2026` (2026-10-09, [ADR 0148](docs/adr/0148-the-2026-excel-pilot-imports-a-reviewed-sample-as-native-work.md)),
   `evidence_pilot` (2026-10-20, [ADR 0173](docs/adr/0173-the-evidence-pilot-imports-reconstructed-history-from-a-reviewed-package.md))
-  and `lovable_pilot` (2026-10-27, [ADR 0191](docs/adr/0191-the-lovable-pilot-adds-reviewed-current-teemad-beside-existing-ones.md))
+  and `lovable_pilot` (2026-10-27, [ADR 0191](docs/adr/0191-the-lovable-pilot-adds-reviewed-current-teemad-beside-existing-ones.md);
+  its `rebuild` and `replace` steps rebuilt and then replaced the register on
+  2026-11-03, ADR 0202 and ADR 0203)
   — **completed**. The commands stay, and each refuses to run unless its own
   flag is set (`JURISTID_EXCEL_PILOT`, `JURISTID_EVIDENCE_PILOT`,
   `JURISTID_LOVABLE_PILOT`, read as `EXCEL_PILOT_ENABLED`,
   `EVIDENCE_PILOT_ENABLED`, `LOVABLE_PILOT_ENABLED`); those flags must stay
-  unset. They are unrelated to the **live** Lovable nightly synchronisation,
+  unset on every service, and are set only on the one-off container of a
+  separately approved data operation. They are unrelated to the **live** Lovable nightly synchronisation,
   which is controlled by `JURISTID_LOVABLE_SYNC` and its database control row
   and runs in COMPARE mode only; APPLY is not authorised
   ([ADR 0192](docs/adr/0192-the-lovable-pilot-teemad-follow-lovable-nightly-one-way.md)).
