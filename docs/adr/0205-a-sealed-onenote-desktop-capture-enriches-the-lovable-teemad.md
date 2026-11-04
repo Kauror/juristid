@@ -3,8 +3,8 @@
 Status: accepted (owner brief «Phase 2: Validate and import OneNote evidence»,
 2026-11-04)
 Date: 2026-11-04
-Builds on [0204](https://github.com/Kauror/juristid/pull/595) (Proposed, Phase 1:
-the desktop reader and the source-identity contract), [0203](0203-lovable-is-the-whole-register-source-authoritative-replacement.md),
+Builds on [0204](0204-onenote-ingress-reads-by-scoped-identity-and-proves-each-capture.md) (the desktop reader and the
+source-identity contract), [0203](0203-lovable-is-the-whole-register-source-authoritative-replacement.md),
 [0092](0092-substantive-matter-history-and-evidence-safe-process-timeline.md) §6,
 [0076](0076-closed-matter-dokumendid-is-read-only.md) §3,
 [0173](0173-the-evidence-pilot-imports-reconstructed-history-from-a-reviewed-package.md).

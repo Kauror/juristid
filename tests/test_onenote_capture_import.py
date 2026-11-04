@@ -670,7 +670,7 @@ def test_a_teema_whose_stored_link_names_another_page_is_a_problem(world):
     state.applied = {"onenote_link": stored_link(_guid(9))}
     state.save(update_fields=["applied"])
     plan = oc.build_plan(oc.load_capture(world["root"]))
-    assert any("does not name this page" in p for p in plan.problems)
+    assert any("does not name exactly this page" in p for p in plan.problems)
 
 
 def test_the_source_page_view_renders_every_imported_file(world, enabled):

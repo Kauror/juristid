@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import urllib.parse
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -535,6 +536,53 @@ class Plan:
         }
 
 
+_GUID_TEXT = r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+#: The page form of ``wd=target(Section.one|SECTION/Title|PAGE/)``. The page is the
+#: last ``|GUID/`` before the target closes (or the value ends), because a title
+#: may itself hold ``|`` and ``/`` and some stored links carry text after the
+#: closing parenthesis; a section-only target (``Section.one|SECTION/``) has no
+#: page and does not match.
+_TARGET_PAGE = re.compile(rf"^.+?\.one\|[^|/]+/.*\|(?P<page>{_GUID_TEXT})/?(?:\).*)?$", re.DOTALL)
+_CLIENT_PAGE = re.compile(rf"(?:^|&)page-id=\{{?(?P<page>{_GUID_TEXT})\}}?", re.IGNORECASE)
+
+
+def register_page_guids(link: str) -> frozenset[str]:
+    """The OneNote page GUIDs a register link names, upper-cased; empty when it names none.
+
+    Read only where a link names a *page*: the last GUID of ``wd=target(…)`` on
+    a ``Doc.aspx`` or ``OneNote.aspx`` web link, and ``page-id`` in the
+    fragment of an ``onenote:`` client link. ``sourcedoc`` (the notebook, the
+    same on every link), ``OneNote.aspx?id=`` (a notebook path) and
+    ``wdsectionfileid`` (a section file) are never read: taking one of them for
+    a page is what made the retired register-link reconciliation collapse every
+    Teema onto one identity (owner decision D5, docs/adr/0204). A link whose
+    web and client halves disagree names two pages, and the caller refuses it.
+    """
+    found: set[str] = set()
+    for piece in (link or "").split():
+        if piece.lower().startswith("onenote:"):
+            fragment = urllib.parse.urlsplit(piece[len("onenote:") :]).fragment
+            found.update(m.group("page").upper() for m in _CLIENT_PAGE.finditer(fragment))
+            continue
+        try:
+            query = urllib.parse.urlsplit(piece).query
+        except ValueError:
+            continue
+        for key, values in urllib.parse.parse_qs(query, keep_blank_values=True).items():
+            if key.lower() != "wd":
+                continue
+            for value in values:
+                for _pass in range(3):  # a target may arrive encoded once or twice more
+                    if value.startswith("target("):
+                        break
+                    value = urllib.parse.unquote(value)
+                if value.startswith("target("):
+                    match = _TARGET_PAGE.match(value[len("target(") :])
+                    if match:
+                        found.add(match.group("page").upper())
+    return frozenset(found)
+
+
 def _stored_onenote_link(matter_id: str, state: Any) -> str:
     """The Teema's own OneNote link as the register stored it (applied, else the reference)."""
     from app.legacy_import.models import MatterSourceReference
@@ -600,9 +648,11 @@ def build_plan(capture: Capture) -> Plan:
         if pm.matter_id not in live:
             plan.problems.append(f"{label}: the Teema is not live")
         link = _stored_onenote_link(pm.matter_id, state)
-        if page.page_guid not in link.upper():
+        # Exactly this page, read where a link names a page — never a substring
+        # match, which every link passes for the notebook GUID it carries (D5).
+        if register_page_guids(link) != {page.page_guid.upper()}:
             plan.problems.append(
-                f"{label}: the Teema's stored OneNote link does not name this page"
+                f"{label}: the Teema's stored OneNote link does not name exactly this page"
             )
         plan.matter_refs[pm.matter_id] = pm.reference
 
