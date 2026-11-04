@@ -1,8 +1,10 @@
 # 0204 — OneNote ingress reads by scoped identity and proves each capture
 
-Status: **Proposed** (Phase 1 evidence, 2026-11-04; reader decided by the owner 2026-11-04: desktop OneNote, not Graph). Not implemented in `app/`;
-no schema, command, schedule or deployment follows from it until the owner
-approves Phase 2.
+Status: **Proposed** (Phase 1 evidence, 2026-11-04). The owner decided the
+architecture on 2026-11-04: **desktop OneNote only, no Microsoft Graph**.
+Nothing is implemented in `app/`. No schema, command, schedule, automation or
+deployment follows from this ADR until the owner approves production
+ingestion. Production ingestion stays disabled.
 
 ## Context
 
@@ -15,24 +17,34 @@ Graph export filed one page's HTML under 342 others and reported PASS.
 
 Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 
-* The Graph OneNote API is delegated-only. No app registration, consent or
-  token cache exists for a server-side reader.
-* The desktop client reads the notebook completely and read-only, but only on a
-  signed-in workstation. On a team-site notebook it returns file objects only
-  after the page has been viewed.
+* The desktop client reads the notebook completely and read-only on a
+  signed-in workstation.
+  * On a team-site notebook it returns file objects only after the page has
+    been opened.
+  * Some files appear only then, floating on the page canvas.
+  * Its hierarchy is a local replica that can lag the server by hours.
+* A full run over all 394 resolved pages captured 6,614 files and changed no
+  content. 96.9 % of the files carry a block creation date (report §9c).
 * Register links carry the desktop page GUID. The notebook GUID (`sourcedoc`)
-  is shared by every link, and the older proof-of-concept mistakes it for a
-  page ID.
+  is shared by every link. The older proof-of-concept mistook it for a page ID
+  and is retired (D5).
+* The Graph OneNote API is delegated-only, and its page HTML carries no
+  attachment times. Graph is not used (see Alternatives).
 
 ## Decision (proposed)
 
 1. **Reader — owner decision 2026-11-04: the OneNote desktop client on the
-   owner's workstation; Graph is not used.**
-   * The reader is the read-only COM members (`GetHierarchy`,
+   owner's workstation, and only that.** There is no Graph reader, token,
+   app registration or KOCORP-side OneNote access.
+   * The reader uses the read-only COM members (`GetHierarchy`,
      `GetHyperlinkToObject`, `GetPageContent`) plus `NavigateTo`, which makes
-     OneNote fetch file data.
+     OneNote fetch file data. It never calls a member that writes
+     (`UpdatePageContent`, `UpdateHierarchy`, `DeleteHierarchy`,
+     `CreateNewPage`, `OpenHierarchy`, `Publish`, `SyncHierarchy`) on the
+     department notebook.
    * It runs on the owner's laptop when an operator session runs it. The laptop
-     may stay online for this purpose.
+     may stay online for this purpose. There is no unattended schedule (see
+     §8).
    * The owner chose this because the desktop XML carries what Graph's page
      HTML does not:
      * each attachment block's creation and modification time (ADR 0092 §6);
@@ -43,21 +55,36 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
      navigation writes nothing back to SharePoint (§9.5a of the design).
    * Captures travel to KOCORP as a verified, read-only archive, the same
      pattern as `onenote-desktop-archive`. KOCORP never reads OneNote.
-   * The Graph route (delegated `Notes.Read*`, a reader account, a token cache)
-     was specified and then **not pursued**. Its prototype modules
-     (`transport.py`, the Graph half of `capture.py` and `resources.py`) are
-     kept only as reference and are not part of the adopted pipeline.
+   * The Graph route was specified and then **not pursued**. Its prototype
+     modules (`transport.py`, the Graph half of `capture.py` and
+     `resources.py`) are reference only. They are not part of the adopted
+     pipeline, and Phase 2 does not build on them.
 2. **Identity.** Internal `SourcePage` identities; provider IDs are scoped by
    reader and notebook and kept verbatim; locators are append-only
    observations. Only an exact scoped ID, or a recorded reviewer decision,
    resolves a topic. Title, filename or SHA-256 equality never merges
    identities.
-3. **Capture.** A body is kept only if it is bound to the requested identity
-   (echoed request ID, `<title>` and `created` markers equal to the metadata,
-   unique non-trivial body). The stale-body regression test is
+3. **Capture.** A page capture is kept only if it is bound to the requested
+   identity:
+   * the page ID and title are read before and after navigation, and they are
+     equal;
+   * the page is in the same section in the hierarchy before and after;
+   * the outline blocks keep their order, kind, text and creation times
+     (navigation may touch a text block's modified time only);
+   * every copied file's SHA-256 equals its source, and the source was stable
+     during the copy.
+
+   Any break stops the batch. The ADR 0015 stale-body regression stays
    release-blocking.
-4. **Associations.** Page-to-Matter associations are many-to-many; each
-   resource occurrence on a shared page needs its own association decision.
+4. **Associations.** Page-to-Matter associations are many-to-many. Each
+   attachment occurrence on a shared page needs its own association decision.
+   Nothing is associated with every Matter a page is linked to by default
+   (owner decision D4). Shared pages are reviewed from a private list first,
+   in this order: multi-URL pages, title discrepancies, mixed open/closed.
+   Unresolved topics (36 without a link, 8 page not found, 2 in the recycle
+   bin, 6 document-library targets) are kept in a private exception register
+   and fixed in Lovable by people, never by Juristid (D3). They do not block
+   the 472 topics that resolve.
 5. **Promotion.** Evidence enters only through the ADR 0076 privileged import
    path, as new immutable DocumentVersions (ADR 0003). Visibility follows the
    Matter and the record (ADR 0005, 0137). Nothing infers dates, statuses,
@@ -74,10 +101,6 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
    * **Other times stay separate.** Block modification, file-internal metadata,
      page dates and Juristid's own detection, verification and promotion times
      are stored apart and never substituted for it.
-   * **Graph occurrences.** Graph output HTML carries no attachment time. A
-     Graph occurrence is dated only through a verified mapping to a
-     byte-identical desktop observation; otherwise it reads «Lisamise kuupäev
-     teadmata».
    * **Conflicts and later times.** Conflicting observations make the date
      unknown. A replaced binary is a new version, dated only by its change
      window. A first detection is a window, never a source date.
@@ -98,6 +121,70 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
      `DocumentVersion` audit fields are untouched.
    * **Teema chronology.** ADR 0092's per-Tallinn-day rows stay, rows are
      added for later versions, and permission applies before grouping.
+8. **Operational requirements of the desktop reader.** Each is a precondition
+   of a run that may feed production. Phase 2 must prove each one before
+   ingestion is enabled.
+   1. **Windows session availability.**
+      * A run needs the owner's laptop on, signed in and unlocked, with OneNote
+        desktop running and the department notebook open under the owner's
+        account.
+      * The run checks this first and stops with `READER_UNAVAILABLE` rather
+        than waiting. Examples: COM not registered, notebook not in the
+        hierarchy, or the session locked or asleep.
+      * An operator starts each run. There is no unattended schedule until the
+        owner approves one separately.
+      * OneNote refusing calls while busy (`RPC_E_CALL_REJECTED`) is retried
+        with backoff. Repeated refusal stops the batch.
+   2. **Source synchronization freshness.**
+      * The local hierarchy is a replica. Two identical local scans prove only
+        local stability.
+      * Before a section is read, its local `lastModifiedTime` is compared with
+        a server-side reference: the SharePoint library's *Modified* time for
+        that `.one` file, read in the owner's signed-in browser.
+      * A section whose replica is older than the server is `PENDING_SYNC` and
+        is not read in that run.
+      * A run records the freshness it saw for each section. If freshness
+        cannot be established, the section is not `RUN_COMPLETE`.
+      * Forcing a sync (`SyncHierarchy`) needs a separate owner decision.
+   3. **Complete attachment fetching.**
+      * A page counts as captured only when no placeholder remains: no empty
+        or list-only block, and every file's cached path exists.
+      * "Stable for two polls" is not enough. In the full run two pages were
+        stable with 9 and 6 unfetched files.
+      * A page with a remaining placeholder is revisited, up to a set limit,
+        then reported as `INCOMPLETE_FETCH`. Its occurrences are not promoted
+        until a later run completes it.
+      * Floating files count. They appear only after opening.
+   4. **Immutable capture transfer to Juristid.**
+      * Each batch is sealed on the laptop: a manifest with every file's size
+        and SHA-256, the pre- and post-navigation page XML, the hierarchy
+        before and after, and the verifier's result.
+      * It travels to KOCORP as a read-only archive, the
+        `onenote-desktop-archive` pattern.
+      * KOCORP re-hashes everything on arrival and refuses any mismatch.
+        Juristid imports only from a verified archive, through the ADR 0076
+        privileged path.
+      * Archives are append-only. A re-capture is a new archive, never an
+        overwrite.
+      * Real captures never enter Git, CI or a chat.
+   5. **Resumability.**
+      * Work is planned as weighted batches with a persisted cursor.
+      * A batch is atomic: if it fails, its partial output is kept as a
+        record, set aside, and the batch is re-run from the start.
+      * A completed, verified batch is never re-run implicitly.
+      * The latest complete capture of a page supersedes earlier ones, and the
+        earlier ones are kept.
+      * Watermarks never move past an unverified or incomplete batch.
+   6. **Failure alerts.**
+      * Every stop condition ends the run with a named reason. Examples:
+        `READER_UNAVAILABLE`, `PENDING_SYNC`, `INCOMPLETE_FETCH`, a verifier
+        STOP, a hash mismatch on transfer, a busy timeout.
+      * The reason is reported to the owner through the existing notification
+        channel, and the run is never reported as success.
+      * A run that has not completed within its expected window is reported as
+        overdue.
+      * Silence never means "nothing changed": a zero-change result is valid
+        only for a `RUN_COMPLETE` run.
 
 ## Alternatives considered
 
@@ -111,10 +198,9 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
   the requirements stay in `JURISTID_ONENOTE_GRAPH_ACCESS_REQUIREMENTS_2026-11-04.md`,
   outside Git, in case it is reconsidered.
 * **Desktop COM on a schedule without an operator.** Possible as a later step,
-  as a Windows scheduled task on the same laptop. It is not adopted now:
-  `NavigateTo` drives the visible OneNote window, and the local copy can lag the
-  server by hours, so each run needs a sync check and a person who knows that
-  it is running.
+  as a Windows scheduled task on the same laptop. It is not adopted, and no
+  schedule is authorised: `NavigateTo` drives the visible OneNote window, and
+  each run needs the freshness check and a person who knows it is running.
 * **SharePoint `driveItem` delta on the `.one` files.** It reports that a
   section file changed, not which page. It may be used later as a "scan sooner"
   hint, once its coverage is measured. Never as the source.
@@ -124,18 +210,20 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 * **Attribute the nearest paragraph to a file.** Rejected. 14 of 20 sampled
   files sit in runs of several files, where nearby text belongs to no single
   file.
-* **Reuse `tools/onenote_export` as is.** Its link reconciliation collapses
-  real register links onto the notebook GUID. It lacks a response-size cap and
-  capture binding, and it requests no `offline_access`. Its safe parts (host
-  allowlist, GET-only client) informed `transport.py`.
+* **Reuse `tools/onenote_export` as is.** Its link reconciliation collapsed
+  real register links onto the notebook GUID. It was retired on 2026-11-04
+  (D5): the module is removed and the command refuses. Its Graph exporter is
+  not used.
 
 ## Consequences
 
 * No tenant changes are needed: no app registration, consent, reader account
   or token cache (B1–B4 withdrawn 2026-11-04).
 * Ingestion and re-scans depend on the owner's laptop being online, signed in,
-  with OneNote running and synced. A run records how fresh the replica is and
-  stops if it cannot tell.
+  with OneNote running and synced (§8). The pipeline has a single point of
+  failure: one workstation and one account. If the laptop is unavailable, new
+  OneNote material is late, not lost. A run records how fresh the replica is
+  and does not read a section it cannot vouch for.
 * Fetching file data moves the visible OneNote window and the owner's
   read/unread marks (approved). It writes no SharePoint revision (verified
   2026-11-04).
@@ -143,6 +231,9 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
   is missed.
 * Two things cannot be recovered: when replaced bytes arrived, and the authors'
   names.
+* How page GUIDs, object IDs and dates behave under moves, renames, copies,
+  replacement and deletion is measured on a disposable notebook (D2, design
+  §8). Results are in the Phase 1 report.
 
 ## Reversibility
 
