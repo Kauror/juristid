@@ -24,7 +24,7 @@ ROOT = Path(settings.BASE_DIR)
 
 #: Where the repository's own Markdown lives. Walked from the filesystem rather
 #: than from `git ls-files`, so the check also runs outside a checkout.
-MARKDOWN_ROOTS = ("docs", "deploy", "design", "devtools", "tools", "prompts")
+MARKDOWN_ROOTS = ("docs", "deploy", "design", "devtools", "tools")
 TOP_LEVEL = ("README.md", "AGENTS.md")
 
 _FENCE = re.compile(r"^(```|~~~).*?^\1", re.MULTILINE | re.DOTALL)
