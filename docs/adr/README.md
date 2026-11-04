@@ -211,6 +211,7 @@ consequences and reversibility.
 | [0201](0201-lovable-is-observed-wider-than-the-pilot-read-only.md) | Lovable is observed wider than the pilot, read only | Proposed (owner's brief of 2026-11-02, absolute read-only rule; migration legacy_import 0020, additive): GET-only transport and probe; PILOT / OPERATIONAL / ALL_LIVE / SOURCE_HISTORY populations; observation never a pilot baseline; audit ledger ingestion built and disabled; one read service for Uuendused, Haldus and five read-only MCP tools; readiness assessment, never an activation |
 | [0202](0202-the-lovable-operational-register-is-rebuilt-from-one-snapshot-in-place.md) | The Lovable operational register is rebuilt from one snapshot, in place | Proposed (owner's briefs of 2026-11-03; migration legacy_import 0021, additive): one reviewed rebuild package — CREATE for operational topics not in Juristid, REBASE of the pilot's Teemad in place by three-way rules with a reconciliation decision for every local edit; per-Teema preservation proofs; one `lovable-operational` cohort, pilot baselines archived and retired; COMPARE only |
 | [0203](0203-lovable-is-the-whole-register-source-authoritative-replacement.md) | Lovable is the whole register: a source-authoritative replacement | Proposed (owner's correction of 2026-11-03): `lovable_pilot replace` retires every business Teema through the deletion path (tombstones, audit kept), releases their references, creates Lovable's operational register from one reviewed snapshot; evidence bytes untouched; one clean `lovable-register` COMPARE cohort; rollback = restore the verified pre-replacement set; amended 2026-11-04: the Excel-era write modes refuse in code once the register cohort exists (`register_source`) |
+| [0205](0205-a-sealed-onenote-desktop-capture-enriches-the-lovable-teemad.md) | A sealed OneNote desktop capture enriches the Lovable Teemad | Accepted 2026-11-04 (owner Phase 2 brief): `onenote_capture_import` (validate, plan, apply, verify, digest), separately gated; pages keyed `p-<GUID>` (earlier rows reused unchanged), occurrences by block object ID; single-Teema files become Documents on their OneNote day, shared-page files held for review; never writes Matters, Lovable state or the Excel-era paths; migration `legacy_import/0022` (choices only) |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -219,6 +220,10 @@ requires every gap in the numbering to be named here:
   It is on `feature/lovable-mirror` (PR #429, still open), and the owner accepted
   the architecture only on 2026-10-13, with activation not approved. The record
   lands with that PR.
+- 0204 — reserved for «OneNote ingress reads by scoped identity and proves each
+  capture» (Proposed, the Phase 1 evidence and the desktop-reader decision of
+  2026-11-04). It is on `feature/onenote-ingress-phase1` (PR #595, a draft the
+  owner keeps unmerged for review); 0205 builds on it. The record lands with that PR.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
 

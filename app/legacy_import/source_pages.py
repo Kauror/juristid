@@ -89,6 +89,9 @@ class SourceMatchMethod(models.TextChoices):
     REVIEWED_MATCH = "REVIEWED_MATCH", "Ülevaatusel kinnitatud"
     ONENOTE_ONLY_MATTER = "ONENOTE_ONLY_MATTER", "OneNote'i-põhine teema"
     MANUAL = "MANUAL", "Käsitsi lisatud"
+    #: The Lovable register's OneNote link names this page's desktop GUID exactly
+    #: (docs/adr/0205). Deterministic, like the Excel page-ID match.
+    LOVABLE_EXACT_PAGE_GUID = "LOVABLE_EXACT_PAGE_GUID", "Lovable'i link — täpne lehe GUID"
 
 
 class SourceMatchClass(models.TextChoices):
