@@ -1,0 +1,224 @@
+# OneNote ingress — Phase 1 design and contracts
+
+Status: **proposal for review** (ADR 0204, Proposed). Nothing here is
+implemented in `app/`, migrated, scheduled or deployed. The prototype lives in
+`tools/onenote_ingress/` and is exercised only by `tests/test_onenote_ingress.py`
+against invented notebooks.
+
+Real results (counts, receipts, gaps) are in the owner's Phase 1 report, which
+is kept outside Git. Real manifests, page bodies and files are in private
+storage on the reviewing workstation; none of them may enter this repository,
+CI, a pull request or the live evidence store.
+
+## 1. What Phase 1 settled
+
+| Question | Answer | Basis |
+| --- | --- | --- |
+| Can the Graph OneNote API be used app-only? | **No.** The overview says app-only is unsupported (retired 31 March 2025, MC1011142), although per-endpoint permission tables still list `Notes.Read.All` (Application). We follow the overview. | DOCUMENTED |
+| Is there a delegated Graph authorization for a server-side reader today? | **No.** There is no Entra app registration, no consent and no token cache, on KOCORP or on the workstation. | OBSERVED |
+| Can the department notebook be enumerated completely? | Yes, by the desktop client (`GetHierarchy`, one XML document, no pagination). Not yet by Graph. | OBSERVED (desktop) / UNVERIFIED (Graph) |
+| Do Lovable links identify pages? | Mostly. `wd=target(Section.one\|SGUID/Title\|PGUID/)` carries the desktop page GUID, which resolves exactly against the client's hyperlinks. | OBSERVED |
+| Does the desktop page GUID survive a move between sections? | In every observed case (links naming an older section that now resolve to a page elsewhere, mostly ARHIIV). Not tested by deliberately moving a page. | OBSERVED, not experimental |
+| Do desktop GUIDs equal Graph page IDs? | **No** (October pilot). A Graph reader must map through its own scoped IDs. | OBSERVED earlier |
+| Does a desktop page read return all attachments? | **No** on a team-site notebook: file objects not yet fetched by the client appear as empty `one:OE` until the page is viewed. A COM-only resource inventory is incomplete by construction. | OBSERVED |
+
+## 2. Link resolution (Gate B)
+
+`tools/onenote_ingress/locators.py` parses a link without guessing:
+
+* `sourcedoc` names the **notebook** and `wdsectionfileid` the section
+  **file**; neither is ever a page identity. The old proof-of-concept's
+  `tools/onenote_export/reconcile.page_id_from_link` takes the first braced
+  GUID (the notebook's) or the `id=` query (a notebook *path* in
+  `OneNote.aspx` links) as the page ID. Against real register links it would
+  file every topic under one identity. **It must not be used for register
+  links.**
+* GUIDs compare case-insensitively as GUIDs; everything else keeps its case.
+  The raw link is preserved; the client-link fragment is parsed, not stripped.
+* A `/_vti_history/<n>/` prefix is recorded, not treated as a different page.
+* A link holding a web half and an `onenote:` half must name the same page;
+  if not, the topic is `MULTIPLE_PAGES`/`AMBIGUOUS`, never resolved.
+
+`resolution.py` gives every topic exactly one state:
+
+| State | Meaning |
+| --- | --- |
+| `EXACT_PAGE` | the locator's page GUID occurs exactly once, outside the recycle bin |
+| `VERIFIED_ALIAS` | a recorded reviewer decision maps this exact locator to one page |
+| `MULTIPLE_PAGES` | the locator names, or matches, more than one page |
+| `CONTAINER_ONLY` | a section or notebook link: no page is identified |
+| `NO_LINK` | Lovable has no link — a visible gap, never "complete" |
+| `AMBIGUOUS` | contradictory identifiers, at most one of them found |
+| `PAGE_NOT_FOUND` | well-formed page GUID absent from the current inventory — held, not deleted |
+| `IN_RECYCLE_BIN` | found only in the notebook's recycle bin — held, not deleted |
+| `INACCESSIBLE` | the section exists but its pages are not available to the reader |
+| `OUT_OF_SCOPE` | another host, notebook, or a plain SharePoint document path |
+| `ERROR` | unparseable; the row is reported, not dropped |
+
+Link state and content state are separate fields. Title equality only fills
+`title_candidates` for a reviewer. Notes record drift that does not change the
+state: `PAGE_NOW_IN_ANOTHER_SECTION`, `PAGE_IN_ARCHIVE_SECTION`, `SUBPAGE`,
+`TITLE_HINT_TRUNCATED` (OneNote shortens titles in links), `TITLE_HINT_DIFFERS`
+(renamed), `OBSERVED_DIFFERS_FROM_CANONICAL` (COMPARE left Juristid's link
+unchanged).
+
+A page in ARHIIV is in scope, and an ARHIIV move never closes a Matter.
+
+**Shared pages.** One page may serve several topics. That page's
+*association* is many-to-many, but its **attachments are not**: each resource
+occurrence needs its own association decision (or a reviewed rule naming the
+part of the page it belongs to) before it is filed under any Matter. A page
+shared by four topics is not permission to file every file on it four times.
+
+## 3. Capture binding (Gate C, the ADR 0015 regression)
+
+`capture.verify_capture` accepts a page body only if:
+
+1. the response is to the URL requested (no redirect), 200, `text/html`, the
+   declared length matches, and it is not a sign-in or error page;
+2. the response echoes the request's fresh `client-request-id` (a cached or
+   misrouted response for another request does not);
+3. `<title>` and `<meta name="created">` in the body equal the metadata read
+   for that page ID;
+4. no other identity already holds the same non-trivial body in this run.
+
+Two pages with the same title created in the same second cannot be told apart
+by their bodies: such a capture is `WEAK_BINDING` and needs an independent
+reference. Same body under two identities is `EMPTY_TEMPLATE` (trivial text)
+or `DUPLICATE_BODY_REVIEW`, never silently kept.
+
+The test `test_a_stale_previous_body_is_never_filed_under_the_next_page`
+replays the 342-page failure; removing the marker check makes it fail
+(mutation-checked). It is release-blocking for any Phase 2 reader.
+
+Fidelity needs an **independent** reference. Re-reading through the same
+reader is not one. The desktop client and Graph are independent of each other,
+so the Phase 1 desktop receipts are the reference set for the first Graph
+captures. Until Graph runs, fidelity is PARTIAL.
+
+## 4. Resources and originals
+
+`resources.occurrences` reads the page's output HTML: `object[data]` with
+`data-attachment` is an **embedded original**; `img[data-fullres-src]` is an
+image original (role — picture or printout page — is not documented and stays
+unverified); `a[href]` is a link (SharePoint links are a separate access path,
+never crawled). A resource URL must be HTTPS on a Graph host **inside the
+page's own site scope** with a resource path, or it is never requested.
+
+`verify_download` refuses redirects, non-200, length mismatch, empty bodies,
+sign-in/error pages, HTML in place of a file and formats implausible for the
+extension (a PNG preview is not the attached PDF). Files above 25 MiB are
+`TOO_LARGE_NOT_TESTED`, never truncated. Signed containers (`.asice`, `.bdoc`
+and others) are stored byte for byte; `signature_verified` is always false.
+
+## 5. Identity, versions, access (Gate D)
+
+```
+SourcePage(internal_id)            ── stable, ours
+  └─ ProviderId(reader, scope, value)     many; verbatim; never case-folded
+  └─ LocatorObservation(raw, at, by)      append-only
+  └─ Capture(capture_id, reader, request_id, body_sha256, verdict)   immutable
+       └─ Occurrence(resource_id, ordinal, filename, kind)
+            └─ Content(sha256)            bytes stored once
+Association(source_page | occurrence → Matter, decided_by, reason)   reviewed
+```
+
+* Same scoped provider ID ⇒ same identity, whatever URL, section or title now say.
+* A different provider ID is new unless continuity evidence exists
+  (`REVIEWER_DECISION` or `PROVIDER_REPORTED_MOVE`). Title, filename or
+  SHA-256 equality never merges identities.
+* Archive moves: (1) new URL, same ID → same identity, new locator row;
+  (2) new ID with evidence → linked; (3) new ID without evidence → new
+  identity, offered to a reviewer.
+* Files: same ID + same bytes → unchanged; same ID + new bytes → new version of
+  that occurrence; new ID + bytes already known → new occurrence, bytes stored
+  once; new ID + same filename + new bytes → `POSSIBLE_REPLACEMENT_REVIEW`;
+  ID gone → `OCCURRENCE_ABSENT`, prior capture kept.
+* 401/403/404 or absence from a listing → `RETRY_PENDING`, then
+  `ACCESS_LOST_REVIEW` / `NOT_FOUND_REVIEW` after three scans. Never deleted;
+  the last good capture is kept; nothing new is promoted meanwhile.
+* **Access to local copies never broadens.** A promoted Document takes the
+  Matter's visibility (ADR 0005) and the record's restriction (ADR 0137). Losing
+  Microsoft access neither publishes the local copy more widely nor removes it
+  silently; it raises a review item. A source reader that can read the whole
+  notebook gives no Juristid user any extra access.
+
+Unknown and therefore not assumed: whether Graph page IDs survive section
+moves, copies or notebook moves; whether resource IDs survive a page copy or
+a file replace. A disposable-notebook experiment (§8) would settle the
+first two; until then the conservative rules above apply.
+
+## 6. Evidence-only import boundary (for Phase 2, not built)
+
+Promotion into Juristid reuses the privileged import path of ADR 0076: the leaf
+services `create_document` / `add_evidence_version` (ADR 0003) with
+`source_identifier = <capture_id>/<occurrence ordinal>` and
+`source_url = <provider resource URL>`. They file onto closed Matters without
+reopening them; the interactive wrappers keep refusing closed Matters. No
+date, status, Valdkond, sent opinion or activity is inferred from ingestion.
+`refuse_excel_era_write` (ADR 0203) stays untouched; Phase 2 adds a new,
+separately guarded command and never re-enables `historical_import apply` or
+`materialise`.
+
+Originals and captures are kept apart from derived text; parsers are
+versioned; re-parsing replays approved captures and writes a reprocessing
+receipt, without recreating Matters or re-reading the source. New source
+artifacts (captures, resource bytes, manifests) must be inside what the nightly
+backup and its L2 verification cover. Which tier holds the evidence pool
+versus the sets is an open owner decision (G6, 2026-11-04), so Phase 2 must
+verify coverage and not assume it.
+
+The August desktop archive of the old copy notebook is a separately identified
+historical source. It is not the live source, and its bytes are not expected
+to match edited live pages.
+
+## 7. Recurring detection (Gate E)
+
+One pipeline: bootstrap is its first run.
+
+* **PRIORITY**: a new or changed Lovable locator queues the page.
+  It is a reason to look, not evidence that anything changed.
+* **PERIODIC**: per-section listings (`pagelevel=true`) with
+  `lastModifiedDateTime ge watermark − 2 h`, so edits Lovable never mentions are
+  found.
+* **FULL**: a rotating cursor re-lists every section and re-captures a slice of
+  pages and their resource inventories, ARHIIV and closed topics included. It
+  keeps at least a quarter of every run's budget and rotates its cursor, so every
+  slot is reached within ⌈slots / reserved⌉ runs (`scan.plan`).
+
+Watermarks move only past completely read and verified items. An unfinished
+listing chain, a failed capture or a pending retry holds the watermark and is
+recorded as a gap. Continuations are used exactly as returned and must stay on
+the collection's own origin and path. `Retry-After` is honoured, capped at
+300 s; retries are finite; an authentication failure is not retried.
+
+Unchanged-page resources: a page's HTML hash does not prove its files are
+unchanged. The FULL cursor re-downloads a rotating sample of resources and
+compares SHA-256, so every resource is re-verified at least once per full cycle.
+
+**Known limitation.** Polling sees states, not edits. Content added and
+removed between two scans is missed unless a separately verified history
+source shows it. We promise auditable *observed* versions and stated coverage,
+not a complete edit history. No OneNote-page delta or webhook feed is
+documented; `driveItem` and `listItem` change tracking cover the notebook's
+files, not pages. A SharePoint change signal may later trigger a scan
+sooner, but only after its coverage has been measured.
+
+Monitoring (ADR 0196): a run is `RUN_COMPLETE` only if every planned scope was fully
+read. A zero-change run or exit code 0 is not proof. AUTH_FAILED, PARTIAL and
+stale-watermark scopes become notifications, and so do topics left unresolved.
+
+Proposed budgets (to be measured on the real tenant before adoption): about
+30 sections with fewer than 1,000 pages give roughly 30–60 listing requests per
+periodic pass. Run hourly in working hours, that puts maximum detection delay
+at about 1 h for edits and about 24 h for the full cycle, with a few hundred
+requests per day. Graph throttling limits are documented per tenant, so these
+figures need measuring before adoption.
+
+## 8. Disposable-notebook experiment (proposed, not run)
+
+In a new notebook on a test site, never the department notebook, with a
+test account: create page P with two files. Then move P between sections, copy
+P, rename P, replace one file, delete and restore P. Record the Graph page ID,
+resource IDs, `oneNoteWebUrl` and desktop GUID after each step. This settles
+the UNVERIFIED rows of §5 before Phase 2 relies on them.
