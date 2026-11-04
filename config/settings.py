@@ -1036,6 +1036,11 @@ EXCEL_PILOT_ENABLED = env_bool("JURISTID_EXCEL_PILOT", default=False)
 # one-off container that runs `evidence_pilot apply` carries it.
 EVIDENCE_PILOT_ENABLED = env_bool("JURISTID_EVIDENCE_PILOT", default=False)
 
+# The OneNote capture import (docs/adr/0205) adds a sealed desktop capture's files
+# to existing Lovable Teemad. Off by default and never in an env file: only the
+# one-off container that runs `onenote_capture_import apply` carries it.
+ONENOTE_CAPTURE_IMPORT_ENABLED = env_bool("JURISTID_ONENOTE_CAPTURE_IMPORT", default=False)
+
 # The Lovable pilot (docs/adr/0191) adds reviewed current Teemad from a snapshot of
 # the department's Lovable register beside the ones already there. Off by default
 # and never in an env file, for the same reason: only the one-off container that

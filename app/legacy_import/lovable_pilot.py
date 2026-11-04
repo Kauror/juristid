@@ -3833,7 +3833,9 @@ def verify_applied(plan: LovablePlan) -> VerifyReport:
 
         if Submission.objects.filter(matter=m).exists():
             out.append(f"{ref}: a Submission exists; this pilot writes none.")
-        if Document.objects.filter(matter=m).exists():
+        # A file the OneNote capture import added (docs/adr/0205) is not this pilot's
+        # write and not a discrepancy in it; every other Document still is.
+        if Document.objects.filter(matter=m, legacy_imports__isnull=True).exists():
             out.append(f"{ref}: a Document exists; this pilot writes none.")
         if OpinionFollowUp.objects.filter(submission__matter=m).exists():
             out.append(f"{ref}: a follow-up check exists; this pilot schedules none.")

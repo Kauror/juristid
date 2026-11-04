@@ -8,6 +8,19 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-05
+basis = "deployment"
+prs = [592, 593]
+# 05.11 väljalase: #592 (hoolduskomplekt, dokumendid, sõltuvused), #593 (Exceli-aegsete
+# kirjutusteede lukk) ja OneNote'i hõive import (ADR 0205, legacy_import 0022 — ainult
+# uus valikväärtus). Väljalase ise ühtegi teemat ei muuda; OneNote'i failide lisamine on
+# eraldi, omaniku kinnitatud andmetoiming samal päeval. Kui see ei jõua 05.11 lõpuni,
+# parandatakse punkti sõnastust sama päeva kirjes.
+changes = [
+  "Teemadel on nüüd nende OneNote'i lehelt pärit failid: «Teema käik» näitab iga faili päeval, mil see OneNote'i lisati, ja ilma teadaoleva lisamise ajata failid eraldi real «lisamise kuupäev teadmata»; faili lehel on OneNote'i asukoht ja faili juurde kirjutatud märkus.",
+]
+
+[[day]]
 date = 2026-11-03
 basis = "deployment"
 prs = [588, 589, 591]
