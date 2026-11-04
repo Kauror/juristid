@@ -54,6 +54,11 @@ class Command(BaseCommand):
             help="apply: shared pages (catalogued, every file held for review).",
         )
         parser.add_argument("--bytes", action="store_true", help="verify: re-hash stored files.")
+        parser.add_argument(
+            "--require-complete",
+            action="store_true",
+            help="verify: an item or page link not yet applied is a problem.",
+        )
         parser.add_argument("--out", default="", help="Write the full JSON report here.")
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -81,7 +86,11 @@ class Command(BaseCommand):
                 )
                 return
             if mode == "verify":
-                result = onenote_capture.verify(capture, check_bytes=options["bytes"])
+                result = onenote_capture.verify(
+                    capture,
+                    check_bytes=options["bytes"],
+                    require_complete=options["require_complete"],
+                )
                 self._emit(result, options, quiet_keys={"problems"})
                 self.stdout.write(f"problems {len(result['problems'])}")
                 if result["problems"]:

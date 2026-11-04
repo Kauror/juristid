@@ -11,13 +11,13 @@ What this module may write, and nothing else:
 * ``LegacySourcePage`` — one per page identity, keyed ``p-<page GUID>``. A page
   that already has a row (the October evidence pilot) is reused **unchanged**.
 * ``MatterSourcePage`` — the Lovable Teema's link to that page
-  (``LOVABLE_EXACT_PAGE_GUID``).
+  (``LOVABLE_EXACT_PAGE_GUID``), also for a page that holds no file.
 * ``LegacySourceResource`` — one per file occurrence on the page, keyed by the
   file block's object ID, with ``source_added_at`` = that block's creation time.
 * ``Document`` + ``DocumentVersion`` through ``create_document`` and
   ``add_evidence_version`` — the import path (docs/adr/0076 §3), with no actor and
   outside any composer operation, so the Teema chronology files them on their
-  OneNote day (docs/adr/0092 §6).
+  OneNote day (docs/adr/0092 §6). Each writes its ordinary change event.
 * ``LegacySourceResourceImport`` — exactly one per (Teema link, occurrence):
   IMPORTED with its document, or SKIPPED with the reason it is held.
 * ``ImportBatch`` — one per apply run that writes anything.
@@ -43,6 +43,7 @@ from typing import Any
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.db.models.functions import Lower
 from django.utils import timezone
 
 from app.legacy_import.integrity import IntegrityError, canonical_sha256, require_digest
@@ -59,7 +60,11 @@ SOURCE_ADDED_BASIS = "ONENOTE_BLOCK_CREATED"
 #: Why an occurrence is catalogued but not made into a Document for a Teema.
 HOLD_SHARED_PAGE = "SHARED_PAGE_AWAITING_REVIEW"
 HOLD_EMPTY_FILE = "EMPTY_FILE"
+HOLD_TOO_LARGE = "LARGER_THAN_EVIDENCE_LIMIT"
 HOLD_EARLIER_CAPTURE = "EARLIER_CAPTURE_NOT_IMPORTED"
+
+#: The only context bases that are the file's own comment (owner decision D9).
+STRUCTURAL_BASES = frozenset({"ATTACHED_NOTE", "CONTAINER_HEADING"})
 
 #: A block modified this long after its creation may hold newer bytes (the
 #: Phase 1 contract, docs/onenote-ingress-phase1.md §9.2).
@@ -69,6 +74,11 @@ _GUID = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4
 _SHA = re.compile(r"^[0-9a-f]{64}$")
 _REFERENCE = re.compile(r"\b(?:19|20)\d{2}[ _-]\d{1,4}\b")
 _MAX_FILE_BYTES = 200 * 1024 * 1024
+_PAGE_FILES = ("pre.xml", "post.xml", "receipt.json")
+
+#: The capture's block kinds, as the source-page view reads them
+#: (``historical_views._rendered_blocks``): a file block names its resource.
+_RENDERED_KIND = {"FILE": "FILE_ATTACHMENT", "IMAGE": "IMAGE_NOT_CAPTURED"}
 
 
 class CaptureError(Exception):
@@ -97,11 +107,15 @@ class Occurrence:
 
     @property
     def structural_comment(self) -> list[tuple[str, str]]:
-        """(basis, verbatim text) of ``ATTACHED_NOTE`` / ``CONTAINER_HEADING`` only."""
+        """(basis, verbatim text) of ``ATTACHED_NOTE`` / ``CONTAINER_HEADING`` only.
+
+        The basis decides, not the record's own ``attributed`` flag: a record of
+        any other basis never becomes the file's comment, however it is flagged.
+        """
         return [
             (record["basis"], "\n".join(record["text"]))
             for record in self.context
-            if record.get("attributed") and record.get("text")
+            if record.get("basis") in STRUCTURAL_BASES and record.get("text")
         ]
 
     @property
@@ -157,6 +171,7 @@ class Capture:
     sums_sha256: str
     counts: dict[str, int]
     pages: list[CapturePage]
+    listed: dict[str, str] = field(default_factory=dict)
 
     @property
     def occurrences(self) -> list[Occurrence]:
@@ -179,12 +194,17 @@ class Capture:
         return content
 
     def read_page_file(self, page: CapturePage, name: str) -> bytes:
-        if name not in {"pre.xml", "post.xml", "receipt.json"}:
+        """A page file, refused unless it hashes to what ``SHA256SUMS`` pins."""
+        if name not in _PAGE_FILES:
             raise CaptureError(f"not a page file: {name!r}")
-        path = self.root / "pages" / page.tag / name
+        relative = f"pages/{page.tag}/{name}"
+        path = self.root / relative
         if path.is_symlink() or not path.is_file():
-            raise CaptureError(f"page file {page.tag}/{name} is missing")
-        return path.read_bytes()
+            raise CaptureError(f"page file {relative} is missing")
+        content = path.read_bytes()
+        if hashlib.sha256(content).hexdigest() != self.listed.get(relative):
+            raise CaptureError(f"page file {relative} does not match SHA256SUMS")
+        return content
 
 
 def _sha256_file(path: Path) -> str:
@@ -215,8 +235,8 @@ def load_capture(root: Path, *, verify_all_bytes: bool = False) -> Capture:
     """Open a sealed capture, refusing anything the seal does not vouch for.
 
     The seal pins ``SHA256SUMS``, which pins every file. ``verify_all_bytes``
-    re-hashes every listed file (``validate``); otherwise the manifest, the page
-    files and each blob are checked when they are read.
+    re-hashes every listed file (``validate``); otherwise each page file and
+    each blob is re-hashed when it is read.
     """
     root = Path(root)
     try:
@@ -239,11 +259,13 @@ def load_capture(root: Path, *, verify_all_bytes: bool = False) -> Capture:
         listed[str(_safe_relative(name))] = digest
     if listed.get("manifest.json") != manifest_sha:
         raise CaptureError("SHA256SUMS does not list the sealed manifest")
-    on_disk = {
-        path.relative_to(root).as_posix()
-        for path in root.rglob("*")
-        if path.is_file() and path.name not in {"SHA256SUMS", "SEAL.json"}
-    }
+    on_disk = set()
+    for path in root.rglob("*"):
+        relative = path.relative_to(root).as_posix()
+        if path.is_symlink():
+            raise CaptureError(f"a symbolic link in the capture: {relative}")
+        if path.is_file() and relative not in {"SHA256SUMS", "SEAL.json"}:
+            on_disk.add(relative)
     if on_disk != set(listed):
         missing, extra = sorted(set(listed) - on_disk), sorted(on_disk - set(listed))
         raise CaptureError(
@@ -274,6 +296,7 @@ def load_capture(root: Path, *, verify_all_bytes: bool = False) -> Capture:
         sums_sha256=seal["sha256sums_sha256"],
         counts=dict(manifest["counts"]),
         pages=pages,
+        listed=listed,
     )
     _check_counts(capture)
     return capture
@@ -283,7 +306,7 @@ def _page(raw: dict[str, Any], listed: dict[str, str]) -> CapturePage:
     guid = str(raw["page_guid"])
     if not _GUID.match(guid):
         raise CaptureError(f"page {raw.get('tag')!r}: not a GUID {guid!r}")
-    for name in ("pre.xml", "post.xml", "receipt.json"):
+    for name in _PAGE_FILES:
         if f"pages/{raw['tag']}/{name}" not in listed:
             raise CaptureError(f"page {raw['tag']}: {name} is not sealed")
     matters = tuple(
@@ -375,6 +398,26 @@ def _check_counts(capture: Capture) -> None:
         raise CaptureError("two captured pages share one page GUID")
 
 
+def rendered_blocks(page: CapturePage) -> list[dict[str, Any]]:
+    """The page's blocks in the shape the source-page view renders.
+
+    A file block becomes ``FILE_ATTACHMENT`` naming its resource (the block's
+    object ID, which is the resource key). An inline image was not captured as
+    a file, so it names nothing. Every captured field is kept beside.
+    """
+    files = {o.block_object_id for o in page.occurrences}
+    out = []
+    for block in page.blocks:
+        kind = str(block.get("kind") or "TEXT")
+        row = dict(block)
+        row["source_kind"] = kind
+        row["kind"] = _RENDERED_KIND.get(kind, kind)
+        object_id = str(block.get("object_id") or "")
+        row["resource_key"] = object_id if kind == "FILE" and object_id in files else ""
+        out.append(row)
+    return out
+
+
 # -- planning (reads only) -----------------------------------------------------------
 
 
@@ -398,6 +441,8 @@ class Plan:
     known_pages: list[str] = field(default_factory=list)  # page keys that already have a row
     earlier_resources: dict[str, int] = field(default_factory=dict)  # page key -> pilot rows
     matter_refs: dict[str, str] = field(default_factory=dict)
+    recorded: set[tuple[str, str, str]] = field(default_factory=set)
+    linked: set[tuple[str, str]] = field(default_factory=set)
     progress: Counter[str] = field(default_factory=Counter)
 
     @property
@@ -406,16 +451,42 @@ class Plan:
         return canonical_sha256(
             {
                 "manifest_sha256": self.capture.manifest_sha256,
+                "sha256sums_sha256": self.capture.sums_sha256,
                 "importer": IMPORTER_VERSION,
                 "items": [item.__dict__ for item in self.items],
+                "links": sorted(
+                    (pm.matter_id, page.page_key)
+                    for page in self.capture.pages
+                    for pm in page.matters
+                ),
+                "known_pages": sorted(self.known_pages),
                 "problems": self.problems,
             }
         )
+
+    def page_done(self, page: CapturePage) -> bool:
+        """Every Teema linked, every (Teema, occurrence) recorded."""
+        for pm in page.matters:
+            if (pm.matter_id, page.page_key) not in self.linked:
+                return False
+            for o in page.occurrences:
+                if (pm.matter_id, page.page_key, o.block_object_id) not in self.recorded:
+                    return False
+        return True
 
     def summary(self) -> dict[str, Any]:
         promote = [i for i in self.items if i.disposition == "PROMOTE"]
         hold = [i for i in self.items if i.disposition == "HOLD"]
         occurrences = self.capture.occurrences
+        index = {
+            (page.page_key, o.block_object_id): o
+            for page in self.capture.pages
+            for o in page.occurrences
+        }
+
+        def occ(item: PlannedItem) -> Occurrence:
+            return index[(item.page_key, item.resource_key)]
+
         return {
             "capture_id": self.capture.capture_id,
             "manifest_sha256": self.capture.manifest_sha256,
@@ -424,41 +495,40 @@ class Plan:
             "pages": len(self.capture.pages),
             "pages_single_teema": sum(1 for p in self.capture.pages if not p.shared),
             "pages_shared": sum(1 for p in self.capture.pages if p.shared),
+            "pages_without_files": sum(1 for p in self.capture.pages if not p.occurrences),
             "pages_already_known": len(self.known_pages),
+            "pages_done": sum(1 for p in self.capture.pages if self.page_done(p)),
             "earlier_capture_resources_on_known_pages": sum(self.earlier_resources.values()),
             "occurrences": len(occurrences),
             "distinct_sha256": len({o.sha256 for o in occurrences}),
             "teema_page_links": sum(len(p.matters) for p in self.capture.pages),
-            "teemad": len({i.matter_id for i in self.items}),
+            "teemad": len({pm.matter_id for p in self.capture.pages for pm in p.matters}),
             "items": len(self.items),
             "promote": len(promote),
-            "promote_bytes": sum(self._size(i) for i in promote),
-            "promote_dated": sum(1 for i in promote if self._occ(i).block_created),
-            "promote_undated": sum(1 for i in promote if not self._occ(i).block_created),
-            "promote_with_structural_comment": sum(
-                1 for i in promote if self._occ(i).structural_comment
-            ),
+            "promote_bytes": sum(occ(i).size for i in promote),
+            "promote_dated": sum(1 for i in promote if occ(i).block_created),
+            "promote_undated": sum(1 for i in promote if not occ(i).block_created),
+            "promote_with_structural_comment": sum(1 for i in promote if occ(i).structural_comment),
             "hold": len(hold),
             "hold_by_reason": dict(Counter(i.reason for i in hold)),
             "progress": dict(self.progress),
         }
 
-    def _occ(self, item: PlannedItem) -> Occurrence:
-        return self._index()[(item.page_key, item.resource_key)]
 
-    def _size(self, item: PlannedItem) -> int:
-        return self._occ(item).size
+def _stored_onenote_link(matter_id: str, state: Any) -> str:
+    """The Teema's own OneNote link as the register stored it (applied, else the reference)."""
+    from app.legacy_import.models import MatterSourceReference
 
-    def _index(self) -> dict[tuple[str, str], Occurrence]:
-        cached = getattr(self, "_occurrence_index", None)
-        if cached is None:
-            cached = {
-                (page.page_key, o.block_object_id): o
-                for page in self.capture.pages
-                for o in page.occurrences
-            }
-            self._occurrence_index = cached
-        return cached
+    applied = (state.applied or {}).get("onenote_link") if state is not None else None
+    if applied:
+        return str(applied)
+    reference = (
+        MatterSourceReference.objects.filter(matter_id=matter_id, source_system="LOVABLE")
+        .exclude(onenote_url="")
+        .order_by("-created_at", "-id")
+        .first()
+    )
+    return reference.onenote_url if reference else ""
 
 
 def build_plan(capture: Capture) -> Plan:
@@ -468,88 +538,113 @@ def build_plan(capture: Capture) -> Plan:
         LegacySourcePage,
         LegacySourceResource,
         LegacySourceResourceImport,
+        MatterSourcePage,
         SourceSystem,
     )
     from app.matters.models import Matter
 
     plan = Plan(capture=capture)
-    wanted = {m.lovable_source_id: m for p in capture.pages for m in p.matters}
+    limit = int(getattr(settings, "MAX_EVIDENCE_UPLOAD_BYTES", 100 * 1024 * 1024))
+
+    # Every (page, Teema) pair is checked — never one entry per topic. A topic names
+    # exactly one Teema and a Teema exactly one topic, across the whole capture.
+    pairs = [(page, pm) for page in capture.pages for pm in page.matters]
+    by_topic: dict[str, set[str]] = {}
+    by_matter: dict[str, set[str]] = {}
+    for _page, pm in pairs:
+        by_topic.setdefault(pm.lovable_source_id, set()).add(pm.matter_id)
+        by_matter.setdefault(pm.matter_id, set()).add(pm.lovable_source_id)
+    for topic, matters in sorted(by_topic.items()):
+        if len(matters) > 1:
+            plan.problems.append(f"Lovable topic {topic} names {len(matters)} Teemad")
+    for matter_id, topics in sorted(by_matter.items()):
+        if len(topics) > 1:
+            plan.problems.append(f"Teema {matter_id} is named by {len(topics)} Lovable topics")
     states = {
-        str(s.source_id): s
-        for s in LovableSyncState.objects.filter(source_id__in=list(wanted)).select_related(
-            "matter"
-        )
+        str(s.source_id): s for s in LovableSyncState.objects.filter(source_id__in=list(by_topic))
     }
-    wanted_ids = [m.matter_id for m in wanted.values()]
-    live = {str(pk) for pk in Matter.objects.filter(pk__in=wanted_ids).values_list("pk", flat=True)}
-    for source_id, pm in sorted(wanted.items()):
-        state = states.get(source_id)
+    live = {
+        str(pk) for pk in Matter.objects.filter(pk__in=list(by_matter)).values_list("pk", flat=True)
+    }
+    for page, pm in pairs:
+        state = states.get(pm.lovable_source_id)
+        label = f"{pm.reference} (page {page.tag})"
         if state is None:
-            plan.problems.append(f"{pm.reference}: Lovable topic {source_id} has no sync state")
-        elif str(state.matter_id) != pm.matter_id:
-            plan.problems.append(f"{pm.reference}: Lovable topic maps to another Teema")
-        elif state.cohort != REGISTER_COHORT:
-            plan.problems.append(f"{pm.reference}: not in the {REGISTER_COHORT} cohort")
-        elif pm.matter_id not in live:
-            plan.problems.append(f"{pm.reference}: the Teema is not live")
+            plan.problems.append(f"{label}: Lovable topic {pm.lovable_source_id} has no sync state")
+            continue
+        if str(state.matter_id) != pm.matter_id:
+            plan.problems.append(f"{label}: the Lovable topic maps to another Teema")
+            continue
+        if state.cohort != REGISTER_COHORT:
+            plan.problems.append(f"{label}: not in the {REGISTER_COHORT} cohort")
+        if pm.matter_id not in live:
+            plan.problems.append(f"{label}: the Teema is not live")
+        link = _stored_onenote_link(pm.matter_id, state)
+        if page.page_guid not in link.upper():
+            plan.problems.append(
+                f"{label}: the Teema's stored OneNote link does not name this page"
+            )
         plan.matter_refs[pm.matter_id] = pm.reference
 
     keys = [p.page_key for p in capture.pages]
     existing = {
-        row.page_key.lower(): row
+        row.lk: row
         for row in LegacySourcePage.objects.filter(source_system=SourceSystem.ONENOTE_DESKTOP)
-        if row.page_key.lower() in set(keys)
+        .annotate(lk=Lower("page_key"))
+        .filter(lk__in=keys)
+        .only("pk", "page_key", "capture_id")
     }
     for page in capture.pages:
         row = existing.get(page.page_key)
-        if row is not None:
+        # A row this capture wrote is progress, not prior knowledge: only an earlier
+        # capture's row is "known", so the digest does not move as batches complete.
+        if row is not None and row.capture_id != capture.capture_id[:100]:
             plan.known_pages.append(page.page_key)
-            ours = {o.block_object_id for o in page.occurrences}
-            plan.earlier_resources[page.page_key] = (
-                LegacySourceResource.objects.filter(source_page=row)
-                .exclude(resource_key__in=ours)
-                .count()
+            ours = {o.block_object_id: o for o in page.occurrences}
+            rows = list(LegacySourceResource.objects.filter(source_page=row))
+            plan.earlier_resources[page.page_key] = sum(
+                1 for r in rows if r.resource_key not in ours
             )
+            for r in rows:
+                o = ours.get(r.resource_key)
+                if o is not None and (
+                    r.sha256 != o.sha256
+                    or r.size_bytes != o.size
+                    or r.source_added_at != o.block_created
+                ):
+                    plan.problems.append(
+                        f"page {page.tag}: existing resource row {r.resource_key} "
+                        "disagrees with the seal"
+                    )
         for pm in page.matters:
             for occurrence in page.occurrences:
+                base = (pm.matter_id, page.page_key, occurrence.block_object_id, occurrence.sha256)
                 if page.shared:
-                    item = PlannedItem(
-                        pm.matter_id,
-                        page.page_key,
-                        occurrence.block_object_id,
-                        occurrence.sha256,
-                        "HOLD",
-                        HOLD_SHARED_PAGE,
-                    )
+                    item = PlannedItem(*base, "HOLD", HOLD_SHARED_PAGE)
                 elif occurrence.size == 0:
-                    item = PlannedItem(
-                        pm.matter_id,
-                        page.page_key,
-                        occurrence.block_object_id,
-                        occurrence.sha256,
-                        "HOLD",
-                        HOLD_EMPTY_FILE,
-                    )
+                    item = PlannedItem(*base, "HOLD", HOLD_EMPTY_FILE)
+                elif occurrence.size > limit:
+                    item = PlannedItem(*base, "HOLD", HOLD_TOO_LARGE)
                 else:
-                    item = PlannedItem(
-                        pm.matter_id,
-                        page.page_key,
-                        occurrence.block_object_id,
-                        occurrence.sha256,
-                        "PROMOTE",
-                    )
+                    item = PlannedItem(*base, "PROMOTE")
                 plan.items.append(item)
 
-    done = LegacySourceResourceImport.objects.filter(
-        resource__source_page__page_key__in=keys,
-        matter_source_page__matter_id__in=list(plan.matter_refs),
-    ).values_list(
-        "matter_source_page__matter_id",
-        "resource__source_page__page_key",
-        "resource__resource_key",
-        "state",
+    matter_ids = list(by_matter)
+    plan.linked = {
+        (str(m), k)
+        for m, k in MatterSourcePage.objects.filter(matter_id__in=matter_ids)
+        .annotate(lk=Lower("source_page__page_key"))
+        .filter(lk__in=keys)
+        .values_list("matter_id", "lk")
+    }
+    done = (
+        LegacySourceResourceImport.objects.filter(matter_source_page__matter_id__in=matter_ids)
+        .annotate(lk=Lower("resource__source_page__page_key"))
+        .filter(lk__in=keys)
+        .values_list("matter_source_page__matter_id", "lk", "resource__resource_key", "state")
     )
-    recorded = {(str(m), k.lower(), r): s for m, k, r, s in done}
+    recorded = {(str(m), k, r): s for m, k, r, s in done}
+    plan.recorded = set(recorded)
     for item in plan.items:
         recorded_state = recorded.get((item.matter_id, item.page_key, item.resource_key))
         plan.progress["recorded_" + (recorded_state or "PENDING")] += 1
@@ -573,6 +668,23 @@ class ApplyReport:
     already_recorded: int = 0
     earlier_capture_rows: int = 0
     matters: set[str] = field(default_factory=set)
+    pages_done_before: int = 0
+
+    def merge(self, other: ApplyReport) -> None:
+        for name in (
+            "pages_written",
+            "pages_created",
+            "pages_reused",
+            "links_created",
+            "resources_created",
+            "documents_created",
+            "document_bytes",
+            "already_recorded",
+            "earlier_capture_rows",
+        ):
+            setattr(self, name, getattr(self, name) + getattr(other, name))
+        self.held.update(other.held)
+        self.matters |= other.matters
 
     def as_dict(self) -> dict[str, Any]:
         out = dict(self.__dict__)
@@ -629,21 +741,24 @@ def select_pages(
     limit: int | None = None,
     include_shared: bool = False,
 ) -> list[CapturePage]:
-    """Deterministic order: by the first Teema reference, then page key."""
+    """The next pages to write, in a deterministic order, finished pages skipped.
+
+    Order: by the first Teema reference, then page key. ``matters`` picks pages
+    of those Teemad (a shared page only with ``include_shared``); otherwise
+    ``include_shared`` chooses between the single-Teema and the shared pages.
+    """
     chosen = []
-    pending = {(i.matter_id, i.page_key) for i in plan.items}
-    for page in sorted(
+    pages = sorted(
         plan.capture.pages, key=lambda p: (min(m.reference for m in p.matters), p.page_key)
-    ):
+    )
+    for page in pages:
         ids = {m.matter_id for m in page.matters}
         if matters is not None:
-            if not ids & set(matters):
-                continue
-            if page.shared and not include_shared:
+            if not ids & set(matters) or (page.shared and not include_shared):
                 continue
         elif page.shared != include_shared:
             continue
-        if not any((m, page.page_key) in pending for m in ids):
+        if plan.page_done(page):
             continue
         chosen.append(page)
     return chosen if limit is None else chosen[:limit]
@@ -661,8 +776,11 @@ def apply(
 ) -> ApplyReport:
     """Write the chosen pages. One transaction per page; a finished page is never rewritten.
 
-    The first failure stops the run: the page that failed rolls back whole, the
-    pages before it stay, and the batch is marked FAILED with the reason.
+    The first failure (an interruption included) stops the run: the page that
+    failed rolls back whole, the pages before it stay, and the batch is marked
+    FAILED with the reason. Counts reach the report only once a page commits.
+    Search rows are written by the ordinary per-row handlers as each page
+    commits, the way a person's upload is indexed.
     """
     approved = refuse_unless_authorised(
         plan,
@@ -672,7 +790,7 @@ def apply(
         backup_set=backup_set,
     )
     from app.legacy_import.models import ImportBatch, ReconciliationStatus
-    from app.search.indexing import indexable_matters, refresh_matters, suspend_indexing
+    from app.search.indexing import indexable_matters, refresh_matters
 
     report = ApplyReport()
     batch: ImportBatch | None = None
@@ -695,28 +813,29 @@ def apply(
                     "plan_sha256": approved,
                     "backup_set": backup_set.strip(),
                     "capture_id": plan.capture.capture_id,
+                    "sha256sums_sha256": plan.capture.sums_sha256,
                 },
                 sort_keys=True,
             ),
         )
 
-    failure: Exception | None = None
+    failure: BaseException | None = None
     try:
-        with suspend_indexing():
-            for page in pages:
-                items = by_page.get(page.page_key, [])
-                if _page_complete(page, items):
-                    report.already_recorded += len(items)
-                    continue
-                if batch is None:
-                    batch = open_batch()
-                    report.batch_id = str(batch.pk)
-                _write_page(plan.capture, page, items, batch=batch, report=report)
-    except Exception as error:  # recorded on the batch, then re-raised below
+        for page in pages:
+            if _page_complete(page, by_page.get(page.page_key, [])):
+                report.pages_done_before += 1
+                continue
+            if batch is None:
+                batch = open_batch()
+                report.batch_id = str(batch.pk)
+            page_report = ApplyReport()
+            _write_page(
+                plan.capture, page, by_page.get(page.page_key, []), batch=batch, report=page_report
+            )
+            report.merge(page_report)  # only after the page's transaction committed
+    except BaseException as error:  # an interruption is a failure too; re-raised below
         failure = error
     finally:
-        if report.matters:
-            refresh_matters(indexable_matters().filter(pk__in=list(report.matters)))
         if batch is not None:
             batch.finished_at = timezone.now()
             batch.matched_count = report.documents_created
@@ -733,6 +852,10 @@ def apply(
             notes["report"] = report.as_dict()
             if failure:
                 notes["failure"] = f"{type(failure).__name__}: {str(failure)[:1500]}"
+                notes["note"] = (
+                    "The failed page rolled back; evidence objects it stored before failing are "
+                    "orphaned (check_evidence_integrity lists them; never prune without the owner)."
+                )
             batch.notes = json.dumps(notes, sort_keys=True)
             batch.save(
                 update_fields=[
@@ -745,20 +868,46 @@ def apply(
                     "updated_at",
                 ]
             )
-    if failure:
+        if report.matters:
+            try:
+                refresh_matters(indexable_matters().filter(pk__in=list(report.matters)))
+            except Exception as refresh_error:  # never hides the run's own failure
+                if failure is None:
+                    failure = refresh_error
+    if failure is not None:
+        if isinstance(failure, KeyboardInterrupt):
+            raise failure
         raise CaptureError(f"stopped at a page that rolled back whole: {failure}") from failure
     return report
 
 
 def _page_complete(page: CapturePage, items: list[PlannedItem]) -> bool:
-    from app.legacy_import.source_pages import LegacySourceResourceImport
+    from app.legacy_import.source_pages import LegacySourceResourceImport, MatterSourcePage
 
-    recorded = LegacySourceResourceImport.objects.filter(
-        resource__source_page__page_key__iexact=page.page_key,
-        matter_source_page__matter_id__in=[m.matter_id for m in page.matters],
-        resource__resource_key__in=[o.block_object_id for o in page.occurrences],
-    ).count()
+    ids = [m.matter_id for m in page.matters]
+    links = (
+        MatterSourcePage.objects.filter(matter_id__in=ids)
+        .annotate(lk=Lower("source_page__page_key"))
+        .filter(lk=page.page_key)
+        .count()
+    )
+    if links != len(ids):
+        return False
+    recorded = (
+        LegacySourceResourceImport.objects.filter(
+            matter_source_page__matter_id__in=ids,
+            resource__resource_key__in=[o.block_object_id for o in page.occurrences],
+        )
+        .annotate(lk=Lower("resource__source_page__page_key"))
+        .filter(lk=page.page_key)
+        .count()
+    )
     return recorded == len(items)
+
+
+def _title_for(occurrence: Occurrence) -> str:
+    name = (occurrence.filename or "").strip()
+    return (name or f"OneNote'i fail {occurrence.ordinal}")[:400]
 
 
 def _write_page(
@@ -770,7 +919,6 @@ def _write_page(
     report: ApplyReport,
 ) -> None:
     from app.documents.enums import ExtractionState
-    from app.documents.models import DocumentVersion
     from app.documents.services import add_evidence_version, create_document
     from app.legacy_import.historical_apply import legacy_source_storage
     from app.legacy_import.historical_materials import (
@@ -791,18 +939,17 @@ def _write_page(
         SourceRelationshipKind,
         SourceSystem,
     )
-    from app.matters.models import Matter
+    from app.matters.locks import lock_matters_in_order
 
     post_xml = capture.read_page_file(page, "post.xml")
     with transaction.atomic():
-        matters = {
-            str(m.pk): m
-            for m in Matter.objects.select_for_update().filter(
-                pk__in=[pm.matter_id for pm in page.matters]
-            )
-        }
-        if set(matters) != {pm.matter_id for pm in page.matters}:
-            raise CaptureError(f"page {page.tag}: a Teema disappeared since the plan")
+        locked = lock_matters_in_order(*[pm.matter_id for pm in page.matters])
+        matters = {str(pk): m for pk, m in locked.items()}
+        if any(
+            matters.get(pm.matter_id) is None or matters[pm.matter_id].deleted_at
+            for pm in page.matters
+        ):
+            raise CaptureError(f"page {page.tag}: a Teema is gone or removed since the plan")
         record = LegacySourcePage.objects.filter(
             source_system=SourceSystem.ONENOTE_DESKTOP, page_key__iexact=page.page_key
         ).first()
@@ -833,7 +980,7 @@ def _write_page(
                 source_xml_storage_key=key,
                 source_xml_sha256=hashlib.sha256(post_xml).hexdigest(),
                 derived_text=text,
-                blocks=list(page.blocks),
+                blocks=rendered_blocks(page),
                 links=[],
                 onenote_hyperlink=page.onenote_hyperlink,
                 reference_tokens=" ".join(sorted(set(_REFERENCE.findall(page.title))))[:300],
@@ -852,7 +999,13 @@ def _write_page(
             r.resource_key: r for r in LegacySourceResource.objects.filter(source_page=record)
         }
         for occurrence in page.occurrences:
-            if occurrence.block_object_id in resources:
+            existing = resources.get(occurrence.block_object_id)
+            if existing is not None:
+                if existing.sha256 != occurrence.sha256 or existing.size_bytes != occurrence.size:
+                    raise CaptureError(
+                        f"{page.tag}/{occurrence.block_object_id}: "
+                        "existing row disagrees with the seal"
+                    )
                 continue
             resources[occurrence.block_object_id] = LegacySourceResource.objects.create(
                 source_page=record,
@@ -891,10 +1044,6 @@ def _write_page(
                     report.already_recorded += 1
                     continue
                 occurrence, resource = by_key[item.resource_key], resources[item.resource_key]
-                if resource.sha256 != occurrence.sha256 or resource.size_bytes != occurrence.size:
-                    raise CaptureError(
-                        f"{page.tag}/{item.resource_key}: catalogued row disagrees with the seal"
-                    )
                 if item.disposition == "HOLD":
                     LegacySourceResourceImport.objects.create(
                         matter_source_page=link,
@@ -907,31 +1056,33 @@ def _write_page(
                     report.held[item.reason] += 1
                     continue
                 content = capture.read_blob(occurrence)
+                extractable = is_extractable(Path(occurrence.filename).suffix.lower())
                 document = create_document(
                     matter=matter,
-                    title=(occurrence.filename or f"OneNote'i fail {occurrence.ordinal}")[:400],
+                    title=_title_for(occurrence),
                     role=role_for(occurrence.filename),
                     provenance_note=provenance_note(capture, page, occurrence),
                 )
                 version = add_evidence_version(
                     document=document,
                     content=content,
-                    original_filename=occurrence.filename[:500]
+                    original_filename=(occurrence.filename or "").strip()[:500]
                     or f"onenote-{occurrence.ordinal}.bin",
                     mime_type=mime_type_for(occurrence.filename),
                     expected_sha256=occurrence.sha256,
                     acquired_at=occurrence.copied_at,
                     source_path=f"{capture.package}/blobs/{occurrence.sha256}",
                     source_identifier=f"{record.page_key}/{resource.resource_key}"[:400],
+                    extraction_state=ExtractionState.PENDING
+                    if extractable
+                    else ExtractionState.NOT_APPLICABLE,
+                    extraction_note=""
+                    if extractable
+                    else extraction_note_for(occurrence.filename)[:300],
                 )
                 if version.sha256 != occurrence.sha256 or version.size_bytes != occurrence.size:
                     raise CaptureError(
                         f"{page.tag}/{item.resource_key}: stored bytes differ from the seal"
-                    )
-                if not is_extractable(Path(occurrence.filename).suffix.lower()):
-                    DocumentVersion.objects.filter(pk=version.pk).update(
-                        extraction_state=ExtractionState.NOT_APPLICABLE,
-                        extraction_note=extraction_note_for(occurrence.filename)[:300],
                     )
                 LegacySourceResourceImport.objects.create(
                     matter_source_page=link,
@@ -943,15 +1094,10 @@ def _write_page(
                 )
                 report.documents_created += 1
                 report.document_bytes += version.size_bytes
-                report.matters.add(pm.matter_id)
             # An earlier capture's rows on a reused page: never imported for this Teema,
             # recorded so that every (link, resource) pair is accounted for.
             for key, resource in resources.items():
                 if key in ours or key in done:
-                    continue
-                if LegacySourceResourceImport.objects.filter(
-                    matter_source_page=link, resource=resource
-                ).exists():
                     continue
                 LegacySourceResourceImport.objects.create(
                     matter_source_page=link,
@@ -959,8 +1105,10 @@ def _write_page(
                     import_batch=batch,
                     state=ResourceImportState.SKIPPED,
                     error_code=HOLD_EARLIER_CAPTURE,
-                    error_detail="Varasema hõive rida; selle teema failid tulevad hõivest "
-                    + capture.capture_id,
+                    error_detail=(
+                        "Varasema hõive rida; selle teema failid tulevad hõivest "
+                        + capture.capture_id
+                    ),
                 )
                 report.earlier_capture_rows += 1
             report.matters.add(pm.matter_id)
@@ -983,6 +1131,8 @@ def _hold_detail(reason: str, page: CapturePage) -> str:
         )
     if reason == HOLD_EMPTY_FILE:
         return "OneNote'i fail on 0-baidine; tühja tõendit ei looda. Kirje on lähtekorpuses alles."
+    if reason == HOLD_TOO_LARGE:
+        return "Fail on suurem kui tõendi ülempiir; originaal on lähtekorpuses alles."
     return reason
 
 
@@ -1019,8 +1169,16 @@ def provenance_note(capture: Capture, page: CapturePage, occurrence: Occurrence)
 # -- verifying (reads only) ----------------------------------------------------------
 
 
-def verify(capture: Capture, *, check_bytes: bool = False) -> dict[str, Any]:
-    """Read back every row this capture produced and reconcile it with the seal."""
+def verify(
+    capture: Capture, *, check_bytes: bool = False, require_complete: bool = False
+) -> dict[str, Any]:
+    """Read back every row this capture produced for its Teemad and reconcile it with the seal.
+
+    Rows on the captured pages that belong to other Matters (an earlier
+    capture's, on Teemad since retired) are counted, not judged. Items not yet
+    applied are counted; with ``require_complete`` each is a problem.
+    """
+    from app.documents.filenames import canonical_filename
     from app.documents.models import Document
     from app.documents.services import evidence_storage
     from app.legacy_import.source_pages import (
@@ -1031,25 +1189,33 @@ def verify(capture: Capture, *, check_bytes: bool = False) -> dict[str, Any]:
 
     problems: list[str] = []
     counts: Counter[str] = Counter()
-    keys = {p.page_key for p in capture.pages}
+    keys = [p.page_key for p in capture.pages]
+    matter_ids = sorted({pm.matter_id for p in capture.pages for pm in p.matters})
     expected = {}
     for page in capture.pages:
         for pm in page.matters:
             for o in page.occurrences:
                 expected[(pm.matter_id, page.page_key, o.block_object_id)] = (page, o)
-    rows = LegacySourceResourceImport.objects.filter(
-        resource__source_page__page_key__in=list(keys)
-    ).select_related(
-        "matter_source_page", "resource", "resource__source_page", "document", "document_version"
+    rows = (
+        LegacySourceResourceImport.objects.annotate(lk=Lower("resource__source_page__page_key"))
+        .filter(lk__in=keys)
+        .select_related(
+            "matter_source_page",
+            "resource",
+            "resource__source_page",
+            "document",
+            "document_version",
+        )
     )
     seen = set()
     storage = evidence_storage() if check_bytes else None
+    wanted = set(matter_ids)
     for row in rows:
-        key = (
-            str(row.matter_source_page.matter_id),
-            row.resource.source_page.page_key.lower(),
-            row.resource.resource_key,
-        )
+        matter_id = str(row.matter_source_page.matter_id)
+        if matter_id not in wanted:
+            counts["rows_of_other_matters_on_captured_pages"] += 1
+            continue
+        key = (matter_id, row.resource.source_page.page_key.lower(), row.resource.resource_key)
         if key not in expected:
             if row.error_code == HOLD_EARLIER_CAPTURE and row.state == ResourceImportState.SKIPPED:
                 counts["earlier_capture_rows"] += 1
@@ -1077,7 +1243,10 @@ def verify(capture: Capture, *, check_bytes: bool = False) -> dict[str, Any]:
                 problems.append(f"{page.tag}/{o.block_object_id}: document on another Teema")
             if version.sha256 != o.sha256 or version.size_bytes != o.size:
                 problems.append(f"{page.tag}/{o.block_object_id}: stored version differs")
-            if version.original_filename != (o.filename[:500] or version.original_filename):
+            wanted_name = (
+                canonical_filename((o.filename or "").strip()[:500]) or version.original_filename
+            )
+            if version.original_filename != wanted_name:
                 problems.append(f"{page.tag}/{o.block_object_id}: filename differs")
             if version.uploaded_by_id is not None or row.document.created_by_id is not None:
                 problems.append(f"{page.tag}/{o.block_object_id}: an actor was recorded")
@@ -1091,38 +1260,54 @@ def verify(capture: Capture, *, check_bytes: bool = False) -> dict[str, Any]:
                     if hashlib.sha256(handle.read()).hexdigest() != o.sha256:
                         problems.append(f"{page.tag}/{o.block_object_id}: stored bytes do not hash")
                 counts["bytes_rehashed"] += 1
-        elif row.document_id or row.document_version_id:
-            problems.append(f"{page.tag}/{o.block_object_id}: a held row carries a document")
-    applied_pages = {
-        (str(m), k.lower())
-        for m, k in MatterSourcePage.objects.filter(
-            source_page__page_key__in=list(keys)
-        ).values_list("matter_id", "source_page__page_key")
+        else:
+            counts["held_" + (row.error_code or "UNKNOWN")] += 1
+            if row.document_id or row.document_version_id:
+                problems.append(f"{page.tag}/{o.block_object_id}: a held row carries a document")
+    linked = {
+        (str(m), k)
+        for m, k in MatterSourcePage.objects.filter(matter_id__in=matter_ids)
+        .annotate(lk=Lower("source_page__page_key"))
+        .filter(lk__in=keys)
+        .values_list("matter_id", "lk")
     }
     for (matter_id, page_key, resource_key), (page, _o) in expected.items():
-        if (matter_id, page_key) in applied_pages and (
-            matter_id,
-            page_key,
-            resource_key,
-        ) not in seen:
+        if (matter_id, page_key) in linked and (matter_id, page_key, resource_key) not in seen:
             problems.append(
                 f"{page.tag}/{resource_key}: page applied but this occurrence has no row"
             )
-    matter_ids = {pm.matter_id for p in capture.pages for pm in p.matters}
+    pending_items = len(expected) - len(seen)
+    pending_links = sum(
+        1
+        for page in capture.pages
+        for pm in page.matters
+        if (pm.matter_id, page.page_key) not in linked
+    )
+    if require_complete and (pending_items or pending_links):
+        problems.append(
+            f"not complete: {pending_items} items and {pending_links} page links not applied"
+        )
     foreign = (
         Document.objects.filter(matter_id__in=matter_ids)
-        .exclude(legacy_imports__isnull=False)
+        .filter(legacy_imports__isnull=True)
         .count()
     )
     counts["other_documents_on_these_teemad"] = foreign
-    counts["applied_teema_page_links"] = len(applied_pages)
+    counts["applied_teema_page_links"] = len(linked)
+    counts["expected_teema_page_links"] = sum(len(p.matters) for p in capture.pages)
     counts["expected_items"] = len(expected)
     counts["recorded_items"] = len(seen)
+    counts["pending_items"] = pending_items
     return {
         "problems": problems,
         "counts": dict(counts),
         "manifest_sha256": capture.manifest_sha256,
     }
+
+
+#: The sync-state columns that are the register's own record of a Teema. ``observed``
+#: and its version/run move with every nightly comparison and are not compared.
+_SYNC_FIELDS = ("matter_id", "source_id", "reference", "cohort", "applied", "applied_version")
 
 
 def business_digest(matter_ids: list[str]) -> dict[str, str]:
@@ -1138,14 +1323,17 @@ def business_digest(matter_ids: list[str]) -> dict[str, str]:
         values["updated_at"] = getattr(obj, "updated_at", None)
         return {k: str(v) for k, v in sorted(values.items())}
 
+    states = {
+        str(s["matter_id"]): {k: str(s.get(k)) for k in _SYNC_FIELDS}
+        for s in LovableSyncState.objects.filter(matter_id__in=matter_ids).values(*_SYNC_FIELDS)
+    }
     out = {}
-    for matter in Matter.objects.filter(pk__in=matter_ids).order_by("pk"):
-        state = LovableSyncState.objects.filter(matter=matter).first()
+    for matter in Matter.all_objects.filter(pk__in=matter_ids).order_by("pk"):
         refs = MatterSourceReference.objects.filter(matter=matter).order_by("pk")
         out[str(matter.pk)] = canonical_sha256(
             {
                 "matter": row(matter),
-                "sync": row(state) if state else None,
+                "sync": states.get(str(matter.pk)),
                 "refs": [row(r) for r in refs],
             }
         )

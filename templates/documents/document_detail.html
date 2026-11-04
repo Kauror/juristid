@@ -202,7 +202,7 @@
           </div>
           <div class="detailgrid__wide"><dt>SHA-256</dt><dd class="mono">{{ version.sha256 }}</dd></div>
           {% if document.provenance_note %}
-            <div class="detailgrid__wide"><dt>Päritolu</dt><dd>{{ document.provenance_note }}</dd></div>
+            <div class="detailgrid__wide"><dt>Päritolu</dt><dd>{{ document.provenance_note|linebreaksbr }}</dd></div>
           {% endif %}
         </dl>
 

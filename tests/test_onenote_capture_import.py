@@ -32,6 +32,7 @@ from app.legacy_import.source_pages import (
     SourceMatchMethod,
     SourceSystem,
 )
+from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.matters.timeline import HISTORICAL_IMPORT_ITEM, matter_timeline
 from tests import factories
@@ -97,6 +98,11 @@ def build_capture(root: Path, pages: list[dict]) -> Path:
     manifest_pages, occurrences, blobs = [], [], {}
     for p in pages:
         tag = p["tag"]
+        if not p.get("no_stored_link"):
+            for m in p["matters"]:
+                state = m.lovable_sync_state
+                state.applied = {"onenote_link": stored_link(p["guid"])}
+                state.save(update_fields=["applied"])
         (root / "pages" / tag).mkdir(parents=True)
         for name, body in (
             ("pre.xml", b"<pre/>"),
@@ -199,7 +205,7 @@ def build_capture(root: Path, pages: list[dict]) -> Path:
         "dated": sum(1 for o in occurrences if o["block_created"]),
         "floating": sum(1 for o in occurrences if o["floating"]),
         "structural_comment_files": sum(
-            1 for o in occurrences if any(c["attributed"] for c in o["context"])
+            1 for o in occurrences if any(c["basis"] in oc.STRUCTURAL_BASES for c in o["context"])
         ),
         "topics": sum(len(p["matters"]) for p in manifest_pages),
         "shared_pages": sum(1 for p in manifest_pages if len(p["matters"]) > 1),
@@ -238,8 +244,17 @@ def reseal(root: Path) -> None:
     )
 
 
+def stored_link(guid: str) -> str:
+    return (
+        "https://tenant.invalid/sites/x/_layouts/Doc.aspx?sourcedoc={NB}"
+        f"&wd=target(Osakond.one%7CS%2FLeht%7C{guid.lower()}%2F)"
+    )
+
+
 def register_teema(reference: str, *, is_open: bool = True) -> Matter:
-    matter = factories.MatterFactory(is_open=is_open)
+    # A closed Lovable Teema is an archive-mode row (the register gives no closure reason).
+    extra = {} if is_open else {"is_open": False, "record_mode": RecordMode.ARCHIVE}
+    matter = factories.MatterFactory(**extra)
     LovableSyncState.objects.create(
         matter=matter, source_id=uuid.uuid4(), reference=reference, cohort=oc.REGISTER_COHORT
     )
@@ -255,7 +270,9 @@ def enabled(settings):
 
 @pytest.fixture
 def world(tmp_path):
-    a, b, c, d = (register_teema(f"2026_{n}") for n in (1, 2, 3, 4))
+    a, c, d = (register_teema(f"2026_{n}") for n in (1, 3, 4))
+    b = register_teema("2026_2", is_open=False)  # a closed Teema receives its files too
+    e = register_teema("2026_5")
     pages = [
         {
             "tag": "001",
@@ -281,8 +298,10 @@ def world(tmp_path):
         },
         {"tag": "002", "guid": _guid(2), "matters": [b], "files": [_file(1, "b.pdf", T1)]},
         {"tag": "003", "guid": _guid(3), "matters": [c, d], "files": [_file(1, "jagatud.pdf", T2)]},
+        {"tag": "004", "guid": _guid(4), "matters": [e], "title": "Failideta leht", "files": []},
     ]
-    return {"root": build_capture(tmp_path / "cap", pages), "a": a, "b": b, "c": c, "d": d}
+    root = build_capture(tmp_path / "cap", pages)
+    return {"root": root, "a": a, "b": b, "c": c, "d": d, "e": e}
 
 
 def _apply(plan, pages, **overrides):
@@ -306,7 +325,7 @@ def _all(plan, include_shared=False):
 
 def test_a_sealed_capture_loads_and_reconciles(world):
     capture = oc.load_capture(world["root"], verify_all_bytes=True)
-    assert len(capture.pages) == 3 and len(capture.occurrences) == 8
+    assert len(capture.pages) == 4 and len(capture.occurrences) == 8
     assert capture.counts["floating"] == 1 and capture.counts["shared_pages"] == 1
 
 
@@ -621,3 +640,240 @@ def test_the_command_prints_counts_only(world, enabled):
             "x",
             stdout=io.StringIO(),
         )
+
+
+# -- regressions from the independent review (2026-11-04) -------------------------------
+
+
+def _rewrite_manifest(root, change):
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    change(manifest)
+    (root / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
+    reseal(root)
+
+
+def test_every_page_and_teema_pair_is_checked_not_one_per_topic(world):
+    root = world["root"]
+
+    def point_page_002_at_teema_a(manifest):
+        page = next(p for p in manifest["pages"] if p["tag"] == "002")
+        page["matters"][0]["matter_id"] = str(world["a"].pk)
+
+    _rewrite_manifest(root, point_page_002_at_teema_a)
+    plan = oc.build_plan(oc.load_capture(root))
+    assert any("named by 2 Lovable topics" in p for p in plan.problems)
+    assert any("maps to another Teema" in p for p in plan.problems)
+
+
+def test_a_teema_whose_stored_link_names_another_page_is_a_problem(world):
+    state = world["b"].lovable_sync_state
+    state.applied = {"onenote_link": stored_link(_guid(9))}
+    state.save(update_fields=["applied"])
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    assert any("does not name this page" in p for p in plan.problems)
+
+
+def test_the_source_page_view_renders_every_imported_file(world, enabled):
+    from app.legacy_import.historical_views import _rendered_blocks
+
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    _apply(plan, _all(plan))
+    link = MatterSourcePage.objects.get(matter=world["a"])
+    page = link.source_page
+    documents = {
+        r.resource.resource_key: r
+        for r in link.resource_imports.select_related("resource", "document", "document_version")
+    }
+    resources = {r.resource_key: r for r in page.resources.all()}
+    readable = {r.document_id for r in documents.values() if r.document_id}
+    files = [
+        b
+        for b in _rendered_blocks(page, resources, documents, readable=readable)
+        if b["kind"] == "file"
+    ]
+    assert len(files) == 6  # every file block, the held empty one included
+    assert sum(1 for b in files if b["document"] is not None) == 5
+    assert {b["filename"] for b in files} >= {"kiri.pdf", "lõuendil.pdf"}
+
+
+def test_imported_documents_and_page_links_are_searchable(world, enabled):
+    from app.search.models import SearchDocument, SearchSourceKind
+
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    _apply(plan, _all(plan))
+    kinds = set(SearchDocument.objects.values_list("source_kind", flat=True))
+    assert SearchSourceKind.DOCUMENT in kinds and SearchSourceKind.LEGACY_SOURCE_PAGE in kinds
+
+
+def test_pages_advance_and_verify_can_require_completeness(world, enabled):
+    capture = oc.load_capture(world["root"])
+    plan = oc.build_plan(capture)
+    first = oc.select_pages(plan, limit=1)
+    _apply(plan, first)
+    again = oc.build_plan(capture)
+    second = oc.select_pages(again, limit=1)
+    assert [p.tag for p in first] == ["001"] and [p.tag for p in second] == ["002"]
+    assert any("not complete" in p for p in oc.verify(capture, require_complete=True)["problems"])
+    assert oc.verify(capture)["problems"] == []
+    _apply(again, oc.select_pages(again))
+    _apply(again, oc.select_pages(again, include_shared=True))
+    assert oc.verify(capture, require_complete=True)["problems"] == []
+
+
+def test_a_page_without_files_is_catalogued_and_linked(world, enabled):
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    assert plan.summary()["pages_without_files"] == 1
+    _apply(plan, _all(plan))
+    link = MatterSourcePage.objects.get(matter=world["e"])
+    assert link.source_page.title == "Failideta leht" and not link.source_page.resources.exists()
+    assert not Document.objects.filter(matter=world["e"]).exists()
+
+
+def test_a_file_above_the_evidence_limit_is_held_not_a_failure(world, enabled):
+    enabled.MAX_EVIDENCE_UPLOAD_BYTES = 10  # only the 9-byte files fit
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    report = _apply(plan, _all(plan))
+    assert report.documents_created == 2 and report.held[oc.HOLD_TOO_LARGE] == 4
+
+
+def test_the_business_digest_ignores_the_nightly_observation_but_not_the_register(world):
+    ids = [str(world["a"].pk)]
+    before = oc.business_digest(ids)
+    state = world["a"].lovable_sync_state
+    state.observed = {"title": "öine võrdlus"}
+    state.save(update_fields=["observed"])
+    assert oc.business_digest(ids) == before
+    state.applied = {**state.applied, "title": "muudetud"}
+    state.save(update_fields=["applied"])
+    assert oc.business_digest(ids) != before
+
+
+def test_a_page_file_changed_after_sealing_is_refused(world, enabled):
+    root = world["root"]
+    (root / "pages" / "001" / "post.xml").write_bytes(b"<post>tampered</post>")
+    plan = oc.build_plan(oc.load_capture(root))
+    with pytest.raises(oc.CaptureError, match="does not match SHA256SUMS"):
+        _apply(plan, _all(plan))
+    assert not LegacySourcePage.objects.exists()
+
+
+def test_an_interruption_fails_the_batch_and_counts_only_committed_pages(
+    world, enabled, monkeypatch
+):
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    real = oc._write_page
+    calls = []
+
+    def interrupted(capture, page, items, **kwargs):
+        calls.append(page.tag)
+        if len(calls) == 2:
+            raise KeyboardInterrupt
+        return real(capture, page, items, **kwargs)
+
+    monkeypatch.setattr(oc, "_write_page", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        _apply(plan, _all(plan))
+    batch = ImportBatch.objects.get()
+    assert batch.reconciliation_status == ReconciliationStatus.FAILED
+    notes = json.loads(batch.notes)
+    assert notes["report"]["documents_created"] == Document.objects.count() == 5
+
+
+def test_a_failure_after_files_were_stored_keeps_no_rows_of_that_page(world, enabled, monkeypatch):
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    real_read = oc.Capture.read_blob
+    seen = []
+
+    def fail_on_third(self, occurrence):
+        seen.append(occurrence)
+        if len(seen) == 3:
+            raise oc.CaptureError("simulated read failure")
+        return real_read(self, occurrence)
+
+    monkeypatch.setattr(oc.Capture, "read_blob", fail_on_third)
+    with pytest.raises(oc.CaptureError, match="rolled back whole"):
+        _apply(plan, _all(plan))
+    assert not Document.objects.exists() and not MatterSourcePage.objects.exists()
+    notes = json.loads(ImportBatch.objects.get().notes)
+    assert notes["report"]["documents_created"] == 0 and "orphaned" in notes["note"]
+
+
+def test_verify_counts_but_does_not_judge_rows_of_other_matters(world, enabled):
+    capture = oc.load_capture(world["root"])
+    plan = oc.build_plan(capture)
+    _apply(plan, _all(plan))
+    retired = factories.MatterFactory()
+    page = LegacySourcePage.objects.get(page_key=f"p-{_guid(2).lower()}")
+    link = MatterSourcePage.objects.create(matter=retired, source_page=page, match_method="MANUAL")
+    LegacySourceResourceImport.objects.create(
+        matter_source_page=link, resource=page.resources.first(), state=ResourceImportState.SKIPPED
+    )
+    result = oc.verify(capture)
+    assert (
+        result["problems"] == []
+        and result["counts"]["rows_of_other_matters_on_captured_pages"] == 1
+    )
+
+
+def test_a_flagged_record_of_another_basis_is_never_the_files_comment(world, enabled):
+    root = world["root"]
+
+    def flag_adjacent_as_attributed(manifest):
+        for occurrence in manifest["occurrences"]:
+            for record in occurrence["context"]:
+                record["attributed"] = True
+
+    _rewrite_manifest(root, flag_adjacent_as_attributed)
+    plan = oc.build_plan(oc.load_capture(root))
+    _apply(plan, _all(plan))
+    note = Document.objects.get(matter=world["a"], title="kiri.pdf").provenance_note
+    assert "Ministeeriumi kiri" in note and "Kõrvallause" not in note
+
+
+def test_a_closed_teema_receives_its_files(world, enabled):
+    assert not world["b"].is_open
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    _apply(plan, _all(plan))
+    assert Document.objects.filter(matter=world["b"]).count() == 1
+
+
+def test_the_command_applies_one_teema_with_every_authorisation(world, enabled, tmp_path):
+    capture = oc.load_capture(world["root"])
+    plan = oc.build_plan(capture)
+    out = tmp_path / "apply.json"
+    call_command(
+        "onenote_capture_import",
+        "apply",
+        "--capture",
+        str(world["root"]),
+        "--expect-manifest-sha256",
+        capture.manifest_sha256,
+        "--expect-plan-sha256",
+        plan.digest,
+        "--operator-intent",
+        oc.OPERATOR_INTENT,
+        "--backup-set",
+        "sets/x",
+        "--label",
+        "canary",
+        "--matter",
+        str(world["b"].pk),
+        "--out",
+        str(out),
+        stdout=io.StringIO(),
+    )
+    assert json.loads(out.read_text(encoding="utf-8"))["documents_created"] == 1
+    assert set(Document.objects.values_list("matter_id", flat=True)) == {world["b"].pk}
+
+
+def test_one_topic_naming_two_teemad_is_a_problem(world):
+    root = world["root"]
+
+    def reuse_topic_of_a_on_page_002(manifest):
+        a = next(p for p in manifest["pages"] if p["tag"] == "001")["matters"][0]
+        page = next(p for p in manifest["pages"] if p["tag"] == "002")
+        page["matters"][0]["lovable_source_id"] = a["lovable_source_id"]
+
+    _rewrite_manifest(root, reuse_topic_of_a_on_page_002)
+    plan = oc.build_plan(oc.load_capture(root))
+    assert any("names 2 Teemad" in p for p in plan.problems)
