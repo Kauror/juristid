@@ -424,6 +424,26 @@ would never replace source text. None is proposed.
   for both affected section files (04.11) and found no new revision, so the
   change was local only and the pilot wrote nothing back.
 
+### 9.5b Lessons from the full desktop run (394 pages, 6,614 files)
+
+* **A page is complete only when no placeholder is left.** On two pages the
+  read was stable for two polls at 9 and 6 empty blocks and 0 files, and a
+  second visit returned the files. A page with any remaining placeholder is
+  revisited. A run with such a page is not `RUN_COMPLETE`.
+* **A floating file has no `creationTime`.** Most floating files appear only
+  after the page is opened. Its own `lastModifiedTime` bounds the addition
+  from above ("added no later than"); it is not the addition date, and the file
+  stays `NO_VERIFIED_SOURCE_TIME` unless the owner decides otherwise.
+* **Navigation can touch text blocks, never file blocks** (48 text, 0 file).
+  Dates are taken from the pre-navigation read.
+* **The client refuses calls while busy** (`RPC_E_CALL_REJECTED`). The reader
+  retries with backoff. An aborted batch keeps its partial output and is
+  re-run.
+* Coverage: 96.9 % of files carry a block creation date (median 5 distinct days
+  per topic). 9.6 % carry a structural comment (`ATTACHED_NOTE`,
+  `CONTAINER_HEADING`), and a further 36.9 % are `ADJACENT_SINGLE_FILE`
+  candidates.
+
 ### 9.6 What remains unavailable
 
 * Any attachment time from Graph.
