@@ -120,3 +120,31 @@ into a disposable database before any write; rollback = restore that set's datab
 - 0191 §5 and 0202 §3–§4 no longer describe this environment's dataset after the replacement.
 - The irreversible parts, short of a database restore: the tombstones, released references and
   deleted owned rows; evidence files are untouched.
+
+## Amendment 2026-11-04 — the Excel-era writes refuse once Lovable is the source
+
+The Excel-era write commands were still gated only by `REAL_DATA_ALLOWED` and their digests, which
+prove a person approved a *workbook* and cannot know the register no longer comes from one. Run
+after the replacement, they could create workbook Teemad beside Lovable's, attach workbook source
+references to Lovable's Teemad or overwrite fields Lovable is the source of.
+
+One rule now refuses them in code: `app.legacy_import.register_source.refuse_excel_era_write`.
+Lovable is the source (`lovable_register_is_source`) while an un-retired `LovableSyncCohort` with key
+`lovable-register` exists **or** any `LovableSyncState` names that cohort — a state without its cohort
+row still fails closed. The refusal comes first in the write branch, before any plan, report file,
+lock or row:
+
+- `import_legacy_register --apply`, `final_register_cutover --apply`,
+  `promote_current_register --apply`, `historical_cutover_state --apply`,
+  `backfill_legacy_owners --apply`;
+- `refresh_current_register apply`, `register_next_action_enrichment apply`,
+  `excel_pilot_2026 apply`;
+- `historical_import apply` (OneNote-only Teemad, page links to register Teemad) and
+  `historical_import materialise` (files Documents into the Teemad those links name).
+
+Their read-only modes stay open — `--dry-run`, `plan`, `manifest`, `inspect`, `status`, `verify`,
+`historical_import dry-run` (rolled back) and the read-only `register_snapshot_delta` — because
+audits read historical provenance through them. The Lovable commands, the opinion archive and the
+OneNote enrichment are not Excel-era writes and are not affected. A database with no register cohort
+(every development and test database) behaves exactly as before. Tests:
+`tests/test_excel_era_write_guard.py`.
