@@ -431,9 +431,15 @@ would never replace source text. None is proposed.
   second visit returned the files. A page with any remaining placeholder is
   revisited. A run with such a page is not `RUN_COMPLETE`.
 * **A floating file has no `creationTime`.** Most floating files appear only
-  after the page is opened. Its own `lastModifiedTime` bounds the addition
-  from above ("added no later than"); it is not the addition date, and the file
-  stays `NO_VERIFIED_SOURCE_TIME` unless the owner decides otherwise.
+  after the page is opened. **Owner decision D8 (2026-11-04):**
+  * Such a file stays undated (`NO_VERIFIED_SOURCE_TIME`, «Lisamise kuupäev
+    teadmata») and sits on the undated chronology row.
+  * Its own `lastModifiedTime` is kept as source metadata
+    (`ONENOTE_OBJECT_MODIFIED`, `OccurrenceDates.object_modified`).
+  * It may be displayed separately as «OneNote'i objekti viimane muutmine». It
+    is never shown as an addition date, an "added no later than" bound or a
+    chronology day.
+  * All such files stay eligible for import.
 * **Navigation can touch text blocks, never file blocks** (48 text, 0 file).
   Dates are taken from the pre-navigation read.
 * **The client refuses calls while busy** (`RPC_E_CALL_REJECTED`). The reader

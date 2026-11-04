@@ -14,6 +14,7 @@ from datetime import UTC, date, datetime, timedelta
 import pytest
 
 from tools.onenote_ingress.chronology import (
+    OBJECT_MODIFIED,
     UNKNOWN_ADDITION,
     ChronologyRow,
     DateBasis,
@@ -470,3 +471,37 @@ def test_a_floating_file_has_no_date_and_no_position():
     assert [r.basis for r in records] == [ContextBasis.PAGE_NARRATIVE]
     result = chronology_date(OccurrenceDates())  # no creationTime -> no addition date
     assert result.value is None and result.label == UNKNOWN_ADDITION
+
+
+def test_a_floating_files_own_modified_time_is_metadata_never_a_date():
+    """D8: kept and displayable on its own, but never an addition date or a day."""
+    own = SourceTime(
+        datetime.fromisoformat(
+            blocks_from_desktop_xml(
+                page([]).replace(
+                    "</one:Page>",
+                    '<one:InsertedFile objectID="FL" lastModifiedTime="2025-10-15T12:51:18.000Z"'
+                    ' pathCache="x" preferredName="a.pdf"/></one:Page>',
+                )
+            )[0].modified.replace("Z", "+00:00")
+        ),
+        DateBasis.ONENOTE_OBJECT_MODIFIED,
+        "ONENOTE_DESKTOP",
+        "c1",
+    )
+    dates = OccurrenceDates(
+        object_modified=own,
+        page_created=block_time(utc(2024, 1, 1), basis=DateBasis.PAGE_CREATED),
+    )
+    result = chronology_date(dates)
+    assert result.value is None and result.basis is None
+    assert result.qualifiers == (Qualifier.NO_VERIFIED_SOURCE_TIME,)
+    assert result.label == UNKNOWN_ADDITION
+    assert OBJECT_MODIFIED.format(value="15.10.2025") != result.label
+    assert dates.object_modified is own  # preserved, not consumed
+    stored = utc(2026, 11, 5, 9)
+    version = OccurrenceVersion("p/fl/1", "d1", True, result)
+    (row,) = chronology_rows([version], stored_at=stored)
+    assert row.group == "undated" and row.anchor == stored  # not 15.10.2025
+    with pytest.raises(ValueError):
+        chronology_date(OccurrenceDates(object_modified=block_time(utc(2025, 10, 15))))

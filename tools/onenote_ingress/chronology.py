@@ -22,7 +22,10 @@ What Phase 1 evidence adds (Phase 1 report, "Historical file dates"):
   while the hierarchy's page time and every block time stayed unchanged.
   ``PAGE_MODIFIED`` is read from the hierarchy (or Graph metadata) only.
 * A floating object (on the page canvas, outside any outline) has no
-  ``creationTime`` and stays undated.
+  ``creationTime`` and stays undated. Its own ``lastModifiedTime`` is kept as
+  source metadata (``ONENOTE_OBJECT_MODIFIED``) and may be shown on its own;
+  it is never an addition date, a bound on one, or a chronology day (owner
+  decision D8, 2026-11-04). Such a file stays eligible for import.
 * A scanner that first sees a file has seen it, nothing more. The most it may
   record is the interval between the last complete scan without it and the
   first complete scan with it — a detection window, never a source date.
@@ -46,6 +49,8 @@ UNKNOWN_ADDITION = "Lisamise kuupäev teadmata"
 PREDATES_PAGE = "lisatud enne praeguse lehe loomist"
 CONTENT_MAY_BE_NEWER = "faili sisu võib olla hiljem uuendatud"
 DETECTED_WINDOW = "Juristid märkas faili vahemikus {start}–{end}"
+#: Source metadata only (D8): shown apart from the chronology, never as "lisatud".
+OBJECT_MODIFIED = "OneNote'i objekti viimane muutmine: {value}"
 
 #: A block modified this long after its creation may hold newer bytes.
 CONTENT_DRIFT = timedelta(hours=1)
@@ -54,6 +59,8 @@ CONTENT_DRIFT = timedelta(hours=1)
 class DateBasis(StrEnum):
     ONENOTE_BLOCK_CREATED = "ONENOTE_BLOCK_CREATED"  # one:OE/@creationTime (desktop XML)
     ONENOTE_BLOCK_MODIFIED = "ONENOTE_BLOCK_MODIFIED"  # one:OE/@lastModifiedTime
+    # A floating one:InsertedFile's own @lastModifiedTime (it has no creationTime). D8.
+    ONENOTE_OBJECT_MODIFIED = "ONENOTE_OBJECT_MODIFIED"
     FILE_INTERNAL_METADATA = (
         "FILE_INTERNAL_METADATA"  # OOXML core, PDF info, MSG sent, ASiC signing
     )
@@ -106,6 +113,7 @@ class OccurrenceDates:
     block_created: list[SourceTime] = field(default_factory=list)  # one per verified observation
     block_modified: list[SourceTime] = field(default_factory=list)
     file_internal: list[SourceTime] = field(default_factory=list)  # plausibility only
+    object_modified: SourceTime | None = None  # floating object only; display metadata (D8)
     page_created: SourceTime | None = None
     page_modified: SourceTime | None = None
     first_detected: Window | None = None
@@ -151,9 +159,14 @@ def chronology_date(dates: OccurrenceDates) -> ChronologyDate:
 
     Only a verified block creation time is a source addition date. Disagreeing
     verified observations make it unknown (provenance before coverage); the
-    first value is never silently preferred. Page dates, file metadata and
-    Juristid's own times are never used, even as a fallback.
+    first value is never silently preferred. Page dates, file metadata, a
+    floating object's own modification time and Juristid's own times are never
+    used, even as a fallback.
     """
+    if dates.object_modified is not None and (
+        dates.object_modified.basis is not DateBasis.ONENOTE_OBJECT_MODIFIED
+    ):
+        raise ValueError("object_modified holds only ONENOTE_OBJECT_MODIFIED")
     values = {item.value for item in dates.block_created}
     qualifiers: list[Qualifier] = []
     if len(values) > 1:

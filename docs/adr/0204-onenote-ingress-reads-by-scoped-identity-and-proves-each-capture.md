@@ -81,6 +81,12 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
    * **Conflicts and later times.** Conflicting observations make the date
      unknown. A replaced binary is a new version, dated only by its change
      window. A first detection is a window, never a source date.
+   * **Floating attachments (owner decision D8, 2026-11-04).** A file placed on
+     the page canvas has no creation time, so it stays undated.
+     * Its own last-modified time is kept and may be shown separately, as
+       source metadata.
+     * That time is never an inferred addition date or a timeline date.
+     * These files remain eligible for import.
    * **Page text.** It is preserved verbatim per capture. Each file gets
      append-only context records with a structural basis (`ATTACHED_NOTE`,
      `CONTAINER_HEADING`) or a positional one (`ADJACENT_SINGLE_FILE`,
