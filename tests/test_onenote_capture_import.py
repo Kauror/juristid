@@ -877,3 +877,33 @@ def test_one_topic_naming_two_teemad_is_a_problem(world):
     _rewrite_manifest(root, reuse_topic_of_a_on_page_002)
     plan = oc.build_plan(oc.load_capture(root))
     assert any("names 2 Teemad" in p for p in plan.problems)
+
+
+def test_a_file_block_without_its_file_and_a_file_without_a_block_both_render_honestly(world):
+    capture = oc.load_capture(world["root"])
+    page = next(p for p in capture.pages if p.tag == "001")
+    blocks = [*page.blocks, {"ordinal": 99, "kind": "FILE", "text": "", "object_id": "{X}{99}{B0}"}]
+    without_first = page.occurrences[0].block_object_id
+    blocks = [b for b in blocks if b.get("object_id") != without_first]
+    changed = oc.CapturePage(**{**page.__dict__, "blocks": tuple(blocks)})
+    rendered = oc.rendered_blocks(changed)
+    assert {"kind": "FILE_NOT_CAPTURED", "resource_key": ""}.items() <= next(
+        b for b in rendered if b.get("object_id") == "{X}{99}{B0}"
+    ).items()
+    assert rendered[-1]["resource_key"] == without_first  # appended, not lost
+
+
+def test_a_failed_search_refresh_is_not_reported_as_a_rollback(world, enabled, monkeypatch):
+    import app.search.indexing as indexing
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("index unavailable")
+
+    monkeypatch.setattr(indexing, "refresh_matters", broken)
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    with pytest.raises(oc.CaptureError, match="every chosen page committed"):
+        _apply(plan, _all(plan))
+    assert (
+        ImportBatch.objects.get().reconciliation_status == ReconciliationStatus.COMPLETED_WITH_GAPS
+    )
+    assert Document.objects.count() == 6

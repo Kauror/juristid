@@ -51,9 +51,13 @@ Teemad and without touching anything Lovable derives.
    * **Association.** A Teema's association is `MatterSourcePage(PRIMARY,
      LOVABLE_EXACT_PAGE_GUID)`.
    * **Resolution.** A Teema is resolved by its Lovable topic UUID through
-     `LovableSyncState`. The UUID must agree with the Teema the capture names,
-     in that cohort. Titles, filenames, reference numbers and SHA-256 equality
-     never decide anything.
+     `LovableSyncState`. Every (page, Teema) pair is checked:
+     * the UUID must agree with the Teema the capture names, in that cohort;
+     * a topic names exactly one Teema, and a Teema exactly one topic;
+     * the Teema's own stored Lovable OneNote link must name the page GUID.
+
+     Titles, filenames, reference numbers and SHA-256 equality never decide
+     anything.
 4. **One decision per (Teema, occurrence).** Each is recorded once in
    `LegacySourceResourceImport`.
    * **IMPORTED.** A single-Teema page's file becomes a `Document` and an
@@ -69,6 +73,9 @@ Teemad and without touching anything Lovable derives.
      files are catalogued once; no Document is made (owner decision D4).
    * **SKIPPED `EMPTY_FILE`.** A 0-byte file is catalogued; no empty evidence is
      made.
+   * **SKIPPED `LARGER_THAN_EVIDENCE_LIMIT`.** A file above
+     `MAX_EVIDENCE_UPLOAD_BYTES` is catalogued and held, never a failure.
+   * A page with no file is still catalogued and linked to its Teema.
    * **SKIPPED `EARLIER_CAPTURE_NOT_IMPORTED`.** An earlier capture's resource
      row on a reused page is accounted for, never imported.
 5. **Dates and context.** These are ADR 0092 §6 and 0204 point 7, unchanged.

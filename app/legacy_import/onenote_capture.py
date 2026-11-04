@@ -407,14 +407,34 @@ def rendered_blocks(page: CapturePage) -> list[dict[str, Any]]:
     """
     files = {o.block_object_id for o in page.occurrences}
     out = []
+    placed = set()
     for block in page.blocks:
         kind = str(block.get("kind") or "TEXT")
         row = dict(block)
         row["source_kind"] = kind
-        row["kind"] = _RENDERED_KIND.get(kind, kind)
         object_id = str(block.get("object_id") or "")
-        row["resource_key"] = object_id if kind == "FILE" and object_id in files else ""
+        if kind == "FILE" and object_id not in files:
+            row["kind"], row["resource_key"] = "FILE_NOT_CAPTURED", ""  # never a nameless file
+        else:
+            row["kind"] = _RENDERED_KIND.get(kind, kind)
+            row["resource_key"] = object_id if kind == "FILE" else ""
+        if row["resource_key"]:
+            placed.add(object_id)
         out.append(row)
+    # A captured file with no block of its own is still on its page, after the rest.
+    last = max((int(b.get("ordinal") or 0) for b in page.blocks), default=0)
+    for offset, o in enumerate(x for x in page.occurrences if x.block_object_id not in placed):
+        out.append(
+            {
+                "ordinal": last + 1 + offset,
+                "kind": "FILE_ATTACHMENT",
+                "text": "",
+                "depth": 0,
+                "resource_key": o.block_object_id,
+                "source_kind": "FILE",
+                "object_id": o.block_object_id,
+            }
+        )
     return out
 
 
@@ -820,6 +840,7 @@ def apply(
         )
 
     failure: BaseException | None = None
+    refresh_failure: Exception | None = None
     try:
         for page in pages:
             if _page_complete(page, by_page.get(page.page_key, [])):
@@ -872,12 +893,16 @@ def apply(
             try:
                 refresh_matters(indexable_matters().filter(pk__in=list(report.matters)))
             except Exception as refresh_error:  # never hides the run's own failure
-                if failure is None:
-                    failure = refresh_error
+                refresh_failure = refresh_error
     if failure is not None:
-        if isinstance(failure, KeyboardInterrupt):
+        if isinstance(failure, KeyboardInterrupt | SystemExit):
             raise failure
         raise CaptureError(f"stopped at a page that rolled back whole: {failure}") from failure
+    if refresh_failure is not None:
+        raise CaptureError(
+            "every chosen page committed, but refreshing the Teemad's search rows failed "
+            f"({refresh_failure}); run rebuild_search_index for them"
+        ) from refresh_failure
     return report
 
 
@@ -1162,7 +1187,8 @@ def provenance_note(capture: Capture, page: CapturePage, occurrence: Occurrence)
     for basis, text in occurrence.structural_comment:
         label = "Märkus OneNote'is" if basis == "ATTACHED_NOTE" else "Pealkiri OneNote'is"
         lines.append(f"{label}: {text}")
-    lines.append(f"Allikas: {capture.capture_id}, plokk {occurrence.block_ordinal}")
+    where = f", plokk {occurrence.block_ordinal}" if occurrence.block_ordinal is not None else ""
+    lines.append(f"Allikas: {capture.capture_id}{where}")
     return "\n".join(lines)
 
 

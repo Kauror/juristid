@@ -27,6 +27,7 @@ material: keep it, and every ``--out`` file, outside the repository and CI.
 from __future__ import annotations
 
 import json
+import signal
 from pathlib import Path
 from typing import Any
 
@@ -119,6 +120,13 @@ class Command(BaseCommand):
                 limit=options["pages"] or None,
                 include_shared=options["include_shared"],
             )
+
+            # `docker stop` sends SIGTERM: end the run through the same path as Ctrl-C,
+            # so the batch is recorded FAILED rather than left RUNNING.
+            def _terminate(signum: int, frame: Any) -> None:
+                raise SystemExit(128 + signum)
+
+            signal.signal(signal.SIGTERM, _terminate)
             report = onenote_capture.apply(
                 plan,
                 pages,
