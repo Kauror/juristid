@@ -103,3 +103,16 @@ artifacts/
 .devdata/
 devtools/matter-refinement/shots/
 .e2eserver.*
+
+# Local tooling and scratch output beside a checkout (maintenance round
+# 2026-11-04). Agent sessions keep worktrees and local settings under
+# `.claude/`; development and preview servers leave logs, evidence roots and
+# cookie jars — a cookie jar is a live session. None of it is source.
+.claude/worktrees/
+.claude/settings.local.json
+*.log
+.preview-*
+_e2e_evidence*/
+.devvisual*
+playwright-report/
+test-results/

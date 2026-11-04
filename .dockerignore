@@ -31,6 +31,33 @@ import-output/
 opinion-archive/
 .local/
 
+# Everything else `.gitignore` keeps out of Git as real material, secrets or
+# local output stays out of the build context too (maintenance round
+# 2026-11-04). The release image is built off the host from a CI checkout, but
+# a context taken from a working copy would otherwise carry the OneNote corpus,
+# a workbook, a dump or a tunnel credential into a layer.
+onenote-desktop-archive/
+onenote-juristid-export/
+migration-audit/
+historical-source/
+**/*.xlsx
+**/*.xlsm
+**/*.xls
+**/*.sql
+**/*.sql.gz
+**/*.dump
+cloudflared/
+**/cert.pem
+**/*credentials*.json
+artifacts/
+evidence-*/
+.e2e-evidence/
+_e2e_evidence*/
+.preview-*
+node_modules/
+.claude/
+**/*.log
+
 # Environment files, at any depth (JSEC-004). The root-only patterns this list
 # used to have missed `deploy/unraid-main/juristid.env`, the one file a server
 # checkout is most likely to have beside the code, and `COPY . .` would bake it
