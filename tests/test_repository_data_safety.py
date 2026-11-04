@@ -101,6 +101,29 @@ def test_no_local_evidence_store_is_tracked() -> None:
     assert _git("check-ignore", "-q", ".e2e-evidence/anything").returncode == 0
 
 
+@requires_git
+@pytest.mark.parametrize(
+    "path",
+    [
+        ".claude/worktrees/some-branch/README.md",
+        ".claude/settings.local.json",
+        "server.log",
+        "tests/run.log",
+        ".preview-cookies.txt",
+        ".preview-evidence/0001-file.pdf",
+        "_e2e_evidence/0001-file.pdf",
+        "_e2e_evidence2/0001-file.pdf",
+        "playwright-report/index.html",
+        "test-results/trace.zip",
+    ],
+)
+def test_local_tool_output_is_ignored(path: str) -> None:
+    """What development and preview servers and agent sessions leave beside a
+    checkout: logs, evidence roots, cookie jars (a live session), worktrees.
+    Each was found untracked in a real worktree on 2026-11-04."""
+    assert _git("check-ignore", "-q", path).returncode == 0, path
+
+
 def test_the_report_classes_do_not_overlap() -> None:
     """A file is publishable or it is not. There is no third state."""
     assert not set(AGGREGATE_REPORTS) & set(ROW_LEVEL_REPORTS)

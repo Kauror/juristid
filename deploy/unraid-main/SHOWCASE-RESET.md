@@ -1,5 +1,10 @@
 # Showcase reset — replacing a disposable business-data world
 
+> **Historical (2026-10-08).** The showcase world this procedure installed was
+> superseded by the Excel pilot (`EXCEL-PILOT-2026.md`) and, since 2026-11-03,
+> by Lovable's operational register (ADR 0203). Kept as the record of the
+> rename-aside model; it is not a current procedure for this instance.
+
 How `juristid-main` moves from a used-up TEST/showcase dataset to the clean
 six-package showcase world, without touching append-only history and without
 the old data ever stopping being restorable. Written for the overnight

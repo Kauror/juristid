@@ -52,8 +52,12 @@ def create_with_files(page, base_url: str, title: str, paths: list[str]) -> str:
     page.locator("#id_title").fill(title)
     page.locator("#id_files").set_input_files(paths)
     name_a_next_step(page)
-    page.get_by_role("button", name="Salvesta", exact=True).click()
-    page.wait_for_load_state("domcontentloaded")
+    # Wait for the navigation the click starts (the redirect, or the refused
+    # form re-rendered). `wait_for_load_state` alone returned at once on the
+    # page still showing the form, and the read below then raced the POST:
+    # "Execution context was destroyed" (#576 run 41086662919, #592 run 41775253388).
+    with page.expect_navigation(wait_until="domcontentloaded"):
+        page.get_by_role("button", name="Salvesta", exact=True).click()
 
     complaints = page.locator(".field__error, .formerror, .message--error").all_inner_texts()
     assert not complaints, f"the form refused: {complaints}"

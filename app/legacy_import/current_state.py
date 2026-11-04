@@ -388,10 +388,6 @@ class CurrentRegisterState(BaseModel):
         return self.is_current and not self.opinion_sent_recorded
 
     @property
-    def has_source_instruction(self) -> bool:
-        return bool(self.next_action_text.strip())
-
-    @property
     def opinion_not_sent(self) -> bool:
         """The register says, in words, that Koda did not send one."""
         return self.opinion_sent_state == OpinionSentState.NOT_SENT
@@ -406,19 +402,6 @@ class CurrentRegisterState(BaseModel):
         from app.legacy_import.register_semantics import split_addressees
 
         return split_addressees(self.addressee_raw)
-
-    @property
-    def has_member_feedback(self) -> bool:
-        """Whether the register recorded either count.
-
-        Either, not both, and not "is non-zero": a row saying 220 were asked and
-        0 answered is two measurements and the most informative shape this pair
-        takes. A surface that required both, or required them to be positive,
-        would hide exactly the rows worth reading.
-        """
-        return (
-            self.member_feedback_responded is not None or self.member_feedback_requested is not None
-        )
 
     @property
     def source_responsibility(self) -> str:

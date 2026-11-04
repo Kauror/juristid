@@ -568,6 +568,35 @@ def test_the_committed_examples_are_not_mistaken_for_secrets(path: str) -> None:
     assert not _excluded_from_the_build_context(path, _dockerignore()), path
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "onenote-desktop-archive/Notebook/Section.one",
+        "migration-audit/reports/reconciliation/unmatched-onenote.csv",
+        "historical-source/page.xml",
+        "Tööd eelnõudega.xlsx",
+        "private-data/2026/register.xlsm",
+        "backup.sql",
+        "deploy/unraid-main/juristid.sql.gz",
+        "database.dump",
+        "cloudflared/tunnel-credentials.json",
+        "cert.pem",
+        "artifacts/production-page.png",
+        "evidence-second/0001-file.pdf",
+        ".claude/worktrees/some-branch/app/settings.py",
+        "node_modules/package/index.js",
+        "server.log",
+    ],
+)
+def test_real_material_secrets_and_local_output_stay_out_of_the_build_context(
+    path: str,
+) -> None:
+    """What `.gitignore` refuses as real data, a secret or local output, the
+    build context refuses as well: `COPY . .` takes whatever the working copy
+    holds, tracked or not."""
+    assert _excluded_from_the_build_context(path, _dockerignore()), path
+
+
 def test_the_test_suites_and_the_prose_stay_out_of_the_image() -> None:
     """Nothing in the image runs them, and a test suite in a production image is
     an invitation to run it there (deploy/unraid-main/README.md, 2026-08-24)."""

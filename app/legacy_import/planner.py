@@ -71,10 +71,6 @@ class RowPlan:
     def anomalies(self) -> list[str]:
         return list(self.row.anomalies)
 
-    @property
-    def creates_matter(self) -> bool:
-        return self.outcome == RowOutcome.WOULD_CREATE.value
-
 
 @dataclass
 class ImportPlan:
@@ -104,9 +100,6 @@ class ImportPlan:
     def is_complete(self) -> bool:
         """Every row below every header is accounted for exactly once."""
         return sum(self.outcome_counts.values()) == len(self.rows)
-
-    def rows_with_outcome(self, outcome: str) -> list[RowPlan]:
-        return [plan for plan in self.rows if plan.outcome == outcome]
 
 
 def _proposed_record_mode(

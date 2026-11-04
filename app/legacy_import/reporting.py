@@ -329,10 +329,6 @@ class WrittenReports:
     def local_only(self) -> tuple[Path, ...]:
         return self.operator + self.row_level
 
-    @property
-    def all_paths(self) -> tuple[Path, ...]:
-        return self.aggregate + self.operator + self.row_level
-
 
 def _write_json(path: Path, payload: dict[str, Any]) -> Path:
     path.write_text(

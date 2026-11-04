@@ -19,6 +19,21 @@ to it, in one system. This is the environment that holds the real thing.
 | Secrets | `/mnt/user/appdata/juristid-main/config/juristid.env`, mode 600, never in Git |
 | Backup and recovery | [`RECOVERY.md`](RECOVERY.md) — how to back up, verify, restore and roll back |
 | Reaching the host, and running commands on it | [`OPERATOR.md`](OPERATOR.md) — access paths, proving which host answered, and why a deploy script is never piped into `ssh` |
+| Where the operational register comes from | Lovable, read-only — see below |
+
+**The register's source is Lovable (since 2026-11-03).** The live Teemad are
+exactly Lovable's operational topics, each with a verified Lovable identity, in
+the synchronisation cohort `lovable-register`
+([ADR 0203](../../docs/adr/0203-lovable-is-the-whole-register-source-authoritative-replacement.md)).
+Lovable is followed one way by `scripts/deploy/juristid-lovable-sync.sh`
+(`manage.py lovable_sync`, from cron, under the host lock;
+[ADR 0192](../../docs/adr/0192-the-lovable-pilot-teemad-follow-lovable-nightly-one-way.md),
+[ADR 0201](../../docs/adr/0201-lovable-is-observed-wider-than-the-pilot-read-only.md)),
+in COMPARE mode: APPLY is not authorised. The sections below on importing the
+historical corpus, the Excel register import and *refreshing the register*
+describe the Excel-register era (2026-08 to 2026-10). They are kept as the
+record of how that data arrived and what its provenance means; **none of their
+write steps is to be run against this instance's register.**
 
 The synthetic rehearsal at `juristid-test` keeps running, on its own project,
 network, database and appdata tree. Nothing here touches it, and it must not be
@@ -422,6 +437,13 @@ sign-in is activated.
 
 ## Importing the historical corpus
 
+> **Historical — first deployment only.** This is how the OneNote corpus
+> entered the instance in 2026-08/09. Since the register replacement of
+> 2026-11-03 every live Teema is a Lovable topic (ADR 0203); the Matters this
+> import created or linked are not part of the current dataset, and `apply` is
+> not to be re-run against it. The read-only phases (`plan`, `status`,
+> `verify`) and the legacy source pages it stored remain.
+
 Six phases, in order. Each is a separate command rather than a flag, because
 they have genuinely different consequences and a flag is easy to mistype.
 
@@ -470,8 +492,13 @@ scripts/deploy/juristid-backup.sh --project juristid-main --compose-file deploy/
 
 ## The register import
 
+> **Historical — superseded by ADR 0203.** The register now comes from
+> Lovable; `import_legacy_register --apply` would create workbook Matters, or
+> attach workbook source references to Lovable Teemad that share a reference.
+> Not to be run against this instance.
+
 `historical_import` imports the OneNote side and links it to Matters that
-already exist. The Excel register itself is imported by `register_import`
+already exist. The Excel register itself is imported by `import_legacy_register`
 (ADR 0012) and must run first — otherwise every exact link reports its reference
 as not found, which is correct behaviour and a wasted afternoon.
 
@@ -500,6 +527,17 @@ look at first. `rebuild_search_index` remains the manual answer and is always
 safe to run.
 
 ## Recurring operations — refreshing the register
+
+> **Historical — superseded by ADR 0203 (2026-11-03). Do not run this cycle
+> against this instance.** The register is no longer read from
+> `Tööd eelnõudega.xlsx`: Lovable is its source, and the recurring operation is
+> now the nightly `lovable_sync` comparison (ADR 0192, COMPARE only). The
+> Excel-era Teemad, their source references and their derived
+> `CurrentRegisterState` rows were retired with the replacement, so a refresh
+> would either refuse or — after a step-2 catalogue — write workbook data into
+> the Lovable register. The section is kept as the record of how the 21.08,
+> 28.08 and 01.09 workbooks were applied and as the procedure an owner-approved
+> rehearsal on a restored copy would follow.
 
 Everything above this point happens once, or happens when something is wrong.
 This is the one operation that is *meant* to be repeated: the department edits
@@ -1039,6 +1077,10 @@ you would keep a migration under review.
 
 ### What must not be run here, and why
 
+- **Any write step of this section, at all, since ADR 0203** — the register
+  comes from Lovable now (see the note at the top of this section). The bullets
+  below are the Excel era's reasons and still hold for a rehearsal on a
+  restored copy.
 - **`refresh_current_register apply` while the plan's `AUTO` +
   `REFRESH_IMPORTED` + `REMOVE_STALE_IMPORTED` is above zero.** The JÄRGMISEKS
   decision belongs to the department head and the lawyers and has not been made.
