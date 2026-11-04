@@ -1,6 +1,6 @@
 # 0204 — OneNote ingress reads by scoped identity and proves each capture
 
-Status: **Proposed** (Phase 1 evidence, 2026-11-04). Not implemented in `app/`;
+Status: **Proposed** (Phase 1 evidence, 2026-11-04; reader decided by the owner 2026-11-04: desktop OneNote, not Graph). Not implemented in `app/`;
 no schema, command, schedule or deployment follows from it until the owner
 approves Phase 2.
 
@@ -26,14 +26,27 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 
 ## Decision (proposed)
 
-1. **Reader.** Phase 2 uses Microsoft Graph with **delegated** `Notes.Read.All`
-   plus `offline_access`, on a dedicated, licensed, MFA-protected reader account
-   that has read access to the department site only. The refresh-token cache is
-   encrypted at rest on KOCORP. No `Notes.ReadWrite*`, no `Sites.*`, no app-only
-   permission. Whether `Notes.Read` alone reaches a site notebook is UNVERIFIED;
-   test it first and choose the narrower scope if it works. The desktop COM
-   reader stays an independent *reference* for fidelity checks and is never the
-   production reader.
+1. **Reader — owner decision 2026-11-04: the OneNote desktop client on the
+   owner's workstation; Graph is not used.**
+   * The reader is the read-only COM members (`GetHierarchy`,
+     `GetHyperlinkToObject`, `GetPageContent`) plus `NavigateTo`, which makes
+     OneNote fetch file data.
+   * It runs on the owner's laptop when an operator session runs it. The laptop
+     may stay online for this purpose.
+   * The owner chose this because the desktop XML carries what Graph's page
+     HTML does not:
+     * each attachment block's creation and modification time (ADR 0092 §6);
+     * outline structure and nesting, for commentary;
+     * files that only appear once a page is opened.
+   * The same route produced the August 2026 archive (755 pages, 10,916
+     files) and the October evidence pilot. The D1 pilot showed that
+     navigation writes nothing back to SharePoint (§9.5a of the design).
+   * Captures travel to KOCORP as a verified, read-only archive, the same
+     pattern as `onenote-desktop-archive`. KOCORP never reads OneNote.
+   * The Graph route (delegated `Notes.Read*`, a reader account, a token cache)
+     was specified and then **not pursued**. Its prototype modules
+     (`transport.py`, the Graph half of `capture.py` and `resources.py`) are
+     kept only as reference and are not part of the adopted pipeline.
 2. **Identity.** Internal `SourcePage` identities; provider IDs are scoped by
    reader and notebook and kept verbatim; locators are append-only
    observations. Only an exact scoped ID, or a recorded reviewer decision,
@@ -82,10 +95,18 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 
 * **App-only Graph (client credentials).** Unsupported by the OneNote API
   since 31 March 2025, whatever the per-endpoint tables say. Rejected.
-* **Desktop COM on a workstation as the production reader.** It is complete and
-  needs no token, but it needs an interactive session on one laptop, and file
-  data appears only after a page is viewed in the UI. It is not a scheduled
-  server process. Kept as a reference reader.
+* **Microsoft Graph, delegated, on KOCORP.** This was the first proposal. It
+  needs an app registration, a reader account, consent, Conditional Access
+  exclusions and a token cache. Its page HTML carries no attachment times, and
+  attachments still unfetched by OneNote are invisible to it, so for history it
+  would still depend on desktop evidence. The owner rejected it on 2026-11-04;
+  the requirements stay in `JURISTID_ONENOTE_GRAPH_ACCESS_REQUIREMENTS_2026-11-04.md`,
+  outside Git, in case it is reconsidered.
+* **Desktop COM on a schedule without an operator.** Possible as a later step,
+  as a Windows scheduled task on the same laptop. It is not adopted now:
+  `NavigateTo` drives the visible OneNote window, and the local copy can lag the
+  server by hours, so each run needs a sync check and a person who knows that
+  it is running.
 * **SharePoint `driveItem` delta on the `.one` files.** It reports that a
   section file changed, not which page. It may be used later as a "scan sooner"
   hint, once its coverage is measured. Never as the source.
@@ -102,16 +123,16 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 
 ## Consequences
 
-* An owner or tenant administrator must create the app registration, approve
-  delegated consent, and decide on the reader account (Phase 1 report, B1–B4).
-* Unattended access lasts only as long as the refresh token and the account's
-  sign-in policy allow. Revocation is an AUTH_FAILED run and a notification,
-  never a silent zero-change night.
+* No tenant changes are needed: no app registration, consent, reader account
+  or token cache (B1–B4 withdrawn 2026-11-04).
+* Ingestion and re-scans depend on the owner's laptop being online, signed in,
+  with OneNote running and synced. A run records how fresh the replica is and
+  stops if it cannot tell.
+* Fetching file data moves the visible OneNote window and the owner's
+  read/unread marks (approved). It writes no SharePoint revision (verified
+  2026-11-04).
 * Some history is unobservable: content added and removed between two scans
   is missed.
-* For an initial Graph ingestion, attachment dates depend on a desktop
-  reference read of the same occurrences, with their file data fetched.
-  Without that read the dates stay unknown, by design.
 * Two things cannot be recovered: when replaced bytes arrived, and the authors'
   names.
 

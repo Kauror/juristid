@@ -1,6 +1,6 @@
 # OneNote ingress — Phase 1 design and contracts
 
-Status: **proposal for review** (ADR 0204, Proposed). Nothing here is
+Status: **proposal for review** (ADR 0204, Proposed). **Reader decision (owner, 2026-11-04): the OneNote desktop client on the owner's workstation. Microsoft Graph is not used.** The Graph sections below are kept as a record of what was evaluated; for the adopted pipeline they are reference only. Nothing here is
 implemented in `app/`, migrated, scheduled or deployed. The prototype lives in
 `tools/onenote_ingress/` and is exercised only by `tests/test_onenote_ingress.py`
 against invented notebooks.
