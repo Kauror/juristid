@@ -1606,7 +1606,9 @@ It must print an address; NXDOMAIN means `mcp` lacks the alias on `mcp_edge`
 [`docs/mcp/OPERATIONS.md`](../../docs/mcp/OPERATIONS.md) — must say `ready`.
 If it does not, restart the tunnel client — it probes `mcp` only at its
 own start-up and, on failure, logs `startup catalog failed; control-plane
-polling disabled` and never retries (2026-10-25):
+polling disabled` and never retries (2026-10-25). After a reboot its
+entrypoint waits for `mcp` first, so this restart is for a recreate, not a
+reboot:
 
 ```bash
 docker compose -p juristid-main -f deploy/unraid-main/compose.yml restart mcp-tunnel

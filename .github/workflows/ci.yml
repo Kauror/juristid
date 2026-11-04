@@ -279,7 +279,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
     services:
       postgres:
-        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -413,7 +413,7 @@ jobs:
     # the `tests` job, with their reasoning intact.
     services:
       postgres:
-        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -636,7 +636,7 @@ jobs:
     # job and the recovery rehearsal keep a disk.
     services:
       postgres:
-        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -921,7 +921,7 @@ jobs:
     # same server, same configuration, same semantics.
     services:
       postgres:
-        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -1115,7 +1115,7 @@ jobs:
     # only thing that changed is what ran before the first screenshot: nothing.
     services:
       postgres:
-        image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+        image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
         env:
           POSTGRES_DB: juristid
           POSTGRES_USER: juristid
@@ -2414,13 +2414,30 @@ jobs:
 
           echo "--- mcp-tunnel: the pinned version, as nobody, with wget"
           compose run --rm --no-deps --entrypoint /usr/bin/tunnel-client mcp-tunnel --version | tee tunnel-version.txt
-          grep -q '0\.0\.17' tunnel-version.txt
+          grep -q '0\.0\.19' tunnel-version.txt
           compose run --rm --no-deps --entrypoint /bin/sh mcp-tunnel -c '
             set -e
             test "$(id -u)" = 65534
             command -v wget
+            test -x /usr/bin/tunnel-client
             if touch /probe 2>/dev/null; then echo "/ is writable"; exit 1; fi
           '
+          # After a reboot dockerd may start the client before `mcp` exists.
+          # Its own entrypoint must wait (no client process yet) and still stop
+          # promptly on `docker stop` — not after the stop timeout.
+          echo "--- mcp-tunnel: with no mcp, the entrypoint waits and the client is not started"
+          compose run -d --no-deps --name juristid-mcp-ci-tunnel-wait mcp-tunnel
+          sleep 12
+          docker inspect -f '{{.State.Running}}' juristid-mcp-ci-tunnel-wait | grep -qx true
+          docker top juristid-mcp-ci-tunnel-wait -o pid,comm | tee tunnel-top.txt
+          if grep -q 'tunnel-client' tunnel-top.txt; then echo "client started without mcp"; exit 1; fi
+          grep -qE '(sleep|wget)' tunnel-top.txt
+          started=$(date +%s)
+          docker stop -t 30 juristid-mcp-ci-tunnel-wait
+          took=$(( $(date +%s) - started ))
+          echo "stopped in ${took}s"
+          test "$took" -lt 15
+          docker rm -f juristid-mcp-ci-tunnel-wait
 
       # 2026-10-25: a recreate of `mcp` left it without the alias `mcp` on
       # `mcp_edge`, and the tunnel client, which resolves it there and nowhere
