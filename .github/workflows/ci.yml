@@ -955,6 +955,14 @@ jobs:
       DEV_LOGIN_ENABLED: "1"
       REAL_DATA_ALLOWED: "0"
       APPLICATION_ENVIRONMENT: ci
+      # The servers here are `runserver`, which starts a thread per request.
+      # With persistent connections each finished thread's connection stays
+      # open until garbage collection, and six servers sharing one PostgreSQL
+      # (max_connections 100) once ran it out mid-run: "too many clients",
+      # error pages, and every sign-in after that timed out (#592, run
+      # 41773261922). Django's own advice for the development server is not
+      # to persist connections; production (gunicorn) keeps its setting.
+      DJANGO_DB_CONN_MAX_AGE: "0"
       POSTGRES_USER: juristid
       POSTGRES_PASSWORD: juristid
       POSTGRES_HOST: localhost
@@ -1132,6 +1140,14 @@ jobs:
       DEV_LOGIN_ENABLED: "1"
       REAL_DATA_ALLOWED: "0"
       APPLICATION_ENVIRONMENT: ci
+      # The servers here are `runserver`, which starts a thread per request.
+      # With persistent connections each finished thread's connection stays
+      # open until garbage collection, and six servers sharing one PostgreSQL
+      # (max_connections 100) once ran it out mid-run: "too many clients",
+      # error pages, and every sign-in after that timed out (#592, run
+      # 41773261922). Django's own advice for the development server is not
+      # to persist connections; production (gunicorn) keeps its setting.
+      DJANGO_DB_CONN_MAX_AGE: "0"
       POSTGRES_DB: juristid
       POSTGRES_USER: juristid
       POSTGRES_PASSWORD: juristid
