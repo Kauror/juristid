@@ -332,7 +332,7 @@ Each file occurrence gets **context records per capture**, never summaries:
 | --- | --- | --- |
 | `ATTACHED_NOTE` | text nested under the file's outline element | yes |
 | `CONTAINER_HEADING` | the file is nested under a text element | yes (as its heading) |
-| `ADJACENT_SINGLE_FILE` | text directly before or after a run that holds only this file and no unfetched object | **no**: a reviewable candidate, shown as "nearby text" |
+| `ADJACENT_SINGLE_FILE` | text directly before or after a run that holds only this file and no unfetched object | **no** (owner decision D9, 2026-11-04): page text only, not shown or indexed with the file |
 | `ADJACENT_SHARED` | text beside a run of several files or unknown objects | no: context for all of them, attributed to none |
 | `PAGE_NARRATIVE` | the rest of the page | reachable through the page capture |
 
@@ -447,8 +447,8 @@ would never replace source text. None is proposed.
   re-run.
 * Coverage: 96.9 % of files carry a block creation date (median 5 distinct days
   per topic). 9.6 % carry a structural comment (`ATTACHED_NOTE`,
-  `CONTAINER_HEADING`), and a further 36.9 % are `ADJACENT_SINGLE_FILE`
-  candidates.
+  `CONTAINER_HEADING`). A further 36.9 % have `ADJACENT_SINGLE_FILE` text,
+  which stays page text only (D9).
 
 ### 9.6 What remains unavailable
 

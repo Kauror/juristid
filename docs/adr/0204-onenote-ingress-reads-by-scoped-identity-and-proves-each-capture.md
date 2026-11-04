@@ -91,7 +91,9 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
      append-only context records with a structural basis (`ATTACHED_NOTE`,
      `CONTAINER_HEADING`) or a positional one (`ADJACENT_SINGLE_FILE`,
      `ADJACENT_SHARED`, `PAGE_NARRATIVE`). Only structural text is shown or
-     indexed as the file's comment.
+     indexed as the file's comment. Text beside a single file
+     (`ADJACENT_SINGLE_FILE`) stays page text only (owner decision D9,
+     2026-11-04).
    * **Where the dates live.** At occurrence and version level. Immutable
      `DocumentVersion` audit fields are untouched.
    * **Teema chronology.** ADR 0092's per-Tallinn-day rows stay, rows are

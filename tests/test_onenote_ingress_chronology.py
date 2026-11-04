@@ -342,7 +342,9 @@ def test_a_paragraph_clearly_captioning_one_attachment_is_a_candidate_not_a_clai
     records = context_for(blocks, ordinal_of(blocks, "F1"), capture_id="c1")
     adjacent = next(r for r in records if r.basis is ContextBasis.ADJACENT_SINGLE_FILE)
     assert adjacent.text == ("Lisan Koja arvamuse eelnõule:", "Järgmine samm: ootame vastust")
-    assert not adjacent.attributed  # shown as context beside the file, never as its comment
+    # D9 (owner, 2026-11-04): page text only - not shown or indexed as this file's comment
+    assert not adjacent.attributed
+    assert searchable_context(records, document_visible=True) == ()
 
 
 def test_nearby_text_for_several_files_is_attributed_to_none():

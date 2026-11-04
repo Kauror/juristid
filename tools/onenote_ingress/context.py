@@ -13,7 +13,8 @@ only be structural. The bases, strongest first:
 ``ATTACHED_NOTE``           text in an outline element nested *under* the file's element
 ``CONTAINER_HEADING``       the file sits nested under a text element (its outline parent)
 ``ADJACENT_SINGLE_FILE``    text directly before/after a run holding only this file, with
-                            no unfetched object beside it — a reviewable candidate only
+                            no unfetched object beside it — page text only (owner
+                            decision D9, 2026-11-04): never shown or indexed per file
 ``ADJACENT_SHARED``         text beside a run of several files (or unknown objects):
                             context for all of them, attributed to none
 ``PAGE_NARRATIVE``          everything else; reachable from every file via the page capture
