@@ -419,9 +419,10 @@ would never replace source text. None is proposed.
 * The desktop hierarchy is a local replica that can lag the server by hours.
   A desktop inventory records when the replica last synced, and two identical
   scans prove only local stability.
-* Navigating can move a section file's `lastModifiedTime`; read or view state
-  is the suspected cause. Whether that is written back to SharePoint is
-  unverified, so check the version history before wider use.
+* Navigating can move a section file's local `lastModifiedTime`, probably
+  through read or view state. The owner checked SharePoint version history
+  for both affected section files (04.11) and found no new revision, so the
+  change was local only and the pilot wrote nothing back.
 
 ### 9.6 What remains unavailable
 
