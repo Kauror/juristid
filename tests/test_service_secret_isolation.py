@@ -696,10 +696,13 @@ def test_the_check_does_not_pass_over_the_writer(
 # (memory: juristid-db-tunnel-config-drift), so their definitions are pinned:
 # a change here is a deliberate, announced maintenance step — update the digest
 # in the same commit and say so in the release note.
+#
+# Last moved 2026-11-04 (#594): the postgres 18.6 rebuild and cloudflared 2026.10.7
+# pins; deploy/unraid-main maintenance plan, not a code release.
 
 PINNED_DEFINITIONS = {
-    "db": "3de3b35aba9a70e560b3300cfa8d31715dcd5effec091f01dd4117615ad321df",
-    "tunnel": "19003e82ed68d4b37462f97d57f4268758fe1344bfd12426f3bfc5bc50856cc3",
+    "db": "aafc925c6a7b778da68f29cccabc4b946959436c4ceb6d9a1819c4e6916a28d4",
+    "tunnel": "e3192b1ae6024b39fda9f3a1e75f742863585da97ef63e92e0b2433baa59fd71",
 }
 
 
