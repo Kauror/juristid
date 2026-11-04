@@ -96,9 +96,19 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
    path, as new immutable DocumentVersions (ADR 0003). Visibility follows the
    Matter and the record (ADR 0005, 0137). Nothing infers dates, statuses,
    opinions or Valdkond. The Excel-era guards of ADR 0203 stay as they are.
-6. **Detection.** One pipeline with PRIORITY / PERIODIC / FULL jobs and a
-   reserved FULL share. Watermarks never pass unresolved work. A run is
-   `RUN_COMPLETE` only when every planned scope was fully read.
+6. **Detection — owner decision 2026-11-04: Lovable changes drive it.**
+   * The Lovable synchronisation already marks the topics whose register data
+     changed. Juristid collects those topics as a worklist.
+   * When the owner says OneNote is open and synced, a run reads only those
+     topics' pages and looks for new or changed files (PRIORITY).
+   * Topics without a OneNote page are skipped and stay in the D3 register.
+   * An occasional FULL pass over all resolved pages, started by the owner,
+     catches files added in OneNote without any Lovable change. Watermarks
+     never pass unresolved work.
+   * A run is `RUN_COMPLETE` only when every topic on its worklist was fully
+     read. A topic leaves the worklist only then.
+   * This lasts until OneNote is retired and files are uploaded to Juristid
+     directly.
 7. **Historical dates and commentary (amendment, 2026-11-04).** This extends
    ADR 0092 §6 and replaces nothing in it. Full contract:
    `docs/onenote-ingress-phase1.md` §9.
@@ -142,24 +152,17 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
         owner approves one separately.
       * OneNote refusing calls while busy (`RPC_E_CALL_REJECTED`) is retried
         with backoff. Repeated refusal stops the batch.
-   2. **Source synchronization freshness.**
-      * The local hierarchy is a replica. Two identical local scans prove only
-        local stability.
-      * Before a section is read, its local `lastModifiedTime` is compared with
-        a server-side reference: the current SharePoint *Modified* time of
-        that `.one` file.
-        * It is read through an authorized read-only metadata source, never
-          by browser automation and never through a new Graph application.
-        * The source must be proven to report the current *Modified* value.
-          Version-history timestamps, or a search index's copy, are not
-          accepted as a substitute until a test shows they are equivalent.
-        * Status 2026-11-04: no such source is verified yet (Phase 1 report
-          §9e). Until one is, no section's freshness can be established, so
-          no run is `RUN_COMPLETE`.
-      * A section whose replica is older than the server is `PENDING_SYNC` and
-        is not read in that run.
-      * A run records the freshness it saw for each section. If freshness
-        cannot be established, the section is not `RUN_COMPLETE`.
+   2. **Source synchronization freshness — owner decision 2026-11-04: the
+      owner confirms it.**
+      * The owner's laptop holds the up-to-date notebook. A run starts only
+        after the owner confirms that OneNote is open and synced.
+      * The run records that confirmation, who gave it and when, and each
+        section's local `lastModifiedTime`.
+      * No server-side *Modified* comparison is made. No SharePoint connector,
+        sign-in, browser or new Graph application is needed.
+      * A change that had not yet reached the laptop is picked up by a later
+        run. It arrives late, never wrong: captures are append-only, and an
+        absence never deletes anything.
       * Forcing a sync (`SyncHierarchy`) needs a separate owner decision.
    3. **Complete attachment fetching.**
       * A page counts as captured only when no placeholder remains: no empty
@@ -192,7 +195,7 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
       * Watermarks never move past an unverified or incomplete batch.
    6. **Failure alerts.**
       * Every stop condition ends the run with a named reason. Examples:
-        `READER_UNAVAILABLE`, `PENDING_SYNC`, `INCOMPLETE_FETCH`, a verifier
+        `READER_UNAVAILABLE`, `SYNC_NOT_CONFIRMED`, `INCOMPLETE_FETCH`, a verifier
         STOP, a hash mismatch on transfer, a busy timeout.
       * The reason is reported to the owner through the existing notification
         channel, and the run is never reported as success.
@@ -215,7 +218,7 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 * **Desktop COM on a schedule without an operator.** Possible as a later step,
   as a Windows scheduled task on the same laptop. It is not adopted, and no
   schedule is authorised: `NavigateTo` drives the visible OneNote window, and
-  each run needs the freshness check and a person who knows it is running.
+  each run needs the owner's sync confirmation and a person who knows it is running.
 * **SharePoint `driveItem` delta on the `.one` files.** It reports that a
   section file changed, not which page. It may be used later as a "scan sooner"
   hint, once its coverage is measured. Never as the source.
@@ -237,8 +240,8 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 * Ingestion and re-scans depend on the owner's laptop being online, signed in,
   with OneNote running and synced (§8). The pipeline has a single point of
   failure: one workstation and one account. If the laptop is unavailable, new
-  OneNote material is late, not lost. A run records how fresh the replica is
-  and does not read a section it cannot vouch for.
+  OneNote material is late, not lost. A run starts only on the owner's
+  confirmation that OneNote is synced, and records it.
 * Fetching file data moves the visible OneNote window and the owner's
   read/unread marks (approved). It writes no SharePoint revision (verified
   2026-11-04).

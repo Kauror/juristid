@@ -299,10 +299,10 @@ These are two separate items:
 * **Web links.** Opening the legacy web links is a compatibility check, not
   an ingestion prerequisite: the desktop reader resolves by page GUID. It is
   done only when the owner opens them in their own browser.
-* **Freshness.** Freshness (ADR 0204 §8.2) needs the current server
-  *Modified* time of each `.one` file from an authorized read-only source,
-  without browser automation. The candidates and their limits are in the
-  Phase 1 report §9e.
+* **Freshness.** Owner decision 2026-11-04 (ADR 0204 §8.2): the owner
+  confirms OneNote is open and synced before a run. There is no server-side
+  comparison and no connector or sign-in. A change missed by one run is
+  caught by the next.
 
 Evidence (private): `C:\CC\_onenote_p1_data\d2\` has the per-step
 hierarchy, page XML, file hashes and links (`s00`–`s09`) and
