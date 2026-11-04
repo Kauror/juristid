@@ -6,9 +6,10 @@ A page's output HTML (Graph) names what the page holds:
   embedded **original file**. Its ``data`` URL is the only route to the bytes.
 * ``<img src=… data-fullres-src=…>`` — an image; ``data-fullres-src`` is the
   original, ``src`` an optimised rendition. A file *printout* is also rendered
-  as images. Graph's output HTML gives no documented marker that tells a
-  printout page image from a pasted picture, so an image is never recorded as
-  a substitute for an attached file, and printout detection is UNVERIFIED.
+  as images. Output HTML marks ``data-options="printout"`` only on images the
+  API itself rendered (``data-render-src``); whether a printout a person
+  inserted carries it is UNVERIFIED. So an image is never recorded as a
+  substitute for an attached file.
 * ``<a href=…>`` — a hyperlink. A SharePoint document link is a separately
   classified access path, not an embedded attachment, and is never crawled.
 
@@ -51,6 +52,9 @@ class OccurrenceKind(StrEnum):
     EMBEDDED_FILE = "EMBEDDED_FILE"
     IMAGE = "IMAGE"  # original via data-fullres-src; role (picture vs printout) unverified
     IMAGE_RENDITION_ONLY = "IMAGE_RENDITION_ONLY"  # only an optimised src: never the original
+    PRINTOUT_IMAGE = (
+        "PRINTOUT_IMAGE"  # data-options="printout": a rendering, never the attached file
+    )
     LINKED_SHAREPOINT = "LINKED_SHAREPOINT"
     EXTERNAL_LINK = "EXTERNAL_LINK"
     INTERNAL_ONENOTE_LINK = "INTERNAL_ONENOTE_LINK"
@@ -109,6 +113,7 @@ class _PageParser(HTMLParser):
             OccurrenceKind.EMBEDDED_FILE,
             OccurrenceKind.IMAGE,
             OccurrenceKind.IMAGE_RENDITION_ONLY,
+            OccurrenceKind.PRINTOUT_IMAGE,
         }:
             verdict, resource_id = check_resource_url(url, site_scope_path=self.scope)
         self.items.append(
@@ -133,10 +138,14 @@ class _PageParser(HTMLParser):
                 declared_type=a.get("type", ""),
             )
         elif tag == "img" and (a.get("data-fullres-src") or a.get("src")):
+            if "printout" in a.get("data-options", "").lower():
+                image_kind = OccurrenceKind.PRINTOUT_IMAGE
+            elif a.get("data-fullres-src"):
+                image_kind = OccurrenceKind.IMAGE
+            else:
+                image_kind = OccurrenceKind.IMAGE_RENDITION_ONLY
             self._add(
-                OccurrenceKind.IMAGE
-                if a.get("data-fullres-src")
-                else OccurrenceKind.IMAGE_RENDITION_ONLY,
+                image_kind,
                 a.get("data-fullres-src") or a["src"],
                 declared_type=a.get("data-fullres-src-type") or a.get("data-src-type", ""),
             )

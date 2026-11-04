@@ -222,3 +222,199 @@ test account: create page P with two files. Then move P between sections, copy
 P, rename P, replace one file, delete and restore P. Record the Graph page ID,
 resource IDs, `oneNoteWebUrl` and desktop GUID after each step. This settles
 the UNVERIFIED rows of §5 before Phase 2 relies on them.
+
+## 9. Historical file dates and OneNote commentary (amendment, 4 Nov 2026)
+
+This section extends ADR 0092 §6 (amendment of 2026-10-20) and replaces
+nothing in it. The rules that already hold stay in force:
+
+* A file is dated by the `creationTime` of the outline element that holds it
+  (`LegacySourceResource.source_added_at`, `ONENOTE_BLOCK_CREATED`).
+* Files are grouped per Europe/Tallinn day of addition.
+* Files without a time get «lisamise kuupäev teadmata».
+* A file older than its page reads «lisatud enne praeguse lehe loomist»
+  (`MOVED_CONTENT`).
+* A later read never corrects a recorded time.
+
+Prototype: `tools/onenote_ingress/chronology.py` and `context.py`.
+Tests: `tests/test_onenote_ingress_chronology.py`.
+
+### 9.1 What the source actually exposes
+
+Measured on the 20 Phase 1 sample files; the counts are in the Phase 1 report.
+
+**Desktop XML** (`GetPageContent`, piBasic):
+
+* Every file sits in its own `one:OE`, which carries `creationTime` and
+  `lastModifiedTime`.
+* Times are UTC (`Z`) in whole seconds; the milliseconds are always `.000`.
+* `one:InsertedFile` itself carries no time and no caption, only `pathCache`,
+  `pathSource` and `preferredName`.
+* Authors are opaque `authorResolutionID` / `lastModifiedByResolutionID`
+  values. A readable name appeared once, and only as a last modifier.
+
+**Graph output HTML:**
+
+* The documented attributes of `object` are `data`, `data-attachment`,
+  `data-id`, `id`, `style` and `type`. Neither `img` nor `p` has a time or
+  author attribute.
+* The only times are page-level.
+* The earlier Graph export is no longer on disk, so this is confirmed from
+  Microsoft's attribute tables, not by re-reading captured bodies.
+* **Graph cannot date an attachment.** A date must never be derived from the
+  page's own dates.
+
+**The block time dates the occurrence, not the bytes.**
+
+* 4 of the 16 files with a file-internal date have that date *after* their
+  block's `creationTime`, by 0.1 to 75 days.
+* All 4 of those blocks were modified after that internal date.
+* So a file can be replaced inside an existing block. The block's creation
+  dates when the occurrence appeared on the page; the bytes there now may be
+  newer.
+
+### 9.2 Date contract (per occurrence, and per version)
+
+These times are kept apart, each with its basis, reader, capture reference and
+precision. None is ever substituted for another (`OccurrenceDates`).
+
+| # | Time | Basis | Used for chronology? |
+| --- | --- | --- | --- |
+| 1 | block created | `ONENOTE_BLOCK_CREATED` (desktop, SECOND, UTC) | **yes — the only source addition date** |
+| 2 | block modified | `ONENOTE_BLOCK_MODIFIED` | no; sets `CONTENT_MAY_BE_NEWER` when more than 1 h after #1, and bounds version windows |
+| 3 | file-internal metadata (OOXML core, PDF info, MSG sent, ASiC signing time) | `FILE_INTERNAL_METADATA` + detail | **never**; plausibility only, sets `CONTENT_MAY_BE_NEWER` when later than #1 |
+| 4 | page created / modified | `PAGE_CREATED` / `PAGE_MODIFIED` | never; used only for the `PREDATES_PAGE` comparison |
+| 5 | first detected by Juristid | `FIRST_DETECTED`, an **interval** from the last complete scan without the file to the first scan with it | never a source date; shown as «Juristid märkas faili vahemikus …» |
+| 6 | bytes downloaded and verified | `BYTES_VERIFIED` | technical audit only |
+| 7 | imported / promoted into Documents | `PROMOTED` (= `DocumentVersion.created_at`, untouched) | technical audit only |
+
+The rules below are implemented in `chronology_date`, `version_dates`,
+`detection_window` and `apply_reference_time`.
+
+* **Unknown stays unknown.** Without a verified block time, `value = NULL` and
+  the UI shows «Lisamise kuupäev teadmata». There is no fallback to the page,
+  the file or the scan dates.
+* **Disagreement means unknown, not first-wins.** If verified observations of
+  the same occurrence report different `creationTime` values, all of them are
+  kept, the date is NULL and `SOURCE_TIME_CHANGED` sends it for review.
+  Today's importer fills an empty time once and never corrects it. Phase 2
+  keeps every observation in an append-only log instead.
+* **Moved or copied content** keeps its block time and is flagged
+  `PREDATES_PAGE`. It is never claimed to have been added to *this* page at
+  that time. That OneNote preserves the time across moves is modelled on ADR
+  0092's finding; the disposable-notebook experiment (§8) still has to confirm
+  it.
+* **Versions.** Version 1's source date is the occurrence's date. A later
+  binary is dated only by its change window: after the last capture that had
+  the old bytes and before the first capture with the new ones, narrowed by
+  the block's modification time. It is never dated by the block's creation.
+* **Across readers.** A Graph occurrence takes a desktop block time only
+  through a verified occurrence mapping **and** byte-identical content.
+  Otherwise it stays undated.
+* **Detection windows** narrow only on *complete* scans. An incomplete scan
+  proves nothing about absence.
+* **Tallinn day** = `astimezone(Europe/Tallinn).date()` of the UTC instant.
+  Both daylight-saving transitions are tested.
+
+### 9.3 Commentary and context contract
+
+**What is kept.** The whole page is preserved verbatim as an immutable page
+capture (desktop XML and/or Graph HTML), split into ordered blocks:
+
+* block kinds: text, file, image, table, blank, and **unfetched object** — an
+  empty `one:OE`, possibly a file the client has not downloaded yet;
+* per block: outline index, depth, parent, times and the opaque author
+  reference.
+
+Each file occurrence gets **context records per capture**, never summaries:
+
+| Basis | Structure | Attributed as the file's comment? |
+| --- | --- | --- |
+| `ATTACHED_NOTE` | text nested under the file's outline element | yes |
+| `CONTAINER_HEADING` | the file is nested under a text element | yes (as its heading) |
+| `ADJACENT_SINGLE_FILE` | text directly before or after a run that holds only this file and no unfetched object | **no**: a reviewable candidate, shown as "nearby text" |
+| `ADJACENT_SHARED` | text beside a run of several files or unknown objects | no: context for all of them, attributed to none |
+| `PAGE_NARRATIVE` | the rest of the page | reachable through the page capture |
+
+**Adjacency.** It is counted only within one outline. Separate outlines are
+positioned freely, so the reading order between them is ambiguous.
+
+**No captions.** OneNote has no caption field on files, so an explicit comment
+can exist only structurally.
+
+**Edits.** A changed comment with unchanged bytes is a **new context record**,
+not a new document version, and the earlier record stays.
+
+**Summaries.** A derived summary would be a separately labelled field and
+would never replace source text. None is proposed.
+
+### 9.4 Model proposal for Phase 2 (no migration in this assignment)
+
+* **`LegacySourceResource`** (the occurrence) keeps `source_added_at` and
+  `source_added_basis` as today. It gains:
+  * `source_added_reader`, `source_added_capture`, `source_added_precision`;
+  * `first_detected_not_before` and `first_detected_not_after`;
+  * a Graph occurrence reference.
+* **New, append-only `SourceResourceObservation`**: the occurrence, the
+  capture, block created/modified as read, sha256, present/absent, and scan
+  completeness. The chronology is computed from it and nothing is
+  overwritten.
+* **New `SourceResourceVersion`**: the occurrence, sha256, ordinal, change
+  window, bytes-verified time, and a `DocumentVersion` FK. Historical dates
+  live here, at occurrence and version level. The immutable `DocumentVersion`
+  audit fields stay as they are.
+* **New, append-only `SourceContextRecord`**: the occurrence, the capture,
+  basis, block ordinals, verbatim text and the text's sha256.
+* **Page captures** stay immutable (`page.source.xml` / Graph HTML), and
+  `LegacySourcePage.blocks` becomes capture-scoped.
+
+### 9.5 Display contract (proposal; `app/matters/timeline.py` stays the implementation)
+
+**Teema chronology** (`chronology_rows`):
+
+* **Permission first.** Files the reader cannot see neither date nor count
+  rows, and contribute no context.
+* First versions read **one row per Tallinn day of source addition**, keyed on
+  that day's earliest addition. Files added to one page on different days
+  therefore stand at their own places in the chronology.
+* Undated files share one row («… — lisamise kuupäev teadmata»), anchored where
+  they were stored, as today.
+* A replaced binary gets its own «Faili uuendati OneNote'is» row. It sits on
+  the Tallinn day of its change window when the window fits in one day;
+  otherwise it reads «uuendatud vahemikus d1–d2».
+* Qualifiers go on the subline: «lisatud enne praeguse lehe loomist» and «faili
+  sisu võib olla hiljem uuendatud».
+* The technical audit chronology (imports, scans, promotions) stays separate
+  and unchanged.
+* Repeat ingestion draws the same rows, keyed by
+  `<source page>/<occurrence>/<sha256>`.
+
+**Document page:**
+
+* «Lisatud OneNote'i: <day time>» with its basis, or «kuupäev teadmata».
+* «Juristid märkas: <window>» when a window exists.
+* «Imporditud: <time>» (technical).
+* An **Allika kontekst** panel, containing:
+  * the attributed comment(s), verbatim;
+  * «Kõrval olev tekst — ei pruugi käia selle faili kohta» for adjacent text;
+  * «Ava lehe salvestus (<capture date>)», which opens the full page
+    narrative;
+  * earlier context versions.
+
+**Search:**
+
+* Only attributed context is indexed with a document.
+* Nearby text and page text belong to the page, and the page's association
+  decides who may read them.
+* A restricted file's comment is never indexed for anyone who cannot see the
+  file.
+
+### 9.6 What remains unavailable
+
+* Any attachment time from Graph.
+* When the *current bytes* arrived, if a file was replaced inside a block.
+  From now on only a window between captures can be recorded.
+* Human-readable authors (only opaque IDs exist).
+* Explicit captions (OneNote has none; there is only nesting).
+* Dates of attachments the desktop client has not fetched (empty `one:OE`).
+* Edits made between two scans.

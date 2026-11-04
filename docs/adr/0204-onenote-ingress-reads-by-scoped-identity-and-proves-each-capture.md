@@ -51,7 +51,32 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
    opinions or Valdkond. The Excel-era guards of ADR 0203 stay as they are.
 6. **Detection.** One pipeline with PRIORITY / PERIODIC / FULL jobs and a
    reserved FULL share. Watermarks never pass unresolved work. A run is
-   COMPLETE only when every planned scope was fully read.
+   `RUN_COMPLETE` only when every planned scope was fully read.
+7. **Historical dates and commentary (amendment, 2026-11-04).** This extends
+   ADR 0092 §6 and replaces nothing in it. Full contract:
+   `docs/onenote-ingress-phase1.md` §9.
+   * **The source addition date.** Only a verified desktop
+     `one:OE/@creationTime` counts (`ONENOTE_BLOCK_CREATED`). It is kept per
+     occurrence with its reader, capture and precision (seconds, UTC).
+   * **Other times stay separate.** Block modification, file-internal metadata,
+     page dates and Juristid's own detection, verification and promotion times
+     are stored apart and never substituted for it.
+   * **Graph occurrences.** Graph output HTML carries no attachment time. A
+     Graph occurrence is dated only through a verified mapping to a
+     byte-identical desktop observation; otherwise it reads «Lisamise kuupäev
+     teadmata».
+   * **Conflicts and later times.** Conflicting observations make the date
+     unknown. A replaced binary is a new version, dated only by its change
+     window. A first detection is a window, never a source date.
+   * **Page text.** It is preserved verbatim per capture. Each file gets
+     append-only context records with a structural basis (`ATTACHED_NOTE`,
+     `CONTAINER_HEADING`) or a positional one (`ADJACENT_SINGLE_FILE`,
+     `ADJACENT_SHARED`, `PAGE_NARRATIVE`). Only structural text is shown or
+     indexed as the file's comment.
+   * **Where the dates live.** At occurrence and version level. Immutable
+     `DocumentVersion` audit fields are untouched.
+   * **Teema chronology.** ADR 0092's per-Tallinn-day rows stay, rows are
+     added for later versions, and permission applies before grouping.
 
 ## Alternatives considered
 
@@ -64,6 +89,12 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 * **SharePoint `driveItem` delta on the `.one` files.** It reports that a
   section file changed, not which page. It may be used later as a "scan sooner"
   hint, once its coverage is measured. Never as the source.
+* **Date files by the page's dates, the file's own metadata or the scan that
+  found them.** Rejected. Each is a different fact, and in the sample, file
+  metadata postdates the block for replaced binaries.
+* **Attribute the nearest paragraph to a file.** Rejected. 14 of 20 sampled
+  files sit in runs of several files, where nearby text belongs to no single
+  file.
 * **Reuse `tools/onenote_export` as is.** Its link reconciliation collapses
   real register links onto the notebook GUID. It lacks a response-size cap and
   capture binding, and it requests no `offline_access`. Its safe parts (host
@@ -78,6 +109,11 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
   never a silent zero-change night.
 * Some history is unobservable: content added and removed between two scans
   is missed.
+* For an initial Graph ingestion, attachment dates depend on a desktop
+  reference read of the same occurrences, with their file data fetched.
+  Without that read the dates stay unknown, by design.
+* Two things cannot be recovered: when replaced bytes arrived, and the authors'
+  names.
 
 ## Reversibility
 
