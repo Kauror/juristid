@@ -24,6 +24,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from app.legacy_import import excel_pilot
+from app.legacy_import.register_source import refuse_excel_era_write
 
 
 class Command(BaseCommand):
@@ -44,6 +45,10 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["mode"] == "apply":
+            # Lovable is the register's source (docs/adr/0203). `manifest` and `plan`
+            # stay open.
+            refuse_excel_era_write("excel_pilot_2026 apply")
         try:
             if options["mode"] == "manifest":
                 self._manifest(options)

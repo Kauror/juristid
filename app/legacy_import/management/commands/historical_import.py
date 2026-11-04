@@ -42,7 +42,11 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils import timezone
 
+from app.legacy_import.register_source import refuse_excel_era_write
+
 IMPORTER_VERSION = "historical-corpus/1.0.0"
+#: The phases that commit business rows (docs/adr/0203 refuses them).
+WRITING_PHASES = frozenset({"apply", "materialise"})
 
 
 class Command(BaseCommand):
@@ -90,6 +94,13 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         phase = options["phase"]
+        if phase in WRITING_PHASES:
+            # Lovable is the register's source (docs/adr/0203). `apply` creates
+            # OneNote-only Teemad and links pages to register Teemad by
+            # reference; `materialise` files Documents into the Teemad those
+            # links name. `dry-run` (rolled back), `inspect`, `plan`, `status`
+            # and `verify` stay open.
+            refuse_excel_era_write(f"historical_import {phase}")
         if phase == "status":
             return self._status()
         if phase == "verify":

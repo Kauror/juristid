@@ -41,6 +41,7 @@ from app.legacy_import.next_action_enrichment import (
     protected_rows,
     summary,
 )
+from app.legacy_import.register_source import refuse_excel_era_write
 
 _OUTCOME_LABELS: dict[str, str] = {
     "AUTO": "would become a next action",
@@ -106,6 +107,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["mode"] == "apply":
+            # Lovable is the register's source (docs/adr/0203). `plan` stays open.
+            refuse_excel_era_write("register_next_action_enrichment apply")
         try:
             plan = build_plan(snapshot_sha256=str(options["expect_snapshot_sha256"]))
         except (UnknownSnapshot, MixedSnapshot) as error:

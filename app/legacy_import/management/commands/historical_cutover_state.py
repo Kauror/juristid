@@ -27,6 +27,7 @@ from app.legacy_import.historical_cutover import (
     build_cutover_plan,
     summary,
 )
+from app.legacy_import.register_source import refuse_excel_era_write
 
 _LABELS: dict[str, str] = {
     Classification.WOULD_CLOSE_HISTORICAL: "would become historical",
@@ -70,6 +71,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["apply"]:
+            # Lovable is the register's source (docs/adr/0203). `--dry-run` stays open.
+            refuse_excel_era_write("historical_cutover_state --apply")
         year = options["cutover_year"]
         plan = build_cutover_plan(cutover_year=year)
         self._report(summary(plan))
