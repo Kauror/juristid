@@ -36,6 +36,10 @@ from enum import StrEnum
 NS = "{http://schemas.microsoft.com/office/onenote/2013/onenote}"
 
 
+#: ``Block.outline`` for an object placed directly on the page canvas.
+FLOATING = -1
+
+
 class BlockKind(StrEnum):
     TEXT = "TEXT"
     FILE = "FILE"
@@ -95,8 +99,12 @@ def _kind(oe: ET.Element) -> tuple[BlockKind, str]:
         return BlockKind.IMAGE, ""
     if oe.find(f"{NS}Table") is not None:
         return BlockKind.TABLE, ""
-    own = [child for child in oe if child.tag != f"{NS}OEChildren"]
-    return (BlockKind.UNFETCHED_OBJECT, "") if not own else (BlockKind.BLANK, "")
+    own = [child.tag for child in oe if child.tag != f"{NS}OEChildren"]
+    # D1 pilot: a file not yet fetched leaves an empty one:OE — or, in a bulleted
+    # list, an OE holding only its one:List marker. Both may hide a file.
+    if not own or own == [f"{NS}List"]:
+        return BlockKind.UNFETCHED_OBJECT, ""
+    return BlockKind.BLANK, ""
 
 
 def blocks_from_desktop_xml(page_xml: str) -> list[Block]:
@@ -135,6 +143,24 @@ def blocks_from_desktop_xml(page_xml: str) -> list[Block]:
     for index, outline in enumerate(root.findall(f"{NS}Outline")):
         for children in outline.findall(f"{NS}OEChildren"):
             walk(children, index, 1, None)
+    # Floating objects sit on the page canvas outside any outline. They have no
+    # outline element, hence no creationTime (ADR 0092 §6) and no reading-order
+    # position; the D1 pilot found one that was invisible until the page was
+    # opened. The element's own lastModifiedTime is kept; it is not an addition date.
+    for element in root:
+        if element.tag in {f"{NS}InsertedFile", f"{NS}Image"}:
+            blocks.append(
+                Block(
+                    ordinal=len(blocks),
+                    kind=BlockKind.FILE if element.tag == f"{NS}InsertedFile" else BlockKind.IMAGE,
+                    outline=FLOATING,
+                    depth=0,
+                    parent=None,
+                    object_id=element.get("objectID", ""),
+                    created="",
+                    modified=element.get("lastModifiedTime", ""),
+                )
+            )
     return blocks
 
 
@@ -146,6 +172,7 @@ def context_for(
     if target.kind is not BlockKind.FILE:
         raise ValueError("not a file block")
     records: list[ContextRecord] = []
+    floating = target.outline == FLOATING
 
     def record(basis: ContextBasis, found: Sequence[Block]) -> None:
         if found:
@@ -159,6 +186,10 @@ def context_for(
                 )
             )
 
+    if floating:
+        # No outline, no position: only the page narrative relates to it.
+        record(ContextBasis.PAGE_NARRATIVE, [b for b in blocks if b.kind is BlockKind.TEXT])
+        return records
     record(
         ContextBasis.ATTACHED_NOTE,
         [b for b in blocks if b.parent == target.ordinal and b.kind is BlockKind.TEXT],

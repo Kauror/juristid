@@ -439,3 +439,34 @@ def test_window_rows_fit_a_single_day_when_they_can():
     )
     assert rows[0].group == "updated:2026-01-12"
     assert timedelta(0) < rows[0].anchor - w.not_before  # type: ignore[operator]
+
+
+# -- D1 pilot findings ---------------------------------------------------------------------
+
+
+def test_a_list_item_holding_only_its_bullet_may_hide_an_unfetched_file():
+    hidden = (
+        '<one:OE objectID="L1" creationTime="2024-01-01T10:00:00.000Z">'
+        '<one:List><one:Bullet bullet="2"/></one:List></one:OE>'
+    )
+    blocks = blocks_from_desktop_xml(
+        page([oe_text("T1", "Lisa:"), oe_file("F1"), hidden, oe_text("T2", "x")])
+    )
+    assert blocks[ordinal_of(blocks, "L1")].kind is BlockKind.UNFETCHED_OBJECT
+    records = context_for(blocks, ordinal_of(blocks, "F1"), capture_id="c1")
+    assert ContextBasis.ADJACENT_SHARED in {r.basis for r in records}  # not "single" any more
+
+
+def test_a_floating_file_has_no_date_and_no_position():
+    floating = (
+        '<one:InsertedFile objectID="FL" lastModifiedTime="2026-11-04T12:03:39.000Z" '
+        'pathCache="x" preferredName="a.pdf"/>'
+    )
+    xml = page([oe_text("T1", "Tekst")]).replace("</one:Page>", floating + "</one:Page>")
+    blocks = blocks_from_desktop_xml(xml)
+    block = blocks[ordinal_of(blocks, "FL")]
+    assert block.kind is BlockKind.FILE and block.created == "" and block.outline == -1
+    records = context_for(blocks, block.ordinal, capture_id="c1")
+    assert [r.basis for r in records] == [ContextBasis.PAGE_NARRATIVE]
+    result = chronology_date(OccurrenceDates())  # no creationTime -> no addition date
+    assert result.value is None and result.label == UNKNOWN_ADDITION

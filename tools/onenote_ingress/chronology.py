@@ -17,6 +17,12 @@ What Phase 1 evidence adds (Phase 1 report, "Historical file dates"):
 * Graph output HTML carries no attachment-level time (documented attribute
   tables for `object`/`img`/`p`). A Graph-only occurrence has no source
   addition date unless a *verified* mapping ties it to a desktop observation.
+* The page XML's root ``lastModifiedTime`` is **not** a page modification
+  time: in the D1 pilot it became the moment of navigation on all 10 pages
+  while the hierarchy's page time and every block time stayed unchanged.
+  ``PAGE_MODIFIED`` is read from the hierarchy (or Graph metadata) only.
+* A floating object (on the page canvas, outside any outline) has no
+  ``creationTime`` and stays undated.
 * A scanner that first sees a file has seen it, nothing more. The most it may
   record is the interval between the last complete scan without it and the
   first complete scan with it — a detection window, never a source date.

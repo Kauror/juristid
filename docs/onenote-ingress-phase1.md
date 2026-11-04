@@ -409,6 +409,20 @@ would never replace source text. None is proposed.
 * A restricted file's comment is never indexed for anyone who cannot see the
   file.
 
+### 9.5a Lessons from the D1 pilot (desktop `NavigateTo`, 10 pages)
+
+* The root `lastModifiedTime` in page XML becomes the moment of navigation.
+  Page times come from the hierarchy only.
+* A not-yet-fetched file can hide in a bullet-list block (`one:OE` holding only
+  `one:List`) or float on the page canvas. Before fetching, attachment counts
+  and attribution rates are lower bounds.
+* The desktop hierarchy is a local replica that can lag the server by hours.
+  A desktop inventory records when the replica last synced, and two identical
+  scans prove only local stability.
+* Navigating can move a section file's `lastModifiedTime`; read or view state
+  is the suspected cause. Whether that is written back to SharePoint is
+  unverified, so check the version history before wider use.
+
 ### 9.6 What remains unavailable
 
 * Any attachment time from Graph.
