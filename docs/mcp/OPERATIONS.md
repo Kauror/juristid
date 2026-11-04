@@ -77,7 +77,7 @@ holds a colleague's authenticator can connect as that colleague (ADR 0185,
 | --- | --- | --- | --- | --- |
 | `web` (existing) | `juristid-main-web` | the release image | `juristid.env` + `MCP_ENABLED`, `JURISTID_PUBLIC_ORIGIN`, `MCP_RESOURCE_URLS` | serves `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and the enrolment pages through the Cloudflare tunnel |
 | `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only; database role `juristid_mcp` (SELECT only) | `db` on `internal`; listens on `mcp:8001` on `mcp_edge`, no host port |
-| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4…` | `juristid-mcp-tunnel.env` only | only `mcp_edge`: `http://mcp:8001/mcp`; `api.openai.com:443` outbound; the public origin's OAuth metadata — never `db`, `web` or `tunnel` |
+| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.19@sha256:dcae53be…` | `juristid-mcp-tunnel.env` only | only `mcp_edge`: `http://mcp:8001/mcp`; `api.openai.com:443` outbound; the public origin's OAuth metadata — never `db`, `web` or `tunnel` |
 
 Both new services are behind the `mcp` profile. A release's `up -d --no-build`,
 a restore's `up -d tunnel` and the backup scripts neither start, replace nor
@@ -552,6 +552,19 @@ afterwards does not wake it; only a restart of `mcp-tunnel` does. This is what
 happened on 2026-10-25: a `up -d --no-deps mcp` left the alias on `mcp_write`
 only, the tunnel client got NXDOMAIN for `mcp`, and the connector failed until
 the alias was attached and the client restarted.
+
+**After a reboot it waits instead (since 2026-11-04).** dockerd, not Compose,
+restarts `unless-stopped` containers after a host or daemon restart, so
+`depends_on: mcp: service_healthy` does not hold then. Three reboots
+(2026-10-25, 2026-11-04 twice) each left the client started before `mcp` and
+needed a manual restart. The `mcp-tunnel` entrypoint in `compose.yml` now polls
+`http://mcp:8001/healthz` every 5 s and only then `exec`s
+`/usr/bin/tunnel-client run`, and the healthcheck's 300 s start period covers
+the wait (`starting`, not `unhealthy`). Upstream's `MCP_STARTUP_WAIT_TIMEOUT`
+was not enough on its own: it retries a refused connection but not a name that
+does not resolve yet. The wait cannot fix a *missing alias*, because `/healthz`
+is asked by the same name. A client stuck at `starting` after `mcp` is healthy
+is therefore the alias check above.
 
 ## Diagnosing a failed search or a refused connection
 

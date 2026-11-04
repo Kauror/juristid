@@ -22,6 +22,13 @@ index digest, so the same line serves amd64 production and an arm64 laptop.
 | `postgres:18` | `sha256:06cad38a…dcd941` | PostgreSQL 18.6 (`PG_VERSION=18.6-1.pgdg13+2`), Debian 13, built 2026-08-13 | the index production was running on 2026-10-22 (`docker image inspect` RepoDigests, read-only); fetched by digest from `registry-1.docker.io/v2/library/postgres`, body hashed to the digest; its amd64 config read. The `18` tag has since moved to a rebuild of the same 18.6 (`sha256:edb0c08d…`); production's is kept so a deployment pulls nothing. |
 | `cloudflare/cloudflared:2026.8.2` | `sha256:0aa26e28…89eb38` | cloudflared 2026.8.2, distroless, built 2026-08-14 | production's RepoDigest on 2026-10-22 and what the tag resolves to on Docker Hub today; the amd64 image's `CI_GIT_COMMIT=733bfb93…` is the commit GitHub's `2026.8.2` release tag names. |
 
+**Moved 2026-11-04** (the procedure above, applied once): `postgres:18` →
+`sha256:3a426452…144b81`, the 2026-10-28 Debian rebuild of the same 18.6
+(`PG_VERSION=18.6-1.pgdg13+2`); `cloudflare/cloudflared` → `2026.10.7@sha256:4955524a…b9c5ba`
+(built 2026-10-30, `CI_GIT_COMMIT=872b241f…` = the `2026.10.7` tag); and the
+MCP tunnel client (ADR 0185) → `ghcr.io/openai/tunnel-client:v0.0.19@sha256:dcae53be…f43151`.
+The table keeps the values this decision was taken on.
+
 The same name has the same digest in every file, so CI, the rehearsals and
 production run one PostgreSQL. `aquasec/trivy` and both Dockerfile bases were
 already pinned this way and are unchanged.

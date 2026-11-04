@@ -986,10 +986,10 @@ MCP_WRITER_ENV_EXAMPLE = DEPLOY / "juristid-mcp-writer.env.example"
 MCP_TUNNEL_ENV_EXAMPLE = DEPLOY / "juristid-mcp-tunnel.env.example"
 
 #: The tunnel client, by tag and by digest: the multi-platform index
-#: ghcr.io/openai/tunnel-client:v0.0.17 resolved to on 2026-10-22.
+#: ghcr.io/openai/tunnel-client:v0.0.19 resolved to on 2026-11-04.
 TUNNEL_CLIENT_IMAGE = (
-    "ghcr.io/openai/tunnel-client:v0.0.17"
-    "@sha256:67b473b4bc23bc984e4a381752e9a2fa75649746edc06e46b27025611835c5c0"
+    "ghcr.io/openai/tunnel-client:v0.0.19"
+    "@sha256:dcae53be336c062ffdc3f250a287b2a07724c344b8c370a50f54ad033af43151"
 )
 
 
@@ -1109,6 +1109,40 @@ def test_the_tunnel_client_reaches_the_server_on_the_edge_network_only(
     assert probe[:2] == ["CMD", "wget"]
     assert probe[-1] == "http://127.0.0.1:8080/readyz"
     assert environment["HEALTH_LISTEN_ADDR"] == "127.0.0.1:8080", "the probe asks this port"
+
+
+def test_the_tunnel_client_waits_for_the_server_itself_not_only_through_compose(
+    compose: dict[str, Any],
+) -> None:
+    """After a reboot dockerd, not Compose, starts the containers.
+
+    `depends_on` orders `docker compose up` only. On 2026-10-25 and twice on
+    2026-11-04 the host came back with the client started before `mcp`
+    answered; it logged "startup catalog failed; control-plane polling
+    disabled" (it retries a refused connection only with
+    MCP_STARTUP_WAIT_TIMEOUT, and a missing name never) and stayed unready
+    until someone ran `docker restart`. The entrypoint waits for `mcp`'s
+    `/healthz` on the dialled origin and then execs the image's own command.
+    """
+    from urllib.parse import urlsplit
+
+    client = compose["services"][MCP_TUNNEL]
+    entrypoint = client["entrypoint"]
+    assert entrypoint[:2] == ["/bin/sh", "-c"]
+    [script] = entrypoint[2:]
+    origin = urlsplit(client["environment"]["MCP_SERVER_URL"])
+    health = f"{origin.scheme}://{origin.netloc}/healthz"
+    wait, _, start = script.partition("exec ")
+    assert f"until wget -q -T 5 -O /dev/null {health}; do sleep 5; done" in wait
+    # The image's entrypoint, unchanged, and nothing after it: PID 1 is the
+    # client, so `docker stop` signals it exactly as before.
+    assert start.strip() == "/usr/bin/tunnel-client run"
+    assert "trap 'exit 143' TERM INT" in wait
+    assert "$" not in script, "Compose would interpolate it"
+    # Waiting is not failing: the start period covers the server's own.
+    check = client["healthcheck"]
+    assert check["start_period"] == compose["services"][MCP]["healthcheck"]["start_period"]
+    assert check["start_interval"] == "5s"
 
 
 def test_the_server_answers_to_its_dialled_name_on_the_edge_network(
