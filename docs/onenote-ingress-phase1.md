@@ -144,10 +144,15 @@ Association(source_page | occurrence → Matter, decided_by, reason)   reviewed
   silently; it raises a review item. A source reader that can read the whole
   notebook gives no Juristid user any extra access.
 
-Unknown and therefore not assumed: whether Graph page IDs survive section
-moves, copies or notebook moves; whether resource IDs survive a page copy or
-a file replace. A disposable-notebook experiment (§8) would settle the
-first two; until then the conservative rules above apply.
+Settled by the D2 experiment (§8) for the desktop reader:
+
+* The page GUID survives moves, archiving, deletion and restore, and section
+  renames. A copy gets a new GUID.
+* Block object IDs are re-issued by a move between sections. "Same ID" for a
+  file therefore means "same ID, or the same block (creation time and
+  filename, uniquely) within the same page GUID".
+
+Moves between notebooks were not tested and stay unassumed.
 
 ## 6. Evidence-only import boundary (for Phase 2, not built)
 
@@ -216,13 +221,89 @@ at about 1 h for edits and about 24 h for the full cycle, with a few hundred
 requests per day. Graph throttling limits are documented per tenant, so these
 figures need measuring before adoption.
 
-## 8. Disposable-notebook experiment (proposed, not run)
+## 8. Disposable-notebook experiment (D2, run 2026-11-04)
 
-In a new notebook on a test site, never the department notebook, with a
-test account: create page P with two files. Then move P between sections, copy
-P, rename P, replace one file, delete and restore P. Record the Graph page ID,
-resource IDs, `oneNoteWebUrl` and desktop GUID after each step. This settles
-the UNVERIFIED rows of §5 before Phase 2 relies on them.
+The owner approved D2 on 2026-11-04. The test used a new notebook in the
+owner's own OneDrive for Business, `Juristid-D2-katsemarkmik-20261104`, never
+the department notebook, with synthetic pages and `.txt` files only.
+
+* **Setup.** Three sections (`Aktiivne`, `Teine`, and `ARHIIV 2025` inside an
+  `ARHIIV` section group) and four pages with five files.
+* **How each step was done.**
+  * Page moves, the copy and the restore used OneNote's own **Move or Copy**
+    dialog, as people do.
+  * The attachment edit was done by opening the attachment from the page,
+    editing it in Notepad and saving.
+  * The page rename, the delete (to the recycle bin) and the section rename
+    were done through COM.
+* **The write guard.** Every COM write went through a guard that refuses any
+  object outside the test notebook. It refused one malformed attempt during
+  the run.
+
+| Operation | Page GUID (link `page-id`) | Section in link | Block object IDs | Block creation / modified times | Hierarchy page times | Old desktop link opens |
+| --- | --- | --- | --- | --- | --- | --- |
+| Rename page (COM) | kept | kept | kept | kept for file blocks; text blocks' modified time = write time (a COM full-page write artefact) | **not updated** | the renamed page |
+| Edit attachment, save (UI) | kept | kept | kept | file block: creation kept, modified = edit time, **new bytes** | modified = edit time | — |
+| Replace a file through COM in the same block | — | — | — | ignored: bytes unchanged | — | — |
+| Move to another section (UI) | **kept** | new `section-id`, new path | **all re-issued** | kept | kept | the page, in its new section |
+| Move into an `ARHIIV` section (UI) | **kept** | new | **re-issued** | kept | kept | the page, in ARHIIV |
+| Copy page (UI) | **new** | target section | new | **copied from the original** | **copied**, including the page's creation date | the original, not the copy |
+| Delete (to recycle bin) | kept | `OneNote_DeletedPages` | re-issued | kept | kept | — |
+| Restore from the recycle bin (UI) | kept | original section | re-issued | kept | kept | the restored page |
+| Rename section (COM) | kept | `section-id` kept, path changes | kept | kept | kept | the page (old path ignored) |
+
+What this settles for Phase 2:
+
+1. **The page GUID is the durable identity.** It survived rename, move,
+   archiving, deletion and restore, and a section rename. Every old desktop
+   link (`onenote:` + `page-id`) opened the same GUID wherever the page now
+   is.
+2. **Block object IDs are not durable.** A move between sections re-issues
+   all of them, so a file occurrence cannot be keyed by object ID.
+   * Within one page GUID, an occurrence is carried across a move by its
+     block creation time and filename, when exactly one occurrence matches
+     (`identity.classify_resources`: `SAME_BLOCK_NEW_ID`, or
+     `…_CONTENT_CHANGED` when the bytes changed too).
+   * An ambiguous match, or one with no block time, never carries; the
+     conservative rules apply.
+3. **A copy is a new identity that carries old dates.** Its blocks keep the
+   original creation times, and even the page's creation date is copied.
+   * `PREDATES_PAGE` does not detect a copy.
+   * Equal (block creation time, SHA-256) on two page GUIDs is a
+     copied-content signal for the reviewer. It never merges identities.
+   * The copied file's date is when the material first entered OneNote, which
+     is the honest addition date. Each copy's association to a Matter is
+     decided per occurrence (D4).
+4. **A replaced file is a new version in the same block.** Editing an
+   attachment keeps the block's ID and creation time and moves its modified
+   time. This confirms `CONTENT_MAY_BE_NEWER` and version dating by change
+   window.
+5. **Page `lastModifiedTime` in the hierarchy is a hint, not a change
+   signal.** UI edits moved it; a COM title write did not. Change detection
+   compares captured blocks, and the FULL rotation (§7) catches what a hint
+   misses.
+6. **A deleted page keeps its GUID in the recycle bin.** `IN_RECYCLE_BIN` is
+   correct, and a restore returns the same identity.
+
+**Not verified: web links and server-side sync.** The test could not open the
+stored-style web links (`Doc.aspx?sourcedoc=…&wd=target(…)`) in a browser,
+nor read the SharePoint library's *Modified* times:
+
+* the Chrome extension was not connected;
+* the in-app browser was not signed in to SharePoint;
+* Edge was granted view-only, and driving it by script would have bypassed
+  that grant.
+
+This needs one owner sign-in in the in-app browser, then a short follow-up:
+open the four baseline web links, and read the test folder's *Modified*
+column, which is the freshness reference of ADR 0204 §8.2.
+
+Evidence (private): `C:\CC\_onenote_p1_data\d2\` has the per-step
+hierarchy, page XML, file hashes and links (`s00`–`s09`) and
+`links-desktop-old.json`. The scripts are `d2_lib.ps1`, `d2_setup.ps1`,
+`d2_step_com.ps1`, `d2_links.ps1` and `d2_compare.py` in
+`C:\CC\_onenote_p1_tools\`. The test notebook stays in the owner's OneDrive
+until the owner deletes it.
 
 ## 9. Historical file dates and OneNote commentary (amendment, 4 Nov 2026)
 

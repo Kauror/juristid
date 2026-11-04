@@ -64,6 +64,13 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
    observations. Only an exact scoped ID, or a recorded reviewer decision,
    resolves a topic. Title, filename or SHA-256 equality never merges
    identities.
+   * The D2 experiment (2026-11-04) showed the desktop page GUID survives
+     rename, moves between sections, archiving, deletion and restore, and
+     section renames. A copy gets a new GUID but keeps the original block
+     times.
+   * Block object IDs are re-issued by a move. A file occurrence is
+     therefore carried across a move by its block creation time and filename
+     within the same page GUID, and only when that match is unique.
 3. **Capture.** A page capture is kept only if it is bound to the requested
    identity:
    * the page ID and title are read before and after navigation, and they are
@@ -232,8 +239,11 @@ Phase 1 established (details in `docs/onenote-ingress-phase1.md`):
 * Two things cannot be recovered: when replaced bytes arrived, and the authors'
   names.
 * How page GUIDs, object IDs and dates behave under moves, renames, copies,
-  replacement and deletion is measured on a disposable notebook (D2, design
-  §8). Results are in the Phase 1 report.
+  replacement and deletion was measured on a disposable notebook (D2, design
+  §8).
+  * Web-link resolution and server-side sync were not yet observed.
+  * The hierarchy's page `lastModifiedTime` is only a hint, so detection
+    compares captured blocks.
 
 ## Reversibility
 

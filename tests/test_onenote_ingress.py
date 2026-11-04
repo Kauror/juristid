@@ -640,6 +640,51 @@ def test_replacement_rename_and_separate_same_named_file():
     }
 
 
+def test_a_section_move_reissues_block_ids_but_the_occurrence_carries_over():
+    """D2 (disposable notebook, 2026-11-04): moving a page to another section kept the
+    page GUID and every block creation time, and re-issued every block object id."""
+    t1, t2 = "2026-01-05T09:00:00.000Z", "2026-01-06T10:00:00.000Z"
+    before = [
+        OccurrenceRecord("{AAAA}{39}{B0}", "otsus.pdf", "aa", 0, block_created=t1),
+        OccurrenceRecord("{AAAA}{48}{B0}", "lisa.docx", "bb", 1, block_created=t2),
+    ]
+    after = [  # same page after the move: new ids, same block times
+        OccurrenceRecord("{BBBB}{21}{B0}", "otsus.pdf", "aa", 0, block_created=t1),
+        OccurrenceRecord("{BBBB}{25}{B0}", "lisa.docx", "b2", 1, block_created=t2),  # edited too
+    ]
+    assert classify_resources(before, after) == {
+        "{BBBB}{21}{B0}": ResourceChange.SAME_BLOCK_NEW_ID,
+        "{BBBB}{25}{B0}": ResourceChange.SAME_BLOCK_NEW_ID_CONTENT_CHANGED,
+    }  # and nothing is reported absent
+
+
+def test_block_continuity_never_matches_an_ambiguous_or_unknown_block():
+    t = "2026-01-05T09:00:00.000Z"
+    twins = [
+        OccurrenceRecord("o1", "lisa.pdf", "aa", 0, block_created=t),
+        OccurrenceRecord("o2", "lisa.pdf", "bb", 1, block_created=t),
+    ]
+    moved = [
+        OccurrenceRecord("n1", "lisa.pdf", "aa", 0, block_created=t),
+        OccurrenceRecord("n2", "lisa.pdf", "bb", 1, block_created=t),
+    ]
+    out = classify_resources(twins, moved)
+    assert ResourceChange.SAME_BLOCK_NEW_ID not in out.values()
+    assert out["absent:o1"] is ResourceChange.OCCURRENCE_ABSENT
+    unknown = classify_resources(
+        [OccurrenceRecord("o1", "x.pdf", "aa", 0)], [OccurrenceRecord("n1", "x.pdf", "zz", 0)]
+    )
+    assert unknown == {
+        "n1": ResourceChange.POSSIBLE_REPLACEMENT_REVIEW,
+        "absent:o1": ResourceChange.OCCURRENCE_ABSENT,
+    }
+    renamed = classify_resources(
+        [OccurrenceRecord("o1", "x.pdf", "aa", 0, block_created=t)],
+        [OccurrenceRecord("n1", "y.pdf", "aa", 0, block_created=t)],
+    )
+    assert renamed["n1"] is ResourceChange.SAME_BYTES_NEW_OCCURRENCE  # name differs: no carry
+
+
 # -- identity: move versus copy (modelled provider behaviour) ---------------------------------
 
 

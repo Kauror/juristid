@@ -139,6 +139,10 @@ class OccurrenceRecord:
     filename: str
     sha256: str
     ordinal: int
+    # Desktop reader: the file block's one:OE/@creationTime, verbatim. Moving a page to
+    # another section re-issues every object ID but keeps this time (D2 experiment,
+    # 2026-11-04), so it carries an occurrence across the move. "" = unknown.
+    block_created: str = ""
 
 
 class ResourceChange(StrEnum):
@@ -153,6 +157,10 @@ class ResourceChange(StrEnum):
     )
     OCCURRENCE_ABSENT = "OCCURRENCE_ABSENT"  # keep prior capture; never delete
     DUPLICATE_RESOURCE_ID = "DUPLICATE_RESOURCE_ID"  # one id twice in one capture: review
+    # Same page, new object id, but exactly one vanished occurrence with the same block
+    # creation time and filename: the block was re-issued by a section move (D2).
+    SAME_BLOCK_NEW_ID = "SAME_BLOCK_NEW_ID"
+    SAME_BLOCK_NEW_ID_CONTENT_CHANGED = "SAME_BLOCK_NEW_ID_CONTENT_CHANGED"  # and new bytes
 
 
 def classify_resources(
@@ -160,9 +168,17 @@ def classify_resources(
 ) -> dict[str, ResourceChange]:
     """Keyed by resource id (``"absent:<id>"`` for ones no longer present).
 
-    A resource id that occurs twice in one capture is reported, not collapsed:
-    two occurrences must never silently become one. An empty SHA-256 means
-    "bytes not read" and never matches known bytes.
+    Both captures must be of the same source page. A resource id that occurs
+    twice in one capture is reported, not collapsed: two occurrences must never
+    silently become one. An empty SHA-256 means "bytes not read" and never
+    matches known bytes.
+
+    Block continuity: a new id whose (block creation time, filename) matches
+    exactly one vanished previous occurrence — and no other current one — is
+    that occurrence under a re-issued id, not a new file plus an absent one.
+    An ambiguous or unknown block time never matches. A copied page is a
+    different source page, so its blocks (which keep the original times) are
+    never matched by this rule.
     """
     before_list, after_list = list(previous), list(current)
     out: dict[str, ResourceChange] = {}
@@ -175,9 +191,27 @@ def classify_resources(
     after = {item.resource_id: item for item in after_list}
     known_bytes = {item.sha256 for item in before.values() if item.sha256}
     known_names = {item.filename for item in before.values() if item.filename}
+
+    def block(item: OccurrenceRecord) -> tuple[str, str] | None:
+        return (item.block_created, item.filename) if item.block_created and item.filename else None
+
+    vanished = Counter(block(i) for rid, i in before.items() if rid not in after and block(i))
+    arrived = Counter(block(i) for rid, i in after.items() if rid not in before and block(i))
+    by_block = {block(i): i for rid, i in before.items() if rid not in after and block(i)}
+    carried: set[str] = set()
     for rid, item in after.items():
         old = before.get(rid)
-        if old is not None:
+        key = block(item)
+        if old is None and key and vanished[key] == 1 and arrived[key] == 1:
+            prior = by_block[key]
+            carried.add(prior.resource_id)
+            same = bool(prior.sha256) and prior.sha256 == item.sha256
+            out[rid] = (
+                ResourceChange.SAME_BLOCK_NEW_ID
+                if same
+                else ResourceChange.SAME_BLOCK_NEW_ID_CONTENT_CHANGED
+            )
+        elif old is not None:
             same = bool(old.sha256) and old.sha256 == item.sha256
             out[rid] = ResourceChange.UNCHANGED if same else ResourceChange.CONTENT_CHANGED_SAME_ID
         elif item.sha256 and item.sha256 in known_bytes:
@@ -186,7 +220,7 @@ def classify_resources(
             out[rid] = ResourceChange.POSSIBLE_REPLACEMENT_REVIEW
         else:
             out[rid] = ResourceChange.NEW_OCCURRENCE
-    for rid in before.keys() - after.keys():
+    for rid in before.keys() - after.keys() - carried:
         out[f"absent:{rid}"] = ResourceChange.OCCURRENCE_ABSENT
     return out
 
