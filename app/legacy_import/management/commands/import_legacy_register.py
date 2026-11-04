@@ -34,6 +34,7 @@ from app.legacy_import.limits import SourceLimitExceeded
 from app.legacy_import.plan_reports import build_summary, write_plan_reports
 from app.legacy_import.planner import build_plan
 from app.legacy_import.register_approval import register_plan_digest
+from app.legacy_import.register_source import refuse_excel_era_write
 from app.legacy_import.resolution import MappingFileError, MappingTables
 
 
@@ -99,6 +100,9 @@ class Command(BaseCommand):
             )
             return
 
+        # Lovable is the register's source (docs/adr/0203): refused before the
+        # plan is built, the reports written or the Matter table held.
+        refuse_excel_era_write("import_legacy_register --apply")
         with transaction.atomic():
             # The plan is built here, inside the transaction that writes, with
             # the Matter table held against other writers: the database it

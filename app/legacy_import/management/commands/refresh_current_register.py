@@ -99,6 +99,7 @@ from app.legacy_import.register_refresh import (
     require_catalogued,
     summary,
 )
+from app.legacy_import.register_source import refuse_excel_era_write
 
 #: The pilot window for campaign candidates. Deliberately a constant rather than
 #: an option: "which months of outreach are we placing" is a reviewed decision
@@ -275,6 +276,9 @@ class Command(BaseCommand):
     # -- the run -----------------------------------------------------------
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["mode"] == "apply":
+            # Lovable is the register's source (docs/adr/0203). `plan` stays open.
+            refuse_excel_era_write("refresh_current_register apply")
         digest = self._workbook_digest(options)
         campaigns, tally = self._campaigns(options)
         links = self._links(options)

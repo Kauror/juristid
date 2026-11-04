@@ -33,6 +33,7 @@ from app.legacy_import.final_cutover import (
     build_cutover_plan,
     summary,
 )
+from app.legacy_import.register_source import refuse_excel_era_write
 
 _ACTION_LABELS: dict[str, str] = {
     "ACTIVATE": "would become current",
@@ -80,6 +81,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["apply"]:
+            # Lovable is the register's source (docs/adr/0203). `--dry-run` stays open.
+            refuse_excel_era_write("final_register_cutover --apply")
         digest = str(options["snapshot"]).strip().lower()
         plan = build_cutover_plan(snapshot_sha256=digest)
 

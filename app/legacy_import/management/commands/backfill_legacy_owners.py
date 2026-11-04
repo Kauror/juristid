@@ -37,6 +37,7 @@ from app.legacy_import.owner_backfill import (
     build_backfill_plan,
     summary,
 )
+from app.legacy_import.register_source import refuse_excel_era_write
 from app.legacy_import.resolution import (
     METHOD_EXACT,
     METHOD_GIVEN_NAME,
@@ -114,6 +115,9 @@ class Command(BaseCommand):
             self.stdout.write("Dry run: nothing was written to the database.")
             return
 
+        # Lovable is the register's source (docs/adr/0203): refused before the
+        # Matter table is held or the unresolved-values file written.
+        refuse_excel_era_write("backfill_legacy_owners --apply")
         with transaction.atomic():
             # The plan this run writes is built here, with the Matter table
             # held, and must be the plan that was reviewed.

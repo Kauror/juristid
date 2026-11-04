@@ -32,6 +32,7 @@ from app.legacy_import.current_register import (
     build_promotion_plan,
     summary,
 )
+from app.legacy_import.register_source import refuse_excel_era_write
 
 _CLASSIFICATION_LABELS: dict[str, str] = {
     "PROMOTE": "would promote",
@@ -87,6 +88,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
+        if options["apply"]:
+            # Lovable is the register's source (docs/adr/0203). `--dry-run` stays open.
+            refuse_excel_era_write("promote_current_register --apply")
         year = options["year"]
         try:
             plan = build_promotion_plan(year=year)
