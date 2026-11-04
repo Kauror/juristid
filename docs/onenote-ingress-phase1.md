@@ -28,11 +28,12 @@ CI, a pull request or the live evidence store.
 
 * `sourcedoc` names the **notebook** and `wdsectionfileid` the section
   **file**; neither is ever a page identity. The old proof-of-concept's
-  `tools/onenote_export/reconcile.page_id_from_link` takes the first braced
+  `tools/onenote_export/reconcile.page_id_from_link` took the first braced
   GUID (the notebook's) or the `id=` query (a notebook *path* in
   `OneNote.aspx` links) as the page ID. Against real register links it would
-  file every topic under one identity. **It must not be used for register
-  links.**
+  have filed every topic under one identity. **It is retired (owner decision
+  D5, 2026-11-04):** the module is removed, the CLI command refuses, and
+  regression tests prove notebook IDs are never page IDs.
 * GUIDs compare case-insensitively as GUIDs; everything else keeps its case.
   The raw link is preserved; the client-link fragment is parsed, not stripped.
 * A `/_vti_history/<n>/` prefix is recorded, not treated as a different page.

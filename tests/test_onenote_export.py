@@ -32,15 +32,6 @@ from tools.onenote_export.graph import (
     UnsafeUrl,
     require_safe_url,
 )
-from tools.onenote_export.reconcile import (
-    AUTOMATIC_TIERS,
-    MatchTier,
-    build_candidates,
-    canonical_page_url,
-    page_id_from_link,
-    reference_tokens,
-    summarise,
-)
 
 ONENOTE_HOST = "https://www.onenote.com/api/v1.0"
 
@@ -356,95 +347,60 @@ def test_html_to_text_keeps_paragraph_structure() -> None:
     assert len(text.splitlines()) > 1
 
 
-# -- reconciliation --------------------------------------------------------
+# -- register-link reconciliation: retired (owner decision D5, 2026-11-04) ---
+#
+# `tools/onenote_export/reconcile.py` took the first `id`/`page-id` query value
+# or the first braced GUID as a page id. On the register's Doc.aspx links the
+# first braced GUID is `sourcedoc`, the notebook, so every link collapsed onto
+# one identity; on OneNote.aspx links `id` is a notebook path. It also made a
+# shared `YYYY_NNN` token an automatic match. It is removed; links are parsed by
+# `tools/onenote_ingress.locators` and resolved by `tools/onenote_ingress.resolution`.
+
+NOTEBOOK = "11111111-2222-3333-4444-555555555555"
+SECTION = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
 
 
-def test_a_page_id_in_a_link_is_extracted_exactly() -> None:
-    assert page_id_from_link("https://onedrive.live.com/view.aspx?page-id=abc-123") == "abc-123"
-    desktop_link = "onenote:///C:/Notes#Section&page-id={0A1B2C3D-4E5F-6789-ABCD-EF0123456789}"
-    assert page_id_from_link(desktop_link) == "0A1B2C3D-4E5F-6789-ABCD-EF0123456789"
+def _doc_link(page: str, title: str = "Näide") -> str:
+    target = f"target(Osakond.one%7C{SECTION}%2F{title}%7C{page}%2F)"
+    return f"https://tenant.example/sites/x/_layouts/Doc.aspx?sourcedoc={{{NOTEBOOK}}}&wd={target}"
 
 
-def test_a_link_with_no_identifier_yields_nothing_rather_than_a_guess() -> None:
-    assert page_id_from_link("https://onedrive.live.com/view.aspx?section=2019") == ""
-    assert page_id_from_link("") == ""
+def test_the_legacy_reconcile_module_is_gone() -> None:
+    import importlib
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("tools.onenote_export.reconcile")
 
 
-def test_urls_differing_only_in_noise_canonicalise_together() -> None:
-    left = "https://ONEDRIVE.live.com/view.aspx?page-id=abc&wd=target#heading"
-    right = "https://onedrive.live.com/view.aspx?wd=target&page-id=abc"
-    assert canonical_page_url(left) == canonical_page_url(right)
+def test_the_legacy_reconcile_command_refuses(capsys: pytest.CaptureFixture[str]) -> None:
+    from tools.onenote_export.__main__ import main
+
+    assert main(["reconcile", "--archive", "a", "--references", "r.json"]) == 2
+    assert "retired" in capsys.readouterr().err
 
 
-def test_reference_tokens_normalise_every_shape() -> None:
-    assert reference_tokens("Vaata 2019_184 ja 2019-184 ja 2019 184") == {"2019_184"}
+@pytest.mark.parametrize(
+    "link",
+    [
+        _doc_link("99999999-0000-0000-0000-000000000001"),
+        _doc_link("99999999-0000-0000-0000-000000000002", "Teine"),
+        f"https://tenant.example/sites/x/_layouts/Doc.aspx?sourcedoc={{{NOTEBOOK}}}",
+        "https://tenant.example/sites/x/_layouts/15/OneNote.aspx"
+        "?id=%2Fsites%2Fx%2FSiteAssets%2FOsakond%20Notebook&wd=target%28Osakond.one%7C"
+        f"{SECTION}%2FN%C3%A4ide%7C99999999-0000-0000-0000-000000000003%2F%29",
+    ],
+)
+def test_a_notebook_id_is_never_taken_for_a_page_id(link: str) -> None:
+    from tools.onenote_ingress.locators import canonical_guid, parse_locator
+
+    located = parse_locator(link)
+    assert canonical_guid(NOTEBOOK) not in located.page_guids
+    assert "Osakond Notebook" not in " ".join(located.page_guids)
 
 
-def test_an_exact_page_id_match_is_automatic() -> None:
-    manifest = [{"page_id": "abc-123", "title": "Midagi", "web_url": ""}]
-    references = [{"id": "r1", "onenote_url": "https://x.invalid?page-id=abc-123"}]
+def test_links_sharing_one_notebook_keep_distinct_page_ids() -> None:
+    from tools.onenote_ingress.locators import parse_locator
 
-    candidates = build_candidates(source_references=references, manifest=manifest)
-
-    assert [candidate.tier for candidate in candidates] == [MatchTier.PAGE_ID]
-    assert candidates[0].automatic is True
-
-
-def test_a_shared_reference_token_is_automatic() -> None:
-    manifest = [{"page_id": "p9", "title": "2019_184 Näidiseelnõu", "web_url": ""}]
-    references = [
-        {"id": "r2", "onenote_url": "https://x.invalid/no-id", "source_title": "2019-184 midagi"}
-    ]
-
-    candidates = build_candidates(source_references=references, manifest=manifest)
-
-    assert candidates[0].tier == MatchTier.REFERENCE_TOKEN
-    assert candidates[0].automatic is True
-
-
-def test_a_similar_title_is_never_automatic() -> None:
-    """The finding this whole module is shaped around: a OneNote hyperlink in
-    this register has already been observed pointing at the wrong page, and a
-    similar title is weaker evidence than a hyperlink."""
-    manifest = [{"page_id": "p1", "title": "Pakendiseaduse muutmine 2019", "web_url": ""}]
-    references = [{"id": "r3", "onenote_url": "", "source_title": "Pakendiseaduse muutmine  2019"}]
-
-    candidates = build_candidates(source_references=references, manifest=manifest)
-
-    assert candidates[0].tier == MatchTier.TITLE_SIMILARITY
-    assert candidates[0].automatic is False
-    assert MatchTier.TITLE_SIMILARITY not in AUTOMATIC_TIERS
-
-
-def test_a_weak_title_match_produces_no_candidate_at_all() -> None:
-    manifest = [{"page_id": "p1", "title": "Midagi hoopis muud", "web_url": ""}]
-    references = [{"id": "r4", "onenote_url": "", "source_title": "Pakendiseaduse muutmine"}]
-
-    assert build_candidates(source_references=references, manifest=manifest) == []
-
-
-def test_a_reviewed_mapping_wins_where_nothing_else_matches() -> None:
-    manifest = [{"page_id": "p7", "title": "Ei seostu", "web_url": ""}]
-    references = [{"id": "r5", "onenote_url": "", "source_title": "Ka ei seostu"}]
-
-    candidates = build_candidates(
-        source_references=references, manifest=manifest, reviewed_mapping={"r5": "p7"}
-    )
-
-    assert candidates[0].tier == MatchTier.REVIEWED_MAPPING
-
-
-def test_the_summary_reports_counts_by_tier() -> None:
-    manifest = [{"page_id": "abc", "title": "2019_1 Teema", "web_url": ""}]
-    references = [
-        {"id": "r1", "onenote_url": "https://x.invalid?page-id=abc"},
-        {"id": "r2", "onenote_url": "", "source_title": "midagi täiesti muud"},
-    ]
-
-    counts = summarise(
-        build_candidates(source_references=references, manifest=manifest), total_references=2
-    )
-
-    assert counts["PAGE_ID"] == 1
-    assert counts["unmatched"] == 1
-    assert counts["automatic"] == 1
+    pages = {f"99999999-0000-0000-0000-00000000000{n}" for n in range(1, 6)}
+    found = {next(iter(parse_locator(_doc_link(p)).page_guids)) for p in pages}
+    assert len(found) == len(pages)
