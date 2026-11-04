@@ -4,7 +4,7 @@ Status: accepted
 Date: 2026-09-12
 Extends [0075](0075-teema-current-action-and-add-to-matter-workspace.md) §12
 from the Teema workspace to the Dokumendid tab. Decides the question
-[0061](0061-a-matters-opinions-live-under-dokumendid.md) left open when the
+[0061](0061-matter-opinions-live-under-documents.md) left open when the
 per-Matter Arvamused page was folded into the file list. Nothing in 0005, 0011
 or 0019 changes.
 
