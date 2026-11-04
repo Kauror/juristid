@@ -42,7 +42,7 @@ import time
 import uuid
 from collections import Counter
 from collections.abc import Callable, Iterable
-from typing import Any, Protocol
+from typing import Any
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -153,22 +153,6 @@ _NIL_UUID = "00000000-0000-0000-0000-000000000000"
 
 _REFERENCE = re.compile(r"(\d{4})_(\d+)")
 _UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
-
-
-class AuditTransport(Protocol):
-    def select_page(
-        self,
-        table: str,
-        columns: Iterable[str],
-        *,
-        filters: dict[str, str],
-        order: str,
-        limit: int = ...,
-    ) -> list[dict[str, Any]]: ...
-
-    def select(
-        self, table: str, columns: Iterable[str], *, filters: dict[str, str], order: str
-    ) -> list[dict[str, Any]]: ...
 
 
 # ---------------------------------------------------------------------------

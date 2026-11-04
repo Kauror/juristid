@@ -1,5 +1,12 @@
 # Excel pilot 2026 — replacing the test-build's data with the reviewed sample
 
+> **Historical (2026-10-09).** This procedure moved the instance to the 2026
+> Excel pilot. That dataset was later rebuilt from Lovable (ADR 0202) and then
+> replaced by Lovable's whole operational register (ADR 0203, 2026-11-03).
+> Kept as the record of the pilot and of the rename-aside model; it is not a
+> current procedure, and `excel_pilot_2026` is not to be run against this
+> instance.
+
 How `juristid-main` moves from its development dataset to the 2026 Excel
 operational pilot (docs/adr/0148): a fresh database, the reviewed accounts and
 reference data, and the reviewed sample imported by `excel_pilot_2026`. It is

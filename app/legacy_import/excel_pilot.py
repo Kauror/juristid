@@ -723,10 +723,6 @@ class PilotPlan:
     database_state: str
     existing_matters: int
 
-    @property
-    def can_apply(self) -> bool:
-        return not self.problems and self.database_state == "fresh"
-
 
 def _leading_colleague(text: str, people: Any) -> Any:
     """A colleague named as the sentence's first word, when exactly one carries it."""

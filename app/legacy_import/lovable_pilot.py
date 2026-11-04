@@ -2492,11 +2492,6 @@ def preserved_snapshot() -> dict[str, Any]:
     return preserved_document(state.settled, state.references)
 
 
-def read_preserved_document(document: Any) -> tuple[dict[str, str], dict[str, str]]:
-    body = _checked_preserved_body(document)
-    return dict(body["matters"]), dict(body.get("references") or {})
-
-
 def _checked_preserved_body(document: Any) -> dict[str, Any]:
     if not isinstance(document, dict) or document.get("format") != PRESERVED_FORMAT:
         raise LovablePilotError(f"The file is not a {PRESERVED_FORMAT} document.")

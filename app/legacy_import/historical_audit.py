@@ -240,12 +240,6 @@ class MigrationAudit:
                 )
         return out
 
-    def unmatched_pages(self) -> list[PageProfile]:
-        """Archived pages no Excel Matter claims."""
-        return [
-            self._profile(row) for row in self._rows("reports/reconciliation/unmatched-onenote.csv")
-        ]
-
     def page_profiles(self) -> dict[str, PageProfile]:
         """Every archived page, by archive key."""
         links = self._hyperlinks()

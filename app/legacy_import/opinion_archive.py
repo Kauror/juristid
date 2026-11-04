@@ -84,16 +84,6 @@ class OpinionArchiveBatch(BaseModel):
     def __str__(self) -> str:
         return f"{self.archive_file_name or self.source_kind} {self.started_at:%Y-%m-%d %H:%M}"
 
-    @property
-    def source_fingerprint(self) -> tuple[str, str, str, str]:
-        """The four hashes a plan and its apply must agree on."""
-        return (
-            self.archive_sha256,
-            self.excel_sha256,
-            self.kodadash_artifact_sha256,
-            self.onenote_capture_id,
-        )
-
 
 class OpinionArchiveItem(BaseModel):
     """One file as it sits at one path inside the opinions archive.
