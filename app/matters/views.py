@@ -6535,7 +6535,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     # would answer "Vigane väärtus." (app/matters/forms.py).
     form = MatterFieldForm(request.POST, matter=matter)
     if not form.is_valid():
-        context = _header_context(request, matter)
+        context = _field_surface_context(request, matter, surface)
         context["field_error"] = "Vigane väärtus."
         if _reopens_on_refusal(field, matter):
             _reopen_header_editor(context, request, editor=field, error=_first_error(form, field))
@@ -6566,7 +6566,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
             _apply_inline_field(request, matter, field, value, form)
     except date_order.DateOrderUnconfirmed as warning:
         matter.refresh_from_db()
-        context = _header_context(request, matter)
+        context = _field_surface_context(request, matter, surface)
         context["field_error"] = str(warning)
         context["date_order_confirm"] = _date_order_confirmation(request)
         return render(request, surface, context, status=400)
@@ -6576,7 +6576,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         # decides again — rather than having silently reverted it. 409, which
         # the page swaps in like a validation answer (static/js/app.js).
         matter = conflict.current
-        context = _header_context(request, matter)
+        context = _field_surface_context(request, matter, surface)
         context["field_error"] = str(conflict)
         return render(request, surface, context, status=409)
     except FollowUpClosureUnconfirmed as refusal:
@@ -6586,7 +6586,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         # rolled back, and the instance it was tried on must not show the
         # header a stage that was never saved.
         matter.refresh_from_db()
-        context = _header_context(request, matter)
+        context = _field_surface_context(request, matter, surface)
         context["field_error"] = str(refusal)
         context["follow_up_closure_stage"] = getattr(value, "pk", value)
         context["follow_up_closure_label"] = refusal.label
@@ -6598,7 +6598,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         return response
     except DomainError as error:
         matter.refresh_from_db()
-        context = _header_context(request, matter)
+        context = _field_surface_context(request, matter, surface)
         context["field_error"] = str(error)
         if _reopens_on_refusal(field, matter):
             _reopen_header_editor(context, request, editor=field, error=str(error))
@@ -6623,7 +6623,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
     # Each field re-renders the surface it lives on. `Muu valdkond` sits in the
     # facts rail rather than the header strip, and swapping the header for it
     # would leave the value on screen unchanged while claiming it had saved.
-    response = render(request, surface, _header_context(request, matter))
+    response = render(request, surface, _field_surface_context(request, matter, surface))
     if was_open and not matter.is_open:
         # «Jõustunud» or «Rohkem ei tegele» chosen here closed the Matter
         # (docs/adr/0131 §10). The banner, the workspace and `Teema käik` all
@@ -6824,6 +6824,19 @@ def _apply_inline_field(
         # sender set uses one: an empty POST means "none of them", which is
         # a decision somebody made, not a field they left alone.
         set_policy_areas(matter=matter, policy_areas=list(value or []), actor=request.user)
+
+
+def _field_surface_context(request: HttpRequest, matter: Matter, surface: str) -> dict[str, Any]:
+    """The context an inline field's surface re-renders with.
+
+    The rail carries «Seotud materjalid», which `_header_context` does not read:
+    without it a Saatja save redrew the rail with the whole section gone until
+    the next load, and its earlier stages with it (docs/adr/0209).
+    """
+    context = _header_context(request, matter)
+    if surface == "matters/partials/rail.html":
+        context["related_materials"] = related_materials_for(matter, request.user)
+    return context
 
 
 #: Fields whose control is not in the header band. `_header_context` already
