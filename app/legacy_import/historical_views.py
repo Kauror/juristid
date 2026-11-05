@@ -15,6 +15,7 @@ decisions in the middle of a lawyer's navigation is not a feature.
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 
 from django.contrib import messages
@@ -48,7 +49,9 @@ from app.legacy_import.source_pages import (
     CandidateState,
     HistoricalMatchCandidate,
     LegacySourcePage,
+    LegacySourceResourceImport,
     MatterSourcePage,
+    ResourceImportState,
     SourceMatchClass,
     SourceMatchMethod,
     SourceRelationshipKind,
@@ -217,6 +220,21 @@ def _rendered_blocks(
     return out
 
 
+#: A deliberate «not now» recorded by an importer (`SKIPPED`), by its code, and
+#: the state the page shows for it. None of these is a failure: the original is
+#: kept in the source corpus and nothing was lost (docs/adr/0205 §4, docs/adr/0206).
+HELD_STATES = {
+    # A page linked to several Teemad: which Teema a file belongs to is a
+    # person's decision, never the importer's (owner decision D4).
+    "SHARED_PAGE_AWAITING_REVIEW": "held_shared",
+    "LARGER_THAN_EVIDENCE_LIMIT": "held_too_large",
+    # A row of an earlier capture of the same page, superseded by a later one.
+    "EARLIER_CAPTURE_NOT_IMPORTED": "superseded",
+    # The evidence pilot's review outcomes (app/legacy_import/evidence_pilot.py).
+    "RECORD_HELD_FOR_REVIEW": "held_review",
+}
+
+
 def _file_state(resource: Any, record: Any) -> str:
     """What actually happened to one attachment, said in one word.
 
@@ -230,13 +248,24 @@ def _file_state(resource: Any, record: Any) -> str:
     about the source. An empty attachment is exactly what the lawyer's OneNote
     page contained; an unavailable one means the copy failed and is worth an
     operator's attention.
+
+    **A file held on purpose is neither** (ONENOTE-UI-003, 2026-11-05). The
+    capture import records every file of a page shared by several Teemad as
+    `SKIPPED · SHARED_PAGE_AWAITING_REVIEW`, and this function used to call
+    every recorded, non-imported, non-empty file `unavailable` — so 5,539 held
+    decisions read «Kopeerimine ebaõnnestus», which a lawyer reads as evidence
+    lost. Only a `FAILED` row is a failure now; a `SKIPPED` row says what it was
+    held for (`HELD_STATES`), and one whose code this view does not know reads
+    as «not imported», never as an error.
     """
     if record is None:
         return "pending"
-    if record.document is not None:
+    if record.document_id is not None:
         return "imported"
-    if is_empty_at_source(resource):
+    if is_empty_at_source(resource) or record.error_code == "EMPTY_FILE":
         return "empty"
+    if record.state == ResourceImportState.SKIPPED:
+        return HELD_STATES.get(record.error_code, "not_imported")
     return "unavailable"
 
 
@@ -520,10 +549,129 @@ def historical_summary(matter: Matter, user: Any) -> dict[str, Any]:
         return {}
     files = sum(link.source_page.file_count for link in links)
     sections = list(dict.fromkeys(link.source_page.source_section for link in links))
+    statuses = import_statuses(links)
+    for link in links:
+        # Read by the page's row in «Ajalooline OneNote».
+        link.import_status = statuses[link.pk]
     return {
         "links": links,
         "page_count": len(links),
         "file_count": files,
         "sections": sections,
         "first": links[0],
+        "status": teema_import_status(list(statuses.values())),
     }
+
+
+# -- what the import records say -------------------------------------------
+
+#: The order a page's file counts are said in, and the words. Imported first,
+#: then what is held on purpose, then what is wrong. `superseded` is absent: an
+#: earlier capture's row is not a file on the page as it is now.
+_STATUS_PARTS = (
+    ("imported", "imporditud", ""),
+    ("held_shared", "ootab teemaga seostamist", "waiting"),
+    ("held_review", "ootab ülevaatust", "waiting"),
+    ("held_too_large", "ületab tõendi ülempiiri", "waiting"),
+    ("empty", "oli OneNote'is tühi", ""),
+    ("not_imported", "jäeti importimata", ""),
+    ("pending", "on veel importimata", "waiting"),
+    ("unavailable", "kopeerimine ebaõnnestus", "problem"),
+)
+
+
+def _files(n: int) -> str:
+    return "1 fail" if n == 1 else f"{n} faili"
+
+
+@dataclass(frozen=True)
+class ImportStatus:
+    """One page's files as the import rows record them (ONENOTE-UI-002).
+
+    Counted from `LegacySourceResourceImport`, one state per file block of the
+    page as it is now (`_file_state`, the same answer the page view prints) —
+    never inferred from the page row existing, which says only that the page's
+    text is here.
+    """
+
+    counts: dict[str, int]
+    files: int
+
+    @property
+    def label(self) -> str:
+        """The page row's chip: «Kõik 27 faili imporditud», «145 faili ootab teemaga seostamist»."""
+        if not self.files:
+            return "Lehel ei ole faile"
+        imported = self.counts.get("imported", 0)
+        empty = self.counts.get("empty", 0)
+        if imported and imported + empty == self.files:
+            text = f"Kõik {imported} faili imporditud" if imported > 1 else "Fail imporditud"
+            return text + (f" · {_files(empty)} oli OneNote'is tühi" if empty else "")
+        return " · ".join(
+            f"{_files(self.counts[state])} {words}"
+            for state, words, _tone in _STATUS_PARTS
+            if self.counts.get(state)
+        )
+
+    @property
+    def tone(self) -> str:
+        """`problem` when any copy failed, `waiting` when anything is held or pending."""
+        tones = {tone for state, _w, tone in _STATUS_PARTS if self.counts.get(state)}
+        return "problem" if "problem" in tones else "waiting" if "waiting" in tones else ""
+
+
+def import_statuses(links: list[Any]) -> dict[Any, ImportStatus]:
+    """Every link's `ImportStatus`, from one query over the links' import rows."""
+    records: dict[Any, dict[str, Any]] = {link.pk: {} for link in links}
+    for record in LegacySourceResourceImport.objects.filter(
+        matter_source_page__in=[link.pk for link in links]
+    ).select_related("resource"):
+        records[record.matter_source_page_id][record.resource.resource_key] = record
+    out = {}
+    for link in links:
+        mine = records[link.pk]
+        states = []
+        for block in link.source_page.blocks or []:
+            if block.get("kind") not in {"FILE_ATTACHMENT", "IMAGE"}:
+                continue
+            found = mine.get(block.get("resource_key", ""))
+            states.append(_file_state(found.resource if found else None, found))
+        counts = {state: states.count(state) for state in set(states) if state != "superseded"}
+        out[link.pk] = ImportStatus(counts=counts, files=sum(counts.values()))
+    return out
+
+
+def teema_import_status(statuses: list[ImportStatus]) -> dict[str, Any]:
+    """The Teema's sentence under «Allikas», from its pages' import records.
+
+    It replaced a fixed «Lehe sisu ja manuseid ei ole Juristidesse imporditud»,
+    which stayed on every Teema after its OneNote files had been imported
+    (ONENOTE-UI-002, 2026-11-05).
+    """
+    total = ImportStatus(
+        counts={
+            state: sum(s.counts.get(state, 0) for s in statuses) for state, _w, _t in _STATUS_PARTS
+        },
+        files=sum(s.files for s in statuses),
+    )
+    lines = []
+    if not total.files:
+        lines.append("Lehe sisu on Juristides; lehel ei ole faile.")
+    else:
+        imported = total.counts["imported"]
+        empty = total.counts["empty"]
+        if imported and imported + empty == total.files:
+            lines.append(
+                f"Lehe sisu ja {'kõik ' if imported > 1 else ''}{_files(imported)} on Juristidesse "
+                "imporditud (failide loend ja «Ajalooline OneNote» ülal)."
+            )
+            if empty:
+                lines.append(f"{_files(empty)} oli OneNote'is tühi ja jäi tõendina loomata.")
+        else:
+            lines.append(f"Lehe sisu on Juristides. Failid: {total.label}.")
+        if total.counts["held_shared"]:
+            lines.append(
+                "Leht on seotud mitme teemaga: faili kuuluvuse otsustab inimene; "
+                "originaalid on lähtekorpuses alles."
+            )
+    return {"lines": lines, "tone": total.tone, "counts": total.counts, "files": total.files}

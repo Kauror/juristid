@@ -184,7 +184,20 @@
       <h2 class="sectionlabel" id="originaal-heading">Originaal</h2>
       <dl class="detailgrid detailgrid--wrap">
         <div><dt>Failinimi</dt><dd>{{ version.original_filename }}</dd></div>
-        <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"j.n.Y H:i" }}</dd></div>
+        {% comment %}
+          A OneNote file's historical date is in this card, not one click away
+          (ONENOTE-UI-001, docs/adr/0206): when the source says it was added to
+          OneNote, or that the source has no such time. `Saadi` stays what it
+          is — when these bytes were copied out — and says so for an imported
+          file, so the two never read as one date. The block's later
+          modification is source metadata in «Päritolu» only (owner decision D8).
+        {% endcomment %}
+        {% if onenote_addition %}
+          <div><dt>Lisatud OneNote'i</dt><dd>{% if onenote_addition.display %}{{ onenote_addition.display }}{% if onenote_addition.predates_page %} · lisatud enne praeguse lehe loomist{% endif %}{% else %}Lisamise kuupäev teadmata{% endif %}</dd></div>
+          <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"j.n.Y H:i" }} · kopeeriti OneNote'ist</dd></div>
+        {% else %}
+          <div><dt>Saadi</dt><dd>{{ version.acquired_at|date:"j.n.Y H:i" }}</dd></div>
+        {% endif %}
       </dl>
       <p class="cardnote">Muutumatu tõend. Baidid ei muutu kunagi — parandus on uus versioon.</p>
 
@@ -193,9 +206,6 @@
         <dl class="detailgrid detailgrid--wrap">
           <div><dt>Tüüp</dt><dd>{{ version.mime_type }}</dd></div>
           <div><dt>Suurus</dt><dd>{{ version.size_bytes|filesizeformat }} ({{ version.size_bytes }} baiti)</dd></div>
-          {% if onenote_addition %}
-            <div><dt>Lisatud OneNote'i</dt><dd>{% if onenote_addition.display %}{{ onenote_addition.display }}{% if onenote_addition.predates_page %} · lisatud enne praeguse lehe loomist{% endif %}{% else %}kuupäev teadmata{% endif %}</dd></div>
-          {% endif %}
           <div><dt>Versioon</dt><dd>{{ version.version_number }}{% if versions|length > 1 %} / {{ versions|length }}{% endif %}</dd></div>
           <div><dt>Töötlemine</dt>
             <dd><span class="statechip statechip--{{ preview.state_tone }}">{{ preview.state_label }}</span></dd>

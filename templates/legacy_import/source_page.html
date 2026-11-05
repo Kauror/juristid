@@ -149,8 +149,32 @@
               {% else %}
                 <span class="casefile__name">{{ block.filename }}</span>
                 <span class="casefile__meta">
+                  {% comment %}
+                    Held is not failed (ONENOTE-UI-003). A file the import kept
+                    back on purpose — a page shared by several Teemad, a file
+                    over the evidence limit — reads as waiting for a person,
+                    and only a copy that actually failed reads as a problem
+                    (app/legacy_import/historical_views.py `_file_state`).
+                  {% endcomment %}
                   {% if block.state == "empty" %}
                     Tühi fail · <span class="statechip">OneNote'is oli see fail tühi</span>
+                  {% elif block.state == "held_shared" %}
+                    {{ block.size_bytes|filesizeformat }} ·
+                    <span class="statechip statechip--waiting">Ootab teemaga seostamist</span>
+                    <span class="casefile__hint">Leht on seotud mitme teemaga; faili kuuluvuse otsustab inimene. Originaal on lähtekorpuses alles.</span>
+                  {% elif block.state == "held_review" %}
+                    {{ block.size_bytes|filesizeformat }} ·
+                    <span class="statechip statechip--waiting">Ootab ülevaatust</span>
+                  {% elif block.state == "held_too_large" %}
+                    {{ block.size_bytes|filesizeformat }} ·
+                    <span class="statechip statechip--waiting">Suurem kui tõendi ülempiir</span>
+                    <span class="casefile__hint">Originaal on lähtekorpuses alles.</span>
+                  {% elif block.state == "superseded" %}
+                    {{ block.size_bytes|filesizeformat }} ·
+                    <span class="statechip">Varasema hõive kirje</span>
+                  {% elif block.state == "not_imported" %}
+                    {{ block.size_bytes|filesizeformat }} ·
+                    <span class="statechip">Ei imporditud</span>
                   {% elif block.state == "unavailable" %}
                     {{ block.size_bytes|filesizeformat }} ·
                     <span class="statechip statechip--problem">Kopeerimine ebaõnnestus</span>

@@ -85,6 +85,9 @@ finds again (§23.5).
                 {{ year }}
               </option>
             {% endfor %}
+            {% if document_year_unknown or document_filters.aasta == "teadmata" %}
+              <option value="teadmata" {% if document_filters.aasta == "teadmata" %}selected{% endif %}>Kuupäev teadmata</option>
+            {% endif %}
           </select>
         </label>
         <button class="button button--quiet button--tiny" type="submit">Otsi</button>
@@ -282,6 +285,18 @@ finds again (§23.5).
                 {% endif %}
               </div>
             {% endif %}
+            {% if document_onenote_dates %}
+              {% comment %}
+                Said once, above the table, only where the list holds a file
+                the OneNote import brought: two kinds of date in one column are
+                unambiguous only when the reader is told which is which
+                (docs/adr/0206).
+              {% endcomment %}
+              <p class="cardnote" id="kuupaeva-selgitus">
+                OneNote'ist imporditud failide kuupäev on päev, mil fail OneNote'i lisati; teiste failide kuupäev on Juristidesse lisamise päev.
+                Loend on selle kuupäeva järgi, uuemad eespool; teadmata lisamise kuupäevaga failid on lõpus.
+              </p>
+            {% endif %}
             <div class="tablewrap tablewrap--evidence">
               <table class="table doctable">
                 <thead>
@@ -451,9 +466,30 @@ finds again (§23.5).
                           suite masks. A date rendered in a bare cell is a
                           baseline that goes red the next morning.
                         {% endcomment %}
-                        <time datetime="{{ document.created_at|date:'c' }}">
-                          {{ document.created_at|date:"j.n.Y" }}
-                        </time>
+                        {% comment %}
+                          The row's own date, and which one it is (docs/adr/0206).
+                          A file the OneNote import brought prints the day it was
+                          added to OneNote — not the import, the copy or the
+                          block's later modification — and says so; one whose
+                          source has no such time says that instead, and no day
+                          is put in its place (owner decision D8). Every other
+                          file prints its upload day, as it always did. The list
+                          is ordered by exactly what this cell prints.
+                        {% endcomment %}
+                        {% if document.onenote_imported %}
+                          {% if document.onenote_added_at %}
+                            <time datetime="{{ document.onenote_added_at|date:'c' }}">
+                              {{ document.onenote_added_at|date:"j.n.Y" }}
+                            </time>
+                            <span class="datebasis">lisatud OneNote'i</span>
+                          {% else %}
+                            <span class="datebasis">Lisamise kuupäev teadmata</span>
+                          {% endif %}
+                        {% else %}
+                          <time datetime="{{ document.created_at|date:'c' }}">
+                            {{ document.created_at|date:"j.n.Y" }}
+                          </time>
+                        {% endif %}
                       </td>
                       {% comment %}
                         No `Versioon` and no `Maht` column. Both were true and
@@ -708,6 +744,12 @@ finds again (§23.5).
                   · {{ link.source_page.file_count }} faili
                   · {{ link.get_match_method_display }}
                 </span>
+                {% comment %}
+                  What the import records say about this page's files, one
+                  state per file as the page itself prints it — never inferred
+                  from the page being here (ONENOTE-UI-002).
+                {% endcomment %}
+                <span class="statechip{% if link.import_status.tone %} statechip--{{ link.import_status.tone }}{% endif %}">{{ link.import_status.label }}</span>
               </li>
             {% endfor %}
           </ul>
@@ -721,6 +763,12 @@ finds again (§23.5).
           sign-in. A link, not an import — the sentence below says so, so an
           empty file list above reads as "not brought over yet" rather than as a
           failed import (docs/adr/0191 §6).
+
+          **Once the page is here, the sentence is the import's own record**
+          (ONENOTE-UI-002, 2026-11-05): «Lehe sisu ja kõik 27 faili on
+          Juristidesse imporditud», «… 145 faili ootab teemaga seostamist»,
+          counted from the import rows (`teema_import_status`). The fixed «ei
+          ole Juristidesse imporditud» is said only where no page is linked.
         {% endcomment %}
         <section class="docsection" aria-labelledby="allikas-heading">
           <div class="docsection__head">
@@ -731,7 +779,11 @@ finds again (§23.5).
               <li class="filelist__item">
                 <a href="{{ link.url }}" target="_blank" rel="noopener noreferrer">OneNote</a>
                 <span class="filelist__meta">
-                  Lehe sisu ja manuseid ei ole Juristidesse imporditud; avaneb OneNote'is sinu Microsofti kontoga.
+                  {% if historical.status %}
+                    {% for line in historical.status.lines %}{{ line }} {% endfor %}Originaal avaneb OneNote'is sinu Microsofti kontoga.
+                  {% else %}
+                    Lehe sisu ja manuseid ei ole Juristidesse imporditud; avaneb OneNote'is sinu Microsofti kontoga.
+                  {% endif %}
                 </span>
               </li>
             {% endfor %}

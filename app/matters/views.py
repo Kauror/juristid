@@ -4065,6 +4065,52 @@ def _lovable_source_links(matter: Any) -> list[dict[str, str]]:
     return [{"url": url} for url in urls[:1] if url.startswith("https://")]
 
 
+#: The `aasta` value of the OneNote files whose addition date is unknown.
+UNKNOWN_YEAR = "teadmata"
+
+
+def with_list_dates(documents: Any) -> Any:
+    """Annotate and order Dokumendid rows by the date each row prints (docs/adr/0206).
+
+    * ``onenote_imported`` — the OneNote capture or archive import brought this
+      file (an `IMPORTED` `LegacySourceResourceImport` row names it);
+    * ``onenote_added_at`` — when the source says it was added to OneNote
+      (`LegacySourceResource.source_added_at`, the block's creation time), or
+      ``None`` when the source has none: never the import, the copy or the
+      block's modification time;
+    * ``list_at`` — the row's date: ``onenote_added_at`` for an imported file,
+      ``created_at`` (the upload) for every other one, ``None`` for an imported
+      file with no known addition time.
+
+    Ordered newest first by ``list_at``, the undated OneNote files after every
+    dated row (where they claim nothing), ties by upload. A person's upload
+    keeps its own date and its order among the other uploads.
+    """
+    from django.db.models import Case, DateTimeField, Exists, OuterRef, Subquery, When
+
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    imports = LegacySourceResourceImport.objects.filter(
+        document=OuterRef("pk"), state=ResourceImportState.IMPORTED
+    )
+    return (
+        documents.annotate(
+            onenote_imported=Exists(imports),
+            onenote_added_at=Subquery(
+                imports.order_by("created_at").values("resource__source_added_at")[:1]
+            ),
+        )
+        .annotate(
+            list_at=Case(
+                When(onenote_imported=True, then=F("onenote_added_at")),
+                default=F("created_at"),
+                output_field=DateTimeField(),
+            )
+        )
+        .order_by(F("list_at").desc(nulls_last=True), "-created_at", "-pk")
+    )
+
+
 #: How many evidence rows the Dokumendid table renders before it offers
 #: "Näita rohkem". A file with forty documents is real; forty rows above the
 #: fold is not what somebody opening the tab is looking for.
@@ -4253,8 +4299,11 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
         # `is_restricted`, which reads the parent Matter's visibility, and without
         # the join that was one query per document — 70 on a dense `?koik=1`.
         .select_related("current_version", "created_by", "matter")
-        .order_by("-created_at")
     )
+    # Each row's own date and what kind of date it is, ordered by it
+    # (docs/adr/0206): a file the OneNote import brought reads on the day it
+    # was added to OneNote, every other file on its upload day as before.
+    documents = with_list_dates(documents)
 
     term = (request.GET.get("otsi") or "").strip()
     role = (request.GET.get("roll") or "").strip()
@@ -4292,9 +4341,14 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     # let `999999999999` through to a `bigint out of range` (ENG-046); the
     # chip below names the year only when it was applied.
     applied_year = bounded_int(year, default=0, minimum=1, maximum=9999)
-    year = str(applied_year) if applied_year else ""
-    if applied_year:
-        documents = documents.filter(created_at__year=applied_year)
+    if year == UNKNOWN_YEAR:
+        # The OneNote files whose source has no addition time (owner decision
+        # D8): a year of their own to find them by, never a year guessed.
+        documents = documents.filter(onenote_imported=True, onenote_added_at__isnull=True)
+    else:
+        year = str(applied_year) if applied_year else ""
+        if applied_year:
+            documents = documents.filter(list_at__year=applied_year)
 
     # The filters as they were actually applied, which is what the chips name
     # and what their removal links rebuild. `koik` is deliberately not carried:
@@ -4382,12 +4436,20 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
             # same year `created_at__year` filters on above and the row's date
             # prints. In UTC a file uploaded 1.01 at 00:30 was offered as the
             # year before and then filtered out of it (bounty A-03).
+            #
+            # The year of each row's own date (docs/adr/0206), so a 2021
+            # OneNote file is offered under 2021 and not under its import year.
             "document_years": list(
-                documents.annotate(created_year=ExtractYear("created_at"))
-                .order_by("-created_year")
-                .values_list("created_year", flat=True)
+                documents.exclude(list_at__isnull=True)
+                .annotate(list_year=ExtractYear("list_at"))
+                .order_by("-list_year")
+                .values_list("list_year", flat=True)
                 .distinct()
             ),
+            "document_year_unknown": documents.filter(
+                onenote_imported=True, onenote_added_at__isnull=True
+            ).exists(),
+            "document_onenote_dates": any(d.onenote_imported for d in visible_evidence),
             "document_filters": {"otsi": term, "roll": role, "aasta": year},
             "document_filters_active": bool(term or role or year),
             # Built from the *applied* values rather than from `request.GET`, so

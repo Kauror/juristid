@@ -1208,6 +1208,7 @@ def verify(
     from app.documents.models import Document
     from app.documents.services import evidence_storage
     from app.legacy_import.source_pages import (
+        LegacySourcePage,
         LegacySourceResourceImport,
         MatterSourcePage,
         ResourceImportState,
@@ -1222,16 +1223,43 @@ def verify(
         for pm in page.matters:
             for o in page.occurrences:
                 expected[(pm.matter_id, page.page_key, o.block_object_id)] = (page, o)
-    rows = (
-        LegacySourceResourceImport.objects.annotate(lk=Lower("resource__source_page__page_key"))
+    # **Bounded memory** (2026-11-05). Every row used to arrive with its whole
+    # source page joined in — the page's text, blocks and links, copied once per
+    # row — plus the whole Document and the whole link, and the queryset cached
+    # all of them: the production run over 9,783 decisions was killed at 2 GB.
+    # The page key is now read once per page, each row brings only the columns
+    # checked below, and the rows are streamed. Nothing checked is dropped.
+    page_keys = dict(
+        LegacySourcePage.objects.annotate(lk=Lower("page_key"))
         .filter(lk__in=keys)
-        .select_related(
-            "matter_source_page",
-            "resource",
-            "resource__source_page",
-            "document",
-            "document_version",
+        .values_list("pk", "lk")
+    )
+    rows = (
+        LegacySourceResourceImport.objects.filter(resource__source_page_id__in=list(page_keys))
+        .select_related("matter_source_page", "resource", "document", "document_version")
+        .only(
+            "pk",
+            "state",
+            "error_code",
+            "document_id",
+            "document_version_id",
+            "matter_source_page__matter_id",
+            "resource__resource_key",
+            "resource__source_page_id",
+            "resource__sha256",
+            "resource__size_bytes",
+            "resource__source_added_at",
+            "document__matter_id",
+            "document__created_by_id",
+            "document_version__document_id",
+            "document_version__sha256",
+            "document_version__size_bytes",
+            "document_version__original_filename",
+            "document_version__uploaded_by_id",
+            "document_version__storage_key",
         )
+        .order_by("pk")
+        .iterator(chunk_size=500)
     )
     seen = set()
     storage = evidence_storage() if check_bytes else None
@@ -1241,7 +1269,7 @@ def verify(
         if matter_id not in wanted:
             counts["rows_of_other_matters_on_captured_pages"] += 1
             continue
-        key = (matter_id, row.resource.source_page.page_key.lower(), row.resource.resource_key)
+        key = (matter_id, page_keys[row.resource.source_page_id], row.resource.resource_key)
         if key not in expected:
             if row.error_code == HOLD_EARLIER_CAPTURE and row.state == ResourceImportState.SKIPPED:
                 counts["earlier_capture_rows"] += 1
@@ -1283,7 +1311,10 @@ def verify(
             counts["dated" if o.block_created else "undated"] += 1
             if storage is not None:
                 with storage.open(version.storage_key, "rb") as handle:
-                    if hashlib.sha256(handle.read()).hexdigest() != o.sha256:
+                    digest = hashlib.sha256()
+                    while chunk := handle.read(1 << 20):
+                        digest.update(chunk)
+                    if digest.hexdigest() != o.sha256:
                         problems.append(f"{page.tag}/{o.block_object_id}: stored bytes do not hash")
                 counts["bytes_rehashed"] += 1
         else:
