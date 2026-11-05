@@ -16,6 +16,9 @@ Closed, the line is `27.07.2026 [4 dokumenti] KLIM saatis …`:
   - the date in the precision the source gave it — a day, a month or a year —
     inside a `<time>` whose `datetime` has the same precision; an undated note
     shows no date at all, never one borrowed from the capture;
+  - «Eesolev» after a date ahead of today (`milestone.ahead`), exactly as
+    every other milestone row says it (`timeline_items.html`): a note written
+    ahead — «11.11.2026 3. lugemine» — is a plan, and must not read as done;
   - the tag only for files **directly attributed** to this note (D9, category
     1): «Dokument» for one, «N dokumenti» for more, and nothing otherwise —
     files merely on the same page never tag a note;
@@ -44,6 +47,7 @@ the way to the page's other files, «Sama OneNote'i lehe failid (N)».
         {% elif note.date_display %}
           <span class="uxtl__msdate">{{ note.date_display }}</span>
         {% endif %}
+        {% if item.milestone.ahead %}<span class="uxtl__msahead">Eesolev</span>{% endif %}
         {% if note.kind == "NEXT_ACTIONS" %}
           <span class="uxtl__histtag uxtl__histtag--past">Ajalooline: Järgmised tegevused</span>
         {% endif %}
