@@ -929,7 +929,9 @@ def test_the_history_does_not_cost_a_query_per_row(
                 actor=specialist,
             )
 
-    budget = 18
+    # 19 since 2026-11-05: one read of the linked OneNote pages for their dated
+    # notes (`historical_notes.matter_notes`), constant in pages, notes and rows.
+    budget = 19
     populate(3)
     with django_assert_max_num_queries(budget):
         assert len(_history(normal_matter, specialist)) >= 9
@@ -1757,7 +1759,9 @@ def test_rendering_the_note_costs_no_extra_query(
                 note=f"Juristi hinnang {index}.",
             )
 
-    budget = 18
+    # 19 since 2026-11-05: one read of the linked OneNote pages for their dated
+    # notes (`historical_notes.matter_notes`), constant in pages, notes and rows.
+    budget = 19
     populate(3)
     with django_assert_max_num_queries(budget):
         assert len(_history(matter, specialist)) >= 3

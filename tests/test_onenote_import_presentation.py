@@ -432,9 +432,17 @@ def test_tallinn_midnight_and_dst_decide_the_day_in_both_views(dst, client, spec
     for name, _when, day in DST:
         assert cells[name] == f"{day} lisatud OneNote'i"
     # Tegevused files each document under the same Tallinn day as Dokumendid does.
+    # The same day, not the same spelling: the chronology's historical rows print
+    # it zero-padded since 2026-11-05 («28.03.2026»), Dokumendid as «28.3.2026».
+    from app.core.dates import parse_estonian_date
+
     rows, _more = matter_timeline(matter=dst, user=specialist)
-    days = sorted(r.milestone.display_date for r in rows if r.item_type == HISTORICAL_IMPORT_ITEM)
-    assert days == sorted(day for _n, _w, day in DST)
+    days = sorted(
+        parse_estonian_date(r.milestone.display_date)
+        for r in rows
+        if r.item_type == HISTORICAL_IMPORT_ITEM
+    )
+    assert days == sorted(parse_estonian_date(day) for _n, _w, day in DST)
 
 
 @pytest.fixture

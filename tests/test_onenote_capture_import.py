@@ -513,7 +513,8 @@ def test_the_chronology_files_each_document_on_its_tallinn_day(world, enabled, s
     imports = [r for r in rows if r.item_type == HISTORICAL_IMPORT_ITEM]
     days = sorted(r.milestone.display_date for r in imports)
     # 30.8.2021 (kiri), 1.2.2023 (vastus, 23:30 local), 2.2.2023 (two same-byte files), undated.
-    assert days == sorted(["30.8.2021", "1.2.2023", "2.2.2023", "kuupäev teadmata"])
+    # Zero-padded since 2026-11-05, like every historical row (lead decision).
+    assert days == sorted(["30.08.2021", "01.02.2023", "02.02.2023", "kuupäev teadmata"])
     assert sum(r.imported_documents for r in imports) == 5
 
 

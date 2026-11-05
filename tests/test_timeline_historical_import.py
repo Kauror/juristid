@@ -41,10 +41,9 @@ from app.legacy_import.source_pages import (
 from app.matters.services import add_entry
 from app.matters.timeline import (
     HISTORICAL_IMPORT_ITEM,
-    ONENOTE_ADDED_ONE,
     ONENOTE_PREDATES_PAGE,
     ONENOTE_UNDATED_DISPLAY,
-    ONENOTE_UNDATED_ONE,
+    ONENOTE_UNDATED_SUB,
     matter_timeline,
 )
 
@@ -208,8 +207,10 @@ def test_one_file_reads_on_the_day_it_was_added_to_onenote(normal_matter, specia
         added={FILES[0][0]: _utc(2021, 8, 30, 8, 48, 10)},
     )
     (row,) = _imports(_rows(normal_matter, specialist))
-    assert row.milestone.what == ONENOTE_ADDED_ONE == "Dokument lisatud OneNote'i"
-    assert row.milestone.display_date == "30.8.2021"
+    # The headline names the file, not the import (2026-11-05; it read «Dokument
+    # lisatud OneNote'i», which is what the importer did).
+    assert row.milestone.what == "Ministeeriumi kiri 2021.pdf"
+    assert row.milestone.display_date == "30.08.2021"
     assert row.milestone.sub == f"1 fail · OneNote: {SECTION} → Näidisseaduse eelnõu"
     # Sorted at the moment the source names, not at the import.
     assert row.occurred_at == _utc(2021, 8, 30, 8, 48, 10)
@@ -223,8 +224,11 @@ def test_files_added_on_one_day_are_one_row_that_opens_onto_each(normal_matter, 
     versions = _import(normal_matter, FILES, added=SAME_DAY)
     rows = _rows(normal_matter, specialist)
     (row,) = _imports(rows)
-    assert row.milestone.what == "OneNote'i lisati 3 dokumenti"
-    assert row.milestone.display_date == "30.8.2021"
+    # The first file in page order and how many more (2026-11-05; it read
+    # «OneNote'i lisati 3 dokumenti»).
+    assert row.milestone.what == "Ministeeriumi kiri 2021.pdf ja 2 muud faili"
+    assert [file.original_filename for file in row.historical_files] == [name for name, _ in FILES]
+    assert row.milestone.display_date == "30.08.2021"
     assert row.imported_documents == 3
     assert row.occurred_at == min(SAME_DAY.values())
     assert sorted(file.label for file in row.files) == sorted(name for name, _ in FILES)
@@ -243,7 +247,11 @@ def test_different_days_on_one_page_are_different_rows(normal_matter, specialist
         },
     )
     rows = _imports(_rows(normal_matter, specialist))
-    assert [row.milestone.display_date for row in rows] == ["17.7.2024", "31.8.2021", "30.8.2021"]
+    assert [row.milestone.display_date for row in rows] == [
+        "17.07.2024",
+        "31.08.2021",
+        "30.08.2021",
+    ]
     assert all(row.imported_documents == 1 for row in rows)
 
 
@@ -258,10 +266,11 @@ def test_the_day_is_the_tallinn_day_not_the_utc_one(normal_matter, specialist):
         },
     )
     (row,) = _imports(_rows(normal_matter, specialist))
-    assert row.milestone.display_date == "31.8.2021"
+    assert row.milestone.display_date == "31.08.2021"
     assert row.imported_documents == 2
 
 
+# Zero-padded since 2026-11-05 (lead): every historical row prints «29.07.2026».
 @pytest.mark.parametrize(
     ("moment", "day"),
     [
@@ -269,9 +278,9 @@ def test_the_day_is_the_tallinn_day_not_the_utc_one(normal_matter, specialist):
         (_utc(2021, 10, 30, 21, 30), "31.10.2021"),  # 00:30 EEST
         (_utc(2021, 10, 31, 21, 30), "31.10.2021"),  # 23:30 EET
         # The night it begins (28.3.2021 03:00 EET → 04:00 EEST).
-        (_utc(2021, 3, 27, 22, 30), "28.3.2021"),  # 00:30 EET
-        (_utc(2021, 3, 28, 20, 59), "28.3.2021"),  # 23:59 EEST
-        (_utc(2021, 3, 28, 21, 0), "29.3.2021"),  # 00:00 EEST
+        (_utc(2021, 3, 27, 22, 30), "28.03.2021"),  # 00:30 EET
+        (_utc(2021, 3, 28, 20, 59), "28.03.2021"),  # 23:59 EEST
+        (_utc(2021, 3, 28, 21, 0), "29.03.2021"),  # 00:00 EEST
     ],
 )
 def test_daylight_saving_changes_keep_the_local_calendar_day(
@@ -290,8 +299,11 @@ def test_daylight_saving_changes_keep_the_local_calendar_day(
 def test_a_file_with_no_source_time_claims_no_day(normal_matter, specialist):
     _import(normal_matter, FILES[:1])
     (row,) = _imports(_rows(normal_matter, specialist))
-    assert row.milestone.what == ONENOTE_UNDATED_ONE
+    # Named by its file like every document row (2026-11-05); the date's place
+    # and the subline still say the day is unknown.
+    assert row.milestone.what == "Ministeeriumi kiri 2021.pdf"
     assert row.milestone.display_date == ONENOTE_UNDATED_DISPLAY == "kuupäev teadmata"
+    assert row.milestone.sub.endswith(ONENOTE_UNDATED_SUB)
     # The import's own day is not printed anywhere on the row.
     assert format_estonian_date(timezone.localdate()) not in (
         row.milestone.display_date + row.milestone.sub
@@ -301,8 +313,13 @@ def test_a_file_with_no_source_time_claims_no_day(normal_matter, specialist):
 def test_dated_and_undated_files_of_one_page_part_honestly(normal_matter, specialist):
     _import(normal_matter, FILES, added={FILES[0][0]: _utc(2021, 8, 30, 8, 0)})
     rows = _imports(_rows(normal_matter, specialist))
-    assert sorted(row.milestone.what for row in rows) == sorted(
-        ["Dokument lisatud OneNote'i", "OneNote'i dokumendid (2) — lisamise kuupäev teadmata"]
+    # Named by their files (2026-11-05; they read «Dokument lisatud OneNote'i»
+    # and «OneNote'i dokumendid (2) — lisamise kuupäev teadmata»).
+    assert sorted((row.milestone.what, row.milestone.display_date) for row in rows) == sorted(
+        [
+            ("Ministeeriumi kiri 2021.pdf", "30.08.2021"),
+            ("Seletuskiri.pdf ja 1 muu fail", ONENOTE_UNDATED_DISPLAY),
+        ]
     )
 
 
@@ -414,10 +431,10 @@ def test_a_restricted_file_is_neither_counted_nor_linked_nor_dates_a_row(
         restricted=("Liikme vastus.pdf",),
     )
     theirs = _imports(_rows(normal_matter, specialist))
-    assert sorted(row.milestone.display_date for row in theirs) == ["2.1.2019", "30.8.2021"]
+    assert sorted(row.milestone.display_date for row in theirs) == ["02.01.2019", "30.08.2021"]
 
     readers = _imports(_rows(normal_matter, reader))
-    assert sorted(row.milestone.display_date for row in readers) == ["2.1.2019", "30.8.2021"]
+    assert sorted(row.milestone.display_date for row in readers) == ["02.01.2019", "30.08.2021"]
     assert sorted(row.imported_documents for row in readers) == sorted(
         row.imported_documents for row in theirs
     )
@@ -527,10 +544,9 @@ def test_the_page_draws_each_day_once_and_counts_rows_not_files(
     html = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": normal_matter.pk})
     ).content.decode()
-    assert (
-        html.count("OneNote&#x27;i lisati 3 dokumenti") + html.count("OneNote'i lisati 3 dokumenti")
-        == 1
-    )
+    # One row, named by its files (2026-11-05; it read «OneNote'i lisati 3 dokumenti»).
+    assert html.count("Ministeeriumi kiri 2021.pdf ja 2 muud faili") == 1
+    assert "OneNote&#x27;i lisati" not in html and "OneNote'i lisati" not in html
     assert "3 faili · OneNote: Näidissektsioon → Näidisseaduse eelnõu" in html
     assert "lisas dokumendi" not in html
     for name, _content in FILES:
@@ -560,8 +576,8 @@ def test_a_file_older_than_its_page_says_so_and_keeps_its_source_day(normal_matt
         page_created=_utc(2026, 2, 1, 9, 0),
     )
     (row,) = _imports(_rows(normal_matter, specialist))
-    assert row.milestone.what == ONENOTE_ADDED_ONE
-    assert row.milestone.display_date == "30.8.2021"
+    assert row.milestone.what == FILES[0][0]
+    assert row.milestone.display_date == "30.08.2021"
     assert row.occurred_at == _utc(2021, 8, 30, 8, 48, 10)
     assert ONENOTE_PREDATES_PAGE == "lisatud enne praeguse lehe loomist"
     assert row.milestone.sub == (
