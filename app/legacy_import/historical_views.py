@@ -25,7 +25,7 @@ from django.db.models import Count
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_safe
 
 from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
@@ -390,6 +390,9 @@ def _file_state(resource: Any, record: Any) -> str:
     return "unavailable"
 
 
+# GET and HEAD only, like the held originals (source_originals.py): OPTIONS, which
+# CSRF does not guard, served and audited the page XML like a GET.
+@require_safe
 @login_required
 def source_xml(request: HttpRequest, pk: Any) -> FileResponse:
     """The page's own XML, for somebody who needs the evidence itself.
