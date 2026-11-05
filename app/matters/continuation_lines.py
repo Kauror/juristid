@@ -1,9 +1,10 @@
 """Where a continued Teema's work went, for every row of one list page.
 
 A list row whose work status is «Jätkub mujal» says *that* the work continued.
-This answers *where*, for a whole page of rows at once: «Jätkub teemas 2025_196»
-with the reference linked, and — only when it is known and is not the direct
-successor itself — the endpoint of the chain («→ … 2026_190 (avatud)»).
+This answers *where*, for a whole page of rows at once: «Jätkub teemas 2025_196 ·
+<short title>» with the reference linked, and — only when it is known and is not
+the direct successor itself — the endpoint of the chain («→ … viimane etapp
+2026_190 (avatud) · <short title>»).
 
 The same rules as the Teema page (`app/matters/continuations.py`, docs/adr/0207),
 read in batches instead of per Matter (the later round 0207 §8 left lists for):
@@ -39,14 +40,34 @@ from app.matters.work_status import CONTINUES, work_status_of
 #: The longest title a reference-less stage is named by before it is cut.
 LABEL_CHARACTERS = 40
 
+#: The longest title shown beside a stage's reference (QA-18). The line clips
+#: with an ellipsis in a narrow cell anyway; this keeps a wide one compact.
+TITLE_CHARACTERS = 40
+
+
+def _cut(title: str, limit: int) -> str:
+    return title if len(title) <= limit else f"{title[: limit - 1].rstrip()}…"
+
 
 def stage_label(matter: Matter) -> str:
     """A stage by its reference («2025_196»), or a short title when it has none."""
     reference = matter.display_reference
     if reference:
         return reference
-    title = matter.title or ""
-    return title if len(title) <= LABEL_CHARACTERS else f"{title[: LABEL_CHARACTERS - 1]}…"
+    return _cut(matter.title or "", LABEL_CHARACTERS)
+
+
+def stage_title(matter: Matter) -> str:
+    """The short title shown beside a stage's reference (QA-18).
+
+    A register row does not show its own reference, so a line naming only
+    «2025_196» told a reader nothing without hovering for the tooltip. Empty
+    for a stage with no reference: its label already *is* its short title, and
+    saying it twice would be noise.
+    """
+    if not matter.display_reference:
+        return ""
+    return _cut(matter.title or "", TITLE_CHARACTERS)
 
 
 @dataclass(frozen=True)
@@ -70,10 +91,30 @@ class ContinuationLine:
         return stage_label(self.endpoint) if self.endpoint else ""
 
     @property
+    def successor_title(self) -> str:
+        return stage_title(self.successor) if self.successor else ""
+
+    @property
+    def endpoint_title(self) -> str:
+        return stage_title(self.endpoint) if self.endpoint else ""
+
+    @property
     def endpoint_state(self) -> str:
         if self.endpoint is None:
             return ""
         return "avatud" if self.endpoint.is_open else "suletud"
+
+    @property
+    def skipped_text(self) -> str:
+        """What a screen reader hears for the «…» (QA-19): how many stages it stands for.
+
+        They are stages this reader may read — the walk names an endpoint only
+        when every step was readable — so saying how many discloses nothing.
+        """
+        if not self.skipped:
+            return ""
+        noun = "etapp" if self.skipped == 1 else "etappi"
+        return f"vahel veel {self.skipped} {noun}"
 
 
 #: The fallback, shared: it carries nothing about any other Matter.
