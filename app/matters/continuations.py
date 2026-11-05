@@ -182,8 +182,26 @@ class _History:
     #: first, then by reference; at most the level's budget + 1). Level 0 is the
     #: Matter's own direct predecessors.
     levels: tuple[tuple[_Row, ...], ...] = ()
-    #: A live direct predecessor exists that this reader may not read.
+    #: A live direct predecessor exists that this reader may not read, as far
+    #: as the first level shows: when readable rows alone filled its budget, the
+    #: answer is left to `_hidden_direct` (asked only by `continuations_for`).
     hidden_direct: bool = False
+
+
+def _hidden_direct(matter: Matter, viewer: Any, history: _History) -> bool:
+    """Whether an unreadable direct predecessor exists: yes or no (QA-05)."""
+    if history.hidden_direct or not history.levels:
+        return history.hidden_direct
+    if len(history.levels[0]) < MAX_HISTORY + 1:
+        return False  # the whole level was read, readable rows first
+    # The first level was cut by readable rows alone: ask the one question the
+    # cut left open.
+    return (
+        Matter.objects.filter(superseded_by=matter.pk)
+        .exclude(pk=matter.pk)
+        .exclude(pk__in=Matter.objects.visible_to(viewer).values("pk"))
+        .exists()
+    )
 
 
 def _history_key(matter: Matter) -> tuple[Any, ...]:
@@ -282,18 +300,11 @@ def _walk_back(matter: Matter, viewer: Any) -> _History:
             seen.add(pk)
             stages.append((pk, depth, successor))
             next_frontier.append(pk)
+        if truncated:
+            break  # cut at MAX_HISTORY: nothing further can be listed
         frontier = next_frontier
 
     hidden_direct = bool(levels) and any(not ok for _pk, _successor, ok in levels[0])
-    if levels and not hidden_direct and len(levels[0]) >= MAX_HISTORY + 1:
-        # The first level was cut by readable rows alone: ask the one question
-        # the cut left open, yes or no.
-        hidden_direct = (
-            Matter.objects.filter(superseded_by=matter.pk)
-            .exclude(pk=matter.pk)
-            .exclude(pk__in=readable.values("pk"))
-            .exists()
-        )
 
     # One query for every readable stage's row, instead of one per level.
     loaded = {row.pk: row for row in readable.filter(pk__in=[pk for pk, _d, _s in stages])}
@@ -358,7 +369,7 @@ def continuations_for(matter: Matter | None, viewer: Any) -> Continuations:
     )
     predecessors = direct[:MAX_PREDECESSORS]
     more_predecessors = len(direct) > MAX_PREDECESSORS
-    hidden_predecessors = history.hidden_direct
+    hidden_predecessors = _hidden_direct(matter, viewer, history)
 
     before: list[Matter] = []
     hidden_before = hidden_predecessors

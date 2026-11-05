@@ -64,16 +64,43 @@ def test_a_step_the_reader_may_not_read_stops_the_walk_unnamed(specialist):
 
 
 def test_an_outsider_reads_no_step_at_all(administrator):
+    # An outsider may not read the Matter itself, so it learns nothing — not even
+    # that a step exists (QA-06; this test asserted `hidden_after` before).
     old, _new = _chain(2)
     c = continuations_for(old, administrator)
-    assert c.after == () and c.successor is None and c.hidden_after
+    assert c.after == () and c.successor is None and not c.hidden_after
+    assert c == type(c)()
 
 
-def test_a_hidden_predecessor_is_counted_never_named(specialist, administrator):
-    _old, new = _chain(2)
-    # Seen by an outsider who may read only the successor: nothing about the other end.
-    c = continuations_for(new, administrator)
-    assert c.predecessors == () and c.hidden_predecessors == 1 and c.hidden_before
+def test_a_hidden_predecessor_is_flagged_never_named(specialist, monkeypatch):
+    """A reader of the successor who may not read the predecessor: a flag, no count.
+
+    A hand-built scope (unreachable from a request under docs/adr/0181), because
+    since QA-06 an outsider who may not read the successor gets nothing at all,
+    and since QA-05 the flag is yes/no.
+    """
+    from app.core.authorization import Scope
+    from app.core.authorization import scope_for_user as real
+    from app.core.enums import Visibility
+
+    def scope(user):
+        if getattr(user, "pk", None) == specialist.pk:
+            return Scope(
+                user=user,
+                is_authenticated=True,
+                sees_restricted_by_role=False,
+                break_glass_grant_id=None,
+            )
+        return real(user)
+
+    monkeypatch.setattr("app.matters.models.scope_for_user", scope)
+    old, new = _chain(2)
+    Matter.all_objects.filter(pk=old.pk).update(
+        visibility=Visibility.RESTRICTED, owner=factories.UserFactory()
+    )
+    Matter.all_objects.filter(pk=new.pk).update(owner=specialist)
+    c = continuations_for(Matter.all_objects.get(pk=new.pk), specialist)
+    assert c.predecessors == () and c.hidden_predecessors is True and c.hidden_before
 
 
 def test_a_cycle_ends_the_walk_instead_of_looping(specialist):

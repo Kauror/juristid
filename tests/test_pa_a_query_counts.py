@@ -8,8 +8,10 @@ live predecessor marked readable or not in the same query — plus one row read
 for all the stages, done once per Matter instance and reader.
 
 The page numbers are measured on the Teema detail view and the «Seotud
-materjalid» fragment for the shapes the audit measured. `PAGE_BUDGET` is the
-after-fix count plus nothing: a regression shows as a failure, not as drift.
+materjalid» fragment for the shapes the audit measured (printed, and appended to
+``$PA_A_QUERY_OUT`` when set). What is asserted is relative, so another round's
+change to the rest of the page does not move it: a history costs the page one
+query per level plus two, however many surfaces show it.
 """
 
 from __future__ import annotations
@@ -109,6 +111,22 @@ def test_page_and_fragment_query_counts(client, specialist, name):
     if out:
         with open(out, "a", encoding="utf-8") as handle:
             handle.write(line + "\n")
+
+
+def test_the_page_pays_for_its_history_once(client, specialist):
+    client.force_login(specialist)
+
+    def page(viewed: Matter) -> int:
+        url = reverse("matters:matter_detail", kwargs={"pk": viewed.pk})
+        client.get(url)
+        return _count(lambda: client.get(url))
+
+    baseline = page(_scenario("none", specialist))
+    # The readability check and the empty first level are in the baseline; a
+    # history adds its other levels and one row read — once, for the header,
+    # the rail and «Seotud materjalid» together.
+    assert page(_scenario("four_stages", specialist)) - baseline <= 4
+    assert page(_scenario("deep30", specialist)) - baseline <= MAX_HOPS + 1
 
 
 @pytest.mark.parametrize(

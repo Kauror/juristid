@@ -340,3 +340,16 @@ def test_a_shown_stage_is_not_also_suggested_under_a_wide_sibling_fan(specialist
 
     assert len(shown) == 4
     assert not shown & suggested
+
+
+def test_a_hidden_predecessor_is_flagged_even_when_readable_ones_fill_the_bound(narrow):
+    viewed = _teema(narrow)
+    _converge([_teema(narrow) for _ in range(MAX_HISTORY + 5)], viewed)
+    _continues(_secret(), viewed)
+    chain = continuations_for(_fresh(viewed), narrow)
+    assert chain.hidden_predecessors is True and chain.more_predecessors is True
+    assert len(chain.predecessors) == MAX_PREDECESSORS
+    # Without the hidden one the same shape says no.
+    plain = _teema(narrow)
+    _converge([_teema(narrow) for _ in range(MAX_HISTORY + 5)], plain)
+    assert continuations_for(_fresh(plain), narrow).hidden_predecessors is False

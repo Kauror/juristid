@@ -236,7 +236,9 @@ def _render_for(user, template: str, matter) -> str:
 
 def test_an_outsider_administrator_reads_no_reference_at_all(client, specialist, administrator):
     """The page itself is a 404 for an administrator without a grant (docs/adr/0181);
-    and were a partial drawn for one, neither end of the chain would be named."""
+    and were a partial drawn for one, neither end of the chain would be named — nor
+    even flagged: a reader who may not read the Matter learns nothing about its
+    chain (QA-06; this test asserted the «may not see» flags before)."""
     old = factories.MatterFactory(owner=specialist, title="Varasem")
     new = factories.MatterFactory(owner=specialist, title="Hilisem")
     close_matter(matter=old, disposition=Disposition.SUPERSEDED, actor=specialist, successor=new)
@@ -250,10 +252,10 @@ def test_an_outsider_administrator_reads_no_reference_at_all(client, specialist,
         assert new.display_reference not in response.content.decode()
 
     banner = _render_for(administrator, "matters/partials/matter_banner.html", old)
-    assert HIDDEN_SUCCESSOR in _squash(banner)
+    assert HIDDEN_SUCCESSOR not in _squash(banner)
     assert new.display_reference not in banner and "Hilisem" not in banner
     new_header = _render_for(administrator, "matters/partials/header.html", new)
-    assert HIDDEN_PREDECESSOR in _squash(new_header)
+    assert HIDDEN_PREDECESSOR not in _squash(new_header)
     assert old.display_reference not in new_header.replace(new.display_reference, "")
     assert "Varasem" not in new_header
 
