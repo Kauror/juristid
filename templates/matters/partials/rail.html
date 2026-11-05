@@ -344,20 +344,30 @@ whose addressee nobody recorded should look short, not incomplete.
     reference the header names, plus the title the header leaves out
     (docs/adr/0207). A neighbour this reader may not read is a row that says
     so, never a reference or a title.
+
+    **`Eelnev teema` only where `Seotud materjalid` is not on this rail.** That
+    section lists every readable earlier stage under `Varasemad etapid`, the
+    direct predecessors among them (docs/adr/0209), so naming them here as well
+    would say the predecessor twice in one rail. `Jätkub teemas` stays: the
+    section lists only earlier stages, and the way forward is still a shortcut
+    worth having. The «may not read» predecessor row stays too, because the
+    section neither names nor counts what this reader may not read. A fragment
+    that redraws this rail without the section (an inline `Saatja` save) keeps
+    the predecessor rows, so the rail never loses them.
   {% endcomment %}
   {% load continuations %}
   {% readable_continuations matter as continuations %}
-  {% if continuations or matter.collaborators.all %}
+  {% if continuations.later or continuations.hidden_after or continuations.hidden_predecessors or matter.collaborators.all or continuations.earlier and not related_materials %}
     <div class="railcard">
       <span class="railcard__label">Seotud</span>
-      {% for earlier in continuations.earlier %}
+      {% for earlier in continuations.earlier %}{% if not related_materials %}
         <div class="railcard__row">
           <span class="railcard__key">Eelnev teema</span>
           <a href="{% url 'matters:matter_detail' pk=earlier.pk %}" title="{{ earlier.title }}">
             {% if earlier.display_reference %}{{ earlier.display_reference }} · {% endif %}{{ earlier.title|truncatechars:40 }} →
           </a>
         </div>
-      {% endfor %}
+      {% endif %}{% endfor %}
       {% if continuations.hidden_predecessors %}
         <div class="railcard__row">
           <span class="railcard__key">Eelnev teema</span>

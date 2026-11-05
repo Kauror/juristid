@@ -475,6 +475,21 @@ def test_an_administrator_without_a_grant_may_not_download_an_archive_letter(
     assert response.status_code == 403
 
 
+@pytest.mark.parametrize("method", ["post", "put", "patch", "delete", "options"])
+def test_the_letter_is_served_to_get_and_head_only(client, reader, stored, method):
+    """As every byte-serving route (ADR 0208): another method serves nothing, audits nothing."""
+    from app.audit.models import SecurityAuditEvent
+
+    client.force_login(reader)
+    url = reverse("legacy_import:opinion_archive_file", kwargs={"pk": stored.pk})
+    before = SecurityAuditEvent.objects.count()
+    response = getattr(client, method)(url)
+    assert response.status_code == 405
+    assert b"%PDF" not in response.content
+    assert SecurityAuditEvent.objects.count() == before
+    assert client.head(url).status_code == 200
+
+
 def test_a_reader_reads_the_letter_inline_under_safe_headers(client, reader, stored):
     client.force_login(reader)
     response = client.get(reverse("legacy_import:opinion_archive_file", kwargs={"pk": stored.pk}))

@@ -1,4 +1,9 @@
-{% load register_source matter_activity %}
+{% load register_source matter_activity continuation_lines %}
+{% comment %}
+Where each continued row's work went, for both row groups in one scoped batch:
+«Jätkub teemas 2025_196» under the title (app/matters/continuation_lines.py).
+{% endcomment %}
+{% continuation_lines_for matters extra as continuation_lines %}
 {% comment %}
 The dense register row, shared by Teemad, Minu töö and Saabunud so a row means
 the same thing everywhere.

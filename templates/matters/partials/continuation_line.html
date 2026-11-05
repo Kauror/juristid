@@ -1,0 +1,31 @@
+{% comment %}
+Where a continued Teema's work went, as one quiet line under a list row's title
+(app/matters/continuation_lines.py). `line` is a `ContinuationLine`, or empty for
+a row whose work status is not «Jätkub mujal» — then nothing is drawn.
+
+A navigation label, never a status: the row's own badge keeps saying what it
+said. The reference is the link, because a list is scanned by reference and the
+title is already the row's; the successor's full title is the link's tooltip.
+
+The endpoint follows only when it is known and is not the direct successor:
+«→ 2026_190 (avatud)», with «…» when stages lie between. A screen reader hears
+«viimane etapp» instead of the arrow, the Teema page's own words.
+
+A successor this reader may not read is never named: the line is the plain
+«Jätkub mujal», with no reference, no link and no title.
+{% endcomment %}
+{% if line %}
+  {% if line.successor %}
+    <span class="continuationline">
+      Jätkub teemas
+      <a class="continuationline__link" href="{% url 'matters:matter_detail' pk=line.successor.pk %}"
+         title="{{ line.successor.title }}">{{ line.successor_label }}</a>{% if line.endpoint %}
+      <span aria-hidden="true">→{% if line.skipped %} …{% endif %}</span><span class="visually-hidden">, viimane etapp</span>
+      <a class="continuationline__link" href="{% url 'matters:matter_detail' pk=line.endpoint.pk %}"
+         title="{{ line.endpoint.title }}">{{ line.endpoint_label }}</a>
+      <span class="continuationline__state">({{ line.endpoint_state }})</span>{% endif %}
+    </span>
+  {% else %}
+    <span class="continuationline continuationline--unnamed">Jätkub mujal</span>
+  {% endif %}
+{% endif %}

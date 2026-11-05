@@ -1219,10 +1219,15 @@ def _continuations(user: Any, matter: Any) -> dict[str, Any]:
     not read is counted or flagged and never named, and a cycle or a chain
     longer than the walk's bound says so instead of looping.
     """
-    from app.matters.continuations import continuations_for
+    from app.matters.continuations import continuations_for, historical_predecessors
 
     chain = continuations_for(matter, user)
     endpoint = chain.endpoint
+    # Every earlier stage through every branch (docs/adr/0209): `chain` is only the
+    # linear part and stops where two histories converge. Same reader's scope; a
+    # stage this reader may not read is neither listed nor counted, and nothing
+    # behind it is reached. Bounded by MAX_HOPS / MAX_HISTORY.
+    history = historical_predecessors(matter, user)
     return {
         "successor": _continuation_ref(chain.successor) if chain.successor else None,
         "successor_hidden": chain.hidden_after and chain.successor is None,
@@ -1243,6 +1248,20 @@ def _continuations(user: Any, matter: Any) -> dict[str, Any]:
         ),
         "cyclic": chain.cyclic,
         "truncated": chain.truncated,
+        # Furthest back first; `depth` 1 is a direct predecessor.
+        "historical_predecessors": [
+            {
+                **_continuation_ref(stage.matter),
+                "depth": stage.depth,
+                "is_open": stage.matter.is_open,
+            }
+            for stage in history.stages
+        ],
+        # The walk stopped at its bound: there may be earlier stages than the ones
+        # above. A cycle needs no flag of its own here: with one successor per
+        # Matter, a cycle among the predecessors runs through this Matter, so the
+        # forward walk already reports it as `cyclic`.
+        "historical_truncated": history.truncated,
     }
 
 
@@ -1301,6 +1320,21 @@ def _chain_line(continuations: dict[str, Any]) -> str | None:
     return line
 
 
+def _history_line(continuations: dict[str, Any]) -> str | None:
+    """Every earlier stage, only when it says more than «Continued from» and «Chain»."""
+    history = continuations["historical_predecessors"]
+    shown = {item["id"] for item in continuations["predecessors"]}
+    shown |= {item["id"] for item in continuations["chain"]}
+    if all(item["id"] in shown for item in history) and not continuations["historical_truncated"]:
+        return None
+    line = ", ".join(
+        f"{item['reference'] or item['id']} ({item['depth']} back)" for item in history
+    )
+    if continuations["historical_truncated"]:
+        line += " (more earlier stages than shown)"
+    return line
+
+
 def _snapshot_text(snapshot: dict[str, Any]) -> str:
     """The snapshot as plain text, for `fetch` of a ``matter:`` id."""
 
@@ -1321,6 +1355,7 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
             ("Continues as", _continuation_line(snapshot["continuations"])),
             ("Continued from", _predecessor_line(snapshot["continuations"])),
             ("Chain", _chain_line(snapshot["continuations"])),
+            ("Earlier stages (all branches)", _history_line(snapshot["continuations"])),
             ("Hetkeseis (stage)", (snapshot["stage"] or {}).get("label") or "not recorded"),
             ("Vastutaja (owner)", snapshot["owner"] or "not recorded"),
             ("Source organisations", ", ".join(snapshot["source_organisations"])),

@@ -54,8 +54,15 @@ register rebuild imported Lovable's structured stage links into
    `endpoint` (with `is_open`, only when known), `cyclic` and `truncated`. Each
    stage gives its id, reference and link, in the same viewer scope. There is
    no new tool and no write scope.
-8. **Not on lists.** Teemad and search already show «Suletud». A «→ 2025_196»
-   marker there would need a scoped batch query per page in views and row
-   templates outside this round, so it is left for a later round.
+8. **On lists (amended 2026-11-05).** Rows on the Teemad register (every surface
+   that draws the shared matter table: Teemad, Minu asjad, Saabunud) and Teema
+   search results carry one quiet line under the title: «Jätkub teemas 2025_196».
+   The reference is a link. When the chain's known endpoint is not the direct
+   successor, it follows the arrow («→ 2026_190 (avatud)»). An unreadable or
+   deleted successor reads «Jätkub mujal» without a reference.
+   - One scoped batch query per page, plus one per chain level for the endpoints
+     (`app/matters/continuation_lines.py`); never per row.
+   - The status badge is unchanged.
+   - Earlier stages are listed under «Seotud materjalid» (0209).
 
 No schema change and no data change.

@@ -22,6 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from django.db.models import Q
+
 from app.matters.models import Matter
 
 #: How far a chain is followed in either direction. Real chains are two or three
@@ -182,3 +184,132 @@ def continuations_for(matter: Matter | None, viewer: Any) -> Continuations:
         cyclic=cyclic,
         truncated=truncated,
     )
+
+
+# -- every earlier stage, all branches (docs/adr/0209) ----------------------------------
+
+#: How many earlier stages «Seotud materjalid» lists at most. Real histories are a
+#: handful; a larger graph is cut, and says so, instead of being walked to the end.
+MAX_HISTORY = 60
+
+
+@dataclass(frozen=True)
+class EarlierStage:
+    """One readable earlier stage of a Teema, `depth` steps back (1 = direct)."""
+
+    matter: Matter
+    depth: int
+    #: The stage this one continued as: the path back to the viewed Teema.
+    continues_as: Any
+
+
+@dataclass(frozen=True)
+class EarlierStages:
+    stages: tuple[EarlierStage, ...] = ()
+    #: The walk met a Matter it had already visited, or stopped at MAX_HOPS or
+    #: MAX_HISTORY. Nothing beyond is shown; nothing unreadable is counted.
+    cyclic: bool = False
+    truncated: bool = False
+
+    def __bool__(self) -> bool:
+        return bool(self.stages)
+
+    def __len__(self) -> int:
+        return len(self.stages)
+
+
+def historical_predecessors(matter: Matter | None, viewer: Any) -> EarlierStages:
+    """Every earlier stage of `matter` this reader may read, through every branch.
+
+    Breadth-first against `Matter.superseded_by`, one query per level: every live
+    Matter whose successor is in the current frontier. Each level is re-read
+    through `visible_to(viewer)`. A stage the reader may not read is neither shown
+    nor counted, and the walk does not pass through it, because what lies behind
+    it would be read through a door the reader may not open. A deleted stage is
+    not live, so the history behind it is not reached either. Converging branches
+    are all followed: several Matters may continue as the same one.
+
+    Ordered earliest first by depth (furthest back first), then by reference, for
+    presentation only: the relationship comes from the edges alone.
+    """
+    if matter is None or matter.pk is None:
+        return EarlierStages()
+    readable = Matter.objects.visible_to(viewer)
+    seen: set[Any] = {matter.pk}
+    frontier: list[Any] = [matter.pk]
+    found: list[EarlierStage] = []
+    cyclic = truncated = False
+    depth = 0
+    while frontier:
+        depth += 1
+        if depth > MAX_HOPS:
+            # Cut only if there is in fact something beyond the bound.
+            truncated = readable.filter(superseded_by__in=frontier).exclude(pk__in=seen).exists()
+            break
+        rows = list(
+            readable.filter(superseded_by__in=frontier)
+            .exclude(pk__in=frontier)
+            .order_by("reference_year", "reference_number", "pk")
+        )
+        next_frontier: list[Any] = []
+        for row in rows:
+            if row.pk in seen:
+                cyclic = True
+                continue
+            if len(found) >= MAX_HISTORY:
+                truncated = True
+                break
+            seen.add(row.pk)
+            found.append(EarlierStage(matter=row, depth=depth, continues_as=row.superseded_by_id))
+            next_frontier.append(row.pk)
+        frontier = next_frontier
+    found.sort(
+        key=lambda s: (
+            -s.depth,
+            s.matter.reference_year or 0,
+            s.matter.reference_number or 0,
+            str(s.matter.pk),
+        )
+    )
+    return EarlierStages(stages=tuple(found), cyclic=cyclic, truncated=truncated)
+
+
+def continuation_component_ids(matter_id: Any) -> set[Any]:
+    """Every live Matter on `matter_id`'s continuation history, both directions, all branches.
+
+    Unscoped ids for exclusion only (the suggestion engine scopes its own pool):
+    an established continuation, however many steps away, is never offered again
+    as an uncertain «Võimalik seos». Bounded like the walks above; the Matter
+    itself is included.
+
+    A deleted stage (docs/adr/0102) is not live and the walk does not pass
+    through it, exactly as `historical_predecessors` does not: a successor id is
+    only followed onward once its own row is found live, so the other
+    predecessors of a deleted Matter are not reached through it.
+    """
+    seen: set[Any] = {matter_id}
+    dead: set[Any] = set()
+    frontier: set[Any] = {matter_id}
+    for _ in range(MAX_HOPS * 2):
+        if not frontier or len(seen) > MAX_HISTORY * 2:
+            break
+        rows = list(
+            Matter.objects.filter(Q(superseded_by__in=frontier) | Q(pk__in=frontier)).values_list(
+                "pk", "superseded_by"
+            )
+        )
+        live = {pk for pk, _successor in rows if pk in frontier}
+        dead |= frontier - live
+        nxt: set[Any] = set()
+        for pk, successor in rows:
+            if pk in live:
+                step = successor  # forward from a live stage
+            elif successor in live:
+                step = pk  # a live predecessor of a live stage
+            else:
+                continue  # a predecessor of a deleted stage: not reached through it
+            if step is not None and step not in seen:
+                nxt.add(step)
+        seen |= nxt
+        frontier = nxt
+    return seen - dead

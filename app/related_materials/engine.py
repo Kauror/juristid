@@ -71,6 +71,7 @@ from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
 from app.legacy_import.opinion_enums import OpinionCandidateState
 from app.legacy_import.opinion_search import visible_archive
 from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
+from app.matters.continuations import continuation_component_ids
 from app.matters.enums import MatterDataClass
 from app.matters.models import Matter
 from app.organisations.models import Organisation
@@ -439,12 +440,12 @@ def build_profile(matter: Matter) -> SubjectProfile:
         if binary_id is not None:
             background_binaries.add(binary_id)
 
-    # The continuation chain is the existing, authoritative relationship and is
-    # shown where it always was; it is not offered again as a possibility.
-    successors = set(Matter.objects.filter(superseded_by=matter).values_list("pk", flat=True))
-    excluded = {matter.pk, *related_ids, *dismissed_matters, *successors}
-    if matter.superseded_by_id is not None:
-        excluded.add(matter.superseded_by_id)
+    # The continuation history is the existing, authoritative relationship and is
+    # shown where it always was; no stage of it is offered again as a possibility,
+    # however many steps away and through whichever branch (docs/adr/0207, 0209).
+    # The ids are unscoped and used only to exclude: the pool is scoped on its own.
+    history = continuation_component_ids(matter.pk)
+    excluded = {matter.pk, *related_ids, *dismissed_matters, *history}
 
     return SubjectProfile(
         matter=matter,
@@ -460,7 +461,10 @@ def build_profile(matter: Matter) -> SubjectProfile:
         track=matter.track or "",
         related_matter_ids=frozenset(related_ids),
         excluded_matter_ids=frozenset(excluded),
-        dismissed_matter_ids=frozenset(dismissed_matters),
+        # A dismissal of a Teema that is (now) a stage of this history is not offered
+        # back under «Näita peidetud»: restoring it could never make it a suggestion
+        # again, because the history is excluded above (AUDIT-D-03, ADR 0209).
+        dismissed_matter_ids=frozenset(dismissed_matters - history),
         dismissed_submission_ids=frozenset(dismissed_submissions),
         dismissed_binary_ids=frozenset(dismissed_binaries),
         background_submission_ids=frozenset(background_submissions),

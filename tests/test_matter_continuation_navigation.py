@@ -111,7 +111,10 @@ def test_the_successor_names_its_one_predecessor(signed_in, specialist):
     assert f"Eelnev teema: {old.display_reference}" in _squash(nav)
     assert _link(old) in nav
     assert "Jätkub teemas" not in _squash(nav)
-    assert f"Eelnev teema {old.display_reference} · Etapp 1" in _squash(_seotud(body))
+    # The rail names the predecessor once, under `Seotud materjalid` →
+    # `Varasemad etapid`, and not again in the `Seotud` card (docs/adr/0209).
+    assert f"{old.display_reference} — Etapp 1" in _squash(body)
+    assert "Eelnev teema" not in _squash(_seotud(body))
 
 
 def test_several_predecessors_are_an_accessible_list(signed_in, specialist):
@@ -275,7 +278,9 @@ def test_the_rail_re_rendered_by_an_inline_save_keeps_seotud(signed_in, speciali
     )
     assert response.status_code == 200
     body = response.content.decode()
-    assert f"Eelnev teema {old.display_reference} · Etapp 1" in _squash(_seotud(body))
+    # The rail redrawn by the save carries «Seotud materjalid» too (ADR 0209), so the
+    # predecessor is listed there under «Varasemad etapid», as on a full load.
+    assert "Varasemad etapid" in body and old.display_reference in body
 
 
 def test_a_closure_re_renders_the_header_banner_and_rail_with_the_chain(signed_in, specialist):
@@ -296,7 +301,9 @@ def test_a_closure_re_renders_the_header_banner_and_rail_with_the_chain(signed_i
     assert 'id="teema-pais"' in body  # the header, out of band
     assert f"Eelnev teema: {earlier.display_reference}" in _squash(_nav(body))
     assert "Teema on suletud." in _squash(_banner(body))
-    assert f"Eelnev teema {earlier.display_reference}" in _squash(_seotud(body))
+    # Under `Varasemad etapid` in the re-rendered section, not twice (docs/adr/0209).
+    assert f"{earlier.display_reference} — " in _squash(body)
+    assert "Eelnev teema" not in _squash(_seotud(body))
 
 
 # ---------------------------------------------------------------------------
