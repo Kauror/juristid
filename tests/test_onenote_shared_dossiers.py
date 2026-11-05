@@ -314,15 +314,16 @@ def test_an_ambiguous_page_gets_a_read_only_overview_with_onenote_days(world, cl
     assert "Suletud" in closed.split('id="ulevaade-heading"', 1)[1]
 
 
-def test_a_hidden_teema_on_the_page_is_counted_and_not_named(world, client, operator):
+def test_a_hidden_teema_on_the_page_is_flagged_and_not_named(world, client, operator):
     hidden = _restricted()
     _also_link(hidden, 2)
     client.force_login(operator)
     html = _view(client, _link(world["c"], 2)).content.decode()
     assert "SALAJANE-TEEMA-77" not in html
     assert hidden.display_reference not in html
-    assert "Lisaks on leht seotud 1 teemaga, mida selles kasutajavaates ei kuvata." in html
-    assert "Ühine toimik · 3 teemat" in html
+    # Yes/no only, and the total counts what this reader can open (QA-05, E-2).
+    assert "Leht on seotud ka teemaga, mida siit avada ei saa." in html
+    assert "Ühine toimik · 2 teemat" in html
 
 
 def test_held_files_offer_their_original_and_imported_ones_keep_their_document(

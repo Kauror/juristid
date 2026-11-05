@@ -36,30 +36,62 @@ register rebuild imported Lovable's structured stage links into
    «Jätkub teemana» becomes «Jätkub teemas», the header's words. The header
    gives references, the rail gives titles, and the banner names only the
    direct successor.
-5. **What a reader may not read** is said to exist and is never named: «Jätkub
-   teemas, mida sul ei ole lubatud näha», «Eelnev teema, mida sul ei ole
-   lubatud näha» (with a count when there are several). Under 0181 this is a
-   deleted Teema for a business reader, or every Teema for an administrator
-   without a grant. A deleted predecessor is not offered as history (0102). A
-   cycle reads «Ahel jõuab tagasi juba näidatud teemani, kaugemale seda ei
-   näidata.» and a cut chain reads «Ahel on pikem kui 12 etappi, näidatud on
-   lähimad.». Neither names an endpoint.
+5. **What a reader cannot open (amended 2026-11-05, owner, QA-04/QA-05)** — a
+   deleted Teema, or one outside the reader's scope — is never named, counted or
+   titled, and never described as a permissions matter. Navigation surfaces
+   (header, closed banner, rail, `get_matter`) say only *that* the history
+   continues past it, as a yes/no: forward «Jätkub teemas, mida siit avada ei
+   saa», backward «Varasem etapp, mida siit avada ei saa». `hidden_predecessors`
+   is a yes/no. A reader who may not read the Teema itself is told nothing about
+   its history (QA-06). Under 0181 this is a deleted Teema for a business reader.
+   A deleted predecessor is not offered as history (0102), and the walk is not
+   continued through a deleted stage (owner, QA-04: the cut is kept). A cycle
+   reads «Ahel jõuab tagasi juba näidatud teemani, kaugemale seda ei näidata.»
+   and a cut chain reads «Ahel on pikem kui 12 etappi, näidatud on lähimad.».
+   Neither names an endpoint.
 6. **One walk per request.** The `readable_continuations` tag caches the answer
    on the request, keyed on the Matter, its `superseded_by` and whether it is
    open. Header, banner and rail share one walk, and the HTMX re-renders
-   (inline saves, a closure's out-of-band header) read the same scope.
+   (inline saves, a closure's out-of-band header) read the same scope. Amended
+   2026-11-05 (QA-10): the backward history is walked once per Matter instance
+   and reader (memo keyed on the viewer object and `(pk, superseded_by_id,
+   is_open)`, never shared across readers), one query per level, and the header,
+   «Seotud materjalid» and the Dokumendid earlier-stage pages share it. At most
+   `MAX_PREDECESSORS` (12) direct predecessors are named; past that
+   `more_predecessors` is set and the header points to «Varasemad etapid»
+   (QA-08).
+6a. **No cycle through a closure (2026-11-05, QA-03).** `close_matter` refuses a
+   `Järglane` whose forward chain leads back to the closing Matter: the pair and
+   the pre-read chain are locked `FOR NO KEY UPDATE` in ascending id order; a
+   step changed meanwhile is locked as it is reached only with `NOWAIT`, so the
+   closure never waits out of order (independent review E-1: a waited late lock
+   could deadlock a legitimate closure), and a step somebody holds refuses it
+   with «Valitud järglase jätkuahel muutus samal ajal. Proovi uuesti …». The walk
+   is bounded at 200 hops, past which the closure is refused too. Every refusal
+   comes before any write, and the memoised history of the successor instance is
+   dropped after the write. The Lovable importer already refuses cycles at plan
+   time.
 7. **`get_matter`** (read-only MCP) carries `continuations`: `successor`,
    `successor_hidden`, `predecessors`, `hidden_predecessors`, `chain` (earliest
    first, this Teema included), `chain_starts_hidden`/`chain_continues_hidden`,
    `endpoint` (with `is_open`, only when known), `cyclic` and `truncated`. Each
    stage gives its id, reference and link, in the same viewer scope. There is
-   no new tool and no write scope.
+   no new tool and no write scope. Amended 2026-11-05: `hidden_predecessors` is a
+   boolean and `more_predecessors` is added (QA-05, QA-08); a reader who may not
+   read the Matter gets no continuation information at all (QA-06).
 8. **On lists (amended 2026-11-05).** Rows on the Teemad register (every surface
    that draws the shared matter table: Teemad, Minu asjad, Saabunud) and Teema
    search results carry one quiet line under the title: «Jätkub teemas 2025_196».
    The reference is a link. When the chain's known endpoint is not the direct
    successor, it follows the arrow («→ 2026_190 (avatud)»). An unreadable or
    deleted successor reads «Jätkub mujal» without a reference.
+   - Amended 2026-11-05 (QA-18/QA-19): a stage is named by reference and a short
+     title (40 characters, title last so a narrow cell clips the title first); a
+     stage without a reference is named by its short title once. With a known
+     endpoint other than the successor the line reads «Jätkub teemas X → [ … ]
+     viimane etapp Y (avatud|suletud) · pealkiri»; «viimane etapp» is visible,
+     the «…» is decoration and a screen reader hears «vahel veel N etappi»
+     (readable stages only).
    - One scoped batch query per page, plus one per chain level for the endpoints
      (`app/matters/continuation_lines.py`); never per row.
    - The status badge is unchanged.

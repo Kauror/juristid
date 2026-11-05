@@ -437,8 +437,11 @@ def test_the_indicators_cost_the_same_three_queries_however_many_cards(
     )
     _sent_opinion(one, "Koja arvamus 1")
 
+    # A fresh instance per measurement: the continuation history is memoised on
+    # the Matter instance (docs/adr/0207 §6, QA-10), so re-using `ours` would make
+    # the second call cheaper for a reason that has nothing to do with the cards.
     with CaptureQueriesContext(connection) as few:
-        engine.suggestions_for(ours, specialist)
+        engine.suggestions_for(Matter.objects.get(pk=ours.pk), specialist)
 
     for index in range(10):
         extra = _matter(
@@ -454,7 +457,7 @@ def test_the_indicators_cost_the_same_three_queries_however_many_cards(
         )
 
     with CaptureQueriesContext(connection) as many:
-        engine.suggestions_for(ours, specialist)
+        engine.suggestions_for(Matter.objects.get(pk=ours.pk), specialist)
 
     assert len(many) == len(few), (
         f"{len(few)} queries for one candidate, {len(many)} for eleven — "

@@ -10,12 +10,13 @@ from __future__ import annotations
 
 import datetime
 import hashlib
+import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -27,6 +28,7 @@ from app.core.enums import Visibility, most_restrictive, validate_visibility_ove
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
 from app.core.web_addresses import normalize_web_address
+from app.matters.continuations import forget_continuation_history
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     SELECTABLE_EXTERNAL_POSITION_PROVENANCE,
@@ -5644,8 +5646,19 @@ def close_matter(
         # leaving a closed file whose continuation is a tombstone. With the
         # successor locked too, one of them waits for the other, and the
         # successor is re-read here after any deletion that won.
-        rows = lock_matters_in_order(matter.pk, successor.pk)
+        #
+        # **And the successor's own forward chain** (QA-03). Two closures that
+        # would together close a cycle — `a -> b`, `c -> d`, then `b -> c` beside
+        # `d -> a` — lock disjoint pairs, so each could walk a chain the other
+        # had not committed yet. The chain is read once without locks and taken
+        # with the pair in the same global order; the cycle walk below re-reads
+        # it on the locked rows, so whichever closure waited sees the other's
+        # edge.
+        rows = lock_matters_in_order(
+            matter.pk, successor.pk, *_forward_chain_ids(successor.pk, stop=matter.pk)
+        )
         locked = rows[matter.pk]
+        callers_successor = successor
         successor = rows[successor.pk]
         if locked.deleted_at is not None:
             raise Matter.DoesNotExist(matter.pk)
@@ -5660,6 +5673,8 @@ def close_matter(
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
+    if successor is not None:
+        _refuse_continuation_cycle(locked, successor, rows)
     from app.matters.closure_work import live_work_at_closure
     from app.workflow.follow_ups import refuse_unconfirmed_closure
 
@@ -5688,6 +5703,12 @@ def close_matter(
             "updated_at",
         ]
     )
+    if successor is not None:
+        # The successor's earlier history just gained a stage: a history the
+        # caller's instance memoised before this write must not be answered from
+        # again in the same request (QA-10 memo; independent review, E).
+        forget_continuation_history(successor)
+        forget_continuation_history(callers_successor)
 
     # The step, the planned write-ups and the feedback waits end here, in this
     # transaction and under this lock — the same helper every other path that
@@ -5727,6 +5748,104 @@ def close_matter(
 
 #: What `Jätkub teise teema all` naming no Matter is told (ENG-065).
 SUPERSEDED_NEEDS_A_SUCCESSOR = "Kui töö jätkub teise teema all, vali teema, mille all see jätkub."
+
+#: What a closure is told when its successor already continues — directly or
+#: through later stages — as the Matter being closed (QA-03).
+CONTINUATION_CYCLE_REFUSAL = (
+    "Valitud järglase jätkuahel viib tagasi selle teemani. "
+    "Vali teine järglane või sulge teema ilma selleta."
+)
+
+#: What a closure is told when the successor's forward chain is longer than the
+#: check walks. No real chain comes near it; refusing is the safe answer.
+CONTINUATION_CHAIN_TOO_LONG_REFUSAL = (
+    "Valitud järglase jätkuahel on kontrollimiseks liiga pikk. "
+    "Vali teine järglane või sulge teema ilma selleta."
+)
+
+#: What a closure is told when the successor's chain changed between the read
+#: that chose which rows to lock and the locks themselves (another closure ran
+#: at the same moment). Nothing has been written; trying again reads it afresh.
+CONTINUATION_CHAIN_CHANGED_REFUSAL = (
+    "Valitud järglase jätkuahel muutus samal ajal. Proovi uuesti või sulge teema ilma järglaseta."
+)
+
+#: How many forward steps the cycle check follows from a proposed successor.
+#: Real chains are two or three stages; the read-side walks stop at
+#: `app.matters.continuations.MAX_HOPS` (12).
+CYCLE_CHECK_HOPS = 200
+
+
+def _forward_chain_ids(start: Any, *, stop: Any) -> list[Any]:
+    """The ids after `start` along `superseded_by`, read without locks.
+
+    Only to know which rows `close_matter` must lock with the pair; the answer
+    is decided by `_refuse_continuation_cycle` on the locked rows. Stops at
+    `stop` (the Matter being closed), at a row met twice and at the bound.
+    """
+    found: list[Any] = []
+    seen = {start}
+    current = start
+    for _ in range(CYCLE_CHECK_HOPS):
+        following = (
+            Matter.all_objects.filter(pk=current).values_list("superseded_by", flat=True).first()
+        )
+        if following is None or following in seen:
+            break
+        found.append(following)
+        if following == stop:
+            break
+        seen.add(following)
+        current = following
+    return found
+
+
+def _lock_now_or_refuse(pk: Any) -> Matter:
+    """Lock one more chain step without waiting, or refuse the closure (E-1)."""
+    try:
+        with (
+            transaction.atomic()
+        ):  # a savepoint: a refused lock leaves the outer transaction usable
+            return Matter.all_objects.select_for_update(no_key=True, nowait=True).get(pk=pk)
+    except OperationalError as exc:
+        raise DomainError(CONTINUATION_CHAIN_CHANGED_REFUSAL) from exc
+
+
+def _refuse_continuation_cycle(
+    closing: Matter, successor: Matter, locked: dict[Any, Matter]
+) -> None:
+    """Refuse a `Järglane` whose own forward chain leads back to `closing` (QA-03).
+
+    Walked on the rows `close_matter` holds `FOR NO KEY UPDATE`, every
+    direction-relevant column as it is under the lock. A step that was not in
+    the chain read before locking — it changed while this closure waited — is
+    locked late only with `NOWAIT`: a lock *waited for* outside the global
+    ascending order can deadlock a legitimate closure against an ordered writer
+    (independent review E-1), while one taken at once cannot. A free row is locked
+    and the walk goes on; a row somebody else holds refuses the closure with
+    `CONTINUATION_CHAIN_CHANGED_REFUSAL`. Nothing has been written either way,
+    and trying again reads the new chain and locks it in order.
+
+    Unscoped on purpose: a cycle through a stage the closing person may not
+    read is still a cycle, and the refusal names no stage. A loop elsewhere in
+    the data that does not pass through `closing` is not this closure's to
+    refuse; the walk stops where it first meets a row twice.
+    """
+    seen = {successor.pk}
+    step = successor
+    for _ in range(CYCLE_CHECK_HOPS):
+        following = step.superseded_by_id
+        if following is None:
+            return
+        if following == closing.pk:
+            raise DomainError(CONTINUATION_CYCLE_REFUSAL)
+        if following in seen:
+            return
+        seen.add(following)
+        held = locked.get(uuid.UUID(str(following)))
+        step = held if held is not None else _lock_now_or_refuse(following)
+    raise DomainError(CONTINUATION_CHAIN_TOO_LONG_REFUSAL)
+
 
 #: What a closure naming a successor that has since been deleted is told.
 SUCCESSOR_DELETED_REFUSAL = (

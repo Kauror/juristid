@@ -12,11 +12,17 @@ top of a traceback for the reader. Both routes therefore open the handle first
 and, if the object is missing, record the attempt as *failed* and answer 404 —
 the integrity problem goes to the log and to `check_evidence_integrity`, which
 is where an operator can act on it.
+
+**A HEAD is not a download.** It passes the same door and gets the same status
+and headers, `Content-Length` from the recorded size, but the file is never
+opened and no DOCUMENT_DOWNLOADED row is written (`app.core.http.head_response`,
+QA-07, 2026-11-05).
 """
 
 from __future__ import annotations
 
 import logging
+import posixpath
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -33,6 +39,7 @@ from django.http import (
 )
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.http import content_disposition_header
 from django.views.decorators.http import require_http_methods, require_safe
 
 from app.accounts import shared_gate
@@ -42,7 +49,7 @@ from app.core.authorization import may_write_business_content
 from app.core.client_ip import client_ip
 from app.core.decorators import business_write_required, viewer_for
 from app.core.errors import DomainError
-from app.core.http import content_disposition
+from app.core.http import content_disposition, head_response, is_head
 from app.core.middleware import NO_STORE
 from app.documents import inline
 from app.documents.email_intake import attachments_of, parent_email_of
@@ -131,6 +138,25 @@ def _open_evidence(request: HttpRequest, version: DocumentVersion, *, dispositio
             ),
         )
         raise Http404("Selle versiooni faili ei leitud hoidlast.") from None
+
+
+def _head_of_evidence(version: DocumentVersion, *, content_type: str) -> HttpResponse:
+    """HEAD on a stored version: GET's status and headers, nothing read, nothing audited.
+
+    Whether the object is there is asked of the storage's directory entry, not
+    by opening it, so a missing object is the same 404 a GET gives — logged at
+    error level for the operator, but with no audit row: a HEAD is not a
+    delivery, attempted or made (QA-07). The length is the recorded size.
+    """
+    if not evidence_storage().exists(version.storage_key):
+        logger.error(
+            "evidence object missing version=%s storage_key=%s sha256=%s method=HEAD",
+            version.pk,
+            version.storage_key,
+            version.sha256,
+        )
+        raise Http404("Selle versiooni faili ei leitud hoidlast.")
+    return head_response(content_type=content_type, content_length=version.size_bytes)
 
 
 class DocumentUploadForm(forms.Form):
@@ -328,10 +354,12 @@ def remove(request: HttpRequest, pk: Any) -> HttpResponse:
 
 # GET and HEAD only, outermost: a read-only route onto stored bytes answers no other
 # method. Without it, OPTIONS (which CSRF does not guard) or any other verb served
-# the file and wrote a DOCUMENT_DOWNLOADED row as if it had been a GET.
+# the file and wrote a DOCUMENT_DOWNLOADED row as if it had been a GET. A HEAD makes
+# every check a GET makes and answers its headers, but reads and audits nothing
+# (`_head_of_evidence`, QA-07).
 @require_safe
 @login_required
-def download(request: HttpRequest, pk: Any) -> FileResponse:
+def download(request: HttpRequest, pk: Any) -> HttpResponseBase:
     """Stream one evidence version to a user entitled to read it.
 
     The queryset is filtered through the document's visibility, so a restricted
@@ -345,6 +373,11 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
         ).select_related("document"),
         pk=pk,
     )
+
+    if is_head(request):
+        return _attachment_headers(
+            _head_of_evidence(version, content_type=version.mime_type), version
+        )
 
     handle = _open_evidence(request, version, disposition="attachment")
 
@@ -374,6 +407,11 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
         as_attachment=True,
         filename=version.original_filename,
     )
+    return _attachment_headers(response, version)
+
+
+def _attachment_headers(response: HttpResponseBase, version: DocumentVersion) -> HttpResponseBase:
+    """The download's own headers, for its GET and its HEAD alike."""
     response["X-Content-Type-Options"] = "nosniff"
     # Set explicitly rather than left to `FileResponse`, because the filename
     # also has to be safe: an upload's name is whatever the multipart part
@@ -409,6 +447,12 @@ def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
     if not inline.may_open_inline(filename=version.original_filename, mime_type=version.mime_type):
         return redirect("documents:download", pk=version.pk)
 
+    content_type = inline.inline_mime_for(version.original_filename)
+    if is_head(request):
+        # GET's headers from the recorded size; nothing read, nothing audited (QA-07).
+        head = _head_of_evidence(version, content_type=content_type)
+        return inline.apply_inline_headers(head, filename=version.original_filename)
+
     handle = _open_evidence(request, version, disposition="inline")
 
     record_security_event(
@@ -426,13 +470,13 @@ def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
         ),
     )
 
-    response = FileResponse(handle, content_type=inline.inline_mime_for(version.original_filename))
+    response = FileResponse(handle, content_type=content_type)
     return inline.apply_inline_headers(response, filename=version.original_filename)
 
 
 @require_safe
 @login_required
-def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
+def thumbnail(request: HttpRequest, pk: Any) -> HttpResponseBase:
     """Serve a generated preview image, inline.
 
     Inline is safe here and only here. These bytes were produced by this process
@@ -454,8 +498,21 @@ def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
         pk=pk,
     )
 
+    response: HttpResponseBase
     try:
-        handle = derivative_storage().open(derivative.storage_key, "rb")
+        if is_head(request):
+            # The size from the directory entry, the content never opened (QA-07).
+            size = derivative_storage().size(derivative.storage_key)
+            response = head_response(content_type="image/png", content_length=size)
+            # The line `FileResponse` writes for GET from the stored file's name.
+            disposition = content_disposition_header(
+                False, posixpath.basename(derivative.storage_key)
+            )
+            if disposition:
+                response["Content-Disposition"] = disposition
+        else:
+            handle = derivative_storage().open(derivative.storage_key, "rb")
+            response = FileResponse(handle, content_type="image/png")
     except FileNotFoundError:
         # A derivative is rebuildable, so a missing thumbnail is a gap rather
         # than an incident: it is logged for `rebuild_document_derivatives` to
@@ -464,7 +521,6 @@ def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
         logger.warning("derivative object missing derivative=%s", derivative.pk)
         raise Http404("Pisipilti ei leitud.") from None
 
-    response = FileResponse(handle, content_type="image/png")
     response["X-Content-Type-Options"] = "nosniff"
     # Belt and braces: even a generated PNG is served under a policy that
     # forbids scripts, so a hypothetical polyglot has nothing to execute.

@@ -386,8 +386,16 @@ def _related_matters(matter: Matter) -> list[DeletionBlocker]:
     file was replaced by that one" is a real record depending on this one, and
     the honest answer is to refuse rather than to delete somebody else's Teema
     or to leave a pointer into a tombstone that reads as a live replacement.
+
+    **Live predecessors only** (QA-20). A deleted predecessor keeps its
+    ``superseded_by`` — the edge is history under the tombstone, and nothing
+    clears it — but it is not a record that depends on this one: no reader is
+    ever shown a tombstone, and a tombstone can never be deleted again to clear
+    the way, so counting it made this Matter undeletable for ever. Both pointers
+    then name tombstones, which is what the architecture already allows for
+    every other row kept under one.
     """
-    count = Matter.all_objects.filter(superseded_by=matter.pk).exclude(pk=matter.pk).count()
+    count = Matter.objects.filter(superseded_by=matter.pk).exclude(pk=matter.pk).count()
     if not count:
         return []
     return [
@@ -674,7 +682,8 @@ def deletion_may_be_offered(matter: Matter) -> bool:
     pk = matter.pk
     blocked = (
         Document._base_manager.filter(matter_id=pk, legal_hold=True),
-        Matter.all_objects.filter(superseded_by=pk).exclude(pk=pk),
+        # Live predecessors only, as `_related_matters` counts them (QA-20).
+        Matter.objects.filter(superseded_by=pk).exclude(pk=pk),
         EntryRevision.objects.filter(entry__matter_id=pk),
         Submission._base_manager.filter(final_version__document__matter_id=pk).exclude(
             matter_id=pk

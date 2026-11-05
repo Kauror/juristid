@@ -1,28 +1,41 @@
 {% comment %}
 «Lisa seotud teema»: the Matters the header search would offer for this query,
-minus this Matter and the ones already related. Each row's button is the same
-`link` route a suggestion's «Seo teemaga» posts to — a person's own knowledge of
-a relationship needs no score (docs/adr/0062 §6).
+minus this Matter and the ones already related — except a stage of its own
+continuation history, which is shown labelled and without a button (QA-14).
+Each other row's button is the same `link` route a suggestion's «Seo teemaga»
+posts to — a person's own knowledge of a relationship needs no score
+(docs/adr/0062 §6).
 {% endcomment %}
 {% if picker_query %}
   {% if picker_results %}
     <ul class="factlist factlist--compact" data-related-picker-results>
       {% for hit in picker_results %}
-        <li class="factrow">
+        {% comment %}
+          A stage of this Teema's own continuation history is shown, so the
+          person who searched for it finds it, and labelled instead of offered:
+          the continuation already says more than a manual relation could, and
+          the `link` route refuses one (QA-14).
+        {% endcomment %}
+        <li class="factrow"{% if hit.stage_label %} data-related-picker-stage="{{ hit.matter.pk }}"{% endif %}>
           <span class="factrow__body">
-            {% if hit.display_reference %}<span class="factrow__kind">{{ hit.display_reference }}</span>{% endif %}
-            <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=hit.pk %}">{{ hit.title }}</a>
-            <span class="muted">{% if hit.is_open %}avatud{% else %}suletud{% endif %}</span>
+            {% if hit.matter.display_reference %}<span class="factrow__kind">{{ hit.matter.display_reference }}</span>{% endif %}
+            <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=hit.matter.pk %}">{{ hit.matter.title }}</a>
+            <span class="muted">{% if hit.matter.is_open %}avatud{% else %}suletud{% endif %}</span>
           </span>
           <span class="factrow__actions">
-            <form method="post" action="{% url 'related_materials:link' pk=matter.pk %}"
-                  hx-post="{% url 'related_materials:link' pk=matter.pk %}"
-                  hx-target="#seotud-materjalid" hx-swap="outerHTML">
-              {% csrf_token %}
-              {% include "related_materials/partials/state_fields.html" %}
-              <input type="hidden" name="teema" value="{{ hit.pk }}">
-              <button class="button button--tiny" type="submit">Seo teemaga</button>
-            </form>
+            {% if hit.stage_label %}
+              <span class="muted">{{ hit.stage_label }}</span>
+            {% else %}
+              <form method="post" action="{% url 'related_materials:link' pk=matter.pk %}"
+                    hx-post="{% url 'related_materials:link' pk=matter.pk %}"
+                    hx-target="#seotud-materjalid" hx-swap="outerHTML">
+                {% csrf_token %}
+                {% include "related_materials/partials/state_fields.html" %}
+                <input type="hidden" name="teema" value="{{ hit.matter.pk }}">
+                {# The Teema in the name: five identical «Seo teemaga» are no use to a screen reader (QA-15). #}
+                <button class="button button--tiny" type="submit" aria-label="Seo teemaga {% if hit.matter.display_reference %}{{ hit.matter.display_reference }} — {% endif %}{{ hit.matter.title }}">Seo teemaga</button>
+              </form>
+            {% endif %}
           </span>
         </li>
       {% endfor %}

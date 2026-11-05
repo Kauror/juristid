@@ -22,6 +22,7 @@ happens here, when somebody asks:
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from typing import Any
 
 from django.contrib import messages
@@ -115,16 +116,41 @@ def _limit(source: Any) -> int:
 # ---------------------------------------------------------------------------
 
 
-def _picker_results(request: HttpRequest, matter: Matter, query: str) -> list[Matter]:
+@dataclass(frozen=True)
+class PickerHit:
+    """One «Lisa seotud teema» result.
+
+    `stage_label` is «Juba varasem etapp» or «Juba hilisem etapp» for a stage of
+    this Teema's own continuation history: the row is shown so the person who
+    searched for it finds it, and offers no «Seo teemaga» (QA-14).
+    """
+
+    matter: Matter
+    stage_label: str = ""
+
+
+def _picker_results(request: HttpRequest, matter: Matter, query: str) -> list[PickerHit]:
     """Matters for «Lisa seotud teema»: the header search's own ranking, minus
-    this Matter and the ones already related to it."""
+    this Matter and the ones already related to it.
+
+    A stage of the continuation history stays in the list, labelled and without
+    an add control, even when it is also related by hand: somebody looking for
+    it should learn it is already the earlier (or later) stage, not that it
+    does not exist (QA-14).
+    """
     if len(query) < MIN_PICKER_CHARACTERS:
         return []
+    stages = selectors.continuation_stage_labels(matter, request.user)
     already = {item.other.pk for item in selectors.confirmed_relations(matter, request.user)} | {
         matter.pk
     }
     found = search_matters(query=query, user=request.user, limit=PICKER_LIMIT + len(already) + 1)
-    return [result.matter for result in found if result.matter.pk not in already][:PICKER_LIMIT]
+    hits = [
+        PickerHit(matter=result.matter, stage_label=stages.get(result.matter.pk, ""))
+        for result in found
+        if result.matter.pk in stages or result.matter.pk not in already
+    ]
+    return hits[:PICKER_LIMIT]
 
 
 def section_context(
@@ -252,9 +278,24 @@ def picker(request: HttpRequest, pk: Any) -> HttpResponse:
 @business_write_required
 @require_http_methods(["POST"])
 def link(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Seo teemaga», from a suggestion or from the picker: the same service."""
+    """«Seo teemaga», from a suggestion or from the picker: the same service.
+
+    Refused for a stage of this Teema's continuation history (QA-14): the
+    picker offers no control for one, and a crafted POST writes nothing — no
+    relation that would only repeat the continuation, and `superseded_by` is
+    never touched here in any case.
+    """
     matter = _visible_matter(request, pk)
     other = _target_matter(request.user, request.POST.get("teema"))
+    stage_label = selectors.continuation_stage_labels(matter, request.user).get(other.pk)
+    if stage_label:
+        which = "varasem" if stage_label == selectors.EARLIER_STAGE_LABEL else "hilisem"
+        return _after_write(
+            request,
+            matter,
+            f"See teema on juba selle teema {which} etapp; eraldi seost ei lisatud.",
+            is_error=True,
+        )
     try:
         _, created = services.link_related_matters(matter=matter, other=other, actor=request.user)
     except DomainError as error:

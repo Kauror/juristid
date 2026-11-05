@@ -37,7 +37,10 @@ from __future__ import annotations
 import posixpath
 import re
 import unicodedata
+from typing import Any
 from urllib.parse import quote
+
+from django.http import HttpResponse
 
 #: Anything a client could use as a directory separator. Applied before the
 #: basename is taken, because ``PurePosixPath`` does not treat ``\`` as one and
@@ -95,3 +98,31 @@ def content_disposition(disposition: str, filename: str) -> str:
         # escaped rather than only the ones that happen to matter in a path.
         header += f"; filename*=UTF-8''{quote(name, safe='')}"
     return header
+
+
+# -- HEAD on a route that serves stored bytes (QA-07, 2026-11-05) -------------------
+
+
+def is_head(request: Any) -> bool:
+    """Whether this read asks only for the headers."""
+    return getattr(request, "method", "") == "HEAD"
+
+
+def head_response(*, content_type: str, content_length: int) -> HttpResponse:
+    """What a byte route answers to HEAD: its GET's status and headers, no body.
+
+    A HEAD asks whether the file is there and what it is, not for the file. So
+    the route makes every check its GET makes — the same door, the same 404 —
+    and then answers from what is already recorded about the file: its type and
+    its size (``Content-Length``). It never reads the file's content, never
+    hashes it and never writes a ``DOCUMENT_DOWNLOADED`` row, because nothing
+    was delivered. Before this, a HEAD was audited as a download, and a held
+    OneNote original was hashed in full to answer one (QA-07).
+
+    The caller adds the ``Content-Disposition``, ``nosniff``, CSP and
+    ``Cache-Control`` lines its GET sends, from the same code as the GET.
+    """
+    response = HttpResponse(content_type=content_type)
+    # Explicit: CommonMiddleware would otherwise write the empty body's 0.
+    response["Content-Length"] = str(max(int(content_length), 0))
+    return response

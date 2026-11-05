@@ -348,16 +348,33 @@ whose addressee nobody recorded should look short, not incomplete.
     **`Eelnev teema` only where `Seotud materjalid` is not on this rail.** That
     section lists every readable earlier stage under `Varasemad etapid`, the
     direct predecessors among them (docs/adr/0209), so naming them here as well
-    would say the predecessor twice in one rail. `Jätkub teemas` stays: the
-    section lists only earlier stages, and the way forward is still a shortcut
-    worth having. The «may not read» predecessor row stays too, because the
-    section neither names nor counts what this reader may not read. A fragment
-    that redraws this rail without the section (an inline `Saatja` save) keeps
-    the predecessor rows, so the rail never loses them.
+    would say the predecessor twice in one rail. Every view that draws this rail
+    today carries the section: the Teema page and every `#teema-vaade`
+    re-render build it in `_overview_context`, and the inline `Saatja` save,
+    which swaps this rail alone, builds it in `_field_surface_context`
+    (app/matters/views.py). So the `Eelnev teema` rows below are only a
+    fallback for a context without `related_materials`, which no current view
+    produces; they are kept so that such a context could never lose the
+    predecessor (QA-17).
+
+    The «cannot be opened» predecessor row stays even beside the section,
+    because the section neither names nor mentions what this reader cannot
+    open. It is yes/no only, in the agreed words: never a count, a reference or
+    a title (QA-05).
+
+    **`Jätkub teemas` only where the closed banner does not already say it**
+    (owner, QA-16). On a closed Teema whose successor this reader can open, the
+    banner names it, with a link and the title (`matter_banner.html`), and the
+    header names it as well; a third mention here was noise. That is exactly
+    `not matter.is_open and continuations.later`, the banner's own condition.
+    An open Teema keeps the row, because it has no closed banner (the section
+    lists only earlier stages, and the way forward is a shortcut worth having).
+    A successor that cannot be opened is not named by the banner either, so its
+    «cannot be opened» row stays.
   {% endcomment %}
   {% load continuations %}
   {% readable_continuations matter as continuations %}
-  {% if continuations.later or continuations.hidden_after or continuations.hidden_predecessors or matter.collaborators.all or continuations.earlier and not related_materials %}
+  {% if continuations.later and matter.is_open or continuations.hidden_after and not continuations.later or continuations.hidden_predecessors or matter.collaborators.all or continuations.earlier and not related_materials %}
     <div class="railcard">
       <span class="railcard__label">Seotud</span>
       {% for earlier in continuations.earlier %}{% if not related_materials %}
@@ -370,21 +387,19 @@ whose addressee nobody recorded should look short, not incomplete.
       {% endif %}{% endfor %}
       {% if continuations.hidden_predecessors %}
         <div class="railcard__row">
-          <span class="railcard__key">Eelnev teema</span>
-          <span class="muted">{% if continuations.hidden_predecessors == 1 %}teema, mida sul ei ole lubatud näha{% else %}{{ continuations.hidden_predecessors }} teemat, mida sul ei ole lubatud näha{% endif %}</span>
+          <span class="muted">Varasem etapp, mida siit avada ei saa</span>
         </div>
       {% endif %}
-      {% if continuations.later %}
+      {% if continuations.later %}{% if matter.is_open %}
         <div class="railcard__row">
           <span class="railcard__key">Jätkub teemas</span>
           <a href="{% url 'matters:matter_detail' pk=continuations.later.pk %}" title="{{ continuations.later.title }}">
             {% if continuations.later.display_reference %}{{ continuations.later.display_reference }} · {% endif %}{{ continuations.later.title|truncatechars:40 }} →
           </a>
         </div>
-      {% elif continuations.hidden_after %}
+      {% endif %}{% elif continuations.hidden_after %}
         <div class="railcard__row">
-          <span class="railcard__key">Jätkub teemas</span>
-          <span class="muted">teema, mida sul ei ole lubatud näha</span>
+          <span class="muted">Jätkub teemas, mida siit avada ei saa</span>
         </div>
       {% endif %}
       {% for person in matter.collaborators.all %}

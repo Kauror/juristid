@@ -1,7 +1,10 @@
 {% comment %}
 One candidate Matter. The title opens it; nothing on the card itself writes.
 The reasons are the whole explanation — no score, no percentage — and the two
-decisions are explicit buttons (docs/adr/0062 §6, §7).
+decisions are explicit buttons (docs/adr/0062 §6, §7). Each button's accessible
+name carries the Teema's reference and title, so a list of cards is not a list
+of identical «Lisa» / «Ei ole seotud» to a screen reader (QA-15); the visible
+word stays the same.
 {% endcomment %}
 <li class="relatedcard {% if item.is_dismissed %}relatedcard--hidden{% endif %}"
     data-related-candidate="teema:{{ item.matter.pk }}">
@@ -65,7 +68,7 @@ decisions are explicit buttons (docs/adr/0062 §6, §7).
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="liik" value="teema">
           <input type="hidden" name="kandidaat" value="{{ item.matter.pk }}">
-          <button class="button button--quiet button--tiny" type="submit">Taasta soovitus</button>
+          <button class="button button--quiet button--tiny" type="submit" aria-label="Taasta soovitus {% if item.matter.display_reference %}{{ item.matter.display_reference }} — {% endif %}{{ item.matter.title }}">Taasta soovitus</button>
         </form>
       {% else %}
         <form method="post" action="{% url 'related_materials:link' pk=matter.pk %}"
@@ -74,7 +77,7 @@ decisions are explicit buttons (docs/adr/0062 §6, §7).
           {% csrf_token %}
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="teema" value="{{ item.matter.pk }}">
-          <button class="button button--quiet button--tiny" type="submit">Lisa</button>
+          <button class="button button--quiet button--tiny" type="submit" aria-label="Lisa {% if item.matter.display_reference %}{{ item.matter.display_reference }} — {% endif %}{{ item.matter.title }}">Lisa</button>
         </form>
         <form method="post" action="{% url 'related_materials:dismiss' pk=matter.pk %}"
               hx-post="{% url 'related_materials:dismiss' pk=matter.pk %}"
@@ -83,7 +86,7 @@ decisions are explicit buttons (docs/adr/0062 §6, §7).
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="liik" value="teema">
           <input type="hidden" name="kandidaat" value="{{ item.matter.pk }}">
-          <button class="button button--quiet button--tiny" type="submit">Ei ole seotud</button>
+          <button class="button button--quiet button--tiny" type="submit" aria-label="Ei ole seotud {% if item.matter.display_reference %}{{ item.matter.display_reference }} — {% endif %}{{ item.matter.title }}">Ei ole seotud</button>
         </form>
       {% endif %}
     </div>

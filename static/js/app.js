@@ -1302,6 +1302,141 @@
     }
   }, true);
 
+  /* ---- «Seotud materjalid»: focus stays in the section (QA-13) ----------
+   * Every decision in the section — `Lisa`, `Seo teemaga`, `×`, `Ei ole
+   * seotud`, `Taasta soovitus`, `Näita veel` — answers with the whole section
+   * (`hx-target="#seotud-materjalid"`, outerHTML). That destroys the control
+   * that had focus, and the general rule below then searched the document for
+   * the first landing mark, which is `Lisa teemale` near the top of the page:
+   * a keyboard user who removed one relation in the rail had to find the
+   * section again before removing the next.
+   *
+   * So before such a swap this remembers where the control stood, and after it
+   * the landing is, in order:
+   *
+   *   1. the same control again, where it survived (a `data-related-*` mark
+   *      on the control itself), or what stands in its place in the row under
+   *      the suggestions (`Näita peidetud` becomes `Peida peidetud`);
+   *   2. the row that took the acted-on row's place in the same list
+   *      (`data-related-confirmed`, `data-related-stages`, the suggestion
+   *      cards, the picker results), or the one before it when it was last —
+   *      its first control, the title link;
+   *   3. the section's own heading, made focusable for the purpose.
+   *
+   * Only a successful swap, as above: a refusal is somebody else's to focus.
+   * The notice the section returns («Teemad on seotud.») is said through one
+   * polite live region that exists *before* the swap — a `role="status"` node
+   * that arrives already holding its text is not reliably announced — the
+   * same visually hidden status pattern as `#global-search-status`. */
+  var relatedPlacement = null;
+  var relatedAnnouncer = null;
+
+  var ensureRelatedAnnouncer = function () {
+    if (relatedAnnouncer && document.contains(relatedAnnouncer)) {
+      return relatedAnnouncer;
+    }
+    relatedAnnouncer = document.createElement("p");
+    relatedAnnouncer.className = "visually-hidden";
+    relatedAnnouncer.id = "seotud-materjalid-teade";
+    relatedAnnouncer.setAttribute("role", "status");
+    relatedAnnouncer.setAttribute("aria-live", "polite");
+    document.body.appendChild(relatedAnnouncer);
+    return relatedAnnouncer;
+  };
+
+  var relatedMark = function (element) {
+    if (!element || !element.attributes) {
+      return null;
+    }
+    for (var i = 0; i < element.attributes.length; i += 1) {
+      var name = element.attributes[i].name;
+      if (name.indexOf("data-related-") === 0) {
+        return "[" + name + "]";
+      }
+    }
+    return null;
+  };
+
+  var firstVisibleControl = function (root) {
+    var controls = root.querySelectorAll("a[href], button:not([disabled]), summary, input:not([type=hidden])");
+    for (var i = 0; i < controls.length; i += 1) {
+      if (controls[i].getClientRects().length) {
+        return controls[i];
+      }
+    }
+    return null;
+  };
+
+  document.body.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail || {};
+    var target = detail.target;
+    if (!target || target.id !== "seotud-materjalid" || !detail.xhr || detail.xhr.status >= 300) {
+      return;
+    }
+    var asker = (detail.requestConfig && detail.requestConfig.elt) || detail.elt;
+    var place = { target: target, control: null, more: false, list: null, index: -1 };
+    if (asker && asker.closest) {
+      place.control = asker.matches && asker.matches("a, button") ? relatedMark(asker) : null;
+      place.more = Boolean(asker.closest(".relatedmaterials__more"));
+      var item = asker.closest("li");
+      var list = item ? item.parentElement : null;
+      var listMark = list && list.matches && list.matches("ul, ol") ? relatedMark(list) : null;
+      if (item && listMark && target.contains(item)) {
+        place.list = listMark;
+        place.index = Array.prototype.indexOf.call(list.children, item);
+      }
+    }
+    relatedPlacement = place;
+    ensureRelatedAnnouncer();
+  }, true);
+
+  var relatedLanding = function (place) {
+    var section = document.getElementById("seotud-materjalid");
+    if (!section) {
+      return null;
+    }
+    if (place.control) {
+      var same = section.querySelector(place.control);
+      if (same && same.getClientRects().length) {
+        return same;
+      }
+    }
+    /* `Näita peidetud` answers with `Peida peidetud` in its place, and `Näita
+     * veel` with whatever of that row is left. */
+    var more = place.more ? section.querySelector(".relatedmaterials__more") : null;
+    var moreControl = more ? firstVisibleControl(more) : null;
+    if (moreControl) {
+      return moreControl;
+    }
+    if (place.list && place.index >= 0) {
+      var list = section.querySelector(place.list);
+      var rows = list ? list.children : [];
+      for (var i = Math.min(place.index, rows.length - 1); i >= 0; i -= 1) {
+        var landing = firstVisibleControl(rows[i]);
+        if (landing) {
+          return landing;
+        }
+      }
+    }
+    return section.querySelector("#seotud-materjalid-heading") || section;
+  };
+
+  var announceRelated = function () {
+    var section = document.getElementById("seotud-materjalid");
+    var notice = section && section.querySelector("[data-related-notice]");
+    var text = notice ? notice.textContent.replace(/\s+/g, " ").trim() : "";
+    if (!text) {
+      return;
+    }
+    var region = ensureRelatedAnnouncer();
+    /* Emptied first, then filled on the next turn, so the same sentence twice
+     * in a row («Teemad on seotud.» after two links) is announced twice. */
+    region.textContent = "";
+    window.setTimeout(function () {
+      region.textContent = text;
+    }, 50);
+  };
+
   /* A chronology row is `display: contents` — the grid lays out its children
    * directly — so the row itself has no box and cannot hold focus. The landing
    * is inside it: its first visible control, or else its first visible part,
@@ -1364,6 +1499,13 @@
     if (target.closest && target.closest("[data-background-swap]")) {
       return;
     }
+    /* «Seotud materjalid» (QA-13, above): its own swap only, read and cleared
+     * here whether or not focus was lost, and its notice announced either way. */
+    var related = relatedPlacement && relatedPlacement.target === target ? relatedPlacement : null;
+    if (related) {
+      relatedPlacement = null;
+      announceRelated();
+    }
     /* Focus counts as lost when it is on nothing, on the document, or on an
      * element the swap has just detached. The last case is the common one and
      * was missed at first: the browser moves focus to `body` only *after* the
@@ -1386,6 +1528,28 @@
     var place = placement && placement.target === target ? placement : null;
     if (place) {
       placement = null;
+    }
+    if (related && !place) {
+      var relatedTo = relatedLanding(related);
+      if (relatedTo) {
+        /* A control is focusable as it is; only the heading (or the section
+         * itself) needs `tabindex="-1"`, which takes nothing out of the Tab
+         * order and so traps nothing. */
+        if (!relatedTo.matches("a[href], button, summary, input") && !relatedTo.hasAttribute("tabindex")) {
+          relatedTo.setAttribute("tabindex", "-1");
+        }
+        /* No scroll where it is already on screen — the jump this avoids —
+         * and the browser's own reveal where the new section is shorter and
+         * the landing ended up above the viewport. */
+        var box = relatedTo.getBoundingClientRect();
+        var onScreen = box.bottom > 0 && box.top < (window.innerHeight || document.documentElement.clientHeight);
+        try {
+          relatedTo.focus({ preventScroll: onScreen });
+        } catch (error) {
+          relatedTo.focus();
+        }
+        return;
+      }
     }
     var placed = place ? placedLanding(place) : null;
     if (placed) {

@@ -153,7 +153,14 @@ rather than read.
     the title because it answers the next question a reader of «Jätkub mujal»
     asks: where? `Matter.superseded_by` is the only edge, and every stage is
     re-read through this request's scope (`readable_continuations`), so a stage
-    this reader may not read is said to exist and is never named.
+    this reader cannot open (deleted, or outside the scope) is never named.
+
+    **Yes or no, never how many** (owner, 2026-11-05, QA-04/QA-05): such a stage
+    gets one sentence, «Jätkub teemas, mida siit avada ei saa» forward or
+    «Varasem etapp, mida siit avada ei saa» back — no count, reference or title,
+    and never «not allowed», because a deleted stage is not a permissions
+    matter. `hidden_predecessors` is only ever tested, never printed, so it may
+    be a count or a bool.
 
     References, not titles: the band names the file in the shape a lawyer types
     into search, and the rail's `Seotud` card carries the titles. Three or more
@@ -169,7 +176,7 @@ rather than read.
         <span class="matterhead__continuationkey">Teema etapid</span>
         <ol class="chainpath">
           {% if continuations.hidden_before and continuations.before %}
-            <li class="chainpath__stage chainpath__stage--hidden">eelnev teema, mida sul ei ole lubatud näha</li>
+            <li class="chainpath__stage chainpath__stage--hidden">Varasem etapp, mida siit avada ei saa</li>
           {% endif %}
           {% for stage in continuations.before %}
             <li class="chainpath__stage"><a href="{% url 'matters:matter_detail' pk=stage.pk %}" title="{{ stage.title }}">{% continuation_label stage %}</a></li>
@@ -179,7 +186,7 @@ rather than read.
             <li class="chainpath__stage"><a href="{% url 'matters:matter_detail' pk=stage.pk %}" title="{{ stage.title }}">{% continuation_label stage %}</a></li>
           {% endfor %}
           {% if continuations.hidden_after %}
-            <li class="chainpath__stage chainpath__stage--hidden">teema, mida sul ei ole lubatud näha</li>
+            <li class="chainpath__stage chainpath__stage--hidden">Jätkub teemas, mida siit avada ei saa</li>
           {% endif %}
         </ol>
         {% if continuations.endpoint_is_known %}
@@ -196,12 +203,12 @@ rather than read.
                 {% for earlier in continuations.predecessors %}
                   <li><a href="{% url 'matters:matter_detail' pk=earlier.pk %}" title="{{ earlier.title }}">{% continuation_label earlier %}</a></li>
                 {% endfor %}
-              </ul>{% if hidden %} ja {{ hidden }}, mida sul ei ole lubatud näha{% endif %}
+              </ul>
+              {% if continuations.more_predecessors %}<a class="matterhead__continuationnote" href="#seotud-materjalid">ja veel, vt «Varasemad etapid»</a>{% endif %}
             </span>
-          {% elif hidden == 1 %}
-            <span class="matterhead__continuationitem">Eelnev teema, mida sul ei ole lubatud näha</span>
-          {% elif hidden %}
-            <span class="matterhead__continuationitem">Eelnevad teemad ({{ hidden }}), mida sul ei ole lubatud näha</span>
+          {% endif %}
+          {% if hidden %}
+            <span class="matterhead__continuationitem">Varasem etapp, mida siit avada ei saa</span>
           {% endif %}
         {% endwith %}
       {% endif %}
@@ -209,7 +216,7 @@ rather than read.
         {% if continuations.successor %}
           <span class="matterhead__continuationitem">Jätkub teemas <a href="{% url 'matters:matter_detail' pk=continuations.successor.pk %}" title="{{ continuations.successor.title }}">{% continuation_label continuations.successor %}</a></span>
         {% elif continuations.hidden_after %}
-          <span class="matterhead__continuationitem">Jätkub teemas, mida sul ei ole lubatud näha</span>
+          <span class="matterhead__continuationitem">Jätkub teemas, mida siit avada ei saa</span>
         {% endif %}
       {% endif %}
       {% if continuations.cyclic %}

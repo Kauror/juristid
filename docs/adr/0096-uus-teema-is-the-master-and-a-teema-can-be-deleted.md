@@ -202,7 +202,10 @@ the Matter itself: they are the audit proof the architecture requires, and
 nothing else remains.
 
 **A second `Matter` is never owned.** The walk refuses to follow
-`Matter.superseded_by`, and a Matter superseded by this one is a blocker.
+`Matter.superseded_by`, and a *live* Matter superseded by this one is a blocker
+(amended 2026-11-05, QA-20: a deleted predecessor keeps its `superseded_by` as
+history and no longer blocks; the blocker and `_related_matters` read
+`Matter.objects`, not `all_objects`. No tombstone is changed).
 
 **The tombstone is invisible by construction.** `Matter.objects` is a manager
 that excludes `deleted_at__isnull=False`, and `Matter.all_objects` is the

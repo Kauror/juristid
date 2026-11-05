@@ -1215,9 +1215,12 @@ def _continuations(user: Any, matter: Any) -> dict[str, Any]:
     """Where this Matter's work came from and where it continues (docs/adr/0207).
 
     The Teema page's own answer (`app.matters.continuations`), through the same
-    reader's scope: `superseded_by` is the only edge, a stage this reader may
-    not read is counted or flagged and never named, and a cycle or a chain
-    longer than the walk's bound says so instead of looping.
+    reader's scope: `superseded_by` is the only edge, a stage this reader cannot
+    open is a yes/no flag — never a count, reference or title (QA-05) — and a
+    cycle or a chain longer than the walk's bound says so instead of looping.
+    The direct predecessors are capped at `MAX_PREDECESSORS`, with
+    `more_predecessors` saying so (QA-08); every earlier stage is in
+    `historical_predecessors`, capped at `MAX_HISTORY`.
     """
     from app.matters.continuations import continuations_for, historical_predecessors
 
@@ -1232,7 +1235,9 @@ def _continuations(user: Any, matter: Any) -> dict[str, Any]:
         "successor": _continuation_ref(chain.successor) if chain.successor else None,
         "successor_hidden": chain.hidden_after and chain.successor is None,
         "predecessors": [_continuation_ref(earlier) for earlier in chain.predecessors],
-        "hidden_predecessors": chain.hidden_predecessors,
+        "more_predecessors": chain.more_predecessors,
+        # Yes or no: an earlier stage exists that this reader cannot open.
+        "hidden_predecessors": bool(chain.hidden_predecessors),
         # Earliest first, this Matter included; only the readable linear part.
         "chain": (
             [_continuation_ref(stage) for stage in chain.before]
@@ -1289,15 +1294,17 @@ def _continuation_line(continuations: dict[str, Any]) -> str | None:
     if continuations["successor"]:
         return continuations["successor"]["reference"] or continuations["successor"]["id"]
     if continuations["successor_hidden"]:
-        return "a matter this reader may not read"
+        return "a matter that cannot be opened here"
     return None
 
 
 def _predecessor_line(continuations: dict[str, Any]) -> str | None:
     named = [item["reference"] or item["id"] for item in continuations["predecessors"]]
-    hidden = continuations["hidden_predecessors"]
-    if hidden:
-        named.append(f"{hidden} matter(s) this reader may not read")
+    if continuations.get("more_predecessors"):
+        named.append("more (see the earlier stages)")
+    # Yes or no, never how many (QA-05).
+    if continuations["hidden_predecessors"]:
+        named.append("an earlier stage that cannot be opened here")
     return ", ".join(named) or None
 
 
@@ -1307,7 +1314,7 @@ def _chain_line(continuations: dict[str, Any]) -> str | None:
         return None
     line = " -> ".join(item["reference"] or item["id"] for item in stages)
     if continuations["chain_continues_hidden"]:
-        line += " -> (a matter this reader may not read)"
+        line += " -> (a matter that cannot be opened here)"
     if continuations["cyclic"]:
         line += " (the chain leads back to itself; not followed further)"
     elif continuations["truncated"]:

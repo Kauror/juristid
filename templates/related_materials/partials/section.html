@@ -105,7 +105,13 @@ lists and the suggestions cannot disagree about the click that just happened.
       {% for item in related_materials.stages %}
         <li class="factrow relatedmaterials__row" data-related-stage="{{ item.matter.pk }}"{% if item.is_also_manual %} data-related-matter="{{ item.matter.pk }}"{% endif %}>
           <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{% if item.matter.display_reference %}{{ item.matter.display_reference }} — {% endif %}{{ item.matter.title }}</a>
-          <span class="muted relatedmaterials__meta">{{ item.state_label }}{% if item.is_also_manual %} · seotud ka käsitsi{% endif %}</span>
+          {% comment %}
+            Flat and compact, earliest first (owner, QA-12): a direct
+            predecessor says so, a deeper stage names the stage it continued
+            as — always a row of this list, so the reference is one this
+            reader may open.
+          {% endcomment %}
+          <span class="muted relatedmaterials__meta" data-related-stage-depth="{{ item.depth }}">{{ item.state_label }}{% if item.is_direct %} · vahetu eelmine etapp{% elif item.continued_as_label %} · jätkus teemana {{ item.continued_as_label }}{% endif %}{% if item.is_also_manual %} · seotud ka käsitsi{% endif %}</span>
           {% if can_write and matter.is_open and item.is_also_manual %}
             <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:unlink' pk=matter.pk %}"
                   hx-post="{% url 'related_materials:unlink' pk=matter.pk %}"

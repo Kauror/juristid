@@ -108,7 +108,7 @@ def test_opening_suggestions_explains_and_linking_shows_both_sides(page, base_ur
     # `Lisa`, which is the target's own word for this action on a suggestion
     # row (TEEMA_TARGET.html §G.3). The picker results below are a different
     # template and keep `Seo teemaga`.
-    card.get_by_role("button", name="Lisa", exact=True).click()
+    card.get_by_role("button", name=re.compile(r"^Lisa ")).click()
 
     expect(page.locator("[data-related-notice]")).to_contain_text("Teemad on seotud.")
     expect(confirmed_row(page, title_a)).to_be_visible()
@@ -161,7 +161,7 @@ def test_an_earlier_opinion_becomes_background_and_stays_where_it_was(page, base
     # page, which is only a compatibility redirect now (docs/adr/0061).
     assert re.search(r"/teemad/[0-9a-f-]{36}/dokumendid/\?roll=arvamus$", source_href), source_href
 
-    card.get_by_role("button", name="Lisa", exact=True).click()
+    card.get_by_role("button", name=re.compile(r"^Lisa ")).click()
 
     expect(page.locator("[data-related-notice]")).to_contain_text("Taustmaterjal on lisatud.")
     row = background_row(page, SUBMISSION_TITLE)
@@ -187,7 +187,7 @@ def test_archive_material_opens_through_the_archive_and_files_no_link(page, base
     expect(card.locator(".relatedcard__label")).to_have_text("Arhiivimaterjal")
     expect(card.locator(".relatedcard__reasons")).to_contain_text("Sama õigusakt: näidisseadus")
 
-    card.get_by_role("button", name="Lisa", exact=True).click()
+    card.get_by_role("button", name=re.compile(r"^Lisa ")).click()
 
     row = background_row(page, ARCHIVE_LETTER_TITLE)
     expect(row).to_be_visible()

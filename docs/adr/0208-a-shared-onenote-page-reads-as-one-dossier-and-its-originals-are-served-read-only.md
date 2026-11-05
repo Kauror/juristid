@@ -57,9 +57,11 @@ ootavad teemaga seostamist ega ole ühegi teema dokumentide all; originaalid on
 lähtekorpuses alles.» Then the relationship: «Sama menetluse etapid: 2025_140 →
 2025_196» (each other stage a link to its own view of the page, through its
 own scope), or «Teemade vahel ei ole registris jätku seost.», «Ülejäänud
-teemade vahel …», «Teemade jätku seosed ei moodusta üht ahelat …», and «Lisaks
-on leht seotud N teemaga, mida selles kasutajavaates ei kuvata.» for hidden
-ones. It replaces «Sama leht on seotud ka» on a shared page; that line stays for
+teemade vahel …», «Teemade jätku seosed ei moodusta üht ahelat …», and «Leht
+on seotud ka teemaga, mida siit avada ei saa.» when there are hidden ones — a
+yes/no, never how many, and «Ühine toimik · N teemat» counts only the Teemad
+this reader can open (amended 2026-11-05, owner rule QA-05, independent review
+E-2; it printed the hidden number before). It replaces «Sama leht on seotud ka» on a shared page; that line stays for
 any other case.
 
 ### 3. The narrowest read-only download of a held original
@@ -101,6 +103,14 @@ any other case.
   `no_capture_batch`, `blob_unreadable`). Any failure after the gate is a 404
   with a failed audit row, never a 500, and the answer names no path, key or
   digest.
+* **HEAD (amended 2026-11-05, QA-07).** Every byte route — evidence download and
+  open, thumbnail, opinion-archive letter, page XML (`source_xml`) and this held
+  original — answers HEAD with GET's access checks, status and headers, and
+  `Content-Length` from the recorded size (or the directory entry). It reads no
+  file content, does no hashing and writes no `DOCUMENT_DOWNLOADED` row: a HEAD
+  tells the reader only what the page already shows. A held original's HEAD is
+  answered from the catalogue alone; only the GET proves size and digest.
+  Other methods stay 405 with `Allow: GET, HEAD` and no row.
 
 Nothing but the audit row is written: no Document, no import row, no decision.
 On the page, a held shared-page file offers «Laadi alla (allikas)»; an imported
@@ -108,9 +118,11 @@ file keeps its Document links; a withheld file stays unnamed.
 
 ### 4. Dokumendid: the earlier stages' pages
 
-For a Teema with readable predecessors (`continuations_for(...).before` and
-`.predecessors`), «Eelnevate etappide ajalooline materjal» lists the
-predecessors' own linked pages that this Teema does not link itself — each once,
+For a Teema with readable earlier stages (`historical_predecessors(matter,
+viewer).stages`: every branch, the same graph «Varasemad etapid» lists, 0209
+§1), «Eelnevate etappide ajalooline materjal» lists those stages' own linked
+pages (amended 2026-11-05, QA-11: it had used `continuations_for`'s linear chain
+plus the direct predecessors, which left out converging grand-predecessors) that this Teema does not link itself — each once,
 by page identity, linking to the *predecessor's* page view (its scope, not this
 Teema's), with the stage reference, section, file count and that link's import
 status chip. A page this Teema links itself is not repeated; its own row in

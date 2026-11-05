@@ -22,7 +22,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.core.enums import Visibility
-from app.matters.continuation_lines import UNNAMED, continuation_lines
+from app.matters.continuation_lines import UNNAMED, continuation_lines, stage_title
 from app.matters.models import Matter
 from app.matters.services import close_matter
 from app.matters.work_status import CONTINUES
@@ -100,9 +100,11 @@ def test_the_register_row_links_the_readable_successor(signed_in, specialist):
     row = _row_for(_register(signed_in), old)
     line = _line(row)
 
-    assert _squash(line) == f"Jätkub teemas {new.display_reference}"
+    # The reference, then a short title cut to 40 characters (QA-18).
+    assert _squash(line) == f"Jätkub teemas {new.display_reference} · {stage_title(new)}"
+    assert stage_title(new).endswith("…") and len(stage_title(new)) <= 40
     assert _link(new) in line
-    # The long title is the link's tooltip; the visible text is the reference.
+    # The long title is still the link's tooltip; the link text is the reference.
     assert f'title="{new.title}"' in line
     assert '<a class="continuationline__link"' in line
 
@@ -148,7 +150,7 @@ def test_a_restricted_successor_is_linked_for_an_internal_reader(client, special
 
     line = _line(_row_for(_register(client), old))
 
-    assert _squash(line) == f"Jätkub teemas {hidden.display_reference}"
+    assert _squash(line) == f"Jätkub teemas {hidden.display_reference} · {stage_title(hidden)}"
 
 
 def _table_for(user, matters: list[Matter], *, fetched_by=None) -> str:
@@ -186,7 +188,9 @@ def test_minu_asjad_and_saabunud_share_the_row_and_its_line(specialist):
     """The table partial batches for itself, so every surface drawing it agrees."""
     old, new = _chain(2, owner=specialist)
     table = _table_for(specialist, [old, new])
-    assert _squash(_line(_row_for(table, old))) == f"Jätkub teemas {new.display_reference}"
+    assert _squash(_line(_row_for(table, old))) == (
+        f"Jätkub teemas {new.display_reference} · {stage_title(new)}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -201,15 +205,19 @@ def test_a_closed_successor_that_continues_names_it_then_the_endpoint(signed_in,
     line = _line(_row_for(body, first))
 
     # The immediate successor first, always; the endpoint after it, distinct.
+    # «viimane etapp» is visible now (QA-19); the successor's title is for a
+    # screen reader only, the endpoint's is visible (QA-18).
     assert _squash(line) == (
-        f"Jätkub teemas {middle.display_reference} → , viimane etapp "
-        f"{last.display_reference} (avatud)"
+        f"Jätkub teemas {middle.display_reference} ({stage_title(middle)}) → , viimane etapp "
+        f"{last.display_reference} (avatud) · {stage_title(last)}"
     )
     links = re.findall(r'href="(/teemad/[^"]+/)"', line)
     assert links == [f"/teemad/{middle.pk}/", f"/teemad/{last.pk}/"]
-    assert '<span class="visually-hidden">, viimane etapp</span>' in line
+    assert '<span class="visually-hidden">,</span>' in line
     # The stage that continues straight into the endpoint names only that one.
-    assert _squash(_line(_row_for(body, middle))) == f"Jätkub teemas {last.display_reference}"
+    assert _squash(_line(_row_for(body, middle))) == (
+        f"Jätkub teemas {last.display_reference} · {stage_title(last)}"
+    )
 
 
 def test_stages_between_the_successor_and_the_endpoint_are_an_ellipsis(signed_in, specialist):
@@ -219,8 +227,9 @@ def test_stages_between_the_successor_and_the_endpoint_are_an_ellipsis(signed_in
     line = _squash(_line(_row_for(_register(signed_in), first)))
 
     assert line == (
-        f"Jätkub teemas {second.display_reference} → … , viimane etapp "
-        f"{last.display_reference} (suletud)"
+        f"Jätkub teemas {second.display_reference} ({stage_title(second)}) → … , "
+        f"vahel veel 1 etapp, viimane etapp {last.display_reference} (suletud) · "
+        f"{stage_title(last)}"
     )
 
 
@@ -231,7 +240,7 @@ def test_an_endpoint_behind_a_step_the_reader_may_not_read_is_not_named(signed_i
     body = _register(signed_in)
     line = _line(_row_for(body, first))
 
-    assert _squash(line) == f"Jätkub teemas {middle.display_reference}"
+    assert _squash(line) == f"Jätkub teemas {middle.display_reference} · {stage_title(middle)}"
     assert last.display_reference not in body
     # The middle stage's own successor is the deleted one: nothing named there.
     assert _squash(_line(_row_for(body, middle))) == "Jätkub mujal"
@@ -243,7 +252,9 @@ def test_a_cycle_names_the_successor_and_no_endpoint(signed_in, specialist):
 
     body = _register(signed_in)
     for row, successor in ((a, b), (b, c), (c, a)):
-        assert _squash(_line(_row_for(body, row))) == f"Jätkub teemas {successor.display_reference}"
+        assert _squash(_line(_row_for(body, row))) == (
+            f"Jätkub teemas {successor.display_reference} · {stage_title(successor)}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -277,7 +288,7 @@ def test_a_search_result_links_the_readable_successor(signed_in, specialist):
     row = _search_row(body, old)
     line = re.search(r'<div class="resultrow__continuation">.*?</div>', row, re.S).group(0)
 
-    assert _squash(line) == f"Jätkub teemas {new.display_reference}"
+    assert _squash(line) == f"Jätkub teemas {new.display_reference} · {stage_title(new)}"
     assert _link(new) in line
     assert 'class="resultrow resultrow--continued"' in row
     # Beside the result, never inside its link.
@@ -352,8 +363,8 @@ def test_endpoints_cost_one_query_per_level_not_per_row(signed_in, specialist):
     body = _register(signed_in, olek="suletud")
     for row, successor, end in zip(rows, successors, ends, strict=True):
         assert _squash(_line(_row_for(body, row))) == (
-            f"Jätkub teemas {successor.display_reference} → , viimane etapp "
-            f"{end.display_reference} (avatud)"
+            f"Jätkub teemas {successor.display_reference} ({stage_title(successor)}) → , "
+            f"viimane etapp {end.display_reference} (avatud) · {stage_title(end)}"
         )
     assert body.count("viimane etapp") == 10
 

@@ -31,8 +31,8 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-HIDDEN_SUCCESSOR = "Jätkub teemas, mida sul ei ole lubatud näha"
-HIDDEN_PREDECESSOR = "Eelnev teema, mida sul ei ole lubatud näha"
+HIDDEN_SUCCESSOR = "Jätkub teemas, mida siit avada ei saa"
+HIDDEN_PREDECESSOR = "Varasem etapp, mida siit avada ei saa"
 
 
 def _chain(n: int, **fields) -> list[Matter]:
@@ -100,8 +100,8 @@ def test_a_closed_teema_names_its_successor_in_the_header_banner_and_rail(signed
     assert _link(new) in banner
     assert "Asendatud järgnenud teemaga" not in banner
 
-    seotud = _squash(_seotud(body))
-    assert f"Jätkub teemas {reference} · Uus pakendiseaduse eelnõu" in seotud
+    # The rail does not say it a third time (owner, QA-16).
+    assert "Jätkub teemas" not in _squash(_seotud(body))
 
 
 def test_the_successor_names_its_one_predecessor(signed_in, specialist):
@@ -208,7 +208,7 @@ def test_a_deleted_successor_is_said_to_exist_and_never_named(signed_in, special
 
     assert HIDDEN_SUCCESSOR in _squash(_nav(body))
     assert f"Teema on suletud. {HIDDEN_SUCCESSOR}" in _squash(_banner(body))
-    assert "teema, mida sul ei ole lubatud näha" in _squash(_seotud(body))
+    assert "Jätkub teemas, mida siit avada ei saa" in _squash(_seotud(body))
     assert "Kustutatud jätkuteema" not in body
     assert new.display_reference not in body
     assert f"/teemad/{new.pk}/" not in body
@@ -236,9 +236,11 @@ def _render_for(user, template: str, matter) -> str:
 
 def test_an_outsider_administrator_reads_no_reference_at_all(client, specialist, administrator):
     """The page itself is a 404 for an administrator without a grant (docs/adr/0181);
-    and were a partial drawn for one, neither end of the chain would be named."""
-    old = factories.MatterFactory(owner=specialist, title="Varasem")
-    new = factories.MatterFactory(owner=specialist, title="Hilisem")
+    and were a partial drawn for one, neither end of the chain would be named — nor
+    even flagged: a reader who may not read the Matter learns nothing about its
+    chain (QA-06; this test asserted the «may not see» flags before)."""
+    old = factories.MatterFactory(owner=specialist, title="Varasem teema 81")
+    new = factories.MatterFactory(owner=specialist, title="Hilisem teema 82")
     close_matter(matter=old, disposition=Disposition.SUPERSEDED, actor=specialist, successor=new)
     old.refresh_from_db()
 
@@ -250,12 +252,12 @@ def test_an_outsider_administrator_reads_no_reference_at_all(client, specialist,
         assert new.display_reference not in response.content.decode()
 
     banner = _render_for(administrator, "matters/partials/matter_banner.html", old)
-    assert HIDDEN_SUCCESSOR in _squash(banner)
-    assert new.display_reference not in banner and "Hilisem" not in banner
+    assert HIDDEN_SUCCESSOR not in _squash(banner)
+    assert new.display_reference not in banner and "Hilisem teema 82" not in banner
     new_header = _render_for(administrator, "matters/partials/header.html", new)
-    assert HIDDEN_PREDECESSOR in _squash(new_header)
+    assert HIDDEN_PREDECESSOR not in _squash(new_header)
     assert old.display_reference not in new_header.replace(new.display_reference, "")
-    assert "Varasem" not in new_header
+    assert "Varasem teema 81" not in new_header
 
 
 # ---------------------------------------------------------------------------
