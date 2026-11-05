@@ -27,7 +27,9 @@ still needs to open one, so this module offers exactly that and nothing more:
 * **Audited like every served file.** `DOCUMENT_DOWNLOADED`, source
   ``onenote_source_original``, success and failure alike, through
   `shared_gate.audit_detail` (the `source_xml` pattern). A failure is a 404 that
-  names neither a path nor a key, never a 500.
+  names neither a path nor a key, never a 500. A HEAD is not a download: the
+  same door and headers, answered from the catalogue, with no file read, no
+  hash and no audit row (QA-07).
 
 Nothing is written but the audit row: no Document, no import row, no decision.
 """
@@ -46,7 +48,7 @@ from typing import Any, BinaryIO
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.http import FileResponse, Http404, HttpRequest
+from django.http import FileResponse, Http404, HttpRequest, HttpResponseBase
 from django.shortcuts import get_object_or_404
 from django.views.decorators.http import require_safe
 
@@ -54,7 +56,7 @@ from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.client_ip import client_ip
-from app.core.http import content_disposition
+from app.core.http import content_disposition, head_response, is_head
 from app.documents.models import Document
 from app.legacy_import.source_pages import (
     LegacySourceResource,
@@ -222,16 +224,26 @@ def _capture_of(row: LegacySourceResourceImport) -> str:
     return str(recorded or row.resource.source_page.capture_id or "")
 
 
-def open_original(resource: LegacySourceResource, row: LegacySourceResourceImport) -> BinaryIO:
-    """A handle on the proved original, positioned at its start. Raises `OriginalUnavailable`."""
-    sha = resource.sha256 or ""
-    if not _SHA.fullmatch(sha):
+def check_recorded(resource: LegacySourceResource, row: LegacySourceResourceImport) -> Any:
+    """What the catalogue alone can refuse; the row's capture batch. Raises `OriginalUnavailable`.
+
+    The database half of `open_original`, and all a HEAD asks: it touches no
+    file in the corpus, the seal included (QA-07).
+    """
+    if not _SHA.fullmatch(resource.sha256 or ""):
         raise OriginalUnavailable("resource_digest_invalid")
     if resource.size_bytes <= 0:
         raise OriginalUnavailable("resource_empty")
     batch = row.import_batch
     if batch is None or batch.source_system != CAPTURE_BATCH_SOURCE_SYSTEM:
         raise OriginalUnavailable("no_capture_batch")
+    return batch
+
+
+def open_original(resource: LegacySourceResource, row: LegacySourceResourceImport) -> BinaryIO:
+    """A handle on the proved original, positioned at its start. Raises `OriginalUnavailable`."""
+    batch = check_recorded(resource, row)
+    sha = resource.sha256
     package = find_package(
         capture_id=_capture_of(row), manifest_sha256=batch.source_snapshot_sha256
     )
@@ -298,7 +310,7 @@ def withheld_elsewhere(resource: LegacySourceResource, viewer: Any) -> bool:
 # OPTIONS (which CSRF does not guard) served and audited the file like a GET.
 @require_safe
 @login_required
-def source_original(request: HttpRequest, pk: Any, resource_pk: Any) -> FileResponse:
+def source_original(request: HttpRequest, pk: Any, resource_pk: Any) -> HttpResponseBase:
     """One held original of a page this reader may open, as an attachment."""
     from app.legacy_import.historical_views import visible_links
 
@@ -315,6 +327,27 @@ def source_original(request: HttpRequest, pk: Any, resource_pk: Any) -> FileResp
         # nothing to audit — exactly the answer for an id that does not exist,
         # as `source_xml` answers a page without stored XML.
         raise Http404(NOT_FOUND)
+
+    if is_head(request):
+        # The same door as GET and GET's headers, answered from the catalogue:
+        # the corpus is not touched, the original is not hashed and nothing is
+        # audited as downloaded (QA-07). A HEAD cannot tell that a sealed blob
+        # has gone missing since the import; the GET that follows still proves
+        # size and digest before it serves a byte.
+        try:
+            check_recorded(resource, row)
+        except OriginalUnavailable as failure:
+            logger.warning(
+                "held OneNote original unavailable link=%s resource=%s outcome=%s method=HEAD",
+                link.pk,
+                resource.pk,
+                failure.outcome,
+            )
+            raise Http404(NOT_FOUND) from None
+        head = head_response(
+            content_type="application/octet-stream", content_length=resource.size_bytes
+        )
+        return _original_headers(head, resource)
 
     def audit(*, succeeded: bool, outcome: str) -> None:
         record_security_event(
@@ -347,6 +380,13 @@ def source_original(request: HttpRequest, pk: Any, resource_pk: Any) -> FileResp
         raise Http404(NOT_FOUND) from None
     audit(succeeded=True, outcome="served")
     response = FileResponse(handle, content_type="application/octet-stream", as_attachment=True)
+    return _original_headers(response, resource)
+
+
+def _original_headers(
+    response: HttpResponseBase, resource: LegacySourceResource
+) -> HttpResponseBase:
+    """The held original's headers, for its GET and its HEAD alike."""
     response["Content-Disposition"] = content_disposition(
         "attachment", resource.original_filename or f"{resource.sha256[:12]}.bin"
     )
