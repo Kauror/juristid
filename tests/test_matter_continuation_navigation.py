@@ -100,8 +100,8 @@ def test_a_closed_teema_names_its_successor_in_the_header_banner_and_rail(signed
     assert _link(new) in banner
     assert "Asendatud järgnenud teemaga" not in banner
 
-    seotud = _squash(_seotud(body))
-    assert f"Jätkub teemas {reference} · Uus pakendiseaduse eelnõu" in seotud
+    # The rail does not say it a third time (owner, QA-16).
+    assert "Jätkub teemas" not in _squash(_seotud(body))
 
 
 def test_the_successor_names_its_one_predecessor(signed_in, specialist):
@@ -208,7 +208,7 @@ def test_a_deleted_successor_is_said_to_exist_and_never_named(signed_in, special
 
     assert HIDDEN_SUCCESSOR in _squash(_nav(body))
     assert f"Teema on suletud. {HIDDEN_SUCCESSOR}" in _squash(_banner(body))
-    assert "teema, mida sul ei ole lubatud näha" in _squash(_seotud(body))
+    assert "Jätkub teemas, mida siit avada ei saa" in _squash(_seotud(body))
     assert "Kustutatud jätkuteema" not in body
     assert new.display_reference not in body
     assert f"/teemad/{new.pk}/" not in body
