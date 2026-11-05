@@ -84,7 +84,7 @@ SCAN_ENTRY_BUDGET = 5000
 #: Package subdirectories that hold content, never another package.
 _NOT_PACKAGES = frozenset({"blobs", "pages"})
 
-_SHA = re.compile(r"^[0-9a-f]{64}$")
+_SHA = re.compile(r"[0-9a-f]{64}")
 _CHUNK = 1 << 20
 
 NOT_FOUND = "Faili originaali ei leitud."
@@ -181,7 +181,7 @@ def _open_package(
         blobs = set()
         for line in sums.read_text(encoding="utf-8").splitlines():
             digest, _, name = line.partition("  ")
-            if name.startswith("blobs/") and name[6:] == digest and _SHA.match(digest):
+            if name.startswith("blobs/") and name[6:] == digest and _SHA.fullmatch(digest):
                 blobs.add(digest)
     except (OSError, ValueError):
         return None
@@ -193,7 +193,7 @@ def _open_package(
 def find_package(*, capture_id: str, manifest_sha256: str) -> SealedPackage | None:
     """The sealed package of `capture_id` whose manifest is `manifest_sha256`, or ``None``."""
     configured = getattr(settings, "HISTORICAL_SOURCE_ROOT", "") or ""
-    if not configured or not capture_id or not _SHA.match(manifest_sha256 or ""):
+    if not configured or not capture_id or not _SHA.fullmatch(manifest_sha256 or ""):
         return None
     root = Path(configured)
     key = (str(root), capture_id, manifest_sha256)
@@ -225,7 +225,7 @@ def _capture_of(row: LegacySourceResourceImport) -> str:
 def open_original(resource: LegacySourceResource, row: LegacySourceResourceImport) -> BinaryIO:
     """A handle on the proved original, positioned at its start. Raises `OriginalUnavailable`."""
     sha = resource.sha256 or ""
-    if not _SHA.match(sha):
+    if not _SHA.fullmatch(sha):
         raise OriginalUnavailable("resource_digest_invalid")
     if resource.size_bytes <= 0:
         raise OriginalUnavailable("resource_empty")

@@ -1008,11 +1008,6 @@ def test_an_outsider_administrator_is_served_nothing(held, client, administrator
     assert not _audits()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-E MINOR-2: visible_links does not exclude a soft-deleted Teema's link, so its "
-    "OneNote page and held originals stay reachable through it (docs/adr/0102)",
-)
 def test_a_deleted_teemas_link_serves_no_original(held, client, specialist):
     Matter.all_objects.filter(pk=held["b"].pk).update(deleted_at=timezone.now())
     client.force_login(specialist)

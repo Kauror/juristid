@@ -73,8 +73,12 @@ def visible_links(user: Any) -> Any:
     (Stage-2D brief 60).
     """
     scope = scope_for_user(user)
+    # A deleted Teema's link is not a way in (docs/adr/0102, 0096): its pages and
+    # their held originals are read through a live Teema or not at all.
     return apply_scope(
-        MatterSourcePage.objects.select_related("matter", "source_page"),
+        MatterSourcePage.objects.select_related("matter", "source_page").filter(
+            matter__deleted_at__isnull=True
+        ),
         matter_visibility_q(scope, prefix="matter__"),
     )
 
@@ -665,7 +669,6 @@ def historical_summary(matter: Matter, user: Any) -> dict[str, Any]:
     earlier = predecessor_pages(matter, user, own=links)
     if not links:
         return {"links": [], "predecessor_pages": earlier} if earlier else {}
-    files = sum(link.source_page.file_count for link in links)
     sections = list(dict.fromkeys(link.source_page.source_section for link in links))
     statuses = import_statuses(links)
     for link in links:
@@ -674,7 +677,9 @@ def historical_summary(matter: Matter, user: Any) -> dict[str, Any]:
     return {
         "links": links,
         "page_count": len(links),
-        "file_count": files,
+        # The files the pages show now, every capture's (the same count as their
+        # status chips), not the first capture's `file_count` (QA-E, 2026-11-05).
+        "file_count": sum(status.files for status in statuses.values()),
         "sections": sections,
         "first": links[0],
         "status": teema_import_status(list(statuses.values())),
