@@ -116,6 +116,10 @@ NOT_MATTER_DATA = {
     "legacy_import:review_decide": "historical review",
     "legacy_import:source_page": "historical source",
     "legacy_import:source_xml": "historical source",
+    # A held original of that page: the link and the resource, both checked
+    # against each other and the reader's scope (docs/adr/0208,
+    # tests/test_onenote_shared_dossiers.py).
+    "legacy_import:source_original": "historical source",
     # A person, not a Matter (tests/test_person_work*).
     "matters:person_work": "person",
     # A metric slug, not an id (tests/test_reporting_*).

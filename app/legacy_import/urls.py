@@ -10,7 +10,7 @@ from django.urls import path
 
 from app.legacy_import import archive_views as archive
 from app.legacy_import import historical_views as views
-from app.legacy_import import opinion_views
+from app.legacy_import import opinion_views, source_originals
 
 urlpatterns = [
     path(
@@ -48,6 +48,13 @@ urlpatterns = [
     ),
     path("ajalugu/<uuid:pk>/", views.source_page, name="source_page"),
     path("ajalugu/<uuid:pk>/lahtefail/", views.source_xml, name="source_xml"),
+    # A held original of that page (docs/adr/0208). Both ids name rows; the
+    # sealed package and the blob are found from those rows, never from the URL.
+    path(
+        "ajalugu/<uuid:pk>/allikas/<uuid:resource_pk>/",
+        source_originals.source_original,
+        name="source_original",
+    ),
     path("haldus/ajaloo-ulevaatus/", views.review_queue, name="review_queue"),
     path("haldus/ajaloo-ulevaatus/<uuid:pk>/", views.review_decide, name="review_decide"),
 ]
