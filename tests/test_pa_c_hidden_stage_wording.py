@@ -324,7 +324,6 @@ def test_qa05_get_matter_flags_hidden_predecessors_without_a_count(narrow):
     _no_count(text)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-05: agent A words the rail (rail.html)")
 def test_qa05_the_rail_says_yes_or_no_in_the_agreed_words(client, narrow):
     viewed = _teema(narrow, "PA-C VAADATUD-69")
     for n in range(2):
@@ -338,7 +337,6 @@ def test_qa05_the_rail_says_yes_or_no_in_the_agreed_words(client, narrow):
     _no_count(rail)
 
 
-@pytest.mark.xfail(strict=True, reason="QA-04: agent A words the rail (rail.html)")
 def test_qa04_the_rail_calls_a_deleted_successor_unopenable(signed_in, specialist):
     old = _teema(specialist, "PA-C vana-71")
     gone = _teema(specialist, "PA-C KUSTUTATUD-72")
