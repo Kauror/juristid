@@ -94,6 +94,7 @@ FILE_ROUTES = {
     "documents:open",
     "documents:thumbnail",
     "legacy_import:source_xml",
+    "legacy_import:source_original",
     "legacy_import:opinion_archive_file",
 }
 

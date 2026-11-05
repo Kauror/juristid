@@ -63,7 +63,47 @@
       </p>
     {% endif %}
 
-    {% if other_matters %}
+    {% if dossier.shared %}
+      {% comment %}
+        A page linked to several Teemad says two facts at once, and both are
+        true (docs/adr/0208): the page was captured whole and reads here whole,
+        as one dossier; and which Teema each of its files belongs to has not
+        been decided, so the files are held — not lost, not failed. Then how
+        the Teemad relate, by the register's own continuation edge only
+        (`Matter.superseded_by`); a Teema this reader may not read is counted,
+        never named. It replaces «Sama leht on seotud ka»: one chain names
+        every Teema, and otherwise the overview below lists each.
+      {% endcomment %}
+      <div class="dossiernote" role="note" aria-labelledby="toimik-heading">
+        <p class="dossiernote__title" id="toimik-heading">Ühine toimik · {{ dossier.total }} teemat</p>
+        <p class="dossiernote__text">
+          Leht on tervikuna hõivatud ja siin täielikult loetav. Milline fail millisele
+          teemale kuulub, ei ole otsustatud: failid ootavad teemaga seostamist ega ole
+          ühegi teema dokumentide all; originaalid on lähtekorpuses alles.
+        </p>
+        {% for chain in dossier.chains %}
+          <p class="dossiernote__chain">
+            Sama menetluse etapid:
+            {% for item in chain %}
+              {% if item.link.pk == link.pk %}<strong aria-current="page">{{ item.matter.display_reference|default:item.matter.title|truncatechars:40 }}</strong>{% else %}<a href="{% url 'legacy_import:source_page' pk=item.link.pk %}">{{ item.matter.display_reference|default:item.matter.title|truncatechars:40 }}</a>{% endif %}{% if not forloop.last %} → {% endif %}
+            {% endfor %}
+          </p>
+        {% endfor %}
+        {% if dossier.kind == "NONE" %}
+          <p class="dossiernote__chain">Teemade vahel ei ole registris jätku seost.</p>
+        {% elif dossier.kind == "PARTIAL_CHAIN" and dossier.unchained %}
+          <p class="dossiernote__chain">Ülejäänud teemade vahel ei ole registris jätku seost.</p>
+        {% elif dossier.kind == "COMPLEX" %}
+          <p class="dossiernote__chain">Teemade jätku seosed ei moodusta üht ahelat (koonduvad või kordavad end).</p>
+        {% endif %}
+        {% if dossier_rows %}
+          <p class="dossiernote__chain"><a href="#ulevaade-heading">Lehe teemad ja failid</a> on allpool ülevaatena.</p>
+        {% endif %}
+        {% if dossier.hidden %}
+          <p class="dossiernote__chain">Lisaks on leht seotud {{ dossier.hidden }} teemaga, mida selles kasutajavaates ei kuvata.</p>
+        {% endif %}
+      </div>
+    {% elif other_matters %}
       <p class="cardnote">
         Sama leht on seotud ka:
         {% for other in other_matters %}
@@ -161,6 +201,9 @@
                   {% elif block.state == "held_shared" %}
                     {{ block.size_bytes|filesizeformat }} ·
                     <span class="statechip statechip--waiting">Ootab teemaga seostamist</span>
+                    {% if block.original_pk %}
+                      · <a href="{% url 'legacy_import:source_original' pk=link.pk resource_pk=block.original_pk %}" download>Laadi alla (allikas)</a>
+                    {% endif %}
                     <span class="casefile__hint">Leht on seotud mitme teemaga; faili kuuluvuse otsustab inimene. Originaal on lähtekorpuses alles.</span>
                   {% elif block.state == "held_review" %}
                     {{ block.size_bytes|filesizeformat }} ·
@@ -192,6 +235,74 @@
       <p class="empty">Sellel lehel ei ole teksti ega faile.</p>
     {% endif %}
   </section>
+
+  {% if dossier_rows %}
+    {% comment %}
+      For a page whose Teemad are not one continuation chain: what a person
+      deciding the files' Teemad would want side by side. Read-only — no
+      decision is offered or recorded here (docs/adr/0208 §5). Files are the
+      page's own, each on its OneNote day; a withheld one stays unnamed.
+    {% endcomment %}
+    <section class="card" aria-labelledby="ulevaade-heading">
+      <h2 class="sectionlabel" id="ulevaade-heading">
+        Lehe teemad ja failid
+        <span class="sectionlabel__count">{{ dossier_rows|length }}</span>
+      </h2>
+      <p class="cardnote">Ülevaade on ainult lugemiseks: siin ei seota faile ühegi teemaga.</p>
+      <table class="data-table dossierreview">
+        <caption class="visually-hidden">Lehega seotud teemad</caption>
+        <thead>
+          <tr><th scope="col">Teema</th><th scope="col">Pealkiri</th><th scope="col">Olek</th><th scope="col">Jätku seos</th></tr>
+        </thead>
+        <tbody>
+          {% for row in dossier_rows %}
+            <tr>
+              <td>
+                {% if row.teema.link.pk == link.pk %}
+                  <strong aria-current="page">{{ row.teema.matter.display_reference|default:"—" }}</strong>
+                {% else %}
+                  <a href="{% url 'legacy_import:source_page' pk=row.teema.link.pk %}">{{ row.teema.matter.display_reference|default:"—" }}</a>
+                {% endif %}
+              </td>
+              <td>{{ row.teema.matter.title|truncatechars:80 }}</td>
+              <td>{% if row.teema.matter.is_open %}Avatud{% else %}Suletud{% endif %}</td>
+              <td>{{ row.relation }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if dossier.hidden %}
+        <p class="cardnote">Lisaks {{ dossier.hidden }} teemat, mida selles kasutajavaates ei kuvata.</p>
+      {% endif %}
+      {% if dossier_files %}
+        <table class="data-table dossierreview">
+          <caption class="visually-hidden">Lehe failid ja nende OneNote'i kuupäevad</caption>
+          <thead>
+            <tr><th scope="col">Fail</th><th scope="col">Lisatud OneNote'i</th></tr>
+          </thead>
+          <tbody>
+            {% for file in dossier_files %}
+              <tr>
+                {% if file.state == "withheld" %}
+                  <td class="casefile__name--withheld">Fail, mida selles kasutajavaates ei kuvata</td>
+                  <td></td>
+                {% else %}
+                  <td>{{ file.filename }}</td>
+                  <td>
+                    {% if file.added_known %}
+                      <time datetime="{{ file.added_at|date:'c' }}">{{ file.added_at|date:"j.n.Y" }}</time>
+                    {% else %}
+                      Lisamise kuupäev teadmata
+                    {% endif %}
+                  </td>
+                {% endif %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endif %}
+    </section>
+  {% endif %}
 
   {% if page_links %}
     <section class="card" aria-labelledby="lingid-heading">

@@ -44,6 +44,7 @@ from app.documents.inline import may_open_inline
 from app.documents.models import Document
 from app.legacy_import.historical_apply import is_empty_at_source
 from app.legacy_import.opinion_views import MATTER_NOT_FOUND, queue_rows
+from app.legacy_import.shared_dossiers import shared_dossier
 from app.legacy_import.source_pages import (
     CandidateClass,
     CandidateState,
@@ -97,6 +98,15 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
         .filter(pk__in=[record.document_id for record in documents.values() if record.document_id])
         .values_list("pk", flat=True)
     )
+    blocks = _rendered_blocks(
+        page,
+        resources,
+        documents,
+        readable=readable,
+        servable=_servable_originals(page, request.user),
+    )
+    # The page's Teemad and how they relate, for this reader (docs/adr/0208).
+    dossier = shared_dossier(page, request.user)
 
     return render(
         request,
@@ -105,7 +115,7 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "matter": link.matter,
             "link": link,
             "page": page,
-            "blocks": _rendered_blocks(page, resources, documents, readable=readable),
+            "blocks": blocks,
             "page_links": page_links(page.links),
             "other_matters": (
                 visible_links(request.user)
@@ -113,9 +123,37 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
                 .exclude(pk=link.pk)
                 .select_related("matter")
             ),
+            "dossier": dossier,
+            "dossier_rows": [
+                {"teema": item, "relation": dossier.relation_of(item)} for item in dossier.teemad
+            ]
+            if dossier.ambiguous
+            else [],
+            "dossier_files": [block for block in blocks if block["kind"] == "file"]
+            if dossier.ambiguous
+            else [],
             "nav_active": "teemad",
         },
     )
+
+
+def _servable_originals(page: LegacySourcePage, user: Any) -> set[Any]:
+    """Resources of `page` whose held original this reader may be offered.
+
+    A resource some Teema holds as a `Document` this reader may not read is left
+    out: the original is never a way round a stricter document (ENG-047). The
+    download route checks the same again on its own (`source_originals`).
+    """
+    made = dict(
+        LegacySourceResourceImport.objects.filter(
+            resource__source_page=page, document__isnull=False
+        ).values_list("document_id", "resource_id")
+    )
+    readable = set(
+        Document.objects.visible_to(user).filter(pk__in=made).values_list("pk", flat=True)
+    )
+    stricter = {resource for document, resource in made.items() if document not in readable}
+    return set(page.resources.exclude(pk__in=stricter).values_list("pk", flat=True))
 
 
 def page_links(stored: Any) -> list[dict[str, str]]:
@@ -142,7 +180,12 @@ def page_links(stored: Any) -> list[dict[str, str]]:
 
 
 def _rendered_blocks(
-    page: LegacySourcePage, resources: dict, documents: dict, *, readable: set[Any]
+    page: LegacySourcePage,
+    resources: dict,
+    documents: dict,
+    *,
+    readable: set[Any],
+    servable: set[Any] | None = None,
 ) -> list[dict]:
     """Narrative and files in one sequence, ready for the template.
 
@@ -161,6 +204,7 @@ def _rendered_blocks(
             key = block.get("resource_key", "")
             resource = resources.get(key)
             record = documents.get(key)
+            state = _file_state(resource, record)
             if record is not None and record.document_id and record.document_id not in readable:
                 # A file this reader may not read: its place in the page is kept
                 # and nothing about it is — no name, no size, no id to follow
@@ -176,6 +220,9 @@ def _rendered_blocks(
                         "version": None,
                         "opens_inline": False,
                         "state": "withheld",
+                        "original_pk": None,
+                        "added_at": None,
+                        "added_known": False,
                     }
                 )
                 continue
@@ -202,7 +249,21 @@ def _rendered_blocks(
                     # A file the importer has not reached yet is shown as
                     # itself, waiting. Hiding it would make the page look like
                     # it had fewer materials than it does.
-                    "state": _file_state(resource, record),
+                    "state": state,
+                    # A held shared-page file's sealed original, read-only
+                    # (docs/adr/0208): the resource id the download route takes.
+                    "original_pk": (
+                        resource.pk
+                        if state in SERVED_STATES
+                        and resource is not None
+                        and resource.size_bytes > 0
+                        and resource.pk in (servable or set())
+                        else None
+                    ),
+                    # The OneNote day the file was added, when the source has
+                    # one (docs/adr/0206); never the capture or import time.
+                    "added_at": resource.source_added_at if resource else None,
+                    "added_known": bool(resource and resource.source_added_at),
                 }
             )
         else:
@@ -233,6 +294,10 @@ HELD_STATES = {
     # The evidence pilot's review outcomes (app/legacy_import/evidence_pilot.py).
     "RECORD_HELD_FOR_REVIEW": "held_review",
 }
+
+#: The file states whose sealed original the page offers (docs/adr/0208). The
+#: download route keeps its own list of the hold codes it serves.
+SERVED_STATES = frozenset({"held_shared"})
 
 
 def _file_state(resource: Any, record: Any) -> str:
@@ -545,8 +610,9 @@ def historical_summary(matter: Matter, user: Any) -> dict[str, Any]:
     dashboard that a lawyer reads in three seconds (Stage-2D brief 34).
     """
     links = list(visible_links(user).filter(matter=matter))
+    earlier = predecessor_pages(matter, user, own=links)
     if not links:
-        return {}
+        return {"links": [], "predecessor_pages": earlier} if earlier else {}
     files = sum(link.source_page.file_count for link in links)
     sections = list(dict.fromkeys(link.source_page.source_section for link in links))
     statuses = import_statuses(links)
@@ -560,7 +626,56 @@ def historical_summary(matter: Matter, user: Any) -> dict[str, Any]:
         "sections": sections,
         "first": links[0],
         "status": teema_import_status(list(statuses.values())),
+        "predecessor_pages": earlier,
     }
+
+
+def predecessor_pages(matter: Matter, user: Any, *, own: list[Any]) -> list[dict[str, Any]]:
+    """The earlier stages' own OneNote pages, for «Eelnevate etappide ajalooline materjal».
+
+    A Teema that continues another (`Matter.superseded_by`, docs/adr/0207) often
+    started its dossier under the earlier reference. Those pages are listed
+    here, each through the *predecessor's* link — so the page view a reader
+    lands on is the predecessor's, governed by the predecessor's scope — and
+    each page once, by its own identity. A page this Teema links itself is not
+    repeated; its own row in «Ajalooline OneNote» says it is in an earlier
+    stage's dossier too (`shared_with_earlier`, set on `own`). Nothing is
+    counted into this Teema's files: these are not its Documents (docs/adr/0208).
+
+    Only readable predecessors are walked (`continuations_for` re-reads every
+    step through `visible_to`), and a predecessor's page link is read through
+    `visible_links`. No read is granted by the edge itself.
+    """
+    from app.matters.continuations import continuations_for
+
+    chain = continuations_for(matter, user)
+    stages = list(dict.fromkeys([*chain.before, *chain.predecessors]))
+    for link in own:
+        link.shared_with_earlier = []
+    if not stages:
+        return []
+    own_by_page = {link.source_page_id: link for link in own}
+    order = {stage.pk: index for index, stage in enumerate(stages)}
+    theirs = sorted(
+        visible_links(user).filter(matter__in=[stage.pk for stage in stages]),
+        key=lambda link: (order[link.matter_id], link.source_page.title or "", str(link.pk)),
+    )
+    pages: dict[Any, dict[str, Any]] = {}
+    for link in theirs:
+        mine = own_by_page.get(link.source_page_id)
+        if mine is not None:
+            if link.matter not in mine.shared_with_earlier:
+                mine.shared_with_earlier.append(link.matter)
+            continue
+        entry = pages.setdefault(link.source_page_id, {"link": link, "stages": []})
+        if link.matter not in entry["stages"]:
+            entry["stages"].append(link.matter)
+    rows = list(pages.values())
+    statuses = import_statuses([row["link"] for row in rows])
+    for row in rows:
+        row["page"] = row["link"].source_page
+        row["import_status"] = statuses[row["link"].pk]
+    return rows
 
 
 # -- what the import records say -------------------------------------------
