@@ -395,3 +395,33 @@ def test_get_matter_reports_a_cycle_without_looping(public_origin, specialist):
     Matter.all_objects.filter(pk=b.pk).update(superseded_by=a)
     c = readers.matter_snapshot(specialist, a.display_reference)["continuations"]
     assert c["cyclic"] is True and c["endpoint"] is None
+
+
+# ---------------------------------------------------------------------------
+# The helpers the page reads (app/matters/continuations.py)
+# ---------------------------------------------------------------------------
+
+
+def test_the_middle_of_three_stages_shows_a_path_and_two_stages_do_not(specialist):
+    from app.matters.continuations import continuations_for
+
+    first, middle, last = _chain(3, owner=specialist)
+    mid = continuations_for(middle, specialist)
+    assert not mid.has_chain and mid.shows_path and mid.stage_count == 3
+    assert not continuations_for(_chain(2, owner=specialist)[0], specialist).shows_path
+    assert continuations_for(first, specialist).endpoint_is_known
+    assert not continuations_for(last, specialist).endpoint_is_known  # nothing after it
+
+
+def test_an_endpoint_behind_a_hidden_step_or_a_cycle_is_not_known(specialist):
+    from app.matters.continuations import continuations_for
+
+    first, middle, third, _last = _chain(4, owner=specialist)
+    Matter.all_objects.filter(pk=third.pk).update(deleted_at=timezone.now())
+    hidden = continuations_for(first, specialist)
+    assert hidden.endpoint == middle and not hidden.endpoint_is_known
+
+    a, b = _chain(2, owner=specialist)
+    Matter.all_objects.filter(pk=b.pk).update(superseded_by=a)
+    looped = continuations_for(Matter.all_objects.get(pk=a.pk), specialist)
+    assert looped.cyclic and not looped.endpoint_is_known
