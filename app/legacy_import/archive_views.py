@@ -39,7 +39,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.http import FileResponse, Http404, HttpRequest, HttpResponse, HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_safe
 
 from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
@@ -403,6 +403,7 @@ def _matter_by_reference(population: Any, reference: str) -> Any:
     return population.filter(reference_year=numbers[0], reference_number=numbers[1]).first()
 
 
+@require_safe
 @login_required
 def archive_file(request: HttpRequest, pk: Any) -> HttpResponseBase:
     """Serve the letter's bytes to somebody entitled to read them.
