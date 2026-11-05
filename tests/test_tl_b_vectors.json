@@ -1,0 +1,2492 @@
+{
+ "line_vectors": [
+  {
+   "text": "27.07.2026 - Ministeerium saatis eelnõu",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "Ministeerium saatis eelnõu",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "27.07.2026 – Ministeerium saatis eelnõu",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "Ministeerium saatis eelnõu",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "27.07.2026: Ministeerium saatis eelnõu",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "Ministeerium saatis eelnõu",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "27.07.2026 Ministeerium saatis eelnõu",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "Ministeerium saatis eelnõu",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "27.07.2026  -  Ministeerium",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "Ministeerium",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "27.07.2026&nbsp;-&nbsp;Ministeerium",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "Ministeerium",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "7.5.2026 - liit vastas",
+   "date_display": "07.05.2026",
+   "precision": "DAY",
+   "rest": "liit vastas",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "20.10. 2026 Esimene lugemine:",
+   "date_display": "20.10.2026",
+   "precision": "DAY",
+   "rest": "Esimene lugemine:",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "20.10.2026. Esimene lugemine",
+   "date_display": "20.10.2026",
+   "precision": "DAY",
+   "rest": "Esimene lugemine",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "12.02.24 läks välja mitteametlik arvamus",
+   "date_display": "12.02.2024",
+   "precision": "DAY",
+   "rest": "läks välja mitteametlik arvamus",
+   "form": "DMY2",
+   "reason": ""
+  },
+  {
+   "text": "05.09.23 - ministeerium saatis eelnõu",
+   "date_display": "05.09.2023",
+   "precision": "DAY",
+   "rest": "ministeerium saatis eelnõu",
+   "form": "DMY2",
+   "reason": ""
+  },
+  {
+   "text": "24/07/2026 Final act published",
+   "date_display": "24.07.2026",
+   "precision": "DAY",
+   "rest": "Final act published",
+   "form": "DMY_SLASH",
+   "reason": ""
+  },
+  {
+   "text": "27.07.2026",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "27.07.2026:",
+   "date_display": "27.07.2026",
+   "precision": "DAY",
+   "rest": "",
+   "form": "DMY",
+   "reason": ""
+  },
+  {
+   "text": "8.veebruaril 2023 saadeti meile konsultatsioon.",
+   "date_display": "08.02.2023",
+   "precision": "DAY",
+   "rest": "saadeti meile konsultatsioon.",
+   "form": "D_MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "23. jaanuaril 2023 saadeti meile eelnõu",
+   "date_display": "23.01.2023",
+   "precision": "DAY",
+   "rest": "saadeti meile eelnõu",
+   "form": "D_MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "16.juuni 2023 - ministeerium informeeris",
+   "date_display": "16.06.2023",
+   "precision": "DAY",
+   "rest": "ministeerium informeeris",
+   "form": "D_MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "5.mail 2023 kaasas ministeerium meid",
+   "date_display": "05.05.2023",
+   "precision": "DAY",
+   "rest": "kaasas ministeerium meid",
+   "form": "D_MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "12.september 2025 saatis ministeerium eelnõu.",
+   "date_display": "12.09.2025",
+   "precision": "DAY",
+   "rest": "saatis ministeerium eelnõu.",
+   "form": "D_MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "3.oktoobril 2022 toimus seminar",
+   "date_display": "03.10.2022",
+   "precision": "DAY",
+   "rest": "toimus seminar",
+   "form": "D_MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "10.2026 seisuga ei ole edasi liikunud",
+   "date_display": "10.2026",
+   "precision": "MONTH",
+   "rest": "seisuga ei ole edasi liikunud",
+   "form": "MY",
+   "reason": ""
+  },
+  {
+   "text": "Märtsis 2021 toimub kinnitamine",
+   "date_display": "03.2021",
+   "precision": "MONTH",
+   "rest": "toimub kinnitamine",
+   "form": "MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "Märts 2023 - liit tegi kampaania",
+   "date_display": "03.2023",
+   "precision": "MONTH",
+   "rest": "liit tegi kampaania",
+   "form": "MONTH_Y",
+   "reason": ""
+  },
+  {
+   "text": "2026 seisuga edasiliikumist pole",
+   "date_display": "2026",
+   "precision": "YEAR",
+   "rest": "seisuga edasiliikumist pole",
+   "form": "Y",
+   "reason": ""
+  },
+  {
+   "text": "2026 - teema seisab",
+   "date_display": "2026",
+   "precision": "YEAR",
+   "rest": "teema seisab",
+   "form": "Y",
+   "reason": ""
+  },
+  {
+   "text": "14.07 läks koja poolt mitteametlik arvamus",
+   "date_display": "",
+   "precision": null,
+   "rest": null,
+   "form": "DM",
+   "reason": "NO_YEAR"
+  },
+  {
+   "text": "03.04. Koja arvamus:",
+   "date_display": "",
+   "precision": null,
+   "rest": null,
+   "form": "DM",
+   "reason": "NO_YEAR"
+  },
+  {
+   "text": "22.veebruaril saatis ministeerium eelnõu.",
+   "date_display": "",
+   "precision": null,
+   "rest": null,
+   "form": "D_MONTH",
+   "reason": "NO_YEAR"
+  },
+  {
+   "text": "20.02.20023 saatis ministeerium VTK.",
+   "date_display": "",
+   "precision": null,
+   "rest": null,
+   "form": "DMY_BADYEAR",
+   "reason": "YEAR_MALFORMED"
+  },
+  {
+   "text": "05.11.205 kirjutas ministeerium",
+   "date_display": "",
+   "precision": null,
+   "rest": null,
+   "form": "DMY_BADYEAR",
+   "reason": "YEAR_MALFORMED"
+  },
+  {
+   "text": "06.03.3024 - ministeerium saatis eelnõu",
+   "date_display": "",
+   "precision": null,
+   "rest": null,
+   "form": "DMY",
+   "reason": "YEAR_OUT_OF_RANGE"
+  },
+  {
+   "text": "31.02.2026 - kohtumine",
+   "date_display": "",
+   "precision": null,
+   "rest": null,
+   "form": "DMY",
+   "reason": "NOT_A_CALENDAR_DATE"
+  },
+  {
+   "text": "1.1 Eesti ei toeta ettepanekut",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "1) ministeerium kaalub muudatusi",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "2. kooskõlastusringil oleva eelnõu kohaselt",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "09.26 seisuga pole edasi liikunud",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "13. juunil 2024. a vastu võetud määrus",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "2024. aasta kevadel toimub konsultatsioon",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "2019. aasta materjalid:",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "300 kWh aastas majapidamisele",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "6 kuu jooksul ei rakendata",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "1,5-kordne määr",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "Ministeerium ootab vastust 10.08.",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "Ministeerium saatis 14.11.2024 teema:",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  },
+  {
+   "text": "3-1-1-10-20",
+   "date_display": null,
+   "precision": null,
+   "rest": null,
+   "form": "",
+   "reason": ""
+  }
+ ],
+ "trailing_vectors": [
+  {
+   "text": "Koja arvamus 12.03.2024:",
+   "date_display": "12.03.2024"
+  },
+  {
+   "text": "Kolmas lugemine 15.06.2025",
+   "date_display": "15.06.2025"
+  },
+  {
+   "text": "Kolmas lugemine: 11.06.2025",
+   "date_display": "11.06.2025"
+  },
+  {
+   "text": "Ministeerium saatis teema 22.09.2026:",
+   "date_display": "22.09.2026"
+  },
+  {
+   "text": "Ministeerium saatis teema 13. mai 2025:",
+   "date_display": "13.05.2025"
+  },
+  {
+   "text": "Koja arvamus (mitteametlik, läks välja 08.05.2026):",
+   "date_display": "08.05.2026"
+  },
+  {
+   "text": "Koja arvamus: mitteametlik (läks välja 05.10.2026)",
+   "date_display": "05.10.2026"
+  },
+  {
+   "text": "Ministeerium (23.01.25)",
+   "date_display": "23.01.2025"
+  },
+  {
+   "text": "Esimene lugemine 20.05.26",
+   "date_display": "20.05.2026"
+  },
+  {
+   "text": "Tähtaeg 05.11.2026",
+   "date_display": null
+  },
+  {
+   "text": "Tähtaeg arvamuse avaldamiseks: 12.11.2026",
+   "date_display": null
+  },
+  {
+   "text": "Muudatus jõustub 01.01.2031",
+   "date_display": null
+  },
+  {
+   "text": "Määrust kohaldatakse alates 21.09.2027.",
+   "date_display": null
+  },
+  {
+   "text": "Jälgin menetlust. Viimati vaatasin 08.10.2026",
+   "date_display": null
+  },
+  {
+   "text": "Ootan II lugemise kuupäeva, komisjoni istung teisipäev, 13.10.2026",
+   "date_display": null
+  },
+  {
+   "text": "Koja seisukoht saadeti ministeeriumile o6.06.2022:",
+   "date_display": null
+  },
+  {
+   "text": "Eesti seisukohad (saadeti 21.01.2026, kiideti heaks 22.01.2026)",
+   "date_display": null
+  },
+  {
+   "text": "Mitteametlik arvamus 27. mai",
+   "date_display": null
+  },
+  {
+   "text": "Mis saab edasi?- jõustub 01.11.2026",
+   "date_display": null
+  },
+  {
+   "text": "Väga pikk pealkiri mis sisaldab liiga palju sõnu et olla lühike sündmuse silt 12.03.2024:",
+   "date_display": null
+  }
+ ],
+ "page_vectors": [
+  {
+   "id": "V01_two_notes_adjacent_files_next_actions",
+   "rule": "R3 R5 R8 R9 R4",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "27.07.2026 - Ministeerium saatis kooskõlastusringile eelnõu, millega täpsustatakse mõisteid",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{2}{B0}"
+    },
+    {
+     "ordinal": 3,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{3}{B0}"
+    },
+    {
+     "ordinal": 4,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{4}{B0}"
+    },
+    {
+     "ordinal": 5,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{5}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 6,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{6}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 7,
+     "kind": "TEXT",
+     "text": "10.08.2026 - kojal ei olnud eelnõu kohta märkusi",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{7}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 8,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{8}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 9,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{9}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 10,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{10}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 11,
+     "kind": "TEXT",
+     "text": "Eelnõu menetlus EIS-is: ",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{11}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 12,
+     "kind": "TEXT",
+     "text": "https://eelnoud.example.ee/main/mount/docList/0000",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{12}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 13,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{13}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 14,
+     "kind": "TEXT",
+     "text": "Järgmised tegevused: ",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{14}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 15,
+     "kind": "TEXT",
+     "text": "Ministeerium ootab vastust 10.08. ",
+     "depth": 2,
+     "parent": 14,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{15}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 16,
+     "kind": "TEXT",
+     "text": "Ootan eelnõu jõustumist. ",
+     "depth": 2,
+     "parent": 14,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{16}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 17,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{17}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "27.07.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "Ministeerium saatis kooskõlastusringile eelnõu, millega täpsustatakse mõisteid"
+     ],
+     "block_ordinals": [
+      0,
+      1,
+      2,
+      3,
+      4
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "10.08.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "kojal ei olnud eelnõu kohta märkusi"
+     ],
+     "block_ordinals": [
+      7
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NEXT_ACTIONS",
+     "date_display": "",
+     "precision": null,
+     "paragraphs": [
+      "Järgmised tegevused:",
+      "Ministeerium ootab vastust 10.08.",
+      "Ootan eelnõu jõustumist."
+     ],
+     "block_ordinals": [
+      14,
+      15,
+      16
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "page_text": [
+    "Eelnõu menetlus EIS-is:",
+    "https://eelnoud.example.ee/main/mount/docList/0000"
+   ]
+  },
+  {
+   "id": "V02_sibling_continuation_until_blank",
+   "rule": "R5.3",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "03.02.2026 - EL võttis määruse vastu",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "https://eur-lex.example.eu/eli/reg/2026/1/oj",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "TEXT",
+     "text": "Ülevaade kodulehel: https://www.example.ee/uudis",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "03.02.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "EL võttis määruse vastu",
+      "https://eur-lex.example.eu/eli/reg/2026/1/oj"
+     ],
+     "block_ordinals": [
+      0,
+      1
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_text": [
+    "Ülevaade kodulehel: https://www.example.ee/uudis"
+   ]
+  },
+  {
+   "id": "V03_file_inside_run_not_direct",
+   "rule": "R5.3 R9",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "27.01.2026 - koja arvamus ministeeriumile",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "https://www.example.ee/uudised/koda-arvamus",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "27.01.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "koja arvamus ministeeriumile",
+      "https://www.example.ee/uudised/koda-arvamus"
+     ],
+     "block_ordinals": [
+      0,
+      1,
+      2
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    1
+   ]
+  },
+  {
+   "id": "V04_next_dated_sibling_splits",
+   "rule": "R5.2",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "10.06.2026 - II lugemine",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "17.06.2026 - III lugemine",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "Vastu võetud ühehäälselt",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "10.06.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "II lugemine"
+     ],
+     "block_ordinals": [
+      0
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "17.06.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "III lugemine",
+      "Vastu võetud ühehäälselt"
+     ],
+     "block_ordinals": [
+      1,
+      2
+     ],
+     "direct_files": []
+    }
+   ]
+  },
+  {
+   "id": "V05_children_belong_blank_inside_children",
+   "rule": "R5.4",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "18.09.2026 Ministeeriumi arvamus (II ring):",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "Ministeerium toetab eelnõu.",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "TEXT",
+     "text": "Ettepanek jätta § 3 välja.",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 4,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 5,
+     "kind": "TEXT",
+     "text": "Koja arvamus:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{5}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "18.09.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "Ministeeriumi arvamus (II ring):",
+      "Ministeerium toetab eelnõu.",
+      "Ettepanek jätta § 3 välja."
+     ],
+     "block_ordinals": [
+      0,
+      1,
+      2,
+      3
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_text": [
+    "Koja arvamus:"
+   ]
+  },
+  {
+   "id": "V06_nested_file_is_direct",
+   "rule": "R9a",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "15.01.2025 kiitis valitsus seisukohad heaks:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{2}{B0}"
+    },
+    {
+     "ordinal": 3,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{3}{B0}"
+    },
+    {
+     "ordinal": 4,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "15.01.2025",
+     "precision": "DAY",
+     "paragraphs": [
+      "kiitis valitsus seisukohad heaks:"
+     ],
+     "block_ordinals": [
+      0,
+      1,
+      2,
+      3
+     ],
+     "direct_files": [
+      1,
+      2
+     ]
+    }
+   ],
+   "page_files": [
+    3
+   ]
+  },
+  {
+   "id": "V07_file_under_adjacent_label_not_direct",
+   "rule": "R9a D9",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "19.05.2025 saatis komisjon muudatusettepanekud",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "Ülikool:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 2,
+     "parent": 1,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{2}{B0}"
+    },
+    {
+     "ordinal": 3,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "19.05.2025",
+     "precision": "DAY",
+     "paragraphs": [
+      "saatis komisjon muudatusettepanekud",
+      "Ülikool:"
+     ],
+     "block_ordinals": [
+      0,
+      1,
+      2
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    2
+   ]
+  },
+  {
+   "id": "V08_note_nested_under_file",
+   "rule": "R9b",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "Arvamused:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "14.10.2024 nõukogu võttis määruse vastu",
+     "depth": 2,
+     "parent": 1,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "14.10.2024",
+     "precision": "DAY",
+     "paragraphs": [
+      "nõukogu võttis määruse vastu"
+     ],
+     "block_ordinals": [
+      2
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    1
+   ],
+   "page_text": [
+    "Arvamused:"
+   ]
+  },
+  {
+   "id": "V22_label_shift_under_file",
+   "rule": "R9 (ATTACHED_NOTE never direct)",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "Kooskõlastajate arvamused:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "Ministeerium A",
+     "depth": 2,
+     "parent": 1,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{3}{B0}"
+    },
+    {
+     "ordinal": 4,
+     "kind": "TEXT",
+     "text": "Ministeerium B",
+     "depth": 2,
+     "parent": 3,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 5,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{5}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{5}{B0}"
+    },
+    {
+     "ordinal": 6,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{6}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [],
+   "page_files": [
+    1,
+    3,
+    5
+   ],
+   "page_text": [
+    "Kooskõlastajate arvamused:",
+    "Ministeerium A",
+    "Ministeerium B"
+   ]
+  },
+  {
+   "id": "V09_prose_dates_are_not_notes",
+   "rule": "R11",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "Ministeerium saatis 14.11.2024 teema:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "TEXT",
+     "text": "Ministeerium ootab vastust 10.08.",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [],
+   "page_files": [
+    1
+   ],
+   "page_text": [
+    "Ministeerium saatis 14.11.2024 teema:",
+    "Ministeerium ootab vastust 10.08."
+   ]
+  },
+  {
+   "id": "V10_trailing_date_heading",
+   "rule": "R2b",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "Ministeerium saatis teema 22.09.2026:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "TEXT",
+     "text": "Kolmas lugemine 15.10.2026",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 4,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "22.09.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "Ministeerium saatis teema 22.09.2026:"
+     ],
+     "block_ordinals": [
+      0,
+      1
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "15.10.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "Kolmas lugemine 15.10.2026"
+     ],
+     "block_ordinals": [
+      3
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    1
+   ]
+  },
+  {
+   "id": "V11_no_year_is_undated_boundary",
+   "rule": "R2a R5",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "25.08.2025 koja mitteametlik arvamus (kommentaare ei ole)",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "13.11 kirjutasin uuesti liidule",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "liit vastust ei saatnud",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "25.08.2025",
+     "precision": "DAY",
+     "paragraphs": [
+      "koja mitteametlik arvamus (kommentaare ei ole)"
+     ],
+     "block_ordinals": [
+      0
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "",
+     "precision": null,
+     "paragraphs": [
+      "13.11 kirjutasin uuesti liidule",
+      "liit vastust ei saatnud"
+     ],
+     "block_ordinals": [
+      1,
+      2
+     ],
+     "direct_files": [],
+     "flags_include": [
+      "NO_YEAR",
+      "UNDATED"
+     ]
+    }
+   ]
+  },
+  {
+   "id": "V12_next_actions_with_dated_child",
+   "rule": "R4",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "Mis saab edasi?",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "Jälgida, kuidas liigub edasi määrus",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "13.02.2026 seisuga teema ootab otsust",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "TEXT",
+     "text": "Jõustub üldises korras",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 4,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NEXT_ACTIONS",
+     "date_display": "",
+     "precision": null,
+     "paragraphs": [
+      "Mis saab edasi?",
+      "Jälgida, kuidas liigub edasi määrus"
+     ],
+     "block_ordinals": [
+      0,
+      1
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NEXT_ACTIONS",
+     "date_display": "13.02.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "seisuga teema ootab otsust",
+      "Jõustub üldises korras"
+     ],
+     "block_ordinals": [
+      2,
+      3
+     ],
+     "direct_files": []
+    }
+   ]
+  },
+  {
+   "id": "V13_trailing_inside_next_actions_is_text",
+   "rule": "R2b R4",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "Järgmised sammud:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "Muudatusettepanekute esitamise aeg 05.11.2026",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NEXT_ACTIONS",
+     "date_display": "",
+     "precision": null,
+     "paragraphs": [
+      "Järgmised sammud:",
+      "Muudatusettepanekute esitamise aeg 05.11.2026"
+     ],
+     "block_ordinals": [
+      0,
+      1
+     ],
+     "direct_files": []
+    }
+   ]
+  },
+  {
+   "id": "V14_date_after_writing",
+   "rule": "R7",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "25.09.2029 - saatsin ettepanekud töörühmale",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-09-25T08:00:00.000Z",
+     "modified": "2026-09-25T08:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "11.11.2026 - III lugemine",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-23T08:00:00.000Z",
+     "modified": "2026-10-23T08:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 4,
+     "kind": "TEXT",
+     "text": "09.2026 seisuga uut infot ei ole",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-02-11T08:00:00.000Z",
+     "modified": "2026-09-08T08:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "",
+     "precision": null,
+     "paragraphs": [
+      "25.09.2029 - saatsin ettepanekud töörühmale"
+     ],
+     "block_ordinals": [
+      0
+     ],
+     "direct_files": [],
+     "flags_include": [
+      "DATE_AFTER_WRITING",
+      "UNDATED"
+     ]
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "11.11.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "III lugemine"
+     ],
+     "block_ordinals": [
+      2
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "09.2026",
+     "precision": "MONTH",
+     "paragraphs": [
+      "seisuga uut infot ei ole"
+     ],
+     "block_ordinals": [
+      4
+     ],
+     "direct_files": []
+    }
+   ]
+  },
+  {
+   "id": "V15_rule_line_is_separator",
+   "rule": "R3",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "12.11.2025 küsis liit ülevõtmise seisu",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "____________________________",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "Ministeerium saatis teema 13.02.2026:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{3}{B0}"
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "12.11.2025",
+     "precision": "DAY",
+     "paragraphs": [
+      "küsis liit ülevõtmise seisu"
+     ],
+     "block_ordinals": [
+      0
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "13.02.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "Ministeerium saatis teema 13.02.2026:"
+     ],
+     "block_ordinals": [
+      2,
+      3
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    3
+   ]
+  },
+  {
+   "id": "V16_date_alone_line",
+   "rule": "R8",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "27.05.2026",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "nõukoja kohtumine",
+     "depth": 2,
+     "parent": 0,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "27.05.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "nõukoja kohtumine"
+     ],
+     "block_ordinals": [
+      0,
+      1
+     ],
+     "direct_files": []
+    }
+   ]
+  },
+  {
+   "id": "V17_outlines_and_floating",
+   "rule": "R5.1 R12",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "05.03.2026 - kohtumine ministeeriumis",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "Mis saab edasi?",
+     "depth": 1,
+     "parent": null,
+     "outline": 1,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "TEXT",
+     "text": "Ootan eelnõu",
+     "depth": 2,
+     "parent": 1,
+     "outline": 1,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 0,
+     "parent": null,
+     "outline": -1,
+     "created": "",
+     "modified": "2026-03-05T10:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{3}{B0}"
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "05.03.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "kohtumine ministeeriumis"
+     ],
+     "block_ordinals": [
+      0
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NEXT_ACTIONS",
+     "date_display": "",
+     "precision": null,
+     "paragraphs": [
+      "Mis saab edasi?",
+      "Ootan eelnõu"
+     ],
+     "block_ordinals": [
+      1,
+      2
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    3
+   ]
+  },
+  {
+   "id": "V18_legacy_shape",
+   "rule": "R6",
+   "blocks": [
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "24.09.2026 - ministeerium saatis eelnõu",
+     "depth": 0,
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "FILE_ATTACHMENT",
+     "text": "Eelnõu.docx",
+     "depth": 0,
+     "resource_key": "r002"
+    },
+    {
+     "ordinal": 3,
+     "kind": "TEXT",
+     "text": "Ülevaade: Mida arvad? | Koda",
+     "depth": 0,
+     "resource_key": ""
+    },
+    {
+     "ordinal": 4,
+     "kind": "TEXT",
+     "text": "VV kiitis heaks 11.06.2026",
+     "depth": 0,
+     "resource_key": ""
+    },
+    {
+     "ordinal": 5,
+     "kind": "FILE_ATTACHMENT",
+     "text": "Seaduseelnõu.pdf",
+     "depth": 1,
+     "resource_key": "r005"
+    },
+    {
+     "ordinal": 6,
+     "kind": "TEXT",
+     "text": "Eelnõude võrdlus:",
+     "depth": 1,
+     "resource_key": ""
+    },
+    {
+     "ordinal": 7,
+     "kind": "TEXT",
+     "text": "Järgmised sammud:",
+     "depth": 0,
+     "resource_key": ""
+    },
+    {
+     "ordinal": 8,
+     "kind": "TEXT",
+     "text": "Jälgin, millal jõustub",
+     "depth": 1,
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "24.09.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "ministeerium saatis eelnõu"
+     ],
+     "block_ordinals": [
+      1
+     ],
+     "direct_files": []
+    },
+    {
+     "kind": "NOTE",
+     "date_display": "11.06.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "VV kiitis heaks 11.06.2026",
+      "Eelnõude võrdlus:"
+     ],
+     "block_ordinals": [
+      4,
+      5,
+      6
+     ],
+     "direct_files": [
+      5
+     ]
+    },
+    {
+     "kind": "NEXT_ACTIONS",
+     "date_display": "",
+     "precision": null,
+     "paragraphs": [
+      "Järgmised sammud:",
+      "Jälgin, millal jõustub"
+     ],
+     "block_ordinals": [
+      7,
+      8
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_files": [
+    2
+   ]
+  },
+  {
+   "id": "V19_entities_whitespace",
+   "rule": "R1",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "1.&nbsp;&nbsp;Kliimaseadus",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "09.04.2026 -  eelnõu oli valitsuse   istungil, valitsus kiitis &quot;heaks&quot;",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "09.04.2026",
+     "precision": "DAY",
+     "paragraphs": [
+      "eelnõu oli valitsuse istungil, valitsus kiitis \"heaks\""
+     ],
+     "block_ordinals": [
+      1
+     ],
+     "direct_files": []
+    }
+   ],
+   "page_text": [
+    "1. Kliimaseadus"
+   ]
+  },
+  {
+   "id": "V20_no_dated_notes",
+   "rule": "R11",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "Ministeerium saatis eelnõu:",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "FILE_ATTACHMENT",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "FILE",
+     "resource_key": "{SYN}{1}{B0}"
+    },
+    {
+     "ordinal": 2,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 3,
+     "kind": "TEXT",
+     "text": "Keda kaasata?",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{3}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 4,
+     "kind": "TEXT",
+     "text": "Liit A, Liit B",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{4}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    }
+   ],
+   "expect": [],
+   "page_files": [
+    1
+   ],
+   "page_text": [
+    "Ministeerium saatis eelnõu:",
+    "Keda kaasata?",
+    "Liit A, Liit B"
+   ]
+  },
+  {
+   "id": "V21_citation_continues",
+   "rule": "R2a-7",
+   "blocks": [
+    {
+     "ordinal": 0,
+     "kind": "TEXT",
+     "text": "28.02.2024 - EL võttis direktiivi vastu",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{0}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 1,
+     "kind": "TEXT",
+     "text": "13. juunil 2024. a vastu võetud määrus (EL) 2024/0000",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{1}{B0}",
+     "source_kind": "TEXT",
+     "resource_key": ""
+    },
+    {
+     "ordinal": 2,
+     "kind": "BLANK",
+     "text": "",
+     "depth": 1,
+     "parent": null,
+     "outline": 0,
+     "created": "2026-10-30T09:00:00.000Z",
+     "modified": "2026-10-30T09:00:00.000Z",
+     "object_id": "{SYN}{2}{B0}",
+     "source_kind": "BLANK",
+     "resource_key": ""
+    }
+   ],
+   "expect": [
+    {
+     "kind": "NOTE",
+     "date_display": "28.02.2024",
+     "precision": "DAY",
+     "paragraphs": [
+      "EL võttis direktiivi vastu",
+      "13. juunil 2024. a vastu võetud määrus (EL) 2024/0000"
+     ],
+     "block_ordinals": [
+      0,
+      1
+     ],
+     "direct_files": []
+    }
+   ]
+  }
+ ]
+}

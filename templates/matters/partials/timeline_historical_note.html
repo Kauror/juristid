@@ -1,0 +1,118 @@
+{% comment %}
+A historical OneNote note on `Teema käik`: what the page said happened, verbatim
+(`TimelineItem.historical_note`, an `app.legacy_import.historical_notes
+.HistoricalNoteRow`; item type `HISTORICAL_NOTE`).
+
+**A `<details>`, not the button the other rows carry.** The other rows draw
+their line inside correction elements that `Muuda` swaps whole, which is why
+they cannot use a `<summary>` (`timeline_items.html`). This row has no
+correction, no swap target and no control: its line is fixed text, so the
+native disclosure holds it — open and closed by keyboard and pointer with no
+script at all, and named by its own text. `static/js/app.js` is not involved;
+its accordion only ever toggles rows with a `.uxtl__toggle`.
+
+Closed, the line is `27.07.2026 [4 dokumenti] KLIM saatis …`:
+
+  - the date in the precision the source gave it — a day, a month or a year —
+    inside a `<time>` whose `datetime` has the same precision; an undated note
+    shows no date at all, never one borrowed from the capture;
+  - «Eesolev» after a date ahead of today (`milestone.ahead`), exactly as
+    every other milestone row says it (`timeline_items.html`): a note written
+    ahead — «11.11.2026 3. lugemine» — is a plan, and must not read as done;
+  - the tag only for files **directly attributed** to this note (D9, category
+    1): «Dokument» for one, «N dokumenti» for more, and nothing otherwise —
+    files merely on the same page never tag a note;
+  - the headline as the import gave it (≤ 65 characters, cut at a word).
+
+A «Järgmised tegevused» note says «Ajalooline: Järgmised tegevused» on the
+line and over its text: it is what the page once planned, never a current
+task, so it has no checkbox, no date field and no control of any kind.
+
+Open, the full verbatim paragraphs (escaped, line breaks kept), the original
+date, the exact source with its `/ajalugu/<msp>/` page and the inspectable
+`source_ref`, the note's own links, its direct files, and — once, not a list —
+the way to the page's other files, «Sama OneNote'i lehe failid (N)».
+{% endcomment %}
+<article class="uxtl__item uxtl__item--secondary uxtl__item--historical"
+         data-kaik-rida="{{ item.row_key }}">
+  <span class="uxtl__rail" aria-hidden="true">
+    <span class="uxtl__dot"></span>
+    <span class="uxtl__line"></span>
+  </span>
+  <div class="uxtl__body">
+    <details class="uxtl__hist">
+      <summary class="uxtl__histline" id="kaik-{{ item.row_key }}-rida">
+        {% if note.date_display and note.date_iso %}
+          <time class="uxtl__msdate" datetime="{{ note.date_iso }}">{{ note.date_display }}</time>
+        {% elif note.date_display %}
+          <span class="uxtl__msdate">{{ note.date_display }}</span>
+        {% endif %}
+        {% if item.milestone.ahead %}<span class="uxtl__msahead">Eesolev</span>{% endif %}
+        {% if note.kind == "NEXT_ACTIONS" %}
+          <span class="uxtl__histtag uxtl__histtag--past">Ajalooline: Järgmised tegevused</span>
+        {% endif %}
+        {% with count=note.direct_files|length %}
+          {% if count == 1 %}
+            <span class="uxtl__histtag">Dokument</span>
+          {% elif count %}
+            <span class="uxtl__histtag">{{ count }} dokumenti</span>
+          {% endif %}
+        {% endwith %}
+        <span class="uxtl__mswhat">{{ note.headline }}</span>
+        <span class="uxtl__chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="uxtl__histpanel">
+        <div class="uxtl__histtext {% if note.kind == 'NEXT_ACTIONS' %}uxtl__histtext--past{% endif %}">
+          {% if note.kind == "NEXT_ACTIONS" %}
+            <span class="uxtl__msnotelabel">Ajalooline: Järgmised tegevused</span>
+          {% endif %}
+          {% for paragraph in note.paragraphs %}
+            <p class="uxtl__histpara">{{ paragraph|linebreaksbr }}</p>
+          {% endfor %}
+        </div>
+        <span class="uxtl__mssub">
+          <span class="uxtl__filegrouplabel">Kuupäev</span>
+          {% if note.date_display %}{{ note.date_display }}{% if note.precision == "MONTH" %} (kuu täpsusega){% elif note.precision == "YEAR" %} (aasta täpsusega){% endif %}{% else %}OneNote'i märkusel kuupäeva ei ole{% endif %}
+        </span>
+        <span class="uxtl__mssub">
+          <span class="uxtl__filegrouplabel">Allikas</span>
+          OneNote: {% if note.section %}{{ note.section }} → {% endif %}{{ note.page_title }}
+        </span>
+        <span class="uxtl__links">
+          <a class="uxtl__link" href="{{ note.page_url }}">Ava OneNote'i leht Juristides</a>
+          {% if note.page_files_count > 0 %}
+            <a class="uxtl__link" href="{{ note.page_url }}#sisu-heading">Sama OneNote'i lehe failid ({{ note.page_files_count }})</a>
+          {% endif %}
+        </span>
+        {% if note.source_ref %}
+          <span class="uxtl__histref">{{ note.source_ref }}</span>
+        {% endif %}
+        {% if note.links %}
+          {% comment %}
+            The note's own links, by the text the page gave them. Only a web or
+            mail address becomes a link: whatever else a OneNote page holds —
+            an `onenote:` address, a script scheme — is shown as its text and
+            never handed to the browser.
+          {% endcomment %}
+          <span class="uxtl__links">
+            <span class="uxtl__filegrouplabel">Lingid</span>
+            {% for text, href in note.links %}
+              {% if href|lower|slice:":7" == "http://" or href|lower|slice:":8" == "https://" or href|lower|slice:":7" == "mailto:" %}
+                <a class="uxtl__link" href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ text|default:href }}<span
+                   class="visually-hidden"> — avaneb uues aknas</span></a>
+              {% elif text %}
+                <span class="uxtl__histref">{{ text }}</span>
+              {% endif %}
+            {% endfor %}
+          </span>
+        {% endif %}
+        {% if note.direct_files %}
+          {% include "matters/partials/timeline_historical_files.html" with files=note.direct_files heading="Selle märkuse failid" %}
+        {% endif %}
+        <div class="uxtl__permalink">
+          {% include "matters/partials/row_copy_link.html" with row_key=item.row_key %}
+        </div>
+      </div>
+    </details>
+  </div>
+</article>

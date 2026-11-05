@@ -1519,6 +1519,27 @@ def _shown_in_activity(item: Any) -> bool:
     return bool(record.status == VISIBLE_VICTORY_STATUS)
 
 
+#: A historical note's own precision (app/legacy_import/historical_notes.py) in
+#: the `DatePrecision` words every other activity date uses.
+_NOTE_PRECISION = {"DAY": "EXACT", "MONTH": "MONTH", "YEAR": "YEAR"}
+
+
+def _historical_note_text(note: Any) -> str:
+    """A OneNote note in full: verbatim paragraphs, its label and its page.
+
+    The whole note, not the row's ≤ 65-character headline, so `text_truncated`
+    says only what `ACTIVITY_ITEM_CHARS` cut. A «Järgmised tegevused» note says
+    it is historical text — what the page once planned, never a current task.
+    """
+    from app.legacy_import.historical_notes import NEXT_ACTIONS, NEXT_ACTIONS_LABEL
+
+    body = "\n".join(note.paragraphs) or note.headline
+    if note.kind == NEXT_ACTIONS:
+        body = f"{NEXT_ACTIONS_LABEL}: {body}"
+    source = " → ".join(part for part in (note.section, note.page_title) if part)
+    return f"{body}\nAllikas: OneNote{': ' + source if source else ''}"
+
+
 def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
     """One chronology row in words, with its date, precision, kind and link."""
     day = _local_date(item.occurred_at)
@@ -1565,6 +1586,12 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
             precision = "RECORDED_DAY"
     elif item.event is not None:
         kind = "historical_import" if item.imported_documents else "event"
+    note = getattr(item, "historical_note", None)
+    if note is not None:
+        # A dated OneNote note (`HISTORICAL_NOTE_ITEM`): its date at the
+        # precision the page wrote it — «09.2024» is a month, never an exact
+        # 2024-09-01 (the chronology's sorting anchor).
+        precision = _NOTE_PRECISION.get(note.precision or "", "EXACT")
 
     # What a dated record *is* comes from the record, never from where the
     # chronology drew it (MCPSEC-04): the chronology's milestone carries no
@@ -1582,6 +1609,8 @@ def _activity_item(item: Any, matter: Any, today: date) -> dict[str, Any]:
     if milestone is not None:
         if record_name == "MatterEffectiveDate" and record_facts is not None:
             line = _commencement_line(record_facts)
+        elif note is not None:
+            line = _historical_note_text(note)
         else:
             line = milestone.what
             if milestone.sub:

@@ -1,0 +1,55 @@
+{% comment %}
+One OneNote day's imported files on `Teema käik` — or the one undated row — in
+the same shape as a historical note (`timeline_historical_note.html` says why it
+is a `<details>`). Item type `HISTORICAL_DOCUMENTS_IMPORTED`, drawn this way once
+the row carries `TimelineItem.historical_files`; a row without them keeps the
+older milestone rendering in `timeline_items.html`.
+
+Closed: `29.07.2026 [4 dokumenti] EELNÕU.pdf ja 3 muud faili` — the day the
+source says the files were added, the count as a tag, and the headline the
+projection gives (`milestone.what`). The undated row prints the projection's own
+«kuupäev teadmata» where the day would be, as plain text and not as a `<time>`:
+it states that no day is known, it does not name one.
+
+Open: where the files came from (`milestone.sub`) and every file, each with its
+title, filename, OneNote day, structural comment and exact bytes.
+{% endcomment %}
+<article class="uxtl__item uxtl__item--secondary uxtl__item--historical"
+         data-kaik-rida="{{ item.row_key }}">
+  <span class="uxtl__rail" aria-hidden="true">
+    <span class="uxtl__dot"></span>
+    <span class="uxtl__line"></span>
+  </span>
+  <div class="uxtl__body">
+    <details class="uxtl__hist">
+      <summary class="uxtl__histline" id="kaik-{{ item.row_key }}-rida">
+        {% if item.milestone.display_date and item.milestone.display_date|first in "0123456789" %}
+          <time class="uxtl__msdate" datetime="{{ item.occurred_at|date:'Y-m-d' }}">{{ item.milestone.display_date }}</time>
+        {% elif item.milestone.display_date %}
+          <span class="uxtl__msdate">{{ item.milestone.display_date }}</span>
+        {% endif %}
+        {% with count=item.historical_files|length %}
+          {% if count == 1 %}
+            <span class="uxtl__histtag">Dokument</span>
+          {% elif count %}
+            <span class="uxtl__histtag">{{ count }} dokumenti</span>
+          {% endif %}
+        {% endwith %}
+        <span class="uxtl__mswhat">{{ item.milestone.what }}</span>
+        <span class="uxtl__chevron" aria-hidden="true"></span>
+      </summary>
+      <div class="uxtl__histpanel">
+        {% if item.milestone.sub %}
+          <span class="uxtl__mssub">
+            <span class="uxtl__filegrouplabel">Allikas</span>
+            {{ item.milestone.sub }}
+          </span>
+        {% endif %}
+        {% include "matters/partials/timeline_historical_files.html" with files=item.historical_files heading="" %}
+        <div class="uxtl__permalink">
+          {% include "matters/partials/row_copy_link.html" with row_key=item.row_key %}
+        </div>
+      </div>
+    </details>
+  </div>
+</article>

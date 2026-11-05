@@ -60,6 +60,8 @@ ROWS = """rows => rows.map(row => {
   const body = row.querySelector('.uxtl__body');
   const style = getComputedStyle(body);
   const toggle = row.querySelector('.uxtl__toggle');
+  /* A historical OneNote row is a native disclosure, not a toggle (ADR 0210). */
+  const disclosure = row.querySelector('details.uxtl__hist');
   const line = row.querySelector('.uxtl__line').getBoundingClientRect();
   const head = row.querySelector('.uxtl__mswhat, .uxtl__author, .uxtl__did');
   const date = row.querySelector('.uxtl__msdate');
@@ -68,7 +70,8 @@ ROWS = """rows => rows.map(row => {
     text: row.textContent.replace(/\\s+/g, ' ').trim().slice(0, 80),
     primary: row.classList.contains('uxtl__item--primary'),
     open: row.classList.contains('uxtl__item--open'),
-    expanded: toggle ? toggle.getAttribute('aria-expanded') : null,
+    expanded: toggle ? toggle.getAttribute('aria-expanded')
+      : (disclosure ? (disclosure.open ? 'true' : 'false') : null),
     toggleShown: !!toggle && toggle.getClientRects().length > 0,
     border: style.borderTopColor,
     borderWidth: parseFloat(style.borderTopWidth),

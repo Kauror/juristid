@@ -1223,6 +1223,14 @@ def open_kaik_row(row) -> None:
     """
     article = row.locator("xpath=ancestor-or-self::article[contains(@class,'uxtl__item')]").first
     open_kaik_period(article)
+    # A historical OneNote row is a native `<details>` with no toggle
+    # (templates/matters/partials/timeline_historical_note.html): open its summary.
+    history = article.locator("details.uxtl__hist").first
+    if history.count():
+        if history.get_attribute("open") is None:
+            history.locator("summary").first.click()
+        assert history.get_attribute("open") is not None
+        return
     toggle = article.locator(".uxtl__toggle").first
     toggle.wait_for(state="attached")
     if toggle.is_hidden():

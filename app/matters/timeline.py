@@ -288,13 +288,24 @@ _MILESTONE_LABELS: dict[str, str] = {
 #: Every file under a row is linked to its exact bytes. Nothing is hidden, no
 #: stored date or audit row changes.
 HISTORICAL_IMPORT_ITEM = "HISTORICAL_DOCUMENTS_IMPORTED"
-#: The headlines, by how many files and whether the source dated them.
-ONENOTE_ADDED_ONE = "Dokument lisatud OneNote'i"
-ONENOTE_ADDED_MANY = "OneNote'i lisati {count} dokumenti"
-ONENOTE_UNDATED_ONE = "OneNote'i dokument — lisamise kuupäev teadmata"
-ONENOTE_UNDATED_MANY = "OneNote'i dokumendid ({count}) — lisamise kuupäev teadmata"
+#: **The headline names the files, not the import** (2026-11-05): «EELNÕU.pdf ja
+#: 3 muud faili» — the first file in page order and how many more
+#: (`historical_notes.files_headline`). The row said «OneNote'i lisati 4
+#: dokumenti», which is what the importer did; what the reader looks for is
+#: which papers reached the file that day. The count stays on the row
+#: (`TimelineItem.imported_documents`) and every file is listed under it
+#: (`TimelineItem.historical_files`). The undated row keeps «kuupäev teadmata»
+#: where the date would be, and claims no day.
+#:
+#: A historical note: a dated entry of a linked OneNote page, verbatim
+#: (app/legacy_import/historical_notes.py), on `TimelineItem.historical_note`.
+#: Projected from the page as it is stored; nothing is created. A file the
+#: page's structure ties to the note reads under it and draws no document row.
+HISTORICAL_NOTE_ITEM = "HISTORICAL_NOTE"
 #: What stands in the date's place when the source has no time.
 ONENOTE_UNDATED_DISPLAY = "kuupäev teadmata"
+#: The subline of an undated document row, after its count and source.
+ONENOTE_UNDATED_SUB = "lisamise kuupäev teadmata"
 #: Said beside a file whose OneNote time is older than the page it is on now.
 #: OneNote keeps an element's creation time when content is moved or copied in
 #: from another page, so the day is when the file reached OneNote, not when it
@@ -590,6 +601,12 @@ class TimelineItem:
     #: How many imported historical files this row stands for, on the one row
     #: per import (`HISTORICAL_IMPORT_ITEM`); 0 on every other row.
     imported_documents: int = 0
+    #: Those files, in page order, as the expanded row lists them — on a
+    #: `HISTORICAL_IMPORT_ITEM` row and no other (`historical_notes.HistoricalFile`).
+    historical_files: tuple[Any, ...] = ()
+    #: The note a `HISTORICAL_NOTE_ITEM` row stands for
+    #: (`historical_notes.HistoricalNoteRow`); ``None`` on every other row.
+    historical_note: Any = None
     #: The files a `Lõpeta teema` brought, on its «Teema suletud» row and on no
     #: other: the `EVIDENCE_VERSION_ADDED` events written in the closing's own
     #: operation (`CLOSURE_FILES`). Apart from ``events`` on purpose — those
@@ -600,6 +617,11 @@ class TimelineItem:
     @property
     def is_milestone(self) -> bool:
         return self.milestone is not None
+
+    @property
+    def is_historical_note(self) -> bool:
+        """A dated note of a linked OneNote page (`HISTORICAL_NOTE_ITEM`)."""
+        return self.historical_note is not None
 
     @property
     def website_overview(self) -> Any:
@@ -1217,6 +1239,15 @@ class ImportedVersion:
     #: from an older page. ``False`` when either time is unknown — it claims
     #: nothing it cannot see.
     predates_page: bool = False
+    #: The `MatterSourcePage` it was imported through, and its block on that page
+    #: (`LegacySourceResource.resource_key`): what ties it to a historical note
+    #: (app/legacy_import/historical_notes.py).
+    link_id: Any = None
+    resource_key: str = ""
+    #: Where it reads in a document row's list and headline: page, then block.
+    order: tuple[Any, ...] = ()
+    #: The file as an expanded row prints it (`HistoricalFile`).
+    file: Any = None
 
 
 def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, ImportedVersion]:
@@ -1239,25 +1270,75 @@ def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, Im
     )
     if user is not None:
         rows = rows.filter(document__in=Document.objects.visible_to(user))
+    from django.urls import reverse
+
+    from app.documents.inline import file_link_for
+    from app.legacy_import.historical_notes import (
+        UNDATED_FILE_DISPLAY,
+        HistoricalFile,
+        day_display,
+        structural_comment,
+    )
+
     found: dict[Any, ImportedVersion] = {}
-    for version_id, added_at, stored_at, section, title, page_created in rows.values_list(
+    for (
+        version_id,
+        added_at,
+        stored_at,
+        section,
+        title,
+        page_created,
+        link_id,
+        resource_key,
+        block_ordinal,
+        document_id,
+        document_title,
+        provenance_note,
+        filename,
+        mime_type,
+    ) in rows.values_list(
         "document_version_id",
         "resource__source_added_at",
         "document_version__created_at",
         "matter_source_page__source_page__source_section",
         "matter_source_page__source_page__title",
         "matter_source_page__source_page__source_created_at",
+        "matter_source_page_id",
+        "resource__resource_key",
+        "resource__source_block_ordinal",
+        "document_id",
+        "document__title",
+        "document__provenance_note",
+        "document_version__original_filename",
+        "document_version__mime_type",
     ):
         source = " → ".join(
             part for part in ((section or "").strip(), (title or "").strip()) if part
         )
         group = f"day:{_local_day(added_at).isoformat()}" if added_at else "undated"
+        predates = bool(added_at and page_created and added_at < page_created)
+        added_display = day_display(_local_day(added_at)) if added_at else UNDATED_FILE_DISPLAY
         found[version_id] = ImportedVersion(
             group=group,
             source=source,
             added_at=added_at,
             anchor=added_at or stored_at,
-            predates_page=bool(added_at and page_created and added_at < page_created),
+            predates_page=predates,
+            link_id=link_id,
+            resource_key=resource_key or "",
+            order=(source, str(link_id), block_ordinal or 0, filename or "", str(version_id)),
+            file=HistoricalFile(
+                title=document_title or "",
+                original_filename=filename or "",
+                document_url=reverse("documents:document_detail", kwargs={"pk": document_id}),
+                open_url=file_link_for(
+                    version_id=version_id, filename=filename or "", mime_type=mime_type or ""
+                ).href,
+                added_display=added_display,
+                comment=structural_comment(provenance_note or ""),
+                predates_page=predates,
+                version_id=version_id,
+            ),
         )
     return found
 
@@ -1283,11 +1364,19 @@ def _historical_import_row(
     Keyed on the earliest addition, so the row stands where the work happened;
     the undated row is keyed where the import stored the files and prints no
     date. The import's own events ride along unchanged as the row's files.
+
+    The headline names the files — «EELNÕU.pdf ja 3 muud faili» — in page
+    order (`ImportedVersion.order`), and every file is listed, with its OneNote
+    day and its structural comment, on ``historical_files``.
     """
+    from app.legacy_import.historical_notes import day_display, files_headline
+
     ordered = sorted(events, key=lambda event: (event.occurred_at, event.created_at, str(event.id)))
     count = len(ordered)
     anchor = min(version.anchor for version in versions)
     dated = versions[0].added_at is not None
+    in_order = sorted(versions, key=lambda version: version.order)
+    files = tuple(version.file for version in in_order if version.file is not None)
     where = sorted({version.source for version in versions if version.source})
     if len(where) == 1:
         origin = f"OneNote: {where[0]}"
@@ -1295,17 +1384,19 @@ def _historical_import_row(
         origin = f"{len(where)} OneNote'i lehelt"
     else:
         origin = "ajaloolisest materjalist"
+    what = files_headline(files) or f"{count} {'fail' if count == 1 else 'faili'}"
     if dated:
-        what = ONENOTE_ADDED_ONE if count == 1 else ONENOTE_ADDED_MANY.format(count=count)
-        display = format_estonian_date(_local_day(anchor))
+        # Zero-padded like the note rows and the file days beside it (lead,
+        # 2026-11-05), where every other chronology row prints «29.7.2026».
+        display = day_display(_local_day(anchor))
         earlier = sum(1 for version in versions if version.predates_page)
         if earlier == len(versions):
             origin = f"{origin} · {ONENOTE_PREDATES_PAGE}"
         elif earlier:
             origin = f"{origin} · {ONENOTE_PREDATES_PAGE_SOME.format(count=earlier)}"
     else:
-        what = ONENOTE_UNDATED_ONE if count == 1 else ONENOTE_UNDATED_MANY.format(count=count)
         display = ONENOTE_UNDATED_DISPLAY
+        origin = f"{origin} · {ONENOTE_UNDATED_SUB}"
     return TimelineItem(
         occurred_at=anchor,
         created_at=anchor,
@@ -1319,7 +1410,79 @@ def _historical_import_row(
             sub=f"{count} {'fail' if count == 1 else 'faili'} · {origin}",
         ),
         imported_documents=count,
+        historical_files=files,
     )
+
+
+def historical_note_rows(
+    matter: Matter,
+    user: Any,
+    imported: dict[Any, ImportedVersion],
+    *,
+    withheld: frozenset[Any] = frozenset(),
+    today: date | None = None,
+) -> tuple[list[TimelineItem], frozenset[Any]]:
+    """The dated notes of this Matter's OneNote pages, as rows, and the files under them.
+
+    Read through the page view's own door (`historical_notes.matter_notes`), from
+    the imported files this reader may see (``imported``, read once for the
+    whole chronology). Returns the rows and the versions they carry, which draw
+    no document row of their own: one file, one place.
+
+    **Only a dated note is a row.** An undated block claims no day, and the
+    chronology has no honest place for it among dated rows; it stays on its
+    page, which every note row and every document row of that page links to,
+    and which «Ajalooline OneNote» lists on the Teema page.
+
+    **Placement.** A DAY note sorts as a dated milestone does, at the end of its
+    day (`_end_of_day`), above the work written that day. A MONTH or YEAR note
+    sorts on its period's first day, the anchor every approximate date in the
+    chronology uses (docs/adr/0092 §4), and prints the period. Never the block's
+    creation time, the capture or the import.
+    """
+    from app.legacy_import.historical_notes import PageFile, matter_notes
+
+    by_link: dict[Any, list[PageFile]] = {}
+    for version_id, version in imported.items():
+        if version.file is None or not version.resource_key:
+            continue
+        by_link.setdefault(version.link_id, []).append(
+            PageFile(
+                resource_key=version.resource_key,
+                file=version.file,
+                version_id=version_id,
+                filename=version.file.original_filename,
+                added_at=version.added_at,
+            )
+        )
+    for files in by_link.values():
+        files.sort(key=lambda item: imported[item.version_id].order)
+    notes = matter_notes(matter=matter, user=user, files=by_link, withheld=withheld)
+    day = today or timezone.localdate()
+    rows: list[TimelineItem] = []
+    carried: set[Any] = set()
+    for note in notes:
+        if note.date is None:
+            continue
+        moment = _end_of_day(note.date.day)
+        row = note.row
+        rows.append(
+            TimelineItem(
+                occurred_at=moment,
+                created_at=moment,
+                sort_key=f"onenote-note:{note.link_id}:{note.start:06d}",
+                item_type=HISTORICAL_NOTE_ITEM,
+                milestone=ChronologyMilestone(
+                    what=row.headline,
+                    display_date=row.date_display,
+                    sub=" → ".join(part for part in (row.section, row.page_title) if part),
+                    ahead=note.date.day > day,
+                ),
+                historical_note=row,
+            )
+        )
+        carried.update(note.direct_versions)
+    return rows, frozenset(carried)
 
 
 def _end_of_day(day: date) -> datetime:
@@ -2418,6 +2581,26 @@ def matter_timeline(
     # Files an import brought, read as one row per import rather than one
     # «lisas dokumendi» per file (`HISTORICAL_IMPORT_ITEM`).
     imported_versions = imported_document_versions(matter, user)
+    # The dated notes of the linked OneNote pages, each its own row, and the files
+    # the page's structure ties to them — which read under their note and draw no
+    # document row (`HISTORICAL_NOTE_ITEM`). Read once, like the facts; a file on
+    # a record of its own stays there (§5) and is not repeated under a note.
+    note_rows: list[TimelineItem] = []
+    on_notes: frozenset[Any] = frozenset()
+    if only != TIMELINE_FILTER_ENTRIES:
+        note_rows, on_notes = historical_note_rows(
+            matter,
+            user,
+            imported_versions,
+            withheld=frozenset(shown_on_their_record),
+            today=day,
+        )
+    # The document rows those other files draw, one anchor each.
+    document_row_versions = {
+        version_id: version
+        for version_id, version in imported_versions.items()
+        if version_id not in on_notes
+    }
     # The open step, which `_assemble_timeline` keeps off the chronology as a
     # row of its own (docs/adr/0092 §8).
     open_action = (
@@ -2433,11 +2616,13 @@ def matter_timeline(
         day=day,
         entry_scope=entry_scope,
         event_scope=event_scope,
-        fact_rows=fact_rows,
+        # A note row is placed like a fact: read once, and every one of them
+        # counted in the bound, so a page boundary never splits the notes.
+        fact_rows=[*fact_rows, *note_rows],
         shown_on_their_record=frozenset(shown_on_their_record),
         only=only,
         imported_versions=frozenset(imported_versions),
-        imported_anchors=imported_row_anchors(imported_versions),
+        imported_anchors=imported_row_anchors(document_row_versions),
         owned_versions=owned_versions,
     )
     batch = window
@@ -2451,8 +2636,9 @@ def matter_timeline(
             shown_on_their_record=shown_on_their_record,
             open_action_pk=open_action_pk,
             only=only,
-            imported_versions=imported_versions,
+            imported_versions=document_row_versions,
             owned_versions=owned_versions,
+            on_notes=on_notes,
         )
         if bound is not None:
             items = [item for item in items if item.occurred_at >= bound]
@@ -2840,6 +3026,7 @@ def _assemble_timeline(
     only: str,
     imported_versions: dict[Any, ImportedVersion] | None = None,
     owned_versions: Any = None,
+    on_notes: frozenset[Any] = frozenset(),
 ) -> list[TimelineItem]:
     """The chronology rows these sources make, in the one order.
 
@@ -2884,11 +3071,20 @@ def _assemble_timeline(
     # grouped by the day the source says the file was added. A person's upload
     # has an actor and stays its own «lisas dokumendi» row.
     imported_rows: list[TimelineItem] = []
-    if imported_versions:
+    if imported_versions or on_notes:
+        imported_versions = imported_versions or {}
         by_import: dict[str, list[ChangeEvent]] = {}
         versions_by_import: dict[str, list[ImportedVersion]] = {}
         not_imported: list[ChangeEvent] = []
         for event in renderable:
+            if (
+                event.object_id in on_notes
+                and event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED
+                and event.operation_id is None
+                and event.actor_id is None
+            ):
+                # Read under the note the page's structure ties it to.
+                continue
             imported = (
                 imported_versions.get(event.object_id)
                 if event.event_type == ChangeEventType.EVIDENCE_VERSION_ADDED

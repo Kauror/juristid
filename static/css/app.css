@@ -16474,3 +16474,187 @@ a.jcal__daynum {
   padding: 0 var(--spacing-3) var(--spacing-2);
   margin-top: calc(-1 * var(--spacing-1));
 }
+
+/* ====================================================================
+ * Teema käik — historical OneNote rows (agent C, 2026-11-05)
+ *
+ * A note the OneNote page held, and one OneNote day's imported files
+ * (`timeline_historical_note.html`, `timeline_historical_documents.html`).
+ * Fixed text with no correction and no control, so each is a native
+ * `<details>`: it opens and closes by keyboard and pointer with no script,
+ * and its `<summary>` is the row's one line — `27.07.2026 [4 dokumenti]
+ * KLIM saatis …`. Everything else reuses the chronology's own pieces: the
+ * dot and spine, `.uxtl__msdate`, `.uxtl__mswhat`, `.uxtl__mssub`,
+ * `.uxtl__file`, `.uxtl__link`, `.uxtl__chevron`, the open panel's edge.
+ * ==================================================================== */
+
+/* The closed-state rule of the accordion hides every child of a closed row's
+ * body except the line; here the `<details>` *is* the line, and it hides its
+ * own panel. Same specificity, later in the file, so it wins. */
+#teema-vaade-wrap .uxtl__item--historical:not(.uxtl__item--open) .uxtl__body > .uxtl__hist {
+  display: block;
+}
+
+/* The panel's edge follows the disclosure, not the script's class: the
+ * accordion marks a row open when it holds an open `<details>` or when a link
+ * lands on it, and only the first means anything is showing. */
+#teema-vaade-wrap .uxtl__item--historical.uxtl__item--open > .uxtl__body {
+  margin-bottom: 2px;
+  padding-bottom: 4px;
+  border-color: transparent;
+  background: none;
+}
+
+#teema-vaade-wrap .uxtl__item--historical > .uxtl__body:has(> .uxtl__hist[open]) {
+  margin-bottom: var(--spacing-2);
+  padding-bottom: var(--spacing-25);
+  border-color: var(--border-default);
+  background: var(--surface-panel);
+}
+
+/* The line: date, tag, headline, wrapping as a unit on a phone. The drawn
+ * chevron is placed against the body, exactly where the other rows draw it. */
+#teema-vaade-wrap .uxtl__histline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--spacing-2);
+  list-style: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+#teema-vaade-wrap .uxtl__histline::-webkit-details-marker {
+  display: none;
+}
+
+#teema-vaade-wrap .uxtl__histline > .uxtl__mswhat {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+#teema-vaade-wrap .uxtl__histline > .uxtl__chevron {
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .uxtl__histline:hover > .uxtl__mswhat,
+#teema-vaade-wrap .uxtl__histline:hover > .uxtl__chevron {
+  color: var(--text-primary);
+}
+
+#teema-vaade-wrap .uxtl__hist[open] > .uxtl__histline > .uxtl__chevron {
+  top: 12px;
+  transform: rotate(-135deg);
+}
+
+/* «Dokument» / «4 dokumenti»: words in a bordered box, so the tag reads the
+ * same without colour, and in the case it is written — no upper-casing, so a
+ * screen reader says «4 dokumenti» and not a spelled-out abbreviation. */
+#teema-vaade-wrap .uxtl__histtag {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--border-default);
+  border-radius: 3px;
+  background: var(--surface-elevated);
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.4;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* «Ajalooline: Järgmised tegevused» is what the page once planned, never a
+ * current task: a dashed edge rather than a task's solid one, and no control. */
+#teema-vaade-wrap .uxtl__histtag--past {
+  flex: 0 1 auto;
+  border-style: dashed;
+  white-space: normal;
+}
+
+#teema-vaade-wrap .uxtl__histpanel {
+  margin-top: var(--spacing-15);
+}
+
+/* The note itself, verbatim: body copy, its own line breaks, and long tokens
+ * broken rather than pushing the page sideways at 375 px. */
+#teema-vaade-wrap .uxtl__histtext {
+  margin-bottom: var(--spacing-15);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+#teema-vaade-wrap .uxtl__histtext--past {
+  padding-left: var(--spacing-25);
+  border-left: 2px dashed var(--border-subtle);
+}
+
+#teema-vaade-wrap .uxtl__histtext--past > .uxtl__msnotelabel {
+  display: block;
+  margin-bottom: 2px;
+}
+
+#teema-vaade-wrap .uxtl__histpara {
+  margin: 0 0 var(--spacing-1);
+}
+
+/* Inspectable provenance (`source_ref`) and link text that is not a web
+ * address: present, selectable, and quieter than anything a reader acts on. */
+#teema-vaade-wrap .uxtl__histref {
+  display: block;
+  margin-top: 1px;
+  font-size: var(--typography-size-meta);
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+#teema-vaade-wrap .uxtl__links > .uxtl__histref {
+  display: inline;
+  margin-right: var(--spacing-3);
+}
+
+#teema-vaade-wrap .uxtl__histfiles {
+  margin-top: var(--spacing-15);
+}
+
+#teema-vaade-wrap .uxtl__histfilelist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+#teema-vaade-wrap .uxtl__histfile {
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+#teema-vaade-wrap .uxtl__histfile > .uxtl__file {
+  margin-top: 0;
+  margin-right: var(--spacing-15);
+}
+
+#teema-vaade-wrap .uxtl__histfilemeta {
+  font-size: var(--typography-size-meta);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .uxtl__histfilename {
+  color: var(--text-secondary);
+}
+
+#teema-vaade-wrap .uxtl__histopen {
+  margin-right: 0;
+  font-size: inherit;
+}
+
+#teema-vaade-wrap .uxtl__histcomment {
+  display: block;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-body);
+}
+
+/* ==================== end: historical OneNote rows ==================== */

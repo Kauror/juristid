@@ -514,6 +514,8 @@ nothing backfilled: rows written before this carry labels alone and are resolved
 live through the reviewed vocabulary, which includes the version-1.0 wording of the
 three reworded labels.
 
+> **Amended 2026-11-05 ([0210](0210-the-chronology-reads-onenote-notes-and-titles-change-only-by-review.md)):** the OneNote page's own dated notes read as `HISTORICAL_NOTE` rows, and imported files read on document rows named by their files («EELNÕU.pdf ja 3 muud faili», zero-padded day) instead of «OneNote'i lisati N dokumenti».
+
 ## 13 — `Menetluse kulg`: the four states, and the late-entry rule
 
 Four states, because there are four honest answers and the usual two would force a

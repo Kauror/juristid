@@ -8,6 +8,17 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-06
+basis = "deployment"
+prs = [602]
+# 06.11 väljalase r49 (#602, ADR 0210, ainult kood, migratsioonita): OneNote'i lehe dateeritud märkused
+# «Tegevused» all ja dokumendipealkirjade ülevaatuse tööriist (pealkirju ei muudetud).
+changes = [
+  "«Tegevused» näitab nüüd OneNote'i lehe enda dateeritud märkusi — näiteks «27.07.2026 KLIM saatis kooskõlastusringile eelnõu …» — selle asemel, et öelda ainult «OneNote'i lisati 4 dokumenti». Rea avamisel on näha kogu märkus, selle allikas OneNote'is ja märkusega otseselt seotud failid; kuupäevata märkused ja «Järgmised tegevused» jäävad OneNote'i lehele.",
+  "OneNote'ist imporditud failide read on nimetatud failide järgi («EELNÕU.pdf ja 3 muud faili») ja seisavad päeval, mil failid OneNote'i lisati; rea avamisel on kõik failid ja nende märkused.",
+]
+
+[[day]]
 date = 2026-11-05
 basis = "deployment"
 prs = [592, 593, 596, 597, 599, 601]

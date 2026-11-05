@@ -53,6 +53,18 @@ record, not professional chronology (master specification 16.5).
 {% load document_files people %}
 {% for item in timeline_items %}
   {% comment %}
+    **Historical OneNote rows** — a note the page held, and one day's imported
+    files — are fixed text with no correction and no control, so they are a
+    native `<details>` of their own rather than this article's button-and-script
+    accordion (`timeline_historical_note.html`, `timeline_historical_documents.html`).
+    A files row without `historical_files` keeps the milestone rendering below.
+  {% endcomment %}
+  {% if item.historical_note %}
+    {% include "matters/partials/timeline_historical_note.html" with item=item note=item.historical_note matter=matter %}
+  {% elif item.historical_files %}
+    {% include "matters/partials/timeline_historical_documents.html" with item=item matter=matter %}
+  {% else %}
+  {% comment %}
     The id is what a search result for an entry scrolls to. Server-rendered
     anchor, no router: the timeline is already one page (Stage-2B brief 77).
 
@@ -631,6 +643,7 @@ record, not professional chronology (master specification 16.5).
       {% endif %}
     </div>
   </article>
+  {% endif %}
 {% empty %}
   {% comment %}
     The section is called `Teema käik` since docs/adr/0092 §9, and the empty
