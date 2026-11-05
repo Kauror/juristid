@@ -149,62 +149,74 @@ def _rendered_blocks(
     The template makes no decisions. Everything about what a block is, whether
     its file was materialised, and what may be done with it is settled here, so
     that changing the rendering cannot accidentally change what is shown.
+
+    **A page row is one capture's record** (docs/adr/0205 §3 and its amendment of
+    2026-11-05). A later capture adds its files to the page's catalogue but keeps
+    the row's text and blocks, so a file the stored blocks do not reach (a later
+    capture's, or one that never had a block) is shown after the narrative,
+    under a line naming the capture the narrative is from. None was shown
+    before, and the page read as the latest while it was an earlier one. A row
+    recorded as continuing an earlier block (a moved page) is that same file,
+    already shown in its place, so it is not repeated.
     """
+
+    def file_block(key: str, ordinal: Any) -> dict:
+        resource = resources.get(key)
+        record = documents.get(key)
+        if record is not None and record.document_id and record.document_id not in readable:
+            # A file this reader may not read: its place in the page is kept
+            # and nothing about it is — no name, no size, no id to follow
+            # (ENG-047). Hiding the block altogether would make the page
+            # look as though it had less material than it does.
+            return {
+                "kind": "file",
+                "ordinal": ordinal,
+                "filename": "",
+                "size_bytes": 0,
+                "document": None,
+                "version": None,
+                "opens_inline": False,
+                "state": "withheld",
+            }
+        return {
+            "kind": "file",
+            "ordinal": ordinal,
+            "filename": resource.original_filename if resource else key,
+            "size_bytes": resource.size_bytes if resource else 0,
+            "document": record.document if record else None,
+            "version": record.document_version if record else None,
+            # What clicking the filename should do. Decided here, from
+            # the stored bytes' own extension and MIME type, so the
+            # template cannot accidentally make something openable by
+            # rendering it differently (app/documents/inline.py).
+            "opens_inline": bool(
+                record
+                and record.document_version
+                and may_open_inline(
+                    filename=record.document_version.original_filename,
+                    mime_type=record.document_version.mime_type,
+                )
+            ),
+            # A file the importer has not reached yet is shown as
+            # itself, waiting. Hiding it would make the page look like
+            # it had fewer materials than it does.
+            "state": _file_state(resource, record),
+        }
+
     out: list[dict] = []
+    placed: set[str] = set()
+    last = 0
     for block in page.blocks or []:
         kind = block.get("kind", "TEXT")
+        last = max(last, int(block.get("ordinal") or 0))
         if kind == "TITLE":
             # The page's own title is already the heading. Repeating it as the
             # first line of the narrative reads like a mistake.
             continue
         if kind in {"FILE_ATTACHMENT", "IMAGE"}:
             key = block.get("resource_key", "")
-            resource = resources.get(key)
-            record = documents.get(key)
-            if record is not None and record.document_id and record.document_id not in readable:
-                # A file this reader may not read: its place in the page is kept
-                # and nothing about it is — no name, no size, no id to follow
-                # (ENG-047). Hiding the block altogether would make the page
-                # look as though it had less material than it does.
-                out.append(
-                    {
-                        "kind": "file",
-                        "ordinal": block.get("ordinal", 0),
-                        "filename": "",
-                        "size_bytes": 0,
-                        "document": None,
-                        "version": None,
-                        "opens_inline": False,
-                        "state": "withheld",
-                    }
-                )
-                continue
-            out.append(
-                {
-                    "kind": "file",
-                    "ordinal": block.get("ordinal", 0),
-                    "filename": resource.original_filename if resource else key,
-                    "size_bytes": resource.size_bytes if resource else 0,
-                    "document": record.document if record else None,
-                    "version": record.document_version if record else None,
-                    # What clicking the filename should do. Decided here, from
-                    # the stored bytes' own extension and MIME type, so the
-                    # template cannot accidentally make something openable by
-                    # rendering it differently (app/documents/inline.py).
-                    "opens_inline": bool(
-                        record
-                        and record.document_version
-                        and may_open_inline(
-                            filename=record.document_version.original_filename,
-                            mime_type=record.document_version.mime_type,
-                        )
-                    ),
-                    # A file the importer has not reached yet is shown as
-                    # itself, waiting. Hiding it would make the page look like
-                    # it had fewer materials than it does.
-                    "state": _file_state(resource, record),
-                }
-            )
+            placed.add(key)
+            out.append(file_block(key, block.get("ordinal", 0)))
         else:
             text = (block.get("text") or "").strip()
             if text:
@@ -217,6 +229,33 @@ def _rendered_blocks(
                         "list_item": kind == "LIST_ITEM",
                     }
                 )
+    unplaced = [
+        key
+        for key in resources
+        if key not in placed
+        and getattr(documents.get(key), "error_code", "") != "CONTINUES_EARLIER_BLOCK"
+    ]
+    if unplaced:
+        when = (
+            f" ({timezone.localtime(page.first_imported_at):%d.%m.%Y})"
+            if page.first_imported_at
+            else ""
+        )
+        out.append(
+            {
+                "kind": "text",
+                "ordinal": last + 1,
+                "text": (
+                    f"Lehe tekst on hõivest {page.capture_id}{when}. Järgmised failid on "
+                    "samal lehel, kuid selles tekstis pole neil kohta (hilisem hõive "
+                    "või plokita fail)."
+                ),
+                "depth": 0,
+                "list_item": False,
+            }
+        )
+        for offset, key in enumerate(unplaced, start=2):
+            out.append(file_block(key, last + offset))
     return out
 
 
