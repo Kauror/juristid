@@ -115,7 +115,8 @@ def _mcp_says_nothing(block: dict[str, Any], viewed: Matter) -> None:
     assert block["successor"] is None and not block["successor_hidden"]
     assert block["predecessors"] == [] and not block["hidden_predecessors"]
     assert not block["chain_continues_hidden"] and not block["chain_starts_hidden"]
-    assert [item["id"] for item in block["chain"]] in ([], [str(viewed.pk)])
+    # The chain may hold the viewed Matter itself (MCP ids are «matter:<uuid>»), nothing else.
+    assert [item["id"] for item in block["chain"]] in ([], [f"matter:{viewed.pk}"])
     assert block["historical_predecessors"] == []
     assert block["endpoint"] is None
 
