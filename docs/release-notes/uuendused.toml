@@ -8,6 +8,21 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-06
+basis = "deployment"
+prs = [597]
+# r46: OneNote'i järelparandused (ADR 0206), teema jätkumine (ADR 0207), jagatud lehe toimik
+# ja hoitud originaalide allalaadimine (ADR 0208), hilisema hõive leping (ADR 0205 täiendus),
+# D5 ja ADR 0204. Andmeid ei muudeta, migratsiooni pole. Kuupäev eeldab paigaldust pärast
+# 05.11 öist Lovable'i võrdlust; teisel päeval paigaldades muuda kuupäev enne FULL CI-d.
+changes = [
+  "«Dokumendid» loendis on OneNote'ist tulnud failid nüüd päeval, mil need OneNote'i lisati, ja aasta järgi saab neid sirvida; teadmata lisamise ajaga failid on lõpus ja eraldi valikus «Kuupäev teadmata». Faili lehel on see kuupäev kohe näha.",
+  "Mitme teemaga seotud OneNote'i lehe failid on märgitud «Ootab teemaga seostamist», mitte enam ekslikult «Kopeerimine ebaõnnestus»; lehe saab avada ühe toimikuna ja selle originaalfaile saab alla laadida, kuigi ükski teema neid veel oma dokumendiks ei ole võtnud.",
+  "Teema päis ja suletud teema teade ütlevad, millise teema all töö jätkub («Jätkub teemas 2025_196») või milline teema eelnes, ja mitme etapi korral näidatakse kogu ahelat; «Dokumendid» näitab ka eelnevate etappide OneNote'i lehti.",
+  "«Allikas» ütleb nüüd, mitu OneNote'i faili on Juristidesse imporditud.",
+]
+
+[[day]]
 date = 2026-11-05
 basis = "deployment"
 prs = [592, 593]
