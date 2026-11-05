@@ -50,6 +50,13 @@ up twice if both were listed.
    from `related_materials_for`.
 6. **Cost.** One query per level of history (the walk), none per row. A Teema
    with no history pays one query; the Teema page ceiling moves from 64 to 65.
+   Amended 2026-11-05: each level is limited at the database to the remaining
+   `MAX_HISTORY` budget + 1; a cycle met on the level beyond `MAX_HOPS` is
+   reported as a cycle, not a complete history (QA-08, QA-09); the walk is shared
+   with the header (QA-10). The suggestion exclusion is
+   `confirmed_continuation_ids(matter, viewer)`: every stage shown here, by
+   construction, plus the bounded component walk; a confirmed stage that is not
+   shown and lies beyond that budget may still be suggested (QA-01, QA-02).
 7. **The rail «Seotud» card** (amended 2026-11-05) drops its «Eelnev teema» rows
    wherever «Seotud materjalid» is on the same rail, so the predecessor is not
    named twice. Every view that draws the rail today carries the section — the

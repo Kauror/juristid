@@ -52,13 +52,28 @@ register rebuild imported Lovable's structured stage links into
 6. **One walk per request.** The `readable_continuations` tag caches the answer
    on the request, keyed on the Matter, its `superseded_by` and whether it is
    open. Header, banner and rail share one walk, and the HTMX re-renders
-   (inline saves, a closure's out-of-band header) read the same scope.
+   (inline saves, a closure's out-of-band header) read the same scope. Amended
+   2026-11-05 (QA-10): the backward history is walked once per Matter instance
+   and reader (memo keyed on the viewer object and `(pk, superseded_by_id,
+   is_open)`, never shared across readers), one query per level, and the header,
+   «Seotud materjalid» and the Dokumendid earlier-stage pages share it. At most
+   `MAX_PREDECESSORS` (12) direct predecessors are named; past that
+   `more_predecessors` is set and the header points to «Varasemad etapid»
+   (QA-08).
+6a. **No cycle through a closure (2026-11-05, QA-03).** `close_matter` refuses a
+   `Järglane` whose forward chain leads back to the closing Matter: the pair and
+   the pre-read chain are locked `FOR NO KEY UPDATE` in ascending id order, a
+   step changed meanwhile is locked as it is reached, and the walk is bounded at
+   200 hops, past which the closure is refused too. The refusal comes before any
+   write. The Lovable importer already refuses cycles at plan time.
 7. **`get_matter`** (read-only MCP) carries `continuations`: `successor`,
    `successor_hidden`, `predecessors`, `hidden_predecessors`, `chain` (earliest
    first, this Teema included), `chain_starts_hidden`/`chain_continues_hidden`,
    `endpoint` (with `is_open`, only when known), `cyclic` and `truncated`. Each
    stage gives its id, reference and link, in the same viewer scope. There is
-   no new tool and no write scope.
+   no new tool and no write scope. Amended 2026-11-05: `hidden_predecessors` is a
+   boolean and `more_predecessors` is added (QA-05, QA-08); a reader who may not
+   read the Matter gets no continuation information at all (QA-06).
 8. **On lists (amended 2026-11-05).** Rows on the Teemad register (every surface
    that draws the shared matter table: Teemad, Minu asjad, Saabunud) and Teema
    search results carry one quiet line under the title: «Jätkub teemas 2025_196».
