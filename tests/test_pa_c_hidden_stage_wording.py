@@ -46,7 +46,6 @@ BACKWARD = "Varasem etapp, mida siit avada ei saa"
 FORBIDDEN = "lubatud"
 
 
-
 @pytest.fixture(autouse=True)
 def public_origin(settings):
     settings.JURISTID_PUBLIC_ORIGIN = "https://juristid.example.test"
