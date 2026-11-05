@@ -719,7 +719,7 @@ finds again (§23.5).
         </details>
       {% endif %}
 
-      {% if historical %}
+      {% if historical.links %}
         {% comment %}
           The OneNote pages themselves, each a link — and the only way in to
           them: the Teema page carries no summary row for them (owner,
@@ -750,6 +750,47 @@ finds again (§23.5).
                   from the page being here (ONENOTE-UI-002).
                 {% endcomment %}
                 <span class="statechip{% if link.import_status.tone %} statechip--{{ link.import_status.tone }}{% endif %}">{{ link.import_status.label }}</span>
+                {% if link.shared_with_earlier %}
+                  {% comment %}
+                    The same page is in an earlier stage's dossier too: said once
+                    here rather than listed again below (docs/adr/0208).
+                  {% endcomment %}
+                  <span class="filelist__meta">ka eelneva teema {% for stage in link.shared_with_earlier %}{{ stage.display_reference|default:stage.title|truncatechars:40 }}{% if not forloop.last %}, {% endif %}{% endfor %} toimikus</span>
+                {% endif %}
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endif %}
+
+      {% if historical.predecessor_pages %}
+        {% comment %}
+          The earlier stages' own OneNote pages (docs/adr/0208). This Teema
+          continues them (`Matter.superseded_by`), and its dossier often began
+          under the earlier reference. Each page is listed once, by its own
+          identity, and links to the *earlier* Teema's view of it — governed by
+          that Teema's scope, never by this one's. These are not this Teema's
+          files: nothing here is counted into the table above or the
+          «Ajalooline OneNote» figures.
+        {% endcomment %}
+        <section class="docsection" aria-labelledby="eelnevad-heading">
+          <div class="docsection__head">
+            <h2 class="docsection__title" id="eelnevad-heading">Eelnevate etappide ajalooline materjal</h2>
+            <span class="docsection__count">{{ historical.predecessor_pages|length }} lehte</span>
+          </div>
+          <p class="cardnote">Varasema viitega teema OneNote'i lehed. Need ei ole selle teema dokumendid.</p>
+          <ul class="filelist">
+            {% for row in historical.predecessor_pages %}
+              <li class="filelist__item">
+                <a href="{% url 'legacy_import:source_page' pk=row.link.pk %}">
+                  {{ row.page.title|default:"Nimetu leht" }}
+                </a>
+                <span class="filelist__meta">
+                  {% for stage in row.stages %}{{ stage.display_reference|default:stage.title|truncatechars:40 }}{% if not forloop.last %}, {% endif %}{% endfor %}
+                  · {{ row.page.source_section }}
+                  · {{ row.page.file_count }} faili
+                </span>
+                <span class="statechip{% if row.import_status.tone %} statechip--{{ row.import_status.tone }}{% endif %}">{{ row.import_status.label }}</span>
               </li>
             {% endfor %}
           </ul>
