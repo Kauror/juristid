@@ -58,6 +58,13 @@ class HistoricalNoteRow:
     page_title: str
     section: str
     source_ref: str
+    date_iso: str = ""
+
+
+def _iso(display: str, precision: str | None) -> str:
+    """The `datetime` value agent B's `date_iso` carries for a display date."""
+    parts = display.split(".") if display else []
+    return "-".join(reversed(parts)) if precision and parts else ""
 
 
 @dataclass
@@ -110,6 +117,7 @@ def a_note(**overrides: Any) -> HistoricalNoteRow:
         "source_ref": "capture näidis-01 · plokid 0–3",
     }
     values.update(overrides)
+    values.setdefault("date_iso", _iso(values["date_display"], values["precision"]))
     return HistoricalNoteRow(**values)
 
 
