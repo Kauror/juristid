@@ -1379,8 +1379,10 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 
 
 #: The Teema page's query ceiling: 62 measured, plus a margin of two
-#: (`test_the_matter_page_does_not_explode_into_queries`).
-TEEMA_PAGE_QUERY_CEILING = 64
+#: (`test_the_matter_page_does_not_explode_into_queries`). One more since
+#: docs/adr/0209: `Seotud materjalid` asks once which Teemad continue as this
+#: one (`historical_predecessors`, one read per level of history, none per row).
+TEEMA_PAGE_QUERY_CEILING = 65
 
 
 def test_the_matter_page_does_not_explode_into_queries(

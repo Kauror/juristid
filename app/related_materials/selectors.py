@@ -10,6 +10,13 @@ A relation to a Matter this reader may not open is not shown, not counted and
 not hinted at; a background Submission on a restricted Matter is the same; an
 archive letter is offered only to a reader of the archive. A relation is a fact
 about two files, never a key to one of them (§5).
+
+The earlier stages of the Teema's continuation history are the third thing, and
+the only one nobody chose here: they follow from `Matter.superseded_by`, walked
+through every branch by `historical_predecessors` in this reader's scope
+(app/matters/continuations.py, docs/adr/0209). They are shown, never edited. A
+predecessor that somebody also related by hand is one row, not two — the stage
+row carrying the manual relation and its remove control (§2 of 0209).
 """
 
 from __future__ import annotations
@@ -23,6 +30,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.legacy_import.opinion_access import may_read_archive
+from app.matters.continuations import EarlierStage, historical_predecessors
 from app.matters.models import Matter
 from app.related_materials.models import MatterBackgroundMaterial, MatterRelation
 from app.submissions.models import Submission
@@ -160,25 +168,82 @@ def _background_item(row: MatterBackgroundMaterial) -> BackgroundItem:
 
 
 @dataclass(frozen=True)
-class RelatedMaterials:
-    """What the ordinary Matter page renders: decisions, not suggestions."""
+class EarlierStageItem:
+    """One readable earlier stage, and the manual relation to it if there is one.
 
+    `relation` is the confirmed `MatterRelation` to the same Matter, when
+    somebody also linked it by hand. The row then says both bases and keeps the
+    manual relation's `Eemalda seos`; the continuation itself has no control
+    anywhere in this section (docs/adr/0209 §2).
+    """
+
+    stage: EarlierStage
+    relation: ConfirmedRelation | None = None
+
+    @property
+    def matter(self) -> Matter:
+        return self.stage.matter
+
+    @property
+    def depth(self) -> int:
+        return self.stage.depth
+
+    @property
+    def state_label(self) -> str:
+        return "avatud" if self.stage.matter.is_open else "suletud"
+
+    @property
+    def is_also_manual(self) -> bool:
+        return self.relation is not None
+
+
+@dataclass(frozen=True)
+class RelatedMaterials:
+    """What the ordinary Matter page renders: decisions and history, not suggestions."""
+
+    #: Every confirmed relation this reader may open, the ones to an earlier
+    #: stage included. Rendering reads `manual_rows`, which leaves those out
+    #: because their stage row already carries them.
     relations: tuple[ConfirmedRelation, ...]
     background: tuple[BackgroundItem, ...]
+    #: The readable earlier stages, earliest first (`historical_predecessors`).
+    stages: tuple[EarlierStageItem, ...] = ()
+    #: The walk met a stage it had already shown, or was cut at its bound. One
+    #: honest note each; nothing beyond is named or counted.
+    stages_cyclic: bool = False
+    stages_truncated: bool = False
+
+    @property
+    def manual_rows(self) -> tuple[ConfirmedRelation, ...]:
+        """The confirmed relations that are not already a row under `Varasemad etapid`."""
+        on_stage_rows = {item.matter.pk for item in self.stages}
+        return tuple(item for item in self.relations if item.other.pk not in on_stage_rows)
 
     @property
     def is_empty(self) -> bool:
-        return not self.relations and not self.background
+        return not self.relations and not self.background and not self.stages
 
     @property
     def count(self) -> int:
-        """Everything a person linked: the count beside `Seotud materjalid`."""
-        return len(self.relations) + len(self.background)
+        """Distinct visible rows: the count beside `Seotud materjalid`.
+
+        A predecessor that is also related by hand is one row and counts once.
+        """
+        return len(self.manual_rows) + len(self.background) + len(self.stages)
 
 
 def related_materials_for(matter: Matter, viewer: Any) -> RelatedMaterials:
-    """Two queries, and nothing about what might be related."""
+    """Two queries and the history walk (one per level), nothing about what might be related."""
+    relations = tuple(confirmed_relations(matter, viewer))
+    by_matter = {item.other.pk: item for item in relations}
+    history = historical_predecessors(matter, viewer)
     return RelatedMaterials(
-        relations=tuple(confirmed_relations(matter, viewer)),
+        relations=relations,
         background=tuple(background_materials(matter, viewer)),
+        stages=tuple(
+            EarlierStageItem(stage=stage, relation=by_matter.get(stage.matter.pk))
+            for stage in history.stages
+        ),
+        stages_cyclic=history.cyclic,
+        stages_truncated=history.truncated,
     )
