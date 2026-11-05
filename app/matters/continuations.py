@@ -71,6 +71,35 @@ class Continuations:
         """More than one hop in either direction: worth printing the whole path."""
         return len(self.after) > 1 or len(self.before) > 1
 
+    @property
+    def stage_count(self) -> int:
+        """Readable stages on the linear path through this Matter, itself included."""
+        return len(self.before) + 1 + len(self.after)
+
+    @property
+    def shows_path(self) -> bool:
+        """Three or more readable stages: print them in order, not as two neighbours.
+
+        `has_chain` plus the Matter in the middle of a three-stage chain, which
+        has one hop each way and is still a chain to whoever opens it.
+        """
+        return self.stage_count > 2
+
+    @property
+    def endpoint_is_known(self) -> bool:
+        """`endpoint` really is where the work ends, as far as anybody can tell.
+
+        Not when the walk stopped at a step this reader may not read, met a
+        cycle or hit `MAX_HOPS`: the last readable stage is then only the last
+        one *shown*, and calling it the endpoint would be a guess.
+        """
+        return bool(self.after) and not (self.hidden_after or self.cyclic or self.truncated)
+
+    @property
+    def hop_limit(self) -> int:
+        """`MAX_HOPS`, for the sentence that says a chain was cut."""
+        return MAX_HOPS
+
     # Kept for the rail's existing template names (`earlier`, `later`).
     @property
     def earlier(self) -> tuple[Matter, ...]:
@@ -115,6 +144,8 @@ def continuations_for(matter: Matter | None, viewer: Any) -> Continuations:
             Matter.objects.filter(superseded_by=of).exclude(pk=of).values_list("pk", flat=True)
         )
         ids = set(everyone)
+        if not ids:
+            return [], 0  # the usual answer, and no second query to reach it
         visible = sorted(
             readable.filter(pk__in=ids),
             key=lambda m: (m.reference_year or 0, m.reference_number or 0, str(m.pk)),
