@@ -16414,3 +16414,18 @@ a.jcal__daynum {
 .dossierreview {
   margin-top: var(--spacing-3);
 }
+
+/* -- Seotud materjalid · Varasemad etapid (docs/adr/0209) -------------------
+ *
+ * The continuation history under the chosen materials: a group heading like
+ * the suggestions' own (`.relatedmaterials__sub`), the same compact rows, and
+ * one quiet sentence when the walk met a cycle or its bound. Read-only, so
+ * nothing here styles a control of its own. */
+.relatedmaterials__stageshead {
+  margin-top: var(--spacing-2);
+}
+
+.relatedmaterials__stagenote {
+  margin: var(--spacing-1) 0 0;
+  font-size: var(--typography-size-meta);
+}

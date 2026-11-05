@@ -12,6 +12,11 @@ Three things, in decreasing certainty (docs/adr/0062):
    control, computed only when opened, never counted on the ordinary page
    render, and every card says why it is there.
 
+And below the chosen ones `Varasemad etapid`, which nobody chose here: every earlier stage
+of this Teema's continuation history this reader may read, through every
+branch, earliest first (`Matter.superseded_by`, docs/adr/0209). Not editable —
+no `+ Lisa`, and no control anywhere here touches the continuation.
+
 Nothing here is mandatory, nothing here blocks anything, and a Matter with
 nothing confirmed and nothing opened is one quiet row. The whole section is
 what a decision re-renders (`hx-target="#seotud-materjalid"`), so the confirmed
@@ -40,9 +45,9 @@ lists and the suggestions cannot disagree about the click that just happened.
     <p class="factnote {% if notice_is_error %}factnote--warning{% endif %} relatedmaterials__notice"
        role="status" data-related-notice>{{ notice }}</p>
   {% endif %}
-  {% if related_materials.relations or related_materials.background %}
+  {% if related_materials.manual_rows or related_materials.background %}
     <ul class="factlist factlist--compact relatedmaterials__list" data-related-confirmed>
-      {% for item in related_materials.relations %}
+      {% for item in related_materials.manual_rows %}
         <li class="factrow relatedmaterials__row" data-related-matter="{{ item.other.pk }}">
           <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=item.other.pk %}">{{ item.other.title }}</a>
           {% if can_write %}
@@ -75,6 +80,44 @@ lists and the suggestions cannot disagree about the click that just happened.
         </li>
       {% endfor %}
     </ul>
+  {% endif %}
+  {% if related_materials.stages %}
+    {% comment %}
+      `Varasemad etapid` — the continuation history, shown and never edited
+      (docs/adr/0209). A stage somebody also related by hand is this one row,
+      not a second one above: it says both bases, and its `×` withdraws the
+      manual relation only. The stage stays, because `superseded_by` is not
+      something this section can change.
+
+      A stage this reader may not read is not a row, not a count and not a
+      hint; the walk does not pass through it either. A cycle or a cut walk is
+      one sentence that names nothing beyond what is listed.
+    {% endcomment %}
+    <h3 class="relatedmaterials__sub relatedmaterials__stageshead">Varasemad etapid</h3>
+    <ul class="factlist factlist--compact relatedmaterials__list" data-related-stages>
+      {% for item in related_materials.stages %}
+        <li class="factrow relatedmaterials__row" data-related-stage="{{ item.matter.pk }}"{% if item.is_also_manual %} data-related-matter="{{ item.matter.pk }}"{% endif %}>
+          <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{% if item.matter.display_reference %}{{ item.matter.display_reference }} — {% endif %}{{ item.matter.title }}</a>
+          <span class="muted relatedmaterials__meta">{{ item.state_label }}{% if item.is_also_manual %} · seotud ka käsitsi{% endif %}</span>
+          {% if can_write and item.is_also_manual %}
+            <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:unlink' pk=matter.pk %}"
+                  hx-post="{% url 'related_materials:unlink' pk=matter.pk %}"
+                  hx-target="#seotud-materjalid" hx-swap="outerHTML">
+              {% csrf_token %}
+              {% include "related_materials/partials/state_fields.html" %}
+              <input type="hidden" name="teema" value="{{ item.matter.pk }}">
+              <button class="quietbutton" type="submit" aria-label="Eemalda käsitsi lisatud seos: {{ item.matter.title }}" title="Eemalda käsitsi lisatud seos (varasem etapp jääb)">×</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+    {% if related_materials.stages_cyclic %}
+      <p class="muted relatedmaterials__stagenote" data-related-stages-note="cyclic">Ajalugu jõuab tagasi juba näidatud teemani, kaugemale seda ei näidata.</p>
+    {% endif %}
+    {% if related_materials.stages_truncated %}
+      <p class="muted relatedmaterials__stagenote" data-related-stages-note="truncated">Ajalugu on pikem, kui siin näidatakse; näidatud on lähimad etapid.</p>
+    {% endif %}
   {% endif %}
   {% if can_write %}
     {% comment %}
