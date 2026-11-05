@@ -22,7 +22,13 @@ Dokumendid row:
   ``suggestion_kind`` ``EXPLICIT_TITLE`` are eligible. Contextual descriptions
   are never applied by this module.
 * **Dry run first.** `plan_sha256` identifies the exact file; applying requires
-  the digest from a reviewed dry run.
+  the digest from a reviewed dry run. The file is read **once**: the digest is
+  of exactly the bytes that are parsed and applied, so a file swapped between
+  a digest and a second read cannot apply rows nobody reviewed.
+* **Only printable titles.** A proposal holding a control character (NUL
+  included), a bidirectional override or isolate, or another invisible format
+  character is refused as that row's ``REFUSED_BAD_PROPOSAL``, naming the
+  character: «Arvamus» + U+202E + «fdp.exe» reads on screen as «Arvamusexe.pdf».
 
 Each row is its own transaction: one refusal does not undo the rows before it.
 The comparison with ``current_title`` is made under the same Matter → Document
@@ -34,6 +40,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 import uuid
 from collections import Counter
 from dataclasses import dataclass, field
@@ -108,6 +115,10 @@ ACTOR_UNKNOWN = "Tegijat ei leitud või ta pole aktiivne"
 ACTOR_MAY_NOT_WRITE = "Tegija ei tohi sisu muuta"
 #: Refused when the digest of the plan does not match the reviewed one.
 PLAN_DIGEST_MISMATCH = "Plaani kontrollsumma ei vasta ülevaadatud plaanile"
+#: Why a row is `REFUSED_BAD_PROPOSAL` (its `RowResult.detail`).
+PROPOSAL_FORBIDDEN_CHARACTER = "Pakutud pealkirjas on keelatud märk"
+PROPOSAL_EMPTY = "Pakutud pealkiri on tühi"
+PROPOSAL_TOO_LONG = "Pakutud pealkiri on liiga pikk"
 #: Raised inside a row's transaction when the title moved since the plan.
 _TITLE_MOVED = "title changed since the plan"
 
@@ -147,14 +158,26 @@ class ApplyReport:
 
 
 def plan_sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(_read(path)).hexdigest()
+
+
+def _read(path: Path) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise TitlePlanError(f"{PLAN_UNREADABLE}: {error}") from error
 
 
 def load_plan(path: Path) -> list[PlanRow]:
     """Read a JSON Lines plan. Refuses the whole file on any malformed row."""
+    return parse_plan(_read(path))
+
+
+def parse_plan(data: bytes) -> list[PlanRow]:
+    """The rows of a JSON Lines plan's bytes. Refuses the whole plan on any malformed row."""
     try:
-        text = path.read_text(encoding="utf-8-sig")
-    except (OSError, UnicodeDecodeError) as error:
+        text = data.decode("utf-8-sig")
+    except UnicodeDecodeError as error:
         raise TitlePlanError(f"{PLAN_UNREADABLE}: {error}") from error
     rows: list[PlanRow] = []
     seen: set[uuid.UUID] = set()
@@ -206,22 +229,46 @@ def _clean(title: str) -> str:
     return " ".join(title.split())
 
 
-def _eligibility(row: PlanRow) -> str:
-    if row.recommendation != APPROVE:
-        return SKIPPED_NOT_APPROVED
-    if row.suggestion_kind != EXPLICIT_TITLE:
-        return SKIPPED_NOT_EXPLICIT
-    cleaned = _clean(row.proposed_title)
-    if not cleaned or len(cleaned) > DOCUMENT_TITLE_MAX:
-        return REFUSED_BAD_PROPOSAL
+#: Whitespace the service collapses to one space (`_clean`): allowed in a proposal.
+_COLLAPSED_CONTROLS = frozenset("\t\n\r\x0b\x0c\x1c\x1d\x1e\x1f\x85")
+#: Unicode categories a display title never holds: controls (NUL among them),
+#: format characters (the bidirectional overrides and isolates, zero-width
+#: marks), unpaired surrogates and private-use characters.
+_FORBIDDEN_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Co"})
+
+
+def forbidden_character(title: str) -> str:
+    """The first character a display title may not hold, as «U+202E», or ""."""
+    for character in title:
+        if character in _COLLAPSED_CONTROLS:
+            continue
+        if unicodedata.category(character) in _FORBIDDEN_CATEGORIES:
+            return f"U+{ord(character):04X}"
     return ""
+
+
+def _eligibility(row: PlanRow) -> tuple[str, str]:
+    """The outcome that stops the row before the database, and why; ``("", "")`` if none."""
+    if row.recommendation != APPROVE:
+        return SKIPPED_NOT_APPROVED, ""
+    if row.suggestion_kind != EXPLICIT_TITLE:
+        return SKIPPED_NOT_EXPLICIT, ""
+    forbidden = forbidden_character(row.proposed_title)
+    if forbidden:
+        return REFUSED_BAD_PROPOSAL, f"{PROPOSAL_FORBIDDEN_CHARACTER} {forbidden}"
+    cleaned = _clean(row.proposed_title)
+    if not cleaned:
+        return REFUSED_BAD_PROPOSAL, PROPOSAL_EMPTY
+    if len(cleaned) > DOCUMENT_TITLE_MAX:
+        return REFUSED_BAD_PROPOSAL, PROPOSAL_TOO_LONG
+    return "", ""
 
 
 def _predict(row: PlanRow, actor: Any) -> RowResult:
     """What applying this row would do, read without locks or writes."""
-    skipped = _eligibility(row)
+    skipped, detail = _eligibility(row)
     if skipped:
-        return RowResult(row.line, row.document_id, skipped)
+        return RowResult(row.line, row.document_id, skipped, detail)
     document = Document._base_manager.select_related("matter").filter(pk=row.document_id).first()
     if document is None:
         return RowResult(row.line, row.document_id, REFUSED_NOT_FOUND)
@@ -275,10 +322,12 @@ def run_plan(
     """Dry-run (default) or apply a plan; returns one result per row.
 
     Applying requires ``expect_plan_sha256`` equal to the file's digest, so what
-    is written is exactly what a person reviewed in a dry run.
+    is written is exactly what a person reviewed in a dry run. The file is read
+    once, and the digest is of the very bytes the rows are parsed from.
     """
-    digest = plan_sha256(path)
-    rows = load_plan(path)
+    data = _read(path)
+    digest = hashlib.sha256(data).hexdigest()
+    rows = parse_plan(data)
     actor = resolve_actor(actor_identifier)
     if apply and expect_plan_sha256.strip().lower() != digest:
         raise TitlePlanError(PLAN_DIGEST_MISMATCH)
