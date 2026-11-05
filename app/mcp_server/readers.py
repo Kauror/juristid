@@ -1038,6 +1038,7 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
     victories = [
         record for record in facts.work_victories if record.status == VISIBLE_VICTORY_STATUS
     ]
+    continuation = _continuations(user, matter)
     snapshot = _snapshot_body(
         user=user,
         matter=matter,
@@ -1056,6 +1057,7 @@ def _snapshot(user: Any, matter: Any, today: date) -> dict[str, Any]:
         work_status=work_status,
         victories=victories,
     )
+    snapshot["continuations"] = continuation
     # How long each bounded list is in full. Nothing in the snapshot is cut
     # without the answer saying so (MCPSEC-05). A short page is the whole list,
     # so only a full one costs a COUNT.
@@ -1201,6 +1203,49 @@ def _snapshot_body(
     }
 
 
+def _continuation_ref(matter: Any) -> dict[str, Any]:
+    return {
+        "id": ids.format_source_id(ids.MATTER, matter.pk),
+        "reference": matter.display_reference or None,
+        "url": links.matter_url(matter.pk),
+    }
+
+
+def _continuations(user: Any, matter: Any) -> dict[str, Any]:
+    """Where this Matter's work came from and where it continues (docs/adr/0207).
+
+    The Teema page's own answer (`app.matters.continuations`), through the same
+    reader's scope: `superseded_by` is the only edge, a stage this reader may
+    not read is counted or flagged and never named, and a cycle or a chain
+    longer than the walk's bound says so instead of looping.
+    """
+    from app.matters.continuations import continuations_for
+
+    chain = continuations_for(matter, user)
+    endpoint = chain.endpoint
+    return {
+        "successor": _continuation_ref(chain.successor) if chain.successor else None,
+        "successor_hidden": chain.hidden_after and chain.successor is None,
+        "predecessors": [_continuation_ref(earlier) for earlier in chain.predecessors],
+        "hidden_predecessors": chain.hidden_predecessors,
+        # Earliest first, this Matter included; only the readable linear part.
+        "chain": (
+            [_continuation_ref(stage) for stage in chain.before]
+            + [_continuation_ref(matter)]
+            + [_continuation_ref(stage) for stage in chain.after]
+        ),
+        "chain_continues_hidden": chain.hidden_after,
+        "chain_starts_hidden": chain.hidden_before,
+        "endpoint": (
+            {**_continuation_ref(endpoint), "is_open": endpoint.is_open}
+            if endpoint is not None and chain.endpoint_is_known
+            else None
+        ),
+        "cyclic": chain.cyclic,
+        "truncated": chain.truncated,
+    }
+
+
 def matter_snapshot(user: Any, matter: str) -> dict[str, Any]:
     """`get_matter`: where a Matter stands, every value labelled for what it is."""
     _require_reader(user)
@@ -1221,6 +1266,41 @@ def _sent_line(item: dict[str, Any], when: str) -> str:
     return f"- {kind}: {item['title']}, {when}, to {recipients}"
 
 
+def _continuation_line(continuations: dict[str, Any]) -> str | None:
+    if continuations["successor"]:
+        return continuations["successor"]["reference"] or continuations["successor"]["id"]
+    if continuations["successor_hidden"]:
+        return "a matter this reader may not read"
+    return None
+
+
+def _predecessor_line(continuations: dict[str, Any]) -> str | None:
+    named = [item["reference"] or item["id"] for item in continuations["predecessors"]]
+    hidden = continuations["hidden_predecessors"]
+    if hidden:
+        named.append(f"{hidden} matter(s) this reader may not read")
+    return ", ".join(named) or None
+
+
+def _chain_line(continuations: dict[str, Any]) -> str | None:
+    stages = continuations["chain"]
+    if len(stages) < 3:
+        return None
+    line = " -> ".join(item["reference"] or item["id"] for item in stages)
+    if continuations["chain_continues_hidden"]:
+        line += " -> (a matter this reader may not read)"
+    if continuations["cyclic"]:
+        line += " (the chain leads back to itself; not followed further)"
+    elif continuations["truncated"]:
+        line += " (longer than shown)"
+    endpoint = continuations["endpoint"]
+    if endpoint:
+        line += f"; endpoint {endpoint['reference'] or endpoint['id']} is " + (
+            "open" if endpoint["is_open"] else "closed"
+        )
+    return line
+
+
 def _snapshot_text(snapshot: dict[str, Any]) -> str:
     """The snapshot as plain text, for `fetch` of a ``matter:`` id."""
 
@@ -1238,6 +1318,9 @@ def _snapshot_text(snapshot: dict[str, Any]) -> str:
             ("Open", "yes" if snapshot["is_open"] else "no"),
             ("Work status", snapshot["work_status"]["label"]),
             ("Disposition", (snapshot["disposition"] or {}).get("label")),
+            ("Continues as", _continuation_line(snapshot["continuations"])),
+            ("Continued from", _predecessor_line(snapshot["continuations"])),
+            ("Chain", _chain_line(snapshot["continuations"])),
             ("Hetkeseis (stage)", (snapshot["stage"] or {}).get("label") or "not recorded"),
             ("Vastutaja (owner)", snapshot["owner"] or "not recorded"),
             ("Source organisations", ", ".join(snapshot["source_organisations"])),

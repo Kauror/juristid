@@ -274,9 +274,12 @@ def tool_specs() -> list[ToolSpec]:
                 "responsible lawyer (Vastutaja), organisations, the current next action and "
                 "whether it is DO, WAIT or MONITOR, its date and how precise that date is, "
                 "planned actions, the opinion deadline, upcoming and past important dates, "
-                "commencements, sent opinions and official replies, latest developments and "
-                "counts. Values are labelled confirmed, planned, estimated, previous or missing; "
-                "no next step is invented where none is recorded. Estonian content. Read-only."
+                "commencements, sent opinions and official replies, latest developments, "
+                "counts, and where its work came from and continues (the predecessor and "
+                "successor matters, the chain of stages and its endpoint, as far as the reader "
+                "may see them). Values are labelled confirmed, planned, estimated, previous or "
+                "missing; no next step is invented where none is recorded. Estonian content. "
+                "Read-only."
             ),
             arguments=schemas.GetMatterArguments,
             output=schemas.MatterOutput,
