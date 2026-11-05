@@ -71,7 +71,7 @@ from app.legacy_import.opinion_binary import OpinionArchiveMatterLink
 from app.legacy_import.opinion_enums import OpinionCandidateState
 from app.legacy_import.opinion_search import visible_archive
 from app.legacy_import.opinion_search_models import OpinionArchiveSearchDocument
-from app.matters.continuations import continuation_component_ids
+from app.matters.continuations import confirmed_continuation_ids
 from app.matters.enums import MatterDataClass
 from app.matters.models import Matter
 from app.organisations.models import Organisation
@@ -384,11 +384,13 @@ def _instrument_names(matter: Matter) -> dict[Any, str]:
     }
 
 
-def build_profile(matter: Matter) -> SubjectProfile:
+def build_profile(matter: Matter, viewer: Any = None) -> SubjectProfile:
     """Read what the Matter is about and what has already been decided about it.
 
     Reads the Matter's own relations, and the reader's own catalogues, and
-    nothing about anybody else's visibility — the profile is *ours*.
+    nothing about anybody else's visibility — the profile is *ours*. `viewer`
+    is used for one thing only: excluding every continuation stage the page
+    shows that reader (`confirmed_continuation_ids`, QA-01).
     """
     titles = [matter.title, *(matter.alternate_titles or [])]
     instruments = tuple(text.legal_instruments(" . ".join(titles)))
@@ -443,8 +445,11 @@ def build_profile(matter: Matter) -> SubjectProfile:
     # The continuation history is the existing, authoritative relationship and is
     # shown where it always was; no stage of it is offered again as a possibility,
     # however many steps away and through whichever branch (docs/adr/0207, 0209).
-    # The ids are unscoped and used only to exclude: the pool is scoped on its own.
-    history = continuation_component_ids(matter.pk)
+    # The ids are used only to exclude: the pool is scoped on its own. Every stage
+    # the page shows this reader — «Varasemad etapid» and the forward chain — is
+    # in the set by construction, whatever the component walk's budget reaches
+    # (QA-01, QA-02); the walks are the page's own, memoized on the instance.
+    history = confirmed_continuation_ids(matter, viewer)
     excluded = {matter.pk, *related_ids, *dismissed_matters, *history}
 
     return SubjectProfile(
@@ -1428,7 +1433,7 @@ def suggestions_for(
     Read-only: computes, returns, and leaves every table exactly as it was.
     """
     limit = max(1, min(int(limit), MAX_LIMIT))
-    profile = build_profile(matter)
+    profile = build_profile(matter, viewer)
 
     matters, matter_scores = related_matter_candidates(profile, viewer)
     materials = opinion_candidates(profile, viewer, matter_scores)

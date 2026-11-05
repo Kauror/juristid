@@ -194,7 +194,10 @@ def test_the_width_bound_cuts_without_reading_further_levels(specialist):
     assert history.truncated is True
     # The nearest stages are shown: the 61st reference (by order) is the cut one.
     assert direct[-1].pk not in {s.matter.pk for s in history.stages}
-    assert len(captured.captured_queries) <= 3
+    # The row read, the readability check on the viewed Matter (QA-06), one
+    # id-only level query limited at the database, and one row read for the
+    # stages kept (QA-08, QA-10): never a second level.
+    assert len(captured.captured_queries) <= 4
 
 
 def test_a_history_exactly_at_the_depth_bound_lists_every_stage(specialist):

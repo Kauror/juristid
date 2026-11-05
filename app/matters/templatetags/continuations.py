@@ -19,7 +19,10 @@ The header, the closed banner and the rail all ask on one page load, so the
 answer is kept on the request for that Matter — keyed on the columns a write in
 this request would move (`superseded_by`, open or closed), so a save that
 re-renders the band after changing the chain is never answered from before it
-(docs/adr/0207).
+(docs/adr/0207). The earlier history underneath is walked once per Matter
+instance and reader (`app.matters.continuations._history`), so «Seotud
+materjalid» on the same page does not walk it again (QA-10). A reader who may
+not read the Matter gets an empty answer from the helper itself (QA-06).
 """
 
 from __future__ import annotations

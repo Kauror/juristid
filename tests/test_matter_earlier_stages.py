@@ -96,8 +96,12 @@ def test_a_history_deeper_than_the_bound_is_cut_and_says_so(specialist):
 
 
 def test_one_query_per_level(specialist, django_assert_max_num_queries):
+    # One id-only query per level (len(chain) levels, the last one empty), plus
+    # the readability check on the viewed Matter (QA-06) and one row read for
+    # every stage at once (QA-10): two more than when each level loaded its rows
+    # and nothing checked the Matter, and the page no longer walks it twice.
     chain = _chain("2022_1", "2023_2", "2024_3", "2025_4", "2026_5")
-    with django_assert_max_num_queries(len(chain) + 1):
+    with django_assert_max_num_queries(len(chain) + 2):
         historical_predecessors(chain[-1], specialist)
 
 
