@@ -17,6 +17,13 @@ of this Teema's continuation history this reader may read, through every
 branch, earliest first (`Matter.superseded_by`, docs/adr/0209). Not editable —
 no `+ Lisa`, and no control anywhere here touches the continuation.
 
+Every write control asks `can_write and matter.is_open`, not `can_write` alone.
+`section_context` folds `is_open` into `can_write`, but the Matter page and the
+rail an inline save redraws pass the page's own `can_write` (corrections on a
+closed file stay allowed elsewhere), and a closed Teema — every middle stage of
+a history is one — then offered `×` and `+ Lisa` that the services refuse
+(R2-02 §9).
+
 Nothing here is mandatory, nothing here blocks anything, and a Matter with
 nothing confirmed and nothing opened is one quiet row. The whole section is
 what a decision re-renders (`hx-target="#seotud-materjalid"`), so the confirmed
@@ -50,7 +57,7 @@ lists and the suggestions cannot disagree about the click that just happened.
       {% for item in related_materials.manual_rows %}
         <li class="factrow relatedmaterials__row" data-related-matter="{{ item.other.pk }}">
           <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=item.other.pk %}">{{ item.other.title }}</a>
-          {% if can_write %}
+          {% if can_write and matter.is_open %}
             <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:unlink' pk=matter.pk %}"
                   hx-post="{% url 'related_materials:unlink' pk=matter.pk %}"
                   hx-target="#seotud-materjalid" hx-swap="outerHTML">
@@ -66,7 +73,7 @@ lists and the suggestions cannot disagree about the click that just happened.
         <li class="factrow relatedmaterials__row" data-related-background data-related-material="{{ item.form_kind }}:{{ item.key }}">
           <a class="factrow__title factrow__matter" href="{{ item.open_url }}">{{ item.title }}</a>
           <span class="muted relatedmaterials__meta">{{ item.label }}{% if item.date %} · {{ item.date|date:"j.n.Y" }}{% endif %}</span>
-          {% if can_write %}
+          {% if can_write and matter.is_open %}
             <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:remove_background' pk=matter.pk %}"
                   hx-post="{% url 'related_materials:remove_background' pk=matter.pk %}"
                   hx-target="#seotud-materjalid" hx-swap="outerHTML">
@@ -99,7 +106,7 @@ lists and the suggestions cannot disagree about the click that just happened.
         <li class="factrow relatedmaterials__row" data-related-stage="{{ item.matter.pk }}"{% if item.is_also_manual %} data-related-matter="{{ item.matter.pk }}"{% endif %}>
           <a class="factrow__title factrow__matter" href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{% if item.matter.display_reference %}{{ item.matter.display_reference }} — {% endif %}{{ item.matter.title }}</a>
           <span class="muted relatedmaterials__meta">{{ item.state_label }}{% if item.is_also_manual %} · seotud ka käsitsi{% endif %}</span>
-          {% if can_write and item.is_also_manual %}
+          {% if can_write and matter.is_open and item.is_also_manual %}
             <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:unlink' pk=matter.pk %}"
                   hx-post="{% url 'related_materials:unlink' pk=matter.pk %}"
                   hx-target="#seotud-materjalid" hx-swap="outerHTML">
@@ -119,7 +126,7 @@ lists and the suggestions cannot disagree about the click that just happened.
       <p class="muted relatedmaterials__stagenote" data-related-stages-note="truncated">Ajalugu on pikem, kui siin näidatakse; näidatud on lähimad etapid.</p>
     {% endif %}
   {% endif %}
-  {% if can_write %}
+  {% if can_write and matter.is_open %}
     {% comment %}
       `Lisa` — **one disclosure over both ways of adding something.** It used to
       be two controls that did not know about each other: `Võimalikud seosed` in

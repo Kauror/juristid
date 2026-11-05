@@ -281,20 +281,35 @@ def continuation_component_ids(matter_id: Any) -> set[Any]:
     an established continuation, however many steps away, is never offered again
     as an uncertain «Võimalik seos». Bounded like the walks above; the Matter
     itself is included.
+
+    A deleted stage (docs/adr/0102) is not live and the walk does not pass
+    through it, exactly as `historical_predecessors` does not: a successor id is
+    only followed onward once its own row is found live, so the other
+    predecessors of a deleted Matter are not reached through it.
     """
     seen: set[Any] = {matter_id}
+    dead: set[Any] = set()
     frontier: set[Any] = {matter_id}
     for _ in range(MAX_HOPS * 2):
         if not frontier or len(seen) > MAX_HISTORY * 2:
             break
-        rows = Matter.objects.filter(
-            Q(superseded_by__in=frontier) | Q(pk__in=frontier)
-        ).values_list("pk", "superseded_by")
+        rows = list(
+            Matter.objects.filter(Q(superseded_by__in=frontier) | Q(pk__in=frontier)).values_list(
+                "pk", "superseded_by"
+            )
+        )
+        live = {pk for pk, _successor in rows if pk in frontier}
+        dead |= frontier - live
         nxt: set[Any] = set()
         for pk, successor in rows:
-            for x in (pk, successor):
-                if x is not None and x not in seen:
-                    nxt.add(x)
+            if pk in live:
+                step = successor  # forward from a live stage
+            elif successor in live:
+                step = pk  # a live predecessor of a live stage
+            else:
+                continue  # a predecessor of a deleted stage: not reached through it
+            if step is not None and step not in seen:
+                nxt.add(step)
         seen |= nxt
         frontier = nxt
-    return seen
+    return seen - dead

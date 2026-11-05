@@ -228,10 +228,6 @@ def test_a_cycle_behind_the_successor_cannot_trap_any_walk(specialist):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-D-02: continuation_component_ids follows predecessors of a deleted successor",
-)
 def test_the_suggestion_exclusion_does_not_walk_through_a_deleted_stage(specialist):
     """`continuation_component_ids` says «every live Matter». A deleted stage
     (docs/adr/0102) is not live, and the history behind it is not reached by
@@ -351,10 +347,6 @@ def test_the_stage_row_remove_control_is_csrf_guarded(specialist):
     assert MatterRelation.objects.count() == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-D-01: the Matter page and the rail re-render pass can_write without is_open",
-)
 def test_a_closed_middle_stage_offers_no_remove_control_on_any_surface(signed_in, specialist):
     """The typical stage page: a continued Teema is closed by definition.
 
