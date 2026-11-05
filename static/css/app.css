@@ -16379,6 +16379,8 @@ a.jcal__daynum {
 
 .chainlist li + li::before {
   content: ", " / "";
+}
+
 /* -- A shared OneNote page read as one dossier (docs/adr/0208) ----------- *
  *
  * The block on a page linked to several Teemad: the page is captured and
