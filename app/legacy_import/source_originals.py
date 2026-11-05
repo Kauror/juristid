@@ -48,6 +48,7 @@ from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import FileResponse, Http404, HttpRequest
 from django.shortcuts import get_object_or_404
+from django.views.decorators.http import require_safe
 
 from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
@@ -293,6 +294,9 @@ def withheld_elsewhere(resource: LegacySourceResource, viewer: Any) -> bool:
     return bool(made - readable)
 
 
+# GET and HEAD only: a read-only download answers no other method. Without this,
+# OPTIONS (which CSRF does not guard) served and audited the file like a GET.
+@require_safe
 @login_required
 def source_original(request: HttpRequest, pk: Any, resource_pk: Any) -> FileResponse:
     """One held original of a page this reader may open, as an attachment."""
