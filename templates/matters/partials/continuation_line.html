@@ -4,12 +4,23 @@ Where a continued Teema's work went, as one quiet line under a list row's title
 a row whose work status is not «Jätkub mujal» — then nothing is drawn.
 
 A navigation label, never a status: the row's own badge keeps saying what it
-said. The reference is the link, because a list is scanned by reference and the
-title is already the row's; the successor's full title is the link's tooltip.
+said. The reference is the link, because a list is scanned by reference; the
+full title is the link's tooltip.
+
+**A short title is visible too** (QA-18). The register does not show a row's own
+reference, so «Jätkub teemas 2025_196» alone named something the reader could
+only identify by hovering. After the reference comes « · » and the stage's title
+cut to 40 characters — last on the line, so a narrow cell's ellipsis eats the
+title first and never the reference. A stage with no reference is already named
+by its short title and gets no second one.
 
 The endpoint follows only when it is known and is not the direct successor:
-«→ 2026_190 (avatud)», with «…» when stages lie between. A screen reader hears
-«viimane etapp» instead of the arrow, the Teema page's own words.
+«→ viimane etapp 2026_190 (avatud) · <title>» (QA-19). «viimane etapp» is
+visible, the Teema page's own words, so the arrow is never the only thing saying
+where the work stands now. With stages between, a «…» follows the arrow; it is
+decoration, and a screen reader hears how many readable stages it stands for
+instead («vahel veel 2 etappi»). With an endpoint the line names it by title, and
+the successor's title goes to the screen reader only, keeping the line one line.
 
 A successor this reader may not read is never named: the line is the plain
 «Jätkub mujal», with no reference, no link and no title.
@@ -19,11 +30,12 @@ A successor this reader may not read is never named: the line is the plain
     <span class="continuationline">
       Jätkub teemas
       <a class="continuationline__link" href="{% url 'matters:matter_detail' pk=line.successor.pk %}"
-         title="{{ line.successor.title }}">{{ line.successor_label }}</a>{% if line.endpoint %}
-      <span aria-hidden="true">→{% if line.skipped %} …{% endif %}</span><span class="visually-hidden">, viimane etapp</span>
+         title="{{ line.successor.title }}">{{ line.successor_label }}</a>{% if line.endpoint %}{% if line.successor_title %}<span class="visually-hidden"> ({{ line.successor_title }})</span>{% endif %}
+      <span aria-hidden="true"{% if line.skipped %} title="{{ line.skipped_text }}"{% endif %}>→{% if line.skipped %} …{% endif %}</span><span class="visually-hidden">,{% if line.skipped %} {{ line.skipped_text }},{% endif %}</span>
+      viimane etapp
       <a class="continuationline__link" href="{% url 'matters:matter_detail' pk=line.endpoint.pk %}"
          title="{{ line.endpoint.title }}">{{ line.endpoint_label }}</a>
-      <span class="continuationline__state">({{ line.endpoint_state }})</span>{% endif %}
+      <span class="continuationline__state">({{ line.endpoint_state }})</span>{% if line.endpoint_title %}<span class="muted"> · {{ line.endpoint_title }}</span>{% endif %}{% elif line.successor_title %}<span class="muted"> · {{ line.successor_title }}</span>{% endif %}
     </span>
   {% else %}
     <span class="continuationline continuationline--unnamed">Jätkub mujal</span>
