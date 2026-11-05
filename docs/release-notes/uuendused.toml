@@ -8,31 +8,22 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
-date = 2026-11-06
-basis = "deployment"
-prs = [597]
-# r46: OneNote'i järelparandused (ADR 0206), teema jätkumine (ADR 0207), jagatud lehe toimik
-# ja hoitud originaalide allalaadimine (ADR 0208), hilisema hõive leping (ADR 0205 täiendus),
-# D5 ja ADR 0204. Andmeid ei muudeta, migratsiooni pole. Kuupäev eeldab paigaldust pärast
-# 05.11 öist Lovable'i võrdlust; teisel päeval paigaldades muuda kuupäev enne FULL CI-d.
-changes = [
-  "«Dokumendid» loendis on OneNote'ist tulnud failid nüüd päeval, mil need OneNote'i lisati, ja aasta järgi saab neid sirvida; teadmata lisamise ajaga failid on lõpus ja eraldi valikus «Kuupäev teadmata». Faili lehel on see kuupäev kohe näha.",
-  "Mitme teemaga seotud OneNote'i lehe failid on märgitud «Ootab teemaga seostamist», mitte enam ekslikult «Kopeerimine ebaõnnestus»; lehe saab avada ühe toimikuna ja selle originaalfaile saab alla laadida, kuigi ükski teema neid veel oma dokumendiks ei ole võtnud.",
-  "Teema päis ja suletud teema teade ütlevad, millise teema all töö jätkub («Jätkub teemas 2025_196») või milline teema eelnes, ja mitme etapi korral näidatakse kogu ahelat; «Dokumendid» näitab ka eelnevate etappide OneNote'i lehti.",
-  "«Allikas» ütleb nüüd, mitu OneNote'i faili on Juristidesse imporditud.",
-]
-
-[[day]]
 date = 2026-11-05
 basis = "deployment"
-prs = [592, 593]
+prs = [592, 593, 596, 597]
 # 05.11 väljalase: #592 (hoolduskomplekt, dokumendid, sõltuvused), #593 (Exceli-aegsete
 # kirjutusteede lukk) ja OneNote'i hõive import (ADR 0205, legacy_import 0022 — ainult
 # uus valikväärtus). Väljalase ise ühtegi teemat ei muuda; OneNote'i failide lisamine on
 # eraldi, omaniku kinnitatud andmetoiming samal päeval. Kui see ei jõua 05.11 lõpuni,
 # parandatakse punkti sõnastust sama päeva kirjes.
+# Sama päeva teine väljalase r46 (#597, ADR 0204–0208, ainult kood, migratsioonita): OneNote'i kuupäevad
+# ja hoitud failid, teema jätkumine, jagatud lehe toimik ja hoitud originaalide allalaadimine.
 changes = [
   "Teemadel on nüüd nende OneNote'i lehelt pärit failid: «Tegevused» näitab iga faili päeval, mil see OneNote'i lisati, ja ilma teadaoleva lisamise ajata failid eraldi real «lisamise kuupäev teadmata»; faili lehel on OneNote'i asukoht ja faili juurde kirjutatud märkus.",
+  "«Dokumendid» loendis on OneNote'ist tulnud failid nüüd päeval, mil need OneNote'i lisati, ja aasta järgi saab neid sirvida; teadmata lisamise ajaga failid on lõpus ja eraldi valikus «Kuupäev teadmata». Faili lehel on see kuupäev kohe näha.",
+  "Mitme teemaga seotud OneNote'i lehe failid on märgitud «Ootab teemaga seostamist», mitte enam ekslikult «Kopeerimine ebaõnnestus»; lehe saab avada ühe toimikuna ja selle originaalfaile saab alla laadida, kuigi ükski teema neid veel oma dokumendiks ei ole võtnud.",
+  "Teema päis ja suletud teema teade ütlevad, millise teema all töö jätkub («Jätkub teemas 2025_196») või milline teema eelnes, ja mitme etapi korral näidatakse kogu ahelat; «Dokumendid» näitab ka eelnevate etappide OneNote'i lehti.",
+  "«Allikas» ütleb nüüd, mitu OneNote'i faili on Juristidesse imporditud.",
 ]
 
 [[day]]
