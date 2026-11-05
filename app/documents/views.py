@@ -33,7 +33,7 @@ from django.http import (
 )
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_safe
 
 from app.accounts import shared_gate
 from app.audit.enums import SecurityEventType
@@ -326,6 +326,10 @@ def remove(request: HttpRequest, pk: Any) -> HttpResponse:
     return redirect("matters:matter_documents", pk=document.matter_id)
 
 
+# GET and HEAD only, outermost: a read-only route onto stored bytes answers no other
+# method. Without it, OPTIONS (which CSRF does not guard) or any other verb served
+# the file and wrote a DOCUMENT_DOWNLOADED row as if it had been a GET.
+@require_safe
 @login_required
 def download(request: HttpRequest, pk: Any) -> FileResponse:
     """Stream one evidence version to a user entitled to read it.
@@ -378,6 +382,7 @@ def download(request: HttpRequest, pk: Any) -> FileResponse:
     return response
 
 
+@require_safe
 @login_required
 def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
     """Render one stored file in the browser, when that is safe.
@@ -425,6 +430,7 @@ def open_inline(request: HttpRequest, pk: Any) -> HttpResponseBase:
     return inline.apply_inline_headers(response, filename=version.original_filename)
 
 
+@require_safe
 @login_required
 def thumbnail(request: HttpRequest, pk: Any) -> FileResponse:
     """Serve a generated preview image, inline.
