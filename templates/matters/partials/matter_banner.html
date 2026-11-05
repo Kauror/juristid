@@ -25,10 +25,19 @@ paragraph. The banner's own action slot keeps it inside and at the right.
   </div>
 {% endif %}
 {% if not matter.is_open %}
+  {% comment %}
+    A file closed because its work continues elsewhere names where, instead of
+    the generic «Asendatud järgnenud teemaga» (docs/adr/0207): the successor's
+    reference as a link and its title, both read through this request's scope.
+    A successor this reader may not read is said to exist and is never named.
+    Only the direct successor — the header prints the rest of the path.
+  {% endcomment %}
+  {% load continuations %}
+  {% readable_continuations matter as continuations %}
   <div class="banner banner--closed">
     <p class="banner__text">
       <strong>Teema on suletud.</strong>
-      {{ matter.closure_reason_label }}{% if matter.disposition_reason %} — {{ matter.disposition_reason }}{% endif %}
+      {% if continuations.successor %}Jätkub teemas <a href="{% url 'matters:matter_detail' pk=continuations.successor.pk %}">{% continuation_label continuations.successor %}</a>{% if continuations.successor.display_reference %} ({{ continuations.successor.title|truncatechars:60 }}){% endif %}{% elif continuations.hidden_after %}Jätkub teemas, mida sul ei ole lubatud näha{% else %}{{ matter.closure_reason_label }}{% endif %}{% if matter.disposition_reason %} — {{ matter.disposition_reason }}{% endif %}
       {% if matter.closed_at %}<span class="muted">({{ matter.closed_at|date:"j.n.Y" }})</span>{% endif %}
     </p>
     {% comment %}

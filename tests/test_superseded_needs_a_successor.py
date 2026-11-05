@@ -273,7 +273,8 @@ def test_seotud_names_both_ends_of_the_chain_to_a_reader_and_none_to_an_outsider
     assert client.get(f"/teemad/{later.pk}/").status_code == 200
     assert client.get(f"/teemad/{secret_earlier.pk}/").status_code == 200
     for page, hidden_matter, hidden_title, label in (
-        (earlier, later, hidden, "Jätkub teemana"),
+        # «Jätkub teemas», the header's words since docs/adr/0207 (was «Jätkub teemana»).
+        (earlier, later, hidden, "Jätkub teemas"),
         (shown, secret_earlier, "Konfidentsiaalne eelkäija", "Eelnev teema"),
     ):
         response = client.get(f"/teemad/{page.pk}/")

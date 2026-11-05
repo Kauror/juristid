@@ -339,6 +339,11 @@ whose addressee nobody recorded should look short, not incomplete.
     ends are read through the reader's own scope, never off the instance: either
     may be restricted while this one is not
     (app/matters/templatetags/continuations.py).
+
+    The direct neighbours only, each as «reference · title» — the same
+    reference the header names, plus the title the header leaves out
+    (docs/adr/0207). A neighbour this reader may not read is a row that says
+    so, never a reference or a title.
   {% endcomment %}
   {% load continuations %}
   {% readable_continuations matter as continuations %}
@@ -348,17 +353,28 @@ whose addressee nobody recorded should look short, not incomplete.
       {% for earlier in continuations.earlier %}
         <div class="railcard__row">
           <span class="railcard__key">Eelnev teema</span>
-          <a href="{% url 'matters:matter_detail' pk=earlier.pk %}">
-            {{ earlier.title|truncatechars:40 }} →
+          <a href="{% url 'matters:matter_detail' pk=earlier.pk %}" title="{{ earlier.title }}">
+            {% if earlier.display_reference %}{{ earlier.display_reference }} · {% endif %}{{ earlier.title|truncatechars:40 }} →
           </a>
         </div>
       {% endfor %}
+      {% if continuations.hidden_predecessors %}
+        <div class="railcard__row">
+          <span class="railcard__key">Eelnev teema</span>
+          <span class="muted">{% if continuations.hidden_predecessors == 1 %}teema, mida sul ei ole lubatud näha{% else %}{{ continuations.hidden_predecessors }} teemat, mida sul ei ole lubatud näha{% endif %}</span>
+        </div>
+      {% endif %}
       {% if continuations.later %}
         <div class="railcard__row">
-          <span class="railcard__key">Jätkub teemana</span>
-          <a href="{% url 'matters:matter_detail' pk=continuations.later.pk %}">
-            {{ continuations.later.title|truncatechars:40 }} →
+          <span class="railcard__key">Jätkub teemas</span>
+          <a href="{% url 'matters:matter_detail' pk=continuations.later.pk %}" title="{{ continuations.later.title }}">
+            {% if continuations.later.display_reference %}{{ continuations.later.display_reference }} · {% endif %}{{ continuations.later.title|truncatechars:40 }} →
           </a>
+        </div>
+      {% elif continuations.hidden_after %}
+        <div class="railcard__row">
+          <span class="railcard__key">Jätkub teemas</span>
+          <span class="muted">teema, mida sul ei ole lubatud näha</span>
         </div>
       {% endif %}
       {% for person in matter.collaborators.all %}

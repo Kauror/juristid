@@ -1401,6 +1401,15 @@ p.formnote {
   margin-right: var(--spacing-1);
 }
 
+/* Which date a Dokumendid row prints (docs/adr/0206): «lisatud OneNote'i» under
+ * a OneNote file's day, «Lisamise kuupäev teadmata» in place of one. */
+.table__date .datebasis {
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+  white-space: normal;
+}
+
 /* The register row's second date: the official `Arvamuse tähtaeg` that is still
  * outstanding, under the plan the cell states above it.
  *
@@ -3328,6 +3337,14 @@ fieldset.field > legend {
 }
 
 .casefile__meta {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+/* Why a file is held rather than imported (ONENOTE-UI-003): one muted line of
+ * its own under the name, so the waiting chip is never read as a failure. */
+.casefile__hint {
+  flex-basis: 100%;
   color: var(--text-muted);
   font-size: var(--typography-size-meta);
 }
@@ -16290,4 +16307,110 @@ a.jcal__daynum {
   border-left: 2px solid var(--border-subtle);
   padding-left: var(--spacing-2);
   margin-block: var(--spacing-2);
+}
+
+/* ---------------------------------------------------------------------------
+ * Teema continuation navigation (docs/adr/0207): the line under the Teema
+ * title that names where the work came from and where it continues, and the
+ * ordered path of stages when there are three or more. One quiet meta line —
+ * it answers «where?» for a «Jätkub mujal» badge, it is not a second header.
+ * ------------------------------------------------------------------------- */
+.matterhead__continuation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.matterhead__continuationkey {
+  color: var(--text-muted);
+}
+
+.matterhead__continuationitem,
+.matterhead__continuationnote {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.matterhead__continuationnote {
+  color: var(--text-muted);
+}
+
+.chainpath {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The arrow is drawn, not written: it says nothing a screen reader needs, the
+   ordered list already says the order. */
+.chainpath__stage + .chainpath__stage::before {
+  content: "→" / "";
+  margin-right: var(--spacing-1);
+  color: var(--text-muted);
+}
+
+.chainpath__stage--current {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-body);
+}
+
+.chainpath__stage--hidden {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.chainlist {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chainlist li {
+  display: inline;
+}
+
+.chainlist li + li::before {
+  content: ", " / "";
+}
+
+/* -- A shared OneNote page read as one dossier (docs/adr/0208) ----------- *
+ *
+ * The block on a page linked to several Teemad: the page is captured and
+ * readable whole, the files' Teema is not decided, and how the Teemad relate
+ * by the register's continuation edge. Quiet, beside the source facts — it
+ * explains, it asks for nothing. The review overview below the page content
+ * reuses `.data-table`; `.dossierreview` only spaces its two tables apart.
+ */
+.dossiernote {
+  display: grid;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-left: 2px solid var(--accent-border);
+  background: var(--surface-panel);
+  border-radius: var(--radius-sm);
+}
+
+.dossiernote__title {
+  font-weight: var(--typography-weight-semibold);
+  font-size: var(--typography-size-row);
+}
+
+.dossiernote__text,
+.dossiernote__chain {
+  font-size: var(--typography-size-label);
+  color: var(--text-secondary);
+  max-width: 96ch;
+}
+
+.dossierreview {
+  margin-top: var(--spacing-3);
 }

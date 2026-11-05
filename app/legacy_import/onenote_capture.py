@@ -34,6 +34,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import urllib.parse
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -62,6 +63,37 @@ HOLD_SHARED_PAGE = "SHARED_PAGE_AWAITING_REVIEW"
 HOLD_EMPTY_FILE = "EMPTY_FILE"
 HOLD_TOO_LARGE = "LARGER_THAN_EVIDENCE_LIMIT"
 HOLD_EARLIER_CAPTURE = "EARLIER_CAPTURE_NOT_IMPORTED"
+
+#: A later capture of a page an earlier capture already wrote (amendment 2026-11-05).
+#:
+#: *Recorded* — the new block identity is catalogued and its (Teema, occurrence) row
+#: says why no Document was made:
+#:
+#: * a proven pure move: same page GUID, an earlier row on this Teema's link with the
+#:   same block creation time and filename (unique both ways on the page) and the
+#:   same SHA-256 and size. The earlier row's decision stands; nothing is copied.
+SKIP_CONTINUES = "CONTINUES_EARLIER_BLOCK"
+#: * the same (creation time, filename) but other bytes: a move and an edit at once
+#:   proves nothing, so a person decides.
+HOLD_MOVED_AND_CHANGED = "MOVED_BLOCK_BYTES_CHANGED"
+#: * the (creation time, filename) names more than one earlier or later block.
+HOLD_AMBIGUOUS = "AMBIGUOUS_EARLIER_BLOCK"
+#: * same bytes and filename as an earlier file of this page, without a creation time
+#:   to prove it (a floating file) or at another time: held, never matched.
+HOLD_RESEMBLES = "RESEMBLES_EARLIER_FILE_UNPROVEN"
+#: * the same bytes, filename and creation time as an earlier capture's file on
+#:   another page of this Teema (a copied page gets a new GUID and keeps its times).
+HOLD_SAME_FILE_ELSEWHERE = "SAME_FILE_ON_ANOTHER_PAGE_OF_TEEMA"
+#:
+#: *Plan-only* — the occurrence keeps an earlier capture's identity (same block
+#: object ID) but this capture differs. The earlier rows and the immutable
+#: ``DocumentVersion`` are kept exactly; nothing can be recorded for the change
+#: without a schema change (amendment proposals P1/P2), so the plan names it and
+#: ``verify`` keeps reporting the difference.
+HOLD_BYTES_CHANGED = "BYTES_CHANGED_UNDER_SAME_BLOCK"
+HOLD_TIME_CHANGED = "BLOCK_TIME_CHANGED_UNDER_SAME_BLOCK"
+HOLD_COMMENT_CHANGED = "COMMENT_CHANGED_SINCE_IMPORT"
+PLAN_ONLY_HOLDS = frozenset({HOLD_BYTES_CHANGED, HOLD_TIME_CHANGED, HOLD_COMMENT_CHANGED})
 
 #: The only context bases that are the file's own comment (owner decision D9).
 STRUCTURAL_BASES = frozenset({"ATTACHED_NOTE", "CONTAINER_HEADING"})
@@ -464,25 +496,32 @@ class Plan:
     recorded: set[tuple[str, str, str]] = field(default_factory=set)
     linked: set[tuple[str, str]] = field(default_factory=set)
     progress: Counter[str] = field(default_factory=Counter)
+    #: (page key, this capture's block ID) -> the earlier block ID it continues or
+    #: resembles (amendment 2026-11-05). Part of the decisions.
+    earlier_blocks: dict[tuple[str, str], str] = field(default_factory=dict)
+    #: Counts only, never decisions: what a later capture sees that it does not write.
+    observations: Counter[str] = field(default_factory=Counter)
 
     @property
     def digest(self) -> str:
         """The decisions only — independent of how far an apply has got."""
-        return canonical_sha256(
-            {
-                "manifest_sha256": self.capture.manifest_sha256,
-                "sha256sums_sha256": self.capture.sums_sha256,
-                "importer": IMPORTER_VERSION,
-                "items": [item.__dict__ for item in self.items],
-                "links": sorted(
-                    (pm.matter_id, page.page_key)
-                    for page in self.capture.pages
-                    for pm in page.matters
-                ),
-                "known_pages": sorted(self.known_pages),
-                "problems": self.problems,
-            }
-        )
+        decisions: dict[str, Any] = {
+            "manifest_sha256": self.capture.manifest_sha256,
+            "sha256sums_sha256": self.capture.sums_sha256,
+            "importer": IMPORTER_VERSION,
+            "items": [item.__dict__ for item in self.items],
+            "links": sorted(
+                (pm.matter_id, page.page_key) for page in self.capture.pages for pm in page.matters
+            ),
+            "known_pages": sorted(self.known_pages),
+            "problems": self.problems,
+        }
+        # Only a later capture has these; a first capture's digest is what it always was.
+        if self.earlier_blocks:
+            decisions["earlier_blocks"] = sorted(
+                [*key, earlier] for key, earlier in self.earlier_blocks.items()
+            )
+        return canonical_sha256(decisions)
 
     def page_done(self, page: CapturePage) -> bool:
         """Every Teema linked, every (Teema, occurrence) recorded."""
@@ -532,7 +571,64 @@ class Plan:
             "hold": len(hold),
             "hold_by_reason": dict(Counter(i.reason for i in hold)),
             "progress": dict(self.progress),
+            # A later capture (amendment 2026-11-05): what is left to write, what is
+            # held without a row to hold it in, and what is seen but never written.
+            "pages_pending": sum(1 for p in self.capture.pages if not self.page_done(p)),
+            "items_already_recorded": sum(
+                1 for i in self.items if (i.matter_id, i.page_key, i.resource_key) in self.recorded
+            ),
+            "plan_only_holds": dict(Counter(i.reason for i in hold if i.reason in PLAN_ONLY_HOLDS)),
+            "earlier_files_not_in_this_capture": self.observations["earlier_gone"],
+            "pages_text_changed_since_stored_row": self.observations["page_xml_changed"],
+            "observed_link_differs": self.observations["observed_link_differs"],
         }
+
+
+_GUID_TEXT = r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}"
+#: The page form of ``wd=target(Section.one|SECTION/Title|PAGE/)``. The page is the
+#: last ``|GUID/`` before the target closes (or the value ends), because a title
+#: may itself hold ``|`` and ``/`` and some stored links carry text after the
+#: closing parenthesis; a section-only target (``Section.one|SECTION/``) has no
+#: page and does not match.
+_TARGET_PAGE = re.compile(rf"^.+?\.one\|[^|/]+/.*\|(?P<page>{_GUID_TEXT})/?(?:\).*)?$", re.DOTALL)
+_CLIENT_PAGE = re.compile(rf"(?:^|&)page-id=\{{?(?P<page>{_GUID_TEXT})\}}?", re.IGNORECASE)
+
+
+def register_page_guids(link: str) -> frozenset[str]:
+    """The OneNote page GUIDs a register link names, upper-cased; empty when it names none.
+
+    Read only where a link names a *page*: the last GUID of ``wd=target(…)`` on
+    a ``Doc.aspx`` or ``OneNote.aspx`` web link, and ``page-id`` in the
+    fragment of an ``onenote:`` client link. ``sourcedoc`` (the notebook, the
+    same on every link), ``OneNote.aspx?id=`` (a notebook path) and
+    ``wdsectionfileid`` (a section file) are never read: taking one of them for
+    a page is what made the retired register-link reconciliation collapse every
+    Teema onto one identity (owner decision D5, docs/adr/0204). A link whose
+    web and client halves disagree names two pages, and the caller refuses it.
+    """
+    found: set[str] = set()
+    for piece in (link or "").split():
+        if piece.lower().startswith("onenote:"):
+            fragment = urllib.parse.urlsplit(piece[len("onenote:") :]).fragment
+            found.update(m.group("page").upper() for m in _CLIENT_PAGE.finditer(fragment))
+            continue
+        try:
+            query = urllib.parse.urlsplit(piece).query
+        except ValueError:
+            continue
+        for key, values in urllib.parse.parse_qs(query, keep_blank_values=True).items():
+            if key.lower() != "wd":
+                continue
+            for value in values:
+                for _pass in range(3):  # a target may arrive encoded once or twice more
+                    if value.startswith("target("):
+                        break
+                    value = urllib.parse.unquote(value)
+                if value.startswith("target("):
+                    match = _TARGET_PAGE.match(value[len("target(") :])
+                    if match:
+                        found.add(match.group("page").upper())
+    return frozenset(found)
 
 
 def _stored_onenote_link(matter_id: str, state: Any) -> str:
@@ -540,7 +636,15 @@ def _stored_onenote_link(matter_id: str, state: Any) -> str:
     from app.legacy_import.models import MatterSourceReference
 
     applied = (state.applied or {}).get("onenote_link") if state is not None else None
-    if applied:
+    if isinstance(applied, dict):
+        # The register's own shape (``lovable_sync``): the Lovable value it last
+        # applied (``source``) and what Juristid wrote (``target``). Both are read,
+        # so the two must name the same page; ``str()`` of the dict happened to work
+        # for a web link and dropped a client half (amendment 2026-11-05, case 8).
+        halves = [str(applied.get(k) or "").strip() for k in ("source", "target")]
+        if any(halves):
+            return " ".join(h for h in halves if h)
+    elif applied:
         return str(applied)
     reference = (
         MatterSourceReference.objects.filter(matter_id=matter_id, source_system="LOVABLE")
@@ -600,9 +704,24 @@ def build_plan(capture: Capture) -> Plan:
         if pm.matter_id not in live:
             plan.problems.append(f"{label}: the Teema is not live")
         link = _stored_onenote_link(pm.matter_id, state)
-        if page.page_guid not in link.upper():
+        # The *applied* link is the register's accepted record; an observation
+        # (COMPARE, never applied) is not, so it is reported and never followed.
+        observed = (state.observed or {}).get("onenote_link")
+        named = register_page_guids(link)
+        if isinstance(observed, str) and observed and register_page_guids(observed) != named:
+            plan.observations["observed_link_differs"] += 1
+        # Exactly this page, read where a link names a page — never a substring
+        # match, which every link passes for the notebook GUID it carries (D5).
+        if named != {page.page_guid.upper()}:
+            unapplied = (
+                " (Lovable's observed link names it, but that change is not applied)"
+                if isinstance(observed, str)
+                and register_page_guids(observed) == {page.page_guid.upper()}
+                else ""
+            )
             plan.problems.append(
-                f"{label}: the Teema's stored OneNote link does not name this page"
+                f"{label}: the Teema's stored OneNote link does not name exactly this page"
+                + unapplied
             )
         plan.matter_refs[pm.matter_id] = pm.reference
 
@@ -612,34 +731,49 @@ def build_plan(capture: Capture) -> Plan:
         for row in LegacySourcePage.objects.filter(source_system=SourceSystem.ONENOTE_DESKTOP)
         .annotate(lk=Lower("page_key"))
         .filter(lk__in=keys)
-        .only("pk", "page_key", "capture_id")
+        .only("pk", "page_key", "capture_id", "source_xml_sha256")
     }
+    earlier = _earlier_capture_rows(capture, list(by_matter))
+    notes = _earlier_notes(capture, earlier)
     for page in capture.pages:
         row = existing.get(page.page_key)
+        ours = {o.block_object_id: o for o in page.occurrences}
+        # An earlier resource row under this capture's block ID is the same
+        # occurrence identity. A row this capture wrote is progress, never
+        # "earlier", so the decisions (and the digest) do not move as batches
+        # complete. A disagreeing earlier row used to refuse the whole capture; it
+        # is now that one occurrence's hold (amendment 2026-11-05, case 3).
+        same_block: dict[str, Any] = {}
+        rows: list[Any] = []
+        if row is not None:
+            rows = list(LegacySourceResource.objects.filter(source_page=row))
+            written_here = _written_by_this_capture(capture, rows)
+            same_block = {
+                r.resource_key: r
+                for r in rows
+                if r.resource_key in ours and r.pk not in written_here
+            }
         # A row this capture wrote is progress, not prior knowledge: only an earlier
         # capture's row is "known", so the digest does not move as batches complete.
         if row is not None and row.capture_id != capture.capture_id[:100]:
             plan.known_pages.append(page.page_key)
-            ours = {o.block_object_id: o for o in page.occurrences}
-            rows = list(LegacySourceResource.objects.filter(source_page=row))
             plan.earlier_resources[page.page_key] = sum(
                 1 for r in rows if r.resource_key not in ours
             )
-            for r in rows:
-                o = ours.get(r.resource_key)
-                if o is not None and (
-                    r.sha256 != o.sha256
-                    or r.size_bytes != o.size
-                    or r.source_added_at != o.block_created
-                ):
-                    plan.problems.append(
-                        f"page {page.tag}: existing resource row {r.resource_key} "
-                        "disagrees with the seal"
-                    )
+            if row.source_xml_sha256 and row.source_xml_sha256 != capture.listed.get(
+                f"pages/{page.tag}/post.xml"
+            ):
+                plan.observations["page_xml_changed"] += 1  # the row is kept (0205 §3)
         for pm in page.matters:
+            decided = _later_capture_decisions(
+                plan, page, same_block, earlier.get(pm.matter_id, []), notes
+            )
             for occurrence in page.occurrences:
                 base = (pm.matter_id, page.page_key, occurrence.block_object_id, occurrence.sha256)
-                if page.shared:
+                reason = decided.get(occurrence.block_object_id)
+                if reason:
+                    item = PlannedItem(*base, "HOLD", reason)
+                elif page.shared:
                     item = PlannedItem(*base, "HOLD", HOLD_SHARED_PAGE)
                 elif occurrence.size == 0:
                     item = PlannedItem(*base, "HOLD", HOLD_EMPTY_FILE)
@@ -669,6 +803,191 @@ def build_plan(capture: Capture) -> Plan:
         recorded_state = recorded.get((item.matter_id, item.page_key, item.resource_key))
         plan.progress["recorded_" + (recorded_state or "PENDING")] += 1
     return plan
+
+
+@dataclass(frozen=True)
+class EarlierRow:
+    """One (Teema, occurrence) decision an *earlier* capture recorded (amendment 2026-11-05)."""
+
+    page_key: str
+    resource_key: str
+    filename: str
+    sha256: str
+    size: int
+    added_at: datetime | None
+    state: str
+    error_code: str
+    document_id: Any
+
+
+def _earlier_capture_rows(capture: Capture, matter_ids: list[str]) -> dict[str, list[EarlierRow]]:
+    """Per Teema, the rows an earlier OneNote *capture* import recorded on its links.
+
+    Only this importer's batches of another sealed manifest count. The October
+    evidence pilot's rows (another importer, other resource keys) are never a
+    continuity candidate, so a first capture plans exactly as it always did.
+    """
+    from app.legacy_import.source_pages import LegacySourceResourceImport
+
+    out: dict[str, list[EarlierRow]] = {}
+    rows = (
+        LegacySourceResourceImport.objects.filter(
+            matter_source_page__matter_id__in=matter_ids,
+            import_batch__source_system=BATCH_SOURCE_SYSTEM,
+        )
+        .exclude(import_batch__source_snapshot_sha256=capture.manifest_sha256)
+        .annotate(lk=Lower("resource__source_page__page_key"))
+        .values_list(
+            "matter_source_page__matter_id",
+            "lk",
+            "resource__resource_key",
+            "resource__original_filename",
+            "resource__sha256",
+            "resource__size_bytes",
+            "resource__source_added_at",
+            "state",
+            "error_code",
+            "document_id",
+        )
+        .order_by("pk")
+        .iterator(chunk_size=2000)
+    )
+    for matter_id, *values in rows:
+        out.setdefault(str(matter_id), []).append(EarlierRow(*values))
+    return out
+
+
+def _earlier_notes(capture: Capture, earlier: dict[str, list[EarlierRow]]) -> dict[Any, str]:
+    """The provenance notes of earlier Documents whose block this capture names again."""
+    from app.documents.models import Document
+
+    blocks = {(p.page_key, o.block_object_id) for p in capture.pages for o in p.occurrences}
+    ids = {
+        e.document_id
+        for rows in earlier.values()
+        for e in rows
+        if e.document_id and (e.page_key, e.resource_key) in blocks
+    }
+    if not ids:
+        return {}
+    return dict(Document.objects.filter(pk__in=ids).values_list("pk", "provenance_note"))
+
+
+def _written_by_this_capture(capture: Capture, resources: list[Any]) -> set[Any]:
+    """The resource rows this capture's own batches wrote: every import row of theirs is ours."""
+    from app.legacy_import.source_pages import LegacySourceResourceImport
+
+    if not resources:
+        return set()
+    manifests: dict[Any, set[str]] = {}
+    for resource_id, manifest in LegacySourceResourceImport.objects.filter(
+        resource__in=resources
+    ).values_list("resource_id", "import_batch__source_snapshot_sha256"):
+        manifests.setdefault(resource_id, set()).add(manifest or "")
+    return {pk for pk, seen in manifests.items() if seen == {capture.manifest_sha256}}
+
+
+def _comment_line(basis: str, text: str) -> str:
+    label = "Märkus OneNote'is" if basis == "ATTACHED_NOTE" else "Pealkiri OneNote'is"
+    return f"{label}: {text}"
+
+
+def _comment_changed(note: str, occurrence: Occurrence) -> bool:
+    """Whether a Document's note carries other structural comments than this capture has."""
+    lines = [_comment_line(basis, text) for basis, text in occurrence.structural_comment]
+    recorded = note.count("\nMärkus OneNote'is: ") + note.count("\nPealkiri OneNote'is: ")
+    return recorded != len(lines) or any(f"\n{line}" not in note for line in lines)
+
+
+def _later_capture_decisions(
+    plan: Plan,
+    page: CapturePage,
+    same_block: dict[str, Any],
+    earlier: list[EarlierRow],
+    notes: dict[Any, str],
+) -> dict[str, str]:
+    """Block ID -> reason, for this capture's occurrences an earlier capture decides.
+
+    For one (Teema, page). An occurrence not named here is decided as a first
+    capture decides it. Identity is the block object ID. Without it, continuity
+    is claimed only for a *pure move*:
+
+    * the same page, since the page key is the page GUID;
+    * exactly one earlier row on this Teema's link, and exactly one block of
+      this capture, with that (creation time, filename);
+    * an unchanged SHA-256 and size.
+
+    Anything weaker that still resembles an earlier file is held for a person.
+    It is never matched and never made into a second Document. A floating file
+    has no creation time, so it is never continued at all.
+    """
+    from app.legacy_import.source_pages import ResourceImportState
+
+    decided: dict[str, str] = {}
+    by_key = {e.resource_key: e for e in earlier if e.page_key == page.page_key}
+    for o in page.occurrences:
+        r = same_block.get(o.block_object_id)
+        if r is None:
+            continue
+        if r.sha256 != o.sha256 or r.size_bytes != o.size:
+            decided[o.block_object_id] = HOLD_BYTES_CHANGED
+        elif r.source_added_at != o.block_created:
+            decided[o.block_object_id] = HOLD_TIME_CHANGED
+        else:
+            e = by_key.get(o.block_object_id)
+            note = notes.get(e.document_id) if e is not None and e.document_id else None
+            if (
+                e is not None
+                and e.state == ResourceImportState.IMPORTED
+                and note is not None
+                and _comment_changed(note, o)
+            ):
+                decided[o.block_object_id] = HOLD_COMMENT_CHANGED
+    if not earlier:
+        return decided
+    now = {o.block_object_id for o in page.occurrences}
+    # An earlier block this capture no longer names. A row that itself continued
+    # an older block is an alias of a row still on the page, never a candidate.
+    gone = [
+        e for e in by_key.values() if e.resource_key not in now and e.error_code != SKIP_CONTINUES
+    ]
+    new = [o for o in page.occurrences if o.block_object_id not in same_block]
+    claimed: set[str] = set()
+    for o in new:
+        name = o.filename[:500]
+        if o.block_created is not None:
+            old = [e for e in gone if e.added_at == o.block_created and e.filename == name]
+            twins = [
+                x for x in new if x.block_created == o.block_created and x.filename == o.filename
+            ]
+            if len(old) == 1 and len(twins) == 1:
+                e = old[0]
+                pure = e.sha256 == o.sha256 and e.size == o.size
+                decided[o.block_object_id] = SKIP_CONTINUES if pure else HOLD_MOVED_AND_CHANGED
+                plan.earlier_blocks[(page.page_key, o.block_object_id)] = e.resource_key
+                claimed.add(e.resource_key)
+                continue
+            if old:
+                decided[o.block_object_id] = HOLD_AMBIGUOUS
+                claimed.update(e.resource_key for e in old)
+                continue
+        similar = [e for e in gone if e.sha256 == o.sha256 and e.filename == name]
+        if similar:
+            decided[o.block_object_id] = HOLD_RESEMBLES
+            if len(similar) == 1:
+                plan.earlier_blocks[(page.page_key, o.block_object_id)] = similar[0].resource_key
+            claimed.update(e.resource_key for e in similar)
+            continue
+        if any(
+            e.page_key != page.page_key
+            and e.sha256 == o.sha256
+            and e.filename == name
+            and e.added_at == o.block_created
+            for e in earlier
+        ):
+            decided[o.block_object_id] = HOLD_SAME_FILE_ELSEWHERE
+    plan.observations["earlier_gone"] += sum(1 for e in gone if e.resource_key not in claimed)
+    return decided
 
 
 # -- applying ------------------------------------------------------------------------
@@ -851,7 +1170,12 @@ def apply(
                 report.batch_id = str(batch.pk)
             page_report = ApplyReport()
             _write_page(
-                plan.capture, page, by_page.get(page.page_key, []), batch=batch, report=page_report
+                plan.capture,
+                page,
+                by_page.get(page.page_key, []),
+                batch=batch,
+                report=page_report,
+                earlier=plan.earlier_blocks,
             )
             report.merge(page_report)  # only after the page's transaction committed
     except BaseException as error:  # an interruption is a failure too; re-raised below
@@ -942,6 +1266,7 @@ def _write_page(
     *,
     batch: Any,
     report: ApplyReport,
+    earlier: dict[tuple[str, str], str] | None = None,
 ) -> None:
     from app.documents.enums import ExtractionState
     from app.documents.services import add_evidence_version, create_document
@@ -1023,9 +1348,14 @@ def _write_page(
         resources = {
             r.resource_key: r for r in LegacySourceResource.objects.filter(source_page=record)
         }
+        # The plan held these: an earlier row under this block ID that this capture
+        # contradicts. It is kept exactly as it is; nothing is overwritten.
+        contradicted = {i.resource_key for i in items if i.reason in PLAN_ONLY_HOLDS}
         for occurrence in page.occurrences:
             existing = resources.get(occurrence.block_object_id)
             if existing is not None:
+                if occurrence.block_object_id in contradicted:
+                    continue
                 if existing.sha256 != occurrence.sha256 or existing.size_bytes != occurrence.size:
                     raise CaptureError(
                         f"{page.tag}/{occurrence.block_object_id}: "
@@ -1076,7 +1406,11 @@ def _write_page(
                         import_batch=batch,
                         state=ResourceImportState.SKIPPED,
                         error_code=item.reason,
-                        error_detail=_hold_detail(item.reason, page),
+                        error_detail=_hold_detail(
+                            item.reason,
+                            page,
+                            earlier=(earlier or {}).get((page.page_key, item.resource_key), ""),
+                        ),
                     )
                     report.held[item.reason] += 1
                     continue
@@ -1147,7 +1481,29 @@ def _parent_title(capture: Capture, page: CapturePage) -> str:
     return parent.title if parent else ""
 
 
-def _hold_detail(reason: str, page: CapturePage) -> str:
+def _hold_detail(reason: str, page: CapturePage, *, earlier: str = "") -> str:
+    block = f" (varasem plokk {earlier})" if earlier else ""
+    later = {
+        SKIP_CONTINUES: "Sama fail mis varasema hõive plokis{b}: sama lehe GUID, loomise aeg, "
+        "failinimi ja SHA-256. Plokk on teisaldatud; varasem otsus kehtib, teist dokumenti ei "
+        "looda.",
+        HOLD_MOVED_AND_CHANGED: "Varasema faili{b} loomise aeg ja nimi, kuid teised baidid: "
+        "teisaldus ja muutmine korraga ei tõenda järjepidevust. Vajab ülevaatust.",
+        HOLD_AMBIGUOUS: "Sama loomise aja ja nimega faile on lehel mitu; millise varasema "
+        "failiga see sama on, otsustab inimene.",
+        HOLD_RESEMBLES: "Samad baidid ja nimi kui varasemal failil{b}, kuid loomise aeg seda "
+        "ei tõenda. Vajab ülevaatust; teist dokumenti ei looda.",
+        HOLD_SAME_FILE_ELSEWHERE: "Sama fail (baidid, nimi, loomise aeg) on selle teema teisel "
+        "lehel juba olemas; leht võib olla koopia. Vajab ülevaatust.",
+        HOLD_BYTES_CHANGED: "Selle ploki baidid on varasemast hõivest erinevad; varasem "
+        "tõendiversioon on muutmata. Uue versiooni lisamist see importija ei toeta.",
+        HOLD_TIME_CHANGED: "Selle ploki loomise aeg erineb varasemast hõivest; varasem kirje "
+        "on muutmata. Vajab ülevaatust.",
+        HOLD_COMMENT_CHANGED: "Faili märkus OneNote'is erineb varasemast hõivest; dokumendi "
+        "päritolumärkus on muutmata.",
+    }
+    if reason in later:
+        return later[reason].format(b=block)
     if reason == HOLD_SHARED_PAGE:
         refs = ", ".join(sorted(m.reference for m in page.matters))
         return (
@@ -1185,8 +1541,7 @@ def provenance_note(capture: Capture, page: CapturePage, occurrence: Occurrence)
                 f"OneNote'i objekti viimane muutmine: {_tallinn(occurrence.object_modified)}"
             )
     for basis, text in occurrence.structural_comment:
-        label = "Märkus OneNote'is" if basis == "ATTACHED_NOTE" else "Pealkiri OneNote'is"
-        lines.append(f"{label}: {text}")
+        lines.append(_comment_line(basis, text))
     where = f", plokk {occurrence.block_ordinal}" if occurrence.block_ordinal is not None else ""
     lines.append(f"Allikas: {capture.capture_id}{where}")
     return "\n".join(lines)
@@ -1208,6 +1563,7 @@ def verify(
     from app.documents.models import Document
     from app.documents.services import evidence_storage
     from app.legacy_import.source_pages import (
+        LegacySourcePage,
         LegacySourceResourceImport,
         MatterSourcePage,
         ResourceImportState,
@@ -1222,16 +1578,47 @@ def verify(
         for pm in page.matters:
             for o in page.occurrences:
                 expected[(pm.matter_id, page.page_key, o.block_object_id)] = (page, o)
-    rows = (
-        LegacySourceResourceImport.objects.annotate(lk=Lower("resource__source_page__page_key"))
+    # **Bounded memory** (2026-11-05). Every row used to arrive with its whole
+    # source page joined in — the page's text, blocks and links, copied once per
+    # row — plus the whole Document and the whole link, and the queryset cached
+    # all of them: the production run over 9,783 decisions was killed at 2 GB.
+    # The page key is now read once per page, each row brings only the columns
+    # checked below, and the rows are streamed. Nothing checked is dropped.
+    page_keys = dict(
+        LegacySourcePage.objects.annotate(lk=Lower("page_key"))
         .filter(lk__in=keys)
+        .values_list("pk", "lk")
+    )
+    rows = (
+        LegacySourceResourceImport.objects.filter(resource__source_page_id__in=list(page_keys))
         .select_related(
-            "matter_source_page",
-            "resource",
-            "resource__source_page",
-            "document",
-            "document_version",
+            "matter_source_page", "resource", "document", "document_version", "import_batch"
         )
+        .only(
+            "pk",
+            "state",
+            "error_code",
+            "document_id",
+            "document_version_id",
+            "import_batch__source_system",
+            "import_batch__source_snapshot_sha256",
+            "matter_source_page__matter_id",
+            "resource__resource_key",
+            "resource__source_page_id",
+            "resource__sha256",
+            "resource__size_bytes",
+            "resource__source_added_at",
+            "document__matter_id",
+            "document__created_by_id",
+            "document_version__document_id",
+            "document_version__sha256",
+            "document_version__size_bytes",
+            "document_version__original_filename",
+            "document_version__uploaded_by_id",
+            "document_version__storage_key",
+        )
+        .order_by("pk")
+        .iterator(chunk_size=500)
     )
     seen = set()
     storage = evidence_storage() if check_bytes else None
@@ -1241,9 +1628,20 @@ def verify(
         if matter_id not in wanted:
             counts["rows_of_other_matters_on_captured_pages"] += 1
             continue
-        key = (matter_id, row.resource.source_page.page_key.lower(), row.resource.resource_key)
+        key = (matter_id, page_keys[row.resource.source_page_id], row.resource.resource_key)
         if key not in expected:
             if row.error_code == HOLD_EARLIER_CAPTURE and row.state == ResourceImportState.SKIPPED:
+                counts["earlier_capture_rows"] += 1
+                continue
+            # A row an earlier sealed capture recorded for a block this one no longer
+            # names (moved, re-issued or removed): that capture's, counted, not judged
+            # (amendment 2026-11-05). Any other unexpected row is still a problem.
+            batch = row.import_batch
+            if (
+                batch is not None
+                and batch.source_system == BATCH_SOURCE_SYSTEM
+                and batch.source_snapshot_sha256 != capture.manifest_sha256
+            ):
                 counts["earlier_capture_rows"] += 1
                 continue
             problems.append(f"unexpected import row {row.pk}")
@@ -1283,7 +1681,10 @@ def verify(
             counts["dated" if o.block_created else "undated"] += 1
             if storage is not None:
                 with storage.open(version.storage_key, "rb") as handle:
-                    if hashlib.sha256(handle.read()).hexdigest() != o.sha256:
+                    digest = hashlib.sha256()
+                    while chunk := handle.read(1 << 20):
+                        digest.update(chunk)
+                    if digest.hexdigest() != o.sha256:
                         problems.append(f"{page.tag}/{o.block_object_id}: stored bytes do not hash")
                 counts["bytes_rehashed"] += 1
         else:

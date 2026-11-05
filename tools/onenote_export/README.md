@@ -1,7 +1,7 @@
 # OneNote export — read-only proof of concept
 
 A bounded, read-only extractor that turns OneNote pages into a neutral archive
-and compares that archive to the OneNote links the legacy register preserved.
+(the register-link comparison it once had is retired; see below).
 
 **It is not an importer.** It creates no Matters, updates no register rows,
 downloads no notebook in full and changes nothing in OneNote. The full
@@ -88,37 +88,25 @@ a PDF.
 JSON Lines rather than one document, so an export interrupted after 400 pages
 leaves 400 complete records rather than an unparseable array.
 
-## Reconciliation
+## Reconciliation — retired (owner decision D5, 2026-11-04)
 
-```
-python -m tools.onenote_export reconcile \
-    --archive ./onenote-export \
-    --references rows.json \
-    --out candidates.json
-```
+The `reconcile` command and `reconcile.py` are removed, and
+`python -m tools.onenote_export reconcile` now refuses with exit code 2.
 
-`rows.json` is a list of `{id, onenote_url, onenote_page_id, source_title}` —
-exported from `MatterSourceReference` on the machine that has the data.
+It was unsafe for the register's links:
 
-Five tiers, in confidence order:
+* It took the first `id`/`page-id` query value or the first braced GUID as the
+  page id. On the register's `Doc.aspx` links that is `sourcedoc`, the
+  **notebook** GUID, which every link shares, so all links collapsed onto one
+  identity. On `OneNote.aspx` links, `id` is a notebook path.
+* It treated a shared `YYYY_NNN` token as an automatic match, taking the first
+  page that carried it.
 
-| Tier | Basis | Automatic |
-| --- | --- | --- |
-| `PAGE_ID` | a page identifier lifted out of the link | yes |
-| `PAGE_URL` | canonicalised page URL, exact | yes |
-| `REFERENCE_TOKEN` | the same `YYYY_NNN` in both | yes |
-| `REVIEWED_MAPPING` | a person recorded it | yes |
-| `TITLE_SIMILARITY` | titles are alike | **no, ever** |
-
-Nothing is applied. The command prints counts and, optionally, writes the
-candidate list for review.
-
-The last row is the point of the design. Stage 2A's discovery work proved that a
-OneNote hyperlink in this register can point at the wrong page — rows were
-copied, sections were reorganised — so a *hyperlink* is already treated as
-evidence rather than a key. A similar title is weaker evidence than a hyperlink,
-not stronger. An unmatched page waits; a wrongly matched page puts one ministry's
-correspondence into another matter's file, where nobody looks for it again.
+A register link now names a page only where it names one: the last GUID of
+`wd=target(…)` or a client link's `page-id`
+(`app/legacy_import/onenote_capture.register_page_guids`, ADR 0204). The capture
+import (ADR 0205) requires the link to name exactly the page the desktop reader
+captured; title similarity is never a match. The regression tests are in `tests/test_onenote_export.py`.
 
 ## Security notes
 
