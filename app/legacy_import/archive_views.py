@@ -46,7 +46,7 @@ from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.client_ip import client_ip
 from app.core.errors import DomainError
-from app.core.http import content_disposition
+from app.core.http import content_disposition, head_response, is_head
 from app.core.request_params import digits_or_none
 from app.documents import inline
 from app.documents.services import evidence_storage
@@ -423,7 +423,20 @@ def archive_file(request: HttpRequest, pk: Any) -> HttpResponseBase:
         filename=filename, mime_type=binary.mime_type
     )
 
+    content_type = (
+        (binary.mime_type or "application/pdf")
+        if as_attachment
+        else inline.inline_mime_for(filename)
+    )
     storage = evidence_storage()
+    if is_head(request):
+        # The same door and the same 404 for absent bytes (asked of the
+        # directory entry), GET's headers from the recorded size; the letter is
+        # never opened and nothing is audited as downloaded (QA-07).
+        if not storage.exists(binary.storage_key):
+            raise Http404("Arhiivi baiti ei ole salvestuses.")
+        head = head_response(content_type=content_type, content_length=binary.size_bytes)
+        return _archive_file_headers(head, filename=filename, as_attachment=as_attachment)
     try:
         handle = storage.open(binary.storage_key, "rb")
     except FileNotFoundError as error:
@@ -454,11 +467,16 @@ def archive_file(request: HttpRequest, pk: Any) -> HttpResponseBase:
         ),
     )
 
+    response = FileResponse(handle, content_type=content_type)
+    return _archive_file_headers(response, filename=filename, as_attachment=as_attachment)
+
+
+def _archive_file_headers(
+    response: HttpResponseBase, *, filename: str, as_attachment: bool
+) -> HttpResponseBase:
+    """The letter's headers, for its GET and its HEAD alike."""
     if as_attachment:
-        response = FileResponse(handle, content_type=binary.mime_type or "application/pdf")
         response["X-Content-Type-Options"] = "nosniff"
         response["Content-Disposition"] = content_disposition("attachment", filename)
         return response
-
-    response = FileResponse(handle, content_type=inline.inline_mime_for(filename))
     return inline.apply_inline_headers(response, filename=filename)

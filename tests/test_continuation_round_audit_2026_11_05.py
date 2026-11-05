@@ -488,9 +488,14 @@ def test_the_list_line_never_names_past_a_deleted_step(specialist):
 # ---------------------------------------------------------------------------
 
 
-def test_head_on_the_evidence_download_writes_an_audit_row_like_get(client, specialist):
-    """HEAD stays allowed (require_safe). Recorded here, not changed: a HEAD
-    reads the route and is audited as a download, as before this round."""
+def test_head_on_the_evidence_download_is_not_audited_as_a_download(client, specialist):
+    """HEAD stays allowed (require_safe) but is not a download (QA-07, 2026-11-05).
+
+    This test used to pin the opposite — a HEAD audited as DOCUMENT_DOWNLOADED,
+    recorded as the behaviour before the continuation round. The post-audit
+    round changed the rule on every byte route: a HEAD gets GET's status and
+    headers, opens nothing and writes no download row; the GET that follows is
+    audited once, as before (tests/test_pa_c_byte_routes_head.py)."""
     from app.audit.enums import SecurityEventType
     from app.audit.models import SecurityAuditEvent
     from app.documents.services import add_evidence_version
@@ -505,10 +510,17 @@ def test_head_on_the_evidence_download_writes_an_audit_row_like_get(client, spec
     )
     client.force_login(specialist)
 
-    response = client.head(reverse("documents:download", kwargs={"pk": version.pk}))
+    url = reverse("documents:download", kwargs={"pk": version.pk})
+
+    def downloads() -> int:
+        return SecurityAuditEvent.objects.filter(
+            event_type=SecurityEventType.DOCUMENT_DOWNLOADED
+        ).count()
+
+    response = client.head(url)
 
     assert response.status_code == 200
-    downloads = SecurityAuditEvent.objects.filter(
-        event_type=SecurityEventType.DOCUMENT_DOWNLOADED
-    ).count()
-    assert downloads == 1
+    assert response["Content-Length"] == str(len(b"%PDF-1.4\naudit-head"))
+    assert downloads() == 0
+    assert client.get(url).status_code == 200
+    assert downloads() == 1
