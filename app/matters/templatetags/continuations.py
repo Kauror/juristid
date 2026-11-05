@@ -18,34 +18,21 @@ request in the context nothing is shown.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
 from django import template
 
 from app.core.decorators import viewer_for
+from app.matters.continuations import Continuations, continuations_for
 from app.matters.models import Matter
 
 register = template.Library()
 
 
-@dataclass(frozen=True)
-class Continuations:
-    earlier: tuple[Matter, ...]
-    later: Matter | None
-
-    def __bool__(self) -> bool:
-        return bool(self.earlier) or self.later is not None
-
-
 @register.simple_tag(takes_context=True)
 def readable_continuations(context: Any, matter: Matter) -> Continuations:
+    """The chain as this request's reader may follow it (app/matters/continuations.py)."""
     request = context.get("request")
     if request is None or matter is None:
-        return Continuations(earlier=(), later=None)
-    readable = Matter.objects.visible_to(viewer_for(request))
-    earlier = tuple(readable.filter(superseded_by=matter.pk))
-    later = None
-    if matter.superseded_by_id is not None:
-        later = readable.filter(pk=matter.superseded_by_id).first()
-    return Continuations(earlier=earlier, later=later)
+        return Continuations()
+    return continuations_for(matter, viewer_for(request))
