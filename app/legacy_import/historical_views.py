@@ -50,6 +50,7 @@ from app.legacy_import.source_pages import (
     CandidateState,
     HistoricalMatchCandidate,
     LegacySourcePage,
+    LegacySourceResource,
     LegacySourceResourceImport,
     MatterSourcePage,
     ResourceImportState,
@@ -793,15 +794,33 @@ def import_statuses(links: list[Any]) -> dict[Any, ImportStatus]:
         matter_source_page__in=[link.pk for link in links]
     ).select_related("resource"):
         records[record.matter_source_page_id][record.resource.resource_key] = record
+    # The page view also lists every catalogued file no stored block reaches (a
+    # later capture's, or a capture's files on a reused pilot page), after the
+    # narrative (`_rendered_blocks`). Counted here the same way, so the chip and
+    # «Allikas» never say less than the page shows (one query for all pages).
+    catalogue: dict[Any, list[Any]] = {}
+    for resource in LegacySourceResource.objects.filter(
+        source_page__in={link.source_page_id for link in links}
+    ).only("pk", "source_page_id", "resource_key", "size_bytes"):
+        catalogue.setdefault(resource.source_page_id, []).append(resource)
     out = {}
     for link in links:
         mine = records[link.pk]
         states = []
+        placed = set()
         for block in link.source_page.blocks or []:
             if block.get("kind") not in {"FILE_ATTACHMENT", "IMAGE"}:
                 continue
+            placed.add(block.get("resource_key", ""))
             found = mine.get(block.get("resource_key", ""))
             states.append(_file_state(found.resource if found else None, found))
+        for resource in catalogue.get(link.source_page_id, []):
+            found = mine.get(resource.resource_key)
+            if resource.resource_key in placed or (
+                found is not None and found.error_code == "CONTINUES_EARLIER_BLOCK"
+            ):
+                continue
+            states.append(_file_state(resource, found))
         counts = {state: states.count(state) for state in set(states) if state != "superseded"}
         out[link.pk] = ImportStatus(counts=counts, files=sum(counts.values()))
     return out
