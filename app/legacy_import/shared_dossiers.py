@@ -64,7 +64,9 @@ class SharedDossier:
     teemad: tuple[DossierTeema, ...] = ()
     #: Each chain of two or more readable linked Teemad, earliest stage first.
     chains: tuple[tuple[DossierTeema, ...], ...] = ()
-    #: Linked Teemad this reader may not read. Counted, never named.
+    #: Linked Teemad this reader may not read. Never named; the page says only
+    #: *that* there is one (yes/no), never how many (owner, 2026-11-05, QA-05 / E-2).
+    #: The number is kept for `shared`, which decides whether the files wait.
     hidden: int = 0
     #: A forward walk met a Matter it had already visited.
     cyclic: bool = False

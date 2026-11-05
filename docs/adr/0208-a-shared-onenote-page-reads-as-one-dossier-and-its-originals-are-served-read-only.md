@@ -57,9 +57,11 @@ ootavad teemaga seostamist ega ole ühegi teema dokumentide all; originaalid on
 lähtekorpuses alles.» Then the relationship: «Sama menetluse etapid: 2025_140 →
 2025_196» (each other stage a link to its own view of the page, through its
 own scope), or «Teemade vahel ei ole registris jätku seost.», «Ülejäänud
-teemade vahel …», «Teemade jätku seosed ei moodusta üht ahelat …», and «Lisaks
-on leht seotud N teemaga, mida selles kasutajavaates ei kuvata.» for hidden
-ones. It replaces «Sama leht on seotud ka» on a shared page; that line stays for
+teemade vahel …», «Teemade jätku seosed ei moodusta üht ahelat …», and «Leht
+on seotud ka teemaga, mida siit avada ei saa.» when there are hidden ones — a
+yes/no, never how many, and «Ühine toimik · N teemat» counts only the Teemad
+this reader can open (amended 2026-11-05, owner rule QA-05, independent review
+E-2; it printed the hidden number before). It replaces «Sama leht on seotud ka» on a shared page; that line stays for
 any other case.
 
 ### 3. The narrowest read-only download of a held original

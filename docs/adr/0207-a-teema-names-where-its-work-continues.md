@@ -62,10 +62,15 @@ register rebuild imported Lovable's structured stage links into
    (QA-08).
 6a. **No cycle through a closure (2026-11-05, QA-03).** `close_matter` refuses a
    `Järglane` whose forward chain leads back to the closing Matter: the pair and
-   the pre-read chain are locked `FOR NO KEY UPDATE` in ascending id order, a
-   step changed meanwhile is locked as it is reached, and the walk is bounded at
-   200 hops, past which the closure is refused too. The refusal comes before any
-   write. The Lovable importer already refuses cycles at plan time.
+   the pre-read chain are locked `FOR NO KEY UPDATE` in ascending id order; a
+   step changed meanwhile is locked as it is reached only with `NOWAIT`, so the
+   closure never waits out of order (independent review E-1: a waited late lock
+   could deadlock a legitimate closure), and a step somebody holds refuses it
+   with «Valitud järglase jätkuahel muutus samal ajal. Proovi uuesti …». The walk
+   is bounded at 200 hops, past which the closure is refused too. Every refusal
+   comes before any write, and the memoised history of the successor instance is
+   dropped after the write. The Lovable importer already refuses cycles at plan
+   time.
 7. **`get_matter`** (read-only MCP) carries `continuations`: `successor`,
    `successor_hidden`, `predecessors`, `hidden_predecessors`, `chain` (earliest
    first, this Teema included), `chain_starts_hidden`/`chain_continues_hidden`,

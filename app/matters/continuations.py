@@ -230,6 +230,11 @@ def _history(matter: Matter, viewer: Any) -> _History:
     return history
 
 
+def forget_continuation_history(matter: Matter) -> None:
+    """Drop the memoised history on this instance (after a write that changes it)."""
+    matter.__dict__.pop("_continuation_history_memo", None)
+
+
 def _level(frontier: list[Any], readable: Any, limit: int) -> list[_Row]:
     """Every live Matter whose successor is in `frontier`, readable ones first.
 

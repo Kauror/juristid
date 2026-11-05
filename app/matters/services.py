@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
 
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Q
 from django.utils import timezone
 
@@ -28,6 +28,7 @@ from app.core.enums import Visibility, most_restrictive, validate_visibility_ove
 from app.core.errors import DomainError
 from app.core.richtext import excerpt, is_empty, sanitize_entry_html
 from app.core.web_addresses import normalize_web_address
+from app.matters.continuations import forget_continuation_history
 from app.matters.entry_enums import EntryKind
 from app.matters.enums import (
     SELECTABLE_EXTERNAL_POSITION_PROVENANCE,
@@ -5657,6 +5658,7 @@ def close_matter(
             matter.pk, successor.pk, *_forward_chain_ids(successor.pk, stop=matter.pk)
         )
         locked = rows[matter.pk]
+        callers_successor = successor
         successor = rows[successor.pk]
         if locked.deleted_at is not None:
             raise Matter.DoesNotExist(matter.pk)
@@ -5701,6 +5703,12 @@ def close_matter(
             "updated_at",
         ]
     )
+    if successor is not None:
+        # The successor's earlier history just gained a stage: a history the
+        # caller's instance memoised before this write must not be answered from
+        # again in the same request (QA-10 memo; independent review, E).
+        forget_continuation_history(successor)
+        forget_continuation_history(callers_successor)
 
     # The step, the planned write-ups and the feedback waits end here, in this
     # transaction and under this lock — the same helper every other path that
@@ -5755,6 +5763,13 @@ CONTINUATION_CHAIN_TOO_LONG_REFUSAL = (
     "Vali teine järglane või sulge teema ilma selleta."
 )
 
+#: What a closure is told when the successor's chain changed between the read
+#: that chose which rows to lock and the locks themselves (another closure ran
+#: at the same moment). Nothing has been written; trying again reads it afresh.
+CONTINUATION_CHAIN_CHANGED_REFUSAL = (
+    "Valitud järglase jätkuahel muutus samal ajal. Proovi uuesti või sulge teema ilma järglaseta."
+)
+
 #: How many forward steps the cycle check follows from a proposed successor.
 #: Real chains are two or three stages; the read-side walks stop at
 #: `app.matters.continuations.MAX_HOPS` (12).
@@ -5785,6 +5800,17 @@ def _forward_chain_ids(start: Any, *, stop: Any) -> list[Any]:
     return found
 
 
+def _lock_now_or_refuse(pk: Any) -> Matter:
+    """Lock one more chain step without waiting, or refuse the closure (E-1)."""
+    try:
+        with (
+            transaction.atomic()
+        ):  # a savepoint: a refused lock leaves the outer transaction usable
+            return Matter.all_objects.select_for_update(no_key=True, nowait=True).get(pk=pk)
+    except OperationalError as exc:
+        raise DomainError(CONTINUATION_CHAIN_CHANGED_REFUSAL) from exc
+
+
 def _refuse_continuation_cycle(
     closing: Matter, successor: Matter, locked: dict[Any, Matter]
 ) -> None:
@@ -5793,10 +5819,12 @@ def _refuse_continuation_cycle(
     Walked on the rows `close_matter` holds `FOR NO KEY UPDATE`, every
     direction-relevant column as it is under the lock. A step that was not in
     the chain read before locking — it changed while this closure waited — is
-    locked as it is reached, at the same strength, so the walk never decides on
-    a row somebody else may still be changing. That late lock is outside the
-    global ascending order; PostgreSQL resolves the deadlock it could in theory
-    meet by aborting one transaction, and either way nothing is written.
+    locked late only with `NOWAIT`: a lock *waited for* outside the global
+    ascending order can deadlock a legitimate closure against an ordered writer
+    (independent review E-1), while one taken at once cannot. A free row is locked
+    and the walk goes on; a row somebody else holds refuses the closure with
+    `CONTINUATION_CHAIN_CHANGED_REFUSAL`. Nothing has been written either way,
+    and trying again reads the new chain and locks it in order.
 
     Unscoped on purpose: a cycle through a stage the closing person may not
     read is still a cycle, and the refusal names no stage. A loop elsewhere in
@@ -5815,11 +5843,7 @@ def _refuse_continuation_cycle(
             return
         seen.add(following)
         held = locked.get(uuid.UUID(str(following)))
-        step = (
-            held
-            if held is not None
-            else Matter.all_objects.select_for_update(no_key=True).get(pk=following)
-        )
+        step = held if held is not None else _lock_now_or_refuse(following)
     raise DomainError(CONTINUATION_CHAIN_TOO_LONG_REFUSAL)
 
 

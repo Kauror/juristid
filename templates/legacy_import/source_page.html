@@ -75,7 +75,7 @@
         every Teema, and otherwise the overview below lists each.
       {% endcomment %}
       <div class="dossiernote" role="note" aria-labelledby="toimik-heading">
-        <p class="dossiernote__title" id="toimik-heading">Ühine toimik · {{ dossier.total }} teemat</p>
+        <p class="dossiernote__title" id="toimik-heading">Ühine toimik · {{ dossier.teemad|length }} teemat</p>
         <p class="dossiernote__text">
           Leht on tervikuna hõivatud ja siin täielikult loetav. Milline fail millisele
           teemale kuulub, ei ole otsustatud: failid ootavad teemaga seostamist ega ole
@@ -100,7 +100,7 @@
           <p class="dossiernote__chain"><a href="#ulevaade-heading">Lehe teemad ja failid</a> on allpool ülevaatena.</p>
         {% endif %}
         {% if dossier.hidden %}
-          <p class="dossiernote__chain">Lisaks on leht seotud {{ dossier.hidden }} teemaga, mida selles kasutajavaates ei kuvata.</p>
+          <p class="dossiernote__chain">Leht on seotud ka teemaga, mida siit avada ei saa.</p>
         {% endif %}
       </div>
     {% elif other_matters %}
@@ -272,7 +272,7 @@
         </tbody>
       </table>
       {% if dossier.hidden %}
-        <p class="cardnote">Lisaks {{ dossier.hidden }} teemat, mida selles kasutajavaates ei kuvata.</p>
+        <p class="cardnote">Leht on seotud ka teemaga, mida siit avada ei saa.</p>
       {% endif %}
       {% if dossier_files %}
         <table class="data-table dossierreview">
