@@ -36,14 +36,19 @@ register rebuild imported Lovable's structured stage links into
    «Jätkub teemana» becomes «Jätkub teemas», the header's words. The header
    gives references, the rail gives titles, and the banner names only the
    direct successor.
-5. **What a reader may not read** is said to exist and is never named: «Jätkub
-   teemas, mida sul ei ole lubatud näha», «Eelnev teema, mida sul ei ole
-   lubatud näha» (with a count when there are several). Under 0181 this is a
-   deleted Teema for a business reader, or every Teema for an administrator
-   without a grant. A deleted predecessor is not offered as history (0102). A
-   cycle reads «Ahel jõuab tagasi juba näidatud teemani, kaugemale seda ei
-   näidata.» and a cut chain reads «Ahel on pikem kui 12 etappi, näidatud on
-   lähimad.». Neither names an endpoint.
+5. **What a reader cannot open (amended 2026-11-05, owner, QA-04/QA-05)** — a
+   deleted Teema, or one outside the reader's scope — is never named, counted or
+   titled, and never described as a permissions matter. Navigation surfaces
+   (header, closed banner, rail, `get_matter`) say only *that* the history
+   continues past it, as a yes/no: forward «Jätkub teemas, mida siit avada ei
+   saa», backward «Varasem etapp, mida siit avada ei saa». `hidden_predecessors`
+   is a yes/no. A reader who may not read the Teema itself is told nothing about
+   its history (QA-06). Under 0181 this is a deleted Teema for a business reader.
+   A deleted predecessor is not offered as history (0102), and the walk is not
+   continued through a deleted stage (owner, QA-04: the cut is kept). A cycle
+   reads «Ahel jõuab tagasi juba näidatud teemani, kaugemale seda ei näidata.»
+   and a cut chain reads «Ahel on pikem kui 12 etappi, näidatud on lähimad.».
+   Neither names an endpoint.
 6. **One walk per request.** The `readable_continuations` tag caches the answer
    on the request, keyed on the Matter, its `superseded_by` and whether it is
    open. Header, banner and rail share one walk, and the HTMX re-renders
@@ -60,6 +65,13 @@ register rebuild imported Lovable's structured stage links into
    The reference is a link. When the chain's known endpoint is not the direct
    successor, it follows the arrow («→ 2026_190 (avatud)»). An unreadable or
    deleted successor reads «Jätkub mujal» without a reference.
+   - Amended 2026-11-05 (QA-18/QA-19): a stage is named by reference and a short
+     title (40 characters, title last so a narrow cell clips the title first); a
+     stage without a reference is named by its short title once. With a known
+     endpoint other than the successor the line reads «Jätkub teemas X → [ … ]
+     viimane etapp Y (avatud|suletud) · pealkiri»; «viimane etapp» is visible,
+     the «…» is decoration and a screen reader hears «vahel veel N etappi»
+     (readable stages only).
    - One scoped batch query per page, plus one per chain level for the endpoints
      (`app/matters/continuation_lines.py`); never per row.
    - The status badge is unchanged.
