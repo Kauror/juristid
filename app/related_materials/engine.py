@@ -461,7 +461,10 @@ def build_profile(matter: Matter) -> SubjectProfile:
         track=matter.track or "",
         related_matter_ids=frozenset(related_ids),
         excluded_matter_ids=frozenset(excluded),
-        dismissed_matter_ids=frozenset(dismissed_matters),
+        # A dismissal of a Teema that is (now) a stage of this history is not offered
+        # back under «Näita peidetud»: restoring it could never make it a suggestion
+        # again, because the history is excluded above (AUDIT-D-03, ADR 0209).
+        dismissed_matter_ids=frozenset(dismissed_matters - history),
         dismissed_submission_ids=frozenset(dismissed_submissions),
         dismissed_binary_ids=frozenset(dismissed_binaries),
         background_submission_ids=frozenset(background_submissions),

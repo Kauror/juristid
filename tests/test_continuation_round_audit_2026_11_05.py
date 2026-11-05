@@ -258,10 +258,6 @@ def test_a_genuine_lookalike_outside_the_history_is_still_suggested(specialist):
     assert outsider.pk in suggested
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="AUDIT-D-03: hidden_candidates/hidden_count do not exclude the continuation history",
-)
 def test_a_dismissed_stage_is_not_offered_back_under_hidden_suggestions(signed_in, specialist):
     """A candidate dismissed before it became a stage of the history.
 
