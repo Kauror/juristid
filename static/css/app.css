@@ -16308,3 +16308,75 @@ a.jcal__daynum {
   padding-left: var(--spacing-2);
   margin-block: var(--spacing-2);
 }
+
+/* ---------------------------------------------------------------------------
+ * Teema continuation navigation (docs/adr/0207): the line under the Teema
+ * title that names where the work came from and where it continues, and the
+ * ordered path of stages when there are three or more. One quiet meta line —
+ * it answers «where?» for a «Jätkub mujal» badge, it is not a second header.
+ * ------------------------------------------------------------------------- */
+.matterhead__continuation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.matterhead__continuationkey {
+  color: var(--text-muted);
+}
+
+.matterhead__continuationitem,
+.matterhead__continuationnote {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.matterhead__continuationnote {
+  color: var(--text-muted);
+}
+
+.chainpath {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The arrow is drawn, not written: it says nothing a screen reader needs, the
+   ordered list already says the order. */
+.chainpath__stage + .chainpath__stage::before {
+  content: "→" / "";
+  margin-right: var(--spacing-1);
+  color: var(--text-muted);
+}
+
+.chainpath__stage--current {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-body);
+}
+
+.chainpath__stage--hidden {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.chainlist {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chainlist li {
+  display: inline;
+}
+
+.chainlist li + li::before {
+  content: ", " / "";
+}

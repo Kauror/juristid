@@ -149,6 +149,78 @@ rather than read.
   </h1>
 
   {% comment %}
+    **Where this work came from and where it continues** (docs/adr/0207), under
+    the title because it answers the next question a reader of «Jätkub mujal»
+    asks: where? `Matter.superseded_by` is the only edge, and every stage is
+    re-read through this request's scope (`readable_continuations`), so a stage
+    this reader may not read is said to exist and is never named.
+
+    References, not titles: the band names the file in the shape a lawyer types
+    into search, and the rail's `Seotud` card carries the titles. Three or more
+    readable stages print as one path, earliest first, with this Teema marked and
+    not linked. Nothing redirects: a historical stage keeps its own page and
+    history.
+  {% endcomment %}
+  {% load continuations %}
+  {% readable_continuations matter as continuations %}
+  {% if continuations %}
+    <nav class="matterhead__continuation" aria-label="Teema jätkumine">
+      {% if continuations.shows_path %}
+        <span class="matterhead__continuationkey">Teema etapid</span>
+        <ol class="chainpath">
+          {% if continuations.hidden_before and continuations.before %}
+            <li class="chainpath__stage chainpath__stage--hidden">eelnev teema, mida sul ei ole lubatud näha</li>
+          {% endif %}
+          {% for stage in continuations.before %}
+            <li class="chainpath__stage"><a href="{% url 'matters:matter_detail' pk=stage.pk %}" title="{{ stage.title }}">{% continuation_label stage %}</a></li>
+          {% endfor %}
+          <li class="chainpath__stage chainpath__stage--current" aria-current="page">{% continuation_label matter %}<span class="visually-hidden"> (see teema)</span></li>
+          {% for stage in continuations.after %}
+            <li class="chainpath__stage"><a href="{% url 'matters:matter_detail' pk=stage.pk %}" title="{{ stage.title }}">{% continuation_label stage %}</a></li>
+          {% endfor %}
+          {% if continuations.hidden_after %}
+            <li class="chainpath__stage chainpath__stage--hidden">teema, mida sul ei ole lubatud näha</li>
+          {% endif %}
+        </ol>
+        {% if continuations.endpoint_is_known %}
+          <span class="matterhead__continuationnote">viimane etapp {% continuation_label continuations.endpoint %} on {% if continuations.endpoint.is_open %}avatud{% else %}suletud{% endif %}</span>
+        {% endif %}
+      {% endif %}
+      {% if not continuations.shows_path or not continuations.before %}
+        {% with shown=continuations.predecessors|length hidden=continuations.hidden_predecessors %}
+          {% if shown == 1 and not hidden %}
+            <span class="matterhead__continuationitem">Eelnev teema: <a href="{% url 'matters:matter_detail' pk=continuations.predecessors.0.pk %}" title="{{ continuations.predecessors.0.title }}">{% continuation_label continuations.predecessors.0 %}</a></span>
+          {% elif shown %}
+            <span class="matterhead__continuationitem">Eelnevad teemad:
+              <ul class="chainlist">
+                {% for earlier in continuations.predecessors %}
+                  <li><a href="{% url 'matters:matter_detail' pk=earlier.pk %}" title="{{ earlier.title }}">{% continuation_label earlier %}</a></li>
+                {% endfor %}
+              </ul>{% if hidden %} ja {{ hidden }}, mida sul ei ole lubatud näha{% endif %}
+            </span>
+          {% elif hidden == 1 %}
+            <span class="matterhead__continuationitem">Eelnev teema, mida sul ei ole lubatud näha</span>
+          {% elif hidden %}
+            <span class="matterhead__continuationitem">Eelnevad teemad ({{ hidden }}), mida sul ei ole lubatud näha</span>
+          {% endif %}
+        {% endwith %}
+      {% endif %}
+      {% if not continuations.shows_path %}
+        {% if continuations.successor %}
+          <span class="matterhead__continuationitem">Jätkub teemas <a href="{% url 'matters:matter_detail' pk=continuations.successor.pk %}" title="{{ continuations.successor.title }}">{% continuation_label continuations.successor %}</a></span>
+        {% elif continuations.hidden_after %}
+          <span class="matterhead__continuationitem">Jätkub teemas, mida sul ei ole lubatud näha</span>
+        {% endif %}
+      {% endif %}
+      {% if continuations.cyclic %}
+        <span class="matterhead__continuationnote">Ahel jõuab tagasi juba näidatud teemani, kaugemale seda ei näidata.</span>
+      {% elif continuations.truncated %}
+        <span class="matterhead__continuationnote">Ahel on pikem kui {{ continuations.hop_limit }} etappi, näidatud on lähimad.</span>
+      {% endif %}
+    </nav>
+  {% endif %}
+
+  {% comment %}
     A refused header editor that comes back open (`reopen`, E-04) says why
     inside itself, beside the field; the banner is for every other refusal.
   {% endcomment %}
