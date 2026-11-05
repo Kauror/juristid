@@ -702,14 +702,22 @@ def predecessor_pages(matter: Matter, user: Any, *, own: list[Any]) -> list[dict
     stage's dossier too (`shared_with_earlier`, set on `own`). Nothing is
     counted into this Teema's files: these are not its Documents (docs/adr/0208).
 
-    Only readable predecessors are walked (`continuations_for` re-reads every
-    step through `visible_to`), and a predecessor's page link is read through
-    `visible_links`. No read is granted by the edge itself.
-    """
-    from app.matters.continuations import continuations_for
+    **Every readable earlier stage, through every branch** — the same graph
+    «Varasemad etapid» lists (`historical_predecessors`, docs/adr/0209), so the
+    two surfaces cannot disagree about which stages there are. It used to be the
+    linear part of the chain plus the direct predecessors, which left out a
+    converging grand-predecessor's pages (QA-11, 2026-11-05). Earliest stage
+    first; a page several stages hold is listed once, through the earliest
+    stage's link, and names every stage holding it.
 
-    chain = continuations_for(matter, user)
-    stages = list(dict.fromkeys([*chain.before, *chain.predecessors]))
+    Only readable predecessors are walked (`historical_predecessors` re-reads
+    every level through `visible_to` and does not pass through a stage the
+    reader may not open, nor through a deleted one), and a predecessor's page
+    link is read through `visible_links`. No read is granted by the edge itself.
+    """
+    from app.matters.continuations import historical_predecessors
+
+    stages = [stage.matter for stage in historical_predecessors(matter, user).stages]
     for link in own:
         link.shared_with_earlier = []
     if not stages:

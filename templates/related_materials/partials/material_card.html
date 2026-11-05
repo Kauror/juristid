@@ -3,7 +3,8 @@ One candidate opinion or archive letter. The label says which — «Varasem
 arvamus» only for a canonical Submission, «Arhiivimaterjal» for a held letter,
 never the stronger word for the weaker thing. The title opens the material
 through its own protected route; an archive letter opens on the archive detail
-page, never through a storage address (docs/adr/0062 §3, §5).
+page, never through a storage address (docs/adr/0062 §3, §5). Each button's
+accessible name carries the material's kind and title (QA-15).
 {% endcomment %}
 <li class="relatedcard {% if item.is_dismissed %}relatedcard--hidden{% endif %}"
     data-related-candidate="{{ item.form_kind }}:{{ item.key }}">
@@ -32,7 +33,7 @@ page, never through a storage address (docs/adr/0062 §3, §5).
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="liik" value="{{ item.form_kind }}">
           <input type="hidden" name="kandidaat" value="{{ item.key }}">
-          <button class="button button--quiet button--tiny" type="submit">Taasta soovitus</button>
+          <button class="button button--quiet button--tiny" type="submit" aria-label="Taasta soovitus {{ item.label|lower }} — {{ item.title }}">Taasta soovitus</button>
         </form>
       {% else %}
         <form method="post" action="{% url 'related_materials:add_background' pk=matter.pk %}"
@@ -42,7 +43,7 @@ page, never through a storage address (docs/adr/0062 §3, §5).
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="liik" value="{{ item.form_kind }}">
           <input type="hidden" name="kandidaat" value="{{ item.key }}">
-          <button class="button button--quiet button--tiny" type="submit">Lisa</button>
+          <button class="button button--quiet button--tiny" type="submit" aria-label="Lisa {{ item.label|lower }} — {{ item.title }}">Lisa</button>
         </form>
         <form method="post" action="{% url 'related_materials:dismiss' pk=matter.pk %}"
               hx-post="{% url 'related_materials:dismiss' pk=matter.pk %}"
@@ -51,7 +52,7 @@ page, never through a storage address (docs/adr/0062 §3, §5).
           {% include "related_materials/partials/state_fields.html" %}
           <input type="hidden" name="liik" value="{{ item.form_kind }}">
           <input type="hidden" name="kandidaat" value="{{ item.key }}">
-          <button class="button button--quiet button--tiny" type="submit">Ei ole seotud</button>
+          <button class="button button--quiet button--tiny" type="submit" aria-label="Ei ole seotud {{ item.label|lower }} — {{ item.title }}">Ei ole seotud</button>
         </form>
       {% endif %}
     </div>

@@ -30,7 +30,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from app.legacy_import.opinion_access import may_read_archive
-from app.matters.continuations import EarlierStage, historical_predecessors
+from app.matters.continuations import EarlierStage, continuations_for, historical_predecessors
 from app.matters.models import Matter
 from app.related_materials.models import MatterBackgroundMaterial, MatterRelation
 from app.submissions.models import Submission
@@ -179,6 +179,9 @@ class EarlierStageItem:
 
     stage: EarlierStage
     relation: ConfirmedRelation | None = None
+    #: The stage this one continued as, resolved to the Matter (`EarlierStage.continues_as`
+    #: is its id). Always a stage listed above it or the viewed Teema itself.
+    continued_as: Matter | None = None
 
     @property
     def matter(self) -> Matter:
@@ -187,6 +190,24 @@ class EarlierStageItem:
     @property
     def depth(self) -> int:
         return self.stage.depth
+
+    @property
+    def is_direct(self) -> bool:
+        """The viewed Teema continues this one directly: «vahetu eelmine etapp» (QA-12)."""
+        return self.stage.depth == 1
+
+    @property
+    def continued_as_label(self) -> str:
+        """The reference a deeper stage continued as, for «jätkus teemana …» (QA-12).
+
+        Empty for a direct stage, which continued as the viewed Teema itself.
+        """
+        if self.is_direct or self.continued_as is None:
+            return ""
+        other = self.continued_as
+        return other.display_reference or (
+            other.title[:40] + ("…" if len(other.title) > 40 else "")
+        )
 
     @property
     def state_label(self) -> str:
@@ -237,13 +258,56 @@ def related_materials_for(matter: Matter, viewer: Any) -> RelatedMaterials:
     relations = tuple(confirmed_relations(matter, viewer))
     by_matter = {item.other.pk: item for item in relations}
     history = historical_predecessors(matter, viewer)
+    # Every `continues_as` is a stage of this walk or the viewed Teema: the walk
+    # reaches a stage only through the one it continued as (QA-12).
+    known: dict[Any, Matter] = {matter.pk: matter}
+    known.update((stage.matter.pk, stage.matter) for stage in history.stages)
     return RelatedMaterials(
         relations=relations,
         background=tuple(background_materials(matter, viewer)),
         stages=tuple(
-            EarlierStageItem(stage=stage, relation=by_matter.get(stage.matter.pk))
+            EarlierStageItem(
+                stage=stage,
+                relation=by_matter.get(stage.matter.pk),
+                continued_as=known.get(_pk(stage.continues_as)),
+            )
             for stage in history.stages
         ),
         stages_cyclic=history.cyclic,
         stages_truncated=history.truncated,
     )
+
+
+def _pk(value: Any) -> Any:
+    """`EarlierStage.continues_as` as an id, whether it carries the id or the Matter."""
+    return getattr(value, "pk", value)
+
+
+# -- the continuation history, as the «+ Lisa» picker sees it (QA-14) -------------------
+
+#: What a picker row says instead of offering «Seo teemaga» for a stage of this
+#: Teema's own continuation history.
+EARLIER_STAGE_LABEL = "Juba varasem etapp"
+LATER_STAGE_LABEL = "Juba hilisem etapp"
+
+
+def continuation_stage_labels(matter: Matter, viewer: Any) -> dict[Any, str]:
+    """This reader's confirmed continuation stages of `matter`, by pk, with their label.
+
+    Every readable earlier stage through every branch (`historical_predecessors`)
+    and every readable later stage on the forward path (`continuations_for`). The
+    continuation is already the strongest relation there is; a manual relation
+    to one of these would only repeat it, so the picker shows the row labelled
+    and offers no add control, and `link` refuses it (docs/adr/0209 §2).
+
+    Scoped like both walks: a stage this reader may not open is not here, and
+    the picker could not have found it anyway (`search_matters` is scoped).
+    """
+    labels: dict[Any, str] = {
+        stage.matter.pk: EARLIER_STAGE_LABEL
+        for stage in historical_predecessors(matter, viewer).stages
+    }
+    for later in continuations_for(matter, viewer).after:
+        labels.setdefault(later.pk, LATER_STAGE_LABEL)
+    labels.pop(matter.pk, None)
+    return labels
