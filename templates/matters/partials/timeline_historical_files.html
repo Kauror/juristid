@@ -1,0 +1,40 @@
+{% comment %}
+Imported OneNote files under an opened historical row of `Teema käik`: a note's
+directly attributed files, or every file of a document row.
+
+The caller supplies `files` (a sequence of
+`app.legacy_import.historical_notes.HistoricalFile`) and, optionally, `heading`.
+
+Each file reads as the record and the bytes it is: its title linked to the
+document page, its original filename where that differs from the title, the
+day the source says it was added to OneNote, the structural comment OneNote
+held beside it, and «lisatud enne praeguse lehe loomist» when its OneNote time
+is older than the page it is on now (the wording of
+`app.matters.timeline.ONENOTE_PREDATES_PAGE`). `Ava või laadi alla` is the
+exact bytes, named by the file so thirty of them are not thirty identical links.
+
+`added_display` is either a day («29.07.2026») or the source's own «lisamise
+kuupäev teadmata»; only a day gets «lisatud OneNote'i» in front of it, decided
+on the first character so no sentence here has to repeat the other module's
+wording.
+
+Read-only: no checkbox, no `Muuda`, no `Kustuta` — this is what the history
+held, not something to act on.
+{% endcomment %}
+<div class="uxtl__histfiles">
+  {% if heading %}<span class="uxtl__filegrouplabel">{{ heading }}</span>{% endif %}
+  <ul class="uxtl__histfilelist">
+    {% for file in files %}
+      <li class="uxtl__histfile">
+        <a class="uxtl__file" href="{{ file.document_url }}">{{ file.title }}</a>
+        <span class="uxtl__histfilemeta">
+          {% if file.original_filename and file.original_filename != file.title %}<span class="uxtl__histfilename">{{ file.original_filename }}</span> · {% endif %}
+          {% if file.added_display %}{% if file.added_display|first in "0123456789" %}lisatud OneNote'i {{ file.added_display }}{% else %}{{ file.added_display }}{% endif %}{% endif %}
+          {% if file.predates_page %} · lisatud enne praeguse lehe loomist{% endif %}
+          {% if file.open_url %} · <a class="uxtl__link uxtl__histopen" href="{{ file.open_url }}">Ava või laadi alla<span class="visually-hidden"> — {{ file.original_filename|default:file.title }}</span></a>{% endif %}
+        </span>
+        {% if file.comment %}<span class="uxtl__histcomment">{{ file.comment }}</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+</div>
