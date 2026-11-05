@@ -109,3 +109,10 @@ def test_the_component_holds_every_stage_in_both_directions(specialist):
     assert ids == {first.pk, middle.pk, last.pk, side.pk}
     alone = factories.MatterFactory()
     assert continuation_component_ids(alone.pk) == {alone.pk}
+
+
+def test_a_history_exactly_at_the_bound_is_not_called_truncated(specialist):
+    refs = [f"{2000 + n}_{n + 1}" for n in range(MAX_HOPS + 1)]
+    chain = _chain(*refs)
+    stages = historical_predecessors(chain[-1], specialist)
+    assert len(stages) == MAX_HOPS and not stages.truncated

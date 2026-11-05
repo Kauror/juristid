@@ -243,7 +243,8 @@ def historical_predecessors(matter: Matter | None, viewer: Any) -> EarlierStages
     while frontier:
         depth += 1
         if depth > MAX_HOPS:
-            truncated = True
+            # Cut only if there is in fact something beyond the bound.
+            truncated = readable.filter(superseded_by__in=frontier).exclude(pk__in=seen).exists()
             break
         rows = list(
             readable.filter(superseded_by__in=frontier)
