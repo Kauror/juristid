@@ -703,7 +703,7 @@ def test_a_deleted_target_is_said_to_exist_and_never_named(signed_in, specialist
     old, gone = _chain(2, owner=specialist)
     Matter.all_objects.filter(pk=gone.pk).update(deleted_at=timezone.now(), title="KUSTUTATUD-QA")
     body = _teema_page(signed_in, old)
-    assert "Jätkub teemas, mida sul ei ole lubatud näha" in _text(body)
+    assert "Jätkub teemas, mida siit avada ei saa" in _text(body)
     for leak in (gone.display_reference, "KUSTUTATUD-QA", str(gone.pk)):
         assert leak not in body
     c = readers.matter_snapshot(specialist, old.display_reference)["continuations"]
@@ -841,11 +841,11 @@ def test_a_served_original_is_exact_attachment_only_and_writes_one_audit_row(
     _only_audit_written(before)
 
 
-def test_head_is_answered_and_audited_once(held, client, specialist):
+def test_head_is_answered_and_not_audited(held, client, specialist):
     client.force_login(specialist)
     response = client.head(_url(_link(held["a"], 51), _res(51, "kiri.pdf")))
     assert response.status_code == 200
-    assert len(_audits()) == 1
+    assert len(_audits()) == 0
 
 
 @pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE", "OPTIONS"])

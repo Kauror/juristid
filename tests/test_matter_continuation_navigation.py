@@ -31,8 +31,8 @@ from tests import factories
 
 pytestmark = pytest.mark.django_db
 
-HIDDEN_SUCCESSOR = "Jätkub teemas, mida sul ei ole lubatud näha"
-HIDDEN_PREDECESSOR = "Eelnev teema, mida sul ei ole lubatud näha"
+HIDDEN_SUCCESSOR = "Jätkub teemas, mida siit avada ei saa"
+HIDDEN_PREDECESSOR = "Varasem etapp, mida siit avada ei saa"
 
 
 def _chain(n: int, **fields) -> list[Matter]:
@@ -237,8 +237,8 @@ def _render_for(user, template: str, matter) -> str:
 def test_an_outsider_administrator_reads_no_reference_at_all(client, specialist, administrator):
     """The page itself is a 404 for an administrator without a grant (docs/adr/0181);
     and were a partial drawn for one, neither end of the chain would be named."""
-    old = factories.MatterFactory(owner=specialist, title="Varasem")
-    new = factories.MatterFactory(owner=specialist, title="Hilisem")
+    old = factories.MatterFactory(owner=specialist, title="Varasem teema 81")
+    new = factories.MatterFactory(owner=specialist, title="Hilisem teema 82")
     close_matter(matter=old, disposition=Disposition.SUPERSEDED, actor=specialist, successor=new)
     old.refresh_from_db()
 
@@ -251,11 +251,11 @@ def test_an_outsider_administrator_reads_no_reference_at_all(client, specialist,
 
     banner = _render_for(administrator, "matters/partials/matter_banner.html", old)
     assert HIDDEN_SUCCESSOR in _squash(banner)
-    assert new.display_reference not in banner and "Hilisem" not in banner
+    assert new.display_reference not in banner and "Hilisem teema 82" not in banner
     new_header = _render_for(administrator, "matters/partials/header.html", new)
     assert HIDDEN_PREDECESSOR in _squash(new_header)
     assert old.display_reference not in new_header.replace(new.display_reference, "")
-    assert "Varasem" not in new_header
+    assert "Varasem teema 81" not in new_header
 
 
 # ---------------------------------------------------------------------------

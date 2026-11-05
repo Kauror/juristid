@@ -75,18 +75,9 @@ AUDITED = {
     "source_xml": True,
 }
 
-#: `source_xml` lives in `app/legacy_import/historical_views.py`, which this
-#: round's agent C may not edit; the lead integrates the same change there.
-SOURCE_XML_PENDING = pytest.mark.xfail(
-    strict=True, reason="QA-07: lead applies the source_xml HEAD patch in historical_views.py"
-)
-#: Every byte route, for the checks that hold on all of them already.
+#: Every byte route, `source_xml` included (its HEAD patch landed at integration).
 ALL_ROUTES = list(AUDITED)
-#: The same, with `source_xml` expected to fail until the lead's patch lands.
-ROUTES = [
-    pytest.param(name, marks=SOURCE_XML_PENDING) if name == "source_xml" else name
-    for name in ALL_ROUTES
-]
+ROUTES = ALL_ROUTES
 
 
 def _downloads() -> int:

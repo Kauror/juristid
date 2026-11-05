@@ -22,7 +22,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count
-from django.http import FileResponse, Http404, HttpRequest, HttpResponse
+from django.http import FileResponse, Http404, HttpRequest, HttpResponse, HttpResponseBase
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods, require_safe
@@ -39,7 +39,7 @@ from app.core.authorization import (
 )
 from app.core.authorization import apply as apply_scope
 from app.core.client_ip import client_ip
-from app.core.http import content_disposition
+from app.core.http import content_disposition, head_response, is_head
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
 from app.legacy_import.historical_apply import is_empty_at_source
@@ -394,7 +394,7 @@ def _file_state(resource: Any, record: Any) -> str:
 # CSRF does not guard, served and audited the page XML like a GET.
 @require_safe
 @login_required
-def source_xml(request: HttpRequest, pk: Any) -> FileResponse:
+def source_xml(request: HttpRequest, pk: Any) -> HttpResponseBase:
     """The page's own XML, for somebody who needs the evidence itself.
 
     Always an attachment. This is OneNote's markup, it is untrusted like any
@@ -405,13 +405,30 @@ def source_xml(request: HttpRequest, pk: Any) -> FileResponse:
     as every other served file is (`DOCUMENT_DOWNLOADED`, through the shared-gate
     helper); a stored key whose object is gone is a 404 and a failed audit row,
     never a 500, and neither the key nor the page title is in the answer.
+
+    A HEAD is not a download (QA-07): the same door and GET's headers, the
+    length from the stored file's directory entry, the XML never opened and no
+    audit row written.
     """
     from app.legacy_import.historical_apply import legacy_source_storage
 
     link = get_object_or_404(visible_links(request.user), pk=pk)
     page = link.source_page
     if not page.source_xml_storage_key:
-        return HttpResponse(status=404)  # type: ignore[return-value]
+        return HttpResponse(status=404)
+
+    if is_head(request):
+        try:
+            size = legacy_source_storage().size(page.source_xml_storage_key)
+        except FileNotFoundError:
+            logger.error(
+                "historical source XML missing page=%s storage_key=%s method=HEAD",
+                page.pk,
+                page.source_xml_storage_key,
+            )
+            raise Http404("Lehe lähte-XML-i ei leitud hoidlast.") from None
+        head = head_response(content_type="application/xml", content_length=size)
+        return _source_xml_headers(head, page)
 
     def audit(*, succeeded: bool, outcome: str = "") -> None:
         detail = {
@@ -444,6 +461,11 @@ def source_xml(request: HttpRequest, pk: Any) -> FileResponse:
         raise Http404("Lehe lähte-XML-i ei leitud hoidlast.") from None
     audit(succeeded=True)
     response = FileResponse(handle, content_type="application/xml", as_attachment=True)
+    return _source_xml_headers(response, page)
+
+
+def _source_xml_headers(response: HttpResponseBase, page: Any) -> HttpResponseBase:
+    """The page XML's headers, for its GET and its HEAD alike."""
     response["Content-Disposition"] = content_disposition("attachment", f"{page.page_key}.xml")
     response["X-Content-Type-Options"] = "nosniff"
     return response
