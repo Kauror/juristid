@@ -285,7 +285,9 @@ def years(tmp_path, evidence_root, enabled):
 
 
 def _rows(html):
-    """(filename, printed date cell) for each evidence row, in page order."""
+    """(filename, printed date cell) for each evidence row, in page order; [] without a table."""
+    if 'class="table doctable"' not in html:
+        return []
     body = html.split('class="table doctable"', 1)[1].split("</table>", 1)[0]
     out = []
     for row in body.split("<tr")[2:]:
@@ -395,3 +397,113 @@ def test_verify_still_finds_a_document_moved_to_another_teema(world, enabled):
     moved = Document.objects.filter(matter=world["a"]).first()
     Document.objects.filter(pk=moved.pk).update(matter=world["b"])
     assert any("document on another Teema" in p for p in oc.verify(capture)["problems"])
+
+
+# -- the date rule at its edges: DST, pagination, ties, conflicts, Tegevused ------------
+
+#: Europe/Tallinn summer time ends 25.10.2026 04:00 local (01:00 UTC) and starts
+#: 29.03.2026 03:00 local (01:00 UTC). Each instant is given with its Tallinn day.
+DST = [
+    ("enne-keskööd.pdf", "2026-10-24T20:59:00.000Z", "24.10.2026"),  # 23:59 EEST
+    ("pärast-keskööd.pdf", "2026-10-24T21:30:00.000Z", "25.10.2026"),  # 00:30 EEST
+    ("talveaeg.pdf", "2026-10-25T22:30:00.000Z", "26.10.2026"),  # 00:30 EET
+    ("kevad-kesköö.pdf", "2026-03-28T22:30:00.000Z", "29.3.2026"),  # 00:30 EET
+    ("kevad-enne.pdf", "2026-03-28T21:59:00.000Z", "28.3.2026"),  # 23:59 EET
+]
+
+
+@pytest.fixture
+def dst(tmp_path, evidence_root, enabled):
+    teema = register_teema("2026_8")
+    files = [_file(n, name, when) for n, (name, when, _day) in enumerate(DST, start=1)]
+    root = build_capture(
+        tmp_path / "dst", [{"tag": "001", "guid": _guid(8), "matters": [teema], "files": files}]
+    )
+    plan = oc.build_plan(oc.load_capture(root))
+    _apply(plan, _all(plan))
+    return teema
+
+
+def test_tallinn_midnight_and_dst_decide_the_day_in_both_views(dst, client, specialist):
+    from app.matters.timeline import HISTORICAL_IMPORT_ITEM, matter_timeline
+
+    client.force_login(specialist)
+    cells = dict(_rows(_documents(client, dst, koik="1").content.decode()))
+    for name, _when, day in DST:
+        assert cells[name] == f"{day} lisatud OneNote'i"
+    # Tegevused files each document under the same Tallinn day as Dokumendid does.
+    rows, _more = matter_timeline(matter=dst, user=specialist)
+    days = sorted(r.milestone.display_date for r in rows if r.item_type == HISTORICAL_IMPORT_ITEM)
+    assert days == sorted(day for _n, _w, day in DST)
+
+
+@pytest.fixture
+def many(tmp_path, evidence_root, enabled):
+    teema = register_teema("2026_9")
+    files = [_file(n, f"fail-{n:02}.pdf", f"2021-01-{n:02}T10:00:00.000Z") for n in range(1, 15)]
+    files.append(_file(15, "sama-päev-a.pdf", "2021-01-14T10:00:00.000Z"))
+    files.append(_file(16, "teadmata.pdf", None, floating=True))
+    root = build_capture(
+        tmp_path / "many", [{"tag": "001", "guid": _guid(9), "matters": [teema], "files": files}]
+    )
+    plan = oc.build_plan(oc.load_capture(root))
+    _apply(plan, _all(plan))
+    return teema
+
+
+def test_the_first_page_holds_the_newest_onenote_days_and_ties_stay_put(many, client, specialist):
+    client.force_login(specialist)
+    first = [n for n, _ in _rows(_documents(client, many).content.decode())]
+    assert len(first) == 12  # DOCUMENT_PAGE_SIZE
+    assert "teadmata.pdf" not in first  # undated files come last, after every dated one
+    assert set(first[:2]) == {"fail-14.pdf", "sama-päev-a.pdf"}  # the same day, side by side
+    full = [n for n, _ in _rows(_documents(client, many, koik="1").content.decode())]
+    assert full[:12] == first and full[-1] == "teadmata.pdf" and len(full) == 16
+    again = [n for n, _ in _rows(_documents(client, many, koik="1").content.decode())]
+    assert again == full  # a tie never moves between two loads
+
+
+def test_the_list_reads_each_page_with_a_bounded_number_of_queries(many, client, specialist):
+    client.force_login(specialist)
+    _documents(client, many, koik="1")  # warm per-request caches
+    with CaptureQueriesContext(connection) as small:
+        _documents(client, many)
+    with CaptureQueriesContext(connection) as full:
+        _documents(client, many, koik="1")
+    # Twelve rows or sixteen: the same queries, never one per document.
+    assert len(full.captured_queries) <= len(small.captured_queries) + 1
+
+
+def test_conflicting_source_dates_read_as_unknown_and_say_why(years, client, specialist):
+    from app.legacy_import.source_pages import LegacySourceResource
+
+    document = Document.objects.get(matter=years, title="y2022.pdf")
+    row = LegacySourceResourceImport.objects.get(document=document)
+    # An invented second import row naming the same file with another addition time.
+    source = row.resource
+    other = LegacySourceResource.objects.create(
+        source_page=source.source_page,
+        resource_key="invented-conflict",
+        original_filename=source.original_filename,
+        resource_kind=source.resource_kind,
+        sha256=source.sha256,
+        size_bytes=source.size_bytes,
+        archive_relative_path="invented",
+        source_added_at=source.source_added_at - timezone.timedelta(days=400),
+        source_added_basis=source.source_added_basis,
+    )
+    LegacySourceResourceImport.objects.create(
+        matter_source_page=row.matter_source_page,
+        resource=other,
+        document=document,
+        document_version=row.document_version,
+        import_batch=row.import_batch,
+        state=ResourceImportState.IMPORTED,
+    )
+    client.force_login(specialist)
+    cells = dict(_rows(_documents(client, years, koik="1").content.decode()))
+    assert cells["y2022.pdf"] == "Lisamise kuupäev teadmata (allikad on vastuolus)"
+    unknown = [n for n, _ in _rows(_documents(client, years, aasta="teadmata").content.decode())]
+    assert "y2022.pdf" in unknown and "y2022.pdf" not in [
+        n for n, _ in _rows(_documents(client, years, aasta="2022").content.decode())
+    ]

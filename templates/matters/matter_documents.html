@@ -483,7 +483,7 @@ finds again (§23.5).
                             </time>
                             <span class="datebasis">lisatud OneNote'i</span>
                           {% else %}
-                            <span class="datebasis">Lisamise kuupäev teadmata</span>
+                            <span class="datebasis">Lisamise kuupäev teadmata{% if document.onenote_date_conflict %} (allikad on vastuolus){% endif %}</span>
                           {% endif %}
                         {% else %}
                           <time datetime="{{ document.created_at|date:'c' }}">

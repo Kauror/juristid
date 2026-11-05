@@ -77,6 +77,10 @@ the files read as «on veel importimata».
   own modification time (D8).
 * For **a floating file** with no such time, `list_at` is empty. The cell reads
   «Lisamise kuupäev teadmata»; no day is put in its place (0092 §4).
+* When **the import rows naming one file disagree** on its addition time, the
+  file has no `list_at`. It reads «Lisamise kuupäev teadmata (allikad on
+  vastuolus)» and is filtered under «Kuupäev teadmata». No MIN or MAX is chosen
+  (`onenote_date_conflict`).
 * For **every other file**, it is `created_at`, the upload day, exactly as 0129
   §10 has it.
 

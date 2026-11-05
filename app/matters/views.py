@@ -4082,22 +4082,60 @@ def with_list_dates(documents: Any) -> Any:
       ``created_at`` (the upload) for every other one, ``None`` for an imported
       file with no known addition time.
 
+    * ``onenote_date_conflict`` — the import rows naming this file disagree on
+      its addition time. It then reads as unknown and says why; no MIN or MAX
+      is chosen for it.
+
     Ordered newest first by ``list_at``, the undated OneNote files after every
-    dated row (where they claim nothing), ties by upload. A person's upload
-    keeps its own date and its order among the other uploads.
+    dated row (where they claim nothing), ties by upload, then by id, so a page
+    boundary never moves between two loads. A person's upload keeps its own date
+    and its order among the other uploads.
     """
-    from django.db.models import Case, DateTimeField, Exists, OuterRef, Subquery, When
+    from django.db.models import (
+        Case,
+        Count,
+        DateTimeField,
+        Exists,
+        IntegerField,
+        OuterRef,
+        Subquery,
+        Value,
+        When,
+    )
+    from django.db.models.functions import Coalesce
 
     from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
 
     imports = LegacySourceResourceImport.objects.filter(
         document=OuterRef("pk"), state=ResourceImportState.IMPORTED
     )
+    distinct_dates = (
+        imports.order_by()
+        .values("document")
+        .annotate(n=Count("resource__source_added_at", distinct=True))
+        .values("n")[:1]
+    )
     return (
         documents.annotate(
             onenote_imported=Exists(imports),
-            onenote_added_at=Subquery(
-                imports.order_by("created_at").values("resource__source_added_at")[:1]
+            onenote_dates=Coalesce(Subquery(distinct_dates, output_field=IntegerField()), Value(0)),
+        )
+        .annotate(
+            onenote_date_conflict=Case(
+                When(onenote_dates__gt=1, then=Value(True)),
+                default=Value(False),
+            ),
+            onenote_added_at=Case(
+                When(
+                    onenote_dates=1,
+                    then=Subquery(
+                        imports.exclude(resource__source_added_at__isnull=True)
+                        .order_by("created_at")
+                        .values("resource__source_added_at")[:1]
+                    ),
+                ),
+                default=Value(None),
+                output_field=DateTimeField(),
             ),
         )
         .annotate(
