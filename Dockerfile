@@ -60,7 +60,14 @@ ENV PYTHONUNBUFFERED=1 \
 # Tesseract asked for a language it does not have falls back silently and returns
 # confident nonsense, which is why the application probes for these at runtime
 # instead of assuming them.
+#
+# `apt-get upgrade` first: the base is pinned by digest for a reproducible build,
+# and a pinned base ages. Security updates Debian publishes after the pin would
+# otherwise stay out of every image built from it; the image gate fails on a
+# fixable HIGH (CVE-2026-109518 in apt itself, 05.11.2026). A release image is
+# built and archived once, so the upgrade is taken once, at the moment it is scanned.
 RUN apt-get update \
+    && apt-get upgrade --yes --no-install-recommends \
     && apt-get install --no-install-recommends --yes \
         tesseract-ocr \
         tesseract-ocr-est \
