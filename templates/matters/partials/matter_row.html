@@ -46,6 +46,7 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
         </span>
       {% endif %}
     </span>
+    {% include "matters/partials/continuation_line.html" with line=continuation_lines|get_item:matter.pk %}
   </td>
 
   {% comment %}

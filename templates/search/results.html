@@ -70,7 +70,7 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
             downloads (app/documents/inline.py). Every row gets the wrapper so
             the list keeps one shape and one separator rule.
           {% endcomment %}
-          <div class="resultrow">
+          <div class="resultrow{% if row.continuation %} resultrow--continued{% endif %}">
             <a class="result" href="{{ row.target }}">
               <span class="result__head">
                 <span class="badge badge--source">{{ row.result.source_label }}</span>
@@ -134,6 +134,17 @@ reaches the page as HTML (app/search/services.py, Stage-2B brief 42, 70).
                 {% endif %}
               {% endif %}
             {% endwith %}
+            {% comment %}
+              Where a continued Teema's work went, beside the result rather than
+              inside it — the result is a link already, and a link inside a link
+              is the invalid HTML the file action above also avoids. Wrapped to
+              its own line under the result (`.resultrow--continued`).
+            {% endcomment %}
+            {% if row.continuation %}
+              <div class="resultrow__continuation">
+                {% include "matters/partials/continuation_line.html" with line=row.continuation %}
+              </div>
+            {% endif %}
           </div>
         {% endfor %}
       </div>

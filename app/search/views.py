@@ -22,6 +22,8 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 
+from app.core.decorators import viewer_for
+from app.matters.continuation_lines import continuation_lines
 from app.matters.models import Matter
 from app.matters.selectors import current_action_of, open_action_prefetch
 from app.search.links import target_path
@@ -66,11 +68,17 @@ def search_view(request: HttpRequest) -> HttpResponse:
     if matters:
         prefetch_related_objects(matters, open_action_prefetch(request.user))
 
+    # Where a continued Teema's work went, for the whole page in one scoped
+    # batch: «Jätkub teemas 2025_196» under a Matter result whose work continues
+    # elsewhere, never a query per row (app/matters/continuation_lines.py).
+    continued = continuation_lines(matters, viewer_for(request))
+
     rows = [
         {
             "result": result,
             "action": current_action_of(result.matter, request.user) if result.is_matter else None,
             "target": _target_url(result),
+            "continuation": continued.get(result.matter.pk) if result.is_matter else None,
         }
         for result in results
     ]
