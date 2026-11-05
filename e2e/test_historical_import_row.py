@@ -3,9 +3,11 @@
 The seeded Teema carries two files an import brought (`seed_e2e_data`): a
 signed container whose source records when it was added to OneNote
 (10.6.2019, `HISTORICAL_ADDED_AT`), and a text file whose source records no
-time. They draw two honest rows — «Dokument lisatud OneNote'i · 10.6.2019» and
-«OneNote'i dokument — lisamise kuupäev teadmata» — and never a «lisas
-dokumendi» row dated the import (docs/adr/0092 §6, amendment of 2026-10-20).
+time. They draw two honest rows, each named by its file (2026-11-05: the rows
+said «Dokument lisatud OneNote'i» and «OneNote'i dokument — lisamise kuupäev
+teadmata», which is what the importer did) — «<file> · 10.06.2019» and
+«<file> · kuupäev teadmata» — and never a «lisas dokumendi» row dated the
+import (docs/adr/0092 §6, amendment of 2026-10-20).
 Opening each row reaches its file.
 """
 
@@ -26,8 +28,8 @@ from e2e.conftest import KAIK_ROW, MARTIN, sign_in
 
 pytestmark = pytest.mark.e2e
 
-DATED = "Dokument lisatud OneNote'i"
-UNDATED = "OneNote'i dokument — lisamise kuupäev teadmata"
+DATED = HISTORICAL_FILENAME
+UNDATED = HISTORICAL_INLINE_FILENAME
 
 
 @pytest.mark.parametrize("width", [375, 1440])
@@ -42,7 +44,7 @@ def test_each_file_reads_on_its_onenote_day_and_opens_onto_it(page, base_url, wi
 
     dated = rows.filter(has_text=DATED)
     expect(dated).to_have_count(1)
-    expect(dated).to_contain_text("10.6.2019")
+    expect(dated).to_contain_text("10.06.2019")
     dated.get_by_role("button", name=re.compile(re.escape(DATED))).click()
     # The seeded page was created when the world was seeded, after its 2019 file:
     # the row says the file reached OneNote before the page it is on now.
