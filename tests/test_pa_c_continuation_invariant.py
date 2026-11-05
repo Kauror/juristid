@@ -14,9 +14,9 @@ The surfaces: `continuations_for`, `historical_predecessors`, the exclusion
 ids `continuation_component_ids`, the selector `related_materials_for`, MCP
 `get_matter` (and its continuation block), and the HTTP routes.
 
-The cases that fail on 9eff0e9a, where the invariant is missing, are
-``xfail(strict=True, reason="QA-06: agent A implements")`` so the lead flips
-them at integration; the rest already hold and guard against regressions.
+Some cases fail on 9eff0e9a, where the invariant is missing (they were
+``xfail(strict=True)`` until agent A's change landed at integration); the rest
+already held there and guard against regressions.
 Synthetic data only.
 """
 
@@ -47,7 +47,6 @@ from tests.gate import PASSWORD, apply_shared_gate
 
 pytestmark = pytest.mark.django_db
 
-A_IMPLEMENTS = pytest.mark.xfail(strict=True, reason="QA-06: agent A implements")
 HX = {"HTTP_HX_REQUEST": "true"}
 
 
@@ -124,7 +123,6 @@ def _mcp_says_nothing(block: dict[str, Any], viewed: Matter) -> None:
 # -- an unreadable viewed Matter: the three outsiders -----------------------------------
 
 
-@A_IMPLEMENTS
 @pytest.mark.parametrize("outsider", OUTSIDERS, indirect=True)
 def test_continuations_for_says_nothing_to_an_outsider(history, outsider):
     _says_nothing(continuations_for(history["viewed"], outsider))
@@ -143,7 +141,6 @@ def test_the_related_materials_selector_lists_nothing_for_an_outsider(history, o
     assert not related.stages_truncated and not related.stages_cyclic
 
 
-@A_IMPLEMENTS
 @pytest.mark.parametrize("outsider", OUTSIDERS, indirect=True)
 def test_the_mcp_continuation_block_says_nothing_to_an_outsider(history, outsider):
     """The block `get_matter` embeds, asked directly: the door in front of it is
@@ -198,22 +195,18 @@ def test_the_http_routes_name_no_stage_to_anonymous_or_a_personaless_gate(settin
 # -- a deleted viewed Matter: unreadable to everybody ----------------------------------
 
 
-@A_IMPLEMENTS
 def test_continuations_for_says_nothing_about_a_deleted_root(deleted_root, specialist):
     _says_nothing(continuations_for(deleted_root, specialist))
 
 
-@A_IMPLEMENTS
 def test_historical_predecessors_lists_nothing_behind_a_deleted_root(deleted_root, specialist):
     assert historical_predecessors(deleted_root, specialist).stages == ()
 
 
-@A_IMPLEMENTS
 def test_the_selector_lists_no_stage_behind_a_deleted_root(deleted_root, specialist):
     assert related_materials_for(deleted_root, specialist).stages == ()
 
 
-@A_IMPLEMENTS
 def test_the_mcp_continuation_block_says_nothing_about_a_deleted_root(deleted_root, specialist):
     _mcp_says_nothing(readers._continuations(specialist, deleted_root), deleted_root)
 

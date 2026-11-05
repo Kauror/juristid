@@ -204,6 +204,7 @@ rather than read.
                   <li><a href="{% url 'matters:matter_detail' pk=earlier.pk %}" title="{{ earlier.title }}">{% continuation_label earlier %}</a></li>
                 {% endfor %}
               </ul>
+              {% if continuations.more_predecessors %}<a class="matterhead__continuationnote" href="#seotud-materjalid">ja veel, vt «Varasemad etapid»</a>{% endif %}
             </span>
           {% endif %}
           {% if hidden %}

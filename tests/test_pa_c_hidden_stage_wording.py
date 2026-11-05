@@ -17,8 +17,8 @@ owner's binding rule of the same day:
 Under docs/adr/0181 the only stage a live reader cannot open is a deleted one;
 a narrower reader is reached here, as in the audit, through a hand-built
 participation scope (`narrow`). Tests that depend on agent A's change
-(`hidden_predecessors` becoming a bool, the rail and MCP wording) are
-``xfail(strict=True)`` and say so. Synthetic data only.
+(`hidden_predecessors` becoming a bool, the rail and MCP wording) were
+``xfail(strict=True)`` until it landed at integration. Synthetic data only.
 """
 
 from __future__ import annotations
@@ -45,7 +45,6 @@ FORWARD = "Jätkub teemas, mida siit avada ei saa"
 BACKWARD = "Varasem etapp, mida siit avada ei saa"
 FORBIDDEN = "lubatud"
 
-A_PENDING = "QA-05: agent A makes hidden_predecessors a bool and words the rail/MCP"
 
 
 @pytest.fixture(autouse=True)
@@ -294,10 +293,9 @@ def test_qa05_seotud_materjalid_is_silent_about_a_hidden_stage(client, narrow):
         assert secret.display_reference not in html and "SALA-63" not in html
 
 
-# -- QA-05 on surfaces agent A owns: xfail(strict) until A's change lands --------------
+# -- QA-05 on surfaces agent A owns (landed at integration) -----------------------------
 
 
-@pytest.mark.xfail(strict=True, reason=A_PENDING)
 def test_qa05_continuations_report_a_hidden_predecessor_as_yes_or_no(narrow):
     from app.matters.continuations import continuations_for
 
@@ -310,7 +308,6 @@ def test_qa05_continuations_report_a_hidden_predecessor_as_yes_or_no(narrow):
     assert chain.hidden_predecessors is True
 
 
-@pytest.mark.xfail(strict=True, reason=A_PENDING)
 def test_qa05_get_matter_flags_hidden_predecessors_without_a_count(narrow):
     viewed = _teema(narrow, "PA-C VAADATUD-67")
     for n in range(2):
