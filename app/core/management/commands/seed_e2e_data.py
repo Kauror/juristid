@@ -82,7 +82,7 @@ HISTORICAL_FILENAME = "seisukoht-2019.asice"
 HISTORICAL_INLINE_FILENAME = "markmed-2019.txt"
 #: When the signed container was added to OneNote, as the source records it
 #: (docs/adr/0092 §6): a fixed historical moment, so the chronology draws
-#: «Dokument lisatud OneNote'i · 10.6.2019» on every run. The text file carries
+#: «<file> · 10.06.2019» (a historical document row) on every run. The text file carries
 #: no time, so the same Teema also draws the honest undated row.
 HISTORICAL_ADDED_AT = "2019-06-10T07:15:00+00:00"
 HISTORICAL_INLINE_TEXT = (

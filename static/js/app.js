@@ -6551,6 +6551,11 @@
     var row = node && node.closest ? node.closest("article.uxtl__item") : null;
     if (row) {
       revealKaikPeriod(row);
+      /* A historical OneNote row is a native disclosure: a link to it opens it. */
+      var history = row.querySelector("details.uxtl__hist");
+      if (history) {
+        history.open = true;
+      }
     }
     if (row && !row.classList.contains(KAIK_OPEN)) {
       openKaikRow(row, true);

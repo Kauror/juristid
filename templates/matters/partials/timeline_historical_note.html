@@ -39,12 +39,10 @@ the way to the page's other files, «Sama OneNote'i lehe failid (N)».
   <div class="uxtl__body">
     <details class="uxtl__hist">
       <summary class="uxtl__histline" id="kaik-{{ item.row_key }}-rida">
-        {% if note.date_display and note.precision == "DAY" %}
-          <time class="uxtl__msdate" datetime="{{ note.date_display|slice:'6:' }}-{{ note.date_display|slice:'3:5' }}-{{ note.date_display|slice:':2' }}">{{ note.date_display }}</time>
-        {% elif note.date_display and note.precision == "MONTH" %}
-          <time class="uxtl__msdate" datetime="{{ note.date_display|slice:'3:' }}-{{ note.date_display|slice:':2' }}">{{ note.date_display }}</time>
-        {% elif note.date_display and note.precision == "YEAR" %}
-          <time class="uxtl__msdate" datetime="{{ note.date_display }}">{{ note.date_display }}</time>
+        {% if note.date_display and note.date_iso %}
+          <time class="uxtl__msdate" datetime="{{ note.date_iso }}">{{ note.date_display }}</time>
+        {% elif note.date_display %}
+          <span class="uxtl__msdate">{{ note.date_display }}</span>
         {% endif %}
         {% if note.kind == "NEXT_ACTIONS" %}
           <span class="uxtl__histtag uxtl__histtag--past">Ajalooline: Järgmised tegevused</span>

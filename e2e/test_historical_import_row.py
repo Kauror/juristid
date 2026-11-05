@@ -45,7 +45,8 @@ def test_each_file_reads_on_its_onenote_day_and_opens_onto_it(page, base_url, wi
     dated = rows.filter(has_text=DATED)
     expect(dated).to_have_count(1)
     expect(dated).to_contain_text("10.06.2019")
-    dated.get_by_role("button", name=re.compile(re.escape(DATED))).click()
+    # A historical row is a native disclosure (`<details>`): its summary opens it.
+    dated.locator("summary").first.click()
     # The seeded page was created when the world was seeded, after its 2019 file:
     # the row says the file reached OneNote before the page it is on now.
     expect(
@@ -58,15 +59,15 @@ def test_each_file_reads_on_its_onenote_day_and_opens_onto_it(page, base_url, wi
         )
     ).to_be_visible()
     expect(
-        dated.get_by_role("link", name=re.compile(re.escape(HISTORICAL_FILENAME)))
+        dated.get_by_role("link", name=re.compile(re.escape(HISTORICAL_FILENAME))).first
     ).to_be_visible()
 
     undated = rows.filter(has_text=UNDATED)
     expect(undated).to_have_count(1)
     expect(undated).to_contain_text("kuupäev teadmata")
-    undated.get_by_role("button", name=re.compile(re.escape(UNDATED))).click()
+    undated.locator("summary").first.click()
     expect(
-        undated.get_by_role("link", name=re.compile(re.escape(HISTORICAL_INLINE_FILENAME)))
+        undated.get_by_role("link", name=re.compile(re.escape(HISTORICAL_INLINE_FILENAME))).first
     ).to_be_visible()
 
     # Nothing pushes the page sideways on a phone.
