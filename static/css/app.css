@@ -16414,3 +16414,48 @@ a.jcal__daynum {
 .dossierreview {
   margin-top: var(--spacing-3);
 }
+
+/*
+ * Where a continued Teema's work went, on list rows (app/matters/continuation_lines.py,
+ * templates/matters/partials/continuation_line.html). One quiet line under the
+ * title — no new column, no new badge: «Jätkub teemas 2025_196», the reference
+ * a real link, and the chain's known endpoint after an arrow when it is not the
+ * direct successor. It clips like the title above it, so a narrow register
+ * cell never grows wider; every link carries the full title in `title=`.
+ * Search results wrap the line onto its own row under the result, because the
+ * result is itself a link and the line's links sit beside it, never inside.
+ */
+.continuationline {
+  display: block;
+  min-width: 0;
+  margin-top: 1px;
+  font-size: var(--typography-size-meta);
+  line-height: 1.35;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.continuationline--unnamed {
+  color: var(--text-muted);
+}
+
+.continuationline__link {
+  color: var(--accent-link);
+}
+
+.continuationline__state {
+  color: var(--text-muted);
+}
+
+.resultrow--continued {
+  flex-wrap: wrap;
+}
+
+.resultrow__continuation {
+  flex: 1 0 100%;
+  min-width: 0;
+  padding: 0 var(--spacing-3) var(--spacing-2);
+  margin-top: calc(-1 * var(--spacing-1));
+}
