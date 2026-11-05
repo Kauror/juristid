@@ -241,8 +241,13 @@ _TRAILING = re.compile(
     r"\s*\)?\s*[:.]?$",
     re.IGNORECASE,
 )
+#: Never a dated heading: a deadline or due-date label («Vastamise tähtaeg»,
+#: «Tagasiside andmise kuupäev:», «Arvamuse andmise tähtpäev»,
+#: «Kooskõlastamise lõpp»), a future entry into force, a plan or a wait. Word
+#: stems, so every case form is caught («kuupäevaks», «tähtpäeval», «lõppeb»);
+#: «kuupäev» and «tähtpäev» also inside a compound («lõpukuupäev»).
 _TRAILING_STOP = re.compile(
-    r"tähtaeg|tähtaja|alates|\bkuni\b|jõustu(?:b|vad)\b|kohaldatakse|hakkavad|hakkab|viimati|"
+    r"tähtaeg|tähtaja|kuupäev|tähtpäev|\blõpp|alates|\bkuni\b|jõustu(?:b|vad)\b|kohaldatakse|hakkavad|hakkab|viimati|"
     r"\booda|\bootan|\bootame|plaanis|kavanda|planeeritud|eeldatav|\btoimub\b|\bseisuga\b|"
     r"\bseisuks\b",
     re.IGNORECASE,
@@ -526,6 +531,7 @@ def parse_page(
     if shape == "DESKTOP":
         for block in ordered:
             parent[ordinal_of[id(block)]] = _int(block.get("parent"))
+        _break_parent_cycles(parent, by_ordinal)
     else:
         stack: list[tuple[int, int]] = []
         for block in ordered:
@@ -612,48 +618,72 @@ def parse_page(
                 target.paragraphs.append(value)
 
     def group(siblings: list[Mapping[str, Any]], container: _Segment | None) -> None:
-        current = container
-        for block in siblings:
-            ordinal = ordinal_of[id(block)]
-            if separator(block):
-                current = container
-                add(container, block)
-                if ordinal in children:
-                    group(children[ordinal], container)
+        """One sibling list, then each block's nested list right after it.
+
+        Iterative, not recursive: a page nested deeper than Python's recursion
+        limit is read like any other (the production pages nest at most four
+        deep). Each frame is one sibling list: its blocks, the segment that
+        contains the list, and the segment its next block continues.
+        """
+        frames: list[list[Any]] = [[iter(siblings), container, container]]
+        while frames:
+            frame = frames[-1]
+            block = next(frame[0], None)
+            if block is None:
+                frames.pop()
                 continue
-            leading = leading_date(block.get("text")) if is_text(block) else None
-            if leading is not None:
-                current = open_note(block, leading, current if in_next(current) else container)
-                add(current, block, leading)
-            elif (
-                TRAILING_DATES
-                and is_text(block)
-                and not in_next(current)
-                and not is_next_actions_heading(block.get("text"))
-                and (trailing := trailing_date(block.get("text"))) is not None
-            ):
-                current = open_note(block, trailing, container)
-                add(current, block)
-            elif (
-                is_text(block)
-                and not in_next(current)
-                and is_next_actions_heading(block.get("text"))
-            ):
-                current = _Segment(kind=NEXT_ACTIONS, start=ordinal, flags=[UNDATED])
-                segments.append(current)
-                add(current, block)
-            else:
-                add(current, block)
+            nested = step(block, frame[1], frame)
+            ordinal = ordinal_of[id(block)]
             if ordinal in children:
-                group(children[ordinal], current)
-            if shape == "LEGACY" and current is not container and current is not None:
-                if current.start == ordinal:
-                    current = container  # R6: no sibling continuation
+                frames.append([iter(children[ordinal]), nested, nested])
+
+    def step(block: Mapping[str, Any], container: _Segment | None, frame: list[Any]):
+        """Place one block; return the segment its nested blocks belong to.
+
+        ``frame[2]`` is the segment the next sibling continues, updated here.
+        """
+        current = frame[2]
+        ordinal = ordinal_of[id(block)]
+        if separator(block):
+            frame[2] = container
+            add(container, block)
+            return container
+        leading = leading_date(block.get("text")) if is_text(block) else None
+        if leading is not None:
+            current = open_note(block, leading, current if in_next(current) else container)
+            add(current, block, leading)
+        elif (
+            TRAILING_DATES
+            and is_text(block)
+            and not in_next(current)
+            and not is_next_actions_heading(block.get("text"))
+            and (trailing := trailing_date(block.get("text"))) is not None
+        ):
+            current = open_note(block, trailing, container)
+            add(current, block)
+        elif is_text(block) and not in_next(current) and is_next_actions_heading(block.get("text")):
+            current = _Segment(kind=NEXT_ACTIONS, start=ordinal, flags=[UNDATED])
+            segments.append(current)
+            add(current, block)
+        else:
+            add(current, block)
+        nested = current
+        if shape == "LEGACY" and current is not container and current is not None:
+            if current.start == ordinal:
+                current = container  # R6: no sibling continuation
+        frame[2] = current
+        return nested
 
     for outline in sorted(roots):
         group(roots[outline], None)
     for block in ordered:
         if floating(block):
+            add(None, block)
+    # Nothing is silently lost: a block the outline walk never reached — one
+    # nested under a block that is itself in no outline list (a floating one,
+    # say) — is page text, in reading order.
+    for block in ordered:
+        if ordinal_of[id(block)] not in member:
             add(None, block)
 
     # R9a: a file is direct to the segment whose start is its nearest
@@ -709,6 +739,32 @@ def parse_page(
         page_files=tuple(page_files),
         shape=shape,
     )
+
+
+def _break_parent_cycles(
+    parent: dict[int, int | None], by_ordinal: Mapping[int, Mapping[str, Any]]
+) -> None:
+    """Make the stored parent links a forest, in place.
+
+    A block that is its own parent, or one of a ring of blocks that are each
+    other's ancestors, is in no outline list and would be read by nobody. The
+    link that closes each ring is dropped, so that block becomes a root of its
+    outline and the rest of the ring hangs under it. A well-formed page — every
+    production page — is unchanged. Linear: every block is walked up once.
+    """
+    settled: set[int] = set()
+    for start in list(parent):
+        path: list[int] = []
+        on_path: set[int] = set()
+        node: int | None = start
+        while node is not None and node in by_ordinal and node not in settled:
+            if node in on_path:
+                parent[path[-1]] = None  # the link back into the ring
+                break
+            path.append(node)
+            on_path.add(node)
+            node = parent.get(node)
+        settled.update(path)
 
 
 def _note_links(paragraphs: Iterable[str], page_links: Any, ordinals: set[int]) -> tuple:
