@@ -499,6 +499,11 @@ jobs:
       - name: A fresh database migrates from zero
         run: uv run python manage.py migrate --noinput
 
+      # The database cache table is schema (core/0003, L-02): a database migrated
+      # from zero holds it, so the MCP OAuth rate limit and replay memory work.
+      - name: The database cache answers on a database migrated from zero
+        run: uv run python manage.py shell -c "from django.core.cache import cache; assert cache.add('ci-cache-probe', 1, 60) in (True, False); assert cache.get('ci-cache-probe') == 1"
+
       # Rows, before anything steps backwards. The step-back below used to run
       # on an empty schema, so every RunPython migration it reversed and
       # re-applied did so over no data, and a data migration whose reverse or
@@ -2141,6 +2146,9 @@ jobs:
 
       - name: The restored deployment reports itself ready
         run: uv run python manage.py deployment_readiness
+
+      - name: The database cache answers on the restored deployment
+        run: uv run python manage.py shell -c "from django.core.cache import cache; assert cache.add('ci-cache-probe', 1, 60) in (True, False); assert cache.get('ci-cache-probe') == 1"
 
       - name: Rehearsal logs on failure
         if: failure()
