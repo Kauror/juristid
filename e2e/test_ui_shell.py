@@ -387,6 +387,9 @@ def test_the_gear_is_reached_by_keyboard_and_marks_haldus_current(page, base_url
 
     gear = page.locator(".topbar .settingsmenu__trigger")
     expect(gear).to_have_class(re.compile(r"\bis-active\b"))
+    # The menu is shut on the new page, so its entry is out of the accessibility
+    # tree until the gear opens it again.
+    gear.click()
     expect(haldus).to_have_attribute("aria-current", "page")
     expect(page.get_by_role("heading", name="Rakendus", exact=True)).to_be_visible()
     assert not document_overflows(page)
