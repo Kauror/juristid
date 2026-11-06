@@ -138,11 +138,17 @@
         }
       });
 
-      /* The panel's own content arrived: on an opening, focus its heading. A
-         later swap inside it (an answer, a further page) leaves focus to the
-         application's own rule (static/js/app.js, `data-focus-after-save`). */
+      /* The panel's own content arrived — on an opening, or as the answer to
+         «Märgi kõik loetuks»: focus its heading. An item's answer and a
+         further page are placed by the handlers further down. */
       p.content.addEventListener("htmx:afterSettle", function (event) {
-        if (!bell.notifFocusOnLoad || !p.content.contains(event.target)) {
+        if (!p.content.contains(event.target)) {
+          return;
+        }
+        var config = event.detail && event.detail.requestConfig;
+        var source = config && config.elt;
+        var markAll = Boolean(source && source.closest && source.closest(".notifpanel__markall"));
+        if (!bell.notifFocusOnLoad && !markAll) {
           return;
         }
         bell.notifFocusOnLoad = false;
@@ -194,13 +200,15 @@
   });
 
   /* ---- Focus after an answer or a further page inside the panel ----------
-   * The application's own rule (static/js/app.js) looks for
-   * `data-focus-after-save` in the swapped element — but an `outerHTML` swap
-   * hands it the element that has just been removed, so it searches the whole
-   * document and lands on the panel's heading. Inside the panel the right
-   * place is known: after a read, unread or postponement, the same item's `⋯`
-   * (or the item, when it has none left); after «Näita varasemaid», the first
-   * item that arrived. This runs after app.js's handler and has the last word. */
+   * The panel and the Minu asjad block never carry the application's own
+   * `data-focus-after-save` (static/js/app.js): after an `outerHTML` swap that
+   * rule searches the whole document for the first one, and a panel in the top
+   * bar — open or long closed — would come before every landing in `<main>`
+   * and take it (QA-018). They mark their own landings `data-notif-focus` and
+   * place focus here instead: after a read, unread or postponement, the same
+   * item's `⋯` (or the item, when it has none left); after «Näita
+   * varasemaid», the first item that arrived. These run after app.js's
+   * handler and have the last word inside the panel and the block only. */
   var pendingPage = null;
 
   document.addEventListener("htmx:beforeRequest", function (event) {
@@ -232,11 +240,13 @@
     if (!wrapper || wrapper.id !== "notif-sidebar") {
       return;
     }
+    /* The wrapper itself counts as lost: app.js lands on the swapped element
+       when it finds no landing of its own, and this one draws no box. */
     var active = document.activeElement;
-    if (active && active !== document.body && document.contains(active)) {
+    if (active && active !== document.body && active !== wrapper && document.contains(active)) {
       return;
     }
-    var landing = wrapper.querySelector("[data-focus-after-save]") || wrapper.nextElementSibling;
+    var landing = wrapper.querySelector("[data-notif-focus]") || wrapper.nextElementSibling;
     if (landing) {
       if (!landing.matches("a[href], button, summary, input") && !landing.hasAttribute("tabindex")) {
         landing.setAttribute("tabindex", "-1");

@@ -15,7 +15,7 @@ redirect to the gate or the persona list swaps in nothing.
 {% endcomment %}
 <div class="notifpanel__body" data-notifpanel-body>
   <div class="notifpanel__head">
-    <h2 class="notifpanel__title" id="notifpanel-title" tabindex="-1" data-focus-after-save>Teavitused</h2>
+    <h2 class="notifpanel__title" id="notifpanel-title" tabindex="-1" data-notif-focus>Teavitused</h2>
     <form class="notifpanel__markall" method="post" action="{% url 'notifications:mark_all_read' %}"
           hx-post="{% url 'notifications:mark_all_read' %}"
           hx-target="closest [data-notifpanel-content]"

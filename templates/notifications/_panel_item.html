@@ -36,7 +36,7 @@ groups — a postponed check — to say so in place.
   </div>
   {% if item.has_menu %}
     <details class="notifitem__menu" data-uxpopover>
-      <summary class="notifitem__menubutton" data-focus-after-save>
+      <summary class="notifitem__menubutton" data-notif-focus>
         <svg class="notifitem__dots" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
           <circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>
         </svg>
@@ -79,7 +79,7 @@ groups — a postponed check — to say so in place.
   {% endif %}
 </li>
 {% else %}
-<li class="notifitem notifitem--resolved" data-notif-item data-notif-state="gone" tabindex="-1" data-focus-after-save>
+<li class="notifitem notifitem--resolved" data-notif-item data-notif-state="gone" tabindex="-1" data-notif-focus>
   <span class="notifitem__mark" aria-hidden="true"></span>
   <div class="notifitem__main">
     {% if title %}<span class="notifitem__title">{{ title }}</span>{% endif %}

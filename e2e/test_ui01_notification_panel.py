@@ -23,7 +23,15 @@ import sys
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import MARTIN, REPOSITORY_ROOT, sign_in, unique_title
+from e2e.conftest import (
+    MARTIN,
+    REPOSITORY_ROOT,
+    SANDRA,
+    create_matter,
+    open_add_panel,
+    sign_in,
+    unique_title,
+)
 
 pytestmark = pytest.mark.e2e
 
@@ -240,3 +248,29 @@ def test_the_panel_fits_a_phone(page, base_url):
     expect(page.locator(PANEL)).to_be_hidden()
     expect(page.locator(TRIGGER)).to_have_attribute("aria-expanded", "false")
     assert re.search(r"/minu-asjad/$", page.url)
+
+
+def test_a_teema_save_lands_focus_where_it_did_after_the_panel_was_opened(page, base_url):
+    """The closed panel keeps no landing of the application's (review F-1, QA-018).
+
+    `static/js/app.js` focuses the first `data-focus-after-save` in the
+    document after a swap that destroyed focus. The panel sits in the top bar,
+    before `<main>`, so it must never carry one: after the panel has been
+    opened and closed, a save on the Teema still leaves focus on «Lisa
+    teemale», exactly as `e2e/test_correction_round_surfaces.py` measures it.
+    """
+    sign_in(page, base_url, SANDRA)
+    url = create_matter(page, base_url, unique_title("Paneeli fookus"), owner=SANDRA)
+    page.goto(url)
+    _open(page)
+    page.keyboard.press("Escape")
+    expect(page.locator(PANEL)).to_be_hidden()
+    expect(page.locator(f"{PANEL} [data-notifpanel-body]")).to_be_attached()
+
+    open_add_panel(page, "marge-toovoit")
+    page.fill("#id_victory_change", "Ministeerium lükkas jõustumise edasi")
+    page.locator("#marge-toovoit button[type=submit]").click()
+    page.wait_for_selector("text=Ministeerium lükkas jõustumise edasi", state="attached")
+
+    focused = page.evaluate("() => document.activeElement && document.activeElement.id")
+    assert focused == "lisa-teemale"
