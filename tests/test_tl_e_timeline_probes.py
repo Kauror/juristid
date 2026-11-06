@@ -108,8 +108,9 @@ def test_every_html_channel_shows_the_note_to_a_reader_and_the_same_once(client,
         # Two notes, one dated NA line and one document row.
         assert html.count('class="uxtl__histline"') == 4
         assert html.count('data-kaik-rida="onenote-note:') == 3
-        # Short enough to be its own headline: once in the line, once in the panel.
-        assert html.count("Näidisamet saatis kooskõlastusringile näidiseelnõu") == 2
+        # Short enough to be its own headline: once, in the line — the opened
+        # row does not repeat it (UI-13).
+        assert html.count("Näidisamet saatis kooskõlastusringile näidiseelnõu") == 1
         # The direct file once under its note, the other once on its own row.
         assert html.count(">Otsene-näidisfail.pdf</a>") == 1
         assert html.count(">Kõrvalfail-näidis.pdf</a>") == 1
@@ -161,8 +162,10 @@ def test_a_deleted_teema_on_a_shared_page_leaks_nothing_into_the_live_one(client
     client.force_login(specialist)
     html = _page_html(client, live)
     assert html.count('data-kaik-rida="onenote-note:') == 3
-    assert html.count("Näidisamet saatis kooskõlastusringile näidiseelnõu") == 2
+    assert html.count("Näidisamet saatis kooskõlastusringile näidiseelnõu") == 1
     assert str(gone_link.pk) not in html
+    # A deleted Teema's link does not make the live one's page «shared» (UI-13).
+    assert "ühine leht" not in html
     response = client.get(reverse("legacy_import:source_page", kwargs={"pk": gone_link.pk}))
     assert response.status_code == 404
 
@@ -300,7 +303,7 @@ def test_next_actions_text_reaches_no_current_task_surface(client, normal_matter
     # The undated NA prose is no row and nowhere on the Teema page.
     assert "Ootame näidisvastust" not in html
     # The dated NA line appears exactly once, inside its labelled historical row.
-    assert html.count("ootab näidisteema edasist menetlust") == 2  # line + panel
+    assert html.count("ootab näidisteema edasist menetlust") == 1  # the line only (UI-13)
     row = re.search(
         r"<article[^>]*uxtl__item--historical[^>]*>(?:(?!</article>).)*ootab näidisteema",
         html,

@@ -31,7 +31,13 @@ from tests.test_tl_c_historical_rows import a_file, a_note, files_item, note_ite
 pytestmark = pytest.mark.e2e
 
 STATIC = Path(settings.BASE_DIR) / "static"
-STYLESHEETS = ("css/tokens.css", "css/base.css", "css/app.css", "css/ux.css")
+STYLESHEETS = (
+    "css/tokens.css",
+    "css/base.css",
+    "css/app.css",
+    "css/ux.css",
+    "css/historical-reading.css",
+)
 
 #: Where the screenshots go: `E2E_SCREENSHOT_DIR` as the suite has it, or none.
 SCREENS = os.environ.get("TL_C_SCREENS", "")
@@ -134,14 +140,14 @@ def test_a_historical_row_opens_and_closes_by_keyboard(page, width):
     expect(summary).to_have_text(
         re.compile(r"^\s*27\.07\.2026\s+4 dokumenti\s+Näidisamet saatis kooskõlastusringile")
     )
-    expect(note.get_by_text("Ava OneNote'i leht Juristides")).to_be_hidden()
+    expect(note.get_by_text("OneNote'i koopia")).to_be_hidden()
     _shot(page, f"collapsed-{width}")
 
     summary.focus()
     expect(summary).to_be_focused()
     page.keyboard.press("Enter")
     expect(details).to_have_attribute("open", "")
-    expect(note.get_by_role("link", name="Ava OneNote'i leht Juristides")).to_be_visible()
+    expect(note.get_by_role("link", name="OneNote'i koopia")).to_be_visible()
     expect(note.get_by_role("link", name="Sama OneNote'i lehe failid (4)")).to_be_visible()
     expect(note.locator("li.uxtl__histfile")).to_have_count(4)
     expect(note.get_by_text("lisatud enne praeguse lehe loomist")).to_be_visible()
@@ -154,7 +160,7 @@ def test_a_historical_row_opens_and_closes_by_keyboard(page, width):
 
     page.keyboard.press("Space")
     expect(details).not_to_have_attribute("open", re.compile(".*"))
-    expect(note.get_by_text("Ava OneNote'i leht Juristides")).to_be_hidden()
+    expect(note.get_by_text("OneNote'i koopia")).to_be_hidden()
 
 
 def test_the_accessible_name_is_the_line_and_the_tag_is_read_as_words(page):
@@ -178,9 +184,11 @@ def test_next_actions_reads_as_history_with_no_control(page):
     plan = _row(page, "onenote-note:b")
     plan.locator("summary").click()
     expect(plan.locator("details")).to_have_attribute("open", "")
-    expect(plan.locator(".uxtl__histtext .uxtl__msnotelabel")).to_have_text(
+    # Said once, on the line (UI-13): the open panel does not repeat the label.
+    expect(plan.locator("summary .uxtl__histtag--past")).to_have_text(
         "Ajalooline: Järgmised tegevused"
     )
+    expect(plan.get_by_text("Ajalooline: Järgmised tegevused")).to_have_count(1)
     expect(plan.locator("input, select, textarea, form")).to_have_count(0)
     expect(plan.get_by_role("checkbox")).to_have_count(0)
     _shot(page, "next-actions-1440")
@@ -224,10 +232,10 @@ def test_the_row_works_with_no_script_at_all(browser):
         page = context.new_page()
         _open_page(page, width=375, with_script=False)
         note = _row(page, "onenote-note:a")
-        expect(note.get_by_text("Ava OneNote'i leht Juristides")).to_be_hidden()
+        expect(note.get_by_text("OneNote'i koopia")).to_be_hidden()
         note.locator("summary").click()
         expect(note.locator("details")).to_have_attribute("open", "")
-        expect(note.get_by_role("link", name="Ava OneNote'i leht Juristides")).to_be_visible()
+        expect(note.get_by_role("link", name="OneNote'i koopia")).to_be_visible()
         assert not document_overflows(page)
         _shot(page, "no-script-375")
     finally:

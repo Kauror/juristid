@@ -59,6 +59,12 @@ class HistoricalNoteRow:
     section: str
     source_ref: str
     date_iso: str = ""
+    anchor: str = ""
+    shared_page: bool = False
+
+    @property
+    def source_url(self) -> str:
+        return f"{self.page_url}#{self.anchor}" if self.anchor else self.page_url
 
 
 def _iso(display: str, precision: str | None) -> str:
@@ -249,12 +255,19 @@ def test_a_note_is_one_disclosure_whose_line_is_date_tag_headline():
     assert "open" not in details.attrs, "every row renders closed"
     summary = details.one("summary")
     assert summary.attrs["id"] == "kaik-onenote-note:1-rida"
-    assert summary.words() == (
-        "27.07.2026 4 dokumenti Näidisamet saatis kooskõlastusringile eelnõu, millega…"
+    # Closed, the line reads date, tag, preview; the full first paragraph that
+    # replaces the preview when the row opens is in the same line, drawn only
+    # then (UI-13, `historical-reading.css`).
+    assert "uxtl__hist--inplace" in details.classes()
+    preview = summary.one(cls="uxtl__histpreview")
+    assert preview.words() == "Näidisamet saatis kooskõlastusringile eelnõu, millega…"
+    assert summary.one(cls="uxtl__histfirst").words() == (
+        "Näidisamet saatis kooskõlastusringile eelnõu, millega muudetakse näidisseadust."
     )
     # Order on the line is date, tag, headline.
-    kinds = [child.tag for child in summary.children if isinstance(child, Node)]
-    assert kinds[:3] == ["time", "span", "span"]
+    kinds = [child for child in summary.children if isinstance(child, Node)]
+    assert [child.tag for child in kinds[:3]] == ["time", "span", "span"]
+    assert kinds[2] is preview
     # No button-and-script accordion on this row.
     assert not row.all(cls="uxtl__toggle")
 
@@ -285,9 +298,11 @@ def test_the_date_keeps_its_precision_in_text_and_in_datetime(display, precision
     row = the_row(root)
     time = row.one("summary").one("time")
     assert time.attrs["datetime"] == iso
-    assert time.words() == display
-    dated = [line.words() for line in row.all(cls="uxtl__mssub")]
-    assert f"Kuupäev {said}" in dated
+    # The line's date is the only date: a month or a year says so to a screen
+    # reader, and no second «Kuupäev» row repeats it (UI-13).
+    assert time.words() == said
+    assert row.all(cls="uxtl__mssub") == []
+    assert "Kuupäev" not in row.words()
 
 
 def test_an_undated_note_shows_no_date_and_invents_none():
@@ -298,9 +313,7 @@ def test_an_undated_note_shows_no_date_and_invents_none():
     assert summary.all(cls="uxtl__msdate") == []
     assert not re.search(r"\d{1,2}\.\d{1,2}\.\d{4}", summary.words())
     assert summary.words().startswith("Näidisamet saatis")
-    assert "Kuupäev OneNote'i märkusel kuupäeva ei ole" in [
-        line.words() for line in row.all(cls="uxtl__mssub")
-    ]
+    assert "Kuupäev" not in row.words()
 
 
 # ---------------------------------------------------------------------------
@@ -310,24 +323,27 @@ def test_an_undated_note_shows_no_date_and_invents_none():
 
 def test_the_opened_note_holds_the_verbatim_paragraphs_with_their_line_breaks():
     html, root = render(note_item(a_note()))
-    paragraphs = the_row(root).all("p", "uxtl__histpara")
-    assert [p.words() for p in paragraphs] == [
-        "Näidisamet saatis kooskõlastusringile eelnõu, millega muudetakse näidisseadust.",
-        "Teine lõik. Teine rida samas lõigus.",
-    ]
+    row = the_row(root)
+    # The first paragraph in the line, the rest once below it (UI-13).
+    assert row.one(cls="uxtl__histfirst").words() == (
+        "Näidisamet saatis kooskõlastusringile eelnõu, millega muudetakse näidisseadust."
+    )
+    paragraphs = row.all("p", "uxtl__histpara")
+    assert [p.words() for p in paragraphs] == ["Teine lõik. Teine rida samas lõigus."]
     assert "Teine lõik.<br>Teine rida samas lõigus." in html
 
 
-def test_the_source_page_section_link_and_ref_are_all_there():
-    _html, root = render(note_item(a_note(page_files_count=3)))
+def test_the_source_page_link_is_there_and_the_generated_rows_are_not():
+    _html, root = render(note_item(a_note(page_files_count=3, anchor="plokk-0")))
     row = the_row(root)
-    assert "Allikas OneNote: Näidissektsioon → Näidisseaduse muutmine 2026" in [
-        line.words() for line in row.all(cls="uxtl__mssub")
-    ]
+    # No generated «Allikas OneNote: …» row, and no capture/block reference (UI-13).
+    assert row.all(cls="uxtl__mssub") == []
+    assert "Allikas" not in row.words() and "capture näidis-01" not in row.words()
+    assert row.all(cls="uxtl__histref") == []
     links = {a.words(): a.attrs["href"] for a in row.all("a", "uxtl__link")}
-    assert links["Ava OneNote'i leht Juristides"] == PAGE_URL
+    assert links["OneNote'i koopia"] == PAGE_URL + "#plokk-0"
     assert links["Sama OneNote'i lehe failid (3)"] == PAGE_URL + "#sisu-heading"
-    assert row.one(cls="uxtl__histref").words() == "capture näidis-01 · plokid 0–3"
+    assert "Ava OneNote'i leht Juristides" not in row.words()
 
 
 def test_no_page_files_means_no_page_files_link():
@@ -375,11 +391,15 @@ def test_a_next_actions_note_is_labelled_history_and_offers_no_control():
     row = the_row(root)
     summary = row.one("summary")
     assert "Ajalooline: Järgmised tegevused" in summary.words()
-    label = row.one(cls="uxtl__histtext").one(cls="uxtl__msnotelabel")
-    assert label.words() == "Ajalooline: Järgmised tegevused"
+    # Said once, on the line; the panel holds only the rest of the note.
+    assert row.words().count("Ajalooline: Järgmised tegevused") == 1
+    assert [p.words() for p in row.one(cls="uxtl__histtext").all("p")] == [
+        "küsida ministeeriumilt uut versiooni"
+    ]
     # History, not a task: no form, no checkbox, no button but the copy icon.
     assert row.all("input") == [] and row.all("form") == [] and row.all("select") == []
-    assert [b.attrs.get("class") for b in row.all("button")] == ["uxtl__icon uxtl__icon--copy"]
+    # History, not a task: the only buttons are the two copy icons.
+    assert [b.attrs.get("class") for b in row.all("button")] == ["uxtl__icon uxtl__icon--copy"] * 2
     assert not row.all(cls="uxtl__next") and not row.all(cls="uxtl__nextlabel")
 
 

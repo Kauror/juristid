@@ -2,7 +2,7 @@
 {% block title %}{{ page.title|truncatechars:60 }} · Ajalooline materjal · {{ application_name }}{% endblock %}
 
 {% comment %}
-  A OneNote page as the case file it was.
+  A OneNote page as the case file it was, read as a document (UI-12).
 
   The narrative and its files are one sequence, in the order somebody wrote
   them, because that order is the content: "Ettepaneku eestikeelne variant"
@@ -10,17 +10,23 @@
   attachment list at the bottom would be easier to build and would throw away
   the only thing OneNote was ever good at (Stage-2D brief 22, 31).
 
-  The view decided everything. This template renders and makes no judgements —
-  particularly not about what is safe to show: the page's own XML is never
-  rendered here, only offered as a download (app/legacy_import/historical_views.py).
+  Reading order, top to bottom: the way back to the Teema, one heading, one
+  line of source facts, the shared dossier's status said once, the page's own
+  contents list (its headings and dated notes, when it has enough of them),
+  the page itself, and last «Allikas» with every identifier, match method and
+  count behind «Tehnilised andmed».
+
+  The view decided everything (app/legacy_import/historical_views.py,
+  app/legacy_import/historical_reading.py). This template renders and makes no
+  judgements — particularly not about what is safe to show: the text arrives
+  as plain text and is escaped here, and the page's own XML is never
+  rendered, only offered as a download.
 {% endcomment %}
 
 {% block content %}
 <div class="page sourcepage">
   <nav class="crumbs" aria-label="Asukoht">
-    <a href="{% url 'matters:matter_detail' pk=matter.pk %}">
-      {{ matter.title|truncatechars:60 }}
-    </a>
+    <a class="sourcepage__back" href="{% url 'matters:matter_detail' pk=matter.pk %}"><span aria-hidden="true">←</span> {% if matter.display_reference %}{{ matter.display_reference }} · {% endif %}{{ matter.title|truncatechars:60 }}</a>
   </nav>
 
   <header class="pagehead">
@@ -31,155 +37,129 @@
       {% if page.source_modified_at %}
         · muudetud {{ page.source_modified_at|date:"d.m.Y" }}
       {% endif %}
+      {% if file_summary %}· {{ file_summary }}{% endif %}
     </p>
   </header>
 
-  <section class="card card--derived" aria-labelledby="allikas-heading">
-    <h2 class="sectionlabel" id="allikas-heading">Allikas</h2>
-    <p class="cardnote">
-      See on OneNote'i lehe sisu nii, nagu see arhiveeriti. Tegemist on ajaloolise
-      lähtematerjaliga, mitte süsteemis kirjutatud sissekannetega.
-    </p>
-    <dl class="detailgrid">
-      <div><dt>Märkmik</dt><dd>{{ page.source_notebook }}</dd></div>
-      <div><dt>Sektsioon</dt><dd>{{ page.source_section }}</dd></div>
-      {% if page.source_parent_page %}
-        <div><dt>Ülemleht</dt><dd>{{ page.source_parent_page }}</dd></div>
-      {% endif %}
-      <div><dt>Tase</dt><dd>{{ page.page_level }}</dd></div>
-      <div><dt>Faile</dt><dd>{{ page.file_count }} ({{ page.file_bytes|filesizeformat }})</dd></div>
-      <div><dt>Sidumine</dt><dd>{{ link.get_match_method_display }}</dd></div>
-    </dl>
-
-    {% if page.reading_order_ambiguous %}
-      {% comment %}
-        Said out loud rather than smoothed over. OneNote is a free-form canvas,
-        and on this page the raw XML order and the visual order disagreed — so
-        the sequence below is a best reading, not a fact (Stage-2D brief 32).
-      {% endcomment %}
-      <p class="formnote">
-        OneNote'i vaba paigutuse tõttu ei ole lugemisjärjekord üheselt määratud.
-        Allolev järjestus on parim tõlgendus, mitte lehe kindel struktuur.
+  {% if dossier.shared %}
+    {% comment %}
+      A page linked to several Teemad says two facts at once, and both are
+      true (docs/adr/0208): the page was captured whole and reads here whole,
+      as one dossier; and which Teema each of its files belongs to has not
+      been decided, so the files are held — not lost, not failed. Said once,
+      here, and not again beside each file (UI-12): a file says its state only
+      when it differs. Then the Teemad, each linked to its own page, and how
+      they relate by the register's own continuation edge only
+      (`Matter.superseded_by`); a Teema this reader may not read is counted
+      yes/no, never named.
+    {% endcomment %}
+    <div class="dossiernote" role="note" aria-labelledby="toimik-heading">
+      <p class="dossiernote__title" id="toimik-heading">Ühine toimik · {{ dossier.teemad|length }} teemat</p>
+      <p class="dossiernote__text">
+        Leht on tervikuna hõivatud ja siin täielikult loetav. Milline fail millisele
+        teemale kuulub, ei ole otsustatud: failid ootavad teemaga seostamist ega ole
+        ühegi teema dokumentide all; originaalid on lähtekorpuses alles. Faili juures
+        on märgitud ainult see, mis sellest erineb.
       </p>
-    {% endif %}
-
-    {% if dossier.shared %}
-      {% comment %}
-        A page linked to several Teemad says two facts at once, and both are
-        true (docs/adr/0208): the page was captured whole and reads here whole,
-        as one dossier; and which Teema each of its files belongs to has not
-        been decided, so the files are held — not lost, not failed. Then how
-        the Teemad relate, by the register's own continuation edge only
-        (`Matter.superseded_by`); a Teema this reader may not read is counted,
-        never named. It replaces «Sama leht on seotud ka»: one chain names
-        every Teema, and otherwise the overview below lists each.
-      {% endcomment %}
-      <div class="dossiernote" role="note" aria-labelledby="toimik-heading">
-        <p class="dossiernote__title" id="toimik-heading">Ühine toimik · {{ dossier.teemad|length }} teemat</p>
-        <p class="dossiernote__text">
-          Leht on tervikuna hõivatud ja siin täielikult loetav. Milline fail millisele
-          teemale kuulub, ei ole otsustatud: failid ootavad teemaga seostamist ega ole
-          ühegi teema dokumentide all; originaalid on lähtekorpuses alles.
+      <ul class="dossiernote__teemad">
+        {% for item in dossier.teemad %}
+          <li>{% if item.link.pk == link.pk %}<strong aria-current="page">{{ item.matter.display_reference|default:"—" }}</strong>{% else %}<a href="{% url 'matters:matter_detail' pk=item.matter.pk %}">{{ item.matter.display_reference|default:"—" }}</a>{% endif %} {{ item.matter.title|truncatechars:70 }}</li>
+        {% endfor %}
+      </ul>
+      {% for chain in dossier.chains %}
+        <p class="dossiernote__chain">
+          Sama menetluse etapid:
+          {% for item in chain %}
+            {% if item.link.pk == link.pk %}<strong aria-current="page">{{ item.matter.display_reference|default:item.matter.title|truncatechars:40 }}</strong>{% else %}<a href="{% url 'legacy_import:source_page' pk=item.link.pk %}">{{ item.matter.display_reference|default:item.matter.title|truncatechars:40 }}</a>{% endif %}{% if not forloop.last %} → {% endif %}
+          {% endfor %}
         </p>
-        {% for chain in dossier.chains %}
-          <p class="dossiernote__chain">
-            Sama menetluse etapid:
-            {% for item in chain %}
-              {% if item.link.pk == link.pk %}<strong aria-current="page">{{ item.matter.display_reference|default:item.matter.title|truncatechars:40 }}</strong>{% else %}<a href="{% url 'legacy_import:source_page' pk=item.link.pk %}">{{ item.matter.display_reference|default:item.matter.title|truncatechars:40 }}</a>{% endif %}{% if not forloop.last %} → {% endif %}
-            {% endfor %}
-          </p>
-        {% endfor %}
-        {% if dossier.kind == "NONE" %}
-          <p class="dossiernote__chain">Teemade vahel ei ole registris jätku seost.</p>
-        {% elif dossier.kind == "PARTIAL_CHAIN" and dossier.unchained %}
-          <p class="dossiernote__chain">Ülejäänud teemade vahel ei ole registris jätku seost.</p>
-        {% elif dossier.kind == "COMPLEX" %}
-          <p class="dossiernote__chain">Teemade jätku seosed ei moodusta üht ahelat (koonduvad või kordavad end).</p>
-        {% endif %}
-        {% if dossier_rows %}
-          <p class="dossiernote__chain"><a href="#ulevaade-heading">Lehe teemad ja failid</a> on allpool ülevaatena.</p>
-        {% endif %}
-        {% if dossier.hidden %}
-          <p class="dossiernote__chain">Leht on seotud ka teemaga, mida siit avada ei saa.</p>
-        {% endif %}
-      </div>
-    {% elif other_matters %}
-      <p class="cardnote">
-        Sama leht on seotud ka:
-        {% for other in other_matters %}
-          <a href="{% url 'legacy_import:source_page' pk=other.pk %}">{{ other.matter.title|truncatechars:40 }}</a>{% if not forloop.last %},{% endif %}
-        {% endfor %}
-      </p>
-    {% endif %}
+      {% endfor %}
+      {% if dossier.kind == "NONE" %}
+        <p class="dossiernote__chain">Teemade vahel ei ole registris jätku seost.</p>
+      {% elif dossier.kind == "PARTIAL_CHAIN" and dossier.unchained %}
+        <p class="dossiernote__chain">Ülejäänud teemade vahel ei ole registris jätku seost.</p>
+      {% elif dossier.kind == "COMPLEX" %}
+        <p class="dossiernote__chain">Teemade jätku seosed ei moodusta üht ahelat (koonduvad või kordavad end).</p>
+      {% endif %}
+      {% if dossier_rows %}
+        <p class="dossiernote__chain"><a href="#ulevaade-heading">Lehe teemad ja failid</a> on allpool ülevaatena.</p>
+      {% endif %}
+      {% if dossier.hidden %}
+        <p class="dossiernote__chain">Leht on seotud ka teemaga, mida siit avada ei saa.</p>
+      {% endif %}
+    </div>
+  {% elif other_matters %}
+    <p class="cardnote">
+      Sama leht on seotud ka:
+      {% for other in other_matters %}
+        <a href="{% url 'legacy_import:source_page' pk=other.pk %}">{{ other.matter.title|truncatechars:40 }}</a>{% if not forloop.last %},{% endif %}
+      {% endfor %}
+    </p>
+  {% endif %}
 
-    <details class="disclosure">
-      <summary>Tehnilised andmed</summary>
-      <dl class="detailgrid">
-        <div><dt>Lehe ID</dt><dd class="mono">{{ page.source_page_id }}</dd></div>
-        <div><dt>Arhiivi võti</dt><dd class="mono">{{ page.page_key }}</dd></div>
-        <div><dt>Lähte-XML SHA-256</dt><dd class="mono">{{ page.source_xml_sha256 }}</dd></div>
-        <div><dt>Hõive</dt><dd class="mono">{{ page.capture_id }}</dd></div>
-      </dl>
-      <p class="form__actions">
-        {% if page.source_xml_storage_key %}
-          <a class="button button--quiet" href="{% url 'legacy_import:source_xml' pk=link.pk %}">
-            Laadi alla lähte-XML
-          </a>
-        {% endif %}
-        {% if page.onenote_hyperlink %}
-          <a class="button button--quiet" href="{{ page.onenote_hyperlink }}">Ava OneNote'is</a>
-        {% endif %}
-      </p>
+  {% if page.reading_order_ambiguous %}
+    {% comment %}
+      Said out loud rather than smoothed over. OneNote is a free-form canvas,
+      and on this page the raw XML order and the visual order disagreed — so
+      the sequence below is a best reading, not a fact (Stage-2D brief 32).
+    {% endcomment %}
+    <p class="formnote">
+      OneNote'i vaba paigutuse tõttu ei ole lugemisjärjekord üheselt määratud.
+      Allolev järjestus on parim tõlgendus, mitte lehe kindel struktuur.
+    </p>
+  {% endif %}
+
+  {% if contents %}
+    {% comment %}
+      The page's own headings and dated notes, nothing else: no heading is
+      written that the page did not have, and nothing is hidden — every entry
+      only jumps to its place in the full page below.
+    {% endcomment %}
+    <details class="disclosure sourcetoc">
+      <summary>Lehe sisukord <span class="sectionlabel__count">{{ contents|length }}</span></summary>
+      <nav aria-label="Lehe sisukord">
+        <ol class="sourcetoc__list">
+          {% for entry in contents %}
+            <li><a href="#{{ entry.anchor }}">{% if entry.date %}<time class="sourcetoc__date" datetime="{{ entry.iso }}">{{ entry.date }}</time> {% endif %}{{ entry.label }}</a></li>
+          {% endfor %}
+        </ol>
+      </nav>
     </details>
-  </section>
+  {% endif %}
 
   <section class="card" aria-labelledby="sisu-heading">
-    <h2 class="sectionlabel" id="sisu-heading">
-      Lehe sisu
-      <span class="sectionlabel__count">{{ blocks|length }}</span>
-    </h2>
+    <h2 class="sectionlabel" id="sisu-heading">Lehe sisu</h2>
 
     {% if blocks %}
       <div class="casefile">
         {% for block in blocks %}
-          {% if block.kind == "text" %}
-            <p class="casefile__text {% if block.list_item %}casefile__text--item{% endif %}">{{ block.text }}</p>
+          {% if block.kind == "list" %}
+            <ul class="casefile__list">
+              {% for item in block.items %}
+                <li{% if item.anchor %} id="{{ item.anchor }}"{% endif %} class="casefile__text casefile__text--item {{ item.depth_class }}">{% if item.parts %}{% for piece, href in item.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ item.text }}{% endif %}</li>
+              {% endfor %}
+            </ul>
+          {% elif block.kind == "text" and block.list_item %}
+            <ul class="casefile__list"><li class="casefile__text casefile__text--item">{{ block.text }}</li></ul>
+          {% elif block.kind == "text" and block.heading %}
+            <h3{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__heading {{ block.depth_class }}">{{ block.text }}</h3>
+          {% elif block.kind == "text" %}
+            <p{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__text {{ block.depth_class }}{% if block.dated %} casefile__text--dated{% endif %}">{% if block.parts %}{% for piece, href in block.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ block.text }}{% endif %}</p>
+          {% elif block.kind == "notice" %}
+            <p class="casefile__notice">{{ block.text }}</p>
           {% else %}
             {% comment %}
-              Four states, because they are four different facts and only one of
-              them means "wait". Six attachments in the real corpus are zero
-              bytes in OneNote itself; showing those as "Kopeerimisel" for ever
-              would be the page lying about its own material.
+              One compact line per file: its type, its name, its size, the
+              day it was added to OneNote when the source has one, and the one
+              action the existing routes allow. Its state is said only when it
+              is not the dossier's common state (`block.quiet`), because a
+              state on every line is a state on no line. Six attachments in the
+              real corpus are zero bytes in OneNote itself; showing those as
+              "Kopeerimisel" for ever would be the page lying about its own
+              material.
             {% endcomment %}
-            <div class="casefile__file">
-              <span class="casefile__label">Materjal</span>
-              {% if block.state == "imported" %}
-                {% comment %}
-                  The filename does the useful thing. A PDF opens, a Word file
-                  saves — nobody wants an intermediate page between them and the
-                  material they clicked on. Document detail is still one link
-                  away for provenance, which is a different question and a rarer
-                  one (Stage-2E.1 brief 11, 13).
-                {% endcomment %}
-                {% if block.opens_inline %}
-                  <a class="casefile__name"
-                     href="{% url 'documents:open' pk=block.version.pk %}"
-                     target="_blank" rel="noopener noreferrer">{{ block.filename }}<span
-                     class="visually-hidden"> — avaneb uues aknas</span></a>
-                {% else %}
-                  <a class="casefile__name"
-                     href="{% url 'documents:download' pk=block.version.pk %}"
-                     download>{{ block.filename }}</a>
-                {% endif %}
-                <span class="casefile__meta">
-                  {{ block.size_bytes|filesizeformat }}
-                  {% if block.opens_inline %}
-                    · <a href="{% url 'documents:download' pk=block.version.pk %}">Laadi alla</a>
-                  {% endif %}
-                  · <a class="quietlink"
-                       href="{% url 'documents:document_detail' pk=block.document.pk %}">Päritolu</a>
-                </span>
-              {% elif block.state == "withheld" %}
+            <div{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__file {{ block.depth_class }}">
+              {% if block.state == "withheld" %}
                 {% comment %}
                   A file whose own visibility is stricter than this page's.
                   Named by nothing — not its filename, size or id — because each
@@ -187,45 +167,67 @@
                 {% endcomment %}
                 <span class="casefile__name casefile__name--withheld">Fail, mida selles kasutajavaates ei kuvata</span>
               {% else %}
-                <span class="casefile__name">{{ block.filename }}</span>
+                {% if block.type %}<span class="casefile__type">{{ block.type }}</span>{% endif %}
+                {% if block.state == "imported" %}
+                  {% comment %}
+                    The filename does the useful thing. A PDF opens, a Word file
+                    saves — nobody wants an intermediate page between them and the
+                    material they clicked on. Document detail is still one link
+                    away for provenance (Stage-2E.1 brief 11, 13).
+                  {% endcomment %}
+                  {% if block.opens_inline %}
+                    <a class="casefile__name"
+                       href="{% url 'documents:open' pk=block.version.pk %}"
+                       target="_blank" rel="noopener noreferrer">{{ block.filename }}<span
+                       class="visually-hidden"> — avaneb uues aknas</span></a>
+                  {% else %}
+                    <a class="casefile__name"
+                       href="{% url 'documents:download' pk=block.version.pk %}"
+                       download>{{ block.filename }}</a>
+                  {% endif %}
+                {% else %}
+                  <span class="casefile__name">{{ block.filename }}</span>
+                {% endif %}
                 <span class="casefile__meta">
+                  {% if block.state == "empty" %}Tühi fail{% else %}{{ block.size_bytes|filesizeformat }}{% endif %}{% if block.added_known %} · lisatud <time datetime="{{ block.added_at|date:'Y-m-d' }}">{{ block.added_at|date:"d.m.Y" }}</time>{% endif %}
+                  {% if block.state == "imported" %}
+                    {% if block.opens_inline %}
+                      · <a href="{% url 'documents:download' pk=block.version.pk %}">Laadi alla</a>
+                    {% endif %}
+                    · <a class="quietlink"
+                         href="{% url 'documents:document_detail' pk=block.document.pk %}">Päritolu</a>
+                  {% elif block.original_pk %}
+                    · <a href="{% url 'legacy_import:source_original' pk=link.pk resource_pk=block.original_pk %}" download>Laadi alla (allikas)</a>
+                  {% endif %}
                   {% comment %}
                     Held is not failed (ONENOTE-UI-003). A file the import kept
-                    back on purpose — a page shared by several Teemad, a file
-                    over the evidence limit — reads as waiting for a person,
-                    and only a copy that actually failed reads as a problem
-                    (app/legacy_import/historical_views.py `_file_state`).
+                    back on purpose reads as waiting for a person, and only a
+                    copy that actually failed reads as a problem.
                   {% endcomment %}
-                  {% if block.state == "empty" %}
-                    Tühi fail · <span class="statechip">OneNote'is oli see fail tühi</span>
+                  {% if block.quiet %}
+                  {% elif block.state == "empty" %}
+                    · <span class="statechip">OneNote'is oli see fail tühi</span>
                   {% elif block.state == "held_shared" %}
-                    {{ block.size_bytes|filesizeformat }} ·
-                    <span class="statechip statechip--waiting">Ootab teemaga seostamist</span>
-                    {% if block.original_pk %}
-                      · <a href="{% url 'legacy_import:source_original' pk=link.pk resource_pk=block.original_pk %}" download>Laadi alla (allikas)</a>
-                    {% endif %}
-                    <span class="casefile__hint">Leht on seotud mitme teemaga; faili kuuluvuse otsustab inimene. Originaal on lähtekorpuses alles.</span>
+                    · <span class="statechip statechip--waiting">Ootab teemaga seostamist</span>
                   {% elif block.state == "held_review" %}
-                    {{ block.size_bytes|filesizeformat }} ·
-                    <span class="statechip statechip--waiting">Ootab ülevaatust</span>
+                    · <span class="statechip statechip--waiting">Ootab ülevaatust</span>
                   {% elif block.state == "held_too_large" %}
-                    {{ block.size_bytes|filesizeformat }} ·
-                    <span class="statechip statechip--waiting">Suurem kui tõendi ülempiir</span>
-                    <span class="casefile__hint">Originaal on lähtekorpuses alles.</span>
+                    · <span class="statechip statechip--waiting">Suurem kui tõendi ülempiir</span>
                   {% elif block.state == "superseded" %}
-                    {{ block.size_bytes|filesizeformat }} ·
-                    <span class="statechip">Varasema hõive kirje</span>
+                    · <span class="statechip">Varasema hõive kirje</span>
                   {% elif block.state == "not_imported" %}
-                    {{ block.size_bytes|filesizeformat }} ·
-                    <span class="statechip">Ei imporditud</span>
+                    · <span class="statechip">Ei imporditud</span>
                   {% elif block.state == "unavailable" %}
-                    {{ block.size_bytes|filesizeformat }} ·
-                    <span class="statechip statechip--problem">Kopeerimine ebaõnnestus</span>
-                  {% else %}
-                    {{ block.size_bytes|filesizeformat }} ·
-                    <span class="statechip statechip--waiting">Kopeerimisel</span>
+                    · <span class="statechip statechip--problem">Kopeerimine ebaõnnestus</span>
+                  {% elif block.state == "pending" %}
+                    · <span class="statechip statechip--waiting">Kopeerimisel</span>
                   {% endif %}
                 </span>
+                {% if not block.quiet and block.state == "held_shared" %}
+                  <span class="casefile__hint">Leht on seotud mitme teemaga; faili kuuluvuse otsustab inimene. Originaal on lähtekorpuses alles.</span>
+                {% elif block.state == "held_too_large" %}
+                  <span class="casefile__hint">Originaal on lähtekorpuses alles.</span>
+                {% endif %}
               {% endif %}
             </div>
           {% endif %}
@@ -314,16 +316,69 @@
         {% for item in page_links %}
           <li class="filelist__item">
             {% comment %}
-              Shown as text, not as a live link. These URLs come out of a
-              document; some are years dead and some point at intranet paths
-              that would leak a referrer. A reader can copy one deliberately.
+              A web or mail address is a working link, opened elsewhere and with
+              no referrer, so an intranet path cannot leak one. Anything else a
+              OneNote page held — an `onenote:` address, a script scheme — is
+              shown as its text and never handed to the browser.
             {% endcomment %}
-            <span>{{ item.text|default:item.url|truncatechars:90 }}</span>
+            {% if item.url|lower|slice:":7" == "http://" or item.url|lower|slice:":8" == "https://" or item.url|lower|slice:":7" == "mailto:" %}
+              <a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.text|default:item.url|truncatechars:90 }}<span class="visually-hidden"> — avaneb uues aknas</span></a>
+            {% else %}
+              <span>{{ item.text|default:item.url|truncatechars:90 }}</span>
+            {% endif %}
             <span class="filelist__meta mono">{{ item.url|truncatechars:60 }}</span>
           </li>
         {% endfor %}
       </ul>
     </section>
   {% endif %}
+
+  <section class="card" aria-labelledby="allikas-heading">
+    <h2 class="sectionlabel" id="allikas-heading">Allikas</h2>
+    <p class="cardnote">
+      See on OneNote'i lehe sisu nii, nagu see arhiveeriti. Tegemist on ajaloolise
+      lähtematerjaliga, mitte süsteemis kirjutatud sissekannetega.
+    </p>
+    {% comment %}
+      Everything a specialist needs to trace the page to its capture, and
+      nothing a reader needs to read it: identifiers, the capture, the match
+      method, block counts. The note rows of `Tegevused` link here at
+      `#plokk-N`, the capture's block N — this is where that number is
+      explained (UI-13).
+    {% endcomment %}
+    <details class="disclosure">
+      <summary>Tehnilised andmed</summary>
+      <dl class="detailgrid">
+        <div><dt>Märkmik</dt><dd>{{ page.source_notebook }}</dd></div>
+        <div><dt>Sektsioon</dt><dd>{{ page.source_section }}</dd></div>
+        {% if page.source_parent_page %}
+          <div><dt>Ülemleht</dt><dd>{{ page.source_parent_page }}</dd></div>
+        {% endif %}
+        <div><dt>Tase</dt><dd>{{ page.page_level }}</dd></div>
+        <div><dt>Sidumine</dt><dd>{{ link.get_match_method_display }}</dd></div>
+        <div><dt>Lehe ID</dt><dd class="mono">{{ page.source_page_id }}</dd></div>
+        <div><dt>Arhiivi võti</dt><dd class="mono">{{ page.page_key }}</dd></div>
+        <div><dt>Lähte-XML SHA-256</dt><dd class="mono">{{ page.source_xml_sha256 }}</dd></div>
+        <div><dt>Hõive</dt><dd class="mono">{{ page.capture_id }}{% if page.first_imported_at %} · imporditud {{ page.first_imported_at|date:"d.m.Y" }}{% endif %}</dd></div>
+        {% if page.block_count %}
+          <div><dt>Plokke</dt><dd>{{ page.block_count }}{% if page.file_count %} · faile esimeses hõives {{ page.file_count }} ({{ page.file_bytes|filesizeformat }}){% endif %}</dd></div>
+        {% endif %}
+        <div><dt>Ploki viide</dt><dd>Aadressi lõpp #plokk-N on selle hõive plokk N.</dd></div>
+        {% if unplaced_files %}
+          <div><dt>Hilisemad failid</dt><dd>Lehe tekst on hõivest {{ page.capture_id }}; teksti järel loetletud failidel pole selles tekstis kohta.</dd></div>
+        {% endif %}
+      </dl>
+      <p class="form__actions">
+        {% if page.source_xml_storage_key %}
+          <a class="button button--quiet" href="{% url 'legacy_import:source_xml' pk=link.pk %}">
+            Laadi alla lähte-XML
+          </a>
+        {% endif %}
+        {% if page.onenote_hyperlink %}
+          <a class="button button--quiet" href="{{ page.onenote_hyperlink }}">Ava OneNote'is</a>
+        {% endif %}
+      </p>
+    </details>
+  </section>
 </div>
 {% endblock %}
