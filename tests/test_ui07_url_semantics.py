@@ -245,6 +245,7 @@ def test_every_incoming_address_opens_the_rows_it_opened_on_the_base(client, fro
         GOLDEN.write_text(
             json.dumps(observed, ensure_ascii=False, indent=1, sort_keys=True) + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         pytest.skip("recorded")  # never in CI: UI07_RECORD is a local switch
     expected = json.loads(GOLDEN.read_text(encoding="utf-8"))
