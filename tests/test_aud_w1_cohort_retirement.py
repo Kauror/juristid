@@ -24,6 +24,7 @@ from unittest import mock
 
 import pytest
 from django.core.management import CommandError, call_command
+from django.db import DatabaseError, connection, transaction
 from django.test import Client
 from django.urls import reverse
 
@@ -43,6 +44,7 @@ from app.legacy_import.models import EvidencePilotRecord
 from app.matters.deletion import permanently_delete_matter, plan_matter_deletion
 from app.matters.models import Matter
 from tests import factories
+from tests.refusals import refused
 from tests.test_lovable_operational_cohort import HOUR, _enroll, active  # noqa: F401
 from tests.test_lovable_pilot import pilot_on, world  # noqa: F401
 from tests.test_lovable_sync import NIGHT, _decisions, _matter, _run, cohort  # noqa: F401
@@ -462,8 +464,16 @@ def test_every_member_retired_is_an_empty_cohort_never_a_negative_one(active):
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
     assert run.counts["by_cohort"][OPERATIONAL_COHORT]["checked"] == 0
     # More retirements than the enrolment (only drift could write one) never go below 0.
-    extra = Matter.all_objects.get(pk=factories.MatterFactory().pk)
-    event = ChangeEvent.objects.filter(matter=_matter("2026_510")).first()
+    # The extra row is the one shape the model still accepts: a tombstone beside
+    # its own MATTER_DELETED event, here a Teema that was never a member.
+    outsider = factories.MatterFactory()
+    permanently_delete_matter(
+        matter=outsider,
+        actor=factories.DepartmentHeadFactory(),
+        confirmation=plan_matter_deletion(outsider).digest,
+    )
+    extra = Matter.all_objects.get(pk=outsider.pk)
+    event = _deletion_event(extra)
     _retirements().create(
         cohort=OPERATIONAL_COHORT,
         matter=extra,
@@ -514,3 +524,117 @@ def test_the_replacement_retires_whole_cohorts_without_member_retirements(active
     run = _run(active, at=NIGHT + HOUR)
     assert run.status == SyncRunStatus.FAILED and run.error.startswith("COHORT_SIZE")
     assert EvidencePilotRecord.objects.filter(pilot=OPERATIONAL_COHORT).exists()
+
+
+# ---------------------------------------------------------------------------
+# 6. Below the command layer: the model and the database refuse a forgery
+#    (QA 2026-11, C-L-04 defect 5)
+# ---------------------------------------------------------------------------
+
+
+def _forge(matter: Any, event: Any) -> Any:
+    return _retirements().create(
+        cohort=OPERATIONAL_COHORT,
+        matter=matter,
+        deletion_event=event,
+        actor=None,
+        reference="2026_512",
+        kind="OPERATOR",
+        retired_at=NIGHT,
+        reason="forge",
+    )
+
+
+def test_a_retirement_of_a_live_teema_is_refused_by_the_model(active):
+    """QA: `objects.create` accepted a live Teema; with a raw state removal beside
+    it, the night passed with a member silently gone."""
+    from app.legacy_import.lovable_sync_models import RETIREMENT_NEEDS_A_TOMBSTONE
+
+    _enroll(active)
+    live = _matter("2026_512")
+    event = ChangeEvent.objects.filter(matter=live).first()
+    assert event is not None
+    with refused(RETIREMENT_NEEDS_A_TOMBSTONE):
+        _forge(live, event)
+    # An instance that only *claims* to be deleted proves nothing either.
+    live.deleted_at = NIGHT
+    with refused(RETIREMENT_NEEDS_A_TOMBSTONE):
+        _forge(live, event)
+    assert not _retirements().exists()
+    # So the loss QA masked with the forged row is still caught as drift.
+    _drift("2026_512")
+    run = _run(active, at=NIGHT + HOUR)
+    assert run.status == SyncRunStatus.FAILED and run.error.startswith("COHORT_SIZE")
+
+
+def _tombstone_outside_every_cohort() -> Matter:
+    """A Teema deleted through the service that held no state: no retirement."""
+    outsider = factories.MatterFactory()
+    permanently_delete_matter(
+        matter=outsider,
+        actor=factories.DepartmentHeadFactory(),
+        confirmation=plan_matter_deletion(outsider).digest,
+    )
+    return Matter.all_objects.get(pk=outsider.pk)
+
+
+def test_a_retirement_naming_another_event_is_refused_by_the_model(active):
+    from app.audit.services import record_change_event
+    from app.legacy_import.lovable_sync_models import RETIREMENT_NEEDS_ITS_DELETION_EVENT
+
+    _enroll(active)
+    member = _delete("2026_511")
+    tomb = _tombstone_outside_every_cohort()
+    assert _retirements().count() == 1
+    wrong_type = record_change_event(
+        event_type=ChangeEventType.MATTER_TITLE_CHANGED, matter=tomb, summary="muu sündmus"
+    )
+    another_teemas = _deletion_event(member)
+    for event in (wrong_type, another_teemas):
+        with refused(RETIREMENT_NEEDS_ITS_DELETION_EVENT):
+            _forge(tomb, event)
+    assert _retirements().count() == 1
+    # The one shape still accepted: the tombstone beside its own deletion event.
+    assert _forge(tomb, _deletion_event(tomb)).matter_id == tomb.pk
+
+
+def test_the_database_refuses_an_update_or_delete_of_a_retirement(active):
+    """QA: `QuerySet.update()` changed a row and `.delete()` removed one, since
+    neither calls the model. Migration 0023's trigger refuses both."""
+    _enroll(active)
+    _delete("2026_511")
+    row = _retirements().get()
+    with pytest.raises(DatabaseError, match="does not permit UPDATE"), transaction.atomic():
+        _retirements().filter(pk=row.pk).update(reason="muudetud")
+    with pytest.raises(DatabaseError, match="does not permit DELETE"), transaction.atomic():
+        _retirements().filter(pk=row.pk).delete()
+    with pytest.raises(DatabaseError, match="does not permit UPDATE"), transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "UPDATE legacy_import_lovablesyncretirement SET cohort = 'x' WHERE id = %s",
+                [row.pk],
+            )
+    kept = _retirements().get()
+    assert (kept.pk, kept.reason, kept.cohort) == (row.pk, row.reason, row.cohort)
+    # And the night still counts it.
+    assert _run(active, at=NIGHT + HOUR).status == SyncRunStatus.SUCCEEDED
+
+
+def test_deletion_and_retire_still_write_their_retirements(active):
+    """The two doors pass the model's check: the tombstone is marked with
+    `update()` before the event and the retirement are written."""
+    from app.legacy_import import lovable_sync_retirement
+
+    _enroll(active)
+    tomb = _delete("2026_510")
+    assert _retirements().get().deletion_event_id == _deletion_event(tomb).pk
+    # An operator's retirement of a deletion made without one (the pre-fix shape).
+    with mock.patch.object(lovable_sync_retirement, "record_for_deletion", return_value=[]):
+        later = _delete("2026_512")
+    assert _retirements().count() == 1
+    plan = lovable_sync_retirement.retire(
+        cohort=OPERATIONAL_COHORT, reference="2026_512", reason="Operaatori kanne", apply=True
+    )
+    assert plan.applied and _retirements().count() == 2
+    assert _retirements().get(matter=later).deletion_event_id == _deletion_event(later).pk
+    assert _run(active, at=NIGHT + HOUR).status == SyncRunStatus.SUCCEEDED

@@ -32,7 +32,7 @@ from typing import Any
 from django.conf import settings
 from django.db import models
 
-from app.core.errors import ImmutableRecordError
+from app.core.errors import ImmutableRecordError, InvariantViolation
 from app.core.models import BaseModel
 
 
@@ -237,6 +237,15 @@ class RetirementKind(models.TextChoices):
     OPERATOR = "OPERATOR", "Kanti käsitsi (jäädavalt kustutatud teema)"
 
 
+#: Refusals of a retirement written below the command layer (2026-11 QA, C-L-04).
+RETIREMENT_NEEDS_A_TOMBSTONE = (
+    "Kohordist arvatakse välja ainult jäädavalt kustutatud teema: see teema ei ole kustutatud."
+)
+RETIREMENT_NEEDS_ITS_DELETION_EVENT = (
+    "Kohordist väljaarvamine peab viitama selle sama teema kustutamise sündmusele (MATTER_DELETED)."
+)
+
+
 class LovableSyncRetirement(BaseModel):
     """One cohort member that left its cohort because its Teema was permanently
     deleted (docs/adr/0165; audit 2026-11 C-L-04).
@@ -246,7 +255,14 @@ class LovableSyncRetirement(BaseModel):
     still stops the night (COHORT_SIZE). Every row names the deletion's own
     `MATTER_DELETED` change event, so a retirement exists only beside an
     authorised, audited deletion; the tombstone it points at is never removed.
-    Written once and never changed."""
+    Written once and never changed.
+
+    Both halves are enforced below the services as well (2026-11 QA, C-L-04):
+    `save` refuses an insert whose Teema is not a tombstone in the database, or
+    whose event is not that same Teema's MATTER_DELETED event, so
+    ``objects.create`` cannot forge one; and the table is append-only in the
+    database (migration 0023's trigger), so ``QuerySet.update()`` and
+    ``.delete()`` are refused too."""
 
     cohort = models.CharField(max_length=64)
     matter = models.ForeignKey(
@@ -287,7 +303,31 @@ class LovableSyncRetirement(BaseModel):
     def save(self, *args: Any, **kwargs: Any) -> None:
         if not self._state.adding:
             raise ImmutableRecordError("Kohordist väljaarvamist ei muudeta.")
+        self._refuse_unless_beside_its_deletion()
         super().save(*args, **kwargs)
+
+    def _refuse_unless_beside_its_deletion(self) -> None:
+        """The Teema is a tombstone and the event is its own MATTER_DELETED.
+
+        Read from the database, not from the instances handed in: the deletion
+        marks its tombstone with ``update()``, so the caller's copy still says
+        live, and an instance claiming ``deleted_at`` proves nothing."""
+        from django.apps import apps
+
+        from app.audit.enums import ChangeEventType
+
+        matter_model = apps.get_model("matters", "Matter")
+        event_model = apps.get_model("audit", "ChangeEvent")
+        if not matter_model.all_objects.filter(
+            pk=self.matter_id, deleted_at__isnull=False
+        ).exists():
+            raise InvariantViolation(RETIREMENT_NEEDS_A_TOMBSTONE)
+        if not event_model.objects.filter(
+            pk=self.deletion_event_id,
+            matter_id=self.matter_id,
+            event_type=ChangeEventType.MATTER_DELETED,
+        ).exists():
+            raise InvariantViolation(RETIREMENT_NEEDS_ITS_DELETION_EVENT)
 
     def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         raise ImmutableRecordError("Kohordist väljaarvamist ei muudeta.")
