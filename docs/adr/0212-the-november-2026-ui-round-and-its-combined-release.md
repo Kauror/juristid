@@ -108,7 +108,24 @@ A collapsed group's active constraints stay visible as removable chips. No param
 
 ### 6. The Teema's action row and the current-action toolbar (UI-09, UI-10)
 
-See the amendment below (completed at integration).
+**One action row.** A writer on an open Matter sees one row directly under «Praegune tegevus»:
+- «+ Lisa tegevus»;
+- «+ Ülevaade / uudis»;
+- «+ Kaasamine»;
+- «+ Koja arvamus / kohtumine»;
+- «+ Lisa»;
+- «Lõpeta teema» at its right.
+
+The LISA TEEMALE heading is retired. Every form, endpoint, permission and confirmation is unchanged. «Lõpeta teema» keeps its own close-Matter form, which is not the completion of a current action.
+
+«+ Lisa tegevus» opens the planned-action form when there is a current step, and the next-step editor when there is none. A closed Matter and a reader get no row.
+
+**The toolbar.** The current step carries a toolbar of buttons with `aria-expanded`: «✓ Tehtud | Vaatasin üle | Muuda», at the right of its line.
+- Each button toggles its own panel, drawn under the line in that order.
+- Panels are independent and may all be open at once.
+- Opening or closing a panel saves nothing, and hiding a panel keeps what was typed.
+
+**Stale forms are refused.** Each panel posts the step's revision (`<pk>@<updated_at>`). The server checks it inside the save's transaction, under the Matter and action locks, before anything is stored. A stale submit is refused with «Praegune tegevus muutus vahepeal, seda vormi ei salvestatud.», with nothing written. A form drawn before this release, posting no revision, keeps only the step-id check.
 
 ### 7. The historical OneNote copy reads as a document (UI-12, UI-13; amends 0208 and 0210)
 
