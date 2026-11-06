@@ -16,7 +16,7 @@
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="page sourcepage">
   <nav class="crumbs" aria-label="Asukoht">
     <a href="{% url 'matters:matter_detail' pk=matter.pk %}">
       {{ matter.title|truncatechars:60 }}
