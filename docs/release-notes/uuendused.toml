@@ -27,7 +27,7 @@ changes = [
   "Kalendri saab avada suuremas aknas: klõpsa juba valitud vaatel („4 nädalat“ või „Kuu“) või pealkirjal KALENDER — avaneb sama periood ja sama kalender (Minu asjad või Osakond). Laupäevad, pühapäevad ja riigipühad on punased ning riigipüha nimi on näha hiire, klaviatuuri või puudutusega.",
   "Teemade lehel on olekud Avatud, Suletud ja Kõik; arhiivikirjed leiad Täpsemast otsingust (Muud tunnused → Kirje liik) ja vanad arhiivilingid töötavad edasi. Täpsem otsing kasutab kogu lehe laiust ja on jagatud rühmadesse; kokkuvolditud rühma valikud on näha kiipidena.",
   "Osakonna ribal ei näidata enam nulli korral «tähtajaga teemat sel nädalal», «vastutajata» ega «uut läbi vaatamata».",
-  "Ajaloolise OneNote'i lehe koopia on nüüd loetav dokument: selge pealkiri, lehe enda vahepealkirjad ja kuupäevaga märkused sisukorras, töötavad lingid ja kompaktne failirida; ühise toimiku olek on öeldud üks kord ja jutumärgid kuvatakse õigesti. Teema käigus näitab avatud OneNote'i märkus teksti ühe korra ning link «OneNote'i koopia» avab lehe selle märkuse kohalt.",
+  "Ajaloolise OneNote'i lehe koopia on nüüd loetav dokument: selge pealkiri, lehe enda vahepealkirjad ja kuupäevaga märkused sisukorras, töötavad lingid ja kompaktne failirida; ühise toimiku olek on öeldud üks kord ja jutumärgid kuvatakse õigesti. «Tegevused» all näitab avatud OneNote'i märkus teksti ühe korra ning link «OneNote'i koopia» avab lehe selle märkuse kohalt.",
 ]
 
 [[day]]
