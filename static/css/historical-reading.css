@@ -1,1 +1,172 @@
 /* historical-reading.css: UI-12/UI-13 historical reading view and timeline (agent F). Loaded after ux.css from templates/base.html. */
+
+/* ====================================================================
+ * UI-12 — `/ajalugu/<pk>/` reads as a document
+ *
+ * One column of reasonable width; the page's text at a reading measure; the
+ * source's own headings, dated notes and indentation; one compact line per
+ * file. #603's E-03 wrapping (app.css, `.casefile`, `.casefile__text`,
+ * `.sourcepage .filelist__item`) is kept as it is: every rule here narrows or
+ * spaces, none lets a long token stop wrapping.
+ * ==================================================================== */
+
+.sourcepage {
+  max-width: 64rem;
+}
+
+.sourcepage__back {
+  display: inline-flex;
+  gap: var(--spacing-1);
+  align-items: baseline;
+  overflow-wrap: anywhere;
+}
+
+/* E-04 (prepared on fix/aud-w4 at 6d0f3290, folded in here): the source
+ * page's cards carry one padding and what is inside starts at it, as
+ * `.docpage .card` does — before, the text, the fact grid and the tables sat
+ * flush against the card's edge while the label and note were indented by
+ * their own paddings. */
+.sourcepage .card {
+  padding: var(--spacing-3) var(--spacing-4);
+}
+
+.sourcepage .card > .sectionlabel,
+.sourcepage .card .cardnote {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* Reading measure: prose stops at ~72 characters; files and lists line up
+ * with it. */
+.sourcepage .casefile {
+  max-width: 72ch;
+  gap: var(--spacing-2);
+}
+
+.sourcepage .casefile__text {
+  font-size: var(--typography-size-base);
+  line-height: 1.6;
+}
+
+.sourcepage .casefile__text a {
+  color: var(--accent-link);
+}
+
+/* A source heading: a line the outline nests material under. */
+.casefile__heading {
+  margin: var(--spacing-3) 0 0;
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.4;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+/* The first line of a dated note starts a section of the page. */
+.casefile__text--dated {
+  margin-top: var(--spacing-3);
+  color: var(--text-primary);
+}
+
+.casefile__list {
+  display: grid;
+  gap: var(--spacing-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The outline's own indentation, to four levels. */
+.casefile .casefile__block--d0 {
+  margin-left: 0;
+}
+
+.casefile .casefile__block--d1 {
+  margin-left: var(--spacing-4);
+}
+
+.casefile .casefile__block--d2 {
+  margin-left: var(--spacing-8);
+}
+
+.casefile .casefile__block--d3 {
+  margin-left: calc(var(--spacing-8) + var(--spacing-4));
+}
+
+.casefile .casefile__block--d4 {
+  margin-left: calc(var(--spacing-8) * 2);
+}
+
+/* One compact line per file: type, name, size, OneNote day, action. */
+.sourcepage .casefile__file {
+  gap: var(--spacing-1) var(--spacing-2);
+  padding: var(--spacing-15) var(--spacing-3);
+}
+
+.casefile__type {
+  flex: none;
+  padding: 0 var(--spacing-15);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  font-size: var(--typography-size-chip);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.03em;
+  color: var(--text-secondary);
+}
+
+.sourcepage .casefile__name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* What the page says about its own files, never text from the source. */
+.casefile__notice {
+  margin: var(--spacing-3) 0 0;
+  font-size: var(--typography-size-meta);
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+/* Where a link lands: «OneNote'i koopia» or a contents entry. */
+.casefile [id] {
+  scroll-margin-top: var(--spacing-8);
+}
+
+.casefile [id]:target {
+  outline: 2px solid var(--accent-border);
+  outline-offset: var(--spacing-1);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+}
+
+/* The shared dossier's Teemad, each a link to its page. */
+.dossiernote__teemad {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--typography-size-label);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The page's own contents: headings and dated notes, one line each. */
+.sourcetoc {
+  margin: var(--spacing-3) 0;
+}
+
+.sourcetoc__list {
+  display: grid;
+  gap: var(--spacing-1);
+  max-width: 72ch;
+  margin: var(--spacing-2) 0 0;
+  padding-left: var(--spacing-5);
+  font-size: var(--typography-size-row);
+  overflow-wrap: anywhere;
+}
+
+.sourcetoc__date {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
