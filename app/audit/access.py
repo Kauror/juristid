@@ -23,8 +23,19 @@ own parameter names and say what kind of slice was taken; their *values* can
 be anything a reader typed — a Teema title in a search box — so a value is
 never stored. What is stored instead is a keyed digest of the whole parameter
 set (``filters_hmac``): two rows with the same digest were the same slice,
-which is what an exposure review needs, and the digest cannot be reversed or
-confirmed against a guessed title without the deployment's secret key.
+which is what an exposure review needs, and nobody can compute it offline
+without the deployment's secret key.
+
+**The digest is not secret from whoever can make the application compute it.**
+Anyone who can run an export with filters of their choosing gets the digest of
+their guess written to the trail, and a digest equal to another row's confirms
+the guess (2026-11 QA, B-01). That is harmless for an actor who may read
+business content — they could run the same search on the page and read the
+answer — and is the whole leak for one who may not: an administrator without a
+grant is handed an empty file and would still be handed the digest. So the
+digest is written only when the request may read business content
+(`authorization.may_read_business_content`, the one predicate, docs/adr/0181);
+otherwise the row keeps the filter names and the row count and no digest.
 
 **HEAD writes nothing.** A HEAD asks what the file would be and is handed no
 file, so nothing was exported (QA-07, `app.core.http.head_response`).
@@ -59,11 +70,13 @@ _FILTER_SALT = "app.audit.access.export-filters"
 _NOT_FILTERS = frozenset({"csrfmiddlewaretoken"})
 
 
-def filter_summary(params: QueryDict | None) -> dict[str, Any]:
+def filter_summary(params: QueryDict | None, *, keyed: bool = True) -> dict[str, Any]:
     """The names of the filters applied, and a keyed digest of their values.
 
     Empty parameters are not filters: the page posts every field of its form,
     and «nothing chosen» is the same slice whether the field was sent or not.
+    ``keyed=False`` — the request may not read business content — leaves the
+    digest empty: it would only confirm a guess (module docstring).
     """
     if params is None:
         return {"filter_keys": [], "filters_hmac": ""}
@@ -76,7 +89,7 @@ def filter_summary(params: QueryDict | None) -> dict[str, Any]:
     summary: dict[str, Any] = {"filter_keys": names, "filters_hmac": ""}
     if len(names) != len(applied):
         summary["other_filter_keys"] = len(applied) - len(names)
-    if applied:
+    if applied and keyed:
         canonical = urlencode(
             [(key, str(value).strip()) for key in applied for value in params.getlist(key)]
         )
@@ -123,11 +136,16 @@ def record_export(
     view's name) and nothing else.
     """
     from app.accounts import shared_gate
+    from app.core.authorization import may_read_business_content
     from app.core.client_ip import client_ip
     from app.core.http import is_head
 
     if is_head(request):
         return None
+    # Asked of the request's own user, as the export's population was: a reader
+    # (or a grant, already logged once for this request) gets the digest, an
+    # administrator without one, the shared-gate sentinel and anyone else does not.
+    keyed = may_read_business_content(getattr(request, "user", None))
     return record_security_event(
         event_type=SecurityEventType.EXPORT_GENERATED,
         actor=_request_actor(request),
@@ -139,7 +157,7 @@ def record_export(
             format=file_format,
             rows=int(rows),
             method=request.method,
-            **filter_summary(params),
+            **filter_summary(params, keyed=keyed),
             **extra,
         ),
     )

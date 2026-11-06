@@ -265,6 +265,41 @@ def test_an_administrator_without_a_grant_gets_an_empty_file_on_the_trail(world)
     assert not _events(USED)
 
 
+@pytest.mark.parametrize(
+    ("name", "kwargs"),
+    [("matters:export_table", {}), ("reporting:export", {"slug": "teemad"})],
+)
+def test_no_digest_for_an_actor_who_may_not_read_so_a_guess_is_never_confirmed(world, name, kwargs):
+    """QA 2026-11 (B-01): the digest of an administrator's empty export, compared
+    with a reader's row, confirmed a guessed title. Without business read there is
+    no digest to compare; the row keeps the filter names and the row count."""
+    secret = {"q": "Salajane eelnõu X", "periood": "koik"}
+    _signed_in(factories.ReaderFactory()).get(_url(name, kwargs, secret))
+    (reader_row,) = _events(EXPORTED)
+    assert reader_row.detail["filters_hmac"]
+
+    admin = factories.AdministratorFactory()
+    for guess in ({"q": "Avalik teema", "periood": "koik"}, secret):
+        assert _signed_in(admin).get(_url(name, kwargs, guess)).status_code == 200
+    guesses = _events(EXPORTED)[1:]
+    assert [row.actor_id for row in guesses] == [admin.pk, admin.pk]
+    for row in guesses:
+        assert row.detail["rows"] == 0
+        assert row.detail["filters_hmac"] == ""
+        assert row.detail["filter_keys"]
+        assert reader_row.detail["filters_hmac"] not in json.dumps(row.detail)
+    assert not _events(USED)
+
+
+def test_a_grant_is_business_read_and_its_export_keeps_the_digest(world):
+    admin = factories.AdministratorFactory()
+    _grant(admin)
+    _signed_in(admin).get(_url("reporting:export", {"slug": "teemad"}, {"periood": "koik"}))
+    (event,) = _events(EXPORTED)
+    assert event.detail["filters_hmac"]
+    assert len(_events(USED)) == 1
+
+
 def test_the_word_overview_writes_one_row_with_its_period_and_no_title(world):
     reader = factories.ReaderFactory()
     client = _signed_in(reader)
