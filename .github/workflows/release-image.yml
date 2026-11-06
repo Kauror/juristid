@@ -242,6 +242,10 @@ jobs:
       # the copy CI ran on this commit), and the same pinned Trivy with the same
       # gate. Either failing stops the job here, before anything is saved or
       # uploaded: there is no artifact of an image that failed.
+      #
+      # The runtime check runs the image by its id, read once from the tag: a
+      # tag can be moved between two commands and an id cannot, so the id
+      # recorded is the image that ran (2026-11 QA, G-02).
       - name: The image is what its Dockerfile says it is
         env:
           DJANGO_SECRET_KEY: ci-only-secret-not-used-anywhere-else
@@ -249,8 +253,9 @@ jobs:
         run: |
           set -euo pipefail
           checked="$(docker image inspect "juristid-main-web:$SHORT" --format '{{.Id}}')"
+          [[ "$checked" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "not an image id: $checked"; exit 1; }
           docker run --rm -e DJANGO_SECRET_KEY -e DJANGO_ALLOWED_HOSTS -e DJANGO_DEBUG=0 \
-            --entrypoint python "juristid-main-web:$SHORT" scripts/ci/assert_image_runtime.py
+            --entrypoint python "$checked" scripts/ci/assert_image_runtime.py
           test "$(docker image inspect "juristid-main-web:$SHORT" --format '{{.Id}}')" = "$checked" \
             || { echo "the tag moved while the image was being checked"; exit 1; }
           echo "runtime-checked image: $checked"
@@ -359,8 +364,12 @@ jobs:
           # else keeps, since apt installs them at build time — and the locked
           # Python set, which `uv sync --frozen` installed from uv.lock at this
           # revision. A later advisory is then answered by reading two files
-          # rather than by loading the image.
-          docker run --rm --entrypoint dpkg-query "juristid-main-web:$SHORT" \
+          # rather than by loading the image. Listed from the image by its id,
+          # asked again first, so the list is the archived image's and not
+          # whatever the tag names by now (2026-11 QA, G-02).
+          test "$(docker image inspect "$image_id" --format '{{.Id}}')" = "$image_id" \
+            || { echo "image $image_id is gone, or is not an image id"; exit 1; }
+          docker run --rm --entrypoint dpkg-query "$image_id" \
             -W -f '${Package}=${Version}\n' | sort > "os-packages-$SHORT.txt"
           cp uv.lock "python-packages-$SHORT.lock"
           echo "os_packages:   os-packages-$SHORT.txt ($(wc -l < "os-packages-$SHORT.txt") entries)" >> "release-manifest-$SHORT.txt"

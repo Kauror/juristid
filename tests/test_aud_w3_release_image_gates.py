@@ -49,6 +49,9 @@ DOCKERFILE = ROOT / "Dockerfile"
 BASH = shutil.which("bash") or "bash"
 
 RELEASE_IMAGE = '"juristid-main-web:$SHORT"'
+#: The runtime check addresses the image by the id it records, not by the tag
+#: (2026-11 QA, G-02), so it differs from CI's line by the image reference only.
+RELEASE_CHECKED_ID = '"$checked"'
 CI_IMAGE = "juristid:ci"
 RUNTIME_STEP = "The image is what its Dockerfile says it is"
 GATE_STEP = "The image has no fixable HIGH or CRITICAL vulnerability"
@@ -115,11 +118,40 @@ def _runtime_line(steps: list[dict[str, Any]], image: str) -> str:
 
 
 def test_the_release_runs_cis_runtime_check_on_its_own_image(release, container) -> None:
-    assert _runtime_line(release, RELEASE_IMAGE) == _runtime_line(container, CI_IMAGE)
+    assert _runtime_line(release, RELEASE_CHECKED_ID) == _runtime_line(container, CI_IMAGE)
     step = release[_index(release, _named(RUNTIME_STEP))]
     ci_step = container[_index(container, _named(RUNTIME_STEP))]
     assert step["env"] == ci_step["env"]
     assert 'echo "RUNTIME_CHECKED_IMAGE_ID=$checked" >> "$GITHUB_ENV"' in step["run"]
+
+
+def _docker_runs(step: dict[str, Any]) -> list[str]:
+    return [line for line in _joined(str(step.get("run", ""))) if line.startswith("docker run")]
+
+
+def test_the_runtime_check_and_the_package_list_run_the_pinned_id(release) -> None:
+    """QA 2026-11 (G-02): both ran `juristid-main-web:$SHORT`, so a tag moved
+    between the id being read and the command running would have been checked or
+    listed in place of the recorded image. Both now run the id itself."""
+    runtime = release[_index(release, _named(RUNTIME_STEP))]
+    script = runtime["run"]
+    (run,) = _docker_runs(runtime)
+    assert RELEASE_CHECKED_ID in run and RELEASE_IMAGE not in run
+    assert script.index("checked=") < script.index("docker run")
+    assert '[[ "$checked" =~ ^sha256:[0-9a-f]{64}$ ]]' in script
+    assert 'echo "RUNTIME_CHECKED_IMAGE_ID=$checked"' in script
+
+    save = release[_index(release, _named("Save and digest"))]
+    (listing,) = [line for line in _docker_runs(save) if "dpkg-query" in line]
+    assert '--entrypoint dpkg-query "$image_id"' in listing
+    assert RELEASE_IMAGE not in listing
+    script = save["run"]
+    recheck = 'test "$(docker image inspect "$image_id" --format ' + '\'{{.Id}}\')" = "$image_id"'
+    assert recheck in script
+    assert script.index(recheck) < script.index("--entrypoint dpkg-query")
+    # Nothing in either step runs a container from the tag any more.
+    for step in (runtime, save):
+        assert not [line for line in _docker_runs(step) if RELEASE_IMAGE in line]
 
 
 def test_the_release_runs_cis_trivy_gate_on_its_own_image(release, container) -> None:
