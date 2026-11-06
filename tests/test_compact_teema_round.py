@@ -39,6 +39,10 @@ def _detail(client, matter) -> str:
 
 
 def _zone(body: str) -> str:
+    return body[body.index('id="praegune-tegevus"') : body.index('id="lisa-teemale"')]
+
+
+def _zone_and_row(body: str) -> str:
     """`PRAEGUNE TEGEVUS` and the action row directly under it (UI-09).
 
     `+ Lisa tegevus` sits in that row since UI-09, so «the zone» a lawyer reads
@@ -80,7 +84,7 @@ def test_the_add_action_control_is_lisa_tegevus_beside_a_current_action(
 ):
     client.force_login(specialist)
 
-    zone = _zone(_detail(client, with_current))
+    zone = _zone_and_row(_detail(client, with_current))
 
     assert (
         '<label class="disclosure-chip" for="lisa-planeeritud-valik">+ Lisa tegevus</label>' in zone
@@ -93,7 +97,7 @@ def test_the_add_action_control_is_lisa_tegevus_with_nothing_current(
 ):
     client.force_login(specialist)
 
-    zone = _zone(_detail(client, normal_matter))
+    zone = _zone_and_row(_detail(client, normal_matter))
 
     assert "+ Lisa tegevus" in zone
     assert "Määra järgmine tegevus" not in zone
@@ -113,7 +117,7 @@ def test_planned_rows_render_under_the_control_without_a_heading(client, special
         matter=with_current, text="Helista ministeeriumile", target_date=_day(9), actor=specialist
     )
 
-    zone = _zone(_detail(client, with_current))
+    zone = _zone_and_row(_detail(client, with_current))
 
     assert "Planeeritud tegevused</h3>" not in zone
     assert "curact__plannedhead" not in zone
