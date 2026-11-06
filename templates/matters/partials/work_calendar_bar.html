@@ -1,6 +1,10 @@
 {% comment %}
 The calendar's controls: the four views, then ‹ period › and «Täna». Every
 control is a link to this page's own address (see work_calendar.html).
+
+In the rail the active «4 nädalat» or «Kuu» is not a dead control (UI-04): it
+opens the same view and period in the large panel (`link.expands`, its query
+`calendar.expand_query`). An inactive one switches the rail's view as before.
 {% endcomment %}
 <nav class="wcal__bar" aria-label="Kalendri vaade{% if in_panel %} (paneel){% endif %}">
   <span class="wcal__views">
@@ -8,7 +12,7 @@ control is a link to this page's own address (see work_calendar.html).
       <a class="wcal__view{% if link.is_current %} is-active{% endif %}"
          href="{{ link.query }}"
          hx-get="{{ link.query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true"
-         {% if link.is_current %}aria-current="true"{% endif %}>{{ link.label }}</a>
+         {% if link.is_current %}aria-current="true"{% endif %}{% if link.expands %} data-wcal-expand title="Ava suuremas aknas" aria-describedby="{{ calendar.element_id }}-suurem"{% endif %}>{{ link.label }}</a>
     {% endfor %}
   </span>
   <span class="wcal__period">

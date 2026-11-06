@@ -68,6 +68,7 @@ from django.urls import reverse
 
 from app.core import dates
 from app.core.dates import format_estonian_date, short_day_month
+from app.core.holidays import RestDay, rest_day
 from app.intelligence.enums import (
     INFORMATIONAL_IMPORTANT_DATE_KINDS,
     FactStatus,
@@ -618,6 +619,18 @@ class Day:
     in_period: bool
     is_today: bool
     events: list[CalendarEvent]
+    #: Weekend and holiday facts from the one provider (`app.core.holidays`,
+    #: UI-11). Presentation only: no date is refused or moved for it.
+    rest: RestDay | None = None
+
+    @property
+    def is_rest_day(self) -> bool:
+        return self.rest is not None and self.rest.is_rest_day
+
+    @property
+    def holiday_label(self) -> str:
+        """«jaanipäev (riigipüha)», or empty on any day that is not a holiday."""
+        return self.rest.label if self.rest is not None else ""
 
     @property
     def dots(self) -> list[CalendarEvent]:
@@ -646,15 +659,19 @@ class Day:
 
     @property
     def title(self) -> str:
-        """«N 12.11.2026», the popover's heading."""
-        return f"{dates.weekday_name(self.day).capitalize()} {format_estonian_date(self.day)}"
+        """«N 12.11.2026», the popover's heading; a holiday adds its name."""
+        heading = f"{dates.weekday_name(self.day).capitalize()} {format_estonian_date(self.day)}"
+        if self.holiday_label:
+            return f"{heading} · {self.holiday_label}"
+        return heading
 
     @property
     def label(self) -> str:
-        """The day's accessible name: its date and what it holds."""
+        """The day's accessible name: its date, a holiday's name, and what it holds."""
         today = ", täna" if self.is_today else ""
+        holiday = f", {self.holiday_label}" if self.holiday_label else ""
         return (
-            f"{format_estonian_date(self.day)}{today}: "
+            f"{format_estonian_date(self.day)}{today}{holiday}: "
             f"{_counts_label(self.work_count, self.commencement_count, self.estimate_count)}"
         )
 
@@ -742,6 +759,7 @@ def _week(
                 in_period=inside,
                 is_today=cell == today,
                 events=by_day.get(cell, []) if inside else [],
+                rest=rest_day(cell),
             )
         )
     return Week(number=first.isocalendar()[1], days=days)
@@ -781,6 +799,10 @@ class ViewLink:
     label: str
     query: str
     is_current: bool
+    #: The active «4 nädalat» or «Kuu» in the rail (UI-04): a click opens the
+    #: same view and period in the large panel instead of doing nothing.
+    #: ``query`` is then `Calendar.expand_query`.
+    expands: bool = False
 
 
 @dataclass
@@ -817,6 +839,10 @@ class Calendar:
     is_department: bool = False
     #: Four weeks or a month asked for in the panel (`WINDOW_PARAM`).
     in_window: bool = False
+    #: The same view and period in the large panel (UI-04): where the active
+    #: «4 nädalat» or «Kuu» and the KALENDER heading go from the rail. Empty
+    #: when the calendar is already in the panel.
+    expand_query: str = ""
 
     @property
     def is_wide(self) -> bool:
@@ -960,6 +986,11 @@ def build_calendar(
     previous_anchor = shift_anchor(view, anchor, -1)
     next_anchor = shift_anchor(view, anchor, 1)
     current = default_anchor(view, today)
+    # The page's own address with only the panel switched on, so the scope
+    # (this desk, a colleague's, Osakond and its `vaade`) and every other
+    # parameter of the page carry over unchanged (`query_for`). Quarter and
+    # year are always in the panel already, so they never need it.
+    expand_query = "" if in_panel else address(view, anchor, panel=True)
     result = Calendar(
         view=view,
         anchor=anchor,
@@ -968,7 +999,9 @@ def build_calendar(
         today=today,
         title=period_title(view, anchor),
         views=[
-            ViewLink(key, label, address(key, default_anchor(key, today)), key == view)
+            ViewLink(key, label, expand_query, True, expands=True)
+            if key == view and expand_query
+            else ViewLink(key, label, address(key, default_anchor(key, today)), key == view)
             for key, label in VIEWS
         ],
         previous_query=address(view, previous_anchor) if _in_bounds(previous_anchor) else "",
@@ -984,6 +1017,7 @@ def build_calendar(
         element_id=DEPARTMENT_ELEMENT_ID if subject is None else ELEMENT_ID,
         is_department=subject is None,
         in_window=in_window,
+        expand_query=expand_query,
     )
 
     if view == VIEW_WEEKS:
