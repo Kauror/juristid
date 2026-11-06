@@ -16,10 +16,17 @@ precision label and its state. The lists under the grid keep every date.
 `compact` is the department calendar: a work dot takes its responsible person's
 colour (`event.person_class`) and an entry is person — Teema, then what the
 date means.
+
+A rest day (UI-11) — Saturday, Sunday or an Estonian public holiday, from the
+one provider `app.core.holidays.rest_day` — draws its number in
+`--calendar-rest-day` (`is-rest`). A holiday is never told by colour alone: its
+name is in the day's `title` (hover), in its accessible name (keyboard) and in
+the popover heading. An otherwise empty holiday is a disclosure too, so a
+keyboard can reach it and a tap opens its name. Nothing is disabled or moved.
 {% endcomment %}
 <div class="wcal__grid">
   <span class="wcal__head wcal__head--week" aria-hidden="true">N</span>
-  {% for letter in weekdays %}<span class="wcal__head" aria-hidden="true">{{ letter }}</span>{% endfor %}
+  {% for letter in weekdays %}<span class="wcal__head{% if forloop.counter > 5 %} wcal__head--rest{% endif %}" aria-hidden="true">{{ letter }}</span>{% endfor %}
   {% for week in weeks %}
     {% if week.total %}
       <details class="wcal__week" data-uxpopover>
@@ -41,8 +48,8 @@ date means.
     {% endif %}
     {% for day in week.days %}
       {% if day.events %}
-        <details class="wcal__day{% if day.is_today %} is-today{% endif %}" data-uxpopover data-wcal-day>
-          <summary class="wcal__daybtn" aria-label="{{ day.label }}"{% if day.is_today %} aria-current="date"{% endif %}>
+        <details class="wcal__day{% if day.is_today %} is-today{% endif %}{% if day.is_rest_day %} is-rest{% endif %}{% if day.holiday_label %} is-holiday{% endif %}" data-uxpopover data-wcal-day>
+          <summary class="wcal__daybtn" aria-label="{{ day.label }}"{% if day.holiday_label %} title="{{ day.holiday_label }}"{% endif %}{% if day.is_today %} aria-current="date"{% endif %}>
             <span class="wcal__num">{{ day.day.day }}</span>
             <span class="wcal__dots" aria-hidden="true">
               {% for event in day.dots %}<span class="wcal__dot wcal__dot--{{ event.category }}{% if compact and event.is_work %} wcal__dot--{{ event.person_class }}{% endif %}{% if event.is_overdue %} is-overdue{% endif %}" title="{% if compact %}{{ event.compact_summary }}{% else %}{{ event.summary }}{% endif %}"></span>{% endfor %}{% if day.more %}<span class="wcal__more">+{{ day.more }}</span>{% endif %}
@@ -60,8 +67,18 @@ date means.
             {% endfor %}
           </div>
         </details>
+      {% elif day.in_period and day.holiday_label %}
+        <details class="wcal__day is-rest is-holiday{% if day.is_today %} is-today{% endif %}" data-uxpopover>
+          <summary class="wcal__daybtn wcal__daybtn--holiday" aria-label="{{ day.label }}" title="{{ day.holiday_label }}"{% if day.is_today %} aria-current="date"{% endif %}>
+            <span class="wcal__num">{{ day.day.day }}</span>
+          </summary>
+          <div class="wcal__pop" data-uxfloat="fit">
+            <p class="wcal__poptitle">{{ day.title }}</p>
+            <p class="wcal__popempty">Sel päeval kuupäevaga töid ega jõustumisi ei ole.</p>
+          </div>
+        </details>
       {% else %}
-        <span class="wcal__day wcal__day--empty{% if not day.in_period %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}"{% if day.is_today %} aria-current="date"{% endif %}><span class="wcal__num">{{ day.day.day }}</span></span>
+        <span class="wcal__day wcal__day--empty{% if not day.in_period %} is-outside{% endif %}{% if day.is_today %} is-today{% endif %}{% if day.in_period and day.is_rest_day %} is-rest{% endif %}"{% if day.is_today %} aria-current="date"{% endif %}><span class="wcal__num">{{ day.day.day }}</span></span>
       {% endif %}
     {% endfor %}
   {% endfor %}
