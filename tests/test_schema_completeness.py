@@ -172,6 +172,12 @@ EXPECTED_TRIGGERS: dict[str, str] = {
     # A cohort retirement re-sizes what the nightly Lovable run checks (audit
     # 2026-11 C-L-04): changed or removed later, it would hide drift.
     "legacy_import_lovablesyncretirement_append_only": "legacy_import_lovablesyncretirement",
+    # REL-01 (2026-11): a retirement is inserted only beside its tombstone, its own
+    # deletion event and a membership of the same cohort and Lovable id; a
+    # membership only for a live Teema's state, and is never changed.
+    "legacy_import_lovablesyncretirement_evidenced": "legacy_import_lovablesyncretirement",
+    "legacy_import_lovablesyncmembership_append_only": "legacy_import_lovablesyncmembership",
+    "legacy_import_lovablesyncmembership_evidenced": "legacy_import_lovablesyncmembership",
     # MCP access events (docs/adr/0185): the authorization server's audit trail.
     "mcp_access_mcpaccessevent_append_only": "mcp_access_mcpaccessevent",
     "mcp_writes_mcpwriteevent_append_only": "mcp_writes_mcpwriteevent",

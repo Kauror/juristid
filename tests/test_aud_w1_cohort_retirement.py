@@ -345,7 +345,10 @@ def test_the_operator_command_repairs_a_deletion_made_before_the_fix(active):
 
     _enroll(active)
     assert _run(active).status == SyncRunStatus.SUCCEEDED
-    # A deletion made by a release without the recorder: the night stops.
+    source_id = LovableSyncState.objects.get(matter=_matter("2026_512")).source_id
+    # A deletion whose retirement was not recorded: the night stops. Its
+    # membership was recorded at enrolment (REL-01); a deletion made before
+    # memberships existed is refused instead (tests/test_rel01_*).
     with mock.patch.object(lovable_sync_retirement, "record_for_deletion", lambda **_kw: []):
         _delete("2026_512")
     stopped = _run(active, at=NIGHT + HOUR)
@@ -364,7 +367,8 @@ def test_the_operator_command_repairs_a_deletion_made_before_the_fix(active):
     assert retirement.kind == "OPERATOR"
     assert retirement.deletion_event_id == _deletion_event(tomb).pk
     assert retirement.actor_id == _deletion_event(tomb).actor_id
-    assert retirement.source_id is None and retirement.reason == "Kustutatud"
+    # The Lovable id comes from the membership, not from the operator (REL-01).
+    assert retirement.source_id == source_id and retirement.reason == "Kustutatud"
     assert "retired" in out
 
     run = _run(active, at=NIGHT + 2 * HOUR)
@@ -455,7 +459,11 @@ def _plan(reference: str, *, apply: bool = False, cohort: str = OPERATIONAL_COHO
 # ---------------------------------------------------------------------------
 
 
-def test_every_member_retired_is_an_empty_cohort_never_a_negative_one(active):
+def test_every_member_retired_is_an_empty_cohort_never_a_negative_one(active, monkeypatch):
+    from collections import Counter
+
+    from app.legacy_import.lovable_sync_models import RETIREMENT_NEEDS_A_REMOVED_STATE
+
     _enroll(active)
     for reference in ("2026_510", "2026_511", "2026_512"):
         _delete(reference)
@@ -463,9 +471,8 @@ def test_every_member_retired_is_an_empty_cohort_never_a_negative_one(active):
     run = _run(active, at=NIGHT + HOUR)
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
     assert run.counts["by_cohort"][OPERATIONAL_COHORT]["checked"] == 0
-    # More retirements than the enrolment (only drift could write one) never go below 0.
-    # The extra row is the one shape the model still accepts: a tombstone beside
-    # its own MATTER_DELETED event, here a Teema that was never a member.
+    # A fourth retirement, of a Teema that was never a member, can no longer be
+    # written at all (REL-01: tests/test_rel01_retirement_membership.py).
     outsider = factories.MatterFactory()
     permanently_delete_matter(
         matter=outsider,
@@ -474,15 +481,19 @@ def test_every_member_retired_is_an_empty_cohort_never_a_negative_one(active):
     )
     extra = Matter.all_objects.get(pk=outsider.pk)
     event = _deletion_event(extra)
-    _retirements().create(
-        cohort=OPERATIONAL_COHORT,
-        matter=extra,
-        deletion_event=event,
-        reference="",
-        kind="OPERATOR",
-        retired_at=NIGHT,
-        reason="drift",
-    )
+    with refused(RETIREMENT_NEEDS_A_REMOVED_STATE):
+        _retirements().create(
+            cohort=OPERATIONAL_COHORT,
+            matter=extra,
+            deletion_event=event,
+            actor=event.actor,
+            reference="",
+            kind="OPERATOR",
+            retired_at=NIGHT,
+            reason="drift",
+        )
+    # More retirements than the enrolment still never go below 0.
+    monkeypatch.setattr(lovable_sync, "retired_members", lambda: Counter({OPERATIONAL_COHORT: 4}))
     assert lovable_sync.expected_cohorts()[OPERATIONAL_COHORT] == 0
     ledger = {c["key"]: c for c in lovable_sync.cohort_ledger()}
     assert ledger[OPERATIONAL_COHORT] == {
@@ -594,8 +605,13 @@ def test_a_retirement_naming_another_event_is_refused_by_the_model(active):
         with refused(RETIREMENT_NEEDS_ITS_DELETION_EVENT):
             _forge(tomb, event)
     assert _retirements().count() == 1
-    # The one shape still accepted: the tombstone beside its own deletion event.
-    assert _forge(tomb, _deletion_event(tomb)).matter_id == tomb.pk
+    # Its own deletion event is no longer enough either (REL-01): that deletion
+    # removed no synchronisation state, and no membership names the Teema.
+    from app.legacy_import.lovable_sync_models import RETIREMENT_NEEDS_A_REMOVED_STATE
+
+    with refused(RETIREMENT_NEEDS_A_REMOVED_STATE):
+        _forge(tomb, _deletion_event(tomb))
+    assert _retirements().count() == 1
 
 
 def test_the_database_refuses_an_update_or_delete_of_a_retirement(active):
