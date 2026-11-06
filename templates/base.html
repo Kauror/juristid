@@ -13,8 +13,8 @@
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
 
-    {# Linked explicitly so browsers do not fall back to probing /favicon.ico. #}
-    <link rel="icon" type="image/png" href="{% static 'brand/koda-logo-negative.png' %}">
+    {# The round emblem, in every size a browser asks for (UI-02). #}
+    {% include "components/favicon_links.html" %}
     <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
