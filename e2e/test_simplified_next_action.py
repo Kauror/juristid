@@ -173,10 +173,9 @@ def test_the_current_action_zone_carries_only_the_targets_controls(page, base_ur
     set_step(page, "Saata kiri ministeeriumile", 30)
 
     zone = page.locator("#praegune-tegevus")
-    # `Muuda` is a native `<summary>` rather than a button, which is what
-    # keeps it operable with scripting off (brief §33).
+    # `Muuda` is a button in the step's toolbar since UI-10.
     expect(zone.get_by_text("Muuda", exact=True)).to_be_visible()
-    expect(zone.locator('label[for="tehtud-valik"]')).to_have_text("✓ Tehtud")
+    expect(zone.locator('[data-curact-toggle][aria-controls="tehtud"]')).to_have_text("✓ Tehtud")
     expect(page.locator("summary.uxnext__defersum")).to_have_count(0)
     assert "Lükka edasi" not in zone.inner_text()
     # And the launcher does not offer a second way to set the same one step.
@@ -247,7 +246,7 @@ def test_a_seeded_wait_reads_as_a_sentence_and_a_date(page, base_url):
     # here. This file shares one seeded world with the rest of the browser
     # suite, and a test that completed the seeded WAIT would decide what every
     # later reader of this Matter sees.
-    expect(zone.locator('label[for="tehtud-valik"]')).to_have_text("✓ Tehtud")
+    expect(zone.locator('[data-curact-toggle][aria-controls="tehtud"]')).to_have_text("✓ Tehtud")
 
 
 # ---------------------------------------------------------------------------

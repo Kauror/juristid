@@ -341,8 +341,11 @@ def test_each_group_is_its_own_radio_group_so_only_one_form_can_be_open(signed_i
 
     names = re.findall(r'<input class="addpick" type="radio" name="([^"]+)"', zone)
 
-    assert len(names) == len(PANEL_IDS)
-    assert names.count("lisa-valik") == len(EXCLUSIVE_IDS)
+    # Plus `+ Lisa tegevus`, the row's first choice since UI-09 — the
+    # next-step editor on this Matter with no step — in the same group.
+    assert len(names) == len(PANEL_IDS) + 1
+    assert names.count("lisa-valik") == len(EXCLUSIVE_IDS) + 1
+    assert 'name="lisa-valik" id="lisa-jargmine-valik"' in zone
     assert set(names) == {"lisa-valik", "marke-liik", "kaasamise-liik", "arvamuse-liik"}
 
 

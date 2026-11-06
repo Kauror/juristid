@@ -79,9 +79,18 @@ def _teema(client, matter) -> str:
 
 
 def _zone(body: str) -> str:
-    """`PRAEGUNE TEGEVUS` and nothing else on the page."""
+    """`PRAEGUNE TEGEVUS` and the action row directly under it (UI-09).
+
+    `+ Lisa tegevus` sits in that row since UI-09, so «the zone» a lawyer reads
+    runs from the zone's heading to the end of the row; a reader and a closed
+    Matter have no row, and the zone then ends with its own section.
+    """
     start = body.index('id="praegune-tegevus"')
-    return body[start : body.index("</section>", start)]
+    end = body.index("</section>", start)
+    row = body.find('<section class="addzone" id="lisa-teemale"', end)
+    if row != -1 and "<section" not in body[end:row]:
+        end = body.index("</section>", row)
+    return body[start:end]
 
 
 def _open_steps(matter):
@@ -287,7 +296,10 @@ def test_a_direct_step_with_no_sentence_is_refused_in_its_own_panel(signed_in, m
     assert not NextAction.objects.filter(matter=matter).exists()
     zone = _zone(response.content.decode())
     # Reopened where it was typed, with the sentence the step controls give.
-    assert re.search(r'id="lisa-jargmine"[^>]*\bopen\b', zone, re.S)
+    # The action row's first choice since UI-09: its radio comes back chosen.
+    assert re.search(
+        r'id="lisa-jargmine-valik"\s+data-addpick aria-controls="lisa-jargmine"\s+checked', zone
+    )
     assert "Kirjuta järgmine tegevus." in zone
 
 

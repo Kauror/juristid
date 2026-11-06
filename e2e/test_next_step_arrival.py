@@ -100,7 +100,9 @@ def test_maara_opens_the_next_step_form_and_puts_the_caret_in_it(page, base_url)
     # not because the page opens it for everybody (docs/adr/0075 §2). And
     # `+ Lisa`, whose first child is `Arvamuse tähtaeg` now, stays shut: a link
     # for work is not a link to a deadline.
-    expect(page.locator("#lisa-jargmine")).to_have_attribute("open", "")
+    # The action row's first choice since UI-09, opened off its radio.
+    expect(page.locator("#lisa-jargmine-valik")).to_be_checked()
+    expect(page.locator("#lisa-jargmine")).to_be_visible()
     assert not page.locator("#lisa-marge-valik").is_checked()
     expect(page.locator("#lisa-marge")).not_to_be_visible()
 

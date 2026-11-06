@@ -345,7 +345,7 @@ from app.taxonomy.models import LegalInstrumentType, PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.consistency import current_work_alerts
-from app.workflow.enums import PlanStepOperation, Track
+from app.workflow.enums import DatePrecision, PlanStepOperation, Track
 from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed, pending_checks
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.selectors import stages_including
@@ -5491,6 +5491,58 @@ def _named_action_id(request: HttpRequest, matter: Matter, form: Any) -> Any:
     ).pk
 
 
+#: Refused when a `PRAEGUNE TEGEVUS` panel was drawn from a revision of the
+#: current step that another save has since replaced (UI-10).
+STALE_REVISION_REFUSAL = (
+    "Praegune tegevus muutus vahepeal, seda vormi ei salvestatud. "
+    "Vaata tegevuse uus seis üle ja salvesta siis uuesti."
+)
+
+
+def current_action_revision(action: NextAction) -> str:
+    """The revision token of a current step, exactly as its panels post it.
+
+    The step's id and its ``updated_at`` — the token every corrected record
+    here already uses (`MatterWebsiteOverview.revision_token`): ``auto_now``
+    moves it on every write, PostgreSQL keeps the microseconds, and it costs no
+    migration. Spelled once here and once in `current_action_task.html`
+    (``{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}``),
+    both off the same UTC value, and held to each other by
+    `tests/test_ui10_current_action_toolbar.py`.
+    """
+    return f"{action.pk}@{action.updated_at.isoformat()}"
+
+
+def _hold_the_drawn_revision(matter: Matter, action_id: Any, posted: str) -> NextAction | None:
+    """Lock the step a toolbar panel names and refuse it if it is not the drawn revision.
+
+    `✓ Tehtud`, `Vaatasin üle` and `Muuda` may all be open at once (UI-10), so
+    one of them is often saved while the others stay open on the page. The id
+    alone does not catch a stale one: `Vaatasin üle` and a date moved from Minu
+    asjad change the step **in place**, so a `Muuda` drawn before them would
+    post the old day back over the new one under the same id.
+
+    Called inside the caller's transaction, before the service: the Matter
+    row, then the action, at `FOR NO KEY UPDATE` — the order and strength
+    every transition takes (`workflow.services._lock_for_transition`) — so the
+    answer cannot change between this check and the write. Returns the locked
+    row, or ``None`` when nothing was posted: a form drawn before this release,
+    or a caller other than the Teema page, keeps exactly the id check it had.
+    Raises `STALE_REVISION_REFUSAL` with nothing written.
+    """
+    if not posted:
+        return None
+    Matter.objects.select_for_update(no_key=True).filter(pk=matter.pk).first()
+    action = (
+        NextAction.objects.select_for_update(no_key=True)
+        .filter(pk=action_id, matter=matter)
+        .first()
+    )
+    if action is None or current_action_revision(action) != posted:
+        raise DomainError(STALE_REVISION_REFUSAL)
+    return action
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -5537,12 +5589,14 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
             action = get_object_or_404(
                 NextAction.objects.visible_to(request.user), pk=named, matter=matter
             )
-            workspace.change_current_action(
-                matter=matter,
-                actor=request.user,
-                action_id=action.pk,
-                **form.as_service_kwargs(),
-            )
+            with transaction.atomic():
+                _hold_the_drawn_revision(matter, action.pk, request.POST.get("revision", ""))
+                workspace.change_current_action(
+                    matter=matter,
+                    actor=request.user,
+                    action_id=action.pk,
+                    **form.as_service_kwargs(),
+                )
         else:
             step = form.as_service_kwargs()
             workspace.add_unnamed_step(
@@ -5980,11 +6034,25 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
         return _workspace_refusal(request, matter, key="review_form", form=form)
 
     try:
-        acknowledge_review(
-            action=action,
-            actor=request.user,
-            next_review_date=form.cleaned_data.get("next_review_date"),
-        )
+        with transaction.atomic():
+            try:
+                _hold_the_drawn_revision(matter, action.pk, request.POST.get("revision", ""))
+            except DomainError:
+                # **A second press of the same review is still one review**
+                # (ENG-021): the first moved the revision on, so the second
+                # arrives stale — and asks for exactly the day the step now
+                # has. That is the review landing once, not an obsolete form,
+                # and `acknowledge_review` answers it by writing nothing.
+                # Anything else drawn from an older revision is refused.
+                locked = NextAction.objects.filter(pk=action.pk).first()
+                wanted = (form.cleaned_data.get("next_review_date"), DatePrecision.EXACT)
+                if locked is None or (locked.target_date, locked.date_precision) != wanted:
+                    raise
+            acknowledge_review(
+                action=action,
+                actor=request.user,
+                next_review_date=form.cleaned_data.get("next_review_date"),
+            )
     except DomainError as error:
         return _workspace_refusal(request, matter, key="review_form", form=form, error=str(error))
 
@@ -8490,21 +8558,26 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
         matter=matter,
     )
     try:
-        result = workspace.complete_current_action(
-            matter=matter,
-            author=request.user,
-            action_id=action.pk,
-            body=form.cleaned_data["body"],
-            uploads=form.cleaned_data["attachments"],
-            # `Järgmine tegevus` and `Uus hetkeseis` (docs/adr/0140): a sentence
-            # of the person's own or nothing, and a stage or `Jätan muutmata`.
-            next_text=form.cleaned_data.get("next_text") or "",
-            next_date=form.cleaned_data.get("next_date"),
-            stage=form.cleaned_data.get("stage"),
-            # `Sulge teema ja lõpeta ka järelkontroll`, when the person ticked
-            # it after the warning (docs/adr/0146 §8).
-            follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
-        )
+        # The drawn revision first, under the locks the completion takes next
+        # and before it stores a byte of any file (UI-10).
+        with transaction.atomic():
+            _hold_the_drawn_revision(matter, action.pk, request.POST.get("revision", ""))
+            result = workspace.complete_current_action(
+                matter=matter,
+                author=request.user,
+                action_id=action.pk,
+                body=form.cleaned_data["body"],
+                uploads=form.cleaned_data["attachments"],
+                # `Järgmine tegevus` and `Uus hetkeseis` (docs/adr/0140): a
+                # sentence of the person's own or nothing, and a stage or
+                # `Jätan muutmata`.
+                next_text=form.cleaned_data.get("next_text") or "",
+                next_date=form.cleaned_data.get("next_date"),
+                stage=form.cleaned_data.get("stage"),
+                # `Sulge teema ja lõpeta ka järelkontroll`, when the person
+                # ticked it after the warning (docs/adr/0146 §8).
+                follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
+            )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(
             request, matter, key="current_action_form", form=form, refusal=refusal

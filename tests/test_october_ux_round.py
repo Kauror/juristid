@@ -134,7 +134,9 @@ def test_b_planned_rows_come_before_the_add_control(client, specialist, normal_m
     zone = _zone(_detail(client, normal_matter))
 
     assert zone.index("Loe eelnõu") < zone.index("Helista ministeeriumile")
-    assert zone.index("Helista ministeeriumile") < zone.index('id="lisa-planeeritud"')
+    # `+ Lisa tegevus` is the action row's first choice since UI-09, under the zone.
+    body = _detail(client, normal_matter)
+    assert body.index("Helista ministeeriumile") < body.index('id="lisa-planeeritud"')
     assert "Planeeritud tegevused</h3>" not in zone
 
 
@@ -446,6 +448,8 @@ def test_g_the_launchers_read_in_the_owners_order(client, specialist, normal_mat
     )
 
     assert launchers == [
+        # First in the one action row since UI-09.
+        "+ Lisa tegevus",
         "+ Ülevaade / uudis",
         "+ Kaasamine",
         # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).

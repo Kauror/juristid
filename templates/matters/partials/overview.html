@@ -106,12 +106,15 @@ next step and no history renders as a short, deliberate page.
     {% endif %}
 
     {% include "matters/partials/current_action.html" %}
-    {# A check this reopened Teema's closure ended, offered to be planned again (owner decision D9). #}
-    {% include "matters/partials/follow_up_restart.html" %}
-
+    {% comment %}
+      The action row (UI-09): directly under `PRAEGUNE TEGEVUS`, with no heading
+      of its own, and only for a writer on an open Matter.
+    {% endcomment %}
     {% if matter.is_open and can_write %}
       {% include "matters/partials/add_to_matter.html" %}
     {% endif %}
+    {# A check this reopened Teema's closure ended, offered to be planned again (owner decision D9). #}
+    {% include "matters/partials/follow_up_restart.html" %}
 
     {% comment %}
       `TEEMA TOIMINGUD` is gone. `Kustuta` is beside `Muuda teemat` in the

@@ -89,22 +89,59 @@ row of controls that refuse (brief §30, §31).
   launcher is where they all start, so this is one Tab from the thing the
   person is most likely to want (static/js/app.js, QA-018).
 {% endcomment %}
-<section class="addzone" id="lisa-teemale" aria-labelledby="lisa-pealkiri"
-         data-focus-after-save tabindex="-1">
-  <h2 class="rowlabel" id="lisa-pealkiri">Lisa teemale</h2>
+{% comment %}
+  **One action row, no heading of its own** (UI-09, November 2026 round). The
+  `LISA TEEMALE` heading and its separate block are gone: this row sits
+  directly under `PRAEGUNE TEGEVUS`, on the same ground, and holds — in this
+  order — `+ Lisa tegevus`, `+ Ülevaade / uudis`, `+ Kaasamine`,
+  `+ Koja arvamus / kohtumine`, `+ Lisa`, and `Lõpeta teema` at the right end of
+  the same row. `+ Lisa tegevus` moved here from inside `PRAEGUNE TEGEVUS`;
+  every form, endpoint, permission and confirmation is the one it was, and the
+  step's own `✓ Tehtud | Vaatasin üle | Muuda` stay on the step's line above
+  (`current_action_task.html`), untouched by anything opened here.
 
+  The id `lisa-teemale` and the landmark name «Lisa teemale» are kept: they are
+  where focus lands after a save (`data-focus-after-save`) and the name a
+  screen reader announces for the row.
+{% endcomment %}
+<section class="addzone" id="lisa-teemale" aria-label="Lisa teemale"
+         data-focus-after-save tabindex="-1">
   {% comment %}
-    One flex container for the whole zone, because the chip and the form it
+    One flex container for the whole row, because the chip and the form it
     opens have to be siblings for `:checked` to reach across them. The chips are
     its wrapping first line; the chosen form is its second.
   {% endcomment %}
   <div class="cx-panels">
     {% comment %}
-      **The order** (owner's round, 2026-10-07): `+ Ülevaade / uudis`,
-      `+ Kaasamine`, `+ Arvamus / tagasiside`, `+ Lisa` — the consultation
-      workflow first, in the order it runs (the overview a round points at,
-      the round, what came back), and the general-purpose `+ Lisa` last. Only
-      the order changed; each launcher is the one it was.
+      0 — `+ Lisa tegevus`. Work to be done on this file (UI-09: first in the
+      row). Beside a current step it is a dated planned action, which never
+      replaces the current one (docs/adr/0143); on a file with none it is the
+      next-step editor that makes one (docs/adr/0126 §1). Decided by the same
+      `current_action` the zone above is drawn from, so the row never offers
+      both.
+    {% endcomment %}
+    {% if current_action %}
+      <input class="addpick" type="radio" name="lisa-valik" id="lisa-planeeritud-valik"
+             data-addpick aria-controls="lisa-planeeritud"
+             {% if open_panel == "lisa-planeeritud" %}checked{% endif %}>
+      <label class="disclosure-chip" for="lisa-planeeritud-valik">+ Lisa tegevus</label>
+      <div class="cx-panel" id="lisa-planeeritud" data-addpanel>
+        <div class="cx-panel__body">
+          {% if open_panel == "lisa-planeeritud" and workspace_error %}
+            <p class="formerror" role="alert">{{ workspace_error }}</p>
+          {% endif %}
+          {% include "matters/partials/planned_action_form.html" with form=planned_action_form submit_label="Salvesta" %}
+        </div>
+      </div>
+    {% else %}
+      {% include "matters/partials/next_action_panel.html" %}
+    {% endif %}
+
+    {% comment %}
+      **Then the order** of the owner's round of 2026-10-07: `+ Ülevaade /
+      uudis`, `+ Kaasamine`, `+ Koja arvamus / kohtumine`, `+ Lisa` — the
+      consultation workflow in the order it runs, and the general-purpose
+      `+ Lisa` last. Each launcher is the one it was.
     {% endcomment %}
     {# 1 — `+ Ülevaade / uudis`. What Koda published about the topic. #}
     {% include "matters/partials/add/koduleht.html" %}

@@ -61,8 +61,8 @@ def _day(offset: int) -> str:
 
 def _set_directly(page, text: str, when: str) -> None:
     """`+ Lisa tegevus`, the way a lawyer uses it."""
-    cta = page.locator("#praegune-tegevus #lisa-jargmine")
-    expect(cta.locator("> summary")).to_have_text(CTA)
+    cta = page.locator("#lisa-teemale #lisa-jargmine")
+    expect(page.locator('#lisa-teemale label[for="lisa-jargmine-valik"]')).to_have_text(CTA)
     open_add_panel(page, "lisa-jargmine")
     cta.locator("[name='text']").fill(text)
     page.locator("#id_target_date").fill(when)
@@ -116,7 +116,7 @@ def test_the_whole_loop_from_no_step_to_the_following_one(page, base_url, screen
     # A. No step: one compact line, and the direct control under it.
     zone = page.locator("#praegune-tegevus")
     expect(zone).to_contain_text("Järgmine samm on määramata")
-    expect(zone.locator("#lisa-jargmine > summary")).to_have_text(CTA)
+    expect(page.locator('#lisa-teemale label[for="lisa-jargmine-valik"]')).to_have_text(CTA)
     expect(zone.locator("label.uxcomp__q")).to_have_count(0)
 
     # B. The step, set directly — yesterday, so it is late as soon as it exists.
@@ -127,8 +127,10 @@ def test_the_whole_loop_from_no_step_to_the_following_one(page, base_url, screen
     zone = page.locator("#praegune-tegevus")
     expect(zone.locator(".curact__text")).to_have_text(STEP)
     expect(zone.locator(".curact__date--overdue")).to_have_count(1)
-    expect(zone.locator("#lisa-jargmine > summary")).to_have_text("Muuda")
-    expect(zone.locator("#lisa-planeeritud > summary")).to_have_text(CTA)
+    expect(zone.locator('[data-curact-toggle][aria-controls="lisa-jargmine"]')).to_have_text(
+        "Muuda"
+    )
+    expect(page.locator('#lisa-teemale label[for="lisa-planeeritud-valik"]')).to_have_text(CTA)
     # Nothing was filed as a `Märge` to make it.
     expect(page.locator(KAIK_ROW).filter(has_text=STEP)).to_have_count(0)
     screenshots(page, "otsene-samm-praegune-tegevus")
@@ -180,7 +182,7 @@ def test_the_whole_loop_from_no_step_to_the_following_one(page, base_url, screen
     page.wait_for_load_state("networkidle")
     zone = page.locator("#praegune-tegevus")
     expect(zone).to_contain_text("Järgmine samm on määramata")
-    expect(zone.locator("#lisa-jargmine > summary")).to_have_text(CTA)
+    expect(page.locator('#lisa-teemale label[for="lisa-jargmine-valik"]')).to_have_text(CTA)
 
     # H. The following step, through the same control.
     _set_directly(page, FOLLOWING, _day(6))

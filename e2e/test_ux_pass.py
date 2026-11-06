@@ -77,7 +77,7 @@ def test_l_puts_the_caret_in_the_box_that_records_what_happened(page, base_url):
     url = create_matter(page, base_url, "L-kiirklahvi brauserikatse")
 
     # No task: `L` is `+ Lisa tegevus`, caret in its first box.
-    expect(page.locator("#praegune-tegevus #lisa-jargmine > summary")).to_have_text(
+    expect(page.locator('#lisa-teemale label[for="lisa-jargmine-valik"]')).to_have_text(
         "+ Lisa tegevus"
     )
     assert not add_panel_is_open(page, "lisa-jargmine")

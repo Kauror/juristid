@@ -364,7 +364,8 @@ def test_the_launcher_offers_exactly_four_families(signed_in, specialist, stage)
         r'<label class="disclosure-chip" for="lisa-[a-z-]+-valik">([^<]+)</label>', zone
     )
 
-    assert chips == FAMILIES
+    # After `+ Lisa tegevus`, the one action row's first choice since UI-09.
+    assert chips == ["+ Lisa tegevus", *FAMILIES]
 
 
 @pytest.mark.parametrize("chip", RETIRED_CHIPS, ids=[c[2:] for c in RETIRED_CHIPS])

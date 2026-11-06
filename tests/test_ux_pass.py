@@ -466,6 +466,12 @@ def _panel_is_open(body: str, panel_id: str) -> bool:
     radio = f'id="{panel_id}-valik"'
     if radio in body:
         return "checked" in body.split(radio)[1].split(">")[0]
+    # The current step's toolbar (UI-10): a button with `aria-expanded`, and
+    # a panel that is `hidden` until it is opened.
+    toggle = re.search(rf'aria-controls="{panel_id}"\s+aria-expanded="(true|false)"', body)
+    if toggle:
+        tag = re.search(rf'<[^>]*\bid="{panel_id}"[^>]*>', body)
+        return toggle.group(1) == "true" and tag is not None and "hidden" not in tag.group(0)
     marker = f'id="{panel_id}"'
     assert marker in body, f"{panel_id} is not on the page at all"
     return " open" in body.split(marker)[1].split(">")[0]

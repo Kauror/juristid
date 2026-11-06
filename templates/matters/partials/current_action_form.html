@@ -23,6 +23,8 @@ hidden `action_id` names the step so a stale tab completes nothing.
       hx-encoding="multipart/form-data">
   {% csrf_token %}
   <input type="hidden" name="action_id" value="{{ current_action.pk }}">
+  {# The step's revision when this panel was drawn (UI-10, `views._hold_the_drawn_revision`). #}
+  <input type="hidden" name="revision" value="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
 
   {% if workspace_error and open_panel == "tehtud" %}
     <p class="formerror" role="alert">{{ workspace_error }}</p>
