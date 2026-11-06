@@ -153,6 +153,18 @@ class HistoricalNoteRow:
     #: **Extension** (lead, 2026-11-05): the date machine-readable, at its
     #: precision — "YYYY-MM-DD", "YYYY-MM", "YYYY", or "" (undated).
     date_iso: str = ""
+    #: **Extension** (UI-13): the source page's id for the note's first block,
+    #: `plokk-<ordinal>`, when that ordinal names one block of the page only —
+    #: or "" when no anchor can be trusted, and the link opens the page's top.
+    anchor: str = ""
+    #: **Extension** (UI-13): the page is linked to more than one live Teema
+    #: (`SharedDossier.shared`'s rule, readable or not), for «ühine leht».
+    shared_page: bool = False
+
+    @property
+    def source_url(self) -> str:
+        """The copy view at this note: `page_url`, at its block where stable."""
+        return f"{self.page_url}#{self.anchor}" if self.anchor else self.page_url
 
 
 # -- R1 normalisation -----------------------------------------------------------------
@@ -173,6 +185,17 @@ def normalise(text: Any) -> str:
 
 #: Kept for callers that only need the whitespace rule.
 collapse = normalise
+
+
+def _collapse(text: str) -> str:
+    """R1's whitespace rule alone, for text `normalise` has already decoded.
+
+    Decoding is done once, where a block's stored text is first read. A second
+    `normalise` would decode a second time: a person's own «&quot;», stored
+    `&amp;quot;`, would read «"» (UI-13). Everything after the first read
+    uses this.
+    """
+    return _SPACES.sub(" ", text).strip()
 
 
 def day_display(value: date) -> str:
@@ -419,8 +442,12 @@ def is_next_actions_heading(text: Any) -> bool:
 
 
 def headline(text: str, limit: int = HEADLINE_LIMIT) -> str:
-    """``text`` cut at a word boundary to at most ``limit`` characters, «…» when cut."""
-    text = normalise(text)
+    """``text`` cut at a word boundary to at most ``limit`` characters, «…» when cut.
+
+    ``text`` is already decoded (a note's paragraphs): only its whitespace is
+    collapsed here, so nothing is decoded twice (UI-13).
+    """
+    text = _collapse(str(text or ""))
     if len(text) <= limit:
         return text
     room = limit - len(ELLIPSIS)
@@ -611,7 +638,9 @@ def parse_page(
             raw = block.get("text")
             target.texts.append(normalise(raw))
             if found is not None and target.date is found and found.stripped:
-                value = normalise(found.rest)  # R8: the leading date and separator only
+                # R8: the leading date and separator only. `rest` is already
+                # decoded (`leading_date` read the normalised text): not twice.
+                value = _collapse(found.rest)
             else:
                 value = normalise(raw)
             if value:
@@ -932,6 +961,7 @@ def project_page(
     resources: Sequence[PageResource] = (),
     page_modified: Any = None,
     withheld: frozenset[Any] = frozenset(),
+    shared_page: bool = False,
 ) -> tuple[ProjectedNote, ...]:
     """Every segment of one page, for one reader, through one Matter's link.
 
@@ -954,6 +984,12 @@ def project_page(
         taken.update(item.version_id for item in mine)
         direct[note.start] = mine
     page_files = sum(1 for item in files if item.version_id not in taken)
+    # A stored ordinal anchors a block only when no other block has it (UI-13):
+    # the source page gives that block `id="plokk-<ordinal>"`.
+    counts: dict[int, int] = {}
+    for block in blocks:
+        if isinstance(block, Mapping) and (ordinal := _int(block.get("ordinal"))) is not None:
+            counts[ordinal] = counts.get(ordinal, 0) + 1
     out: list[ProjectedNote] = []
     for note in parsed.notes:
         mine = direct[note.start]
@@ -972,6 +1008,8 @@ def project_page(
             section=section,
             source_ref=source_ref(capture_id, note.ordinals),
             date_iso=note.date.iso if note.date is not None else "",
+            anchor=f"plokk-{note.start}" if counts.get(note.start) == 1 else "",
+            shared_page=shared_page,
         )
         out.append(
             ProjectedNote(
@@ -1007,10 +1045,11 @@ def matter_notes(
     the reader may see (`Document.visible_to`): the caller reads them once for
     the whole chronology (`app.matters.timeline.imported_document_versions`).
     """
+    from django.db.models import Count
     from django.urls import reverse
 
     from app.legacy_import.historical_views import visible_links
-    from app.legacy_import.source_pages import LegacySourceResource
+    from app.legacy_import.source_pages import LegacySourceResource, MatterSourcePage
 
     links = list(
         visible_links(user)
@@ -1039,6 +1078,18 @@ def matter_notes(
         }
         if any(item.resource_key not in keys for item in files.get(link.pk, ())):
             unplaced_pages.add(link.source_page_id)
+    # How many live Teemad each page is linked to, readable or not: the rule
+    # `SharedDossier.shared` reads (docs/adr/0208). One query for every page.
+    shared = set(
+        MatterSourcePage.objects.filter(
+            source_page_id__in={link.source_page_id for link in links},
+            matter__deleted_at__isnull=True,
+        )
+        .values("source_page_id")
+        .annotate(teemad=Count("matter_id", distinct=True))
+        .filter(teemad__gt=1)
+        .values_list("source_page_id", flat=True)
+    )
     resources: dict[Any, list[PageResource]] = {}
     if unplaced_pages:
         for page_id, key, filename, added_at in LegacySourceResource.objects.filter(
@@ -1061,6 +1112,7 @@ def matter_notes(
                 resources=resources.get(page.pk, ()),
                 page_modified=page.source_modified_at,
                 withheld=withheld,
+                shared_page=page.pk in shared,
             )
         )
     return tuple(out)

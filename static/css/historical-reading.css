@@ -170,3 +170,46 @@
   font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
+
+/* ====================================================================
+ * UI-13 — an expanded OneNote note row of `Tegevused`
+ *
+ * Closed, the line is date · tag · preview. Open, the note's full first
+ * paragraph takes the preview's place on that same line, and the rest of the
+ * note follows once below (`timeline_historical_note.html`). Then one line of
+ * source access: «OneNote'i koopia», its copy icon right after it, and the
+ * shared-page indicator.
+ * ==================================================================== */
+
+#teema-vaade-wrap .uxtl__hist--inplace[open] > .uxtl__histline > .uxtl__histpreview,
+#teema-vaade-wrap .uxtl__hist--inplace:not([open]) > .uxtl__histline > .uxtl__histfirst {
+  display: none;
+}
+
+#teema-vaade-wrap .uxtl__histline > .uxtl__histfirst {
+  flex: 1 1 20rem;
+  min-width: 0;
+  color: var(--text-body);
+  overflow-wrap: anywhere;
+}
+
+#teema-vaade-wrap .uxtl__histsource {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin-top: var(--spacing-15);
+}
+
+/* The link and the icon that copies it: one unit, never split by a wrap. */
+#teema-vaade-wrap .uxtl__histcopy {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  white-space: nowrap;
+}
+
+#teema-vaade-wrap .uxtl__histshared {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
