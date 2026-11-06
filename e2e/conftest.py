@@ -539,6 +539,13 @@ def add_panel_is_open(page, panel_id: str) -> bool:
                 if (!panel) {
                     return false;
                 }
+                // The current step's toolbar (UI-10): its button says.
+                const toggle = document.querySelector(
+                    `[data-curact-toggle][aria-controls="${id}"]`
+                );
+                if (toggle) {
+                    return toggle.getAttribute("aria-expanded") === "true";
+                }
                 if (panel.tagName === "DETAILS") {
                     return panel.open;
                 }
@@ -565,6 +572,11 @@ def add_panel_chip(page, panel_id: str):
     chip = page.locator(f'label[for="{panel_id}-valik"]')
     if chip.count():
         return chip.first
+    # `✓ Tehtud`, `Vaatasin üle` and `Muuda` are buttons in the step's
+    # toolbar since UI-10, outside the panels they open.
+    toggle = page.locator(f'[data-curact-toggle][aria-controls="{panel_id}"]')
+    if toggle.count():
+        return toggle.first
     return page.locator(f"#{panel_id} summary").first
 
 
@@ -1024,12 +1036,13 @@ def open_done_form(page) -> None:
     """`✓ Tehtud` — open the completion form beside the current step.
 
     Behind an explicit control since docs/adr/0133 §4, and since docs/adr/0140
-    §1 a toggle — the label of `#tehtud-valik`, which stays on the row. Looked
+    §1 a toggle on the row — since UI-10 the toolbar button for `#tehtud`. Looked
     at before clicking, so a form a refusal reopened is not shut by the act of
     asking for it: a second press closes it.
     """
-    if not page.locator("#tehtud-valik").is_checked():
-        page.locator('label[for="tehtud-valik"]').click()
+    toggle = page.locator('[data-curact-toggle][aria-controls="tehtud"]')
+    if toggle.get_attribute("aria-expanded") != "true":
+        toggle.click()
     page.locator("#id_praegune_body").wait_for(state="visible")
 
 

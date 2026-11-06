@@ -81,7 +81,7 @@ def test_a_day_can_be_added_afterwards_and_taken_off_again(page, base_url):
     expect(current).to_contain_text(UNDATED_LABEL)
 
     # Add one.
-    current.locator("#lisa-jargmine > summary").click()
+    current.locator('[data-curact-toggle][aria-controls="lisa-jargmine"]').click()
     page.locator("#lisa-jargmine [name='text']").fill("Vaatan uue versiooni üle")
     page.locator("#id_target_date").fill("30.09.2026")
     page.locator("#lisa-jargmine button[type=submit]").click()
@@ -90,7 +90,7 @@ def test_a_day_can_be_added_afterwards_and_taken_off_again(page, base_url):
     expect(page.locator("#praegune-tegevus")).not_to_contain_text(UNDATED_LABEL)
 
     # And take it back off, by emptying the box the editor opened on.
-    page.locator("#praegune-tegevus #lisa-jargmine > summary").click()
+    page.locator('[data-curact-toggle][aria-controls="lisa-jargmine"]').click()
     expect(page.locator("#id_target_date")).to_have_value("30.9.2026")
     page.locator("#id_target_date").fill("")
     page.locator("#lisa-jargmine button[type=submit]").click()

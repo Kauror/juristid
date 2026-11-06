@@ -136,7 +136,10 @@ def test_vaatasin_ule_lands_on_the_review_and_records_it_once(page, base_url):
     panel = page.locator("#vaatasin-ule")
     box = panel.get_by_label("Järgmine ülevaatus")
     expect(box).to_be_visible()
-    expect(panel).to_have_attribute("open", "")
+    expect(panel).to_be_visible()
+    expect(page.locator('[aria-controls="vaatasin-ule"]')).to_have_attribute(
+        "aria-expanded", "true"
+    )
     expect(box).to_be_focused()
 
     box.fill(_in_two_weeks())
@@ -149,7 +152,7 @@ def test_vaatasin_ule_lands_on_the_review_and_records_it_once(page, base_url):
     expect(zone).not_to_have_class(re.compile("curact--overdue"))
     # Still a step that waits: the review is offered again, shut.
     expect(page.locator("#vaatasin-ule")).to_have_count(1)
-    expect(page.locator("#vaatasin-ule")).not_to_have_attribute("open", "")
+    expect(page.locator("#vaatasin-ule")).to_be_hidden()
 
     assert _in_the_server(_COUNT_SCRIPT, matter_id) == "1"
 
@@ -197,8 +200,8 @@ def test_the_review_control_fits_every_width(page, base_url, width):
     # `goto` to the page already shown plus a fragment is a same-document
     # navigation that fires no load for the arrival script to answer.
     panel = page.locator("#vaatasin-ule")
-    panel.locator("summary").click()
-    expect(panel).to_have_attribute("open", "")
+    page.locator('[data-curact-toggle][aria-controls="vaatasin-ule"]').click()
+    expect(panel).to_be_visible()
     expect(panel.get_by_label("Järgmine ülevaatus")).to_be_visible()
     expect(panel.get_by_role("button", name="Salvesta", exact=True)).to_be_visible()
     overflow = page.evaluate(

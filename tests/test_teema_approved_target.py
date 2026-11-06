@@ -423,6 +423,8 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     panels = body[start : body.index("</section>", start)]
 
     expected = [
+        # The action row's first choice since UI-09.
+        "+ Lisa tegevus",
         "+ Lisa",
         # `Tavaline` left on 2026-10-07 (docs/adr/0143); still thirteen.
         "Arvamuse tähtaeg",
@@ -449,7 +451,8 @@ def test_lisa_teemale_offers_thirteen_choices_and_opens_none_of_them(signed_in, 
     # `+ Arvamus / tagasiside`, and `+ Lisa · Muu` joined (docs/adr/0097).
     # Thirteen since `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17),
     # fourteen with `Lõpeta teema` again (docs/adr/0131, amendment of 2026-10-25).
-    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 14
+    # Fifteen with `+ Lisa tegevus`, which moved into this row (UI-09).
+    assert panels.count('class="cx-panel"') + panels.count("cx-panel cx-panel--last") == 15
     # All closed on arrival: nothing in this zone is a form until it is chosen.
     assert "data-addpanel\n             open" not in panels
     assert 'cx-panel" open' not in panels
@@ -507,9 +510,9 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     completion = zone[zone.index('class="curact__form"') :]
     completion = completion[: completion.index("</form>")]
     assert completion.count('type="submit"') == 1
-    # `Muuda`'s save, and `+ Määra järgmine tegevus`'s beside a current step
-    # (a planned action, docs/adr/0143).
-    assert zone.count('type="submit"') == 3
+    # `Muuda`'s save. `+ Lisa tegevus`'s beside a current step (a planned
+    # action, docs/adr/0143) is in the action row under the zone since UI-09.
+    assert zone.count('type="submit"') == 2
 
     # Ten operations under LISA TEEMALE — four families, of which two ask a
     # second question, plus `Lõpeta teema` — each with exactly one save of its
@@ -536,7 +539,8 @@ def test_each_operation_carries_its_own_save_and_there_is_no_global_one(
     # Matter with no round — is now always the form. Ten since `Kohtumine /
     # arutelu` brought its own (docs/adr/0097, amendment of 2026-10-17). Eleven
     # with `Lõpeta teema`'s (docs/adr/0131, amendment of 2026-10-25).
-    assert panels.count('type="submit"') == 11
+    # Twelve with `+ Lisa tegevus`, the row's first choice since UI-09.
+    assert panels.count('type="submit"') == 12
     # And the composer's single global save is gone from the page entirely.
     assert "composer__actions" not in workspace
 
@@ -2573,14 +2577,16 @@ def test_the_current_action_zone_holds_the_task_and_exactly_one_way_to_finish_it
     assert "Koosta koja arvamus" in zone
     assert "Mida tegid?" in zone
     assert "Muuda" in zone
-    # `✓ Tehtud` only opens this form (docs/adr/0133 §4): since docs/adr/0140
-    # §1 the label of a toggle that stays on the row — not a button, not a
+    # `✓ Tehtud` only opens this form (docs/adr/0133 §4): since UI-10 a
+    # `type="button"` toggle in the step's toolbar — not a submit, not a
     # request, and nothing that completes by itself.
-    assert (
-        '<label class="disclosure-chip curact__donechip" for="tehtud-valik">✓ Tehtud</label>'
-        in zone
+    assert re.search(
+        r'<button type="button" class="disclosure-chip curact__donechip curact__tool" '
+        r'id="tehtud-nupp"\s+data-curact-toggle aria-controls="tehtud"',
+        zone,
     )
-    for gone in ("Märgi tehtuks", "Tehtud</button>", "/valmis/"):
+    assert 'type="submit" class="disclosure-chip' not in zone
+    for gone in ("Märgi tehtuks", "/valmis/"):
         assert gone not in zone
     # And not the retired controls or vocabulary.
     assert "Lükka edasi" not in body

@@ -22,6 +22,7 @@ is that this surface reaches it, and that it stopped asking for things.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 import pytest
@@ -280,7 +281,9 @@ def test_completion_is_the_result_being_saved_and_swaps_the_whole_column(
     # `✓ Tehtud` is the disclosure around that one form (docs/adr/0133 §4),
     # never a button posting somewhere of its own.
     assert "/valmis/" not in row
-    assert "Tehtud</button>" not in row
+    # Since UI-10 `✓ Tehtud` is a `type="button"` toggle in the step's toolbar;
+    # what must never exist is a *submit* that completes with nothing written.
+    assert not re.search(r'<button type="submit"[^>]*>[^<]*Tehtud</button>', row)
 
 
 # ---------------------------------------------------------------------------
@@ -522,7 +525,9 @@ def test_the_current_step_shows_its_text_its_date_and_tehtud(signed_in, normal_m
     # `✓ Tehtud` disclosure since docs/adr/0133 §4, which opens it and
     # completes nothing on its own.
     assert "Mida tegid?" in flat
-    assert "Tehtud</button>" not in flat
+    # Since UI-10 `✓ Tehtud` is a `type="button"` toggle in the step's toolbar;
+    # what must never exist is a *submit* that completes with nothing written.
+    assert not re.search(r'<button type="submit"[^>]*>[^<]*Tehtud</button>', flat)
     for word in RETIRED_WORDS:
         assert word not in flat
 

@@ -190,7 +190,7 @@ def test_a_signed_letter_and_its_docx_in_one_opinion(page, base_url, screenshots
     expect(zone.locator(".curact__text")).to_have_text(
         "Kontrolli, kas adressaat on Koja arvamusele vastanud"
     )
-    expect(zone.locator("#lisa-planeeritud > summary")).to_have_text(CTA)
+    expect(page.locator('#lisa-teemale label[for="lisa-planeeritud-valik"]')).to_have_text(CTA)
 
     row = _opinion_rows(page).first
     open_kaik_row(row)

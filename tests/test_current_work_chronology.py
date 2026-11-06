@@ -228,7 +228,7 @@ def test_every_row_keeps_its_own_controls(signed_in, specialist):
 
     # The current step: `✓ Tehtud` with its form named by `action_id`, `Muuda`.
     current_row = rows[rows.index('id="tegevus-' + str(current.pk)) :]
-    assert 'for="tehtud-valik">✓ Tehtud</label>' in current_row
+    assert 'aria-controls="tehtud"' in current_row
     assert f'value="{current.pk}"' in current_row
     assert 'id="lisa-jargmine"' in current_row
     # The round: `Tehtud` opens `Lisa tagasiside` with this round chosen.
@@ -240,9 +240,11 @@ def test_every_row_keeps_its_own_controls(signed_in, specialist):
         reverse("matters:cancel_planned_action", kwargs={"pk": matter.pk, "action_id": plan.pk})
         in rows
     )
-    # `+ Lisa tegevus` stays outside the sorted list, after it.
+    # `+ Lisa tegevus` stays outside the sorted list, after it: in the action
+    # row under the zone since UI-09.
     page = _page(signed_in, matter)
     assert page.index('id="lisa-planeeritud"') > page.index("</ul>", page.index("praegune-ootused"))
+    assert page.index('id="lisa-planeeritud"') > page.index('id="lisa-teemale"')
 
 
 def test_a_reader_sees_the_ordered_rows_without_any_control(client, specialist, reader):

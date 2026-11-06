@@ -215,7 +215,8 @@ def test_a_current_check_offers_its_own_form_and_not_mida_tegid(
 
     zone = _zone(_teema(signed_in, normal_matter))
 
-    assert 'id="tehtud-valik"' not in zone
+    assert 'id="tehtud"' not in zone
+    assert "data-curact-toggle" not in zone
     assert 'id="lisa-jargmine"' not in zone
     assert (
         reverse("matters:check_follow_up", kwargs={"pk": normal_matter.pk, "action_id": check.pk})

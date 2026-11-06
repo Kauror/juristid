@@ -540,9 +540,9 @@ def test_the_current_action_zone_offers_muuda_and_the_launcher_does_not(page, ba
     expect(page.locator("#praegune-tegevus")).to_contain_text("Järgmine samm on määramata")
     expect(page.get_by_role("button", name="Määra allpool ↓")).to_have_count(0)
     expect(page.get_by_text("+ Järgmine tegevus", exact=True)).to_have_count(0)
-    # The editor is in the zone, as the direct control — once, and nowhere else.
+    # The editor is the action row's first choice — once, and nowhere else.
     expect(page.locator("#lisa-jargmine")).to_have_count(1)
-    expect(page.locator("#praegune-tegevus #lisa-jargmine > summary")).to_have_text(
+    expect(page.locator('#lisa-teemale label[for="lisa-jargmine-valik"]')).to_have_text(
         "+ Lisa tegevus"
     )
 
