@@ -67,6 +67,10 @@ class Clock:
 def clock(monkeypatch):
     moment = Clock()
     monkeypatch.setattr("django.utils.timezone.now", lambda: moment.now)
+    # `ChangeEvent.occurred_at` took `timezone.now` itself as its default when
+    # the model was defined, so the patch above does not reach it.
+    occurred_at = ChangeEvent._meta.get_field("occurred_at")
+    monkeypatch.setattr(occurred_at, "_get_default", lambda: moment.now)
     return moment
 
 
@@ -398,7 +402,7 @@ def test_mark_all_reaches_unloaded_pages_and_spares_what_arrived_after_the_bound
     body = response.content.decode()
     # 3 of the world (its INFO notice became unread after the boundary) + 20 hand-overs.
     assert "Loetuks märgitud: 23." in body
-    assert "Vahepeal lisandus 2 uut teavitust" in body
+    assert "Lugemata jäi 2" in body
     remaining = {item.title for item in inbox.inbox_for(specialist)}
     assert remaining == {"Hiljem saabunud teema", "Läheneva tähtajaga teema"}
     # The answer is a fresh panel, with a fresh boundary that now covers them.
@@ -427,6 +431,28 @@ def test_mark_all_spares_a_commencement_check_handed_over_after_the_boundary(
         inbox.TYPE_COMMENCEMENT,
         inbox.TYPE_ASSIGNMENT,
     }
+
+
+def test_mark_all_reads_a_check_whose_teema_was_only_edited_after_the_boundary(
+    client, specialist, other_specialist, clock
+):
+    """Arrival is the Teema changing hands, not any edit to it (review F-5)."""
+    matter = factories.MatterFactory(owner=specialist, title="Muudetud jõustumine")
+    factories.EffectiveDateFactory(matter=matter, date_value=TODAY, period_end=TODAY)
+    _run()
+    clock.tick()
+    client.force_login(specialist)
+    boundary = _boundary_from(_panel(client))
+    clock.tick()
+    Matter.objects.filter(pk=matter.pk).update(updated_at=clock.now, title="Uus pealkiri")
+    clock.tick()
+
+    response = client.post(
+        reverse("notifications:mark_all_read"), {"kuni": boundary, "tagasi": "paneel"}, headers=HX
+    )
+
+    assert "Loetuks märgitud: 1." in response.content.decode()
+    assert inbox.inbox_count(specialist) == 0
 
 
 def test_mark_all_without_a_valid_boundary_is_refused_and_marks_nothing(
@@ -475,12 +501,16 @@ def test_mark_all_from_the_list_page_redirects_with_its_count(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_boundary_stops_at_a_generator_that_has_not_committed(specialist, other_specialist):
-    """Rows a running worker has written are invisible yet carry an earlier time.
+@pytest.mark.parametrize("generator", [True, False], ids=["generator", "any-transaction"])
+def test_the_boundary_stops_at_a_transaction_that_has_not_committed(
+    specialist, other_specialist, generator
+):
+    """Rows another transaction has written are invisible yet carry an earlier time.
 
-    A second connection holds the deadline generator's lock and writes a row,
-    uncommitted. The boundary drawn meanwhile ends at that transaction's start,
-    so a «Märgi kõik loetuks» made after it commits leaves the row unread.
+    A second connection — here the deadline generator, holding its lock —
+    writes a row, uncommitted. The boundary drawn meanwhile ends at that
+    transaction's start, so a «Märgi kõik loetuks» made after it commits leaves
+    the row unread. Any open transaction counts, not only a generator's.
     """
     matter = _opinion(specialist, TODAY + timedelta(days=30), "Taustal loodud teema")
     holding = threading.Event()
@@ -493,9 +523,12 @@ def test_the_boundary_stops_at_a_generator_that_has_not_committed(specialist, ot
 
             with transaction.atomic():
                 with connection.cursor() as cursor:
-                    cursor.execute(
-                        "SELECT pg_advisory_xact_lock(%s, %s)", list(deadlines.DEADLINE_LOCK)
-                    )
+                    if generator:
+                        cursor.execute(
+                            "SELECT pg_advisory_xact_lock(%s, %s)", list(deadlines.DEADLINE_LOCK)
+                        )
+                    else:
+                        cursor.execute("SELECT 1")
                 DeadlineNotification.objects.create(
                     recipient=specialist,
                     matter=matter,
@@ -728,8 +761,23 @@ def test_an_administrator_without_a_business_role_has_an_empty_panel(client, adm
 def test_a_malformed_page_cursor_is_refused(client, specialist):
     client.force_login(specialist)
 
-    for value in ("", "x", "2-1-0-00", "0-1-9-" + "0" * 32, "0-12-0-zz"):
+    huge = "1-" + "9" * 18 + "-0-" + "0" * 32  # past what a datetime holds
+    for value in ("", "x", "2-1-0-00", "0-1-9-" + "0" * 32, "0-12-0-zz", huge):
         assert client.get(reverse("notifications:panel"), {"enne": value}).status_code == 400
+    assert feed.Cursor.decode(huge) is None
+
+
+def test_a_malformed_history_cursor_falls_back_to_the_first_page(
+    client, specialist, other_specialist, clock
+):
+    world = _world(specialist, other_specialist, clock)
+    deadlines.mark_read(notification=_row(world["info"], specialist))
+    client.force_login(specialist)
+
+    for value in ("x", "1-" + "9" * 18 + "-0-" + "0" * 32):
+        response = client.get(reverse("notifications:list"), {"varasemad": value})
+        assert response.status_code == 200
+        assert "Läheneva tähtajaga teema" in response.content.decode().split('id="varasemad"')[1]
 
 
 def test_paging_walks_every_item_once_unread_first(specialist, other_specialist, clock):
@@ -817,3 +865,21 @@ def test_personas_behind_the_shared_gate_keep_their_own_state(
     bell = client.get(reverse("notifications:bell"))
     assert bell.context["count"] == 4
     assert world["info"].title in client.get(reverse("notifications:block")).content.decode()
+
+
+def test_no_notification_template_carries_the_applications_focus_landing():
+    """`app.js` takes the first `data-focus-after-save` in the document after a swap
+    that destroyed focus; the top-bar panel and the rail block must never be it
+    (review F-1). They mark their own landings `data-notif-focus`."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    folder = Path(settings.BASE_DIR) / "templates" / "notifications"
+    offenders = [
+        path.name
+        for path in sorted(folder.glob("*.html"))
+        if "data-focus-after-save" in path.read_text(encoding="utf-8")
+    ]
+    assert offenders == []
+    assert "data-notif-focus" in (folder / "_panel.html").read_text(encoding="utf-8")
