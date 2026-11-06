@@ -57,7 +57,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from django.db import DatabaseError, IntegrityError, connection, transaction
-from django.db.models import Q
+from django.db.models import Count, Q
 from django.utils import timezone
 
 from app.legacy_import.lovable_pilot import (
@@ -80,6 +80,7 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncCohort,
     LovableSyncControl,
     LovableSyncDecision,
+    LovableSyncRetirement,
     LovableSyncRun,
     LovableSyncSnapshot,
     LovableSyncState,
@@ -306,35 +307,97 @@ class Cohort:
     pilot: str
     #: The approved package digest; ``""`` for the built-in pilot (every pilot record).
     package_sha256: str
+    #: How many Teemad the enrolment recorded (`LovableSyncCohort.expected`).
     expected: int
+    #: Members that left with their Teema's permanent deletion (`LovableSyncRetirement`).
+    retired: int = 0
 
     @property
     def builtin(self) -> bool:
         return self.key == PILOT_COHORT
 
+    @property
+    def required(self) -> int:
+        """How many Teemad a run must find: the enrolled size less the authorised
+        retirements, never below zero (audit 2026-11 C-L-04). A state missing
+        without a retirement is still one short of this."""
+        return max(0, self.expected - self.retired)
 
-def pilot_cohort() -> Cohort:
+
+def pilot_cohort(retired: int = 0) -> Cohort:
     # Read at call time: tests (and only tests) size the pilot down.
-    return Cohort(PILOT_COHORT, PILOT, "", EXPECTED_COHORT)
+    return Cohort(PILOT_COHORT, PILOT, "", EXPECTED_COHORT, retired)
+
+
+def retired_members() -> Counter[str]:
+    """How many members each cohort lost to a permanent deletion. Reads only."""
+    return Counter(
+        dict(
+            LovableSyncRetirement.objects.values("cohort")
+            .annotate(n=Count("id"))
+            .values_list("cohort", "n")
+        )
+    )
 
 
 def cohorts() -> list[Cohort]:
     """The pilot (until a rebuild retires it), then every enrolled cohort that is
-    not retired. Reads only: no control row, no state."""
+    not retired, each with its members retired by a permanent deletion. Reads
+    only: no control row, no state."""
     rows = list(LovableSyncCohort.objects.order_by("enrolled_at", "key"))
     retired = {row.key for row in rows if row.retired_at is not None}
+    gone = retired_members()
     enrolled = [
-        Cohort(row.key, row.pilot, row.package_sha256, row.expected)
+        Cohort(row.key, row.pilot, row.package_sha256, row.expected, gone[row.key])
         for row in rows
         if row.retired_at is None and row.key != PILOT_COHORT
     ]
-    return ([] if PILOT_COHORT in retired else [pilot_cohort()]) + enrolled
+    pilot = [] if PILOT_COHORT in retired else [pilot_cohort(gone[PILOT_COHORT])]
+    return pilot + enrolled
 
 
 def expected_cohorts() -> dict[str, int]:
-    """Each synchronised cohort's required size, by key. Read-only (docs/adr/0201:
-    observability never creates the control row; this touches no control row)."""
-    return {cohort.key: cohort.expected for cohort in cohorts()}
+    """Each synchronised cohort's required size, by key: enrolled less retired
+    (`Cohort.required`). Read-only (docs/adr/0201: observability never creates
+    the control row; this touches no control row)."""
+    return {cohort.key: cohort.required for cohort in cohorts()}
+
+
+def cohort_ledger() -> list[dict[str, Any]]:
+    """Per synchronised cohort: enrolled, retired and required, numbers only."""
+    return [
+        {
+            "key": cohort.key,
+            "enrolled": cohort.expected,
+            "retired": cohort.retired,
+            "expected": cohort.required,
+        }
+        for cohort in cohorts()
+    ]
+
+
+def retirement_report() -> dict[str, Any]:
+    """What `lovable_sync report` prints about retirements: each cohort's
+    numbers, and each retirement as its cohort, kind, moment and whether a
+    person is named on it — never the Teema, its reference or a reason."""
+    active = {row["key"]: row for row in cohort_ledger()}
+    return {
+        "cohorts": {
+            key: {k: v for k, v in row.items() if k != "key"} for key, row in active.items()
+        },
+        "retired": [
+            {
+                "cohort": cohort,
+                "kind": kind,
+                "retired_at": moment,
+                "attributed": actor is not None,
+                "active": cohort in active,
+            }
+            for cohort, kind, moment, actor in LovableSyncRetirement.objects.order_by(
+                "retired_at", "id"
+            ).values_list("cohort", "kind", "retired_at", "actor_id")
+        ],
+    }
 
 
 def expected_total() -> int:
@@ -714,8 +777,11 @@ def not_yet_read(states: Iterable[LovableSyncState], snapshot: LovableSyncSnapsh
 
 
 def cohort_size_problem(states: Iterable[LovableSyncState]) -> tuple[str, int, int] | None:
-    """The first cohort that does not hold exactly its recorded number of Teemad:
-    ``(key, held, expected)``, or ``None`` when every cohort is whole."""
+    """The first cohort that does not hold exactly its required number of Teemad —
+    the enrolled size less the members retired with an authorised permanent
+    deletion (`Cohort.required`): ``(key, held, expected)``, or ``None`` when
+    every cohort is whole. A state gone without a retirement is drift and stops
+    the run (audit 2026-11 C-L-04)."""
     held = Counter(state.cohort for state in states)
     for key, expected in expected_cohorts().items():
         if held.get(key, 0) != expected:
@@ -1413,6 +1479,8 @@ class RunCounts:
     stopped_active: int = 0
     #: A check only: Teemad enrolled after the stored reading, so not in it (`not_yet_read`).
     not_yet_read: int = 0
+    #: Members the synchronised cohorts lost to a permanent deletion (`LovableSyncRetirement`).
+    retired: int = 0
     #: The same per cohort (`cohort_counts`), with each cohort's activity.
     by_cohort: dict[str, dict[str, Any]] = field(default_factory=dict)
     duration_seconds: float = 0.0
@@ -1458,10 +1526,14 @@ class RunCounts:
         return dict(self.__dict__)
 
 
-def cohort_counts(expected: int | None = None) -> dict[str, Any]:
-    """One cohort's counts in `RunCounts.by_cohort`. Numbers only."""
+def cohort_counts(expected: int | None = None, retired: int = 0) -> dict[str, Any]:
+    """One cohort's counts in `RunCounts.by_cohort`. Numbers only. ``expected``
+    is the required size, after ``retired`` members left with their deletion;
+    ``retired`` is present only for a cohort that lost one (audit 2026-11 C-L-04),
+    so a cohort that never did reads exactly as before."""
     return {
         "expected": expected,
+        **({"retired": retired} if retired else {}),
         "checked": 0,
         "unchanged": 0,
         "review": 0,
@@ -1672,7 +1744,7 @@ def _execute(
     # `Kontrolli muudatusi` reads only: it seeds nothing, advances no baseline,
     # observes nothing and prunes nothing; it records its own findings, no more.
     states = population() if check else ensure_states()
-    expected = expected_cohorts()
+    active = cohorts()
     problem = cohort_size_problem(states)
     if problem is not None:
         key, held, wanted = problem
@@ -1796,7 +1868,10 @@ def _execute(
     if applied_ids:
         refresh_matters(Matter.objects.filter(pk__in=applied_ids))
 
-    counts = RunCounts(by_cohort={key: cohort_counts(n) for key, n in expected.items()})
+    counts = RunCounts(
+        by_cohort={c.key: cohort_counts(c.required, c.retired) for c in active},
+        retired=sum(c.retired for c in active),
+    )
     for state in states:
         if state.pk in unread:
             counts.not_yet_read += 1
@@ -2426,6 +2501,8 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
     ]
     if c.get("not_yet_read"):
         lines.append(f"Veel lugemata (lisati pärast viimast lugemist): {c['not_yet_read']}")
+    if c.get("retired"):
+        lines.append(f"Kohortidest välja arvatud (teema jäädavalt kustutatud): {c['retired']}")
     if run.mode != SyncMode.APPLY or run.status == SyncRunStatus.REVIEW_ONLY:
         lines.append(f"Ohutuid uuendusi rakendamata: {c.get('eligible_unapplied', 0)}")
     by_cohort = c.get("by_cohort") or {}

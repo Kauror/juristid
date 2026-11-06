@@ -1,6 +1,6 @@
 """The nightly Lovable synchronisation's records (docs/adr/0192, 0202).
 
-Six tables, kept apart from the importers' immutable provenance:
+The tables, kept apart from the importers' immutable provenance:
 
 * `LovableSyncControl` — one row: whether the job may run, and whether it may
   write. Final cutover sets ``cut_over`` and nothing turns it back;
@@ -16,6 +16,9 @@ Six tables, kept apart from the importers' immutable provenance:
   Teemad it must hold. The pilot (`lovable-pilot`, 100 Teemad) is built in and
   has a row only once a rebuild retires it (``retired_at``);
   `LovableSyncState.cohort` says which cohort a state belongs to;
+* `LovableSyncRetirement` — a member that left its cohort with its Teema's
+  permanent deletion (audit 2026-11 C-L-04): the cohort's required size is its
+  enrolled size less these, and each names the deletion's audit event;
 * `LovableSyncBaselineArchive` — a rebased Teema's baseline and last
   observation exactly as they were before the rebuild re-seeded its state in
   place (docs/adr/0202 §6). Written once and never changed;
@@ -26,6 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from django.conf import settings
 from django.db import models
 
 from app.core.errors import ImmutableRecordError
@@ -223,6 +227,70 @@ class LovableSyncCohort(BaseModel):
 
     def __str__(self) -> str:
         return self.key
+
+
+class RetirementKind(models.TextChoices):
+    #: Recorded by `delete_matter` in the deletion's own transaction.
+    MATTER_DELETED = "MATTER_DELETED", "Teema kustutati jäädavalt"
+    #: Recorded by `lovable_sync retire` for a deletion made before the recorder
+    #: existed; still anchored to that deletion's MATTER_DELETED event.
+    OPERATOR = "OPERATOR", "Kanti käsitsi (jäädavalt kustutatud teema)"
+
+
+class LovableSyncRetirement(BaseModel):
+    """One cohort member that left its cohort because its Teema was permanently
+    deleted (docs/adr/0165; audit 2026-11 C-L-04).
+
+    A cohort's required size is its enrolled size less these rows
+    (`lovable_sync.cohorts`). A state that disappears **without** one is drift and
+    still stops the night (COHORT_SIZE). Every row names the deletion's own
+    `MATTER_DELETED` change event, so a retirement exists only beside an
+    authorised, audited deletion; the tombstone it points at is never removed.
+    Written once and never changed."""
+
+    cohort = models.CharField(max_length=64)
+    matter = models.ForeignKey(
+        "matters.Matter", on_delete=models.PROTECT, related_name="lovable_sync_retirements"
+    )
+    #: The deletion's `MATTER_DELETED` event: who deleted it, when, and how much went.
+    deletion_event = models.ForeignKey(
+        "audit.ChangeEvent", on_delete=models.PROTECT, related_name="+"
+    )
+    #: The person who deleted the Teema (the event's actor), or none for a system deletion.
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    #: The Lovable topic the state followed; unknown for an operator's later entry,
+    #: whose state was already gone.
+    source_id = models.UUIDField(null=True, blank=True)
+    reference = models.CharField(max_length=20, blank=True)
+    kind = models.CharField(max_length=16, choices=RetirementKind.choices)
+    retired_at = models.DateTimeField()
+    reason = models.CharField(max_length=300)
+
+    class Meta:
+        verbose_name = "Lovable sünkroonimise kohordist väljaarvamine"
+        ordering = ["retired_at"]
+        constraints = [
+            # A Teema leaves a cohort once: a second retirement is refused by the
+            # database, whatever the code above it does.
+            models.UniqueConstraint(fields=["matter"], name="lovable_sync_retired_once"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.cohort}: {self.reference or self.matter_id}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ImmutableRecordError("Kohordist väljaarvamist ei muudeta.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ImmutableRecordError("Kohordist väljaarvamist ei muudeta.")
 
 
 class LovableSyncBaselineArchive(BaseModel):

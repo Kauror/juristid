@@ -20,6 +20,8 @@
         --package-sha256 SHA --expect N --reason R [--supersede lovable-pilot]
     python manage.py lovable_sync enroll --cohort lovable-register \\
         --package-sha256 SHA --expect N --reason R --replaces lovable-operational
+    python manage.py lovable_sync retire --cohort lovable-register \\
+        --reference 2026_511 --reason R [--apply]
 
 `run` reads Lovable as the service login named in the credentials file and
 reconciles the pilot's 100 Teemad and every enrolled cohort (docs/adr/0202). It
@@ -58,6 +60,14 @@ synchronisation state too, so it reports differences once enrolment has
 re-seeded it; (2) `enroll --supersede`. A nightly or manual run that reconciled
 after the rebuild was applied refuses the enrolment (SYNC_RAN_SINCE_REBUILD):
 restore the pre-rebuild backup set, or the owner decides.
+
+`retire` (audit 2026-11 C-L-04) records that a cohort Teema left its cohort
+because it was permanently deleted (docs/adr/0165), so the nightly size check
+expects one fewer. A deletion records this itself; `retire` is for a deletion
+made before that, and it is refused unless the Teema is a tombstone whose
+MATTER_DELETED event removed a synchronisation state, nothing has retired it yet,
+and the cohort is short. Dry run unless ``--apply``; it writes no business record.
+`report` lists every retirement (cohort, kind, time) and each cohort's numbers.
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),
 3 held for review (circuit breaker or no backup), 1 failed.
@@ -104,6 +114,7 @@ class Command(BaseCommand):
                 "control",
                 "resolve",
                 "enroll",
+                "retire",
             ],
         )
         parser.add_argument("--trigger", choices=["scheduled", "manual"], default="manual")
@@ -130,7 +141,12 @@ class Command(BaseCommand):
             "--backfill", action="store_true", help="observe: read the audit ledger to the end."
         )
         parser.add_argument("--observe", choices=["on", "off"], default="")
-        parser.add_argument("--cohort", default="", help="enroll: the cohort key.")
+        parser.add_argument("--cohort", default="", help="enroll / retire: the cohort key.")
+        parser.add_argument(
+            "--apply",
+            action="store_true",
+            help="retire: record the retirement (without it, a dry run).",
+        )
         parser.add_argument(
             "--package-sha256", default="", help="enroll: the approved package digest."
         )
@@ -231,6 +247,8 @@ class Command(BaseCommand):
             {
                 "status": codes_only(lovable_observability.status(nobody).as_dict()),
                 "readiness": codes_only(lovable_observability.readiness(nobody).as_dict()),
+                # Numbers, codes and times only, like the rest (audit 2026-11 C-L-04).
+                "retirements": lovable_sync.retirement_report(),
             },
         )
 
@@ -370,6 +388,26 @@ class Command(BaseCommand):
             f" import_held_fields={done.import_held_fields}"
             + (f" reseeded={done.reseeded} superseded={done.superseded}" if done.superseded else "")
         )
+
+    def _retire(self, options: dict[str, Any]) -> None:
+        from app.legacy_import import lovable_sync_retirement
+
+        if not (options["cohort"] and options["reference"] and options["reason"].strip()):
+            raise CommandError("retire needs --cohort, --reference and --reason.")
+        plan = lovable_sync_retirement.retire(
+            cohort=options["cohort"],
+            reference=options["reference"],
+            reason=options["reason"],
+            apply=options["apply"],
+        )
+        verb = "retired" if plan.applied else "would retire"
+        self.stdout.write(
+            f"{verb}: cohort={plan.cohort} reference={plan.reference}"
+            f" deleted_at={plan.deleted_at.isoformat()} deletion_event={plan.deletion_event_id}"
+            f" held={plan.held} required={plan.required}->{plan.required - 1}"
+        )
+        if not plan.applied:
+            self.stdout.write("dry run: nothing recorded; add --apply to record it.")
 
     # -- helpers ---------------------------------------------------------------
 
