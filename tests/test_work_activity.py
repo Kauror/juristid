@@ -28,6 +28,7 @@ from django.utils import timezone
 
 from app.audit.enums import ChangeEventType
 from app.audit.services import record_change_event
+from app.core.dates import start_of_local_day
 from app.core.enums import Visibility
 from app.documents.models import Document
 from app.documents.services import add_evidence_version, create_document
@@ -77,13 +78,22 @@ def _day(offset: int) -> dt.date:
     return _today() + dt.timedelta(days=offset)
 
 
+def _at(offset: int) -> dt.datetime:
+    """The start of the Tallinn day `offset` days from today, as an aware instant.
+
+    Not `timezone.now() + timedelta(days=offset)`: that is `offset` times 24
+    hours, which across an EET/EEST change lands on the neighbouring calendar
+    day for one hour of the evening, while every assertion here is in Tallinn
+    calendar days (audit 2026-11, G-01; tests/test_aud_w4_no_dst_bombs.py).
+    """
+    return start_of_local_day(_day(offset))
+
+
 @pytest.fixture
 def matter(specialist):
     """Last work 60 days ago: quiet, and not changed in any recent window."""
     matter = factories.MatterFactory(owner=specialist)
-    factories.EntryFactory(
-        matter=matter, author=specialist, occurred_at=timezone.now() + dt.timedelta(days=OLD)
-    )
+    factories.EntryFactory(matter=matter, author=specialist, occurred_at=_at(OLD))
     return matter
 
 
@@ -119,9 +129,7 @@ def _human_action(matter, actor, **_) -> None:
 
 def _human_action_completed(matter, actor, **_) -> None:
     action = set_next_action(matter=matter, text="Helistan", actor=actor)
-    NextAction.objects.filter(pk=action.pk).update(
-        created_at=timezone.now() + dt.timedelta(days=OLD)
-    )
+    NextAction.objects.filter(pk=action.pk).update(created_at=_at(OLD))
     complete_next_action(action=NextAction.objects.get(pk=action.pk), actor=actor)
 
 
@@ -364,9 +372,7 @@ def test_a_marge_dated_ahead_never_becomes_work_when_its_day_arrives(
     development = record_procedural_development(
         matter=matter, title="Saadan kirja", occurred_on=_day(-3), actor=specialist
     )
-    MatterProceduralDevelopment.objects.filter(pk=development.pk).update(
-        created_at=timezone.now() + dt.timedelta(days=-8)
-    )
+    MatterProceduralDevelopment.objects.filter(pk=development.pk).update(created_at=_at(-8))
 
     assert _last(matter, department_head) == (OLD, ActivityBasis.ENTRY)
     assert _quiet(matter, department_head)
@@ -387,7 +393,7 @@ def test_last_week_still_counts_when_there_is_also_work_today(matter, specialist
         matter=matter,
         body="Eelmisel nädalal",
         author=specialist,
-        occurred_at=timezone.now() + dt.timedelta(days=-8),
+        occurred_at=_at(-8),
     )
     add_entry(matter=matter, body="Täna", author=specialist)
 
@@ -414,7 +420,7 @@ def test_an_approximate_record_moves_last_activity_but_no_bounded_window(
     seen 31.10.2026). This file's history starts 90 days back instead.
     """
     matter = factories.MatterFactory(owner=specialist)
-    older = timezone.now() - dt.timedelta(days=90)
+    older = _at(-90)
     factories.EntryFactory(matter=matter, author=specialist, occurred_at=older)
     first_of_last_month = (_today().replace(day=1) - dt.timedelta(days=1)).replace(day=1)
     assert timezone.localdate(older) < first_of_last_month
