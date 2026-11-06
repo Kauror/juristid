@@ -230,14 +230,19 @@ def test_the_switch_is_a_button_that_submits_nothing():
 
 
 def test_the_switch_names_the_action_in_estonian_for_each_state():
-    """The name is what pressing does, and there is one per state."""
+    """The name is what pressing does, and there is one per state.
+
+    Written on the row since UI-03 rather than visually hidden: the switch is a
+    row of the settings menu now, and a menu row is read, not recognised by its
+    icon alone. The stylesheet still shows exactly one of the two.
+    """
     markup = TEMPLATE_COMMENT.sub("", TOGGLE)
     assert (
-        '<span class="visually-hidden themetoggle__name--light">Lülita heledale teemale</span>'
+        '<span class="themetoggle__name themetoggle__name--light">Lülita heledale teemale</span>'
         in markup
     )
     assert (
-        '<span class="visually-hidden themetoggle__name--dark">Lülita tumedale teemale</span>'
+        '<span class="themetoggle__name themetoggle__name--dark">Lülita tumedale teemale</span>'
         in markup
     )
     # No `aria-pressed` beside a name that already changes with the state.
@@ -254,15 +259,30 @@ def test_the_icons_are_decoration_and_carry_no_colour_of_their_own():
     assert "fill=" not in markup and "stroke=" not in markup
 
 
-def test_the_switch_is_on_the_bar_signed_in_and_signed_out():
-    """Beside the account controls, and on the sign-in page.
+def test_the_switch_is_in_the_settings_menu_signed_in_and_signed_out():
+    """Inside «Seaded», after signing in and on the sign-in page — never loose on the bar.
 
-    Signing out clears the browser's storage and the preference with it
-    (`Clear-Site-Data`, ENG-009), so the page somebody lands on after signing
-    out is where they meet the default again — and where the switch has to be.
+    UI-03 moved it from its own sun/moon button into the settings menu behind
+    the gear (templates/components/settings_menu.html). The bar includes that
+    menu in both of its branches, so the switch is still wherever somebody
+    meets the default again: signing out clears the browser's storage and the
+    preference with it (`Clear-Site-Data`, ENG-009).
     """
     base = TEMPLATE_COMMENT.sub("", (ROOT / "templates" / "base.html").read_text(encoding="utf-8"))
-    assert base.count('{% include "components/theme_toggle.html" %}') == 2
-    signed_in, signed_out = base.split('{% else %}\n          <span class="topbar__spacer">')
-    assert signed_in.index("theme_toggle.html") < signed_in.index("persona_switcher.html")
-    assert "theme_toggle.html" in signed_out.split("</header>")[0]
+    header = base[base.index('<header class="topbar">') : base.index("</header>")]
+    assert "theme_toggle.html" not in header
+    assert "data-theme-toggle" not in header
+    signed_in, signed_out = header.split("{% else %}")
+    for branch in (signed_in, signed_out):
+        assert branch.count('{% include "components/settings_menu.html" %}') == 1
+    menu = TEMPLATE_COMMENT.sub(
+        "", (ROOT / "templates" / "components" / "settings_menu.html").read_text(encoding="utf-8")
+    )
+    assert menu.count('{% include "components/theme_toggle.html" %}') == 1
+    # The only other place it is included is nowhere.
+    includes = [
+        path.relative_to(ROOT / "templates").as_posix()
+        for path in (ROOT / "templates").rglob("*.html")
+        if "components/theme_toggle.html" in TEMPLATE_COMMENT.sub("", path.read_text("utf-8"))
+    ]
+    assert includes == ["components/settings_menu.html"]

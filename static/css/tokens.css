@@ -18,7 +18,7 @@
   /* ---- the top bar's right-hand controls (November 2026 UI round) ----
      One height and one gap for search, «Uus teema», persona, bell, settings
      and «Välju», so no control carries its own offset. */
-  --topbar-control-size: 2.25rem;
+  --topbar-control-size: 2rem;
   --topbar-gap: 0.5rem;
 
   /* ---- primitives: CVI brand --------------------------------------- */
