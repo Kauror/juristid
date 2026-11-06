@@ -25,6 +25,16 @@
       (static/css/ux.css).
     {% endcomment %}
     <link rel="stylesheet" href="{% static 'css/ux.css' %}">
+    {% comment %}
+      One stylesheet and one script per area of the November 2026 UI round,
+      loaded after ux.css. Each is inert on pages without its component.
+    {% endcomment %}
+    <link rel="stylesheet" href="{% static 'css/notification-panel.css' %}">
+    <link rel="stylesheet" href="{% static 'css/header-menu.css' %}">
+    <link rel="stylesheet" href="{% static 'css/calendar.css' %}">
+    <link rel="stylesheet" href="{% static 'css/register-search.css' %}">
+    <link rel="stylesheet" href="{% static 'css/matter-actions.css' %}">
+    <link rel="stylesheet" href="{% static 'css/historical-reading.css' %}">
     <script src="{% static 'vendor/htmx.min.js' %}" defer></script>
     <script src="{% static 'js/app.js' %}" defer></script>
     {% comment %}
@@ -38,6 +48,13 @@
       every page without the chooser.
     {% endcomment %}
     <script src="{% static 'js/register_columns.js' %}" defer></script>
+    {# The November 2026 UI round's per-area scripts, after app.js so htmx and its helpers exist. #}
+    <script src="{% static 'js/notification-panel.js' %}" defer></script>
+    <script src="{% static 'js/header-menu.js' %}" defer></script>
+    <script src="{% static 'js/calendar.js' %}" defer></script>
+    <script src="{% static 'js/register-search.js' %}" defer></script>
+    <script src="{% static 'js/matter-actions.js' %}" defer></script>
+    <script src="{% static 'js/historical-reading.js' %}" defer></script>
     {% if user.is_authenticated %}
       {% comment %}
         Remembered blocks (docs/adr/0194): where a reader's open/closed choice
