@@ -36,9 +36,21 @@ cohort's provenance still names that Teema under that id
 has no state and no provenance left, so it gets none, and `retire` refuses it
 (NO_MEMBERSHIP_EVIDENCE).
 
-The SQL below is the exact SQL the release kit pins; keep it byte-stable. The
-reverse drops the triggers and the two functions, then the table; 0023's
-trigger and `core_reject_mutation()` stay.
+**Reverse.** It drops the triggers and the two functions, then the table;
+0023's trigger and `core_reject_mutation()` stay. It is refused (the last
+operation's reverse runs first) while either table holds a row: a membership of
+basis DELETION exists nowhere else once its Teema is purged, and a retirement
+without its membership could never be written again, so reversing would destroy
+evidence for good. On empty tables (CI's step-back, a fresh database) it
+reverses as before.
+
+**Restore.** Only a full dump (schema and data, as `pg_dump`/`pg_restore` of
+the whole database, which loads rows before it creates triggers) restores these
+two tables. A data-only restore into a migrated schema is refused row by row by
+the INSERT triggers: a membership of a tombstone, or one loaded before its
+state, and a retirement loaded before its membership, all fail.
+
+The SQL below is the exact SQL the release kit pins; keep it byte-stable.
 """
 
 import app.core.ids
@@ -154,6 +166,20 @@ CREATE_RETIREMENT_CHECK_TRIGGER = (
 )
 DROP_RETIREMENT_CHECK_TRIGGER = f"DROP TRIGGER IF EXISTS {RETIREMENT}_evidenced ON {RETIREMENT};"
 
+#: The reverse of the last operation, so it runs before anything is dropped.
+REFUSE_REVERSE_WITH_ROWS = f"""
+DO $guard$
+BEGIN
+    IF EXISTS (SELECT 1 FROM {MEMBERSHIP}) OR EXISTS (SELECT 1 FROM {RETIREMENT}) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = 'restrict_violation',
+            MESSAGE = 'legacy_import.0024 is not reversed while cohort memberships or retirements exist.',
+            HINT = 'Reversing would destroy membership evidence that exists nowhere else.';
+    END IF;
+END
+$guard$;
+"""
+
 
 class Migration(migrations.Migration):
     dependencies = [
@@ -220,4 +246,5 @@ class Migration(migrations.Migration):
         migrations.RunSQL(
             sql=CREATE_RETIREMENT_CHECK_TRIGGER, reverse_sql=DROP_RETIREMENT_CHECK_TRIGGER
         ),
+        migrations.RunSQL(sql=migrations.RunSQL.noop, reverse_sql=REFUSE_REVERSE_WITH_ROWS),
     ]
