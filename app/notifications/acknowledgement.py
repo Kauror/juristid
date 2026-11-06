@@ -29,15 +29,17 @@ source, is the last moment the item could have become unread for this reader:
   written when it is created, brought back (`deadlines._deliver`) or marked
   unread, so that stamp is when it last arrived;
 * commencement check: the latest of the prompt's creation, the Teema's last
-  change (a hand-over to this reader writes ``Matter.updated_at``), the
-  reader's own state row's last change, and the Tallinn midnight on which a
-  postponement ran out. Conservative on purpose: a check that might have
-  arrived after the boundary stays unread, and the reader sees it.
+  change of hands (its newest `MATTER_ASSIGNED` event — `assign_matter`, the
+  one path that moves an owner, always writes one), the reader's own state
+  row's last change, and the Tallinn midnight on which a postponement ran
+  out. A check that becomes a manager's because its owner's account was
+  deactivated has no such moment and counts from its creation.
 
-The boundary is never later than the start of a notification generator that is
-still running (:func:`boundary`): rows that worker has written but not yet
-committed are invisible to the panel while carrying a time before it, and must
-not be swept up by a press made after they appear.
+The boundary is never later than the start of any other transaction still
+open in this database (:func:`boundary`): whatever such a transaction has
+written — a generator's rows, a colleague's hand-over and its «Uus asi» — is
+invisible to the panel while carrying a time before its commit, and must not
+be swept up by a press made after it appears.
 """
 
 from __future__ import annotations
@@ -55,9 +57,6 @@ from app.notifications.feed import unreadable_assignment_matters
 from app.notifications.inbox import TYPE_ASSIGNMENT, TYPE_COMMENCEMENT, TYPE_DEADLINE
 from app.notifications.models import CommencementReminderPersonalState
 
-#: The advisory locks the two generators hold for their whole transaction.
-GENERATOR_LOCKS: tuple[tuple[int, int], ...] = (deadlines.DEADLINE_LOCK, services.REMINDER_LOCK)
-
 #: What a malformed or missing boundary is told. A form drawn by this
 #: application always carries one, so this is a stale or hand-made request.
 BOUNDARY_REFUSED = "Teavituste seis on aegunud. Ava teavitused uuesti ja proovi siis."
@@ -66,25 +65,22 @@ BOUNDARY_REFUSED = "Teavituste seis on aegunud. Ava teavitused uuesti ja proovi 
 def boundary(now: datetime | None = None) -> datetime:
     """The moment the inbox the reader is being shown is complete up to.
 
-    Normally now. While a generator is inside its transaction, the start of
-    that transaction instead: anything it has written so far carries a time
-    after that start and is not yet visible, so it is outside the boundary.
-    Read from `pg_locks` / `pg_stat_activity`; if the database does not show
-    another session's start (a different role without `pg_read_all_stats`),
-    the answer is now — the behaviour without this refinement.
+    Normally now. While another transaction in this database is open, the
+    start of the oldest one instead: anything it has written so far carries a
+    time after its start and is not yet visible, so it is outside the boundary
+    (a generator's rows, `assign_matter`'s «Uus asi», a reader's own second
+    tab). Conservative: an unrelated long transaction only means a few items
+    stay unread, and «Märgi kõik loetuks» says so. Read from
+    `pg_stat_activity`; a session the database does not show this role (a
+    different role without `pg_read_all_stats`) has a NULL start and is left
+    out, which is the behaviour without this refinement.
     """
     moment = now or timezone.now()
-    (deadline_a, deadline_b), (reminder_a, reminder_b) = GENERATOR_LOCKS
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT min(a.xact_start) FROM pg_locks l "
-            "JOIN pg_stat_activity a ON a.pid = l.pid "
-            "WHERE l.locktype = 'advisory' AND l.granted AND l.objsubid = 2 "
-            "AND l.pid <> pg_backend_pid() "
-            "AND l.database = (SELECT oid FROM pg_database WHERE datname = current_database()) "
-            "AND ((l.classid = %s::oid AND l.objid = %s::oid) "
-            "OR (l.classid = %s::oid AND l.objid = %s::oid))",
-            [deadline_a, deadline_b, reminder_a, reminder_b],
+            "SELECT min(xact_start) FROM pg_stat_activity "
+            "WHERE datname = current_database() AND pid <> pg_backend_pid() "
+            "AND xact_start IS NOT NULL"
         )
         started = cursor.fetchone()[0]
     return min(moment, started) if started is not None else moment
@@ -228,7 +224,10 @@ class MarkAllResult:
             return "Lugemata teavitusi ei olnud."
         text = f"Loetuks märgitud: {self.marked}."
         if self.remaining:
-            text += f" Vahepeal lisandus {self.remaining} uut teavitust, need jäid lugemata."
+            text += (
+                f" Lugemata jäi {self.remaining}: need võisid lisanduda pärast seda,"
+                " kui teavitused avasid."
+            )
         return text
 
 
@@ -240,19 +239,33 @@ def _midnight(day: date | None) -> datetime | None:
 
 def _commencement_arrivals(user: Any, rows: list[Any]) -> dict[Any, datetime]:
     """When each awaiting commencement check last arrived for ``user`` (see the module note)."""
+    from django.db.models import Max
+
+    from app.audit.enums import ChangeEventType
+    from app.audit.models import ChangeEvent
+
     states = {
         state.reminder_id: state
         for state in CommencementReminderPersonalState.objects.filter(
             user_id=user.pk, reminder_id__in=[row.pk for row in rows]
         )
     }
+    handed = dict(
+        ChangeEvent.objects.filter(
+            event_type=ChangeEventType.MATTER_ASSIGNED,
+            matter_id__in={row.reminder.effective_date.matter_id for row in rows},
+        )
+        .values("matter_id")
+        .annotate(last=Max("occurred_at"))
+        .values_list("matter_id", "last")
+    )
     arrivals = {}
     for row in rows:
         reminder = row.reminder
         state = states.get(reminder.pk)
         moments = [
             reminder.created_at,
-            reminder.effective_date.matter.updated_at,
+            handed.get(reminder.effective_date.matter_id),
             _midnight(reminder.deferred_until),
         ]
         if state is not None:

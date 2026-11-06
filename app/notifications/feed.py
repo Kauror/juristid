@@ -107,9 +107,11 @@ class Cursor:
             return None
         try:
             pk = uuid.UUID(hex=hexed)
-        except ValueError:
+            # A moment past what a datetime can hold is a hand-made link.
+            at = _EPOCH + int(micros) * _MICROSECOND
+        except (ValueError, OverflowError):
             return None
-        return cls(int(group), _EPOCH + int(micros) * _MICROSECOND, int(rank), pk)
+        return cls(int(group), at, int(rank), pk)
 
     @classmethod
     def after(cls, group: int, item: InboxItem) -> Cursor:
