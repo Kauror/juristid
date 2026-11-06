@@ -16,11 +16,12 @@ What only a running page can settle (the markup, order and permissions are
 from __future__ import annotations
 
 import itertools
+from urllib.parse import quote
 
 import pytest
 from playwright.sync_api import expect
 
-from e2e.conftest import READER, SANDRA, create_matter, open_matter, sign_in, unique_title
+from e2e.conftest import READER, SANDRA, create_matter, sign_in, unique_title
 
 pytestmark = pytest.mark.e2e
 
@@ -37,6 +38,19 @@ ROW_ORDER = [
 CLOSED_TITLE = "Lõpetatud sünteetiline teema"
 #: A seeded open file with a current step, read but never written here.
 REVIEW_DUE_TITLE = "Ootamise ülevaatuse aeg on käes"
+
+
+def _open_seeded(page, base_url: str, title: str) -> None:
+    """A seeded Teema, found in the register by its whole title.
+
+    `open_matter` searches the first word only, and «Lõpetatud» also matches
+    every file a long-lived browser world has closed since it was seeded.
+    """
+    page.goto(f"{base_url}/teemad/?olek=koik&q={quote(title)}")
+    page.wait_for_load_state("networkidle")
+    link = page.get_by_role("link", name=title, exact=True).first
+    page.goto(f"{base_url}{link.get_attribute('href')}")
+    page.wait_for_load_state("networkidle")
 
 
 def _chips(page) -> list[dict]:
@@ -76,7 +90,7 @@ def test_the_row_reads_in_order_and_lopeta_teema_ends_it(page, base_url, width):
 
 def test_opening_a_choice_moves_no_chip_and_not_the_toolbar(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, REVIEW_DUE_TITLE)
+    _open_seeded(page, base_url, REVIEW_DUE_TITLE)
     toolbar = page.locator("#praegune-tegevus .curact__tools")
     resting_toolbar = toolbar.bounding_box()
     resting = _chips(page)
@@ -120,7 +134,7 @@ def test_lisa_tegevus_works_with_no_current_action(page, base_url):
 
 def test_a_closed_matter_has_no_row(page, base_url):
     sign_in(page, base_url, SANDRA)
-    open_matter(page, base_url, CLOSED_TITLE)
+    _open_seeded(page, base_url, CLOSED_TITLE)
     expect(page.locator("#praegune-tegevus")).to_contain_text("teema on suletud")
     expect(page.locator("#lisa-teemale")).to_have_count(0)
     expect(page.locator("#praegune-tegevus [data-curact-toggle]")).to_have_count(0)
@@ -128,7 +142,7 @@ def test_a_closed_matter_has_no_row(page, base_url):
 
 def test_a_reader_has_no_row_and_no_toolbar(page, base_url):
     sign_in(page, base_url, READER)
-    open_matter(page, base_url, REVIEW_DUE_TITLE)
+    _open_seeded(page, base_url, REVIEW_DUE_TITLE)
     expect(page.locator("#praegune-tegevus .curact__text")).to_have_text(
         "Ootame ministeeriumi vastust"
     )

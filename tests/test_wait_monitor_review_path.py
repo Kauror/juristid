@@ -440,7 +440,9 @@ def test_a_date_that_is_not_a_day_is_refused_in_the_panel(client, specialist, no
     body = response.content.decode()
     panel = body.split('id="vaatasin-ule"')[1].split("</form>")[0]
     # The panel it came from, reopened, with the sentence on the box.
-    assert "hidden" not in body.split('id="vaatasin-ule"')[1].split(">")[0]
+    assert "curact__toolpanel--shut" not in re.search(
+        r'<div class="([^"]*)" id="vaatasin-ule"', body
+    ).group(1)
     assert "Kirjuta kuupäev kujul 7.9.2026." in panel
     assert 'id="id_ulevaatus_next_review_date_error"' in panel
     assert 'aria-invalid="true"' in panel

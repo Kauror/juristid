@@ -16,7 +16,8 @@ order, at its right; each one only toggles its own panel (`aria-expanded`,
 **under** the line, always in the same order — `✓ Tehtud`, `Vaatasin üle`,
 `Muuda` — whatever order they were opened in. Any number may be open at once;
 opening one closes nothing and saves nothing, and a closed panel keeps what was
-typed in it, because it is hidden rather than removed.
+typed in it, because it is hidden rather than removed (and, with scripting
+off, every panel is shown).
 
 **Every panel names the revision it was drawn from.** `revision` is the step's
 `updated_at` (the token every corrected record here already uses), posted by all
@@ -144,21 +145,25 @@ panel is not carried across as if nothing had happened: its words are shown as
     script also reopens, after a save elsewhere on the page, every panel that
     was open, as long as the step is still at the revision they were drawn
     from (`data-curact-revision`).
+
+    **Shut is a class, not `hidden`.** `curact__toolpanel--shut` hides a panel
+    only where scripting runs (`@media (scripting: enabled)`,
+    static/css/matter-actions.css), so the rule applies before the first paint
+    and nothing jumps on load; without scripting the buttons cannot toggle, and
+    every panel is simply shown.
   {% endcomment %}
   <div class="curact__toolpanels" data-curact-revision="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
     {% if not current_launch %}
-      <div class="cx-panel curact__toolpanel" id="tehtud" data-addpanel role="region" aria-labelledby="tehtud-nupp"
-           data-draft-host data-draft-state="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}"
-           {% if open_panel != "tehtud" %}hidden{% endif %}>
+      <div class="cx-panel curact__toolpanel{% if open_panel != 'tehtud' %} curact__toolpanel--shut{% endif %}" id="tehtud" data-addpanel role="region" aria-labelledby="tehtud-nupp"
+           data-draft-host data-draft-state="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
         <div class="cx-panel__body">
           {% include "matters/partials/current_action_form.html" %}
         </div>
       </div>
     {% endif %}
     {% if current_action.is_review_kind %}
-      <div class="cx-panel curact__toolpanel" id="vaatasin-ule" data-addpanel role="region" aria-labelledby="vaatasin-ule-nupp"
-           data-draft-host data-draft-state="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}"
-           {% if open_panel != "vaatasin-ule" %}hidden{% endif %}>
+      <div class="cx-panel curact__toolpanel{% if open_panel != 'vaatasin-ule' %} curact__toolpanel--shut{% endif %}" id="vaatasin-ule" data-addpanel role="region" aria-labelledby="vaatasin-ule-nupp"
+           data-draft-host data-draft-state="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
         <div class="cx-panel__body">
           {% if open_panel == "vaatasin-ule" and workspace_error %}
             <p class="formerror" role="alert">{{ workspace_error }}</p>
@@ -167,9 +172,8 @@ panel is not carried across as if nothing had happened: its words are shown as
         </div>
       </div>
     {% endif %}
-    <div class="cx-panel curact__toolpanel" id="lisa-jargmine" data-addpanel role="region" aria-labelledby="lisa-jargmine-nupp"
-         data-draft-host data-draft-state="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}"
-         {% if open_panel != "lisa-jargmine" %}hidden{% endif %}>
+    <div class="cx-panel curact__toolpanel{% if open_panel != 'lisa-jargmine' %} curact__toolpanel--shut{% endif %}" id="lisa-jargmine" data-addpanel role="region" aria-labelledby="lisa-jargmine-nupp"
+         data-draft-host data-draft-state="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
       <div class="cx-panel__body">
         {% if open_panel == "lisa-jargmine" and workspace_error %}
           <p class="formerror" role="alert">{{ workspace_error }}</p>

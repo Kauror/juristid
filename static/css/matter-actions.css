@@ -46,8 +46,22 @@
   min-width: 0;
 }
 
-#teema-vaade-wrap .curact__toolpanel[hidden] {
-  display: none;
+/* Shut only where scripting runs: the buttons that open a panel need it, and
+ * without it every panel is simply shown. A media condition rather than a
+ * class set by script, so it applies before the first paint and the page does
+ * not jump on load (the pattern app.css uses for the chronology rows, `.uxtl__item`). */
+@media (scripting: enabled) {
+  #teema-vaade-wrap .curact__toolpanel--shut {
+    display: none;
+  }
+}
+
+/* And without scripting no button could toggle anything, so none is drawn —
+ * the panels are all open, each under its own labelled fields. */
+@media (scripting: none) {
+  #teema-vaade-wrap .curact__tool[data-curact-toggle] {
+    display: none;
+  }
 }
 
 /* -- UI-09: the action row under PRAEGUNE TEGEVUS -------------------------

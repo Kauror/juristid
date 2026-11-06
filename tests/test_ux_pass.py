@@ -471,7 +471,11 @@ def _panel_is_open(body: str, panel_id: str) -> bool:
     toggle = re.search(rf'aria-controls="{panel_id}"\s+aria-expanded="(true|false)"', body)
     if toggle:
         tag = re.search(rf'<[^>]*\bid="{panel_id}"[^>]*>', body)
-        return toggle.group(1) == "true" and tag is not None and "hidden" not in tag.group(0)
+        return (
+            toggle.group(1) == "true"
+            and tag is not None
+            and "curact__toolpanel--shut" not in tag.group(0)
+        )
     marker = f'id="{panel_id}"'
     assert marker in body, f"{panel_id} is not on the page at all"
     return " open" in body.split(marker)[1].split(">")[0]

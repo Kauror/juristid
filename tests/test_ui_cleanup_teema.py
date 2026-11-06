@@ -134,8 +134,8 @@ def test_tehtud_stays_visible_with_its_panel_open_after_a_refusal(
     assert response.status_code == 400
     zone = _zone(response.content.decode())
     assert re.search(r'aria-controls="tehtud"\s+aria-expanded="true">✓ Tehtud</button>', zone)
-    opening = zone[zone.index('id="tehtud"') :].split(">", 1)[0]
-    assert "hidden" not in opening
+    classes = re.search(r'<div class="([^"]*)" id="tehtud"', zone).group(1)
+    assert "curact__toolpanel--shut" not in classes
 
 
 # ---------------------------------------------------------------------------
