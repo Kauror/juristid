@@ -595,6 +595,24 @@ def mark_read(*, notification: DeadlineNotification) -> None:
     )
 
 
+def mark_unread(*, notification: DeadlineNotification) -> bool:
+    """«Märgi lugemata». The inverse of :func:`mark_read`, on a row its recipient has not hidden.
+
+    One conditional UPDATE: a second press, or a row never read, changes
+    nothing. ``updated_at`` is the moment the row became unread again, which is
+    what a «Märgi kõik loetuks» boundary compares (`app.notifications.acknowledgement`).
+    """
+    now = timezone.now()
+    return bool(
+        DeadlineNotification.objects.filter(
+            pk=notification.pk,
+            retired_at__isnull=True,
+            dismissed_at__isnull=True,
+            read_at__isnull=False,
+        ).update(read_at=None, updated_at=now)
+    )
+
+
 def dismiss(*, notification: DeadlineNotification) -> bool:
     """Hide an INFO row. Also marks it read. ``False`` for an ACTION row.
 

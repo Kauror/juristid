@@ -1,0 +1,12 @@
+{% comment %}
+«Näita varasemaid» — the next page of the panel, a GET that marks nothing. The
+answer (`_panel_page.html`) replaces this item with the next items and, if
+there are still more, another of these.
+{% endcomment %}
+<li class="notifpanel__moreitem" data-notifpanel-more>
+  <button type="button" class="button button--quiet button--tiny notifpanel__more"
+          hx-get="{% url 'notifications:panel' %}?enne={{ page.next }}"
+          hx-target="closest [data-notifpanel-more]"
+          hx-select="[data-notifpanel-page] > li"
+          hx-swap="outerHTML">Näita varasemaid</button>
+</li>

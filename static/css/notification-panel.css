@@ -1,1 +1,450 @@
-/* notification-panel.css: UI-01 notification panel (agent A). Loaded after ux.css from templates/base.html. */
+/* notification-panel.css: UI-01 notification panel (agent A). Loaded after ux.css from templates/base.html.
+ *
+ * The bell on the bar, the panel that opens under it, its items and their `⋯`
+ * menus, and the few rules the Minu asjad block and /teavitused/ gained for
+ * the read/unread state. Tokens only. The badge keeps the established warning
+ * colour rather than danger red: a notice is not a failure.
+ */
+
+/* ---- The bell ----------------------------------------------------------
+ * One box, `--topbar-control-size` square, which the top bar places and
+ * styles nothing inside (the header contract with agent B). The number sits on
+ * the bell's shoulder so the box never changes width with it. */
+.notifbell {
+  position: relative;
+  flex: none;
+  width: var(--topbar-control-size);
+  height: var(--topbar-control-size);
+}
+
+.notifbell__trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.notifbell__trigger:hover,
+.notifbell__trigger[aria-expanded="true"] {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.notifbell__icon {
+  flex: none;
+}
+
+.notifbell__slot {
+  position: absolute;
+  top: 1px;
+  right: 0;
+  display: inline-flex;
+  pointer-events: none;
+}
+
+.notifbell__count {
+  min-width: 18px;
+  padding: 0 var(--spacing-1);
+  border-radius: var(--radius-chip);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  line-height: 16px;
+  text-align: center;
+  color: var(--status-warning);
+  background: var(--status-warning-soft);
+  border: 1px solid var(--status-warning-border);
+}
+
+/* ---- The panel ----------------------------------------------------------
+ * Under the bell, right-aligned to it, a compact column that scrolls inside
+ * itself rather than growing past the window. No transform, filter or
+ * containment on it: the `⋯` menus inside are `position: fixed`
+ * (`data-uxfloat`, static/js/ux.js) and must be placed against the window. */
+.notifpanel {
+  position: absolute;
+  top: calc(100% + var(--spacing-2));
+  right: 0;
+  z-index: 40;
+  width: 26rem;
+  max-width: calc(100vw - 2 * var(--spacing-4));
+  max-height: min(36rem, calc(100vh - var(--layout-topbar) - var(--spacing-6)));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-overlay);
+  box-shadow: var(--shadow-overlay);
+  color: var(--text-body);
+}
+
+.notifpanel[hidden] {
+  display: none;
+}
+
+.notifpanel__body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.notifpanel__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-3) var(--spacing-2) var(--spacing-4);
+  background: var(--surface-elevated);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.notifpanel__title {
+  flex: 1 1 auto;
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-bold);
+  color: var(--text-primary);
+}
+
+.notifpanel__content > .notifpanel__title {
+  padding: var(--spacing-3) var(--spacing-4) 0;
+}
+
+.notifpanel__markall {
+  flex: none;
+  margin: 0;
+}
+
+.notifpanel__markallbutton {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.notifpanel__settings {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.notifpanel__settingsicon {
+  display: block;
+}
+
+.notifpanel__settings:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.notifpanel__loading,
+.notifpanel__empty {
+  margin: 0;
+  padding: var(--spacing-4);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.notifpanel__status {
+  margin: 0;
+  padding: var(--spacing-2) var(--spacing-4);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.notifpanel__status--error {
+  color: var(--status-danger);
+}
+
+.notifpanel__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-1) 0;
+}
+
+.notifpanel__moreitem {
+  display: flex;
+  justify-content: center;
+  padding: var(--spacing-2);
+}
+
+.notifpanel__more {
+  color: var(--accent-link);
+}
+
+.notifpanel__foot {
+  position: sticky;
+  bottom: 0;
+  padding: var(--spacing-2) var(--spacing-4);
+  background: var(--surface-elevated);
+  border-top: 1px solid var(--border-subtle);
+  text-align: center;
+}
+
+.notifpanel__all {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--accent-link);
+}
+
+/* ---- One item -----------------------------------------------------------
+ * Unread: the accent mark and full-strength text. Read and resolved: muted,
+ * still legible, still there. The state is also said in words (templates). */
+.notifitem {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) var(--spacing-2) var(--spacing-2) var(--spacing-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.notifitem:last-child {
+  border-bottom: none;
+}
+
+.notifitem:hover {
+  background: var(--surface-hover);
+}
+
+.notifitem__mark {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: var(--radius-circle);
+}
+
+.notifitem--unread {
+  background: var(--accent-soft);
+}
+
+.notifitem--unread .notifitem__mark {
+  background: var(--accent-primary);
+}
+
+.notifitem__main {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.notifitem__label {
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-bold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+  color: var(--status-warning);
+}
+
+.notifitem--info .notifitem__label {
+  color: var(--status-info);
+}
+
+.notifitem__open {
+  margin: 0;
+}
+
+.notifitem__title {
+  display: block;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-primary);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.notifitem__title:hover {
+  color: var(--accent-link);
+}
+
+.notifitem__date,
+.notifitem__note {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.notifitem__notice {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.notifitem__notice--error {
+  color: var(--status-danger);
+}
+
+/* Read and resolved: quieter in every part, but not below the muted text
+ * colour, which is the product's legible minimum. */
+.notifitem--read .notifitem__label,
+.notifitem--resolved .notifitem__label,
+.notifitem--read .notifitem__title,
+.notifitem--resolved .notifitem__title {
+  color: var(--text-muted);
+  font-weight: var(--typography-weight-regular);
+}
+
+/* ---- The item's `⋯` ---------------------------------------------------- */
+.notifitem__menu {
+  flex: none;
+}
+
+.notifitem__menubutton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-circle);
+  color: var(--text-secondary);
+  list-style: none;
+  cursor: pointer;
+}
+
+.notifitem__menubutton::-webkit-details-marker {
+  display: none;
+}
+
+.notifitem__menubutton:hover,
+.notifitem__menu[open] > .notifitem__menubutton {
+  background: var(--surface-overlay-hover);
+  color: var(--text-primary);
+}
+
+.notifitem__dots {
+  fill: currentColor;
+}
+
+.notifitem__menulist {
+  position: fixed;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+  max-width: calc(100vw - 2 * var(--spacing-3));
+  padding: var(--spacing-1);
+  overflow-y: auto;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+}
+
+.notifitem__menulist > form {
+  margin: 0;
+}
+
+.notifitem__command {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--typography-size-base);
+  color: var(--text-body);
+  text-align: left;
+  list-style: none;
+  cursor: pointer;
+}
+
+.notifitem__command::-webkit-details-marker {
+  display: none;
+}
+
+.notifitem__command:hover {
+  background: var(--surface-overlay-hover);
+}
+
+.notifitem__defer[open] > .notifitem__command {
+  color: var(--text-primary);
+}
+
+.notifitem__deferform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2);
+}
+
+/* ---- Minu asjad and /teavitused/ ------------------------------------------
+ * The block's place on Minu asjad draws no box of its own, so the rail's
+ * spacing is exactly what it was, with the block or without it. */
+.notifsidebar {
+  display: contents;
+}
+
+.notifblock__error {
+  margin: 0 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--status-danger);
+}
+
+.notifpage {
+  scroll-margin-top: var(--spacing-5);
+}
+
+.notifpage__markall {
+  margin: 0 0 0 auto;
+}
+
+.notifsection--history .notifrow__matter {
+  color: var(--text-secondary);
+}
+
+.notifrow--read .notifrow__label,
+.notifrow--resolved .notifrow__label {
+  color: var(--text-muted);
+}
+
+.notifsection__more {
+  display: inline-block;
+  margin-top: var(--spacing-2);
+  margin-right: var(--spacing-4);
+  font-size: var(--typography-size-meta);
+  color: var(--accent-link);
+}
+
+/* ---- Narrow screens -------------------------------------------------------
+ * The panel spans the window under the bar with the gutter on each side, and
+ * scrolls inside itself; the bell keeps its box. */
+@media (max-width: 40rem) {
+  .notifpanel {
+    position: fixed;
+    top: calc(var(--layout-topbar) + var(--spacing-1));
+    right: var(--spacing-4);
+    left: var(--spacing-4);
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - var(--layout-topbar) - var(--spacing-4));
+  }
+
+  .notifpanel__head {
+    flex-wrap: wrap;
+  }
+
+  .notifitem__menubutton {
+    width: 36px;
+    height: 36px;
+  }
+}

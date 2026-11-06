@@ -1,0 +1,89 @@
+{% comment %}
+One item in the bell's panel (UI-01), whichever source it comes from.
+
+* **Unread** items carry the accent mark and full-strength text; **read** and
+  **resolved** ones are muted but legible, and stay — they are the history.
+  The state is also in words for a screen reader.
+* The title opens the item's Teema at the right section. A GET marks nothing;
+  only «Uus asi» opens through its own acknowledging POST (ADR 0051).
+* The `⋯` menu (`data-uxpopover`, static/js/ux.js: one open at a time, Escape
+  and an outside click close it and focus returns to `⋯`) holds what applies:
+  «Märgi loetuks» or «Märgi lugemata», and for a commencement check «Lükka
+  edasi». Each is a CSRF POST naming only the row; the server takes the reader
+  from the session. The answer is this item redrawn (`hx-swap="outerHTML"`).
+
+Rendered with `item=None` after an answer that took the item out of both
+groups — a postponed check — to say so in place.
+{% endcomment %}
+{% if item %}
+<li class="notifitem notifitem--{{ item.state }}{% if item.kind == 'INFO' %} notifitem--info{% endif %}"
+    data-notif-item data-notif-type="{{ item.type }}" data-notif-state="{{ item.state }}">
+  <span class="notifitem__mark" aria-hidden="true"></span>
+  <div class="notifitem__main">
+    <span class="notifitem__label">{{ item.label }}</span>
+    {% if item.opens_by_post %}
+      <form class="notifitem__open" method="post" action="{{ item.url }}">
+        {% csrf_token %}
+        <button type="submit" class="notifitem__title">{{ item.title }}<span class="visually-hidden"> · lugemata</span></button>
+      </form>
+    {% else %}
+      <a class="notifitem__title" href="{{ item.url }}">{{ item.title }}<span class="visually-hidden">{% if item.state == "unread" %} · lugemata{% elif item.state == "read" %} · loetud{% else %} · lõpetatud{% endif %}</span></a>
+    {% endif %}
+    <span class="notifitem__date">{{ item.date_label }}</span>
+    {% if item.note %}<span class="notifitem__note">{{ item.note }}</span>{% endif %}
+    {% if notice %}<span class="notifitem__notice" role="status">{{ notice }}</span>{% endif %}
+    {% if error %}<span class="notifitem__notice notifitem__notice--error" role="alert">{{ error }}</span>{% endif %}
+  </div>
+  {% if item.has_menu %}
+    <details class="notifitem__menu" data-uxpopover>
+      <summary class="notifitem__menubutton" data-focus-after-save>
+        <svg class="notifitem__dots" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+          <circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/>
+        </svg>
+        <span class="visually-hidden">Valikud: {{ item.title }}</span>
+      </summary>
+      <div class="notifitem__menulist" data-uxfloat="fit">
+        {% if item.can_read %}
+          <form method="post" action="{{ item.read_url }}" hx-post="{{ item.read_url }}"
+                hx-target="closest [data-notif-item]" hx-swap="outerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="tagasi" value="paneel">
+            <button type="submit" class="notifitem__command">Märgi loetuks</button>
+          </form>
+        {% endif %}
+        {% if item.can_unread %}
+          <form method="post" action="{{ item.unread_url }}" hx-post="{{ item.unread_url }}"
+                hx-target="closest [data-notif-item]" hx-swap="outerHTML">
+            {% csrf_token %}
+            <input type="hidden" name="tagasi" value="paneel">
+            <button type="submit" class="notifitem__command">Märgi lugemata</button>
+          </form>
+        {% endif %}
+        {% if item.can_defer %}
+          <details class="notifitem__defer">
+            <summary class="notifitem__command">Lükka edasi</summary>
+            <form class="notifitem__deferform" method="post" action="{{ item.defer_url }}"
+                  hx-post="{{ item.defer_url }}" hx-target="closest [data-notif-item]" hx-swap="outerHTML">
+              {% csrf_token %}
+              <input type="hidden" name="tagasi" value="paneel">
+              <label class="field__label" for="paneel-edasi-{{ item.pk }}">Kuni</label>
+              <input class="field__input dateinput" id="paneel-edasi-{{ item.pk }}" type="text"
+                     inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                     data-datepicker="true" name="until" required>
+              <button type="submit" class="button button--quiet button--tiny">Lükka edasi</button>
+            </form>
+          </details>
+        {% endif %}
+      </div>
+    </details>
+  {% endif %}
+</li>
+{% else %}
+<li class="notifitem notifitem--resolved" data-notif-item data-notif-state="gone" tabindex="-1" data-focus-after-save>
+  <span class="notifitem__mark" aria-hidden="true"></span>
+  <div class="notifitem__main">
+    {% if title %}<span class="notifitem__title">{{ title }}</span>{% endif %}
+    <span class="notifitem__notice" role="status">{{ notice|default:"Teavitust ei ole enam sinu teavituste hulgas." }}</span>
+  </div>
+</li>
+{% endif %}

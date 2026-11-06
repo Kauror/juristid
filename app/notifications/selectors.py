@@ -276,6 +276,51 @@ def answerable_reminder(user: Any, pk: Any) -> CommencementReminder | None:
     )
 
 
+def inbox_scope(user: Any) -> QuerySet[CommencementReminder]:
+    """Every open, live prompt that belongs in this reader's inbox, whatever their own state.
+
+    The reader's own desk, plus the unowned prompts for
+    `department.view_management` — the population :func:`readable_inbox_reminder`
+    resolves one row from, and the one a «Märgi lugemata» may return a prompt
+    to. Empty for a caller who is not signed in.
+    """
+    if not getattr(user, "is_authenticated", False) or getattr(user, "pk", None) is None:
+        return CommencementReminder.objects.none()
+    readable = MatterEffectiveDate.objects.visible_to(user).values("pk")
+    scope = _owned_by(user)
+    if may_view_department_management(user):
+        scope = scope | _unowned()
+    return (
+        CommencementReminder.objects.open()
+        .filter(eligibility_q("effective_date__"))
+        .filter(source_date=F("effective_date__date_value"))
+        .filter(effective_date__in=readable)
+        .filter(scope)
+    )
+
+
+def read_by(user: Any) -> QuerySet[CommencementReminder]:
+    """The prompts this reader has marked read, on commencements they may still see.
+
+    Their history (`app.notifications.feed`): whatever has happened to the
+    prompt since — answered, moved, made obsolete — the reader's own receipt
+    is what puts it there, so a colleague's reading never does.
+    """
+    if not getattr(user, "is_authenticated", False) or getattr(user, "pk", None) is None:
+        return CommencementReminder.objects.none()
+    readable = MatterEffectiveDate.objects.visible_to(user).values("pk")
+    return CommencementReminder.objects.filter(
+        Exists(_states(user).filter(read_at__isnull=False)), effective_date__in=readable
+    )
+
+
+def reminder_rows(
+    queryset: QuerySet[CommencementReminder], *, today: date | None = None
+) -> list[ReminderRow]:
+    """:class:`ReminderRow` for any reminder queryset the caller has already scoped."""
+    return _rows(queryset, _today(today))
+
+
 def readable_inbox_reminder(user: Any, pk: Any) -> CommencementReminder | None:
     """The prompt a «Märgi loetuks» or «Lükka edasi» POST names, if it is in this reader's inbox.
 
@@ -285,17 +330,4 @@ def readable_inbox_reminder(user: Any, pk: Any) -> CommencementReminder | None:
     Minu asjad never lets anybody clear what that person is shown. Deferred
     prompts count: a receipt for one is harmless and the POST may race the date.
     """
-    if not getattr(user, "is_authenticated", False) or getattr(user, "pk", None) is None:
-        return None
-    readable = MatterEffectiveDate.objects.visible_to(user).values("pk")
-    scope = _owned_by(user)
-    if may_view_department_management(user):
-        scope = scope | _unowned()
-    return (
-        CommencementReminder.objects.open()
-        .filter(eligibility_q("effective_date__"))
-        .filter(source_date=F("effective_date__date_value"))
-        .filter(effective_date__in=readable, pk=pk)
-        .filter(scope)
-        .first()
-    )
+    return inbox_scope(user).filter(pk=pk).first()
