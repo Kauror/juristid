@@ -295,3 +295,38 @@ def test_ordinary_prose_still_breaks_only_at_spaces(page, width):
     if width >= 768:
         # Two written lines, each with room to spare: nothing else wraps.
         assert measured["lines"] == 2, measured
+
+
+#: The breaks inside one element's text, as the character each new visual line
+#: follows. A word wrapped mid-word follows a letter.
+_BREAKS = """(el) => {
+    const breaks = [];
+    const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+    const range = document.createRange();
+    let top = null;
+    let previous = null;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        for (let i = 0; i < node.length; i++) {
+            range.setStart(node, i);
+            range.setEnd(node, i + 1);
+            const rect = range.getBoundingClientRect();
+            if (rect.width && top !== null && rect.top > top + 1) breaks.push(previous);
+            if (rect.width) top = rect.top;
+            previous = node.data[i];
+        }
+    }
+    return breaks;
+}"""
+
+
+@pytest.mark.parametrize("width", WIDTHS)
+def test_the_review_tables_keep_short_words_whole(page, width):
+    """Only a title or file-name cell breaks mid-word; «Avatud» never reads «Avat ud»."""
+    _open(page, width, shared=True)
+
+    cells = page.locator(".dossierreview th, .dossierreview td:not(.dossierreview__text)")
+    assert cells.count() > 0
+    for index in range(cells.count()):
+        cell = cells.nth(index)
+        breaks = cell.evaluate(_BREAKS)
+        assert all(char in (" ", "\n", "-") for char in breaks), (cell.inner_text(), breaks)

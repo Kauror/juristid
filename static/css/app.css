@@ -3367,13 +3367,15 @@ fieldset.field > legend {
  * and, on a page shared by several Teemad, the review tables' file names. Each
  * was cut off by its `overflow: hidden` card exactly as the text was. Scoped to
  * the source page (`.sourcepage`), so `.filelist` and `.data-table` elsewhere
- * do not move. */
+ * do not move. In the tables only the title and file-name cells may break
+ * mid-word: on every cell, the table's auto layout would squeeze «Avatud» and
+ * «Jätku seos» into broken words to make room. */
 .sourcepage .filelist__item {
   flex-wrap: wrap;
 }
 
 .sourcepage .filelist__item > *,
-.dossierreview td {
+.dossierreview__text {
   min-width: 0;
   overflow-wrap: anywhere;
 }
