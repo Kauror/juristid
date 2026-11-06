@@ -18,6 +18,11 @@ What this module holds, server side:
   current revision saves and a form posting no revision keeps the id check it
   always had;
 * a second press of the same `Vaatasin üle` is still one review (ENG-021);
+* (review round) a stale panel is refused as stale **before** it is validated,
+  and redrawn from the step as it is now rather than under the fresh token with
+  the old fields — so the corrected save cannot put the old day back; a Matter
+  closed meanwhile gets the closed-Matter refusal instead; a stale `✓ Tehtud`
+  with a file stores no `Document` and no bytes;
 * a reader and a closed Matter get no toolbar at all.
 
 The browser half — all three open together, the buttons not moving, typed
@@ -28,15 +33,21 @@ from __future__ import annotations
 
 import datetime
 import re
+from pathlib import Path
 
 import pytest
+from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import transaction
 from django.urls import reverse
 
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.dates import format_estonian_date
+from app.documents.models import Document
 from app.matters import views
 from app.matters.forms import period_initial
+from app.matters.locks import CLOSED_MATTER_REFUSAL
 from app.matters.services import close_matter
 from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
 from app.workflow.models import NextAction
@@ -127,8 +138,12 @@ def test_the_toolbar_is_three_buttons_in_order_with_their_panels_below(
     order = [panels.index(f'id="{panel}"') for panel in ("tehtud", "vaatasin-ule", "lisa-jargmine")]
     assert order == sorted(order), "the panels follow the toolbar's order"
     for panel in ("tehtud", "vaatasin-ule", "lisa-jargmine"):
+        classes = re.search(rf'<div class="([^"]*)" id="{panel}"', panels).group(1)
+        # Shut by a class the stylesheet hides only where scripting runs, never
+        # by `hidden`: without scripting every panel is shown (review P3).
+        assert "curact__toolpanel--shut" in classes, f"#{panel} is shut until its button is pressed"
         opening = panels[panels.index(f'id="{panel}"') :].split(">", 1)[0]
-        assert "hidden" in opening, f"#{panel} is closed until its button is pressed"
+        assert " hidden" not in opening
         assert "<details" not in opening
     # The toolbar sits on the step's own line, before any panel.
     assert zone.index('class="curact__tools"') < zone.index('class="curact__toolpanels"')
@@ -178,8 +193,8 @@ def test_a_refusal_reopens_its_own_panel_and_names_it_expanded(
     assert response.status_code == 400
     body = response.content.decode()
     assert 'aria-controls="vaatasin-ule"\n                aria-expanded="true"' in body
-    opening = body[body.index('id="vaatasin-ule"') :].split(">", 1)[0]
-    assert "hidden" not in opening
+    classes = re.search(r'<div class="([^"]*)" id="vaatasin-ule"', body).group(1)
+    assert "curact__toolpanel--shut" not in classes
 
 
 # ---------------------------------------------------------------------------
@@ -375,3 +390,158 @@ def test_a_closed_matter_has_no_toolbar(signed_in, specialist, normal_matter):
     assert "Puudub — teema on suletud" in zone
     for absent in ("curact__tools", "data-curact-toggle", "<form", "<button"):
         assert absent not in zone
+
+
+# ---------------------------------------------------------------------------
+# Review round (2026-11-06): a stale panel is refused before it is validated
+# ---------------------------------------------------------------------------
+
+
+def _evidence_files() -> list[Path]:
+    return [path for path in Path(settings.EVIDENCE_ROOT).rglob("*") if path.is_file()]
+
+
+def test_a_validation_refusal_does_not_launder_a_stale_muuda(signed_in, specialist, normal_matter):
+    """The reviewer's sequence (P2), exactly.
+
+    Muuda is drawn while the step is due 20.11; a colleague's `Vaatasin üle`
+    moves it to 9.12; the stale Muuda is posted with a validation error; the
+    person corrects the text and saves. Until the fix the 400 redrew the old day
+    under the fresh token, and the corrected save put 20.11 back with a 200.
+    """
+    action = _wait(normal_matter, specialist, on=datetime.date(2026, 11, 20))
+    drawn = views.current_action_revision(action)
+    acknowledge_review(action=action, actor=specialist, next_review_date=datetime.date(2026, 12, 9))
+    url = reverse("matters:set_action", kwargs={"pk": normal_matter.pk})
+
+    invalid = signed_in.post(url, _muuda(action, drawn, text="", when=datetime.date(2026, 11, 20)))
+
+    assert invalid.status_code == 400
+    body = invalid.content.decode()
+    assert views.STALE_REVISION_REFUSAL in body, "a stale panel is refused as stale, first"
+    assert "Kirjuta järgmine tegevus." not in body
+    # Redrawn from the step as it is now: the new day and the new token, never
+    # the posted old day under the fresh token.
+    current = _open(normal_matter)
+    assert _revisions(body) == {views.current_action_revision(current)}
+    muuda = body[body.index('id="lisa-jargmine"') :]
+    muuda = muuda[: muuda.index("</form>")]
+    assert 'value="9.12.2026"' in muuda
+    assert 'value="20.11.2026"' not in muuda
+
+    # The corrected save, from the page as it was answered: the old fields
+    # with the old token are refused again; nothing reverts the day.
+    again = signed_in.post(
+        url, _muuda(action, drawn, text="Ootame vastust", when=datetime.date(2026, 11, 20))
+    )
+    assert again.status_code == 400
+    assert views.STALE_REVISION_REFUSAL in again.content.decode()
+    current = _open(normal_matter)
+    assert (current.pk, current.target_date) == (action.pk, datetime.date(2026, 12, 9))
+
+    # And the redrawn panel's own save goes through, keeping the new day.
+    saved = signed_in.post(
+        url,
+        _muuda(
+            current,
+            views.current_action_revision(current),
+            text="Ootame vastust",
+            when=datetime.date(2026, 12, 9),
+        ),
+    )
+    assert saved.status_code == 200
+    assert (_open(normal_matter).text, _open(normal_matter).target_date) == (
+        "Ootame vastust",
+        datetime.date(2026, 12, 9),
+    )
+
+
+@pytest.mark.parametrize("panel", ["review", "complete"])
+def test_a_stale_review_or_completion_is_refused_before_validation(
+    signed_in, specialist, normal_matter, panel
+):
+    action = _wait(normal_matter, specialist)
+    drawn = views.current_action_revision(action)
+    acknowledge_review(action=action, actor=specialist, next_review_date=datetime.date(2026, 12, 9))
+    if panel == "review":
+        url = reverse(
+            "matters:review_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}
+        )
+        data = {"next_review_date": "31.02.2026", "revision": drawn}
+    else:
+        url = reverse("matters:complete_current_action", kwargs={"pk": normal_matter.pk})
+        data = {"action_id": str(action.pk), "revision": drawn, "body": ""}
+
+    response = signed_in.post(url, data)
+
+    assert response.status_code == 400
+    assert views.STALE_REVISION_REFUSAL in response.content.decode()
+    assert _revisions(response.content.decode()) == {
+        views.current_action_revision(_open(normal_matter))
+    }
+    assert _open(normal_matter).target_date == datetime.date(2026, 12, 9)
+
+
+@pytest.mark.parametrize("panel", ["muuda", "review", "complete"])
+def test_a_matter_closed_meanwhile_gets_the_closed_refusal_not_the_stale_one(
+    signed_in, specialist, normal_matter, panel
+):
+    action = _wait(normal_matter, specialist)
+    drawn = views.current_action_revision(action)
+    close_matter(
+        matter=normal_matter, disposition="COMPLETED", actor=specialist, follow_ups_confirmed=True
+    )
+    if panel == "muuda":
+        url = reverse("matters:set_action", kwargs={"pk": normal_matter.pk})
+        data = _muuda(action, drawn)
+    elif panel == "review":
+        url = reverse(
+            "matters:review_action", kwargs={"pk": normal_matter.pk, "action_id": action.pk}
+        )
+        data = {"next_review_date": "4.12.2026", "revision": drawn}
+    else:
+        url = reverse("matters:complete_current_action", kwargs={"pk": normal_matter.pk})
+        data = {"action_id": str(action.pk), "revision": drawn, "body": "Helistasin"}
+
+    response = signed_in.post(url, data)
+
+    assert response.status_code == 400
+    body = response.content.decode()
+    assert CLOSED_MATTER_REFUSAL in body
+    assert views.STALE_REVISION_REFUSAL not in body
+
+
+def test_the_hold_says_closed_before_stale(specialist, normal_matter):
+    action = _wait(normal_matter, specialist)
+    drawn = views.current_action_revision(action)
+    close_matter(
+        matter=normal_matter, disposition="COMPLETED", actor=specialist, follow_ups_confirmed=True
+    )
+    with refused(CLOSED_MATTER_REFUSAL), transaction.atomic():
+        views._hold_the_drawn_revision(normal_matter, action.pk, drawn)
+
+
+def test_a_stale_completion_with_a_file_stores_nothing(signed_in, specialist, normal_matter):
+    action = _wait(normal_matter, specialist)
+    drawn = views.current_action_revision(action)
+    acknowledge_review(action=action, actor=specialist, next_review_date=datetime.date(2026, 12, 9))
+    documents = Document.objects.count()
+    stored = _evidence_files()
+
+    response = signed_in.post(
+        reverse("matters:complete_current_action", kwargs={"pk": normal_matter.pk}),
+        {
+            "action_id": str(action.pk),
+            "revision": drawn,
+            "body": "Saatsin kirja",
+            "attachments": SimpleUploadedFile(
+                "ministeeriumi-kiri.pdf", b"%PDF-1.4\n% ui10 stale\n%%EOF\n", "application/pdf"
+            ),
+        },
+    )
+
+    assert response.status_code == 400
+    assert views.STALE_REVISION_REFUSAL in response.content.decode()
+    assert Document.objects.count() == documents
+    assert _evidence_files() == stored
+    assert _open(normal_matter).pk == action.pk

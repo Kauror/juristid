@@ -267,3 +267,40 @@ def test_a_save_elsewhere_keeps_open_panels_open(page, base_url):
         expect(page.locator(f"#{panel}")).to_be_visible()
         expect(_button(page, panel)).to_have_attribute("aria-expanded", "true")
     expect(page.locator("#vaatasin-ule")).to_be_hidden()
+
+
+def test_the_panels_are_shut_from_the_first_paint_and_open_without_scripting(
+    browser, page, base_url
+):
+    """Review P3: shut is a stylesheet condition, not a script's doing.
+
+    With scripting the panels are shut by `(scripting: enabled)` before any
+    script runs — checked at `DOMContentLoaded`, ahead of the deferred
+    `matter-actions.js` having any say. Without scripting the buttons could
+    toggle nothing, so they are not drawn and every panel is shown.
+    """
+    sign_in(page, base_url, SANDRA)
+    url, _matter_id = _a_waiting_matter(page, base_url)
+
+    page.goto(url, wait_until="domcontentloaded")
+    shut_at_load = page.evaluate(
+        """(ids) => ids.map((id) => getComputedStyle(document.getElementById(id)).display)""",
+        list(PANELS),
+    )
+    assert shut_at_load == ["none", "none", "none"]
+
+    context = browser.new_context(
+        java_script_enabled=False, viewport={"width": 1440, "height": 900}
+    )
+    try:
+        plain = context.new_page()
+        plain.context.add_cookies(page.context.cookies())
+        plain.goto(url)
+        for panel in PANELS:
+            expect(plain.locator(f"#{panel}")).to_be_visible()
+            expect(plain.locator(f'[data-curact-toggle][aria-controls="{panel}"]')).to_be_hidden()
+        expect(
+            plain.locator("#tehtud").get_by_role("button", name="Salvesta tegevus")
+        ).to_be_visible()
+    finally:
+        context.close()

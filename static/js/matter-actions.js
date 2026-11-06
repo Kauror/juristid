@@ -30,6 +30,13 @@
 
   var TOGGLE = "[data-curact-toggle]";
   var PANELS = ".curact__toolpanels";
+  /* Shut is a class the stylesheet hides only where scripting runs
+     (matter-actions.css), so without scripting every panel is shown. */
+  var SHUT = "curact__toolpanel--shut";
+
+  function isShut(panel) {
+    return panel.classList.contains(SHUT);
+  }
 
   function toggleFor(id) {
     if (!id) {
@@ -47,7 +54,7 @@
     if (!panel) {
       return false;
     }
-    panel.hidden = !open;
+    panel.classList.toggle(SHUT, !open);
     button.setAttribute("aria-expanded", open ? "true" : "false");
     return true;
   }
@@ -58,7 +65,7 @@
     document.querySelectorAll(TOGGLE).forEach(function (button) {
       var panel = panelOf(button);
       if (panel) {
-        button.setAttribute("aria-expanded", panel.hidden ? "false" : "true");
+        button.setAttribute("aria-expanded", isShut(panel) ? "false" : "true");
       }
     });
   }
@@ -98,7 +105,7 @@
     }
     var panel = event.target.closest(".curact__toolpanel");
     var button = panel ? toggleFor(panel.id) : null;
-    if (!button || panel.hidden) {
+    if (!button || isShut(panel)) {
       return;
     }
     event.preventDefault();
@@ -108,13 +115,16 @@
 
   /* -- Across a swap ------------------------------------------------------- */
 
-  var before = null;
+  /* Per request, keyed on its XMLHttpRequest: two swaps in flight at once
+     (a save and an out-of-band refresh, say) each keep their own record, so
+     neither can drop the other's reopen. */
+  var before = new WeakMap();
 
   document.addEventListener("htmx:beforeSwap", function (event) {
     var target = event.detail && event.detail.target;
+    var xhr = event.detail && event.detail.xhr;
     var holder = document.querySelector(PANELS);
-    before = null;
-    if (!target || !holder || !target.contains(holder)) {
+    if (!xhr || !target || !holder || !target.contains(holder)) {
       return;
     }
     var requester = event.detail.requestConfig && event.detail.requestConfig.elt;
@@ -123,27 +133,27 @@
     var open = [];
     holder.querySelectorAll(".curact__toolpanel").forEach(function (panel) {
       /* The panel whose own save succeeded stays closed: that save is done. */
-      if (!panel.hidden && !(ok && own === panel)) {
+      if (!isShut(panel) && !(ok && own === panel)) {
         open.push(panel.id);
       }
     });
-    before = {
-      xhr: event.detail.xhr,
+    before.set(xhr, {
       revision: holder.getAttribute("data-curact-revision") || "",
       open: open,
-    };
+    });
   });
 
   document.addEventListener("htmx:afterSettle", function (event) {
-    var done = before;
-    if (done && event.detail && event.detail.xhr === done.xhr) {
-      before = null;
+    var xhr = event.detail && event.detail.xhr;
+    var done = xhr ? before.get(xhr) : null;
+    if (done) {
+      before.delete(xhr);
       var holder = document.querySelector(PANELS);
       if (holder && (holder.getAttribute("data-curact-revision") || "") === done.revision) {
         done.open.forEach(function (id) {
           var panel = document.getElementById(id);
           if (panel && holder.contains(panel)) {
-            panel.hidden = false;
+            panel.classList.remove(SHUT);
           }
         });
       }

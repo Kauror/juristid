@@ -274,7 +274,8 @@ def _opened(panel: Tag, page: BeautifulSoup) -> bool:
         else None
     )
     if toggle is not None:
-        return toggle.get("aria-expanded") == "true" and not panel.has_attr("hidden")
+        shut = "curact__toolpanel--shut" in (panel.get("class") or [])
+        return toggle.get("aria-expanded") == "true" and not shut
     control = page.find("input", attrs={"aria-controls": panel_id}) if panel_id else None
     return control is not None and control.has_attr("checked")
 
