@@ -24,6 +24,8 @@ pytestmark = pytest.mark.e2e
 
 def test_haldus_rakendus_reaches_the_shortcut_page(page, base_url):
     sign_in(page, base_url, SANDRA)
+    # Haldus is an entry of «Seaded», the menu behind the gear (UI-03).
+    page.locator(".topbar .settingsmenu__trigger").click()
     page.locator(".topbar").get_by_role("link", name="Haldus", exact=True).click()
     page.wait_for_url(f"{base_url}/haldus/")
     page.get_by_role("link", name="Kiirklahvid", exact=True).click()
@@ -94,7 +96,9 @@ def test_enter_elsewhere_on_the_page_does_not_open_the_selected_row(page, base_u
     page.keyboard.press("j")
     expect(first).to_have_class(re.compile(r"\bis-selected\b"))
 
-    # Off the row, on a header control that is a button with its own Enter.
+    # Off the row, on a header control that is a button with its own Enter:
+    # the theme switch, the first row of «Seaded» since UI-03.
+    page.locator(".topbar .settingsmenu__trigger").click()
     toggle = page.locator("[data-theme-toggle]").first
     toggle.focus()
     page.keyboard.press("Enter")

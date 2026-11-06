@@ -13,8 +13,8 @@
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
 
-    {# Linked explicitly so browsers do not fall back to probing /favicon.ico. #}
-    <link rel="icon" type="image/png" href="{% static 'brand/koda-logo-negative.png' %}">
+    {# The round emblem, in every size a browser asks for (UI-02). #}
+    {% include "components/favicon_links.html" %}
     <link rel="stylesheet" href="{% static 'css/tokens.css' %}">
     <link rel="stylesheet" href="{% static 'css/base.css' %}">
     <link rel="stylesheet" href="{% static 'css/app.css' %}">
@@ -184,7 +184,27 @@
             </details>
           </nav>
 
-          <span class="topbar__spacer"></span>
+          {% comment %}
+            The right-hand controls, in the owner's order (UI-03, 2026-11-06):
+            search, «+ Uus teema», whose work is on screen, the bell, the
+            settings gear and «Välju» at the right edge. One group with one
+            height and one gap (`--topbar-control-size`, `--topbar-gap`), so
+            no control carries an offset of its own; the search is the one
+            that gives and takes width. The group itself takes the bar's spare
+            width and sits its controls at the right-hand end.
+
+            The environment warning is not a control and is not in that
+            sequence: it leads the group, where it can say «Sünteetilised»
+            without splitting the controls (it never renders in production).
+          {% endcomment %}
+          <div class="topbar__controls">
+          {% if not real_data_allowed %}
+            <span class="badge badge--environment topbar__env"
+                  title="Selles keskkonnas on lubatud ainult sünteetilised andmed">
+              <span class="topbar__envlong">Sünteetilised</span>
+              <span class="topbar__envshort" aria-hidden="true">SÜNT</span>
+            </span>
+          {% endif %}
 
           {% comment %}
             The search field, and — once app.js has upgraded it — the live
@@ -255,28 +275,12 @@
             </a>
           {% endif %}
 
-          {% if not real_data_allowed %}
-            <span class="badge badge--environment topbar__env"
-                  title="Selles keskkonnas on lubatud ainult sünteetilised andmed">
-              <span class="topbar__envlong">Sünteetilised</span>
-              <span class="topbar__envshort" aria-hidden="true">SÜNT</span>
-            </span>
-          {% endif %}
-
           {% comment %}
-            Beside the account controls, because it is a preference of this
-            browser rather than a place to go. Left of them, so the persona and
-            «Välju» keep the positions they have always had.
+            The account end of the bar, kept together: whose work is on screen,
+            the bell, the settings gear and «Välju». One block so a narrow bar
+            that wraps moves it as one row, «Välju» still last.
           {% endcomment %}
-          {% comment %}
-            «Teavitused» (docs/adr/0188, docs/adr/0198): a count of the
-            reader's inbox — deadline notices, commencement checks, «Uus asi» —
-            fetched after the page has drawn, so no page's own queries change.
-            Renders nothing for a reader with none to see.
-          {% endcomment %}
-          {% load notifications %}{% notifications_bell %}
-          {% include "components/theme_toggle.html" %}
-
+          <div class="topbar__account">
           {% comment %}
             Who the application is showing work for, and a way to change it.
 
@@ -287,7 +291,8 @@
 
             The pill opens the same list the full page shows, so switching costs
             a click and not a page: somebody comparing two people's queues stays
-            on the queue (Vali kasutaja brief 14, 19).
+            on the queue (Vali kasutaja brief 14, 19). It stays on the bar
+            itself, never inside the settings menu (UI-03).
           {% endcomment %}
           {% if shared_gate_mode %}
             {% include "components/persona_switcher.html" %}
@@ -304,39 +309,39 @@
           {% endif %}
 
           {% comment %}
-            Haldus, as a gear beside «Välju» rather than a word in the everyday
-            navigation (the owner's brief, 2026-10-28). Its landing page opens
-            for every signed-in reader alike, so the gear says nothing about who
-            administers anything; each section behind it decides for itself
-            (app/accounts/templatetags/haldus.py, docs/adr/0186). An inline
-            icon in `currentColor`: no icon font, no new request.
+            «Teavitused» (docs/adr/0188, docs/adr/0198): what the tag renders is
+            the notification panel's own (UI-01); this bar only gives it its
+            place, between the persona and the settings gear. Renders nothing
+            for a reader with none to see.
           {% endcomment %}
-          {% load haldus %}{% haldus_link as haldus_href %}
-          {% if haldus_href %}
-            <a class="topbar__haldus{% if nav_active == 'haldus' %} is-active{% endif %}"
-               {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
-               href="{{ haldus_href }}" title="Haldus">
-              <svg class="topbar__hicon" viewBox="0 0 24 24" width="16" height="16"
-                   aria-hidden="true" focusable="false">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-              </svg>
-              <span class="visually-hidden">Haldus</span>
-            </a>
-          {% endif %}
+          {% load notifications %}{% notifications_bell %}
+
+          {% comment %}
+            «Seaded»: the gear that was Haldus, now a menu holding the theme
+            switch, «Teavituste seaded» and Haldus (UI-03). Haldus's landing
+            opens for every signed-in reader alike, so the gear says nothing
+            about who administers anything; each section behind it decides for
+            itself (app/accounts/templatetags/haldus.py, docs/adr/0186).
+          {% endcomment %}
+          {% include "components/settings_menu.html" %}
 
           <form class="topbar__signout" method="post" action="{% url 'accounts:sign_out' %}">
             {% csrf_token %}
             <button type="submit" class="button button--quiet">Välju</button>
           </form>
+          </div>
+          </div>
         {% else %}
-          <span class="topbar__spacer"></span>
           {% comment %}
             Before signing in too: signing out clears the browser's storage
             and the preference with it, so the sign-in page is where somebody
-            meets the default again (docs/adr/0147).
+            meets the default again (docs/adr/0147). The same gear, in the same
+            place it has after signing in, holding only the theme switch
+            (UI-03): one place to look for it, before and after.
           {% endcomment %}
-          {% include "components/theme_toggle.html" %}
+          <div class="topbar__controls topbar__controls--alone">
+            {% include "components/settings_menu.html" %}
+          </div>
         {% endif %}
       </header>
 

@@ -1,7 +1,8 @@
 """The top bar's way into Haldus, and the administrator session's line in the persona menu.
 
-**The gear** (`haldus_link`). One icon beside «Välju», never a text item in the
-everyday navigation: Haldus is where somebody goes now and then, not a
+**The gear** (`haldus_link`). An entry in the settings menu behind the gear
+beside «Välju» (UI-03, templates/components/settings_menu.html), never a text
+item in the everyday navigation: Haldus is where somebody goes now and then, not a
 destination in the daily rotation (the owner's brief, 2026-10-28). It leads to
 Haldus → Ülevaade, which since then opens for **every** signed-in persona or
 account — it carries *Rakendus* (Uuendused, Kiirklahvid, the running build,
@@ -43,6 +44,24 @@ def haldus_link(context: Any) -> str:
     from app.haldus.sections import visible_sections
 
     return reverse("haldus:index") if visible_sections(request) else ""
+
+
+@register.simple_tag(takes_context=True)
+def notification_settings_link(context: Any) -> str:
+    """The URL of the settings menu's «Teavituste seaded», or "" for none (UI-03).
+
+    Offered to exactly the readers the bell is drawn for — a signed-in
+    internal reader (`notifications_bell`) — because the page is about the
+    notices that bell counts. Showing it is not what protects it: the view is
+    `login_required` and reads only the signed-in person's own choices.
+    """
+    request = context.get("request")
+    user = getattr(request, "user", None) if request is not None else None
+    if not getattr(user, "is_authenticated", False):
+        return ""
+    from app.core.authorization import may_read_business_content
+
+    return reverse("notifications:settings") if may_read_business_content(user) else ""
 
 
 @register.simple_tag(takes_context=True)

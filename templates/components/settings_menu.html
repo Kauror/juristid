@@ -1,0 +1,44 @@
+{% load haldus %}{% haldus_link as haldus_href %}{% notification_settings_link as notification_settings_href %}
+{% comment %}
+  «Seaded» (UI-03): the gear at the right of the bar, as a small menu. It
+  holds what used to be two separate controls on the bar — the light/dark
+  switch (docs/adr/0147) and the way into Haldus (docs/adr/0186) — and the way
+  to the reader's own notification settings.
+
+  A real `<details>`, like «Veel»: with scripting off it still opens and its
+  links still work. What static/js/header-menu.js adds is what a disclosure
+  does not do by itself — closing on Escape, on a click outside and when the
+  keyboard leaves it, putting the focus back on the gear, and closing whenever
+  another top-bar menu opens (`juristid:menu-open`).
+
+  The gear says nothing about who administers anything: Haldus is offered on
+  the same terms it always was (`haldus_link`), and every route behind it still
+  decides for itself. «Teavituste seaded» is offered where the bell is — to a
+  signed-in internal reader (`notification_settings_link`).
+
+  The theme switch needs its script, so a menu that would hold nothing else is
+  shown only once theme.js has run (`settingsmenu--themeonly`, header-menu.css)
+  — before signing in, for example, where it is the only control on the bar.
+{% endcomment %}
+<details class="settingsmenu{% if not haldus_href and not notification_settings_href %} settingsmenu--themeonly{% endif %}"
+         id="settings-menu" data-settings-menu>
+  <summary class="settingsmenu__trigger{% if nav_active == 'haldus' %} is-active{% endif %}" title="Seaded">
+    <svg class="settingsmenu__icon" viewBox="0 0 24 24" width="18" height="18"
+         aria-hidden="true" focusable="false">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+    <span class="visually-hidden">Seaded</span>
+  </summary>
+  <div class="settingsmenu__panel" role="group" aria-label="Seaded">
+    {% include "components/theme_toggle.html" %}
+    {% if notification_settings_href %}
+      <a class="settingsmenu__item" href="{{ notification_settings_href }}">Teavituste seaded</a>
+    {% endif %}
+    {% if haldus_href %}
+      <a class="settingsmenu__item{% if nav_active == 'haldus' %} is-active{% endif %}"
+         {% if nav_active == 'haldus' %}aria-current="page"{% endif %}
+         href="{{ haldus_href }}">Haldus</a>
+    {% endif %}
+  </div>
+</details>

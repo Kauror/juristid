@@ -58,13 +58,14 @@ def favicon(request: HttpRequest) -> HttpResponse:
     without it every single visit logged a `Not Found: /favicon.ico` warning —
     noise that makes a real 404 harder to notice in the log.
 
-    A redirect rather than a checked-in `.ico`: the brand PNG already exists and
-    is already served with the right cache headers, and drawing a second copy of
-    a logo into the repository is a maintenance liability for no gain.
-    Resolved per request rather than at import, so the hashed static name is
-    looked up from whatever manifest the running process actually has.
+    A redirect to the round emblem's .ico (UI-02), which is cut from the same
+    artwork the top bar shows (`tools/brand_favicons.py`) and is already served
+    as a static file with the right cache headers. Resolved per request rather
+    than at import, so the hashed static name is looked up from whatever
+    manifest the running process actually has — and a temporary redirect, so a
+    browser that cached the old target asks again.
     """
-    return redirect(static("brand/koda-logo-negative.png"), permanent=False)
+    return redirect(static("brand/koda-round-favicon.ico"), permanent=False)
 
 
 def home(request: HttpRequest) -> HttpResponse:

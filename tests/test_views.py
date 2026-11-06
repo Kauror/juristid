@@ -89,7 +89,8 @@ def test_favicon_no_longer_404s(client):
     """
     response = client.get("/favicon.ico")
     assert response.status_code in {301, 302}
-    assert "koda-logo-negative" in response["Location"]
+    # The round emblem (UI-02), not the wordmark the icon used to be.
+    assert "koda-round-favicon" in response["Location"]
 
 
 def test_the_page_links_an_icon_so_browsers_need_not_probe(client, specialist):
