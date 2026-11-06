@@ -17,9 +17,20 @@ the owner names — GAP: no incident log exists.
 
 - **Detection.** Nobody is told. `SHARED_GATE_PASSED`, `PERSONA_SELECTED`,
   `DOCUMENT_DOWNLOADED`, `EXPORT_GENERATED` rows carry the client address and
-  user agent (`app/audit/enums.py`); `manage.py audit_failures` counts the
-  failures and the monitor's `auth` row warns over the thresholds — a leak
-  that is *used*, not guessed, shows in neither. Realistically a colleague
+  user agent (`app/audit/enums.py`). One `EXPORT_GENERATED` row is written for
+  every bulk export a GET or POST hands over (the two Teemad workbooks, the
+  Statistika CSVs, the old-layout workbook, the Lovable workbook, the Word
+  overview; a HEAD writes none) and says which export, its format, how many
+  records it selected, the persona and how the session signed in, and the
+  filter *names* with a keyed digest of their values — never a title, a cell
+  or the search text, so the row tells you an export left, not what was in
+  it (`app/audit/access.py`). Exports served before the B-01 correction was
+  deployed left no row. A read authorized by a break-glass grant writes one
+  `BREAK_GLASS_USED` row per request (grant, path, route); under the shared
+  gate no administrator is ever the reader, so none is expected there.
+  `manage.py audit_failures` counts the failures and the monitor's `auth` row
+  warns over the thresholds — a leak that is *used*, not guessed, shows in
+  neither (the rows above record use; nothing reads them for you). Realistically a colleague
   reports it.
 - **Containment.** README "Rotating the password": a **new** password (never a
   previous one) in `juristid.env`, then **recreate** the application services

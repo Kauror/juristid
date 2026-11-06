@@ -27,6 +27,7 @@ from django.http import Http404, HttpRequest, HttpResponse, StreamingHttpRespons
 from django.shortcuts import render
 from django.utils import timezone
 
+from app.audit.access import record_export
 from app.core.decorators import viewer_for
 from app.core.request_params import digits_or_none
 from app.reporting import charts, exports, filters, overview_strip, services
@@ -601,7 +602,24 @@ def definitions(request: HttpRequest) -> HttpResponse:
 
 @login_required
 def export(request: HttpRequest, slug: str) -> StreamingHttpResponse:
-    """One CSV, from the same selectors and the same filters as the page."""
+    """One CSV, from the same selectors and the same filters as the page.
+
+    Each file served writes one ``EXPORT_GENERATED`` row: the slug, the row
+    count and the filter names, never a cell (`app.audit.access`, B-01). An
+    unknown slug is a 404 and writes nothing; a HEAD writes nothing.
+    """
+    response = _export_csv(request, slug)
+    record_export(
+        request,
+        export=f"reporting.{slug}",
+        file_format="csv",
+        rows=response.row_count,
+        params=request.GET,
+    )
+    return response
+
+
+def _export_csv(request: HttpRequest, slug: str) -> exports.CsvExport:
     context = reporting_context.from_request(request)
 
     if slug == "teemad":

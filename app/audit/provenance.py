@@ -138,6 +138,11 @@ def mcp_write_context(principal: Any, correlation_id: uuid.UUID) -> Iterator[Non
         _current_mcp_write.reset(token)
 
 
+def current_request() -> HttpRequest | None:
+    """The request this execution context is serving, or ``None`` outside one."""
+    return _current_request.get()
+
+
 def current_correlation_id() -> uuid.UUID | None:
     """This request's correlation id, a job's inherited one, or the composer operation."""
     return _current_correlation.get() or current_operation_id()
