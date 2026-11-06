@@ -89,6 +89,10 @@ def open_advanced(page):
     panel = page.locator("#tapsem-otsing")
     if not panel.evaluate("node => node.open"):
         panel.locator("summary.filterpanel__trigger").click()
+    # The institutions are a group of their own since UI-07, shut on arrival.
+    group = page.locator("#otsing-asutused")
+    if not group.evaluate("node => node.open"):
+        group.locator("> summary").click()
     return panel
 
 
