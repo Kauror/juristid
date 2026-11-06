@@ -191,3 +191,7 @@ Owner's brief of 2026-11-02. Proposed, not yet accepted; unmerged at the time of
 - **Commencement checks**: «Märgi loetuks» and «Lükka edasi» are both personal state of the reader; «Sulge…» is retired (ADR 0188 amendment 2026-11-02). The «Edasi lükatud» section lists the reader's own postponements and any global deferral recorded before that day.
 - **Copy**: the list page loses the line «Sinu tähtajad, jõustumise kontrollid ja sulle määratud teemad.» and the note explaining what a commencement check means; «Teavitused» and «Teavituste seaded» stay. Item actions sit on their own line directly under the item, not at the far edge of the page.
 - **Surfaces still agree by construction**: every action is a CSRF POST that redirects (PRG), and the bell refetches its count on the next page load, so there is no client-side count to drift.
+
+## Amendment 2026-11-06 — the bell panel (UI-01)
+
+Superseded in part by [0212](0212-the-november-2026-ui-round-and-its-combined-release.md) §1: «Märgi loetuks» on a «Vajab tegevust» row now also takes it out of the bell, the Minu asjad block and the inbox sections (its deadline stays on the Teema and in the work lists); the bell opens a panel of unread items and history; «Märgi lugemata» and «Märgi kõik loetuks» are added. The rest of this ADR, the 2026-11-02 amendment included, stands.

@@ -10,15 +10,24 @@
 [[day]]
 date = 2026-11-06
 basis = "deployment"
-prs = [602, 603]
+prs = [602, 603, 604]
 # 06.11 väljalase r49 (#602, ADR 0210, ainult kood, migratsioonita): OneNote'i lehe dateeritud märkused
 # «Tegevused» all ja dokumendipealkirjade ülevaatuse tööriist (pealkirju ei muudetud).
 # Sama päeva teine väljalase r50 (#603, ADR 0211; legacy_import 0023 ja core 0003 — lisanduvad tabelid):
-# auditi parandused C-L-04, B-01, G-02, L-02, G-01, E-03.
+# auditi parandused C-L-04, B-01, G-02, L-02, G-01, E-03 — ei jõudnud eraldi tootmisse.
+# Sama päeva teine väljalase on ühendatud väljalase (#603 + #604, ADR 0211 ja 0212; legacy_import 0023 ja 0024,
+# core 0003 — lisanduvad tabelid ja päästikud): auditi parandused ja kasutajaliidese voor UI-01…UI-13.
+# Kui see ei jõua tootmisse 06.11, liiguvad allolevad punktid peale esimese kahe väljalaske päeva kirjesse.
 changes = [
   "«Tegevused» näitab nüüd OneNote'i lehe enda dateeritud märkusi — näiteks «27.07.2026 KLIM saatis kooskõlastusringile eelnõu …» — selle asemel, et öelda ainult «OneNote'i lisati 4 dokumenti». Rea avamisel on näha kogu märkus, selle allikas OneNote'is ja märkusega otseselt seotud failid; kuupäevata märkused ja «Järgmised tegevused» jäävad OneNote'i lehele.",
   "OneNote'ist imporditud failide read on nimetatud failide järgi («EELNÕU.pdf ja 3 muud faili») ja seisavad päeval, mil failid OneNote'i lisati; rea avamisel on kõik failid ja nende märkused.",
   "OneNote'i lehe vaates (Ajalooline OneNote) murduvad pikad lingid ja sõnad rea lõpus ega jää enam kaardi servast peitu.",
+  "Kellukesele vajutades avaneb teavituste paneel: lugemata teavitused on esimesena, loetud jäävad alles tuhmimalt. Iga teavituse „⋯“ menüüst saab selle loetuks või lugemata märkida ja „Märgi kõik loetuks“ märgib korraga kõik. Loetud teavitus kaob Minu asjade plokist ja kellukese numbrist, kuid tähtaeg ise ei muutu; leht «Teavitused» jääb alles koos varasemate teavitustega.",
+  "Ülariba parem pool on uues järjekorras: otsing, «+ Uus teema», kasutaja, teavitused, seaded ja «Välju». Heleda ja tumeda teema vahetus ning Haldus on nüüd hammasratta all menüüs «Seaded», kus on ka «Teavituste seaded». Brauseri vahekaardil on Kaubandus-Tööstuskoja ümar logo.",
+  "Kalendri saab avada suuremas aknas: klõpsa juba valitud vaatel („4 nädalat“ või „Kuu“) või pealkirjal KALENDER — avaneb sama periood ja sama kalender (Minu asjad või Osakond). Laupäevad, pühapäevad ja riigipühad on punased ning riigipüha nimi on näha hiire, klaviatuuri või puudutusega.",
+  "Teemade lehel on olekud Avatud, Suletud ja Kõik; arhiivikirjed leiad Täpsemast otsingust (Muud tunnused → Kirje liik) ja vanad arhiivilingid töötavad edasi. Täpsem otsing kasutab kogu lehe laiust ja on jagatud rühmadesse; kokkuvolditud rühma valikud on näha kiipidena.",
+  "Osakonna ribal ei näidata enam nulli korral «tähtajaga teemat sel nädalal», «vastutajata» ega «uut läbi vaatamata».",
+  "Ajaloolise OneNote'i lehe koopia on nüüd loetav dokument: selge pealkiri, lehe enda vahepealkirjad ja kuupäevaga märkused sisukorras, töötavad lingid ja kompaktne failirida; ühise toimiku olek on öeldud üks kord ja jutumärgid kuvatakse õigesti. Teema käigus näitab avatud OneNote'i märkus teksti ühe korra ning link «OneNote'i koopia» avab lehe selle märkuse kohalt.",
 ]
 
 [[day]]

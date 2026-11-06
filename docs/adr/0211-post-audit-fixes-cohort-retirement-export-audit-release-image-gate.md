@@ -91,3 +91,7 @@ Text on `/ajalugu/` is evidence. It wraps (`overflow-wrap: anywhere` on the page
 - **Migrations:** two, both additive. `legacy_import.0023` adds a new table. `core.0003` creates the cache table if it is missing, and is a no-op on production.
 - **Per-export cost:** one COUNT and one INSERT for each export.
 - **Release time:** release-image runs are 2–3 minutes longer. A release now fails if a fixable HIGH or CRITICAL vulnerability appears between CI and release.
+
+## Amendment 2026-11-06 — membership is proven (REL-01)
+
+§1 is tightened by [0212](0212-the-november-2026-ui-round-and-its-combined-release.md) §8: a retirement must also name a `LovableSyncMembership` of the same cohort, Teema and Lovable id (migration `legacy_import.0024`), and `retire` refuses NO_MEMBERSHIP_EVIDENCE or WRONG_COHORT before writing. This closes the residuals R2-1 and R2-2. The held r50 image built for this ADR is never deployed; its fixes ship in 0212's combined release.
