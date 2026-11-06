@@ -45,6 +45,8 @@ own date and precision, and a refused save on what was posted
   {% endcomment %}
   {% if current_action %}
     <input type="hidden" name="action_id" value="{{ current_action.pk }}">
+    {# And the revision it was drawn from (UI-10): a stale `Muuda` must not save an old day back. #}
+    <input type="hidden" name="revision" value="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
   {% endif %}
   <label class="cx-f" for="{{ action_form.text.id_for_label }}">
     <span class="cx-f__lab">Mida on vaja teha?{% required_mark %}</span>

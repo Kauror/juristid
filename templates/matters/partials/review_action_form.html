@@ -26,6 +26,8 @@ control a screen reader cannot tell apart.
       hx-target="#teema-vaade"
       hx-swap="outerHTML">
   {% csrf_token %}
+  {# The revision this panel was drawn from (UI-10, `views._hold_the_drawn_revision`). #}
+  <input type="hidden" name="revision" value="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
   <div class="cx-grid cx-grid--links"
        data-quickdate-group="{{ review_form.next_review_date.id_for_label }}">
     <div class="cx-when">
