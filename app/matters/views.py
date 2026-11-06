@@ -1089,12 +1089,25 @@ COMMENCEMENT_LABELS = {
     register_filters.FACT_ABSENT: "Ilma jõustumiseta",
 }
 
+#: The register's status tabs: Avatud | Suletud | Kõik (owner's brief of
+#: 2026-11-06, UI-06). «Arhiiv» is no longer one of them. It never was a
+#: status: archive is a record mode (`RecordMode.ARCHIVE`) and an archived file
+#: is open or closed like any other, so the tab answered a Kirje liik question
+#: from the status row. That question is asked in Täpsem otsing under Kirje
+#: liik (`?liik=ARCHIVE`, with any status).
 STATUS_SEGMENTS = (
     ("avatud", "Avatud"),
     ("suletud", "Suletud"),
-    ("arhiiv", "Arhiiv"),
     ("koik", "Kõik"),
 )
+
+#: An address that still carries the retired tab's `?olek=arhiiv` keeps
+#: exactly what it meant — every archive record, open or closed
+#: (`register_filters.status_q`) — and says so in the chip row, because no tab
+#: lights up for it any more. Its `×` widens to every status, which is the
+#: archive filter removed and nothing else.
+LEGACY_ARCHIVE_STATUS = "arhiiv"
+LEGACY_ARCHIVE_CHIP = ("Kirje liik", "Arhiiv (avatud ja suletud)")
 
 
 def _segment_counts(user: Any) -> dict[str, int]:
@@ -1539,6 +1552,14 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
                 "value": _filter_display(request, name, value),
                 "remove_query": _without_dimension(params, name, also),
             }
+        )
+    if params.get("olek") == LEGACY_ARCHIVE_STATUS:
+        widened = params.copy()
+        widened["olek"] = "koik"
+        widened.pop("leht", None)
+        label, value = LEGACY_ARCHIVE_CHIP
+        chips.append(
+            {"name": "olek", "label": label, "value": value, "remove_query": widened.urlencode()}
         )
     return chips
 

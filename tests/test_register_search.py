@@ -595,7 +595,7 @@ def test_the_register_scope_segments_mean_what_they_say(signed_in):
 
 
 def test_each_segment_counts_the_matters_its_list_shows(client, reader):
-    """The four chip counts are one aggregate, so they must count Matters, not join rows.
+    """The three chip counts are one aggregate, so they must count Matters, not join rows.
 
     The scope joins the collaborators table, and a Matter with three
     collaborators is three rows there. Each chip's number is checked against
@@ -613,9 +613,11 @@ def test_each_segment_counts_the_matters_its_list_shows(client, reader):
     options = client.get(REGISTER).context["status_options"]
     counts = {option["key"]: option["count"] for option in options}
 
-    for key in ("avatud", "suletud", "arhiiv", "koik"):
+    for key in ("avatud", "suletud", "koik"):
         assert counts[key] == total_of(client.get(REGISTER, {"olek": key})), key
-    assert counts == {"avatud": 2, "suletud": 1, "arhiiv": 1, "koik": 3}
+    # «Arhiiv» is no longer a status tab (UI-06); `?olek=arhiiv` still answers.
+    assert counts == {"avatud": 2, "suletud": 1, "koik": 3}
+    assert total_of(client.get(REGISTER, {"olek": "arhiiv"})) == 1
 
 
 # ---------------------------------------------------------------------------
