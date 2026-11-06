@@ -6,6 +6,10 @@ behind the register's own gate (`@login_required`; the population starts from
 `visible_to`, so an administrator without a business role gets an empty file,
 exactly as they get an empty register). The response is private and never
 cached (`app.core.xlsx_safety.workbook_response`).
+
+Each file served writes one ``EXPORT_GENERATED`` row — the export's name, the
+row count and the filter names, never a title or the search text
+(`app.audit.access.record_export`, B-01).
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from django.http import HttpRequest, HttpResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
+from app.audit.access import record_export
 from app.core.xlsx_safety import workbook_response
 from app.matters import register_export
 
@@ -35,15 +40,23 @@ def _conditions(request: HttpRequest) -> list[str]:
 @require_GET
 def export_table(request: HttpRequest) -> HttpResponse:
     """«Laadi Excel tabelis kuvatud infoga» — the current address, every page of it."""
-    workbook, _rows = register_export.table_workbook(
+    workbook, rows = register_export.table_workbook(
         request.user, request.GET, conditions=_conditions(request)
     )
-    return workbook_response(workbook, register_export.table_filename(timezone.localdate()))
+    response = workbook_response(workbook, register_export.table_filename(timezone.localdate()))
+    record_export(
+        request, export="matters.register_table", file_format="xlsx", rows=rows, params=request.GET
+    )
+    return response
 
 
 @login_required
 @require_GET
 def export_full(request: HttpRequest) -> HttpResponse:
     """«Laadi Excel kõikide andmetega» — every visible Teema, every supported field."""
-    workbook, _rows = register_export.full_workbook(request.user)
-    return workbook_response(workbook, register_export.full_filename(timezone.localdate()))
+    workbook, rows = register_export.full_workbook(request.user)
+    response = workbook_response(workbook, register_export.full_filename(timezone.localdate()))
+    record_export(
+        request, export="matters.register_full", file_format="xlsx", rows=rows, params=None
+    )
+    return response

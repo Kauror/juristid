@@ -50,7 +50,11 @@ ROWS = 12
 #: PostgreSQL 18. 8 is the worst of the two plus room for one more figure, and
 #: still nowhere near ROWS — which is the only number that matters here, because
 #: what this guards is that neither queue grows with its backlog.
-QUERY_BUDGET = 8
+#:
+#: 9 since B-01: the operator reads the queue through a break-glass grant, and
+#: that request now writes its one ``BREAK_GLASS_USED`` row — one INSERT per
+#: request, whatever the backlog (`app.audit.access.record_break_glass_use`).
+QUERY_BUDGET = 9
 
 
 def _decided_rows(count, make):

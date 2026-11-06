@@ -146,7 +146,11 @@ def may_read_business_content(user: object | None) -> bool:
         return False
     if role in ROLES_WITH_BUSINESS_READ:
         return True
-    return active_break_glass_grant_id(user) is not None
+    grant_id = active_break_glass_grant_id(user)
+    if grant_id is None:
+        return False
+    _note_break_glass_use(user, grant_id)
+    return True
 
 
 def may_write_business_content(user: object | None) -> bool:
@@ -552,6 +556,23 @@ def active_break_glass_grant_id(user: object) -> uuid.UUID | None:
     return found
 
 
+def _note_break_glass_use(user: object, grant_id: uuid.UUID) -> None:
+    """Put this request's reliance on a grant on the security trail (B-01).
+
+    Called exactly where a grant, and not a role, is what lets a read through:
+    the grant branch of `scope_for_user` and of `may_read_business_content`.
+    ADR 0181 promises those reads are audited. One ``BREAK_GLASS_USED`` row per
+    request and grant, however many of the hundred-odd `visible_to` calls on a
+    page ask (`app.audit.access.record_break_glass_use`); none outside a request.
+
+    A failed write fails the read: the grant is sight on the condition that it
+    is recorded, and a read that cannot be recorded is not one to serve.
+    """
+    from app.audit.access import record_break_glass_use
+
+    record_break_glass_use(user, grant_id)
+
+
 def scope_for_user(user: object | None) -> Scope:
     """All of the business content, or none of it (docs/adr/0181).
 
@@ -586,6 +607,7 @@ def scope_for_user(user: object | None) -> Scope:
         # module has not heard of. Technical administration is not business
         # access: not even NORMAL content (docs/adr/0181).
         return no_scope()
+    _note_break_glass_use(user, grant_id)
     return Scope(
         user=user,
         is_authenticated=True,

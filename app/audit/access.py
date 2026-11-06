@@ -1,0 +1,198 @@
+"""Two security rows the trail promised and nobody wrote (B-01).
+
+**EXPORT_GENERATED** — one row for every bulk export a reader is handed: the
+register workbooks, the Statistika CSVs, the old-layout workbook, the Lovable
+workbook and the Word overview. A single evidence file already writes
+``DOCUMENT_DOWNLOADED`` where it is served, and is not an export.
+
+**BREAK_GLASS_USED** — one row for every request whose business read was
+authorized by a break-glass grant rather than by a business role
+(`app.core.authorization`, docs/adr/0181).
+
+**What a row may hold, and what it may not** (the owner's rule). It records
+that the operation happened: which export, in which format, how many records
+it selected, who asked, as which persona and how they had signed in
+(`shared_gate.audit_detail` plus the provenance columns every row carries,
+docs/adr/0180), and from where. It never records what the file *said*: no
+title, no cell, no search text. The audit trail is read by people who were not
+entitled to the export, and an audit row that quoted it would be a second copy
+of it with weaker protection.
+
+The filters are summarised the same way. Their *names* are this application's
+own parameter names and say what kind of slice was taken; their *values* can
+be anything a reader typed — a Teema title in a search box — so a value is
+never stored. What is stored instead is a keyed digest of the whole parameter
+set (``filters_hmac``): two rows with the same digest were the same slice,
+which is what an exposure review needs, and the digest cannot be reversed or
+confirmed against a guessed title without the deployment's secret key.
+
+**HEAD writes nothing.** A HEAD asks what the file would be and is handed no
+file, so nothing was exported (QA-07, `app.core.http.head_response`).
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+from urllib.parse import urlencode
+
+from django.http import HttpRequest, QueryDict
+from django.utils.crypto import salted_hmac
+
+from app.audit.enums import SecurityEventType
+from app.audit.models import SecurityAuditEvent
+from app.audit.services import record_security_event
+
+#: A parameter name this application could have written. Anything else — a name
+#: a caller made up, which could itself carry text — is counted, not recorded.
+_PARAMETER_NAME = re.compile(r"[a-z0-9_]{1,40}")
+
+#: More filter names than any export offers; a longer list was not written by
+#: the page.
+_MAX_NAMES = 24
+
+#: The salt of the filter digest, so it is never comparable with any other
+#: keyed hash the application makes.
+_FILTER_SALT = "app.audit.access.export-filters"
+
+#: Parameters that are not a filter: the CSRF token a posted form carries.
+_NOT_FILTERS = frozenset({"csrfmiddlewaretoken"})
+
+
+def filter_summary(params: QueryDict | None) -> dict[str, Any]:
+    """The names of the filters applied, and a keyed digest of their values.
+
+    Empty parameters are not filters: the page posts every field of its form,
+    and «nothing chosen» is the same slice whether the field was sent or not.
+    """
+    if params is None:
+        return {"filter_keys": [], "filters_hmac": ""}
+    applied = sorted(
+        key
+        for key, values in params.lists()
+        if key not in _NOT_FILTERS and any(str(value).strip() for value in values)
+    )
+    names = [key for key in applied if _PARAMETER_NAME.fullmatch(key)][:_MAX_NAMES]
+    summary: dict[str, Any] = {"filter_keys": names, "filters_hmac": ""}
+    if len(names) != len(applied):
+        summary["other_filter_keys"] = len(applied) - len(names)
+    if applied:
+        canonical = urlencode(
+            [(key, str(value).strip()) for key in applied for value in params.getlist(key)]
+        )
+        summary["filters_hmac"] = salted_hmac(
+            _FILTER_SALT, canonical, algorithm="sha256"
+        ).hexdigest()
+    return summary
+
+
+def _request_actor(request: HttpRequest) -> Any:
+    """The account the row is associated with, as ``DOCUMENT_DOWNLOADED`` names it.
+
+    The persona if one was selected, and nobody otherwise. Only a saved account
+    can be an actor: the shared-gate sentinel says it is authenticated and has
+    no primary key.
+    """
+    user = getattr(request, "user", None)
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    if getattr(user, "pk", None) is None:
+        return None
+    return user
+
+
+def record_export(
+    request: HttpRequest,
+    *,
+    export: str,
+    file_format: str,
+    rows: int,
+    params: QueryDict | None,
+    **extra: Any,
+) -> SecurityAuditEvent | None:
+    """One ``EXPORT_GENERATED`` row for a file this request is about to hand over.
+
+    Called by the view after the file is built and before it is returned, so a
+    refusal, a 404 or a 409 — which build nothing — write nothing, and a file
+    that was built is on the trail even if the reader's connection drops
+    halfway through it.
+
+    ``export`` is the export's own name (``matters.register_table``), never a
+    filename that could carry a title. ``rows`` is how many records the export
+    selected. ``extra`` is for further non-content facts (a period's dates, a
+    view's name) and nothing else.
+    """
+    from app.accounts import shared_gate
+    from app.core.client_ip import client_ip
+    from app.core.http import is_head
+
+    if is_head(request):
+        return None
+    return record_security_event(
+        event_type=SecurityEventType.EXPORT_GENERATED,
+        actor=_request_actor(request),
+        ip_address=client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        detail=shared_gate.audit_detail(
+            request,
+            export=export,
+            format=file_format,
+            rows=int(rows),
+            method=request.method,
+            **filter_summary(params),
+            **extra,
+        ),
+    )
+
+
+#: The attribute a request carries the grants it has already logged on. On the
+#: request itself rather than in a context variable: the request is the unit
+#: «once per request» counts, and it is gone when the request is.
+_LOGGED_GRANTS = "_juristid_break_glass_logged"
+
+
+def record_break_glass_use(user: Any, grant_id: Any) -> SecurityAuditEvent | None:
+    """``BREAK_GLASS_USED``, the first time this request relies on this grant.
+
+    Written only while a request is being served (`provenance.current_request`).
+    A management command, a worker or a test calling the authorization helpers
+    directly serves nobody, and «somebody's request read through a grant» is
+    the fact this row states. The row names the grant, the path and the route,
+    never what was read: the grant's reason is already on BREAK_GLASS_GRANTED.
+    """
+    from app.accounts import shared_gate
+    from app.audit.provenance import current_request
+    from app.core.client_ip import client_ip
+
+    request = current_request()
+    if request is None or grant_id is None:
+        return None
+    logged: set[Any] | None = getattr(request, _LOGGED_GRANTS, None)
+    if logged is None:
+        logged = set()
+        setattr(request, _LOGGED_GRANTS, logged)
+    if grant_id in logged:
+        return None
+    # Marked before the write: the write itself reads provenance, which must
+    # not come back here and log the same grant a second time.
+    logged.add(grant_id)
+
+    from django.apps import apps
+
+    grant = apps.get_model("accounts", "BreakGlassGrant")(pk=grant_id)
+    match = getattr(request, "resolver_match", None)
+    actor = user if getattr(user, "pk", None) is not None else None
+    return record_security_event(
+        event_type=SecurityEventType.BREAK_GLASS_USED,
+        actor=actor,
+        subject=grant,
+        ip_address=client_ip(request),
+        user_agent=request.META.get("HTTP_USER_AGENT", ""),
+        detail=shared_gate.audit_detail(
+            request,
+            grant=str(grant_id),
+            path=request.path,
+            route=match.view_name if match is not None else "",
+            method=request.method,
+        ),
+    )

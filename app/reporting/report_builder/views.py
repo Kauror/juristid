@@ -35,6 +35,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
+from app.audit.access import record_export
 from app.core.authorization import may_read_business_content
 from app.core.http import content_disposition
 from app.core.middleware import is_htmx
@@ -177,4 +178,15 @@ def export(request: HttpRequest) -> HttpResponse:
     response["Content-Disposition"] = content_disposition("attachment", report.filename)
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
+    # The period and the number of topics, never a title or the reader's text:
+    # the posted draft is the report's content (`app.audit.access`, B-01).
+    record_export(
+        request,
+        export="reporting.report_builder",
+        file_format="docx",
+        rows=report.selected_count,
+        params=None,
+        period_start=report.start.isoformat(),
+        period_end=report.end.isoformat(),
+    )
     return response
