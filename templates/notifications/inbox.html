@@ -14,18 +14,37 @@ from everybody else's response, not hidden in it.
 
 Owner's review of 2026-11-02: no explanatory line under the title and no
 note about what a commencement check means — each item says what it is.
+
+UI-01 (2026-11-06): the page stays the full fallback for the bell's panel.
+«Märgi kõik loetuks» (with the boundary this page was drawn with) heads it,
+and «Varasemad» below the inbox sections is the history — what the reader has
+read and what was resolved, newest first, muted, a page at a time. The whole
+body is `#notif-page`, which redraws itself when the bell's panel answers
+something (`notificationsPageStale`), so the page never contradicts the panel.
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="page notifpage" id="notif-page"
+     hx-get="{{ request.get_full_path }}"
+     hx-trigger="notificationsPageStale from:body"
+     hx-select="#notif-page"
+     hx-swap="outerHTML">
   <div class="pagehead">
     <h1 class="pagehead__title">Teavitused</h1>
     <span class="pagehead__context">
       <a href="{% url 'notifications:settings' %}">Teavituste seaded</a>
     </span>
+    {% if items %}
+      <form class="notifpage__markall" method="post" action="{% url 'notifications:mark_all_read' %}">
+        {% csrf_token %}
+        <input type="hidden" name="kuni" value="{{ boundary }}">
+        <input type="hidden" name="tagasi" value="teavitused">
+        <button type="submit" class="button button--quiet button--tiny">Märgi kõik loetuks</button>
+      </form>
+    {% endif %}
   </div>
 
-  {% if not items and not deferred_rows %}
+  {% if not items and not deferred_rows and not history.items %}
     <p class="muted notifempty">Praegu ei ole ühtegi teavitust. <a href="{% url 'notifications:settings' %}">Teavituste seaded</a></p>
   {% endif %}
 
@@ -80,6 +99,40 @@ note about what a commencement check means — each item says what it is.
         </ul>
       {% else %}
         <p class="muted">Vastutajata teemadel ei ole kontrollimata jõustumisi.</p>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if history.items %}
+    <section class="notifsection notifsection--history" id="varasemad" aria-labelledby="notif-history-heading">
+      <h2 class="sectionlabel" id="notif-history-heading">Varasemad</h2>
+      <ul class="notiflist">
+        {% for item in history.items %}
+          <li class="notifrow notifrow--{{ item.state }}" data-inbox-history data-inbox-type="{{ item.type }}">
+            <div class="notifrow__main">
+              <span class="notifrow__label">{{ item.label }}<span class="visually-hidden">{% if item.state == "read" %} · loetud{% else %} · lõpetatud{% endif %}</span></span>
+              <a class="notifrow__matter" href="{{ item.url }}">{{ item.title }}</a>
+              <span class="notifrow__date">{{ item.date_label }}</span>
+              {% if item.note %}<span class="notifrow__source">{{ item.note }}</span>{% endif %}
+            </div>
+            {% if item.can_unread %}
+              <div class="notifrow__actions">
+                <form method="post" action="{{ item.unread_url }}">
+                  {% csrf_token %}
+                  <input type="hidden" name="tagasi" value="teavitused">
+                  <button type="submit" class="button button--quiet button--tiny"
+                          aria-label="Märgi lugemata: {{ item.title }}">Märgi lugemata</button>
+                </form>
+              </div>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+      {% if history.cursor %}
+        <a class="notifsection__more" href="?varasemad={{ history.next }}#varasemad">Näita varasemaid</a>
+      {% endif %}
+      {% if history_continued %}
+        <a class="notifsection__more" href="{% url 'notifications:list' %}#varasemad">Tagasi uuemate juurde</a>
       {% endif %}
     </section>
   {% endif %}

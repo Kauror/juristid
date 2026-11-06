@@ -16,7 +16,8 @@ owner are on the Teema page, not repeated in every item (owner's review of
 
 «Kontrollitud» (2026-10-30) and «Sulge…» (2026-11-02) are retired; their routes
 are 404s. Each answer is its own POST form with the CSRF token and a fixed
-`tagasi`, so the row works without scripting.
+`tagasi`, so the row works without scripting; on Minu asjad it is also an htmx
+post that redraws the block in place (UI-01).
 {% endcomment %}
 <li class="notifrow" data-inbox-item data-inbox-type="commencement">
   <div class="notifrow__main">
@@ -25,7 +26,7 @@ are 404s. Each answer is its own POST form with the CSRF token and a fixed
     <span class="notifrow__date">Jõustumise kuupäev {{ row.date_label }} · {{ row.stage_label }}</span>
   </div>
   <div class="notifrow__actions">
-    <form method="post" action="{% url 'notifications:reminder_read' pk=row.pk %}">
+    <form method="post" action="{% url 'notifications:reminder_read' pk=row.pk %}"{% if tagasi == "minu_asjad" %} hx-post="{% url 'notifications:reminder_read' pk=row.pk %}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
       {% csrf_token %}
       <input type="hidden" name="tagasi" value="{{ tagasi }}">
       <button type="submit" class="button button--quiet button--tiny"
@@ -34,7 +35,7 @@ are 404s. Each answer is its own POST form with the CSRF token and a fixed
       <details class="notifrow__more">
         <summary class="button button--quiet button--tiny"
                  aria-label="Lükka edasi: {{ row.matter_title }}">Lükka edasi</summary>
-        <form class="notifrow__panel" method="post" action="{% url 'notifications:defer' pk=row.pk %}">
+        <form class="notifrow__panel" method="post" action="{% url 'notifications:defer' pk=row.pk %}"{% if tagasi == "minu_asjad" %} hx-post="{% url 'notifications:defer' pk=row.pk %}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
           {% csrf_token %}
           <input type="hidden" name="tagasi" value="{{ tagasi }}">
           <label class="field__label" for="edasi-{{ tagasi }}-{{ row.pk }}">Kuni</label>

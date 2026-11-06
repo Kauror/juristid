@@ -14527,35 +14527,9 @@ a.jcal__daynum {
 /* ====================================================================
  * «Kontrolli jõustumist» — commencement-review reminders (docs/adr/0188)
  *
- * A bell on the bar, a compact list at /teavitused/ and a rail block on Minu
- * asjad. Tokens only; the count uses the established warning colour rather
- * than danger red, because a check to do is not a failure.
+ * A compact list at /teavitused/ and a rail block on Minu asjad. The bell and
+ * its panel moved to static/css/notification-panel.css (UI-01).
  * ==================================================================== */
-.notifbell {
-  position: relative;
-  gap: var(--spacing-1);
-}
-
-.notifbell__icon {
-  flex: none;
-}
-
-.notifbell__slot {
-  display: inline-flex;
-}
-
-.notifbell__count {
-  min-width: 18px;
-  padding: 0 var(--spacing-1);
-  border-radius: var(--radius-chip);
-  font-size: var(--typography-size-label);
-  font-weight: var(--typography-weight-bold);
-  line-height: 18px;
-  text-align: center;
-  color: var(--status-warning);
-  background: var(--status-warning-soft);
-  border: 1px solid var(--status-warning-border);
-}
 
 .notifsection {
   margin-top: var(--spacing-5);

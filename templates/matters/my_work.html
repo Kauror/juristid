@@ -372,8 +372,17 @@ The rail holds only what has no honest place on a timeline.
           is what marks it seen, and a GET never does. The red «!» is that
           unread state and nothing else, `aria-hidden` because the row's label
           says it in words.
+
+          UI-01: the block's place is `#notif-sidebar`, a box-less wrapper
+          (`display: contents`) that redraws the block in place — after an
+          answer given in the block itself, and when the bell's panel says the
+          inbox changed (`notificationsSidebarStale`) — so the block, the bell
+          and the panel agree without a reload.
         {% endcomment %}
-        {% notifications_block tagasi="minu_asjad" %}
+        <div class="notifsidebar" id="notif-sidebar"
+             hx-get="{% url 'notifications:block' %}"
+             hx-trigger="notificationsSidebarStale from:body"
+             hx-swap="innerHTML">{% notifications_block tagasi="minu_asjad" %}</div>
       {% endif %}
 
       {% comment %}

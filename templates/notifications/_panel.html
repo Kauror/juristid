@@ -1,0 +1,53 @@
+{% comment %}
+The bell's panel (UI-01): swapped into `.notifpanel__content` when the bell is
+opened, and again after «Märgi kõik loetuks». Everything is inside
+`data-notifpanel-body`, which is all the script selects from a response, so a
+redirect to the gate or the persona list swaps in nothing.
+
+* Unread items first, then the history, newest first (`app.notifications.feed`);
+  the rest a page at a time with «Näita varasemaid». Opening it and turning a
+  page are GETs and mark nothing.
+* «Märgi kõik loetuks» carries `kuni`, the moment this panel was complete up
+  to (`acknowledgement.boundary`): it marks every unread item that had arrived
+  by then — on pages never loaded too — and nothing that arrived after.
+* «Teavituste seaded» and «Kõik teavitused» are the same pages the bar's
+  settings menu and the old bell link lead to.
+{% endcomment %}
+<div class="notifpanel__body" data-notifpanel-body>
+  <div class="notifpanel__head">
+    <h2 class="notifpanel__title" id="notifpanel-title" tabindex="-1" data-focus-after-save>Teavitused</h2>
+    <form class="notifpanel__markall" method="post" action="{% url 'notifications:mark_all_read' %}"
+          hx-post="{% url 'notifications:mark_all_read' %}"
+          hx-target="closest [data-notifpanel-content]"
+          hx-select="[data-notifpanel-body]"
+          hx-swap="innerHTML">
+      {% csrf_token %}
+      <input type="hidden" name="kuni" value="{{ boundary }}">
+      <input type="hidden" name="tagasi" value="paneel">
+      <button type="submit" class="button button--quiet button--tiny notifpanel__markallbutton"
+              {% if not unread_total %}disabled{% endif %}>Märgi kõik loetuks</button>
+    </form>
+    <a class="notifpanel__settings" href="{% url 'notifications:settings' %}" title="Teavituste seaded">
+      <svg class="notifpanel__settingsicon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+        <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+      <span class="visually-hidden">Teavituste seaded</span>
+    </a>
+  </div>
+  {% if status %}<p class="notifpanel__status" role="status">{{ status }}</p>{% endif %}
+  {% if error %}<p class="notifpanel__status notifpanel__status--error" role="alert">{{ error }}</p>{% endif %}
+  {% if page.items %}
+    <ul class="notifpanel__list" aria-labelledby="notifpanel-title" data-notifpanel-list>
+      {% for item in page.items %}
+        {% include "notifications/_panel_item.html" with item=item %}
+      {% endfor %}
+      {% if page.cursor %}{% include "notifications/_panel_more.html" with page=page %}{% endif %}
+    </ul>
+  {% else %}
+    <p class="notifpanel__empty">Teavitusi ei ole.</p>
+  {% endif %}
+  <div class="notifpanel__foot">
+    <a class="notifpanel__all" href="{% url 'notifications:list' %}">Kõik teavitused</a>
+  </div>
+</div>
