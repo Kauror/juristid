@@ -310,6 +310,8 @@ def test_the_weeks_opinion_figure_states_a_number_it_cannot_open(page, base_url)
 def test_the_strip_carries_the_seven_approved_figures(page, base_url):
     """Seven, in the approved order: five risks, then two informational figures.
 
+    Three of them are drawn only while positive (owner's brief of 2026-11-06).
+
     The merged strip was the six states a head can act on this morning
     (docs/adr/0049 §4). The owner added «arvamust koostamisel» back at its end,
     as information rather than a warning, and the sent figure became the
@@ -323,20 +325,27 @@ def test_the_strip_carries_the_seven_approved_figures(page, base_url):
     ]
     # Captions of the UX package of 2026-10-28; a figure of exactly one reads
     # in the nominative singular, so four of them are patterns.
+    # (pattern, drawn at zero). Three leave the strip at 0 and come back when
+    # positive, in the same place (UI-05, `SeisFigure.hidden_at_zero`); the
+    # seeded world decides which of them are positive, so they are optional.
     expected = [
-        r"üle tähtaja",
-        r"tähtajaga teemat? sel nädalal",
-        r"vastutajata",
-        r"uu[st] läbi vaatamata",
-        r"järgmise tegevuseta",
-        r"arvamust? saadetud sel nädalal",
-        r"arvamust? koostamisel",
+        (r"üle tähtaja", True),
+        (r"tähtajaga teemat? sel nädalal", False),
+        (r"vastutajata", False),
+        (r"uu[st] läbi vaatamata", False),
+        (r"järgmise tegevuseta", True),
+        (r"arvamust? saadetud sel nädalal", True),
+        (r"arvamust? koostamisel", True),
     ]
-    assert len(captions) == len(expected), captions
-    for caption, pattern in zip(captions, expected, strict=True):
-        assert re.fullmatch(pattern, caption), captions
-    # Every figure explains itself, beside its link and never inside it.
-    expect(page.locator(".seis .seis__info")).to_have_count(7)
+    remaining = list(captions)
+    for pattern, always in expected:
+        if remaining and re.fullmatch(pattern, remaining[0]):
+            remaining.pop(0)
+        else:
+            assert not always, captions
+    assert not remaining, captions
+    # Every drawn figure explains itself, beside its link and never inside it.
+    expect(page.locator(".seis .seis__info")).to_have_count(len(captions))
 
 
 # ---------------------------------------------------------------------------

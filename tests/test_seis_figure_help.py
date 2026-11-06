@@ -339,13 +339,18 @@ def _assert_explained_and_never_nested(body: str, unexplained: int = 0) -> None:
 
 
 def test_osakond_draws_an_explanation_beside_every_figure(client, department_head, frozen):
+    from tests import factories
+
     stepped(department_head, "Neljapäevane tähtaeg", THURSDAY)
+    # Ownerless and newly arrived: «vastutajata» and «uut läbi vaatamata» are
+    # drawn only while they count something (UI-05, `hidden_at_zero`).
+    factories.MatterFactory(owner=None, received_date=WEDNESDAY)
     client.force_login(department_head)
 
     body = client.get(reverse("matters:department")).content.decode()
 
     _assert_explained_and_never_nested(body)
-    # Osakond shows its zeros, so all seven are there, each with its words.
+    # Osakond shows its other zeros, so all seven are there, each with its words.
     assert _strip_markup(body).count('class="seis__info"') == 7
     for text in seis_help.DEPT_WEEK_HELP.paragraphs:
         assert text in body
