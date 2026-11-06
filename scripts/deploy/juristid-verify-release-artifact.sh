@@ -13,9 +13,12 @@
 # archive holds. This script is the receiving half: it refuses an artifact
 # unless
 #
-#   * the archive hashes to its `.sha256` file and to the manifest's
-#     `archive_sha256` (and to `--archive-sha256`, the digest the release kit
-#     recorded, when given);
+#   * the archive, hashed here by its own name, hashes to its `.sha256` file —
+#     which must be one line naming exactly this archive — and to the
+#     manifest's `archive_sha256` (and to `--archive-sha256`, the digest the
+#     release kit recorded, when given). `sha256sum -c` is not used: it checks
+#     whichever file the `.sha256` names, so one naming another file vouched for
+#     a tampered archive (2026-11 QA, G-02);
 #   * the manifest names one image id four times over — `image_id`,
 #     `scanned_image_id`, `runtime_checked_image_id`, `archive_image_id` — so
 #     the image in the archive is the image that was scanned and checked;
@@ -87,11 +90,27 @@ fixable="$(required image_scan_fixable_high_critical)"
 packages_sha="$(required os_packages_sha256)"
 
 # -- the archive is the archive the manifest describes
-( cd "$DIR" && sha256sum -c --strict --quiet "$ARCHIVE.sha256" ) || die "$ARCHIVE does not match $ARCHIVE.sha256"
-listed="$(cut -d' ' -f1 "$DIR/$ARCHIVE.sha256")"
-[ "$archive_sha" = "$listed" ] || die "manifest archive_sha256 $archive_sha is not the .sha256 digest $listed"
+#
+# The `.sha256` is exactly one line, `<64 hex>  <this archive's name>` as the
+# workflow writes it (` *` for binary mode is accepted too). Every digest is then
+# compared with the hash of the archive itself, computed here.
+sums="$(cat "$DIR/$ARCHIVE.sha256")"
+lines="$(wc -l < "$DIR/$ARCHIVE.sha256")"
+# A carriage return is refused outright rather than left to `$(...)` and `grep`,
+# which Git for Windows strips and Linux keeps: the file is counted with and
+# without them.
+bytes="$(wc -c < "$DIR/$ARCHIVE.sha256")"
+bare="$(tr -d '\r' < "$DIR/$ARCHIVE.sha256" | wc -c)"
+[ "$bytes" -eq "$bare" ] && [ "$lines" -eq 1 ] && [[ "$sums" =~ ^([0-9a-f]{64})\ [\ *](.+)$ ]] \
+  || die "$ARCHIVE.sha256 is not one '<sha256>  <file>' line"
+listed="${BASH_REMATCH[1]}"
+named="${BASH_REMATCH[2]}"
+[ "$named" = "$ARCHIVE" ] || die "$ARCHIVE.sha256 names $named, not $ARCHIVE"
+actual="$(sha256sum "$DIR/$ARCHIVE" | cut -d' ' -f1)"
+[ "$listed" = "$actual" ] || die "$ARCHIVE does not match $ARCHIVE.sha256: it hashes to $actual, not $listed"
+[ "$archive_sha" = "$actual" ] || die "manifest archive_sha256 $archive_sha is not the .sha256 digest $actual of $ARCHIVE"
 if [ -n "$EXPECTED_ARCHIVE_SHA" ]; then
-  [ "$listed" = "$EXPECTED_ARCHIVE_SHA" ] || die "archive digest $listed is not the expected $EXPECTED_ARCHIVE_SHA"
+  [ "$actual" = "$EXPECTED_ARCHIVE_SHA" ] || die "archive digest $actual is not the expected $EXPECTED_ARCHIVE_SHA"
 fi
 [ "${revision:0:12}" = "$TAG" ] || die "manifest revision $revision is not tag $TAG"
 if [ -n "$REVISION" ]; then
@@ -120,4 +139,4 @@ if [ -n "$LOADED_ID" ]; then
   loaded_note=", and is the image loaded"
 fi
 
-echo "release artifact verified: $ARCHIVE $listed holds $image_id, scanned and runtime-checked$loaded_note"
+echo "release artifact verified: $ARCHIVE $actual holds $image_id, scanned and runtime-checked$loaded_note"

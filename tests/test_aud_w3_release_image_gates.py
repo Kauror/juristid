@@ -563,3 +563,75 @@ def test_a_missing_file_is_refused(tmp_path) -> None:
     result = verify(tmp_path)
     assert result.returncode == 1
     assert "missing" in result.stderr
+
+
+def _flip_last_byte(archive: Path) -> None:
+    data = bytearray(archive.read_bytes())
+    data[-1] ^= 0xFF
+    archive.write_bytes(bytes(data))
+
+
+def test_a_sha256_file_naming_another_file_does_not_vouch_for_the_archive(tmp_path) -> None:
+    """QA 2026-11 (G-02), «BYPASS?»: the archive tampered, its `.sha256` pointing
+    at the package list (whose hash it carries) and the manifest's
+    `archive_sha256` set to match. `sha256sum -c` checked the package list and
+    the artifact verified; the archive is now hashed by its own name."""
+    _artifact(tmp_path)
+    archive = tmp_path / f"juristid-main-web-{TAG}.tar.gz"
+    _flip_last_byte(archive)
+    packages = tmp_path / f"os-packages-{TAG}.txt"
+    vouched = hashlib.sha256(packages.read_bytes()).hexdigest()
+    (tmp_path / f"{archive.name}.sha256").write_bytes(f"{vouched}  {packages.name}\n".encode())
+    manifest = tmp_path / f"release-manifest-{TAG}.txt"
+    manifest.write_text(
+        re.sub(r"(?m)^archive_sha256:.*$", f"archive_sha256:   {vouched}", manifest.read_text()),
+        newline="\n",
+    )
+
+    result = verify(tmp_path)
+
+    assert result.returncode == 1, result.stdout
+    assert f"names {packages.name}, not {archive.name}" in result.stderr
+
+
+def test_a_sha256_file_naming_the_archive_with_another_digest_is_refused(tmp_path) -> None:
+    """The `.sha256` names the archive but carries the manifest's (forged) digest."""
+    _artifact(tmp_path, archive_sha256="c" * 64)
+    archive = tmp_path / f"juristid-main-web-{TAG}.tar.gz"
+    (tmp_path / f"{archive.name}.sha256").write_bytes(f"{'c' * 64}  {archive.name}\n".encode())
+    result = verify(tmp_path)
+    assert result.returncode == 1, result.stdout
+    assert "does not match" in result.stderr and "it hashes to" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{digest}  {name}\n{digest}  {name}\n",
+        "{digest}  ./{name}\n",
+        "{digest}  {name}\r\n",
+        "{digest}  {name}",
+        "{digest}{name}\n",
+        "",
+    ],
+    ids=["two-lines", "path-prefix", "crlf", "no-newline", "no-separator", "empty"],
+)
+def test_a_sha256_file_that_is_not_one_line_naming_the_archive_is_refused(
+    tmp_path, content
+) -> None:
+    made = _artifact(tmp_path)
+    name = f"juristid-main-web-{TAG}.tar.gz"
+    (tmp_path / f"{name}.sha256").write_bytes(
+        content.format(digest=made["digest"], name=name).encode()
+    )
+    result = verify(tmp_path)
+    assert result.returncode == 1, result.stdout
+    assert "release artifact refused" in result.stderr
+
+
+def test_the_binary_mode_sha256_line_is_accepted(tmp_path) -> None:
+    made = _artifact(tmp_path)
+    name = f"juristid-main-web-{TAG}.tar.gz"
+    (tmp_path / f"{name}.sha256").write_bytes(f"{made['digest']} *{name}\n".encode())
+    result = verify(tmp_path, "--archive-sha256", made["digest"])
+    assert result.returncode == 0, result.stderr
