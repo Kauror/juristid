@@ -446,15 +446,22 @@ DEV_LOGIN_PIN_LOCKOUT_SECONDS = env_int("DEV_LOGIN_PIN_LOCKOUT_SECONDS", 300)
 # Cache
 # --------------------------------------------------------------------------
 
-# PostgreSQL, not local memory. The only thing this cache currently holds is the
-# PIN lockout counter, and gunicorn runs several worker processes: with the
-# default per-process cache each worker would keep its own count, so "five
-# attempts" would really mean five per worker. A shared backend makes the limit
-# the number it claims to be.
+# PostgreSQL, not local memory, because gunicorn runs several worker processes
+# and several services share one database: a per-process cache would keep a
+# count, or a memory of what was already seen, per worker. What it holds:
 #
-# Requires `python manage.py createcachetable`, which is idempotent and part of
-# the deployment steps. Redis is deliberately not introduced for this
-# (AGENTS.md): one small counter does not justify another service.
+# * the development PIN's lockout counter (app/accounts/views.py);
+# * the MCP OAuth endpoints' per-address rate limit and the client assertions'
+#   replay memory (`jti`) (app/mcp_access/views.py, app/mcp_access/oauth.py) —
+#   without the table `/oauth/token` and `/oauth/revoke` answer 500;
+# * the Cloudflare Access signing keys, briefly (app/accounts/cloudflare_access.py).
+#
+# The table, `core_cache`, is made by the migration `core/0003` (L-02), so a
+# fresh install, a migrate-from-zero and a restore all have it; nobody has to
+# remember `createcachetable`. The migration names `core_cache` itself, so
+# setting CACHE_TABLE to anything else means creating that table by hand.
+# Redis is deliberately not introduced for this (AGENTS.md): a few small
+# counters do not justify another service.
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.db.DatabaseCache",
