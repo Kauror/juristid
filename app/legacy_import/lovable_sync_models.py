@@ -16,9 +16,13 @@ The tables, kept apart from the importers' immutable provenance:
   Teemad it must hold. The pilot (`lovable-pilot`, 100 Teemad) is built in and
   has a row only once a rebuild retires it (``retired_at``);
   `LovableSyncState.cohort` says which cohort a state belongs to;
+* `LovableSyncMembership` — that a Teema was a member of a cohort, under
+  which Lovable id (REL-01, 2026-11): written when its state is seeded, kept
+  under the tombstone when the Teema is deleted, never changed;
 * `LovableSyncRetirement` — a member that left its cohort with its Teema's
   permanent deletion (audit 2026-11 C-L-04): the cohort's required size is its
-  enrolled size less these, and each names the deletion's audit event;
+  enrolled size less these, and each names the deletion's audit event and a
+  membership of the same cohort, Teema and Lovable id;
 * `LovableSyncBaselineArchive` — a rebased Teema's baseline and last
   observation exactly as they were before the rebuild re-seeded its state in
   place (docs/adr/0202 §6). Written once and never changed;
@@ -33,7 +37,7 @@ from django.conf import settings
 from django.db import models
 
 from app.core.errors import ImmutableRecordError, InvariantViolation
-from app.core.models import BaseModel
+from app.core.models import AppendOnlyModel, BaseModel
 
 
 class SyncMode(models.TextChoices):
@@ -229,6 +233,53 @@ class LovableSyncCohort(BaseModel):
         return self.key
 
 
+class MembershipBasis(models.TextChoices):
+    #: Written by `lovable_sync.seed_state` / `reseed_state`, from the cohort's
+    #: approved provenance, in the transaction that seeds the state.
+    ENROLMENT = "ENROLMENT", "Kanti kohorti seisu loomisel"
+    #: Written by the deletion, under the Teema's row lock and before the purge,
+    #: for a state seeded before memberships were recorded (migration 0024): only
+    #: when the cohort's approved provenance names that Teema under that Lovable id.
+    DELETION = "DELETION", "Kinnitati kustutamisel kohordi päritolu järgi"
+
+
+class LovableSyncMembership(AppendOnlyModel):
+    """A Teema was a member of a synchronised cohort, under one Lovable id
+    (owner brief 2026-11-06 §17, REL-01).
+
+    The synchronisation state says the same while it exists, but the purge of a
+    permanent deletion removes the state, the Teema's source references and its
+    import provenance with it (docs/adr/0165), so after a deletion nothing else
+    says which cohort the Teema was in or which Lovable topic it followed. This
+    row does, and stays under the tombstone (an append-only direct child of the
+    Matter, like the audit trail). A retirement must name a membership of the
+    same cohort, Teema and Lovable id (`LovableSyncRetirement`).
+
+    Written once and never changed. The database refuses an UPDATE or a DELETE,
+    and refuses an INSERT unless a live (not deleted) Teema holds a
+    synchronisation state of exactly this cohort and Lovable id at that moment
+    (migration 0024's triggers), so a membership cannot be invented for a Teema
+    that never had a state, nor added to a tombstone afterwards."""
+
+    cohort = models.CharField(max_length=64)
+    matter = models.ForeignKey(
+        "matters.Matter", on_delete=models.PROTECT, related_name="lovable_sync_memberships"
+    )
+    #: The Lovable topic the state followed (`LovableSyncState.source_id`).
+    source_id = models.UUIDField()
+    basis = models.CharField(max_length=16, choices=MembershipBasis.choices)
+
+    class Meta:
+        verbose_name = "Lovable sünkroonimise kohordi liikmesus"
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["cohort", "matter"], name="lovable_sync_member_once"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.cohort}: {self.matter_id}"
+
+
 class RetirementKind(models.TextChoices):
     #: Recorded by `delete_matter` in the deletion's own transaction.
     MATTER_DELETED = "MATTER_DELETED", "Teema kustutati jäädavalt"
@@ -244,6 +295,38 @@ RETIREMENT_NEEDS_A_TOMBSTONE = (
 RETIREMENT_NEEDS_ITS_DELETION_EVENT = (
     "Kohordist väljaarvamine peab viitama selle sama teema kustutamise sündmusele (MATTER_DELETED)."
 )
+#: REL-01 (2026-11): the deletion must have removed a synchronisation state, and
+#: must not be the source replacement, which retires whole cohorts instead.
+RETIREMENT_NEEDS_A_REMOVED_STATE = (
+    "Kohordist väljaarvamine peab viitama kustutamisele, mis eemaldas teema "
+    "sünkroonimise seisu (ja ei olnud allikapõhine asendamine)."
+)
+#: REL-01 (2026-11): who retired it is who deleted it.
+RETIREMENT_NEEDS_THE_DELETIONS_ACTOR = (
+    "Kohordist väljaarvamise isik peab olema sama, kes teema jäädavalt kustutas."
+)
+#: REL-01 (2026-11): neither a similar reference nor a deletion event proves membership.
+RETIREMENT_NEEDS_MEMBERSHIP = (
+    "Kohordist arvatakse välja ainult teema, mille liikmesust selles kohordis tõendab "
+    "kohordi liikmesuse kirje sama Lovable'i tunnusega."
+)
+
+#: The purge's own count of the states it removed, in the MATTER_DELETED payload.
+STATE_LABEL = "legacy_import.LovableSyncState"
+#: The provenance source the replacement names (`app.matters.deletion.SOURCE_REPLACEMENT`).
+REPLACEMENT_SOURCE = "LOVABLE_REPLACEMENT"
+
+
+def removed_a_state(payload: Any) -> bool:
+    """Whether a MATTER_DELETED payload is a person's deletion whose purge removed a
+    synchronisation state: the same test migration 0024's trigger makes."""
+    payload = payload if isinstance(payload, dict) else {}
+    provenance = payload.get("provenance")
+    if isinstance(provenance, dict) and provenance.get("source") == REPLACEMENT_SOURCE:
+        return False
+    rows = payload.get("rows")
+    count = rows.get(STATE_LABEL) if isinstance(rows, dict) else None
+    return isinstance(count, int) and not isinstance(count, bool) and count >= 1
 
 
 class LovableSyncRetirement(BaseModel):
@@ -257,12 +340,20 @@ class LovableSyncRetirement(BaseModel):
     authorised, audited deletion; the tombstone it points at is never removed.
     Written once and never changed.
 
-    Both halves are enforced below the services as well (2026-11 QA, C-L-04):
-    `save` refuses an insert whose Teema is not a tombstone in the database, or
-    whose event is not that same Teema's MATTER_DELETED event, so
-    ``objects.create`` cannot forge one; and the table is append-only in the
-    database (migration 0023's trigger), so ``QuerySet.update()`` and
-    ``.delete()`` are refused too."""
+    Enforced below the services as well (2026-11 QA, C-L-04; REL-01). An insert
+    is refused unless, read from the database:
+
+    * the Teema is a tombstone;
+    * the event is that same Teema's MATTER_DELETED event, its purge removed a
+      synchronisation state, and it is not the source replacement;
+    * the retirement's actor is the deletion's actor;
+    * a `LovableSyncMembership` names this cohort, this Teema and this Lovable
+      id (``source_id`` is required).
+
+    `save` checks it, so ``objects.create`` cannot forge one, and migration
+    0024's BEFORE INSERT trigger checks it again, so ``bulk_create`` and a raw
+    INSERT cannot either. The table is append-only in the database (migration
+    0023's trigger), so ``QuerySet.update()`` and ``.delete()`` are refused too."""
 
     cohort = models.CharField(max_length=64)
     matter = models.ForeignKey(
@@ -322,12 +413,28 @@ class LovableSyncRetirement(BaseModel):
             pk=self.matter_id, deleted_at__isnull=False
         ).exists():
             raise InvariantViolation(RETIREMENT_NEEDS_A_TOMBSTONE)
-        if not event_model.objects.filter(
-            pk=self.deletion_event_id,
-            matter_id=self.matter_id,
-            event_type=ChangeEventType.MATTER_DELETED,
-        ).exists():
+        event = (
+            event_model.objects.filter(
+                pk=self.deletion_event_id,
+                matter_id=self.matter_id,
+                event_type=ChangeEventType.MATTER_DELETED,
+            )
+            .values("actor_id", "payload")
+            .first()
+        )
+        if event is None:
             raise InvariantViolation(RETIREMENT_NEEDS_ITS_DELETION_EVENT)
+        if not removed_a_state(event["payload"]):
+            raise InvariantViolation(RETIREMENT_NEEDS_A_REMOVED_STATE)
+        if event["actor_id"] != self.actor_id:
+            raise InvariantViolation(RETIREMENT_NEEDS_THE_DELETIONS_ACTOR)
+        if (
+            self.source_id is None
+            or not LovableSyncMembership.objects.filter(
+                cohort=self.cohort, matter_id=self.matter_id, source_id=self.source_id
+            ).exists()
+        ):
+            raise InvariantViolation(RETIREMENT_NEEDS_MEMBERSHIP)
 
     def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         raise ImmutableRecordError("Kohordist väljaarvamist ei muudeta.")

@@ -80,10 +80,12 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncCohort,
     LovableSyncControl,
     LovableSyncDecision,
+    LovableSyncMembership,
     LovableSyncRetirement,
     LovableSyncRun,
     LovableSyncSnapshot,
     LovableSyncState,
+    MembershipBasis,
     SyncMode,
     SyncOutcome,
     SyncRunStatus,
@@ -673,9 +675,31 @@ def _rebuild_writes(matter: Any, cohort: Cohort, reference: Any) -> dict[str, An
 
 
 def seed_state(reference: Any, cohort: Cohort | None = None) -> LovableSyncState:
-    """A new state for a Teema, seeded by `seed_values`."""
-    return LovableSyncState.objects.create(
+    """A new state for a Teema, seeded by `seed_values`, and the membership that
+    outlives it (REL-01)."""
+    state = LovableSyncState.objects.create(
         matter=reference.matter, **seed_values(reference, cohort)
+    )
+    remember_membership(cohort=state.cohort, matter_id=state.matter_id, source_id=state.source_id)
+    return state
+
+
+def remember_membership(
+    *, cohort: str, matter_id: Any, source_id: Any, basis: str = MembershipBasis.ENROLMENT
+) -> LovableSyncMembership:
+    """Record that this Teema is a member of ``cohort`` under ``source_id``
+    (owner brief 2026-11-06 §17, REL-01), once. Called only where a state of
+    exactly that cohort and Lovable id has just been written from the cohort's
+    approved provenance (`seed_state`, `reseed_state`), or by the deletion after
+    checking that provenance (`lovable_sync_retirement.members_of`); migration
+    0024's trigger refuses one without such a state on a live Teema. An earlier
+    membership of the same cohort is kept as it is, even under another id: a
+    retirement must then match that one, so a changed identity fails closed."""
+    existing = LovableSyncMembership.objects.filter(cohort=cohort, matter_id=matter_id).first()
+    if existing is not None:
+        return existing
+    return LovableSyncMembership.objects.create(
+        cohort=cohort, matter_id=matter_id, source_id=source_id, basis=basis
     )
 
 
@@ -721,6 +745,9 @@ def reseed_state(
         observed_version=None,
         observed_run=None,
         updated_at=timezone.now(),
+    )
+    remember_membership(
+        cohort=values["cohort"], matter_id=state.matter_id, source_id=state.source_id
     )
     return archive
 

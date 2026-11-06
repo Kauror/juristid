@@ -1048,7 +1048,9 @@ def delete_matter(
         owned = _collect_owned(locked)
         reference = locked.display_reference
         # A Lovable cohort member leaves its cohort with its Teema (audit 2026-11
-        # C-L-04): its state is read here, before the purge removes it, and the
+        # C-L-04): its state is read here, before the purge removes it, with its
+        # membership of the cohort proven (or recorded from the cohort's
+        # provenance) while that still exists (REL-01), and the
         # retirement is recorded beside the MATTER_DELETED event below. The
         # replacement retires whole cohorts through its own enrolment instead
         # (docs/adr/0203 §3).
