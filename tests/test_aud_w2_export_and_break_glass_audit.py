@@ -345,10 +345,11 @@ def test_the_row_records_the_shared_gate_persona_and_how_little_it_proves(world,
 def test_filter_values_are_digested_with_a_key_and_never_stored():
     from django.http import QueryDict
 
-    one = filter_summary(QueryDict(f"q={SEARCH_TEXT}&periood=koik&tühi="))
-    two = filter_summary(QueryDict(f"periood=koik&q={SEARCH_TEXT}"))
-    other = filter_summary(QueryDict("periood=koik&q=muu"))
-    made_up = filter_summary(QueryDict(f"{SEARCH_TEXT}=1&q=x"))
+    honoured = {"periood", "q", "tühi"}
+    one = filter_summary(QueryDict(f"q={SEARCH_TEXT}&periood=koik&tühi="), honoured=honoured)
+    two = filter_summary(QueryDict(f"periood=koik&q={SEARCH_TEXT}"), honoured=honoured)
+    other = filter_summary(QueryDict("periood=koik&q=muu"), honoured=honoured)
+    made_up = filter_summary(QueryDict(f"{SEARCH_TEXT}=1&q=x"), honoured=honoured)
 
     assert one["filter_keys"] == ["periood", "q"]
     assert one["filters_hmac"] == two["filters_hmac"], "the same slice, the same digest"
@@ -357,7 +358,94 @@ def test_filter_values_are_digested_with_a_key_and_never_stored():
     # A parameter name nobody's page writes is counted, not recorded.
     assert made_up["filter_keys"] == ["q"]
     assert made_up["other_filter_keys"] == 1
-    assert filter_summary(None) == {"filter_keys": [], "filters_hmac": ""}
+    assert filter_summary(None, honoured=honoured) == {"filter_keys": [], "filters_hmac": ""}
+    unkeyed = filter_summary(QueryDict(f"q={SEARCH_TEXT}"), honoured=honoured, keyed=False)
+    assert unkeyed == {"filter_keys": ["q"], "filters_hmac": ""}
+
+
+def test_a_name_the_export_does_not_honour_is_counted_and_never_stored():
+    """QA 2026-11 (B-01): any lower-case name was kept verbatim, so a crafted name
+    carried text onto the trail. Only the export's own allowlist is named now."""
+    from django.http import QueryDict
+
+    crafted = "audw2_salajane_nimi_mets"
+    summary = filter_summary(QueryDict(f"{crafted}=1&q=x&periood=koik"), honoured={"q"})
+    assert summary["filter_keys"] == ["q"]
+    assert summary["other_filter_keys"] == 2
+    assert crafted not in json.dumps(summary)
+    # Fail safe: an export that names no allowlist names no parameter at all.
+    assert filter_summary(QueryDict("q=x"), honoured=())["filter_keys"] == []
+
+
+@pytest.mark.parametrize(
+    ("name", "kwargs", "query", "named"),
+    [
+        (
+            "matters:export_table",
+            {},
+            {"q": "x", "olek": "koik", "veerud": "pealkiri", "otsi": "x", "leht": "2"},
+            ["olek", "q", "veerud"],
+        ),
+        (
+            "reporting:export",
+            {"slug": "teemad"},
+            {"periood": "koik", "vastutaja": "x", "q": "x", "seisund": "x"},
+            ["periood", "vastutaja"],
+        ),
+        (
+            "reporting:export",
+            {"slug": "materjalid"},
+            {"periood": "koik", "seisund": "", "failityyp": "", "otsi": "x"},
+            ["periood"],
+        ),
+        (
+            "core:release_notes_lovable_export",
+            {},
+            {"vaade": "oised", "otsi": "x", "ulatus": "koik", "seos": "x", "leht": "2"},
+            ["otsi", "ulatus", "vaade"],
+        ),
+        (
+            "core:release_notes_lovable_export",
+            {},
+            {"vaade": "ootel", "tulemus": "x", "algus": "1.10.2026"},
+            ["tulemus", "vaade"],
+        ),
+    ],
+    ids=["register", "statistika", "materjalid", "lovable-oised", "lovable-ootel"],
+)
+def test_every_export_names_only_the_filters_it_honours(world, name, kwargs, query, named):
+    crafted = "audw2_salajane_nimi_mets"
+    client = _signed_in(factories.ReaderFactory())
+    response = client.get(_url(name, kwargs, {**query, crafted: "1"}))
+    assert response.status_code == 200
+    (event,) = _events(EXPORTED)
+    assert event.detail["filter_keys"] == named
+    applied = [key for key, value in query.items() if value]
+    assert event.detail["other_filter_keys"] == len(applied) + 1 - len(named)
+    assert crafted not in _row_text(event) and "AUDW2" not in _row_text(event)
+
+
+def test_the_allowlists_are_the_parameters_the_views_read():
+    """Built from the views' own constants, so a filter added there is named here."""
+    from app.core import views as core
+    from app.matters.export_views import table_filters
+    from app.matters.register_columns import COLUMNS_PARAM
+    from app.matters.views import REGISTER_PARAMS
+    from app.reporting import views as reporting
+
+    assert table_filters() == {*REGISTER_PARAMS, COLUMNS_PARAM}
+    assert set(core.LOVABLE_FILTER_PARAMS) >= {
+        kind for kinds in core.LOVABLE_FILTERS.values() for kind in kinds
+    }
+    for view in core.LOVABLE_EXPORTS:
+        assert "vaade" in core.lovable_export_filters(view)
+    assert set(reporting.EXPORT_FILTERS) == {
+        "teemad",
+        "arvamused",
+        "loend",
+        "materjalid",
+        "andmekvaliteet",
+    }
 
 
 # ---------------------------------------------------------------------------

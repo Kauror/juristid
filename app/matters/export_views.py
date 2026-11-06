@@ -24,6 +24,20 @@ from app.core.xlsx_safety import workbook_response
 from app.matters import register_export
 
 
+def table_filters() -> frozenset[str]:
+    """The parameter names «tabelis kuvatud infoga» honours, for its audit row.
+
+    Exactly what the register reads (`views.REGISTER_PARAMS`: every filter, the
+    status, the sort and the search) plus the chosen columns. The page number and
+    the page size are not in it: the file is every page. Anything else on the
+    address is counted on the row, never named (`app.audit.access`, B-01).
+    """
+    from app.matters.register_columns import COLUMNS_PARAM
+    from app.matters.views import REGISTER_PARAMS
+
+    return frozenset((*REGISTER_PARAMS, COLUMNS_PARAM))
+
+
 def _conditions(request: HttpRequest) -> list[str]:
     """The applied search and filters, in the chip words the page shows."""
     from app.matters.views import _active_filters
@@ -45,7 +59,12 @@ def export_table(request: HttpRequest) -> HttpResponse:
     )
     response = workbook_response(workbook, register_export.table_filename(timezone.localdate()))
     record_export(
-        request, export="matters.register_table", file_format="xlsx", rows=rows, params=request.GET
+        request,
+        export="matters.register_table",
+        file_format="xlsx",
+        rows=rows,
+        params=request.GET,
+        honoured=table_filters(),
     )
     return response
 

@@ -600,6 +600,37 @@ def definitions(request: HttpRequest) -> HttpResponse:
     )
 
 
+#: The reporting context every Statistika CSV is built under
+#: (`reporting_context.from_request`, the only reader of those parameters).
+_CONTEXT_FILTERS = frozenset(
+    {
+        reporting_context.PARAM_PERIOD,
+        reporting_context.PARAM_RECORD_MODE,
+        reporting_context.PARAM_ORIGIN,
+        reporting_context.PARAM_OWNER,
+        reporting_context.PARAM_POLICY_AREA,
+        reporting_context.PARAM_STAGE,
+        reporting_context.PARAM_TRACK,
+        reporting_context.PARAM_TAG,
+        reporting_context.PARAM_SECTION,
+        reporting_context.PARAM_FILE_TYPE,
+    }
+)
+
+#: The parameter names each CSV honours, for its audit row: the context, plus
+#: what `_export_csv` reads for that slug (`_submission_selection`,
+#: `_materials_selection`, the metric list's three). Anything else on the
+#: address is counted on the row, never named (`app.audit.access`, B-01).
+EXPORT_FILTERS: dict[str, frozenset[str]] = {
+    "teemad": _CONTEXT_FILTERS,
+    "arvamused": _CONTEXT_FILTERS | {"aasta", "kuu", "kuni", "saaja", "arvamus"},
+    "loend": _CONTEXT_FILTERS
+    | {management.PARAM_METRIC, management.PARAM_GROUP, management.PARAM_YEAR},
+    "materjalid": _CONTEXT_FILTERS | {"failityyp", "seisund"},
+    "andmekvaliteet": _CONTEXT_FILTERS,
+}
+
+
 @login_required
 def export(request: HttpRequest, slug: str) -> StreamingHttpResponse:
     """One CSV, from the same selectors and the same filters as the page.
@@ -615,6 +646,7 @@ def export(request: HttpRequest, slug: str) -> StreamingHttpResponse:
         file_format="csv",
         rows=response.row_count,
         params=request.GET,
+        honoured=EXPORT_FILTERS.get(slug, _CONTEXT_FILTERS),
     )
     return response
 

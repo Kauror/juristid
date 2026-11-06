@@ -161,6 +161,30 @@ LOVABLE_FILTERS = {
     "ootel": ("queue_outcome", "field", "reference", "text"),
     "vaadeldud": ("dates", "population", "kind", "mapping", "field", "reference", "text"),
 }
+#: The address parameter each of those filters reads (`_lovable_filters`).
+LOVABLE_FILTER_PARAMS = {
+    "dates": ("algus", "lopp"),
+    "population": ("ulatus",),
+    "outcome": ("tulemus",),
+    "queue_outcome": ("tulemus",),
+    "kind": ("liik",),
+    "mapping": ("seos",),
+    "field": ("vali",),
+    "reference": ("viide",),
+    "text": ("otsi",),
+    "attention": ("tahelepanu",),
+}
+
+
+def lovable_export_filters(view: str) -> frozenset[str]:
+    """The parameter names `Laadi Excel` honours on ``view``, for its audit row:
+    the view itself and the filters that view offers. The page number is not in
+    it, since the file is every page; anything else is counted on the row, never
+    named (`app.audit.access`, B-01)."""
+    return frozenset(
+        {"vaade"}.union(*(LOVABLE_FILTER_PARAMS[kind] for kind in LOVABLE_FILTERS.get(view, ())))
+    )
+
 
 #: Estonian slugs in the address → (the service's value, the label).
 LOVABLE_POPULATIONS = {
@@ -909,6 +933,7 @@ def release_notes_lovable_export(request: HttpRequest) -> HttpResponse:
         file_format="xlsx",
         rows=selected,
         params=request.GET,
+        honoured=lovable_export_filters(view),
     )
     return response
 

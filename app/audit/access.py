@@ -18,8 +18,12 @@ title, no cell, no search text. The audit trail is read by people who were not
 entitled to the export, and an audit row that quoted it would be a second copy
 of it with weaker protection.
 
-The filters are summarised the same way. Their *names* are this application's
-own parameter names and say what kind of slice was taken; their *values* can
+The filters are summarised the same way. Their *names* say what kind of slice
+was taken, and only a name the export itself honours is written: each export
+passes its own allowlist (``honoured``), built from the constants its view and
+form read, beside the call. Any other name — one a caller made up, which can
+itself carry text (``?salajane_eelnou=1``) — is counted in
+``other_filter_keys`` and never written (2026-11 QA, B-01). Their *values* can
 be anything a reader typed — a Teema title in a search box — so a value is
 never stored. What is stored instead is a keyed digest of the whole parameter
 set (``filters_hmac``): two rows with the same digest were the same slice,
@@ -43,7 +47,7 @@ file, so nothing was exported (QA-07, `app.core.http.head_response`).
 
 from __future__ import annotations
 
-import re
+from collections.abc import Collection
 from typing import Any
 from urllib.parse import urlencode
 
@@ -54,14 +58,6 @@ from app.audit.enums import SecurityEventType
 from app.audit.models import SecurityAuditEvent
 from app.audit.services import record_security_event
 
-#: A parameter name this application could have written. Anything else — a name
-#: a caller made up, which could itself carry text — is counted, not recorded.
-_PARAMETER_NAME = re.compile(r"[a-z0-9_]{1,40}")
-
-#: More filter names than any export offers; a longer list was not written by
-#: the page.
-_MAX_NAMES = 24
-
 #: The salt of the filter digest, so it is never comparable with any other
 #: keyed hash the application makes.
 _FILTER_SALT = "app.audit.access.export-filters"
@@ -70,11 +66,14 @@ _FILTER_SALT = "app.audit.access.export-filters"
 _NOT_FILTERS = frozenset({"csrfmiddlewaretoken"})
 
 
-def filter_summary(params: QueryDict | None, *, keyed: bool = True) -> dict[str, Any]:
+def filter_summary(
+    params: QueryDict | None, *, honoured: Collection[str], keyed: bool = True
+) -> dict[str, Any]:
     """The names of the filters applied, and a keyed digest of their values.
 
     Empty parameters are not filters: the page posts every field of its form,
     and «nothing chosen» is the same slice whether the field was sent or not.
+    Only a name in ``honoured`` is written; the rest are counted, unnamed.
     ``keyed=False`` — the request may not read business content — leaves the
     digest empty: it would only confirm a guess (module docstring).
     """
@@ -85,7 +84,7 @@ def filter_summary(params: QueryDict | None, *, keyed: bool = True) -> dict[str,
         for key, values in params.lists()
         if key not in _NOT_FILTERS and any(str(value).strip() for value in values)
     )
-    names = [key for key in applied if _PARAMETER_NAME.fullmatch(key)][:_MAX_NAMES]
+    names = [key for key in applied if key in honoured]
     summary: dict[str, Any] = {"filter_keys": names, "filters_hmac": ""}
     if len(names) != len(applied):
         summary["other_filter_keys"] = len(applied) - len(names)
@@ -121,6 +120,7 @@ def record_export(
     file_format: str,
     rows: int,
     params: QueryDict | None,
+    honoured: Collection[str] = (),
     **extra: Any,
 ) -> SecurityAuditEvent | None:
     """One ``EXPORT_GENERATED`` row for a file this request is about to hand over.
@@ -132,8 +132,9 @@ def record_export(
 
     ``export`` is the export's own name (``matters.register_table``), never a
     filename that could carry a title. ``rows`` is how many records the export
-    selected. ``extra`` is for further non-content facts (a period's dates, a
-    view's name) and nothing else.
+    selected. ``honoured`` is the export's own allowlist of the parameter names
+    it reads (empty when ``params`` is ``None``). ``extra`` is for further
+    non-content facts (a period's dates, a view's name) and nothing else.
     """
     from app.accounts import shared_gate
     from app.core.authorization import may_read_business_content
@@ -157,7 +158,7 @@ def record_export(
             format=file_format,
             rows=int(rows),
             method=request.method,
-            **filter_summary(params, keyed=keyed),
+            **filter_summary(params, honoured=honoured, keyed=keyed),
             **extra,
         ),
     )
