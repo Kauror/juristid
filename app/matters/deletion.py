@@ -1047,6 +1047,16 @@ def delete_matter(
 
         owned = _collect_owned(locked)
         reference = locked.display_reference
+        # A Lovable cohort member leaves its cohort with its Teema (audit 2026-11
+        # C-L-04): its state is read here, before the purge removes it, and the
+        # retirement is recorded beside the MATTER_DELETED event below. The
+        # replacement retires whole cohorts through its own enrolment instead
+        # (docs/adr/0203 §3).
+        cohort_members = (
+            []
+            if (provenance or {}).get("source") == SOURCE_REPLACEMENT
+            else _lovable_cohort_members(owned)
+        )
 
         # **The tombstone is marked first, and that ordering is load-bearing.**
         #
@@ -1110,7 +1120,7 @@ def delete_matter(
         # **Minimal by design** (docs/adr/0165 §5): who, when, which Matter id
         # and reference, and how much went. No title, no summary, no file name.
         counts = _deletion_counts(plan)
-        record_change_event(
+        deletion_event = record_change_event(
             event_type=ChangeEventType.MATTER_DELETED,
             matter=locked,
             actor=actor,
@@ -1122,6 +1132,8 @@ def delete_matter(
                 **({"provenance": provenance} if provenance else {}),
             },
         )
+        if cohort_members:
+            _retire_lovable_cohort_members(locked, cohort_members, deletion_event, actor)
         record_security_event(
             event_type=SecurityEventType.MATTER_DELETED,
             actor=actor,
@@ -1146,6 +1158,33 @@ def delete_matter(
                 )
             )
     return plan
+
+
+#: The Lovable synchronisation's per-Teema state (docs/adr/0192). The purge removes
+#: it with its Teema; the member's retirement from its cohort is recorded with
+#: the deletion (`app.legacy_import.lovable_sync_retirement`, audit 2026-11 C-L-04).
+LOVABLE_SYNC_STATE = "legacy_import.LovableSyncState"
+
+
+def _lovable_cohort_members(owned: _Owned) -> list[Any]:
+    """The cohort states this deletion will remove, read before it does."""
+    ids = owned.ids.get(LOVABLE_SYNC_STATE)
+    if not ids:
+        return []
+    from app.legacy_import import lovable_sync_retirement
+
+    return lovable_sync_retirement.members_of(ids)
+
+
+def _retire_lovable_cohort_members(
+    matter: Matter, members: list[Any], deletion_event: Any, actor: Any
+) -> None:
+    """Each removed state's member leaves its cohort, attributed to this deletion."""
+    from app.legacy_import import lovable_sync_retirement
+
+    lovable_sync_retirement.record_for_deletion(
+        matter=matter, members=members, deletion_event=deletion_event, actor=actor
+    )
 
 
 #: Owned rows the source replacement keeps under a tombstone: the pilots'
