@@ -5376,21 +5376,38 @@ def _hold_the_drawn_revision(matter: Matter, action_id: Any, posted: str) -> Nex
 
     `✓ Tehtud`, `Vaatasin üle` and `Muuda` may all be open at once (UI-10), so
     one of them is often saved while the others stay open on the page. The id
-    alone does not catch a stale one: `Vaatasin üle` and a date moved from Minu
-    asjad change the step **in place**, so a `Muuda` drawn before them would
-    post the old day back over the new one under the same id.
+    alone does not catch a stale one: `Vaatasin üle` changes the step **in
+    place** — the same row with a new review day — so a `Muuda` drawn before it
+    would post the old day back over the new one under the same id. (`Muuda`
+    itself, and a day moved from Minu asjad or the calendar, replace the step
+    with a new row, which the id check already refuses.)
 
-    Called inside the caller's transaction, before the service: the Matter
-    row, then the action, at `FOR NO KEY UPDATE` — the order and strength
-    every transition takes (`workflow.services._lock_for_transition`) — so the
-    answer cannot change between this check and the write. Returns the locked
-    row, or ``None`` when nothing was posted: a form drawn before this release,
-    or a caller other than the Teema page, keeps exactly the id check it had.
-    Raises `STALE_REVISION_REFUSAL` with nothing written.
+    **Any write to the open row moves the revision, by design.** Reassigning
+    the Matter re-points the open step's `responsible` and so bumps its
+    ``updated_at``: a `✓ Tehtud` or `Vaatasin üle` open at that moment is
+    refused once as stale, and the redrawn panel saves on the next press. That
+    is the honest rule — the step changed while the panel was open — and it is
+    deliberately not narrowed to per-field tokens.
+
+    Called inside the caller's transaction, before the service. **A closed
+    Matter is refused first**, with the closed-Matter sentence, through the same
+    `lock_open_matter_for_business_write` the services take; then the action, at
+    `FOR NO KEY UPDATE` — the order and strength every transition takes
+    (`workflow.services._lock_for_transition`) — so the answer cannot change
+    between this check and the write. Returns the locked row, or ``None`` when
+    nothing was posted: a form drawn before this release, or a caller other than
+    the Teema page, keeps exactly the id check it had. Raises
+    `STALE_REVISION_REFUSAL` with nothing written.
+
+    The views also ask `_drawn_from_an_older_revision` **before validating the
+    form**, so a stale panel is never answered by a validation refusal that
+    redraws it under the fresh token; this locked compare decides at save time.
     """
     if not posted:
         return None
-    Matter.objects.select_for_update(no_key=True).filter(pk=matter.pk).first()
+    from app.matters.locks import lock_open_matter_for_business_write
+
+    lock_open_matter_for_business_write(matter.pk)
     action = (
         NextAction.objects.select_for_update(no_key=True)
         .filter(pk=action_id, matter=matter)
@@ -5399,6 +5416,33 @@ def _hold_the_drawn_revision(matter: Matter, action_id: Any, posted: str) -> Nex
     if action is None or current_action_revision(action) != posted:
         raise DomainError(STALE_REVISION_REFUSAL)
     return action
+
+
+def _drawn_from_an_older_revision(request: HttpRequest, matter: Matter, action_id: Any) -> bool:
+    """Whether a toolbar panel was drawn from a revision the step no longer has.
+
+    Asked **before** the form is validated (UI-10 review, P2): a validation
+    refusal redraws the panel with the step's fresh token beside the posted,
+    old fields, and the corrected save would then pass the guard and write the
+    old day back. So a stale panel always gets `STALE_REVISION_REFUSAL` first.
+
+    Unlocked and read-only — the decision at save time is
+    `_hold_the_drawn_revision`'s, under the locks. ``False`` when no revision
+    was posted, when the id is not one, and on a closed Matter: there the
+    closed-Matter refusal is the one that must be said, and the save path says
+    it.
+    """
+    posted = request.POST.get("revision", "")
+    if not posted or not action_id:
+        return False
+    try:
+        named = uuid.UUID(str(action_id))
+    except ValueError:
+        return False
+    if not Matter.objects.filter(pk=matter.pk, is_open=True).exists():
+        return False
+    action = NextAction.objects.filter(pk=named, matter=matter).first()
+    return action is None or current_action_revision(action) != posted
 
 
 @login_required
@@ -5411,6 +5455,16 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         periods=True,
         current=selectors.current_action_of(matter, request.user),
     )
+    # A stale `Muuda` first, before its fields are judged (UI-10).
+    if _drawn_from_an_older_revision(request, matter, request.POST.get("action_id")):
+        return _workspace_refusal(
+            request,
+            matter,
+            key="action_form",
+            form=form,
+            error=STALE_REVISION_REFUSAL,
+            redraw=True,
+        )
 
     # Both refusals through `_workspace_refusal`, which is where every other
     # workspace save's already went. This view hand-rolled its own render, and
@@ -5466,7 +5520,14 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
                 responsible=step["responsible"],
             )
     except DomainError as error:
-        return _workspace_refusal(request, matter, key="action_form", form=form, error=str(error))
+        return _workspace_refusal(
+            request,
+            matter,
+            key="action_form",
+            form=form,
+            error=str(error),
+            redraw=str(error) == STALE_REVISION_REFUSAL,
+        )
 
     return _render_overview(request, matter)
 
@@ -5859,6 +5920,13 @@ def cancel_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) ->
     return _render_overview(request, matter)
 
 
+def _review_lands_once(action: NextAction, form: Any) -> bool:
+    """Whether a valid `Vaatasin üle` asks for exactly the day the step has now."""
+    current = NextAction.objects.filter(pk=action.pk).first()
+    wanted = (form.cleaned_data.get("next_review_date"), DatePrecision.EXACT)
+    return current is not None and (current.target_date, current.date_precision) == wanted
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -5888,6 +5956,20 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
         NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
     )
     form = ReviewActionForm(request.POST)
+    # A stale panel is refused before its date is judged (UI-10) — except the
+    # second press of the same review, which asks for the day the step already
+    # has: one review landing once (ENG-021).
+    if _drawn_from_an_older_revision(request, matter, action.pk) and not (
+        form.is_valid() and _review_lands_once(action, form)
+    ):
+        return _workspace_refusal(
+            request,
+            matter,
+            key="review_form",
+            form=form,
+            error=STALE_REVISION_REFUSAL,
+            redraw=True,
+        )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="review_form", form=form)
 
@@ -5895,16 +5977,14 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
         with transaction.atomic():
             try:
                 _hold_the_drawn_revision(matter, action.pk, request.POST.get("revision", ""))
-            except DomainError:
+            except DomainError as refusal:
                 # **A second press of the same review is still one review**
                 # (ENG-021): the first moved the revision on, so the second
                 # arrives stale — and asks for exactly the day the step now
                 # has. That is the review landing once, not an obsolete form,
                 # and `acknowledge_review` answers it by writing nothing.
                 # Anything else drawn from an older revision is refused.
-                locked = NextAction.objects.filter(pk=action.pk).first()
-                wanted = (form.cleaned_data.get("next_review_date"), DatePrecision.EXACT)
-                if locked is None or (locked.target_date, locked.date_precision) != wanted:
+                if str(refusal) != STALE_REVISION_REFUSAL or not _review_lands_once(action, form):
                     raise
             acknowledge_review(
                 action=action,
@@ -5912,7 +5992,14 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
                 next_review_date=form.cleaned_data.get("next_review_date"),
             )
     except DomainError as error:
-        return _workspace_refusal(request, matter, key="review_form", form=form, error=str(error))
+        return _workspace_refusal(
+            request,
+            matter,
+            key="review_form",
+            form=form,
+            error=str(error),
+            redraw=str(error) == STALE_REVISION_REFUSAL,
+        )
 
     return _render_overview(request, matter)
 
@@ -8229,8 +8316,16 @@ def _workspace_refusal(
     key: str,
     form: Any,
     error: str = "",
+    redraw: bool = False,
 ) -> HttpResponse:
     """Re-render the column with one bound form, so nothing typed is lost.
+
+    **``redraw``: a panel drawn from an older revision of the current step**
+    (UI-10, `STALE_REVISION_REFUSAL`). The bound form does *not* go back: it
+    would carry the old day under the fresh revision token, and the next press
+    would save it. The panel is drawn afresh from the step as it is now, opened
+    with the refusal, and what was typed comes back read-only as «Salvestamata
+    sisu».
 
     400 rather than 200, like every other refused write on this page, and the
     bound form goes back under its own key so the panel that failed is the panel
@@ -8268,7 +8363,8 @@ def _workspace_refusal(
     matter.refresh_from_db(fields=["is_open"])
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
-    context[key] = form
+    if not redraw:
+        context[key] = form
     # **The refused form is the same drawn form**, so it keeps the token it was
     # posted with. A refusal before the save spent nothing, so the corrected
     # save still saves once; an `ALREADY_SAVED` refusal keeps the spent token,
@@ -8374,10 +8470,10 @@ def _workspace_refusal(
         context.update(
             _workspace_choices(choice, has_open_round=bool(context.get("feedback_waits")))
         )
-    if not panel_is_rendered:
-        # The panel that held their words is not on the fresh column, so the
-        # words come back beside the refusal instead — read-only, and labelled
-        # as unsaved (QA-06).
+    if not panel_is_rendered or redraw:
+        # The panel that held their words is not on the fresh column — or is
+        # drawn afresh from a newer revision — so the words come back beside
+        # the refusal instead, read-only and labelled as unsaved (QA-06, UI-10).
         context["unsaved_content"] = unsaved_content(form)
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if not matter.is_open:
@@ -8407,6 +8503,16 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
     form = CompleteCurrentActionForm(
         request.POST, request.FILES, next_stages=offered_next_stages(matter)
     )
+    # A stale panel first, before its words are judged (UI-10).
+    if _drawn_from_an_older_revision(request, matter, request.POST.get("action_id")):
+        return _workspace_refusal(
+            request,
+            matter,
+            key="current_action_form",
+            form=form,
+            error=STALE_REVISION_REFUSAL,
+            redraw=True,
+        )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="current_action_form", form=form)
 
@@ -8442,7 +8548,12 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     except DomainError as error:
         return _workspace_refusal(
-            request, matter, key="current_action_form", form=form, error=str(error)
+            request,
+            matter,
+            key="current_action_form",
+            form=form,
+            error=str(error),
+            redraw=str(error) == STALE_REVISION_REFUSAL,
         )
     if result.closed:
         # «Jõustunud» or «Rohkem ei tegele» ended the Matter (docs/adr/0131 §10):
