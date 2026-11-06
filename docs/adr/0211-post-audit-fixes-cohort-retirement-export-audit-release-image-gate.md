@@ -31,6 +31,8 @@ It answers the November 2026 full codebase audit, findings C-L-04, B-01, G-02, L
 - no retirement names it yet;
 - the cohort is short.
 
+**Forgery.** The model accepts a retirement only for a tombstone beside its own MATTER_DELETED event, and the table is append-only in the database (trigger on `core_reject_mutation()`).
+
 **Reporting.** `report` lists each retirement by cohort, kind and time, with no reference. Retirement rows stay under the tombstone and hold identifiers only.
 
 **What does not change.** COMPARE writes no business data, and APPLY stays off.
@@ -43,7 +45,8 @@ It answers the November 2026 full codebase audit, findings C-L-04, B-01, G-02, L
 - the method;
 - the persona and authentication provenance (ADR 0180);
 - the client address and user agent;
-- the filter parameter names, plus a SECRET_KEY-keyed HMAC of the filter values.
+- the names of the filters that export honours (its own allowlist; any other name is only counted);
+- when the request may read business content, a SECRET_KEY-keyed HMAC of the filter values. An actor without business read gets no digest, since the application computing one for a chosen guess would confirm it.
 
 **Never stored.** Titles, cell values and search text.
 
@@ -63,6 +66,8 @@ It answers the November 2026 full codebase audit, findings C-L-04, B-01, G-02, L
 - the sha256 of the OS-package list.
 
 **The host side.** The host refuses any artifact, or any loaded image, whose ID is not the scanned one (`scripts/deploy/juristid-verify-release-artifact.sh`, plus the release kit's d1). A green CI run on the source is not evidence about a release image.
+
+**The verifier.** It hashes the archive itself and requires its `.sha256` to be one line naming exactly that archive. The runtime check and the OS-package list run the recorded image id, not the tag.
 
 ### 4. The database cache table is schema (L-02)
 
