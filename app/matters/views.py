@@ -1089,12 +1089,25 @@ COMMENCEMENT_LABELS = {
     register_filters.FACT_ABSENT: "Ilma jõustumiseta",
 }
 
+#: The register's status tabs: Avatud | Suletud | Kõik (owner's brief of
+#: 2026-11-06, UI-06). «Arhiiv» is no longer one of them. It never was a
+#: status: archive is a record mode (`RecordMode.ARCHIVE`) and an archived file
+#: is open or closed like any other, so the tab answered a Kirje liik question
+#: from the status row. That question is asked in Täpsem otsing under Kirje
+#: liik (`?liik=ARCHIVE`, with any status).
 STATUS_SEGMENTS = (
     ("avatud", "Avatud"),
     ("suletud", "Suletud"),
-    ("arhiiv", "Arhiiv"),
     ("koik", "Kõik"),
 )
+
+#: An address that still carries the retired tab's `?olek=arhiiv` keeps
+#: exactly what it meant — every archive record, open or closed
+#: (`register_filters.status_q`) — and says so in the chip row, because no tab
+#: lights up for it any more. Its `×` widens to every status, which is the
+#: archive filter removed and nothing else.
+LEGACY_ARCHIVE_STATUS = "arhiiv"
+LEGACY_ARCHIVE_CHIP = ("Kirje liik", "Arhiiv (avatud ja suletud)")
 
 
 def _segment_counts(user: Any) -> dict[str, int]:
@@ -1540,11 +1553,139 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
                 "remove_query": _without_dimension(params, name, also),
             }
         )
+    if params.get("olek") == LEGACY_ARCHIVE_STATUS:
+        widened = params.copy()
+        widened["olek"] = "koik"
+        widened.pop("leht", None)
+        label, value = LEGACY_ARCHIVE_CHIP
+        chips.append(
+            {"name": "olek", "label": label, "value": value, "remove_query": widened.urlencode()}
+        )
     return chips
 
 
 #: The one ordering, shared with every export of the table (register_selection).
 _ordered = register_selection.ordered
+
+
+# ---------------------------------------------------------------------------
+# Täpsem otsing, grouped (owner's brief of 2026-11-06, UI-07 and UI-08)
+#
+# Presentation only. Every control writes the parameter it always wrote, so the
+# grouping changes where a control sits and nothing about what an address means
+# (tests/test_ui07_url_semantics.py holds a fixed list of incoming addresses to
+# the result sets they had before).
+# ---------------------------------------------------------------------------
+
+#: The date block, in reading order: (legend, start parameter, end parameter).
+#: Each window is its own fact and any number apply at once — arrival, the
+#: Matter's own opinion deadline, the open step's date, an opinion actually
+#: sent, a commencement, the last piece of work, the last save. Never one range
+#: with a «which date» switch: that would make two constraints impossible.
+PANEL_DATE_RANGES: tuple[tuple[str, str, str], ...] = (
+    ("Saabunud", "saabus_alates", "saabus_kuni"),
+    ("Arvamuse tähtaeg", "tahtaeg_alates", "tahtaeg_kuni"),
+    (
+        "Järgmise sammu kuupäev",
+        register_filters.STEP_START_PARAM,
+        register_filters.STEP_END_PARAM,
+    ),
+    ("Arvamus saadetud", register_filters.SENT_START_PARAM, register_filters.SENT_END_PARAM),
+    (
+        "Jõustub",
+        register_filters.COMMENCEMENT_START_PARAM,
+        register_filters.COMMENCEMENT_END_PARAM,
+    ),
+    (
+        "Viimane tegevus",
+        register_filters.ACTIVITY_START_PARAM,
+        register_filters.ACTIVITY_END_PARAM,
+    ),
+    ("Kirjet muudetud", "muudetud_alates", "muudetud_kuni"),
+)
+
+#: The two disclosures and the parameters each holds. A shut group still lists
+#: its active constraints as removable chips under its heading.
+PANEL_GROUPS: dict[str, tuple[str, ...]] = {
+    # The keys of `ORGANISATION_CHOOSER_FIELDS`, which is defined further down.
+    "asutused": ("asutus", "saatja", "adressaat"),
+    "muud": (
+        "liik",
+        register_filters.LEGAL_INSTRUMENT_PARAM,
+        "paritolu",
+        register_filters.VICTORY_PARAM,
+        register_filters.COMMENCEMENT_PARAM,
+        "materjalid",
+        "andmed",
+    ),
+}
+
+#: Dimensions a figure or a link can set and the panel has no control for.
+#: Each is kept, deliberately, rather than given a control nobody asked for:
+#: `silt` (Statistika's tag bars), `allikas` (source coverage), `suletud`
+#: (Aruandlus' closing year), `loodud_*` (Saabunud's «loodud» figures) and the
+#: three `?too=` companions (Osakond's per-person and windowed work). The form
+#: carries them as hidden inputs, so «Filtreeri» never drops one, and says them
+#: as chips with their own `×`.
+PANEL_LINK_ONLY: tuple[str, ...] = (
+    "silt",
+    "allikas",
+    register_filters.CLOSED_YEAR_PARAM,
+    "loodud_alates",
+    "loodud_kuni",
+    register_filters.WORK_RESPONSIBLE_PARAM,
+    register_filters.WORK_WINDOW_START_PARAM,
+    register_filters.WORK_WINDOW_END_PARAM,
+)
+
+
+def _panel_context(
+    params: Any, chips: list[dict[str, Any]], echo: dict[str, Any]
+) -> dict[str, Any]:
+    """What the grouped Täpsem otsing renders beyond the option lists."""
+    chooser_terms = any(
+        (params.get(f"{field}{CONTROL_PARAM_SUFFIX}") or "").strip()
+        for field in ORGANISATION_CHOOSER_FIELDS
+    )
+    groups = {
+        key: {"chips": [chip for chip in chips if chip["name"] in names], "open": False}
+        for key, names in PANEL_GROUPS.items()
+    }
+    # A no-JavaScript institution search lands back here; its answer is inside.
+    groups["asutused"]["open"] = chooser_terms
+
+    def shown(name: str) -> str:
+        # The parsed echo where there is one; the raw value otherwise, so a
+        # window the pipeline stopped reading at (it returns at the first
+        # unreadable date) is still in its box and survives the next submit.
+        return str(echo.get(name) or params.get(name) or "")
+
+    origins = dict(MatterOrigin.choices)
+    origin = params.get("paritolu", "")
+    return {
+        "date_ranges": [
+            {
+                "label": label,
+                "start": start,
+                "end": end,
+                "start_value": shown(start),
+                "end_value": shown(end),
+            }
+            for label, start, end in PANEL_DATE_RANGES
+        ],
+        "panel_groups": groups,
+        "panel_carried": [
+            (name, value)
+            for name in PANEL_LINK_ONLY
+            for value in params.getlist(name)
+            if value.strip()
+        ],
+        "panel_carried_chips": [
+            chip for chip in chips if chip["name"] in PANEL_LINK_ONLY or chip["name"] == "olek"
+        ],
+        "paritolu_listed": origin in origins,
+        "paritolu_label": ", ".join(origins.get(part, part) for part in origin.split(",")),
+    }
 
 
 def _wants_fragment(request: HttpRequest) -> bool:
@@ -2121,6 +2262,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # catalogue, and each has to offer and redisplay the body *it* filters
         # by (docs/adr/0071).
         "organisation_choosers": _organisation_choosers(params),
+        **_panel_context(params, chips, date_echo),
         # Who a row may be handed to, current reader first. The same population
         # the Matter header's own control offers, so the two cannot disagree
         # about who work may be given to (app/accounts/selectors.py, ADR 0036).

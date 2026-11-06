@@ -1,0 +1,749 @@
+{
+ "": [
+  "Avatud arhiivirida",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "joustub_alates=1.7.2026&joustub_kuni=30.9.2026&olek=koik": [
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "joustub_alates=1.7.2026&joustub_kuni=31.8.2026&olek=koik": [],
+ "joustumine=on&olek=koik": [
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "joustumine=puudub&olek=koik": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "liik=ARCHIVE": [
+  "Avatud arhiivirida"
+ ],
+ "liik=FULL&liik=ARCHIVE&olek=koik": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=arhiiv": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=arhiiv&andmed=koik": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=arhiiv&liik=ARCHIVE": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=arhiiv&liik=FULL": [],
+ "olek=arhiiv&q=arhiivirida": [
+  "Avatud arhiivirida"
+ ],
+ "olek=arhiiv&saatja={ministry}": [
+  "Aktsiisimäärade muutmine registrist",
+  "Avatud arhiivirida"
+ ],
+ "olek=avatud": [
+  "Avatud arhiivirida",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=avatud&liik=ARCHIVE": [
+  "Avatud arhiivirida"
+ ],
+ "olek=avatud&liik=FULL": [
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=avatud&liik=FULL&arvamus=koostamisel": [
+  "Ootel olev keskkonnateema"
+ ],
+ "olek=avatud&liik=FULL&saabus_alates=5.10.2026&saabus_kuni=7.10.2026": [
+  "Saatja A ja adressaat B"
+ ],
+ "olek=avatud&liik=FULL&saatja={ministry}": [
+  "Pakendiaruandluse katse-eelnõu",
+  "Saatja A ja adressaat B"
+ ],
+ "olek=avatud&liik=FULL&tegevus=puudub": [
+  "Kaasatud juhi teema",
+  "Piiratud juhi teema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=avatud&liik=FULL&too=hilinenud": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=avatud&liik=FULL&too=hilinenud&too_vastutaja={sandra}": [],
+ "olek=avatud&liik=FULL&too=muutusteta-30": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=avatud&liik=FULL&too=sekkumist": [
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=avatud&liik=FULL&too=tahtaeg-nadalal": [],
+ "olek=avatud&liik=FULL&too=tahtaeg-vahemik": [
+  "Tulevase tähtajaga teema"
+ ],
+ "olek=avatud&liik=FULL&too=tahtaeg-vahemik&too_alates=7.10.2026&too_kuni=31.10.2026": [],
+ "olek=avatud&liik=FULL&valdkond=maksud": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=avatud&liik=FULL&vastutaja=puudub": [
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=avatud&liik=FULL&vastutaja=puudub&tegevus=puudub&saabus_alates=23.9.2026&saabus_kuni=7.10.2026": [],
+ "olek=avatud&liik=FULL&vastutaja={sandra}": [
+  "Kaasatud juhi teema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu",
+  "Saatja B ja adressaat A",
+  "Tulevase tähtajaga teema"
+ ],
+ "olek=avatud&liik=FULL&vastutaja={sandra}&tegevus=puudub": [
+  "Kaasatud juhi teema",
+  "Saatja B ja adressaat A"
+ ],
+ "olek=avatud&tahtaeg_alates=1.10.2026&tahtaeg_kuni=31.10.2026": [
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=avatud&tegevus=hilinenud": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=avatud&tegevus=ulevaatus": [
+  "Jälgitav strateegia",
+  "Ootel olev keskkonnateema"
+ ],
+ "olek=avatud&ulatus=minu": [
+  "Kaasatud juhi teema",
+  "Piiratud juhi teema",
+  "Testandmete teema"
+ ],
+ "olek=avatud&vastutaja=puudub": [
+  "Avatud arhiivirida",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&aasta=2O24": [],
+ "olek=koik&adressaat=puudub": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&adressaat={committee}": [
+  "Avatud arhiivirida",
+  "Kahe lähtelehega arhiiviteema",
+  "Saatja A ja adressaat B"
+ ],
+ "olek=koik&andmed=paris": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&aasta=2018-2026": [
+  "Aktsiisimäärade muutmine registrist",
+  "Jälgitav strateegia",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Registririda ilma OneNote'i leheta",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&aasta=2026": [
+  "Jälgitav strateegia",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&aasta=teadmata": [
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kaasatud juhi teema",
+  "Piiratud juhi teema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A"
+ ],
+ "olek=koik&andmed=paris&allikas=mitu": [
+  "Kahe lähtelehega arhiiviteema"
+ ],
+ "olek=koik&andmed=paris&allikas=on": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside"
+ ],
+ "olek=koik&andmed=paris&allikas=puudub": [
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&hetkeseis=kooskolastusel": [
+  "Jälgitav strateegia",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Tulevase tähtajaga teema"
+ ],
+ "olek=koik&andmed=paris&hetkeseis=puudub": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&liik=ARCHIVE": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=koik&andmed=paris&menetlusliik=DOMESTIC": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&andmed=paris&menetlusliik=puudub": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Lõpetatud teema eelmisest aastast",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&paritolu=LEGACY_IMPORT,PROMOTED_LEGACY": [
+  "Aktsiisimäärade muutmine registrist",
+  "Avatud arhiivirida",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=koik&andmed=paris&paritolu=LEGACY_ONENOTE": [
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Dateerimata OneNote'i teema"
+ ],
+ "olek=koik&andmed=paris&saabus_alates=2026-01-01&saabus_kuni=2026-03-31": [
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&silt=halduskoormus": [
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&andmed=paris&valdkond=puudub": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Lõpetatud teema eelmisest aastast",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=paris&vastutaja=puudub": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&andmed=test": [
+  "Testandmete teema"
+ ],
+ "olek=koik&arvamus=koostamisel&arvamus=saadetud": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&asutus=puudub": [
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Lõpetatud teema eelmisest aastast",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&asutus={committee}": [
+  "Avatud arhiivirida",
+  "Kahe lähtelehega arhiiviteema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A"
+ ],
+ "olek=koik&asutus={ministry}": [
+  "Aktsiisimäärade muutmine registrist",
+  "Avatud arhiivirida",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A"
+ ],
+ "olek=koik&asutus_otsing=mini": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&jarjestus=deadline": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&jarjestus=title&kaupa=30&veerud=pealkiri&veerud=vastutaja": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&liik=ARCHIVE": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=koik&loodud_alates=1.1.2000": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&materjalid=on": [
+  "Aktsiisimäärade muutmine registrist",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&materjalid=puudub": [
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Ootel olev keskkonnateema",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&muudetud_alates=1.1.2000": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&oigusakt=puudub": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&saabus_alates=1.1.2026&tahtaeg_kuni=31.12.2026": [
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&saabus_alates=1.12.2026&saabus_kuni=1.1.2026": [],
+ "olek=koik&saabus_alates=31.02.2026": [],
+ "olek=koik&saadetud_alates=1.1.2026&saadetud_kuni=31.12.2026": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&saatja=puudub": [
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&saatja={ministry}": [
+  "Aktsiisimäärade muutmine registrist",
+  "Avatud arhiivirida",
+  "Pakendiaruandluse katse-eelnõu",
+  "Saatja A ja adressaat B"
+ ],
+ "olek=koik&saatja={ministry}&adressaat={committee}": [
+  "Avatud arhiivirida",
+  "Saatja A ja adressaat B"
+ ],
+ "olek=koik&samm_alates=1.10.2026&samm_kuni=31.10.2026": [
+  "Jälgitav strateegia",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&tahtaeg_alates=2026-10-01": [
+  "Pakendiaruandluse katse-eelnõu",
+  "Tulevase tähtajaga teema"
+ ],
+ "olek=koik&tahtaeg_kuni=31.12.2026": [
+  "Pakendiaruandluse katse-eelnõu",
+  "Tulevase tähtajaga teema"
+ ],
+ "olek=koik&ulatus=minu": [
+  "Kaasatud juhi teema",
+  "Piiratud juhi teema",
+  "Testandmete teema"
+ ],
+ "olek=koik&valdkond=maksud&valdkond=keskkond": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&vastutaja=mitte-uuid": [],
+ "olek=koik&vastutaja=puudub&vastutaja={sandra}": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja B ja adressaat A",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=koik&vastutaja={sandra}&valdkond=maksud": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Pakendiaruandluse katse-eelnõu"
+ ],
+ "olek=koik&viimane_alates=1.1.2026": [
+  "Konfidentsiaalne liikmete tagasiside",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Saatja A ja adressaat B",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "olek=suletud": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Lõpetatud teema eelmisest aastast",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=suletud&liik=ARCHIVE": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Dateerimata OneNote'i teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Registririda ilma OneNote'i leheta"
+ ],
+ "olek=suletud&liik=FULL&suletud=2026": [],
+ "olek=tundmatu": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Ootel olev keskkonnateema",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ],
+ "q=aktsiis&olek=koik": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed"
+ ],
+ "toovoit=2026&olek=koik": [
+  "Ootel olev keskkonnateema"
+ ],
+ "toovoit=on": [
+  "Ootel olev keskkonnateema"
+ ],
+ "toovoit=puudub&olek=koik": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
+  "Konfidentsiaalne liikmete tagasiside",
+  "Lõpetatud teema eelmisest aastast",
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
+ ]
+}

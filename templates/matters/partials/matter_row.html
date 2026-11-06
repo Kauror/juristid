@@ -34,7 +34,16 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           {% if matter.is_test_data %}
             <span class="badge badge--test">TEST</span>
           {% endif %}
-          {% if matter.record_mode == "ARCHIVE" %}
+          {% comment %}
+            «Arhiiv» only on an open row. On an open archive record it is the
+            one thing saying this is a historical register row nobody has
+            activated as current work — no stage, no next action by design
+            (master specification 19.4, ADR 0020). Beside «Suletud» it said
+            nothing more: a closed archive row is history either way, so the
+            badge is left out there and «Suletud» stays (UI-06). The record
+            mode itself is unchanged and still filterable under Kirje liik.
+          {% endcomment %}
+          {% if matter.record_mode == "ARCHIVE" and matter.is_open %}
             <span class="badge badge--archive">Arhiiv</span>
           {% endif %}
           {% if matter.is_restricted %}

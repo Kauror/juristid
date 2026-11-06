@@ -1,0 +1,13 @@
+{% comment %}
+One removable register filter chip: «Label: value ×». Its `×` is
+`chip.remove_query`, the current address minus this one narrowing — never the
+«Tühjenda kõik» address (R2-04, `views._without_dimension`). Drawn above the
+results and, inside Täpsem otsing, under a shut group's heading (UI-07).
+{% endcomment %}
+<a class="filterchip" href="?{{ chip.remove_query }}"
+   title="Eemalda filter: {{ chip.label }}">
+  <span class="filterchip__label">{{ chip.label }}:</span>
+  <span>{{ chip.value }}</span>
+  <span class="filterchip__remove" aria-hidden="true">×</span>
+  <span class="visually-hidden">Eemalda filter</span>
+</a>

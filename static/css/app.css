@@ -1052,10 +1052,13 @@ p.formnote {
   background: var(--surface-selected);
 }
 
+/* The results' width, not a 62rem column with an empty right half (UI-08):
+   the groups inside lay themselves out in as many columns as fit
+   (static/css/register-search.css). */
 .filterpanel__body {
   margin-top: var(--spacing-2);
   width: 100%;
-  max-width: 62rem;
+  min-width: 0;
   padding: var(--spacing-4);
   background: var(--surface-raised);
   border: 1px solid var(--border-default);

@@ -291,6 +291,14 @@ def open_advanced(page):
     expect(page.locator("input[name='vastutaja']").first).to_be_visible()
 
 
+def open_group(page, key: str) -> None:
+    """Open one of Täpsem otsing's disclosures (`asutused`, `muud`; UI-07)."""
+    group = page.locator(f"#otsing-{key}")
+    if not group.evaluate("node => node.open"):
+        group.locator("> summary").click()
+    expect(group).to_have_js_property("open", True)
+
+
 def test_the_advanced_panel_opens(page, base_url, screenshots):
     sign_in(page, base_url, MARTIN)
     open_register(page, base_url)
@@ -318,6 +326,7 @@ def test_the_organisation_chooser_narrows_by_typing(page, base_url):
     sign_in(page, base_url, MARTIN)
     open_register(page, base_url)
     open_advanced(page)
+    open_group(page, "asutused")
 
     chooser = page.locator("#orgchooser-asutus")
     expect(chooser).to_be_visible()
@@ -360,11 +369,23 @@ def test_the_register_scope_segments_work(page, base_url):
     # assert about the register's strip rather than about whichever `.segmented`
     # the DOM happened to put first.
     segments = page.locator('.segmented[aria-label="Kirje seis"]')
-    segments.get_by_role("link", name=re.compile(r"^Arhiiv\b")).click()
-    page.wait_for_url(re.compile(r"olek=arhiiv"))
+    # Avatud | Suletud | Kõik since UI-06; the archive is a Kirje liik.
+    expect(segments.locator(".segmented__option")).to_have_count(3)
+    expect(segments.get_by_role("link", name=re.compile(r"^Arhiiv\b"))).to_have_count(0)
+    segments.get_by_role("link", name=re.compile(r"^Kõik")).click()
+    page.wait_for_url(re.compile(r"olek=koik"))
+    open_advanced(page)
+    open_group(page, "muud")
+    page.locator("input[type='checkbox'][name='liik'][value='ARCHIVE']").check()
+    page.get_by_role("button", name="Filtreeri").click()
+    page.wait_for_url(re.compile(r"liik=ARCHIVE"))
     expect(page.locator(".table--register")).to_contain_text(ARCHIVE_TITLE)
     expect(page.locator(".table--register")).not_to_contain_text(OPEN_TITLE)
 
+    # A tab narrows what is on screen and keeps every other filter, so the
+    # Kirje liik chip goes first; then Avatud is the ordinary open register.
+    page.locator("#teemad-tulemused .filterchip", has_text="Kirje liik").click()
+    page.wait_for_url(lambda url: "liik=" not in url)
     segments.get_by_role("link", name=re.compile(r"^Avatud")).click()
     page.wait_for_url(re.compile(r"olek=avatud"))
     expect(page.locator(".table--register")).to_contain_text(OPEN_TITLE)

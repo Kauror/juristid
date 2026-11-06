@@ -106,13 +106,7 @@ somebody is typing into would move the caret on every keystroke.
         </a>
       {% endif %}
       {% for chip in active_filters %}
-        <a class="filterchip" href="?{{ chip.remove_query }}"
-           title="Eemalda filter: {{ chip.label }}">
-          <span class="filterchip__label">{{ chip.label }}:</span>
-          <span>{{ chip.value }}</span>
-          <span class="filterchip__remove" aria-hidden="true">×</span>
-          <span class="visually-hidden">Eemalda filter</span>
-        </a>
+        {% include "matters/partials/register_chip.html" %}
       {% endfor %}
       {% if has_any_filter %}
         <a class="filterchip filterchip--clear" href="?{{ cleared_query }}">Tühjenda kõik</a>

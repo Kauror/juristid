@@ -439,6 +439,8 @@ def test_the_panel_offers_both_facts_as_filters(page, base_url, screenshots):
 
     panel = page.locator("#tapsem-otsing")
     panel.locator("summary.filterpanel__trigger").click()
+    # «Muud tunnused», shut on arrival since UI-07.
+    panel.locator("#otsing-muud > summary").click()
 
     # Located by the parameter each control submits rather than by its
     # accessible name, and not for convenience: every field in this panel wraps
@@ -462,6 +464,7 @@ def test_choosing_toovoit_narrows_the_register_and_says_so(page, base_url):
 
     panel = page.locator("#tapsem-otsing")
     panel.locator("summary.filterpanel__trigger").click()
+    panel.locator("#otsing-muud > summary").click()
     panel.locator("select[name='toovoit']").select_option("on")
     panel.get_by_role("button", name="Filtreeri").click()
     page.wait_for_load_state("networkidle")
