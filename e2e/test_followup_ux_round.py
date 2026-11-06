@@ -278,7 +278,9 @@ def test_f_l_opens_lisa_tegevus_without_a_task_and_tehtud_with_one(page, base_ur
     create_matter(page, base_url, unique_title("L-klahv"), owner=MARTIN)
 
     page.locator("body").press("l")
-    expect(page.locator("#lisa-jargmine")).to_have_attribute("open", "")
+    # The action row's first choice since UI-09, opened off its radio.
+    expect(page.locator("#lisa-jargmine-valik")).to_be_checked()
+    expect(page.locator("#lisa-jargmine")).to_be_visible()
     # Waiting assertions: the shortcut focuses after the panel opens, so a
     # one-shot read of `activeElement` raced it (CI run 38599779275).
     expect(page.locator("#lisa-jargmine :focus")).to_have_count(1)

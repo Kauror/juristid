@@ -90,10 +90,11 @@ def test_the_current_action_loop_from_task_to_result_to_the_next_one(page, base_
     # asked about the finished task now draws `+ Lisa tegevus`, closed,
     # and the launcher still has no chip for it (docs/adr/0075 §5,
     # docs/adr/0097 §8.2, docs/adr/0126 §1, §3).
-    cta = page.locator("#praegune-tegevus #lisa-jargmine")
+    # The action row's first choice under the zone since UI-09, closed.
+    cta = page.locator("#lisa-teemale #lisa-jargmine")
     expect(cta).to_have_count(1)
-    expect(cta.locator("> summary")).to_have_text("+ Lisa tegevus")
-    expect(cta).not_to_have_attribute("open", "")
+    expect(page.locator('label[for="lisa-jargmine-valik"]')).to_have_text("+ Lisa tegevus")
+    expect(page.locator("#lisa-jargmine-valik")).not_to_be_checked()
     expect(page.get_by_text("+ Järgmine tegevus", exact=True)).to_have_count(0)
 
     set_step(page, "Saata arvamus ministeeriumile", 10)

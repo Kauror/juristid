@@ -45,7 +45,8 @@ pytestmark = pytest.mark.e2e
 #: The geometry contract itself is unchanged and is exactly what this file
 #: exists to hold: fewer chips is allowed, more chips is allowed, a chip that
 #: *moves* is not.
-CANONICAL = [  # the owner's order of 2026-10-07
+CANONICAL = [  # the owner's order of 2026-10-07, `+ Lisa tegevus` first since UI-09
+    "+ Lisa tegevus",
     "+ Ülevaade / uudis",
     "+ Kaasamine",
     # `+ Arvamus / tagasiside` until 2026-10-17 (docs/adr/0097, amendment).
@@ -58,6 +59,8 @@ CANONICAL = [  # the owner's order of 2026-10-07
 
 #: The top-level panels, which is what the chips above open.
 PANEL_IDS = [
+    # `+ Lisa tegevus` on a Matter with no step: the next-step editor (UI-09).
+    "lisa-jargmine",
     "lisa-marge",
     "lisa-kaasamine",
     "lisa-arvamus",

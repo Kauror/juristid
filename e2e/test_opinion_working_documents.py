@@ -68,7 +68,7 @@ def _et(day: date) -> str:
 
 def _set_step(page) -> None:
     """`+ Lisa tegevus` — the open step the opinion will finish."""
-    cta = page.locator("#praegune-tegevus #lisa-jargmine")
+    cta = page.locator("#lisa-teemale #lisa-jargmine")
     open_add_panel(page, "lisa-jargmine")
     cta.locator("[name='text']").fill(STEP)
     page.locator("#id_target_date").fill(_et(_day(2)))
