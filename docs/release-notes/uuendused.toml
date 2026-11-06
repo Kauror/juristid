@@ -10,12 +10,15 @@
 [[day]]
 date = 2026-11-06
 basis = "deployment"
-prs = [602]
+prs = [602, 603]
 # 06.11 väljalase r49 (#602, ADR 0210, ainult kood, migratsioonita): OneNote'i lehe dateeritud märkused
 # «Tegevused» all ja dokumendipealkirjade ülevaatuse tööriist (pealkirju ei muudetud).
+# Sama päeva teine väljalase r50 (#603, ADR 0211; legacy_import 0023 ja core 0003 — lisanduvad tabelid):
+# auditi parandused C-L-04, B-01, G-02, L-02, G-01, E-03.
 changes = [
   "«Tegevused» näitab nüüd OneNote'i lehe enda dateeritud märkusi — näiteks «27.07.2026 KLIM saatis kooskõlastusringile eelnõu …» — selle asemel, et öelda ainult «OneNote'i lisati 4 dokumenti». Rea avamisel on näha kogu märkus, selle allikas OneNote'is ja märkusega otseselt seotud failid; kuupäevata märkused ja «Järgmised tegevused» jäävad OneNote'i lehele.",
   "OneNote'ist imporditud failide read on nimetatud failide järgi («EELNÕU.pdf ja 3 muud faili») ja seisavad päeval, mil failid OneNote'i lisati; rea avamisel on kõik failid ja nende märkused.",
+  "OneNote'i lehe vaates (Ajalooline OneNote) murduvad pikad lingid ja sõnad rea lõpus ega jää enam kaardi servast peitu.",
 ]
 
 [[day]]

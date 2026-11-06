@@ -24,6 +24,11 @@ is still plain UTF-8 for any machine reader.
 `app.core.csv_safety`, which makes a value a spreadsheet would evaluate inert.
 Applied at the writer rather than per column, because a per-column decision is
 one somebody adding a column next year has to remember to make (QA-15).
+
+**And it says how many rows it selected.** Every function returns a
+`CsvExport`, whose ``row_count`` is the number of data rows the file is built
+from, counted before the first byte is streamed. The view writes it on the
+``EXPORT_GENERATED`` row (`app.audit.access`, B-01) — a count, never a cell.
 """
 
 from __future__ import annotations
@@ -63,7 +68,13 @@ class _Echo:
         return value
 
 
-def _stream(rows: Iterator[list[Any]], filename: str) -> StreamingHttpResponse:
+class CsvExport(StreamingHttpResponse):
+    """A streamed CSV that knows how many data rows it was built from."""
+
+    row_count: int = 0
+
+
+def _stream(rows: Iterator[list[Any]], filename: str, *, row_count: int) -> CsvExport:
     writer = csv.writer(_Echo(), delimiter=DELIMITER, quoting=csv.QUOTE_MINIMAL)
 
     def encoded() -> Iterator[bytes]:
@@ -74,8 +85,9 @@ def _stream(rows: Iterator[list[Any]], filename: str) -> StreamingHttpResponse:
             # somebody has to check before adding a column.
             yield writer.writerow(csv_safe_row(row)).encode("utf-8")
 
-    response = StreamingHttpResponse(encoded(), content_type="text/csv; charset=utf-8")
+    response = CsvExport(encoded(), content_type="text/csv; charset=utf-8")
     response["Content-Disposition"] = content_disposition("attachment", filename)
+    response.row_count = row_count
     return response
 
 
@@ -100,7 +112,7 @@ def _organisations(organisations: Any) -> str:
 # ---------------------------------------------------------------------------
 
 
-def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
+def matters_csv(context: ReportingContext) -> CsvExport:
     """The Matter population behind the current filters.
 
     The columns are the ones the register itself shows plus the provenance a
@@ -110,6 +122,13 @@ def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
     queryset = visible_matters(context)
     if not context.period.is_all:
         queryset = in_reporting_year(queryset, context)
+
+    selected = (
+        queryset.select_related("owner", "stage", "addressee_organisation")
+        .prefetch_related("source_organisations")
+        .distinct()
+        .order_by("-reporting_year", "reference_number")
+    )
 
     def rows() -> Iterator[list[Any]]:
         yield [
@@ -127,12 +146,6 @@ def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
             "algataja_voi_saatja",
             "adressaat",
         ]
-        selected = (
-            queryset.select_related("owner", "stage", "addressee_organisation")
-            .prefetch_related("source_organisations")
-            .distinct()
-            .order_by("-reporting_year", "reference_number")
-        )
         for matter in selected.iterator(chunk_size=CHUNK):
             yield [
                 matter.display_reference,
@@ -150,7 +163,7 @@ def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
                 matter.addressee_organisation.name if matter.addressee_organisation else "",
             ]
 
-    return _stream(rows(), "teemad.csv")
+    return _stream(rows(), "teemad.csv", row_count=selected.count())
 
 
 # ---------------------------------------------------------------------------
@@ -158,7 +171,7 @@ def matters_csv(context: ReportingContext) -> StreamingHttpResponse:
 # ---------------------------------------------------------------------------
 
 
-def submissions_csv(context: ReportingContext, **filters: Any) -> StreamingHttpResponse:
+def submissions_csv(context: ReportingContext, **filters: Any) -> CsvExport:
     """Sent Submissions, addressees and copies kept in separate columns."""
     # Both roles, because this file keeps addressees and copies in two columns;
     # the list page reads only the addressees `list_rows` prefetches.
@@ -204,7 +217,7 @@ def submissions_csv(context: ReportingContext, **filters: Any) -> StreamingHttpR
                 submission.reference,
             ]
 
-    return _stream(rows(), "arvamused.csv")
+    return _stream(rows(), "arvamused.csv", row_count=queryset.count())
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +225,7 @@ def submissions_csv(context: ReportingContext, **filters: Any) -> StreamingHttpR
 # ---------------------------------------------------------------------------
 
 
-def metric_rows_csv(listing: RowList, key: str) -> StreamingHttpResponse:
+def metric_rows_csv(listing: RowList, key: str) -> CsvExport:
     """The rows behind one group of a management metric, as the list shows them.
 
     The listing arrives already computed by `management.metric_rows` — the same
@@ -225,7 +238,7 @@ def metric_rows_csv(listing: RowList, key: str) -> StreamingHttpResponse:
         for row in listing.rows:
             yield [key, listing.group_label, row.title, *row.cells]
 
-    return _stream(rows(), f"loend-{key.lower()}.csv")
+    return _stream(rows(), f"loend-{key.lower()}.csv", row_count=len(listing.rows))
 
 
 # ---------------------------------------------------------------------------
@@ -233,7 +246,7 @@ def metric_rows_csv(listing: RowList, key: str) -> StreamingHttpResponse:
 # ---------------------------------------------------------------------------
 
 
-def materials_csv(context: ReportingContext, **filters: Any) -> StreamingHttpResponse:
+def materials_csv(context: ReportingContext, **filters: Any) -> CsvExport:
     """Historical resource occurrences.
 
     One row per occurrence, carrying the SHA-256 so a reader can see for
@@ -265,7 +278,7 @@ def materials_csv(context: ReportingContext, **filters: Any) -> StreamingHttpRes
                 "jah" if page.reading_order_ambiguous else "ei",
             ]
 
-    return _stream(rows(), "ajalooline-materjal.csv")
+    return _stream(rows(), "ajalooline-materjal.csv", row_count=queryset.count())
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +286,7 @@ def materials_csv(context: ReportingContext, **filters: Any) -> StreamingHttpRes
 # ---------------------------------------------------------------------------
 
 
-def quality_csv(context: ReportingContext) -> StreamingHttpResponse:
+def quality_csv(context: ReportingContext) -> CsvExport:
     """The data-quality queues as they stand, coverage notes included.
 
     Coverage notes are exported alongside the actionable queues, and flagged as
@@ -292,7 +305,7 @@ def quality_csv(context: ReportingContext) -> StreamingHttpResponse:
                 queue.explanation,
             ]
 
-    return _stream(rows(), "andmekvaliteet.csv")
+    return _stream(rows(), "andmekvaliteet.csv", row_count=len(queues))
 
 
 def export_url(context: ReportingContext, slug: str, **extra: str) -> str:

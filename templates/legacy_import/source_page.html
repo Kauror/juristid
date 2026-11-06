@@ -16,7 +16,7 @@
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="page sourcepage">
   <nav class="crumbs" aria-label="Asukoht">
     <a href="{% url 'matters:matter_detail' pk=matter.pk %}">
       {{ matter.title|truncatechars:60 }}
@@ -264,7 +264,7 @@
                   <a href="{% url 'legacy_import:source_page' pk=row.teema.link.pk %}">{{ row.teema.matter.display_reference|default:"—" }}</a>
                 {% endif %}
               </td>
-              <td>{{ row.teema.matter.title|truncatechars:80 }}</td>
+              <td class="dossierreview__text">{{ row.teema.matter.title|truncatechars:80 }}</td>
               <td>{% if row.teema.matter.is_open %}Avatud{% else %}Suletud{% endif %}</td>
               <td>{{ row.relation }}</td>
             </tr>
@@ -287,7 +287,7 @@
                   <td class="casefile__name--withheld">Fail, mida selles kasutajavaates ei kuvata</td>
                   <td></td>
                 {% else %}
-                  <td>{{ file.filename }}</td>
+                  <td class="dossierreview__text">{{ file.filename }}</td>
                   <td>
                     {% if file.added_known %}
                       <time datetime="{{ file.added_at|date:'c' }}">{{ file.added_at|date:"j.n.Y" }}</time>

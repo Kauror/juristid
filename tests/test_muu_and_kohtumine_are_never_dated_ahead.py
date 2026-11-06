@@ -58,6 +58,17 @@ def _day(offset: int) -> dt.date:
     return _today() + dt.timedelta(days=offset)
 
 
+def _at(offset: int) -> dt.datetime:
+    """The start of the Tallinn day `offset` days from today, as an aware instant.
+
+    Not `timezone.now() + timedelta(days=offset)`: that is `offset` times 24
+    hours, which across an EET/EEST change lands on the neighbouring calendar
+    day for one hour of the evening, while every assertion here is in Tallinn
+    calendar days (audit 2026-11, G-01; tests/test_aud_w4_no_dst_bombs.py).
+    """
+    return start_of_local_day(_day(offset))
+
+
 def _et(day: dt.date) -> str:
     return f"{day.day:02d}.{day.month:02d}.{day.year:04d}"
 
@@ -256,7 +267,8 @@ def test_an_aware_instant_tomorrow_is_refused_with_the_sentence(which, specialis
     matter = factories.MatterFactory(owner=specialist)
 
     with refused(KINDS[which][6]):
-        KINDS[which][7](matter, specialist, timezone.now() + dt.timedelta(days=1))
+        # Tallinn's midnight tomorrow — the evening before in UTC — is refused all the same.
+        KINDS[which][7](matter, specialist, _at(1))
 
     assert not _entries(matter, which).exists()
 
@@ -321,9 +333,7 @@ def test_a_post_dated_today_is_saved(which, signed_in, specialist):
 def quiet_matter(specialist):
     """Last work 60 days ago — quiet; the fixture `tests/test_work_activity.py` uses."""
     matter = factories.MatterFactory(owner=specialist)
-    factories.EntryFactory(
-        matter=matter, author=specialist, occurred_at=timezone.now() + dt.timedelta(days=OLD)
-    )
+    factories.EntryFactory(matter=matter, author=specialist, occurred_at=_at(OLD))
     return matter
 
 

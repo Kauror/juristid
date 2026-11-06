@@ -3280,8 +3280,18 @@ fieldset.field > legend {
  * and an attachment folder.
  */
 
+/* E-03 (audit 2026-11): the one column is `minmax(0, 1fr)`, not the implicit
+ * `auto` track, and the text wraps a word longer than the line. Before, the
+ * longest unbreakable word on the page (an address pasted into OneNote, a file
+ * name typed as one word — 335 characters in production) set the track's
+ * width, and `section.card`'s `overflow: hidden` cut the rest of it off at
+ * every width: no scrollbar, no ellipsis, the text simply gone. The page is
+ * evidence read as it was archived, so it wraps and is never shortened;
+ * `anywhere` breaks only a word that cannot fit, prose still breaks at spaces
+ * (e2e/test_aud_w4_source_page_wrapping.py). */
 .casefile {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--spacing-2);
   margin-top: var(--spacing-3);
 }
@@ -3291,6 +3301,7 @@ fieldset.field > legend {
   font-size: var(--typography-size-row);
   line-height: 1.6;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .casefile__text--item {
@@ -3347,6 +3358,26 @@ fieldset.field > legend {
   flex-basis: 100%;
   color: var(--text-muted);
   font-size: var(--typography-size-meta);
+}
+
+/* -- E-03: the rest of `/ajalugu/<pk>/` wraps too (audit 2026-11) --------- *
+ *
+ * The page's other text holders carry the same tokens as its text: the links
+ * it had (`Lehel olnud lingid`, a flex row of the link's text and its address)
+ * and, on a page shared by several Teemad, the review tables' file names. Each
+ * was cut off by its `overflow: hidden` card exactly as the text was. Scoped to
+ * the source page (`.sourcepage`), so `.filelist` and `.data-table` elsewhere
+ * do not move. In the tables only the title and file-name cells may break
+ * mid-word: on every cell, the table's auto layout would squeeze «Avatud» and
+ * «Jätku seos» into broken words to make room. */
+.sourcepage .filelist__item {
+  flex-wrap: wrap;
+}
+
+.sourcepage .filelist__item > *,
+.dossierreview__text {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* -- reconciliation review ------------------------------------------------ */

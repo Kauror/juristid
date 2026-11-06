@@ -64,8 +64,16 @@ ENV PYTHONUNBUFFERED=1 \
 # `apt-get upgrade` first: the base is pinned by digest for a reproducible build,
 # and a pinned base ages. Security updates Debian publishes after the pin would
 # otherwise stay out of every image built from it; the image gate fails on a
-# fixable HIGH (CVE-2026-109518 in apt itself, 05.11.2026). A release image is
-# built and archived once, so the upgrade is taken once, at the moment it is scanned.
+# fixable HIGH (CVE-2026-109518 in apt itself, 05.11.2026).
+#
+# The price is that two builds of one commit can carry different Debian
+# packages, so the image CI scanned (`juristid:ci`) is not the image a release
+# ships: release-image.yml builds its own, later (G-02). That job therefore runs
+# CI's runtime check and CI's Trivy gate again on the image it archives, before
+# saving it, and its manifest records the id each one saw (`scanned_image_id`,
+# `runtime_checked_image_id`) beside the id read back out of the archive and the
+# SHA-256 of the package list. The host loads that archive and checks the loaded
+# id against the manifest; the image deployed is the image scanned, by id.
 RUN apt-get update \
     && apt-get upgrade --yes --no-install-recommends \
     && apt-get install --no-install-recommends --yes \

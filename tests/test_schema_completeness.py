@@ -169,6 +169,9 @@ EXPECTED_TRIGGERS: dict[str, str] = {
     "audit_securityauditevent_append_only": "audit_securityauditevent",
     "matters_entryrevision_append_only": "matters_entryrevision",
     "legacy_import_importrowledger_append_only": "legacy_import_importrowledger",
+    # A cohort retirement re-sizes what the nightly Lovable run checks (audit
+    # 2026-11 C-L-04): changed or removed later, it would hide drift.
+    "legacy_import_lovablesyncretirement_append_only": "legacy_import_lovablesyncretirement",
     # MCP access events (docs/adr/0185): the authorization server's audit trail.
     "mcp_access_mcpaccessevent_append_only": "mcp_access_mcpaccessevent",
     "mcp_writes_mcpwriteevent_append_only": "mcp_writes_mcpwriteevent",

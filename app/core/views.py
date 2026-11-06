@@ -161,6 +161,30 @@ LOVABLE_FILTERS = {
     "ootel": ("queue_outcome", "field", "reference", "text"),
     "vaadeldud": ("dates", "population", "kind", "mapping", "field", "reference", "text"),
 }
+#: The address parameter each of those filters reads (`_lovable_filters`).
+LOVABLE_FILTER_PARAMS = {
+    "dates": ("algus", "lopp"),
+    "population": ("ulatus",),
+    "outcome": ("tulemus",),
+    "queue_outcome": ("tulemus",),
+    "kind": ("liik",),
+    "mapping": ("seos",),
+    "field": ("vali",),
+    "reference": ("viide",),
+    "text": ("otsi",),
+    "attention": ("tahelepanu",),
+}
+
+
+def lovable_export_filters(view: str) -> frozenset[str]:
+    """The parameter names `Laadi Excel` honours on ``view``, for its audit row:
+    the view itself and the filters that view offers. The page number is not in
+    it, since the file is every page; anything else is counted on the row, never
+    named (`app.audit.access`, B-01)."""
+    return frozenset(
+        {"vaade"}.union(*(LOVABLE_FILTER_PARAMS[kind] for kind in LOVABLE_FILTERS.get(view, ())))
+    )
+
 
 #: Estonian slugs in the address → (the service's value, the label).
 LOVABLE_POPULATIONS = {
@@ -849,9 +873,13 @@ def release_notes_lovable_export(request: HttpRequest) -> HttpResponse:
     same answers: the rows are exactly what the read service gave this reader,
     over every page, so a Teema the page would not name is not in the file
     (only counted on its information sheet) and a withheld value stays empty.
-    Private and never stored (`xlsx_safety.workbook_response`)."""
+    Private and never stored (`xlsx_safety.workbook_response`). A GET writes
+    one ``EXPORT_GENERATED`` row — the view, the row count and the filter
+    names, never a topic or the search text; a HEAD writes none
+    (`app.audit.access`, B-01)."""
     from django.utils import timezone
 
+    from app.audit.access import record_export
     from app.core.xlsx_safety import workbook_response
     from app.legacy_import import lovable_export
 
@@ -882,18 +910,32 @@ def release_notes_lovable_export(request: HttpRequest) -> HttpResponse:
             info.append(f"Lisaks {hidden} muudetud teemat, mida sa ei näe: ainult arv.")
         _unlinked_info(info, sum(r.unlinked.total for r in readings))
         workbook = lovable_export.nights_workbook(readings, info=info)
+        selected = sum(len(reading.topics) for reading in readings)
     elif view == "ootel":
         items, first = _all_pages(lambda n: _lovable_queue(user, filters, n), info)
         if first.hidden:
             info.append(f"Lisaks {first.hidden} ootel välja teemadel, mida sa ei näe: ainult arv.")
         workbook = lovable_export.queue_workbook(items, info=info)
+        selected = len(items)
     else:
         items, first = _all_pages(lambda n: _lovable_observed(user, filters, n), info)
         if first.hidden:
             info.append(f"Lisaks {first.hidden} muutust teemadel, mida sa ei näe: ainult arv.")
         _unlinked_info(info, first.unlinked.total)
         workbook = lovable_export.observed_workbook(items, info=info)
-    return workbook_response(workbook, lovable_export.filename(view, timezone.localdate(moment)))
+        selected = len(items)
+    response = workbook_response(
+        workbook, lovable_export.filename(view, timezone.localdate(moment))
+    )
+    record_export(
+        request,
+        export=f"release_notes.lovable.{view}",
+        file_format="xlsx",
+        rows=selected,
+        params=request.GET,
+        honoured=lovable_export_filters(view),
+    )
+    return response
 
 
 @require_safe
