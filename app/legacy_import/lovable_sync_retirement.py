@@ -50,6 +50,7 @@ APPLY: a retirement is bookkeeping for the size check and nothing more.
 from __future__ import annotations
 
 import logging
+import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
@@ -100,16 +101,34 @@ class Member:
     evidenced: bool = False
 
 
-def _provenance_names(cohort: lovable_sync.Cohort, matter_id: Any, source_id: Any) -> bool:
-    """Whether the cohort's approved provenance names this Teema under this
-    Lovable id: exactly one canonical source reference among the cohort's, with
-    that id, as `enroll` required when it seeded the state. Read before the
-    purge removes the references and the provenance records."""
+#: Why a deleted state's membership could not be proven (logged, never shown).
+NOT_ONE_REFERENCE = "NOT_EXACTLY_ONE_CANONICAL_REFERENCE"
+NO_PROVENANCE_ID = "PROVENANCE_HAS_NO_LOVABLE_ID"
+PROVENANCE_ID_MISMATCH = "PROVENANCE_ID_MISMATCH"
+MEMBERSHIP_ID_MISMATCH = "MEMBERSHIP_ID_MISMATCH"
+
+
+def same_lovable_id(a: Any, b: Any) -> bool:
+    """Whether two Lovable ids are the same UUID, whatever their spelling (case,
+    braces, a `UUID` object or a string). Anything that is not a UUID is no match."""
+    try:
+        return uuid.UUID(str(a)) == uuid.UUID(str(b))
+    except (TypeError, ValueError, AttributeError):
+        return False
+
+
+def _provenance_problem(cohort: lovable_sync.Cohort, matter_id: Any, source_id: Any) -> str:
+    """Why the cohort's approved provenance does **not** name this Teema under this
+    Lovable id, or ``""`` when it does: exactly one canonical source reference
+    among the cohort's, with that id, as `enroll` required when it seeded the
+    state. Read before the purge removes the references and the provenance."""
     found = [r for r in lovable_sync.cohort_references(cohort) if r.matter_id == matter_id]
     if len(found) != 1:
-        return False
+        return f"{NOT_ONE_REFERENCE} ({len(found)})"
     named = ((found[0].source_row_raw or {}).get("lovable") or {}).get("id")
-    return bool(named) and str(named) == str(source_id)
+    if not named:
+        return NO_PROVENANCE_ID
+    return "" if same_lovable_id(named, source_id) else PROVENANCE_ID_MISMATCH
 
 
 def members_of(state_ids: Iterable[Any]) -> list[Member]:
@@ -135,21 +154,28 @@ def members_of(state_ids: Iterable[Any]) -> list[Member]:
                 cohort=cohort_key, matter_id=matter_id
             ).first()
             if known is not None:
-                evidenced = str(known.source_id) == str(source_id)
-            elif _provenance_names(cohort, matter_id, source_id):
-                lovable_sync.remember_membership(
-                    cohort=cohort_key,
-                    matter_id=matter_id,
-                    source_id=source_id,
-                    basis=MembershipBasis.DELETION,
+                problem = (
+                    "" if same_lovable_id(known.source_id, source_id) else MEMBERSHIP_ID_MISMATCH
                 )
-                evidenced = True
-            if not evidenced:
-                # Counts only: the night will report the cohort's size as drift.
+            else:
+                problem = _provenance_problem(cohort, matter_id, source_id)
+                if not problem:
+                    lovable_sync.remember_membership(
+                        cohort=cohort_key,
+                        matter_id=matter_id,
+                        source_id=source_id,
+                        basis=MembershipBasis.DELETION,
+                    )
+            evidenced = not problem
+            if problem:
+                # Identifiers only, never a title: the night will report the
+                # cohort's size as drift, and this says which Teema and why.
                 logger.warning(
-                    "lovable_sync_retirement: a deleted Teema's state in %s has no proven "
-                    "membership; no retirement is recorded",
+                    "lovable_sync_retirement: no proven membership for deleted matter %s "
+                    "in cohort %s (%s); no retirement is recorded",
+                    matter_id,
                     cohort_key,
+                    problem,
                 )
         members.append(Member(cohort_key, source_id, reference, evidenced))
     return members

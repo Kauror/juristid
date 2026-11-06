@@ -769,14 +769,29 @@ def import_held_fields(raw: dict[str, Any]) -> list[str]:
 def ensure_states() -> list[LovableSyncState]:
     """Seed any cohort Teema that has no state yet; the population afterwards.
 
-    An existing state — the pilot's 100 above all — is never re-seeded or changed."""
+    An existing state — the pilot's 100 above all — is never re-seeded or changed.
+    A permanently deleted Teema is never seeded (REL-01): its references may still
+    be listed if the deletion committed after they were read, and a state on a
+    tombstone is not a member (migration 0024 refuses its membership). Each Teema
+    is taken under the same row lock a deletion takes, so one that is being
+    deleted is seen as deleted once that deletion commits."""
+    from app.matters.models import Matter
+
     existing = set(LovableSyncState.objects.values_list("matter_id", flat=True))
     with transaction.atomic():
         for cohort in cohorts():
             for reference in cohort_references(cohort):
-                if reference.matter_id not in existing:
-                    seed_state(reference, cohort)
-                    existing.add(reference.matter_id)
+                if reference.matter_id in existing:
+                    continue
+                live = list(
+                    Matter.all_objects.select_for_update(no_key=True)
+                    .filter(pk=reference.matter_id, deleted_at__isnull=True)
+                    .values_list("pk", flat=True)
+                )
+                if not live:
+                    continue
+                seed_state(reference, cohort)
+                existing.add(reference.matter_id)
     return population()
 
 
