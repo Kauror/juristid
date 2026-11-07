@@ -184,16 +184,17 @@ def test_production_postgres_is_the_digest_production_runs() -> None:
     """The one pin whose value is load-bearing for the next deployment.
 
     A different digest means a different PostgreSQL build and, at the next `up`,
-    a pull and a recreated database. This is the index production was running
-    on 2026-10-22 (18.6); moving it is a decision, so it is spelled out here.
+    a pull and a recreated database. This is the 2026-10-28 rebuild of 18.6
+    that the `18` tag resolved to on 2026-11-04 (production ran the 2026-08-13
+    build until then); moving it is a decision, so it is spelled out here.
     """
     compose = yaml.safe_load((ROOT / "deploy/unraid-main/compose.yml").read_text("utf-8"))
     assert compose["services"]["db"]["image"] == (
-        "postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941"
+        "postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81"
     )
     assert compose["services"]["tunnel"]["image"] == (
-        "cloudflare/cloudflared:2026.8.2"
-        "@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38"
+        "cloudflare/cloudflared:2026.10.7"
+        "@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba"
     )
 
 
