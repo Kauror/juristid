@@ -500,7 +500,7 @@ def test_mark_all_from_the_list_page_redirects_with_its_count(
     assert inbox.inbox_count(specialist) == 0
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 @pytest.mark.parametrize("generator", [True, False], ids=["generator", "any-transaction"])
 def test_the_boundary_stops_at_a_transaction_that_has_not_committed(
     specialist, other_specialist, generator

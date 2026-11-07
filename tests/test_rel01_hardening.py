@@ -172,7 +172,7 @@ def back_at_the_leaf():
         _migrate(LEAF)
 
 
-@pytest.mark.django_db(transaction=True)
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
 def test_0024_refuses_to_reverse_over_a_membership_and_reverses_when_empty(back_at_the_leaf):
     matter = factories.MatterFactory()
     state = LovableSyncState.objects.create(
