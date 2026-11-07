@@ -84,10 +84,21 @@ def _count(page) -> int:
     return int(badge.inner_text())
 
 
+def _settled(page) -> None:
+    """Wait until the opening's own fetch has replaced the list.
+
+    Every opening refetches the list while the previous one stays on screen
+    (`aria-busy` on the content until it is swapped); a click on a row of the
+    old list can land on an element the new list then replaces.
+    """
+    expect(page.locator("[data-notifpanel-content]")).not_to_have_attribute("aria-busy", "true")
+    expect(page.locator(f"{PANEL} [data-notifpanel-body]")).to_be_attached()
+
+
 def _open(page) -> None:
     page.locator(TRIGGER).click()
     expect(page.locator(PANEL)).to_be_visible()
-    expect(page.locator(f"{PANEL} [data-notifpanel-body]")).to_be_attached()
+    _settled(page)
 
 
 def _item(page, title: str):
@@ -135,6 +146,7 @@ def test_the_panel_works_from_the_keyboard_and_closes_on_an_outside_click(page, 
 
     page.keyboard.press("Enter")
     expect(page.locator(PANEL)).to_be_visible()
+    _settled(page)
     expect(page.locator(f"{PANEL} [data-notifpanel-body]")).to_be_attached()
     expect(page.locator(f"{PANEL} .notifpanel__title")).to_be_focused()
     page.keyboard.press("Tab")
@@ -148,6 +160,7 @@ def test_the_panel_works_from_the_keyboard_and_closes_on_an_outside_click(page, 
 
     page.keyboard.press("Space")
     expect(page.locator(PANEL)).to_be_visible()
+    _settled(page)
     expect(_item(page, f"{prefix} 00")).to_be_visible()
 
     # An Escape inside an item's `⋯` closes only the menu.
@@ -157,6 +170,7 @@ def test_the_panel_works_from_the_keyboard_and_closes_on_an_outside_click(page, 
     page.keyboard.press("Escape")
     expect(_item(page, f"{prefix} 00").get_by_role("button", name="Märgi loetuks")).to_be_hidden()
     expect(page.locator(PANEL)).to_be_visible()
+    _settled(page)
 
     # A click outside closes it, and focus left on the page goes back to the bell.
     page.locator("h1").first.click()
@@ -166,6 +180,7 @@ def test_the_panel_works_from_the_keyboard_and_closes_on_an_outside_click(page, 
     # Another menu announcing itself closes the panel too (the header contract).
     trigger.click()
     expect(page.locator(PANEL)).to_be_visible()
+    _settled(page)
     page.evaluate(
         "() => document.dispatchEvent(new CustomEvent('juristid:menu-open',"
         " {detail: {id: 'settings-menu'}}))"

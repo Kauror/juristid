@@ -68,6 +68,10 @@
       return false;
     }
     bell.notifFocusOnLoad = true;
+    /* Every opening fetches the list afresh, and the previous list stays on
+       screen until it arrives. Say so, so nothing (a person or a test) acts
+       on rows that are about to be replaced. */
+    p.content.setAttribute("aria-busy", "true");
     window.htmx.ajax("GET", url, {
       source: p.content,
       target: p.content,
@@ -141,6 +145,13 @@
       /* The panel's own content arrived — on an opening, or as the answer to
          «Märgi kõik loetuks»: focus its heading. An item's answer and a
          further page are placed by the handlers further down. */
+      ["htmx:afterSettle", "htmx:responseError", "htmx:sendError"].forEach(function (name) {
+        p.content.addEventListener(name, function (event) {
+          if (event.target === p.content) {
+            p.content.removeAttribute("aria-busy");
+          }
+        });
+      });
       p.content.addEventListener("htmx:afterSettle", function (event) {
         if (!p.content.contains(event.target)) {
           return;
