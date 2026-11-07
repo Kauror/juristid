@@ -4,7 +4,7 @@
 running server shows: the bell fetches its number after the page has drawn,
 the one «Teavitused» block on Minu asjad carries a notice and can be worked from
 the keyboard, and «Märgi loetuks» is a real form that takes a «Teadmiseks»
-notice off the list («Peida» was retired on 2026-11-02).
+notice off the list and into its history («Peida» was retired on 2026-11-02).
 
 The deadline is planted through the ORM on a Teema made through the UI, and the
 generator is the real management command the `notifications` worker runs.
@@ -82,12 +82,14 @@ def test_a_notice_is_counted_and_read_off_the_list(page, base_url):
     expect(row.get_by_role("button", name=re.compile("^Peida"))).to_have_count(0)
     row.get_by_role("button", name=f"Märgi loetuks: {title}").click()
     page.wait_for_url(f"{base_url}/teavitused/")
-    expect(page.locator(".notifrow", has_text=title)).to_have_count(0)
+    # Off the inbox and the bell; kept, muted, under «Varasemad» (UI-01).
+    expect(page.locator("[data-inbox-item]", has_text=title)).to_have_count(0)
+    expect(page.locator("#varasemad [data-inbox-history]", has_text=title)).to_have_count(1)
 
     # A second run of the generator does not bring it back.
     _manage("generate_commencement_reminders")
     page.goto(f"{base_url}/teavitused/")
-    expect(page.locator(".notifrow", has_text=title)).to_have_count(0)
+    expect(page.locator("[data-inbox-item]", has_text=title)).to_have_count(0)
 
 
 def test_the_minu_asjad_block_works_from_the_keyboard(page, base_url):
@@ -101,9 +103,12 @@ def test_the_minu_asjad_block_works_from_the_keyboard(page, base_url):
     expect(button).to_be_focused()
     page.keyboard.press("Enter")
 
-    # Back on Minu asjad, at the block, and the notice is gone from it.
-    page.wait_for_url(re.compile(r"/minu-asjad/#teavitused$"))
+    # Answered in place (UI-01): still on Minu asjad, no reload, the notice
+    # gone from the block, and focus on the block rather than lost.
     expect(page.locator(f"{BLOCK} [data-inbox-item]", has_text=title)).to_have_count(0)
+    assert page.url == f"{base_url}/minu-asjad/"
+    focus_in_rail = page.evaluate("() => document.activeElement !== document.body")
+    assert focus_in_rail
 
 
 def test_the_settings_page_saves_and_restores(page, base_url):

@@ -198,6 +198,13 @@ class SeisFigure:
     #: (app/matters/seis_help.py). Every Osakond figure sets one; Saabunud's
     #: figures, which share this dataclass, leave it empty.
     help: FigureHelp | None = None
+    #: Drawn only while it counts something, even where the strip shows its
+    #: zeros (`show_zeros`). Owner's brief of 6 November 2026, UI-05: on
+    #: Osakond exactly three figures — «tähtajaga teemat sel nädalal»,
+    #: «vastutajata», «uut läbi vaatamata» — leave the strip whole at 0, with
+    #: their `i` and their place in the row, and come back on their own when
+    #: positive. The count, the caption and the link are untouched.
+    hidden_at_zero: bool = False
 
 
 #: How far back "recently arrived, nobody has looked" reaches.
@@ -357,6 +364,7 @@ def seis_figures(
             counted(week_count, "tähtajaga teema sel nädalal", "tähtajaga teemat sel nädalal"),
             register_url(**this_week),
             help=DEPT_WEEK_HELP,
+            hidden_at_zero=True,
         ),
         SeisFigure(
             "unassigned",
@@ -365,6 +373,7 @@ def seis_figures(
             register_url(**unassigned),
             "warning",
             help=DEPT_UNASSIGNED_HELP,
+            hidden_at_zero=True,
         ),
         SeisFigure(
             "unreviewed",
@@ -373,6 +382,7 @@ def seis_figures(
             register_url(**unreviewed),
             "warning",
             help=dept_unreviewed_help(UNREVIEWED_WINDOW_DAYS),
+            hidden_at_zero=True,
         ),
         # «Uut sel nädalal» stood here. It is arrival, not risk — a file that
         # came in on Tuesday is on the strip whether or not anything is wrong

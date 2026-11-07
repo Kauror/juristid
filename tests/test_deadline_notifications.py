@@ -713,6 +713,15 @@ def _count_items(html: str) -> int:
     return html.count("data-inbox-item")
 
 
+def _inbox_sections(html: str) -> str:
+    """`/teavitused/` above its «Varasemad» history (UI-01)."""
+    return html.split('id="varasemad"')[0]
+
+
+def _history_section(html: str) -> str:
+    return html.split('id="varasemad"', 1)[1] if 'id="varasemad"' in html else ""
+
+
 def test_the_bell_the_block_and_the_list_count_the_same_items(
     client, specialist, other_specialist, now_is_today
 ):
@@ -786,10 +795,13 @@ def test_reading_an_info_row_takes_it_off_the_list_and_completes_no_work(
     )
     assert response["Location"] == reverse("matters:my_work") + "#teavitused"
     row.refresh_from_db()
-    # History survives: the row is read, not deleted, hidden or retired.
+    # History survives: the row is read, not deleted, hidden or retired. It
+    # leaves the inbox sections and is listed, muted, under «Varasemad» (UI-01).
     assert row.read_at is not None
     assert (row.dismissed_at, row.retired_at) == (None, None)
-    assert "Loetav teema" not in client.get(reverse("notifications:list")).content.decode()
+    listing = client.get(reverse("notifications:list")).content.decode()
+    assert "Loetav teema" not in _inbox_sections(listing)
+    assert "Loetav teema" in _history_section(listing)
     assert inbox.inbox_count(specialist) == 0
     bell = client.get(reverse("notifications:bell")).content.decode()
     assert "notifbell__count" not in bell
@@ -803,8 +815,17 @@ def test_reading_an_info_row_takes_it_off_the_list_and_completes_no_work(
     assert row.read_at == first
 
 
-def test_reading_an_action_row_marks_it_read_and_keeps_it_listed(client, specialist, now_is_today):
-    _opinion(specialist, TODAY, title="Tänane tähtaeg")
+def test_reading_an_action_row_takes_it_off_the_inbox_and_leaves_the_work(
+    client, specialist, now_is_today
+):
+    """UI-01 (owner's brief of 2026-11-06): reading is not completing.
+
+    A read «Vajab tegevust» notice leaves the bell, the block and the inbox
+    sections like any other read item; its history stays under «Varasemad»
+    and the deadline itself is untouched. (Until UI-01 a read ACTION row
+    stayed listed and counted until its work was done.)
+    """
+    matter = _opinion(specialist, TODAY, title="Tänane tähtaeg")
     deadlines.reconcile_deadline_notifications()
     (row,) = _rows()
     assert row.kind == NotificationKind.ACTION
@@ -813,10 +834,13 @@ def test_reading_an_action_row_marks_it_read_and_keeps_it_listed(client, special
     client.post(reverse("notifications:read", kwargs={"notification_id": row.pk}))
 
     row.refresh_from_db()
-    assert row.read_at is not None
+    assert row.read_at is not None and row.retired_at is None
     listing = client.get(reverse("notifications:list")).content.decode()
-    assert "Tänane tähtaeg" in listing
-    assert inbox.inbox_count(specialist) == 1
+    assert "Tänane tähtaeg" not in _inbox_sections(listing)
+    assert "Tänane tähtaeg" in _history_section(listing)
+    assert inbox.inbox_count(specialist) == 0
+    matter.refresh_from_db()
+    assert matter.response_deadline == TODAY
 
 
 def test_peida_is_retired_and_a_stale_post_writes_nothing(client, specialist, now_is_today):
@@ -844,7 +868,10 @@ def test_a_row_hidden_before_peida_was_retired_stays_out(client, specialist, now
     deadlines.dismiss(notification=row)
     client.force_login(specialist)
 
-    assert "Varem peidetud" not in client.get(reverse("notifications:list")).content.decode()
+    listing = client.get(reverse("notifications:list")).content.decode()
+    assert "Varem peidetud" not in _inbox_sections(listing)
+    # Hidden is handled: it is history now (UI-01), never back in the inbox.
+    assert "Varem peidetud" in _history_section(listing)
     assert inbox.inbox_count(specialist) == 0
 
 

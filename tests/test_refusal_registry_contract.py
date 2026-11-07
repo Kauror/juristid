@@ -267,6 +267,15 @@ def _opened(panel: Tag, page: BeautifulSoup) -> bool:
     if panel.name == "details":
         return panel.has_attr("open")
     panel_id = panel.get("id")
+    # A panel of the current step's toolbar (UI-10): its button says.
+    toggle = (
+        page.find("button", attrs={"aria-controls": panel_id, "data-curact-toggle": True})
+        if panel_id
+        else None
+    )
+    if toggle is not None:
+        shut = "curact__toolpanel--shut" in (panel.get("class") or [])
+        return toggle.get("aria-expanded") == "true" and not shut
     control = page.find("input", attrs={"aria-controls": panel_id}) if panel_id else None
     return control is not None and control.has_attr("checked")
 

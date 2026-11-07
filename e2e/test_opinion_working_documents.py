@@ -68,7 +68,7 @@ def _et(day: date) -> str:
 
 def _set_step(page) -> None:
     """`+ Lisa tegevus` — the open step the opinion will finish."""
-    cta = page.locator("#praegune-tegevus #lisa-jargmine")
+    cta = page.locator("#lisa-teemale #lisa-jargmine")
     open_add_panel(page, "lisa-jargmine")
     cta.locator("[name='text']").fill(STEP)
     page.locator("#id_target_date").fill(_et(_day(2)))
@@ -190,7 +190,7 @@ def test_a_signed_letter_and_its_docx_in_one_opinion(page, base_url, screenshots
     expect(zone.locator(".curact__text")).to_have_text(
         "Kontrolli, kas adressaat on Koja arvamusele vastanud"
     )
-    expect(zone.locator("#lisa-planeeritud > summary")).to_have_text(CTA)
+    expect(page.locator('#lisa-teemale label[for="lisa-planeeritud-valik"]')).to_have_text(CTA)
 
     row = _opinion_rows(page).first
     open_kaik_row(row)

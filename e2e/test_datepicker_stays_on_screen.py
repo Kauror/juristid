@@ -90,7 +90,7 @@ def test_praegune_tegevus_calendars_stay_on_a_phone(page, matter_with_step):
     )
 
     page.goto(matter_with_step)
-    page.locator("#lisa-jargmine > summary").click()
+    page.locator('[data-curact-toggle][aria-controls="lisa-jargmine"]').click()
     assert_calendar_on_screen(
         page, page.locator("#lisa-jargmine .datepicker__trigger").first, "Muuda · Millal?"
     )

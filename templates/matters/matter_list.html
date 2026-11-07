@@ -146,10 +146,19 @@ localStorage (Stage-2E.1 brief 12).
         a deliberate multi-field narrowing — the live behaviour belongs to the
         text box above, where a keystroke is cheap.
 
-        `q` rides along hidden so applying a filter keeps the search rather
-        than resetting to the whole register.
+        Four groups, in the order a lawyer reaches for them (owner's brief of
+        2026-11-06, UI-07 and UI-08): the everyday narrowings, then every date
+        constraint together, then the institutions, then the secondary record
+        metadata. Grouping moved controls; it removed no dimension and changed
+        no parameter, so every link, bookmark and export still means what it
+        meant (tests/test_ui07_url_semantics.py). The two lower groups are
+        disclosures; what they hold is still listed as removable chips under
+        their heading while they are shut.
+
+        The panel spans the results' width and lays each group out in as many
+        columns as fit (static/css/register-search.css). No fixed widths.
       {% endcomment %}
-      <form class="formgrid" method="get">
+      <form class="filterform" method="get">
         <input type="hidden" name="q" value="{{ query }}">
         <input type="hidden" name="olek" value="{{ filters.olek }}">
         {% comment %}
@@ -168,321 +177,270 @@ localStorage (Stage-2E.1 brief 12).
         {% if commencement_view %}
           <input type="hidden" name="vaade" value="{{ commencement_view }}">
         {% endif %}
-
-        <label class="field">
-          <span class="field__label">Ulatus</span>
-          <select class="field__input" name="ulatus">
-            <option value="koik" {% if filters.ulatus == "koik" %}selected{% endif %}>Kõik nähtavad</option>
-            <option value="minu" {% if filters.ulatus == "minu" %}selected{% endif %}>Minu omad</option>
-          </select>
-        </label>
-
         {% comment %}
-          A free-text box, so a value it cannot read has to say so here rather
-          than downstream. It used to empty the register silently: a range pasted
-          out of a word processor arrives with an en dash, parsed as nothing, and
-          the page answered «Selle filtriga teemasid ei leitud» — a filter that
-          never ran, presented as an answer about the work (QA-07). The dashes
-          are normalised now, and what is genuinely unreadable gets a sentence
-          under its own box in the vocabulary every other refused field uses.
+          Dimensions a figure can set and this panel has no control for — a
+          tag, a source page, a closing year, a creation window, the work
+          companions, a retired `?olek=arhiiv` link. They used to vanish the
+          moment somebody pressed «Filtreeri», which widened the list behind
+          a number without saying so. Now they ride along, and are said, with
+          their own `×` (UI-07, «applying one filter must not discard others»).
         {% endcomment %}
-        <label class="field">
-          <span class="field__label">Aasta</span>
-          <input class="field__input" type="text" name="aasta" value="{{ filters.aasta }}"
-                 inputmode="numeric" placeholder="2024 või 2018-2024">
-          {% if filters.aasta_viga %}
-            <span class="field__error">{{ filters.aasta_viga }}</span>
-          {% else %}
-            <span class="field__help">Aruandlusaasta. Vahemik sidekriipsuga.</span>
-          {% endif %}
-        </label>
-
-        {% include "matters/partials/register_choice_group.html" with name="vastutaja" label="Vastutaja" options=owner_choices chosen=filters.vastutaja missing=True %}
-
-        {% include "matters/partials/register_choice_group.html" with name="hetkeseis" label="Hetkeseis" options=stage_choices chosen=filters.hetkeseis missing=True %}
-
-        {% include "matters/partials/register_choice_group.html" with name="menetlusliik" label="Menetlusliik" options=tracks chosen=filters.menetlusliik missing=True %}
-
-        {% include "matters/partials/register_choice_group.html" with name="valdkond" label="Valdkond" options=area_choices chosen=filters.valdkond missing=True %}
-        {% include "matters/partials/register_choice_group.html" with name="oigusakt" label="Õigusakt" options=instrument_choices chosen=filters.oigusakt missing=True %}
-
-        {% include "matters/partials/register_choice_group.html" with name="liik" label="Kirje liik" options=record_modes chosen=filters.liik %}
-
-        <label class="field">
-          <span class="field__label">Päritolu</span>
-          <select class="field__input" name="paritolu">
-            <option value="">Kõik</option>
-            {% for value, label in origins %}
-              <option value="{{ value }}" {% if filters.paritolu == value %}selected{% endif %}>{{ label }}</option>
+        {% for name, value in panel_carried %}
+          <input type="hidden" name="{{ name }}" value="{{ value }}">
+        {% endfor %}
+        {% if panel_carried_chips %}
+          <div class="filtergroup__chips filtergroup__chips--carried">
+            <span class="filtergroup__note">Lingiga lisatud:</span>
+            {% for chip in panel_carried_chips %}
+              {% include "matters/partials/register_chip.html" %}
             {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span class="field__label">Järgmine tegevus</span>
-          <select class="field__input" name="tegevus">
-            <option value="">Kõik</option>
-            {% for value, label in next_action_options %}
-              <option value="{{ value }}" {% if filters.tegevus == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-
-        {% comment %}
-          The drafting step, as the register recorded it. A control of its own
-          rather than a value on "Järgmine tegevus": a Matter can carry a next
-          action and an unsent opinion at the same time, and they answer
-          different questions (app/matters/register_filters.py, ADR 0021).
-
-          It exists here because the Osakond card opens it. A dimension a KPI
-          can set and the panel cannot is a filter somebody can arrive at and
-          never reproduce.
-        {% endcomment %}
-        {% include "matters/partials/register_choice_group.html" with name="arvamus" label="Arvamus" options=opinion_options chosen=filters.arvamus %}
-
-        {% comment %}
-          When an opinion or response actually went out: a sent Submission
-          (including one later withdrawn or superseded), never a draft and never
-          an Excel VÄLJA note (register_filters.apply_child_windows).
-        {% endcomment %}
-        <fieldset class="field daterange">
-          <legend class="field__label">Arvamus saadetud</legend>
-          <label class="daterange__end">
-            <span class="field__help">Alates</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saadetud_alates" value="{{ filters.saadetud_alates }}">
-          </label>
-          <label class="daterange__end">
-            <span class="field__help">Kuni</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saadetud_kuni" value="{{ filters.saadetud_kuni }}">
-          </label>
-        </fieldset>
-
-        {% comment %}
-          The dated-work populations Osakond counts, as a control. Beside
-          "Järgmine tegevus" rather than inside it: this asks about *work*,
-          including an `Oluline tähtaeg` that has passed on a Matter carrying
-          no open action at all (app/matters/work_items.py).
-        {% endcomment %}
-        <label class="field">
-          <span class="field__label">Töö seis</span>
-          <select class="field__input" name="too">
-            <option value="">Kõik</option>
-            {% for value, label in work_state_options %}
-              <option value="{{ value }}" {% if filters.too == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-
-        {% comment %}
-          Töövõit and Jõustumine, as dimensions of this register.
-
-          They were a separate destination — three generated reading pages
-          behind a top-level «Tähtajad» item — and that made them parallel
-          lists of Matters rather than facts about the Matters in the one
-          register. A lawyer looking for the file could arrive at either and
-          had no way to say «avatud teemad, millel on töövõit», because the
-          two lists could not be intersected. Here they compose with every
-          other dimension, they are in the URL like every other dimension, and
-          there is one place to look for a Teema (docs/adr/0071).
-
-          Not a tab, not a second search page. A property of a Matter narrows
-          the Matter register.
-        {% endcomment %}
-        <label class="field">
-          <span class="field__label">Töövõit</span>
-          <select class="field__input" name="toovoit">
-            <option value="">Kõik</option>
-            {% for value, label in victory_options %}
-              <option value="{{ value }}" {% if filters.toovoit == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-            {% comment %}
-              The years the visible population actually holds a victory in, so
-              choosing one shows something. A year that only a restricted
-              Matter uses never appears here (Stage-2G brief 31).
-            {% endcomment %}
-            {% for year in victory_years %}
-              <option value="{{ year }}" {% if filters.toovoit == year|stringformat:"s" %}selected{% endif %}>Töövõit {{ year }}</option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <label class="field">
-          <span class="field__label">Jõustumine</span>
-          <select class="field__input" name="joustumine">
-            <option value="">Kõik</option>
-            {% for value, label in commencement_options %}
-              <option value="{{ value }}" {% if filters.joustumine == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-
-        {% comment %}
-          The commencement window, both ends inclusive, over the structured
-          `MatterEffectiveDate` records. A period is inside the window only
-          when the *whole* period is: III kvartal 2026 does not answer
-          01.07–31.08, because it may commence in September and saying yes
-          would state a precision nobody recorded
-          (app/matters/register_filters.py).
-        {% endcomment %}
-        <fieldset class="field daterange">
-          <legend class="field__label">Jõustub</legend>
-          <label class="daterange__end">
-            <span class="field__help">Alates</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="joustub_alates" value="{{ filters.joustub_alates }}">
-          </label>
-          <label class="daterange__end">
-            <span class="field__help">Kuni</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="joustub_kuni" value="{{ filters.joustub_kuni }}">
-          </label>
-        </fieldset>
-
-        <label class="field">
-          <span class="field__label">Materjalid</span>
-          <select class="field__input" name="materjalid">
-            <option value="">Kõik</option>
-            {% for value, label in material_options %}
-              <option value="{{ value }}" {% if filters.materjalid == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-
-        {% comment %}
-          Kõik by default, and deliberately so while the department is still
-          building the system: a developer must be able to find the test
-          matter they created ten seconds ago. Reporting is where the real
-          population becomes the default (Agent-C brief 14, 24, 25).
-        {% endcomment %}
-        <label class="field">
-          <span class="field__label">Andmed</span>
-          <select class="field__input" name="andmed">
-            {% for value, label in data_class_options %}
-              <option value="{{ value }}" {% if filters.andmed == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-
-        {% comment %}
-          Both ends inclusive — 01.01–31.01 means January, including the 31st
-          (app/matters/selectors.py, `date_range_q`).
-        {% endcomment %}
-        <fieldset class="field daterange">
-          <legend class="field__label">Saabumise kuupäev</legend>
-          <label class="daterange__end">
-            <span class="field__help">Alates</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saabus_alates" value="{{ filters.saabus_alates }}">
-          </label>
-          <label class="daterange__end">
-            <span class="field__help">Kuni</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="saabus_kuni" value="{{ filters.saabus_kuni }}">
-          </label>
-        </fieldset>
-
-        <fieldset class="field daterange">
-          <legend class="field__label">Arvamuse tähtaeg</legend>
-          <label class="daterange__end">
-            <span class="field__help">Alates</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="tahtaeg_alates" value="{{ filters.tahtaeg_alates }}">
-          </label>
-          <label class="daterange__end">
-            <span class="field__help">Kuni</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="tahtaeg_kuni" value="{{ filters.tahtaeg_kuni }}">
-          </label>
-        </fieldset>
-
-        {% comment %}
-          The open next step's own date. A window of days holds only a step
-          dated to a day: «oktoober 2026» is in no bounded window (ADR 0122 §2).
-        {% endcomment %}
-        <fieldset class="field daterange">
-          <legend class="field__label">Järgmise sammu kuupäev</legend>
-          <label class="daterange__end">
-            <span class="field__help">Alates</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="samm_alates" value="{{ filters.samm_alates }}">
-          </label>
-          <label class="daterange__end">
-            <span class="field__help">Kuni</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="samm_kuni" value="{{ filters.samm_kuni }}">
-          </label>
-        </fieldset>
-
-        {% comment %}
-          Two different «last» dates, deliberately side by side: the last piece
-          of work (Viimane tegevus, app/matters/activity.py) and the last time
-          the record was saved for any reason (Muudetud).
-        {% endcomment %}
-        <fieldset class="field daterange">
-          <legend class="field__label">Viimane tegevus</legend>
-          <label class="daterange__end">
-            <span class="field__help">Alates</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="viimane_alates" value="{{ filters.viimane_alates }}">
-          </label>
-          <label class="daterange__end">
-            <span class="field__help">Kuni</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="viimane_kuni" value="{{ filters.viimane_kuni }}">
-          </label>
-        </fieldset>
-
-        <fieldset class="field daterange">
-          <legend class="field__label">Kirjet muudetud</legend>
-          <label class="daterange__end">
-            <span class="field__help">Alates</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="muudetud_alates" value="{{ filters.muudetud_alates }}">
-          </label>
-          <label class="daterange__end">
-            <span class="field__help">Kuni</span>
-            <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="muudetud_kuni" value="{{ filters.muudetud_kuni }}">
-          </label>
-        </fieldset>
-        {% if filters.vahemik_viga %}
-          <p class="field__error filterpanel__error" role="alert">{{ filters.vahemik_viga }}</p>
+          </div>
         {% endif %}
+
+        <section class="filtergroup" aria-labelledby="otsing-pohi">
+          <h2 class="filtergroup__title" id="otsing-pohi">Põhifiltrid</h2>
+          <div class="formgrid filtergroup__grid">
+            {% include "matters/partials/register_choice_group.html" with name="vastutaja" label="Vastutaja" options=owner_choices chosen=filters.vastutaja missing=True %}
+            {% include "matters/partials/register_choice_group.html" with name="hetkeseis" label="Hetkeseis" options=stage_choices chosen=filters.hetkeseis missing=True %}
+            {% include "matters/partials/register_choice_group.html" with name="menetlusliik" label="Menetlusliik" options=tracks chosen=filters.menetlusliik missing=True %}
+            {% include "matters/partials/register_choice_group.html" with name="valdkond" label="Valdkond" options=area_choices chosen=filters.valdkond missing=True %}
+            <div class="filtergroup__stack">
+              <label class="field">
+                <span class="field__label">Järgmine tegevus</span>
+                <select class="field__input" name="tegevus">
+                  <option value="">Kõik</option>
+                  {% for value, label in next_action_options %}
+                    <option value="{{ value }}" {% if filters.tegevus == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+              {% comment %}
+                The dated-work populations Osakond counts. Beside «Järgmine
+                tegevus» rather than inside it: this asks about *work*,
+                including an `Oluline tähtaeg` that has passed on a Matter
+                carrying no open action at all (app/matters/work_items.py).
+              {% endcomment %}
+              <label class="field">
+                <span class="field__label">Töö seis</span>
+                <select class="field__input" name="too">
+                  <option value="">Kõik</option>
+                  {% for value, label in work_state_options %}
+                    <option value="{{ value }}" {% if filters.too == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+            <div class="filtergroup__stack">
+              {% comment %}
+                The drafting step: its own control rather than a value of
+                «Järgmine tegevus», because a Matter can carry a next action and
+                an unsent opinion at once (ADR 0021). The Osakond card opens it.
+              {% endcomment %}
+              {% include "matters/partials/register_choice_group.html" with name="arvamus" label="Arvamus" options=opinion_options chosen=filters.arvamus inline=True %}
+              {% comment %}
+                «Minu omad» is `?ulatus=minu` — owner *or* collaborator — and a
+                box rather than a two-option select: unticked sends nothing,
+                which is the register's own default `koik`.
+              {% endcomment %}
+              <label class="checkline filtergroup__check">
+                <input type="checkbox" name="ulatus" value="minu" {% if filters.ulatus == "minu" %}checked{% endif %}>
+                <span>Ainult minu omad <span class="muted">(vastutaja või kaasatud)</span></span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        {% comment %}
+          Every date constraint in one block, each its own fact and each
+          optional; any number of them apply at once, AND-ed. Both ends of a
+          window are inclusive — 01.01–31.01 means January, including the
+          31st (`selectors.date_range_q`). A window of days holds only a date
+          recorded to the day: «oktoober 2026» is in no bounded window
+          (ADR 0122 §2), and a commencement quarter is inside a window only
+          when the whole quarter is (`register_filters.commencement_window_q`).
+          «Viimane tegevus» is the last piece of work; «Kirjet muudetud» the
+          last save for any reason (app/matters/activity.py).
+        {% endcomment %}
+        <fieldset class="filtergroup">
+          <legend class="filtergroup__title">Kuupäevad</legend>
+          <p class="filtergroup__note">Iga täidetud vahemik on eraldi tingimus ja kehtib koos teistega. Otsad kaasa arvatud.</p>
+          <div class="filtergroup__dates">
+            {% comment %}
+              The reporting year, a free-text box that says so when it cannot
+              read what was typed (QA-07): en dashes are normalised, and what
+              is genuinely unreadable gets a sentence under its own box.
+            {% endcomment %}
+            <label class="field">
+              <span class="field__label">Aruandlusaasta</span>
+              <input class="field__input" type="text" name="aasta" value="{{ filters.aasta }}"
+                     inputmode="numeric" placeholder="2024 või 2018-2024">
+              {% if filters.aasta_viga %}
+                <span class="field__error">{{ filters.aasta_viga }}</span>
+              {% endif %}
+            </label>
+            {% for range in date_ranges %}
+              <fieldset class="field daterange">
+                <legend class="field__label">{{ range.label }}</legend>
+                <label class="daterange__end">
+                  <span class="visually-hidden">{{ range.label }} </span><span class="field__help">Alates</span>
+                  <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="{{ range.start }}" value="{{ range.start_value }}">
+                </label>
+                <label class="daterange__end">
+                  <span class="visually-hidden">{{ range.label }} </span><span class="field__help">Kuni</span>
+                  <input class="field__input dateinput" type="text" inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa" data-datepicker="true" name="{{ range.end }}" value="{{ range.end_value }}">
+                </label>
+              </fieldset>
+            {% endfor %}
+          </div>
+          {% if filters.vahemik_viga %}
+            <p class="field__error filterpanel__error" role="alert">{{ filters.vahemik_viga }}</p>
+          {% endif %}
+        </fieldset>
 
         {% comment %}
           Three institution controls, never one. `asutus` is the convenience —
-          "was this body involved at all" — and the two beside it stay precise,
-          because the register itself changed which direction its single
-          counterparty column meant in 2020 (Stage-2E.1 brief 11F–H).
-        {% endcomment %}
-        {% comment %}
-          One catalogue behind all three, and one control shape over it. The
-          two precise dimensions were plain selects carrying the first twenty
-          bodies alphabetically, which is why an institution somebody had just
-          typed on Uus teema could not be found here (docs/adr/0071).
-        {% endcomment %}
-        {% for chooser in organisation_choosers %}
-          {% include "matters/partials/organisation_choices.html" with field=chooser.field field_label=chooser.field_label term=chooser.term organisation_options=chooser.organisation_options chosen_organisation=chooser.chosen_organisation chosen_value=chooser.chosen_value %}
-        {% endfor %}
+          "was this body involved at all", sender *or* addressee — and the two
+          beside it stay precise, because the register itself changed which
+          direction its single counterparty column meant in 2020
+          (Stage-2E.1 brief 11F–H). Saatja and Adressaat together are both
+          conditions: sent by A **and** addressed to B. One catalogue behind
+          all three, one control shape over it (docs/adr/0071).
 
-        <label class="field">
-          <span class="field__label">Järjestus</span>
+          Open on arrival only when a typed institution search came back
+          without JavaScript — the answer to it is inside.
+        {% endcomment %}
+        <div class="filtergroup filtergroup--toggle">
+          <details class="filtergroup__disclosure" id="otsing-asutused" {% if panel_groups.asutused.open %}open{% endif %}>
+            <summary class="filtergroup__summary">Asutused{% if panel_groups.asutused.chips %} <span class="filtergroup__count">· {{ panel_groups.asutused.chips|length }} valitud</span>{% endif %}</summary>
+            <div class="filtergroup__orgs">
+              {% for chooser in organisation_choosers %}
+                {% include "matters/partials/organisation_choices.html" with field=chooser.field field_label=chooser.field_label term=chooser.term organisation_options=chooser.organisation_options chosen_organisation=chooser.chosen_organisation chosen_value=chooser.chosen_value %}
+              {% endfor %}
+            </div>
+            <p class="filtergroup__note">Asutus leiab teema, kus asutus on saatja või adressaat. Saatja ja Adressaat koos tähendavad mõlemat korraga.</p>
+          </details>
+          {% if panel_groups.asutused.chips %}
+            <div class="filtergroup__chips">
+              {% for chip in panel_groups.asutused.chips %}
+                {% include "matters/partials/register_chip.html" %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+
+        {% comment %}
+          Record metadata people narrow by less often. Kirje liik is where the
+          archive is asked for now that «Arhiiv» is not a status tab (UI-06):
+          archive is a record mode, and an archived file is open or closed
+          like any other. Töövõit and Jõustumine are facts about a Matter, so
+          they narrow this register rather than open a list of their own
+          (docs/adr/0071). «Andmed» is Kõik by default, so a developer finds
+          the test Matter they made ten seconds ago (Agent-C brief 14, 24).
+        {% endcomment %}
+        <div class="filtergroup filtergroup--toggle">
+          <details class="filtergroup__disclosure" id="otsing-muud" {% if panel_groups.muud.open %}open{% endif %}>
+            <summary class="filtergroup__summary">Muud tunnused{% if panel_groups.muud.chips %} <span class="filtergroup__count">· {{ panel_groups.muud.chips|length }} valitud</span>{% endif %}</summary>
+            <div class="formgrid filtergroup__grid">
+              {% include "matters/partials/register_choice_group.html" with name="liik" label="Kirje liik" options=record_modes chosen=filters.liik inline=True %}
+              {% include "matters/partials/register_choice_group.html" with name="oigusakt" label="Õigusakt" options=instrument_choices chosen=filters.oigusakt missing=True %}
+              <div class="filtergroup__stack">
+                <label class="field">
+                  <span class="field__label">Päritolu</span>
+                  <select class="field__input" name="paritolu">
+                    <option value="">Kõik</option>
+                    {% for value, label in origins %}
+                      <option value="{{ value }}" {% if filters.paritolu == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                    {% comment %}
+                      A two-origin value from a Statistika bar
+                      (`LEGACY_IMPORT,PROMOTED_LEGACY`) is not one of the
+                      options; it stays selected so submitting keeps it.
+                    {% endcomment %}
+                    {% if filters.paritolu and not paritolu_listed %}
+                      <option value="{{ filters.paritolu }}" selected>{{ paritolu_label }}</option>
+                    {% endif %}
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">Materjalid</span>
+                  <select class="field__input" name="materjalid">
+                    <option value="">Kõik</option>
+                    {% for value, label in material_options %}
+                      <option value="{{ value }}" {% if filters.materjalid == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <div class="filtergroup__stack">
+                <label class="field">
+                  <span class="field__label">Töövõit</span>
+                  <select class="field__input" name="toovoit">
+                    <option value="">Kõik</option>
+                    {% for value, label in victory_options %}
+                      <option value="{{ value }}" {% if filters.toovoit == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                    {% comment %}
+                      The years the visible population actually holds a victory
+                      in, so choosing one shows something (Stage-2G brief 31).
+                    {% endcomment %}
+                    {% for year in victory_years %}
+                      <option value="{{ year }}" {% if filters.toovoit == year|stringformat:"s" %}selected{% endif %}>Töövõit {{ year }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+                <label class="field">
+                  <span class="field__label">Jõustumine</span>
+                  <select class="field__input" name="joustumine">
+                    <option value="">Kõik</option>
+                    {% for value, label in commencement_options %}
+                      <option value="{{ value }}" {% if filters.joustumine == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                </label>
+              </div>
+              <label class="field">
+                <span class="field__label">Andmed</span>
+                <select class="field__input" name="andmed">
+                  {% for value, label in data_class_options %}
+                    <option value="{{ value }}" {% if filters.andmed == value %}selected{% endif %}>{{ label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            </div>
+          </details>
+          {% if panel_groups.muud.chips %}
+            <div class="filtergroup__chips">
+              {% for chip in panel_groups.muud.chips %}
+                {% include "matters/partials/register_chip.html" %}
+              {% endfor %}
+            </div>
+          {% endif %}
+        </div>
+
+        <div class="filterpanel__actions">
           {% comment %}
             Every ordering the register understands, from one mapping in
             `app/matters/views.py` — including the four the Kuupäev and Viimane
-            tegevus headings set.
-
-            Those four have to be here. The panel is a plain GET form, so a
-            select that did not know about the sort somebody had chosen from a
-            heading would post its first option and silently undo their
-            ordering the moment they narrowed anything (brief 16, 20).
-
-            The values are unchanged and so are their meanings. `reference` is
-            still the default; `deadline` still orders on the Matter's own
-            `Arvamuse tähtaeg`, which is *not* the Kuupäev column — the column
-            shows the open step's date whenever the visible step has one — and
-            is labelled for the field it reads now that two sorts on this page
-            would otherwise both read as «Tähtaeg» (review of PR #72 §18,
-            ADR 0026).
+            tegevus headings set. A select that did not know about a heading's
+            sort would post its first option and silently undo that ordering
+            the moment somebody narrowed anything (brief 16, 20). `deadline`
+            orders on the Matter's own `Arvamuse tähtaeg`, not on the Kuupäev
+            column (review of PR #72 §18, ADR 0026).
           {% endcomment %}
-          <select class="field__input" name="jarjestus">
-            {% for value, label in sort_options %}
-              <option value="{{ value }}" {% if filters.jarjestus == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-        </label>
-
-        <div class="filterpanel__actions">
+          <label class="field filterpanel__sort">
+            <span class="field__label">Järjestus</span>
+            <select class="field__input" name="jarjestus">
+              {% for value, label in sort_options %}
+                <option value="{{ value }}" {% if filters.jarjestus == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </label>
           <button class="button button--primary" type="submit">Filtreeri</button>
-          <a class="button button--quiet" href="{% url 'matters:matter_list' %}">Tühjenda kõik</a>
+          {% comment %}
+            The bare register with the page size and the chosen columns kept —
+            the same address the chip row's «Tühjenda kõik» opens.
+          {% endcomment %}
+          <a class="button button--quiet" href="?{{ cleared_query }}">Tühjenda kõik</a>
         </div>
       </form>
       </div>

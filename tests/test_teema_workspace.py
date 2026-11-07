@@ -138,14 +138,16 @@ def test_there_is_exactly_one_save_and_no_separate_completion_control(
 
     assert completion.count('type="submit"') == 1
     assert "Salvesta" in completion
-    # `✓ Tehtud` only opens this form (docs/adr/0133 §4): since docs/adr/0140
-    # §1 the label of a toggle that stays on the row — not a button, not a
+    # `✓ Tehtud` only opens this form (docs/adr/0133 §4): since UI-10 a
+    # `type="button"` toggle in the step's toolbar — not a submit, not a
     # request, and nothing that completes by itself.
-    assert (
-        '<label class="disclosure-chip curact__donechip" for="tehtud-valik">✓ Tehtud</label>'
-        in zone
+    assert re.search(
+        r'<button type="button" class="disclosure-chip curact__donechip curact__tool" '
+        r'id="tehtud-nupp"\s+data-curact-toggle aria-controls="tehtud"',
+        zone,
     )
-    for gone in ("Märgi tehtuks", "Tehtud</button>", "/valmis/"):
+    assert 'type="submit" class="disclosure-chip' not in zone
+    for gone in ("Märgi tehtuks", "/valmis/"):
         assert gone not in zone, gone
 
 
@@ -498,7 +500,8 @@ def test_the_launcher_offers_its_choices_and_opens_none_of_them(signed_in, norma
     # feedback saves and made `Lisa tagasiside` always a form. Ten since
     # `Kohtumine / arutelu` (docs/adr/0097, amendment of 2026-10-17), and
     # eleven with `Lõpeta teema`'s own (docs/adr/0131, amendment of 2026-10-25).
-    assert zone.count('type="submit"') == 11
+    # Twelve with `+ Lisa tegevus`, the row's first choice since UI-09.
+    assert zone.count('type="submit"') == 12
     assert "composer__actions" not in zone
 
 

@@ -1,7 +1,8 @@
 """The theme switch, as a person uses it (docs/adr/0147).
 
 Dark is the default; light is the alternative a browser chooses with the moon
-and sun on the bar, and keeps. What these hold is the behaviour, not the
+and sun row of the settings menu behind the gear (UI-03; until 2026-11-06 a
+button on the bar of its own), and keeps. What these hold is the behaviour, not the
 palette — the palette's contrast is tests/test_text_contrast.py and
 e2e/test_theme_contrast.py, and its appearance is the `hele-*` scenarios of the
 visual suite:
@@ -12,7 +13,7 @@ visual suite:
 * blocked storage and a nonsense value in it;
 * the signed-out pages, and what signing out does to the choice;
 * a switch that writes nothing — no request at all — and loses nothing typed;
-* the bar at every width, in both themes.
+* the gear and its menu at every width, in both themes.
 
 Nothing here files, edits or deletes a record: every test only reads the seeded
 world, so it can share a shard with anything.
@@ -58,7 +59,15 @@ def canvas(page) -> str:
 
 
 def switch(page):
-    return page.locator(".topbar [data-theme-toggle]")
+    return page.locator(".topbar .settingsmenu [data-theme-toggle]")
+
+
+def open_settings(page) -> None:
+    """Open «Seaded» if it is not open already; the switch is its first row."""
+    menu = page.locator(".topbar .settingsmenu")
+    if not menu.evaluate("(details) => details.open"):
+        page.locator(".topbar .settingsmenu__trigger").click()
+    expect(menu).to_have_attribute("open", "")
 
 
 def preset(page, value: str) -> None:
@@ -80,10 +89,12 @@ def preset(page, value: str) -> None:
 
 
 def press_switch(page) -> None:
+    open_settings(page)
     switch(page).click()
 
 
 def assert_dark(page) -> None:
+    open_settings(page)
     assert theme(page) == "dark"
     assert canvas(page) == DARK_CANVAS
     expect(page.get_by_role("button", name=TO_LIGHT, exact=True)).to_be_visible()
@@ -93,6 +104,7 @@ def assert_dark(page) -> None:
 
 
 def assert_light(page) -> None:
+    open_settings(page)
     assert theme(page) == "light"
     assert canvas(page) == LIGHT_CANVAS
     expect(page.get_by_role("button", name=TO_DARK, exact=True)).to_be_visible()
@@ -165,14 +177,18 @@ def test_the_emblem_is_drawn_for_each_theme(page, base_url):
 
 
 def test_the_switch_works_from_the_keyboard_and_shows_its_focus(page, base_url):
+    """Tab to the gear, Enter opens «Seaded», Tab reaches the switch first."""
     sign_in(page, base_url, SANDRA)
     page.locator("#global-search").focus()
     for _ in range(12):
         page.keyboard.press("Tab")
-        if page.evaluate("() => document.activeElement.matches('[data-theme-toggle]')"):
+        if page.evaluate("() => document.activeElement.matches('.settingsmenu__trigger')"):
             break
     else:
-        raise AssertionError("Tab never reached the theme switch")
+        raise AssertionError("Tab never reached the settings gear")
+    page.keyboard.press("Enter")
+    page.keyboard.press("Tab")
+    assert page.evaluate("() => document.activeElement.matches('[data-theme-toggle]')")
 
     outline = switch(page).evaluate(
         """(button) => {
@@ -406,10 +422,12 @@ def _overlap(a, b) -> bool:
 
 @pytest.mark.parametrize("width,height", WIDTHS, ids=lambda value: str(value))
 def test_the_switch_fits_the_bar_at_every_width_in_both_themes(page, base_url, width, height):
-    """On screen, clear of its neighbours, and costing the bar nothing.
+    """The gear on screen and clear of its neighbours; its menu on screen too.
 
     At 861px and up the bar is one 48px row and must stay one; below that it is
-    a deliberate two-row layout, and the switch may not add a third.
+    a deliberate wrapped layout, and opening the menu may not change it. Until
+    UI-03 this measured the sun/moon button; it measures the gear that holds
+    the switch now, and the opened menu with the switch in it.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
@@ -419,8 +437,8 @@ def test_the_switch_fits_the_bar_at_every_width_in_both_themes(page, base_url, w
 
     for expected in ("dark", "light"):
         assert theme(page) == expected
-        toggle = _box(page, ".topbar [data-theme-toggle]")
-        assert toggle, "the switch is not on the bar"
+        toggle = _box(page, ".topbar .settingsmenu__trigger")
+        assert toggle, "the settings gear is not on the bar"
         assert toggle["x"] >= 0 and toggle["x"] + toggle["width"] <= width
         for neighbour in (
             ".personapill",
@@ -431,9 +449,15 @@ def test_the_switch_fits_the_bar_at_every_width_in_both_themes(page, base_url, w
             ".topbar__env",
         ):
             other = _box(page, neighbour)
-            assert not (other and _overlap(toggle, other)), f"the switch overlaps {neighbour}"
+            assert not (other and _overlap(toggle, other)), f"the gear overlaps {neighbour}"
+        open_settings(page)
+        panel = _box(page, ".topbar .settingsmenu__panel")
+        assert panel and panel["x"] >= 0 and panel["x"] + panel["width"] <= width, panel
+        row = _box(page, ".topbar [data-theme-toggle]")
+        assert row and row["x"] >= 0 and row["x"] + row["width"] <= width
         assert not document_overflows(page), "the document scrolls sideways"
         assert page.locator(".topbar").bounding_box()["height"] == bar_height
         if width > 860:
             assert bar_height == 48
         press_switch(page)
+        page.keyboard.press("Escape")

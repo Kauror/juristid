@@ -28,10 +28,23 @@ A «Järgmised tegevused» note says «Ajalooline: Järgmised tegevused» on the
 line and over its text: it is what the page once planned, never a current
 task, so it has no checkbox, no date field and no control of any kind.
 
-Open, the full verbatim paragraphs (escaped, line breaks kept), the original
-date, the exact source with its `/ajalugu/<msp>/` page and the inspectable
-`source_ref`, the note's own links, its direct files, and — once, not a list —
-the way to the page's other files, «Sama OneNote'i lehe failid (N)».
+**Open, nothing is said twice (UI-13).** The note's full first paragraph
+takes the headline's place on the same line (`.uxtl__histfirst` replaces
+`.uxtl__histpreview`; `historical-reading.css`), and the remaining paragraphs
+follow once below, verbatim and escaped. Nothing is subtracted from them: a
+sentence the source repeats is repeated. A note with no text keeps its
+headline (its files' names). A note that is one paragraph shows it once and
+then only its files and source access.
+
+The date is the line's: no second «Kuupäev» row, and a month or a year says
+so to a screen reader. No «Allikas OneNote: …» row and no capture or block
+reference — those are the source page's technical provenance. One line of
+source access: «OneNote'i koopia» (the copy view at this note's block, where
+its anchor is stable, `HistoricalNoteRow.source_url`), its copy icon right
+after it — it copies exactly that address and is named by it — and, for a
+page several Teemad share, «ühine leht». Then the note's own links, its direct
+files, the way to the page's other files once, and last the row's own
+permalink, which stays the history entry's address and nothing else.
 {% endcomment %}
 <article class="uxtl__item uxtl__item--secondary uxtl__item--historical"
          data-kaik-rida="{{ item.row_key }}">
@@ -40,10 +53,10 @@ the way to the page's other files, «Sama OneNote'i lehe failid (N)».
     <span class="uxtl__line"></span>
   </span>
   <div class="uxtl__body">
-    <details class="uxtl__hist">
+    <details class="uxtl__hist{% if note.paragraphs and note.paragraphs.0 != note.headline %} uxtl__hist--inplace{% endif %}">
       <summary class="uxtl__histline" id="kaik-{{ item.row_key }}-rida">
         {% if note.date_display and note.date_iso %}
-          <time class="uxtl__msdate" datetime="{{ note.date_iso }}">{{ note.date_display }}</time>
+          <time class="uxtl__msdate" datetime="{{ note.date_iso }}">{{ note.date_display }}{% if note.precision == "MONTH" %}<span class="visually-hidden"> (kuu täpsusega)</span>{% elif note.precision == "YEAR" %}<span class="visually-hidden"> (aasta täpsusega)</span>{% endif %}</time>
         {% elif note.date_display %}
           <span class="uxtl__msdate">{{ note.date_display }}</span>
         {% endif %}
@@ -58,35 +71,33 @@ the way to the page's other files, «Sama OneNote'i lehe failid (N)».
             <span class="uxtl__histtag">{{ count }} dokumenti</span>
           {% endif %}
         {% endwith %}
-        <span class="uxtl__mswhat">{{ note.headline }}</span>
+        <span class="uxtl__mswhat uxtl__histpreview">{{ note.headline }}</span>
+        {% if note.paragraphs and note.paragraphs.0 != note.headline %}
+          <span class="uxtl__histfirst">{{ note.paragraphs.0 }}</span>
+        {% endif %}
         <span class="uxtl__chevron" aria-hidden="true"></span>
       </summary>
       <div class="uxtl__histpanel">
-        <div class="uxtl__histtext {% if note.kind == 'NEXT_ACTIONS' %}uxtl__histtext--past{% endif %}">
-          {% if note.kind == "NEXT_ACTIONS" %}
-            <span class="uxtl__msnotelabel">Ajalooline: Järgmised tegevused</span>
-          {% endif %}
-          {% for paragraph in note.paragraphs %}
-            <p class="uxtl__histpara">{{ paragraph|linebreaksbr }}</p>
-          {% endfor %}
-        </div>
-        <span class="uxtl__mssub">
-          <span class="uxtl__filegrouplabel">Kuupäev</span>
-          {% if note.date_display %}{{ note.date_display }}{% if note.precision == "MONTH" %} (kuu täpsusega){% elif note.precision == "YEAR" %} (aasta täpsusega){% endif %}{% else %}OneNote'i märkusel kuupäeva ei ole{% endif %}
-        </span>
-        <span class="uxtl__mssub">
-          <span class="uxtl__filegrouplabel">Allikas</span>
-          OneNote: {% if note.section %}{{ note.section }} → {% endif %}{{ note.page_title }}
-        </span>
-        <span class="uxtl__links">
-          <a class="uxtl__link" href="{{ note.page_url }}">Ava OneNote'i leht Juristides</a>
+        {% if note.paragraphs|length > 1 %}
+          <div class="uxtl__histtext {% if note.kind == 'NEXT_ACTIONS' %}uxtl__histtext--past{% endif %}">
+            {% for paragraph in note.paragraphs|slice:"1:" %}
+              <p class="uxtl__histpara">{{ paragraph|linebreaksbr }}</p>
+            {% endfor %}
+          </div>
+        {% endif %}
+        <span class="uxtl__histsource">
+          <span class="uxtl__histcopy">
+            <a class="uxtl__link" id="kaik-{{ item.row_key }}-koopia" href="{{ note.source_url }}">OneNote'i koopia</a>
+            <button type="button" class="uxtl__icon uxtl__icon--copy"
+                    data-copy-href="{{ note.source_url }}" data-copy-icon data-label-done="Link kopeeritud"
+                    title="Kopeeri OneNote'i koopia link"
+                    aria-label="Kopeeri OneNote'i koopia link{% if note.page_title %}: {{ note.page_title }}{% endif %}">{% include "matters/partials/action_icon.html" with name="copy" %}</button>
+          </span>
+          {% if note.shared_page %}<span class="uxtl__histshared">ühine leht</span>{% endif %}
           {% if note.page_files_count > 0 %}
             <a class="uxtl__link" href="{{ note.page_url }}#sisu-heading">Sama OneNote'i lehe failid ({{ note.page_files_count }})</a>
           {% endif %}
         </span>
-        {% if note.source_ref %}
-          <span class="uxtl__histref">{{ note.source_ref }}</span>
-        {% endif %}
         {% if note.links %}
           {% comment %}
             The note's own links, by the text the page gave them. Only a web or

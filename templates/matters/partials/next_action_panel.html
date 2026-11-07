@@ -1,31 +1,30 @@
 {% comment %}
-The next-step editor's disclosure — `#lisa-jargmine` — in the one place it is
-written.
+`+ Lisa tegevus` on a file with no open step — the next-step editor's
+`#lisa-jargmine`, as the first choice of the action row (UI-09).
 
-Two hosts in `PRAEGUNE TEGEVUS`, and never both on one render: `Muuda` beside an
-open step, and `+ Lisa tegevus` on a file with none
-(docs/adr/0126 §1). One partial so that the two are one control in two states —
-one id, one form, one endpoint and one refusal slot — rather than two
-disclosures that drift.
+The same id, form, endpoint and refusal slot as `Muuda` beside an open step
+(`current_action_task.html`), and never both on one render (docs/adr/0126 §1):
+one control in two states. Here it is a choice of the action row
+(`add_to_matter.html`), built like every other one there — a clipped radio in
+the row's group, its chip, and its panel, which alone takes the line under the
+row — so opening it closes whichever other choice was open, and the chips never
+move.
 
-    summary       the chip's words
-    quiet         `Muuda`'s quiet chip, beside a task; the full chip otherwise
-    extra_class   the host's own placement class, if any
-    draft_state   the step a draft typed here belongs to: the open step's id,
-                  or empty with none (static/js/app.js, docs/adr/0107)
-
-`#lisa-jargmine` is the panel `_workspace_refusal` reopens for `action_form`
-(`WORKSPACE_PANELS`), so a refused save comes back opened in whichever host the
-fresh column draws.
+`data-draft-state` is empty because there is no step for a draft to belong to:
+a save elsewhere that sets one replaces this host with `Muuda`, whose state is
+that step, and the unsaved sentence is then shown read-only rather than posted
+against it (docs/adr/0107). `#lisa-jargmine` is the panel `_workspace_refusal`
+reopens for `action_form` (`WORKSPACE_PANELS`).
 {% endcomment %}
-<details class="cx-panel curact__edit{% if extra_class %} {{ extra_class }}{% endif %}" id="lisa-jargmine" data-addpanel
-         data-draft-host data-draft-state="{{ draft_state }}"
-         {% if open_panel == "lisa-jargmine" %}open{% endif %}>
-  <summary class="disclosure-chip{% if quiet %} disclosure-chip--quiet{% endif %}">{{ summary }}</summary>
+<input class="addpick" type="radio" name="lisa-valik" id="lisa-jargmine-valik"
+       data-addpick aria-controls="lisa-jargmine"
+       {% if open_panel == "lisa-jargmine" %}checked{% endif %}>
+<label class="disclosure-chip" for="lisa-jargmine-valik">+ Lisa tegevus</label>
+<div class="cx-panel" id="lisa-jargmine" data-addpanel data-draft-host data-draft-state="">
   <div class="cx-panel__body">
     {% if open_panel == "lisa-jargmine" and workspace_error %}
       <p class="formerror" role="alert">{{ workspace_error }}</p>
     {% endif %}
     {% include "matters/partials/next_action_form.html" %}
   </div>
-</details>
+</div>

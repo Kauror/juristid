@@ -58,10 +58,13 @@ nothing to hide (app/matters/department.py).
     that names the component rather than the content is a word a reader has to
     step over on every page it appears on (01-EHITUSJUHIS §4).
 
-    All seven always, zeros included, which is this page's exception to the rule
-    the other four surfaces keep: these figures are the department's whole
-    position, and one that vanished at zero would read as a figure somebody
-    removed rather than a number that happens to be none (docs/adr/0049 §4).
+    Zeros included, which is this page's exception to the rule the other four
+    surfaces keep: these figures are the department's whole position, and one
+    that vanished at zero would read as a figure somebody removed rather than a
+    number that happens to be none (docs/adr/0049 §4). Exactly three are the
+    exception to the exception and leave the row at 0 — «tähtajaga teemat sel
+    nädalal», «vastutajata», «uut läbi vaatamata» (owner's brief of
+    2026-11-06, UI-05; `SeisFigure.hidden_at_zero`).
   {% endcomment %}
   {% include "components/seis.html" with figures=page.seis show_zeros=1 trailing="matters/partials/department_seis_sort.html" %}
 

@@ -54,9 +54,12 @@ def test_the_next_action_panel_reopens_while_its_save_is_still_in_flight(page, b
     open_next_action_form(page)
 
     # The host it crossed to, open, with the form a person would now type into.
-    edit = page.locator("details#lisa-jargmine")
+    edit = page.locator("#praegune-tegevus #lisa-jargmine")
     expect(edit).to_have_count(1)
-    assert edit.evaluate("node => node.open"), "the Muuda disclosure came back shut"
+    expect(edit).to_be_visible()
+    expect(page.locator('[data-curact-toggle][aria-controls="lisa-jargmine"]')).to_have_attribute(
+        "aria-expanded", "true"
+    )
     expect(page.locator("#lisa-jargmine [name='text']")).to_have_value("Koosta arvamus")
     expect(
         page.locator("#lisa-jargmine label.precision__chip", has_text="Kvartal").first

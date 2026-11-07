@@ -15,6 +15,12 @@
  */
 
 :root {
+  /* ---- the top bar's right-hand controls (November 2026 UI round) ----
+     One height and one gap for search, «Uus teema», persona, bell, settings
+     and «Välju», so no control carries its own offset. */
+  --topbar-control-size: 2rem;
+  --topbar-gap: 0.5rem;
+
   /* ---- primitives: CVI brand --------------------------------------- */
   --primitive-brand-500: #009fda; /* Chamber blue, from the logoraamat */
   --primitive-brand-400: #35b8e8;
@@ -184,6 +190,9 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
 
+  /* A weekend or Estonian public holiday in a calendar grid (UI-11). */
+  --calendar-rest-day: var(--primitive-danger-400);
+
   /* Layered surfaces, subtle separation. No absolute black. */
   --surface-base: var(--primitive-neutral-900);
   --surface-nav: var(--primitive-neutral-950);
@@ -350,6 +359,8 @@
 
 :root[data-theme="light"] {
   color-scheme: light;
+
+  --calendar-rest-day: #b42318;
 
   --surface-base: #f2f4f7;
   --surface-nav: var(--primitive-neutral-0);

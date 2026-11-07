@@ -30,7 +30,21 @@ date means — without the step's own sentence.
          id="{{ calendar.element_id }}"
          aria-label="{% if calendar.is_department %}Osakonna kalender{% else %}Kalender{% endif %}"
          data-wcal>
-  <h2 class="railblock__label">{% if calendar.is_department %}Osakonna kalender{% else %}Kalender{% endif %}</h2>
+  {% if calendar.expand_query %}
+    {% comment %}
+      UI-04: the heading opens this view and period in the large panel, the
+      same request as the active view control beside it. A button styled as
+      the heading: same colour, no underline, a pointer and a focus ring.
+    {% endcomment %}
+    <h2 class="railblock__label">
+      <button type="button" class="wcal__heading"
+              hx-get="{{ calendar.expand_query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true"
+              title="Ava suuremas aknas" aria-describedby="{{ calendar.element_id }}-suurem">{% if calendar.is_department %}Osakonna kalender{% else %}Kalender{% endif %}</button>
+    </h2>
+    <span class="visually-hidden" id="{{ calendar.element_id }}-suurem">Ava suuremas aknas</span>
+  {% else %}
+    <h2 class="railblock__label">{% if calendar.is_department %}Osakonna kalender{% else %}Kalender{% endif %}</h2>
+  {% endif %}
   {% include "matters/partials/work_calendar_bar.html" with calendar=calendar %}
 
   {% if calendar.is_wide %}
@@ -40,7 +54,7 @@ date means — without the step's own sentence.
     <div class="wcal__backdrop" data-wcal-close></div>
     <div class="wcal__panel" role="dialog" aria-modal="true" aria-labelledby="wcal-panel-title" data-wcal-panel>
       <div class="wcal__panelhead">
-        <h2 class="wcal__paneltitle" id="wcal-panel-title" tabindex="-1">Kalender · {{ calendar.title }}</h2>
+        <h2 class="wcal__paneltitle" id="wcal-panel-title" tabindex="-1">{% if calendar.is_department %}Osakonna kalender{% else %}Kalender{% endif %} · {{ calendar.title }}</h2>
         <a class="wcal__close" href="{{ calendar.close_query }}" hx-get="{{ calendar.close_query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true" data-wcal-closelink>Sulge</a>
       </div>
       {% include "matters/partials/work_calendar_bar.html" with calendar=calendar in_panel=1 %}

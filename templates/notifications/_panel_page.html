@@ -1,0 +1,11 @@
+{% comment %}
+One further page of the bell's panel (UI-01): its items, then «Näita
+varasemaid» again while there are more. The button that asked selects the
+`<li>`s out of `data-notifpanel-page` and puts them where it stood.
+{% endcomment %}
+<ul class="notifpanel__list" data-notifpanel-page>
+  {% for item in page.items %}
+    {% include "notifications/_panel_item.html" with item=item %}
+  {% endfor %}
+  {% if page.cursor %}{% include "notifications/_panel_more.html" with page=page %}{% endif %}
+</ul>

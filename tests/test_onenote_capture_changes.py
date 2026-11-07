@@ -593,8 +593,11 @@ def test_the_page_view_shows_a_later_captures_new_file_and_says_whose_body_it_is
     files = [b for b in blocks if b["kind"] == "file"]
     assert [b["filename"] for b in files] == ["kiri.pdf", "vastus.docx", "lõuend.pdf", "uus.pdf"]
     assert files[-1]["document"] is not None and files[-1]["state"] == "imported"
-    label = next(b for b in blocks if b["kind"] == "text" and "cap-1" in b["text"])
+    label = next(b for b in blocks if b["kind"] == "notice")
     assert blocks.index(label) == len(blocks) - 2  # the label sits right before the new file
+    # Which capture the text is from is technical provenance, named in the page's
+    # «Tehnilised andmed», not in the reading flow (UI-12).
+    assert "cap-1" not in label["text"]
 
 
 def test_the_page_view_does_not_repeat_a_continued_file(applied):
@@ -652,7 +655,9 @@ def test_a_pilot_page_reused_by_a_capture_shows_the_captures_files(tmp_path, tee
     blocks = _view_blocks(teema)
     texts = [b["text"] for b in blocks if b["kind"] == "text"]
     files = [b for b in blocks if b["kind"] == "file"]
-    assert texts[0] == "Piloodi tekst" and any("pilot-2026-10" in t for t in texts[1:])
+    assert texts == ["Piloodi tekst"]
+    (notice,) = [b for b in blocks if b["kind"] == "notice"]
+    assert "pilot-2026-10" not in notice["text"]  # in «Tehnilised andmed» (UI-12)
     assert files[0]["filename"] == "kiri.pdf" and files[0]["state"] == "superseded"
     assert [b["filename"] for b in files[1:]] == ["kiri.pdf", "vastus.docx", "lõuend.pdf"]
     assert all(b["state"] == "imported" for b in files[1:])

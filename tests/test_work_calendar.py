@@ -619,7 +619,10 @@ def test_the_rail_writes_no_window_parameter(specialist):
     for view in ("4n", "kuu"):
         calendar = build(specialist, kalender=view)
         assert not calendar.is_wide and calendar.close_query == ""
-        assert not any("kalendri_aken" in link.query for link in calendar.views)
+        # Only the active control writes it since UI-04: it opens this view in
+        # the panel (tests/test_ui04_calendar_expand.py). The others switch the rail.
+        assert not any("kalendri_aken" in link.query for link in calendar.views if not link.expands)
+        assert [link.key for link in calendar.views if link.expands] == [view]
     # A wide view ignores the parameter: it is in the panel either way.
     assert build(specialist, kalender="aasta", kalendri_aken="1").in_window is False
 

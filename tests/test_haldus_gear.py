@@ -4,7 +4,8 @@ The owner's brief of 2026-10-28 moved how Haldus is reached and nothing it
 authorizes (docs/adr/0186, amendment 2026-10-28):
 
 * the everyday navigation is Minu asjad · Osakond · Teemad · Statistika, and
-  Haldus is a gear beside «Välju» with the accessible name «Haldus»;
+  Haldus is reached from the gear beside «Välju» — since UI-03 (2026-11-06)
+  an entry «Haldus» in the gear's «Seaded» menu rather than the gear itself;
 * Haldus → Ülevaade opens for every signed-in persona, because it carries
   Rakendus — and that grants nothing: every protected route still refuses;
 * «Halduri sisselogimine» is at the bottom of the persona menu, the same for
@@ -54,8 +55,9 @@ def _nav(body: str) -> str:
 
 
 def _gear(body: str) -> str:
-    start = body.index('<a class="topbar__haldus')
-    return body[start : body.index("</a>", start) + len("</a>")]
+    """The settings menu behind the gear, which holds the Haldus entry (UI-03)."""
+    start = body.index('<details class="settingsmenu')
+    return body[start : body.index("</details>", start) + len("</details>")]
 
 
 def _persona_menu(body: str) -> str:
@@ -86,8 +88,8 @@ def test_haldus_is_a_gear_beside_valju_not_a_navigation_item(client):
         assert f">{label}</a>" in nav, label
 
     gear = _gear(body)
-    assert 'href="/haldus/"' in gear and 'title="Haldus"' in gear
-    assert '<span class="visually-hidden">Haldus</span>' in gear
+    assert 'title="Seaded"' in gear and '<span class="visually-hidden">Seaded</span>' in gear
+    assert 'href="/haldus/">Haldus</a>' in gear
     assert 'aria-hidden="true"' in gear  # the icon is decoration; the name is the text
     assert "aria-current" not in gear
     header = _header(body)
@@ -98,7 +100,8 @@ def test_haldus_is_a_gear_beside_valju_not_a_navigation_item(client):
 def test_the_gear_is_marked_current_on_a_haldus_page(client):
     body = _as(client, person()[0]).get(reverse("haldus:index")).content.decode()
     gear = _gear(body)
-    assert 'aria-current="page"' in gear and "is-active" in gear
+    assert 'aria-current="page"' in gear
+    assert 'class="settingsmenu__trigger is-active"' in gear
     assert 'aria-current="page"' not in _nav(body)
 
 
@@ -126,7 +129,7 @@ def test_under_personal_sign_in_the_gear_sits_beside_the_avatar(client, settings
 
     assert reverse("accounts:profile") in header
     assert 'href="/haldus/"' in _gear(header)
-    assert header.index(reverse("accounts:profile")) < header.index('class="topbar__haldus')
+    assert header.index(reverse("accounts:profile")) < header.index("data-settings-menu")
     # No step-up link: under personal sign-in the account itself is the administrator.
     assert reverse("haldus:sign_in") not in header
 
@@ -177,7 +180,7 @@ def test_a_signed_in_reader_opens_the_landing_and_no_protected_route(client, set
 
     assert page.status_code == 200 and _keys(page) == ["ulevaade"]
     assert ">Rakendus</h2>" in page.content.decode()
-    assert 'class="topbar__haldus' in page.content.decode()
+    assert 'href="/haldus/">Haldus</a>' in _gear(page.content.decode())
     for name in PROTECTED:
         assert client.get(reverse(name)).status_code == 404, name
 

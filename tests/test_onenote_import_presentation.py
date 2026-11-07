@@ -130,9 +130,13 @@ def test_a_held_shared_page_file_reads_as_waiting_never_as_a_failed_copy(
     client.force_login(specialist)
     for teema in (world["c"], world["d"]):
         html = client.get(_page_url(teema)).content.decode()
-        assert "Ootab teemaga seostamist" in html
+        flat = " ".join(html.split())
+        # Said once, by the shared dossier's note, not beside every file (UI-12).
+        assert "failid ootavad teemaga seostamist" in flat
+        assert "originaalid on lähtekorpuses alles" in flat
+        assert "Ootab teemaga seostamist" not in html
         assert "Kopeerimine ebaõnnestus" not in html
-        assert "jagatud.pdf" in html and "Originaal on lähtekorpuses alles" in html
+        assert "jagatud.pdf" in html
         # Held means held: still no Document, no download, the row and the source kept.
         row = LegacySourceResourceImport.objects.get(matter_source_page__matter=teema)
         assert row.state == ResourceImportState.SKIPPED and row.document_id is None

@@ -80,10 +80,12 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncCohort,
     LovableSyncControl,
     LovableSyncDecision,
+    LovableSyncMembership,
     LovableSyncRetirement,
     LovableSyncRun,
     LovableSyncSnapshot,
     LovableSyncState,
+    MembershipBasis,
     SyncMode,
     SyncOutcome,
     SyncRunStatus,
@@ -673,9 +675,31 @@ def _rebuild_writes(matter: Any, cohort: Cohort, reference: Any) -> dict[str, An
 
 
 def seed_state(reference: Any, cohort: Cohort | None = None) -> LovableSyncState:
-    """A new state for a Teema, seeded by `seed_values`."""
-    return LovableSyncState.objects.create(
+    """A new state for a Teema, seeded by `seed_values`, and the membership that
+    outlives it (REL-01)."""
+    state = LovableSyncState.objects.create(
         matter=reference.matter, **seed_values(reference, cohort)
+    )
+    remember_membership(cohort=state.cohort, matter_id=state.matter_id, source_id=state.source_id)
+    return state
+
+
+def remember_membership(
+    *, cohort: str, matter_id: Any, source_id: Any, basis: str = MembershipBasis.ENROLMENT
+) -> LovableSyncMembership:
+    """Record that this Teema is a member of ``cohort`` under ``source_id``
+    (owner brief 2026-11-06 §17, REL-01), once. Called only where a state of
+    exactly that cohort and Lovable id has just been written from the cohort's
+    approved provenance (`seed_state`, `reseed_state`), or by the deletion after
+    checking that provenance (`lovable_sync_retirement.members_of`); migration
+    0024's trigger refuses one without such a state on a live Teema. An earlier
+    membership of the same cohort is kept as it is, even under another id: a
+    retirement must then match that one, so a changed identity fails closed."""
+    existing = LovableSyncMembership.objects.filter(cohort=cohort, matter_id=matter_id).first()
+    if existing is not None:
+        return existing
+    return LovableSyncMembership.objects.create(
+        cohort=cohort, matter_id=matter_id, source_id=source_id, basis=basis
     )
 
 
@@ -722,6 +746,9 @@ def reseed_state(
         observed_run=None,
         updated_at=timezone.now(),
     )
+    remember_membership(
+        cohort=values["cohort"], matter_id=state.matter_id, source_id=state.source_id
+    )
     return archive
 
 
@@ -742,14 +769,29 @@ def import_held_fields(raw: dict[str, Any]) -> list[str]:
 def ensure_states() -> list[LovableSyncState]:
     """Seed any cohort Teema that has no state yet; the population afterwards.
 
-    An existing state — the pilot's 100 above all — is never re-seeded or changed."""
+    An existing state — the pilot's 100 above all — is never re-seeded or changed.
+    A permanently deleted Teema is never seeded (REL-01): its references may still
+    be listed if the deletion committed after they were read, and a state on a
+    tombstone is not a member (migration 0024 refuses its membership). Each Teema
+    is taken under the same row lock a deletion takes, so one that is being
+    deleted is seen as deleted once that deletion commits."""
+    from app.matters.models import Matter
+
     existing = set(LovableSyncState.objects.values_list("matter_id", flat=True))
     with transaction.atomic():
         for cohort in cohorts():
             for reference in cohort_references(cohort):
-                if reference.matter_id not in existing:
-                    seed_state(reference, cohort)
-                    existing.add(reference.matter_id)
+                if reference.matter_id in existing:
+                    continue
+                live = list(
+                    Matter.all_objects.select_for_update(no_key=True)
+                    .filter(pk=reference.matter_id, deleted_at__isnull=True)
+                    .values_list("pk", flat=True)
+                )
+                if not live:
+                    continue
+                seed_state(reference, cohort)
+                existing.add(reference.matter_id)
     return population()
 
 

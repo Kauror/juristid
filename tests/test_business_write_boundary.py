@@ -1695,6 +1695,17 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # prompt is a 404 (tests/test_commencement_reminders.py).
     "notifications:reminder_read": "C: the reader's own read state on a commencement prompt",
     "notifications:defer": "C: the reader's own postponement of a commencement prompt",
+    # UI-01 (2026-11-06): the same personal stamps undone, «Uus asi» read and
+    # unread from the bell's panel (the receipt `acknowledge_assignment_notice`
+    # writes), and «Märgi kõik loetuks» over the reader's own populations up to
+    # a boundary. All resolve by the session's user; none takes a person
+    # parameter, calls a business service or writes a `ChangeEvent`
+    # (tests/test_ui01_notification_state.py).
+    "notifications:unread": "C: the recipient's own read stamp on a deadline notice, undone",
+    "notifications:reminder_unread": "C: the reader's own commencement receipt, undone",
+    "notifications:assignment_read": "C: the recipient's own «Uus asi» receipt",
+    "notifications:assignment_unread": "C: the recipient's own «Uus asi» receipt, undone",
+    "notifications:mark_all_read": "C: the reader's own read stamps, all at once up to a boundary",
     "notifications:settings": "C: the signed-in person's own notification preferences",
     "notifications:reset_settings": "C: resets the signed-in person's own preferences",
     # D — authentication and session control. Not business content, and two of

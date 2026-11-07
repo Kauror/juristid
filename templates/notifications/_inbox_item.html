@@ -9,8 +9,13 @@ carries `data-inbox-item`, which is what the tests count against the bell.
   (the reader's own receipt) and «Lükka edasi».
 * **A deadline notice**: the Teema link (a GET that changes nothing) and the
   recipient's own «Märgi loetuks», a POST form with the CSRF token and a fixed
-  `tagasi`. On a «Teadmiseks» row that takes it out of the list and the bell;
+  `tagasi`. It takes the item out of the list's inbox sections, the block and
+  the bell (UI-01: a «Vajab tegevust» row too — reading is not doing the work);
   «Peida» was retired on 2026-11-02.
+
+On Minu asjad (`tagasi="minu_asjad"`) the answers are also htmx posts that
+redraw the block in place (`#notif-sidebar`, `notifications:block`) instead of
+reloading the page; without scripting they are the same plain forms.
 {% endcomment %}
 {% if item.type == "commencement" %}
   {% include "notifications/_reminder_row.html" with row=item.reminder tagasi=tagasi %}
@@ -35,7 +40,7 @@ carries `data-inbox-item`, which is what the tests count against the bell.
     </div>
     {% if item.can_read %}
       <div class="notifrow__actions">
-        <form method="post" action="{% url 'notifications:read' notification_id=item.pk %}">
+        <form method="post" action="{% url 'notifications:read' notification_id=item.pk %}"{% if tagasi == "minu_asjad" %} hx-post="{% url 'notifications:read' notification_id=item.pk %}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
           {% csrf_token %}
           <input type="hidden" name="tagasi" value="{{ tagasi }}">
           <button type="submit" class="button button--quiet button--tiny"

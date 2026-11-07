@@ -345,7 +345,7 @@ from app.taxonomy.models import LegalInstrumentType, PolicyArea
 from app.taxonomy.vocabulary import selectable_policy_areas
 from app.workflow import plan as work_plan
 from app.workflow.consistency import current_work_alerts
-from app.workflow.enums import PlanStepOperation, Track
+from app.workflow.enums import DatePrecision, PlanStepOperation, Track
 from app.workflow.follow_ups import FOLLOW_UP_CHANGED, FollowUpClosureUnconfirmed, pending_checks
 from app.workflow.models import MatterPlanStep, NextAction, StageVocabulary
 from app.workflow.selectors import stages_including
@@ -1089,12 +1089,25 @@ COMMENCEMENT_LABELS = {
     register_filters.FACT_ABSENT: "Ilma jõustumiseta",
 }
 
+#: The register's status tabs: Avatud | Suletud | Kõik (owner's brief of
+#: 2026-11-06, UI-06). «Arhiiv» is no longer one of them. It never was a
+#: status: archive is a record mode (`RecordMode.ARCHIVE`) and an archived file
+#: is open or closed like any other, so the tab answered a Kirje liik question
+#: from the status row. That question is asked in Täpsem otsing under Kirje
+#: liik (`?liik=ARCHIVE`, with any status).
 STATUS_SEGMENTS = (
     ("avatud", "Avatud"),
     ("suletud", "Suletud"),
-    ("arhiiv", "Arhiiv"),
     ("koik", "Kõik"),
 )
+
+#: An address that still carries the retired tab's `?olek=arhiiv` keeps
+#: exactly what it meant — every archive record, open or closed
+#: (`register_filters.status_q`) — and says so in the chip row, because no tab
+#: lights up for it any more. Its `×` widens to every status, which is the
+#: archive filter removed and nothing else.
+LEGACY_ARCHIVE_STATUS = "arhiiv"
+LEGACY_ARCHIVE_CHIP = ("Kirje liik", "Arhiiv (avatud ja suletud)")
 
 
 def _segment_counts(user: Any) -> dict[str, int]:
@@ -1540,11 +1553,139 @@ def _active_filters(request: HttpRequest, params: Any) -> list[dict[str, Any]]:
                 "remove_query": _without_dimension(params, name, also),
             }
         )
+    if params.get("olek") == LEGACY_ARCHIVE_STATUS:
+        widened = params.copy()
+        widened["olek"] = "koik"
+        widened.pop("leht", None)
+        label, value = LEGACY_ARCHIVE_CHIP
+        chips.append(
+            {"name": "olek", "label": label, "value": value, "remove_query": widened.urlencode()}
+        )
     return chips
 
 
 #: The one ordering, shared with every export of the table (register_selection).
 _ordered = register_selection.ordered
+
+
+# ---------------------------------------------------------------------------
+# Täpsem otsing, grouped (owner's brief of 2026-11-06, UI-07 and UI-08)
+#
+# Presentation only. Every control writes the parameter it always wrote, so the
+# grouping changes where a control sits and nothing about what an address means
+# (tests/test_ui07_url_semantics.py holds a fixed list of incoming addresses to
+# the result sets they had before).
+# ---------------------------------------------------------------------------
+
+#: The date block, in reading order: (legend, start parameter, end parameter).
+#: Each window is its own fact and any number apply at once — arrival, the
+#: Matter's own opinion deadline, the open step's date, an opinion actually
+#: sent, a commencement, the last piece of work, the last save. Never one range
+#: with a «which date» switch: that would make two constraints impossible.
+PANEL_DATE_RANGES: tuple[tuple[str, str, str], ...] = (
+    ("Saabunud", "saabus_alates", "saabus_kuni"),
+    ("Arvamuse tähtaeg", "tahtaeg_alates", "tahtaeg_kuni"),
+    (
+        "Järgmise sammu kuupäev",
+        register_filters.STEP_START_PARAM,
+        register_filters.STEP_END_PARAM,
+    ),
+    ("Arvamus saadetud", register_filters.SENT_START_PARAM, register_filters.SENT_END_PARAM),
+    (
+        "Jõustub",
+        register_filters.COMMENCEMENT_START_PARAM,
+        register_filters.COMMENCEMENT_END_PARAM,
+    ),
+    (
+        "Viimane tegevus",
+        register_filters.ACTIVITY_START_PARAM,
+        register_filters.ACTIVITY_END_PARAM,
+    ),
+    ("Kirjet muudetud", "muudetud_alates", "muudetud_kuni"),
+)
+
+#: The two disclosures and the parameters each holds. A shut group still lists
+#: its active constraints as removable chips under its heading.
+PANEL_GROUPS: dict[str, tuple[str, ...]] = {
+    # The keys of `ORGANISATION_CHOOSER_FIELDS`, which is defined further down.
+    "asutused": ("asutus", "saatja", "adressaat"),
+    "muud": (
+        "liik",
+        register_filters.LEGAL_INSTRUMENT_PARAM,
+        "paritolu",
+        register_filters.VICTORY_PARAM,
+        register_filters.COMMENCEMENT_PARAM,
+        "materjalid",
+        "andmed",
+    ),
+}
+
+#: Dimensions a figure or a link can set and the panel has no control for.
+#: Each is kept, deliberately, rather than given a control nobody asked for:
+#: `silt` (Statistika's tag bars), `allikas` (source coverage), `suletud`
+#: (Aruandlus' closing year), `loodud_*` (Saabunud's «loodud» figures) and the
+#: three `?too=` companions (Osakond's per-person and windowed work). The form
+#: carries them as hidden inputs, so «Filtreeri» never drops one, and says them
+#: as chips with their own `×`.
+PANEL_LINK_ONLY: tuple[str, ...] = (
+    "silt",
+    "allikas",
+    register_filters.CLOSED_YEAR_PARAM,
+    "loodud_alates",
+    "loodud_kuni",
+    register_filters.WORK_RESPONSIBLE_PARAM,
+    register_filters.WORK_WINDOW_START_PARAM,
+    register_filters.WORK_WINDOW_END_PARAM,
+)
+
+
+def _panel_context(
+    params: Any, chips: list[dict[str, Any]], echo: dict[str, Any]
+) -> dict[str, Any]:
+    """What the grouped Täpsem otsing renders beyond the option lists."""
+    chooser_terms = any(
+        (params.get(f"{field}{CONTROL_PARAM_SUFFIX}") or "").strip()
+        for field in ORGANISATION_CHOOSER_FIELDS
+    )
+    groups = {
+        key: {"chips": [chip for chip in chips if chip["name"] in names], "open": False}
+        for key, names in PANEL_GROUPS.items()
+    }
+    # A no-JavaScript institution search lands back here; its answer is inside.
+    groups["asutused"]["open"] = chooser_terms
+
+    def shown(name: str) -> str:
+        # The parsed echo where there is one; the raw value otherwise, so a
+        # window the pipeline stopped reading at (it returns at the first
+        # unreadable date) is still in its box and survives the next submit.
+        return str(echo.get(name) or params.get(name) or "")
+
+    origins = dict(MatterOrigin.choices)
+    origin = params.get("paritolu", "")
+    return {
+        "date_ranges": [
+            {
+                "label": label,
+                "start": start,
+                "end": end,
+                "start_value": shown(start),
+                "end_value": shown(end),
+            }
+            for label, start, end in PANEL_DATE_RANGES
+        ],
+        "panel_groups": groups,
+        "panel_carried": [
+            (name, value)
+            for name in PANEL_LINK_ONLY
+            for value in params.getlist(name)
+            if value.strip()
+        ],
+        "panel_carried_chips": [
+            chip for chip in chips if chip["name"] in PANEL_LINK_ONLY or chip["name"] == "olek"
+        ],
+        "paritolu_listed": origin in origins,
+        "paritolu_label": ", ".join(origins.get(part, part) for part in origin.split(",")),
+    }
 
 
 def _wants_fragment(request: HttpRequest) -> bool:
@@ -2121,6 +2262,7 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         # catalogue, and each has to offer and redisplay the body *it* filters
         # by (docs/adr/0071).
         "organisation_choosers": _organisation_choosers(params),
+        **_panel_context(params, chips, date_echo),
         # Who a row may be handed to, current reader first. The same population
         # the Matter header's own control offers, so the two cannot disagree
         # about who work may be given to (app/accounts/selectors.py, ADR 0036).
@@ -5349,6 +5491,102 @@ def _named_action_id(request: HttpRequest, matter: Matter, form: Any) -> Any:
     ).pk
 
 
+#: Refused when a `PRAEGUNE TEGEVUS` panel was drawn from a revision of the
+#: current step that another save has since replaced (UI-10).
+STALE_REVISION_REFUSAL = (
+    "Praegune tegevus muutus vahepeal, seda vormi ei salvestatud. "
+    "Vaata tegevuse uus seis üle ja salvesta siis uuesti."
+)
+
+
+def current_action_revision(action: NextAction) -> str:
+    """The revision token of a current step, exactly as its panels post it.
+
+    The step's id and its ``updated_at`` — the token every corrected record
+    here already uses (`MatterWebsiteOverview.revision_token`): ``auto_now``
+    moves it on every write, PostgreSQL keeps the microseconds, and it costs no
+    migration. Spelled once here and once in `current_action_task.html`
+    (``{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}``),
+    both off the same UTC value, and held to each other by
+    `tests/test_ui10_current_action_toolbar.py`.
+    """
+    return f"{action.pk}@{action.updated_at.isoformat()}"
+
+
+def _hold_the_drawn_revision(matter: Matter, action_id: Any, posted: str) -> NextAction | None:
+    """Lock the step a toolbar panel names and refuse it if it is not the drawn revision.
+
+    `✓ Tehtud`, `Vaatasin üle` and `Muuda` may all be open at once (UI-10), so
+    one of them is often saved while the others stay open on the page. The id
+    alone does not catch a stale one: `Vaatasin üle` changes the step **in
+    place** — the same row with a new review day — so a `Muuda` drawn before it
+    would post the old day back over the new one under the same id. (`Muuda`
+    itself, and a day moved from Minu asjad or the calendar, replace the step
+    with a new row, which the id check already refuses.)
+
+    **Any write to the open row moves the revision, by design.** Reassigning
+    the Matter re-points the open step's `responsible` and so bumps its
+    ``updated_at``: a `✓ Tehtud` or `Vaatasin üle` open at that moment is
+    refused once as stale, and the redrawn panel saves on the next press. That
+    is the honest rule — the step changed while the panel was open — and it is
+    deliberately not narrowed to per-field tokens.
+
+    Called inside the caller's transaction, before the service. **A closed
+    Matter is refused first**, with the closed-Matter sentence, through the same
+    `lock_open_matter_for_business_write` the services take; then the action, at
+    `FOR NO KEY UPDATE` — the order and strength every transition takes
+    (`workflow.services._lock_for_transition`) — so the answer cannot change
+    between this check and the write. Returns the locked row, or ``None`` when
+    nothing was posted: a form drawn before this release, or a caller other than
+    the Teema page, keeps exactly the id check it had. Raises
+    `STALE_REVISION_REFUSAL` with nothing written.
+
+    The views also ask `_drawn_from_an_older_revision` **before validating the
+    form**, so a stale panel is never answered by a validation refusal that
+    redraws it under the fresh token; this locked compare decides at save time.
+    """
+    if not posted:
+        return None
+    from app.matters.locks import lock_open_matter_for_business_write
+
+    lock_open_matter_for_business_write(matter.pk)
+    action = (
+        NextAction.objects.select_for_update(no_key=True)
+        .filter(pk=action_id, matter=matter)
+        .first()
+    )
+    if action is None or current_action_revision(action) != posted:
+        raise DomainError(STALE_REVISION_REFUSAL)
+    return action
+
+
+def _drawn_from_an_older_revision(request: HttpRequest, matter: Matter, action_id: Any) -> bool:
+    """Whether a toolbar panel was drawn from a revision the step no longer has.
+
+    Asked **before** the form is validated (UI-10 review, P2): a validation
+    refusal redraws the panel with the step's fresh token beside the posted,
+    old fields, and the corrected save would then pass the guard and write the
+    old day back. So a stale panel always gets `STALE_REVISION_REFUSAL` first.
+
+    Unlocked and read-only — the decision at save time is
+    `_hold_the_drawn_revision`'s, under the locks. ``False`` when no revision
+    was posted, when the id is not one, and on a closed Matter: there the
+    closed-Matter refusal is the one that must be said, and the save path says
+    it.
+    """
+    posted = request.POST.get("revision", "")
+    if not posted or not action_id:
+        return False
+    try:
+        named = uuid.UUID(str(action_id))
+    except ValueError:
+        return False
+    if not Matter.objects.filter(pk=matter.pk, is_open=True).exists():
+        return False
+    action = NextAction.objects.filter(pk=named, matter=matter).first()
+    return action is None or current_action_revision(action) != posted
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -5359,6 +5597,16 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
         periods=True,
         current=selectors.current_action_of(matter, request.user),
     )
+    # A stale `Muuda` first, before its fields are judged (UI-10).
+    if _drawn_from_an_older_revision(request, matter, request.POST.get("action_id")):
+        return _workspace_refusal(
+            request,
+            matter,
+            key="action_form",
+            form=form,
+            error=STALE_REVISION_REFUSAL,
+            redraw=True,
+        )
 
     # Both refusals through `_workspace_refusal`, which is where every other
     # workspace save's already went. This view hand-rolled its own render, and
@@ -5395,12 +5643,14 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
             action = get_object_or_404(
                 NextAction.objects.visible_to(request.user), pk=named, matter=matter
             )
-            workspace.change_current_action(
-                matter=matter,
-                actor=request.user,
-                action_id=action.pk,
-                **form.as_service_kwargs(),
-            )
+            with transaction.atomic():
+                _hold_the_drawn_revision(matter, action.pk, request.POST.get("revision", ""))
+                workspace.change_current_action(
+                    matter=matter,
+                    actor=request.user,
+                    action_id=action.pk,
+                    **form.as_service_kwargs(),
+                )
         else:
             step = form.as_service_kwargs()
             workspace.add_unnamed_step(
@@ -5412,7 +5662,14 @@ def set_action(request: HttpRequest, pk: Any) -> HttpResponse:
                 responsible=step["responsible"],
             )
     except DomainError as error:
-        return _workspace_refusal(request, matter, key="action_form", form=form, error=str(error))
+        return _workspace_refusal(
+            request,
+            matter,
+            key="action_form",
+            form=form,
+            error=str(error),
+            redraw=str(error) == STALE_REVISION_REFUSAL,
+        )
 
     return _render_overview(request, matter)
 
@@ -5805,6 +6062,13 @@ def cancel_planned_action_view(request: HttpRequest, pk: Any, action_id: Any) ->
     return _render_overview(request, matter)
 
 
+def _review_lands_once(action: NextAction, form: Any) -> bool:
+    """Whether a valid `Vaatasin üle` asks for exactly the day the step has now."""
+    current = NextAction.objects.filter(pk=action.pk).first()
+    wanted = (form.cleaned_data.get("next_review_date"), DatePrecision.EXACT)
+    return current is not None and (current.target_date, current.date_precision) == wanted
+
+
 @login_required
 @business_write_required
 @require_http_methods(["POST"])
@@ -5834,17 +6098,50 @@ def review_action(request: HttpRequest, pk: Any, action_id: Any) -> HttpResponse
         NextAction.objects.visible_to(request.user), pk=action_id, matter=matter
     )
     form = ReviewActionForm(request.POST)
+    # A stale panel is refused before its date is judged (UI-10) — except the
+    # second press of the same review, which asks for the day the step already
+    # has: one review landing once (ENG-021).
+    if _drawn_from_an_older_revision(request, matter, action.pk) and not (
+        form.is_valid() and _review_lands_once(action, form)
+    ):
+        return _workspace_refusal(
+            request,
+            matter,
+            key="review_form",
+            form=form,
+            error=STALE_REVISION_REFUSAL,
+            redraw=True,
+        )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="review_form", form=form)
 
     try:
-        acknowledge_review(
-            action=action,
-            actor=request.user,
-            next_review_date=form.cleaned_data.get("next_review_date"),
-        )
+        with transaction.atomic():
+            try:
+                _hold_the_drawn_revision(matter, action.pk, request.POST.get("revision", ""))
+            except DomainError as refusal:
+                # **A second press of the same review is still one review**
+                # (ENG-021): the first moved the revision on, so the second
+                # arrives stale — and asks for exactly the day the step now
+                # has. That is the review landing once, not an obsolete form,
+                # and `acknowledge_review` answers it by writing nothing.
+                # Anything else drawn from an older revision is refused.
+                if str(refusal) != STALE_REVISION_REFUSAL or not _review_lands_once(action, form):
+                    raise
+            acknowledge_review(
+                action=action,
+                actor=request.user,
+                next_review_date=form.cleaned_data.get("next_review_date"),
+            )
     except DomainError as error:
-        return _workspace_refusal(request, matter, key="review_form", form=form, error=str(error))
+        return _workspace_refusal(
+            request,
+            matter,
+            key="review_form",
+            form=form,
+            error=str(error),
+            redraw=str(error) == STALE_REVISION_REFUSAL,
+        )
 
     return _render_overview(request, matter)
 
@@ -8161,8 +8458,16 @@ def _workspace_refusal(
     key: str,
     form: Any,
     error: str = "",
+    redraw: bool = False,
 ) -> HttpResponse:
     """Re-render the column with one bound form, so nothing typed is lost.
+
+    **``redraw``: a panel drawn from an older revision of the current step**
+    (UI-10, `STALE_REVISION_REFUSAL`). The bound form does *not* go back: it
+    would carry the old day under the fresh revision token, and the next press
+    would save it. The panel is drawn afresh from the step as it is now, opened
+    with the refusal, and what was typed comes back read-only as «Salvestamata
+    sisu».
 
     400 rather than 200, like every other refused write on this page, and the
     bound form goes back under its own key so the panel that failed is the panel
@@ -8200,7 +8505,8 @@ def _workspace_refusal(
     matter.refresh_from_db(fields=["is_open"])
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
-    context[key] = form
+    if not redraw:
+        context[key] = form
     # **The refused form is the same drawn form**, so it keeps the token it was
     # posted with. A refusal before the save spent nothing, so the corrected
     # save still saves once; an `ALREADY_SAVED` refusal keeps the spent token,
@@ -8306,10 +8612,10 @@ def _workspace_refusal(
         context.update(
             _workspace_choices(choice, has_open_round=bool(context.get("feedback_waits")))
         )
-    if not panel_is_rendered:
-        # The panel that held their words is not on the fresh column, so the
-        # words come back beside the refusal instead — read-only, and labelled
-        # as unsaved (QA-06).
+    if not panel_is_rendered or redraw:
+        # The panel that held their words is not on the fresh column — or is
+        # drawn afresh from a newer revision — so the words come back beside
+        # the refusal instead, read-only and labelled as unsaved (QA-06, UI-10).
         context["unsaved_content"] = unsaved_content(form)
     body = render_to_string("matters/partials/overview.html", context, request=request)
     if not matter.is_open:
@@ -8339,6 +8645,16 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
     form = CompleteCurrentActionForm(
         request.POST, request.FILES, next_stages=offered_next_stages(matter)
     )
+    # A stale panel first, before its words are judged (UI-10).
+    if _drawn_from_an_older_revision(request, matter, request.POST.get("action_id")):
+        return _workspace_refusal(
+            request,
+            matter,
+            key="current_action_form",
+            form=form,
+            error=STALE_REVISION_REFUSAL,
+            redraw=True,
+        )
     if not form.is_valid():
         return _workspace_refusal(request, matter, key="current_action_form", form=form)
 
@@ -8348,28 +8664,38 @@ def complete_current_action(request: HttpRequest, pk: Any) -> HttpResponse:
         matter=matter,
     )
     try:
-        result = workspace.complete_current_action(
-            matter=matter,
-            author=request.user,
-            action_id=action.pk,
-            body=form.cleaned_data["body"],
-            uploads=form.cleaned_data["attachments"],
-            # `Järgmine tegevus` and `Uus hetkeseis` (docs/adr/0140): a sentence
-            # of the person's own or nothing, and a stage or `Jätan muutmata`.
-            next_text=form.cleaned_data.get("next_text") or "",
-            next_date=form.cleaned_data.get("next_date"),
-            stage=form.cleaned_data.get("stage"),
-            # `Sulge teema ja lõpeta ka järelkontroll`, when the person ticked
-            # it after the warning (docs/adr/0146 §8).
-            follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
-        )
+        # The drawn revision first, under the locks the completion takes next
+        # and before it stores a byte of any file (UI-10).
+        with transaction.atomic():
+            _hold_the_drawn_revision(matter, action.pk, request.POST.get("revision", ""))
+            result = workspace.complete_current_action(
+                matter=matter,
+                author=request.user,
+                action_id=action.pk,
+                body=form.cleaned_data["body"],
+                uploads=form.cleaned_data["attachments"],
+                # `Järgmine tegevus` and `Uus hetkeseis` (docs/adr/0140): a
+                # sentence of the person's own or nothing, and a stage or
+                # `Jätan muutmata`.
+                next_text=form.cleaned_data.get("next_text") or "",
+                next_date=form.cleaned_data.get("next_date"),
+                stage=form.cleaned_data.get("stage"),
+                # `Sulge teema ja lõpeta ka järelkontroll`, when the person
+                # ticked it after the warning (docs/adr/0146 §8).
+                follow_ups_confirmed=form.cleaned_data.get("confirm_follow_up_closure", False),
+            )
     except FollowUpClosureUnconfirmed as refusal:
         return _closure_needs_confirmation(
             request, matter, key="current_action_form", form=form, refusal=refusal
         )
     except DomainError as error:
         return _workspace_refusal(
-            request, matter, key="current_action_form", form=form, error=str(error)
+            request,
+            matter,
+            key="current_action_form",
+            form=form,
+            error=str(error),
+            redraw=str(error) == STALE_REVISION_REFUSAL,
         )
     if result.closed:
         # «Jõustunud» or «Rohkem ei tegele» ended the Matter (docs/adr/0131 §10):

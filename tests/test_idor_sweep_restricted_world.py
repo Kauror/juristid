@@ -155,6 +155,8 @@ PERSONAL_INBOX = {
     # the reader's desk, or unowned and the reader a manager.
     "notifications:reminder_read": "the responsible person's own inbox",
     "notifications:defer": "the responsible person's own inbox",
+    # «Märgi lugemata» undoes the same personal receipt (UI-01): the same gate.
+    "notifications:reminder_unread": "the responsible person's own inbox",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.

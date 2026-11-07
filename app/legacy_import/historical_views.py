@@ -42,6 +42,7 @@ from app.core.client_ip import client_ip
 from app.core.http import content_disposition, head_response, is_head
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
+from app.legacy_import import historical_reading as reading
 from app.legacy_import.historical_apply import is_empty_at_source
 from app.legacy_import.opinion_views import MATTER_NOT_FOUND, queue_rows
 from app.legacy_import.shared_dossiers import shared_dossier
@@ -112,6 +113,8 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
     )
     # The page's Teemad and how they relate, for this reader (docs/adr/0208).
     dossier = shared_dossier(page, request.user)
+    _quiet_common_state(blocks, shared=dossier.shared)
+    status = import_statuses([link])[link.pk]
 
     return render(
         request,
@@ -120,7 +123,10 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "matter": link.matter,
             "link": link,
             "page": page,
-            "blocks": blocks,
+            "blocks": reading.reading_entries(blocks),
+            "contents": reading.contents(blocks),
+            "file_summary": file_summary(status),
+            "unplaced_files": any(block["kind"] == "notice" for block in blocks),
             "page_links": page_links(page.links),
             "other_matters": (
                 visible_links(request.user)
@@ -140,6 +146,43 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "nav_active": "teemad",
         },
     )
+
+
+def file_summary(status: ImportStatus) -> str:
+    """«Lehel on 11 faili; ükski neist ei ole selle teema dokument.» (UI-12)
+
+    Source files and this Teema's Documents, counted apart, from the same
+    import rows as the Teema page's «Ajalooline OneNote» chip (`import_statuses`):
+    a shared page's files are on the page and are no Teema's Documents.
+    """
+    if not status.files:
+        return "Lehel ei ole faile."
+    imported = status.counts.get("imported", 0)
+    if imported == status.files:
+        own = "kõik on selle teema dokumendid" if imported > 1 else "see on selle teema dokument"
+    elif imported == 0:
+        own = "ükski neist ei ole selle teema dokument"
+    elif imported == 1:
+        own = "1 neist on selle teema dokument"
+    else:
+        own = f"{imported} neist on selle teema dokumendid"
+    return f"Lehel on {_files(status.files)}; {own}."
+
+
+def _quiet_common_state(blocks: list[dict], *, shared: bool) -> None:
+    """Say a shared dossier's held state once, not beside every file (UI-12).
+
+    On a page linked to several Teemad every file is held for a person's
+    decision (`held_shared`), and the dossier note says so once, above the
+    page. Each such file stops repeating the chip and the ownership sentence;
+    a file in any *other* state — empty in OneNote, waiting for review, too
+    large — still says its own state, because that is an exception worth
+    reading. Presentation only: the import rows, and so every count and the
+    unresolved association itself, are unchanged.
+    """
+    for block in blocks:
+        if block["kind"] == "file":
+            block["quiet"] = shared and block["state"] == "held_shared"
 
 
 def _servable_originals(page: LegacySourcePage, user: Any) -> set[Any]:
@@ -202,13 +245,32 @@ def _rendered_blocks(
     2026-11-05). A later capture adds its files to the page's catalogue but keeps
     the row's text and blocks, so a file the stored blocks do not reach (a later
     capture's, or one that never had a block) is shown after the narrative,
-    under a line naming the capture the narrative is from. None was shown
-    before, and the page read as the latest while it was an earlier one. A row
-    recorded as continuing an earlier block (a moved page) is that same file,
-    already shown in its place, so it is not repeated.
+    under a line saying so (a `notice`; the capture the narrative is from is
+    named in the page's technical details, UI-12). None was shown before, and
+    the page read as the latest while it was an earlier one. A row recorded as
+    continuing an earlier block (a moved page) is that same file, already shown
+    in its place, so it is not repeated.
+
+    **For reading (UI-12).** Each text block also carries the text a reader
+    sees (decoded once where the capture proves it encoded), its web addresses
+    (`parts`), its indentation, whether it is a source heading or the start of
+    a dated note, and its stable anchor (`plokk-<ordinal>`), all from
+    `app.legacy_import.historical_reading`. A file carries its type and the
+    same anchor. A file after the narrative has no anchor: its place is not a
+    stored block's.
     """
 
-    def file_block(key: str, ordinal: Any) -> dict:
+    stored = [block for block in page.blocks or [] if isinstance(block, dict)]
+    anchored = reading.anchored_ordinals(stored)
+    dated = reading.dated_starts(
+        stored, page.links, page_modified=getattr(page, "source_modified_at", None)
+    )
+    heads = reading.headings(stored, dated=dated)
+
+    def anchor_of(ordinal: Any, *, source: bool = True) -> str:
+        return reading.anchor(ordinal) if source and ordinal in anchored else ""
+
+    def file_block(key: str, ordinal: Any, *, source: bool = True, depth: int = 0) -> dict:
         resource = resources.get(key)
         record = documents.get(key)
         if record is not None and record.document_id and record.document_id not in readable:
@@ -228,6 +290,11 @@ def _rendered_blocks(
                 "original_pk": None,
                 "added_at": None,
                 "added_known": False,
+                "anchor": anchor_of(ordinal, source=source),
+                "depth": depth,
+                "depth_class": reading.depth_class(depth),
+                "type": "",
+                "quiet": False,
             }
         state = _file_state(resource, record)
         return {
@@ -267,12 +334,19 @@ def _rendered_blocks(
             # one (docs/adr/0206); never the capture or import time.
             "added_at": resource.source_added_at if resource else None,
             "added_known": bool(resource and resource.source_added_at),
+            "anchor": anchor_of(ordinal, source=source),
+            "depth": depth,
+            "depth_class": reading.depth_class(depth),
+            "type": reading.file_type(resource.original_filename if resource else key),
+            # Set by the view once it knows whether the page is a shared
+            # dossier (`_quiet_common_state`).
+            "quiet": False,
         }
 
     out: list[dict] = []
     placed: set[str] = set()
     last = 0
-    for block in page.blocks or []:
+    for block in stored:
         kind = block.get("kind", "TEXT")
         last = max(last, int(block.get("ordinal") or 0))
         if kind == "TITLE":
@@ -282,17 +356,25 @@ def _rendered_blocks(
         if kind in {"FILE_ATTACHMENT", "IMAGE"}:
             key = block.get("resource_key", "")
             placed.add(key)
-            out.append(file_block(key, block.get("ordinal", 0)))
+            out.append(file_block(key, block.get("ordinal", 0), depth=reading.depth_of(block)))
         else:
-            text = (block.get("text") or "").strip()
+            # Decoded once where the capture proves it encoded (UI-12,
+            # `historical_reading.display_text`); escaped by the template.
+            text = reading.display_text(block).strip()
             if text:
+                ordinal = block.get("ordinal", 0)
                 out.append(
                     {
                         "kind": "text",
-                        "ordinal": block.get("ordinal", 0),
+                        "ordinal": ordinal,
                         "text": text,
-                        "depth": block.get("depth", 0),
+                        "parts": reading.text_parts(text),
+                        "depth": reading.depth_of(block),
+                        "depth_class": reading.depth_class(reading.depth_of(block)),
                         "list_item": kind == "LIST_ITEM",
+                        "anchor": anchor_of(ordinal),
+                        "heading": ordinal in heads,
+                        "dated": dated.get(ordinal) if ordinal in anchored else None,
                     }
                 )
     unplaced = [
@@ -302,26 +384,20 @@ def _rendered_blocks(
         and getattr(documents.get(key), "error_code", "") != "CONTINUES_EARLIER_BLOCK"
     ]
     if unplaced:
-        when = (
-            f" ({timezone.localtime(page.first_imported_at):%d.%m.%Y})"
-            if page.first_imported_at
-            else ""
-        )
+        # Which capture the text is from, and when, is provenance: it is in
+        # the page's technical details, not in the reading flow (UI-12).
         out.append(
             {
-                "kind": "text",
+                "kind": "notice",
                 "ordinal": last + 1,
                 "text": (
-                    f"Lehe tekst on hõivest {page.capture_id}{when}. Järgmised failid on "
-                    "samal lehel, kuid selles tekstis pole neil kohta (hilisem hõive "
-                    "või plokita fail)."
+                    "Järgmised failid on samal OneNote'i lehel, kuid lehe salvestatud "
+                    "tekstis pole neil kohta (hilisem hõive või plokita fail)."
                 ),
-                "depth": 0,
-                "list_item": False,
             }
         )
         for offset, key in enumerate(unplaced, start=2):
-            out.append(file_block(key, last + offset))
+            out.append(file_block(key, last + offset, source=False))
     return out
 
 

@@ -10,10 +10,10 @@ that chip away). One markup, one endpoint, one service: `matters:set_action` →
 *setting* a step and *changing* one are the same canonical act and there are
 never two competing controls for it (brief §15).
 
-Rendered in two places rather than reached from one by script, because a
-`<details>` is the disclosure and a button that opens a panel elsewhere on the
-page would do nothing with JavaScript off. The panel that is present is the one
-the situation calls for.
+Rendered in two places, and only one of them on any render: the `Muuda` panel
+under the step's toolbar (`current_action_task.html`, UI-10), and the first
+choice of the action row under the zone (`next_action_panel.html`, UI-09). The
+panel that is present is the one the situation calls for.
 
 **What, when, and how exactly the when is known.** Still no `TEEN`/`OOTAN`/
 `JÄLGIN` and still no date meaning: new work recorded here is `DO`/`DEADLINE`,
@@ -45,6 +45,8 @@ own date and precision, and a refused save on what was posted
   {% endcomment %}
   {% if current_action %}
     <input type="hidden" name="action_id" value="{{ current_action.pk }}">
+    {# And the revision it was drawn from (UI-10): a stale `Muuda` must not save an old day back. #}
+    <input type="hidden" name="revision" value="{{ current_action.pk }}@{{ current_action.updated_at.isoformat }}">
   {% endif %}
   <label class="cx-f" for="{{ action_form.text.id_for_label }}">
     <span class="cx-f__lab">Mida on vaja teha?{% required_mark %}</span>

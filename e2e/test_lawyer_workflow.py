@@ -466,7 +466,8 @@ def test_the_whole_lawyer_workflow(page, base_url, screenshots):
     # called `Täpsem otsing` since Stage 2E.1 — it now holds the date ranges and
     # the institution chooser as well, and "+ Filter" undersold it.
     page.locator("summary", has_text="Täpsem otsing").click()
-    page.locator("select[name='ulatus']").select_option("minu")
+    # «Ainult minu omad» is a box since UI-07; it writes the same `ulatus=minu`.
+    page.locator("input[type='checkbox'][name='ulatus']").check()
     page.locator("input[type='checkbox'][name='hetkeseis'][value='consultation']").check()
     page.get_by_role("button", name="Filtreeri").click()
     expect(register_row(page, MATTER_TITLE)).to_be_visible()

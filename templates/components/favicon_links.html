@@ -1,0 +1,16 @@
+{% load static %}{% comment %}
+  The browser icons (UI-02): the Chamber's round emblem, the same artwork the
+  top bar shows, cut from `static/brand/koda-logo-round.png` by
+  `tools/brand_favicons.py` and never redrawn. Included by both documents that
+  open a page — base.html and error_page.html — so the sign-in pages, the
+  application and the error pages carry one icon. Linked explicitly, so a
+  browser need not probe `/favicon.ico` (which answers with the same .ico).
+
+  New file names, and in production `{% static %}` adds each file's content
+  hash, so no browser keeps showing the old wordmark from its cache.
+{% endcomment %}
+<link rel="icon" href="{% static 'brand/koda-round-favicon.ico' %}" sizes="16x16 32x32 48x48">
+<link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/koda-round-favicon-32.png' %}">
+<link rel="icon" type="image/png" sizes="16x16" href="{% static 'brand/koda-round-favicon-16.png' %}">
+<link rel="icon" type="image/png" sizes="48x48" href="{% static 'brand/koda-round-favicon-48.png' %}">
+<link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/koda-round-apple-touch-icon.png' %}">

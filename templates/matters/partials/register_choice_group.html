@@ -14,7 +14,8 @@ pressed: the form is a plain GET and nothing here changes the list by itself.
 {% endcomment %}
 <fieldset class="field choicegroup">
   <legend class="field__label">{{ label }}</legend>
-  <div class="choicegroup__options">
+  {% comment %}`inline`: two or three short values on one line (UI-07).{% endcomment %}
+  <div class="choicegroup__options{% if inline %} choicegroup__options--inline{% endif %}">
     {% if missing %}
       <label class="checkline">
         <input type="checkbox" name="{{ name }}" value="puudub" {% if "puudub" in chosen %}checked{% endif %}>

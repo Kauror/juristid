@@ -1,0 +1,162 @@
+/* register-search.css: UI-05..UI-08 register search (agent D). Loaded after ux.css from templates/base.html. */
+
+/* -- Täpsem otsing, grouped (UI-07, UI-08) ----------------------------------
+ *
+ * Four groups in one form — Põhifiltrid, Kuupäevad, Asutused, Muud tunnused —
+ * each laying itself out in as many columns as the panel's width holds, so a
+ * wide window spreads them across the results' width and a phone stacks them.
+ * Every track is `minmax(min(Nrem, 100%), 1fr)`: never wider than the panel,
+ * never a fixed width, never a horizontal scroll.
+ */
+.filterform {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  min-width: 0;
+}
+
+.filtergroup {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 var(--spacing-3);
+  border: 0;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.filtergroup__title {
+  margin: 0;
+  padding: 0;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.filtergroup__note {
+  margin: 0;
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.filtergroup__grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(13rem, 100%), 1fr));
+  gap: var(--spacing-3);
+  align-items: start;
+}
+
+/* Two short controls sharing one column, so a select does not take a whole
+   column's height beside a list of nine checkboxes. */
+.filtergroup__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  min-width: 0;
+}
+
+.filtergroup__check {
+  align-items: flex-start;
+  font-size: var(--typography-size-meta);
+}
+
+/* The date block: one cell per constraint, both ends side by side. */
+.filtergroup__dates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  gap: var(--spacing-3);
+  align-items: end;
+}
+
+/* The institutions: the three choosers across the width, each one's search box
+   above its select so a long name is readable in both. */
+.filtergroup__orgs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(18rem, 100%), 1fr));
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-2);
+}
+
+.filtergroup__orgs > .orgchooser {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.filtergroup__disclosure {
+  min-width: 0;
+}
+
+.filtergroup__disclosure > .filtergroup__grid,
+.filtergroup__disclosure > .filtergroup__note {
+  margin-top: var(--spacing-2);
+}
+
+.filtergroup__summary {
+  cursor: pointer;
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+  padding: var(--spacing-1) 0;
+}
+
+.filtergroup__summary:hover {
+  color: var(--text-primary);
+}
+
+.filtergroup__count {
+  color: var(--accent-link);
+  font-weight: var(--typography-weight-regular);
+}
+
+/* Active constraints of a shut group, under its heading. Open, the controls
+   themselves show the values, so the chips step aside. */
+.filtergroup__chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-15);
+  min-width: 0;
+}
+
+.filtergroup__disclosure[open] + .filtergroup__chips {
+  display: none;
+}
+
+/* Two or three short values on one line rather than a scrolling box. */
+.choicegroup__options--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: var(--spacing-1) var(--spacing-3);
+  max-height: none;
+}
+
+.filterpanel__sort {
+  flex: 0 1 16rem;
+}
+
+.filterform .filterpanel__actions > .button {
+  align-self: flex-end;
+}
+
+.filterform > .filterpanel__actions {
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+/* Shorter scroll boxes inside the grouped panel: the lists sit four abreast
+   on a wide window, and a 10.5rem column of mostly empty box is the
+   «oversized box» the owner named. Scrolls past seven rows. */
+.filtergroup__grid .choicegroup__options:not(.choicegroup__options--inline) {
+  max-height: 9rem;
+}
+
+/* A disclosure group: its rule already separates it, so its own padding is
+   only what the summary line needs. */
+.filtergroup--toggle {
+  gap: var(--spacing-1);
+}
+
+/* Constraints that came in on a link with no control in the panel. */
+.filtergroup__chips--carried {
+  padding-bottom: var(--spacing-2);
+  border-bottom: 1px solid var(--border-default);
+}

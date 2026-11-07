@@ -7,14 +7,17 @@ Rendered only when there is something in it — no heading, no empty state, no
 zero. Personal: `notifications_block` reads the signed-in reader, so it belongs
 inside Minu asjad's `is_self` branch and is never drawn on a colleague's page.
 The first few items, then «Kõik teavitused»; the count in the heading is the
-bell's.
+bell's. Only what still awaits the reader (UI-01): an item read, postponed or
+resolved leaves it, and its history stays in the bell's panel and on
+`/teavitused/`. When nothing awaits, nothing is drawn — not even the heading.
 {% endcomment %}
 {% if items %}
-  <section class="railblock notifblock" aria-label="Teavitused" id="teavitused" tabindex="-1">
+  <section class="railblock notifblock" aria-label="Teavitused" id="teavitused" tabindex="-1" data-notif-focus>
     <h2 class="railblock__label">
       Teavitused
       <span class="railblock__count">{{ total }}</span>
     </h2>
+    {% if error %}<p class="notifblock__error" role="alert">{{ error }}</p>{% endif %}
     <ul class="notiflist notiflist--rail">
       {% for item in items %}
         {% include "notifications/_inbox_item.html" with item=item tagasi=tagasi %}

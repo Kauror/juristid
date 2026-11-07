@@ -77,13 +77,13 @@ def test_saabunud_builds_no_intake_form(signed_in, monkeypatch):
     assert built == []
 
 
-def test_the_four_status_chips_are_one_statement(specialist):
-    """`Avatud`, `Suletud`, `Arhiiv`, `Kõik` — one aggregate, not four counts."""
+def test_the_three_status_chips_are_one_statement(specialist):
+    """`Avatud`, `Suletud`, `Kõik` — one aggregate, not three counts (UI-06)."""
     from app.matters.views import _segment_counts
 
     factories.MatterFactory(owner=specialist)
     with CaptureQueriesContext(connection) as captured:
         counts = _segment_counts(specialist)
-    assert set(counts) == {"avatud", "suletud", "arhiiv", "koik"}
+    assert set(counts) == {"avatud", "suletud", "koik"}
     # One aggregate, after the reader's scope (which may itself cost a lookup).
     assert len([q for q in captured if "COUNT(" in q["sql"].upper()]) == 1

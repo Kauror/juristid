@@ -64,9 +64,12 @@ restore the pre-rebuild backup set, or the owner decides.
 `retire` (audit 2026-11 C-L-04) records that a cohort Teema left its cohort
 because it was permanently deleted (docs/adr/0165), so the nightly size check
 expects one fewer. A deletion records this itself; `retire` is for a deletion
-made before that, and it is refused unless the Teema is a tombstone whose
-MATTER_DELETED event removed a synchronisation state, nothing has retired it yet,
-and the cohort is short. Dry run unless ``--apply``; it writes no business record.
+whose retirement was not recorded, and it is refused unless the Teema is a
+tombstone whose MATTER_DELETED event removed a synchronisation state, a cohort
+membership record names it in exactly ``--cohort`` (REL-01: NO_MEMBERSHIP_EVIDENCE
+when none does, as for a Teema deleted before migration legacy_import.0024;
+WRONG_COHORT when another cohort's does), nothing has retired it yet, and the
+cohort is short. Dry run unless ``--apply``; it writes no business record.
 `report` lists every retirement (cohort, kind, time) and each cohort's numbers.
 
 Exit status: 0 done, 2 refused before starting (paused, duplicate, locked),

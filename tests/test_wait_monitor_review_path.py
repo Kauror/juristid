@@ -36,6 +36,7 @@ Every date is frozen.
 from __future__ import annotations
 
 import datetime
+import re
 from pathlib import Path
 
 import pytest
@@ -268,8 +269,11 @@ def test_a_waiting_step_offers_a_labelled_review_control(client, specialist, nor
 
     zone = body.split('id="praegune-tegevus"')[1].split("</section>")[0]
     assert 'id="vaatasin-ule"' in zone
-    panel = zone.split('id="vaatasin-ule"')[1].split("</details>")[0]
-    assert ">Vaatasin üle</summary>" in panel
+    panel = zone.split('id="vaatasin-ule"')[1].split("</form>")[0]
+    # The control is a button in the step's toolbar, the form its panel (UI-10).
+    assert re.search(
+        r'aria-controls="vaatasin-ule"\s+aria-expanded="false">Vaatasin üle</button>', zone
+    )
     assert _review_url(normal_matter, action) in panel
     # Labelled: the box has a `<label for>` naming it, and its help is wired.
     assert 'for="id_ulevaatus_next_review_date"' in panel
@@ -434,9 +438,11 @@ def test_a_date_that_is_not_a_day_is_refused_in_the_panel(client, specialist, no
 
     assert response.status_code == 400
     body = response.content.decode()
-    panel = body.split('id="vaatasin-ule"')[1].split("</details>")[0]
+    panel = body.split('id="vaatasin-ule"')[1].split("</form>")[0]
     # The panel it came from, reopened, with the sentence on the box.
-    assert body.split('id="vaatasin-ule"')[1].split(">")[0].rstrip().endswith("open")
+    assert "curact__toolpanel--shut" not in re.search(
+        r'<div class="([^"]*)" id="vaatasin-ule"', body
+    ).group(1)
     assert "Kirjuta kuupäev kujul 7.9.2026." in panel
     assert 'id="id_ulevaatus_next_review_date_error"' in panel
     assert 'aria-invalid="true"' in panel

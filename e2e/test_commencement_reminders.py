@@ -99,7 +99,9 @@ def test_a_commencement_prompt_is_seen_read_and_gone(page, base_url):
     expect(row.get_by_label("Kuni")).to_be_visible()
     row.get_by_role("button", name=f"Märgi loetuks: {title}").click()
     page.wait_for_url(f"{base_url}/teavitused/")
-    expect(page.locator(".notifrow", has_text=title)).to_have_count(0)
+    # Off the inbox, kept as this reader's history under «Varasemad» (UI-01).
+    expect(page.locator("[data-inbox-item]", has_text=title)).to_have_count(0)
+    expect(page.locator("#varasemad [data-inbox-history]", has_text=title)).to_have_count(1)
 
     # A second run of the generator does not bring it back.
     _manage("generate_commencement_reminders")

@@ -104,19 +104,24 @@ def test_the_row_is_tehtud_and_muuda_and_nothing_else(signed_in, normal_matter, 
 
 
 def test_tehtud_is_a_toggle_that_stays_on_the_row(signed_in, normal_matter, specialist):
-    """A checkbox and its label on the row, the form a sibling after them: the
+    """A button in the step's toolbar, the form a panel after the toolbar: the
     chip is never inside the panel it opens, so opening it cannot move it, and
-    pressing it again closes it — natively."""
+    pressing it again closes it (UI-10, `static/js/matter-actions.js`)."""
     _action(normal_matter, specialist)
 
     zone = _zone(_detail(signed_in, normal_matter))
 
-    assert re.search(r'<input class="addpick" type="checkbox" id="tehtud-valik"', zone)
-    chip = zone.index('for="tehtud-valik">✓ Tehtud</label>')
+    assert re.search(
+        r'<button type="button" [^>]*id="tehtud-nupp"\s+'
+        r'data-curact-toggle aria-controls="tehtud"\s+'
+        r'aria-expanded="false">✓ Tehtud</button>',
+        zone,
+    )
+    chip = zone.index('id="tehtud-nupp"')
     panel = zone.index('id="tehtud"')
     assert chip < panel
     assert "✓ Tehtud" not in zone[panel:]
-    assert "<details" not in zone[zone.index("tehtud-valik") - 200 : panel]
+    assert "<details" not in zone[chip:panel]
 
 
 def test_tehtud_stays_visible_with_its_panel_open_after_a_refusal(
@@ -128,8 +133,9 @@ def test_tehtud_stays_visible_with_its_panel_open_after_a_refusal(
 
     assert response.status_code == 400
     zone = _zone(response.content.decode())
-    assert re.search(r'type="checkbox" id="tehtud-valik"\s+aria-controls="tehtud"\s+checked', zone)
-    assert 'for="tehtud-valik">✓ Tehtud</label>' in zone
+    assert re.search(r'aria-controls="tehtud"\s+aria-expanded="true">✓ Tehtud</button>', zone)
+    classes = re.search(r'<div class="([^"]*)" id="tehtud"', zone).group(1)
+    assert "curact__toolpanel--shut" not in classes
 
 
 # ---------------------------------------------------------------------------
@@ -354,7 +360,7 @@ def test_required_labels_carry_the_mark_and_optional_ones_do_not(
     # Muu`'s (docs/adr/0097, amendment of 2026-10-15), so those two panels are
     # read on their own and the rest of the page keeps the optional «Millal?».
     start = body.index('id="lisa-planeeritud"')
-    planned = body[start : body.index("</details>", start)]
+    planned = body[start : body.index("</form>", start)]
     rest = body[:start] + body[start + len(planned) :]
     assert re.search(re.escape("Millal?") + r"\s*" + re.escape(MARK), planned)
     muu_start = rest.index('id="marge-muu"')

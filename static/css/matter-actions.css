@@ -1,0 +1,92 @@
+/* matter-actions.css: UI-09/UI-10 Matter action row and toolbar (agent E). Loaded after ux.css from templates/base.html. */
+
+/* -- UI-10: the current step's toolbar ------------------------------------
+ *
+ * `✓ Tehtud | Vaatasin üle | Muuda` (templates/matters/partials/
+ * current_action_task.html). One group of buttons on the step's own line,
+ * never wrapped inside itself and pushed to the line's end: when the text
+ * needs the whole width, the group takes a line of its own and stays at the
+ * right. Nothing a button opens is inside this group, so opening a panel can
+ * neither resize nor move a button. */
+#teema-vaade-wrap .curact__tools {
+  display: flex;
+  flex: none;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: var(--spacing-1);
+  margin-left: auto;
+}
+
+/* A `<button>` wearing the chip: the line height of the chips beside it, so a
+ * button and a link in one toolbar stand on the same baseline. */
+#teema-vaade-wrap .curact__tool {
+  line-height: inherit;
+}
+
+/* Open: the accent treatment a chosen launcher chip already has (app.css,
+ * `.addpick:checked + .disclosure-chip`) — colour, background and a solid
+ * border at the same width, never a weight change, because bold text is wider
+ * and a wider chip would push its neighbours (2026-09-14). */
+#teema-vaade-wrap .curact__tool[aria-expanded="true"] {
+  color: var(--accent-link);
+  background: var(--status-info-soft);
+  border: 1px solid var(--accent-border);
+}
+
+/* The panels, under the step's line, in the toolbar's order. Hidden ones take
+ * no space; an open one is the full width of the zone. */
+#teema-vaade-wrap .curact__toolpanels {
+  display: flex;
+  flex-direction: column;
+  margin: 0 0 var(--spacing-2);
+}
+
+#teema-vaade-wrap .curact__toolpanel {
+  display: block;
+  min-width: 0;
+}
+
+/* Shut only where scripting runs: the buttons that open a panel need it, and
+ * without it every panel is simply shown. A media condition rather than a
+ * class set by script, so it applies before the first paint and the page does
+ * not jump on load (the pattern app.css uses for the chronology rows, `.uxtl__item`). */
+@media (scripting: enabled) {
+  #teema-vaade-wrap .curact__toolpanel--shut {
+    display: none;
+  }
+}
+
+/* And without scripting no button could toggle anything, so none is drawn —
+ * the panels are all open, each under its own labelled fields. */
+@media (scripting: none) {
+  #teema-vaade-wrap .curact__tool[data-curact-toggle] {
+    display: none;
+  }
+}
+
+/* -- UI-09: the action row under PRAEGUNE TEGEVUS -------------------------
+ *
+ * The row (`#lisa-teemale`, templates/matters/partials/add_to_matter.html)
+ * has no heading of its own any more and reads as the zone's last line: the
+ * same capture ground and accent edge as `.curact`, and no hairline between
+ * the two. `curact--withrow` is drawn only when the row is (a writer on an
+ * open Matter), so a closed Matter and a reader keep the zone exactly as it
+ * was. */
+.teemamain .curact.curact--withrow {
+  border-bottom: 0;
+  padding-bottom: var(--spacing-1);
+}
+
+.teemamain .curact--withrow + .addzone {
+  background: var(--surface-capture);
+  box-shadow: inset 3px 0 0 var(--accent-border);
+  padding-top: var(--spacing-2);
+}
+
+/* The row wraps chip by chip and keeps a little air between its lines, so on a
+ * narrow column a control moves only to the start of the next line, in order;
+ * `Lõpeta teema` stays the last item and keeps to the right of whichever line
+ * it lands on (`disclosure-chip--last`, app.css). */
+#teema-vaade-wrap .curact--withrow + .addzone > .cx-panels {
+  row-gap: var(--spacing-2);
+}

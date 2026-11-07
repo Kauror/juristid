@@ -74,5 +74,7 @@ def test_a_suggestion_is_started_finished_and_the_next_dismissed(page, base_url)
 
     # The manual way is always there. Leave the Teema with an open step, as
     # every file this suite creates must (e2e/conftest.py `give_first_step`).
-    expect(page.locator("#praegune-tegevus")).to_contain_text("+ Lisa tegevus")
+    expect(page.locator('#lisa-teemale label[for="lisa-jargmine-valik"]')).to_have_text(
+        "+ Lisa tegevus"
+    )
     start_first_step(page)

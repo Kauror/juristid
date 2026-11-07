@@ -98,7 +98,10 @@ def test_lisa_tulemus_on_a_planned_row_records_that_planned_action(page, base_ur
     expect(panel).to_have_attribute("open", "")
     expect(box).to_be_focused()
     # The current step's `✓ Tehtud` stays shut: it would finish another step.
-    assert not page.locator("#tehtud-valik").is_checked()
+    assert (
+        page.locator('[data-curact-toggle][aria-controls="tehtud"]').get_attribute("aria-expanded")
+        == "false"
+    )
 
     form = panel.locator("form")
     assert (form.get_attribute("hx-post") or "").endswith(f"/planeeritud/{planned_pk}/tehtud/"), (

@@ -23,6 +23,7 @@ than to the date on the step.
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 import pytest
@@ -110,6 +111,8 @@ def test_the_current_action_zone_no_longer_carries_the_defer_control(
     assert "Lükka edasi" not in html
     # `✓ Tehtud` is back since docs/adr/0133 §4 — as the disclosure that opens
     # `Mida tegid?`, never as a completion with nothing recorded.
-    assert "Tehtud</button>" not in zone
+    # Since UI-10 `✓ Tehtud` is a `type="button"` toggle in the step's toolbar;
+    # what must never exist is a *submit* that completes with nothing written.
+    assert not re.search(r'<button type="submit"[^>]*>[^<]*Tehtud</button>', zone)
     assert "Mida tegid?" in zone
     assert "Muuda" in zone

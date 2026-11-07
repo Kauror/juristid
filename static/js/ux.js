@@ -108,6 +108,13 @@
     if (!target) {
       return false;
     }
+    /* A panel of the current step's toolbar (`✓ Tehtud | Vaatasin üle |
+       Muuda`, UI-10) is opened by its own button, so the button says so too
+       (static/js/matter-actions.js). */
+    var toolbar = window.JuristidMatterActions;
+    if (toolbar && target.id && toolbar.open(target.id)) {
+      return true;
+    }
     if (target.tagName === "DETAILS") {
       target.open = true;
       return true;
@@ -126,12 +133,13 @@
      (docs/adr/0133 §4, §6). The panel opens off its checkbox, as a
      `LISA TEEMALE` panel opens off its radio (docs/adr/0140 §1). */
   function openDoneForm() {
-    var pick = document.getElementById("tehtud-valik");
+    /* The panel opens off its button in the step's toolbar since UI-10
+       (static/js/matter-actions.js). */
+    var toolbar = window.JuristidMatterActions;
     var box = document.getElementById("id_praegune_body");
-    if (!pick || !box) {
+    if (!toolbar || !box || !toolbar.open("tehtud")) {
       return null;
     }
-    pick.checked = true;
     return box;
   }
 
@@ -206,12 +214,13 @@
       box.focus();
       return;
     }
+    /* `+ Lisa tegevus` is the action row's first choice since UI-09, opened
+       off its radio like every other choice there. */
     var addWork = document.getElementById("lisa-jargmine");
-    if (!addWork || addWork.tagName !== "DETAILS") {
+    if (!addWork || !revealDisclosure(addWork)) {
       return;
     }
     event.preventDefault();
-    addWork.open = true;
     addWork.scrollIntoView({ block: "center", behavior: "auto" });
     var first = addWork.querySelector("[data-composer-focus]") ||
       addWork.querySelector("textarea, input:not([type=hidden]), select");

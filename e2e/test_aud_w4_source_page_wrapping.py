@@ -39,7 +39,13 @@ from django.template.loader import render_to_string
 pytestmark = pytest.mark.e2e
 
 STATIC = Path(settings.BASE_DIR) / "static"
-STYLESHEETS = ("css/tokens.css", "css/base.css", "css/app.css", "css/ux.css")
+STYLESHEETS = (
+    "css/tokens.css",
+    "css/base.css",
+    "css/app.css",
+    "css/ux.css",
+    "css/historical-reading.css",
+)
 
 #: 320 is the narrowest phone; 375 the product's claimed minimum; 768 the
 #: tablet breakpoint; 1440 the desktop. The defect clipped at all four.
@@ -97,11 +103,15 @@ def _dossier(pk: uuid.UUID) -> tuple[SimpleNamespace, list[dict], list[dict]]:
     """A page shared by two Teemad that are not one chain (docs/adr/0208)."""
     here = SimpleNamespace(
         link=SimpleNamespace(pk=pk),
-        matter=SimpleNamespace(display_reference="2026-0142", title=LONG_TITLE, is_open=True),
+        matter=SimpleNamespace(
+            pk=uuid.uuid4(), display_reference="2026-0142", title=LONG_TITLE, is_open=True
+        ),
     )
     other = SimpleNamespace(
         link=SimpleNamespace(pk=uuid.uuid4()),
-        matter=SimpleNamespace(display_reference="2025-0917", title=LONG_TITLE, is_open=False),
+        matter=SimpleNamespace(
+            pk=uuid.uuid4(), display_reference="2025-0917", title=LONG_TITLE, is_open=False
+        ),
     )
     dossier = SimpleNamespace(
         shared=True,
@@ -330,3 +340,34 @@ def test_the_review_tables_keep_short_words_whole(page, width):
         cell = cells.nth(index)
         breaks = cell.evaluate(_BREAKS)
         assert all(char in (" ", "\n", "-") for char in breaks), (cell.inner_text(), breaks)
+
+
+@pytest.mark.parametrize("width", (375, 1440))
+def test_a_card_s_content_starts_at_the_card_s_padding(page, width):
+    """E-04: nothing in a card sits flush against its edge; label and text share one inset.
+
+    A card's text is its own note when it has one, else its first body element.
+    UI-12 moved «Tehnilised andmed» into the «Allikas» card at the foot of the
+    page; its grid sits inside the disclosure's own bordered box, which is
+    inset by that box's padding, as every disclosure is (E-04 prepared on
+    fix/aud-w4 at 6d0f3290, folded in by UI-12).
+    """
+    _open(page, width, shared=True)
+
+    insets = page.evaluate(
+        """() => [...document.querySelectorAll('section.card')].map(card => {
+            const left = card.getBoundingClientRect().left + card.clientLeft;
+            const label = card.querySelector(':scope > .sectionlabel');
+            const body = card.querySelector(':scope > .cardnote')
+                || card.querySelector('.casefile__text, .detailgrid, table, .filelist');
+            return {
+                label: Math.round(label.getBoundingClientRect().left - left),
+                body: Math.round(body.getBoundingClientRect().left - left),
+            };
+        })"""
+    )
+
+    assert insets, "no card on the page"
+    for inset in insets:
+        assert inset["body"] >= 12, insets
+        assert inset["label"] == inset["body"], insets

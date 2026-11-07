@@ -485,6 +485,22 @@ def mark_reminder_read(*, reminder: CommencementReminder, reader: Any) -> None:
     )
 
 
+def mark_reminder_unread(*, reminder: CommencementReminder, reader: Any) -> bool:
+    """«Märgi lugemata» on a commencement prompt — undo this reader's own receipt.
+
+    The exact inverse of :func:`mark_reminder_read`: the reader's state row
+    loses its ``read_at``, so the prompt is back in *their* bell and block; a
+    deferral the row also holds is kept. Nothing shared changes — no status, no
+    lock, no `ChangeEvent`. Returns whether there was a receipt to undo.
+    """
+    now = timezone.now()
+    return bool(
+        CommencementReminderPersonalState.objects.filter(
+            reminder=reminder, user=reader, read_at__isnull=False
+        ).update(read_at=None, updated_at=now)
+    )
+
+
 def defer_for_reader(
     *, reminder: CommencementReminder, reader: Any, until: date, today: date | None = None
 ) -> date:

@@ -1,0 +1,64 @@
+/* calendar.css: UI-04/UI-11 calendar enlargement and holidays (agent C). Loaded after ux.css from templates/base.html. */
+
+/* ---- UI-04: the KALENDER heading opens the large panel -------------------
+ * A real <button> that looks exactly like the heading it replaces: the
+ * heading's colour, size, weight, tracking and capitals, no underline and no
+ * colour change on hover. What says "this does something" is the pointer and
+ * the ordinary focus ring (base.css `:focus-visible`).
+ */
+.wcal__heading {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  text-decoration: none;
+  color: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+/* ---- UI-11: weekends and Estonian public holidays ------------------------
+ * A rest day's number is drawn in `--calendar-rest-day` (tokens.css, both
+ * themes; at least 5.5:1 against every calendar surface). Only the number:
+ * today's accent border, the panel's chosen day, the dots, the overdue fill
+ * and the commencement diamond keep their own colours and shapes. This file
+ * loads after app.css, so the number stays red on today's cell too.
+ */
+.wcal__head--rest {
+  color: var(--calendar-rest-day);
+}
+
+.wcal__day.is-rest .wcal__num {
+  color: var(--calendar-rest-day);
+}
+
+/* A holiday is never colour only: its name is in the title, the accessible
+   name and the popover. The dotted underline says the number has more to say. */
+.wcal__day.is-holiday .wcal__num {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+/* An otherwise empty holiday is a disclosure (so a keyboard and a tap reach
+   its name) but looks like the empty day it is, not like a day with records. */
+.wcal__daybtn--holiday {
+  background: transparent;
+  border-color: transparent;
+  font-weight: var(--typography-weight-regular);
+}
+
+.wcal__popempty {
+  margin: 0;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+@media (forced-colors: active) {
+  .wcal__day.is-holiday .wcal__num {
+    text-decoration: underline;
+  }
+}
