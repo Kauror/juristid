@@ -480,22 +480,33 @@ def _last_capture() -> dict[str, Any] | None:
 def _settled_holds() -> tuple[set[Any], set[Any]]:
     """(import row ids, revision ids) an administrator's final decision settled.
 
-    A shared page's file is one item: its decision settles every held row of it.
+    A shared page's file is one item: its decision settles exactly the held rows
+    it was shown (``observed["rows"]``). A Teema linked to the page afterwards has a
+    row no decision saw; it stays open (``_shared_decisions``).
     """
-    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
-
     final = OneNoteHoldDecision.objects.filter(final=True)
     rows = set(final.exclude(resource_import=None).values_list("resource_import_id", flat=True))
-    shared = final.filter(scope=HoldScope.SHARED_FILE).values_list("resource_id", flat=True)
-    rows.update(
-        LegacySourceResourceImport.objects.filter(
-            resource_id__in=list(shared),
-            state=ResourceImportState.SKIPPED,
-            error_code="SHARED_PAGE_AWAITING_REVIEW",
-        ).values_list("pk", flat=True)
-    )
+    for decisions in _shared_decisions().values():
+        for _key, seen in decisions:
+            rows.update(seen)
     readings = set(final.exclude(revision=None).values_list("revision_id", flat=True))
     return rows, readings
+
+
+def _shared_decisions(resource_ids: Any = None) -> dict[Any, list[tuple[str, set[Any]]]]:
+    """Resource id -> [(item key, held row ids it settled)] of final shared-file decisions."""
+    import uuid
+
+    final = OneNoteHoldDecision.objects.filter(final=True, scope=HoldScope.SHARED_FILE)
+    if resource_ids is not None:
+        final = final.filter(resource_id__in=list(resource_ids))
+    out: dict[Any, list[tuple[str, set[Any]]]] = {}
+    for item_key, resource_id, observed in final.order_by("decided_at", "created_at").values_list(
+        "item_key", "resource_id", "observed"
+    ):
+        seen = {uuid.UUID(r["id"]) for r in (observed or {}).get("rows", []) if r.get("id")}
+        out.setdefault(resource_id, []).append((item_key, seen))
+    return out
 
 
 def coverage_summary() -> dict[str, Any]:
@@ -1044,7 +1055,9 @@ def _collect_items(*, key: str | None = None, lock: bool = False) -> list[HeldIt
     if key is not None:
         kind, _, raw = key.partition(":")
         try:
-            pk = uuid.UUID(raw)
+            # A shared file reopened for a Teema linked after a decision is
+            # ``shared:<resource>:<n>`` (``_shared_key``).
+            pk = uuid.UUID(raw.split(":", 1)[0])
         except ValueError:
             return []
         if kind == "shared":
@@ -1059,9 +1072,13 @@ def _collect_items(*, key: str | None = None, lock: bool = False) -> list[HeldIt
             rows = rows.select_for_update(of=("self",))
             revisions = revisions.select_for_update(of=("self",))
     items: dict[str, HeldItem] = {}
-    for row in rows.order_by("resource__source_page__page_key", "resource__source_block_ordinal"):
+    ordered = list(
+        rows.order_by("resource__source_page__page_key", "resource__source_block_ordinal")
+    )
+    settled = _shared_decisions({r.resource_id for r in ordered if r.error_code == _SHARED})
+    for row in ordered:
         shared = row.error_code == _SHARED
-        item_key = f"shared:{row.resource_id}" if shared else f"import:{row.pk}"
+        item_key = _shared_key(row, settled) if shared else f"import:{row.pk}"
         item = items.get(item_key)
         if item is None:
             item = items[item_key] = HeldItem(
@@ -1085,6 +1102,8 @@ def _collect_items(*, key: str | None = None, lock: bool = False) -> list[HeldIt
             teemad=[_teema(revision.matter_source_page)],
             revision=revision,
         )
+    if key is not None:
+        items = {k: v for k, v in items.items() if k == key}
     if not items:
         return []
     for decision in OneNoteHoldDecision.objects.filter(item_key__in=list(items)).order_by(
@@ -1103,6 +1122,20 @@ def _collect_items(*, key: str | None = None, lock: bool = False) -> list[HeldIt
             v = item.revision
             item.newer_revision = newest[(v.matter_source_page_id, v.resource_id)] > v.created_at
     return list(items.values())
+
+
+def _shared_key(row: Any, settled: dict[Any, list[tuple[str, set[Any]]]]) -> str:
+    """The item a shared page's held row belongs to.
+
+    The row a final decision saw belongs to that decision's item; a row no decision
+    saw (a Teema linked to the page later) is a new, open item of the same file.
+    """
+    decisions = settled.get(row.resource_id, [])
+    for item_key, seen in decisions:
+        if row.pk in seen:
+            return item_key
+    base = f"shared:{row.resource_id}"
+    return f"{base}:{len(decisions)}" if decisions else base
 
 
 def _visible_matters(viewer: Any, items: list[HeldItem]) -> set[str]:
@@ -1366,8 +1399,7 @@ def _promote(item: HeldItem, *, teema: HoldTeema, reason: str, content: bytes) -
         extraction_state=ExtractionState.PENDING if extractable else ExtractionState.NOT_APPLICABLE,
         extraction_note="" if extractable else extraction_note_for(name)[:300],
     )
-    if version.sha256 != expected:
-        raise HoldDecisionRefused("BYTES_UNAVAILABLE", HOLD_BYTES_UNAVAILABLE)
+    # ``expected_sha256`` makes add_evidence_version refuse other bytes before it stores them.
     return document, version
 
 
@@ -1390,13 +1422,21 @@ def decide_hold(
     from django.db import IntegrityError
 
     from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+    from app.matters.locks import lock_matters_in_order
 
     user = getattr(actor, "user", actor)
     reason = (reason or "").strip()
+    document = version = None
     try:
         if len(reason) < _MIN_REASON:
             raise HoldDecisionRefused("REASON_REQUIRED", HOLD_REASON_REQUIRED)
         with transaction.atomic():
+            # The Teemad first, in the global order a permanent deletion also takes
+            # (Matter before its rows), then the held rows; the token proves nothing
+            # moved between the two reads.
+            peek = _collect_items(key=key)
+            if peek:
+                lock_matters_in_order(*sorted({t.matter_id for t in peek[0].teemad}))
             items = _collect_items(key=key, lock=True)
             if not items:
                 raise HoldNotFound(key)
@@ -1411,7 +1451,6 @@ def decide_hold(
             if decision not in item.options:
                 raise HoldDecisionRefused("NOT_OFFERED", HOLD_NOT_OFFERED)
             teema = item.teemad[0]
-            document = version = None
             if decision == HoldDecisionKind.ASSOCIATE:
                 found = [t for t in item.teemad if t.link_id == link_id]
                 if len(found) != 1:
@@ -1480,8 +1519,15 @@ def decide_hold(
                 raise HoldDecisionRefused("ALREADY_DECIDED", HOLD_ALREADY_DECIDED) from error
             if final:
                 _mark_page_if_settled(item.page, user)
-    except HoldDecisionRefused as refusal:
-        _audit_hold(user, key, decision, client, succeeded=False, code=refusal.code)
+    except BaseException as failure:
+        if version is not None:
+            # Every refusal comes before the bytes are stored; anything failing after
+            # rolls the version row back, so its stored object must go too.
+            from app.documents.services import _discard_stored_object, evidence_storage
+
+            _discard_stored_object(evidence_storage(), version.storage_key)
+        if isinstance(failure, HoldDecisionRefused):
+            _audit_hold(user, key, decision, client, succeeded=False, code=failure.code)
         raise
     _audit_hold(
         user,
