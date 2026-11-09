@@ -1,0 +1,12 @@
+{% comment %}
+  The host's on-demand runner for one lane (`sync_admin.RunnerStatus`): whether
+  it has ever asked for work, when it last did, and a host-side problem. A
+  request is only ever executed by this runner, so the page says plainly when
+  there is none. `runner` is the status.
+{% endcomment %}
+<p class="dsync__runner" role="status">
+  <span class="dsync__requestwhat">Serveri käivitaja</span>
+  <span class="statechip statechip--{{ runner.tone }}">{{ runner.label }}</span>
+  {% if runner.seen_at %}<span class="dsync__requestmeta">viimati küsis {{ runner.seen_at|date:"j.n.Y H:i" }}</span>{% endif %}
+  {% if runner.note %}<span class="dsync__runnernote">{{ runner.note }}</span>{% endif %}
+</p>

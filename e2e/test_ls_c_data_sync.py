@@ -106,8 +106,9 @@ def test_sync_now_is_confirmed_with_the_mode_and_recorded_once(
     page.get_by_label("Põhjus").fill("uus teema Lovable'is")
     page.get_by_role("button", name="Kinnitan: sünkrooni režiimis «Ainult võrdlus»").click()
     page.wait_for_url(f"{local_base_url}{PAGE}")
-    expect(page.get_by_text("Sünkroonimise taotlus on salvestatud.", exact=False)).to_be_visible()
-    expect(page.locator(".dsync__request").first).to_contain_text("Ootab käivitamist")
+    # No runner has ever asked here (LS2-D): the page says the request waits for one.
+    expect(page.get_by_text("seda pole veel käivitatud", exact=False)).to_be_visible()
+    expect(page.locator(".dsync__request").first).to_contain_text("Ootab serveri käivitajat")
     recorded = _requests()
     assert [(r["kind"], r["status"]) for r in recorded] == [("LOVABLE_SYNC", "PENDING")]
 

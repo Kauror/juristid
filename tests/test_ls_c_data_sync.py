@@ -241,7 +241,7 @@ def test_sync_now_records_one_request_and_an_audit_row(signed, admin):
     assert len(rows) == 1 and rows[0].actor == admin["user"]
     assert rows[0].detail["mode"] == SyncMode.COMPARE
     page = signed.get(reverse("haldus:data_sync")).content.decode()
-    assert "Ootab käivitamist" in page and "Värskenda seisu" in page
+    assert "Ootab serveri käivitajat" in page and "Värskenda seisu" in page
 
 
 def test_a_second_sync_request_is_refused_while_one_is_open(signed, admin):
@@ -423,9 +423,17 @@ def test_the_command_exits_1_on_failure_and_needs_the_switches(admin, settings, 
     _compare()
     sync_admin.request_lovable_sync(admin["user"], "x")
     settings.LOVABLE_SYNC_ENABLED = False
-    with pytest.raises(CommandError, match="nothing was claimed"):
+    # LS2-D: a runner without the switches refuses the waiting request by name
+    # (it never waits two hours to expire) and its heartbeat says why.
+    with pytest.raises(CommandError, match=r"was refused \(NOT_PERMITTED\)"):
         call_command("data_sync_requests", "run-next", "--kind", "lovable")
-    assert DataSyncRequest.objects.get().status == SyncRequestStatus.PENDING
+    refused_request = DataSyncRequest.objects.get()
+    assert refused_request.status == SyncRequestStatus.REFUSED
+    assert refused_request.outcome_code == "NOT_PERMITTED"
+    assert sync_admin.runner_status(SyncRequestLane.LOVABLE).problem == "NOT_PERMITTED"
+    with pytest.raises(CommandError, match="nothing was waiting"):
+        call_command("data_sync_requests", "run-next", "--kind", "lovable")
+    sync_admin.request_lovable_sync(admin["user"], "uuesti")
     settings.LOVABLE_SYNC_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
 
@@ -439,7 +447,10 @@ def test_the_command_exits_1_on_failure_and_needs_the_switches(admin, settings, 
     with pytest.raises(SystemExit) as exit_info:
         call_command("data_sync_requests", "run-next", "--kind", "lovable", stdout=io.StringIO())
     assert exit_info.value.code == 1
-    assert DataSyncRequest.objects.get().status == SyncRequestStatus.FAILED
+    failed = DataSyncRequest.objects.get(reason="uuesti")
+    assert failed.status == SyncRequestStatus.FAILED
+    # Diagnostics without secrets: the class, never the free-form message.
+    assert failed.result == {"error_class": "RuntimeError"}
     out = io.StringIO()
     call_command("data_sync_requests", "list", stdout=out)
     assert "FAILED" in out.getvalue()

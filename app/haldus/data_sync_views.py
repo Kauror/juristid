@@ -67,6 +67,18 @@ MODE_EFFECT: dict[str, str] = {
 }
 
 
+def recorded_message(lane: str, done: str) -> str:
+    """What the page says after recording a request: never that work was done.
+
+    ``done`` says what the runner will do; the rest says honestly whether a
+    runner is there to do it (`sync_admin.runner_status`)."""
+    runner = sync_admin.runner_status(lane)
+    if runner.active:
+        soon = "Taotlus on salvestatud; serveri käivitaja võtab selle üles mõne minuti jooksul."
+        return f"{soon} {done}"
+    return f"Taotlus on salvestatud, kuid seda pole veel käivitatud. {runner.note}"
+
+
 def _require(request: HttpRequest) -> None:
     if not any(item.key == SECTION for item in visible_sections(request)):
         raise Http404(NOT_HERE)
@@ -193,14 +205,17 @@ def sync_now(request: HttpRequest) -> HttpResponseBase:
                     mode_label=SyncMode(mode).label,
                     mode_effect=MODE_EFFECT.get(mode, ""),
                     busy=sync_admin.open_request(SyncRequestLane.LOVABLE),
+                    runner=sync_admin.runner_status(SyncRequestLane.LOVABLE),
                     reason=request.POST.get("reason", ""),
                 ),
                 status=409 if error.code in ("LANE_BUSY", "MODE_CHANGED") else 400,
             )
         messages.success(
             request,
-            "Sünkroonimise taotlus on salvestatud. Server käivitab selle järgmisel võimalusel; "
-            "tulemus ilmub siia.",
+            recorded_message(
+                SyncRequestLane.LOVABLE,
+                "Server loeb Lovable'i uuesti; tulemus ilmub siia.",
+            ),
         )
         return redirect("haldus:data_sync")
     return render(
@@ -213,6 +228,7 @@ def sync_now(request: HttpRequest) -> HttpResponseBase:
             mode_label=SyncMode(mode).label,
             mode_effect=MODE_EFFECT.get(mode, ""),
             busy=sync_admin.open_request(SyncRequestLane.LOVABLE),
+            runner=sync_admin.runner_status(SyncRequestLane.LOVABLE),
             reason="",
         ),
     )
@@ -311,7 +327,9 @@ def onenote_verify(request: HttpRequest) -> HttpResponse:
     else:
         messages.success(
             request,
-            "Kontrolli taotlus on salvestatud. Server kontrollib kogumit ja tulemus ilmub siia.",
+            recorded_message(
+                SyncRequestLane.ONENOTE, "Server kontrollib kogumit; tulemus ilmub siia."
+            ),
         )
     return redirect(f"{reverse('haldus:data_sync')}#onenote")
 
@@ -358,8 +376,10 @@ def onenote_import(request: HttpRequest) -> HttpResponseBase:
             return render(request, "haldus/data_sync_import.html", context, status=409)
         messages.success(
             request,
-            "Impordi taotlus on salvestatud. Server kontrollib kogumi uuesti ja impordib "
-            "ainult siis, kui plaan on sama.",
+            recorded_message(
+                SyncRequestLane.ONENOTE,
+                "Server kontrollib kogumi uuesti ja impordib ainult siis, kui plaan on sama.",
+            ),
         )
         return redirect(f"{reverse('haldus:data_sync')}#onenote")
     return render(request, "haldus/data_sync_import.html", context)
