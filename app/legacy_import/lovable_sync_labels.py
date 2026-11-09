@@ -48,7 +48,6 @@ LOVABLE_REASONS = {
     "VERIFY_MISMATCH": "Kirjutati, kuid tagasilugemine ei vastanud kirjutatule.",
     "IMPORT_HELD": "Imporditud ülevaatamiseks: impordil jäeti see väli inimese otsustada.",
     # The conditional fields and the continuation (docs/adr/0213).
-    "STAGE_UNMAPPED": "Allika hetkeseisu silt pole kinnitatud vastavustabelis.",
     "STAGE_ENDS_WORK": "Uus hetkeseis lõpetaks töö ja sulgeks teema; selle otsustab inimene.",
     "REQUEST_ALREADY_OPEN": (
         "Teemal on juba praegune arvamuse küsimine; selle muutmise või asendamise otsustab inimene."
@@ -58,8 +57,6 @@ LOVABLE_REASONS = {
         "Allikas on «välja» või saatmise kuupäev (ka «ei saatnud»): uut küsimist ei looda."
     ),
     "REQUEST_ON_INITIATIVE": "Koja algatusel pole uut arvamuse küsimist.",
-    "COMMENCEMENT_CHANGED_OR_REMOVED": "Jõustumist muudeti või see eemaldati allikas.",
-    "COMMENCEMENT_KIND_UNCLEAR": "Lisandunud jõustumise liik või kuupäev pole üheselt loetav.",
     "COMMENCEMENT_DAY_CLASH": "Juristides on samal päeval juba teine jõustumise kirje.",
     "CONTINUATION_CHANGED": (
         "Lovable'i menetlusetappide seos muutus; jätku kirjutamine sulgeks teema, nii et "

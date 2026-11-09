@@ -239,14 +239,11 @@ DATE_PAST = "DATE_IN_PAST"
 NOT_EXACT = "STEP_DATE_NOT_EXACT"
 LINK_NOT_HTTPS = "LINK_NOT_HTTPS"
 #: The conditional fields' holds (docs/adr/0213).
-STAGE_UNMAPPED = "STAGE_UNMAPPED"
 STAGE_ENDS_WORK = "STAGE_ENDS_WORK"
 REQUEST_OPEN = "REQUEST_ALREADY_OPEN"
 REQUEST_CLEARED = "REQUEST_CLEARED"
 REQUEST_ANSWERED = "REQUEST_SENT_IN_SOURCE"
 REQUEST_INITIATIVE = "REQUEST_ON_INITIATIVE"
-COMMENCEMENT_CHANGED = "COMMENCEMENT_CHANGED_OR_REMOVED"
-COMMENCEMENT_KIND = "COMMENCEMENT_KIND_UNCLEAR"
 COMMENCEMENT_CLASH = "COMMENCEMENT_DAY_CLASH"
 CONTINUATION_CHANGED = "CONTINUATION_CHANGED"
 #: A new topic's holds (docs/adr/0213 §new topics).
@@ -1117,8 +1114,13 @@ def current_values(matter: Any) -> dict[str, Any]:
         ),
         # A tombstoned Teema is treated as a closed one: nothing is written to it.
         "is_open": matter.is_open and getattr(matter, "deleted_at", None) is None,
-        **conditional_values(matter),
     }
+
+
+def full_values(matter: Any) -> dict[str, Any]:
+    """B for every field the engine compares: `current_values` (the shape the
+    read service's bulk reader mirrors) and the conditional fields' values."""
+    return {**current_values(matter), **conditional_values(matter)}
 
 
 def conditional_values(matter: Any) -> dict[str, Any]:
@@ -1423,6 +1425,8 @@ def plan_matter(
         row.get("version"),
     )
     b = current if current is not None else current_values(state.matter)
+    if "stage" not in b:
+        b = {**b, **conditional_values(state.matter)}
     applied = state.applied
     closed = not b["is_open"]
     plan.open = not closed
@@ -1509,8 +1513,16 @@ def plan_matter(
             )
         else:
             plan.decisions.append(_three_way(name, a(name), src[name], None, None, None, HELD))
-    if CONTINUATION in applied:
-        plan.decisions.append(_continuation_decision(applied, plan.source[CONTINUATION], b))
+    # The continuation's baseline is the last accepted link, or — until one is
+    # held — the last observed one: an unchanged link never touches `applied`.
+    entry = applied.get(CONTINUATION)
+    a_link = entry.get("source") if entry else (state.observed or {}).get(CONTINUATION)
+    if entry or CONTINUATION in (state.observed or {}):
+        link = _continuation_decision(a_link, plan.source[CONTINUATION], b)
+        # Not one of `FIELDS`: an unchanged link adds no decision at all, so the
+        # readers that tally decisions per field see only a moved one.
+        if link.outcome != SyncOutcome.UNCHANGED:
+            plan.decisions.append(link)
     _hold_imported(plan, applied)
     return plan
 
@@ -1541,7 +1553,8 @@ def _stage_decision(
     if closed:
         reason = MATTER_CLOSED
     elif c_tgt is None:
-        reason = STAGE_UNMAPPED
+        # No mapping: no rule writes it (the field's own hold, as before).
+        reason = HELD
     elif c_tgt in TERMINAL_STAGES:
         reason = STAGE_ENDS_WORK
     elif a_tgt is None:
@@ -1637,9 +1650,12 @@ def _commencement_decision(
     if closed:
         reason = MATTER_CLOSED
     elif removed:
-        reason = COMMENCEMENT_CHANGED
+        # Changed or removed: no rule writes it (the field's own hold, as
+        # before this engine).
+        reason = HELD
     elif len(want) != len(readings):
-        reason = COMMENCEMENT_KIND
+        # A kind or day the reader cannot read: no rule writes it.
+        reason = HELD
     elif any(w[2] and dt.date.fromisoformat(w[2]) < today for w in want if w not in have):
         reason = DATE_PAST
     else:
@@ -1658,13 +1674,10 @@ def _commencement_decision(
     return FieldDecision("commencements", SyncOutcome.ELIGIBLE, target=target, **common)
 
 
-def _continuation_decision(
-    applied: dict[str, Any], c_src: list[str], b: dict[str, Any]
-) -> FieldDecision:
+def _continuation_decision(a_src: Any, c_src: list[str], b: dict[str, Any]) -> FieldDecision:
     """Lovable's stage link (REVIEW, docs/adr/0213): the only service that writes
     a continuation closes the predecessor, which is a lifecycle decision, so a
     new, changed or removed link is reported every night and never written."""
-    a_src = (applied.get(CONTINUATION) or {}).get("source")
     b_now = b.get(CONTINUATION) or []
     common: dict[str, Any] = {"baseline": a_src, "current": b_now, "source": c_src}
     if c_src == a_src:
@@ -1976,7 +1989,7 @@ def verify_matter(plan: MatterPlan) -> bool:
     from app.matters.models import Matter
 
     state = LovableSyncState.objects.get(pk=plan.state.pk)
-    b = current_values(Matter.objects.get(pk=state.matter_id))
+    b = full_values(Matter.objects.get(pk=state.matter_id))
     for decision in plan.decisions:
         if decision.outcome != SyncOutcome.APPLIED:
             continue
@@ -3023,9 +3036,19 @@ def _observe(state: LovableSyncState, plan: MatterPlan, run: LovableSyncRun) -> 
     updates = {"observed": plan.source, "observed_version": plan.version, "observed_run": run}
     applied = dict(state.applied)
     started = False
-    for name in (*HELD_FIELDS, CONTINUATION):
+    for name in HELD_FIELDS:
         if name not in applied and name in plan.source:
             applied[name] = {"source": plan.source[name]}
+            started = True
+    for decision in plan.decisions:
+        if (
+            decision.field == CONTINUATION
+            and CONTINUATION not in applied
+            and decision.outcome == SyncOutcome.REVIEW_REQUIRED
+        ):
+            # A changed link is held from the link last seen: it stays pending
+            # every night until somebody decides it or the source returns.
+            applied[CONTINUATION] = {"source": decision.baseline}
             started = True
     if started:
         updates["applied"] = applied
@@ -3549,7 +3572,7 @@ def resolve_field(
         if run is None:
             raise SyncRefused("NOT_OBSERVED", "Nothing observed yet.")
         applied = dict(state.applied)
-        b = current_values(state.matter)
+        b = full_values(state.matter)
         value = state.observed[field_name]
         before = (applied.get(field_name) or {}).get("source")
         if field_name in STEP_FIELDS:

@@ -554,7 +554,7 @@ def test_a_terminal_stage_is_review_and_never_closes(register):
 def test_an_unmapped_stage_is_review(register):
     register["source"].edit("2026_240", hetkeseis="Riigikogus menetluses")
     run = _run(register, at=_at(0))
-    assert _decisions(run, "2026_240")["stage"].reason == lovable_sync.STAGE_UNMAPPED
+    assert _decisions(run, "2026_240")["stage"].reason == lovable_sync.HELD
 
 
 def test_a_new_opinion_deadline_opens_a_request_only_where_none_is_open(register):
@@ -629,7 +629,7 @@ def test_an_added_estimate_stays_an_estimate_and_never_becomes_work(register):
     decision = _decisions(removed, "2026_240")["commencements"]
     assert (decision.outcome, decision.reason) == (
         SyncOutcome.REVIEW_REQUIRED,
-        lovable_sync.COMMENCEMENT_CHANGED,
+        lovable_sync.HELD,
     )
     assert dates.count() == 1
 
