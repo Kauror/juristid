@@ -360,6 +360,21 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
             # never reaches this, so no version-1 result changes.
             out.append(f"{reference}: its continuations lead back to it (a cycle).")
     out.extend(_validate_reserve(package, highest))
+    if package_cohort(package) == HISTORY_COHORT:
+        # One gated path for the historical cohort, whichever command carries it:
+        # the backfill's own rules (a closure only where the source states one, a
+        # CREATE-only closed package, this candidate's reader version) are part of
+        # the package's validity, so `lovable_pilot validate/plan/dry-run/apply`
+        # refuses what `lovable_inventory backfill` refuses. Imported here: the
+        # backfill module imports this one.
+        from app.legacy_import import lovable_backfill
+
+        out.extend(
+            p
+            for p in lovable_backfill.package_problems(package)
+            + lovable_backfill.reader_problems(package)
+            if p not in out
+        )
     return report
 
 
@@ -1029,7 +1044,11 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
     plan = LovablePlan(package=package, digest=package_digest(package))
     report = validate_package(package)
     plan.problems.extend(report.problems)
-    if report.problems:
+    if package_cohort(package) == HISTORY_COHORT:
+        from app.legacy_import import lovable_backfill
+
+        plan.problems.extend(lovable_backfill.decision_problems(package))
+    if plan.problems:
         return plan
 
     people = package.get("people") or {}

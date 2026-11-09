@@ -450,24 +450,36 @@ def _load(path_or_package: str | Path | dict[str, Any]) -> dict[str, Any]:
 
 def validate(path_or_package: str | Path | dict[str, Any]) -> list[str]:
     package = _load(path_or_package)
-    return validate_package(package).problems + package_problems(package) + reader_problems(package)
+    problems = validate_package(package).problems  # a history package: the rules below too
+    return problems + [
+        p for p in package_problems(package) + reader_problems(package) if p not in problems
+    ]
+
+
+def decision_problems(package: dict[str, Any]) -> list[str]:
+    """A package bound to other inventory decisions than today's is stale (reads
+    the database: `lovable_pilot.build_plan` asks it of every history package)."""
+    bound = (package.get("selection") or {}).get("decisions_sha256")
+    if bound != canonical_sha256(decision_index()):
+        return [
+            f"{DECISIONS_CHANGED}; build the package again from the reading "
+            "(lovable_inventory backfill --step package)."
+        ]
+    return []
 
 
 def plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
-    """`lovable_pilot.build_plan`, with the backfill's own rules as plan problems,
-    so `dry_run` and `apply_plan` refuse a package that is not a historical
-    CREATE-only one."""
+    """`lovable_pilot.build_plan`, which for this cohort already holds the
+    backfill's own rules (`package_problems`, `reader_problems`,
+    `decision_problems`), so `dry_run` and `apply_plan` refuse a package that is
+    not a current, historical, CREATE-only one — whichever command carries it."""
     package = _load(path_or_package)
     built = lovable_pilot.build_plan(package)
     built.problems.extend(
-        p for p in package_problems(package) + reader_problems(package) if p not in built.problems
+        p
+        for p in package_problems(package) + reader_problems(package) + decision_problems(package)
+        if p not in built.problems
     )
-    bound = (package.get("selection") or {}).get("decisions_sha256")
-    if bound != canonical_sha256(decision_index()):
-        built.problems.append(
-            f"{DECISIONS_CHANGED}; build the package again from the reading "
-            "(lovable_inventory backfill --step package)."
-        )
     return built
 
 
