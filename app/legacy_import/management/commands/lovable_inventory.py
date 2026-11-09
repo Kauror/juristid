@@ -21,7 +21,11 @@ offline from a saved reading. `report` prints the newest stored run's counts.
 `backfill --step package` builds, from a saved reading and the ledger it gives
 now, the CREATE package of proven-absent non-operational topics
 (``package.json``) and the list of every row left out with its reason
-(``backfill-report.json``) — read-only. The other steps are `lovable_pilot`'s,
+(``backfill-report.json``, which also lists the undecided ARCHIVE_UNLINKED,
+POSSIBLE_DUPLICATE and LINK_ENRICHMENT rows for a person — ``review`` — and
+counts what the package would create — ``distribution``: closure basis,
+disposition, source status) — read-only. ``coverage.md`` has the same review
+list under «Needs a person». The other steps are `lovable_pilot`'s,
 with every one of its gates; `apply` creates Teemad only. Afterwards:
 `lovable_pilot preserved --before F`, then `lovable_sync enroll --cohort
 lovable-history`.
@@ -252,6 +256,9 @@ class Command(BaseCommand):
                 "package_sha256": report["package_sha256"],
                 "reader_version": report["reader_version"],
                 **selection.counts(),
+                "review_by_category": report["review_by_category"],
+                "closure_basis": report["distribution"]["closure_basis"],
+                "disposition": report["distribution"]["disposition"],
             },
         )
 

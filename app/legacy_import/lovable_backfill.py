@@ -22,7 +22,23 @@ historical=True)` (COMMON interface 1) — a closed ARCHIVE topic as ADR 0202 §
 creates finished topics, no open step, nothing it cannot read safely (held for
 review). This module adds a second, independent check (`history_problems`): no
 ACTIVE lifecycle, no current step, no open request, no written commencement, no
-operational topic.
+operational topic — and **a closure reason only where the source states one**
+(`lovable_reading.closure_reading` on the topic's own source copy): «jõustunud»
+→ COMPLETED, «rohkem ei tegele» / «rohkem pole tegevusi plaanis» →
+MONITORING_STOPPED, a structured stage link → SUPERSEDED, otherwise a **blank**
+disposition. Being outside Lovable's operational scope and «ei saatnud» are
+never a reason (docs/adr/0213 §2 as amended 2026-11-09).
+
+**Stale readings are refused.** A package names the reader version that read it
+(``mapping_version``); `validate` and `plan` refuse one read by another version
+than this candidate's (`STALE_READER`), so a package built before a reading rule
+changed can never be applied — build it again from the reading.
+
+**For a person.** The report (``backfill-report.json``) lists, besides every row
+left out, the rows only a person can settle (``review``: ARCHIVE_UNLINKED,
+POSSIBLE_DUPLICATE, LINK_ENRICHMENT without a decision, with their candidates and
+archive pages — never matched here) and the package's ``distribution`` (closure
+basis, disposition, lifecycle, source status, deadline treatment, held columns).
 
 **How it is written.** Only through `lovable_pilot`: a format-2 CREATE package
 with cohort ``lovable-history`` — `validate` → `plan` (plan digest) → `dry-run`
@@ -84,6 +100,14 @@ INVALID_REFERENCE = "INVALID_REFERENCE"
 #: Decisions that keep a topic out of the backfill whatever its category.
 DECIDED_OUT = frozenset({"LINK", "EXCLUDE"})
 DECISIONS_CHANGED = "the inventory decisions changed since the package was built"
+STALE_READER = "the package was read by another reader version than this candidate's"
+#: Ledger categories that only a person settles (docs/adr/0213 §1): listed in the
+#: report's ``review`` with their candidates, never matched or created here.
+REVIEW_CATEGORIES = (
+    Category.ARCHIVE_UNLINKED,
+    Category.POSSIBLE_DUPLICATE,
+    Category.LINK_ENRICHMENT,
+)
 
 Reader = Callable[..., dict[str, Any]]
 
@@ -98,6 +122,7 @@ class Selection:
     selected: list[str] = field(default_factory=list)
     left_out: list[dict[str, Any]] = field(default_factory=list)
     reader_version: str = ""
+    review: list[dict[str, Any]] = field(default_factory=list)
 
     def counts(self) -> dict[str, Any]:
         return {
@@ -116,6 +141,9 @@ class Selection:
             **self.counts(),
             "selected_references": self.selected,
             "left_out": self.left_out,
+            "review": self.review,
+            "review_by_category": dict(sorted(Counter(i["category"] for i in self.review).items())),
+            "distribution": distribution(self.package),
         }
 
 
@@ -132,6 +160,50 @@ def _left(row: LedgerRow, reason: str, detail: str = "") -> dict[str, Any]:
         "category": row.category,
         "reason": reason,
         "detail": detail[:300],
+    }
+
+
+def _review(row: LedgerRow) -> dict[str, Any]:
+    """One row a person settles: codes, references and ids only."""
+    return {
+        "source_id": row.source_id,
+        "reference": row.reference,
+        "category": row.category,
+        "reason": row.reason,
+        "operational": row.operational,
+        "notes": list(row.notes),
+        "archive_pages": list(row.archive_pages),
+        "candidates": [
+            {k: c.get(k) for k in ("basis", "reference", "source_id", "matter_id")}
+            for c in row.candidates
+        ],
+    }
+
+
+def distribution(package: dict[str, Any] | None) -> dict[str, dict[str, int]]:
+    """What the package would create, counted: the owner's before/after view."""
+    topics = (package or {}).get("topics") or []
+
+    def count(values: Any) -> dict[str, int]:
+        return dict(sorted(Counter(str(v) for v in values).items()))
+
+    return {
+        "closure_basis": count(t.get("closure_basis") or "" for t in topics),
+        "disposition": count(t.get("disposition") or "" for t in topics),
+        "lifecycle": count(t.get("lifecycle") or "" for t in topics),
+        "status_raw": count(t.get("status_raw") or "" for t in topics),
+        "status_without_stage": count(
+            t.get("status_raw") or "" for t in topics if t.get("status_raw") and not t.get("stage")
+        ),
+        "deadline_treatment": count(
+            (t.get("deadline") or {}).get("treatment") or "NONE" for t in topics
+        ),
+        "held_columns": count(
+            name
+            for t in topics
+            for name, decision in (t.get("field_decisions") or {}).items()
+            if decision == "HELD_FOR_REVIEW"
+        ),
     }
 
 
@@ -165,9 +237,41 @@ def history_problems(topic: dict[str, Any]) -> list[str]:
         out.append("a historical topic carries no open opinion request.")
     if any(r.get("review") == READY for r in topic.get("commencements") or []):
         out.append("a historical topic's commencements stay source only.")
-    row = (topic.get("source") or {}).get("row") or {}
+    source = topic.get("source") or {}
+    row = source.get("row") or {}
     if isinstance(row, dict) and row.get("operatiivne_ulatus"):
         out.append("an operational topic is the nightly synchronisation's, not the backfill's.")
+    if isinstance(row, dict) and topic.get("lifecycle") != "ACTIVE":
+        # The closure is read again from the topic's own source copy: only a
+        # stated reason, never one inferred from the scope or «ei saatnud».
+        closure_reading = importlib.import_module(READING_MODULE).closure_reading
+        lifecycle, disposition, _basis = closure_reading(
+            {"row": row, "stage_links": source.get("stage_links") or []}
+        )
+        stated = (topic.get("lifecycle"), topic.get("disposition") or "")
+        if stated != (lifecycle, disposition):
+            out.append(
+                f"the closure {stated[0]}/{stated[1] or '(blank)'} is not what the source "
+                f"states ({lifecycle}/{disposition or '(blank)'}); a historical topic's reason "
+                "is read only from Lovable's own status or stage link."
+            )
+    return out
+
+
+def reader_problems(package: dict[str, Any]) -> list[str]:
+    """A package read by another reader version than this candidate's is stale."""
+    _reader, current = _default_reader()
+    named = str(package.get("mapping_version") or "")
+    out: list[str] = []
+    if named != current:
+        out.append(
+            f"{STALE_READER} ({named or 'none'} ≠ {current}); build it again from the "
+            "reading (lovable_inventory backfill --step package)."
+        )
+    for topic in package.get("topics") or []:
+        stamped = (topic.get("reading") or {}).get("reader_version")
+        if stamped is not None and stamped != named:
+            out.append(f"{topic.get('reference')}: read by {stamped}, not {named}.")
     return out
 
 
@@ -237,10 +341,19 @@ def build_package(
     header = _header(document, ledger, people, reader_version)
     selection = Selection(package=None, reader_version=reader_version)
 
+    # Lovable id → reference for every live topic, so a stage link can name its
+    # successor; the importer links it only inside this package (`build_plan`).
+    references = {
+        str(entry.get("id")): str(entry.get("nr") or "")
+        for entry in document.get("index") or []
+        if entry.get("id") and entry.get("nr")
+    }
     topics: list[dict[str, Any]] = []
     for row in sorted(ledger.rows, key=lambda r: r.reference):
         if not row.in_source:
             continue
+        if row.category in REVIEW_CATEGORIES and not row.decision:
+            selection.review.append(_review(row))
         reason = eligible(row)
         if reason:
             if reason != NOT_ABSENT:
@@ -250,14 +363,23 @@ def build_package(
         if bundle is None:
             selection.left_out.append(_left(row, NO_BUNDLE, "the reading holds no bundle"))
             continue
+        partners = {
+            str(link.get("next")): references[str(link.get("next"))]
+            for link in bundle.get("stage_links") or []
+            if str(link.get("next")) in references
+        }
         try:
-            topic = reader(bundle, as_of=as_of, people=people, historical=True)
+            topic = reader(
+                {**bundle, "references": partners}, as_of=as_of, people=people, historical=True
+            )
         except Exception as error:  # the reader refusing one topic never stops the rest
             selection.left_out.append(_left(row, READER_REFUSED, type(error).__name__))
             continue
         if not isinstance(topic, dict):
             selection.left_out.append(_left(row, READER_REFUSED, "not a topic"))
             continue
+        if topic.get("successor") and topic.get("successor") == topic.get("reference"):
+            _unlink(topic, "the stage link names the topic itself")
         problems = history_problems(topic)
         if str((topic.get("source") or {}).get("id") or "").lower() != row.source_id:
             problems.append("the topic's source.id is not the ledger row's Lovable id.")
@@ -276,6 +398,7 @@ def build_package(
 
     if not topics:
         return selection
+    _unlink_loops(topics)
     package = {**header, "expected_topics": len(topics), "topics": topics}
     problems = validate_package(package).problems + package_problems(package)
     if problems:
@@ -284,6 +407,34 @@ def build_package(
         )
     selection.package = package
     return selection
+
+
+def _unlink(topic: dict[str, Any], why: str) -> None:
+    """Keep a continuation as source only: still SUPERSEDED (the stage link is the
+    source's), but no `superseded_by` the importer would write."""
+    topic["successor"] = ""
+    (topic.get("source") or {}).pop("successor_id", None)
+    topic.setdefault("review_notes", []).append(
+        f"CONTINUATION_NOT_LINKED: {why}; the stage link is kept as source only"
+    )
+
+
+def _unlink_loops(topics: list[dict[str, Any]]) -> None:
+    """Stage links that lead back to where they started cannot all be written
+    (`validate_package` refuses a cycle and would refuse the whole package):
+    every topic on such a loop is kept unlinked, nothing else changes."""
+    successors = {str(t.get("reference")): str(t.get("successor") or "") for t in topics}
+    looped: set[str] = set()
+    for start in successors:
+        current, seen = successors[start], 0
+        while current and seen <= len(successors):
+            if current == start:
+                looped.add(start)
+                break
+            current, seen = successors.get(current, ""), seen + 1
+    for topic in topics:
+        if str(topic.get("reference")) in looped:
+            _unlink(topic, "the stage links form a loop")
 
 
 # ---------------------------------------------------------------------------
@@ -299,7 +450,7 @@ def _load(path_or_package: str | Path | dict[str, Any]) -> dict[str, Any]:
 
 def validate(path_or_package: str | Path | dict[str, Any]) -> list[str]:
     package = _load(path_or_package)
-    return validate_package(package).problems + package_problems(package)
+    return validate_package(package).problems + package_problems(package) + reader_problems(package)
 
 
 def plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
@@ -308,7 +459,9 @@ def plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
     CREATE-only one."""
     package = _load(path_or_package)
     built = lovable_pilot.build_plan(package)
-    built.problems.extend(p for p in package_problems(package) if p not in built.problems)
+    built.problems.extend(
+        p for p in package_problems(package) + reader_problems(package) if p not in built.problems
+    )
     bound = (package.get("selection") or {}).get("decisions_sha256")
     if bound != canonical_sha256(decision_index()):
         built.problems.append(

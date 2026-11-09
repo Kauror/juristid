@@ -1039,6 +1039,9 @@ def coverage_markdown(ledger: Ledger) -> str:
         f"- Absent or other rows noted on a tombstone: {counts['tombstone_noted']}",
         f"- Rows with candidates (suggestions only): {counts['with_candidates']}",
         "",
+    ]
+    lines += _needs_a_person(ledger)
+    lines += [
         "## Ledger",
         "",
         "| Reference | Lovable id | Op. | Activity | Category | Reason | Teema | Notes "
@@ -1056,6 +1059,42 @@ def coverage_markdown(ledger: Ledger) -> str:
             f"{_flag(row.open_closed_mismatch)} | {row.continuation_mismatch or ''} |"
         )
     return "\n".join(lines) + "\n"
+
+
+#: The categories no service settles (§1): an archive page with no Teema, a
+#: possible duplicate, a reference-only match. Listed for a person with their
+#: candidates and reasons; nothing here links, merges or creates anything.
+NEEDS_A_PERSON = (Category.ARCHIVE_UNLINKED, Category.POSSIBLE_DUPLICATE, Category.LINK_ENRICHMENT)
+
+
+def _needs_a_person(ledger: Ledger) -> list[str]:
+    """The owner's review list: undecided ambiguous rows first, by category."""
+    rows = [r for r in ledger.rows if r.category in NEEDS_A_PERSON and not r.decision]
+    lines = [
+        "## Needs a person",
+        "",
+        f"- Undecided rows: {len(rows)} (decided rows are in the ledger with their decision)",
+        "",
+    ]
+    if not rows:
+        return [*lines, "None.", ""]
+    lines += [
+        "| Category | Reference | Lovable id | Op. | Reason | Candidates (basis → reference "
+        "or id) | Archive pages | Notes |",
+        "|---|---|---|---|---|---|---|---|",
+    ]
+    order: dict[str, int] = {str(category): n for n, category in enumerate(NEEDS_A_PERSON)}
+    for row in sorted(rows, key=lambda r: (order[r.category], r.reference, r.source_id)):
+        candidates = "; ".join(
+            f"{c['basis']} → {c['reference'] or c['source_id'] or c.get('matter_id') or ''}"
+            for c in row.candidates
+        )
+        lines.append(
+            f"| {row.category} | {row.reference} | {row.source_id} | "
+            f"{'yes' if row.operational else ''} | {row.reason} | {candidates} | "
+            f"{' '.join(row.archive_pages)} | {' '.join(row.notes)} |"
+        )
+    return [*lines, ""]
 
 
 def _flag(value: bool | None) -> str:
