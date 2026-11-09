@@ -214,6 +214,16 @@ def _catalogued() -> dict[str, CataloguedPage]:
                 ),
                 distinct=True,
             ),
+            # A later capture's reading held for a person (OneNoteResourceRevision
+            # HELD) stays pending until resolved; no capture ever accepts it.
+            held_readings=Count(
+                "resources__revisions",
+                filter=Q(
+                    resources__revisions__state="HELD",
+                    resources__revisions__matter_source_page__matter__deleted_at__isnull=True,
+                ),
+                distinct=True,
+            ),
         )
         .values_list(
             "pk",
@@ -223,9 +233,11 @@ def _catalogued() -> dict[str, CataloguedPage]:
             "import_batch__source_system",
             "live_links",
             "held",
+            "held_readings",
         )
     )
-    for pk, key, capture_id, section, system, links, held in rows:
+    for pk, key, capture_id, section, system, links, held_rows, held_readings in rows:
+        held = held_rows + held_readings
         if not key.lower().startswith("p-"):
             continue
         guid = _guid(key[2:])
@@ -351,12 +363,24 @@ def record_capture_marks(
     actor: Any = None,
     reason: str = "",
 ) -> int:
-    """Append the marks a capture step established: page key -> state."""
+    """Append the marks a capture step established: page key -> state.
+
+    A page that still holds something for a person — a shared page, a file held
+    for review, or a later reading held (``OneNoteResourceRevision`` HELD) — is
+    never marked done: ``IMPORTED`` or ``NO_CHANGES`` becomes
+    ``AWAITING_ASSOCIATION`` (independent review 2026-11-09, P2).
+    """
     by_state: dict[str, list[str]] = {}
     guids = {p.page_key: p.page_guid for p in capture.pages}
+    catalogued = _catalogued()
     for key, state in outcomes.items():
-        if key in guids:
-            by_state.setdefault(state, []).append(guids[key])
+        if key not in guids:
+            continue
+        row = catalogued.get(_guid(guids[key]))
+        if state in {PageState.IMPORTED, PageState.NO_CHANGES} and row is not None:
+            if _derived_state(row) == PageState.AWAITING_ASSOCIATION:
+                state = PageState.AWAITING_ASSOCIATION
+        by_state.setdefault(state, []).append(guids[key])
     return sum(
         mark_pages(
             pages,
