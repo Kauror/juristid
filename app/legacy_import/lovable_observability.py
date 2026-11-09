@@ -2725,7 +2725,7 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
         "risks": [
             "Ainult täpse sildivastavuse (lovable_reading.STAGE_MAPPING) kaudu avatud teemal, "
             "mis on veel viimati rakendatud etapis.",
-            "Tööd lõpetav etapp («jõustunud», «rohkem ei tegele») jääb alati inimesele.",
+            "Tööd lõpetav etapp (TERMINAL_STAGE_LABELS) jääb alati inimesele.",
         ],
         "blocking": "",
     },

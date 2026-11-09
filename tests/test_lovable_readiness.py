@@ -171,10 +171,14 @@ def test_the_field_table_says_why_a_field_is_held(cases, reader):
     for name in lovable_sync.AUTO_FIELDS:
         assert fields[name].mapping == "EXACT" and fields[name].service
         assert fields[name].blocking_reason == ""
-    assert fields["stage"].mapping == "NONE" and "etapisõnastiku" in fields["stage"].blocking_reason
+    # docs/adr/0213 §4: stage and commencements are CONDITIONAL — written only
+    # under exact preconditions, never automatically (AUTO).
+    assert fields["stage"].mapping == "CONDITIONAL" and not fields["stage"].automatic
+    assert "STAGE_MAPPING" in " ".join(fields["stage"].risks)
     assert "tee/oota/jälgi" in fields["next_action_text"].blocking_reason
     assert "saadetud arvamus" in fields["sent"].blocking_reason
-    assert "hinnang" in fields["commencements"].blocking_reason.lower()
+    assert fields["commencements"].mapping == "CONDITIONAL"
+    assert "hinnanguks" in " ".join(fields["commencements"].risks)
     assert fields["commencements"].simulated == {"UNCHANGED": 7, "UNSUPPORTED_FIELD": 1}
     dumped = json.dumps(obs.readiness(reader, now=LATER).as_dict(), ensure_ascii=False)
     assert "jõustunud" not in dumped
