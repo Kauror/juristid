@@ -511,6 +511,16 @@ SOURCE_FIELDS: dict[str, Callable[[dict[str, Any]], Any]] = {
 }
 
 
+def bundle_of(snapshot: dict[str, Any], source_id: Any) -> dict[str, Any] | None:
+    """A topic's bundle in a reading: the cohort's, or — for a Teema the same
+    night created from a new topic (docs/adr/0213) — the new topics' reading."""
+    key = str(source_id)
+    found = (snapshot.get("cohort") or {}).get(key)
+    if found is None:
+        found = ((snapshot.get("new_topics") or {}).get("cohort") or {}).get(key)
+    return found
+
+
 def canonical_source(bundle: dict[str, Any]) -> dict[str, Any]:
     return {key: extract(bundle) for key, extract in SOURCE_FIELDS.items()}
 
@@ -1163,7 +1173,12 @@ def conditional_values(matter: Any) -> dict[str, Any]:
             StageVocabulary.objects.filter(pk=matter.stage_id).values_list("key", flat=True).first()
         )
     deadline = getattr(matter, "response_deadline", None)
+    from app.matters.models import MatterResponseDeadline
+
     return {
+        # Requests that have ended (answered, withdrawn, replaced): a lawyer's
+        # decisions the request rule must never undo.
+        "request_history": MatterResponseDeadline.objects.filter(matter_id=matter.pk).count(),
         "stage": stage_key,
         "opinion_deadline": deadline.isoformat() if deadline else None,
         "koda_initiative": getattr(matter, "track", "") == Track.KODA_INITIATIVE,
@@ -1580,7 +1595,11 @@ def _request_decision(
     not a Chamber initiative and the day is not before today. A current request
     is never moved or replaced here; earlier requests and their history are
     never touched. A past deadline never means sent."""
-    a_src = (applied.get("opinion_deadline") or {}).get("source")
+    entry = applied.get("opinion_deadline") or {}
+    a_src = entry.get("source")
+    # What Juristid was given for A: the request a run wrote or converged on, or
+    # — at first sight — A's own day (an open request the import wrote) or none.
+    a_tgt = entry["target"] if "target" in entry else a_src
     c_src = src["opinion_deadline"]
     b_day = b.get("opinion_deadline")
     common = {"baseline": a_src, "current": b_day, "source": c_src}
@@ -1603,11 +1622,26 @@ def _request_decision(
         reason = REQUEST_ANSWERED
     elif src.get("koda_initiative") or b.get("koda_initiative"):
         reason = REQUEST_INITIATIVE
+    elif b_day != a_tgt and not (
+        a_tgt is not None and b_day is None and not b.get("request_history") and _past(a_tgt, today)
+    ):
+        # Juristid no longer holds what it was given for A — a lawyer ended,
+        # moved or added a request: a three-way conflict, never overwritten.
+        return FieldDecision("opinion_deadline", SyncOutcome.CONFLICT, **common)
     elif b_day is not None:
         reason = REQUEST_OPEN
     if reason:
         return FieldDecision("opinion_deadline", SyncOutcome.REVIEW_REQUIRED, reason, **common)
     return FieldDecision("opinion_deadline", SyncOutcome.ELIGIBLE, target=c_src, **common)
+
+
+def _past(day: Any, today: dt.date) -> bool:
+    """A's day is history and Juristid has no ended request: the import wrote
+    none for it (SOURCE_ONLY), so B empty is exactly what Juristid was given."""
+    try:
+        return dt.date.fromisoformat(str(day)) < today
+    except ValueError:
+        return False
 
 
 def _commencement_decision(
@@ -1626,7 +1660,8 @@ def _commencement_decision(
     day before today is history, never a fresh fact: held."""
     from app.legacy_import.lovable_reading import commencement_reading
 
-    a_src = (applied.get("commencements") or {}).get("source") or []
+    entry = applied.get("commencements") or {}
+    a_src = entry.get("source") or []
     c_src = src["commencements"]
     have = b.get("commencements") or []
     common = {"baseline": a_src, "current": have, "source": c_src}
@@ -1658,6 +1693,10 @@ def _commencement_decision(
         reason = HELD
     elif any(w[2] and dt.date.fromisoformat(w[2]) < today for w in want if w not in have):
         reason = DATE_PAST
+    elif _commencements_moved(entry, a_src, have):
+        # Juristid no longer holds what it was given for A (a lawyer cancelled
+        # or changed one): adding beside it is a three-way conflict.
+        return FieldDecision("commencements", SyncOutcome.CONFLICT, **common)
     else:
         missing = [w for w in want if w not in have]
         days = {item[2] for item in have if item[2]}
@@ -1672,6 +1711,29 @@ def _commencement_decision(
         if [r["target"], r["kind"], r["date"]] not in have
     ]
     return FieldDecision("commencements", SyncOutcome.ELIGIBLE, target=target, **common)
+
+
+def _commencements_moved(entry: dict[str, Any], a_src: list[Any], have: list[Any]) -> bool:
+    """Whether B no longer holds what Juristid was given for A: the target a run
+    stored, or else every readable commencement of A."""
+    from app.legacy_import.lovable_reading import commencement_reading
+
+    if "target" in entry:
+        given = [list(item) for item in entry["target"] or []]
+    else:
+        given = []
+        for liik, day, _note in a_src:
+            reading = commencement_reading({"liik": liik, "kuupaev": day}, status="")
+            if reading["target"]:
+                given.append([reading["target"], reading["kind"], reading["date"]])
+        # A fixed day reads as known once adopted: either kind is what was given.
+        have = [
+            ["MatterImportantDate", "PLANNED_COMMENCEMENT", item[2]]
+            if item[1] == "KNOWN_DATE"
+            else item
+            for item in have
+        ]
+    return any(item not in have for item in given)
 
 
 def _continuation_decision(a_src: Any, c_src: list[str], b: dict[str, Any]) -> FieldDecision:
@@ -1917,7 +1979,7 @@ def apply_matter(
         matter = lock_matter_for_write(plan.state.matter_id)
         state = LovableSyncState.objects.select_for_update().get(pk=plan.state.pk)
         state.matter = matter
-        bundle = snapshot["cohort"].get(str(state.source_id))
+        bundle = bundle_of(snapshot, state.source_id)
         fresh = plan_matter(state, bundle, resolver=resolver, today=today)
         provenance = _provenance(run, state, fresh.version, snapshot["sha256"])
         applied = dict(state.applied)
@@ -2781,7 +2843,7 @@ def _replay(
             "taken_at": stored.taken_at.isoformat(),
         }
     plans = [
-        plan_matter(s, document["cohort"].get(str(s.source_id)), resolver=resolver, today=day)
+        plan_matter(s, bundle_of(document, s.source_id), resolver=resolver, today=day)
         for s in states
         if s.pk not in unread
     ]
@@ -3305,7 +3367,7 @@ def _execute(
     # was never read there — «not yet read», never «missing» (ADR 0202 §6).
     unread = not_yet_read(states, previous_snapshot) if check and previous_snapshot else set()
     plans = [
-        plan_matter(s, snapshot["cohort"].get(str(s.source_id)), resolver=resolver, today=today)
+        plan_matter(s, bundle_of(snapshot, s.source_id), resolver=resolver, today=today)
         for s in states
         if s.pk not in unread
     ]
@@ -3562,9 +3624,7 @@ def _identical_check(clock: Callable[[], dt.datetime]) -> LovableSyncRun | None:
     resolver = OwnerResolver(states)
     unread = not_yet_read(states, snapshot)
     plans = [
-        plan_matter(
-            s, snapshot.document["cohort"].get(str(s.source_id)), resolver=resolver, today=today
-        )
+        plan_matter(s, bundle_of(snapshot.document, s.source_id), resolver=resolver, today=today)
         for s in states
         if s.pk not in unread
     ]
@@ -4184,7 +4244,7 @@ def due(*, trigger: str, now: dt.datetime | None = None) -> str:
 HOST_BACKUP_SET_ENV = "LOVABLE_SYNC_BACKUP_SET"
 
 
-def pending_sync_request() -> bool:
+def pending_sync_request(lane: str = "lovable") -> bool:
     """Whether an administrator's «Sünkrooni nüüd» request waits (interface 4:
     `DataSyncRequest`, kind LOVABLE_SYNC, PENDING). Reads only; without the
     requests model in this build there is never one."""
@@ -4194,19 +4254,22 @@ def pending_sync_request() -> bool:
         )
     except ImportError:
         return False
-    return bool(DataSyncRequest.objects.filter(kind="LOVABLE_SYNC", status="PENDING").exists())
+    return bool(DataSyncRequest.objects.filter(lane=lane, status="PENDING").exists())
 
 
-def due_on_demand() -> str:
+def due_on_demand(lane: str = "lovable") -> str:
     """The host's on-demand firing (every few minutes, the same cron file):
     ``DUE <mode>`` only while a request waits, else ``NOT_DUE NO_REQUEST``.
     A paused synchronisation still answers ``DUE OFF`` for a waiting request, so
     the request runner records the refusal instead of leaving it pending. Reads
     only: it never creates the control row."""
+    if lane == "onenote":
+        # The OneNote lane has no Lovable control row: only whether one waits.
+        return "DUE ONENOTE" if pending_sync_request("onenote") else "NOT_DUE NO_REQUEST"
     ctl = LovableSyncControl.objects.filter(pk=1).first()
     if ctl is not None and ctl.cut_over:
         return "NOT_DUE CUT_OVER"
-    if not pending_sync_request():
+    if not pending_sync_request("lovable"):
         return "NOT_DUE NO_REQUEST"
     return f"DUE {ctl.mode if ctl is not None else SyncMode.OFF}"
 

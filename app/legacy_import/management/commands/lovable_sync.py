@@ -22,7 +22,7 @@
         --package-sha256 SHA --expect N --reason R --replaces lovable-operational
     python manage.py lovable_sync retire --cohort lovable-register \\
         --reference 2026_511 --reason R [--apply]
-    python manage.py lovable_sync due --trigger manual --on-demand
+    python manage.py lovable_sync due --trigger manual --on-demand [--kind lovable|onenote]
     python manage.py lovable_sync replay [--run-key K] [--as-of YYYY-MM-DD] [--list-new]
     python manage.py lovable_sync pending
     python manage.py lovable_sync resolve-new-topic --source-id UUID --note N
@@ -155,6 +155,12 @@ class Command(BaseCommand):
             "--on-demand",
             action="store_true",
             help="due: answer for the host's on-demand firing (a waiting request).",
+        )
+        parser.add_argument(
+            "--kind",
+            choices=["lovable", "onenote"],
+            default="lovable",
+            help="due --on-demand: which request lane to ask about (read-only).",
         )
         parser.add_argument("--run-key", default="", help="replay: the stored reading's run.")
         parser.add_argument("--as-of", default="", help="replay: the day the rules read as today.")
@@ -293,7 +299,7 @@ class Command(BaseCommand):
         this is the 00:xx Europe/Tallinn run, and in which mode. Writes nothing."""
         trigger = SyncTrigger.SCHEDULED if options["trigger"] == "scheduled" else SyncTrigger.MANUAL
         if options["on_demand"]:
-            self.stdout.write(lovable_sync.due_on_demand())
+            self.stdout.write(lovable_sync.due_on_demand(options["kind"]))
             return
         self.stdout.write(lovable_sync.due(trigger=trigger))
 

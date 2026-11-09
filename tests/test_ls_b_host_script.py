@@ -60,7 +60,7 @@ def test_on_demand_runs_only_the_request_runner_after_the_backup():
 
 def test_a_firing_with_nothing_to_do_leaves_no_log_and_writes_nothing():
     text = _text()
-    assert 'if [ "$DUE" = "NOT_DUE NO_REQUEST" ]; then exit 0; fi' in text
+    assert 'if [ "$DUE" = "NOT_DUE NO_REQUEST" ]; then exit "$orc_onenote"; fi' in text
     assert 'if [ "$KEEP_LOG" = 0 ]; then rm -f "$LOG"; fi' in text
     assert "--on-demand) TRIGGER=manual; ON_DEMAND=1 ;;" in text
 
@@ -69,3 +69,31 @@ def test_the_script_never_sends_a_write_to_lovable_and_installs_no_cron():
     text = _text()
     for forbidden in ("crontab", "curl ", "wget ", "/boot/config/plugins/dynamix"):
         assert forbidden not in text, forbidden
+
+
+def _onenote_container(text: str) -> str:
+    start = _at(text, 'docker run --rm --name "juristid-main-onenote-import-$$"')
+    return text[start : text.index("</dev/null", start)]
+
+
+def test_the_onenote_lane_imports_with_a_verified_set_and_no_lovable_credentials():
+    text = _text()
+    ask = _at(text, "plain_manage lovable_sync due --trigger manual --on-demand --kind onenote")
+    for gate in ("flock -n 9", "mkdir /tmp/juristid-host-lock", '"$HEALTH" != healthy'):
+        assert _at(text, gate) < ask, gate
+    run = _at(text, 'docker run --rm --name "juristid-main-onenote-import-$$"')
+    assert ask < _at(text[ask:], "take_backup") + ask < run
+    container = _onenote_container(text)
+    for needed in (
+        "-e JURISTID_ONENOTE_CAPTURE_IMPORT=1",
+        "-e REAL_DATA_ALLOWED=1",
+        "-e JURISTID_ONENOTE_CAPTURE_ROOT=/capture",
+        '-e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET"',
+        '-v "$CAPTURE_SOURCE:/capture:ro"',
+        "data_sync_requests run-next --kind onenote",
+    ):
+        assert needed in container, needed
+    assert "CREDENTIALS" not in container and "LOVABLE_SYNC" not in container
+    assert "CAPTURE_SOURCE=/mnt/user/juristid-main/source" in text
+    # The OneNote lane comes before the Lovable lane's own credentials and ask.
+    assert run < _at(text, "one_off due --trigger manual --on-demand")

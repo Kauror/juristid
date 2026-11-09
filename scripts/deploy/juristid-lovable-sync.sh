@@ -39,6 +39,17 @@
 # nothing to do leaves no log file behind. It is the same cron file, one more
 # line; there is no second scheduler.
 #
+# The OneNote lane (brief §7 «Impordi OneNote'i materjalid» / «OneNote'i impordi
+# kontroll»): an on-demand firing first asks whether a OneNote request waits
+# (`lovable_sync due --on-demand --kind onenote`, read-only, no credentials). If
+# one does, it takes a backup set and verifies it to level 2, then runs
+# `data_sync_requests run-next --kind onenote` in a one-off container with
+# JURISTID_ONENOTE_CAPTURE_IMPORT=1, REAL_DATA_ALLOWED=1, the verified set as
+# JURISTID_ONENOTE_BACKUP_SET and the host's capture corpus mounted READ-ONLY at
+# /capture (JURISTID_ONENOTE_CAPTURE_ROOT). That container never receives the
+# Lovable credentials. The Lovable lane follows, unchanged; the host pause file
+# pauses only the Lovable lane.
+#
 # Pause: `touch $SYNC_DIR/PAUSED` (host) or `lovable_sync control --mode off`
 # (database; also what Haldus shows). Final cutover: `lovable_sync control
 # --cut-over …`, then remove the cron file. The credentials stay on the host:
@@ -56,6 +67,9 @@ SYNC_DIR=$APPDATA/l100/sync
 LOG_DIR=$SYNC_DIR/logs
 LOG_RETENTION_DAYS=30
 RUN_TIMEOUT=1200
+# The host's sealed OneNote capture corpus, mounted read-only into the import.
+CAPTURE_SOURCE=/mnt/user/juristid-main/source
+ONENOTE_TIMEOUT=3600
 
 TRIGGER=scheduled
 ON_DEMAND=0
@@ -117,7 +131,62 @@ if [ "$ON_DEMAND" = 0 ]; then
   esac
 fi
 
-if [ -e "$SYNC_DIR/PAUSED" ]; then say "SKIP paused on the host ($SYNC_DIR/PAUSED)"; exit 0; fi
+# A backup set taken and verified to level 2; its name in BACKUP_SET, or "".
+take_backup() {
+  BACKUP_SET=""
+  say "backup"
+  if (cd "$REPO" && scripts/deploy/juristid-backup.sh --project juristid-main \
+        --compose-file deploy/unraid-main/compose.yml --data-root "$APPDATA" \
+        --backup-root "$BACKUP_ROOT" >"$LOG.backup" 2>&1 </dev/null); then
+    SET_PATH="$(sed -nE 's/.*Backup set: +([^ ]+).*/\1/p' "$LOG.backup" | tail -1)"
+    if [ -n "$SET_PATH" ] && (cd "$REPO" && scripts/deploy/juristid-verify-backup.sh \
+          --project juristid-main --compose-file deploy/unraid-main/compose.yml \
+          --set "$SET_PATH" --backup-root "$BACKUP_ROOT" --level 2 >"$LOG.verify" 2>&1 </dev/null); then
+      BACKUP_SET="sets/$(basename "$SET_PATH")"
+      say "backup $BACKUP_SET verified (level 2)"
+    else
+      say "WARN backup verification failed: nothing is written"
+    fi
+  else
+    say "WARN backup failed: nothing is written"
+  fi
+}
+
+# No Lovable credentials here: the database and the image only.
+plain_manage() {
+  timeout "$RUN_TIMEOUT" docker run --rm --name "juristid-main-sync-request-$$" \
+    --network juristid-main-internal --env-file "$ENV_FILE" \
+    --cpus 1 --memory 1g --pids-limit 256 --log-driver none \
+    --entrypoint python "$IMAGE" manage.py "$@" </dev/null
+}
+
+orc_onenote=0
+if [ "$ON_DEMAND" = 1 ]; then
+  ONOTE="$(plain_manage lovable_sync due --trigger manual --on-demand --kind onenote | tail -1)" || ONOTE=""
+  if [ "$ONOTE" = "DUE ONENOTE" ]; then
+    KEEP_LOG=1
+    say "onenote request (image ${IMAGE:7:12})"
+    if [ ! -d "$CAPTURE_SOURCE" ]; then
+      say "FAIL $CAPTURE_SOURCE is missing; the OneNote request waits"; orc_onenote=1
+    else
+      take_backup
+      timeout "$ONENOTE_TIMEOUT" docker run --rm --name "juristid-main-onenote-import-$$" \
+        --network juristid-main-internal --env-file "$ENV_FILE" \
+        -e JURISTID_ONENOTE_CAPTURE_IMPORT=1 -e REAL_DATA_ALLOWED=1 \
+        -e JURISTID_ONENOTE_CAPTURE_ROOT=/capture \
+        -e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET" \
+        -v "$CAPTURE_SOURCE:/capture:ro" \
+        --cpus 1 --memory 2g --pids-limit 256 --log-driver none \
+        --entrypoint python "$IMAGE" manage.py data_sync_requests run-next --kind onenote \
+        </dev/null || orc_onenote=$?
+      say "onenote END rc=$orc_onenote"
+    fi
+  elif [ "$ONOTE" != "NOT_DUE NO_REQUEST" ]; then
+    KEEP_LOG=1; say "FAIL the OneNote due check gave no answer (${ONOTE:-none})"; orc_onenote=1
+  fi
+fi
+
+if [ -e "$SYNC_DIR/PAUSED" ]; then say "SKIP paused on the host ($SYNC_DIR/PAUSED)"; exit "$orc_onenote"; fi
 
 if [ ! -f "$CREDENTIALS" ]; then KEEP_LOG=1; say "FAIL $CREDENTIALS is missing"; exit 1; fi
 if [ "$(stat -c '%u %a' "$CREDENTIALS" 2>/dev/null || true)" != "0 600" ]; then
@@ -140,8 +209,9 @@ if [ "$ON_DEMAND" = 1 ]; then
 else
   DUE="$(one_off due --trigger "$TRIGGER" | tail -1)" || DUE=""
 fi
-# Nothing waits: an on-demand firing ends here and leaves no log.
-if [ "$DUE" = "NOT_DUE NO_REQUEST" ]; then exit 0; fi
+# Nothing waits: an on-demand firing ends here (and leaves no log unless the
+# OneNote lane had work).
+if [ "$DUE" = "NOT_DUE NO_REQUEST" ]; then exit "$orc_onenote"; fi
 KEEP_LOG=1
 say "${DUE:-<no answer>} (image ${IMAGE:7:12})"
 case "$DUE" in
@@ -153,22 +223,8 @@ case "$DUE" in
 esac
 
 if [ "$MODE" = apply ]; then
-  say "backup"
-  if (cd "$REPO" && scripts/deploy/juristid-backup.sh --project juristid-main \
-        --compose-file deploy/unraid-main/compose.yml --data-root "$APPDATA" \
-        --backup-root "$BACKUP_ROOT" >"$LOG.backup" 2>&1 </dev/null); then
-    SET_PATH="$(sed -nE 's/.*Backup set: +([^ ]+).*/\1/p' "$LOG.backup" | tail -1)"
-    if [ -n "$SET_PATH" ] && (cd "$REPO" && scripts/deploy/juristid-verify-backup.sh \
-          --project juristid-main --compose-file deploy/unraid-main/compose.yml \
-          --set "$SET_PATH" --backup-root "$BACKUP_ROOT" --level 2 >"$LOG.verify" 2>&1 </dev/null); then
-      SET="sets/$(basename "$SET_PATH")"
-      say "backup $SET verified (level 2)"
-    else
-      say "WARN backup verification failed: the run writes nothing tonight"
-    fi
-  else
-    say "WARN backup failed: the run writes nothing tonight"
-  fi
+  take_backup
+  SET="$BACKUP_SET"
 fi
 
 if [ "$ON_DEMAND" = 1 ]; then
@@ -180,6 +236,7 @@ if [ "$ON_DEMAND" = 1 ]; then
   rc=0
   one_off_manage data_sync_requests run-next --kind lovable || rc=$?
   say "END rc=$rc"
+  if [ "$rc" = 0 ]; then rc=$orc_onenote; fi
   exit "$rc"
 fi
 
