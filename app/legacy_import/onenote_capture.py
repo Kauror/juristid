@@ -1400,8 +1400,10 @@ def select_pages(
     ``include_shared`` chooses between the single-Teema and the shared pages.
     """
     chosen = []
+    # A page no register link names is inventoried, never written (no Teema to link).
     pages = sorted(
-        plan.capture.pages, key=lambda p: (min(m.reference for m in p.matters), p.page_key)
+        (p for p in plan.capture.pages if p.matters),
+        key=lambda p: (min(m.reference for m in p.matters), p.page_key),
     )
     for page in pages:
         ids = {m.matter_id for m in page.matters}
