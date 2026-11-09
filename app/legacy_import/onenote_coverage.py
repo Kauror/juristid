@@ -34,16 +34,28 @@ from typing import Any
 from django.db import transaction
 from django.utils import timezone
 
+from app.core.errors import DomainError
 from app.legacy_import.onenote_coverage_models import (
+    FINAL_HOLD_DECISIONS,
     CoverageScope,
+    HoldDecisionKind,
+    HoldScope,
     OneNoteCoverageMark,
+    OneNoteHoldDecision,
     PageState,
 )
 
 __all__ = [
+    "HoldDecisionRefused",
+    "HoldNotFound",
     "PageState",
     "WorkItem",
     "coverage_summary",
+    "decide_hold",
+    "held_counts",
+    "held_item",
+    "held_items",
+    "item_token",
     "mark_pages",
     "mark_section",
     "page_states",
@@ -179,6 +191,8 @@ class CataloguedPage:
     by_capture: bool
     linked: int
     review_holds: int
+    #: Held items on the page an administrator settled (``OneNoteHoldDecision``).
+    settled: int = 0
 
 
 def _catalogued() -> dict[str, CataloguedPage]:
@@ -236,13 +250,49 @@ def _catalogued() -> dict[str, CataloguedPage]:
             "held_readings",
         )
     )
+    settled = _settled_by_page()
     for pk, key, capture_id, section, system, links, held_rows, held_readings in rows:
-        held = held_rows + held_readings
+        held = held_rows + held_readings - settled.get(pk, 0)
         if not key.lower().startswith("p-"):
             continue
         guid = _guid(key[2:])
         out[guid] = CataloguedPage(
-            pk, guid, capture_id, section, system == BATCH_SOURCE_SYSTEM, links, held
+            pk,
+            guid,
+            capture_id,
+            section,
+            system == BATCH_SOURCE_SYSTEM,
+            links,
+            held,
+            settled.get(pk, 0),
+        )
+    return out
+
+
+def _settled_by_page() -> Counter[Any]:
+    """Page id -> held rows and readings on it that a final decision settled."""
+    from app.legacy_import.onenote_capture import HOLD_SHARED_PAGE, REVIEW_HOLDS
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    rows, readings = _settled_holds()
+    out: Counter[Any] = Counter()
+    if rows:
+        out.update(
+            LegacySourceResourceImport.objects.filter(
+                pk__in=rows,
+                state=ResourceImportState.SKIPPED,
+                error_code__in=sorted({HOLD_SHARED_PAGE, *REVIEW_HOLDS}),
+                matter_source_page__matter__deleted_at__isnull=True,
+            ).values_list("resource__source_page_id", flat=True)
+        )
+    if readings:
+        out.update(
+            OneNoteResourceRevision.objects.filter(
+                pk__in=readings,
+                state="HELD",
+                matter_source_page__matter__deleted_at__isnull=True,
+            ).values_list("resource__source_page_id", flat=True)
         )
     return out
 
@@ -250,7 +300,10 @@ def _catalogued() -> dict[str, CataloguedPage]:
 def _derived_state(page: CataloguedPage | None) -> str:
     if page is None:
         return PageState.NOT_INSPECTED
-    if page.linked > 1 or page.review_holds:
+    if page.review_holds:
+        return PageState.AWAITING_ASSOCIATION
+    # A shared page waits for its files' association — until a person settled them.
+    if page.linked > 1 and not page.settled:
         return PageState.AWAITING_ASSOCIATION
     return PageState.IMPORTED
 
@@ -424,6 +477,27 @@ def _last_capture() -> dict[str, Any] | None:
     }
 
 
+def _settled_holds() -> tuple[set[Any], set[Any]]:
+    """(import row ids, revision ids) an administrator's final decision settled.
+
+    A shared page's file is one item: its decision settles every held row of it.
+    """
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    final = OneNoteHoldDecision.objects.filter(final=True)
+    rows = set(final.exclude(resource_import=None).values_list("resource_import_id", flat=True))
+    shared = final.filter(scope=HoldScope.SHARED_FILE).values_list("resource_id", flat=True)
+    rows.update(
+        LegacySourceResourceImport.objects.filter(
+            resource_id__in=list(shared),
+            state=ResourceImportState.SKIPPED,
+            error_code="SHARED_PAGE_AWAITING_REVIEW",
+        ).values_list("pk", flat=True)
+    )
+    readings = set(final.exclude(revision=None).values_list("revision_id", flat=True))
+    return rows, readings
+
+
 def coverage_summary() -> dict[str, Any]:
     """Operational coverage, the other catalogued pages, sections, the last capture.
 
@@ -462,17 +536,35 @@ def coverage_summary() -> dict[str, Any]:
     )
 
     matter_ids = [t.matter_id for v in register.pages.values() for t in v]
+    # A held item an administrator settled (``OneNoteHoldDecision``) is no longer
+    # held: it is counted under ``held_decided`` instead. An association turned its
+    # chosen Teema's row into an import, so that one already counts as imported.
+    settled_rows, settled_readings = _settled_holds()
     imports = Counter(
         (state, code)
-        for state, code in LegacySourceResourceImport.objects.filter(
+        for pk, state, code in LegacySourceResourceImport.objects.filter(
             matter_source_page__matter_id__in=matter_ids
-        ).values_list("state", "error_code")
+        ).values_list("pk", "state", "error_code")
+        if not (state == ResourceImportState.SKIPPED and pk in settled_rows)
+    )
+    held_decided = Counter(
+        code
+        for code in LegacySourceResourceImport.objects.filter(
+            matter_source_page__matter_id__in=matter_ids,
+            pk__in=settled_rows,
+            state=ResourceImportState.SKIPPED,
+        ).values_list("error_code", flat=True)
     )
     revisions = Counter(
-        OneNoteResourceRevision.objects.filter(
+        state
+        for pk, state in OneNoteResourceRevision.objects.filter(
             matter_source_page__matter_id__in=matter_ids
-        ).values_list("state", flat=True)
+        ).values_list("pk", "state")
+        if not (state == RevisionState.HELD and pk in settled_readings)
     )
+    readings_decided = OneNoteResourceRevision.objects.filter(
+        matter_source_page__matter_id__in=matter_ids, pk__in=settled_readings
+    ).count()
     section_marks = _latest_marks(CoverageScope.SECTION)
     sections_seen = Counter(catalogued[g].section for g in captured)
     return {
@@ -510,6 +602,9 @@ def coverage_summary() -> dict[str, Any]:
             "new_versions": revisions.get(RevisionState.VERSIONED, 0),
             "revisions_held": revisions.get(RevisionState.HELD, 0),
             "revisions_recorded": revisions.get(RevisionState.RECORDED, 0),
+            # Settled by an administrator's decision (live-sync round 2).
+            "attachments_held_decided": dict(sorted(held_decided.items())),
+            "revisions_held_decided": readings_decided,
             "page_revisions": OneNotePageRevision.objects.filter(
                 page_id__in=[catalogued[g].page_id for g in captured]
             ).count(),
@@ -705,3 +800,763 @@ def capture_request(items: list[WorkItem]) -> dict[str, Any]:
             guid: [t.__dict__ for t in teemad] for guid, teemad in sorted(register.pages.items())
         },
     }
+
+
+# -- held readings: a person's review (live-sync round 2, agent C) ----------------------
+#
+# The importer holds what it cannot decide (``onenote_capture``): a file on a page
+# several Teemad link to, a later reading whose bytes or block time changed, a file
+# whose identity across captures is not proven. An administrator sees one held item
+# at a time (Haldus → Andmete sünkroonimine → OneNote'i ootel kirjed) and records ONE
+# audited decision on it:
+#
+# * ``ASSOCIATE`` — a shared page's file belongs to one named Teema (a reason is
+#   mandatory). The file becomes that Teema's Document through the import path
+#   (``create_document`` + ``add_evidence_version``, no actor, so the chronology files
+#   it on its OneNote day), and that Teema's held row now names it; the other Teemad
+#   keep theirs, settled by the same decision. Never every Teema.
+# * ``ACCEPT_REVISION`` — a held later reading with other bytes becomes the next
+#   DocumentVersion of the Document the Teema already has; the earlier version, its
+#   bytes and hash are never touched.
+# * ``REJECT`` — the proposed association or reading is not Juristid's.
+# * ``KEEP_HOLDING`` — waits for evidence; may be recorded again.
+#
+# The captured rows — page, resource, revision — are never altered; every decision is
+# an append-only ``OneNoteHoldDecision`` with actor, time, reason and the item as it
+# was seen. A decision is refused for an item that changed since it was shown (its
+# token), for one already settled, and for one on a Teema the viewer may not open.
+
+HOLD_CATEGORY_OWNERSHIP = "OWNERSHIP"
+HOLD_CATEGORY_BYTES = "CHANGED_BYTES"
+HOLD_CATEGORY_METADATA = "CHANGED_METADATA"
+HOLD_CATEGORY_OTHER = "OTHER"
+HOLD_CATEGORY_LABELS = {
+    HOLD_CATEGORY_OWNERSHIP: "Kuuluvus ebaselge (jagatud leht)",
+    HOLD_CATEGORY_BYTES: "Faili sisu muutunud",
+    HOLD_CATEGORY_METADATA: "Metaandmed muutunud",
+    HOLD_CATEGORY_OTHER: "Muu põhjus",
+}
+
+#: Why an item is held, in words, per the importer's code.
+HOLD_REASON_LABELS = {
+    "SHARED_PAGE_AWAITING_REVIEW": "Leht on seotud mitme teemaga; faili kuuluvus pole tõendatud.",
+    "MOVED_BLOCK_BYTES_CHANGED": "Plokk on teisaldatud ja selle baidid on muutunud.",
+    "BYTES_CHANGED_UNDER_SAME_BLOCK": "Sama ploki baidid on muutunud.",
+    "DOCUMENT_REMOVED_SINCE_IMPORT": "Baidid on muutunud, kuid dokument on teemalt eemaldatud.",
+    "BLOCK_TIME_CHANGED_UNDER_SAME_BLOCK": "Ploki loomise aeg on muutunud.",
+    "COMMENT_CHANGED_SINCE_IMPORT": "Faili märkus on muutunud.",
+    "AMBIGUOUS_EARLIER_BLOCK": "Mitu sama aja ja nimega faili; varasem vaste pole üheselt teada.",
+    "RESEMBLES_EARLIER_FILE_UNPROVEN": "Sarnaneb varasema failiga, kuid aeg seda ei tõenda.",
+    "SAME_FILE_ON_ANOTHER_PAGE_OF_TEEMA": "Sama fail on selle teema teisel lehel.",
+    "EARLIER_CAPTURE_NOT_IMPORTED": "Varasema hõive rida; selle teema jaoks importimata.",
+    "EMPTY_FILE": "Fail on 0-baidine.",
+    "LARGER_THAN_EVIDENCE_LIMIT": "Fail on suurem kui tõendi ülempiir.",
+}
+
+_SHARED = "SHARED_PAGE_AWAITING_REVIEW"
+_HOLD_CATEGORY = {
+    _SHARED: HOLD_CATEGORY_OWNERSHIP,
+    "MOVED_BLOCK_BYTES_CHANGED": HOLD_CATEGORY_BYTES,
+    "BYTES_CHANGED_UNDER_SAME_BLOCK": HOLD_CATEGORY_BYTES,
+    "DOCUMENT_REMOVED_SINCE_IMPORT": HOLD_CATEGORY_BYTES,
+    "BLOCK_TIME_CHANGED_UNDER_SAME_BLOCK": HOLD_CATEGORY_METADATA,
+    "COMMENT_CHANGED_SINCE_IMPORT": HOLD_CATEGORY_METADATA,
+}
+
+#: Import-row codes a person reviews. ``CONTINUES_EARLIER_BLOCK`` is not one: the
+#: earlier decision stands for a proven pure move.
+REVIEWED_IMPORT_CODES = frozenset(HOLD_REASON_LABELS) - {
+    "BYTES_CHANGED_UNDER_SAME_BLOCK",
+    "DOCUMENT_REMOVED_SINCE_IMPORT",
+    "BLOCK_TIME_CHANGED_UNDER_SAME_BLOCK",
+    "COMMENT_CHANGED_SINCE_IMPORT",
+}
+
+#: Refusals (the tests name them through ``tests.refusals.refused``).
+HOLD_REASON_REQUIRED = "Kirjuta otsuse põhjendus (vähemalt 10 märki)."
+HOLD_ALREADY_DECIDED = "Selle kirje kohta on otsus juba tehtud."
+HOLD_STALE = "Kirje on pärast avamist muutunud; ava see uuesti ja otsusta värske seisu järgi."
+HOLD_NOT_OFFERED = "Seda otsust selle kirje kohta teha ei saa."
+HOLD_NOT_A_CANDIDATE = "Fail saab olla seotud ainult ühe selle lehega seotud teemaga."
+HOLD_NO_DOCUMENT = "Teemal pole selle faili dokumenti, mille järgmine versioon see lugemine oleks."
+HOLD_ALREADY_CURRENT = "Dokumendi praegune versioon on juba täpselt need baidid."
+HOLD_SUPERSEDED = "Sama faili kohta on hilisem lugemine; otsusta selle järgi."
+HOLD_BYTES_UNAVAILABLE = (
+    "Algse faili baite ei leitud suletud kogumist või need ei vasta kataloogile; "
+    "midagi ei kirjutatud."
+)
+HOLD_NOT_EVIDENCE = "Tühja või ülempiirist suuremat faili ei saa dokumendiks lisada."
+HOLD_TEEMA_GONE = "Teema on vahepeal eemaldatud."
+
+_MIN_REASON = 10
+
+
+class HoldDecisionRefused(DomainError):
+    """A decision the item does not allow; ``code`` goes to the audit row."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+class HoldNotFound(Exception):
+    """No such held item for this viewer (the view answers 404)."""
+
+
+@dataclass
+class HoldTeema:
+    matter_id: str
+    reference: str
+    title: str
+    is_open: bool
+    link_id: str
+    #: The held import row on this link (``None`` for a held later reading).
+    row: Any = None
+
+
+@dataclass
+class HeldItem:
+    key: str
+    scope: str
+    reason: str
+    page: Any
+    resource: Any
+    teemad: list[HoldTeema]
+    rows: list[Any] = field(default_factory=list)
+    revision: Any = None
+    decisions: list[Any] = field(default_factory=list)
+    newer_revision: bool = False
+    #: Filled for one item's page only (``held_item``).
+    bytes_available: bool | None = None
+    bytes_note: str = ""
+    version_target: Any = None
+
+    @property
+    def category(self) -> str:
+        return _HOLD_CATEGORY.get(self.reason, HOLD_CATEGORY_OTHER)
+
+    @property
+    def category_label(self) -> str:
+        return HOLD_CATEGORY_LABELS[self.category]
+
+    @property
+    def reason_label(self) -> str:
+        return HOLD_REASON_LABELS.get(self.reason, self.reason)
+
+    @property
+    def detail(self) -> str:
+        if self.revision is not None:
+            return str(self.revision.detail or "")
+        return str(self.rows[0].error_detail or "") if self.rows else ""
+
+    @property
+    def final(self) -> Any:
+        return next((d for d in self.decisions if d.final), None)
+
+    @property
+    def context_available(self) -> bool:
+        if self.revision is not None:
+            return bool(self.revision.context)
+        return bool(self.page.blocks)
+
+    @property
+    def original(self) -> dict[str, Any]:
+        """The identity Juristid already holds: the catalogued (first) reading."""
+        r = self.resource
+        return {
+            "capture_id": self.page.capture_id,
+            "resource_key": r.resource_key,
+            "filename": r.original_filename,
+            "sha256": r.sha256,
+            "size": r.size_bytes,
+            "added_at": r.source_added_at,
+        }
+
+    @property
+    def later(self) -> dict[str, Any] | None:
+        """The later capture's identity, for a held later reading."""
+        v = self.revision
+        if v is None:
+            return None
+        return {
+            "capture_id": v.capture_id,
+            "manifest_sha256": v.manifest_sha256,
+            "kind": v.get_kind_display(),
+            "sha256": v.sha256,
+            "size": v.size_bytes,
+            "added_at": v.source_added_at,
+            "modified_at": v.block_modified_at,
+        }
+
+    @property
+    def options(self) -> list[str]:
+        if self.final is not None:
+            return []
+        if self.scope == HoldScope.SHARED_FILE:
+            return [
+                HoldDecisionKind.ASSOCIATE,
+                HoldDecisionKind.REJECT,
+                HoldDecisionKind.KEEP_HOLDING,
+            ]
+        if self.scope == HoldScope.HELD_REVISION and self.revision.kind == "CHANGED_BYTES":
+            return [
+                HoldDecisionKind.ACCEPT_REVISION,
+                HoldDecisionKind.REJECT,
+                HoldDecisionKind.KEEP_HOLDING,
+            ]
+        return [HoldDecisionKind.REJECT, HoldDecisionKind.KEEP_HOLDING]
+
+
+def _hold_querysets() -> tuple[Any, Any]:
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision, RevisionState
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    rows = LegacySourceResourceImport.objects.filter(
+        state=ResourceImportState.SKIPPED,
+        error_code__in=sorted(REVIEWED_IMPORT_CODES),
+        matter_source_page__matter__deleted_at__isnull=True,
+    ).select_related("resource__source_page", "matter_source_page__matter", "import_batch")
+    revisions = OneNoteResourceRevision.objects.filter(
+        state=RevisionState.HELD, matter_source_page__matter__deleted_at__isnull=True
+    ).select_related("resource__source_page", "matter_source_page__matter")
+    return rows, revisions
+
+
+def _teema(link: Any, row: Any = None) -> HoldTeema:
+    matter = link.matter
+    return HoldTeema(
+        matter_id=str(matter.pk),
+        reference=str(getattr(matter, "display_reference", "") or ""),
+        title=matter.title,
+        is_open=bool(matter.is_open),
+        link_id=str(link.pk),
+        row=row,
+    )
+
+
+def _collect_items(*, key: str | None = None, lock: bool = False) -> list[HeldItem]:
+    """Every held item (or the one named ``key``) with its decisions; no visibility yet."""
+    import uuid
+
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision
+
+    rows, revisions = _hold_querysets()
+    if key is not None:
+        kind, _, raw = key.partition(":")
+        try:
+            pk = uuid.UUID(raw)
+        except ValueError:
+            return []
+        if kind == "shared":
+            rows, revisions = rows.filter(resource_id=pk, error_code=_SHARED), revisions.none()
+        elif kind == "import":
+            rows, revisions = rows.filter(pk=pk).exclude(error_code=_SHARED), revisions.none()
+        elif kind == "revision":
+            rows, revisions = rows.none(), revisions.filter(pk=pk)
+        else:
+            return []
+        if lock:
+            rows = rows.select_for_update(of=("self",))
+            revisions = revisions.select_for_update(of=("self",))
+    items: dict[str, HeldItem] = {}
+    for row in rows.order_by("resource__source_page__page_key", "resource__source_block_ordinal"):
+        shared = row.error_code == _SHARED
+        item_key = f"shared:{row.resource_id}" if shared else f"import:{row.pk}"
+        item = items.get(item_key)
+        if item is None:
+            item = items[item_key] = HeldItem(
+                key=item_key,
+                scope=HoldScope.SHARED_FILE if shared else HoldScope.HELD_IMPORT,
+                reason=row.error_code,
+                page=row.resource.source_page,
+                resource=row.resource,
+                teemad=[],
+            )
+        item.rows.append(row)
+        item.teemad.append(_teema(row.matter_source_page, row))
+    for revision in revisions.order_by("created_at"):
+        item_key = f"revision:{revision.pk}"
+        items[item_key] = HeldItem(
+            key=item_key,
+            scope=HoldScope.HELD_REVISION,
+            reason=revision.reason,
+            page=revision.resource.source_page,
+            resource=revision.resource,
+            teemad=[_teema(revision.matter_source_page)],
+            revision=revision,
+        )
+    if not items:
+        return []
+    for decision in OneNoteHoldDecision.objects.filter(item_key__in=list(items)).order_by(
+        "decided_at", "created_at"
+    ):
+        items[decision.item_key].decisions.append(decision)
+    readings = [i for i in items.values() if i.revision is not None]
+    if readings:
+        newest: dict[tuple[Any, Any], Any] = {}
+        for link_id, resource_id, created in OneNoteResourceRevision.objects.filter(
+            resource_id__in={i.revision.resource_id for i in readings}
+        ).values_list("matter_source_page_id", "resource_id", "created_at"):
+            known = newest.get((link_id, resource_id))
+            newest[(link_id, resource_id)] = created if known is None else max(known, created)
+        for item in readings:
+            v = item.revision
+            item.newer_revision = newest[(v.matter_source_page_id, v.resource_id)] > v.created_at
+    return list(items.values())
+
+
+def _visible_matters(viewer: Any, items: list[HeldItem]) -> set[str]:
+    from app.matters.models import Matter
+
+    ids = {t.matter_id for i in items for t in i.teemad}
+    if viewer is None or not ids:
+        return set()
+    return {
+        str(pk)
+        for pk in Matter.objects.visible_to(viewer).filter(pk__in=ids).values_list("pk", flat=True)
+    }
+
+
+def held_counts() -> dict[str, Any]:
+    """Counts only (no Teema named): open items per category, settled ones per decision."""
+    items = _collect_items()
+    open_items = [i for i in items if i.final is None]
+    return {
+        "open": len(open_items),
+        "open_by_category": dict(Counter(i.category for i in open_items)),
+        "open_shared_rows": sum(
+            len(i.rows) for i in open_items if i.scope == HoldScope.SHARED_FILE
+        ),
+        "decided": len(items) - len(open_items),
+        "decided_by_decision": dict(
+            Counter(str(i.final.decision) for i in items if i.final is not None)
+        ),
+    }
+
+
+def held_items(
+    *, viewer: Any, category: str = "", decided: bool = False
+) -> tuple[list[HeldItem], int, dict[str, int]]:
+    """(items the viewer may open, how many more are on Teemad it may not, open per category)."""
+    items = _collect_items()
+    counts = Counter(i.category for i in items if i.final is None)
+    chosen = [
+        i
+        for i in items
+        if (i.final is not None) == decided and (not category or i.category == category)
+    ]
+    visible = _visible_matters(viewer, chosen)
+    shown = [i for i in chosen if all(t.matter_id in visible for t in i.teemad)]
+    return shown, len(chosen) - len(shown), dict(counts)
+
+
+def _version_target(item: HeldItem) -> Any:
+    """The live Document a held later reading would be the next version of, or None."""
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    v = item.revision
+    if v is None:
+        return None
+    row = (
+        LegacySourceResourceImport.objects.filter(
+            matter_source_page_id=v.matter_source_page_id,
+            resource_id=v.resource_id,
+            state=ResourceImportState.IMPORTED,
+            document__isnull=False,
+        )
+        .select_related("document")
+        .first()
+    )
+    document = row.document if row is not None else None
+    if document is None or document.removed_at is not None:
+        return None
+    if str(document.matter_id) != item.teemad[0].matter_id:
+        return None
+    return document
+
+
+def _sealed_bytes(item: HeldItem, *, read: bool) -> tuple[bytes | None, str]:
+    """The original bytes from the sealed capture (``read``), or only whether they are there.
+
+    Found as the originals view finds them (``source_originals``): by scanning the
+    read-only corpus for the seal of the row's own capture, never by a stored path.
+    """
+    import hashlib
+
+    from app.legacy_import import source_originals
+
+    if item.revision is not None:
+        v = item.revision
+        package = source_originals.find_package(
+            capture_id=v.capture_id, manifest_sha256=v.manifest_sha256
+        )
+        if package is None:
+            return None, "package_missing"
+        if v.sha256 not in package.blobs:
+            return None, "blob_not_sealed"
+        path = package.root / "blobs" / v.sha256
+        if path.is_symlink() or not path.is_file() or path.stat().st_size != v.size_bytes:
+            return None, "blob_missing"
+        if not read:
+            return None, ""
+        content = path.read_bytes()
+        if len(content) != v.size_bytes or hashlib.sha256(content).hexdigest() != v.sha256:
+            return None, "hash_mismatch"
+        return content, ""
+    row = item.rows[0]
+    try:
+        if read:
+            with source_originals.open_original(item.resource, row) as handle:
+                return handle.read(), ""
+        batch = source_originals.check_recorded(item.resource, row)
+        package = source_originals.find_package(
+            capture_id=source_originals._capture_of(row),
+            manifest_sha256=batch.source_snapshot_sha256,
+        )
+    except source_originals.OriginalUnavailable as error:
+        return None, error.outcome
+    if package is None:
+        return None, "package_missing"
+    if item.resource.sha256 not in package.blobs:
+        return None, "blob_not_sealed"
+    return None, ""
+
+
+def held_item(key: str, *, viewer: Any) -> HeldItem:
+    """One held item, with its bytes' availability and its version target.
+
+    Raises ``HoldNotFound`` for no such item, or one on a Teema the viewer may not open.
+    """
+    items = _collect_items(key=key)
+    if not items:
+        raise HoldNotFound(key)
+    item = items[0]
+    visible = _visible_matters(viewer, [item])
+    if not all(t.matter_id in visible for t in item.teemad):
+        raise HoldNotFound(key)
+    _content, note = _sealed_bytes(item, read=False)
+    item.bytes_available, item.bytes_note = not note, note
+    item.version_target = _version_target(item)
+    return item
+
+
+def item_token(item: HeldItem) -> str:
+    """What a decision is bound to: the item's rows, states and decisions as shown."""
+    from app.legacy_import.integrity import canonical_sha256
+
+    return canonical_sha256(
+        {
+            "key": item.key,
+            "rows": sorted(
+                [str(r.pk), r.state, r.error_code, str(r.document_id or "")] for r in item.rows
+            ),
+            "revision": [str(item.revision.pk), item.revision.state] if item.revision else None,
+            "newer_revision": item.newer_revision,
+            "decisions": [str(d.pk) for d in item.decisions],
+        }
+    )
+
+
+def _observed(item: HeldItem) -> dict[str, Any]:
+    r = item.resource
+    v = item.revision
+    return {
+        "scope": str(item.scope),
+        "category": item.category,
+        "reason": item.reason,
+        "page_key": item.page.page_key,
+        "section": item.page.source_section,
+        "resource_key": r.resource_key,
+        "filename": r.original_filename,
+        "sha256": r.sha256,
+        "size": r.size_bytes,
+        "source_added_at": r.source_added_at.isoformat() if r.source_added_at else None,
+        "rows": [
+            {
+                "id": str(row.pk),
+                "matter_id": str(row.matter_source_page.matter_id),
+                "state": row.state,
+                "error_code": row.error_code,
+                "error_detail": row.error_detail,
+            }
+            for row in item.rows
+        ],
+        "revision": None
+        if v is None
+        else {
+            "id": str(v.pk),
+            "capture_id": v.capture_id,
+            "manifest_sha256": v.manifest_sha256,
+            "kind": v.kind,
+            "state": v.state,
+            "sha256": v.sha256,
+            "size": v.size_bytes,
+        },
+        "teemad": [t.matter_id for t in item.teemad],
+        "bytes_available": item.bytes_available,
+    }
+
+
+def _review_note(item: HeldItem, reason: str) -> str:
+    """The document's provenance: where the file sits and that a person associated it."""
+    page = item.page
+    r = item.resource
+    location = " → ".join(
+        part for part in (page.source_section_group, page.source_section, page.title[:160]) if part
+    )
+    lines = [f"OneNote: {location}"]
+    if r.source_added_at:
+        lines.append(f"Lisatud OneNote'i: {timezone.localtime(r.source_added_at):%d.%m.%Y %H:%M}")
+    else:
+        lines.append("Lisamise kuupäev teadmata.")
+    lines.append(f"Seotud selle teemaga halduri otsusega: {reason[:300]}")
+    lines.append(f"Allikas: {page.capture_id}")
+    return "\n".join(lines)
+
+
+def _promote(item: HeldItem, *, teema: HoldTeema, reason: str, content: bytes) -> tuple[Any, Any]:
+    """Make the Document (``ASSOCIATE``) or its next version (``ACCEPT_REVISION``)
+    through the ordinary import path: no actor, the catalogued hash expected."""
+    from pathlib import Path
+
+    from django.conf import settings
+
+    from app.documents.enums import ExtractionState
+    from app.documents.services import add_evidence_version, create_document
+    from app.legacy_import.historical_materials import (
+        extraction_note_for,
+        is_extractable,
+        mime_type_for,
+        role_for,
+    )
+    from app.matters.locks import lock_matters_in_order
+
+    limit = int(getattr(settings, "MAX_EVIDENCE_UPLOAD_BYTES", 100 * 1024 * 1024))
+    if not content or len(content) > limit:
+        raise HoldDecisionRefused("NOT_EVIDENCE", HOLD_NOT_EVIDENCE)
+    matter = next(iter(lock_matters_in_order(teema.matter_id).values()), None)
+    if matter is None or matter.deleted_at is not None:
+        raise HoldDecisionRefused("TEEMA_GONE", HOLD_TEEMA_GONE)
+    r = item.resource
+    name = (r.original_filename or "").strip()[:500] or f"onenote-{r.source_block_ordinal}.bin"
+    extractable = is_extractable(Path(name).suffix.lower())
+    v = item.revision
+    if v is None:
+        document = create_document(
+            matter=matter,
+            title=name[:400],
+            role=role_for(name),
+            provenance_note=_review_note(item, reason),
+        )
+        expected = r.sha256
+        source_path, identifier = r.archive_relative_path, f"{item.page.page_key}/{r.resource_key}"
+    else:
+        document = item.version_target
+        expected = v.sha256
+        source_path = v.archive_relative_path
+        identifier = f"{item.page.page_key}/{r.resource_key}@{v.capture_id}"
+    version = add_evidence_version(
+        document=document,
+        content=content,
+        original_filename=name,
+        mime_type=mime_type_for(name),
+        expected_sha256=expected,
+        source_path=source_path,
+        source_identifier=identifier[:400],
+        extraction_state=ExtractionState.PENDING if extractable else ExtractionState.NOT_APPLICABLE,
+        extraction_note="" if extractable else extraction_note_for(name)[:300],
+    )
+    if version.sha256 != expected:
+        raise HoldDecisionRefused("BYTES_UNAVAILABLE", HOLD_BYTES_UNAVAILABLE)
+    return document, version
+
+
+def decide_hold(
+    key: str,
+    *,
+    actor: Any,
+    viewer: Any,
+    decision: str,
+    reason: str,
+    token: str,
+    link_id: str = "",
+    client: dict[str, Any] | None = None,
+) -> Any:
+    """Record one administrator's decision on one held item. Returns the decision row.
+
+    Raises ``HoldNotFound`` (no such item for this viewer) or ``HoldDecisionRefused``
+    (named refusal; nothing written but its audit row).
+    """
+    from django.db import IntegrityError
+
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    user = getattr(actor, "user", actor)
+    reason = (reason or "").strip()
+    try:
+        if len(reason) < _MIN_REASON:
+            raise HoldDecisionRefused("REASON_REQUIRED", HOLD_REASON_REQUIRED)
+        with transaction.atomic():
+            items = _collect_items(key=key, lock=True)
+            if not items:
+                raise HoldNotFound(key)
+            item = items[0]
+            visible = _visible_matters(viewer, [item])
+            if not all(t.matter_id in visible for t in item.teemad):
+                raise HoldNotFound(key)
+            if item.final is not None:
+                raise HoldDecisionRefused("ALREADY_DECIDED", HOLD_ALREADY_DECIDED)
+            if not token or token != item_token(item):
+                raise HoldDecisionRefused("STALE_ITEM", HOLD_STALE)
+            if decision not in item.options:
+                raise HoldDecisionRefused("NOT_OFFERED", HOLD_NOT_OFFERED)
+            teema = item.teemad[0]
+            document = version = None
+            if decision == HoldDecisionKind.ASSOCIATE:
+                found = [t for t in item.teemad if t.link_id == link_id]
+                if len(found) != 1:
+                    raise HoldDecisionRefused("NOT_A_CANDIDATE", HOLD_NOT_A_CANDIDATE)
+                teema = found[0]
+            if decision == HoldDecisionKind.ACCEPT_REVISION:
+                if item.newer_revision:
+                    raise HoldDecisionRefused("SUPERSEDED", HOLD_SUPERSEDED)
+                item.version_target = _version_target(item)
+                if item.version_target is None:
+                    raise HoldDecisionRefused("NO_DOCUMENT", HOLD_NO_DOCUMENT)
+                current = item.version_target.current_version
+                if current is not None and current.sha256 == item.revision.sha256:
+                    raise HoldDecisionRefused("ALREADY_CURRENT", HOLD_ALREADY_CURRENT)
+            if decision in (HoldDecisionKind.ASSOCIATE, HoldDecisionKind.ACCEPT_REVISION):
+                content, note = _sealed_bytes(item, read=True)
+                item.bytes_available = content is not None
+                if content is None:
+                    raise HoldDecisionRefused("BYTES_UNAVAILABLE:" + note, HOLD_BYTES_UNAVAILABLE)
+                document, version = _promote(item, teema=teema, reason=reason, content=content)
+            else:
+                item.bytes_available = None
+            row = teema.row
+            if decision == HoldDecisionKind.ASSOCIATE:
+                # Juristid's association, not the capture: the chosen Teema's held row
+                # now names its Document (what the chronology, the page view and the
+                # verifier read). The row as it was is kept verbatim in ``observed``.
+                moved = LegacySourceResourceImport.objects.filter(
+                    pk=row.pk, state=ResourceImportState.SKIPPED, document__isnull=True
+                ).update(
+                    state=ResourceImportState.IMPORTED,
+                    document=document,
+                    document_version=version,
+                    error_code="",
+                    error_detail="",
+                )
+                if moved != 1:
+                    raise HoldDecisionRefused("STALE_ITEM", HOLD_STALE)
+            final = decision in FINAL_HOLD_DECISIONS
+            try:
+                with transaction.atomic():
+                    record = OneNoteHoldDecision.objects.create(
+                        item_key=item.key,
+                        scope=item.scope,
+                        decision=decision,
+                        final=final,
+                        resource=item.resource,
+                        resource_import=row
+                        if item.scope == HoldScope.HELD_IMPORT
+                        else (row if decision == HoldDecisionKind.ASSOCIATE else None),
+                        revision=item.revision,
+                        matter_source_page_id=teema.link_id
+                        if (
+                            item.scope != HoldScope.SHARED_FILE
+                            or decision == HoldDecisionKind.ASSOCIATE
+                        )
+                        else None,
+                        reason=reason,
+                        actor=user,
+                        item_token=token,
+                        observed=_observed(item),
+                        document=document,
+                        document_version=version,
+                    )
+            except IntegrityError as error:
+                raise HoldDecisionRefused("ALREADY_DECIDED", HOLD_ALREADY_DECIDED) from error
+            if final:
+                _mark_page_if_settled(item.page, user)
+    except HoldDecisionRefused as refusal:
+        _audit_hold(user, key, decision, client, succeeded=False, code=refusal.code)
+        raise
+    _audit_hold(
+        user,
+        key,
+        decision,
+        client,
+        succeeded=True,
+        subject=document,
+        scope=str(item.scope),
+        hold_reason=item.reason,
+    )
+    return record
+
+
+def _audit_hold(
+    user: Any,
+    key: str,
+    decision: str,
+    client: dict[str, Any] | None,
+    *,
+    succeeded: bool,
+    subject: Any = None,
+    **detail: Any,
+) -> None:
+    from app.audit.enums import SecurityEventType
+    from app.audit.services import record_security_event
+
+    record_security_event(
+        event_type=SecurityEventType.IMPORT_RUN,
+        actor=user,
+        subject=subject,
+        succeeded=succeeded,
+        ip_address=(client or {}).get("ip_address"),
+        user_agent=str((client or {}).get("user_agent") or ""),
+        detail={
+            "action": "ONENOTE_HOLD_DECIDED" if succeeded else "ONENOTE_HOLD_DECISION_REFUSED",
+            "item": key,
+            "decision": str(decision)[:40],
+            **{k: v for k, v in detail.items() if v not in (None, "")},
+        },
+    )
+
+
+def _mark_page_if_settled(page: Any, user: Any) -> None:
+    """A page that waited for association and has no open held item left is imported.
+
+    Appends one progress mark (the page's state is its latest mark); nothing else.
+    """
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision, RevisionState
+    from app.legacy_import.source_pages import LegacySourceResourceImport, ResourceImportState
+
+    rows, readings = _settled_holds()
+    live = {"matter_source_page__matter__deleted_at__isnull": True}
+    if (
+        LegacySourceResourceImport.objects.filter(
+            resource__source_page=page,
+            state=ResourceImportState.SKIPPED,
+            error_code__in=sorted(REVIEWED_IMPORT_CODES),
+            **live,
+        )
+        .exclude(pk__in=rows)
+        .exists()
+        or OneNoteResourceRevision.objects.filter(
+            resource__source_page=page, state=RevisionState.HELD, **live
+        )
+        .exclude(pk__in=readings)
+        .exists()
+    ):
+        return
+    guid = _guid(page.page_key[2:]) if page.page_key.lower().startswith("p-") else ""
+    mark = _latest_marks().get(guid) if guid else None
+    if mark is not None and mark.state == PageState.AWAITING_ASSOCIATION:
+        mark_pages(
+            [guid],
+            PageState.IMPORTED,
+            actor=user,
+            reason="Ootel kirjed on halduri otsustega lahendatud.",
+        )

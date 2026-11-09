@@ -139,6 +139,7 @@
           <h3 class="dsync__subtitle">Kataloogitud, kuid teemale lisamata</h3>
           <dl class="detailgrid">{% for label, n in o.held %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}</dl>
         {% endif %}
+        <p class="acctnote"><a href="{% url 'haldus:onenote_holds' %}">OneNote'i ootel kirjed: vaata ja otsusta ükshaaval</a></p>
         <h3 class="dsync__subtitle">Muud lehed ja jaotised</h3>
         <dl class="detailgrid">
           <dt>Muid kataloogitud lehti</dt><dd>{{ o.other_pages|default_if_none:"—" }}</dd>
