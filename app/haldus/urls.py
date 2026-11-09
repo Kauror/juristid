@@ -11,7 +11,7 @@ none of them can shadow those.
 from django.urls import path
 
 from app.accounts import admin_session_views
-from app.haldus import data_sync_views, views
+from app.haldus import data_sync_views, onenote_holds, views
 
 urlpatterns = [
     path("", views.index, name="index"),
@@ -44,6 +44,7 @@ urlpatterns = [
         data_sync_views.onenote_import,
         name="data_sync_onenote_import",
     ),
+    path("andmete-sunkroonimine/onenote/ootel/", onenote_holds.holds, name="onenote_holds"),
     # -- the verified administrator session (shared gate only, docs/adr/0186) --
     path("sisene/", admin_session_views.sign_in, name="sign_in"),
     path("sisene/kood/", admin_session_views.sign_in_code, name="sign_in_code"),

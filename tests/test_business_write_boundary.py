@@ -1838,6 +1838,7 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "haldus:data_sync_resolve": "I: one pending field's decision via resolve_field, visible only",
     "haldus:data_sync_onenote_verify": "I: records a capture check for the host, may_open_system",
     "haldus:data_sync_onenote_import": "I: records a verified import for the host, may_open_system",
+    "haldus:onenote_holds": "I: one held OneNote item's audited decision, may_open_system, visible only",
 }
 
 

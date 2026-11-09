@@ -98,6 +98,15 @@ def active_reader(bundle, *, as_of, people, historical):
     return topic_
 
 
+@pytest.fixture(autouse=True)
+def _fake_reader_is_this_candidates(monkeypatch):
+    """`plan` refuses a package read by another reader version (STALE_READER); in
+    this module the fake reader stands in for the candidate's own."""
+    monkeypatch.setattr(
+        lovable_backfill, "_default_reader", lambda: (fake_read_topic, READER_VERSION)
+    )
+
+
 @pytest.fixture
 def pilot_on(settings):
     settings.LOVABLE_PILOT_ENABLED = True

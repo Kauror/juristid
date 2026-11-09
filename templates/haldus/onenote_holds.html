@@ -1,0 +1,56 @@
+{% extends "haldus/base.html" %}
+{% block title %}OneNote'i ootel kirjed · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  The OneNote readings the importer held for a person: a shared page's file, a
+  held import row, a held later reading. Counts per reason; one row per item;
+  each opens to its own page and one decision. Teemad are named only for a
+  persona that may open them; the others are counted, never named.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel" aria-labelledby="onenote-holds">
+    <h2 class="dsync__title" id="onenote-holds">OneNote'i ootel kirjed</h2>
+    <p class="acctnote">Importija jätab ootele failid ja lugemised, mille kuuluvust või järjepidevust ei saa tõendada. Iga kirje kohta tehakse üks põhjendatud otsus; hõivatud algandmeid ei muudeta.</p>
+    <nav class="tabs dsync__subnav" aria-label="Ootel kirjed põhjuse järgi">
+      <a class="tabs__tab {% if not chosen and not decided %}is-active{% endif %}" href="{% url 'haldus:onenote_holds' %}">Kõik ootel ({{ open_total }})</a>
+      {% for f in filters %}
+        <a class="tabs__tab {% if f.active %}is-active{% endif %}" {% if f.active %}aria-current="page"{% endif %} href="{% url 'haldus:onenote_holds' %}?liik={{ f.value }}">{{ f.label }} ({{ f.count }})</a>
+      {% endfor %}
+      <a class="tabs__tab {% if decided %}is-active{% endif %}" href="{% url 'haldus:onenote_holds' %}?otsustatud=1">Otsustatud</a>
+    </nav>
+    {% if items %}
+      <div class="accttable">
+        <table class="data-table dsync__table">
+          <thead>
+            <tr><th scope="col">Leht</th><th scope="col">Fail</th><th scope="col">Teemad</th><th scope="col">Miks ootel</th><th scope="col">{% if decided %}Otsus{% else %}<span class="visually-hidden">Toiming</span>{% endif %}</th></tr>
+          </thead>
+          <tbody>
+            {% for item in items %}
+              <tr>
+                <td>{{ item.page.source_section }} → {{ item.page.title|truncatechars:80 }}</td>
+                <td>{{ item.resource.original_filename|truncatechars:60 }}</td>
+                <td>{% for t in item.teemad %}{{ t.reference }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                <td>{{ item.category_label }}: {{ item.reason_label }}</td>
+                <td>{% if decided %}{{ item.final.get_decision_display }} · {{ item.final.decided_at|date:"j.n.Y" }}{% else %}<a class="button button--secondary button--tiny" href="{% url 'haldus:onenote_holds' %}?kirje={{ item.key|urlencode }}">Vaata ja otsusta…</a>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if pages > 1 %}
+        <nav class="pagination" aria-label="Lehed">
+          {% if page > 1 %}<a class="pagination__step" rel="prev" href="?{% if chosen %}liik={{ chosen }}&amp;{% endif %}{% if decided %}otsustatud=1&amp;{% endif %}leht={{ page|add:'-1' }}"><span aria-hidden="true">‹</span><span class="visually-hidden">Eelmine leht</span></a>{% endif %}
+          <span class="pagination__status">Leht {{ page }} / {{ pages }} ({{ total }} kokku)</span>
+          {% if page < pages %}<a class="pagination__step" rel="next" href="?{% if chosen %}liik={{ chosen }}&amp;{% endif %}{% if decided %}otsustatud=1&amp;{% endif %}leht={{ page|add:'1' }}"><span aria-hidden="true">›</span><span class="visually-hidden">Järgmine leht</span></a>{% endif %}
+        </nav>
+      {% endif %}
+    {% elif not hidden %}
+      <p>{% if decided %}Otsustatud kirjeid pole.{% else %}Ootel kirjeid pole.{% endif %}</p>
+    {% endif %}
+    {% if hidden %}
+      <p class="acctnote">{{ hidden }} kirje{{ hidden|pluralize:"t" }} teemadel, mida sinu valitud isik ei näe; neid siin ei nimetata. Vali kasutaja, kellel on teemadele ligipääs, et neid näha ja otsustada.</p>
+    {% endif %}
+  </section>
+{% endblock %}

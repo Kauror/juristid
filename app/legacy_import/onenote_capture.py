@@ -2131,6 +2131,8 @@ def verify(
     from app.documents.models import Document
     from app.documents.services import evidence_storage
     from app.legacy_import.onenote_coverage_models import (
+        HoldDecisionKind,
+        OneNoteHoldDecision,
         OneNoteResourceRevision,
         RevisionState,
     )
@@ -2143,6 +2145,13 @@ def verify(
 
     problems: list[str] = []
     counts: Counter[str] = Counter()
+    # A held file an administrator associated with one Teema (live-sync round 2):
+    # its row names the Document that decision made, and that is not a promotion.
+    reviewed = set(
+        OneNoteHoldDecision.objects.filter(decision=HoldDecisionKind.ASSOCIATE).values_list(
+            "document_version_id", flat=True
+        )
+    )
     keys = [p.page_key for p in capture.pages]
     matter_ids = sorted({pm.matter_id for p in capture.pages for pm in p.matters})
     expected = {}
@@ -2285,8 +2294,10 @@ def verify(
                 problems.append(f"{page.tag}/{o.block_object_id}: filename differs")
             if version.uploaded_by_id is not None or row.document.created_by_id is not None:
                 problems.append(f"{page.tag}/{o.block_object_id}: an actor was recorded")
-            if page.shared or o.size == 0:
+            if (page.shared or o.size == 0) and row.document_version_id not in reviewed:
                 problems.append(f"{page.tag}/{o.block_object_id}: a held item was promoted")
+            if row.document_version_id in reviewed:
+                counts["associated_by_review"] += 1
             counts["documents"] += 1
             counts["document_bytes"] += version.size_bytes
             counts["dated" if o.block_created else "undated"] += 1
