@@ -1,0 +1,552 @@
+"""The machine reader: one Lovable source topic → one CREATE package topic.
+
+The reviewed packages of 0191/0202/0203 were built outside the repository: a
+person read every topic and wrote the reading into the package. Two callers now
+need the same reading without that person in the loop — the nightly
+synchronisation's new topics (docs/adr/0213, brief 2026-11-09 §6 B2) and the
+historical backfill (brief §5 A4). This module is that reading, and it is
+deliberately **poorer** than a reviewer's: it writes only what an exact,
+deterministic rule can read, and holds everything else for a person
+(``HELD_FOR_REVIEW`` in ``field_decisions``, the reason in ``review_notes``).
+An accurate minimal Teema beats an invented complete one (docs/adr/0202 §2).
+
+The rules, each one exact and tested (`tests/test_ls_b_reading.py`):
+
+* **No step is ever read from `jargmiseks`.** The free-text next step is held,
+  with its day, on every open topic: its DO/WAIT/MONITOR kind is a person's
+  call (docs/adr/0157 §3, 0192 §5). The one current step written is the
+  drafting step docs/adr/0148 §10 and 0191 §3 derive from *structured* fields
+  only — an open request (`arvamuse_tahtaeg`), nothing sent (`valja` and
+  `valja_kuupaev` blank), the day not before `as_of`, not a Chamber
+  initiative — as DO «Koostan arvamuse» on that day.
+* **«ei saatnud» is never SENT** (docs/adr/0202 §2): on a live stage the topic
+  stays open and `valja` is held; it never concludes anything by itself.
+* **A past opinion deadline never means sent**: with nothing sent it is held
+  (never an overdue obligation) and kept as source only.
+* **Estimates stay estimates**: «Eeldatava …» becomes an estimated
+  commencement (an important date, never work); a known commencement
+  (`KNOWN_DATE`) only on an adopted act (`ADOPTED_STAGE_LABELS`).
+* **Stage only through `STAGE_MAPPING`**: an explicit dict of Lovable's exact
+  `hetkeseis` labels; no similarity, no case folding beyond whitespace. An
+  unknown label is held and the Teema has no stage.
+* **Terminal and continuing topics are created closed** exactly as 0202 §1
+  creates finished ones: ARCHIVE, a disposition, no `closed_at`, no closure
+  event (the writer's `create_imported_matter(is_open=False, …)`), nothing
+  current — no step, no open request, no written commencement.
+* **`historical=True` is always closed** the same way, whatever the stage.
+
+`read_topic` returns one format-2 ``action: "CREATE"`` topic that
+`lovable_pilot.validate_package` accepts inside a format-2 package, or raises
+`ReadingRefused` with a code when no honest topic can be written (an open topic
+whose owner has no reviewed person, an empty title, a malformed reference).
+
+Reads nothing but its arguments; writes nothing.
+"""
+
+from __future__ import annotations
+
+import datetime as dt
+import unicodedata
+from collections.abc import Mapping
+from typing import Any
+
+#: Bumped whenever a reading rule changes; recorded on every topic it reads
+#: (``topic["reading"]``) and in the provenance of what the synchronisation creates.
+READER_VERSION = "lovable-reading/1"
+
+#: Lovable's `hetkeseis` labels, **exactly as Lovable writes them**, to the
+#: Juristid stage vocabulary (`workflow.StageVocabulary.key`). Each pair is the
+#: department's reviewed vocabulary (`app.workflow.vocabulary`
+#: `RAW_LABEL_TO_STAGE` and `CURRENT_LABEL_TO_STAGE`, the readings 0148 §2 and
+#: 0131 §9 approved), copied here so that a change there never silently changes
+#: what the machine reads:
+#:
+#: ===================================  ========================  ====================
+#: Lovable label                        stage                     ends the work?
+#: ===================================  ========================  ====================
+#: idee                                 idea                      no
+#: kooskõlastusringil                   consultation              no
+#: valitsuses                           government                no
+#: Riigikogus                           parliament                no
+#: ootan jõustumist                     awaiting_entry            no
+#: jõustumise ootel                     awaiting_entry            no (0131 §10)
+#: jõustunud                            in_force                  **yes** (0131 §10)
+#: Eesti seisukoht                      estonian_eu_position      no
+#: Eesti seisukoht koostamisel          estonian_eu_position      no
+#: ELi menetluses                       eu_procedure              no
+#: ootan ELi õiguse ülevõtmist          awaiting_transposition    no
+#: ELi õiguse ülevõtmise ootel          awaiting_transposition    no
+#: muu                                  other                     no
+#: rohkem ei tegele                     monitoring_stopped        **yes** (0131 §10)
+#: ===================================  ========================  ====================
+#:
+#: «rohkem pole tegevusi plaanis» is a disposition, not a stage (0131 §9), and
+#: «lõpetatud» has no stage: both are held.
+STAGE_MAPPING: dict[str, str] = {
+    "idee": "idea",
+    "kooskõlastusringil": "consultation",
+    "valitsuses": "government",
+    "Riigikogus": "parliament",
+    "ootan jõustumist": "awaiting_entry",
+    "jõustumise ootel": "awaiting_entry",
+    "jõustunud": "in_force",
+    "Eesti seisukoht": "estonian_eu_position",
+    "Eesti seisukoht koostamisel": "estonian_eu_position",
+    "ELi menetluses": "eu_procedure",
+    "ootan ELi õiguse ülevõtmist": "awaiting_transposition",
+    "ELi õiguse ülevõtmise ootel": "awaiting_transposition",
+    "muu": "other",
+    "rohkem ei tegele": "monitoring_stopped",
+}
+#: The labels whose stage ends the work: a Teema at them is closed in Juristid
+#: (docs/adr/0131 §10), so the machine never moves a Teema to one (0202 §3).
+TERMINAL_STAGE_LABELS = frozenset({"jõustunud", "rohkem ei tegele"})
+#: The stage keys of those labels.
+TERMINAL_STAGES = frozenset(STAGE_MAPPING[label] for label in TERMINAL_STAGE_LABELS)
+#: An act is adopted at these labels: only there is a «Kindla kuupäevaga»
+#: commencement a known one (docs/adr/0120).
+ADOPTED_STAGE_LABELS = frozenset({"jõustumise ootel", "ootan jõustumist", "jõustunud"})
+
+NOT_SENT = "ei saatnud"
+#: Lovable's commencement kinds (`topic_commencement.liik`), by the word they
+#: start with, and what each may become. Only a kind listed here is written.
+COMMENCEMENT_GENERAL = "Üldises"  # «Üldises korras»: an effective date with no day
+COMMENCEMENT_FIXED = "Kindla"  # «Kindla kuupäevaga»: planned, known only once adopted
+COMMENCEMENT_ESTIMATED = "Eeldatava"  # «Eeldatava kuupäevaga»: an estimate, never work
+
+#: Why something was held or left out: codes first, so a reader can count them.
+HELD_STEP = "STEP_HELD"
+HELD_STAGE = "STAGE_UNMAPPED"
+HELD_NOT_SENT = "NOT_SENT_ON_LIVE_STAGE"
+HELD_PAST_DEADLINE = "OPINION_DEADLINE_PASSED_NOTHING_SENT"
+HELD_INSTRUMENT = "INSTRUMENT_UNMAPPED"
+HELD_RECEIVED = "RECEIVED_AFTER_AS_OF"
+HELD_COMMENCEMENT = "COMMENCEMENT_UNREADABLE"
+HELD_LINK = "LINK_NOT_HTTPS"
+
+
+class ReadingRefused(Exception):
+    """No honest CREATE topic can be written for this source topic. ``code`` says why."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+def _text(raw: Any) -> str:
+    return " ".join(unicodedata.normalize("NFC", str(raw or "")).split())
+
+
+def _key(raw: Any) -> str:
+    return _text(raw).lower().translate(str.maketrans("õäöüšž", "oaousz"))
+
+
+def _day(raw: Any) -> dt.date | None:
+    if not raw:
+        return None
+    try:
+        return dt.date.fromisoformat(str(raw)[:10])
+    except ValueError:
+        return None
+
+
+def _wording(raw: Any) -> str:
+    return _text(raw).casefold().strip(" .,;:!?…\"'«»„“”")
+
+
+def operative_owner(row: Mapping[str, Any]) -> str:
+    """Lovable's `topic_operative_vastutaja`: the new owner if named, else the owner."""
+    new = _text(row.get("uus_vastutaja"))
+    if new:
+        return "" if _key(new).rstrip(".") == "vastutaja puudub" else new
+    return _text(row.get("vastutaja"))
+
+
+def stage_for(label: Any) -> str:
+    """The stage key of an exact Lovable label (whitespace collapsed), or ``""``."""
+    return STAGE_MAPPING.get(_text(label), "")
+
+
+def activity(bundle: Mapping[str, Any]) -> str:
+    """Lovable's own «ongoing» (docs/adr/0202 §6): ONGOING, FINISHED, CONTINUES or
+    NOT_OPERATIONAL. The same rule as `lovable_sync.source_activity`."""
+    row = bundle.get("row") or {}
+    if not row.get("operatiivne_ulatus"):
+        return "NOT_OPERATIONAL"
+    if _key(row.get("hetkeseis")) in {"joustunud", "rohkem ei tegele"}:
+        return "FINISHED"
+    me = str(row.get("id"))
+    if any(str(link.get("prev")) == me for link in bundle.get("stage_links") or []):
+        return "CONTINUES"
+    return "ONGOING"
+
+
+def commencement_reading(record: Mapping[str, Any], *, status: str) -> dict[str, Any]:
+    """One Lovable commencement → what it may become, or why it is held."""
+    liik = _text(record.get("liik"))
+    day = _day(record.get("kuupaev"))
+    if liik.startswith(COMMENCEMENT_GENERAL):
+        return {"target": "MatterEffectiveDate", "kind": "GENERAL_ORDER", "date": None}
+    if liik.startswith(COMMENCEMENT_FIXED) and day is not None:
+        if status in ADOPTED_STAGE_LABELS:
+            return {"target": "MatterEffectiveDate", "kind": "KNOWN_DATE", "date": day.isoformat()}
+        return {
+            "target": "MatterImportantDate",
+            "kind": "PLANNED_COMMENCEMENT",
+            "date": day.isoformat(),
+        }
+    if liik.startswith(COMMENCEMENT_ESTIMATED) and day is not None:
+        return {
+            "target": "MatterImportantDate",
+            "kind": "ESTIMATED_COMMENCEMENT",
+            "date": day.isoformat(),
+        }
+    return {"target": "", "kind": "", "date": None}
+
+
+def _closed_disposition(row: Mapping[str, Any], act: str, *, historical: bool) -> tuple[str, str]:
+    """Lifecycle and disposition of a topic created closed (0202 §1)."""
+    status = _text(row.get("hetkeseis"))
+    if act == "CONTINUES":
+        return "CONTINUES", "SUPERSEDED"
+    if _wording(row.get("valja")) == NOT_SENT:
+        return "CONCLUDED", "NO_POSITION_FORMED"
+    if status == "rohkem ei tegele":
+        return "CONCLUDED", "MONITORING_STOPPED"
+    if status == "jõustunud":
+        return "INACTIVE", "COMPLETED"
+    # Only a historical topic gets here: its work is not current in Lovable's
+    # own scope. Juristid stopped following it; nothing else is claimed.
+    return "INACTIVE", "MONITORING_STOPPED"
+
+
+def _source(bundle: Mapping[str, Any]) -> dict[str, Any]:
+    """The source as read, cut to the synchronisation's own allowlist: never
+    `markmed`, `mitteametlik_arvamus`, identity or raw import columns."""
+    from app.legacy_import.lovable_source import TABLES, TOPIC_COLUMNS
+
+    row = bundle.get("row") or {}
+
+    def cut(items: Any, table: str) -> list[dict[str, Any]]:
+        return [{c: item.get(c) for c in TABLES[table] if c in item} for item in items or []]
+
+    return {
+        "id": str(row.get("id")),
+        "version": row.get("version"),
+        "updated_at": row.get("updated_at"),
+        "row": {c: row.get(c) for c in TOPIC_COLUMNS if c in row},
+        "excel_source_row": None,
+        "history": [],
+        "commencements": cut(bundle.get("commencements"), "topic_commencement"),
+        "responsible_changes": cut(bundle.get("responsible_changes"), "topic_responsible_change"),
+        "stage_links": [
+            {"prev": str(link.get("prev")), "next": str(link.get("next"))}
+            for link in bundle.get("stage_links") or []
+        ],
+    }
+
+
+def read_topic(
+    bundle: Mapping[str, Any],
+    *,
+    as_of: dt.date,
+    people: Mapping[str, str],
+    historical: bool,
+) -> dict[str, Any]:
+    """One source bundle (``{"row", "commencements", "responsible_changes",
+    "stage_links"}`` as `lovable_source` reads it, optionally ``"references"``:
+    Lovable id → ``nr`` for its stage-link partners) → one CREATE topic.
+
+    ``people`` maps a Lovable owner name to the display name of exactly one
+    Juristid account (the package's ``people``). ``as_of`` is the reading's day
+    (Europe/Tallinn): what is before it is history, never current work."""
+    from app.workflow.services import OPINION_PREPARATION_TEXT
+
+    row = bundle.get("row") or {}
+    reference = _text(row.get("nr"))
+    parts = reference.split("_")
+    if len(parts) != 2 or not (parts[0].isdigit() and parts[1].isdigit()) or parts[1][0] == "0":
+        raise ReadingRefused("BAD_REFERENCE", "The source topic's nr is not YYYY_N.")
+    if not row.get("id"):
+        raise ReadingRefused("NO_IDENTITY", "The source topic has no Lovable id.")
+    title = _text(row.get("teema"))
+    if not title:
+        raise ReadingRefused("NO_TITLE", "The source topic has no title; none is invented.")
+
+    act = activity(bundle)
+    if act == "NOT_OPERATIONAL" and not historical:
+        raise ReadingRefused(
+            "NOT_OPERATIONAL", "A topic outside the operational scope is read only as historical."
+        )
+    active = act == "ONGOING" and not historical
+    status = _text(row.get("hetkeseis"))
+    owner_raw = operative_owner(row)
+    if active and not _text(people.get(owner_raw)):
+        raise ReadingRefused(
+            "OWNER_UNRESOLVED",
+            "An open topic needs its owner's account; the owner has no reviewed person.",
+        )
+
+    held: dict[str, str] = {}
+    notes: list[str] = []
+    applied: set[str] = set()
+
+    def hold(column: str, code: str, why: str) -> None:
+        held[column] = code
+        notes.append(f"{code} ({column}): {why}")
+
+    stage = stage_for(status) if status else ""
+    if status and not stage:
+        hold("hetkeseis", HELD_STAGE, "the stage label is not in STAGE_MAPPING; no stage")
+    elif stage:
+        applied.add("hetkeseis")
+
+    instruments: list[str] = []
+    if _text(row.get("oigusakt")):
+        from app.taxonomy.legal_instruments import current_legal_instrument_keys
+
+        instruments = list(current_legal_instrument_keys(_text(row.get("oigusakt"))))
+        if instruments:
+            applied.add("oigusakt")
+        else:
+            hold("oigusakt", HELD_INSTRUMENT, "the act does not map to the vocabulary")
+
+    received = _day(row.get("sisse"))
+    if received and received > as_of:
+        hold("sisse", HELD_RECEIVED, "the received date is after the reading")
+        received = None
+    elif received:
+        applied.add("sisse")
+
+    koda = bool(row.get("koja_ettepanek"))
+    valja = _wording(row.get("valja"))
+    sent_day = _day(row.get("valja_kuupaev"))
+    requested = _day(row.get("arvamuse_tahtaeg"))
+    jargmiseks = _text(row.get("jargmiseks"))
+    action_day = _day(row.get("tegevuse_tahtaeg"))
+
+    next_action: dict[str, Any] | None = None
+    deadline: dict[str, Any] = {"treatment": "NONE"}
+    commencements: list[dict[str, Any]] = []
+    lifecycle, disposition, successor, successor_id = "ACTIVE", "", "", ""
+
+    if active:
+        if valja == NOT_SENT:
+            hold("valja", HELD_NOT_SENT, "«ei saatnud» on a live stage: neither concluded nor sent")
+        if requested and not valja and sent_day is None and requested >= as_of and not koda:
+            # docs/adr/0148 §10, 0191 §3: the drafting step of an open request,
+            # from structured fields only.
+            deadline = {"treatment": "OPEN_REQUEST", "deadline": requested.isoformat()}
+            next_action = {
+                "review": "READY",
+                "kind": "DO",
+                "date_semantics": "DEADLINE",
+                "target_date": requested.isoformat(),
+                "date_precision": "EXACT",
+                "text": OPINION_PREPARATION_TEXT,
+                "source_text": jargmiseks,
+                "treatment": "OPINION_DRAFTING",
+                "reason": f"{READER_VERSION}: open request, nothing sent, day not passed",
+            }
+            applied.add("arvamuse_tahtaeg")
+            if jargmiseks:
+                notes.append(
+                    "DRAFTING_WITH_SOURCE_WORDING: the source next step is kept as source only"
+                )
+        elif requested:
+            nothing_sent = (not valja or valja == NOT_SENT) and sent_day is None
+            if nothing_sent and requested < as_of:
+                hold(
+                    "arvamuse_tahtaeg",
+                    HELD_PAST_DEADLINE,
+                    "a passed opinion deadline with nothing sent is never an overdue obligation",
+                )
+            if valja == NOT_SENT:
+                reason = "NOT_SENT"
+            elif valja or sent_day:
+                reason = "SENT"
+            elif koda:
+                reason = "KODA_INITIATIVE"
+            else:
+                reason = "PASSED_NOT_SENT"
+            deadline = {
+                "treatment": "SOURCE_ONLY",
+                "deadline": requested.isoformat(),
+                "reason": reason,
+            }
+        if next_action is None and jargmiseks:
+            hold("jargmiseks", HELD_STEP, "a free-text next step is never read as a kind")
+            if action_day is not None:
+                hold("tegevuse_tahtaeg", HELD_STEP, "the day of a held next step")
+        elif next_action is None and action_day is not None:
+            hold("tegevuse_tahtaeg", HELD_STEP, "a next-step day with no wording")
+        for index, record in enumerate(
+            sorted(bundle.get("commencements") or [], key=lambda r: r.get("position") or 0), 1
+        ):
+            reading = commencement_reading(record, status=status)
+            liik = _text(record.get("liik"))
+            note = _text(record.get("tapsustus"))
+            entry: dict[str, Any] = {
+                "key": f"{reference}-C{index:02d}",
+                "source_id": str(record.get("id") or ""),
+                "liik": liik,
+                "note": note,
+                "source_text": liik
+                + (f" {record.get('kuupaev')}" if record.get("kuupaev") else "")
+                + (f" — {note}" if note else ""),
+            }
+            if reading["target"]:
+                entry.update(
+                    review="READY",
+                    target=reading["target"],
+                    kind=reading["kind"],
+                    date=reading["date"],
+                    date_precision="EXACT" if reading["date"] else None,
+                )
+            else:
+                entry.update(review="SOURCE_ONLY", reason="commencement kind or day not readable")
+                hold("joustumised", HELD_COMMENCEMENT, "a commencement cannot be written as stated")
+            commencements.append(entry)
+    else:
+        lifecycle, disposition = _closed_disposition(row, act, historical=historical)
+        if historical:
+            notes.append(f"HISTORICAL: created closed ({READER_VERSION}); nothing current")
+        me = str(row.get("id"))
+        successors = sorted(
+            {
+                str(link.get("next"))
+                for link in bundle.get("stage_links") or []
+                if str(link.get("prev")) == me
+            }
+        )
+        references = bundle.get("references") or {}
+        if lifecycle == "CONTINUES":
+            if len(successors) == 1 and references.get(successors[0]):
+                successor, successor_id = str(references[successors[0]]), successors[0]
+            else:
+                notes.append("CONTINUES_UNLINKED: the stage link is kept as source only")
+        if requested:
+            deadline = {
+                "treatment": "SOURCE_ONLY",
+                "deadline": requested.isoformat(),
+                "reason": "CLOSED",
+            }
+        for index, record in enumerate(
+            sorted(bundle.get("commencements") or [], key=lambda r: r.get("position") or 0), 1
+        ):
+            commencements.append(
+                {
+                    "key": f"{reference}-C{index:02d}",
+                    "review": "SOURCE_ONLY",
+                    "reason": "closed Matter: date services refuse a closed file",
+                    "source_id": str(record.get("id") or ""),
+                    "liik": _text(record.get("liik")),
+                }
+            )
+    if active and owner_raw:
+        applied.add("vastutaja")
+
+    url = str(row.get("onenote_link") or "").strip()
+    if url and not url.startswith("https://"):
+        hold("onenote_link", HELD_LINK, "the OneNote link is not an https address; not linked")
+        url = ""
+    elif url:
+        applied.add("onenote_link")
+
+    decisions: dict[str, str] = {"nr": "APPLIED", "teema": "APPLIED", "aasta": "APPLIED"}
+    for column in (
+        "vastutaja",
+        "oigusakt",
+        "sisse",
+        "hetkeseis",
+        "jargmiseks",
+        "tegevuse_tahtaeg",
+        "arvamuse_tahtaeg",
+        "valja",
+        "valja_kuupaev",
+        "kellele",
+        "onenote_link",
+    ):
+        if column in held:
+            decisions[column] = "HELD_FOR_REVIEW"
+        elif not row.get(column):
+            decisions[column] = "NOT_PRESENT"
+        else:
+            decisions[column] = "APPLIED" if column in applied else "PRESERVED_AS_SOURCE_ONLY"
+    decisions["koja_ettepanek"] = "APPLIED" if koda else "NOT_PRESENT"
+    decisions["joustumised"] = (
+        "HELD_FOR_REVIEW" if "joustumised" in held else "PRESERVED_AS_SOURCE_ONLY"
+    )
+
+    source = _source(bundle)
+    if successor_id:
+        source["successor_id"] = successor_id
+    return {
+        "action": "CREATE",
+        "reference": reference,
+        "group": act,
+        "title": title,
+        "owner_raw": owner_raw,
+        "status_raw": status,
+        "stage": stage,
+        "lifecycle": lifecycle,
+        "disposition": disposition,
+        "successor": successor,
+        "koda_initiative": koda,
+        "instruments": instruments,
+        "received_date": received.isoformat() if received else None,
+        "addressee_raw": _text(row.get("kellele")),
+        "next_action": next_action,
+        "deadline": deadline,
+        "commencements": commencements,
+        "onenote_url": url,
+        "field_decisions": decisions,
+        "review_notes": notes,
+        "source": source,
+        "reading": {
+            "reader_version": READER_VERSION,
+            "as_of": as_of.isoformat(),
+            "historical": historical,
+        },
+    }
+
+
+def held_columns(topic: Mapping[str, Any]) -> list[str]:
+    """The Lovable columns a read topic holds for review, sorted."""
+    return sorted(
+        name
+        for name, decision in (topic.get("field_decisions") or {}).items()
+        if decision == "HELD_FOR_REVIEW"
+    )
+
+
+def package_for(
+    topics: list[dict[str, Any]],
+    *,
+    as_of: dt.datetime | dt.date,
+    snapshot_sha256: str,
+    people: Mapping[str, str],
+    cohort: str,
+    reviewer: str = READER_VERSION,
+) -> dict[str, Any]:
+    """A format-2 package around read topics, for `lovable_pilot.validate_package`
+    and `build_plan`. No ``replace`` and no ``reserve_through``: it appends, and it
+    moves no reference sequence."""
+    from app.legacy_import.lovable_pilot import ACTIVE_FORMAT_VERSION, PACKAGE_FORMAT
+
+    owners = {str(t.get("owner_raw") or "") for t in topics}
+    return {
+        "format": PACKAGE_FORMAT,
+        "format_version": ACTIVE_FORMAT_VERSION,
+        "cohort": cohort,
+        "reviewer": reviewer,
+        "mapping_version": READER_VERSION,
+        "snapshot": {
+            "source_system": "lovable",
+            "as_of": as_of.isoformat(),
+            "snapshot_sha256": snapshot_sha256,
+        },
+        "people": {name: people[name] for name in sorted(owners) if name and people.get(name)},
+        "expected_topics": len(topics),
+        "topics": topics,
+    }
