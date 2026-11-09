@@ -599,10 +599,16 @@ class Matter(BaseModel):
             return False
         if self.pilot_imports.exists():
             return False
-        # Both Lovable cohorts (docs/adr/0202 §1), spelled out: importing the
-        # module's `COHORTS` here would be a cycle.
+        # Every Lovable cohort (docs/adr/0202 §1; the historical backfill's
+        # `lovable-history` reads the same register row the same way), spelled
+        # out: importing the module's `COHORTS` here would be a cycle.
         return not self.evidence_pilot_records.filter(
-            pilot__in=("lovable-pilot", "lovable-operational", "lovable-register")
+            pilot__in=(
+                "lovable-pilot",
+                "lovable-operational",
+                "lovable-register",
+                "lovable-history",
+            )
         ).exists()
 
     @property

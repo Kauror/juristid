@@ -78,11 +78,21 @@ OPERATIONAL_COHORT = "lovable-operational"
 #: The source-authoritative replacement's cohort (docs/adr/0203): a package that
 #: retires every current Teema and creates Lovable's whole operational register.
 REGISTER_COHORT = "lovable-register"
-COHORTS = (PILOT, OPERATIONAL_COHORT, REGISTER_COHORT)
+#: The historical backfill's cohort (`app.legacy_import.lovable_backfill`): a
+#: CREATE-only version-2 package of proven-absent, non-operational topics, written
+#: beside the live register exactly as any other CREATE (nothing retired,
+#: released or rebased; every pre-existing Teema digested before and after).
+HISTORY_COHORT = "lovable-history"
+COHORTS = (PILOT, OPERATIONAL_COHORT, REGISTER_COHORT, HISTORY_COHORT)
 PILOT_VERSION = "1.0"
 #: The importer version each cohort's records carry. The pilot's stays "1.0" so
 #: that a version-1 package writes exactly the records it always wrote.
-COHORT_VERSIONS = {PILOT: PILOT_VERSION, OPERATIONAL_COHORT: "2.0", REGISTER_COHORT: "3.0"}
+COHORT_VERSIONS = {
+    PILOT: PILOT_VERSION,
+    OPERATIONAL_COHORT: "2.0",
+    REGISTER_COHORT: "3.0",
+    HISTORY_COHORT: "4.0",
+}
 PACKAGE_FORMAT = "juristid.lovable-pilot"
 PACKAGE_FORMAT_VERSION = 1
 #: Version 2 is the active cohort's reading (docs/adr/0202 §3); version 1 reads
@@ -93,7 +103,7 @@ FORMAT_COHORTS = {PACKAGE_FORMAT_VERSION: PILOT, ACTIVE_FORMAT_VERSION: OPERATIO
 #: or, with ``"replace": true``, the register replacement (docs/adr/0203).
 FORMAT_ALLOWED_COHORTS = {
     PACKAGE_FORMAT_VERSION: frozenset({PILOT}),
-    ACTIVE_FORMAT_VERSION: frozenset({OPERATIONAL_COHORT, REGISTER_COHORT}),
+    ACTIVE_FORMAT_VERSION: frozenset({OPERATIONAL_COHORT, REGISTER_COHORT, HISTORY_COHORT}),
 }
 #: Typed by the operator at `apply`, the same discipline as the other pilots.
 #: It is the package's cohort; this is the pilot's.
