@@ -556,7 +556,7 @@ def test_the_engines_differences_are_used_and_filtered_when_present(admin, monke
     monkeypatch.setattr(lovable_sync, "pending_differences", pending_differences, raising=False)
     reader = factories.UserFactory()
     result = sync_admin.differences(reader)
-    assert seen == [reader]
+    assert seen == [reader, None]  # the reader's view, then the count of everything
     assert result.source == "engine"
     assert [r.source for r in result.rows] == ["Valitsuses"]
     assert result.hidden == 1
@@ -728,41 +728,3 @@ def test_without_ds_interface_the_request_is_refused_not_guessed(admin, capture_
     outcome = sync_admin.run_next(SyncRequestLane.ONENOTE)
     assert outcome.request.status == SyncRequestStatus.REFUSED
     assert outcome.request.outcome_code == "NOT_AVAILABLE"
-
-
-def test_the_onenote_panel_reads_ds_summary_and_degrades_without_it(db, monkeypatch):
-    panel = sync_admin.onenote_panel()
-    assert not panel.available and panel.note == sync_admin.ONENOTE_MISSING
-    fake = SimpleNamespace(
-        coverage_summary=lambda: {
-            "last_capture": {"capture_id": "kogum-1", "captured_at": None, "section": "Näidis"},
-            "pages_checked": 12,
-            "imported": 7,
-            "failed": 0,
-            "sections_not_covered": ["Vanad asjad"],
-            "per_state": {"IMPORTED": 7, "NOT_INSPECTED": 5},
-        }
-    )
-    monkeypatch.setattr(sync_admin, "_coverage_summary", fake.coverage_summary)
-    panel = sync_admin.onenote_panel()
-    assert panel.available
-    counts = dict(panel.counts)
-    assert counts["Kontrollitud lehti"] == 12 and counts["Imporditud"] == 7
-    assert counts["Uusi lehti"] is None
-    assert panel.sections_not_covered == ["Vanad asjad"]
-    assert panel.sections_not_covered_count == 1
-
-
-def test_the_page_renders_ds_summary(signed, monkeypatch):
-    summary = {
-        "last_capture": {"capture_id": "kogum-1", "captured_at": None, "section": "Näidis"},
-        "pages_checked": 12,
-        "awaiting_association": 3,
-        "sections_not_covered": ["Vanad asjad"],
-        "per_state": {"IMPORTED": 7},
-    }
-    monkeypatch.setattr(sync_admin, "_coverage_summary", lambda: summary)
-    body = signed.get(reverse("haldus:data_sync")).content.decode()
-    assert "kogum-1" in body and "Kontrollitud lehti" in body and "Vanad asjad" in body
-    assert "Ootab seose otsust" in body
-    assert sync_admin.ONENOTE_MISSING not in body

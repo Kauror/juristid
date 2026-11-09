@@ -179,6 +179,19 @@ def int_counts(raw: Any) -> dict[str, int]:
     }
 
 
+def code_counts(raw: Any) -> dict[str, int]:
+    """`int_counts` keyed by codes (``EXACT``, ``IMPORTED``): upper case allowed."""
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        str(k): int(v)
+        for k, v in raw.items()
+        if isinstance(v, int)
+        and not isinstance(v, bool)
+        and re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", str(k))
+    }
+
+
 def _as_mapping(value: Any) -> dict[str, Any]:
     if value is None:
         return {}
@@ -283,51 +296,66 @@ def open_request(lane: str) -> DataSyncRequest | None:
 # ---------------------------------------------------------------------------
 
 
+@dataclass(frozen=True)
+class CoverageRow:
+    label: str
+    total: int
+    operational: int
+    historical: int
+
+
 @dataclass
 class Coverage:
-    """Agent A's newest inventory, in counts (interface 2)."""
+    """Agent A's newest inventory, in counts (interface 2): `LovableInventoryRun.counts`
+    as `Ledger.counts()` builds it — ``rows``, ``operational``, ``historical`` and
+    ``by_category`` / ``by_category_operational`` / ``by_category_historical``."""
 
     available: bool
     note: str = ""
     taken_at: dt.datetime | None = None
+    #: Ledger rows (every source topic plus Juristid-only rows).
     total: int | None = None
-    rows: list[tuple[str, int]] = field(default_factory=list)
+    operational: int | None = None
+    historical: int | None = None
+    rows: list[CoverageRow] = field(default_factory=list)
 
 
 INVENTORY_MISSING = "Inventuuri pole veel tehtud."
 
 
 def inventory_coverage() -> Coverage:
-    """`lovable_inventory.latest_inventory()` in counts, or «not yet» when it is absent."""
-    try:
-        from app.legacy_import import lovable_inventory  # type: ignore[attr-defined,unused-ignore]
-    except ImportError:
-        return Coverage(available=False, note=INVENTORY_MISSING)
-    latest = getattr(lovable_inventory, "latest_inventory", None)
-    if not callable(latest):
-        return Coverage(available=False, note=INVENTORY_MISSING)
+    """`lovable_inventory.latest_inventory()` in counts, or «not yet» when there is none."""
+    from app.legacy_import import lovable_inventory
+
     try:
         with transaction.atomic():
-            run = latest()
+            run = lovable_inventory.latest_inventory()
     except DatabaseError:
         return Coverage(available=False, note=INVENTORY_MISSING)
     if run is None:
         return Coverage(available=False, note=INVENTORY_MISSING)
-    counts = int_counts(_as_mapping(getattr(run, "counts", None)) or _as_mapping(run))
-    labels: dict[str, str] = {}
-    category = getattr(lovable_inventory, "Category", None)
-    if category is not None and hasattr(category, "choices"):
-        labels = {str(value): str(label) for value, label in category.choices}
+    counts = run.counts if isinstance(run.counts, dict) else {}
+    every = code_counts(counts.get("by_category"))
+    operational = code_counts(counts.get("by_category_operational"))
+    historical = code_counts(counts.get("by_category_historical"))
     rows = [
-        (labels.get(key.upper(), labels.get(key, key.replace("_", " "))), n)
-        for key, n in counts.items()
-        if key.upper() in labels or key in labels
+        CoverageRow(
+            label=str(label),
+            total=every.get(value, 0),
+            operational=operational.get(value, 0),
+            historical=historical.get(value, 0),
+        )
+        for value, label in lovable_inventory.Category.choices
     ]
-    total = counts.get("total")
-    if total is None and rows:
-        total = sum(n for _, n in rows)
-    taken = _attr(run, "finished_at", "taken_at", "started_at", "created_at")
-    return Coverage(available=True, taken_at=taken, total=total, rows=rows)
+    top = int_counts(counts)
+    return Coverage(
+        available=True,
+        taken_at=run.taken_at or run.created_at,
+        total=top.get("rows", sum(r.total for r in rows)),
+        operational=top.get("operational"),
+        historical=top.get("historical"),
+        rows=rows,
+    )
 
 
 @dataclass
@@ -450,31 +478,52 @@ def lovable_panel(user: Any, *, now: dt.datetime | None = None) -> LovablePanel:
 # OneNote panel
 # ---------------------------------------------------------------------------
 
-ONENOTE_MISSING = "OneNote'i katvuse ülevaadet pole veel koostatud."
+ONENOTE_MISSING = "OneNote'i katvuse ülevaadet ei õnnestunud lugeda."
 
-#: The keys this page reads from `onenote_coverage.coverage_summary()` (interface 5),
-#: in the page's order and words. A key the summary does not give shows «—».
+#: `onenote_coverage.coverage_summary()["operational"]` (interface 5), in the page's
+#: order and words: the operational Teemad's exact pages and what came of them.
 ONENOTE_COUNTS: tuple[tuple[str, str], ...] = (
-    ("pages_checked", "Kontrollitud lehti"),
-    ("new_pages", "Uusi lehti"),
-    ("new_attachments", "Uusi manuseid"),
-    ("changed_notes", "Muutunud märkmeid"),
-    ("changed_attachments", "Muutunud manuseid"),
-    ("imported", "Imporditud"),
-    ("skipped_duplicates", "Vahele jäetud (juba olemas)"),
-    ("awaiting_association", "Ootab seose otsust"),
-    ("failed", "Ebaõnnestunud importe"),
+    ("teemad_with_exact_page", "Teemasid täpse lehelingiga"),
+    ("pages", "Operatiivseid lehti"),
+    ("pages_captured", "Neist kogutud ja kontrollitud"),
+    ("pages_not_captured", "Kogumata lehti"),
+    ("open_teemad_without_capture", "Avatud teemasid ilma kogumita"),
+    ("shared_pages", "Mitme teema ühiseid lehti"),
+    ("attachments_imported", "Imporditud manuseid"),
+    ("new_versions", "Muutunud failide uusi versioone"),
+    ("revisions_held", "Muutusi ootel"),
+    ("attachments_failed", "Ebaõnnestunud importe"),
+    ("teemad_without_page_link", "Teemasid ilma lehelingita"),
+    ("teemad_with_ambiguous_link", "Mitmetähendusliku lingiga teemasid"),
 )
+
+#: Why an attachment was catalogued but not filed (`onenote_capture` hold codes).
+ONENOTE_HOLDS: dict[str, str] = {
+    "SHARED_PAGE_AWAITING_REVIEW": "Ühisleht, ootab seose otsust",
+    "EMPTY_FILE": "Tühi fail",
+    "LARGER_THAN_EVIDENCE_LIMIT": "Liiga suur fail",
+    "EARLIER_CAPTURE_NOT_IMPORTED": "Varasem kogum importimata",
+    "CONTINUES_EARLIER_BLOCK": "Vahele jäetud (sama fail juba olemas)",
+    "MOVED_BLOCK_BYTES_CHANGED": "Liigutatud ja muutunud, ootab otsust",
+    "AMBIGUOUS_EARLIER_BLOCK": "Mitmetähenduslik, ootab otsust",
+    "RESEMBLES_EARLIER_FILE_UNPROVEN": "Sarnane varasemaga, ootab otsust",
+    "SAME_FILE_ON_ANOTHER_PAGE_OF_TEEMA": "Sama fail teema teisel lehel",
+}
 
 
 @dataclass
 class OneNotePanel:
     available: bool
     note: str
+    #: `onenote_coverage.coverage_summary()["archive_note"]`: what «coverage» measures.
+    scope_note: str
     last_capture: dict[str, Any]
     counts: list[tuple[str, int | None]]
     per_state: list[tuple[str, int]]
-    operational: dict[str, int]
+    held: list[tuple[str, int]]
+    other_pages: int | None
+    other_states: list[tuple[str, int]]
+    sections_with_pages: int | None
     sections_not_covered: list[str]
     sections_not_covered_count: int | None
     open_request: DataSyncRequest | None
@@ -493,30 +542,19 @@ def capture_root() -> str:
 
 
 def _coverage_summary() -> dict[str, Any] | None:
-    try:
-        from app.legacy_import import onenote_coverage  # type: ignore[attr-defined,unused-ignore]
-    except ImportError:
-        return None
-    summary = getattr(onenote_coverage, "coverage_summary", None)
-    if not callable(summary):
-        return None
+    from app.legacy_import import onenote_coverage
+
     try:
         with transaction.atomic():
-            got = summary()
+            return onenote_coverage.coverage_summary()
     except DatabaseError:
         return None
-    return got if isinstance(got, dict) else _as_mapping(got) or None
 
 
 def _state_labels() -> dict[str, str]:
-    try:
-        from app.legacy_import import onenote_coverage  # type: ignore[attr-defined,unused-ignore]
-    except ImportError:
-        return {}
-    states = getattr(onenote_coverage, "PageState", None)
-    if states is None or not hasattr(states, "choices"):
-        return {}
-    return {str(v): str(label) for v, label in states.choices}
+    from app.legacy_import.onenote_coverage_models import PageState
+
+    return {str(v): str(label) for v, label in PageState.choices}
 
 
 def latest_verifications() -> list[DataSyncRequest]:
@@ -539,45 +577,48 @@ def _is_verified(item: DataSyncRequest) -> bool:
     )
 
 
+def _part(data: dict[str, Any], key: str) -> dict[str, Any]:
+    value = data.get(key)
+    return value if isinstance(value, dict) else {}
+
+
 def onenote_panel(*, now: dt.datetime | None = None) -> OneNotePanel:
+    """D's `coverage_summary()` as the page shows it: every number is the summary's own."""
     moment = now or timezone.now()
     summary = _coverage_summary()
     labels = _state_labels()
     data = summary or {}
-    last = data.get("last_capture") if isinstance(data.get("last_capture"), dict) else {}
-    per_state_raw = int_counts(
-        {str(k).lower(): v for k, v in (data.get("per_state") or {}).items()}
-        if isinstance(data.get("per_state"), dict)
-        else {}
-    )
-    per_state = [(labels.get(k.upper(), k.replace("_", " ")), n) for k, n in per_state_raw.items()]
-    not_covered = data.get("sections_not_covered")
-    names = (
-        [str(s) for s in not_covered if isinstance(s, str)] if isinstance(not_covered, list) else []
-    )
-    if isinstance(not_covered, int) and not isinstance(not_covered, bool):
-        not_covered_count: int | None = not_covered
-    elif isinstance(not_covered, list):
-        not_covered_count = len(not_covered)
-    else:
-        not_covered_count = None
+    operational = _part(data, "operational")
+    other = _part(data, "other_pages")
+    sections = _part(data, "sections")
+    last = _part(data, "last_capture")
+    states = code_counts(operational.get("states"))
+    not_covered = sections.get("not_covered")
+    names = [str(n) for n in not_covered] if isinstance(not_covered, list) else []
     verified = [request_view(r, now=moment) for r in latest_verifications() if _is_verified(r)]
     return OneNotePanel(
         available=summary is not None,
         note="" if summary is not None else ONENOTE_MISSING,
+        scope_note=str(data.get("archive_note") or ""),
         last_capture={
-            "name": _attr(last, "capture_id", "name", default=""),
-            "captured_at": _attr(last, "captured_at", "taken_at", default=None),
-            "imported_at": _attr(last, "imported_at", default=None),
-            "section": _shown(_attr(last, "section", "sections", default="")),
+            "name": str(last.get("capture_id") or ""),
+            "started_at": last.get("started_at"),
+            "finished_at": last.get("finished_at"),
+            "status": str(last.get("status") or ""),
         }
         if last
         else {},
-        counts=[(label, _count(data, key)) for key, label in ONENOTE_COUNTS],
-        per_state=per_state,
-        operational=int_counts(data.get("operational")),
+        counts=[(label, _count(operational, key)) for key, label in ONENOTE_COUNTS],
+        per_state=[(labels.get(k, k), n) for k, n in states.items()],
+        held=[
+            (ONENOTE_HOLDS.get(code, code), n)
+            for code, n in code_counts(operational.get("attachments_held")).items()
+        ],
+        other_pages=_count(other, "pages"),
+        other_states=[(labels.get(k, k), n) for k, n in code_counts(other.get("states")).items()],
+        sections_with_pages=_count(sections, "with_operational_pages"),
         sections_not_covered=names,
-        sections_not_covered_count=not_covered_count,
+        sections_not_covered_count=len(names) if isinstance(not_covered, list) else None,
         open_request=open_request(SyncRequestLane.ONENOTE),
         recent=_recent(SyncRequestLane.ONENOTE, moment),
         verified=verified,
@@ -639,6 +680,7 @@ def differences(user: Any, *, page: int = 1) -> Differences:
 
     Named only for a Teema ``user`` may open; the rest are counted in ``hidden``."""
     from app.legacy_import import lovable_observability as obs
+    from app.legacy_import.lovable_sync import RESOLVABLE_FIELDS as RESOLVABLE
     from app.matters.models import Matter
 
     engine = _engine_differences()
@@ -668,9 +710,13 @@ def differences(user: Any, *, page: int = 1) -> Differences:
                         name, reason, str(_attr(item, "explanation", default="") or "")
                     ),
                     since=_attr(item, "since", "first_observed_at"),
-                    resolvable=True,
+                    resolvable=name in RESOLVABLE
+                    and _attr(item, "kind", default="FIELD") == "FIELD",
                 )
             )
+        # The engine leaves out what this reader may not open; the server's own
+        # view counts everything, so the rest is counted here — never named.
+        hidden = max(hidden, len(engine(visible_to=None)) - len(rows))
         paginator = Paginator(rows, obs.PAGE_SIZE)
         chosen = paginator.get_page(page)
         return Differences(
@@ -696,7 +742,7 @@ def differences(user: Any, *, page: int = 1) -> Differences:
             source=item.lovable_now,
             explanation=item.explanation,
             since=item.first_observed_at,
-            resolvable=True,
+            resolvable=item.field in RESOLVABLE,
         )
         for item in shown
         if item.matter_id in matters
@@ -847,6 +893,31 @@ def expire_stale(*, now: dt.datetime | None = None) -> int:
     return expired
 
 
+#: The partial unique index that allows one open request per lane (migration 0027).
+OPEN_PER_LANE = "data_sync_one_open_request_per_lane"
+
+
+def constraint_of(error: IntegrityError) -> str:
+    """The name of the constraint the database said was violated, or ""."""
+    diag = getattr(error.__cause__, "diag", None)
+    return str(getattr(diag, "constraint_name", "") or "")
+
+
+def record_check(
+    actor: Any, *, run: LovableSyncRun | None, code: str = "", client: dict[str, Any] | None
+) -> None:
+    """«Kontrolli muudatusi» from the page: one audit row naming who asked and what came of it."""
+    _audit(
+        actor=actor,
+        action="LOVABLE_CHECK_REQUESTED",
+        subject=run,
+        succeeded=run is not None,
+        client=client,
+        run=str(run.pk) if run is not None else None,
+        code=code,
+    )
+
+
 def _record(
     actor: Any,
     *,
@@ -869,6 +940,8 @@ def _record(
             )
             item.save()
     except IntegrityError as error:
+        if constraint_of(error) != OPEN_PER_LANE:
+            raise
         raise _refuse(actor, kind, "LANE_BUSY", LANE_BUSY, client) from error
     _audit(
         actor=actor,
@@ -998,11 +1071,11 @@ def request_onenote_import(
 
 def resolvable(user: Any, reference: str, field_name: str) -> Any:
     """The state of a pending difference this reader may decide, or None."""
-    from app.legacy_import.lovable_sync import FIELDS
+    from app.legacy_import.lovable_sync import RESOLVABLE_FIELDS
     from app.legacy_import.lovable_sync_models import LovableSyncState
     from app.matters.models import Matter
 
-    if field_name not in FIELDS:
+    if field_name not in RESOLVABLE_FIELDS:
         return None
     state = (
         LovableSyncState.objects.select_related("matter")
@@ -1078,7 +1151,29 @@ class RunNext:
         )
 
 
+def _lovable_run_active() -> bool:
+    """Whether a Lovable synchronisation holds the engine's advisory run lock now."""
+    from django.db import connection
+
+    from app.legacy_import.lovable_sync import LOCK_KEY, LOCK_NAMESPACE
+
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s, %s)", [LOCK_NAMESPACE, LOCK_KEY])
+        free = bool(cursor.fetchone()[0])
+        if free:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", [LOCK_NAMESPACE, LOCK_KEY])
+    return not free
+
+
 def recover_lost(lane: str, *, now: dt.datetime) -> int:
+    """RUNNING requests whose runner went silent are marked FAILED (RUNNER_LOST).
+
+    A Lovable request is never declared lost while a synchronisation holds the
+    engine's run lock: a live run is not lost, however long it takes. If a
+    runner nevertheless finishes after its request was marked lost, `_finish`
+    records the late result in the audit trail instead of failing."""
+    if lane == SyncRequestLane.LOVABLE and _lovable_run_active():
+        return 0
     lost = 0
     for item in DataSyncRequest.objects.filter(
         lane=lane, status=SyncRequestStatus.RUNNING, claimed_at__lt=now - RUNNING_LOST_AFTER
@@ -1114,6 +1209,24 @@ def _finish(
     now: dt.datetime,
     run: LovableSyncRun | None = None,
 ) -> DataSyncRequest:
+    stored = DataSyncRequest.objects.filter(pk=item.pk).values_list("status", flat=True).first()
+    if stored is not None and stored != item.status:
+        # Finished elsewhere meanwhile (marked lost): the record stays as it is,
+        # and the real outcome is kept in the audit trail.
+        _audit(
+            actor=item.requested_by,
+            action="DATA_SYNC_FINISHED_LATE",
+            subject=item,
+            succeeded=status == SyncRequestStatus.DONE,
+            kind=item.kind,
+            request=str(item.pk),
+            status=status,
+            recorded_status=stored,
+            code=code,
+            run=str(run.pk) if run is not None else None,
+        )
+        item.refresh_from_db()
+        return item
     item.status = status
     item.outcome_code = code[:64]
     item.result = result

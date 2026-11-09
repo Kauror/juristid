@@ -146,12 +146,14 @@ def check(request: HttpRequest) -> HttpResponse:
     from app.legacy_import.lovable_sync_models import SyncTrigger
 
     _require(request)
-    _actor(request)
+    actor = _actor(request)
     try:
         run = run_sync(trigger=SyncTrigger.CHECK)
     except SyncRefused as error:
+        sync_admin.record_check(actor, run=None, code=error.code, client=_client(request))
         messages.info(request, sync_admin.failure_reason(error.code))
     else:
+        sync_admin.record_check(actor, run=run, client=_client(request))
         messages.success(
             request,
             "Kontroll tehtud: viimati loetud Lovable'i seisu võrreldi Juristidega"
