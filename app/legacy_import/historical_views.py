@@ -114,6 +114,7 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
         list(
             OneNoteResourceRevision.objects.filter(matter_source_page=link)
             .select_related("resource", "document_version")
+            .prefetch_related(versions.accepted_decisions())
             .order_by("created_at", "pk")
         )
         if len(readings) > 1 or documents

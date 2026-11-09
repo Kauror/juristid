@@ -1370,20 +1370,45 @@ def _onenote_later_versions(
     undated (`source_page_versions.plausible_modification`, the source page's
     rule). A later version never reads under a dated note (`later`).
     """
+    from django.db.models import FilteredRelation, Q
+    from django.db.models.functions import Coalesce
     from django.urls import reverse
 
     from app.documents.inline import file_link_for
     from app.documents.models import Document
     from app.legacy_import.historical_notes import UNDATED_FILE_DISPLAY, HistoricalFile, day_display
-    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision, RevisionState
+    from app.legacy_import.onenote_coverage_models import (
+        HoldDecisionKind,
+        OneNoteResourceRevision,
+        RevisionState,
+    )
 
-    rows = OneNoteResourceRevision.objects.filter(
-        matter_source_page__matter=matter,
-        state=RevisionState.VERSIONED,
-        document_version__isnull=False,
+    # A held reading an administrator accepted (`OneNoteHoldDecision`,
+    # `ACCEPT_REVISION`) made the version the decision names: the same kind of
+    # later version, read off the same row in the same query (one LEFT JOIN; an
+    # item has at most one settling decision). Its day is the reading's, never
+    # the decision's.
+    rows = (
+        OneNoteResourceRevision.objects.filter(matter_source_page__matter=matter)
+        .annotate(
+            accepted=FilteredRelation(
+                "hold_decisions",
+                # An accepted decision always names its version (a database
+                # constraint), so the decision kind alone selects it.
+                condition=Q(hold_decisions__decision=HoldDecisionKind.ACCEPT_REVISION),
+            )
+        )
+        .annotate(
+            later_version=Coalesce("document_version", "accepted__document_version"),
+            later_document=Coalesce("document", "accepted__document"),
+        )
+        .filter(
+            Q(state=RevisionState.VERSIONED, document_version__isnull=False)
+            | Q(state=RevisionState.HELD, accepted__document_version__isnull=False)
+        )
     )
     if user is not None:
-        rows = rows.filter(document__in=Document.objects.visible_to(user))
+        rows = rows.filter(later_document__in=Document.objects.visible_to(user).values("pk"))
     found: dict[Any, ImportedVersion] = {}
     for (
         version_id,
@@ -1401,9 +1426,11 @@ def _onenote_later_versions(
         filename,
         mime_type,
     ) in rows.values_list(
-        "document_version_id",
+        "later_version",
         "block_modified_at",
-        "document_version__created_at",
+        # Where an undated version sorts: when its reading was imported — for an
+        # accepted reading too, never the decision's time.
+        "created_at",
         "source_added_at",
         "created_at",
         "matter_source_page__source_page__source_section",
@@ -1411,12 +1438,15 @@ def _onenote_later_versions(
         "matter_source_page_id",
         "resource__resource_key",
         "resource__source_block_ordinal",
-        "document_id",
-        "document__title",
-        "document_version__original_filename",
-        "document_version__mime_type",
+        "later_document",
+        Coalesce("document__title", "accepted__document__title"),
+        Coalesce(
+            "document_version__original_filename",
+            "accepted__document_version__original_filename",
+        ),
+        Coalesce("document_version__mime_type", "accepted__document_version__mime_type"),
     ):
-        if version_id in earlier:
+        if version_id in earlier or version_id in found:
             continue
         if modified_at is not None and (
             (block_created is not None and modified_at < block_created)
