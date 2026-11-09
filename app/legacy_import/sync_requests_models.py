@@ -18,7 +18,15 @@ Rules kept below the services as well:
   and who asked, what and why never change at all. ``save`` checks it and
   migration 0025's trigger checks it again for ``update()`` and raw SQL;
 * **rows are never deleted** — the same trigger refuses a DELETE. A stale
-  PENDING request is marked EXPIRED, not removed.
+  PENDING request is marked EXPIRED, not removed;
+* **a Lovable request is bound to the mode it was confirmed in**
+  (``mode_at_request``, LS2-D): the runner refuses it (``MODE_CHANGED``) if
+  the mode is different when it is claimed, so nobody confirms a comparison and
+  gets an APPLY run.
+
+`DataSyncRunnerBeat` is the host runner's heartbeat: every on-demand firing of
+the host script records, per lane, when it last asked and what it was told, so
+the page can say plainly whether a server runner exists at all.
 
 ``result`` holds codes and counts only: never a title, a value, a file name or a
 person's name, so the page can show it to a technical administrator.
@@ -88,6 +96,7 @@ FIXED_FIELDS = (
     "requested_at",
     "capture_name",
     "approved_plan_sha256",
+    "mode_at_request",
 )
 
 TRANSITION_REFUSED = "Taotluse olekut ei saa nii muuta: olek liigub ainult edasi."
@@ -116,6 +125,8 @@ class DataSyncRequest(BaseModel):
     capture_name = models.CharField(max_length=120, blank=True)
     #: ONENOTE_IMPORT only: the verified plan digest the import is bound to.
     approved_plan_sha256 = models.CharField(max_length=64, blank=True)
+    #: LOVABLE_SYNC only: the mode (COMPARE/APPLY) the confirmation stated.
+    mode_at_request = models.CharField(max_length=16, blank=True)
     #: A short code when the request did not finish as asked (``PAUSED``, ``PLAN_CHANGED``).
     outcome_code = models.CharField(max_length=64, blank=True)
     #: Codes and counts only (`sync_admin` writes it); never business text.
@@ -149,6 +160,11 @@ class DataSyncRequest(BaseModel):
                 | models.Q(approved_plan_sha256__regex=r"^[0-9a-f]{64}$"),
                 name="data_sync_import_names_its_plan",
             ),
+            models.CheckConstraint(
+                condition=~models.Q(kind="LOVABLE_SYNC")
+                | models.Q(mode_at_request__in=["COMPARE", "APPLY"]),
+                name="data_sync_lovable_names_its_mode",
+            ),
         ]
         indexes = [models.Index(fields=["lane", "status"], name="data_sync_lane_status")]
 
@@ -175,3 +191,30 @@ class DataSyncRequest(BaseModel):
 
     def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         raise ImmutableRecordError(DELETE_REFUSED)
+
+
+#: A heartbeat older than this means the on-demand runner is not firing.
+#: The proposed cron line fires every five minutes.
+RUNNER_SILENT_AFTER_MINUTES = 15
+
+
+class DataSyncRunnerBeat(BaseModel):
+    """The host's on-demand runner (`data_sync_requests poll`), last seen per lane.
+
+    Operational metadata, not business data: one row per lane, overwritten by
+    every firing. ``answer`` is what the database told the runner (``DUE
+    COMPARE``, ``NOT_DUE NO_REQUEST``…); ``problem`` is a host-side reason the
+    lane cannot run (``HOST_PAUSED``, ``NO_CREDENTIALS``, ``NOT_PERMITTED``,
+    ``NO_CAPTURE_SOURCE``) or ``""``. Codes only, never a path or a secret."""
+
+    lane = models.CharField(max_length=16, choices=SyncRequestLane.choices, unique=True)
+    first_seen_at = models.DateTimeField()
+    seen_at = models.DateTimeField()
+    answer = models.CharField(max_length=64, blank=True)
+    problem = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        verbose_name = "Andmete sünkroonimise serveri käivitaja"
+
+    def __str__(self) -> str:
+        return f"{self.lane} {self.seen_at:%Y-%m-%dT%H:%M}Z"

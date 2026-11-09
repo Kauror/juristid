@@ -30,16 +30,83 @@
   </nav>
 
   <header class="pagehead">
-    <h1>{{ page.title|default:"Nimetu leht" }}</h1>
+    {% comment %}
+      The shown version's title, place and OneNote day (`reading`); the page
+      row's when the view gave no reading (a render of the template alone).
+    {% endcomment %}
+    {% if reading and not reading.is_original %}
+      <h1>{{ reading.title|default:"Nimetu leht" }}</h1>
+    {% else %}
+      <h1>{{ page.title|default:"Nimetu leht" }}</h1>
+    {% endif %}
     <p class="pagehead__meta">
       <span class="badge badge--source">Ajalooline OneNote</span>
-      {{ page.display_location }}
-      {% if page.source_modified_at %}
-        · muudetud {{ page.source_modified_at|date:"d.m.Y" }}
+      {% if reading and not reading.is_original %}
+        {{ reading.display_location }}
+        {% if reading.source_modified_at %}
+          · muudetud {{ reading.source_modified_at|date:"d.m.Y" }}
+        {% endif %}
+      {% else %}
+        {{ page.display_location }}
+        {% if page.source_modified_at %}
+          · muudetud {{ page.source_modified_at|date:"d.m.Y" }}
+        {% endif %}
       {% endif %}
       {% if file_summary %}· {{ file_summary }}{% endif %}
     </p>
   </header>
+
+  {% if readings %}
+    {% comment %}
+      Which captured version of the page this is (live-sync round 2). A later
+      capture's reading is kept beside the first record, never over it, and
+      the page opens at the latest; every earlier reading is one link away
+      (`?hoive=`). One line says which version is shown and when Juristid
+      stored it (the OneNote day is the header's «muudetud», not repeated
+      here) and, for an earlier one, that a later exists. Then what changed
+      against the version before, only where the records establish it
+      (blocks by OneNote object ID; files by their own records), and the
+      versions themselves behind a closed disclosure. The capture's
+      identifiers stay in «Tehnilised andmed».
+    {% endcomment %}
+    <div class="sourceversion" role="note" aria-labelledby="versioon-heading">
+      <p class="sourceversion__line" id="versioon-heading">
+        {% if reading.latest %}<strong>Viimane hõive</strong>{% else %}<strong>Varasem versioon</strong>{% endif %}
+        · versioon {{ reading.number }}/{{ readings|length }}{% if reading.is_original %} · esimene hõive{% endif %}{% if reading.imported_at %} · salvestatud <time datetime="{{ reading.imported_at|date:'Y-m-d' }}">{{ reading.imported_at|date:"d.m.Y" }}</time>{% endif %}
+      </p>
+      {% if not reading.latest %}
+        <p class="sourceversion__line">
+          Lehest on hilisem hõive{% if latest_reading.imported_at %} ({{ latest_reading.imported_at|date:"d.m.Y" }}){% endif %}.
+          <a href="{% url 'legacy_import:source_page' pk=link.pk %}">Ava viimane hõive</a>
+        </p>
+      {% endif %}
+      {% for sentence in version_summary %}
+        <p class="sourceversion__change">{{ sentence }}</p>
+      {% endfor %}
+      {% if removed_blocks %}
+        <details class="disclosure sourceversion__more">
+          <summary>Eemaldatud plokid <span class="sectionlabel__count">{{ removed_blocks|length }}</span></summary>
+          <p class="cardnote">Need plokid olid eelmises versioonis; selles hõives neid ei ole.</p>
+          <ul class="sourceversion__list">
+            {% for text in removed_blocks %}<li>{{ text }}</li>{% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+      <details class="disclosure sourceversion__more">
+        <summary>{% if reading.latest %}Varasemad versioonid{% else %}Kõik versioonid{% endif %} <span class="sectionlabel__count">{% if reading.latest %}{{ readings|length|add:"-1" }}{% else %}{{ readings|length }}{% endif %}</span></summary>
+        <ol class="sourceversion__list">
+          {% for item in readings reversed %}
+            {% if not reading.latest or not item.latest %}
+              <li>
+                {% if item.number == reading.number %}<strong aria-current="page">Versioon {{ item.number }}</strong>{% elif item.latest %}<a href="{% url 'legacy_import:source_page' pk=link.pk %}">Versioon {{ item.number }}</a>{% else %}<a href="{% url 'legacy_import:source_page' pk=link.pk %}?hoive={{ item.token }}">Versioon {{ item.number }}</a>{% endif %}
+                {% if item.latest %}· viimane hõive{% elif item.is_original %}· esimene hõive{% endif %}{% if item.imported_at %} · salvestatud {{ item.imported_at|date:"d.m.Y" }}{% endif %}{% if item.source_modified_at %} · OneNote'is muudetud {{ item.source_modified_at|date:"d.m.Y" }}{% endif %}
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ol>
+      </details>
+    </div>
+  {% endif %}
 
   {% if dossier.shared %}
     {% comment %}
@@ -136,15 +203,15 @@
           {% if block.kind == "list" %}
             <ul class="casefile__list">
               {% for item in block.items %}
-                <li{% if item.anchor %} id="{{ item.anchor }}"{% endif %} class="casefile__text casefile__text--item {{ item.depth_class }}">{% if item.parts %}{% for piece, href in item.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ item.text }}{% endif %}</li>
+                <li{% if item.anchor %} id="{{ item.anchor }}"{% endif %} class="casefile__text casefile__text--item {{ item.depth_class }}">{% if item.parts %}{% for piece, href in item.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ item.text }}{% endif %}{% if item.change == "added" %} <span class="statechip statechip--new">uus</span>{% elif item.change == "changed" %} <span class="statechip statechip--new">muudetud</span>{% endif %}</li>
               {% endfor %}
             </ul>
           {% elif block.kind == "text" and block.list_item %}
             <ul class="casefile__list"><li class="casefile__text casefile__text--item">{{ block.text }}</li></ul>
           {% elif block.kind == "text" and block.heading %}
-            <h3{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__heading {{ block.depth_class }}">{{ block.text }}</h3>
+            <h3{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__heading {{ block.depth_class }}">{{ block.text }}{% if block.change == "added" %} <span class="statechip statechip--new">uus</span>{% elif block.change == "changed" %} <span class="statechip statechip--new">muudetud</span>{% endif %}</h3>
           {% elif block.kind == "text" %}
-            <p{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__text {{ block.depth_class }}{% if block.dated %} casefile__text--dated{% endif %}">{% if block.parts %}{% for piece, href in block.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ block.text }}{% endif %}</p>
+            <p{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__text {{ block.depth_class }}{% if block.dated %} casefile__text--dated{% endif %}">{% if block.parts %}{% for piece, href in block.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ block.text }}{% endif %}{% if block.change == "added" %} <span class="statechip statechip--new">uus</span>{% elif block.change == "changed" %} <span class="statechip statechip--new">muudetud</span>{% endif %}</p>
           {% elif block.kind == "notice" %}
             <p class="casefile__notice">{{ block.text }}</p>
           {% else %}
@@ -189,7 +256,7 @@
                   <span class="casefile__name">{{ block.filename }}</span>
                 {% endif %}
                 <span class="casefile__meta">
-                  {% if block.state == "empty" %}Tühi fail{% else %}{{ block.size_bytes|filesizeformat }}{% endif %}{% if block.added_known %} · lisatud <time datetime="{{ block.added_at|date:'Y-m-d' }}">{{ block.added_at|date:"d.m.Y" }}</time>{% endif %}
+                  {% if block.state == "empty" %}Tühi fail{% elif block.later %}{{ block.version.size_bytes|filesizeformat }}{% else %}{{ block.size_bytes|filesizeformat }}{% endif %}{% if block.added_known %} · lisatud <time datetime="{{ block.added_at|date:'Y-m-d' }}">{{ block.added_at|date:"d.m.Y" }}</time>{% endif %}{% if block.later %} · versioon {{ block.later.number }}{% if block.later.modified_at %}, OneNote'is muudetud <time datetime="{{ block.later.modified_at|date:'Y-m-d' }}">{{ block.later.modified_at|date:"d.m.Y" }}</time>{% endif %}{% endif %}{% if block.change == "added" %} · <span class="statechip statechip--new">Uus selles versioonis</span>{% elif block.change == "versioned" %} · <span class="statechip statechip--new">Uus versioon selles hõives</span>{% endif %}
                   {% if block.state == "imported" %}
                     {% if block.opens_inline %}
                       · <a href="{% url 'documents:download' pk=block.version.pk %}">Laadi alla</a>
@@ -360,17 +427,21 @@
         <div><dt>Arhiivi võti</dt><dd class="mono">{{ page.page_key }}</dd></div>
         <div><dt>Lähte-XML SHA-256</dt><dd class="mono">{{ page.source_xml_sha256 }}</dd></div>
         <div><dt>Hõive</dt><dd class="mono">{{ page.capture_id }}{% if page.first_imported_at %} · imporditud {{ page.first_imported_at|date:"d.m.Y" }}{% endif %}</dd></div>
+        {% if reading and not reading.is_original %}
+          <div><dt>Näidatud versiooni hõive</dt><dd class="mono">{{ reading.capture_id }}{% if reading.imported_at %} · imporditud {{ reading.imported_at|date:"d.m.Y" }}{% endif %}</dd></div>
+          <div><dt>Näidatud versiooni XML SHA-256</dt><dd class="mono">{{ reading.source_xml_sha256 }}</dd></div>
+        {% endif %}
         {% if page.block_count %}
           <div><dt>Plokke</dt><dd>{{ page.block_count }}{% if page.file_count %} · faile esimeses hõives {{ page.file_count }} ({{ page.file_bytes|filesizeformat }}){% endif %}</dd></div>
         {% endif %}
-        <div><dt>Ploki viide</dt><dd>Aadressi lõpp #plokk-N on selle hõive plokk N.</dd></div>
+        <div><dt>Ploki viide</dt><dd>Aadressi lõpp #plokk-N on näidatud versiooni hõive plokk N.</dd></div>
         {% if unplaced_files %}
           <div><dt>Hilisemad failid</dt><dd>Lehe tekst on hõivest {{ page.capture_id }}; teksti järel loetletud failidel pole selles tekstis kohta.</dd></div>
         {% endif %}
       </dl>
       <p class="form__actions">
-        {% if page.source_xml_storage_key %}
-          <a class="button button--quiet" href="{% url 'legacy_import:source_xml' pk=link.pk %}">
+        {% if page.source_xml_storage_key or reading and not reading.is_original %}
+          <a class="button button--quiet" href="{% url 'legacy_import:source_xml' pk=link.pk %}{% if reading and not reading.is_original %}?hoive={{ reading.token }}{% endif %}">
             Laadi alla lähte-XML
           </a>
         {% endif %}

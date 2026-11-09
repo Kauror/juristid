@@ -20,7 +20,9 @@
       <li>Lovable'isse ei kirjutata midagi: ühendus ainult loeb.</li>
       <li>Kohalikku muudatust ei kirjutata üle: kui nii Juristides kui ka Lovable'is on väli muutunud, jääb see vastuoluna ülevaatusele.</li>
       <li>Taotluse käivitab server; tulemus ilmub Andmete sünkroonimise lehele. Korraga saab olla üks taotlus.</li>
+      <li>Kui režiim muutub enne, kui server taotluse käivitab, jäetakse taotlus käivitamata.</li>
     </ul>
+    {% include "haldus/_data_sync_runner.html" %}
     {% if busy %}
       <p class="dsync__live" role="status">Üks taotlus juba ootab või käib ({{ busy.get_status_display }}, {{ busy.requested_at|date:"j.n.Y H:i" }}). Uue saab esitada, kui see on lõppenud.</p>
     {% endif %}
