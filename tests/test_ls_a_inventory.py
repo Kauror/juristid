@@ -486,7 +486,10 @@ def test_building_the_ledger_writes_nothing(world):
 # ---------------------------------------------------------------------------
 
 
-def test_activity_and_the_open_closed_stage_and_continuation_mismatches():
+def test_activity_and_the_open_closed_stage_and_continuation_mismatches(monkeypatch):
+    # Without the reader's verified mapping the stage is compared with the stage
+    # the import read; with it, see the next test.
+    monkeypatch.setattr(lovable_inventory, "_stage_mapping", lambda: None)
     enrol_register()
     fake = FakeLovable(
         [
@@ -520,6 +523,23 @@ def test_activity_and_the_open_closed_stage_and_continuation_mismatches():
     assert third.continuation_mismatch == "JURISTID_ONLY_CONTINUATION"
     counts = ledger.counts()
     assert counts["open_closed_mismatch"] == 1 and counts["continuation_mismatch"] == 2
+
+
+def test_with_the_verified_stage_mapping_the_stage_key_is_compared(monkeypatch):
+    enrol_register()
+    monkeypatch.setattr(lovable_inventory, "_stage_mapping", lambda: {"Riigikogus": "parliament"})
+    register_teema(1)
+    register_teema(2)
+    from app.workflow.models import StageVocabulary
+
+    stage = StageVocabulary.objects.filter(key="parliament").first()
+    if stage is not None:
+        Matter.all_objects.filter(reference_number=901).update(stage=stage)
+    fake = FakeLovable([topic(n, operational=True, hetkeseis="Riigikogus") for n in (1, 2)])
+    ledger = build_ledger(reading(fake))
+    assert row_of(ledger, 1).stage_basis == "STAGE_MAPPING"
+    assert row_of(ledger, 1).stage_mismatch is (stage is None)
+    assert row_of(ledger, 2).stage_mismatch is True
 
 
 def test_a_successor_the_source_names_differently_is_a_continuation_mismatch():
@@ -671,3 +691,100 @@ def test_a_decision_is_append_only():
     with pytest.raises(DatabaseError, match="does not permit UPDATE"):
         with transaction.atomic():
             LovableInventoryDecision.objects.filter(pk=decision.pk).update(reason="x")
+
+
+# ---------------------------------------------------------------------------
+# A person's decisions, and archive Teemad without a reference (review P2)
+# ---------------------------------------------------------------------------
+
+
+def decide(n: int, kind: str, *, matter: Matter | None = None, reason: str = "näidis põhjus"):
+    return LovableInventoryDecision.objects.create(
+        source_id=sid(n),
+        reference="",
+        decision=kind,
+        matter_id=matter.pk if matter else None,
+        reason=reason,
+        actor=factories.UserFactory(),
+        decided_at=timezone.now(),
+    )
+
+
+def unreferenced_teema(title: str, *, era: str = "2026") -> Matter:
+    """An archive / OneNote-only Teema: no reference, no Lovable identity."""
+    m = factories.MatterFactory(title=title)
+    Matter.all_objects.filter(pk=m.pk).update(
+        reference_year=None, reference_number=None, source_era=era
+    )
+    return m
+
+
+def test_exclude_and_link_decisions_change_what_the_ledger_reports(world):
+    excluded = decide(5, InventoryDecisionKind.EXCLUDE, reason="testteema, mitte register")
+    decide(4, InventoryDecisionKind.LINK, matter=world["other"])
+    ledger = build_ledger(reading(world["fake"]))
+    five, four = row_of(ledger, 5), row_of(ledger, 4)
+    assert (five.category, five.reason) == (Category.EXCLUDED, "DECIDED_EXCLUDE")
+    assert five.decision == {
+        "id": str(excluded.pk),
+        "kind": "EXCLUDE",
+        "matter_id": None,
+        "reason": "testteema, mitte register",
+    }
+    assert (four.category, four.reason) == (Category.LINK_ENRICHMENT, "DECIDED_LINK")
+    assert four.matter_id == str(world["other"].pk) and four.matter_reference == "2024_4"
+    counts = ledger.counts()
+    assert counts["decided"] == {"EXCLUDE": 1, "LINK": 1}
+    assert counts["excluded_by_reason"]["DECIDED_EXCLUDE"] == 1
+    assert len(ledger.decisions) == 2 and ledger.document()["decisions_sha256"]
+
+
+def test_not_same_settles_title_similarity_only_and_the_newest_decision_stands(world):
+    decide(9, InventoryDecisionKind.EXCLUDE)
+    decide(9, InventoryDecisionKind.NOT_SAME)  # newer: the one that stands
+    decide(7, InventoryDecisionKind.NOT_SAME)  # a shared reference is not title similarity
+    ledger = build_ledger(reading(world["fake"]))
+    nine = row_of(ledger, 9)
+    assert (nine.category, nine.reason) == (Category.ABSENT, "PROVEN_ABSENT")
+    assert "DECIDED_NOT_SAME" in nine.notes and nine.candidates == []
+    # Only the decided topic is settled; its peer still waits for a person.
+    assert row_of(ledger, 10).category == Category.POSSIBLE_DUPLICATE
+    assert row_of(ledger, 7).reason == "SOURCE_REFERENCE_SHARED"
+
+
+def test_a_decision_never_overrides_an_exact_match(world):
+    decide(1, InventoryDecisionKind.EXCLUDE)
+    one = row_of(build_ledger(reading(world["fake"])), 1)
+    assert one.category == Category.EXACT and "DECISION_NOT_APPLIED" in one.notes
+
+
+def test_a_lookalike_archive_teema_without_a_reference_keeps_a_topic_from_being_absent():
+    archive = unreferenced_teema("Viienda näidise teema", era="2026")
+    unreferenced_teema("Viienda näidise teema", era="2019")  # another year: never
+    identified = unreferenced_teema("Kuuenda näidise teema")
+    lovable_reference(identified, 77)  # holds a Lovable identity: not an archive Teema
+    fake = FakeLovable(
+        [
+            topic(5, title="Viienda näidise teema"),
+            topic(6, title="Kuuenda näidise teema"),
+        ]
+    )
+    ledger = build_ledger(reading(fake))
+    five = row_of(ledger, 5)
+    assert (five.category, five.reason) == (
+        Category.POSSIBLE_DUPLICATE,
+        "NEAR_IDENTICAL_TEEMA_TITLE",
+    )
+    assert five.candidates == [
+        {
+            "source_id": "",
+            "reference": "",
+            "matter_id": str(archive.pk),
+            "basis": "NEAR_IDENTICAL_TEEMA_TITLE",
+        }
+    ]
+    assert five.matter_id is None  # a suggestion, never a link
+    assert row_of(ledger, 6).category == Category.ABSENT
+    # A person says it is a different topic: absent again.
+    decide(5, InventoryDecisionKind.NOT_SAME, matter=archive)
+    assert row_of(build_ledger(reading(fake)), 5).category == Category.ABSENT

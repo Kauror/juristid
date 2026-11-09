@@ -360,3 +360,52 @@ def test_the_backfill_command_package_and_plan_steps_are_read_only(world, tmp_pa
             "lovable_inventory", "backfill", "--step", "apply", "--package", str(out),
             "--operator-intent", "lovable-pilot",
         )  # fmt: skip
+
+
+# ---------------------------------------------------------------------------
+# Decisions and archive Teemad (review P2)
+# ---------------------------------------------------------------------------
+
+
+def test_decided_topics_stay_out_and_the_package_binds_the_decisions(world, pilot_on):
+    from app.legacy_import.lovable_inventory_models import InventoryDecisionKind
+    from tests.test_ls_a_inventory import decide
+
+    decide(2, InventoryDecisionKind.EXCLUDE, reason="ei ole registriteema")
+    decide(3, InventoryDecisionKind.LINK, matter=world["register"])
+    ledger, selection = _selection(world)
+    reasons = {item["reference"]: item["reason"] for item in selection.left_out}
+    assert reasons["2019_12"] == "DECIDED_EXCLUDE" and reasons["2020_7"] == "DECIDED_LINK"
+    assert selection.selected == ["2021_3"]
+    package = selection.package
+    assert package["selection"]["decisions_sha256"] == ledger.decisions_sha256
+    assert len(package["selection"]["decisions"]) == 2
+    assert lovable_backfill.plan(package).problems == []
+
+    # A later decision: this package is refused, and the next one differs.
+    decide(4, InventoryDecisionKind.EXCLUDE)
+    plan = lovable_backfill.plan(package)
+    assert any(lovable_backfill.DECISIONS_CHANGED in p for p in plan.problems)
+    with pytest.raises(LovablePilotError, match="The plan has problems"):
+        lovable_pilot.dry_run(plan)
+    _ledger, again = _selection(world)
+    assert again.package is None  # 2021_3 is now excluded too
+    assert {i["reason"] for i in again.left_out} >= {"DECIDED_EXCLUDE", "DECIDED_LINK"}
+
+
+def test_a_package_without_bound_decisions_is_refused(world):
+    _ledger, selection = _selection(world)
+    package = copy.deepcopy(selection.package)
+    package["selection"].pop("decisions_sha256")
+    assert any(
+        lovable_backfill.DECISIONS_CHANGED in p for p in lovable_backfill.plan(package).problems
+    )
+
+
+def test_an_archive_teema_with_a_lookalike_title_is_never_duplicated_by_the_backfill(world):
+    from tests.test_ls_a_inventory import unreferenced_teema
+
+    unreferenced_teema("Ajaloolise näidise teema B", era="2020")
+    _ledger, selection = _selection(world)
+    assert "2020_7" not in selection.selected
+    assert selection.selected == ["2019_12", "2021_3"]
