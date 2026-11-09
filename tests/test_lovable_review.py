@@ -73,11 +73,20 @@ def _fields(topic: lovable_review.TopicChange) -> dict[str, lovable_review.Field
 
 @pytest.fixture(autouse=True)
 def page_clock(monkeypatch):
-    """The page asks the read service at a fixed moment, after every night here,
-    whatever day the suite runs on."""
+    """The page asks the read service at a moment after every night here and
+    after every reading's own timestamp, whatever day the suite runs on.
+
+    The runs start on the night clock (`NIGHT`), but the fake source stamps each
+    reading with the wall clock (`take_snapshot`'s default), so a moment fixed
+    at `_night(10)` put every reading in the future from 8.11.2026 on and the
+    page showed no night. The later of the two is after both."""
     from app.core import views as core_views
 
-    monkeypatch.setattr(core_views, "_lovable_now", lambda: _night(10))
+    monkeypatch.setattr(
+        core_views,
+        "_lovable_now",
+        lambda: max(_night(10), dt.datetime.now(dt.UTC) + dt.timedelta(minutes=5)),
+    )
 
 
 #: The nights moved to their own view of the page (docs/adr/0201).
