@@ -58,7 +58,9 @@ from app.legacy_import.lovable_sync_models import (
 )
 from app.legacy_import.sync_requests_models import (
     OPEN_STATUSES,
+    RUNNER_SILENT_AFTER_MINUTES,
     DataSyncRequest,
+    DataSyncRunnerBeat,
     SyncRequestKind,
     SyncRequestLane,
     SyncRequestStatus,
@@ -139,6 +141,21 @@ FAILURE_REASONS: dict[str, str] = {
     "PLAN_CHANGED": "Impordiplaan oli pärast kontrolli muutunud; midagi ei imporditud.",
     "CAPTURE_ERROR": "Kogumit ei saanud lugeda või see ei läbinud kontrolli.",
     "IMPORT_FAILED": "Import katkes; juba kirjutatud lehed jäid, katkenud leht võeti tagasi.",
+    # LS2-D: the runner's own refusals.
+    "MODE_CHANGED": (
+        "Režiim muutus pärast taotlemist; taotlust ei käivitatud. "
+        "Vaata režiim üle ja esita vajadusel uus taotlus."
+    ),
+    "HOST_PAUSED": "Sünkroonimine on serveris peatatud (PAUSED-fail); taotlust ei käivitatud.",
+    "NO_CREDENTIALS": "Serveris pole Lovable'i lugemisvolitusi; taotlust ei käivitatud.",
+    "CREDENTIALS_MODE": (
+        "Serveri Lovable'i volituste failil on vale omanik või õigused; taotlust ei käivitatud."
+    ),
+    "NOT_PERMITTED": (
+        "Serveri käivitajal pole sünkroonimise luba (JURISTID_LOVABLE_SYNC, REAL_DATA_ALLOWED); "
+        "taotlust ei käivitatud."
+    ),
+    "NO_CAPTURE_SOURCE": "Serveris pole OneNote'i kogumite kausta; taotlust ei käivitatud.",
 }
 
 
@@ -234,6 +251,112 @@ def _shown(value: Any) -> str:
     return str(value)
 
 
+# ---------------------------------------------------------------------------
+# The host runner's heartbeat (LS2-D)
+# ---------------------------------------------------------------------------
+
+RUNNER_NEVER_SEEN = (
+    "Serveri käivitajat pole kunagi nähtud: taotlus salvestatakse, kuid keegi ei käivita "
+    "seda ja see aegub kahe tunni pärast. Käivitaja on serveri cron-rida "
+    "«juristid-lovable-sync.sh --on-demand», mille paigaldab omanik."
+)
+RUNNER_SILENT = (
+    "Serveri käivitaja pole viimase {minutes} minuti jooksul taotlusi küsinud; ootav taotlus "
+    "ei pruugi käivituda."
+)
+
+#: Host-side problems a beat may carry, in the page's words.
+RUNNER_PROBLEMS: dict[str, str] = {
+    code: FAILURE_REASONS[code]
+    for code in (
+        "HOST_PAUSED",
+        "NO_CREDENTIALS",
+        "CREDENTIALS_MODE",
+        "NOT_PERMITTED",
+        "NO_CAPTURE_SOURCE",
+    )
+}
+_PROBLEM_CODE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+
+
+@dataclass(frozen=True)
+class RunnerStatus:
+    """Whether the host's on-demand runner exists, for one lane, in the page's words."""
+
+    lane: str
+    seen: bool
+    seen_at: dt.datetime | None
+    first_seen_at: dt.datetime | None
+    #: Seen, but not within `RUNNER_SILENT_AFTER_MINUTES`.
+    silent: bool
+    problem: str
+    problem_text: str
+    #: ok (seen recently, no problem) | waiting (never seen / silent) | problem
+    tone: str
+    label: str
+    note: str
+
+    @property
+    def active(self) -> bool:
+        return self.seen and not self.silent and not self.problem
+
+
+def runner_status(lane: str, *, now: dt.datetime | None = None) -> RunnerStatus:
+    """The newest heartbeat of ``lane``'s host runner, judged against ``now``. Reads only."""
+    moment = now or timezone.now()
+    beat = DataSyncRunnerBeat.objects.filter(lane=lane).first()
+    if beat is None:
+        return RunnerStatus(
+            lane=lane,
+            seen=False,
+            seen_at=None,
+            first_seen_at=None,
+            silent=False,
+            problem="",
+            problem_text="",
+            tone="waiting",
+            label="Pole kunagi nähtud",
+            note=RUNNER_NEVER_SEEN,
+        )
+    silent = moment - beat.seen_at > dt.timedelta(minutes=RUNNER_SILENT_AFTER_MINUTES)
+    problem = beat.problem if _PROBLEM_CODE.fullmatch(beat.problem or "") else ""
+    problem_text = RUNNER_PROBLEMS.get(problem, failure_reason(problem)) if problem else ""
+    if silent:
+        tone, label = "waiting", "Vaikib"
+        note = RUNNER_SILENT.format(minutes=RUNNER_SILENT_AFTER_MINUTES)
+    elif problem:
+        tone, label, note = "problem", "Ei saa käivitada", problem_text
+    else:
+        tone, label, note = "ok", "Töötab", ""
+    return RunnerStatus(
+        lane=lane,
+        seen=True,
+        seen_at=beat.seen_at,
+        first_seen_at=beat.first_seen_at,
+        silent=silent,
+        problem=problem,
+        problem_text=problem_text,
+        tone=tone,
+        label=label,
+        note=note,
+    )
+
+
+def record_beat(lane: str, *, answer: str, problem: str = "", now: dt.datetime) -> None:
+    """The host runner asked (`poll` / `refuse_unpermitted`): remember when and what."""
+    problem = problem if _PROBLEM_CODE.fullmatch(problem or "") else ""
+    values = {"seen_at": now, "answer": answer[:64], "problem": problem, "updated_at": now}
+    if DataSyncRunnerBeat.objects.filter(lane=lane).update(**values):
+        return
+    try:
+        with transaction.atomic():
+            DataSyncRunnerBeat.objects.create(
+                lane=lane, first_seen_at=now, seen_at=now, answer=answer[:64], problem=problem
+            )
+    except IntegrityError:  # two firings at once: the other one created it
+        DataSyncRunnerBeat.objects.filter(lane=lane).update(**values)
+
+
 @dataclass(frozen=True)
 class RequestView:
     """One request, in the page's words."""
@@ -247,6 +370,8 @@ class RequestView:
     stale: bool
     expires_at: dt.datetime | None
     counts: dict[str, int]
+    #: A PENDING request's honest wait: no runner seen, a silent one, or a host problem.
+    waiting_note: str = ""
 
 
 def _tone(status: str, stale: bool) -> str:
@@ -257,7 +382,16 @@ def _tone(status: str, stale: bool) -> str:
     return "problem"
 
 
-def request_view(item: DataSyncRequest, *, now: dt.datetime | None = None) -> RequestView:
+#: A PENDING request's label: it waits for the host runner, not for this page.
+WAITING_FOR_RUNNER = "Ootab serveri käivitajat"
+
+
+def request_view(
+    item: DataSyncRequest,
+    *,
+    now: dt.datetime | None = None,
+    runner: RunnerStatus | None = None,
+) -> RequestView:
     moment = now or timezone.now()
     expires = (
         item.requested_at + PENDING_EXPIRES_AFTER
@@ -266,21 +400,32 @@ def request_view(item: DataSyncRequest, *, now: dt.datetime | None = None) -> Re
     )
     stale = expires is not None and moment > expires
     result = item.result if isinstance(item.result, dict) else {}
+    label = "Aegunud (ootab märkimist)" if stale else SyncRequestStatus(item.status).label
+    waiting = ""
+    if item.status == SyncRequestStatus.PENDING and not stale:
+        runner = runner or runner_status(item.lane, now=moment)
+        label = WAITING_FOR_RUNNER
+        if not runner.active:
+            waiting = runner.note
     return RequestView(
         request=item,
         kind_label=SyncRequestKind(item.kind).label,
-        status_label="Aegunud (ootab märkimist)" if stale else SyncRequestStatus(item.status).label,
+        status_label=label,
         status_tone=_tone(item.status, stale),
         reason_text=failure_reason(item.outcome_code),
         stale=stale,
         expires_at=expires,
         counts=int_counts(result.get("counts")),
+        waiting_note=waiting,
     )
 
 
-def _recent(lane: str, now: dt.datetime) -> list[RequestView]:
+def _recent(lane: str, now: dt.datetime, runner: RunnerStatus) -> list[RequestView]:
     rows = DataSyncRequest.objects.filter(lane=lane).select_related("requested_by", "sync_run")
-    return [request_view(r, now=now) for r in rows.order_by("-requested_at")[:RECENT_REQUESTS]]
+    return [
+        request_view(r, now=now, runner=runner)
+        for r in rows.order_by("-requested_at")[:RECENT_REQUESTS]
+    ]
 
 
 def open_request(lane: str) -> DataSyncRequest | None:
@@ -388,6 +533,7 @@ class LovablePanel:
     pending_fields: int
     open_request: DataSyncRequest | None
     recent: list[RequestView]
+    runner: RunnerStatus | None = None
 
 
 def decision_counts(run: LovableSyncRun | None) -> dict[str, int]:
@@ -443,6 +589,7 @@ def lovable_panel(user: Any, *, now: dt.datetime | None = None) -> LovablePanel:
             if isinstance(part, dict):
                 held_fields += int(part.get("import_held_fields") or 0)
     mode = current_mode()
+    runner = runner_status(SyncRequestLane.LOVABLE, now=moment)
     return LovablePanel(
         mode=mode,
         mode_label=SyncMode(mode).label,
@@ -470,7 +617,8 @@ def lovable_panel(user: Any, *, now: dt.datetime | None = None) -> LovablePanel:
         import_held_fields=held_fields,
         pending_fields=status.pending_review,
         open_request=open_request(SyncRequestLane.LOVABLE),
-        recent=_recent(SyncRequestLane.LOVABLE, moment),
+        recent=_recent(SyncRequestLane.LOVABLE, moment, runner),
+        runner=runner,
     )
 
 
@@ -532,6 +680,7 @@ class OneNotePanel:
     #: plan is still the newest one checked for that capture.
     verified: list[RequestView]
     capture_root_configured: bool
+    runner: RunnerStatus | None = None
 
 
 def capture_root() -> str:
@@ -595,7 +744,12 @@ def onenote_panel(*, now: dt.datetime | None = None) -> OneNotePanel:
     states = code_counts(operational.get("states"))
     not_covered = sections.get("not_covered")
     names = [str(n) for n in not_covered] if isinstance(not_covered, list) else []
-    verified = [request_view(r, now=moment) for r in latest_verifications() if _is_verified(r)]
+    runner = runner_status(SyncRequestLane.ONENOTE, now=moment)
+    verified = [
+        request_view(r, now=moment, runner=runner)
+        for r in latest_verifications()
+        if _is_verified(r)
+    ]
     return OneNotePanel(
         available=summary is not None,
         note="" if summary is not None else ONENOTE_MISSING,
@@ -620,15 +774,88 @@ def onenote_panel(*, now: dt.datetime | None = None) -> OneNotePanel:
         sections_not_covered=names,
         sections_not_covered_count=len(names) if isinstance(not_covered, list) else None,
         open_request=open_request(SyncRequestLane.ONENOTE),
-        recent=_recent(SyncRequestLane.ONENOTE, moment),
+        recent=_recent(SyncRequestLane.ONENOTE, moment, runner),
         verified=verified,
         capture_root_configured=bool(capture_root()),
+        runner=runner,
     )
 
 
 # ---------------------------------------------------------------------------
 # «Vaata erinevusi»
 # ---------------------------------------------------------------------------
+
+
+#: The current step's wording and day (`lovable_sync.STEP_FIELDS`): the most
+#: valuable corrections, because a stale step is work somebody is (not) doing.
+STEP_FIELDS = ("next_action_text", "next_action_date")
+#: The opinion request's lifecycle in Lovable: whether a request is still open.
+REQUEST_FIELDS = ("opinion_deadline", "sent", "sent_date")
+#: What a Teema is and where it stands.
+STANDING_FIELDS = ("stage", "continuation", "commencements", "owner", "title", "onenote_link")
+
+#: Priority groups of «Vaata erinevusi», first first: (key, heading, what to do).
+PRIORITY_GROUPS: tuple[tuple[str, str, str], ...] = (
+    (
+        "step_past",
+        "Järgmise sammu parandused: Juristide samm on möödas kuupäevaga",
+        "Lovable'i järgmine tegevus muutus ja Juristide praegune samm on juba möödas. "
+        "Ava teema ja lõpeta, asenda või muuda samm seal.",
+    ),
+    (
+        "step",
+        "Järgmise sammu parandused",
+        "Lovable'i järgmise tegevuse sõnastus või kuupäev muutus. Juristid ei liigita vaba "
+        "teksti ise (teen / ootan / jälgin): otsuse teeb inimene teema lehel.",
+    ),
+    ("request", "Arvamuse küsimine ja saatmine", ""),
+    ("standing", "Hetkeseis, vastutaja ja seosed", ""),
+    ("other", "Muud väljad", ""),
+)
+_PRIORITY = {key: n for n, (key, _h, _t) in enumerate(PRIORITY_GROUPS)}
+_ISO_DAY = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def priority_group(field_name: str, *, step_past: bool) -> str:
+    """Which group a pending field belongs to (`PRIORITY_GROUPS`). Never reads the
+    free text: the order is by field and by the Teema's own step date only."""
+    if field_name in STEP_FIELDS:
+        return "step_past" if step_past else "step"
+    if field_name in REQUEST_FIELDS:
+        return "request"
+    if field_name in STANDING_FIELDS:
+        return "standing"
+    return "other"
+
+
+def value_text(value: Any) -> str:
+    """A compared value as the page shows it: ISO days as «15.11.2026», a step as
+    its wording and day, nothing as «—»."""
+    if isinstance(value, str) and _ISO_DAY.fullmatch(value):
+        try:
+            day = dt.date.fromisoformat(value)
+        except ValueError:
+            return value
+        return f"{day.day}.{day.month}.{day.year}"
+    if isinstance(value, dict) and "text" in value:
+        when = value_text(value.get("target_date")) if value.get("target_date") else ""
+        text = str(value.get("text") or "").strip()
+        return " · ".join(part for part in (f"«{text}»" if text else "", when) if part) or "—"
+    return _shown(value)
+
+
+@dataclass(frozen=True)
+class StepView:
+    """The Teema's open step as Juristid holds it now (read live, not from the night)."""
+
+    text: str
+    kind_label: str
+    semantics_label: str
+    target_date: dt.date | None
+    #: The day is before today (Tallinn).
+    past: bool
+    #: ... and it is a DEADLINE, the only kind of date that can be missed.
+    missed: bool
 
 
 @dataclass(frozen=True)
@@ -643,6 +870,25 @@ class DifferenceRow:
     explanation: str
     since: dt.datetime | None
     resolvable: bool
+    #: `PRIORITY_GROUPS` key; rows are ordered by it, then oldest first.
+    group: str = "other"
+    #: Whole Tallinn days since the difference first appeared with this value.
+    age_days: int | None = None
+    #: STEP_FIELDS only: Juristid's open step now.
+    step: StepView | None = None
+
+
+@dataclass
+class StepCard:
+    """One Teema's pending next-step correction: wording and day together."""
+
+    matter: Any
+    reference: str
+    group: str
+    step: StepView | None
+    since: dt.datetime | None
+    age_days: int | None
+    rows: list[DifferenceRow]
 
 
 @dataclass
@@ -655,6 +901,12 @@ class Differences:
     total: int
     #: ``engine`` (B's `pending_differences`) or ``ledger`` (the read service's queue).
     source: str
+    #: The next-step corrections, one card per Teema, highest value first (page 1 only).
+    step_cards: list[StepCard] = field(default_factory=list)
+    #: (heading, rows) of ``rows``, in `PRIORITY_GROUPS` order.
+    groups: list[tuple[str, list[DifferenceRow]]] = field(default_factory=list)
+    #: Pending differences named here, all pages and groups together.
+    named: int = 0
 
 
 def _engine_differences() -> Callable[..., Any] | None:
@@ -671,65 +923,179 @@ def _explanation(field_name: str, reason: str, given: str) -> str:
 
     policy = getattr(lovable_sync, "FIELD_POLICY", {}) or {}
     entry = policy.get(field_name) if isinstance(policy, dict) else None
-    words = _attr(entry, "explanation", "label", default="") if entry is not None else ""
-    return str(words or LOVABLE_REASONS.get(reason, "") or "")
+    # The reason a field was held says more than the field's general policy.
+    words = LOVABLE_REASONS.get(reason, "")
+    if not words and entry is not None:
+        words = _attr(entry, "explanation", "label", default="")
+    return str(words or "")
 
 
-def differences(user: Any, *, page: int = 1) -> Differences:
-    """Pending differences: A (accepted), B (Juristid), C (Lovable) and why.
+def _open_steps(matter_ids: Iterable[Any], today: dt.date) -> dict[Any, StepView]:
+    """Each Teema's open step now, one query."""
+    from app.workflow.enums import ActionStatus, DateSemantics
+    from app.workflow.models import NextAction
 
-    Named only for a Teema ``user`` may open; the rest are counted in ``hidden``."""
-    from app.legacy_import import lovable_observability as obs
+    out: dict[Any, StepView] = {}
+    for action in NextAction.objects.filter(
+        matter_id__in=list(matter_ids), status=ActionStatus.OPEN
+    ).order_by("created_at"):
+        past = action.target_date is not None and action.target_date < today
+        out[action.matter_id] = StepView(
+            text=action.text,
+            kind_label=action.get_kind_display(),
+            semantics_label=action.get_date_semantics_display(),
+            target_date=action.target_date,
+            past=past,
+            missed=past and action.date_semantics == DateSemantics.DEADLINE,
+        )
+    return out
+
+
+def _age(since: dt.datetime | None, today: dt.date) -> int | None:
+    if since is None:
+        return None
+    from app.legacy_import.lovable_sync import TALLINN
+
+    return max(0, (today - since.astimezone(TALLINN).date()).days)
+
+
+def _ordered(rows: list[DifferenceRow]) -> list[DifferenceRow]:
+    far = dt.datetime.max.replace(tzinfo=dt.UTC)
+    fields = {name: n for n, name in enumerate(LOVABLE_FIELD_LABELS)}
+    return sorted(
+        rows,
+        key=lambda r: (
+            _PRIORITY.get(r.group, len(_PRIORITY)),
+            r.since or far,
+            r.reference,
+            fields.get(r.field, len(fields)),
+        ),
+    )
+
+
+def engine_rows(user: Any, *, now: dt.datetime | None = None) -> tuple[list[DifferenceRow], int]:
+    """Every pending difference ``user`` may see (named) in priority order, and
+    how many more there are (counted, never named). Reads only."""
     from app.legacy_import.lovable_sync import RESOLVABLE_FIELDS as RESOLVABLE
+    from app.legacy_import.lovable_sync import TALLINN
     from app.matters.models import Matter
 
     engine = _engine_differences()
-    if engine is not None:
-        items = list(engine(visible_to=user))
-        visible = set(Matter.objects.visible_to(user).values_list("pk", flat=True))
-        rows: list[DifferenceRow] = []
-        hidden = 0
-        for item in items:
-            matter = _attr(item, "matter")
-            matter_id = getattr(matter, "pk", None) or _attr(item, "matter_id")
-            if matter is None or matter_id not in visible:
-                hidden += 1
-                continue
-            name = str(_attr(item, "field", "field_name", default=""))
-            reason = str(_attr(item, "reason", default="") or "")
-            rows.append(
-                DifferenceRow(
-                    matter=matter,
-                    reference=str(_attr(item, "reference", default="") or matter.display_reference),
-                    field=name,
-                    field_label=LOVABLE_FIELD_LABELS.get(name, name),
-                    accepted=_shown(_attr(item, "accepted", "baseline", "a")),
-                    juristid=_shown(_attr(item, "juristid", "current", "b")),
-                    source=_shown(_attr(item, "source", "lovable", "c")),
-                    explanation=_explanation(
-                        name, reason, str(_attr(item, "explanation", default="") or "")
-                    ),
-                    since=_attr(item, "since", "first_observed_at"),
-                    resolvable=name in RESOLVABLE
-                    and _attr(item, "kind", default="FIELD") == "FIELD",
-                )
+    if engine is None:
+        return [], 0
+    today = (now or timezone.now()).astimezone(TALLINN).date()
+    items = list(engine(visible_to=user))
+    visible = set(Matter.objects.visible_to(user).values_list("pk", flat=True))
+    named = []
+    hidden = 0
+    for item in items:
+        matter = _attr(item, "matter")
+        matter_id = getattr(matter, "pk", None) or _attr(item, "matter_id")
+        if matter is None or matter_id not in visible:
+            hidden += 1
+            continue
+        named.append((item, matter))
+    steps = _open_steps(
+        {m.pk for item, m in named if str(_attr(item, "field", default="")) in STEP_FIELDS},
+        today,
+    )
+    rows: list[DifferenceRow] = []
+    for item, matter in named:
+        name = str(_attr(item, "field", "field_name", default=""))
+        reason = str(_attr(item, "reason", default="") or "")
+        since = _attr(item, "since", "first_observed_at")
+        step = steps.get(matter.pk) if name in STEP_FIELDS else None
+        current = _attr(item, "juristid", "current", "b")
+        rows.append(
+            DifferenceRow(
+                matter=matter,
+                reference=str(_attr(item, "reference", default="") or matter.display_reference),
+                field=name,
+                field_label=LOVABLE_FIELD_LABELS.get(name, name),
+                accepted=value_text(_attr(item, "accepted", "baseline", "a")),
+                juristid=value_text(current),
+                source=value_text(_attr(item, "source", "lovable", "c")),
+                explanation=_explanation(
+                    name, reason, str(_attr(item, "explanation", default="") or "")
+                ),
+                since=since,
+                resolvable=name in RESOLVABLE and _attr(item, "kind", default="FIELD") == "FIELD",
+                group=priority_group(name, step_past=bool(step and step.past)),
+                age_days=_age(since, today),
+                step=step,
             )
-        # The engine leaves out what this reader may not open; the server's own
-        # view counts everything, so the rest is counted here — never named.
-        hidden = max(hidden, len(engine(visible_to=None)) - len(rows))
-        paginator = Paginator(rows, obs.PAGE_SIZE)
+        )
+    # The engine leaves out what this reader may not open; the server's own
+    # view counts everything, so the rest is counted here — never named.
+    hidden = max(hidden, len(engine(visible_to=None)) - len(rows))
+    return _ordered(rows), hidden
+
+
+def _step_cards(rows: list[DifferenceRow]) -> list[StepCard]:
+    cards: dict[Any, StepCard] = {}
+    for row in rows:
+        if row.field not in STEP_FIELDS:
+            continue
+        card = cards.get(row.matter.pk)
+        if card is None:
+            card = cards[row.matter.pk] = StepCard(
+                matter=row.matter,
+                reference=row.reference,
+                group=row.group,
+                step=row.step,
+                since=row.since,
+                age_days=row.age_days,
+                rows=[],
+            )
+        card.rows.append(row)
+        if row.since is not None and (card.since is None or row.since < card.since):
+            card.since, card.age_days = row.since, row.age_days
+    for card in cards.values():
+        card.rows.sort(key=lambda r: STEP_FIELDS.index(r.field))
+    return list(cards.values())
+
+
+def _grouped(rows: list[DifferenceRow]) -> list[tuple[str, list[DifferenceRow]]]:
+    headings = {key: heading for key, heading, _t in PRIORITY_GROUPS}
+    out: list[tuple[str, list[DifferenceRow]]] = []
+    for row in rows:
+        heading = headings.get(row.group, row.group)
+        if not out or out[-1][0] != heading:
+            out.append((heading, []))
+        out[-1][1].append(row)
+    return out
+
+
+def differences(user: Any, *, page: int = 1, now: dt.datetime | None = None) -> Differences:
+    """Pending differences: A (accepted), B (Juristid), C (Lovable), why, and for
+    how long — the next-step corrections first, as one card per Teema, then the
+    rest by priority group, oldest first.
+
+    Named only for a Teema ``user`` may open; the rest are counted in ``hidden``."""
+    from app.legacy_import import lovable_observability as obs
+    from app.matters.models import Matter
+
+    if _engine_differences() is not None:
+        every, hidden = engine_rows(user, now=now)
+        cards = _step_cards(every)
+        rest = [r for r in every if r.field not in STEP_FIELDS]
+        paginator = Paginator(rest, obs.PAGE_SIZE)
         chosen = paginator.get_page(page)
+        shown = list(chosen.object_list)
         return Differences(
-            rows=list(chosen.object_list),
+            rows=shown,
             hidden=hidden,
             page=chosen.number,
             pages=paginator.num_pages,
-            total=len(rows),
+            total=len(rest),
             source="engine",
+            step_cards=cards if chosen.number == 1 else [],
+            groups=_grouped(shown),
+            named=len(every),
         )
     queue = obs.review_queue(user, page=page)
-    shown = list(queue.items)
-    ids = {item.matter_id for item in shown}
+    shown_items = list(queue.items)
+    ids = {item.matter_id for item in shown_items}
     matters = {str(m.pk): m for m in Matter.objects.visible_to(user).filter(pk__in=ids)}
     rows = [
         DifferenceRow(
@@ -742,9 +1108,9 @@ def differences(user: Any, *, page: int = 1) -> Differences:
             source=item.lovable_now,
             explanation=item.explanation,
             since=item.first_observed_at,
-            resolvable=item.field in RESOLVABLE,
+            resolvable=item.field in _resolvable_fields(),
         )
-        for item in shown
+        for item in shown_items
         if item.matter_id in matters
     ]
     # A reader the service refuses (a technical administrator with no persona)
@@ -759,11 +1125,22 @@ def differences(user: Any, *, page: int = 1) -> Differences:
         pages=queue.pages,
         total=queue.total,
         source="ledger",
+        groups=_grouped(rows),
+        named=queue.total,
     )
+
+
+def _resolvable_fields() -> tuple[str, ...]:
+    from app.legacy_import.lovable_sync import RESOLVABLE_FIELDS
+
+    return tuple(RESOLVABLE_FIELDS)
 
 
 def difference_for(user: Any, reference: str, field_name: str) -> DifferenceRow | None:
     """The one pending difference a decision page confirms, whatever page it is on."""
+    if _engine_differences() is not None:
+        rows, _hidden = engine_rows(user)
+        return next((r for r in rows if r.reference == reference and r.field == field_name), None)
     page = 1
     while True:
         found = differences(user, page=page)
@@ -830,7 +1207,8 @@ def request_history(*, page: int = 1) -> Any:
     )
     chosen = paginator.get_page(page)
     moment = timezone.now()
-    views = [request_view(r, now=moment) for r in chosen.object_list]
+    runners = {lane: runner_status(lane, now=moment) for lane in SyncRequestLane.values}
+    views = [request_view(r, now=moment, runner=runners.get(r.lane)) for r in chosen.object_list]
     chosen.object_list = cast(Any, views)
     return chosen
 
@@ -985,7 +1363,15 @@ def request_lovable_sync(
         raise _refuse(actor, kind, "PAUSED", SYNC_PAUSED, client)
     if mode_seen is not None and mode_seen != mode:
         raise _refuse(actor, kind, "MODE_CHANGED", MODE_CHANGED, client)
-    return _record(actor, kind=kind, reason=text, now=moment, client=client, audit={"mode": mode})
+    return _record(
+        actor,
+        kind=kind,
+        reason=text,
+        now=moment,
+        client=client,
+        audit={"mode": mode},
+        mode_at_request=mode,
+    )
 
 
 def valid_capture_name(raw: str) -> str | None:
@@ -1188,7 +1574,12 @@ def claim_next(lane: str, *, now: dt.datetime) -> DataSyncRequest | None:
     with transaction.atomic():
         item = (
             DataSyncRequest.objects.select_for_update(skip_locked=True)
-            .filter(lane=lane, status=SyncRequestStatus.PENDING)
+            # A request past its expiry is never run, whether or not it was marked yet.
+            .filter(
+                lane=lane,
+                status=SyncRequestStatus.PENDING,
+                requested_at__gte=now - PENDING_EXPIRES_AFTER,
+            )
             .order_by("requested_at")
             .first()
         )
@@ -1259,26 +1650,64 @@ def _run_lovable(
 ) -> DataSyncRequest:
     from app.legacy_import import lovable_sync
 
+    wanted = item.mode_at_request
+    mode = current_mode()
+    if wanted and mode not in (SyncMode.OFF, wanted):
+        # Confirmed for one mode, claimed in another: never run it in the other.
+        # (OFF and cut-over are refused below by the engine itself, by name.)
+        changed = {"mode_requested": wanted, "mode_now": mode}
+        return _finish(item, SyncRequestStatus.REFUSED, "MODE_CHANGED", changed, now=now())
     if transport_factory is None:
         return _finish(item, SyncRequestStatus.FAILED, "NO_SOURCE", {}, now=now())
     try:
         transport = transport_factory()
     except Exception as error:  # the credentials file, the configuration
         code = str(getattr(error, "code", "") or "NO_SOURCE")
-        return _finish(item, SyncRequestStatus.FAILED, code, {}, now=now())
+        return _finish(item, SyncRequestStatus.FAILED, code, diagnostics(error), now=now())
     try:
         run = lovable_sync.run_sync(
             trigger=SyncTrigger.MANUAL, transport=transport, backup_set=backup_set, now=now
         )
     except lovable_sync.SyncRefused as error:
-        return _finish(item, SyncRequestStatus.REFUSED, error.code, {}, now=now())
+        return _finish(item, SyncRequestStatus.REFUSED, error.code, diagnostics(error), now=now())
     counts = int_counts(run.counts)
-    result = {"run_status": run.status, "mode": run.mode, "counts": counts}
+    result: dict[str, Any] = {
+        "run_status": run.status,
+        "mode": run.mode,
+        "mode_requested": wanted,
+        "counts": counts,
+    }
     if run.status == SyncRunStatus.FAILED:
         code = run.error.split(":")[0] or "INTERNAL"
+        # The run keeps the engine's own error line (a code and a fixed sentence,
+        # or an exception's class name — never a value); the request keeps the code.
+        result["error_code"] = code
         return _finish(item, SyncRequestStatus.FAILED, code, result, now=now(), run=run)
     code = run.error.split(":")[0] if run.status == SyncRunStatus.REVIEW_ONLY else ""
     return _finish(item, SyncRequestStatus.DONE, code, result, now=now(), run=run)
+
+
+#: Exceptions whose messages are fixed sentences written in this code base (no
+#: value, no path, no credential): their message may be kept as a diagnostic.
+_FIXED_MESSAGE_ERRORS = ("SourceError", "SyncRefused", "SyncRequestRefused")
+
+
+def diagnostics(error: BaseException) -> dict[str, Any]:
+    """What a failed request keeps about the error: its class, its code, and its
+    message only when the message is one of this code base's fixed sentences.
+
+    Never a free-form message (an `OSError` names paths; a library error may
+    echo a URL), never a traceback, never a value."""
+    name = type(error).__name__
+    out: dict[str, Any] = {"error_class": name[:80]}
+    code = str(getattr(error, "code", "") or "")
+    if _PROBLEM_CODE.fullmatch(code):
+        out["error_code"] = code
+    if name in _FIXED_MESSAGE_ERRORS:
+        message = " ".join(str(error).split())[:200]
+        if message:
+            out["error_message"] = message
+    return out
 
 
 def capture_check_result(check: Any) -> dict[str, Any]:
@@ -1333,7 +1762,7 @@ def _run_onenote(
         check = capture_check_result(verify(path))
     except Exception as error:
         code = str(getattr(error, "code", "") or "CAPTURE_ERROR")
-        return _finish(item, SyncRequestStatus.FAILED, code, {}, now=now())
+        return _finish(item, SyncRequestStatus.FAILED, code, diagnostics(error), now=now())
     if item.kind == SyncRequestKind.ONENOTE_VERIFY:
         status = SyncRequestStatus.DONE if check["verified"] else SyncRequestStatus.FAILED
         return _finish(item, status, "" if check["verified"] else "NOT_VERIFIED", check, now=now())
@@ -1350,7 +1779,9 @@ def _run_onenote(
         )
     except Exception as error:
         code = str(getattr(error, "code", "") or "IMPORT_FAILED")
-        return _finish(item, SyncRequestStatus.FAILED, code, check, now=now())
+        return _finish(
+            item, SyncRequestStatus.FAILED, code, {**check, **diagnostics(error)}, now=now()
+        )
     result = {**check, "counts": int_counts(_as_mapping(report)) or check["counts"]}
     return _finish(item, SyncRequestStatus.DONE, "", result, now=now())
 
@@ -1385,12 +1816,75 @@ def run_next(
             )
         else:
             done = _run_onenote(item, root=capture_root_override, now=clock)
-    except Exception:
+    except Exception as error:
         item.refresh_from_db()
         if item.status == SyncRequestStatus.RUNNING:
-            _finish(item, SyncRequestStatus.FAILED, "INTERNAL", {}, now=clock())
+            _finish(item, SyncRequestStatus.FAILED, "INTERNAL", diagnostics(error), now=clock())
         raise
     return RunNext(done, done.status)
+
+
+# ---------------------------------------------------------------------------
+# The host script's questions (LS2-D)
+# ---------------------------------------------------------------------------
+
+#: `poll`'s answer when it refused a waiting request for a host-side problem.
+REFUSED_ANSWER = "REFUSED"
+
+
+def _refuse_claimed(item: DataSyncRequest, code: str, now: dt.datetime) -> DataSyncRequest:
+    _audit(
+        actor=item.requested_by,
+        action="DATA_SYNC_STARTED",
+        subject=item,
+        kind=item.kind,
+        request=str(item.pk),
+    )
+    return _finish(item, SyncRequestStatus.REFUSED, code, {}, now=now)
+
+
+def poll(lane: str, *, problem: str = "", now: dt.datetime | None = None) -> str:
+    """The host script's on-demand question for one lane, with a heartbeat.
+
+    Records that the runner asked (`DataSyncRunnerBeat`). With a host-side
+    ``problem`` (`RUNNER_PROBLEMS`: ``HOST_PAUSED``, ``NO_CREDENTIALS``,
+    ``CREDENTIALS_MODE``, ``NO_CAPTURE_SOURCE``) a waiting request is claimed and
+    REFUSED by name at once — never left to wait two hours for a runner that
+    cannot run it — and the answer is ``REFUSED <problem>``; with nothing
+    waiting it is ``NOT_DUE NO_REQUEST``. Without a problem the answer is the
+    engine's own `lovable_sync.due_on_demand` (``DUE COMPARE``, ``NOT_DUE …``)."""
+    from app.legacy_import import lovable_sync
+
+    moment = now or timezone.now()
+    code = problem if problem in RUNNER_PROBLEMS else ("UNKNOWN_PROBLEM" if problem else "")
+    expire_stale(now=moment)
+    if not code:
+        answer = lovable_sync.due_on_demand(lane)
+        record_beat(lane, answer=answer, now=moment)
+        if answer == "NOT_DUE CUT_OVER":
+            # Recorded before the final cutover: refused by name, never left waiting.
+            item = claim_next(lane, now=moment)
+            if item is not None:
+                _refuse_claimed(item, "CUT_OVER", moment)
+        return answer
+    item = claim_next(lane, now=moment)
+    answer = f"{REFUSED_ANSWER} {code}" if item is not None else "NOT_DUE NO_REQUEST"
+    record_beat(lane, answer=answer, problem=code, now=moment)
+    if item is not None:
+        _refuse_claimed(item, code, moment)
+    return answer
+
+
+def refuse_unpermitted(lane: str, *, now: dt.datetime | None = None) -> DataSyncRequest | None:
+    """`run-next` on a container without the synchronisation's switches: the
+    waiting request is refused by name (``NOT_PERMITTED``) and the heartbeat says
+    why, so nothing waits silently for a runner that may not run it."""
+    moment = now or timezone.now()
+    expire_stale(now=moment)
+    item = claim_next(lane, now=moment)
+    answer = f"{REFUSED_ANSWER} NOT_PERMITTED" if item is not None else "NOT_DUE NO_REQUEST"
+    record_beat(lane, answer=answer, problem="NOT_PERMITTED", now=moment)
+    return _refuse_claimed(item, "NOT_PERMITTED", moment) if item is not None else None
 
 
 def lanes() -> Iterable[str]:
