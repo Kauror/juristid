@@ -1340,7 +1340,11 @@ def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, Im
                 version_id=version_id,
             ),
         )
-    found.update(_onenote_later_versions(matter, user, found))
+    if found:
+        # A later version exists only beside a first capture's imported file
+        # (a VERSIONED revision continues an imported Document), so a Teema with
+        # no imported OneNote file costs no extra query (docs/adr/0092 §10).
+        found.update(_onenote_later_versions(matter, user, found))
     return found
 
 
