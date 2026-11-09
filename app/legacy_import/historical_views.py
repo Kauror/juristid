@@ -43,6 +43,7 @@ from app.core.http import content_disposition, head_response, is_head
 from app.documents.inline import may_open_inline
 from app.documents.models import Document
 from app.legacy_import import historical_reading as reading
+from app.legacy_import import source_page_versions as versions
 from app.legacy_import.historical_apply import is_empty_at_source
 from app.legacy_import.opinion_views import MATTER_NOT_FOUND, queue_rows
 from app.legacy_import.shared_dossiers import shared_dossier
@@ -86,9 +87,19 @@ def visible_links(user: Any) -> Any:
 
 @login_required
 def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
-    """One historical page, as the case file it was."""
+    """One historical page, as the case file it was — at its latest captured version.
+
+    A later capture's reading of the page (`OneNotePageRevision`) is shown by
+    default; the first record and every earlier reading stay one `?hoive=` away
+    (`app.legacy_import.source_page_versions`). A value naming no reading of
+    this page is a 404, after the same door as the page itself.
+    """
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision
+
     link = get_object_or_404(visible_links(request.user), pk=pk)
     page = link.source_page
+    readings = versions.page_readings(page)
+    shown = versions.select_reading(readings, request.GET.get(versions.QUERY_PARAM))
 
     documents = {
         record.resource.resource_key: record
@@ -97,6 +108,21 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     }
     resources = {resource.resource_key: resource for resource in page.resources.all()}
+    # A file revision continues an import row of this link, so a page with
+    # neither a later reading nor an import row costs no query for them.
+    file_revisions = (
+        list(
+            OneNoteResourceRevision.objects.filter(matter_source_page=link)
+            .select_related("resource", "document_version")
+            .order_by("created_at", "pk")
+        )
+        if len(readings) > 1 or documents
+        else []
+    )
+    files = versions.reading_files(shown, resources, file_revisions)
+    changes = None
+    if not shown.is_original:
+        changes = versions.block_changes(readings[shown.number - 2].blocks, shown.blocks)
     # The page is readable; each attachment is a `Document` with its own
     # visibility, which may be stricter. Read once, by id (ENG-047).
     readable = set(
@@ -105,11 +131,13 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
         .values_list("pk", flat=True)
     )
     blocks = _rendered_blocks(
-        page,
+        shown,
         resources,
         documents,
         readable=readable,
         servable=_servable_originals(page, request.user),
+        files=files,
+        changes=changes,
     )
     # The page's Teemad and how they relate, for this reader (docs/adr/0208).
     dossier = shared_dossier(page, request.user)
@@ -123,11 +151,16 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "matter": link.matter,
             "link": link,
             "page": page,
+            "reading": shown,
+            "readings": readings if len(readings) > 1 else [],
+            "latest_reading": readings[-1],
+            "version_summary": _version_summary(shown, changes, files, blocks),
+            "removed_blocks": changes.removed if changes is not None else (),
             "blocks": reading.reading_entries(blocks),
             "contents": reading.contents(blocks),
             "file_summary": file_summary(status),
             "unplaced_files": any(block["kind"] == "notice" for block in blocks),
-            "page_links": page_links(page.links),
+            "page_links": page_links(shown.links),
             "other_matters": (
                 visible_links(request.user)
                 .filter(source_page=page)
@@ -146,6 +179,58 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "nav_active": "teemad",
         },
     )
+
+
+def _count(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def _version_summary(
+    shown: versions.PageReading,
+    changes: versions.BlockChanges | None,
+    files: versions.ReadingFiles,
+    blocks: list[dict],
+) -> list[str]:
+    """What this reading changed against the one before, in short sentences.
+
+    Only what the records establish: blocks by object ID (`block_changes`), a
+    file catalogued or versioned within this reading's window, a later file
+    reading held for a person. The first record compares with nothing.
+    """
+    if shown.is_original:
+        return []
+    out: list[str] = []
+    if changes is None:
+        out.append(
+            "Lehe tekst muutus. Plokkide kaupa muudatusi ei saa näidata: "
+            "hõivete plokke ei saa kindlalt kokku viia."
+        )
+    elif changes.empty:
+        out.append("Lehe tekst ei muutunud.")
+    else:
+        parts = []
+        if changes.added:
+            parts.append(_count(len(changes.added), "plokk lisandus", "plokki lisandus"))
+        if changes.changed:
+            parts.append(_count(len(changes.changed), "plokk muutus", "plokki muutus"))
+        if changes.removed:
+            parts.append(_count(len(changes.removed), "plokk eemaldati", "plokki eemaldati"))
+        out.append("Võrreldes eelmise versiooniga: " + ", ".join(parts) + ".")
+    if shown.location_changed:
+        out.append("Lehe pealkiri või asukoht OneNote'is muutus.")
+    shown_files = [block for block in blocks if block["kind"] == "file"]
+    new_files = sum(1 for block in shown_files if block.get("change") == "added")
+    new_versions = sum(1 for block in shown_files if block.get("change") == "versioned")
+    if new_files:
+        out.append(_count(new_files, "uus fail.", "uut faili."))
+    if new_versions:
+        out.append(_count(new_versions, "faili uus versioon.", "faili uut versiooni."))
+    if files.held:
+        out.append(
+            _count(files.held, "faili hilisem lugemine", "faili hilisemat lugemist")
+            + " ootab ülevaatust."
+        )
+    return out
 
 
 def file_summary(status: ImportStatus) -> str:
@@ -228,12 +313,14 @@ def page_links(stored: Any) -> list[dict[str, str]]:
 
 
 def _rendered_blocks(
-    page: LegacySourcePage,
+    page: Any,
     resources: dict,
     documents: dict,
     *,
     readable: set[Any],
     servable: set[Any] | None = None,
+    files: versions.ReadingFiles | None = None,
+    changes: versions.BlockChanges | None = None,
 ) -> list[dict]:
     """Narrative and files in one sequence, ready for the template.
 
@@ -258,6 +345,14 @@ def _rendered_blocks(
     `app.legacy_import.historical_reading`. A file carries its type and the
     same anchor. A file after the narrative has no anchor: its place is not a
     stored block's.
+
+    **One captured version (live-sync round 2).** ``page`` is the reading shown
+    — the page row or a later `OneNotePageRevision` (`source_page_versions`):
+    its blocks, links and modification time. With ``files``, only the files the
+    page had by the end of that reading are listed, a later capture's version
+    opens instead of the first, and a file or version that reading brought says
+    so (``change``); with ``changes``, a text block the reading added or changed
+    says so too. Without them the page row reads exactly as before.
     """
 
     stored = [block for block in page.blocks or [] if isinstance(block, dict)]
@@ -295,25 +390,38 @@ def _rendered_blocks(
                 "depth_class": reading.depth_class(depth),
                 "type": "",
                 "quiet": False,
+                "later": None,
+                "change": "",
             }
         state = _file_state(resource, record)
+        later = files.versions.get(key) if files is not None else None
+        version = (
+            later.version if later is not None else (record.document_version if record else None)
+        )
+        if later is not None and state != "imported":
+            later = None  # a version continues an imported Document only
+            version = record.document_version if record else None
+        change = ""
+        if files is not None and key in files.added:
+            change = "added"
+        elif later is not None and later.in_window:
+            change = "versioned"
         return {
             "kind": "file",
             "ordinal": ordinal,
             "filename": resource.original_filename if resource else key,
             "size_bytes": resource.size_bytes if resource else 0,
             "document": record.document if record else None,
-            "version": record.document_version if record else None,
+            "version": version,
             # What clicking the filename should do. Decided here, from
             # the stored bytes' own extension and MIME type, so the
             # template cannot accidentally make something openable by
             # rendering it differently (app/documents/inline.py).
             "opens_inline": bool(
-                record
-                and record.document_version
+                version
                 and may_open_inline(
-                    filename=record.document_version.original_filename,
-                    mime_type=record.document_version.mime_type,
+                    filename=version.original_filename,
+                    mime_type=version.mime_type,
                 )
             ),
             # A file the importer has not reached yet is shown as
@@ -341,6 +449,15 @@ def _rendered_blocks(
             # Set by the view once it knows whether the page is a shared
             # dossier (`_quiet_common_state`).
             "quiet": False,
+            # A later capture's version this reading opens: its number and its
+            # OneNote modification day when plausible (never the import day).
+            "later": (
+                {"number": later.version.version_number, "modified_at": later.modified_at}
+                if later is not None
+                else None
+            ),
+            # «uus» / «uus versioon» when this reading brought it.
+            "change": change,
         }
 
     out: list[dict] = []
@@ -363,6 +480,11 @@ def _rendered_blocks(
             text = reading.display_text(block).strip()
             if text:
                 ordinal = block.get("ordinal", 0)
+                change = ""
+                if changes is not None and ordinal in changes.added:
+                    change = "added"
+                elif changes is not None and ordinal in changes.changed:
+                    change = "changed"
                 out.append(
                     {
                         "kind": "text",
@@ -375,12 +497,14 @@ def _rendered_blocks(
                         "anchor": anchor_of(ordinal),
                         "heading": ordinal in heads,
                         "dated": dated.get(ordinal) if ordinal in anchored else None,
+                        "change": change,
                     }
                 )
     unplaced = [
         key
         for key in resources
         if key not in placed
+        and (files is None or key in files.known)
         and getattr(documents.get(key), "error_code", "") != "CONTINUES_EARLIER_BLOCK"
     ]
     if unplaced:
@@ -490,27 +614,37 @@ def source_xml(request: HttpRequest, pk: Any) -> HttpResponseBase:
 
     link = get_object_or_404(visible_links(request.user), pk=pk)
     page = link.source_page
-    if not page.source_xml_storage_key:
+    # A later captured version's own XML (`?hoive=`, live-sync round 2): the
+    # same door, the same audit, that reading's stored key and hash.
+    token = request.GET.get(versions.QUERY_PARAM)
+    storage_key, sha256, filename = page.source_xml_storage_key, page.source_xml_sha256, ""
+    if token is not None:
+        shown = versions.select_reading(versions.page_readings(page), token)
+        if not shown.is_original:
+            storage_key = shown.revision.source_xml_storage_key
+            sha256 = shown.revision.source_xml_sha256
+            filename = f"{page.page_key}-v{shown.number}.xml"
+    if not storage_key:
         return HttpResponse(status=404)
 
     if is_head(request):
         try:
-            size = legacy_source_storage().size(page.source_xml_storage_key)
+            size = legacy_source_storage().size(storage_key)
         except FileNotFoundError:
             logger.error(
                 "historical source XML missing page=%s storage_key=%s method=HEAD",
                 page.pk,
-                page.source_xml_storage_key,
+                storage_key,
             )
             raise Http404("Lehe lähte-XML-i ei leitud hoidlast.") from None
         head = head_response(content_type="application/xml", content_length=size)
-        return _source_xml_headers(head, page)
+        return _source_xml_headers(head, page, filename)
 
     def audit(*, succeeded: bool, outcome: str = "") -> None:
         detail = {
             "source": "onenote_source_xml",
             "matter": str(link.matter_id),
-            "sha256": page.source_xml_sha256,
+            "sha256": sha256,
             "disposition": "attachment",
         }
         if outcome:
@@ -526,23 +660,27 @@ def source_xml(request: HttpRequest, pk: Any) -> HttpResponseBase:
         )
 
     try:
-        handle = legacy_source_storage().open(page.source_xml_storage_key, "rb")
+        handle = legacy_source_storage().open(storage_key, "rb")
     except FileNotFoundError:
         logger.error(
             "historical source XML missing page=%s storage_key=%s",
             page.pk,
-            page.source_xml_storage_key,
+            storage_key,
         )
         audit(succeeded=False, outcome="source_object_missing")
         raise Http404("Lehe lähte-XML-i ei leitud hoidlast.") from None
     audit(succeeded=True)
     response = FileResponse(handle, content_type="application/xml", as_attachment=True)
-    return _source_xml_headers(response, page)
+    return _source_xml_headers(response, page, filename)
 
 
-def _source_xml_headers(response: HttpResponseBase, page: Any) -> HttpResponseBase:
+def _source_xml_headers(
+    response: HttpResponseBase, page: Any, filename: str = ""
+) -> HttpResponseBase:
     """The page XML's headers, for its GET and its HEAD alike."""
-    response["Content-Disposition"] = content_disposition("attachment", f"{page.page_key}.xml")
+    response["Content-Disposition"] = content_disposition(
+        "attachment", filename or f"{page.page_key}.xml"
+    )
     response["X-Content-Type-Options"] = "nosniff"
     return response
 
