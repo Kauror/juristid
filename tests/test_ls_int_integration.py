@@ -8,6 +8,8 @@ Invented data only.
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.legacy_import import lovable_backfill, lovable_observability, lovable_reading, lovable_sync
@@ -83,3 +85,27 @@ def test_the_backfill_package_built_by_the_real_reader_validates_and_dry_runs_cl
     report = lovable_backfill.dry_run(selection.package)
     assert report.verify.ok, report.verify.discrepancies
     assert report.written["MATTER"] == len(topics)
+
+
+@pytest.mark.django_db
+def test_replay_plans_over_a_full_inventory_reading_and_writes_nothing(world):  # noqa: F811
+    from app.legacy_import.lovable_sync_models import LovableSyncDecision, LovableSyncState
+
+    before = (LovableSyncState.objects.count(), LovableSyncDecision.objects.count())
+    result = lovable_sync.replay(reading=world["document"])
+    assert result["snapshot_sha256"] == world["document"]["sha256"]
+    assert result["counts"]["checked"] >= 1
+    # The operational topic outside the register is a new topic, planned only.
+    assert result["counts"]["new_topics_seen"] == 1
+    assert result["counts"]["new_topics_created"] == 0
+    assert (LovableSyncState.objects.count(), LovableSyncDecision.objects.count()) == before
+
+
+@pytest.mark.django_db
+def test_replay_refuses_a_reading_without_detail_for_every_topic(world):  # noqa: F811
+    from app.legacy_import.lovable_source import SourceError
+
+    document = dict(world["document"])
+    document.pop("bundles", None)
+    with pytest.raises(SourceError, match=re.escape("The observation's digest does not match it.")):
+        lovable_sync.replay(reading=document)

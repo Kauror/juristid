@@ -161,6 +161,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--list-new", action="store_true", help="replay: list new topics by reference."
         )
+        parser.add_argument(
+            "--reading",
+            default="",
+            help="replay: a full-detail inventory reading (lovable_inventory read) instead "
+            "of the newest stored snapshot.",
+        )
         parser.add_argument("--source-id", default="", help="resolve-new-topic: the Lovable id.")
         parser.add_argument(
             "--manual",
@@ -296,7 +302,11 @@ class Command(BaseCommand):
         import datetime as dt
 
         as_of = dt.date.fromisoformat(options["as_of"]) if options["as_of"] else None
-        result = lovable_sync.replay(run_key=options["run_key"], today=as_of)
+        reading = None
+        if options["reading"]:
+            with open(options["reading"], encoding="utf-8") as handle:
+                reading = json.load(handle)
+        result = lovable_sync.replay(run_key=options["run_key"], today=as_of, reading=reading)
         if not options["list_new"]:
             reasons: dict[str, int] = {}
             for item in result["new_topics"]:

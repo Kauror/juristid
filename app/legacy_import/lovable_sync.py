@@ -2699,6 +2699,7 @@ def replay(
     *,
     run_key: str = "",
     today: dt.date | None = None,
+    reading: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What tonight's rules would decide over a **stored** reading, written to
     nothing: the planner runs inside a PostgreSQL ``READ ONLY`` transaction, so
@@ -2709,12 +2710,17 @@ def replay(
     their outcome and reason (references and codes; no value, title or wording).
     New topics are listed by reason; the stored readings before this engine carry
     no new-topic detail, so there they read NOT_IN_READING (a real run reads
-    them fresh)."""
+    them fresh).
+
+    With ``reading`` — a full-detail inventory reading (`lovable_observation.
+    take_observation(detail="all")`, `lovable_inventory read`) — the same rules
+    are planned over that reading instead: every cohort Teema and every new
+    operational topic, read the moment the reading was taken."""
     try:
         with transaction.atomic():
             with connection.cursor() as cursor:
                 cursor.execute("SET TRANSACTION READ ONLY")
-            raise _ReplayDone(_replay(run_key=run_key, today=today))
+            raise _ReplayDone(_replay(run_key=run_key, today=today, reading=reading))
     except _ReplayDone as done:
         # Rolled back on purpose: the read-only setting goes with the transaction.
         return done.result
@@ -2725,17 +2731,55 @@ class _ReplayDone(Exception):
         self.result = result
 
 
-def _replay(*, run_key: str, today: dt.date | None) -> dict[str, Any]:
-    snapshots = comparable_snapshots()
-    stored = snapshots.filter(run__run_key=run_key).first() if run_key else snapshots.first()
-    if stored is None:
-        raise SyncRefused("NO_SNAPSHOT", "No stored Lovable snapshot to replay.")
-    document = stored.document
-    verify_snapshot(document)
+def _reading_document(reading: dict[str, Any]) -> dict[str, Any]:
+    """A full-detail inventory reading in the shape the planner reads: every
+    topic's allowlisted bundle as the cohort and as the new topics' detail, and
+    the index with the snapshot's operational key. Verified first."""
+    from app.legacy_import.lovable_observation import DETAIL_ALL, verify_observation
+
+    verify_observation(reading)
+    if reading.get("detail_scope") != DETAIL_ALL or "bundles" not in reading:
+        raise SyncRefused("NOT_A_FULL_READING", "The reading holds no detail for every topic.")
+    bundles = reading["bundles"]
+    return {
+        "cohort": bundles,
+        "new_topics": {"cohort": bundles},
+        "index": [
+            {"id": row["id"], "nr": row.get("nr"), "operatiivne_ulatus": row.get("operational")}
+            for row in reading.get("index") or []
+        ],
+        "sha256": reading["sha256"],
+        "taken_at": reading.get("taken_at"),
+    }
+
+
+def _replay(
+    *, run_key: str, today: dt.date | None, reading: dict[str, Any] | None = None
+) -> dict[str, Any]:
     day = today or timezone.localdate()
     states = population()
     resolver = OwnerResolver(states)
-    unread = not_yet_read(states, stored)
+    if reading is not None:
+        document = _reading_document(reading)
+        unread = {s.pk for s in states if str(s.source_id) not in document["cohort"]}
+        origin = {
+            "run_key": "",
+            "snapshot_sha256": document["sha256"],
+            "taken_at": str(document["taken_at"] or ""),
+        }
+    else:
+        snapshots = comparable_snapshots()
+        stored = snapshots.filter(run__run_key=run_key).first() if run_key else snapshots.first()
+        if stored is None:
+            raise SyncRefused("NO_SNAPSHOT", "No stored Lovable snapshot to replay.")
+        document = stored.document
+        verify_snapshot(document)
+        unread = not_yet_read(states, stored)
+        origin = {
+            "run_key": stored.run.run_key,
+            "snapshot_sha256": stored.sha256,
+            "taken_at": stored.taken_at.isoformat(),
+        }
     plans = [
         plan_matter(s, document["cohort"].get(str(s.source_id)), resolver=resolver, today=day)
         for s in states
@@ -2774,9 +2818,7 @@ def _replay(*, run_key: str, today: dt.date | None) -> dict[str, Any]:
         for plan in plans
     }
     return {
-        "run_key": stored.run.run_key,
-        "snapshot_sha256": stored.sha256,
-        "taken_at": stored.taken_at.isoformat(),
+        **origin,
         "as_of": day.isoformat(),
         "engine": ENGINE_VERSION,
         "counts": {k: v for k, v in counts.as_dict().items() if k != "by_cohort"},
