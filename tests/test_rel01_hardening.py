@@ -150,7 +150,7 @@ def test_the_nightly_seeding_skips_a_teema_deleted_after_its_references_were_lis
 # ---------------------------------------------------------------------------
 
 #: The graph's leaf: re-migrating to 0024 only would leave later tables unapplied.
-LEAF = ("legacy_import", "0029_ls2_c_onenote_hold_decisions")
+LEAF = ("legacy_import", "0030_ls2_d_request_mode_runner_beat")
 BEFORE = ("legacy_import", "0023_lovable_sync_retirement")
 
 

@@ -41,7 +41,7 @@ assert CREATE_GUARD != GUARD_0027
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("legacy_import", "0028_ls_d_onenote_revisions_coverage"),
+        ("legacy_import", "0029_ls2_c_onenote_hold_decisions"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
