@@ -45,10 +45,21 @@
       <h3 class="dsync__subtitle">Juristide katvus</h3>
       {% if p.coverage.available %}
         <dl class="detailgrid">
-          {% for label, n in p.coverage.rows %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}
-          <dt>Kokku</dt><dd>{{ p.coverage.total|default_if_none:"—" }}</dd>
+          <dt>Lovable'i teemasid inventuuris</dt><dd>{{ p.coverage.total|default_if_none:"—" }}</dd>
+          <dt>Neist operatiivseid</dt><dd>{{ p.coverage.operational|default_if_none:"—" }}</dd>
+          <dt>Neist ajaloolisi</dt><dd>{{ p.coverage.historical|default_if_none:"—" }}</dd>
         </dl>
-        {% if p.coverage.taken_at %}<p class="acctnote">Inventuur {{ p.coverage.taken_at|date:"j.n.Y H:i" }}.</p>{% endif %}
+        <div class="accttable">
+          <table class="data-table dsync__coverage">
+            <thead><tr><th scope="col">Kategooria</th><th scope="col">Kokku</th><th scope="col">Operatiivsed</th><th scope="col">Ajaloolised</th></tr></thead>
+            <tbody>
+              {% for row in p.coverage.rows %}
+                <tr><th scope="row">{{ row.label }}</th><td>{{ row.total }}</td><td>{{ row.operational }}</td><td>{{ row.historical }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if p.coverage.taken_at %}<p class="acctnote">Inventuur Lovable'i seisust {{ p.coverage.taken_at|date:"j.n.Y H:i" }}.</p>{% endif %}
       {% else %}
         <p class="acctnote">{{ p.coverage.note }}</p>
       {% endif %}
@@ -110,24 +121,34 @@
       {% if o.available %}
         <dl class="detailgrid">
           <dt>Viimati imporditud kogum</dt>
-          <dd>{% if o.last_capture %}<span class="mono">{{ o.last_capture.name|default:"—" }}</span>{% else %}Pole{% endif %}</dd>
-          <dt>Kogumi kuupäev</dt>
-          <dd>{% if o.last_capture.captured_at %}{{ o.last_capture.captured_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
-          <dt>Jaotis</dt>
-          <dd>{{ o.last_capture.section|default:"—" }}</dd>
+          <dd>{% if o.last_capture.name %}<span class="mono">{{ o.last_capture.name }}</span>{% else %}Pole{% endif %}</dd>
+          <dt>Import lõppes</dt>
+          <dd>{% if o.last_capture.finished_at %}{{ o.last_capture.finished_at|date:"j.n.Y H:i" }}{% elif o.last_capture.started_at %}algas {{ o.last_capture.started_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+          <dt>Jaotisi operatiivsete lehtedega</dt>
+          <dd>{{ o.sections_with_pages|default_if_none:"—" }}</dd>
         </dl>
+        <h3 class="dsync__subtitle">Operatiivsed teemad</h3>
         <dl class="detailgrid dsync__counts">
           {% for label, n in o.counts %}<dt>{{ label }}</dt><dd>{{ n|default_if_none:"—" }}</dd>{% endfor %}
-          <dt>Katmata jaotisi</dt><dd>{{ o.sections_not_covered_count|default_if_none:"—" }}</dd>
         </dl>
         {% if o.per_state %}
-          <h3 class="dsync__subtitle">Lehed oleku järgi</h3>
+          <h3 class="dsync__subtitle">Operatiivsed lehed oleku järgi</h3>
           <dl class="detailgrid">{% for label, n in o.per_state %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}</dl>
         {% endif %}
+        {% if o.held %}
+          <h3 class="dsync__subtitle">Kataloogitud, kuid teemale lisamata</h3>
+          <dl class="detailgrid">{% for label, n in o.held %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}</dl>
+        {% endif %}
+        <h3 class="dsync__subtitle">Muud lehed ja jaotised</h3>
+        <dl class="detailgrid">
+          <dt>Muid kataloogitud lehti</dt><dd>{{ o.other_pages|default_if_none:"—" }}</dd>
+          {% for label, n in o.other_states %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}
+          <dt>Katmata jaotisi</dt><dd>{{ o.sections_not_covered_count|default_if_none:"—" }}</dd>
+        </dl>
         {% if o.sections_not_covered %}
-          <h3 class="dsync__subtitle">Veel katmata jaotised</h3>
           <ul class="linklist">{% for name in o.sections_not_covered %}<li class="linklist__item">{{ name }}</li>{% endfor %}</ul>
         {% endif %}
+        {% if o.scope_note %}<p class="acctnote">{{ o.scope_note }}</p>{% endif %}
       {% else %}
         <p class="acctnote">{{ o.note }}</p>
       {% endif %}
