@@ -1,0 +1,105 @@
+{% extends "haldus/base.html" %}
+{% block title %}Ootel kirje · OneNote · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  One held OneNote item: which page and file, what changed, why it waits, the
+  identity Juristid holds and the later capture's, whether the original bytes
+  and context are there, the candidate Teemad, earlier decisions, and one form
+  per decision the item allows. Each form carries the item's token: an item
+  that changed since this page was drawn is refused, never decided blind.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel dsync__confirm" aria-labelledby="onenote-hold">
+    <h2 class="dsync__title" id="onenote-hold">Ootel kirje</h2>
+    <dl class="detailgrid">
+      <dt>Leht</dt><dd>{% if item.page.source_section_group %}{{ item.page.source_section_group }} → {% endif %}{{ item.page.source_section }} → {{ item.page.title }}</dd>
+      <dt>Lehe tunnus</dt><dd><span class="mono">{{ item.page.page_key }}</span></dd>
+      <dt>Fail</dt><dd>{{ item.resource.original_filename }}</dd>
+      <dt>Kirje liik</dt><dd>{{ item.scope.label|default:item.scope }}</dd>
+      <dt>Miks ootel</dt><dd>{{ item.category_label }}: {{ item.reason_label }}</dd>
+      {% if item.detail %}<dt>Importija selgitus</dt><dd>{{ item.detail }}</dd>{% endif %}
+    </dl>
+
+    <h3 class="dsync__subtitle">Juristides olev lugemine</h3>
+    <dl class="detailgrid">
+      <dt>Hõive</dt><dd><span class="mono">{{ item.original.capture_id }}</span></dd>
+      <dt>Ploki tunnus</dt><dd><span class="mono">{{ item.original.resource_key }}</span></dd>
+      <dt>SHA-256</dt><dd><span class="mono">{{ item.original.sha256 }}</span></dd>
+      <dt>Suurus</dt><dd>{{ item.original.size }} baiti</dd>
+      <dt>Lisatud OneNote'i</dt><dd>{% if item.original.added_at %}{{ item.original.added_at|date:"j.n.Y H:i" }}{% else %}teadmata{% endif %}</dd>
+    </dl>
+    {% if item.later %}
+      <h3 class="dsync__subtitle">Hilisema hõive lugemine</h3>
+      <dl class="detailgrid">
+        <dt>Hõive</dt><dd><span class="mono">{{ item.later.capture_id }}</span></dd>
+        <dt>Muutus</dt><dd>{{ item.later.kind }}</dd>
+        <dt>SHA-256</dt><dd><span class="mono">{{ item.later.sha256 }}</span></dd>
+        <dt>Suurus</dt><dd>{{ item.later.size }} baiti</dd>
+        <dt>Lisatud OneNote'i</dt><dd>{% if item.later.added_at %}{{ item.later.added_at|date:"j.n.Y H:i" }}{% else %}teadmata{% endif %}</dd>
+        <dt>Ploki viimane muutmine</dt><dd>{% if item.later.modified_at %}{{ item.later.modified_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+        {% if item.newer_revision %}<dt>Hilisem lugemine</dt><dd>Sama faili kohta on veel hilisem lugemine.</dd>{% endif %}
+      </dl>
+    {% endif %}
+
+    <h3 class="dsync__subtitle">Kättesaadavus</h3>
+    <dl class="detailgrid">
+      <dt>Algsed baidid</dt><dd>{% if item.bytes_available %}<span class="statechip statechip--ok">Suletud kogumis olemas</span>{% else %}<span class="statechip statechip--problem">Ei leitud</span> <span class="mono">{{ item.bytes_note }}</span>{% endif %}</dd>
+      <dt>Lehe kontekst</dt><dd>{% if item.context_available %}Olemas{% else %}Puudub{% endif %}</dd>
+      {% if item.version_target %}<dt>Teema dokument</dt><dd>{{ item.version_target.title }}</dd>{% endif %}
+    </dl>
+
+    <h3 class="dsync__subtitle">{% if item.scope == "SHARED_FILE" %}Kandidaatteemad (leht on seotud kõigiga){% else %}Teema{% endif %}</h3>
+    <ul class="linklist">
+      {% for t in item.teemad %}
+        <li class="linklist__item"><a href="{% url 'matters:matter_detail' t.matter_id %}">{{ t.reference }}</a> — {{ t.title }}{% if not t.is_open %} (lõpetatud){% endif %}</li>
+      {% endfor %}
+    </ul>
+
+    {% if item.decisions %}
+      <h3 class="dsync__subtitle">Otsused</h3>
+      <ul class="linklist">
+        {% for d in item.decisions %}
+          <li class="linklist__item">{{ d.decided_at|date:"j.n.Y H:i" }} · {{ d.get_decision_display }} · {{ d.actor }} — {{ d.reason }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if item.final %}
+      <p class="acctnote">Kirje on otsustatud; uut otsust selle kohta teha ei saa.</p>
+    {% else %}
+      {% for f in forms %}
+        <h3 class="dsync__subtitle">{{ f.label }}</h3>
+        <p class="dsync__effect">{{ f.effect }}</p>
+        {% if f.blocked %}
+          <p class="acctnote">{{ f.blocked }}</p>
+        {% else %}
+          <form method="post" action="{% url 'haldus:onenote_holds' %}" class="form dsync__form">
+            {% csrf_token %}
+            <input type="hidden" name="kirje" value="{{ item.key }}">
+            <input type="hidden" name="token" value="{{ token }}">
+            <input type="hidden" name="decision" value="{{ f.decision }}">
+            {% if f.needs_teema %}
+              <div class="field">
+                <label class="field__label" for="hold-teema-{{ forloop.counter }}">Teema</label>
+                <select class="field__input" id="hold-teema-{{ forloop.counter }}" name="teema" required>
+                  <option value="">Vali üks teema…</option>
+                  {% for t in item.teemad %}<option value="{{ t.link_id }}">{{ t.reference }} — {{ t.title|truncatechars:80 }}</option>{% endfor %}
+                </select>
+              </div>
+            {% endif %}
+            <div class="field">
+              <label class="field__label" for="hold-reason-{{ forloop.counter }}">Põhjendus (kohustuslik)</label>
+              <input class="field__input" type="text" id="hold-reason-{{ forloop.counter }}" name="reason" minlength="10" maxlength="1000" required>
+            </div>
+            <div class="form__actions">
+              <button type="submit" class="button button--primary">{{ f.label }}</button>
+            </div>
+          </form>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    <p><a href="{% url 'haldus:onenote_holds' %}">Tagasi ootel kirjete juurde</a></p>
+  </section>
+{% endblock %}
