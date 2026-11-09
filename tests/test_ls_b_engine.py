@@ -830,7 +830,7 @@ def test_the_replay_writes_nothing(register):
 
 def test_the_on_demand_gate_answers_only_for_a_waiting_request(register, monkeypatch):
     assert lovable_sync.due_on_demand() == "NOT_DUE NO_REQUEST"
-    monkeypatch.setattr(lovable_sync, "pending_sync_request", lambda: True)
+    monkeypatch.setattr(lovable_sync, "pending_sync_request", lambda lane="lovable": True)
     assert lovable_sync.due_on_demand() == "DUE APPLY"
     lovable_sync.set_mode(SyncMode.OFF, reason="test")
     assert lovable_sync.due_on_demand() == "DUE OFF"
@@ -891,3 +891,85 @@ def test_a_historical_cohort_is_enrollable_and_its_teemad_only_ever_review(regis
     assert run.counts["by_cohort"][lovable_sync.HISTORY_COHORT]["checked"] == 2
     # A historical topic is not operational: never a new-topic candidate.
     assert run.counts["new_topics_seen"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Review F (2026-11-09): B = A on the conditional rules, CHECK after creation
+# ---------------------------------------------------------------------------
+
+
+def test_a_locally_ended_request_is_never_reopened_by_a_moved_source_deadline(register):
+    from app.matters.response_deadlines import resolve_response_deadline
+
+    matter = _matter("2026_253")
+    resolve_response_deadline(matter=matter, outcome="NOT_ANSWERING", actor=None)
+    history = MatterResponseDeadline.objects.filter(matter=matter).count()
+    register["source"].edit("2026_253", arvamuse_tahtaeg="2099-04-15")
+    run = _run(register, at=_at(0))
+    decision = _decisions(run, "2026_253")["opinion_deadline"]
+    assert decision.outcome == SyncOutcome.CONFLICT
+    matter.refresh_from_db()
+    assert matter.response_deadline is None
+    assert MatterResponseDeadline.objects.filter(matter=matter).count() == history
+
+
+def test_a_request_a_lawyer_opened_is_a_conflict_not_a_second_request(register):
+    from app.matters.response_deadlines import request_response_deadline
+
+    matter = _matter("2026_240")
+    request_response_deadline(matter=matter, deadline=dt.date(2099, 8, 1), actor=None)
+    register["source"].edit("2026_240", arvamuse_tahtaeg="2099-06-01")
+    run = _run(register, at=_at(0))
+    assert _decisions(run, "2026_240")["opinion_deadline"].outcome == SyncOutcome.CONFLICT
+    matter.refresh_from_db()
+    assert matter.response_deadline == dt.date(2099, 8, 1)
+
+
+def test_a_commencement_cancelled_in_juristid_blocks_an_added_one(register):
+    from app.intelligence.enums import FactStatus
+    from app.intelligence.models import MatterImportantDate
+
+    source = register["source"]
+    first = {
+        "id": "c1",
+        "topic_id": _id("2026_240"),
+        "liik": "Eeldatava kuupäevaga",
+        "kuupaev": "2099-07-01",
+        "tapsustus": "",
+        "position": 1,
+    }
+    source.commencements.append(first)
+    source.edit("2026_240")
+    _run(register, at=_at(0))
+    MatterImportantDate.objects.filter(matter=_matter("2026_240")).update(
+        status=FactStatus.CANCELLED
+    )
+    source.commencements.append({**first, "id": "c2", "kuupaev": "2099-09-01", "position": 2})
+    source.edit("2026_240")
+    run = _run(register, at=_at(1))
+    assert _decisions(run, "2026_240")["commencements"].outcome == SyncOutcome.CONFLICT
+    assert not MatterImportantDate.objects.filter(
+        matter=_matter("2026_240"), date_value=dt.date(2099, 9, 1)
+    ).exists()
+
+
+def test_a_check_after_a_night_that_created_teemad_reads_them(register):
+    _new_topics(register["source"])
+    night = _run(register, at=_at(0))
+    assert night.counts["new_topics_created"] == 3, night.error
+    check = lovable_sync.run_sync(trigger=SyncTrigger.CHECK, now=lambda: _at(1))
+    assert check.status == SyncRunStatus.SUCCEEDED, check.error
+    assert check.counts["missing"] == 0 and check.counts["checked"] == 8
+
+
+def test_the_onenote_lane_answers_only_for_its_own_request(register, monkeypatch):
+    seen: list[str] = []
+
+    def waiting(lane: str = "lovable") -> bool:
+        seen.append(lane)
+        return lane == "onenote"
+
+    monkeypatch.setattr(lovable_sync, "pending_sync_request", waiting)
+    assert lovable_sync.due_on_demand("onenote") == "DUE ONENOTE"
+    assert lovable_sync.due_on_demand("lovable") == "NOT_DUE NO_REQUEST"
+    assert seen == ["onenote", "lovable"]
