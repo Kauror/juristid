@@ -49,6 +49,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from app.legacy_import import lovable_pilot
+from app.legacy_import.integrity import canonical_sha256
 from app.legacy_import.lovable_inventory import (
     READING_MODULE,
     TOMBSTONE_REFERENCE,
@@ -56,6 +57,7 @@ from app.legacy_import.lovable_inventory import (
     Category,
     Ledger,
     LedgerRow,
+    decision_index,
 )
 from app.legacy_import.lovable_pilot import (
     ACTIVE_FORMAT_VERSION,
@@ -79,6 +81,9 @@ READER_REFUSED = "READER_REFUSED"
 NOT_HISTORICAL = "NOT_HISTORICAL"
 VALIDATION = "VALIDATION"
 INVALID_REFERENCE = "INVALID_REFERENCE"
+#: Decisions that keep a topic out of the backfill whatever its category.
+DECIDED_OUT = frozenset({"LINK", "EXCLUDE"})
+DECISIONS_CHANGED = "the inventory decisions changed since the package was built"
 
 Reader = Callable[..., dict[str, Any]]
 
@@ -132,6 +137,9 @@ def _left(row: LedgerRow, reason: str, detail: str = "") -> dict[str, Any]:
 
 def eligible(row: LedgerRow) -> str:
     """``""`` when the row may be backfilled, else the reason it is left out."""
+    if row.decision and row.decision.get("kind") in DECIDED_OUT:
+        # A person linked or excluded it (`LovableInventoryDecision`).
+        return f"DECIDED_{row.decision['kind']}"
     if row.category != Category.ABSENT:
         return NOT_ABSENT
     if row.operational:
@@ -199,6 +207,10 @@ def _header(document: dict[str, Any], ledger: Ledger, people: Mapping[str, str],
             "ledger_sha256": ledger.sha256(),
             "inventory_version": ledger.version,
             "criteria": "ABSENT, non-operational, valid reference, no tombstone note",
+            # Every person's decision the ledger applied: a later decision makes
+            # a different package (and `plan` refuses this one).
+            "decisions": ledger.decisions,
+            "decisions_sha256": ledger.decisions_sha256,
         },
         "people": dict(people),
     }
@@ -297,6 +309,12 @@ def plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
     package = _load(path_or_package)
     built = lovable_pilot.build_plan(package)
     built.problems.extend(p for p in package_problems(package) if p not in built.problems)
+    bound = (package.get("selection") or {}).get("decisions_sha256")
+    if bound != canonical_sha256(decision_index()):
+        built.problems.append(
+            f"{DECISIONS_CHANGED}; build the package again from the reading "
+            "(lovable_inventory backfill --step package)."
+        )
     return built
 
 

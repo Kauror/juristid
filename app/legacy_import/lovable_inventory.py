@@ -63,8 +63,10 @@ from django.db import models
 
 from app.legacy_import.integrity import canonical_sha256
 from app.legacy_import.lovable_inventory_models import (
+    InventoryDecisionKind,
     InventoryRunStatus,
     InventoryTrigger,
+    LovableInventoryDecision,
     LovableInventoryRun,
 )
 from app.legacy_import.lovable_observation import (
@@ -117,11 +119,23 @@ SOURCE_MISSING = "SOURCE_MISSING"
 NO_VALID_REFERENCE = "NO_VALID_REFERENCE"
 REFERENCE_YEAR_MISMATCH = "REFERENCE_YEAR_MISMATCH"
 
+NEAR_IDENTICAL_TEEMA_TITLE = "NEAR_IDENTICAL_TEEMA_TITLE"
+#: A person's `LovableInventoryDecision` decided the row.
+DECIDED_EXCLUDE = "DECIDED_EXCLUDE"
+DECIDED_LINK = "DECIDED_LINK"
+
 # Notes (any number per row).
 TOMBSTONE_UUID = "TOMBSTONE_UUID"
 TOMBSTONE_REFERENCE = "TOMBSTONE_REFERENCE"
 RENUMBERED_IN_SOURCE = "RENUMBERED_IN_SOURCE"
 SHARED_SOURCE_REFERENCE = "SHARED_SOURCE_REFERENCE"
+DECIDED_NOT_SAME = "DECIDED_NOT_SAME"
+#: A decision on an EXACT row is recorded but never overrides approved provenance.
+DECISION_NOT_APPLIED = "DECISION_NOT_APPLIED"
+
+#: Candidate bases a person's NOT_SAME can settle: title similarity only, never
+#: an identity or reference collision.
+TITLE_BASES = frozenset({"NEAR_IDENTICAL_TITLE", "NEAR_IDENTICAL_TEEMA_TITLE"})
 
 # Continuation mismatch codes.
 SOURCE_ONLY_CONTINUATION = "SOURCE_ONLY_CONTINUATION"
@@ -175,6 +189,9 @@ class LedgerRow:
     superseded_in_source: bool = False
     #: False only for a Juristid-side row whose source topic is gone.
     in_source: bool = True
+    #: The person's newest decision on this topic, when one exists:
+    #: ``{"id", "kind", "matter_id", "reason"}``.
+    decision: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -186,6 +203,12 @@ class Ledger:
     source_sha256: str
     rows: list[LedgerRow]
     version: str = INVENTORY_VERSION
+    #: Every decision the ledger read, as ``[id, source_id, kind]``, by id.
+    decisions: list[list[str]] = field(default_factory=list)
+
+    @property
+    def decisions_sha256(self) -> str:
+        return canonical_sha256(self.decisions)
 
     def check(self) -> None:
         """Every row has exactly one known category; one id is one row; no Teema
@@ -236,6 +259,9 @@ class Ledger:
                 1 for r in self.rows if {TOMBSTONE_UUID, TOMBSTONE_REFERENCE} & set(r.notes)
             ),
             "with_candidates": sum(1 for r in self.rows if r.candidates),
+            "decided": dict(
+                sorted(Counter(r.decision["kind"] for r in self.rows if r.decision).items())
+            ),
         }
 
     def document(self) -> dict[str, Any]:
@@ -245,6 +271,8 @@ class Ledger:
             "taken_at": self.taken_at,
             "source_sha256": self.source_sha256,
             "counts": self.counts(),
+            "decisions": self.decisions,
+            "decisions_sha256": self.decisions_sha256,
             "rows": [r.as_dict() for r in self.rows],
         }
         return {**body, "sha256": canonical_sha256(body)}
@@ -289,6 +317,12 @@ class _Juristid:
     pages: dict[str, list[str]] = field(default_factory=dict)
     #: Archive page pk → live Matter pks linking it.
     page_links: dict[str, set[str]] = field(default_factory=dict)
+    #: Live Teemad with neither a reference nor a Lovable identity (an archive
+    #: or OneNote-only Teema): year → [(pk, folded title)].
+    unreferenced: dict[int, list[tuple[str, str]]] = field(default_factory=dict)
+    #: Lovable UUID → the newest person's decision on it.
+    decisions: dict[str, dict[str, Any]] = field(default_factory=dict)
+    decision_index: list[list[str]] = field(default_factory=list)
 
 
 def _read_juristid() -> _Juristid:
@@ -304,8 +338,17 @@ def _read_juristid() -> _Juristid:
     from app.matters.models import Matter
 
     out = _Juristid()
+    unreferenced: list[Any] = []
     for m in Matter.all_objects.filter(deleted_at__isnull=True).values(
-        "pk", "reference_year", "reference_number", "is_open", "superseded_by_id", "stage__key"
+        "pk",
+        "reference_year",
+        "reference_number",
+        "is_open",
+        "superseded_by_id",
+        "stage__key",
+        "title",
+        "source_era",
+        "received_date",
     ):
         pk = str(m["pk"])
         year, number = m["reference_year"], m["reference_number"]
@@ -317,6 +360,8 @@ def _read_juristid() -> _Juristid:
         }
         if year is not None and number is not None:
             out.by_reference.setdefault((year, number), []).append(pk)
+        else:
+            unreferenced.append(m)
 
     def hold(uuid_text: Any, matter_id: Any) -> None:
         if not uuid_text:
@@ -383,7 +428,49 @@ def _read_juristid() -> _Juristid:
     for page_pk, matter_id in MatterSourcePage.objects.values_list("source_page_id", "matter_id"):
         if str(matter_id) in out.matters:
             out.page_links.setdefault(str(page_pk), set()).add(str(matter_id))
+
+    for teema in unreferenced:
+        pk = str(teema["pk"])
+        year = _teema_year(teema["source_era"], teema["received_date"])
+        title = _folded_title(teema["title"])
+        if out.identities.get(pk) or year is None or not title:
+            continue
+        out.unreferenced.setdefault(year, []).append((pk, title))
+
+    for decision in LovableInventoryDecision.objects.order_by("created_at", "id").values(
+        "id", "source_id", "decision", "matter_id", "reason"
+    ):
+        decided = str(decision["source_id"]).lower()
+        out.decision_index.append([str(decision["id"]), decided, decision["decision"]])
+        out.decisions[decided] = {  # append-only: the newest decision stands
+            "id": str(decision["id"]),
+            "kind": decision["decision"],
+            "matter_id": str(decision["matter_id"]) if decision["matter_id"] else None,
+            "reason": decision["reason"],
+        }
+    out.decision_index.sort()
     return out
+
+
+def decision_index() -> list[list[str]]:
+    """Every inventory decision as ``[id, source_id, kind]``, sorted — what a
+    ledger and a backfill package bind. Reads only."""
+    return sorted(
+        [str(pk), str(source_id).lower(), kind]
+        for pk, source_id, kind in LovableInventoryDecision.objects.values_list(
+            "id", "source_id", "decision"
+        )
+    )
+
+
+_YEAR = re.compile(r"^(19|20)\d{2}$")
+
+
+def _teema_year(source_era: Any, received: Any) -> int | None:
+    """A Teema without a reference: its source era's year, else its arrival's."""
+    if _YEAR.match(str(source_era or "").strip()):
+        return int(str(source_era).strip())
+    return received.year if received else None
 
 
 def _stage_mapping() -> dict[str, str] | None:
@@ -509,7 +596,9 @@ def build_ledger(document: dict[str, Any], *, now: dt.datetime | None = None) ->
         rows[source_id] = row
 
     _near_titles(rows, index, detail, linked_pairs)
+    _near_teema_titles(rows, index, detail, held)
     _teema_named_twice(rows)
+    _apply_decisions(rows, held)
 
     # A live Lovable-derived Teema whose topic the reading no longer holds.
     seen = set(rows)
@@ -536,6 +625,7 @@ def build_ledger(document: dict[str, Any], *, now: dt.datetime | None = None) ->
         taken_at=str(document.get("taken_at") or ""),
         source_sha256=str(document.get("sha256") or ""),
         rows=sorted(rows.values(), key=lambda r: (not r.in_source, r.reference, r.source_id)),
+        decisions=held.decision_index,
     )
     ledger.check()
     return ledger
@@ -709,6 +799,80 @@ def _near_titles(
                             Category.POSSIBLE_DUPLICATE,
                             NEAR_IDENTICAL_TITLE,
                         )
+
+
+def _near_teema_titles(
+    rows: dict[str, LedgerRow],
+    index: list[dict[str, Any]],
+    detail: dict[str, Any],
+    held: _Juristid,
+) -> None:
+    """Same-year near-identical titles against live Teemad that hold neither a
+    reference nor a Lovable identity (an archive or OneNote-only Teema), so the
+    backfill cannot create a second one beside it. Suggestions only: a candidate
+    on every row that is not EXACT, and ABSENT becomes POSSIBLE_DUPLICATE."""
+    if not held.unreferenced:
+        return
+    for entry in index:
+        row = rows[str(entry["id"]).lower()]
+        if row.category == Category.EXACT or not isinstance(entry.get("aasta"), int):
+            continue
+        title = _folded_title((detail[entry["id"]] or {}).get("title"))
+        for pk, teema_title in held.unreferenced.get(entry["aasta"], []):
+            if not near_identical(title, teema_title):
+                continue
+            row.candidates.append(_candidate("", "", pk, "NEAR_IDENTICAL_TEEMA_TITLE"))
+            if row.category == Category.ABSENT:
+                row.category, row.reason = (
+                    Category.POSSIBLE_DUPLICATE,
+                    NEAR_IDENTICAL_TEEMA_TITLE,
+                )
+
+
+def _apply_decisions(rows: dict[str, LedgerRow], held: _Juristid) -> None:
+    """A person's newest decision on each topic (`LovableInventoryDecision`).
+
+    EXCLUDE → EXCLUDED (``DECIDED_EXCLUDE``, the decision kept on the row);
+    LINK → reported as a decided link to the named Teema (LINK_ENRICHMENT,
+    ``DECIDED_LINK``), never backfilled; NOT_SAME → the title-similarity
+    candidates it settles (that Teema's, or every one when it names none) are
+    dropped, and a row they alone made POSSIBLE_DUPLICATE is ABSENT again. An
+    identity or reference collision is never settled by a decision, and an
+    EXACT row (approved provenance) is never overridden."""
+    for source_id, decision in held.decisions.items():
+        row = rows.get(source_id)
+        if row is None:
+            continue
+        row.decision = decision
+        if row.category in (Category.EXACT, Category.DELETED_OR_SUPERSEDED):
+            row.notes.append(DECISION_NOT_APPLIED)
+            continue
+        kind = decision["kind"]
+        if kind == InventoryDecisionKind.EXCLUDE:
+            row.category, row.reason = Category.EXCLUDED, DECIDED_EXCLUDE
+        elif kind == InventoryDecisionKind.LINK:
+            row.category, row.reason = Category.LINK_ENRICHMENT, DECIDED_LINK
+            row.matter_id = decision["matter_id"]
+            row.matter_reference = (
+                held.matters.get(str(decision["matter_id"]), {}).get("reference", "")
+                if decision["matter_id"]
+                else ""
+            )
+        elif kind == InventoryDecisionKind.NOT_SAME:
+            settled = [
+                c
+                for c in row.candidates
+                if c["basis"] in TITLE_BASES
+                and (decision["matter_id"] is None or c["matter_id"] == decision["matter_id"])
+            ]
+            row.candidates = [c for c in row.candidates if c not in settled]
+            row.notes.append(DECIDED_NOT_SAME)
+            if (
+                row.category == Category.POSSIBLE_DUPLICATE
+                and row.reason in TITLE_BASES
+                and not any(c["basis"] in TITLE_BASES for c in row.candidates)
+            ):
+                row.category, row.reason = Category.ABSENT, PROVEN_ABSENT
 
 
 def _teema_named_twice(rows: dict[str, LedgerRow]) -> None:
