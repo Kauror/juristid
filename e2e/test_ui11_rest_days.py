@@ -91,7 +91,11 @@ def test_a_holiday_is_named_on_hover_and_by_keyboard(page, base_url):
     summary = day.locator(":scope > summary")
 
     expect(summary).to_have_attribute("title", "jõululaupäev (riigipüha)")
-    expect(summary).to_have_accessible_name("24.12.2026, jõululaupäev (riigipüha): sündmusi ei ole")
+    # The seed puts a deadline at today + 45 days (seed_e2e_data), which is 24.12
+    # when the suite runs on 9.11: the holiday's name must not depend on the day.
+    expect(summary).to_have_accessible_name(
+        re.compile(r"^24\.12\.2026, jõululaupäev \(riigipüha\): (sündmusi ei ole|\d+ \S.*)$")
+    )
 
     summary.hover()
     expect(day.locator(".wcal__pop")).to_contain_text("jõululaupäev (riigipüha)")
