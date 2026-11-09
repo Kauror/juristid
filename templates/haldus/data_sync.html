@@ -1,0 +1,180 @@
+{% extends "haldus/base.html" %}
+{% block title %}Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Andmete sünkroonimine (LS-C), for a verified technical
+  administrator. Lovable and OneNote side by side, each with its state, its
+  counts and its actions. Every number is read from the records it counts
+  (`app.legacy_import.sync_admin`); this page writes nothing. The buttons
+  either run the report-only check or record a request that the host runner
+  executes — the web never reaches Lovable and never reads a capture.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+
+  <div class="dsync">
+    {% with p=lovable %}
+    <section class="panel dsync__panel" aria-labelledby="dsync-lovable">
+      <div class="dsync__head">
+        <h2 class="dsync__title" id="dsync-lovable">Lovable</h2>
+        {% if p.ok %}<span class="statechip statechip--ok">Korras</span>{% else %}<span class="statechip statechip--problem">Vajab tähelepanu</span>{% endif %}
+        <span class="statechip statechip--waiting">Režiim: {{ p.mode_label }}</span>
+      </div>
+      {% if p.warnings %}
+        <ul class="dsync__warnings">{% for line in p.warnings %}<li>{{ line }}</li>{% endfor %}</ul>
+      {% endif %}
+
+      <dl class="detailgrid">
+        <dt>Viimane edukas lugemine</dt>
+        <dd>{% if p.last_observation_at %}{{ p.last_observation_at|date:"j.n.Y H:i" }}{% else %}Pole veel olnud{% endif %}</dd>
+        <dt>Viimane rakendamine</dt>
+        <dd>{% if p.last_apply %}{{ p.last_apply.started_at|date:"j.n.Y H:i" }}{% else %}Pole kunagi rakendatud{% endif %}</dd>
+        <dt>Viimane ebaõnnestunud käivitus</dt>
+        <dd>{% if p.last_failure %}{{ p.last_failure.started_at|date:"j.n.Y H:i" }} · {{ p.last_failure.get_trigger_display }}<span class="dsync__reason">{{ p.last_failure_reason }}</span>{% else %}Ühtegi{% endif %}</dd>
+      </dl>
+
+      <h3 class="dsync__subtitle">Allikas</h3>
+      <dl class="detailgrid">
+        <dt>Elavaid teemasid Lovable'is</dt><dd>{{ p.source_live|default_if_none:"—" }}</dd>
+        <dt>Neist operatiivseid</dt><dd>{{ p.source_operational|default_if_none:"—" }}</dd>
+        <dt>Sünkroonitavaid Juristides</dt><dd>{{ p.cohort_size }}</dd>
+        <dt>Väljaspool sünkroonitavaid</dt><dd>{{ p.outside_cohort|default_if_none:"—" }}</dd>
+      </dl>
+
+      <h3 class="dsync__subtitle">Juristide katvus</h3>
+      {% if p.coverage.available %}
+        <dl class="detailgrid">
+          {% for label, n in p.coverage.rows %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}
+          <dt>Kokku</dt><dd>{{ p.coverage.total|default_if_none:"—" }}</dd>
+        </dl>
+        {% if p.coverage.taken_at %}<p class="acctnote">Inventuur {{ p.coverage.taken_at|date:"j.n.Y H:i" }}.</p>{% endif %}
+      {% else %}
+        <p class="acctnote">{{ p.coverage.note }}</p>
+      {% endif %}
+
+      <h3 class="dsync__subtitle">Viimane võrdlus</h3>
+      {% if p.run %}
+        <p class="acctnote">{{ p.run.get_trigger_display }} {{ p.run.started_at|date:"j.n.Y H:i" }} · {{ p.run.get_mode_display }} · {{ p.run.get_status_display }}</p>
+        <dl class="detailgrid dsync__counts">
+          <dt>Uusi teemasid loodud</dt><dd>{{ p.new_topics_created|default_if_none:"—" }}</dd>
+          <dt>Uusi teemasid ootel</dt><dd>{{ p.new_topics_held|default_if_none:"—" }}</dd>
+          <dt>Operatiivseid, Juristides puudu</dt><dd>{{ p.operational_not_in_juristid|default_if_none:"—" }}</dd>
+          <dt>Uuendatud teemasid</dt><dd>{{ p.updated_teemad|default_if_none:"—" }}</dd>
+          <dt>Rakendatud muudatusi</dt><dd>{{ p.decisions.APPLIED }}</dd>
+          <dt>Vastuolusid</dt><dd>{{ p.decisions.CONFLICT }}</dd>
+          <dt>Ülevaatust ootavaid välju</dt><dd>{{ p.decisions.REVIEW_REQUIRED }}</dd>
+          <dt>Neist impordil ootele jäetud</dt><dd>{{ p.import_held_fields|default_if_none:"—" }}</dd>
+          <dt>Ohutuid, rakendamata</dt><dd>{{ p.decisions.ELIGIBLE }}</dd>
+          <dt>Allikast puudu</dt><dd>{{ p.decisions.SOURCE_MISSING }}</dd>
+          <dt>Tunnus muutunud</dt><dd>{{ p.decisions.IDENTIFIER_CHANGED }}</dd>
+          <dt>Ootel erinevusi kokku</dt><dd>{{ p.pending_fields }}</dd>
+        </dl>
+      {% else %}
+        <p class="acctnote">Ühtegi lõpetatud võrdlust pole veel. Öine käivitus või «Sünkrooni nüüd» täidab selle osa.</p>
+      {% endif %}
+
+      <div class="dsync__actions">
+        <form method="post" action="{% url 'haldus:data_sync_check' %}" class="acctinline">
+          {% csrf_token %}
+          <button type="submit" class="button button--secondary">Kontrolli muudatusi</button>
+        </form>
+        {% if p.mode == "OFF" %}
+          <span class="button button--secondary is-disabled" aria-disabled="true">Sünkrooni nüüd</span>
+        {% else %}
+          <a class="button button--primary" href="{% url 'haldus:data_sync_now' %}">Sünkrooni nüüd</a>
+        {% endif %}
+        <a class="button button--quiet" href="{% url 'haldus:data_sync_differences' %}">Vaata erinevusi</a>
+        <a class="button button--quiet" href="{% url 'haldus:data_sync_history' %}">Vaata ajalugu</a>
+      </div>
+      <p class="acctnote">«Kontrolli muudatusi» võrdleb viimati loetud Lovable'i seisu Juristidega ega muuda midagi. «Sünkrooni nüüd» salvestab taotluse; server loeb Lovable'i uuesti ja töötleb selle samade reeglitega nagu öine käivitus. {{ mode_effect }}</p>
+
+      <h3 class="dsync__subtitle">Taotlused</h3>
+      {% if p.open_request %}
+        <p class="dsync__live" role="status">Taotlus ootab serveri käivitajat või käib. <a href="{% url 'haldus:data_sync' %}">Värskenda seisu</a></p>
+      {% endif %}
+      {% if p.recent %}
+        <ul class="dsync__requests">{% for item in p.recent %}{% include "haldus/_data_sync_request.html" %}{% endfor %}</ul>
+      {% else %}
+        <p class="acctnote">Käsitsi käivitusi pole veel taotletud.</p>
+      {% endif %}
+    </section>
+    {% endwith %}
+
+    {% with o=onenote %}
+    <section class="panel dsync__panel" id="onenote" aria-labelledby="dsync-onenote">
+      <div class="dsync__head">
+        <h2 class="dsync__title" id="dsync-onenote">OneNote</h2>
+        {% if not o.available %}<span class="statechip statechip--waiting">Ülevaade puudub</span>{% endif %}
+      </div>
+      {% if o.available %}
+        <dl class="detailgrid">
+          <dt>Viimati imporditud kogum</dt>
+          <dd>{% if o.last_capture %}<span class="mono">{{ o.last_capture.name|default:"—" }}</span>{% else %}Pole{% endif %}</dd>
+          <dt>Kogumi kuupäev</dt>
+          <dd>{% if o.last_capture.captured_at %}{{ o.last_capture.captured_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
+          <dt>Jaotis</dt>
+          <dd>{{ o.last_capture.section|default:"—" }}</dd>
+        </dl>
+        <dl class="detailgrid dsync__counts">
+          {% for label, n in o.counts %}<dt>{{ label }}</dt><dd>{{ n|default_if_none:"—" }}</dd>{% endfor %}
+          <dt>Katmata jaotisi</dt><dd>{{ o.sections_not_covered_count|default_if_none:"—" }}</dd>
+        </dl>
+        {% if o.per_state %}
+          <h3 class="dsync__subtitle">Lehed oleku järgi</h3>
+          <dl class="detailgrid">{% for label, n in o.per_state %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}</dl>
+        {% endif %}
+        {% if o.sections_not_covered %}
+          <h3 class="dsync__subtitle">Veel katmata jaotised</h3>
+          <ul class="linklist">{% for name in o.sections_not_covered %}<li class="linklist__item">{{ name }}</li>{% endfor %}</ul>
+        {% endif %}
+      {% else %}
+        <p class="acctnote">{{ o.note }}</p>
+      {% endif %}
+
+      <h3 class="dsync__subtitle">OneNote'i impordi kontroll</h3>
+      <p class="acctnote">Käsitsi kogutud ja suletud kogum asub serveri lähtekaustas. Server kontrollib selle pitseri ja koostab impordiplaani; Juristidesse midagi ei kirjutata.{% if not o.capture_root_configured %} Lähtekaust pole selles keskkonnas seadistatud: kontroll lõpeb serveris keeldumisega.{% endif %}</p>
+      <form method="post" action="{% url 'haldus:data_sync_onenote_verify' %}" class="form dsync__form">
+        {% csrf_token %}
+        <div class="field">
+          <label class="field__label" for="dsync-capture">Kogumi kausta nimi</label>
+          <input class="field__input" type="text" id="dsync-capture" name="capture" maxlength="120" autocomplete="off" spellcheck="false" required>
+        </div>
+        <div class="field">
+          <label class="field__label" for="dsync-verify-reason">Põhjus</label>
+          <input class="field__input" type="text" id="dsync-verify-reason" name="reason" maxlength="300" required>
+        </div>
+        <div class="form__actions">
+          <button type="submit" class="button button--secondary">Kontrolli kogumit</button>
+        </div>
+      </form>
+
+      <h3 class="dsync__subtitle">Impordi OneNote'i materjalid</h3>
+      {% if o.verified %}
+        <ul class="dsync__requests">
+          {% for item in o.verified %}
+            <li class="dsync__request">
+              <span class="statechip statechip--ok">Kontrollitud</span>
+              <span class="dsync__requestwhat mono">{{ item.request.capture_name }}</span>
+              <span class="dsync__requestmeta">{{ item.request.finished_at|date:"j.n.Y H:i" }}{% if item.counts.promote is not None %} · imporditavaid faile {{ item.counts.promote }}{% endif %}{% if item.counts.hold is not None %} · ootele {{ item.counts.hold }}{% endif %}</span>
+              <a class="button button--secondary button--tiny" href="{% url 'haldus:data_sync_onenote_import' %}?capture={{ item.request.capture_name|urlencode }}">Impordi…</a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="acctnote">Importida saab ainult edukalt kontrollitud kogumit. Ühtegi pole praegu.</p>
+      {% endif %}
+
+      <h3 class="dsync__subtitle">Taotlused</h3>
+      {% if o.open_request %}
+        <p class="dsync__live" role="status">Taotlus ootab serveri käivitajat või käib. <a href="{% url 'haldus:data_sync' %}#onenote">Värskenda seisu</a></p>
+      {% endif %}
+      {% if o.recent %}
+        <ul class="dsync__requests">{% for item in o.recent %}{% include "haldus/_data_sync_request.html" %}{% endfor %}</ul>
+      {% else %}
+        <p class="acctnote">OneNote'i kontrolli ega importi pole veel taotletud.</p>
+      {% endif %}
+    </section>
+    {% endwith %}
+  </div>
+{% endblock %}

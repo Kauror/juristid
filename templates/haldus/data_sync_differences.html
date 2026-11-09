@@ -1,0 +1,52 @@
+{% extends "haldus/base.html" %}
+{% block title %}Erinevused · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  «Vaata erinevusi»: every pending difference between Lovable and Juristid,
+  with the previously accepted value (A), Juristid's (B), Lovable's (C) and
+  why it waits. Named only for a Teema the reader may open
+  (`Matter.objects.visible_to`); the others are counted, never named.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel" aria-labelledby="dsync-diff">
+    <h2 class="dsync__title" id="dsync-diff">Ootel erinevused</h2>
+    <p class="acctnote">Erinevus jääb siia, kuni see laheneb, allikas muutub tagasi või haldur otsustab. «Otsusta» jätab Juristide väärtuse alles ja märgib Lovable'i muudatuse läbivaadatuks.</p>
+    {% if diff.rows %}
+      <div class="accttable">
+        <table class="data-table dsync__table">
+          <thead>
+            <tr><th scope="col">Teema</th><th scope="col">Väli</th><th scope="col">Viimati aktsepteeritud</th><th scope="col">Juristides</th><th scope="col">Lovable'is</th><th scope="col">Miks ootab</th><th scope="col">Alates</th><th scope="col"><span class="visually-hidden">Toiming</span></th></tr>
+          </thead>
+          <tbody>
+            {% for row in diff.rows %}
+              <tr>
+                <td class="dsync__nowrap"><a href="{% url 'matters:matter_detail' row.matter.pk %}">{{ row.reference }}</a></td>
+                <td>{{ row.field_label }}</td>
+                <td>{{ row.accepted }}</td>
+                <td>{{ row.juristid }}</td>
+                <td>{{ row.source }}</td>
+                <td>{{ row.explanation|default:"—" }}</td>
+                <td class="dsync__nowrap">{% if row.since %}{{ row.since|date:"j.n.Y" }}{% else %}—{% endif %}</td>
+                <td>{% if row.resolvable %}<a class="button button--secondary button--tiny" href="{% url 'haldus:data_sync_resolve' %}?viide={{ row.reference|urlencode }}&amp;vali={{ row.field|urlencode }}">Otsusta…</a>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if diff.pages > 1 %}
+        <nav class="pagination" aria-label="Lehed">
+          {% if diff.page > 1 %}<a class="pagination__step" rel="prev" href="?leht={{ diff.page|add:'-1' }}"><span aria-hidden="true">‹</span><span class="visually-hidden">Eelmine leht</span></a>{% endif %}
+          <span class="pagination__status">Leht {{ diff.page }} / {{ diff.pages }} ({{ diff.total }} kokku)</span>
+          {% if diff.page < diff.pages %}<a class="pagination__step" rel="next" href="?leht={{ diff.page|add:'1' }}"><span aria-hidden="true">›</span><span class="visually-hidden">Järgmine leht</span></a>{% endif %}
+        </nav>
+      {% endif %}
+    {% elif not diff.hidden %}
+      <p>Ootel erinevusi pole.</p>
+    {% endif %}
+    {% if diff.hidden %}
+      <p class="acctnote">{{ diff.hidden }} erinevus{{ diff.hidden|pluralize:"t" }} teemadel, mida sinu valitud isik ei näe; nende sisu siin ei näidata. Vali kasutaja, kellel on teemadele ligipääs, et neid näha ja otsustada.</p>
+    {% endif %}
+  </section>
+{% endblock %}

@@ -10,6 +10,7 @@
 {% endcomment %}
 
 {% block haldus_content %}
+  {% if sync_pages %}{% include "haldus/_data_sync_nav.html" %}{% endif %}
   <section class="panel" aria-labelledby="sunk-seis">
     <h2 class="acctsection__title" id="sunk-seis">Seis</h2>
     <dl class="detailgrid">
@@ -165,6 +166,7 @@
       <li>lovable_sync control --mode off --reason "…"  (peata)</li>
       <li>lovable_sync control --mode compare|apply --reason "…"  (jätka)</li>
       <li>juristid-lovable-sync.sh --manual  (käivita kohe, samade kontrollidega)</li>
+      <li>data_sync_requests run-next --kind lovable|onenote  (täida Andmete sünkroonimise lehel salvestatud taotlus)</li>
       <li>lovable_sync control --cut-over --operator-intent lovable-sync-cutover --reason "…"  (lõplik üleminek, tagasivõtmatu)</li>
     </ul>
   </section>

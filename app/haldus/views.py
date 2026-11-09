@@ -230,16 +230,20 @@ def susteem(request: HttpRequest) -> HttpResponse:
 def lovable(request: HttpRequest) -> HttpResponse:
     """Lovable sünkroonimine (docs/adr/0192): the night's result and what waits.
 
+    Since LS-C (2026-11) a sub-page of Andmete sünkroonimine («Lovable'i
+    üksikasjad»), at the same address and under the same predicate.
+
     For a verified technical administrator, like Süsteemi seis: the run ledger
     and its counts. **What changed is business content**, so a pending change is
     shown with its wording only for a Teema this reader may already open
     (`Matter.objects.visible_to`); the rest are counted, never named.
     """
+    from app.haldus.data_sync_views import sync_pages
     from app.legacy_import.lovable_sync import STALE_AFTER, summary_lines, sync_health
     from app.legacy_import.lovable_sync_models import SyncOutcome
     from app.matters.models import Matter
 
-    _require(request, "lovable")
+    _require(request, "andmed")
     from app.legacy_import.lovable_sync_models import LovableSyncRun
 
     health = sync_health()
@@ -274,7 +278,8 @@ def lovable(request: HttpRequest) -> HttpResponse:
         "haldus/lovable.html",
         _context(
             request,
-            "lovable",
+            "andmed",
+            sync_pages=sync_pages("lovable"),
             observation=observation,
             health=health,
             # The verdict's own run, never a `Kontrolli muudatusi` that came after
@@ -336,7 +341,7 @@ def lovable_check(request: HttpRequest) -> HttpResponse:
     from app.legacy_import.lovable_sync import SyncRefused, run_sync
     from app.legacy_import.lovable_sync_models import SyncTrigger
 
-    _require(request, "lovable")
+    _require(request, "andmed")
     try:
         run_sync(trigger=SyncTrigger.CHECK)
     except SyncRefused:

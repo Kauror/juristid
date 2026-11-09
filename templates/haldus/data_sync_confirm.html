@@ -1,0 +1,45 @@
+{% extends "haldus/base.html" %}
+{% block title %}Sünkrooni nüüd · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  «Sünkrooni nüüd»: the confirmation states the current mode and what a run
+  in it does, before anybody presses. The POST names the mode it confirmed
+  (`mode_seen`); if the mode changed meanwhile the request is refused. The
+  request is executed by the host runner, never by this page.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel dsync__confirm" aria-labelledby="dsync-confirm">
+    <h2 class="dsync__title" id="dsync-confirm">Sünkrooni Lovable nüüd</h2>
+    <dl class="detailgrid">
+      <dt>Praegune režiim</dt><dd><span class="statechip statechip--waiting">{{ mode_label }}</span></dd>
+    </dl>
+    <p class="dsync__effect">{{ mode_effect }}</p>
+    <ul class="dsync__warnings">
+      <li>Lovable'isse ei kirjutata midagi: ühendus ainult loeb.</li>
+      <li>Kohalikku muudatust ei kirjutata üle: kui nii Juristides kui ka Lovable'is on väli muutunud, jääb see vastuoluna ülevaatusele.</li>
+      <li>Taotluse käivitab server; tulemus ilmub Andmete sünkroonimise lehele. Korraga saab olla üks taotlus.</li>
+    </ul>
+    {% if busy %}
+      <p class="dsync__live" role="status">Üks taotlus juba ootab või käib ({{ busy.get_status_display }}, {{ busy.requested_at|date:"j.n.Y H:i" }}). Uue saab esitada, kui see on lõppenud.</p>
+    {% endif %}
+    {% if mode == "OFF" %}
+      <p class="acctnote">Sünkroonimine on peatatud; käivitust ei saa taotleda.</p>
+      <p class="dsync__back"><a href="{% url 'haldus:data_sync' %}">Tagasi</a></p>
+    {% else %}
+      <form method="post" action="{% url 'haldus:data_sync_now' %}" class="form dsync__form">
+        {% csrf_token %}
+        <input type="hidden" name="mode_seen" value="{{ mode }}">
+        <div class="field">
+          <label class="field__label" for="dsync-reason">Põhjus</label>
+          <input class="field__input" type="text" id="dsync-reason" name="reason" maxlength="300" value="{{ reason }}" required>
+        </div>
+        <div class="form__actions">
+          <button type="submit" class="button button--primary">Kinnitan: sünkrooni režiimis «{{ mode_label }}»</button>
+          <a class="button button--quiet" href="{% url 'haldus:data_sync' %}">Loobu</a>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+{% endblock %}
