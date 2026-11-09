@@ -352,3 +352,36 @@ def test_the_coverage_command_prints_counts_and_mark_needs_a_reason(world):
     )
     assert cov.page_states([G_A])[G_A]["state"] == PageState.FAILED
     assert MatterSourcePage.objects.count() == 3
+
+
+def test_the_read_only_baseline_script_agrees_with_the_summary(world, capsys):
+    """The script the lead runs on production before 0025 (counts from records only)."""
+    import runpy
+    from pathlib import Path
+
+    from django.conf import settings
+
+    runpy.run_path(str(Path(settings.BASE_DIR) / "tools/onenote_capture/coverage_baseline.py"))
+    printed = json.loads(capsys.readouterr().out.strip().splitlines()[-1])
+    op = cov.coverage_summary()["operational"]
+    for key in (
+        "teemad",
+        "open_teemad",
+        "teemad_with_exact_page",
+        "teemad_without_page_link",
+        "teemad_with_ambiguous_link",
+        "teemad_with_captured_page",
+        "teemad_without_capture",
+        "open_teemad_without_capture",
+        "pages",
+        "shared_pages",
+        "pages_captured",
+        "pages_not_captured",
+        "captured_by",
+        "attachments_imported",
+        "attachments_held",
+        "attachments_failed",
+    ):
+        assert printed[key] == op[key], key
+    assert printed["states"] == {k: v for k, v in op["states"].items() if v}
+    assert printed["archive_complete"] is False
