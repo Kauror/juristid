@@ -590,3 +590,143 @@ def test_an_outsider_gets_no_note_from_a_restricted_teemas_versions(restricted_m
     outsider = factories.AdministratorFactory()
     assert matter_notes(matter=restricted_matter, user=outsider, files={}) == ()
     assert matter_notes(matter=restricted_matter, user=restricted_matter.owner, files={})
+
+
+# -- a held later reading a person accepted (agent C's `OneNoteHoldDecision`) ---------------
+
+#: When the administrator accepted the held reading: far from every OneNote time.
+T_DECIDED = datetime(2027, 2, 3, 12, 0, tzinfo=UTC)
+
+
+def _held_then_accepted(link, *, file_modified=T_FILE_MODIFIED, accept=True):
+    """The second capture held the changed bytes; later a person accepted them."""
+    from app.legacy_import.onenote_coverage_models import (
+        HoldDecisionKind,
+        HoldScope,
+        OneNoteHoldDecision,
+    )
+
+    batch = _batch("cap-2")
+    revision = OneNotePageRevision.objects.create(
+        page=link.source_page,
+        import_batch=batch,
+        capture_id="cap-2",
+        manifest_sha256=batch.source_snapshot_sha256,
+        source_xml_storage_key="",
+        source_xml_sha256="2" * 64,
+        text_signature="sig-2",
+        text_changed=True,
+        title="Näidisseaduse eelnõu",
+        source_section="Näidissektsioon",
+        source_modified_at=T_LATER_MODIFIED,
+        derived_text="",
+        blocks=LATER_BLOCKS,
+    )
+    record = LegacySourceResourceImport.objects.get(matter_source_page=link)
+    held = OneNoteResourceRevision.objects.create(
+        matter_source_page=link,
+        resource=record.resource,
+        import_batch=batch,
+        capture_id="cap-2",
+        manifest_sha256=batch.source_snapshot_sha256,
+        kind=RevisionKind.CHANGED_BYTES,
+        state=RevisionState.HELD,
+        reason="BYTES_CHANGED_UNDER_SAME_BLOCK",
+        sha256=hashlib.sha256(V2).hexdigest(),
+        size_bytes=len(V2),
+        source_added_at=T_FILE,
+        block_modified_at=file_modified,
+    )
+    if not accept:
+        return revision, held, None
+    v2 = add_evidence_version(
+        document=record.document,
+        content=V2,
+        original_filename=FILENAME,
+        mime_type="application/pdf",
+    )
+    OneNoteHoldDecision.objects.create(
+        item_key=f"rev:{held.pk}",
+        scope=HoldScope.HELD_REVISION,
+        decision=HoldDecisionKind.ACCEPT_REVISION,
+        final=True,
+        resource=record.resource,
+        revision=held,
+        matter_source_page=link,
+        reason="Uus lugemine on sama faili parandatud versioon.",
+        actor=factories.AdministratorFactory(),
+        decided_at=T_DECIDED,
+        item_token="t" * 64,
+        document=record.document,
+        document_version=v2,
+    )
+    return revision, held, v2
+
+
+def test_an_accepted_held_reading_opens_as_the_later_version(normal_matter, signed_in):
+    link = _page(normal_matter)
+    _revision, _held, v2 = _held_then_accepted(link)
+    latest = _flow(_get(signed_in, link))
+    assert reverse("documents:open", kwargs={"pk": v2.pk}) in latest
+    assert "versioon 2, OneNote'is muudetud" in latest and "06.11.2026" in latest
+    assert "Uus versioon selles hõives" in latest and "1 faili uus versioon." in latest
+    assert "ootab ülevaatust" not in latest
+    assert "03.02.2027" not in latest, "the decision's time dated the version"
+    first = _flow(_get(signed_in, link, versions.ORIGINAL))
+    assert reverse("documents:open", kwargs={"pk": v2.pk}) not in first
+
+
+def test_a_held_reading_not_yet_accepted_is_no_version(normal_matter, signed_in, specialist):
+    link = _page(normal_matter)
+    _held_then_accepted(link, accept=False)
+    latest = _flow(_get(signed_in, link))
+    assert "1 faili hilisem lugemine ootab ülevaatust." in latest
+    assert "versioon 2," not in latest and "Uus versioon" not in latest
+    imports = [
+        r for r in _timeline(normal_matter, specialist) if r.item_type == HISTORICAL_IMPORT_ITEM
+    ]
+    assert not [f for r in imports for f in r.historical_files if "muudetud" in f.added_display]
+
+
+def test_an_accepted_version_reads_on_its_onenote_day_in_the_chronology(normal_matter, specialist):
+    link = _page(normal_matter)
+    _revision, _held, v2 = _held_then_accepted(link)
+    rows = _timeline(normal_matter, specialist)
+    imports = [r for r in rows if r.item_type == HISTORICAL_IMPORT_ITEM]
+    later = [f for r in imports for f in r.historical_files if f.version_id == v2.pk]
+    assert len(later) == 1 and later[0].added_display == "OneNote'is muudetud 06.11.2026"
+    row = next(r for r in imports if any(f.version_id == v2.pk for f in r.historical_files))
+    assert timezone.localdate(row.occurred_at) == datetime(2026, 11, 6).date()
+    notes = [r for r in rows if r.item_type == HISTORICAL_NOTE_ITEM]
+    assert all(v2.pk not in [f.version_id for f in n.historical_note.direct_files] for n in notes)
+
+
+def test_an_accepted_version_with_an_implausible_time_is_undated_not_decision_dated(
+    normal_matter, specialist
+):
+    link = _page(normal_matter)
+    # After the capture's import: not a time the reading can have.
+    _revision, held, v2 = _held_then_accepted(
+        link, file_modified=datetime(2026, 12, 24, tzinfo=UTC)
+    )
+    imports = [
+        r for r in _timeline(normal_matter, specialist) if r.item_type == HISTORICAL_IMPORT_ITEM
+    ]
+    later = [f for r in imports for f in r.historical_files if f.version_id == v2.pk]
+    assert len(later) == 1 and "muudetud" not in later[0].added_display
+    row = next(r for r in imports if any(f.version_id == v2.pk for f in r.historical_files))
+    assert row.occurred_at == held.created_at  # sorted where the reading was imported
+    assert timezone.localdate(row.occurred_at) != T_DECIDED.date()
+
+
+def test_an_accepted_version_of_a_restricted_file_is_not_shown_to_an_outsider(
+    restricted_matter, specialist
+):
+    link = _page(restricted_matter)
+    _revision, _held, v2 = _held_then_accepted(link)
+    from app.matters.timeline import imported_document_versions
+
+    assert v2.pk in imported_document_versions(restricted_matter, restricted_matter.owner)
+    assert v2.pk not in imported_document_versions(
+        restricted_matter, factories.AdministratorFactory()
+    )

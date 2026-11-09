@@ -261,6 +261,42 @@ class ReadingFiles:
     held: int = 0
 
 
+def accepted_decisions() -> Any:
+    """The prefetch that gives each file revision its accepting hold decision.
+
+    A held later reading an administrator accepted (`OneNoteHoldDecision`,
+    `ACCEPT_REVISION`) names the `DocumentVersion` the decision made; the
+    revision row itself stays `HELD`, as captured.
+    """
+    from django.db.models import Prefetch
+
+    from app.legacy_import.onenote_coverage_models import HoldDecisionKind, OneNoteHoldDecision
+
+    return Prefetch(
+        "hold_decisions",
+        queryset=OneNoteHoldDecision.objects.filter(
+            decision=HoldDecisionKind.ACCEPT_REVISION, document_version__isnull=False
+        ).select_related("document_version"),
+        to_attr="accepted",
+    )
+
+
+def later_version(revision: Any) -> Any:
+    """The `DocumentVersion` a later file reading stands for, or ``None``.
+
+    A `VERSIONED` reading's own version; a `HELD` reading's version only once a
+    person accepted it (`accepted_decisions`). Anything else made no version.
+    """
+    from app.legacy_import.onenote_coverage_models import RevisionState
+
+    if revision.state == RevisionState.VERSIONED and revision.document_version_id:
+        return revision.document_version
+    if revision.state == RevisionState.HELD:
+        for decision in getattr(revision, "accepted", None) or ():
+            return decision.document_version
+    return None
+
+
 def plausible_modification(revision: Any) -> datetime | None:
     """A file version's OneNote modification time, if it can be the change's day.
 
@@ -305,9 +341,11 @@ def reading_files(
             continue
         in_window = item.since is None or created >= item.since
         key = revision.resource.resource_key
-        if revision.state == RevisionState.VERSIONED and revision.document_version_id:
+        version = later_version(revision)
+        if version is not None:
+            # Placed by when its reading was imported, never by a decision's time.
             out.versions[key] = FileVersion(
-                version=revision.document_version,
+                version=version,
                 modified_at=plausible_modification(revision),
                 in_window=in_window and not item.is_original,
             )
