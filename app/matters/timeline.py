@@ -1340,6 +1340,97 @@ def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, Im
                 version_id=version_id,
             ),
         )
+    found.update(_onenote_later_versions(matter, user, found))
+    return found
+
+
+def _onenote_later_versions(
+    matter: Matter, user: Any, earlier: dict[Any, ImportedVersion]
+) -> dict[Any, ImportedVersion]:
+    """File versions a later OneNote capture brought (docs/adr/0205, 2026-11-09
+    amendment): the next `DocumentVersion` of a Document an earlier capture
+    imported, recorded as a `VERSIONED` `OneNoteResourceRevision`.
+
+    Dated by the block's modification time in OneNote — when the file's content
+    was changed there — and said so («OneNote'is muudetud»), never as the day
+    the file was added; without that time it is undated. Never the import day,
+    so a new version never reads as an actorless «lisas dokumendi».
+    """
+    from django.urls import reverse
+
+    from app.documents.inline import file_link_for
+    from app.documents.models import Document
+    from app.legacy_import.historical_notes import UNDATED_FILE_DISPLAY, HistoricalFile, day_display
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision, RevisionState
+
+    rows = OneNoteResourceRevision.objects.filter(
+        matter_source_page__matter=matter,
+        state=RevisionState.VERSIONED,
+        document_version__isnull=False,
+    )
+    if user is not None:
+        rows = rows.filter(document__in=Document.objects.visible_to(user))
+    found: dict[Any, ImportedVersion] = {}
+    for (
+        version_id,
+        modified_at,
+        stored_at,
+        section,
+        title,
+        link_id,
+        resource_key,
+        block_ordinal,
+        document_id,
+        document_title,
+        filename,
+        mime_type,
+    ) in rows.values_list(
+        "document_version_id",
+        "block_modified_at",
+        "document_version__created_at",
+        "matter_source_page__source_page__source_section",
+        "matter_source_page__source_page__title",
+        "matter_source_page_id",
+        "resource__resource_key",
+        "resource__source_block_ordinal",
+        "document_id",
+        "document__title",
+        "document_version__original_filename",
+        "document_version__mime_type",
+    ):
+        if version_id in earlier:
+            continue
+        source = " → ".join(
+            part for part in ((section or "").strip(), (title or "").strip()) if part
+        )
+        group = f"day:{_local_day(modified_at).isoformat()}" if modified_at else "undated"
+        shown = (
+            f"OneNote'is muudetud {day_display(_local_day(modified_at))}"
+            if modified_at
+            else UNDATED_FILE_DISPLAY
+        )
+        found[version_id] = ImportedVersion(
+            group=group,
+            source=source,
+            added_at=modified_at,
+            anchor=modified_at or stored_at,
+            predates_page=False,
+            link_id=link_id,
+            resource_key=resource_key or "",
+            order=(source, str(link_id), block_ordinal or 0, filename or "", str(version_id)),
+            file=HistoricalFile(
+                title=document_title or "",
+                original_filename=filename or "",
+                document_url=reverse("documents:document_detail", kwargs={"pk": document_id}),
+                open_url=file_link_for(
+                    version_id=version_id, filename=filename or "", mime_type=mime_type or ""
+                ).href,
+                added_display=shown,
+                comment="",
+                predates_page=False,
+                version_id=version_id,
+            ),
+        )
     return found
 
 

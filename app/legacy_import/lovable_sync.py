@@ -81,6 +81,7 @@ from django.utils import timezone
 
 from app.legacy_import.lovable_pilot import (
     HELD_FIELD_COLUMNS,
+    HISTORY_COHORT,
     OPERATIONAL_COHORT,
     PILOT,
     REGISTER_COHORT,
@@ -135,7 +136,6 @@ PILOT_COHORT = PILOT
 #: creates from Lovable's non-operational topics. Every change to one of them is
 #: a person's call (MATTER_CLOSED); a topic gone from the source is never closed
 #: or deleted here.
-HISTORY_COHORT = "lovable-history"
 ENROLLABLE_COHORTS = (OPERATIONAL_COHORT, REGISTER_COHORT, HISTORY_COHORT)
 #: The cohort a new operational topic joins when an APPLY night creates its
 #: Teema (docs/adr/0213): the register, Lovable's operational scope.

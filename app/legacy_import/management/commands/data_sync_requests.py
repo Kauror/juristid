@@ -37,7 +37,7 @@ from typing import Any
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from app.legacy_import import sync_admin
+from app.legacy_import import lovable_sync, sync_admin
 from app.legacy_import.sync_requests_models import DataSyncRequest, SyncRequestLane
 
 
@@ -81,7 +81,10 @@ class Command(BaseCommand):
         outcome = sync_admin.run_next(
             lane,
             transport_factory=transport,
-            backup_set=options["backup_set"],
+            # The host script hands the set it took and verified for this run in
+            # the environment (`lovable_sync.host_backup_set`); an explicit
+            # --backup-set wins. `run_sync` accepts only a fresh set's name.
+            backup_set=options["backup_set"] or lovable_sync.host_backup_set(),
             capture_root_override=options["capture_root"] or None,
         )
         item = outcome.request

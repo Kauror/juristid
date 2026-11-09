@@ -70,7 +70,7 @@ DROP_GUARD_TRIGGER = f"DROP TRIGGER IF EXISTS {TABLE}_guard ON {TABLE};"
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("legacy_import", "0024_lovable_sync_membership"),
+        ("legacy_import", "0026_ls_a_inventory"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

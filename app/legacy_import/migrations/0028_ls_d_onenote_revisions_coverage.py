@@ -26,7 +26,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
     dependencies = [
         ("documents", "0015_extraction_attempt_budget"),
-        ("legacy_import", "0024_lovable_sync_membership"),
+        ("legacy_import", "0027_ls_c_data_sync_requests"),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 

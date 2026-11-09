@@ -30,7 +30,7 @@ DROP_APPEND_ONLY_TRIGGER = f"DROP TRIGGER IF EXISTS {DECISIONS}_append_only ON {
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('legacy_import', '0024_lovable_sync_membership'),
+        ('legacy_import', '0025_ls_b_new_topics'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
