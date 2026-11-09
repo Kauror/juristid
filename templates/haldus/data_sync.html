@@ -101,6 +101,7 @@
       <p class="acctnote">«Kontrolli muudatusi» võrdleb viimati loetud Lovable'i seisu Juristidega ega muuda midagi. «Sünkrooni nüüd» salvestab taotluse; server loeb Lovable'i uuesti ja töötleb selle samade reeglitega nagu öine käivitus. {{ mode_effect }}</p>
 
       <h3 class="dsync__subtitle">Taotlused</h3>
+      {% with runner=p.runner %}{% include "haldus/_data_sync_runner.html" %}{% endwith %}
       {% if p.open_request %}
         <p class="dsync__live" role="status">Taotlus ootab serveri käivitajat või käib. <a href="{% url 'haldus:data_sync' %}">Värskenda seisu</a></p>
       {% endif %}
@@ -139,6 +140,7 @@
           <h3 class="dsync__subtitle">Kataloogitud, kuid teemale lisamata</h3>
           <dl class="detailgrid">{% for label, n in o.held %}<dt>{{ label }}</dt><dd>{{ n }}</dd>{% endfor %}</dl>
         {% endif %}
+        <p class="acctnote"><a href="{% url 'haldus:onenote_holds' %}">OneNote'i ootel kirjed: vaata ja otsusta ükshaaval</a></p>
         <h3 class="dsync__subtitle">Muud lehed ja jaotised</h3>
         <dl class="detailgrid">
           <dt>Muid kataloogitud lehti</dt><dd>{{ o.other_pages|default_if_none:"—" }}</dd>
@@ -154,7 +156,7 @@
       {% endif %}
 
       <h3 class="dsync__subtitle">OneNote'i impordi kontroll</h3>
-      <p class="acctnote">Käsitsi kogutud ja suletud kogum asub serveri lähtekaustas. Server kontrollib selle pitseri ja koostab impordiplaani; Juristidesse midagi ei kirjutata.{% if not o.capture_root_configured %} Lähtekaust pole selles keskkonnas seadistatud: kontroll lõpeb serveris keeldumisega.{% endif %}</p>
+      <p class="acctnote">Käsitsi kogutud ja suletud kogum asub serveri lähtekaustas. Server kontrollib selle pitseri ja koostab impordiplaani; Juristidesse midagi ei kirjutata. Kontrolli ja impordi käivitab ainult serveri käivitaja (selle seis on allpool, «Taotlused»).</p>
       <form method="post" action="{% url 'haldus:data_sync_onenote_verify' %}" class="form dsync__form">
         {% csrf_token %}
         <div class="field">
@@ -187,6 +189,7 @@
       {% endif %}
 
       <h3 class="dsync__subtitle">Taotlused</h3>
+      {% with runner=o.runner %}{% include "haldus/_data_sync_runner.html" %}{% endwith %}
       {% if o.open_request %}
         <p class="dsync__live" role="status">Taotlus ootab serveri käivitajat või käib. <a href="{% url 'haldus:data_sync' %}#onenote">Värskenda seisu</a></p>
       {% endif %}

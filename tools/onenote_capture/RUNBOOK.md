@@ -195,3 +195,18 @@ exception for a person (`--out`). Its writes are the ordinary gated import.
   files held.
 * **An edited attachment** keeps its block and creation time, changes its
   modification time and bytes: the next version.
+* **A notebook name with non-ASCII letters** (õ, ä): call the script from a
+  PowerShell prompt (`-Notebook "…"` as typed there). Passed through another
+  shell's command line it may arrive re-encoded and match no notebook.
+* **Archiving by copy-and-delete breaks the register link.** The desktop
+  rehearsal of 2026-11-09 found register pages whose GUID sits in *Deleted Pages*
+  while a page with the same creation time and title lives in ARHIIV under a new
+  GUID (a copy, ADR 0204 D2). `missing.tsv` lists such GUIDs; the register link
+  is fixed in Lovable by a person, never by matching titles.
+* **The rehearsal (2026-11-09, one ARHIIV page, two files):** request mode over
+  the department notebook took ~10 s; no navigation was needed; the run
+  verified, sealed and compared equal to the 04.11 capture (same page GUID, page
+  object ID, 10 blocks in order, two files with identical SHA-256, names and block
+  times; only the page XML's root `lastModifiedTime` differed — the 04.11 run's
+  own navigation touch). Planned against Juristid it was `NO_CHANGES` and its
+  apply wrote nothing.

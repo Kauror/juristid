@@ -271,3 +271,167 @@ class OneNoteCoverageMark(AppendOnlyModel):
 
     def __str__(self) -> str:
         return f"{self.page_guid or self.section} · {self.state}"
+
+
+# -- held readings: a person's decision (live-sync round 2, agent C) ---------------------
+
+
+class HoldScope(models.TextChoices):
+    """What one held item is: the unit a person decides once."""
+
+    #: One file on a page several Teemad link to: all its held rows are ONE item,
+    #: so it can be associated with one Teema and never with every one.
+    SHARED_FILE = "SHARED_FILE", "Jagatud lehe fail"
+    #: One held (Teema link, file) row of a single-Teema page.
+    HELD_IMPORT = "HELD_IMPORT", "Teemale lisamata fail"
+    #: One later reading of a file a Teema link already holds, held for a person.
+    HELD_REVISION = "HELD_REVISION", "Hilisem lugemine"
+
+
+class HoldDecisionKind(models.TextChoices):
+    ACCEPT_REVISION = "ACCEPT_REVISION", "Uus lugemine võetud vastu (dokumendi uus versioon)"
+    KEEP_HOLDING = "KEEP_HOLDING", "Jääb ootele, kuni tõendeid lisandub"
+    REJECT = "REJECT", "Seos või lugemine lükatud tagasi"
+    ASSOCIATE = "ASSOCIATE", "Seotud ühe teemaga"
+
+
+#: Decisions after which the item is settled. «Jääb ootele» may be repeated.
+FINAL_HOLD_DECISIONS = frozenset(
+    {HoldDecisionKind.ACCEPT_REVISION, HoldDecisionKind.REJECT, HoldDecisionKind.ASSOCIATE}
+)
+
+
+class OneNoteHoldDecision(BaseModel):
+    """An administrator's audited decision on one held OneNote reading.
+
+    Written once (UPDATE refused in Python and by the database). The captured
+    rows it is about — the page, the resource, the revision — are never altered;
+    the decision changes only Juristid's interpretation: with ``ASSOCIATE`` or
+    ``ACCEPT_REVISION`` a Document (or its next version) is made through the
+    ordinary import path and named here. ``observed`` keeps the item as the
+    administrator saw it, verbatim, so the record outlives any later change.
+
+    DELETE is allowed only through the CASCADE of a Teema's permanent deletion
+    (Matter → MatterSourcePage → this row), exactly like the revisions'.
+    """
+
+    item_key = models.CharField(max_length=80, db_index=True, verbose_name="kirje võti")
+    scope = models.CharField(max_length=16, choices=HoldScope.choices, verbose_name="kirje liik")
+    decision = models.CharField(
+        max_length=20, choices=HoldDecisionKind.choices, verbose_name="otsus"
+    )
+    final = models.BooleanField(default=False, verbose_name="lõplik")
+    resource = models.ForeignKey(
+        "legacy_import.LegacySourceResource",
+        on_delete=models.PROTECT,
+        related_name="hold_decisions",
+        verbose_name="lähtefail",
+    )
+    resource_import = models.ForeignKey(
+        "legacy_import.LegacySourceResourceImport",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="hold_decisions",
+        verbose_name="lähtefaili import",
+    )
+    revision = models.ForeignKey(
+        OneNoteResourceRevision,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="hold_decisions",
+        verbose_name="hilisem lugemine",
+    )
+    #: The Teema the decision is about: the associated one, or the held row's.
+    matter_source_page = models.ForeignKey(
+        "legacy_import.MatterSourcePage",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="onenote_hold_decisions",
+        verbose_name="teema lähteleht",
+    )
+    reason = models.TextField(verbose_name="põhjendus")
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="onenote_hold_decisions",
+        verbose_name="otsustaja",
+    )
+    decided_at = models.DateTimeField(default=timezone.now, verbose_name="otsustatud")
+    #: The digest of the item the form was shown for; a changed item is refused.
+    item_token = models.CharField(max_length=64, verbose_name="kirje sõrmejälg")
+    #: The item as the administrator saw it (identities, states, codes; no file text).
+    observed = models.JSONField(default=dict, blank=True, verbose_name="nähtud kirje")
+    document = models.ForeignKey(
+        "documents.Document",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="onenote_hold_decisions",
+        verbose_name="dokument",
+    )
+    document_version = models.ForeignKey(
+        "documents.DocumentVersion",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="onenote_hold_decisions",
+        verbose_name="tõendiversioon",
+    )
+
+    class Meta:
+        verbose_name = "OneNote'i ootel kirje otsus"
+        verbose_name_plural = "OneNote'i ootel kirjete otsused"
+        ordering = ["item_key", "decided_at", "created_at"]
+        constraints = [
+            # One settling decision per item: a second «accept», «reject» or
+            # «associate» is refused by the database even under a race.
+            models.UniqueConstraint(
+                fields=["item_key"],
+                condition=Q(final=True),
+                name="onenote_hold_one_final_decision_per_item",
+            ),
+            models.CheckConstraint(
+                condition=Q(final=True, decision__in=["ACCEPT_REVISION", "REJECT", "ASSOCIATE"])
+                | Q(final=False, decision="KEEP_HOLDING"),
+                name="onenote_hold_final_matches_decision",
+            ),
+            # A Document is named exactly when one was made.
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        decision__in=["ACCEPT_REVISION", "ASSOCIATE"],
+                        document__isnull=False,
+                        document_version__isnull=False,
+                        matter_source_page__isnull=False,
+                    )
+                    | Q(
+                        decision__in=["KEEP_HOLDING", "REJECT"],
+                        document__isnull=True,
+                        document_version__isnull=True,
+                    )
+                ),
+                name="onenote_hold_document_iff_written",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(scope="SHARED_FILE", revision__isnull=True)
+                    | Q(scope="HELD_IMPORT", resource_import__isnull=False, revision__isnull=True)
+                    | Q(scope="HELD_REVISION", revision__isnull=False)
+                ),
+                name="onenote_hold_scope_names_its_row",
+            ),
+            models.CheckConstraint(
+                condition=~Q(reason=""), name="onenote_hold_decision_has_a_reason"
+            ),
+        ]
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ImmutableRecordError(f"{type(self).__name__} rows are written once.")
+        super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return f"{self.item_key} · {self.decision}"

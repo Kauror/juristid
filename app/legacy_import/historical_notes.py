@@ -1044,12 +1044,39 @@ def matter_notes(
     ``files`` are this Matter's imported files by link, already narrowed to what
     the reader may see (`Document.visible_to`): the caller reads them once for
     the whole chronology (`app.matters.timeline.imported_document_versions`).
+
+    **The latest captured version** (live-sync round 2). A page a later capture
+    read again (`OneNotePageRevision`) is projected from its latest reading —
+    the version the source page opens at — so a note added in OneNote later is
+    a row, and a note in both readings is one row, never two. A note's date is
+    its own text's, in either reading. The row's page link names that reading
+    (`?hoive=<revision>`), so its `#plokk-N` stays that reading's block N even
+    after a still later capture. Read in the same query as the pages (one
+    subquery), so the chronology costs nothing more.
     """
-    from django.db.models import Count
+    from django.db.models import Count, JSONField, OuterRef, Subquery
+    from django.db.models.functions import JSONObject
     from django.urls import reverse
 
     from app.legacy_import.historical_views import visible_links
+    from app.legacy_import.onenote_coverage_models import OneNotePageRevision
+    from app.legacy_import.source_page_versions import QUERY_PARAM
     from app.legacy_import.source_pages import LegacySourceResource, MatterSourcePage
+
+    latest = (
+        OneNotePageRevision.objects.filter(page=OuterRef("source_page"))
+        .order_by("-created_at", "-pk")
+        .values(
+            reading=JSONObject(
+                pk="pk",
+                title="title",
+                section="source_section",
+                capture_id="capture_id",
+                modified="source_modified_at",
+                blocks="blocks",
+            )
+        )[:1]
+    )
 
     links = list(
         visible_links(user)
@@ -1067,13 +1094,14 @@ def matter_notes(
             "source_page__blocks",
             "source_page__links",
         )
+        .annotate(latest_reading=Subquery(latest, output_field=JSONField()))
         .order_by("pk")
     )
     unplaced_pages = set()
     for link in links:
         keys = {
             str(block.get("resource_key") or "")
-            for block in link.source_page.blocks or []
+            for block in _reading_of(link)["blocks"]
             if isinstance(block, Mapping)
         }
         if any(item.resource_key not in keys for item in files.get(link.pk, ())):
@@ -1099,20 +1127,59 @@ def matter_notes(
     out: list[ProjectedNote] = []
     for link in links:
         page = link.source_page
+        shown = _reading_of(link)
+        page_url = reverse("legacy_import:source_page", kwargs={"pk": link.pk})
+        if shown["pk"]:
+            page_url = f"{page_url}?{QUERY_PARAM}={shown['pk']}"
         out.extend(
             project_page(
                 link_id=link.pk,
-                page_url=reverse("legacy_import:source_page", kwargs={"pk": link.pk}),
-                page_title=page.title or "",
-                section=page.source_section or "",
-                capture_id=page.capture_id or "",
-                blocks=page.blocks or [],
-                page_links=page.links or [],
+                page_url=page_url,
+                page_title=shown["title"],
+                section=shown["section"],
+                capture_id=shown["capture_id"],
+                blocks=shown["blocks"],
+                page_links=shown["links"],
                 files=files.get(link.pk, ()),
                 resources=resources.get(page.pk, ()),
-                page_modified=page.source_modified_at,
+                page_modified=shown["modified"],
                 withheld=withheld,
                 shared_page=page.pk in shared,
             )
         )
     return tuple(out)
+
+
+def _reading_of(link: Any) -> dict[str, Any]:
+    """The page reading a link's notes are projected from: its latest revision
+    (annotated as ``latest_reading``), or the page row when it has none."""
+    from django.utils.dateparse import parse_datetime
+
+    page = link.source_page
+    later = getattr(link, "latest_reading", None)
+    if isinstance(later, str):  # a driver that hands JSON back as text
+        import json
+
+        later = json.loads(later)
+    if isinstance(later, Mapping) and later.get("pk"):
+        modified = later.get("modified")
+        return {
+            "pk": str(later["pk"]),
+            "title": str(later.get("title") or page.title or ""),
+            "section": str(later.get("section") or ""),
+            "capture_id": str(later.get("capture_id") or ""),
+            "modified": parse_datetime(modified) if isinstance(modified, str) else None,
+            "blocks": [b for b in later.get("blocks") or [] if isinstance(b, Mapping)],
+            # A revision keeps no link records; the page row's name its own
+            # capture's block ordinals, which a later reading does not share.
+            "links": [],
+        }
+    return {
+        "pk": "",
+        "title": page.title or "",
+        "section": page.source_section or "",
+        "capture_id": page.capture_id or "",
+        "modified": page.source_modified_at,
+        "blocks": page.blocks or [],
+        "links": page.links or [],
+    }

@@ -459,6 +459,7 @@ def test_the_backfill_applies_closed_history_with_only_stated_reasons(history, p
     assert page.status_code == 200
     text = page.content.decode()
     assert "Teema on suletud." in text
+    assert "Lõpetamise põhjus pole allikas kirjas." in text
     for invented in ("Koda lõpetas jälgimise", "Koda ei tegele edasi", "Seisukohta ei kujundatud"):
         assert invented not in text
 

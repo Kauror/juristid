@@ -3,6 +3,16 @@
     python manage.py data_sync_requests run-next --kind lovable --credentials F [--backup-set S]
     python manage.py data_sync_requests run-next --kind onenote [--capture-root DIR]
     python manage.py data_sync_requests list [--kind lovable|onenote] [--limit N]
+    python manage.py data_sync_requests poll --kind lovable|onenote [--problem CODE]
+
+`poll` is the host script's on-demand question (LS2-D): it records the
+runner's heartbeat (`DataSyncRunnerBeat`, so the page can say whether a server
+runner exists at all) and prints one line — ``DUE <mode>`` / ``DUE ONENOTE``
+when a request waits, ``NOT_DUE <reason>`` when none does, or
+``REFUSED <problem>`` when the script named a host-side problem
+(``HOST_PAUSED``, ``NO_CREDENTIALS``, ``CREDENTIALS_MODE``,
+``NO_CAPTURE_SOURCE``) and a waiting request was therefore refused by name. It
+needs no credentials and never reaches Lovable or a capture.
 
 `run-next` claims the oldest PENDING request of the lane under
 ``select_for_update(skip_locked=True)``, marks it RUNNING, and runs it with the
@@ -13,8 +23,9 @@ engine the nightly job runs:
   control row exactly as `lovable_sync run --trigger manual` does: OFF refuses,
   COMPARE writes no business data, APPLY writes the allowlisted changes only
   with a verified backup set. Needs ``JURISTID_LOVABLE_SYNC`` and
-  ``REAL_DATA_ALLOWED``, like `lovable_sync run`; without them nothing is
-  claimed;
+  ``REAL_DATA_ALLOWED``, like `lovable_sync run`; without them the waiting
+  request is refused by name (``NOT_PERMITTED``, LS2-D) — never left to expire —
+  and the command exits 1;
 * **onenote** — the named capture under the configured source root
   (``ONENOTE_CAPTURE_ROOT`` / ``JURISTID_ONENOTE_CAPTURE_ROOT``, or
   ``--capture-root``): `onenote_capture.verify_capture` for a check, and for
@@ -56,12 +67,18 @@ class Command(BaseCommand):
     help = "Run the next Andmete sünkroonimine request on the host, or list them."
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument("action", choices=["run-next", "list"])
+        parser.add_argument("action", choices=["run-next", "list", "poll"])
         parser.add_argument("--kind", choices=SyncRequestLane.values, default="")
         parser.add_argument("--credentials", default="")
         parser.add_argument("--backup-set", default="")
         parser.add_argument("--capture-root", default="")
         parser.add_argument("--limit", type=int, default=20)
+        parser.add_argument(
+            "--problem",
+            default="",
+            choices=["", *sync_admin.RUNNER_PROBLEMS],
+            help="poll: a host-side reason this lane cannot run now.",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         if options["action"] == "list":
@@ -69,13 +86,22 @@ class Command(BaseCommand):
             return
         lane = options["kind"]
         if not lane:
-            raise CommandError("run-next needs --kind lovable or --kind onenote.")
+            raise CommandError(f"{options['action']} needs --kind lovable or --kind onenote.")
+        if options["action"] == "poll":
+            self.stdout.write(sync_admin.poll(lane, problem=options["problem"]))
+            return
         transport = None
         if lane == SyncRequestLane.LOVABLE:
             if not (settings.LOVABLE_SYNC_ENABLED and settings.REAL_DATA_ALLOWED):
+                refused = sync_admin.refuse_unpermitted(lane)
                 raise CommandError(
                     "run-next --kind lovable needs JURISTID_LOVABLE_SYNC and "
-                    "REAL_DATA_ALLOWED on this container; nothing was claimed."
+                    "REAL_DATA_ALLOWED on this container; "
+                    + (
+                        f"the waiting request {refused.pk} was refused (NOT_PERMITTED)."
+                        if refused is not None
+                        else "nothing was waiting."
+                    )
                 )
             transport = lovable_transport(options)
         outcome = sync_admin.run_next(

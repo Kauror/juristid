@@ -28,27 +28,37 @@
 #
 # On demand (docs/adr/0213; brief 2026-11-09 §7 «Sünkrooni nüüd»): the web never
 # reaches Lovable and never runs a synchronisation itself; it records a
-# `DataSyncRequest`. This mode asks the database whether one waits (`lovable_sync
-# due --on-demand`, read-only) and, only then, runs it through `manage.py
-# data_sync_requests run-next --kind lovable` — the same engine as the night,
-# `run_sync(trigger=MANUAL)`, which always reads Lovable fresh. Every gate still
-# applies (one runner, release lock, web healthy, pause file, root-only
-# credentials, and in APPLY mode a backup set taken and verified to level 2,
-# handed to the run as LOVABLE_SYNC_BACKUP_SET). It skips the observation's
-# retention and the wider observation (both are the night's), and a firing with
-# nothing to do leaves no log file behind. It is the same cron file, one more
-# line; there is no second scheduler.
+# `DataSyncRequest`. This mode asks the database, per lane, whether one waits
+# (`manage.py data_sync_requests poll --kind <lane>`: no credentials, no
+# Lovable; it also records the runner's heartbeat, so Haldus can say plainly
+# whether a server runner exists) and, only then, runs it through `manage.py
+# data_sync_requests run-next` — for Lovable the same engine as the night,
+# `run_sync(trigger=MANUAL)`, which always reads Lovable fresh. The night's
+# gates still apply (one runner, release lock, web healthy) before anything is
+# asked. The host-side gates of a lane (the pause file and the root-only
+# credentials for Lovable; the capture corpus for OneNote) are checked before
+# its poll and handed to it as `--problem CODE`: a waiting request is then
+# REFUSED by name at once instead of waiting two hours to expire. In APPLY mode
+# a backup set is taken and verified to level 2 and handed to the run as
+# LOVABLE_SYNC_BACKUP_SET. The on-demand mode skips the observation's retention
+# and the wider observation (both are the night's), and a firing with nothing to
+# do leaves no log file behind. It is the same cron file, one more line; there is
+# no second scheduler.
 #
 # The OneNote lane (brief §7 «Impordi OneNote'i materjalid» / «OneNote'i impordi
-# kontroll»): an on-demand firing first asks whether a OneNote request waits
-# (`lovable_sync due --on-demand --kind onenote`, read-only, no credentials). If
-# one does, it takes a backup set and verifies it to level 2, then runs
-# `data_sync_requests run-next --kind onenote` in a one-off container with
-# JURISTID_ONENOTE_CAPTURE_IMPORT=1, REAL_DATA_ALLOWED=1, the verified set as
-# JURISTID_ONENOTE_BACKUP_SET and the host's capture corpus mounted READ-ONLY at
-# /capture (JURISTID_ONENOTE_CAPTURE_ROOT). That container never receives the
-# Lovable credentials. The Lovable lane follows, unchanged; the host pause file
-# pauses only the Lovable lane.
+# kontroll») is asked first. If a request waits, it takes a backup set and
+# verifies it to level 2, then runs `data_sync_requests run-next --kind onenote`
+# in a one-off container with JURISTID_ONENOTE_CAPTURE_IMPORT=1,
+# REAL_DATA_ALLOWED=1, the verified set as JURISTID_ONENOTE_BACKUP_SET and the
+# host's capture corpus mounted READ-ONLY at /capture
+# (JURISTID_ONENOTE_CAPTURE_ROOT). That container never receives the Lovable
+# credentials. The Lovable lane follows; the host pause file pauses only the
+# Lovable lane.
+#
+# Test seams (tests/test_ls2_d_host_script.py runs this script against a fake
+# docker): JURISTID_SYNC_APPDATA, JURISTID_SYNC_BACKUP_ROOT,
+# JURISTID_SYNC_CAPTURE_SOURCE, JURISTID_SYNC_LOCK and JURISTID_HOST_LOCK
+# (scripts/deploy/lib.sh's name) replace the host paths. Cron sets none of them.
 #
 # Pause: `touch $SYNC_DIR/PAUSED` (host) or `lovable_sync control --mode off`
 # (database; also what Haldus shows). Final cutover: `lovable_sync control
@@ -58,9 +68,9 @@
 # takes values literally: write KEY=value with no quotes.
 set -euo pipefail
 
-APPDATA=/mnt/user/appdata/juristid-main
+APPDATA=${JURISTID_SYNC_APPDATA:-/mnt/user/appdata/juristid-main}
 REPO=$APPDATA/repo
-BACKUP_ROOT=/mnt/user/backups/juristid-main
+BACKUP_ROOT=${JURISTID_SYNC_BACKUP_ROOT:-/mnt/user/backups/juristid-main}
 ENV_FILE=$APPDATA/config/juristid.env
 CREDENTIALS=$APPDATA/config/lovable-sync.env
 SYNC_DIR=$APPDATA/l100/sync
@@ -68,7 +78,10 @@ LOG_DIR=$SYNC_DIR/logs
 LOG_RETENTION_DAYS=30
 RUN_TIMEOUT=1200
 # The host's sealed OneNote capture corpus, mounted read-only into the import.
-CAPTURE_SOURCE=/mnt/user/juristid-main/source
+CAPTURE_SOURCE=${JURISTID_SYNC_CAPTURE_SOURCE:-/mnt/user/juristid-main/source}
+# One runner at a time (flock) and the release lock shared with every host job.
+SYNC_LOCK=${JURISTID_SYNC_LOCK:-/tmp/juristid-lovable-sync.lock}
+HOST_LOCK=${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}
 ONENOTE_TIMEOUT=3600
 
 TRIGGER=scheduled
@@ -89,23 +102,23 @@ KEEP_LOG=1
 if [ "$ON_DEMAND" = 1 ]; then KEEP_LOG=0; fi
 HOST_LOCKED=0
 cleanup() {
-  if [ "$HOST_LOCKED" = 1 ]; then rm -rf /tmp/juristid-host-lock; fi
+  if [ "$HOST_LOCKED" = 1 ]; then rm -rf "$HOST_LOCK"; fi
   if [ "$KEEP_LOG" = 0 ]; then rm -f "$LOG"; fi
 }
 trap cleanup EXIT
 exec >>"$LOG" 2>&1
 say() { echo "$(date -u +%FT%TZ) $*"; }
 
-exec 9>/tmp/juristid-lovable-sync.lock
+exec 9>"$SYNC_LOCK"
 flock -n 9 || { say "SKIP another synchronisation is running"; exit 0; }
 
 # The release lock, taken (not only looked at): a release cannot start under a run.
-if ! mkdir /tmp/juristid-host-lock 2>/dev/null; then
-  say "SKIP a release holds /tmp/juristid-host-lock ($(cat /tmp/juristid-host-lock/owner 2>/dev/null))"
+if ! mkdir "$HOST_LOCK" 2>/dev/null; then
+  say "SKIP a release holds $HOST_LOCK ($(cat "$HOST_LOCK/owner" 2>/dev/null))"
   exit 0
 fi
 HOST_LOCKED=1
-echo "owner=lovable-sync pid=$$ $(date -u +%FT%TZ)" > /tmp/juristid-host-lock/owner
+echo "owner=lovable-sync pid=$$ $(date -u +%FT%TZ)" > "$HOST_LOCK/owner"
 
 # The image the site is SERVING (its id), never whatever its tag points at now.
 IMAGE="$(docker inspect -f '{{.Image}}' juristid-main-web 2>/dev/null)" || IMAGE=""
@@ -160,39 +173,8 @@ plain_manage() {
     --entrypoint python "$IMAGE" manage.py "$@" </dev/null
 }
 
-orc_onenote=0
-if [ "$ON_DEMAND" = 1 ]; then
-  ONOTE="$(plain_manage lovable_sync due --trigger manual --on-demand --kind onenote | tail -1)" || ONOTE=""
-  if [ "$ONOTE" = "DUE ONENOTE" ]; then
-    KEEP_LOG=1
-    say "onenote request (image ${IMAGE:7:12})"
-    if [ ! -d "$CAPTURE_SOURCE" ]; then
-      say "FAIL $CAPTURE_SOURCE is missing; the OneNote request waits"; orc_onenote=1
-    else
-      take_backup
-      timeout "$ONENOTE_TIMEOUT" docker run --rm --name "juristid-main-onenote-import-$$" \
-        --network juristid-main-internal --env-file "$ENV_FILE" \
-        -e JURISTID_ONENOTE_CAPTURE_IMPORT=1 -e REAL_DATA_ALLOWED=1 \
-        -e JURISTID_ONENOTE_CAPTURE_ROOT=/capture \
-        -e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET" \
-        -v "$CAPTURE_SOURCE:/capture:ro" \
-        --cpus 1 --memory 2g --pids-limit 256 --log-driver none \
-        --entrypoint python "$IMAGE" manage.py data_sync_requests run-next --kind onenote \
-        </dev/null || orc_onenote=$?
-      say "onenote END rc=$orc_onenote"
-    fi
-  elif [ "$ONOTE" != "NOT_DUE NO_REQUEST" ]; then
-    KEEP_LOG=1; say "FAIL the OneNote due check gave no answer (${ONOTE:-none})"; orc_onenote=1
-  fi
-fi
-
-if [ -e "$SYNC_DIR/PAUSED" ]; then say "SKIP paused on the host ($SYNC_DIR/PAUSED)"; exit "$orc_onenote"; fi
-
-if [ ! -f "$CREDENTIALS" ]; then KEEP_LOG=1; say "FAIL $CREDENTIALS is missing"; exit 1; fi
-if [ "$(stat -c '%u %a' "$CREDENTIALS" 2>/dev/null || true)" != "0 600" ]; then
-  KEEP_LOG=1; say "FAIL $CREDENTIALS must be owned by root with mode 600"; exit 1
-fi
-
+# The Lovable container: Docker reads the credentials file as root; the container
+# sees only the values, never the command line or this log.
 SET=""
 one_off_manage() {
   timeout "$RUN_TIMEOUT" docker run --rm --name "juristid-main-lovable-sync-$$" \
@@ -204,15 +186,80 @@ one_off_manage() {
 }
 one_off() { one_off_manage lovable_sync "$@"; }
 
+# The Lovable lane's host-side gates, as a code ("" when it may run).
+credentials_problem() {
+  if [ ! -f "$CREDENTIALS" ]; then echo NO_CREDENTIALS; return; fi
+  if [ "$(stat -c '%u %a' "$CREDENTIALS" 2>/dev/null || true)" != "0 600" ]; then
+    echo CREDENTIALS_MODE
+  fi
+}
+
+orc_onenote=0
 if [ "$ON_DEMAND" = 1 ]; then
-  DUE="$(one_off due --trigger manual --on-demand | tail -1)" || DUE=""
-else
-  DUE="$(one_off due --trigger "$TRIGGER" | tail -1)" || DUE=""
+  ONOTE_PROBLEM=""
+  if [ ! -d "$CAPTURE_SOURCE" ]; then ONOTE_PROBLEM=NO_CAPTURE_SOURCE; fi
+  ONOTE="$(plain_manage data_sync_requests poll --kind onenote ${ONOTE_PROBLEM:+--problem "$ONOTE_PROBLEM"} | tail -1)" || ONOTE=""
+  case "$ONOTE" in
+    "DUE ONENOTE")
+      KEEP_LOG=1
+      say "onenote request (image ${IMAGE:7:12})"
+      take_backup
+      timeout "$ONENOTE_TIMEOUT" docker run --rm --name "juristid-main-onenote-import-$$" \
+        --network juristid-main-internal --env-file "$ENV_FILE" \
+        -e JURISTID_ONENOTE_CAPTURE_IMPORT=1 -e REAL_DATA_ALLOWED=1 \
+        -e JURISTID_ONENOTE_CAPTURE_ROOT=/capture \
+        -e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET" \
+        -v "$CAPTURE_SOURCE:/capture:ro" \
+        --cpus 1 --memory 2g --pids-limit 256 --log-driver none \
+        --entrypoint python "$IMAGE" manage.py data_sync_requests run-next --kind onenote \
+        </dev/null || orc_onenote=$?
+      say "onenote END rc=$orc_onenote"
+      ;;
+    "NOT_DUE NO_REQUEST") ;;
+    "REFUSED "*) KEEP_LOG=1; say "onenote request $ONOTE (host)"; orc_onenote=1 ;;
+    *) KEEP_LOG=1; say "FAIL the OneNote poll gave no answer (${ONOTE:-none})"; orc_onenote=1 ;;
+  esac
+
+  # The Lovable lane: its host-side gates become the poll's problem code.
+  LOVABLE_PROBLEM=""
+  if [ -e "$SYNC_DIR/PAUSED" ]; then LOVABLE_PROBLEM=HOST_PAUSED; else LOVABLE_PROBLEM="$(credentials_problem)"; fi
+  DUE="$(plain_manage data_sync_requests poll --kind lovable ${LOVABLE_PROBLEM:+--problem "$LOVABLE_PROBLEM"} | tail -1)" || DUE=""
+  case "$DUE" in
+    "DUE APPLY") MODE=apply ;;
+    "DUE COMPARE") MODE=compare ;;
+    "DUE OFF") MODE=off ;;
+    # Nothing waits: the firing ends here and leaves no log unless OneNote had work.
+    "NOT_DUE "*) exit "$orc_onenote" ;;
+    "REFUSED "*) KEEP_LOG=1; say "lovable request $DUE (host)"; exit 1 ;;
+    *) KEEP_LOG=1; say "FAIL the Lovable poll gave no answer (${DUE:-none})"; exit 1 ;;
+  esac
+  KEEP_LOG=1
+  say "$DUE (image ${IMAGE:7:12})"
+  if [ "$MODE" = apply ]; then
+    take_backup
+    SET="$BACKUP_SET"
+  fi
+  # The administrator's request, through the request runner (interface 4): it
+  # claims the request, refuses it if the mode is not the one it was confirmed
+  # in (MODE_CHANGED), runs `run_sync(trigger=MANUAL)` with the set above
+  # (`lovable_sync.host_backup_set()`; a paused synchronisation refuses and the
+  # request is recorded REFUSED) and records the result. Nothing else runs.
+  say "request"
+  rc=0
+  one_off_manage data_sync_requests run-next --kind lovable || rc=$?
+  say "END rc=$rc"
+  if [ "$rc" = 0 ]; then rc=$orc_onenote; fi
+  exit "$rc"
 fi
-# Nothing waits: an on-demand firing ends here (and leaves no log unless the
-# OneNote lane had work).
-if [ "$DUE" = "NOT_DUE NO_REQUEST" ]; then exit "$orc_onenote"; fi
-KEEP_LOG=1
+
+if [ -e "$SYNC_DIR/PAUSED" ]; then say "SKIP paused on the host ($SYNC_DIR/PAUSED)"; exit 0; fi
+
+if [ ! -f "$CREDENTIALS" ]; then KEEP_LOG=1; say "FAIL $CREDENTIALS is missing"; exit 1; fi
+if [ "$(stat -c '%u %a' "$CREDENTIALS" 2>/dev/null || true)" != "0 600" ]; then
+  KEEP_LOG=1; say "FAIL $CREDENTIALS must be owned by root with mode 600"; exit 1
+fi
+
+DUE="$(one_off due --trigger "$TRIGGER" | tail -1)" || DUE=""
 say "${DUE:-<no answer>} (image ${IMAGE:7:12})"
 case "$DUE" in
   "DUE APPLY") MODE=apply ;;
@@ -225,19 +272,6 @@ esac
 if [ "$MODE" = apply ]; then
   take_backup
   SET="$BACKUP_SET"
-fi
-
-if [ "$ON_DEMAND" = 1 ]; then
-  # The administrator's request, through the request runner (interface 4): it
-  # claims the request, runs `run_sync(trigger=MANUAL)` with the set above
-  # (`lovable_sync.host_backup_set()`; a paused synchronisation refuses and the
-  # request is recorded REFUSED) and records the result. Nothing else runs.
-  say "request"
-  rc=0
-  one_off_manage data_sync_requests run-next --kind lovable || rc=$?
-  say "END rc=$rc"
-  if [ "$rc" = 0 ]; then rc=$orc_onenote; fi
-  exit "$rc"
 fi
 
 say "run"

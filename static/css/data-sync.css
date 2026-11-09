@@ -175,3 +175,70 @@
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
+
+/* LS2-D: «Vaata erinevusi» — the next-step corrections as one card per Teema,
+   the highest-value ones (Juristid's step already past) marked on the edge. */
+.dsync__cards {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-2);
+  margin: var(--spacing-2) 0 var(--spacing-3);
+  padding: 0;
+  list-style: none;
+}
+
+.dsync__card {
+  min-width: 0;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+}
+
+.dsync__card--past {
+  border-left: 3px solid var(--status-warning-border);
+}
+
+.dsync__cardhead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-2);
+}
+
+.dsync__cardref {
+  font-weight: var(--typography-weight-semibold);
+  white-space: nowrap;
+}
+
+.dsync__cardtitle {
+  flex: 1 1 12rem;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.dsync__card .detailgrid {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+  margin-top: var(--spacing-2);
+}
+
+.dsync__cardgrid dd {
+  overflow-wrap: anywhere;
+}
+
+/* The host runner's state beside each lane's requests. */
+.dsync__runner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-2);
+  margin: var(--spacing-2) 0;
+  font-size: var(--typography-size-row);
+}
+
+.dsync__runnernote {
+  flex-basis: 100%;
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}

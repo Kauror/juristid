@@ -10,6 +10,7 @@
     {{ item.request.requested_at|date:"j.n.Y H:i" }} · {{ item.request.requested_by.display_name }}
     {% if item.request.finished_at %} · lõppes {{ item.request.finished_at|date:"j.n.Y H:i" }}{% elif item.request.claimed_at %} · käivitati {{ item.request.claimed_at|date:"H:i" }}{% elif item.expires_at and not item.stale %} · aegub {{ item.expires_at|date:"H:i" }}{% endif %}
   </span>
+  {% if item.waiting_note %}<span class="dsync__requestreason">{{ item.waiting_note }}</span>{% endif %}
   {% if item.reason_text %}<span class="dsync__requestreason">{{ item.reason_text }}</span>{% endif %}
   {% if item.request.sync_run %}
     <span class="dsync__requestreason">Käivitus: {{ item.request.sync_run.get_mode_display }} · {{ item.request.sync_run.get_status_display }}{% if item.counts.checked is not None %} · kontrollitud {{ item.counts.checked }}{% endif %}{% if item.counts.updated is not None %} · uuendatud {{ item.counts.updated }}{% endif %}{% if item.counts.conflicts is not None %} · vastuolusid {{ item.counts.conflicts }}{% endif %}{% if item.counts.review is not None %} · vajab ülevaatamist {{ item.counts.review }}{% endif %}</span>

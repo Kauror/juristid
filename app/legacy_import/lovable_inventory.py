@@ -437,8 +437,10 @@ def _read_juristid() -> _Juristid:
             continue
         out.unreferenced.setdefault(year, []).append((pk, title))
 
-    for decision in LovableInventoryDecision.objects.order_by("created_at", "id").values(
-        "id", "source_id", "decision", "matter_id", "reason"
+    for decision in (
+        _decisions()
+        .order_by("created_at", "id")
+        .values("id", "source_id", "decision", "matter_id", "reason")
     ):
         decided = str(decision["source_id"]).lower()
         out.decision_index.append([str(decision["id"]), decided, decision["decision"]])
@@ -452,14 +454,24 @@ def _read_juristid() -> _Juristid:
     return out
 
 
+def _decisions() -> Any:
+    """Every `LovableInventoryDecision` — none on a database that predates the
+    table (legacy_import/0026): the read-only inventory of production runs the
+    candidate's code against the released schema before the release, and a
+    database without the table holds no decision."""
+    from django.db import connection
+
+    if LovableInventoryDecision._meta.db_table not in connection.introspection.table_names():
+        return LovableInventoryDecision.objects.none()
+    return LovableInventoryDecision.objects.all()
+
+
 def decision_index() -> list[list[str]]:
     """Every inventory decision as ``[id, source_id, kind]``, sorted — what a
     ledger and a backfill package bind. Reads only."""
     return sorted(
         [str(pk), str(source_id).lower(), kind]
-        for pk, source_id, kind in LovableInventoryDecision.objects.values_list(
-            "id", "source_id", "decision"
-        )
+        for pk, source_id, kind in _decisions().values_list("id", "source_id", "decision")
     )
 
 
