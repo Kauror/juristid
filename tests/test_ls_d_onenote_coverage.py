@@ -280,21 +280,12 @@ def test_verify_capture_gives_the_plan_to_approve_and_records_the_page_states(wo
     check = oc.verify_capture(root, record=True)
     assert check.ok and check.plan_sha256 == oc.build_plan(oc.load_capture(root)).digest
     assert check.page_states == {f"p-{G_A.lower()}": "VERIFIED", f"p-{G_S.lower()}": "NO_CHANGES"}
-    assert cov.page_states([G_A, G_S]) == {
-        G_A: {
-            "state": "VERIFIED",
-            "basis": "MARK",
-            "at": cov.page_states([G_A])[G_A]["at"],
-            "capture_id": "cap-2",
-            "reason": "verify_capture",
-        },
-        G_S: {
-            "state": "NO_CHANGES",
-            "basis": "MARK",
-            "at": cov.page_states([G_S])[G_S]["at"],
-            "capture_id": "cap-2",
-            "reason": "verify_capture",
-        },
+    states = cov.page_states([G_A, G_S])
+    assert {g: (v["state"], v["basis"], v["capture_id"]) for g, v in states.items()} == {
+        G_A: ("VERIFIED", "MARK", "cap-2"),
+        # Nothing new on the shared page, but its files still wait for a person:
+        # never marked done (independent review 2026-11-09, P2).
+        G_S: ("AWAITING_ASSOCIATION", "MARK", "cap-2"),
     }
     assert Document.objects.count() == 3  # nothing imported by a check
 
@@ -324,7 +315,8 @@ def test_apply_capture_imports_the_approved_plan_once(world, monkeypatch):
     report = oc.apply_capture(root, approved_plan_sha256=sha, actor=None)
     assert report.documents_created == 1
     states = cov.page_states([G_A, G_S])
-    assert states[G_A]["state"] == "IMPORTED" and states[G_S]["state"] == "NO_CHANGES"
+    assert states[G_A]["state"] == "IMPORTED"
+    assert states[G_S]["state"] == "AWAITING_ASSOCIATION"  # held files still pending
     again = oc.apply_capture(root, approved_plan_sha256=sha, actor=None)
     assert again.batch_id == "" and again.documents_created == 0
 

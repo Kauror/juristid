@@ -7,13 +7,26 @@ Additive: three new tables, no existing row or column changes.
   a file occurrence a Teema link already holds: the next `DocumentVersion` of
   the same Document (VERSIONED), a hold (HELD) or a recorded change of block
   time or structural comment (RECORDED). ADR 0205 amendment proposals P1/P2.
+  **UPDATE is refused** by the shared `core_reject_mutation()` trigger. DELETE
+  is allowed for one path only: the permanent deletion of a Teema
+  (`app/matters/deletion.py`) walks every row its Matter owns through CASCADE
+  relations (Matter → MatterSourcePage → this table, as for
+  `LegacySourceResourceImport`) and removes them with the Teema's Documents. A
+  DELETE trigger, or PROTECT on `matter_source_page`, would make every Teema with
+  a later OneNote reading undeletable.
 * `legacy_import_onenotepagerevision` — a later capture's reading of a page
   whose text, title or place changed (P3). The page row stays the first record.
-* `legacy_import_onenotecoveragemark` — per-page/section progress marks;
-  append-only (the shared `core_reject_mutation()` trigger).
+  Pages are never deleted with a Teema, so it is fully append-only (UPDATE and
+  DELETE refused).
+* `legacy_import_onenotecoveragemark` — per-page/section progress marks; fully
+  append-only.
 
-Reverse drops the trigger and the tables. It is refused by PROTECT only where a
-revision names a `DocumentVersion` (which must then be removed deliberately).
+**Reverse** drops the triggers, then the tables. Dropping the tables destroys
+the record of which `DocumentVersion` a later capture added and which readings
+were held, while the `DocumentVersion` rows and their evidence bytes stay on
+their Documents with nothing left that says where they came from. Reverse only
+an empty database (a fresh one, CI's step-back); on a database where a later
+capture was applied, restore the pre-migration backup instead.
 """
 
 import app.core.ids
@@ -350,6 +363,28 @@ class Migration(migrations.Migration):
                     ),
                 ],
             },
+        ),
+        migrations.RunSQL(
+            sql=(
+                "CREATE TRIGGER legacy_import_onenoteresourcerevision_no_update "
+                "BEFORE UPDATE ON legacy_import_onenoteresourcerevision "
+                "FOR EACH ROW EXECUTE FUNCTION core_reject_mutation();"
+            ),
+            reverse_sql=(
+                "DROP TRIGGER IF EXISTS legacy_import_onenoteresourcerevision_no_update "
+                "ON legacy_import_onenoteresourcerevision;"
+            ),
+        ),
+        migrations.RunSQL(
+            sql=(
+                "CREATE TRIGGER legacy_import_onenotepagerevision_append_only "
+                "BEFORE UPDATE OR DELETE ON legacy_import_onenotepagerevision "
+                "FOR EACH ROW EXECUTE FUNCTION core_reject_mutation();"
+            ),
+            reverse_sql=(
+                "DROP TRIGGER IF EXISTS legacy_import_onenotepagerevision_append_only "
+                "ON legacy_import_onenotepagerevision;"
+            ),
         ),
         migrations.RunSQL(
             sql=(

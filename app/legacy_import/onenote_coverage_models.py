@@ -25,11 +25,14 @@ records already prove (``onenote_coverage``).
 
 from __future__ import annotations
 
+from typing import Any
+
 from django.conf import settings
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
 
+from app.core.errors import ImmutableRecordError
 from app.core.models import AppendOnlyModel, BaseModel
 
 
@@ -128,6 +131,14 @@ class OneNoteResourceRevision(BaseModel):
             ),
         ]
 
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        # Written once (the database refuses UPDATE too). DELETE stays possible
+        # only for a Teema's permanent deletion, which owns this row through
+        # Matter → MatterSourcePage (CASCADE), as it owns the import rows.
+        if not self._state.adding:
+            raise ImmutableRecordError(f"{type(self).__name__} rows are written once.")
+        super().save(*args, **kwargs)
+
     def __str__(self) -> str:
         return f"{self.resource} · {self.capture_id} · {self.state}"
 
@@ -180,6 +191,14 @@ class OneNotePageRevision(BaseModel):
                 name="onenote_one_page_revision_per_capture",
             ),
         ]
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ImmutableRecordError(f"{type(self).__name__} rows are append-only.")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
+        raise ImmutableRecordError(f"{type(self).__name__} rows are append-only.")
 
     def __str__(self) -> str:
         return f"{self.page} · {self.capture_id}"

@@ -823,7 +823,7 @@ def build_plan(capture: Capture) -> Plan:
         # is now that occurrence's revision (amendment 2026-11-05, case 3; P1/P2).
         same_block: dict[str, Any] = {}
         rows: list[Any] = []
-        readings: dict[Any, Reading] = {}
+        readings: dict[tuple[str, Any], Reading] = {}
         if row is not None:
             rows = list(LegacySourceResource.objects.filter(source_page=row))
             written_here = _written_by_this_capture(capture, rows)
@@ -986,28 +986,47 @@ def _page_readings(
 
 @dataclass(frozen=True)
 class Reading:
-    """The latest earlier capture's reading of one resource (a revision row)."""
+    """What one Teema link has *accepted* of an occurrence after its first reading.
 
-    sha256: str
-    size_bytes: int
-    source_added_at: datetime | None
-    context: tuple[dict[str, Any], ...]
+    ``bytes_`` is the latest ``VERSIONED`` revision's (sha256, size, creation
+    time); ``context`` the latest ``VERSIONED`` or ``RECORDED`` revision's
+    structural context. A ``HELD`` revision is never a baseline: it waits for a
+    person, so a later capture with the same bytes is still a change (and is held
+    again), never "the same" (independent review 2026-11-09, P2).
+    """
+
+    bytes_: tuple[str, int, datetime | None] | None = None
+    context: tuple[dict[str, Any], ...] | None = None
 
 
-def _resource_readings(capture: Capture, resources: list[Any]) -> dict[Any, Reading]:
-    """Per resource: the latest revision an *earlier* capture recorded, if any."""
-    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision
+def _resource_readings(capture: Capture, resources: list[Any]) -> dict[tuple[str, Any], Reading]:
+    """Per (Teema, resource): the accepted readings earlier captures recorded."""
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision, RevisionState
 
     if not resources:
         return {}
-    out: dict[Any, Reading] = {}
-    for resource_id, sha, size, added, context in (
+    out: dict[tuple[str, Any], Reading] = {}
+    for matter_id, resource_id, state, sha, size, added, context in (
         OneNoteResourceRevision.objects.filter(resource__in=resources)
         .exclude(manifest_sha256=capture.manifest_sha256)
+        .exclude(state=RevisionState.HELD)
         .order_by("created_at", "pk")
-        .values_list("resource_id", "sha256", "size_bytes", "source_added_at", "context")
+        .values_list(
+            "matter_source_page__matter_id",
+            "resource_id",
+            "state",
+            "sha256",
+            "size_bytes",
+            "source_added_at",
+            "context",
+        )
     ):
-        out[resource_id] = Reading(sha, size, added, tuple(context or ()))
+        key = (str(matter_id), resource_id)
+        was = out.get(key, Reading())
+        out[key] = Reading(
+            bytes_=(sha, size, added) if state == RevisionState.VERSIONED else was.bytes_,
+            context=tuple(context or ()),
+        )
     return out
 
 
@@ -1171,7 +1190,7 @@ def _later_capture_decisions(
     notes: dict[Any, str],
     *,
     removed: set[Any],
-    readings: dict[Any, Reading],
+    readings: dict[tuple[str, Any], Reading],
     limit: int,
     matter_id: str,
 ) -> dict[str, Decision]:
@@ -1207,10 +1226,10 @@ def _later_capture_decisions(
         r = same_block.get(o.block_object_id)
         if r is None:
             continue
-        latest = readings.get(r.pk)
+        latest = readings.get((matter_id, r.pk))
         sha, size, added = (
-            (latest.sha256, latest.size_bytes, latest.source_added_at)
-            if latest is not None
+            latest.bytes_
+            if latest is not None and latest.bytes_ is not None
             else (r.sha256, r.size_bytes, r.source_added_at)
         )
         e = by_key.get(o.block_object_id)
@@ -1221,7 +1240,7 @@ def _later_capture_decisions(
         elif added != o.block_created:
             decided[o.block_object_id] = (REVISE, HOLD_TIME_CHANGED, CLASS_CHANGED_TIME)
         else:
-            if latest is not None:
+            if latest is not None and latest.context is not None:
                 changed = structural_comment_of(latest.context) != o.structural_comment
             else:
                 note = notes.get(e.document_id) if e is not None and e.document_id else None
@@ -2191,13 +2210,24 @@ def verify(
             matter_source_page__matter_id__in=matter_ids,
         ).select_related("matter_source_page", "resource", "document", "document_version")
     }
-    latest: dict[Any, Any] = {}
+    # The latest *accepted* byte reading per (Teema, resource): a version. A held
+    # reading waits for a person and is never what the database "holds".
+    latest: dict[tuple[str, Any], Any] = {}
     for r in (
-        OneNoteResourceRevision.objects.filter(resource__source_page_id__in=list(page_keys))
-        .only("resource_id", "sha256", "size_bytes", "source_added_at")
+        OneNoteResourceRevision.objects.filter(
+            resource__source_page_id__in=list(page_keys), state=RevisionState.VERSIONED
+        )
+        .only(
+            "matter_source_page__matter_id",
+            "resource_id",
+            "sha256",
+            "size_bytes",
+            "source_added_at",
+        )
+        .select_related("matter_source_page")
         .order_by("created_at", "pk")
     ):
-        latest[r.resource_id] = r
+        latest[(str(r.matter_source_page.matter_id), r.resource_id)] = r
     for row in rows:
         matter_id = str(row.matter_source_page.matter_id)
         if matter_id not in wanted:
@@ -2227,7 +2257,7 @@ def verify(
         page, o = expected[key]
         counts["state_" + row.state] += 1
         resource = row.resource
-        later = revisions.get(key) or latest.get(resource.pk)
+        later = revisions.get(key) or latest.get((matter_id, resource.pk))
         reading = later if later is not None else resource
         if reading.sha256 != o.sha256 or reading.size_bytes != o.size:
             problems.append(f"{page.tag}/{o.block_object_id}: resource hash/size differ")
