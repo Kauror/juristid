@@ -17,8 +17,9 @@ honestly.
 **What it never does.** No SENT opinion (the letters are in OneNote, which this
 round does not import), no document, no follow-up check, no stage history, no
 closure event, no person and no organisation. A finished topic is created
-closed the way the Excel pilot creates one (ARCHIVE, a disposition, no
-`closed_at`, no `MATTER_CLOSED`). Lovable's change history and every source
+closed the way the Excel pilot creates one (ARCHIVE, a disposition — in the
+historical cohort none when the source states none, `BLANK_DISPOSITION_COHORTS`
+— no `closed_at`, no `MATTER_CLOSED`). Lovable's change history and every source
 value travel in `MatterSourceReference.source_row_raw`, labelled as the
 source's, never as Juristid events. The writes are stamped with the import's own
 moment and no actor.
@@ -122,6 +123,13 @@ SOURCE_ONLY = "SOURCE_ONLY"
 LIFECYCLES = frozenset({"ACTIVE", "INACTIVE", "CONCLUDED", "CONTINUES"})
 #: Every lifecycle but ACTIVE is a finished file: a disposition and nothing current.
 DISPOSITIONS = frozenset({"COMPLETED", "SUPERSEDED", "MONITORING_STOPPED", "NO_POSITION_FORMED"})
+#: The cohorts whose finished topics may carry **no** disposition: the historical
+#: backfill's, where the source often states no reason the work ended and none
+#: is invented (docs/adr/0213 §2 as amended 2026-11-09). Such a Teema is closed
+#: ARCHIVE with a blank disposition, which `matters_closure_fields_consistent`
+#: allows for an archive row and only for one. Every other cohort still needs a
+#: reason from `DISPOSITIONS`; `Lõpeta teema` is a different path and unchanged.
+BLANK_DISPOSITION_COHORTS = frozenset({HISTORY_COHORT})
 STEP_TREATMENTS = frozenset({"SOURCE_NEXT_STEP", "OPINION_DRAFTING"})
 DEADLINE_TREATMENTS = frozenset({"NONE", "OPEN_REQUEST", "SOURCE_ONLY"})
 T_EFFECTIVE_DATE = "MatterEffectiveDate"
@@ -306,9 +314,10 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
             problems = _validate_rebase(topic, people=people, as_of=as_of)
             problems += _validate_active_topic(topic, as_of=as_of, rebase=True)
         else:
-            problems = _validate_topic(topic, people=people, as_of=as_of)
+            historical = package_cohort(package) in BLANK_DISPOSITION_COHORTS
+            problems = _validate_topic(topic, people=people, as_of=as_of, historical=historical)
             if v2:
-                problems += _validate_active_topic(topic, as_of=as_of)
+                problems += _validate_active_topic(topic, as_of=as_of, historical=historical)
         out.extend(f"{reference}: {p}" for p in problems)
         parsed = parse_reference(reference)
         if parsed is None:
@@ -411,7 +420,11 @@ def _excluded_source_columns(source: dict[str, Any]) -> list[str]:
 
 
 def _validate_active_topic(
-    topic: dict[str, Any], *, as_of: dt.date | None, rebase: bool = False
+    topic: dict[str, Any],
+    *,
+    as_of: dt.date | None,
+    rebase: bool = False,
+    historical: bool = False,
 ) -> list[str]:
     """The version-2 reading rules (docs/adr/0202 §3), on top of every version-1 one.
 
@@ -453,7 +466,12 @@ def _validate_active_topic(
     live = not statuses & TERMINAL_STATUSES
     sent_wording = _wording(row.get("valja"))
     sent = bool(sent_wording and sent_wording != NOT_SENT) or bool(row.get("valja_kuupaev"))
-    if live and sent_wording == NOT_SENT:
+    if live and sent_wording == NOT_SENT and historical:
+        # A historical topic is closed for being history, not for «ei saatnud»:
+        # it concludes nothing, so it is never the reason recorded.
+        if topic.get("disposition") == "NO_POSITION_FORMED":
+            out.append("«ei saatnud» is not a closure reason; a historical topic never reads one.")
+    elif live and sent_wording == NOT_SENT:
         # «ei saatnud» is a source assertion: on a live stage it concludes nothing
         # (0148's rule is for a finished stage) and is never a SENT opinion.
         if topic.get("lifecycle") != "ACTIVE":
@@ -536,7 +554,9 @@ def _validate_reserve(package: dict[str, Any], highest: dict[str, int]) -> list[
     return out
 
 
-def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | None) -> list[str]:
+def _validate_topic(
+    topic: dict[str, Any], *, people: dict, as_of: dt.date | None, historical: bool = False
+) -> list[str]:
     out: list[str] = []
     reference = str(topic.get("reference") or "")
     if parse_reference(reference) is None:
@@ -556,7 +576,7 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
     disposition = topic.get("disposition") or ""
     if active and disposition:
         out.append("an active topic has no disposition.")
-    if not active and disposition not in DISPOSITIONS:
+    if not active and disposition not in DISPOSITIONS and not (historical and not disposition):
         out.append(f"a finished topic needs a disposition, not {disposition!r}.")
 
     owner_raw = topic.get("owner_raw") or ""

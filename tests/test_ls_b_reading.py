@@ -15,7 +15,12 @@ from typing import Any
 import pytest
 
 from app.legacy_import import lovable_reading
-from app.legacy_import.lovable_pilot import OPERATIONAL_COHORT, build_plan, validate_package
+from app.legacy_import.lovable_pilot import (
+    HISTORY_COHORT,
+    OPERATIONAL_COHORT,
+    build_plan,
+    validate_package,
+)
 from app.legacy_import.lovable_reading import (
     READER_VERSION,
     STAGE_MAPPING,
@@ -69,8 +74,9 @@ def bundle(reference: str = "2026_701", **values: Any) -> dict[str, Any]:
 
 
 def _valid(topic: dict[str, Any]) -> None:
+    cohort = HISTORY_COHORT if topic["reading"]["historical"] else OPERATIONAL_COHORT
     package = package_for(
-        [topic], as_of=AS_OF, snapshot_sha256="b" * 64, people=PEOPLE, cohort=OPERATIONAL_COHORT
+        [topic], as_of=AS_OF, snapshot_sha256="b" * 64, people=PEOPLE, cohort=cohort
     )
     report = validate_package(package)
     assert report.problems == []
@@ -234,7 +240,8 @@ def test_every_mapped_stage_exists_in_the_vocabulary():
     [
         ({"hetkeseis": "jõustunud"}, "INACTIVE", "COMPLETED"),
         ({"hetkeseis": "rohkem ei tegele"}, "CONCLUDED", "MONITORING_STOPPED"),
-        ({"hetkeseis": "jõustunud", "valja": "ei saatnud"}, "CONCLUDED", "NO_POSITION_FORMED"),
+        # «ei saatnud» is never the reason: the act in force is (LS2-A).
+        ({"hetkeseis": "jõustunud", "valja": "ei saatnud"}, "INACTIVE", "COMPLETED"),
     ],
 )
 def test_a_terminal_topic_is_created_closed_with_nothing_current(values, lifecycle, disposition):
@@ -279,7 +286,9 @@ def test_historical_is_always_closed_with_no_open_step_or_request():
         people={},
         historical=True,
     )
-    assert topic["lifecycle"] != "ACTIVE" and topic["disposition"] == "MONITORING_STOPPED"
+    # Outside Lovable's operational scope is not a reason: none is invented.
+    assert (topic["lifecycle"], topic["disposition"]) == ("INACTIVE", "")
+    assert topic["closure_basis"] == "UNKNOWN"
     assert topic["next_action"] is None and topic["deadline"]["treatment"] != "OPEN_REQUEST"
     assert topic["reading"]["historical"] is True
     _valid(topic)

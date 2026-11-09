@@ -30,9 +30,19 @@ The rules, each one exact and tested (`tests/test_ls_b_reading.py`):
   `hetkeseis` labels; no similarity, no case folding beyond whitespace. An
   unknown label is held and the Teema has no stage.
 * **Terminal and continuing topics are created closed** exactly as 0202 §1
-  creates finished ones: ARCHIVE, a disposition, no `closed_at`, no closure
-  event (the writer's `create_imported_matter(is_open=False, …)`), nothing
-  current — no step, no open request, no written commencement.
+  creates finished ones: ARCHIVE, no `closed_at`, no closure event (the
+  writer's `create_imported_matter(is_open=False, …)`), nothing current — no
+  step, no open request, no written commencement.
+* **A closure reason only where the source states one** (`closure_reading`,
+  reader version 2): Lovable's own status in `CLOSURE_BY_STATUS` («jõustunud»
+  → COMPLETED, «rohkem ei tegele» / «rohkem pole tegevusi plaanis» →
+  MONITORING_STOPPED), or its structured stage link to a successor →
+  SUPERSEDED. Nothing else is a reason: being outside Lovable's operational
+  scope does not say Koda stopped, «ei saatnud» does not say no position was
+  formed (it is kept as the source's statement). With no stated reason a
+  historical topic is closed ARCHIVE with a **blank** disposition
+  (`matters_closure_fields_consistent` allows exactly that); an operational
+  one is refused (`CLOSURE_REASON_UNKNOWN`) and stays with a person.
 * **`historical=True` is always closed** the same way, whatever the stage.
 
 `read_topic` returns one format-2 ``action: "CREATE"`` topic that
@@ -52,7 +62,10 @@ from typing import Any
 
 #: Bumped whenever a reading rule changes; recorded on every topic it reads
 #: (``topic["reading"]``) and in the provenance of what the synchronisation creates.
-READER_VERSION = "lovable-reading/1"
+#: Version 2 (2026-11-09, LS2-A): a closure reason is read only from the source's
+#: own status or stage link (`closure_reading`) — never from the operational scope
+#: or «ei saatnud» — and a historical topic's stage link is read too.
+READER_VERSION = "lovable-reading/2"
 
 #: Lovable's `hetkeseis` labels, **exactly as Lovable writes them**, to the
 #: Juristid stage vocabulary (`workflow.StageVocabulary.key`). Each pair is the
@@ -106,6 +119,39 @@ TERMINAL_STAGES = frozenset(STAGE_MAPPING[label] for label in TERMINAL_STAGE_LAB
 #: An act is adopted at these labels: only there is a «Kindla kuupäevaga»
 #: commencement a known one (docs/adr/0120).
 ADOPTED_STAGE_LABELS = frozenset({"jõustumise ootel", "ootan jõustumist", "jõustunud"})
+
+#: **Why a closed topic's work ended — only what Lovable's own `hetkeseis` says**,
+#: as (lifecycle, `Disposition`). Compared after collapsing whitespace and case,
+#: exactly as the importer reads a terminal status
+#: (`lovable_pilot._validate_active_topic`); no diacritic folding, no similarity.
+#: Each pair is a reading the product already makes:
+#:
+#: * «jõustunud» → COMPLETED: the stage `in_force` closes a Teema with it
+#:   (`workflow.stage_flow.TERMINAL_DISPOSITIONS`); it reads «Jõustus või töö
+#:   lõppes», work status «Mitteaktiivne» — no Chamber decision is asserted.
+#: * «rohkem ei tegele» → MONITORING_STOPPED: the stage `monitoring_stopped`
+#:   closes with it (the same table) — Koda's own words.
+#: * «rohkem pole tegevusi plaanis» → MONITORING_STOPPED: the reviewed
+#:   vocabulary's disposition-only label (`workflow.vocabulary`
+#:   `RAW_LABEL_TO_DISPOSITION`, docs/adr/0131 §9) — Koda's own words again.
+#:
+#: Not here, deliberately: «lõpetatud» (who ended what is not stated; an owner
+#: decision), every stage that does not end the work, the operational scope and
+#: «ei saatnud». Their topics get no closure reason.
+CLOSURE_BY_STATUS: dict[str, tuple[str, str]] = {
+    "jõustunud": ("INACTIVE", "COMPLETED"),
+    "rohkem ei tegele": ("CONCLUDED", "MONITORING_STOPPED"),
+    "rohkem pole tegevusi plaanis": ("CONCLUDED", "MONITORING_STOPPED"),
+}
+#: Where a closed topic's reason came from (`closure_reading`); recorded in its
+#: review notes (kept in `MatterSourceReference.source_row_raw`) and counted by
+#: the backfill report.
+CLOSURE_CONTINUATION = "CONTINUATION"
+CLOSURE_SOURCE_STATUS = "SOURCE_STATUS"
+CLOSURE_UNKNOWN = "UNKNOWN"
+#: A closed topic with no stated reason: «Mitteaktiivne», blank disposition
+#: (`app.matters.work_status.NOT_A_CHAMBER_DECISION` holds "").
+UNKNOWN_CLOSURE = ("INACTIVE", "")
 
 NOT_SENT = "ei saatnud"
 #: Lovable's commencement kinds (`topic_commencement.liik`), by the word they
@@ -204,20 +250,22 @@ def commencement_reading(record: Mapping[str, Any], *, status: str) -> dict[str,
     return {"target": "", "kind": "", "date": None}
 
 
-def _closed_disposition(row: Mapping[str, Any], act: str, *, historical: bool) -> tuple[str, str]:
-    """Lifecycle and disposition of a topic created closed (0202 §1)."""
-    status = _text(row.get("hetkeseis"))
-    if act == "CONTINUES":
-        return "CONTINUES", "SUPERSEDED"
-    if _wording(row.get("valja")) == NOT_SENT:
-        return "CONCLUDED", "NO_POSITION_FORMED"
-    if status == "rohkem ei tegele":
-        return "CONCLUDED", "MONITORING_STOPPED"
-    if status == "jõustunud":
-        return "INACTIVE", "COMPLETED"
-    # Only a historical topic gets here: its work is not current in Lovable's
-    # own scope. Juristid stopped following it; nothing else is claimed.
-    return "INACTIVE", "MONITORING_STOPPED"
+def closure_reading(bundle: Mapping[str, Any]) -> tuple[str, str, str]:
+    """(lifecycle, disposition, basis) of a topic created closed: only what the
+    source states (`CLOSURE_BY_STATUS`, then a structured stage link to a
+    successor), else `UNKNOWN_CLOSURE` with basis `CLOSURE_UNKNOWN`.
+
+    The status comes first, as in `activity`: a topic in force that also
+    continues elsewhere is FINISHED there too. Never read: the operational
+    scope, `valja` («ei saatnud» included), `jargmiseks`, any date."""
+    row = bundle.get("row") or {}
+    stated = CLOSURE_BY_STATUS.get(_text(row.get("hetkeseis")).casefold())
+    if stated is not None:
+        return stated[0], stated[1], CLOSURE_SOURCE_STATUS
+    me = str(row.get("id"))
+    if any(str(link.get("prev")) == me for link in bundle.get("stage_links") or []):
+        return "CONTINUES", "SUPERSEDED", CLOSURE_CONTINUATION
+    return UNKNOWN_CLOSURE[0], UNKNOWN_CLOSURE[1], CLOSURE_UNKNOWN
 
 
 def _source(bundle: Mapping[str, Any]) -> dict[str, Any]:
@@ -329,6 +377,7 @@ def read_topic(
     deadline: dict[str, Any] = {"treatment": "NONE"}
     commencements: list[dict[str, Any]] = []
     lifecycle, disposition, successor, successor_id = "ACTIVE", "", "", ""
+    basis = ""
 
     if active:
         if valja == NOT_SENT:
@@ -408,9 +457,31 @@ def read_topic(
                 hold("joustumised", HELD_COMMENCEMENT, "a commencement cannot be written as stated")
             commencements.append(entry)
     else:
-        lifecycle, disposition = _closed_disposition(row, act, historical=historical)
+        lifecycle, disposition, basis = closure_reading(bundle)
+        if basis == CLOSURE_UNKNOWN and not historical:
+            # Only the historical cohort is closed without a reason; a current
+            # topic Lovable calls finished in words the table does not hold
+            # waits for a person.
+            raise ReadingRefused(
+                "CLOSURE_REASON_UNKNOWN",
+                "A finished operational topic whose status states no closure reason.",
+            )
         if historical:
             notes.append(f"HISTORICAL: created closed ({READER_VERSION}); nothing current")
+        if basis == CLOSURE_SOURCE_STATUS:
+            notes.append(f"CLOSED_BY_SOURCE_STATUS: «{status}» → {disposition}")
+        elif basis == CLOSURE_CONTINUATION:
+            notes.append("CLOSED_BY_CONTINUATION: the source's stage link names a successor")
+        else:
+            notes.append(
+                "CLOSURE_REASON_UNKNOWN: the source states no reason the work ended; "
+                "none is recorded (blank disposition)"
+            )
+        if valja == NOT_SENT:
+            notes.append(
+                "NOT_SENT_RECORDED: «ei saatnud» is kept as the source's statement; "
+                "no closure reason is read from it"
+            )
         me = str(row.get("id"))
         successors = sorted(
             {
@@ -426,10 +497,12 @@ def read_topic(
             else:
                 notes.append("CONTINUES_UNLINKED: the stage link is kept as source only")
         if requested:
+            # History, never an obligation: a closed Teema is written with no
+            # request and no response deadline (`write_topic` stops at closed).
             deadline = {
                 "treatment": "SOURCE_ONLY",
                 "deadline": requested.isoformat(),
-                "reason": "CLOSED",
+                "reason": "NOT_SENT" if valja == NOT_SENT else "CLOSED",
             }
         for index, record in enumerate(
             sorted(bundle.get("commencements") or [], key=lambda r: r.get("position") or 0), 1
@@ -491,6 +564,7 @@ def read_topic(
         "stage": stage,
         "lifecycle": lifecycle,
         "disposition": disposition,
+        "closure_basis": basis,
         "successor": successor,
         "koda_initiative": koda,
         "instruments": instruments,
