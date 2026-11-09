@@ -1,0 +1,52 @@
+{% extends "haldus/base.html" %}
+{% block title %}Impordi OneNote'i materjalid · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  «Impordi OneNote'i materjalid»: only a capture whose newest check passed,
+  bound to that check's plan digest. The host runner checks the capture again
+  and imports through the existing gated importer only if the plan is still
+  the same; otherwise it refuses and nothing is written.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel dsync__confirm" aria-labelledby="dsync-import">
+    <h2 class="dsync__title" id="dsync-import">Impordi OneNote'i materjalid</h2>
+    <dl class="detailgrid">
+      <dt>Kogum</dt><dd class="mono">{{ capture }}</dd>
+      <dt>Kontroll</dt>
+      <dd>{% if plan %}<span class="statechip statechip--ok">Kontrollitud</span>{% if check %} {{ check.request.finished_at|date:"j.n.Y H:i" }}{% endif %}{% else %}<span class="statechip statechip--problem">Kontrollimata või ebaõnnestunud</span>{% endif %}</dd>
+      {% if check %}
+        <dt>Imporditavaid faile</dt><dd>{{ check.counts.promote|default_if_none:"—" }}</dd>
+        <dt>Ootele jäetavaid</dt><dd>{{ check.counts.hold|default_if_none:"—" }}</dd>
+        <dt>Lehti</dt><dd>{{ check.counts.pages|default_if_none:"—" }}</dd>
+      {% endif %}
+    </dl>
+    <ul class="dsync__warnings">
+      <li>Imporditakse ainult see plaan, mida kontroll nägi. Kui kogum või Juristide seis on vahepeal muutunud, keeldub server ja midagi ei kirjutata.</li>
+      <li>Jagatud lehe faile ei seota automaatselt igale teemale; need jäävad seose otsust ootama.</li>
+      <li>Olemasolevaid faile ei kirjutata üle; juba imporditud failid jäetakse vahele.</li>
+    </ul>
+    {% if busy %}
+      <p class="dsync__live" role="status">Üks OneNote'i taotlus juba ootab või käib. Uue saab esitada, kui see on lõppenud.</p>
+    {% endif %}
+    {% if plan %}
+      <form method="post" action="{% url 'haldus:data_sync_onenote_import' %}" class="form dsync__form">
+        {% csrf_token %}
+        <input type="hidden" name="capture" value="{{ capture }}">
+        <input type="hidden" name="plan_sha256" value="{{ plan }}">
+        <div class="field">
+          <label class="field__label" for="dsync-import-reason">Põhjus</label>
+          <input class="field__input" type="text" id="dsync-import-reason" name="reason" maxlength="300" value="{{ reason }}" required>
+        </div>
+        <div class="form__actions">
+          <button type="submit" class="button button--primary">Kinnitan: impordi see kogum</button>
+          <a class="button button--quiet" href="{% url 'haldus:data_sync' %}#onenote">Loobu</a>
+        </div>
+      </form>
+    {% else %}
+      <p class="acctnote">Kontrolli kogumit enne importimist.</p>
+      <p class="dsync__back"><a href="{% url 'haldus:data_sync' %}#onenote">Tagasi</a></p>
+    {% endif %}
+  </section>
+{% endblock %}

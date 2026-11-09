@@ -146,11 +146,11 @@ SECTIONS: tuple[Section, ...] = (
         "Versioon, otsinguindeksi värskus ning failitöötluse vead kokkuvõttes.",
     ),
     Section(
-        "lovable",
-        "Lovable sünkroonimine",
-        "haldus:lovable",
+        "andmed",
+        "Andmete sünkroonimine",
+        "haldus:data_sync",
         may_open_system,
-        "Öise Lovable'i sünkroonimise seis, viimased tulemused ja ülevaatust ootavad muudatused.",
+        "Lovable'i ja OneNote'i sünkroonimise seis, kontroll ja käivitus, erinevused ning ajalugu.",
     ),
 )
 

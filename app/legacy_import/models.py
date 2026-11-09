@@ -434,6 +434,9 @@ from app.legacy_import.source_pages import (  # noqa: E402
     SourceRelationshipKind,
     SourceSystem,
 )
+from app.legacy_import.sync_requests_models import (  # noqa: E402
+    DataSyncRequest,
+)
 
 
 class OutreachChannel(models.TextChoices):
@@ -754,6 +757,7 @@ __all__ = [
     "CandidateState",
     "ConflictState",
     "CurrentRegisterState",
+    "DataSyncRequest",
     "EvidencePilotRecord",
     "ExcelPilotImport",
     "HistoricalMatchCandidate",
