@@ -319,7 +319,8 @@ def test_a_new_attachment_on_a_completed_page_is_imported_not_skipped_forever(ap
 # -- case 3: new bytes under an existing attachment identity ------------------------------
 
 
-def test_changed_bytes_under_the_same_block_are_held_and_never_overwrite(applied):
+def test_changed_bytes_under_the_same_block_become_a_version_and_never_overwrite(applied):
+    """Case 3 (live-sync round 2026-11, P1): the next version, never an overwrite."""
     teema = applied["teema"]
     changed = [FIRST[0], f("{B2}", "vastus.docx", T2, data=b"muudetud sisu"), FIRST[2]]
     root = second(applied, [*changed, f("{B4}", "uus.pdf", T3)])
@@ -328,46 +329,50 @@ def test_changed_bytes_under_the_same_block_are_held_and_never_overwrite(applied
     frozen = model_to_dict(old)
     capture = oc.load_capture(root)
     plan = oc.build_plan(capture)
-    # One changed file no longer refuses the whole capture: it is held, by name.
+    # One changed file no longer refuses the whole capture, and is no longer only planned.
     assert plan.problems == []
-    assert ("{B2}", "HOLD", oc.HOLD_BYTES_CHANGED) in items(plan)
-    assert plan.summary()["plan_only_holds"] == {oc.HOLD_BYTES_CHANGED: 1}
+    assert ("{B2}", oc.VERSION, oc.VERSION_CHANGED_BYTES) in items(plan)
+    assert plan.summary()["plan_only_holds"] == {} and plan.summary()["new_versions"] == 1
     report = oc.apply(plan, oc.select_pages(plan), **_approve(plan))
     assert report.documents_created == 1  # the new attachment still arrives
+    assert report.versions_created == 1
     # Every earlier version is byte-for-byte the same row; the catalogue row too.
     assert {k: v for k, v in versions().items() if k in held_versions} == held_versions
     old.refresh_from_db()
     assert model_to_dict(old) == frozen
     assert Document.objects.filter(matter=teema).count() == 4
-    # verify says plainly that the database does not hold this capture's bytes.
-    problems = oc.verify(capture)["problems"]
-    assert problems and all("{B2}" in p for p in problems)
+    # verify reconciles the capture with the new reading, and the earlier version
+    # with the reading it was made from.
+    result = oc.verify(capture, check_bytes=True, require_complete=True)
+    assert result["problems"] == [] and result["counts"]["new_versions"] == 1
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="NOT SUPPORTED: an edited attachment as version 2 of its Document needs a "
-    "per-capture resource revision (ADR 0205 amendment 2026-11-05, proposal P1)",
-)
 def test_changed_bytes_become_a_second_version_of_the_same_document(applied):
     changed = [FIRST[0], f("{B2}", "vastus.docx", T2, data=b"muudetud sisu"), FIRST[2]]
     run(second(applied, changed))
     document = Document.objects.get(matter=applied["teema"], title="vastus.docx")
     assert document.versions.count() == 2
+    first, latest = document.versions.order_by("version_number")
+    assert first.sha256 == hashlib.sha256(FIRST[1]["data"]).hexdigest()
+    assert latest.sha256 == hashlib.sha256(b"muudetud sisu").hexdigest()
+    assert document.current_version_id == latest.pk
 
 
 # -- case 4: a changed structural comment, unchanged bytes -------------------------------
 
 
-def test_a_changed_comment_is_reported_and_the_documents_note_is_kept(applied):
+def test_a_changed_comment_is_recorded_and_the_documents_note_is_kept(applied):
     note_before = Document.objects.get(title="kiri.pdf").provenance_note
     changed = [f("{B1}", "kiri.pdf", T1, comment="Uus märkus"), *FIRST[1:]]
     root = second(applied, changed)
     before = snapshot()
     plan, report = run(root)
-    assert ("{B1}", "HOLD", oc.HOLD_COMMENT_CHANGED) in items(plan)
-    assert plan.summary()["plan_only_holds"] == {oc.HOLD_COMMENT_CHANGED: 1}
-    assert report.batch_id == "" and snapshot() == before
+    assert ("{B1}", oc.REVISE, oc.HOLD_COMMENT_CHANGED) in items(plan)
+    assert plan.summary()["revisions_by_reason"] == {oc.HOLD_COMMENT_CHANGED: 1}
+    # One batch records the reading; no Document, version or source row is written.
+    after = snapshot()
+    assert after.pop("ImportBatch") == before.pop("ImportBatch") + 1 and after == before
+    assert report.revisions == {oc.HOLD_COMMENT_CHANGED: 1}
     assert Document.objects.get(title="kiri.pdf").provenance_note == note_before
 
 
@@ -376,15 +381,16 @@ def test_an_unchanged_comment_is_not_reported_as_changed(applied):
     assert not any(i.reason == oc.HOLD_COMMENT_CHANGED for i in plan.items)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="NOT SUPPORTED: recording a later capture's comment beside the earlier one needs "
-    "per-capture occurrence context (ADR 0205 amendment 2026-11-05, proposal P2)",
-)
 def test_a_changed_comment_is_recorded_beside_the_earlier_one(applied):
+    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision, RevisionState
+
     changed = [f("{B1}", "kiri.pdf", T1, comment="Uus märkus"), *FIRST[1:]]
     run(second(applied, changed))
-    assert "Uus märkus" in Document.objects.get(title="kiri.pdf").provenance_note
+    revision = OneNoteResourceRevision.objects.get(resource__resource_key="{B1}")
+    assert revision.state == RevisionState.RECORDED and revision.document_version_id is None
+    assert oc.structural_comment_of(revision.context) == [("ATTACHED_NOTE", "Uus märkus")]
+    # The earlier comment is still the Document's own record (ADR 0205 §5).
+    assert "Ministeeriumi kiri" in Document.objects.get(title="kiri.pdf").provenance_note
 
 
 # -- case 5: a moved page whose block IDs were all re-issued ------------------------------
