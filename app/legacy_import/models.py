@@ -399,6 +399,11 @@ from app.legacy_import.lovable_sync_models import (  # noqa: E402
     LovableSyncSnapshot,
     LovableSyncState,
 )
+from app.legacy_import.onenote_coverage_models import (  # noqa: E402
+    OneNoteCoverageMark,
+    OneNotePageRevision,
+    OneNoteResourceRevision,
+)
 from app.legacy_import.opinion_archive import (  # noqa: E402
     OpinionArchiveBatch,
     OpinionArchiveItem,
@@ -775,6 +780,9 @@ __all__ = [
     "MatchMethod",
     "MatterSourcePage",
     "MatterSourceReference",
+    "OneNoteCoverageMark",
+    "OneNotePageRevision",
+    "OneNoteResourceRevision",
     "OpinionArchiveBatch",
     "OpinionArchiveBinary",
     "OpinionArchiveItem",
