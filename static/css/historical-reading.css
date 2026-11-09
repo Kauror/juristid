@@ -213,3 +213,49 @@
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
 }
+
+/* ====================================================================
+ * Live-sync round 2 — the captured versions of a source page
+ *
+ * Shown only on a page a later capture has read again: one line saying which
+ * version this is, what changed against the one before, and the versions
+ * behind a closed disclosure. Quiet: the page's own text stays the reading.
+ * ==================================================================== */
+
+.sourceversion {
+  display: grid;
+  gap: var(--spacing-1);
+  max-width: 72ch;
+  margin: 0 0 var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-left: 3px solid var(--accent-border);
+  font-size: var(--typography-size-row);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.sourceversion__line,
+.sourceversion__change {
+  margin: 0;
+}
+
+.sourceversion__line strong {
+  color: var(--text-primary);
+}
+
+.sourceversion__more {
+  margin: 0;
+}
+
+.sourceversion__list {
+  display: grid;
+  gap: var(--spacing-1);
+  margin: var(--spacing-1) 0 0;
+  padding-left: var(--spacing-5);
+}
+
+/* A block or file this version brought: one quiet word after it. */
+.statechip--new {
+  color: var(--accent-link);
+  border-color: var(--accent-border);
+}
