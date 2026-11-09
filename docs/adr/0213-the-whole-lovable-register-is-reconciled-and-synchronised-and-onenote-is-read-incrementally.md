@@ -134,6 +134,31 @@ Not usable with existing access. The only connector holds no `Notes.Read*` scope
 3. APPLY mode for the nightly run (after `access-sql` is recorded, 0192 status update 2026-11-02).
 4. The on-demand cron line `*/5 * * * * …/juristid-lovable-sync.sh --on-demand`.
 5. Whether a reference released by 0203 may go to a new topic.
-6. The disposition used for historical topics whose source stage is not terminal.
+6. ~~The disposition used for historical topics whose source stage is not terminal.~~ Answered by the amendment below (§9.1): none is invented.
 
 Rollback is the verified backup set taken before each data step. The migrations are additive, so the code rollback goes to r51 only while the new tables are empty.
+
+## 9. Amendment 2026-11-09 (round 2): completion before activation
+
+**9.1 Closure reasons are the source's.** The reader (`lovable-reading/2`, `closure_reading`) records why a closed topic's work ended only where Lovable states it:
+- its own `hetkeseis` through the explicit table `CLOSURE_BY_STATUS` («jõustunud» → COMPLETED; «rohkem ei tegele» or «rohkem pole tegevusi plaanis» → MONITORING_STOPPED; whitespace and case only), or
+- its structured stage link to a successor (SUPERSEDED).
+
+Being outside Lovable's operational scope is not a reason, and «ei saatnud» is not a reason: it stays the source's statement (`valja` and the deadline source-only, reason NOT_SENT). A historical topic with no stated reason is created closed ARCHIVE with a blank disposition, which `matters_closure_fields_consistent` already allows for an archive row; the importer accepts a blank only in `lovable-history` (`BLANK_DISPOSITION_COHORTS`). The Teema reads «Mitteaktiivne» and its banner «Lõpetamise põhjus pole allikas kirjas.». An operational topic Lovable calls finished without a stated reason is refused (`CLOSURE_REASON_UNKNOWN`) and held for a person. `Lõpeta teema` is unchanged. A history package re-reads every closure from its own source copy and is refused when read by another reader version (`STALE_READER`) — on both `lovable_inventory backfill` and the generic `lovable_pilot` path.
+
+**9.2 Stage mapping.** All 14 labels of `STAGE_MAPPING` equal, case aside, a reviewed label of the same stage key (V1–V3 reference stages); a test binds them. Terminal stages stay human-only in the sync.
+
+**9.3 Reading a later capture.** The source page opens at the latest captured version (the page row is version 1, each `OneNotePageRevision` the next); `?hoive=algne|<revision>` opens any version behind the same visibility check. Block changes are stated only where OneNote object IDs prove them. A file version is dated by its block's OneNote modification time only when that time lies between the block's creation and the import; otherwise undated. «Tegevused» projects notes from the latest version and links each to `?hoive=<revision>#plokk-N`. Nothing earlier is rewritten.
+
+**9.4 Held OneNote readings.** A verified technical administrator decides each held item once, with a reason, in an append-only `OneNoteHoldDecision`:
+- associate a shared page's file with ONE candidate Teema (through the ordinary import path);
+- accept a changed reading as the next `DocumentVersion`;
+- reject; or keep holding.
+
+A decision settles only the held rows it saw; a Teema linked to the page later opens a new item. Captured rows are never altered.
+
+**9.5 Desktop capture.** `capture_pages.ps1` was rehearsed against the OneNote desktop on one archived page (a defect fixed: the namespace manager was unrolled). The capture equalled the 04.11 capture in GUID, blocks and file hashes, planned `NO_CHANGES` and its apply wrote nothing. Navigation, placeholder and `-Section` paths are not yet rehearsed.
+
+**9.6 Request runner.** A Lovable request records the mode its confirmation stated (`mode_at_request`); the runner refuses it (`MODE_CHANGED`) when the mode differs, never runs a PENDING request older than two hours, and asks per lane through `data_sync_requests poll`, which records a heartbeat (`DataSyncRunnerBeat`) and needs no credentials. Haldus says whether a runner was ever seen. Host-side blocks refuse the waiting request by name. A failure keeps its error class and code; a message only when it is one of the code base's fixed sentences. «Vaata erinevusi» shows next-step corrections first, one card per Teema with its current step, and never classifies free text.
+
+**9.7 Migrations.** legacy_import 0029 (hold decisions) and 0030 (request mode, runner heartbeat) follow 0025–0028 in the same release; 0030 assumes no LOVABLE_SYNC request without a mode exists, which holds because 0027 ships with it.
