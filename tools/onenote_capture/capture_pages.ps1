@@ -46,7 +46,9 @@ function Invoke-Busy([scriptblock]$call) {
   throw 'OneNote stayed busy'
 }
 function Utf8([string]$path, [string]$text) { [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false)) }
-function Nsm([xml]$d) { $m = New-Object System.Xml.XmlNamespaceManager($d.NameTable); $m.AddNamespace('one', $ns); return $m }
+# A function returning an XmlNamespaceManager must wrap it: PowerShell unrolls any IEnumerable
+# it returns (the manager enumerates its prefixes), and SelectNodes then gets an array.
+function Nsm([xml]$d) { $m = New-Object System.Xml.XmlNamespaceManager($d.NameTable); $m.AddNamespace('one', $ns); return ,$m }
 function Read-Page([string]$id) { $x = ''; Invoke-Busy { $app.GetPageContent($id, [ref]$x, 0) } | Out-Null; return $x }
 function Read-Hierarchy() { $x = ''; Invoke-Busy { $app.GetHierarchy('', 4, [ref]$x) } | Out-Null; return $x }
 function Page-Link([string]$id) { $x = ''; Invoke-Busy { $app.GetHyperlinkToObject($id, '', [ref]$x) } | Out-Null; return $x }
