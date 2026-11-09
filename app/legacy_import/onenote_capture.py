@@ -100,7 +100,8 @@ VERSION_CHANGED_BYTES = "CHANGED_BYTES_NEW_VERSION"
 #:   Document was removed since, the new bytes are empty or too large, or the page
 #:   is shared): held with the reason (disposition ``REVISE``);
 HOLD_BYTES_CHANGED = "BYTES_CHANGED_UNDER_SAME_BLOCK"
-HOLD_DOCUMENT_REMOVED = "DOCUMENT_REMOVED_SINCE_IMPORT"
+#: A revision reason only: never an import row's code, so not a ``HOLD_`` constant.
+REVISE_DOCUMENT_REMOVED = "DOCUMENT_REMOVED_SINCE_IMPORT"
 #: * the same bytes under another creation time: held for a person (``REVISE``);
 HOLD_TIME_CHANGED = "BLOCK_TIME_CHANGED_UNDER_SAME_BLOCK"
 #: * the same bytes with another structural comment: recorded beside the earlier
@@ -1153,7 +1154,7 @@ def _changed_bytes(
     if e is None or e.state != ResourceImportState.IMPORTED or not e.document_id:
         return REVISE, HOLD_BYTES_CHANGED, CLASS_CHANGED_BYTES
     if e.document_id in removed:
-        return REVISE, HOLD_DOCUMENT_REMOVED, CLASS_CHANGED_BYTES
+        return REVISE, REVISE_DOCUMENT_REMOVED, CLASS_CHANGED_BYTES
     if o.size == 0:
         return REVISE, HOLD_EMPTY_FILE, CLASS_CHANGED_BYTES
     if o.size > limit:
@@ -1914,7 +1915,7 @@ REVIEW_HOLDS = frozenset(
         HOLD_SAME_FILE_ELSEWHERE,
         HOLD_BYTES_CHANGED,
         HOLD_TIME_CHANGED,
-        HOLD_DOCUMENT_REMOVED,
+        REVISE_DOCUMENT_REMOVED,
     }
 )
 
@@ -2043,7 +2044,7 @@ def _hold_detail(reason: str, page: CapturePage, *, earlier: str = "") -> str:
         "on sama dokumendi järgmine versioon; varasem versioon on muutmata.",
         HOLD_BYTES_CHANGED: "Selle ploki baidid on varasemast hõivest erinevad, kuid varasem "
         "fail ei ole selle teema dokument; uued baidid on lähtekorpuses ja ootavad ülevaatust.",
-        HOLD_DOCUMENT_REMOVED: "Selle ploki baidid on varasemast hõivest erinevad, kuid "
+        REVISE_DOCUMENT_REMOVED: "Selle ploki baidid on varasemast hõivest erinevad, kuid "
         "dokument on teemalt eemaldatud; uut versiooni ei lisata. Vajab ülevaatust.",
         HOLD_TIME_CHANGED: "Selle ploki loomise aeg erineb varasemast hõivest; varasem kirje "
         "on muutmata. Vajab ülevaatust.",

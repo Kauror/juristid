@@ -229,7 +229,7 @@ def test_changed_bytes_of_a_removed_document_are_held_not_versioned(applied):
     document = Document.objects.get(matter=applied["teema"], title="vastus.docx")
     Document.objects.filter(pk=document.pk).update(removed_at=datetime(2026, 11, 8))
     plan, report = run(later(applied, changed_b2()))
-    assert ("{B2}", oc.REVISE, oc.HOLD_DOCUMENT_REMOVED) in items(plan)
+    assert ("{B2}", oc.REVISE, oc.REVISE_DOCUMENT_REMOVED) in items(plan)
     assert report.versions_created == 0 and document.versions.count() == 1
 
 
@@ -340,7 +340,7 @@ def test_an_unchanged_text_under_new_modification_times_is_not_a_change(applied)
 
 
 def test_a_page_moved_to_another_section_is_recorded_as_moved(applied):
-    plan, report = run(later(applied, FIRST, section="ARHIIV-näidis", title="Uus pealkiri"))
+    plan, _report = run(later(applied, FIRST, section="ARHIIV-näidis", title="Uus pealkiri"))
     assert plan.page_changes == {f"p-{GUID.lower()}": (False, True)}
     revision = OneNotePageRevision.objects.get()
     assert revision.location_changed and not revision.text_changed
