@@ -31,6 +31,25 @@ received date, the act, and lifecycle. A held change stays pending — the
 baseline does not move — until the source returns to it, Juristid converges on
 it, or an operator resolves it (`resolve_field`).
 
+**Conditional fields and new topics** (docs/adr/0213, `FIELD_POLICY`): a stage
+that does not end the work, through the reader's exact `STAGE_MAPPING`; a new
+opinion request where none is open and nothing is sent; an added commencement of
+an unambiguous kind, never on a past day. Lovable's stage link (the
+continuation) is compared and always held. An operational topic with no Teema
+is discovered every run, checked (identity — tombstones included —, reference,
+reading, plan) and, on an APPLY night only, created once through the machine
+reader and the importer's own CREATE writer, then enrolled in the register with
+a ``NEW_TOPIC`` membership (`create_new_topic`).
+
+**The limits, and why each stays** (brief 2026-11-09 §6 B6): ``MAX_CHANGED_MATTERS``
+(20 Teemad written a night) and ``MAX_NEW_CONFLICTS`` (10 more than the night
+before) were sized for daily work, not a backfill — a backfill goes through
+`lovable_pilot` packages, never through a night — and a night over them is a
+changed source or a broken mapping; ``MAX_MISSING`` (5) separates a deleted
+topic from a broken read; ``MAX_NEW_TOPICS`` (10 created a night) is new and
+separate. The field breakers hold every write of the night (REVIEW_ONLY) and
+the new-topic breaker every creation of it; ``MAX_MISSING`` fails the run.
+
 A field the import itself held for review (``HELD_FOR_REVIEW`` in the package's
 ``field_decisions``) is seeded with ``import_held`` and reported
 ``REVIEW_REQUIRED`` / ``IMPORT_HELD`` every night until an operator resolves it;
@@ -81,11 +100,13 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncControl,
     LovableSyncDecision,
     LovableSyncMembership,
+    LovableSyncNewTopic,
     LovableSyncRetirement,
     LovableSyncRun,
     LovableSyncSnapshot,
     LovableSyncState,
     MembershipBasis,
+    NewTopicStatus,
     SyncMode,
     SyncOutcome,
     SyncRunStatus,
@@ -95,6 +116,10 @@ from app.legacy_import.lovable_sync_models import (
 logger = logging.getLogger(__name__)
 
 MAPPING_VERSION = "lovable-sync/1"
+#: The engine's own version (docs/adr/0213): the conditional fields and the new
+#: topics. ``MAPPING_VERSION`` stays: it names the reconciliation's canonical
+#: values, which did not change, and stored snapshots and references carry it.
+ENGINE_VERSION = "lovable-sync/2"
 PROVENANCE_SOURCE = "LOVABLE_SYNC"
 TALLINN = ZoneInfo("Europe/Tallinn")
 LOCK_NAMESPACE, LOCK_KEY = 24607, 1
@@ -106,7 +131,15 @@ EXPECTED_COHORT = 100
 #: importer writes. The pilot is built in; any other is synchronised only once
 #: enrolled (`enroll`).
 PILOT_COHORT = PILOT
-ENROLLABLE_COHORTS = (OPERATIONAL_COHORT, REGISTER_COHORT)
+#: The historical cohort (brief 2026-11-09 §5 A4): the closed Teemad the backfill
+#: creates from Lovable's non-operational topics. Every change to one of them is
+#: a person's call (MATTER_CLOSED); a topic gone from the source is never closed
+#: or deleted here.
+HISTORY_COHORT = "lovable-history"
+ENROLLABLE_COHORTS = (OPERATIONAL_COHORT, REGISTER_COHORT, HISTORY_COHORT)
+#: The cohort a new operational topic joins when an APPLY night creates its
+#: Teema (docs/adr/0213): the register, Lovable's operational scope.
+NEW_TOPIC_COHORT = REGISTER_COHORT
 #: Cohorts a rebuild may supersede (`enroll --supersede`): only the pilot.
 SUPERSEDABLE_COHORTS = (PILOT_COHORT,)
 #: The provenance kinds that make a Teema a member of an enrolled cohort: a
@@ -148,10 +181,21 @@ BACKUP_MAX_AGE = dt.timedelta(hours=2)
 #: More cohort rows missing from the source than this is a broken read or a
 #: broken source, never a night's work: the run stops.
 MAX_MISSING = 5
+#: New Teemad one night may create (docs/adr/0213): the department opens a few
+#: topics a week; more than this in one night is a changed source scope or a
+#: broken reading, never a night's work. A separate breaker: the field breakers
+#: above are unchanged, and a night over this creates none and writes the rest.
+MAX_NEW_TOPICS = 10
 SNAPSHOT_RETENTION_DAYS = 30
 _BACKUP_SET = re.compile(r"^sets/\d{8}T\d{6}Z$")
 
 AUTO_FIELDS = ("title", "owner", "next_action_date", "onenote_link")
+#: Written automatically only under exact preconditions (`FIELD_POLICY`,
+#: docs/adr/0213): a stage that does not end the work, a new opinion request
+#: where none is open, an added commencement of an unambiguous kind.
+CONDITIONAL_FIELDS = ("stage", "opinion_deadline", "commencements")
+#: Every field a run may write, in the order it writes them.
+WRITABLE_FIELDS = AUTO_FIELDS + CONDITIONAL_FIELDS
 HELD_FIELDS = (
     "next_action_text",
     "stage",
@@ -168,6 +212,15 @@ HELD_FIELDS = (
 FIELDS = AUTO_FIELDS + HELD_FIELDS
 #: The current step's wording and day: one operation (`_step_decisions`).
 STEP_FIELDS = ("next_action_text", "next_action_date")
+#: Lovable's structured stage link (`topic_stage_link`, this topic as `prev`):
+#: compared and reported, never written (no service writes a continuation
+#: without closing the predecessor). Not a `SOURCE_FIELDS` field: it is read off
+#: the bundle's links, beside the canonical row values.
+CONTINUATION = "continuation"
+#: A new operational topic, as a decision's field (`LovableSyncDecision.field`).
+NEW_TOPIC = "new_topic"
+#: What `resolve_field` accepts.
+RESOLVABLE_FIELDS = (*FIELDS, CONTINUATION)
 
 #: Why a source change was held. Codes, never business text.
 HELD = "HELD_FIELD"
@@ -185,6 +238,26 @@ DATE_CLEARED = "DATE_CLEARED"
 DATE_PAST = "DATE_IN_PAST"
 NOT_EXACT = "STEP_DATE_NOT_EXACT"
 LINK_NOT_HTTPS = "LINK_NOT_HTTPS"
+#: The conditional fields' holds (docs/adr/0213).
+STAGE_ENDS_WORK = "STAGE_ENDS_WORK"
+REQUEST_OPEN = "REQUEST_ALREADY_OPEN"
+REQUEST_CLEARED = "REQUEST_CLEARED"
+REQUEST_ANSWERED = "REQUEST_SENT_IN_SOURCE"
+REQUEST_INITIATIVE = "REQUEST_ON_INITIATIVE"
+COMMENCEMENT_CLASH = "COMMENCEMENT_DAY_CLASH"
+CONTINUATION_CHANGED = "CONTINUATION_CHANGED"
+#: A new topic's holds (docs/adr/0213 §new topics).
+NEW_UUID_TOMBSTONE = "UUID_HELD_BY_TOMBSTONE"
+NEW_UUID_LIVE = "UUID_HELD_BY_UNSYNCED_TEEMA"
+NEW_REFERENCE_TAKEN = "REFERENCE_TAKEN"
+NEW_REFERENCE_DELETED = "REFERENCE_OF_DELETED_TEEMA"
+NEW_NOT_READ = "NOT_IN_READING"
+NEW_UNREADABLE = "READING_REFUSED"
+NEW_INVALID = "READING_INVALID"
+NEW_PLAN = "PLAN_PROBLEM"
+NEW_NO_COHORT = "NO_TARGET_COHORT"
+NEW_FAILED = "CREATE_FAILED"
+NEW_BREAKER = "NEW_TOPIC_BREAKER"
 #: The import held the field for a person (docs/adr/0202 §6); only `resolve_field` clears it.
 IMPORT_HELD = "IMPORT_HELD"
 BREAKER = "CIRCUIT_BREAKER"
@@ -210,6 +283,172 @@ class SyncRefused(Exception):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)
         self.code = code
+
+
+# ---------------------------------------------------------------------------
+# The field policy (docs/adr/0213, brief 2026-11-09 §6 B3)
+# ---------------------------------------------------------------------------
+
+#: How a reconciled field may change in Juristid.
+AUTO = "AUTO"  # written whenever A is reliable, B = A and the service supports it
+CONDITIONAL = "CONDITIONAL"  # written only under the exact preconditions stated
+REVIEW = "REVIEW"  # never written by the machine: a person decides
+NOT_REPRESENTABLE = "NOT_REPRESENTABLE"  # Juristid has no honest place for it
+POLICY_CLASSES = (AUTO, CONDITIONAL, REVIEW, NOT_REPRESENTABLE)
+
+
+@dataclass(frozen=True)
+class FieldPolicy:
+    """One reconciled field's class, the service that writes it (if any) and why,
+    in Estonian for the administration pages."""
+
+    field: str
+    policy: str
+    explanation: str
+    service: str = ""
+
+
+def _policy(field_name: str, policy: str, explanation: str, service: str = "") -> FieldPolicy:
+    return FieldPolicy(field_name, policy, explanation, service)
+
+
+#: Every reconciled field, the continuation, a new topic and a vanished source
+#: (interface 3). The engine's own rules below enforce exactly this table;
+#: `tests/test_ls_b_policy.py` holds the two together.
+FIELD_POLICY: dict[str, FieldPolicy] = {
+    p.field: p
+    for p in (
+        _policy(
+            "title",
+            AUTO,
+            "Pealkiri uueneb, kui import säilitas allika pealkirja ja Juristides pole seda "
+            "muudetud.",
+            "set_matter_title(provenance=…)",
+        ),
+        _policy(
+            "owner",
+            AUTO,
+            "Vastutaja vahetub, kui nimi vastab täpselt ühele aktiivsele kasutajale, kellele saab "
+            "tööd määrata; avatud tegevus liigub kaasa.",
+            "assign_matter(provenance=…)",
+        ),
+        _policy(
+            "next_action_date",
+            AUTO,
+            "Tegevuse päev nihkub ainult siis, kui sõnastus ei muutunud, tegevus on allika "
+            "sõnastusega täpse päevaga tegevus ja uus päev pole möödas ega tühi.",
+            "set_next_action (sama sõnastus, liik ja vastutaja)",
+        ),
+        _policy(
+            "onenote_link",
+            AUTO,
+            "Uus https-link lisatakse uue allikaviitena; vana jääb alles. Eemaldatud link jääb "
+            "inimesele.",
+            "uus MatterSourceReference",
+        ),
+        _policy(
+            "next_action_text",
+            REVIEW,
+            "Järgmise tegevuse sõnastus on vaba tekst: selle liiki (tee/oota/jälgi) ei loe masin "
+            "kunagi välja; muutus jääb inimese otsustada koos päevaga.",
+        ),
+        _policy(
+            "stage",
+            CONDITIONAL,
+            "Hetkeseis muutub ainult täpse sildivastavuse (STAGE_MAPPING) kaudu avatud teemal, kui "
+            "Juristid on veel viimati rakendatud etapis ja uus etapp ei lõpeta tööd. «Jõustunud» "
+            "ja «rohkem ei tegele» sulgeksid teema: need jäävad alati inimesele.",
+            "change_stage(origin=IMPORTED)",
+        ),
+        _policy(
+            "opinion_deadline",
+            CONDITIONAL,
+            "Uus arvamuse tähtaeg lisatakse uue küsimisena ainult siis, kui teemal pole praegust "
+            "küsimist, allikas pole midagi saadetud ega «ei saatnud» öeldud, see pole Koja algatus "
+            "ja päev pole möödas. Varasemad küsimised ja tähtaegade ajalugu jäävad alles; "
+            "olemasolevat tähtaega ei muudeta kunagi.",
+            "request_response_deadline",
+        ),
+        _policy(
+            "sent",
+            REVIEW,
+            "«Välja» on allika väide, mitte saadetud Koja arvamus: masin ei loo kunagi saadetud "
+            "arvamust; «ei saatnud» ei tähenda saatmist.",
+        ),
+        _policy(
+            "sent_date",
+            REVIEW,
+            "Saatmise kuupäev on allika väide; saadetud arvamust ilma kirjata ei looda.",
+        ),
+        _policy(
+            "addressee",
+            REVIEW,
+            "Adressaadid (kellele) on vaba tekst; asutuse vastet ei arvata.",
+        ),
+        _policy(
+            "koda_initiative",
+            REVIEW,
+            "Koja algatus muudab menetluse liiki ja küsimiste reegleid; selle otsustab inimene.",
+        ),
+        _policy(
+            "legal_act",
+            REVIEW,
+            "Õigusakti liik jääb inimesele: olemasolevat liiki ei kirjutata üle.",
+        ),
+        _policy(
+            "received",
+            REVIEW,
+            "Saabumise kuupäev on ajalugu; selle muutust ei kanta automaatselt üle.",
+        ),
+        _policy(
+            "commencements",
+            CONDITIONAL,
+            "Lisandunud jõustumine lisatakse ainult siis, kui selle liik on üheselt loetav "
+            "(üldises korras, kindel kuupäev, eeldatav kuupäev — eeldatav jääb hinnanguks) ja "
+            "Juristides pole sama päeva teist kirjet. Muudetud või eemaldatud jõustumine jääb "
+            "inimesele.",
+            "add_effective_date / add_important_date",
+        ),
+        _policy(
+            "operational_scope",
+            REVIEW,
+            "Operatiivsest ulatusest väljumine ei sulge ega kustuta teemat; see jääb inimesele.",
+        ),
+        _policy(
+            CONTINUATION,
+            REVIEW,
+            "Jätkuseos (Lovable'i menetlusetappide seos) kirjutatakse ainult teema sulgemisega, "
+            "mis on elutsükli otsus: uus, muudetud või eemaldatud seos jääb inimesele. Seotud "
+            "materjali seost ei looda kunagi asemele.",
+        ),
+        _policy(
+            NEW_TOPIC,
+            CONDITIONAL,
+            "Uus operatiivne Lovable'i teema luuakse ainult rakendamise ööl, kui selle Lovable'i "
+            "tunnust ei hoia ükski teema (ka kustutatud), viide on vaba ja lugemine on ohutu; "
+            "kõik, mida ei saa ohutult lugeda, jääb ülevaatamiseks. Sama teema luuakse ainult "
+            "üks kord.",
+            "lovable_reading.read_topic + lovable_pilot CREATE",
+        ),
+        _policy(
+            "source_missing",
+            NOT_REPRESENTABLE,
+            "Lovable'ist kadunud või kustutatud teemat ei kustutata ega suleta Juristides; see "
+            "jääb teatena alles, kuni inimene otsustab.",
+        ),
+        _policy(
+            "identifier_changed",
+            NOT_REPRESENTABLE,
+            "Muutunud Lovable'i number või tunnus peatab ainult selle teema võrdluse; viidet ei "
+            "muudeta automaatselt.",
+        ),
+    )
+}
+
+
+def policy_of(field_name: str) -> FieldPolicy:
+    """A field's policy; an unknown field is REVIEW, never automatic."""
+    return FIELD_POLICY.get(field_name) or FieldPolicy(field_name, REVIEW, "Tundmatu väli.")
 
 
 # ---------------------------------------------------------------------------
@@ -313,6 +552,9 @@ class Cohort:
     expected: int
     #: Members that left with their Teema's permanent deletion (`LovableSyncRetirement`).
     retired: int = 0
+    #: Members that joined after the enrolment: Teemad the synchronisation
+    #: created from new Lovable topics (`MembershipBasis.NEW_TOPIC`, docs/adr/0213).
+    joined: int = 0
 
     @property
     def builtin(self) -> bool:
@@ -320,15 +562,29 @@ class Cohort:
 
     @property
     def required(self) -> int:
-        """How many Teemad a run must find: the enrolled size less the authorised
-        retirements, never below zero (audit 2026-11 C-L-04). A state missing
-        without a retirement is still one short of this."""
-        return max(0, self.expected - self.retired)
+        """How many Teemad a run must find: the enrolled size plus the members
+        that joined as new topics, less the authorised retirements, never below
+        zero (audit 2026-11 C-L-04; docs/adr/0213). A state missing without a
+        retirement is still one short of this, and a joined member is counted
+        only through its append-only membership."""
+        return max(0, self.expected + self.joined - self.retired)
 
 
 def pilot_cohort(retired: int = 0) -> Cohort:
     # Read at call time: tests (and only tests) size the pilot down.
     return Cohort(PILOT_COHORT, PILOT, "", EXPECTED_COHORT, retired)
+
+
+def joined_members() -> Counter[str]:
+    """How many members each cohort gained as new topics. Reads only."""
+    return Counter(
+        dict(
+            LovableSyncMembership.objects.filter(basis=MembershipBasis.NEW_TOPIC)
+            .values("cohort")
+            .annotate(n=Count("id"))
+            .values_list("cohort", "n")
+        )
+    )
 
 
 def retired_members() -> Counter[str]:
@@ -349,8 +605,9 @@ def cohorts() -> list[Cohort]:
     rows = list(LovableSyncCohort.objects.order_by("enrolled_at", "key"))
     retired = {row.key for row in rows if row.retired_at is not None}
     gone = retired_members()
+    joined = joined_members()
     enrolled = [
-        Cohort(row.key, row.pilot, row.package_sha256, row.expected, gone[row.key])
+        Cohort(row.key, row.pilot, row.package_sha256, row.expected, gone[row.key], joined[row.key])
         for row in rows
         if row.retired_at is None and row.key != PILOT_COHORT
     ]
@@ -366,11 +623,12 @@ def expected_cohorts() -> dict[str, int]:
 
 
 def cohort_ledger() -> list[dict[str, Any]]:
-    """Per synchronised cohort: enrolled, retired and required, numbers only."""
+    """Per synchronised cohort: enrolled, joined, retired and required, numbers only."""
     return [
         {
             "key": cohort.key,
             "enrolled": cohort.expected,
+            **({"joined": cohort.joined} if cohort.joined else {}),
             "retired": cohort.retired,
             "expected": cohort.required,
         }
@@ -859,6 +1117,74 @@ def current_values(matter: Any) -> dict[str, Any]:
     }
 
 
+def full_values(matter: Any) -> dict[str, Any]:
+    """B for every field the engine compares: `current_values` (the shape the
+    read service's bulk reader mirrors) and the conditional fields' values."""
+    return {**current_values(matter), **conditional_values(matter)}
+
+
+def conditional_values(matter: Any) -> dict[str, Any]:
+    """B for the conditional fields and the continuation (docs/adr/0213): the
+    stage key, the current opinion request's day, whether the Teema is a Chamber
+    initiative, its active commencements as ``[target, kind, day]`` (the shape
+    `lovable_pilot.derived_values` gives), and the Lovable ids its continuation
+    names (through the successor's own synchronisation state, never a title)."""
+    from app.intelligence.enums import FactStatus
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.workflow.enums import Track
+
+    dates = [
+        ["MatterEffectiveDate", str(kind or ""), day.isoformat() if day else None]
+        for kind, day in MatterEffectiveDate.objects.filter(
+            matter_id=matter.pk, status=FactStatus.ACTIVE
+        ).values_list("kind", "date_value")
+    ] + [
+        ["MatterImportantDate", str(kind or ""), day.isoformat() if day else None]
+        for kind, day in MatterImportantDate.objects.filter(
+            matter_id=matter.pk, status=FactStatus.ACTIVE
+        ).values_list("kind", "date_value")
+    ]
+    successor = getattr(matter, "superseded_by_id", None)
+    continuation = (
+        sorted(
+            str(source)
+            for source in LovableSyncState.objects.filter(matter_id=successor).values_list(
+                "source_id", flat=True
+            )
+        )
+        if successor
+        else []
+    )
+    stage_key = None
+    if getattr(matter, "stage_id", None):
+        from app.workflow.models import StageVocabulary
+
+        stage_key = (
+            StageVocabulary.objects.filter(pk=matter.stage_id).values_list("key", flat=True).first()
+        )
+    deadline = getattr(matter, "response_deadline", None)
+    return {
+        "stage": stage_key,
+        "opinion_deadline": deadline.isoformat() if deadline else None,
+        "koda_initiative": getattr(matter, "track", "") == Track.KODA_INITIATIVE,
+        "commencements": sorted(dates, key=lambda d: (d[0], d[1], d[2] or "")),
+        CONTINUATION: continuation,
+    }
+
+
+def source_continuation(bundle: dict[str, Any]) -> list[str]:
+    """The Lovable ids this topic continues as (`topic_stage_link`, this topic as
+    ``prev``), sorted: the source's side of the continuation."""
+    me = str((bundle.get("row") or {}).get("id"))
+    return sorted(
+        {
+            str(link.get("next"))
+            for link in bundle.get("stage_links") or []
+            if str(link.get("prev")) == me
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # The decision
 # ---------------------------------------------------------------------------
@@ -1094,8 +1420,13 @@ def plan_matter(
         plan.open = _is_open(state.matter)
         return plan
     src = canonical_source(bundle)
-    plan.source, plan.version = src, row.get("version")
+    plan.source, plan.version = (
+        {**src, CONTINUATION: source_continuation(bundle)},
+        row.get("version"),
+    )
     b = current if current is not None else current_values(state.matter)
+    if "stage" not in b:
+        b = {**b, **conditional_values(state.matter)}
     applied = state.applied
     closed = not b["is_open"]
     plan.open = not closed
@@ -1172,9 +1503,188 @@ def plan_matter(
             continue
         if name not in applied:
             continue  # started below, on first observation
-        plan.decisions.append(_three_way(name, a(name), src[name], None, None, None, HELD))
+        if name == "stage":
+            plan.decisions.append(_stage_decision(applied, src["stage"], b, closed=closed))
+        elif name == "opinion_deadline":
+            plan.decisions.append(_request_decision(applied, src, b, closed=closed, today=today))
+        elif name == "commencements":
+            plan.decisions.append(
+                _commencement_decision(applied, src, b, closed=closed, today=today)
+            )
+        else:
+            plan.decisions.append(_three_way(name, a(name), src[name], None, None, None, HELD))
+    # The continuation's baseline is the last accepted link, or — until one is
+    # held — the last observed one: an unchanged link never touches `applied`.
+    entry = applied.get(CONTINUATION)
+    a_link = entry.get("source") if entry else (state.observed or {}).get(CONTINUATION)
+    if entry or CONTINUATION in (state.observed or {}):
+        link = _continuation_decision(a_link, plan.source[CONTINUATION], b)
+        # Not one of `FIELDS`: an unchanged link adds no decision at all, so the
+        # readers that tally decisions per field see only a moved one.
+        if link.outcome != SyncOutcome.UNCHANGED:
+            plan.decisions.append(link)
     _hold_imported(plan, applied)
     return plan
+
+
+def _stage_decision(
+    applied: dict[str, Any], c_src: Any, b: dict[str, Any], *, closed: bool
+) -> FieldDecision:
+    """`hetkeseis` (CONDITIONAL, docs/adr/0213): only through the reader's exact
+    `STAGE_MAPPING`, on an open Teema still at the stage last accepted, and never
+    to a stage that ends the work — that would close the Teema (0131 §10), which
+    is a person's decision (0202 §3)."""
+    from app.legacy_import.lovable_reading import TERMINAL_STAGES, stage_for
+
+    entry = applied.get("stage") or {}
+    a_src = entry.get("source")
+    a_tgt = entry["target"] if "target" in entry else (stage_for(a_src) or None)
+    c_tgt = stage_for(c_src) or None
+    b_stage = b.get("stage")
+    common = {"baseline": a_src, "current": b_stage, "source": c_src}
+    if c_src == a_src:
+        # Unchanged in the source: whatever Juristid holds stays, and is not
+        # reported (as for every held field). A Teema whose stage differs from
+        # the mapped label is caught when the source does move: CONFLICT.
+        return FieldDecision("stage", SyncOutcome.UNCHANGED, **common)
+    if c_tgt is not None and b_stage == c_tgt:
+        return FieldDecision("stage", SyncOutcome.ALREADY_CONVERGED, target=c_tgt, **common)
+    reason = ""
+    if closed:
+        reason = MATTER_CLOSED
+    elif c_tgt is None:
+        # No mapping: no rule writes it (the field's own hold, as before).
+        reason = HELD
+    elif c_tgt in TERMINAL_STAGES:
+        reason = STAGE_ENDS_WORK
+    elif a_tgt is None:
+        reason = NO_BASELINE
+    if reason:
+        return FieldDecision("stage", SyncOutcome.REVIEW_REQUIRED, reason, **common)
+    if b_stage == a_tgt:
+        return FieldDecision("stage", SyncOutcome.ELIGIBLE, target=c_tgt, **common)
+    return FieldDecision("stage", SyncOutcome.CONFLICT, **common)
+
+
+def _request_decision(
+    applied: dict[str, Any],
+    src: dict[str, Any],
+    b: dict[str, Any],
+    *,
+    closed: bool,
+    today: dt.date,
+) -> FieldDecision:
+    """`arvamuse_tahtaeg` (CONDITIONAL, docs/adr/0213): a new day becomes a **new**
+    opinion request only where no request is open, the source records nothing
+    sent (blank `valja` and `valja_kuupaev`; «ei saatnud» is not blank), it is
+    not a Chamber initiative and the day is not before today. A current request
+    is never moved or replaced here; earlier requests and their history are
+    never touched. A past deadline never means sent."""
+    a_src = (applied.get("opinion_deadline") or {}).get("source")
+    c_src = src["opinion_deadline"]
+    b_day = b.get("opinion_deadline")
+    common = {"baseline": a_src, "current": b_day, "source": c_src}
+    if c_src == a_src:
+        return FieldDecision("opinion_deadline", SyncOutcome.UNCHANGED, **common)
+    if c_src is not None and b_day == c_src:
+        return FieldDecision(
+            "opinion_deadline", SyncOutcome.ALREADY_CONVERGED, target=c_src, **common
+        )
+    reason = ""
+    if closed:
+        reason = MATTER_CLOSED
+    elif c_src is None:
+        reason = REQUEST_CLEARED
+    elif str(c_src).startswith("?"):
+        reason = NO_BASELINE
+    elif dt.date.fromisoformat(c_src) < today:
+        reason = DATE_PAST
+    elif src.get("sent") or src.get("sent_date"):
+        reason = REQUEST_ANSWERED
+    elif src.get("koda_initiative") or b.get("koda_initiative"):
+        reason = REQUEST_INITIATIVE
+    elif b_day is not None:
+        reason = REQUEST_OPEN
+    if reason:
+        return FieldDecision("opinion_deadline", SyncOutcome.REVIEW_REQUIRED, reason, **common)
+    return FieldDecision("opinion_deadline", SyncOutcome.ELIGIBLE, target=c_src, **common)
+
+
+def _commencement_decision(
+    applied: dict[str, Any],
+    src: dict[str, Any],
+    b: dict[str, Any],
+    *,
+    closed: bool,
+    today: dt.date,
+) -> FieldDecision:
+    """`joustumised` (CONDITIONAL, docs/adr/0213): only **added** commencements of
+    a kind the reader reads exactly (`lovable_reading.commencement_reading`; an
+    estimate stays an estimate, a known day only on an adopted act), never on a
+    day Juristid already holds another commencement for. A changed or removed
+    commencement is a person's call; nothing is edited or cancelled. An added
+    day before today is history, never a fresh fact: held."""
+    from app.legacy_import.lovable_reading import commencement_reading
+
+    a_src = (applied.get("commencements") or {}).get("source") or []
+    c_src = src["commencements"]
+    have = b.get("commencements") or []
+    common = {"baseline": a_src, "current": have, "source": c_src}
+    if c_src == a_src:
+        return FieldDecision("commencements", SyncOutcome.UNCHANGED, **common)
+    before = Counter(tuple(item) for item in a_src)
+    after = Counter(tuple(item) for item in c_src)
+    removed, added = before - after, after - before
+    readings = [
+        {
+            "liik": liik,
+            "note": note,
+            **commencement_reading({"liik": liik, "kuupaev": day}, status=src["stage"]),
+        }
+        for liik, day, note in added.elements()
+    ]
+    want = [[r["target"], r["kind"], r["date"]] for r in readings if r["target"]]
+    if not removed and len(want) == len(readings) and all(w in have for w in want):
+        return FieldDecision("commencements", SyncOutcome.ALREADY_CONVERGED, target=have, **common)
+    reason = ""
+    if closed:
+        reason = MATTER_CLOSED
+    elif removed:
+        # Changed or removed: no rule writes it (the field's own hold, as
+        # before this engine).
+        reason = HELD
+    elif len(want) != len(readings):
+        # A kind or day the reader cannot read: no rule writes it.
+        reason = HELD
+    elif any(w[2] and dt.date.fromisoformat(w[2]) < today for w in want if w not in have):
+        reason = DATE_PAST
+    else:
+        missing = [w for w in want if w not in have]
+        days = {item[2] for item in have if item[2]}
+        general = any(item[1] == "GENERAL_ORDER" for item in have)
+        if any((w[2] in days) if w[2] else general for w in missing):
+            reason = COMMENCEMENT_CLASH
+    if reason:
+        return FieldDecision("commencements", SyncOutcome.REVIEW_REQUIRED, reason, **common)
+    target = [
+        {"target": r["target"], "kind": r["kind"], "date": r["date"], "note": r["note"]}
+        for r in readings
+        if [r["target"], r["kind"], r["date"]] not in have
+    ]
+    return FieldDecision("commencements", SyncOutcome.ELIGIBLE, target=target, **common)
+
+
+def _continuation_decision(a_src: Any, c_src: list[str], b: dict[str, Any]) -> FieldDecision:
+    """Lovable's stage link (REVIEW, docs/adr/0213): the only service that writes
+    a continuation closes the predecessor, which is a lifecycle decision, so a
+    new, changed or removed link is reported every night and never written."""
+    b_now = b.get(CONTINUATION) or []
+    common: dict[str, Any] = {"baseline": a_src, "current": b_now, "source": c_src}
+    if c_src == a_src:
+        return FieldDecision(CONTINUATION, SyncOutcome.UNCHANGED, **common)
+    if c_src and b_now == c_src:
+        return FieldDecision(CONTINUATION, SyncOutcome.ALREADY_CONVERGED, target=c_src, **common)
+    return FieldDecision(CONTINUATION, SyncOutcome.REVIEW_REQUIRED, CONTINUATION_CHANGED, **common)
 
 
 def held_by_import(applied: dict[str, Any]) -> set[str]:
@@ -1275,7 +1785,64 @@ def _apply_field(
         return _append_link_observation(
             matter=matter, url=decision.target, run=run, snapshot=snapshot, provenance=provenance
         )
+    if decision.field in CONDITIONAL_FIELDS:
+        return _apply_conditional(decision, matter=matter)
     raise SyncRefused("NOT_ALLOWLISTED", f"{decision.field} is not an automatic field.")
+
+
+def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
+    """A conditional field (docs/adr/0213), through the service the rebuild used
+    for the same change (docs/adr/0202 §3). These services take no provenance;
+    the write's record is its `LovableSyncDecision` (APPLIED, idempotency key)."""
+    from app.intelligence.services import add_effective_date, add_important_date
+    from app.legacy_import.lovable_pilot import COMMENCEMENT_TITLES, T_EFFECTIVE_DATE
+    from app.matters.enums import StageEpisodeOrigin
+    from app.matters.models import Matter
+    from app.matters.response_deadlines import request_response_deadline
+    from app.matters.services import change_stage
+    from app.workflow.models import StageVocabulary
+
+    if decision.field == "stage":
+        change_stage(
+            matter=matter,
+            stage=StageVocabulary.objects.get(key=decision.target),
+            actor=None,
+            origin=StageEpisodeOrigin.IMPORTED,
+        )
+    elif decision.field == "opinion_deadline":
+        request_response_deadline(
+            matter=matter, deadline=dt.date.fromisoformat(decision.target), actor=None
+        )
+    else:
+        for item in decision.target:
+            day = dt.date.fromisoformat(item["date"]) if item["date"] else None
+            if item["target"] == T_EFFECTIVE_DATE:
+                add_effective_date(
+                    matter=matter,
+                    kind=item["kind"],
+                    date_value=day,
+                    period_end=day,
+                    date_precision="EXACT",
+                    description=item.get("note", ""),
+                    actor=None,
+                    source_text="Lovable",
+                )
+            else:
+                if day is None:
+                    raise SyncRefused("NO_DAY", "An important date needs its day.")
+                add_important_date(
+                    matter=matter,
+                    title=COMMENCEMENT_TITLES[item["kind"]],
+                    date_value=day,
+                    period_end=day,
+                    date_precision="EXACT",
+                    kind=item["kind"],
+                    note=item.get("note", ""),
+                    actor=None,
+                    source_text="Lovable",
+                )
+    fresh = Matter.all_objects.get(pk=matter.pk)
+    return conditional_values(fresh)[decision.field]
 
 
 def _sync_batch(run: LovableSyncRun, snapshot: dict[str, Any]) -> Any:
@@ -1356,7 +1923,7 @@ def apply_matter(
         applied = dict(state.applied)
         # Title first, then owner, then the step: a hand-over moves the open step
         # to its new owner, and the date edit then carries that responsibility.
-        order = {name: i for i, name in enumerate(AUTO_FIELDS)}
+        order = {name: i for i, name in enumerate(WRITABLE_FIELDS)}
         for decision in sorted(fresh.eligible, key=lambda d: order[d.field]):
             new_b = _apply_field(
                 decision, matter=matter, provenance=provenance, run=run, snapshot=snapshot
@@ -1422,7 +1989,7 @@ def verify_matter(plan: MatterPlan) -> bool:
     from app.matters.models import Matter
 
     state = LovableSyncState.objects.get(pk=plan.state.pk)
-    b = current_values(Matter.objects.get(pk=state.matter_id))
+    b = full_values(Matter.objects.get(pk=state.matter_id))
     for decision in plan.decisions:
         if decision.outcome != SyncOutcome.APPLIED:
             continue
@@ -1432,6 +1999,793 @@ def verify_matter(plan: MatterPlan) -> bool:
         elif b[decision.field] != state.applied[decision.field]["target"]:
             return False
     return True
+
+
+# ---------------------------------------------------------------------------
+# New topics (docs/adr/0213, brief 2026-11-09 §6 B2)
+# ---------------------------------------------------------------------------
+
+#: The provenance version a created Teema's records carry
+#: (`EvidencePilotRecord.pilot_version`): not a reviewed package's version.
+NEW_TOPIC_RECORD_VERSION = "sync-2"
+
+
+@dataclass
+class NewTopicPlan:
+    """One operational source topic with no Juristid Teema, as tonight read it."""
+
+    source_id: str
+    reference: str
+    version: int | None = None
+    #: CREATABLE: every check passed. Otherwise the hold's code (`NEW_*`).
+    reason: str = ""
+    #: The reader's topic and its one-topic envelope, when it read.
+    topic: dict[str, Any] | None = None
+    package: dict[str, Any] | None = None
+    package_sha256: str = ""
+    plan_sha256: str = ""
+    #: Codes and counts only (held columns, stage-link partners).
+    detail: dict[str, Any] = field(default_factory=dict)
+    #: Set by an APPLY night.
+    created_matter_id: Any = None
+    failed: bool = False
+
+    @property
+    def creatable(self) -> bool:
+        return not self.reason
+
+
+def new_topic_candidates(index: Iterable[dict[str, Any]], cohort_ids: set[str]) -> list[str]:
+    """Operational topics of the reading's index outside every synchronised
+    cohort, by Lovable id — the population a new Teema could come from. Whether
+    Juristid already holds one some other way is `_identity_hold`'s question."""
+    return sorted(
+        str(row["id"])
+        for row in index
+        if row.get("operatiivne_ulatus") and str(row["id"]) not in cohort_ids
+    )
+
+
+def _identity_holds(source_ids: list[str]) -> dict[str, str]:
+    """Lovable id → why Juristid already holds it: a tombstone (never re-created:
+    the topic was deleted in Juristid on purpose, or replaced; a person decides)
+    or a live Teema outside the synchronised cohorts (an identity decision).
+    Read from every place an identity is kept, tombstones included: the
+    synchronisation states, the Lovable source references, the append-only
+    cohort memberships and the retirements."""
+    from app.legacy_import.models import MatterSourceReference
+    from app.matters.models import Matter
+
+    if not source_ids:
+        return {}
+    holders: dict[str, set[Any]] = {}
+    for state_source, matter_id in LovableSyncState.objects.filter(
+        source_id__in=source_ids
+    ).values_list("source_id", "matter_id"):
+        holders.setdefault(str(state_source), set()).add(matter_id)
+    for raw, matter_id in MatterSourceReference._base_manager.filter(
+        source_system=SOURCE_SYSTEM, source_row_raw__lovable__id__in=source_ids
+    ).values_list("source_row_raw", "matter_id"):
+        holders.setdefault(str((raw.get("lovable") or {}).get("id")), set()).add(matter_id)
+    for model in (LovableSyncMembership, LovableSyncRetirement):
+        for kept, matter_id in model.objects.filter(source_id__in=source_ids).values_list(
+            "source_id", "matter_id"
+        ):
+            holders.setdefault(str(kept), set()).add(matter_id)
+    deleted = set(
+        Matter.all_objects.filter(
+            pk__in={pk for found in holders.values() for pk in found},
+            deleted_at__isnull=False,
+        ).values_list("pk", flat=True)
+    )
+    out: dict[str, str] = {}
+    for source_id, found in holders.items():
+        if source_id not in source_ids or not found:
+            continue
+        out[source_id] = NEW_UUID_TOMBSTONE if found & deleted else NEW_UUID_LIVE
+    return out
+
+
+#: A new topic's reference was given back by the replacement (docs/adr/0203
+#: §1.2): free for that replacement only; the importer's planner still counts it
+#: as taken, so a person decides (an owner decision may waive it later).
+NEW_REFERENCE_RELEASED = "REFERENCE_RELEASED_BY_REPLACEMENT"
+
+
+def _reference_hold(reference: str) -> str:
+    """Why the reference cannot be given to a new Teema, or ``""``: held by any
+    Matter (a tombstone keeps its reference unless the replacement released
+    it), or once held by a permanently deleted one (deleted means taken,
+    docs/adr/0191 §5). A reference the replacement released is reported apart."""
+    from app.audit.enums import SecurityEventType
+    from app.audit.models import SecurityAuditEvent
+    from app.legacy_import.lovable_pilot import parse_reference
+    from app.matters.models import Matter
+
+    parsed = parse_reference(reference)
+    if parsed is None:
+        return NEW_UNREADABLE
+    year, number = parsed
+    if Matter.all_objects.filter(reference_year=year, reference_number=number).exists():
+        return NEW_REFERENCE_TAKEN
+    events = SecurityAuditEvent.objects.filter(detail__reference=reference)
+    if events.filter(event_type=SecurityEventType.REFERENCE_RELEASED).exists():
+        return NEW_REFERENCE_RELEASED
+    if events.filter(event_type=SecurityEventType.MATTER_DELETED).exists():
+        return NEW_REFERENCE_DELETED
+    return ""
+
+
+def _new_topic_people(owner_raw: str, resolver: OwnerResolver) -> dict[str, str]:
+    """The package's ``people``: the owner's name → the display name of the one
+    account the synchronisation's own resolver finds (`OwnerResolver`), or
+    nothing. The reader refuses an open topic without one."""
+    from app.accounts.models import User
+
+    target, _reason = resolver.resolve(owner_raw)
+    if target is None:
+        return {}
+    name = User.objects.filter(pk=target).values_list("display_name", flat=True).first()
+    if not name or User.objects.filter(display_name=name).count() != 1:
+        return {}
+    return {owner_raw: name}
+
+
+def plan_new_topic(
+    source_id: str,
+    bundle: dict[str, Any] | None,
+    *,
+    index_row: dict[str, Any],
+    hold: str,
+    known: dict[str, str],
+    resolver: OwnerResolver,
+    today: dt.date,
+    snapshot_sha256: str,
+) -> NewTopicPlan:
+    """Every check before a creation, reading only (docs/adr/0213):
+
+    1. the Lovable id is held by no Teema, live or tombstone (`_identity_holds`);
+    2. the topic was read in full tonight (`bundle`);
+    3. its reference is free and was never a deleted Teema's (`_reference_hold`);
+    4. the machine reader reads it (`lovable_reading.read_topic`), and the one-topic
+       package validates and plans ready against the database
+       (`lovable_pilot.validate_package`, `build_plan`: owner, stage, act,
+       identity and reference collisions under the importer's own rules).
+
+    The stage-link partners are counted (``detail``): a partner in Juristid is
+    linked only by a person; a partner outside it stays source text."""
+    from app.legacy_import import lovable_pilot
+    from app.legacy_import.lovable_reading import (
+        READER_VERSION,
+        ReadingRefused,
+        held_columns,
+        operative_owner,
+        package_for,
+        read_topic,
+    )
+
+    reference = str(index_row.get("nr") or "")
+    plan = NewTopicPlan(source_id=source_id, reference=reference, version=index_row.get("version"))
+    if hold:
+        plan.reason = hold
+        return plan
+    if bundle is None:
+        plan.reason = NEW_NOT_READ
+        return plan
+    row = bundle.get("row") or {}
+    plan.reference, plan.version = str(row.get("nr") or reference), row.get("version")
+    partners = {
+        str(side)
+        for link in bundle.get("stage_links") or []
+        for side in (link.get("prev"), link.get("next"))
+        if str(side) != source_id
+    }
+    plan.detail["partners_in_juristid"] = sum(1 for p in partners if p in known)
+    plan.detail["partners_outside"] = len(partners) - plan.detail["partners_in_juristid"]
+    taken = _reference_hold(plan.reference)
+    if taken:
+        plan.reason = taken
+        return plan
+    people = _new_topic_people(operative_owner(row), resolver)
+    try:
+        topic = read_topic(
+            {**bundle, "references": known}, as_of=today, people=people, historical=False
+        )
+    except ReadingRefused as error:
+        plan.reason = f"{NEW_UNREADABLE}:{error.code}"[:60]
+        return plan
+    # A continuation is linked only inside one package: a new topic never links
+    # itself to a Teema already in Juristid (that would close or move it).
+    topic["successor"] = ""
+    topic["source"].pop("successor_id", None)
+    plan.topic = topic
+    plan.detail["held_columns"] = held_columns(topic)
+    plan.detail["lifecycle"] = topic["lifecycle"]
+    plan.detail["reader_version"] = READER_VERSION
+    package = package_for(
+        [topic],
+        as_of=today,
+        snapshot_sha256=snapshot_sha256,
+        people=people,
+        cohort=lovable_pilot.OPERATIONAL_COHORT,  # the format-2 envelope; see `_writing_plan`
+    )
+    plan.package = package
+    plan.package_sha256 = lovable_pilot.package_digest(package)
+    if lovable_pilot.validate_package(package).problems:
+        plan.reason = NEW_INVALID
+        return plan
+    built = lovable_pilot.build_plan(package)
+    if built.problems or built.database_state != "ready":
+        plan.reason = NEW_PLAN
+        return plan
+    plan.plan_sha256 = lovable_pilot.plan_digest(built)
+    return plan
+
+
+def _writing_plan(package: dict[str, Any], cohort: str) -> Any:
+    """The importer's plan of a one-topic package, written under ``cohort``.
+
+    The package is validated as a format-2 append (the importer's envelope for a
+    non-replacement CREATE is the operational cohort's); the records it writes
+    and their verification name the cohort the Teema joins, so the plan the
+    writer and `verify_applied` see carries that cohort. The package digest —
+    the identity the records bind — is the validated envelope's."""
+    from dataclasses import replace
+
+    from app.legacy_import import lovable_pilot
+
+    built = lovable_pilot.build_plan(package)
+    return replace(built, package={**built.package, "cohort": cohort})
+
+
+def _new_topic_writer(plan: Any, *, run: LovableSyncRun, cohort: str, plan_sha256: str) -> Any:
+    """The importer's CREATE writer (`lovable_pilot._Writer.write_topic`: the
+    imported Teema, its open request and drafting step, its commencements, its
+    canonical source reference and its provenance records), stamped as the
+    synchronisation's: provenance ``LOVABLE_SYNC``, the run, the reader version,
+    and a source reference that says a machine read it — never «reviewed»."""
+    from app.legacy_import import lovable_pilot
+    from app.legacy_import.lovable_reading import READER_VERSION
+
+    class Writer(lovable_pilot._Writer):
+        def __init__(self) -> None:
+            super().__init__(plan, backup_set=run.backup_set, plan_sha256=plan_sha256)
+            self.version = NEW_TOPIC_RECORD_VERSION
+            self.decisions = "docs/adr/0213"
+            self.base = {
+                "source": PROVENANCE_SOURCE,
+                "pilot": cohort,
+                "pilot_version": self.version,
+                "package_sha256": plan.digest,
+                "cohort": cohort,
+                "format_version": self.format_version,
+                "sync_run": str(run.pk),
+                "reader_version": READER_VERSION,
+                "mapping_version": ENGINE_VERSION,
+            }
+
+        def _source_reference(
+            self, matter: Any, topic: dict[str, Any], year: int, number: int
+        ) -> Any:
+            from app.legacy_import.enums import OneNoteContentStatus
+            from app.legacy_import.models import MatchMethod, MatterSourceReference
+
+            source = topic["source"]
+            snapshot = self.package["snapshot"]
+            url = topic.get("onenote_url") or ""
+            return MatterSourceReference.objects.create(
+                matter=matter,
+                import_batch=self.batch,
+                source_system=SOURCE_SYSTEM,
+                source_file_name=SOURCE_TABLE,
+                source_snapshot_sha256=snapshot["snapshot_sha256"],
+                source_sheet=f"{SOURCE_TABLE}:{year}",
+                source_row_number=number,
+                source_row_raw={
+                    "lovable": {
+                        "id": source["id"],
+                        "version": source.get("version"),
+                        "updated_at": source.get("updated_at"),
+                        "as_of": snapshot.get("as_of"),
+                    },
+                    "row": source["row"],
+                    "excel_source_row": None,
+                    "history": [],
+                    "commencements": source.get("commencements") or [],
+                    "responsible_changes": source.get("responsible_changes") or [],
+                    "stage_links": source.get("stage_links") or [],
+                    "field_decisions": topic.get("field_decisions") or {},
+                    "review_notes": topic.get("review_notes") or [],
+                    "reading": topic.get("reading") or {},
+                    "lovable_sync": {"run": str(run.pk), "engine": ENGINE_VERSION},
+                },
+                source_title=topic["title"],
+                source_date_raw=str(source["row"].get("sisse") or "")[:200],
+                onenote_url=url,
+                onenote_content_status=(
+                    OneNoteContentStatus.NOT_IMPORTED
+                    if url
+                    else OneNoteContentStatus.NOT_APPLICABLE
+                ),
+                source_era=str(year),
+                source_contract_version=f"{lovable_pilot.PACKAGE_FORMAT}/{self.format_version}",
+                # A machine read it: never "+reviewed" (lovable_pilot's packages).
+                source_parser_version=f"{READER_VERSION}+machine",
+                match_method=MatchMethod.REFERENCE_TOKEN,
+                conflict_state="NONE",
+                reviewed_by="",
+            )
+
+    return Writer()
+
+
+def new_topic_key(source_id: str) -> str:
+    """The idempotency key of a created topic: one creation per Lovable id, ever."""
+    return hashlib.sha256(json.dumps([NEW_TOPIC, str(source_id)]).encode()).hexdigest()
+
+
+def _verify_new_topic(plan: Any) -> list[str]:
+    """The importer's own read-back of what it wrote (`verify_applied`)."""
+    from app.legacy_import import lovable_pilot
+
+    return list(lovable_pilot.verify_applied(plan).discrepancies)
+
+
+def create_new_topic(
+    topic_plan: NewTopicPlan,
+    *,
+    run: LovableSyncRun,
+    cohort: Cohort,
+    snapshot: dict[str, Any],
+) -> Any:
+    """Create one new Teema, enrol it and seed its baseline — all or nothing.
+
+    Under the year's reference-sequence row and the Matter table lock (the
+    importer's lock order, `lovable_pilot._hold_and_replan`), the package is
+    planned again and must hash to the plan the checks approved; then the
+    importer's writer writes it, the importer's verification reads it back, the
+    synchronisation state is seeded from the new canonical reference, an
+    audited `LovableSyncMembership` (``NEW_TOPIC``) records that it joined the
+    cohort, and a decision with the topic's idempotency key records the write.
+    Any failure rolls back the whole Teema."""
+    from app.audit.enums import SecurityEventType
+    from app.audit.services import record_security_event
+    from app.legacy_import import lovable_pilot
+    from app.legacy_import.lovable_reading import READER_VERSION
+    from app.legacy_import.models import ImportBatch, MatterSourceReference, ReconciliationStatus
+    from app.matters.models import Matter, MatterReferenceSequence
+
+    package = topic_plan.package or {}
+    with transaction.atomic():
+        year = lovable_pilot.parse_reference(topic_plan.reference)[0]  # type: ignore[index]
+        with connection.cursor() as cursor:
+            cursor.execute(f"SET LOCAL lock_timeout = '{lovable_pilot.LOCK_TIMEOUT}'")
+        MatterReferenceSequence.objects.get_or_create(year=year)
+        list(MatterReferenceSequence.objects.select_for_update().filter(year=year))
+        with connection.cursor() as cursor:
+            cursor.execute(f'LOCK TABLE "{Matter._meta.db_table}" IN SHARE ROW EXCLUSIVE MODE')
+        again = lovable_pilot.build_plan(package)
+        if again.problems or again.database_state != "ready":
+            raise SyncRefused(NEW_PLAN, "The new topic's plan is not writable under the lock.")
+        if lovable_pilot.plan_digest(again) != topic_plan.plan_sha256:
+            raise SyncRefused(NEW_PLAN, "The new topic's plan changed under the lock.")
+        if _identity_holds([topic_plan.source_id]) or _reference_hold(topic_plan.reference):
+            raise SyncRefused(NEW_PLAN, "The new topic's identity or reference is taken.")
+        plan = _writing_plan(package, cohort.key)
+        writer = _new_topic_writer(
+            plan, run=run, cohort=cohort.key, plan_sha256=topic_plan.plan_sha256
+        )
+        writer.batch = ImportBatch.objects.create(
+            source_system=SOURCE_SYSTEM,
+            source_file_name=SOURCE_TABLE,
+            source_snapshot_sha256=snapshot["sha256"],
+            importer_version=f"{PROVENANCE_SOURCE.lower()}/{NEW_TOPIC}"[:50],
+            contract_version=f"{lovable_pilot.PACKAGE_FORMAT}/{lovable_pilot.ACTIVE_FORMAT_VERSION}",
+            started_at=timezone.now(),
+            source_row_count=1,
+            reconciliation_status=ReconciliationStatus.RUNNING,
+            notes=(
+                f"{cohort.key}: uus Lovable'i teema {topic_plan.reference} öise sünkroonimise "
+                f"käigus {run.pk} ({READER_VERSION}); pakett {topic_plan.package_sha256}; "
+                f"plan-sha256 {topic_plan.plan_sha256}; varukoopia {run.backup_set} "
+                "(docs/adr/0213)."
+            ),
+        )
+        matter = writer.write_topic(plan.topics[0])
+        problems = _verify_new_topic(plan)
+        if problems:
+            raise SyncRefused(VERIFY_MISMATCH, "; ".join(problems)[:200])
+        writer.batch.finished_at = timezone.now()
+        writer.batch.created_matter_count = 1
+        writer.batch.reconciliation_status = ReconciliationStatus.COMPLETED
+        writer.batch.save(
+            update_fields=[
+                "finished_at",
+                "created_matter_count",
+                "reconciliation_status",
+                "updated_at",
+            ]
+        )
+        reference = MatterSourceReference.objects.get(matter=matter, import_batch=writer.batch)
+        seeding = Cohort(cohort.key, cohort.key, topic_plan.package_sha256, 0)
+        state = LovableSyncState.objects.create(matter=matter, **seed_values(reference, seeding))
+        remember_membership(
+            cohort=state.cohort,
+            matter_id=matter.pk,
+            source_id=state.source_id,
+            basis=MembershipBasis.NEW_TOPIC,
+        )
+        LovableSyncDecision.objects.create(
+            run=run,
+            state=state,
+            field=NEW_TOPIC,
+            outcome=SyncOutcome.APPLIED,
+            source={"reference": topic_plan.reference, "version": topic_plan.version},
+            current={"lifecycle": (topic_plan.topic or {}).get("lifecycle")},
+            idempotency_key=new_topic_key(topic_plan.source_id),
+        )
+        record_security_event(
+            event_type=SecurityEventType.IMPORT_RUN,
+            actor=None,
+            subject=writer.batch,
+            detail={
+                **writer.base,
+                "kind": "NEW_TOPIC",
+                "reference": topic_plan.reference,
+                "lovable_id": topic_plan.source_id,
+                "plan_sha256": topic_plan.plan_sha256,
+                "snapshot_sha256": snapshot["sha256"],
+                "backup_set": run.backup_set,
+                "written": writer.report.written,
+            },
+        )
+    return matter
+
+
+def _record_new_topics(
+    run: LovableSyncRun, plans: list[NewTopicPlan], *, seen_at: dt.datetime
+) -> None:
+    """The new-topic ledger, one row per Lovable id (docs/adr/0213). A held or
+    planned topic stays listed every night until it is created, a person decides
+    it (RESOLVED), or it is no longer new (GONE). A RESOLVED row is never planned
+    again; a CREATED row never changes."""
+    from app.legacy_import.lovable_reading import READER_VERSION
+
+    seen = {p.source_id for p in plans}
+    rows = {str(r.source_id): r for r in LovableSyncNewTopic.objects.select_for_update()}
+    for p in plans:
+        row = rows.get(p.source_id)
+        if row is not None and row.status == NewTopicStatus.CREATED:
+            if p.reason == NEW_UUID_TOMBSTONE:
+                # Created, then permanently deleted in Juristid while Lovable kept
+                # it: never re-created; held for a person, naming the tombstone.
+                row.status, row.reason = NewTopicStatus.HELD, p.reason
+                row.last_seen_at, row.last_seen_run = seen_at, run
+                row.save(
+                    update_fields=[
+                        "status",
+                        "reason",
+                        "last_seen_at",
+                        "last_seen_run",
+                        "updated_at",
+                    ]
+                )
+            continue
+        if row is not None and row.status == NewTopicStatus.RESOLVED:
+            row.last_seen_at, row.last_seen_run = seen_at, run
+            row.save(update_fields=["last_seen_at", "last_seen_run", "updated_at"])
+            continue
+        if row is not None and row.created_matter_id is not None and p.created_matter_id is None:
+            # A held row that names its deleted Teema keeps naming it.
+            values_matter = row.created_matter_id
+        else:
+            values_matter = p.created_matter_id
+        if p.created_matter_id is not None:
+            status, reason = NewTopicStatus.CREATED, ""
+        elif p.creatable:
+            status, reason = NewTopicStatus.PLANNED, ""
+        else:
+            status, reason = NewTopicStatus.HELD, p.reason
+        values = {
+            "reference": p.reference[:20],
+            "status": status,
+            "reason": reason[:60],
+            "last_seen_at": seen_at,
+            "last_seen_run": run,
+            "source_version": p.version,
+            "reader_version": READER_VERSION,
+            "package_sha256": p.package_sha256,
+            "plan_sha256": p.plan_sha256,
+            "detail": p.detail,
+            "created_matter_id": values_matter,
+        }
+        if p.created_matter_id is not None:
+            values["created_at_run"] = run
+        if row is None:
+            LovableSyncNewTopic.objects.create(
+                source_id=p.source_id, first_seen_at=seen_at, first_seen_run=run, **values
+            )
+        else:
+            for key, value in values.items():
+                setattr(row, key, value)
+            row.save()
+    for source_id, row in rows.items():
+        if source_id not in seen and row.status in (NewTopicStatus.PLANNED, NewTopicStatus.HELD):
+            row.status, row.last_seen_run = NewTopicStatus.GONE, run
+            row.save(update_fields=["status", "last_seen_run", "updated_at"])
+
+
+def resolve_new_topic(*, source_id: str, note: str, actor: Any = None) -> LovableSyncNewTopic:
+    """An administrator's decision on a held new topic (brief 2026-11-09 §7): it is
+    not created by the machine and is not planned again. Nothing else changes."""
+    note = text_value(note)
+    if not note:
+        raise SyncRefused("NO_NOTE", "A decision needs a note saying why.")
+    with transaction.atomic():
+        row = LovableSyncNewTopic.objects.select_for_update().filter(source_id=source_id).first()
+        if row is None:
+            raise SyncRefused("UNKNOWN_TOPIC", "No such new topic.")
+        if row.status not in (NewTopicStatus.PLANNED, NewTopicStatus.HELD):
+            raise SyncRefused("NOT_PENDING", "Only a pending new topic can be decided.")
+        row.status, row.decided_by, row.decided_at = NewTopicStatus.RESOLVED, actor, timezone.now()
+        row.decision_note = note[:300]
+        row.save()
+    return row
+
+
+# ---------------------------------------------------------------------------
+# Pending differences (interface 3, «Vaata erinevusi») and the read-only replay
+# ---------------------------------------------------------------------------
+
+#: The outcomes that wait for somebody: a held change, a conflict, a safe change
+#: not applied (COMPARE or a breaker), a local change kept, a topic gone or
+#: renumbered, a failed write.
+PENDING_OUTCOMES = (
+    SyncOutcome.REVIEW_REQUIRED,
+    SyncOutcome.CONFLICT,
+    SyncOutcome.ELIGIBLE,
+    SyncOutcome.LOCAL_TEST_CHANGE,
+    SyncOutcome.SOURCE_MISSING,
+    SyncOutcome.IDENTIFIER_CHANGED,
+    SyncOutcome.FAILED,
+)
+#: What ends a pending difference: the field was written, converged, or decided.
+SETTLING_OUTCOMES = (SyncOutcome.APPLIED, SyncOutcome.ALREADY_CONVERGED)
+
+
+@dataclass(frozen=True)
+class PendingDifference:
+    """One difference that waits for a person (or for the source to move), with
+    the three values the reconciliation compares: A (``baseline``, last
+    accepted), B (``current``, Juristid), C (``source``, Lovable tonight)."""
+
+    kind: str  # "FIELD" or "NEW_TOPIC"
+    field: str
+    outcome: str
+    reason: str
+    reference: str
+    since: dt.datetime | None
+    policy: str
+    matter: Any = None
+    baseline: Any = None
+    current: Any = None
+    source: Any = None
+    run_id: Any = None
+    source_id: str = ""
+
+
+def latest_reconciled_run() -> LovableSyncRun | None:
+    """The newest run that read Lovable and recorded its reconciliation."""
+    for run in LovableSyncRun.objects.exclude(trigger=SyncTrigger.CHECK).order_by("-started_at")[
+        :20
+    ]:
+        if run.status != SyncRunStatus.RUNNING and run_reconciled(run) and run.counts:
+            return run
+    return None
+
+
+def pending_differences(*, visible_to: Any = None) -> list[PendingDifference]:
+    """Every difference still pending after the newest reconciled run.
+
+    A difference stays pending every night until it is applied, converges, the
+    source returns to the baseline, or somebody decides it (`resolve_field`,
+    `resolve_new_topic`) — so this is that run's pending decisions less the ones
+    decided since, each with the moment it first appeared with this source
+    value (``since``).
+
+    ``visible_to``: ``None`` is the server's own view (commands, the engine).
+    A user sees a Teema's difference only for a Teema `Matter.objects.visible_to`
+    lets them open (a tombstone never); a new topic, which has no Teema, is
+    counted but never named for a user — no reference, no value (docs/adr/0201
+    §6) — until the owner decides that topics without a Teema may be shown."""
+    from app.matters.models import Matter
+
+    out: list[PendingDifference] = []
+    run = latest_reconciled_run()
+    if run is not None:
+        rows = list(
+            run.decisions.filter(outcome__in=PENDING_OUTCOMES)
+            .exclude(field=NEW_TOPIC)
+            .select_related("state")
+        )
+        matter_ids = {d.state.matter_id for d in rows}
+        if visible_to is None:
+            readable = set(Matter.objects.filter(pk__in=matter_ids).values_list("pk", flat=True))
+        else:
+            readable = set(
+                Matter.objects.visible_to(visible_to)
+                .filter(pk__in=matter_ids)
+                .values_list("pk", flat=True)
+            )
+        matters = Matter.objects.in_bulk(list(readable))
+        for d in rows:
+            if d.state.matter_id not in readable:
+                continue
+            settled = LovableSyncDecision.objects.filter(
+                state_id=d.state_id, field=d.field, created_at__gt=d.created_at
+            ).filter(Q(outcome__in=SETTLING_OUTCOMES) | Q(reason__startswith=RESOLVED_PREFIX))
+            if settled.exists():
+                continue
+            out.append(
+                PendingDifference(
+                    kind="FIELD",
+                    field=d.field,
+                    outcome=d.outcome,
+                    reason=d.reason,
+                    reference=d.state.reference,
+                    since=_pending_since(d),
+                    policy=policy_of(d.field if d.field != "*" else "source_missing").policy,
+                    matter=matters.get(d.state.matter_id),
+                    baseline=d.baseline,
+                    current=d.current,
+                    source=d.source,
+                    run_id=run.pk,
+                    source_id=str(d.state.source_id),
+                )
+            )
+    for row in LovableSyncNewTopic.objects.filter(
+        status__in=(NewTopicStatus.PLANNED, NewTopicStatus.HELD)
+    ).order_by("reference"):
+        named = visible_to is None
+        out.append(
+            PendingDifference(
+                kind="NEW_TOPIC",
+                field=NEW_TOPIC,
+                outcome=(
+                    SyncOutcome.ELIGIBLE
+                    if row.status == NewTopicStatus.PLANNED
+                    else SyncOutcome.REVIEW_REQUIRED
+                ),
+                reason=row.reason,
+                reference=row.reference if named else "",
+                since=row.first_seen_at,
+                policy=FIELD_POLICY[NEW_TOPIC].policy,
+                run_id=row.last_seen_run_id,
+                source_id=str(row.source_id) if named else "",
+            )
+        )
+    return out
+
+
+def _pending_since(decision: LovableSyncDecision) -> dt.datetime | None:
+    """When this difference — this field, this source value — first appeared,
+    after the field last settled."""
+    settled = (
+        LovableSyncDecision.objects.filter(state_id=decision.state_id, field=decision.field)
+        .filter(Q(outcome__in=SETTLING_OUTCOMES) | Q(reason__startswith=RESOLVED_PREFIX))
+        .filter(created_at__lt=decision.created_at)
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    earlier = LovableSyncDecision.objects.filter(
+        state_id=decision.state_id,
+        field=decision.field,
+        outcome__in=PENDING_OUTCOMES,
+        run__trigger__in=(SyncTrigger.SCHEDULED, SyncTrigger.MANUAL),
+    ).select_related("run")
+    if settled is not None:
+        earlier = earlier.filter(created_at__gt=settled)
+    first = None
+    wanted = _j(decision.source)
+    for d in earlier.order_by("created_at"):
+        if _j(d.source) == wanted:
+            first = d.run.started_at
+            break
+    return first or decision.run.started_at
+
+
+def replay(
+    *,
+    run_key: str = "",
+    today: dt.date | None = None,
+) -> dict[str, Any]:
+    """What tonight's rules would decide over a **stored** reading, written to
+    nothing: the planner runs inside a PostgreSQL ``READ ONLY`` transaction, so
+    any write — a state, a decision, a ledger row, a business record — is refused
+    by the database and the replay fails instead (brief 2026-11-09 §6 B5).
+
+    Returns counts and, per Teema, the fields that would not be unchanged with
+    their outcome and reason (references and codes; no value, title or wording).
+    New topics are listed by reason; the stored readings before this engine carry
+    no new-topic detail, so there they read NOT_IN_READING (a real run reads
+    them fresh)."""
+    try:
+        with transaction.atomic():
+            with connection.cursor() as cursor:
+                cursor.execute("SET TRANSACTION READ ONLY")
+            raise _ReplayDone(_replay(run_key=run_key, today=today))
+    except _ReplayDone as done:
+        # Rolled back on purpose: the read-only setting goes with the transaction.
+        return done.result
+
+
+class _ReplayDone(Exception):
+    def __init__(self, result: dict[str, Any]) -> None:
+        self.result = result
+
+
+def _replay(*, run_key: str, today: dt.date | None) -> dict[str, Any]:
+    snapshots = comparable_snapshots()
+    stored = snapshots.filter(run__run_key=run_key).first() if run_key else snapshots.first()
+    if stored is None:
+        raise SyncRefused("NO_SNAPSHOT", "No stored Lovable snapshot to replay.")
+    document = stored.document
+    verify_snapshot(document)
+    day = today or timezone.localdate()
+    states = population()
+    resolver = OwnerResolver(states)
+    unread = not_yet_read(states, stored)
+    plans = [
+        plan_matter(s, document["cohort"].get(str(s.source_id)), resolver=resolver, today=day)
+        for s in states
+        if s.pk not in unread
+    ]
+    cohort_ids = {str(s.source_id) for s in states}
+    candidates = new_topic_candidates(document.get("index") or [], cohort_ids)
+    holds = _identity_holds(candidates)
+    index_rows = {str(row["id"]): row for row in document.get("index") or []}
+    known = {i: str(index_rows[i].get("nr") or "") for i in cohort_ids if i in index_rows}
+    detail = (document.get("new_topics") or {}).get("cohort") or {}
+    new_plans = [
+        plan_new_topic(
+            source_id,
+            detail.get(source_id),
+            index_row=index_rows[source_id],
+            hold=holds.get(source_id, ""),
+            known=known,
+            resolver=resolver,
+            today=day,
+            snapshot_sha256=document["sha256"],
+        )
+        for source_id in candidates
+    ]
+    counts = RunCounts()
+    for plan in plans:
+        counts.add(plan)
+    counts.add_new_topics(new_plans)
+    teemad = {
+        plan.state.reference: sorted(
+            (d.field, d.outcome, d.reason)
+            for d in plan.decisions
+            if d.outcome != SyncOutcome.UNCHANGED
+        )
+        + ([("*", plan.status, "")] if plan.status else [])
+        for plan in plans
+    }
+    return {
+        "run_key": stored.run.run_key,
+        "snapshot_sha256": stored.sha256,
+        "taken_at": stored.taken_at.isoformat(),
+        "as_of": day.isoformat(),
+        "engine": ENGINE_VERSION,
+        "counts": {k: v for k, v in counts.as_dict().items() if k != "by_cohort"},
+        "teemad": {ref: rows for ref, rows in sorted(teemad.items()) if rows},
+        "new_topics": [
+            {"reference": p.reference, "reason": p.reason or "CREATABLE"}
+            for p in sorted(new_plans, key=lambda p: p.reference)
+        ],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -1525,7 +2879,34 @@ class RunCounts:
     retired: int = 0
     #: The same per cohort (`cohort_counts`), with each cohort's activity.
     by_cohort: dict[str, dict[str, Any]] = field(default_factory=dict)
+    #: New operational topics with no Juristid Teema (docs/adr/0213): seen in the
+    #: reading, planned (would be created), held for a person, decided by one,
+    #: created tonight, failed to create; and the holds by code.
+    new_topics_seen: int = 0
+    new_topics_planned: int = 0
+    new_topics_held: int = 0
+    new_topics_resolved: int = 0
+    new_topics_created: int = 0
+    new_topics_failed: int = 0
+    new_topic_reasons: dict[str, int] = field(default_factory=dict)
     duration_seconds: float = 0.0
+
+    def add_new_topics(self, plans: Iterable[NewTopicPlan]) -> None:
+        for p in plans:
+            self.new_topics_seen += 1
+            if p.created_matter_id is not None:
+                self.new_topics_created += 1
+            elif p.failed:
+                self.new_topics_failed += 1
+            elif p.reason == "RESOLVED":
+                self.new_topics_resolved += 1
+            elif p.creatable:
+                self.new_topics_planned += 1
+            else:
+                self.new_topics_held += 1
+            if p.reason and p.reason != "RESOLVED":
+                code = p.reason.split(":")[0]
+                self.new_topic_reasons[code] = self.new_topic_reasons.get(code, 0) + 1
 
     def add(self, plan: MatterPlan) -> None:
         outcomes = plan.outcomes()
@@ -1659,6 +3040,16 @@ def _observe(state: LovableSyncState, plan: MatterPlan, run: LovableSyncRun) -> 
         if name not in applied and name in plan.source:
             applied[name] = {"source": plan.source[name]}
             started = True
+    for decision in plan.decisions:
+        if (
+            decision.field == CONTINUATION
+            and CONTINUATION not in applied
+            and decision.outcome == SyncOutcome.REVIEW_REQUIRED
+        ):
+            # A changed link is held from the link last seen: it stays pending
+            # every night until somebody decides it or the source returns.
+            applied[CONTINUATION] = {"source": decision.baseline}
+            started = True
     if started:
         updates["applied"] = applied
     LovableSyncState.objects.filter(pk=state.pk).update(**updates, updated_at=timezone.now())
@@ -1766,10 +3157,37 @@ def run_sync(
 
 
 def _fail(run: LovableSyncRun, code: str, message: str, clock: Callable[[], dt.datetime]) -> None:
+    """A failed run: the reason, where it stopped and the Teemad it was writing
+    (references only). Nothing recorded after the failure stays: the run's
+    bookkeeping — converged baselines, decisions, observations, the new-topic
+    ledger — is one transaction (`_execute`), so a failed run never advances a
+    baseline it did not write, and the next run simply tries again."""
+    progress = getattr(run, "progress", None) or {}
+    where = ""
+    if progress:
+        affected = ",".join(progress.get("affected", [])[:8])
+        where = f" [stage={progress.get('stage', '')}{' affected=' + affected if affected else ''}]"
     run.status = SyncRunStatus.FAILED
-    run.error = f"{code}: {message}"[:300]
+    run.error = f"{code}: {message}"[: 300 - len(where)] + where
     run.finished_at = clock()
     run.save(update_fields=["status", "error", "finished_at", "updated_at"])
+
+
+def _with_new_topics(snapshot: dict[str, Any], extra: dict[str, Any]) -> dict[str, Any]:
+    """The run's reading with the new topics' own consistent reading beside the
+    cohort (docs/adr/0213): their rows and children, never another topic's, and
+    a digest over the whole."""
+    from app.legacy_import.integrity import canonical_sha256
+
+    document = {key: value for key, value in snapshot.items() if key != "sha256"}
+    document["new_topics"] = {
+        "taken_at": extra["taken_at"],
+        "attempts": extra.get("attempts"),
+        "sha256": extra["sha256"],
+        "cohort": extra["cohort"],
+    }
+    document["sha256"] = canonical_sha256(document)
+    return document
 
 
 def _execute(
@@ -1782,6 +3200,8 @@ def _execute(
     from app.matters.models import Matter
     from app.search.indexing import refresh_matters
 
+    progress: dict[str, Any] = {"stage": "population", "affected": []}
+    run.progress = progress  # type: ignore[attr-defined]
     check = run.trigger == SyncTrigger.CHECK
     # `Kontrolli muudatusi` reads only: it seeds nothing, advances no baseline,
     # observes nothing and prunes nothing; it records its own findings, no more.
@@ -1798,12 +3218,15 @@ def _execute(
     # Only a run that finished without failing is a baseline (`is_baseline_run`).
     previous_snapshot = comparable_snapshots().first()
 
+    progress["stage"] = "read"
     if run.trigger == SyncTrigger.CHECK:
         if previous_snapshot is None:
             raise SyncRefused("NO_SNAPSHOT", "No stored Lovable snapshot to compare against yet.")
         snapshot = previous_snapshot.document
         verify_snapshot(snapshot)
     else:
+        # Every run that reads Lovable reads it now (a manual run too): a stored
+        # reading is never applied (brief 2026-11-09 §7, «Sünkrooni nüüd»).
         if transport is None:
             raise SyncRefused("NO_SOURCE", "A run that reads Lovable needs the source connection.")
         snapshot = take_snapshot(
@@ -1812,11 +3235,28 @@ def _execute(
             mapping_version=MAPPING_VERSION,
             pause=pause or time.sleep,
         )
+        verify_snapshot(snapshot)
+    candidates = new_topic_candidates(snapshot.get("index") or [], cohort_ids)
+    holds = _identity_holds(candidates)
+    if not check:
+        readable = [i for i in candidates if i not in holds]
+        if readable:
+            # The new topics' rows and children, read as consistently as the
+            # cohort's (GET only, the same allowlist), beside it.
+            extra = take_snapshot(
+                transport,  # type: ignore[arg-type]
+                readable,
+                mapping_version=MAPPING_VERSION,
+                pause=pause or time.sleep,
+            )
+            verify_snapshot(extra)
+            snapshot = _with_new_topics(snapshot, extra)
     verify_snapshot(snapshot)
     run.snapshot_sha256 = snapshot["sha256"]
     run.snapshot_taken_at = dt.datetime.fromisoformat(snapshot["taken_at"])
     run.save(update_fields=["snapshot_sha256", "snapshot_taken_at", "updated_at"])
 
+    progress["stage"] = "plan"
     today = clock().astimezone(TALLINN).date()
     resolver = OwnerResolver(states)
     # A check compares the stored reading; a cohort enrolled after it was taken
@@ -1826,6 +3266,28 @@ def _execute(
         plan_matter(s, snapshot["cohort"].get(str(s.source_id)), resolver=resolver, today=today)
         for s in states
         if s.pk not in unread
+    ]
+    index_rows = {str(row["id"]): row for row in snapshot.get("index") or []}
+    known = {i: str(index_rows[i].get("nr") or "") for i in cohort_ids if i in index_rows}
+    detail = (snapshot.get("new_topics") or {}).get("cohort") or {}
+    decided = {
+        str(i)
+        for i in LovableSyncNewTopic.objects.filter(status=NewTopicStatus.RESOLVED).values_list(
+            "source_id", flat=True
+        )
+    }
+    new_plans = [
+        plan_new_topic(
+            source_id,
+            detail.get(source_id),
+            index_row=index_rows[source_id],
+            hold="RESOLVED" if source_id in decided else holds.get(source_id, ""),
+            known=known,
+            resolver=resolver,
+            today=today,
+            snapshot_sha256=snapshot["sha256"],
+        )
+        for source_id in candidates
     ]
 
     missing = sum(1 for p in plans if p.status == SyncOutcome.SOURCE_MISSING)
@@ -1857,6 +3319,7 @@ def _execute(
     elif not run.backup_set:
         hold = NO_BACKUP
 
+    progress["stage"] = "apply"
     applied_ids: list[Any] = []
     verified = True
     final: list[MatterPlan] = []
@@ -1874,6 +3337,7 @@ def _execute(
                 decision.reason = VERIFY_STOPPED
             final.append(plan)
             continue
+        progress["affected"] = [plan.state.reference]
         try:
             done = apply_matter(plan, run=run, snapshot=snapshot, resolver=resolver, today=today)
         except Exception as error:
@@ -1889,10 +3353,44 @@ def _execute(
             if not verify_matter(done):
                 done.verify_failed = True
                 verified = False
+    progress["affected"] = []
 
-    # Converged fields advance their baseline even on a compare-only night: no
-    # business write, only the record of what Lovable and Juristid agree on.
+    # New topics (docs/adr/0213): created only on an APPLY night that writes,
+    # with every field breaker clear and every read-back good, and under their
+    # own breaker; otherwise planned and counted.
+    progress["stage"] = "new_topics"
+    creatable = [p for p in new_plans if p.creatable]
+    new_hold = hold or ("" if verified else VERIFY_STOPPED)
+    if not new_hold and len(creatable) > MAX_NEW_TOPICS:
+        new_hold = NEW_BREAKER
+    target = next((c for c in active if c.key == NEW_TOPIC_COHORT), None)
+    if not new_hold and creatable and target is None:
+        for p in creatable:
+            p.reason = NEW_NO_COHORT
+    elif not new_hold:
+        for p in creatable:
+            progress["affected"] = [p.reference]
+            try:
+                matter = create_new_topic(p, run=run, cohort=target, snapshot=snapshot)  # type: ignore[arg-type]
+            except Exception as error:
+                logger.warning(
+                    "Lovable sync: new topic %s not created (%s)", p.reference, type(error).__name__
+                )
+                p.failed, p.reason = True, NEW_FAILED
+                continue
+            p.created_matter_id = matter.pk
+            applied_ids.append(matter.pk)
+        progress["affected"] = []
+
+    if applied_ids:
+        refresh_matters(Matter.objects.filter(pk__in=applied_ids))
+
+    # The bookkeeping, all or nothing: a failure here leaves every baseline,
+    # decision and observation as the previous run left them.
+    progress["stage"] = "record"
     with transaction.atomic():
+        # Converged fields advance their baseline even on a compare-only night: no
+        # business write, only the record of what Lovable and Juristid agree on.
         for plan in final:
             if check or plan.status or plan.not_executed or plan.state.pk is None:
                 continue
@@ -1907,48 +3405,52 @@ def _execute(
                 )
             plan.state.applied = applied
 
-    if applied_ids:
-        refresh_matters(Matter.objects.filter(pk__in=applied_ids))
-
-    counts = RunCounts(
-        by_cohort={c.key: cohort_counts(c.required, c.retired) for c in active},
-        retired=sum(c.retired for c in active),
-    )
-    for state in states:
-        if state.pk in unread:
-            counts.not_yet_read += 1
-            counts.by_cohort[state.cohort]["not_yet_read"] += 1
-    for plan in final:
-        counts.add(plan)
-        _record(run, plan)
-        if not plan.status and not check:
-            _observe(LovableSyncState.objects.get(pk=plan.state.pk), plan, run)
-    _observe_index(
-        counts, snapshot, cohort_ids, previous_snapshot.document if previous_snapshot else None
-    )
-    finished = clock()
-    counts.duration_seconds = round((finished - run.started_at).total_seconds(), 1)
-
-    run.counts = counts.as_dict()
-    run.verified = verified
-    run.finished_at = finished
-    if not verified:
-        run.status = SyncRunStatus.FAILED
-        run.error = (
-            "VERIFY: an applied Teema does not read back as written; the run stopped writing"
-            f" ({counts.not_executed} Teema(d) not written after it)."
+        counts = RunCounts(
+            by_cohort={c.key: cohort_counts(c.required, c.retired) for c in active},
+            retired=sum(c.retired for c in active),
         )
-    elif counts.failed:
-        # The others were written and verified; the run still is not a success.
-        run.status = SyncRunStatus.FAILED
-        run.error = f"{PARTIAL}: {counts.failed} Teema(d) not applied; nothing half-written."
-    elif hold in (BREAKER, NO_BACKUP):
-        run.status = SyncRunStatus.REVIEW_ONLY
-        run.error = hold
-    else:
-        run.status = SyncRunStatus.SUCCEEDED
-        run.error = ""
-    run.save(update_fields=["counts", "verified", "finished_at", "status", "error", "updated_at"])
+        for state in states:
+            if state.pk in unread:
+                counts.not_yet_read += 1
+                counts.by_cohort[state.cohort]["not_yet_read"] += 1
+        for plan in final:
+            counts.add(plan)
+            _record(run, plan)
+            if not plan.status and not check:
+                _observe(LovableSyncState.objects.get(pk=plan.state.pk), plan, run)
+        _observe_index(
+            counts, snapshot, cohort_ids, previous_snapshot.document if previous_snapshot else None
+        )
+        counts.add_new_topics(new_plans)
+        if not check:
+            _record_new_topics(run, new_plans, seen_at=run.started_at)
+        finished = clock()
+        counts.duration_seconds = round((finished - run.started_at).total_seconds(), 1)
+
+        run.counts = counts.as_dict()
+        run.verified = verified
+        run.finished_at = finished
+        if not verified:
+            run.status = SyncRunStatus.FAILED
+            run.error = (
+                "VERIFY: an applied Teema does not read back as written; the run stopped writing"
+                f" ({counts.not_executed} Teema(d) not written after it)."
+            )
+        elif counts.failed or counts.new_topics_failed:
+            # The others were written and verified; the run still is not a success.
+            run.status = SyncRunStatus.FAILED
+            run.error = f"{PARTIAL}: {counts.failed} Teema(d) not applied; nothing half-written."
+            if counts.new_topics_failed:
+                run.error += f" New topics not created: {counts.new_topics_failed}."
+        elif hold in (BREAKER, NO_BACKUP) or new_hold == NEW_BREAKER:
+            run.status = SyncRunStatus.REVIEW_ONLY
+            run.error = hold if hold in (BREAKER, NO_BACKUP) else NEW_BREAKER
+        else:
+            run.status = SyncRunStatus.SUCCEEDED
+            run.error = ""
+        run.save(
+            update_fields=["counts", "verified", "finished_at", "status", "error", "updated_at"]
+        )
     if not check:
         prune_snapshots(now=finished)
 
@@ -2041,13 +3543,23 @@ def prune_snapshots(*, now: dt.datetime) -> int:
     return deleted
 
 
-def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncDecision:
+def resolve_field(
+    *, reference: str, field_name: str, note: str, actor: Any = None
+) -> LovableSyncDecision:
     """An operator's resolution of a held change: the baseline takes the last
     observed source value, and the Teema keeps whatever Juristid holds. It is
     also the only thing that lifts the import's review hold (``import_held``,
-    docs/adr/0202 §6) — for the step, from both its wording and its day."""
-    if field_name not in FIELDS:
+    docs/adr/0202 §6) — for the step, from both its wording and its day.
+
+    ``actor`` is the administrator who decided it from «Vaata erinevusi»
+    (brief 2026-11-09 §7); the server command passes none. The decision row
+    names the actor and the note, so who decided what, when, is on record.
+    Nothing in the Teema is written: a decision moves the baseline only."""
+    if field_name not in RESOLVABLE_FIELDS:
         raise SyncRefused("UNKNOWN_FIELD", f"Unknown field {field_name!r}.")
+    note = text_value(note)
+    if not note:
+        raise SyncRefused("NO_NOTE", "A decision needs a note saying why.")
     with transaction.atomic():
         state = (
             LovableSyncState.objects.select_for_update()
@@ -2060,7 +3572,7 @@ def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncD
         if run is None:
             raise SyncRefused("NOT_OBSERVED", "Nothing observed yet.")
         applied = dict(state.applied)
-        b = current_values(state.matter)
+        b = full_values(state.matter)
         value = state.observed[field_name]
         before = (applied.get(field_name) or {}).get("source")
         if field_name in STEP_FIELDS:
@@ -2083,7 +3595,9 @@ def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncD
         elif field_name == "owner":
             # Who kept the file, not who the name is: never taught to the resolver.
             applied[field_name] = {"source": value, "target": b[field_name], "resolved": True}
-        elif field_name in ("title", "onenote_link"):
+        elif field_name in ("title", "onenote_link", "stage", "commencements", CONTINUATION):
+            # What Juristid keeps is the target: unchanged afterwards, it is
+            # unchanged, never a local change.
             applied[field_name] = {"source": value, "target": b[field_name]}
         else:
             applied[field_name] = {"source": value}
@@ -2097,6 +3611,8 @@ def resolve_field(*, reference: str, field_name: str, note: str) -> LovableSyncD
             reason=f"{RESOLVED_PREFIX} {note}"[:60],
             baseline=before,
             source=value,
+            current=b.get(field_name),
+            actor=actor,
         )
 
 
@@ -2547,6 +4063,12 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
         lines.append(f"Kohortidest välja arvatud (teema jäädavalt kustutatud): {c['retired']}")
     if run.mode != SyncMode.APPLY or run.status == SyncRunStatus.REVIEW_ONLY:
         lines.append(f"Ohutuid uuendusi rakendamata: {c.get('eligible_unapplied', 0)}")
+    if c.get("new_topics_seen"):
+        lines.append(
+            f"Uusi Lovable'i teemasid: {c['new_topics_seen']} (loodud "
+            f"{c.get('new_topics_created', 0)}, loomisel {c.get('new_topics_planned', 0)}, "
+            f"vajab ülevaatamist {c.get('new_topics_held', 0)})"
+        )
     by_cohort = c.get("by_cohort") or {}
     if by_cohort and set(by_cohort) != {PILOT_COHORT}:
         # Only when the population is not the pilot alone: the pilot reads as before.
@@ -2613,3 +4135,44 @@ def due(*, trigger: str, now: dt.datetime | None = None) -> str:
         if LovableSyncRun.objects.filter(run_key=run_key_for(trigger, moment)).exists():
             return "NOT_DUE ALREADY_RAN"
     return f"DUE {ctl.mode}"
+
+
+#: The environment variable the host script sets on an on-demand run's
+#: container: the verified backup set it took for an APPLY request.
+HOST_BACKUP_SET_ENV = "LOVABLE_SYNC_BACKUP_SET"
+
+
+def pending_sync_request() -> bool:
+    """Whether an administrator's «Sünkrooni nüüd» request waits (interface 4:
+    `DataSyncRequest`, kind LOVABLE_SYNC, PENDING). Reads only; without the
+    requests model in this build there is never one."""
+    try:
+        from app.legacy_import.sync_requests_models import (  # type: ignore[import-not-found,unused-ignore]
+            DataSyncRequest,
+        )
+    except ImportError:
+        return False
+    return bool(DataSyncRequest.objects.filter(kind="LOVABLE_SYNC", status="PENDING").exists())
+
+
+def due_on_demand() -> str:
+    """The host's on-demand firing (every few minutes, the same cron file):
+    ``DUE <mode>`` only while a request waits, else ``NOT_DUE NO_REQUEST``.
+    A paused synchronisation still answers ``DUE OFF`` for a waiting request, so
+    the request runner records the refusal instead of leaving it pending. Reads
+    only: it never creates the control row."""
+    ctl = LovableSyncControl.objects.filter(pk=1).first()
+    if ctl is not None and ctl.cut_over:
+        return "NOT_DUE CUT_OVER"
+    if not pending_sync_request():
+        return "NOT_DUE NO_REQUEST"
+    return f"DUE {ctl.mode if ctl is not None else SyncMode.OFF}"
+
+
+def host_backup_set() -> str:
+    """The backup set the host script took for this container's run, or ``""``
+    (`HOST_BACKUP_SET_ENV`). The request runner passes it to `run_sync`, which
+    accepts it only if it is a fresh set's name (`fresh_backup_set`)."""
+    import os
+
+    return os.environ.get(HOST_BACKUP_SET_ENV, "").strip()

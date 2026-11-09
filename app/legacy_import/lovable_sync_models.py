@@ -198,6 +198,16 @@ class LovableSyncDecision(BaseModel):
     #: Set only on an applied write: the same source change applied twice is
     #: refused by the database, whatever the code above it does.
     idempotency_key = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    #: The administrator who decided a held change (`lovable_sync.resolve_field`
+    #: with an actor, brief 2026-11-09 §7); none for a machine's decision or an
+    #: operator's server command.
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
 
     class Meta:
         verbose_name = "Lovable sünkroonimise otsus"
@@ -241,6 +251,10 @@ class MembershipBasis(models.TextChoices):
     #: for a state seeded before memberships were recorded (migration 0024): only
     #: when the cohort's approved provenance names that Teema under that Lovable id.
     DELETION = "DELETION", "Kinnitati kustutamisel kohordi päritolu järgi"
+    #: Written by the synchronisation when it created the Teema from a new
+    #: Lovable topic (docs/adr/0213), in the transaction that created it and
+    #: seeded its state. A joined member: the cohort's required size counts it.
+    NEW_TOPIC = "NEW_TOPIC", "Lisati kohorti uue Lovable'i teemana"
 
 
 class LovableSyncMembership(AppendOnlyModel):
@@ -479,3 +493,86 @@ class LovableSyncBaselineArchive(BaseModel):
         if not self._state.adding:
             raise ImmutableRecordError("Arhiveeritud lähtekohta ei muudeta.")
         super().save(*args, **kwargs)
+
+
+class NewTopicStatus(models.TextChoices):
+    #: COMPARE (or a held APPLY night): every check passed, it would be created.
+    PLANNED = "PLANNED", "Luuakse rakendamisel"
+    #: A check failed or a reading is unsafe: a person decides.
+    HELD = "HELD", "Vajab ülevaatamist"
+    #: Created by an APPLY night and enrolled (`created_matter`).
+    CREATED = "CREATED", "Loodud"
+    #: An administrator decided it (`lovable_sync.resolve_new_topic`): not created
+    #: by the machine; it is not planned again.
+    RESOLVED = "RESOLVED", "Lahendatud käsitsi"
+    #: No longer an operational topic without a Teema (it left the scope, was
+    #: deleted in Lovable, or a Teema now holds it): kept as history.
+    GONE = "GONE", "Enam pole uus"
+
+
+class LovableSyncNewTopic(BaseModel):
+    """One operational Lovable topic that has no Juristid Teema (docs/adr/0213).
+
+    Discovered every run from the reading's index, by its Lovable identity;
+    checked (identity, reference, reading, plan) every run; created only by an
+    APPLY night and only once — the database refuses a second row for the same
+    topic, and a created row names its Teema. Held rows stay until a person
+    decides or the topic stops being new. Codes and counts only: the Teema's
+    title and wording live in its source reference, never here."""
+
+    source_id = models.UUIDField(unique=True)
+    #: Lovable's `nr` as last read: an identifier, never a title.
+    reference = models.CharField(max_length=20)
+    status = models.CharField(max_length=16, choices=NewTopicStatus.choices)
+    reason = models.CharField(max_length=60, blank=True)
+    first_seen_at = models.DateTimeField()
+    last_seen_at = models.DateTimeField()
+    first_seen_run = models.ForeignKey(
+        LovableSyncRun, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    last_seen_run = models.ForeignKey(
+        LovableSyncRun, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    #: The source row's version the last plan read.
+    source_version = models.IntegerField(null=True, blank=True)
+    reader_version = models.CharField(max_length=40, blank=True)
+    #: The one-topic package the plan built and, once created, the digests the
+    #: writer was bound to.
+    package_sha256 = models.CharField(max_length=64, blank=True)
+    plan_sha256 = models.CharField(max_length=64, blank=True)
+    #: Codes only: the held Lovable columns, the stage-link partners' counts.
+    detail = models.JSONField(default=dict, blank=True)
+    #: SET_NULL so that a permanent deletion's ownership walk never takes this
+    #: row with the Teema (a Matter row itself is never removed: 0203 §1).
+    created_matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at_run = models.ForeignKey(
+        LovableSyncRun, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        verbose_name = "Lovable'i uus teema"
+        ordering = ["reference"]
+        constraints = [
+            models.CheckConstraint(
+                condition=~models.Q(status="CREATED") | models.Q(created_matter__isnull=False),
+                name="lovable_new_topic_created_names_its_teema",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.reference}: {self.status}"
