@@ -22,6 +22,19 @@
         --package-sha256 SHA --expect N --reason R --replaces lovable-operational
     python manage.py lovable_sync retire --cohort lovable-register \\
         --reference 2026_511 --reason R [--apply]
+    python manage.py lovable_sync due --trigger manual --on-demand
+    python manage.py lovable_sync replay [--run-key K] [--as-of YYYY-MM-DD] [--list-new]
+    python manage.py lovable_sync pending
+    python manage.py lovable_sync resolve-new-topic --source-id UUID --note N
+
+`due --on-demand` (docs/adr/0213) is the host's on-demand firing: ``DUE <mode>``
+when an administrator's «Sünkrooni nüüd» request is waiting
+(`DataSyncRequest`, kind LOVABLE_SYNC, PENDING), else ``NOT_DUE NO_REQUEST``.
+It reads only. `replay` plans tonight's rules over a stored reading inside a
+read-only transaction: nothing is written, the database refuses any write.
+`pending` prints the pending differences as counts by field and reason.
+`resolve-new-topic` records an operator's decision that a held new topic is not
+created by the machine.
 
 `run` reads Lovable as the service login named in the credentials file and
 reconciles the pilot's 100 Teemad and every enrolled cohort (docs/adr/0202). It
@@ -118,6 +131,9 @@ class Command(BaseCommand):
                 "resolve",
                 "enroll",
                 "retire",
+                "replay",
+                "pending",
+                "resolve-new-topic",
             ],
         )
         parser.add_argument("--trigger", choices=["scheduled", "manual"], default="manual")
@@ -135,6 +151,17 @@ class Command(BaseCommand):
         parser.add_argument("--field", default="")
         parser.add_argument("--note", default="")
         parser.add_argument("--json", action="store_true")
+        parser.add_argument(
+            "--on-demand",
+            action="store_true",
+            help="due: answer for the host's on-demand firing (a waiting request).",
+        )
+        parser.add_argument("--run-key", default="", help="replay: the stored reading's run.")
+        parser.add_argument("--as-of", default="", help="replay: the day the rules read as today.")
+        parser.add_argument(
+            "--list-new", action="store_true", help="replay: list new topics by reference."
+        )
+        parser.add_argument("--source-id", default="", help="resolve-new-topic: the Lovable id.")
         parser.add_argument(
             "--manual",
             action="store_true",
@@ -259,7 +286,52 @@ class Command(BaseCommand):
         """For the host scheduler, which has no Tallinn clock of its own: whether
         this is the 00:xx Europe/Tallinn run, and in which mode. Writes nothing."""
         trigger = SyncTrigger.SCHEDULED if options["trigger"] == "scheduled" else SyncTrigger.MANUAL
+        if options["on_demand"]:
+            self.stdout.write(lovable_sync.due_on_demand())
+            return
         self.stdout.write(lovable_sync.due(trigger=trigger))
+
+    def _replay(self, options: dict[str, Any]) -> None:
+        """Tonight's rules over a stored reading, written to nothing (read-only)."""
+        import datetime as dt
+
+        as_of = dt.date.fromisoformat(options["as_of"]) if options["as_of"] else None
+        result = lovable_sync.replay(run_key=options["run_key"], today=as_of)
+        if not options["list_new"]:
+            reasons: dict[str, int] = {}
+            for item in result["new_topics"]:
+                reasons[item["reason"]] = reasons.get(item["reason"], 0) + 1
+            result["new_topics"] = reasons
+        self._emit(options, result)
+
+    def _pending(self, options: dict[str, Any]) -> None:
+        """The pending differences in counts: by field and outcome, and by reason."""
+        rows = lovable_sync.pending_differences(visible_to=None)
+        by_field: dict[str, int] = {}
+        by_reason: dict[str, int] = {}
+        for row in rows:
+            key = f"{row.field}:{row.outcome}"
+            by_field[key] = by_field.get(key, 0) + 1
+            code = (row.reason or "-").split(":")[0]
+            by_reason[code] = by_reason.get(code, 0) + 1
+        self._emit(
+            options,
+            {
+                "pending": len(rows),
+                "teemad": len({r.reference for r in rows if r.kind == "FIELD"}),
+                "new_topics": sum(1 for r in rows if r.kind == "NEW_TOPIC"),
+                "by_field": dict(sorted(by_field.items())),
+                "by_reason": dict(sorted(by_reason.items())),
+            },
+        )
+
+    def _resolve_new_topic(self, options: dict[str, Any]) -> None:
+        if not (options["source_id"] and options["note"].strip()):
+            raise CommandError("resolve-new-topic needs --source-id and --note.")
+        row = lovable_sync.resolve_new_topic(
+            source_id=options["source_id"], note=options["note"].strip()
+        )
+        self.stdout.write(f"resolved new topic {row.reference}: {row.status}")
 
     # -- running ---------------------------------------------------------------
 
