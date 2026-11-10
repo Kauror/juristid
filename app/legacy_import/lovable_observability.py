@@ -224,6 +224,10 @@ class SyncStatus(_AsDict):
     #: Whether the population is other than the pilot alone (the pages then show
     #: the per-cohort rows).
     per_cohort: bool = False
+    #: Of ``pending_review``: the historical register's own import holds
+    #: (`lovable_sync.historical_hold`), which the pages show apart from the
+    #: operational work (docs/adr/0213 §9, amendment 2026-11-10).
+    pending_review_historical: int = 0
 
 
 @dataclass
@@ -1167,6 +1171,18 @@ def _nights_since(firsts: dict[tuple[Any, str], dt.datetime]) -> dict[tuple[Any,
     return {(r["state_id"], r["field"]): r["n"] for r in rows}
 
 
+def _historical(item: _Pending) -> bool:
+    """Whether a pending field is the historical register's import hold: its
+    newest decision says so, or — not yet decided on — the import holds it."""
+    if item.newest is not None:
+        reason = str(item.newest.get("reason") or "")
+    elif item.field in lovable_sync.held_by_import(item.state.applied):
+        reason = lovable_sync.IMPORT_HELD
+    else:
+        reason = ""
+    return lovable_sync.historical_hold(item.state.cohort, reason)
+
+
 def _pending_fields(states: list[LovableSyncState]) -> list[_Pending]:
     """Every field whose last applied source differs from the last observed one,
     or that the import holds for review, unless its newest decision settled it.
@@ -1667,7 +1683,9 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
             matter__deleted_at__isnull=True
         )
     )
-    pending = len(_pending_fields(states))
+    pending_items = _pending_fields(states)
+    pending = len(pending_items)
+    pending_historical = sum(1 for item in pending_items if _historical(item))
 
     warnings: list[str] = []
     if cut_over:
@@ -1796,6 +1814,7 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         live_topics=live,
         operational_topics=operational,
         pending_review=pending,
+        pending_review_historical=pending_historical,
         warnings=warnings,
         indicators=indicators,
         observation_health_ok=health.ok,
