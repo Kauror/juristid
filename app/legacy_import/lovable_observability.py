@@ -2678,9 +2678,10 @@ def matter_changes(
 # Readiness (docs/adr/0201 §7)
 # ---------------------------------------------------------------------------
 
-#: What the existing rules do with each field (`lovable_sync.AUTO_FIELDS` and
-#: `HELD_FIELDS`), and why a held one is held. Static: a change here is a
-#: change to docs/adr/0192 §5, never made by this module.
+#: What the existing rules do with each field (`lovable_sync.FIELD_POLICY`), and
+#: why a held one is held. Static: a change here is a change to docs/adr/0192 §5
+#: as amended by docs/adr/0213, never made by this module; a test keeps it in
+#: step with FIELD_POLICY.
 FIELD_RULES: dict[str, dict[str, Any]] = {
     "title": {
         "mapping": "EXACT",
@@ -2719,16 +2720,23 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
         "blocking": "Tegevuse liigi (tee/oota/jälgi) otsustab inimene.",
     },
     "stage": {
-        "mapping": "NONE",
-        "service": "",
-        "risks": ["Lovable'i vaba tekst ei vasta Juristide etapisõnastikule."],
-        "blocking": "Kinnitatud etapisõnastiku vastendust pole (docs/adr/0191: NEVER_AUTO).",
+        "mapping": "CONDITIONAL",
+        "service": "change_stage(origin=IMPORTED)",
+        "risks": [
+            "Ainult täpse sildivastavuse (lovable_reading.STAGE_MAPPING) kaudu avatud teemal, "
+            "mis on veel viimati rakendatud etapis.",
+            "Tööd lõpetav etapp (TERMINAL_STAGE_LABELS) jääb alati inimesele.",
+        ],
+        "blocking": "",
     },
     "opinion_deadline": {
-        "mapping": "APPROXIMATE",
-        "service": "",
-        "risks": ["Allika kuupäev on väide, mitte Juristide tähtaeg."],
-        "blocking": "Arvamuse tähtaja vastendusreeglit pole kinnitatud.",
+        "mapping": "CONDITIONAL",
+        "service": "request_response_deadline (uus küsimine)",
+        "risks": [
+            "Ainult kui praegust küsimist pole, midagi pole saadetud, see pole Koja algatus "
+            "ja päev pole möödas; olemasolevat tähtaega ei muudeta.",
+        ],
+        "blocking": "",
     },
     "sent": {
         "mapping": "NONE",
@@ -2767,10 +2775,13 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
         "blocking": "Saabumise kuupäeva vastendusreeglit pole kinnitatud.",
     },
     "commencements": {
-        "mapping": "APPROXIMATE",
-        "service": "",
-        "risks": ["Lovable'i kuupäev on hinnang, mitte kinnitatud õigusmõju (docs/adr/0120)."],
-        "blocking": "Jõustumise hinnang ei muutu kunagi tööks ega kinnitatud kuupäevaks.",
+        "mapping": "CONDITIONAL",
+        "service": "add_effective_date / add_important_date (ainult lisandunud)",
+        "risks": [
+            "Ainult üheselt loetava liigiga lisandunud jõustumine; eeldatav jääb hinnanguks "
+            "(docs/adr/0120). Muudetud või eemaldatud jõustumine jääb inimesele.",
+        ],
+        "blocking": "",
     },
     "operational_scope": {
         "mapping": "NONE",

@@ -1248,6 +1248,10 @@ class ImportedVersion:
     order: tuple[Any, ...] = ()
     #: The file as an expanded row prints it (`HistoricalFile`).
     file: Any = None
+    #: A later capture's version of a file an earlier capture imported
+    #: (`_onenote_later_versions`). It reads on its own OneNote modification day
+    #: and never under a dated note: the note's day is the first version's.
+    later: bool = False
 
 
 def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, ImportedVersion]:
@@ -1339,6 +1343,147 @@ def imported_document_versions(matter: Matter, user: Any = None) -> dict[Any, Im
                 predates_page=predates,
                 version_id=version_id,
             ),
+        )
+    if found:
+        # A later version exists only beside a first capture's imported file
+        # (a VERSIONED revision continues an imported Document), so a Teema with
+        # no imported OneNote file costs no extra query (docs/adr/0092 §10).
+        found.update(_onenote_later_versions(matter, user, found))
+    return found
+
+
+def _onenote_later_versions(
+    matter: Matter, user: Any, earlier: dict[Any, ImportedVersion]
+) -> dict[Any, ImportedVersion]:
+    """File versions a later OneNote capture brought (docs/adr/0205, 2026-11-09
+    amendment): the next `DocumentVersion` of a Document an earlier capture
+    imported, recorded as a `VERSIONED` `OneNoteResourceRevision`.
+
+    Dated by the block's modification time in OneNote — when the file's content
+    was changed there — and said so («OneNote'is muudetud»), never as the day
+    the file was added; without that time it is undated. Never the import day,
+    so a new version never reads as an actorless «lisas dokumendi».
+
+    **Only a plausible time dates it** (live-sync round 2): one earlier than the
+    block's creation in the same capture, or later than the import that stored
+    the version, is a clock the chronology does not repeat, and the version is
+    undated (`source_page_versions.plausible_modification`, the source page's
+    rule). A later version never reads under a dated note (`later`).
+    """
+    from django.db.models import FilteredRelation, Q
+    from django.db.models.functions import Coalesce
+    from django.urls import reverse
+
+    from app.documents.inline import file_link_for
+    from app.documents.models import Document
+    from app.legacy_import.historical_notes import UNDATED_FILE_DISPLAY, HistoricalFile, day_display
+    from app.legacy_import.onenote_coverage_models import (
+        HoldDecisionKind,
+        OneNoteResourceRevision,
+        RevisionState,
+    )
+
+    # A held reading an administrator accepted (`OneNoteHoldDecision`,
+    # `ACCEPT_REVISION`) made the version the decision names: the same kind of
+    # later version, read off the same row in the same query (one LEFT JOIN; an
+    # item has at most one settling decision). Its day is the reading's, never
+    # the decision's.
+    rows = (
+        OneNoteResourceRevision.objects.filter(matter_source_page__matter=matter)
+        .annotate(
+            accepted=FilteredRelation(
+                "hold_decisions",
+                # An accepted decision always names its version (a database
+                # constraint), so the decision kind alone selects it.
+                condition=Q(hold_decisions__decision=HoldDecisionKind.ACCEPT_REVISION),
+            )
+        )
+        .annotate(
+            later_version=Coalesce("document_version", "accepted__document_version"),
+            later_document=Coalesce("document", "accepted__document"),
+        )
+        .filter(
+            Q(state=RevisionState.VERSIONED, document_version__isnull=False)
+            | Q(state=RevisionState.HELD, accepted__document_version__isnull=False)
+        )
+    )
+    if user is not None:
+        rows = rows.filter(later_document__in=Document.objects.visible_to(user).values("pk"))
+    found: dict[Any, ImportedVersion] = {}
+    for (
+        version_id,
+        modified_at,
+        stored_at,
+        block_created,
+        imported_at,
+        section,
+        title,
+        link_id,
+        resource_key,
+        block_ordinal,
+        document_id,
+        document_title,
+        filename,
+        mime_type,
+    ) in rows.values_list(
+        "later_version",
+        "block_modified_at",
+        # Where an undated version sorts: when its reading was imported — for an
+        # accepted reading too, never the decision's time.
+        "created_at",
+        "source_added_at",
+        "created_at",
+        "matter_source_page__source_page__source_section",
+        "matter_source_page__source_page__title",
+        "matter_source_page_id",
+        "resource__resource_key",
+        "resource__source_block_ordinal",
+        "later_document",
+        Coalesce("document__title", "accepted__document__title"),
+        Coalesce(
+            "document_version__original_filename",
+            "accepted__document_version__original_filename",
+        ),
+        Coalesce("document_version__mime_type", "accepted__document_version__mime_type"),
+    ):
+        if version_id in earlier or version_id in found:
+            continue
+        if modified_at is not None and (
+            (block_created is not None and modified_at < block_created)
+            or (imported_at is not None and modified_at > imported_at)
+        ):
+            modified_at = None
+        source = " → ".join(
+            part for part in ((section or "").strip(), (title or "").strip()) if part
+        )
+        group = f"day:{_local_day(modified_at).isoformat()}" if modified_at else "undated"
+        shown = (
+            f"OneNote'is muudetud {day_display(_local_day(modified_at))}"
+            if modified_at
+            else UNDATED_FILE_DISPLAY
+        )
+        found[version_id] = ImportedVersion(
+            group=group,
+            source=source,
+            added_at=modified_at,
+            anchor=modified_at or stored_at,
+            predates_page=False,
+            link_id=link_id,
+            resource_key=resource_key or "",
+            order=(source, str(link_id), block_ordinal or 0, filename or "", str(version_id)),
+            file=HistoricalFile(
+                title=document_title or "",
+                original_filename=filename or "",
+                document_url=reverse("documents:document_detail", kwargs={"pk": document_id}),
+                open_url=file_link_for(
+                    version_id=version_id, filename=filename or "", mime_type=mime_type or ""
+                ).href,
+                added_display=shown,
+                comment="",
+                predates_page=False,
+                version_id=version_id,
+            ),
+            later=True,
         )
     return found
 
@@ -1444,7 +1589,7 @@ def historical_note_rows(
 
     by_link: dict[Any, list[PageFile]] = {}
     for version_id, version in imported.items():
-        if version.file is None or not version.resource_key:
+        if version.file is None or not version.resource_key or version.later:
             continue
         by_link.setdefault(version.link_id, []).append(
             PageFile(

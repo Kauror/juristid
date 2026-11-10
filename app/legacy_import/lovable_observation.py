@@ -271,11 +271,25 @@ def observed_values(bundle: dict[str, Any]) -> dict[str, Any]:
     return values
 
 
+#: `take_observation(detail=…)`: the nightly observation's scope (operational and
+#: pilot topics only, the default and unchanged), or every live topic — the full
+#: reading the inventory and the historical backfill need (`lovable_inventory`).
+DETAIL_COHORT = "cohort"
+DETAIL_ALL = "all"
+DETAIL_SCOPES = (DETAIL_COHORT, DETAIL_ALL)
+
+
 def _document(
-    reading: dict[str, Any], *, detail_ids: set[str], taken_at: dt.datetime, attempts: int
+    reading: dict[str, Any],
+    *,
+    detail_ids: set[str],
+    taken_at: dt.datetime,
+    attempts: int,
+    scope: str = DETAIL_COHORT,
 ) -> dict[str, Any]:
     index = []
     detail: dict[str, Any] = {}
+    bundles: dict[str, Any] = {}
     for topic_id in sorted(reading["bundles"]):
         bundle = reading["bundles"][topic_id]
         row = bundle["row"]
@@ -294,7 +308,13 @@ def _document(
                 "sha256": canonical_sha256([row_hash, children_hash]),
             }
         )
-        if operational or topic_id in detail_ids:
+        if scope == DETAIL_ALL:
+            detail[topic_id] = observed_values(bundle)
+            # The allowlisted row and its children exactly as read (the same
+            # `OBSERVE_TABLES` columns; never `markmed`, `mitteametlik_arvamus`,
+            # identity or raw import columns), for a reader that builds a topic.
+            bundles[topic_id] = {"row": row, **_children_key(bundle)}
+        elif operational or topic_id in detail_ids:
             detail[topic_id] = observed_values(bundle)
     document = {
         "format": OBSERVATION_FORMAT,
@@ -305,6 +325,11 @@ def _document(
         "index": index,
         "detail": detail,
     }
+    if scope == DETAIL_ALL:
+        # Only a full reading has these keys, so the nightly document (and its
+        # digest) is exactly what it always was.
+        document["detail_scope"] = DETAIL_ALL
+        document["bundles"] = bundles
     document["sha256"] = canonical_sha256(document)
     return document
 
@@ -316,12 +341,20 @@ def take_observation(
     now: Callable[[], dt.datetime] | None = None,
     pause: Callable[[float], None] = time.sleep,
     meter: _Meter | None = None,
+    detail: str = DETAIL_COHORT,
 ) -> dict[str, Any]:
     """One consistent reading of the whole live register.
 
     Read everything, read everything again; any difference in the canonical
     hash is an edit made while reading and the whole reading is repeated, at
-    most `CONSISTENCY_ATTEMPTS` times, then ``INCONSISTENT``."""
+    most `CONSISTENCY_ATTEMPTS` times, then ``INCONSISTENT``.
+
+    ``detail="all"`` keeps the canonical values *and* the allowlisted bundle of
+    every live topic (the inventory's full reading); the default keeps them for
+    operational and pilot topics only, exactly as the nightly observation always
+    has. The reads themselves are the same either way."""
+    if detail not in DETAIL_SCOPES:
+        raise SourceError("DETAIL_SCOPE", f"detail is one of {', '.join(DETAIL_SCOPES)}.")
     clock = now or (lambda: dt.datetime.now(dt.UTC))
     meter = meter or _Meter(transport)
     detail_ids = {str(i) for i in pilot_ids}
@@ -330,7 +363,13 @@ def take_observation(
         first = _read_register(meter)
         second = _read_register(meter)
         if canonical_sha256(first["bundles"]) == canonical_sha256(second["bundles"]):
-            document = _document(first, detail_ids=detail_ids, taken_at=taken_at, attempts=attempt)
+            document = _document(
+                first,
+                detail_ids=detail_ids,
+                taken_at=taken_at,
+                attempts=attempt,
+                scope=detail,
+            )
             document["children_rows"] = first["children_rows"]
             # `children_rows` is counted, not part of what the digest covers.
             return document

@@ -1048,6 +1048,12 @@ EVIDENCE_PILOT_ENABLED = env_bool("JURISTID_EVIDENCE_PILOT", default=False)
 # one-off container that runs `onenote_capture_import apply` carries it.
 ONENOTE_CAPTURE_IMPORT_ENABLED = env_bool("JURISTID_ONENOTE_CAPTURE_IMPORT", default=False)
 
+# Where sealed OneNote desktop captures lie for «OneNote'i impordi kontroll» and
+# «Impordi OneNote'i materjalid» (Haldus → Andmete sünkroonimine, docs/adr/0213).
+# Read only by the host runner (`data_sync_requests run-next --kind onenote`); a
+# request names one folder under it, never a path. Empty = no capture offered.
+ONENOTE_CAPTURE_ROOT = env("JURISTID_ONENOTE_CAPTURE_ROOT", default="")
+
 # The Lovable pilot (docs/adr/0191) adds reviewed current Teemad from a snapshot of
 # the department's Lovable register beside the ones already there. Off by default
 # and never in an env file, for the same reason: only the one-off container that

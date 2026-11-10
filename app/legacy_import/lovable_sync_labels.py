@@ -22,6 +22,8 @@ LOVABLE_FIELD_LABELS = {
     "received": "Sisse",
     "commencements": "Jõustumised",
     "operational_scope": "Operatiivne ulatus",
+    "continuation": "Jätkuteema (menetlusetappide seos)",
+    "new_topic": "Uus Lovable'i teema",
 }
 
 LOVABLE_REASONS = {
@@ -45,6 +47,41 @@ LOVABLE_REASONS = {
     "VERIFY_STOPPED": "Jäi kirjutamata: varasema teema tagasilugemine ebaõnnestus ja öö peatati.",
     "VERIFY_MISMATCH": "Kirjutati, kuid tagasilugemine ei vastanud kirjutatule.",
     "IMPORT_HELD": "Imporditud ülevaatamiseks: impordil jäeti see väli inimese otsustada.",
+    # The conditional fields and the continuation (docs/adr/0213).
+    "STAGE_ENDS_WORK": "Uus hetkeseis lõpetaks töö ja sulgeks teema; selle otsustab inimene.",
+    "REQUEST_ALREADY_OPEN": (
+        "Teemal on juba praegune arvamuse küsimine; selle muutmise või asendamise otsustab inimene."
+    ),
+    "REQUEST_CLEARED": "Allikas eemaldati arvamuse tähtaeg; praegust küsimist ei lõpetata ise.",
+    "REQUEST_SENT_IN_SOURCE": (
+        "Allikas on «välja» või saatmise kuupäev (ka «ei saatnud»): uut küsimist ei looda."
+    ),
+    "REQUEST_ON_INITIATIVE": "Koja algatusel pole uut arvamuse küsimist.",
+    "COMMENCEMENT_DAY_CLASH": "Juristides on samal päeval juba teine jõustumise kirje.",
+    "CONTINUATION_CHANGED": (
+        "Lovable'i menetlusetappide seos muutus; jätku kirjutamine sulgeks teema, nii et "
+        "selle otsustab inimene."
+    ),
+    # New topics (docs/adr/0213).
+    "UUID_HELD_BY_TOMBSTONE": (
+        "Selle Lovable'i tunnusega teema on Juristides kustutatud; seda ei looda uuesti."
+    ),
+    "UUID_HELD_BY_UNSYNCED_TEEMA": (
+        "Selle Lovable'i tunnust hoiab teema, mis pole sünkroonimises; seose otsustab inimene."
+    ),
+    "REFERENCE_TAKEN": "Teema number on Juristides juba kasutusel.",
+    "REFERENCE_OF_DELETED_TEEMA": "Teema numbrit kasutas jäädavalt kustutatud teema.",
+    "REFERENCE_RELEASED_BY_REPLACEMENT": (
+        "Teema numbri vabastas allikapõhine asendus; selle uuesti andmise otsustab inimene."
+    ),
+    "NOT_IN_READING": "Teema ei olnud selle öö lugemises tervikuna olemas.",
+    "READING_REFUSED": "Teemat ei saa ohutult lugeda (nt vastutajal pole kontot).",
+    "READING_INVALID": "Loetud teema ei vasta impordi reeglitele.",
+    "PLAN_PROBLEM": "Impordiplaan leidis takistuse (vastutaja, etapp, õigusakt või kokkupõrge).",
+    "NO_TARGET_COHORT": "Pole kohorti, millega uus teema liita.",
+    "CREATE_FAILED": "Teema loomine ebaõnnestus; midagi ei jäänud pooleli.",
+    "NEW_TOPIC_BREAKER": "Ühe öö uusi teemasid oli üle piiri; ühtegi ei loodud.",
+    "RESOLVED": "Inimene otsustas; masin seda ei loo.",
 }
 
 #: Lovable's own column names, as its audit ledger (`topic_change_field`) names
@@ -108,6 +145,7 @@ LOVABLE_COHORT_LABELS = {
     "lovable-pilot": "Piloot",
     "lovable-operational": "Operatiivne register",
     "lovable-register": "Lovable'i register",
+    "lovable-history": "Lovable'i ajalugu",
 }
 
 #: The readiness simulation's categories: what the *existing* rules would do

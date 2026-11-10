@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 
 {% comment %}
   The Haldus shell (docs/adr/0186). One heading and one sub-navigation built
@@ -10,9 +11,13 @@
   The strip reuses Statistika's `tabs`, which scrolls itself at phone width
   rather than the page. A reader with Ülevaade alone — everybody signed in,
   since 2026-10-28 — gets no strip: one tab is not a choice.
+  Andmete sünkroonimine's own stylesheet (static/css/data-sync.css) is linked
+  here and nowhere else: every rule in it names a `dsync` class, so it is
+  inert on the other Haldus pages.
 {% endcomment %}
 
 {% block content %}
+<link rel="stylesheet" href="{% static 'css/data-sync.css' %}">
 <div class="page">
   {% block haldus_head %}
   <div class="pagehead">

@@ -524,7 +524,10 @@ def test_the_second_night_reports_a_date_and_a_finished_topic(second_night):
     date = _decisions(run, REVIEW)["next_action_date"]
     assert (date.outcome, date.source) == (SyncOutcome.ELIGIBLE, "2027-02-01")
     stage = _decisions(run, ESTIMATE)["stage"]
-    assert (stage.outcome, stage.reason) == (SyncOutcome.REVIEW_REQUIRED, lovable_sync.HELD)
+    assert (stage.outcome, stage.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.STAGE_ENDS_WORK,
+    )
     # COMPARE: nothing written.
     step = NextAction.objects.get(matter=_matter(REVIEW), status=ActionStatus.OPEN)
     assert step.target_date == dt.date(2027, 1, 15)

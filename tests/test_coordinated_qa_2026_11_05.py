@@ -1270,10 +1270,13 @@ def test_a_changed_byte_never_overwrites_a_version_and_leaves_the_register_alone
             [{"tag": "001", "guid": GUID, "matters": [teema], "files": files}],
         )
     )
-    assert ("{B2}", "HOLD", oc.HOLD_BYTES_CHANGED) in {
+    # Live-sync round 2026-11 (ADR 0205 P1): the next version of the same Document,
+    # recorded beside the earlier one, which stays exactly as it was (asserted below).
+    assert ("{B2}", oc.VERSION, oc.VERSION_CHANGED_BYTES) in {
         (i.resource_key, i.disposition, i.reason) for i in plan.items
     }
     assert report.documents_created == 1  # only the new file
+    assert report.versions_created == 1
     after = _versions()
     assert {pk: after[pk] for pk in held_versions} == held_versions
     assert {pk: v for pk, v in _stored_bytes().items() if pk in held_bytes} == held_bytes

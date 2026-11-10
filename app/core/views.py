@@ -714,7 +714,12 @@ _READINESS_WORDS = {
     "RUNNING": "käib",
     "REVIEW_ONLY": "peatatud ülevaatuseks",
 }
-READINESS_MAPPING = {"EXACT": "täpne", "APPROXIMATE": "ligikaudne", "NONE": "puudub"}
+READINESS_MAPPING = {
+    "EXACT": "täpne",
+    "CONDITIONAL": "tingimustel",
+    "APPROXIMATE": "ligikaudne",
+    "NONE": "puudub",
+}
 
 
 def _readiness_facts(spec: tuple[tuple[str, str], ...], data: dict[str, Any]) -> list[Any]:

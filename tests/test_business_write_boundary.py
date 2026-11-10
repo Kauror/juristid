@@ -1828,6 +1828,19 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # own findings, never a Teema, behind `may_open_system` (404 for everybody
     # else; tests/test_lovable_sync.py).
     "haldus:lovable_check": "I: Lovable sync check, report-only, may_open_system",
+    # I — Andmete sünkroonimine (LS-C): the same report-only check, and requests
+    # the host runner executes; none writes a Teema from the web. Behind
+    # `may_open_system` (404 for everybody else), CSRF, a fresh proof for the
+    # sync, the decision and the import, and an audit row each
+    # (tests/test_ls_c_data_sync.py).
+    "haldus:data_sync_check": "I: Lovable sync check, report-only, may_open_system",
+    "haldus:data_sync_now": "I: records a sync request for the host, may_open_system",
+    "haldus:data_sync_resolve": "I: one pending field's decision via resolve_field, visible only",
+    "haldus:data_sync_onenote_verify": "I: records a capture check for the host, may_open_system",
+    "haldus:data_sync_onenote_import": "I: records a verified import for the host, may_open_system",
+    "haldus:onenote_holds": (
+        "I: one held OneNote item's audited decision, may_open_system, visible only"
+    ),
 }
 
 

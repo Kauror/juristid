@@ -178,6 +178,19 @@ EXPECTED_TRIGGERS: dict[str, str] = {
     "legacy_import_lovablesyncretirement_evidenced": "legacy_import_lovablesyncretirement",
     "legacy_import_lovablesyncmembership_append_only": "legacy_import_lovablesyncmembership",
     "legacy_import_lovablesyncmembership_evidenced": "legacy_import_lovablesyncmembership",
+    # A person's inventory decision on a Lovable topic is evidence: append-only (0213 §1).
+    "legacy_import_lovableinventorydecision_append_only": "legacy_import_lovableinventorydecision",
+    # An admin's data-sync request: its identity, kind, requester and bound mode
+    # never change, its status only moves forward, and it is never deleted (0213 §5, §9.6).
+    "legacy_import_datasyncrequest_guard": "legacy_import_datasyncrequest",
+    # OneNote coverage and later captures are evidence of what was read and when:
+    # a coverage mark and a page revision are append-only, a resource revision is
+    # never rewritten (0213 §6).
+    "legacy_import_onenotecoveragemark_append_only": "legacy_import_onenotecoveragemark",
+    "legacy_import_onenotepagerevision_append_only": "legacy_import_onenotepagerevision",
+    "legacy_import_onenoteresourcerevision_no_update": "legacy_import_onenoteresourcerevision",
+    # A held-reading decision is never rewritten; a later decision is a new row (0213 §9.4).
+    "legacy_import_onenoteholddecision_no_update": "legacy_import_onenoteholddecision",
     # MCP access events (docs/adr/0185): the authorization server's audit trail.
     "mcp_access_mcpaccessevent_append_only": "mcp_access_mcpaccessevent",
     "mcp_writes_mcpwriteevent_append_only": "mcp_writes_mcpwriteevent",

@@ -17,8 +17,9 @@ honestly.
 **What it never does.** No SENT opinion (the letters are in OneNote, which this
 round does not import), no document, no follow-up check, no stage history, no
 closure event, no person and no organisation. A finished topic is created
-closed the way the Excel pilot creates one (ARCHIVE, a disposition, no
-`closed_at`, no `MATTER_CLOSED`). Lovable's change history and every source
+closed the way the Excel pilot creates one (ARCHIVE, a disposition — in the
+historical cohort none when the source states none, `BLANK_DISPOSITION_COHORTS`
+— no `closed_at`, no `MATTER_CLOSED`). Lovable's change history and every source
 value travel in `MatterSourceReference.source_row_raw`, labelled as the
 source's, never as Juristid events. The writes are stamped with the import's own
 moment and no actor.
@@ -78,11 +79,21 @@ OPERATIONAL_COHORT = "lovable-operational"
 #: The source-authoritative replacement's cohort (docs/adr/0203): a package that
 #: retires every current Teema and creates Lovable's whole operational register.
 REGISTER_COHORT = "lovable-register"
-COHORTS = (PILOT, OPERATIONAL_COHORT, REGISTER_COHORT)
+#: The historical backfill's cohort (`app.legacy_import.lovable_backfill`): a
+#: CREATE-only version-2 package of proven-absent, non-operational topics, written
+#: beside the live register exactly as any other CREATE (nothing retired,
+#: released or rebased; every pre-existing Teema digested before and after).
+HISTORY_COHORT = "lovable-history"
+COHORTS = (PILOT, OPERATIONAL_COHORT, REGISTER_COHORT, HISTORY_COHORT)
 PILOT_VERSION = "1.0"
 #: The importer version each cohort's records carry. The pilot's stays "1.0" so
 #: that a version-1 package writes exactly the records it always wrote.
-COHORT_VERSIONS = {PILOT: PILOT_VERSION, OPERATIONAL_COHORT: "2.0", REGISTER_COHORT: "3.0"}
+COHORT_VERSIONS = {
+    PILOT: PILOT_VERSION,
+    OPERATIONAL_COHORT: "2.0",
+    REGISTER_COHORT: "3.0",
+    HISTORY_COHORT: "4.0",
+}
 PACKAGE_FORMAT = "juristid.lovable-pilot"
 PACKAGE_FORMAT_VERSION = 1
 #: Version 2 is the active cohort's reading (docs/adr/0202 §3); version 1 reads
@@ -93,7 +104,7 @@ FORMAT_COHORTS = {PACKAGE_FORMAT_VERSION: PILOT, ACTIVE_FORMAT_VERSION: OPERATIO
 #: or, with ``"replace": true``, the register replacement (docs/adr/0203).
 FORMAT_ALLOWED_COHORTS = {
     PACKAGE_FORMAT_VERSION: frozenset({PILOT}),
-    ACTIVE_FORMAT_VERSION: frozenset({OPERATIONAL_COHORT, REGISTER_COHORT}),
+    ACTIVE_FORMAT_VERSION: frozenset({OPERATIONAL_COHORT, REGISTER_COHORT, HISTORY_COHORT}),
 }
 #: Typed by the operator at `apply`, the same discipline as the other pilots.
 #: It is the package's cohort; this is the pilot's.
@@ -112,6 +123,13 @@ SOURCE_ONLY = "SOURCE_ONLY"
 LIFECYCLES = frozenset({"ACTIVE", "INACTIVE", "CONCLUDED", "CONTINUES"})
 #: Every lifecycle but ACTIVE is a finished file: a disposition and nothing current.
 DISPOSITIONS = frozenset({"COMPLETED", "SUPERSEDED", "MONITORING_STOPPED", "NO_POSITION_FORMED"})
+#: The cohorts whose finished topics may carry **no** disposition: the historical
+#: backfill's, where the source often states no reason the work ended and none
+#: is invented (docs/adr/0213 §2 as amended 2026-11-09). Such a Teema is closed
+#: ARCHIVE with a blank disposition, which `matters_closure_fields_consistent`
+#: allows for an archive row and only for one. Every other cohort still needs a
+#: reason from `DISPOSITIONS`; `Lõpeta teema` is a different path and unchanged.
+BLANK_DISPOSITION_COHORTS = frozenset({HISTORY_COHORT})
 STEP_TREATMENTS = frozenset({"SOURCE_NEXT_STEP", "OPINION_DRAFTING"})
 DEADLINE_TREATMENTS = frozenset({"NONE", "OPEN_REQUEST", "SOURCE_ONLY"})
 T_EFFECTIVE_DATE = "MatterEffectiveDate"
@@ -296,9 +314,10 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
             problems = _validate_rebase(topic, people=people, as_of=as_of)
             problems += _validate_active_topic(topic, as_of=as_of, rebase=True)
         else:
-            problems = _validate_topic(topic, people=people, as_of=as_of)
+            historical = package_cohort(package) in BLANK_DISPOSITION_COHORTS
+            problems = _validate_topic(topic, people=people, as_of=as_of, historical=historical)
             if v2:
-                problems += _validate_active_topic(topic, as_of=as_of)
+                problems += _validate_active_topic(topic, as_of=as_of, historical=historical)
         out.extend(f"{reference}: {p}" for p in problems)
         parsed = parse_reference(reference)
         if parsed is None:
@@ -341,6 +360,21 @@ def validate_package(package: dict[str, Any]) -> ValidationReport:
             # never reaches this, so no version-1 result changes.
             out.append(f"{reference}: its continuations lead back to it (a cycle).")
     out.extend(_validate_reserve(package, highest))
+    if package_cohort(package) == HISTORY_COHORT:
+        # One gated path for the historical cohort, whichever command carries it:
+        # the backfill's own rules (a closure only where the source states one, a
+        # CREATE-only closed package, this candidate's reader version) are part of
+        # the package's validity, so `lovable_pilot validate/plan/dry-run/apply`
+        # refuses what `lovable_inventory backfill` refuses. Imported here: the
+        # backfill module imports this one.
+        from app.legacy_import import lovable_backfill
+
+        out.extend(
+            p
+            for p in lovable_backfill.package_problems(package)
+            + lovable_backfill.reader_problems(package)
+            if p not in out
+        )
     return report
 
 
@@ -401,7 +435,11 @@ def _excluded_source_columns(source: dict[str, Any]) -> list[str]:
 
 
 def _validate_active_topic(
-    topic: dict[str, Any], *, as_of: dt.date | None, rebase: bool = False
+    topic: dict[str, Any],
+    *,
+    as_of: dt.date | None,
+    rebase: bool = False,
+    historical: bool = False,
 ) -> list[str]:
     """The version-2 reading rules (docs/adr/0202 §3), on top of every version-1 one.
 
@@ -443,7 +481,12 @@ def _validate_active_topic(
     live = not statuses & TERMINAL_STATUSES
     sent_wording = _wording(row.get("valja"))
     sent = bool(sent_wording and sent_wording != NOT_SENT) or bool(row.get("valja_kuupaev"))
-    if live and sent_wording == NOT_SENT:
+    if live and sent_wording == NOT_SENT and historical:
+        # A historical topic is closed for being history, not for «ei saatnud»:
+        # it concludes nothing, so it is never the reason recorded.
+        if topic.get("disposition") == "NO_POSITION_FORMED":
+            out.append("«ei saatnud» is not a closure reason; a historical topic never reads one.")
+    elif live and sent_wording == NOT_SENT:
         # «ei saatnud» is a source assertion: on a live stage it concludes nothing
         # (0148's rule is for a finished stage) and is never a SENT opinion.
         if topic.get("lifecycle") != "ACTIVE":
@@ -526,7 +569,9 @@ def _validate_reserve(package: dict[str, Any], highest: dict[str, int]) -> list[
     return out
 
 
-def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | None) -> list[str]:
+def _validate_topic(
+    topic: dict[str, Any], *, people: dict, as_of: dt.date | None, historical: bool = False
+) -> list[str]:
     out: list[str] = []
     reference = str(topic.get("reference") or "")
     if parse_reference(reference) is None:
@@ -546,7 +591,7 @@ def _validate_topic(topic: dict[str, Any], *, people: dict, as_of: dt.date | Non
     disposition = topic.get("disposition") or ""
     if active and disposition:
         out.append("an active topic has no disposition.")
-    if not active and disposition not in DISPOSITIONS:
+    if not active and disposition not in DISPOSITIONS and not (historical and not disposition):
         out.append(f"a finished topic needs a disposition, not {disposition!r}.")
 
     owner_raw = topic.get("owner_raw") or ""
@@ -999,7 +1044,11 @@ def build_plan(path_or_package: str | Path | dict[str, Any]) -> LovablePlan:
     plan = LovablePlan(package=package, digest=package_digest(package))
     report = validate_package(package)
     plan.problems.extend(report.problems)
-    if report.problems:
+    if package_cohort(package) == HISTORY_COHORT:
+        from app.legacy_import import lovable_backfill
+
+        plan.problems.extend(lovable_backfill.decision_problems(package))
+    if plan.problems:
         return plan
 
     people = package.get("people") or {}

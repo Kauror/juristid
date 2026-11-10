@@ -24,6 +24,7 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncSnapshot,
     LovableSyncState,
     SyncMode,
+    SyncRunStatus,
     SyncTrigger,
 )
 from app.matters.models import Matter
@@ -71,12 +72,56 @@ def _fields(topic: lovable_review.TopicChange) -> dict[str, lovable_review.Field
     return {f.name: f for f in topic.fields}
 
 
+def _the_running_nights_moment() -> dt.datetime | None:
+    running = (
+        LovableSyncRun.objects.filter(status=SyncRunStatus.RUNNING)
+        .order_by("-created_at")
+        .values_list("started_at", flat=True)
+        .first()
+    )
+    return running
+
+
 @pytest.fixture(autouse=True)
 def page_clock(monkeypatch):
-    """The page asks the read service at a fixed moment, after every night here,
-    whatever day the suite runs on."""
+    """Every moment of these nights is the night's own; the page asks at
+    `_night(10)`, after all of them — whatever day the suite runs on (LS2-D).
+
+    `run_sync` reads Lovable with `take_snapshot`'s default clock and seeds its
+    states with the database's — both the wall clock, which in production is
+    the run's clock too. Here the runs start on the night clock (`NIGHT`,
+    28.10.2026), so readings and states were stamped on the day the suite ran:
+    after the nights. Round 1 moved the page to `max(_night(10), wall clock)`,
+    which from about 28.11.2026 put every night outside the page's 30-day
+    window. Instead the reading takes the running night's moment and the states
+    a night seeds take it too («a run seeds its states before it reads»), so the
+    page clock can stand still. Scoped to this module and the ones that import
+    this fixture; the rest of the suite keeps the engine's own clocks."""
     from app.core import views as core_views
 
+    real_take = lovable_sync.take_snapshot
+    real_states = lovable_sync.ensure_states
+
+    def take_snapshot(*args: Any, **kw: Any) -> Any:
+        moment = _the_running_nights_moment()
+        if moment is not None:
+            kw.setdefault("now", lambda: moment)
+        return real_take(*args, **kw)
+
+    def ensure_states() -> Any:
+        moment = _the_running_nights_moment()
+        before = set(LovableSyncState.objects.values_list("pk", flat=True))
+        states = real_states()
+        if moment is not None:
+            seeded = [s.pk for s in states if s.pk not in before and s.created_at > moment]
+            LovableSyncState.objects.filter(pk__in=seeded).update(created_at=moment)
+            for state in states:
+                if state.pk in seeded:
+                    state.created_at = moment
+        return states
+
+    monkeypatch.setattr(lovable_sync, "take_snapshot", take_snapshot)
+    monkeypatch.setattr(lovable_sync, "ensure_states", ensure_states)
     monkeypatch.setattr(core_views, "_lovable_now", lambda: _night(10))
 
 

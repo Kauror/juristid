@@ -153,6 +153,8 @@ def test_every_writable_path_the_settings_read_is_given_to_each_browser_shard() 
         "HISTORICAL_SOURCE_ROOT",
         # A breached-password list the application only reads; unset in CI.
         "LOCAL_AUTH_BREACHED_PASSWORDS_PATH",
+        # The sealed OneNote capture corpus the importer only reads (0213); unset in CI.
+        "JURISTID_ONENOTE_CAPTURE_ROOT",
     }
     pattern = re.compile(r'(?:env|os\.environ\.get)\(\s*"([A-Z0-9_]+_(?:ROOT|PATH|DIR))"')
     read = {

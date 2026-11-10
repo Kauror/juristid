@@ -1,0 +1,40 @@
+{% extends "haldus/base.html" %}
+{% block title %}Otsusta erinevus · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  One pending difference, confirmed before it is decided. The decision is the
+  engine's own `resolve_field`: the previously accepted value becomes
+  Lovable's, the Teema keeps what Juristid holds, and an audit row says who
+  decided and why. Reached only for a Teema the reader may open.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel dsync__confirm" aria-labelledby="dsync-resolve">
+    <h2 class="dsync__title" id="dsync-resolve">Otsusta erinevus</h2>
+    <dl class="detailgrid">
+      <dt>Teema</dt><dd><a href="{% url 'matters:matter_detail' state.matter.pk %}">{{ state.reference }}</a></dd>
+      <dt>Väli</dt><dd>{% if row %}{{ row.field_label }}{% else %}{{ field_name }}{% endif %}</dd>
+      {% if row %}
+        <dt>Viimati aktsepteeritud</dt><dd>{{ row.accepted }}</dd>
+        <dt>Juristides</dt><dd>{{ row.juristid }}</dd>
+        <dt>Lovable'is</dt><dd>{{ row.source }}</dd>
+        <dt>Miks ootab</dt><dd>{{ row.explanation|default:"—" }}</dd>
+      {% endif %}
+    </dl>
+    <p class="dsync__effect">Kinnitamisel jääb Juristide väärtus samaks ja Lovable'i praegune väärtus märgitakse läbivaadatuks: järgmine öö ei näita seda erinevust enam, kuni Lovable'is muutub midagi uuesti. Lovable'isse ei kirjutata.</p>
+    <form method="post" action="{% url 'haldus:data_sync_resolve' %}" class="form dsync__form">
+      {% csrf_token %}
+      <input type="hidden" name="viide" value="{{ state.reference }}">
+      <input type="hidden" name="vali" value="{{ field_name }}">
+      <div class="field">
+        <label class="field__label" for="dsync-note">Põhjus (kuni 50 märki)</label>
+        <input class="field__input" type="text" id="dsync-note" name="note" maxlength="50" required>
+      </div>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Kinnitan otsuse</button>
+        <a class="button button--quiet" href="{% url 'haldus:data_sync_differences' %}">Loobu</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

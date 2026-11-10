@@ -381,6 +381,10 @@ from app.legacy_import.current_state import (  # noqa: E402
     CurrentRegisterState,
     RegisterCurrency,
 )
+from app.legacy_import.lovable_inventory_models import (  # noqa: E402
+    LovableInventoryDecision,
+    LovableInventoryRun,
+)
 from app.legacy_import.lovable_observation_models import (  # noqa: E402
     LovableAuditCursor,
     LovableObservationRun,
@@ -398,6 +402,11 @@ from app.legacy_import.lovable_sync_models import (  # noqa: E402
     LovableSyncRun,
     LovableSyncSnapshot,
     LovableSyncState,
+)
+from app.legacy_import.onenote_coverage_models import (  # noqa: E402
+    OneNoteCoverageMark,
+    OneNotePageRevision,
+    OneNoteResourceRevision,
 )
 from app.legacy_import.opinion_archive import (  # noqa: E402
     OpinionArchiveBatch,
@@ -429,6 +438,9 @@ from app.legacy_import.source_pages import (  # noqa: E402
     SourcePageRole,
     SourceRelationshipKind,
     SourceSystem,
+)
+from app.legacy_import.sync_requests_models import (  # noqa: E402
+    DataSyncRequest,
 )
 
 
@@ -750,6 +762,7 @@ __all__ = [
     "CandidateState",
     "ConflictState",
     "CurrentRegisterState",
+    "DataSyncRequest",
     "EvidencePilotRecord",
     "ExcelPilotImport",
     "HistoricalMatchCandidate",
@@ -759,6 +772,8 @@ __all__ = [
     "LegacySourceResource",
     "LegacySourceResourceImport",
     "LovableAuditCursor",
+    "LovableInventoryDecision",
+    "LovableInventoryRun",
     "LovableObservationRun",
     "LovableObservationSnapshot",
     "LovableObservedChange",
@@ -775,6 +790,9 @@ __all__ = [
     "MatchMethod",
     "MatterSourcePage",
     "MatterSourceReference",
+    "OneNoteCoverageMark",
+    "OneNotePageRevision",
+    "OneNoteResourceRevision",
     "OpinionArchiveBatch",
     "OpinionArchiveBinary",
     "OpinionArchiveItem",

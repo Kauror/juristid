@@ -1,0 +1,92 @@
+{% extends "haldus/base.html" %}
+{% block title %}Erinevused · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  «Vaata erinevusi»: every pending difference between Lovable and Juristid,
+  with the previously accepted value (A), Juristid's (B), Lovable's (C), why it
+  waits and for how long. The next-step corrections come first, one card per
+  Teema with Juristid's open step as it is now, because a stale step is work
+  somebody is (not) doing; the page never classifies Lovable's free text as
+  teen / ootan / jälgin — the lawyer does that on the Teema. The rest follow by
+  priority group, oldest first (`sync_admin.PRIORITY_GROUPS`). Named only for
+  a Teema the reader may open (`Matter.objects.visible_to`); the others are
+  counted, never named.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel" aria-labelledby="dsync-diff">
+    <h2 class="dsync__title" id="dsync-diff">Ootel erinevused</h2>
+    <p class="acctnote">Erinevus jääb siia, kuni see laheneb, allikas muutub tagasi või haldur otsustab. «Otsusta» jätab Juristide väärtuse alles ja märgib Lovable'i muudatuse läbivaadatuks; teemat ennast see ei muuda.</p>
+    {% if diff.named %}<p class="acctnote">Nähtavaid erinevusi kokku {{ diff.named }}.</p>{% endif %}
+
+    {% if diff.step_cards %}
+      <h3 class="dsync__subtitle">Järgmise sammu parandused</h3>
+      <p class="acctnote">Lovable'i järgmise tegevuse sõnastus või kuupäev muutus. Juristid ei liigita vaba teksti ise (teen / ootan / jälgin): ava teema ja lõpeta, asenda või muuda samm seal, siis märgi erinevus läbivaadatuks.</p>
+      <ul class="dsync__cards">
+        {% for card in diff.step_cards %}
+          <li class="dsync__card{% if card.group == 'step_past' %} dsync__card--past{% endif %}">
+            <div class="dsync__cardhead">
+              <a class="dsync__cardref" href="{% url 'matters:matter_detail' card.matter.pk %}">{{ card.reference }}</a>
+              <span class="dsync__cardtitle">{{ card.matter.title }}</span>
+              {% if card.step and card.step.missed %}<span class="statechip statechip--problem">Tähtaeg möödas</span>{% elif card.step and card.step.past %}<span class="statechip statechip--waiting">Kuupäev möödas</span>{% endif %}
+              <span class="dsync__requestmeta">{% if card.age_days is not None %}ootel {{ card.age_days }} päev{{ card.age_days|pluralize:"a" }}{% if card.since %} (alates {{ card.since|date:"j.n.Y" }}){% endif %}{% endif %}</span>
+            </div>
+            <dl class="detailgrid dsync__cardgrid">
+              <dt>Juristides praegu</dt>
+              <dd>{% if card.step %}«{{ card.step.text }}» · {{ card.step.kind_label }}{% if card.step.target_date %} · {{ card.step.semantics_label|lower }} {{ card.step.target_date|date:"j.n.Y" }}{% endif %}{% else %}Avatud sammu pole{% endif %}</dd>
+              {% for row in card.rows %}
+                <dt>{{ row.field_label }}: varem aktsepteeritud</dt><dd>{{ row.accepted }}</dd>
+                <dt>{{ row.field_label }}: Lovable'is nüüd</dt><dd>{{ row.source }}</dd>
+                <dt>Miks ootab</dt><dd>{{ row.explanation|default:"—" }}</dd>
+              {% endfor %}
+            </dl>
+            <div class="dsync__actions">
+              <a class="button button--secondary button--tiny" href="{% url 'matters:matter_detail' card.matter.pk %}">Ava teema</a>
+              {% for row in card.rows %}{% if row.resolvable %}<a class="button button--quiet button--tiny" href="{% url 'haldus:data_sync_resolve' %}?viide={{ row.reference|urlencode }}&amp;vali={{ row.field|urlencode }}">Otsusta: {{ row.field_label|lower }}…</a>{% endif %}{% endfor %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if diff.rows %}
+      {% for heading, rows in diff.groups %}
+        <h3 class="dsync__subtitle">{{ heading }}</h3>
+        <div class="accttable">
+          <table class="data-table dsync__table">
+            <thead>
+              <tr><th scope="col">Teema</th><th scope="col">Väli</th><th scope="col">Viimati aktsepteeritud</th><th scope="col">Juristides</th><th scope="col">Lovable'is</th><th scope="col">Miks ootab</th><th scope="col">Ootel</th><th scope="col"><span class="visually-hidden">Toiming</span></th></tr>
+            </thead>
+            <tbody>
+              {% for row in rows %}
+                <tr>
+                  <td class="dsync__nowrap"><a href="{% url 'matters:matter_detail' row.matter.pk %}">{{ row.reference }}</a></td>
+                  <td>{{ row.field_label }}</td>
+                  <td>{{ row.accepted }}</td>
+                  <td>{{ row.juristid }}</td>
+                  <td>{{ row.source }}</td>
+                  <td>{{ row.explanation|default:"—" }}</td>
+                  <td class="dsync__nowrap">{% if row.age_days is not None %}{{ row.age_days }} p{% elif row.since %}{{ row.since|date:"j.n.Y" }}{% else %}—{% endif %}</td>
+                  <td>{% if row.resolvable %}<a class="button button--secondary button--tiny" href="{% url 'haldus:data_sync_resolve' %}?viide={{ row.reference|urlencode }}&amp;vali={{ row.field|urlencode }}">Otsusta…</a>{% endif %}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endfor %}
+      {% if diff.pages > 1 %}
+        <nav class="pagination" aria-label="Lehed">
+          {% if diff.page > 1 %}<a class="pagination__step" rel="prev" href="?leht={{ diff.page|add:'-1' }}"><span aria-hidden="true">‹</span><span class="visually-hidden">Eelmine leht</span></a>{% endif %}
+          <span class="pagination__status">Leht {{ diff.page }} / {{ diff.pages }} ({{ diff.total }} kokku)</span>
+          {% if diff.page < diff.pages %}<a class="pagination__step" rel="next" href="?leht={{ diff.page|add:'1' }}"><span aria-hidden="true">›</span><span class="visually-hidden">Järgmine leht</span></a>{% endif %}
+        </nav>
+      {% endif %}
+    {% elif not diff.step_cards and not diff.hidden %}
+      <p>Ootel erinevusi pole.</p>
+    {% endif %}
+    {% if diff.hidden %}
+      <p class="acctnote">{{ diff.hidden }} erinevus{{ diff.hidden|pluralize:"t" }} teemadel, mida sinu valitud isik ei näe; nende sisu siin ei näidata (sh uued Lovable'i teemad, millel Juristides veel teemat pole). Vali kasutaja, kellel on teemadele ligipääs, et neid näha ja otsustada.</p>
+    {% endif %}
+  </section>
+{% endblock %}
