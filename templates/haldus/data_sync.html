@@ -81,6 +81,18 @@
           <dt>Tunnus muutunud</dt><dd>{{ p.decisions.IDENTIFIER_CHANGED }}</dd>
           <dt>Ootel erinevusi kokku</dt><dd>{{ p.pending_fields }}</dd>
         </dl>
+        {% if p.historical %}
+          {% with h=p.historical %}
+          <h3 class="dsync__subtitle">Ajalooline register</h3>
+          <p class="acctnote">Lõpetatud arhiiviteemad. Nende impordil ootele jäetud väljad ei ole operatiivne töö ega lähe ülaltoodud arvude sisse.</p>
+          <dl class="detailgrid dsync__counts">
+            <dt>Kontrollitud teemasid</dt><dd>{{ h.checked|default_if_none:"—" }}</dd>
+            <dt>Ülevaatust ootavaid teemasid</dt><dd>{{ h.review|default_if_none:"—" }}</dd>
+            <dt>Impordil ootele jäetud välju</dt><dd>{{ h.held_decisions }}</dd>
+            <dt>Ootel erinevusi</dt><dd>{% if h.pending_fields %}<a href="{% url 'haldus:data_sync_differences' %}#ajalooline">{{ h.pending_fields }}</a>{% else %}0{% endif %}</dd>
+          </dl>
+          {% endwith %}
+        {% endif %}
       {% else %}
         <p class="acctnote">Ühtegi lõpetatud võrdlust pole veel. Öine käivitus või «Sünkrooni nüüd» täidab selle osa.</p>
       {% endif %}

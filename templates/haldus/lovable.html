@@ -86,8 +86,14 @@
     {% elif not hidden %}
       <p>Ootel muudatusi pole.</p>
     {% endif %}
+    {% if more %}
+      <p class="acctnote">Näidatud esimesed {{ pending|length }} viite järjekorras; veel {{ more }} on lehel <a href="{% url 'haldus:data_sync_differences' %}">«Vaata erinevusi»</a>.</p>
+    {% endif %}
     {% if hidden %}
       <p class="acctnote">{{ hidden }} muudatus{{ hidden|pluralize:"t" }} teemadel, mida sinu valitud isik ei näe; nende sisu siin ei näidata.</p>
+    {% endif %}
+    {% if historical %}
+      <p class="acctnote">Lisaks {{ historical }} ajaloolise registri impordil ootele jäetud välja, mida Lovable pole muutnud; need on lehel <a href="{% url 'haldus:data_sync_differences' %}#ajalooline">«Vaata erinevusi»</a> eraldi rühmas.</p>
     {% endif %}
   </section>
 
@@ -101,7 +107,8 @@
       <dt>Sünkroonitavad teemad</dt><dd>{{ status.cohort_size }}</dd>
       <dt>Elavaid teemasid Lovable'is</dt><dd>{{ status.live_topics|default_if_none:"—" }}</dd>
       <dt>Operatiivseid teemasid</dt><dd>{{ status.operational_topics|default_if_none:"—" }}</dd>
-      <dt>Ülevaatust ootavaid välju</dt><dd>{{ status.pending_review }}</dd>
+      <dt>Ülevaatust ootavaid välju</dt><dd>{{ status.pending_review_operational }}</dd>
+      {% if status.pending_review_historical %}<dt>Ajaloolise registri impordil ootele jäetud välju</dt><dd>{{ status.pending_review_historical }}</dd>{% endif %}
       <dt>Lahendamata vastuolusid</dt><dd>{{ readiness.conflicts }}</dd>
       <dt>Muutmisajalugu</dt><dd>{% if status.audit.available %}<span class="statechip statechip--ok">Loetav</span>{% else %}<span class="statechip statechip--waiting">Pole kättesaadav</span>{% endif %}</dd>
       <dt>Vaatluse seire</dt>

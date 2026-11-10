@@ -8,7 +8,7 @@
   <p class="lovnight__note">
     Režiim «{{ status.mode_label }}»{% if not status.apply_authorised %}: Juristidesse ei kirjutata{% endif %}.
     Laiem vaatlus (kõik Lovable'i teemad) on {% if status.observe_enabled %}sisse{% else %}välja{% endif %} lülitatud.
-    Ülevaatust ootab {{ status.pending_review }} välja.
+    Ülevaatust ootab {{ status.pending_review_operational }} välja.{% if status.pending_review_historical %} Lisaks on ajaloolises registris {{ status.pending_review_historical }} impordil ootele jäetud välja, mida Lovable pole muutnud.{% endif %}
   </p>
   {% if status.warnings %}
     <div class="notice notice--warning" role="status">

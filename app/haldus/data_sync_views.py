@@ -117,9 +117,9 @@ def sync_pages(active: str) -> list[dict[str, Any]]:
     ]
 
 
-def _page_number(request: HttpRequest) -> int:
+def _page_number(request: HttpRequest, name: str = "leht") -> int:
     try:
-        return max(1, int(request.GET.get("leht", "1")))
+        return max(1, int(request.GET.get(name, "1")))
     except ValueError:
         return 1
 
@@ -245,7 +245,11 @@ def differences(request: HttpRequest) -> HttpResponse:
         _context(
             request,
             "erinevused",
-            diff=sync_admin.differences(request.user, page=_page_number(request)),
+            diff=sync_admin.differences(
+                request.user,
+                page=_page_number(request),
+                history_page=_page_number(request, "ajalugu") if "ajalugu" in request.GET else None,
+            ),
         ),
     )
 
