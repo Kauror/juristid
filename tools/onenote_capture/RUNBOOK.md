@@ -201,8 +201,11 @@ exception for a person (`--out`). Its writes are the ordinary gated import.
 * **Archiving by copy-and-delete breaks the register link.** The desktop
   rehearsal of 2026-11-09 found register pages whose GUID sits in *Deleted Pages*
   while a page with the same creation time and title lives in ARHIIV under a new
-  GUID (a copy, ADR 0204 D2). `missing.tsv` lists such GUIDs; the register link
-  is fixed in Lovable by a person, never by matching titles.
+  GUID (a copy, ADR 0204 D2). `missing.tsv` lists such GUIDs. Nothing is written
+  to Lovable or OneNote: Lovable's link stays as provenance, and a person who
+  verifies the right page records a reviewed local link in Juristid
+  (`MatterSourcePage`, `REVIEWED_MATCH`), which the sync never removes. Never
+  by matching titles alone.
 * **The rehearsal (2026-11-09, one ARHIIV page, two files):** request mode over
   the department notebook took ~10 s; no navigation was needed; the run
   verified, sealed and compared equal to the 04.11 capture (same page GUID, page
