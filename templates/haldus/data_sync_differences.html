@@ -94,14 +94,14 @@
 
     {% if diff.history %}
       {% with h=diff.history %}
-      <details class="accordion dsync__history" id="ajalooline">
+      <details class="accordion dsync__history" id="ajalooline"{% if h.opened %} open{% endif %}>
         <summary class="accordion__head">
           <span class="accordion__caret" aria-hidden="true"></span>
           <h3 class="accordion__title">Ajalooline register: impordil ootele jäetud väljad ({{ h.total }})</h3>
           <span class="accordion__summary">{{ h.teemad }} lõpetatud arhiiviteema{{ h.teemad|pluralize:",t" }}</span>
         </summary>
         <div class="accordion__body">
-          <p class="acctnote">Ajaloolise registri teemad on Juristides lõpetatud. Import jättis need väljad ootele, sest Lovable'i väärtusel pole Juristides vastet (näiteks hetkeseis «lõpetatud»). Need ei ole operatiivne töö ega lähe ülaltoodud arvude sisse; teemat ennast see ei muuda.</p>
+          <p class="acctnote">Ajaloolise registri teemad on Juristides lõpetatud. Import jättis need väljad ootele, sest Lovable'i väärtusel pole Juristides vastet (näiteks hetkeseis «lõpetatud»), ja Lovable pole neid pärast importi muutnud. Kui Lovable sellist välja muudab, on see ülal operatiivsete erinevuste hulgas. Need ei ole operatiivne töö ega lähe ülaltoodud arvude sisse; teemat ennast see ei muuda.</p>
           <div class="accttable">
             <table class="data-table dsync__table">
               <thead><tr><th scope="col">Väli</th><th scope="col">Miks ootab</th><th scope="col">Välju</th></tr></thead>
@@ -131,7 +131,14 @@
               </tbody>
             </table>
           </div>
-          {% if h.more %}<p class="acctnote">Näidatud esimesed {{ h.rows|length }} viite järjekorras; ülejäänud {{ h.more }} on loetud ülal kokkuvõttes.</p>{% endif %}
+          {% if h.pages > 1 %}
+            <nav class="pagination" aria-label="Ajaloolise registri lehed">
+              {% if h.page > 1 %}<a class="pagination__step" rel="prev" href="?leht={{ diff.page }}&amp;ajalugu={{ h.page|add:'-1' }}#ajalooline"><span aria-hidden="true">‹</span><span class="visually-hidden">Eelmine leht</span></a>{% endif %}
+              <span class="pagination__status">Leht {{ h.page }} / {{ h.pages }} ({{ h.total }} kokku)</span>
+              {% if h.page < h.pages %}<a class="pagination__step" rel="next" href="?leht={{ diff.page }}&amp;ajalugu={{ h.page|add:'1' }}#ajalooline"><span aria-hidden="true">›</span><span class="visually-hidden">Järgmine leht</span></a>{% endif %}
+            </nav>
+          {% endif %}
+          {% if h.hidden %}<p class="acctnote">Lisaks {{ h.hidden }} teemadel, mida sinu valitud isik ei näe; nende sisu siin ei näidata.</p>{% endif %}
         </div>
       </details>
       {% endwith %}

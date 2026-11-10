@@ -126,7 +126,7 @@ def test_history_holds_are_their_own_group_never_operational(night):
     diff = sync_admin.differences(_reader(night))
     history = diff.history
     assert history is not None
-    assert (history.total, history.teemad, history.more) == (3, 3, 0)
+    assert (history.total, history.teemad, history.pages, history.hidden) == (3, 3, 1, 0)
     assert [(s.field_label, s.count) for s in history.summary] == [("Hetkeseis", 3)]
     assert [r.reference for r in history.rows] == list(HISTORICAL)
     assert all(r.historical and r.field == "stage" for r in history.rows)
@@ -158,22 +158,32 @@ def test_the_page_puts_the_history_group_last_and_closed(night, client):
     assert f"Nähtavaid erinevusi kokku {sync_admin.differences(_reader(night)).named}." in body
 
 
-def test_the_history_list_is_capped_and_summarised(night, monkeypatch):
+def test_every_history_hold_is_reachable_by_its_own_pages(night, monkeypatch, client):
     monkeypatch.setattr(sync_admin, "HISTORY_ROWS_SHOWN", 2)
     history = sync_admin.differences(_reader(night)).history
     assert [r.reference for r in history.rows] == ["2026_601", "2026_602"]
-    assert (history.total, history.more) == (3, 1)
+    assert (history.total, history.page, history.pages, history.opened) == (3, 1, 2, False)
     assert sum(s.count for s in history.summary) == 3
+    last = sync_admin.differences(_reader(night), history_page=2).history
+    assert [r.reference for r in last.rows] == ["2026_603"] and last.opened
+    signed = _signed(client, night)
+    body = signed.get(reverse("haldus:data_sync_differences")).content.decode()
+    assert "ajalugu=2#ajalooline" in body
+    body = signed.get(reverse("haldus:data_sync_differences") + "?ajalugu=2").content.decode()
+    at = body.index('id="ajalooline"')
+    assert body[at : body.index(">", at)].endswith(" open")
+    assert "2026_603" in body[at:]
 
 
-def test_page_two_of_the_operational_list_does_not_repeat_the_history_group(night, monkeypatch):
+def test_the_history_group_stays_beside_every_operational_page(night, monkeypatch):
     from app.legacy_import import lovable_observability as obs
 
     monkeypatch.setattr(obs, "PAGE_SIZE", 1)
     first = sync_admin.differences(_reader(night), page=1)
     second = sync_admin.differences(_reader(night), page=2)
     assert first.pages > 1
-    assert first.history is not None and second.history is None
+    assert second.history is not None and second.history.total == 3
+    assert not any(r.historical for r in second.rows)
 
 
 def test_the_overview_counts_operational_work_and_the_history_apart(night, client):
@@ -198,13 +208,15 @@ def test_the_overview_counts_operational_work_and_the_history_apart(night, clien
 
 def test_a_requests_run_line_takes_the_history_out_of_vajab_ulevaatamist(night):
     run = night["run"]
+    # 601 and 602 wait only on their stage hold; 603 also on a real title change,
+    # so it stays operational work (the field-level rule, counted per Teema).
+    assert sync_admin.historical_review_teemad([run.pk]) == {run.pk: 2}
     counts = sync_admin.int_counts(run.counts)
-    shown = sync_admin._operational_counts(counts, run)
-    assert shown["review_history"] == 3
-    assert shown["review"] == counts["review"] - 3
+    shown = sync_admin._operational_counts(counts, 2)
+    assert (shown["review"], shown["review_history"]) == (counts["review"] - 2, 2)
     assert LovableSyncRun.objects.get(pk=run.pk).counts["review"] == counts["review"]
     # A run without the history cohort reads exactly as before.
-    assert sync_admin._operational_counts({"review": 4}, None) == {"review": 4}
+    assert sync_admin._operational_counts({"review": 4}, 0) == {"review": 4}
 
 
 def test_pending_and_resolve_are_unchanged_for_a_history_hold(night):
@@ -271,3 +283,137 @@ def test_pending_differences_reads_in_a_bounded_number_of_queries(night):
         night["run"].started_at
     }
     assert LovableSyncState.objects.filter(cohort=HISTORY).count() == 3
+
+
+# ---------------------------------------------------------------------------
+# Independent review of #610 (2026-11-10): adversarial cases
+# ---------------------------------------------------------------------------
+
+
+def _where(diff: Any, reference: str) -> dict[str, list[str]]:
+    operational = [r for _h, rows in diff.groups for r in rows] + [
+        r for card in diff.step_cards for r in card.rows
+    ]
+    held = diff.history.rows if diff.history else []
+    return {
+        "operational": sorted(r.field for r in operational if r.reference == reference),
+        "history": sorted(r.field for r in held if r.reference == reference),
+    }
+
+
+def test_reopened_stage_in_lovable_on_a_historical_teema(night):
+    """Lovable moves a closed historical topic from «lõpetatud» back to
+    «Riigikogus»: the engine still says IMPORT_HELD, but it is a real change."""
+    night["source"].edit("2026_602", hetkeseis="Riigikogus")
+    run = _run(night, SyncTrigger.SCHEDULED, at=NIGHT + dt.timedelta(days=1))
+    d = run.decisions.get(state__reference="2026_602", field="stage")
+    assert (d.outcome, d.reason) == (SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD)
+    where = _where(sync_admin.differences(_reader(night)), "2026_602")
+    assert where == {"operational": ["stage"], "history": []}
+    from app.legacy_import import lovable_observability as obs
+
+    assert obs.status(_reader(night)).pending_review_historical == 2
+    _ops, held = sync_admin.decision_counts(run)
+    assert held == 2
+    assert sync_admin.historical_review_teemad([run.pk]) == {run.pk: 1}
+
+
+def test_source_missing_on_a_historical_teema_is_operational(night):
+    source = night["source"]
+    gone = next(k for k, r in source.rows.items() if r["nr"] == "2026_601")
+    del source.rows[gone]
+    _run(night, SyncTrigger.SCHEDULED, at=NIGHT + dt.timedelta(days=1))
+    where = _where(sync_admin.differences(_reader(night)), "2026_601")
+    assert where["operational"], where
+
+
+def test_other_status_pages_show_the_operational_figure(night, client):
+    from app.legacy_import import lovable_observability as obs
+
+    status = obs.status(_reader(night))
+    assert status.pending_review_operational == status.pending_review - 3
+    signed = _signed(client, night)
+    body = signed.get(reverse("core:release_notes_lovable")).content.decode()
+    assert f"Ülevaatust ootab {status.pending_review_operational} välja." in body
+    assert "ajaloolises registris 3 impordil ootele jäetud välja" in body
+    body = signed.get(reverse("haldus:lovable")).content.decode()
+    assert f"<dd>{status.pending_review_operational}</dd>" in body
+    assert "Lisaks 3 ajaloolise registri impordil ootele jäetud välja" in body
+
+
+def test_haldus_lovable_lists_a_capped_number_of_changes(night, client, monkeypatch):
+    from app.haldus import views
+
+    monkeypatch.setattr(views, "LOVABLE_ROWS_SHOWN", 1)
+    body = _signed(client, night).get(reverse("haldus:lovable")).content.decode()
+    assert "Näidatud esimesed 1 viite järjekorras; veel" in body
+
+
+@pytest.fixture
+def many_history(cohort, settings):
+    """25 enrolled history Teemad, each import-held, on an APPLY night."""
+    refs = [f"2026_{n}" for n in range(601, 626)]
+    topics = [_closed(r) for r in refs]
+    package = _package(*topics)
+    package["snapshot"]["snapshot_sha256"] = "f" * 64
+    package["snapshot"]["highest_reference"] = {"2026": 640}
+    package["reserve_through"] = {"2026": 640}
+    digest = build_plan(package).digest
+    _apply(package)
+    apply_admin_gate(settings)
+    settings.REAL_DATA_ALLOWED = False
+    EvidencePilotRecord.objects.filter(package_sha256=digest).update(pilot=HISTORY)
+    done = lovable_sync.enroll(
+        cohort=HISTORY, package_sha256=digest, expect=25, reason="Ajalugu (testmaailm)"
+    )
+    assert done.seeded == 25
+    for topic in topics:
+        cohort["source"].put(
+            topic["source"]["id"], copy.deepcopy(topic["source"]["row"]), version=3
+        )
+    lovable_sync.set_mode(SyncMode.APPLY, reason="test")
+    return cohort
+
+
+def test_breakers_ignore_import_holds_and_since_stays_the_first_night(many_history):
+    first = _run(many_history, SyncTrigger.SCHEDULED)
+    second = _run(many_history, SyncTrigger.SCHEDULED, at=NIGHT + dt.timedelta(days=1))
+    for run in (first, second):
+        held = run.decisions.filter(state__cohort=HISTORY, reason=lovable_sync.IMPORT_HELD)
+        assert held.count() == 25
+        assert not run.decisions.filter(reason=lovable_sync.BREAKER).exists()
+    sinces = {p.since for p in lovable_sync.pending_differences() if p.cohort == HISTORY}
+    assert sinces == {first.started_at}
+    assert sync_admin.differences(many_history["world"]["mari"]).history.total == 25
+
+
+def test_the_pages_read_in_as_many_queries_for_25_history_holds_as_for_5(many_history):
+    """No per-item query on any page that counts or lists the holds."""
+    _run(many_history, SyncTrigger.SCHEDULED)
+    user = many_history["world"]["mari"]
+    from app.legacy_import import lovable_observability as obs
+
+    reads = (
+        lambda: sync_admin.differences(user),
+        lambda: sync_admin.lovable_panel(user),
+        lambda: obs.status(user),
+        lambda: lovable_sync.pending_differences(visible_to=user),
+    )
+
+    def counted() -> list[int]:
+        out = []
+        for read in reads:
+            with CaptureQueriesContext(connection) as queries:
+                read()
+            out.append(len(queries))
+        return out
+
+    many = counted()
+    assert sync_admin.differences(user).history.total == 25
+    actor = technical_admin()[0]
+    for n in range(601, 621):
+        sync_admin.resolve_difference(
+            actor, user, reference=f"2026_{n}", field_name="stage", note="Ajalugu"
+        )
+    assert sync_admin.differences(user).history.total == 5
+    assert counted() == many

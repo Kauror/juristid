@@ -33,14 +33,14 @@ import inspect
 import os
 import re
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
 from django.conf import settings
 from django.core.paginator import Paginator
 from django.db import DatabaseError, IntegrityError, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.utils import timezone
 
 from app.audit.enums import SecurityEventType
@@ -415,7 +415,7 @@ def request_view(
         reason_text=failure_reason(item.outcome_code),
         stale=stale,
         expires_at=expires,
-        counts=_operational_counts(int_counts(result.get("counts")), item.sync_run),
+        counts=int_counts(result.get("counts")),
         waiting_note=waiting,
     )
 
@@ -430,23 +430,56 @@ def history_part(run_counts: Any) -> dict[str, Any] | None:
     return part if isinstance(part, dict) else None
 
 
-def _operational_counts(counts: dict[str, int], run: Any) -> dict[str, int]:
-    """A request's run counts with the historical register's «vajab
-    ülevaatamist» Teemad taken out of ``review`` and shown as ``review_history``
-    (docs/adr/0213 §9, amendment 2026-11-10). The stored counts are unchanged."""
-    part = history_part(getattr(run, "counts", None)) if run is not None else None
-    if part is None or "review" not in counts:
+def historical_review_teemad(run_ids: Iterable[Any]) -> dict[Any, int]:
+    """Per run: the «vajab ülevaatamist» Teemad whose every REVIEW_REQUIRED field
+    is the historical register's import hold (`lovable_sync.historical_hold`) —
+    the field-level rule, counted per Teema. One query for all the runs."""
+    from app.legacy_import.lovable_sync import HISTORY_COHORT, historical_hold_q
+
+    ids = [i for i in run_ids if i is not None]
+    if not ids:
+        return {}
+    review = Q(outcome=SyncOutcome.REVIEW_REQUIRED)
+    out: dict[Any, int] = {}
+    for row in (
+        LovableSyncDecision.objects.filter(run_id__in=ids, state__cohort=HISTORY_COHORT)
+        .values("run_id", "state_id")
+        .annotate(
+            review=Count("pk", filter=review),
+            held=Count("pk", filter=review & historical_hold_q()),
+        )
+        .filter(review__gt=0, review=F("held"))
+        .order_by()
+    ):
+        out[row["run_id"]] = out.get(row["run_id"], 0) + 1
+    return out
+
+
+def _operational_counts(counts: dict[str, int], held: int) -> dict[str, int]:
+    """A request's run counts with the historical register's held Teemad taken
+    out of ``review`` and shown as ``review_history`` (docs/adr/0213 §9.9). The
+    stored counts are unchanged; a run with none reads exactly as before."""
+    if not held or "review" not in counts:
         return counts
-    held = int(part.get("review") or 0)
     return {**counts, "review": max(0, counts["review"] - held), "review_history": held}
+
+
+def _split_reviews(views: list[RequestView]) -> list[RequestView]:
+    held = historical_review_teemad(v.request.sync_run_id for v in views)
+    return [
+        replace(v, counts=_operational_counts(v.counts, held.get(v.request.sync_run_id, 0)))
+        for v in views
+    ]
 
 
 def _recent(lane: str, now: dt.datetime, runner: RunnerStatus) -> list[RequestView]:
     rows = DataSyncRequest.objects.filter(lane=lane).select_related("requested_by", "sync_run")
-    return [
-        request_view(r, now=now, runner=runner)
-        for r in rows.order_by("-requested_at")[:RECENT_REQUESTS]
-    ]
+    return _split_reviews(
+        [
+            request_view(r, now=now, runner=runner)
+            for r in rows.order_by("-requested_at")[:RECENT_REQUESTS]
+        ]
+    )
 
 
 def open_request(lane: str) -> DataSyncRequest | None:
@@ -581,7 +614,7 @@ def decision_counts(run: LovableSyncRun | None) -> tuple[dict[str, int], int]:
     """Outcome → number of operational field decisions the run recorded, and how
     many more were the historical register's own import holds
     (`lovable_sync.historical_hold`), counted apart. One query."""
-    from app.legacy_import.lovable_sync import HISTORY_COHORT, IMPORT_HELD
+    from app.legacy_import.lovable_sync import historical_hold_q
 
     counts = dict.fromkeys(SyncOutcome.values, 0)
     if run is None:
@@ -592,7 +625,7 @@ def decision_counts(run: LovableSyncRun | None) -> tuple[dict[str, int], int]:
         .values_list("outcome")
         .annotate(
             n=Count("pk"),
-            held=Count("pk", filter=Q(state__cohort=HISTORY_COHORT, reason=IMPORT_HELD)),
+            held=Count("pk", filter=historical_hold_q()),
         )
         .values_list("outcome", "n", "held")
     ):
@@ -976,12 +1009,12 @@ class Differences:
     groups: list[tuple[str, list[DifferenceRow]]] = field(default_factory=list)
     #: Operational pending differences named here, all pages and groups together.
     named: int = 0
-    #: The historical register's import holds, apart (page 1 only; None if none).
+    #: The historical register's import holds, apart (None if none).
     history: HistoryGroup | None = None
 
 
-#: How many of the historical register's holds the page lists by name; the rest
-#: are in the summary's counts.
+#: How many of the historical register's holds one page of the group lists by
+#: name (`?ajalugu=N` pages through the rest).
 HISTORY_ROWS_SHOWN = 50
 
 
@@ -995,17 +1028,19 @@ class HistorySummaryRow:
 @dataclass
 class HistoryGroup:
     """«Ajalooline register: impordil ootele jäetud väljad»: the history
-    cohort's import holds, summarised by field and reason, with the first
-    `HISTORY_ROWS_SHOWN` named (docs/adr/0213 §9, amendment 2026-11-10)."""
+    cohort's import holds, summarised by field and reason, named by reference
+    `HISTORY_ROWS_SHOWN` at a time (docs/adr/0213 §9.9)."""
 
     total: int
     teemad: int
     summary: list[HistorySummaryRow]
     rows: list[DifferenceRow]
-
-    @property
-    def more(self) -> int:
-        return self.total - len(self.rows)
+    page: int = 1
+    pages: int = 1
+    #: Holds on Teemad the reader may not open: counted, never named.
+    hidden: int = 0
+    #: The reader asked for a page of the group (``?ajalugu=N``): shown open.
+    opened: bool = False
 
 
 def _engine_differences() -> Callable[..., Any] | None:
@@ -1072,16 +1107,30 @@ def _ordered(rows: list[DifferenceRow]) -> list[DifferenceRow]:
     )
 
 
-def engine_rows(user: Any, *, now: dt.datetime | None = None) -> tuple[list[DifferenceRow], int]:
-    """Every pending difference ``user`` may see (named) in priority order, and
-    how many more there are (counted, never named). Reads only."""
+def _is_historical(item: Any) -> bool:
+    from app.legacy_import.lovable_sync import historical_hold
+
+    return historical_hold(
+        str(_attr(item, "cohort", default="") or ""),
+        str(_attr(item, "reason", default="") or ""),
+        _attr(item, "baseline", "accepted", "a"),
+        _attr(item, "source", "lovable", "c"),
+    )
+
+
+def engine_rows(
+    user: Any, *, now: dt.datetime | None = None
+) -> tuple[list[DifferenceRow], int, int]:
+    """Every pending difference ``user`` may see (named) in priority order, how
+    many more there are (counted, never named), and how many of those are the
+    historical register's import holds. Reads only."""
     from app.legacy_import.lovable_sync import RESOLVABLE_FIELDS as RESOLVABLE
     from app.legacy_import.lovable_sync import TALLINN
     from app.matters.models import Matter
 
     engine = _engine_differences()
     if engine is None:
-        return [], 0
+        return [], 0, 0
     today = (now or timezone.now()).astimezone(TALLINN).date()
     items = list(engine(visible_to=user))
     visible = set(Matter.objects.visible_to(user).values_list("pk", flat=True))
@@ -1099,12 +1148,9 @@ def engine_rows(user: Any, *, now: dt.datetime | None = None) -> tuple[list[Diff
         today,
     )
     rows: list[DifferenceRow] = []
-    from app.legacy_import.lovable_sync import historical_hold
-
     for item, matter in named:
         name = str(_attr(item, "field", "field_name", default=""))
         reason = str(_attr(item, "reason", default="") or "")
-        cohort = str(_attr(item, "cohort", default="") or "")
         since = _attr(item, "since", "first_observed_at")
         step = steps.get(matter.pk) if name in STEP_FIELDS else None
         current = _attr(item, "juristid", "current", "b")
@@ -1125,13 +1171,17 @@ def engine_rows(user: Any, *, now: dt.datetime | None = None) -> tuple[list[Diff
                 group=priority_group(name, step_past=bool(step and step.past)),
                 age_days=_age(since, today),
                 step=step,
-                historical=historical_hold(cohort, reason),
+                historical=_is_historical(item),
             )
         )
     # The engine leaves out what this reader may not open; the server's own
     # view counts everything, so the rest is counted here — never named.
-    hidden = max(hidden, len(engine(visible_to=None)) - len(rows))
-    return _ordered(rows), hidden
+    server = list(engine(visible_to=None))
+    hidden = max(hidden, len(server) - len(rows))
+    hidden_history = max(
+        0, sum(1 for i in server if _is_historical(i)) - sum(1 for r in rows if r.historical)
+    )
+    return _ordered(rows), hidden - min(hidden, hidden_history), min(hidden, hidden_history)
 
 
 def _step_cards(rows: list[DifferenceRow]) -> list[StepCard]:
@@ -1169,10 +1219,10 @@ def _grouped(rows: list[DifferenceRow]) -> list[tuple[str, list[DifferenceRow]]]
     return out
 
 
-def _history_group(rows: list[DifferenceRow]) -> HistoryGroup | None:
-    """The historical register's holds: counts by field and reason, the first
+def _history_group(rows: list[DifferenceRow], hidden: int, page: int | None) -> HistoryGroup | None:
+    """The historical register's holds: counts by field and reason, one page of
     `HISTORY_ROWS_SHOWN` by reference. No query: ``rows`` are already read."""
-    if not rows:
+    if not rows and not hidden:
         return None
     tally: dict[tuple[str, str], int] = {}
     for row in rows:
@@ -1184,26 +1234,39 @@ def _history_group(rows: list[DifferenceRow]) -> HistoryGroup | None:
     ]
     fields = {name: n for n, name in enumerate(LOVABLE_FIELD_LABELS)}
     named = sorted(rows, key=lambda r: (r.reference, fields.get(r.field, len(fields))))
+    paginator = Paginator(named, HISTORY_ROWS_SHOWN)
+    chosen = paginator.get_page(page or 1)
     return HistoryGroup(
         total=len(rows),
         teemad=len({r.matter.pk for r in rows}),
         summary=summary,
-        rows=named[:HISTORY_ROWS_SHOWN],
+        rows=list(chosen.object_list),
+        page=chosen.number,
+        pages=paginator.num_pages,
+        hidden=hidden,
+        opened=page is not None,
     )
 
 
-def differences(user: Any, *, page: int = 1, now: dt.datetime | None = None) -> Differences:
+def differences(
+    user: Any,
+    *,
+    page: int = 1,
+    history_page: int | None = None,
+    now: dt.datetime | None = None,
+) -> Differences:
     """Pending differences: A (accepted), B (Juristid), C (Lovable), why, and for
     how long — the next-step corrections first, as one card per Teema, then the
     rest by priority group, oldest first; the historical register's own import
     holds last, apart (`HistoryGroup`), never in a card, group or headline count.
 
-    Named only for a Teema ``user`` may open; the rest are counted in ``hidden``."""
+    Named only for a Teema ``user`` may open; the rest are counted in ``hidden``.
+    ``history_page`` (``?ajalugu=N``) pages through the historical group."""
     from app.legacy_import import lovable_observability as obs
     from app.matters.models import Matter
 
     if _engine_differences() is not None:
-        everything, hidden = engine_rows(user, now=now)
+        everything, hidden, hidden_history = engine_rows(user, now=now)
         every = [r for r in everything if not r.historical]
         held = [r for r in everything if r.historical]
         cards = _step_cards(every)
@@ -1221,7 +1284,7 @@ def differences(user: Any, *, page: int = 1, now: dt.datetime | None = None) -> 
             step_cards=cards if chosen.number == 1 else [],
             groups=_grouped(shown),
             named=len(every),
-            history=_history_group(held) if chosen.number == 1 else None,
+            history=_history_group(held, hidden_history, history_page),
         )
     queue = obs.review_queue(user, page=page)
     shown_items = list(queue.items)
@@ -1269,7 +1332,7 @@ def _resolvable_fields() -> tuple[str, ...]:
 def difference_for(user: Any, reference: str, field_name: str) -> DifferenceRow | None:
     """The one pending difference a decision page confirms, whatever page it is on."""
     if _engine_differences() is not None:
-        rows, _hidden = engine_rows(user)
+        rows, _hidden, _held = engine_rows(user)
         return next((r for r in rows if r.reference == reference and r.field == field_name), None)
     page = 1
     while True:
@@ -1338,7 +1401,9 @@ def request_history(*, page: int = 1) -> Any:
     chosen = paginator.get_page(page)
     moment = timezone.now()
     runners = {lane: runner_status(lane, now=moment) for lane in SyncRequestLane.values}
-    views = [request_view(r, now=moment, runner=runners.get(r.lane)) for r in chosen.object_list]
+    views = _split_reviews(
+        [request_view(r, now=moment, runner=runners.get(r.lane)) for r in chosen.object_list]
+    )
     chosen.object_list = cast(Any, views)
     return chosen
 

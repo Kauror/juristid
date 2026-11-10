@@ -229,6 +229,12 @@ class SyncStatus(_AsDict):
     #: operational work (docs/adr/0213 §9, amendment 2026-11-10).
     pending_review_historical: int = 0
 
+    @property
+    def pending_review_operational(self) -> int:
+        """``pending_review`` less the historical register's import holds: the
+        figure every page shows as work waiting (docs/adr/0213 §9.9)."""
+        return self.pending_review - self.pending_review_historical
+
 
 @dataclass
 class FieldDiff(_AsDict):
@@ -1172,15 +1178,20 @@ def _nights_since(firsts: dict[tuple[Any, str], dt.datetime]) -> dict[tuple[Any,
 
 
 def _historical(item: _Pending) -> bool:
-    """Whether a pending field is the historical register's import hold: its
-    newest decision says so, or — not yet decided on — the import holds it."""
+    """Whether a pending field is the historical register's import hold
+    (`lovable_sync.historical_hold`): its newest decision says IMPORT_HELD, or —
+    not yet decided on — the import holds it; and Lovable still says what was
+    accepted (C = A), so a real change in Lovable stays operational."""
     if item.newest is not None:
         reason = str(item.newest.get("reason") or "")
     elif item.field in lovable_sync.held_by_import(item.state.applied):
         reason = lovable_sync.IMPORT_HELD
     else:
         reason = ""
-    return lovable_sync.historical_hold(item.state.cohort, reason)
+    unchanged = lovable_review._key(item.field, item.applied) == lovable_review._key(
+        item.field, item.observed
+    )
+    return unchanged and lovable_sync.historical_hold(item.state.cohort, reason, None, None)
 
 
 def _pending_fields(states: list[LovableSyncState]) -> list[_Pending]:

@@ -76,7 +76,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from django.db import DatabaseError, IntegrityError, connection, transaction
-from django.db.models import Count, Min, Q
+from django.db.models import Count, F, Min, Q
 from django.utils import timezone
 
 from app.legacy_import.lovable_pilot import (
@@ -2639,16 +2639,30 @@ class PendingDifference:
     cohort: str = ""
 
 
-def historical_hold(cohort: str, reason: str) -> bool:
+def historical_hold(cohort: str, reason: str, baseline: Any, source: Any) -> bool:
     """A pending difference that is the historical register's own import hold
-    — a closed ARCHIVE Teema of the history cohort whose field the backfill held
-    (docs/adr/0213 §9, amendment 2026-11-10) — rather than operational work.
+    — a closed ARCHIVE Teema of the history cohort whose field the backfill held,
+    and Lovable has not changed it since the import (C = A) (docs/adr/0213 §9.9)
+    — rather than operational work.
+
+    `_hold_imported` gives every import-held field the reason IMPORT_HELD
+    whatever Lovable says, so the reason alone would hide a real change (Lovable
+    reopening a «lõpetatud» topic): that one, and any other difference on a
+    historical Teema (MATTER_CLOSED, a gone topic), stays operational.
 
     Presentation only: the pages show these in their own group, after everything
     else, and leave them out of the operational headline numbers. Nothing about
-    what is pending, applied or resolved depends on it. Any other difference on a
-    historical Teema (a real change in Lovable, MATTER_CLOSED) stays operational."""
-    return cohort == HISTORY_COHORT and reason == IMPORT_HELD
+    what is pending, applied or resolved depends on it. `historical_hold_q` is
+    the same rule for a query of decisions."""
+    return cohort == HISTORY_COHORT and reason == IMPORT_HELD and _j(baseline) == _j(source)
+
+
+def historical_hold_q() -> Q:
+    """`historical_hold` over `LovableSyncDecision` rows (jsonb equality; two
+    absent values are equal, as in Python)."""
+    return Q(state__cohort=HISTORY_COHORT, reason=IMPORT_HELD) & (
+        Q(source=F("baseline")) | Q(source__isnull=True, baseline__isnull=True)
+    )
 
 
 def latest_reconciled_run() -> LovableSyncRun | None:
