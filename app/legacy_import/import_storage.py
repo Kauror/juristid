@@ -49,7 +49,10 @@ from django.core.files.storage import storages
 logger = logging.getLogger(__name__)
 
 #: Filesystem types that keep nothing across a restart, or are a container's own layer.
-NOT_PERSISTENT_FSTYPES = frozenset({"tmpfs", "ramfs", "devtmpfs", "overlay", "aufs", "squashfs"})
+# `rootfs`: Unraid's own root lives in RAM, so a store bind-mounted from it keeps nothing.
+NOT_PERSISTENT_FSTYPES = frozenset(
+    {"tmpfs", "ramfs", "rootfs", "devtmpfs", "overlay", "aufs", "squashfs"}
+)
 
 MOUNTINFO = Path("/proc/self/mountinfo")
 
@@ -298,6 +301,8 @@ def discard_ours(objects: Iterable[StoredObject]) -> int:
         try:
             storages[obj.alias].delete(obj.key)
             removed += 1
-        except Exception:
-            logger.exception("could not remove an object whose rows rolled back")
+        except Exception as error:
+            logger.error(
+                "could not remove an object whose rows rolled back (%s)", type(error).__name__
+            )
     return removed
