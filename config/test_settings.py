@@ -53,6 +53,9 @@ TRUST_CF_CONNECTING_IP = True
 # suite starts from the safe position.
 DEV_LOGIN_ENABLED = False
 REAL_DATA_ALLOWED = False
+# Follows REAL_DATA_ALLOWED in config/settings.py; the tests' stores are temporary
+# directories, so the import storage tests turn it on where they mean it.
+REQUIRE_PERSISTENT_STORES = False
 # `matters:add_note` is a fixture door for this suite (owner decision D9);
 # tests/test_hidden_write_routes.py turns it off to prove the guard.
 ADD_NOTE_TEST_DOOR_ENABLED = True

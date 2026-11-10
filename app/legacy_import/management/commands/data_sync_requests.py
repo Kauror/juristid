@@ -123,6 +123,10 @@ class Command(BaseCommand):
                     "status": item.status if item else sync_admin.NOTHING,
                     "code": item.outcome_code if item else "",
                     "run": str(item.sync_run_id) if item and item.sync_run_id else None,
+                    # STORE-GUARD: the stores' read-back, integers only.
+                    "storage": sync_admin.int_counts((item.result or {}).get("storage"))
+                    if item
+                    else {},
                 },
                 default=str,
             )
@@ -146,6 +150,7 @@ class Command(BaseCommand):
                         "finished_at": item.finished_at.isoformat() if item.finished_at else None,
                         "run": str(item.sync_run_id) if item.sync_run_id else None,
                         "counts": sync_admin.int_counts((item.result or {}).get("counts")),
+                        "storage": sync_admin.int_counts((item.result or {}).get("storage")),
                     }
                 )
             )
