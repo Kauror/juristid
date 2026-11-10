@@ -148,7 +148,12 @@ fi
 take_backup() {
   BACKUP_SET=""
   say "backup"
-  if (cd "$REPO" && scripts/deploy/juristid-backup.sh --project juristid-main \
+  # This run already holds the host lock ($HOST_LOCK), so a backup that asked
+  # for the same one would be refused ("another operation holds …") and nothing
+  # would ever be written (production, 2026-11-10). The backup takes a lock of
+  # its own instead, as the release scripts do (JURISTID_HOST_LOCK=…r52-backup);
+  # the host lock this run holds keeps releases and restores out meanwhile.
+  if (cd "$REPO" && JURISTID_HOST_LOCK="$HOST_LOCK.sync-backup" scripts/deploy/juristid-backup.sh --project juristid-main \
         --compose-file deploy/unraid-main/compose.yml --data-root "$APPDATA" \
         --backup-root "$BACKUP_ROOT" >"$LOG.backup" 2>&1 </dev/null); then
     SET_PATH="$(sed -nE 's/.*Backup set: +([^ ]+).*/\1/p' "$LOG.backup" | tail -1)"

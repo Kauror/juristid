@@ -55,7 +55,17 @@ FAKE_STAT = (
     "#!/usr/bin/env bash\n"
     'if [ -e "$FAKE_DIR/cred-ok" ]; then echo "0 600"; else echo "1000 644"; fi\n'
 )
-FAKE_BACKUP = "#!/usr/bin/env bash\necho 'Backup set: /backups/sets/20261109T000000Z'\n"
+# As the real one (scripts/deploy/lib.sh `take_host_lock`): it takes the host lock
+# JURISTID_HOST_LOCK names and refuses while another operation holds it. The
+# synchronisation holds the host lock itself, so a backup it asked for under the
+# same name was refused on the host (2026-11-10).
+FAKE_BACKUP = (
+    "#!/usr/bin/env bash\n"
+    'lock="${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}"\n'
+    'mkdir "$lock" 2>/dev/null || { echo "ERROR: another operation holds $lock"; exit 1; }\n'
+    "echo 'Backup set: /backups/sets/20261109T000000Z'\n"
+    'rm -rf -- "$lock"\n'
+)
 FAKE_VERIFY = "#!/usr/bin/env bash\nexit 0\n"
 
 
