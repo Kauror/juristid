@@ -1029,6 +1029,13 @@ APPLICATION_BUILT_AT = _build_stamp()
 # environment that has passed the Secure Pilot Gate (master specification 16.3).
 REAL_DATA_ALLOWED = env_bool("REAL_DATA_ALLOWED", default=False)
 
+# Where real data may be written, an import's stores must be mounted, persistent
+# stores — never a directory baked into the image or a memory filesystem
+# (app/legacy_import/import_storage.py, STORE-GUARD 10.11.2026). Derived, not an
+# environment switch: a real-data process cannot turn it off. A test that means
+# it sets it explicitly.
+REQUIRE_PERSISTENT_STORES = REAL_DATA_ALLOWED
+
 # The 2026 Excel operational pilot (docs/adr/0148) may write placeholder evidence
 # and schedule historical follow-up checks — two things no ordinary importer is
 # allowed to do. Off everywhere by default, and never put in an env file: the

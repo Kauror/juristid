@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 import urllib.parse
 from collections import Counter
@@ -48,7 +49,19 @@ from django.db.models import F
 from django.db.models.functions import Lower
 from django.utils import timezone
 
+from app.legacy_import.import_storage import (
+    STORED_FILES_MISSING,
+    STORED_FILES_REFUSED,
+    StorageGuardError,
+    StoredObject,
+    discard_ours,
+    hash_stored,
+    require_import_stores,
+    verify_stored,
+)
 from app.legacy_import.integrity import IntegrityError, canonical_sha256, require_digest
+
+logger = logging.getLogger(__name__)
 
 #: The sealed package format this module reads.
 SCHEMA = "juristid.onenote-desktop-capture/2"
@@ -145,6 +158,34 @@ _RENDERED_KIND = {"FILE": "FILE_ATTACHMENT", "IMAGE": "IMAGE_NOT_CAPTURED"}
 
 class CaptureError(Exception):
     """The capture, the plan or the database is not in a state this may write from."""
+
+
+class CaptureStorageError(CaptureError):
+    """A store the import writes to is unusable, or lost what was written (STORE-GUARD).
+
+    ``code`` is the request's outcome code (`import_storage`); ``counts`` integers
+    only; ``before_writing`` says the refusal came before any row or object."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+        counts: dict[str, int] | None = None,
+        before_writing: bool = False,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.counts = dict(counts or {})
+        self.before_writing = before_writing
+
+
+def require_stores() -> None:
+    """`import_storage.require_import_stores`, as this module's refusal."""
+    try:
+        require_import_stores()
+    except StorageGuardError as error:
+        raise CaptureStorageError(str(error), code=error.code, before_writing=True) from error
 
 
 # -- reading the sealed capture ---------------------------------------------------
@@ -1333,6 +1374,8 @@ class ApplyReport:
     version_bytes: int = 0
     revisions: Counter[str] = field(default_factory=Counter)
     page_revisions_created: int = 0
+    #: Stored objects read back and re-hashed before their page committed (STORE-GUARD).
+    stored_checked: int = 0
     #: Page key -> what was written for it, for the coverage marks.
     page_outcomes: dict[str, str] = field(default_factory=dict)
 
@@ -1350,6 +1393,7 @@ class ApplyReport:
             "document_bytes",
             "already_recorded",
             "earlier_capture_rows",
+            "stored_checked",
         ):
             setattr(self, name, getattr(self, name) + getattr(other, name))
         self.held.update(other.held)
@@ -1464,6 +1508,8 @@ def apply(
         expect_plan_sha256=expect_plan_sha256,
         backup_set=backup_set,
     )
+    # Fail closed before any row: the stores must be the deployment's mounted ones.
+    require_stores()
     from app.legacy_import.models import ImportBatch, ReconciliationStatus
     from app.search.indexing import indexable_matters, refresh_matters
 
@@ -1546,9 +1592,12 @@ def apply(
             if failure:
                 notes["failure"] = f"{type(failure).__name__}: {str(failure)[:1500]}"
                 notes["note"] = (
-                    "The failed page rolled back; evidence objects it stored before failing are "
-                    "orphaned (check_evidence_integrity lists them; never prune without the owner)."
+                    "The failed page rolled back and the objects it stored were removed; any "
+                    "that could not be removed are orphaned (check_evidence_integrity lists "
+                    "them; never prune without the owner)."
                 )
+                if isinstance(failure, StorageGuardError):
+                    notes["storage"] = failure.counts
             batch.notes = json.dumps(notes, sort_keys=True)
             batch.save(
                 update_fields=[
@@ -1582,6 +1631,12 @@ def apply(
     if failure is not None:
         if isinstance(failure, KeyboardInterrupt | SystemExit):
             raise failure
+        if isinstance(failure, StorageGuardError):
+            raise CaptureStorageError(
+                f"stopped at a page that rolled back whole: {failure}",
+                code=failure.code,
+                counts=failure.counts,
+            ) from failure
         raise CaptureError(f"stopped at a page that rolled back whole: {failure}") from failure
     if refresh_failure is not None:
         raise CaptureError(
@@ -1665,9 +1720,84 @@ def _write_page(
     page_change: tuple[bool, bool] | None = None,
     version_of: dict[tuple[str, str, str], Any] | None = None,
 ) -> None:
+    """One page in one transaction, committed only once its stored objects read back.
+
+    Every object a row of the page names — each new evidence version, the page
+    XML — is re-opened through its storage and re-hashed *before* the commit
+    (STORE-GUARD): a missing or different object raises ``STORED_FILES_MISSING``
+    and the page rolls back whole. Whatever the failure, the objects this page
+    stored are then removed, so no row and no object of it survives.
+    """
+    stored: list[StoredObject] = []
+    try:
+        with transaction.atomic():
+            _write_page_rows(
+                capture,
+                page,
+                items,
+                batch=batch,
+                report=report,
+                earlier=earlier,
+                page_change=page_change,
+                version_of=version_of,
+                stored=stored,
+            )
+            report.stored_checked += verify_stored(stored).checked
+    except BaseException:
+        discard_ours(stored)
+        raise
+
+
+def _save_page_xml(key: str, post_xml: bytes, stored: list[StoredObject]) -> None:
+    """Store the page XML under ``key`` unless it is there; either way, read it back later."""
+    from app.legacy_import.historical_apply import legacy_source_storage
+
+    storage = legacy_source_storage()
+    ours = False
+    if not storage.exists(key):
+        saved = storage.save(key, ContentFile(post_xml))
+        ours = True
+        if saved != key:
+            stored.append(_xml_object(saved, post_xml, ours=True))
+            raise CaptureError(f"page XML stored under another key than {key}")
+    stored.append(_xml_object(key, post_xml, ours=ours))
+
+
+def _xml_object(key: str, post_xml: bytes, *, ours: bool) -> StoredObject:
+    return StoredObject(
+        alias=settings.LEGACY_SOURCE_STORAGE_ALIAS,
+        key=key,
+        sha256=hashlib.sha256(post_xml).hexdigest(),
+        size=len(post_xml),
+        ours=ours,
+    )
+
+
+def _evidence_object(version: Any, occurrence: Occurrence) -> StoredObject:
+    """A new version's object, judged against the seal (never against its own row)."""
+    return StoredObject(
+        alias=settings.EVIDENCE_STORAGE_ALIAS,
+        key=version.storage_key,
+        sha256=occurrence.sha256,
+        size=occurrence.size,
+        ours=True,
+    )
+
+
+def _write_page_rows(
+    capture: Capture,
+    page: CapturePage,
+    items: list[PlannedItem],
+    *,
+    batch: Any,
+    report: ApplyReport,
+    earlier: dict[tuple[str, str], str] | None,
+    page_change: tuple[bool, bool] | None,
+    version_of: dict[tuple[str, str, str], Any] | None,
+    stored: list[StoredObject],
+) -> None:
     from app.documents.enums import ExtractionState
     from app.documents.services import add_evidence_version, create_document
-    from app.legacy_import.historical_apply import legacy_source_storage
     from app.legacy_import.historical_materials import (
         extraction_note_for,
         is_extractable,
@@ -1704,9 +1834,7 @@ def _write_page(
         now = timezone.now()
         if record is None:
             key = f"{page.page_key}/{capture.capture_id}/page.source.xml"
-            storage = legacy_source_storage()
-            if not storage.exists(key):
-                storage.save(key, ContentFile(post_xml))
+            _save_page_xml(key, post_xml, stored)
             text = "\n".join(b["text"] for b in page.blocks if b.get("text"))
             record = LegacySourcePage.objects.create(
                 source_system=SourceSystem.ONENOTE_DESKTOP,
@@ -1752,9 +1880,7 @@ def _write_page(
                 # The page's text, title or place changed since its latest reading:
                 # this capture's reading is kept beside the row, which stays (P3).
                 key = f"{page.page_key}/{capture.capture_id}/page.source.xml"
-                storage = legacy_source_storage()
-                if not storage.exists(key):
-                    storage.save(key, ContentFile(post_xml))
+                _save_page_xml(key, post_xml, stored)
                 OneNotePageRevision.objects.create(
                     page=record,
                     import_batch=batch,
@@ -1836,6 +1962,7 @@ def _write_page(
                         document_id=(version_of or {}).get(
                             (item.matter_id, item.page_key, item.resource_key)
                         ),
+                        stored=stored,
                     )
                     continue
                 if item.resource_key in done:
@@ -1882,6 +2009,7 @@ def _write_page(
                     if extractable
                     else extraction_note_for(occurrence.filename)[:300],
                 )
+                stored.append(_evidence_object(version, occurrence))
                 if version.sha256 != occurrence.sha256 or version.size_bytes != occurrence.size:
                     raise CaptureError(
                         f"{page.tag}/{item.resource_key}: stored bytes differ from the seal"
@@ -1950,6 +2078,7 @@ def _write_revision(
     batch: Any,
     report: ApplyReport,
     document_id: Any,
+    stored: list[StoredObject],
 ) -> None:
     """Record this capture's reading of an occurrence the Teema link already holds.
 
@@ -2007,6 +2136,7 @@ def _write_revision(
             else ExtractionState.NOT_APPLICABLE,
             extraction_note="" if extractable else extraction_note_for(occurrence.filename)[:300],
         )
+        stored.append(_evidence_object(version, occurrence))
         if version.sha256 != occurrence.sha256 or version.size_bytes != occurrence.size:
             raise CaptureError(f"{page.tag}/{item.resource_key}: stored bytes differ from the seal")
         state = RevisionState.VERSIONED
@@ -2203,6 +2333,24 @@ def verify(
     )
     seen = set()
     storage = evidence_storage() if check_bytes else None
+    #: Pages one of whose stored objects is missing or different (STORE-GUARD).
+    storage_failed: set[str] = set()
+
+    def reread(key: str, sha256: str, page: CapturePage, what: str) -> bool:
+        """Re-hash one evidence object; count and name what is missing or different."""
+        got = hash_stored(storage, key)
+        counts["stored_checked"] += 1
+        if got is None:
+            counts["stored_missing"] += 1
+            problems.append(f"{page.tag}/{what}: stored bytes missing")
+        elif got[0] != sha256:
+            counts["stored_mismatch"] += 1
+            problems.append(f"{page.tag}/{what}: stored bytes do not hash")
+        else:
+            return True
+        storage_failed.add(page.page_key)
+        return False
+
     wanted = set(matter_ids)
     # Later readings (P1/P2): this capture's own revision of an occurrence, else the
     # latest any capture recorded. The occurrence is reconciled with that reading;
@@ -2302,12 +2450,7 @@ def verify(
             counts["document_bytes"] += version.size_bytes
             counts["dated" if o.block_created else "undated"] += 1
             if storage is not None:
-                with storage.open(version.storage_key, "rb") as handle:
-                    digest = hashlib.sha256()
-                    while chunk := handle.read(1 << 20):
-                        digest.update(chunk)
-                    if digest.hexdigest() != made_from[0]:
-                        problems.append(f"{page.tag}/{o.block_object_id}: stored bytes do not hash")
+                reread(version.storage_key, made_from[0], page, o.block_object_id)
                 counts["bytes_rehashed"] += 1
         else:
             counts["held_" + (row.error_code or "UNKNOWN")] += 1
@@ -2340,12 +2483,7 @@ def verify(
         counts["new_versions"] += 1
         counts["new_version_bytes"] += version.size_bytes
         if storage is not None:
-            with storage.open(version.storage_key, "rb") as handle:
-                digest = hashlib.sha256()
-                while chunk := handle.read(1 << 20):
-                    digest.update(chunk)
-                if digest.hexdigest() != o.sha256:
-                    problems.append(f"{page.tag}/{o.block_object_id}: stored bytes do not hash")
+            reread(version.storage_key, o.sha256, page, o.block_object_id)
             counts["bytes_rehashed"] += 1
     linked = {
         (str(m), k)
@@ -2359,6 +2497,10 @@ def verify(
             problems.append(
                 f"{page.tag}/{resource_key}: page applied but this occurrence has no row"
             )
+    if check_bytes:
+        _reread_page_xml(capture, page_keys, counts, problems, storage_failed)
+        for name in ("stored_checked", "stored_missing", "stored_mismatch"):
+            counts[name] += 0  # present, zero included: the check ran
     pending_items = len(expected) - len(seen)
     pending_links = sum(
         1
@@ -2385,7 +2527,64 @@ def verify(
         "problems": problems,
         "counts": dict(counts),
         "manifest_sha256": capture.manifest_sha256,
+        "storage_failed_pages": sorted(storage_failed),
     }
+
+
+def _reread_page_xml(
+    capture: Capture,
+    page_keys: dict[Any, str],
+    counts: Counter[str],
+    problems: list[str],
+    storage_failed: set[str],
+) -> None:
+    """The captured pages' stored XML — every reading recorded — re-hashed (STORE-GUARD)."""
+    from app.legacy_import.historical_apply import legacy_source_storage
+    from app.legacy_import.onenote_coverage_models import OneNotePageRevision
+    from app.legacy_import.source_pages import LegacySourcePage
+
+    storage = legacy_source_storage()
+    tags = {p.page_key: p.tag for p in capture.pages}
+    readings = [
+        (page_keys[pk], key, sha)
+        for pk, key, sha in LegacySourcePage.objects.filter(pk__in=list(page_keys)).values_list(
+            "pk", "source_xml_storage_key", "source_xml_sha256"
+        )
+    ] + [
+        (page_keys[pk], key, sha)
+        for pk, key, sha in OneNotePageRevision.objects.filter(
+            page_id__in=list(page_keys)
+        ).values_list("page_id", "source_xml_storage_key", "source_xml_sha256")
+    ]
+    for page_key, key, sha in readings:
+        if not key:
+            continue
+        got = hash_stored(storage, key)
+        counts["stored_checked"] += 1
+        counts["page_xml_rehashed"] += 1
+        tag = tags.get(page_key, page_key)
+        if got is None:
+            counts["stored_missing"] += 1
+            problems.append(f"{tag}/page.xml: stored page XML missing")
+        elif sha and got[0] != sha:
+            counts["stored_mismatch"] += 1
+            problems.append(f"{tag}/page.xml: stored page XML does not hash")
+        else:
+            continue
+        storage_failed.add(page_key)
+
+
+def storage_counts(readback: dict[str, Any]) -> dict[str, int]:
+    """The read-back's storage counts (STORE-GUARD), integers only."""
+    counts = readback.get("counts") or {}
+    return {
+        name: int(counts.get(name, 0))
+        for name in ("stored_checked", "stored_missing", "stored_mismatch")
+    }
+
+
+def storage_failing(counts: dict[str, int]) -> bool:
+    return bool(counts.get("stored_missing") or counts.get("stored_mismatch"))
 
 
 #: The sync-state columns that are the register's own record of a Teema. ``observed``
@@ -2443,6 +2642,9 @@ class CaptureCheck:
     readback: dict[str, Any] = field(default_factory=dict)
     #: Page key -> the state this check establishes for it (``PageState`` values).
     page_states: dict[str, str] = field(default_factory=dict)
+    #: The recorded objects read back (STORE-GUARD): ``stored_checked``,
+    #: ``stored_missing``, ``stored_mismatch``. Either of the last two fails the check.
+    storage: dict[str, int] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         out = dict(self.__dict__)
@@ -2459,7 +2661,9 @@ def _page_problem(plan: Plan, page: CapturePage) -> bool:
 def verify_capture(path: str | Path, *, record: bool = False, actor: Any = None) -> CaptureCheck:
     """Re-hash the whole sealed capture, plan it against Juristid and read back what is held.
 
-    ``ok`` means the seal holds and the plan has no problems: the plan digest
+    ``ok`` means the seal holds, the plan has no problems and every object the
+    database already records for these pages — evidence versions and page XML —
+    is in its store with its recorded hash (STORE-GUARD): the plan digest
     (``plan_sha256``) is then what an administrator approves for the import.
     Writes nothing — with ``record``, only the per-page progress marks
     (``VERIFIED`` for a page with material to import, ``NO_CHANGES`` for a page
@@ -2472,10 +2676,12 @@ def verify_capture(path: str | Path, *, record: bool = False, actor: Any = None)
     except (CaptureError, OSError, ValueError, KeyError) as error:
         return CaptureCheck(path=str(path), ok=False, checked_at=now, problems=[str(error)])
     plan = build_plan(capture)
-    readback = verify(capture)
+    readback = verify(capture, check_bytes=True)
+    storage = storage_counts(readback)
+    lost = set(readback["storage_failed_pages"])
     states: dict[str, str] = {}
     for page in capture.pages:
-        if _page_problem(plan, page):
+        if _page_problem(plan, page) or page.page_key in lost:
             states[page.page_key] = "FAILED"
         elif not page.matters:
             states[page.page_key] = "AWAITING_ASSOCIATION"
@@ -2483,17 +2689,27 @@ def verify_capture(path: str | Path, *, record: bool = False, actor: Any = None)
             states[page.page_key] = "NO_CHANGES"
         else:
             states[page.page_key] = "VERIFIED"
+    problems = list(plan.problems)
+    if storage_failing(storage):
+        problems.append(
+            STORED_FILES_REFUSED.format(
+                missing=storage["stored_missing"],
+                mismatch=storage["stored_mismatch"],
+                checked=storage["stored_checked"],
+            )
+        )
     check = CaptureCheck(
         path=str(path),
-        ok=not plan.problems,
+        ok=not problems,
         checked_at=now,
         capture_id=capture.capture_id,
         manifest_sha256=capture.manifest_sha256,
         plan_sha256=plan.digest,
-        problems=list(plan.problems),
+        problems=problems,
         summary=plan.summary(),
         readback={"problems": readback["problems"], "counts": readback["counts"]},
         page_states=states,
+        storage=storage,
     )
     if record:
         from app.legacy_import.onenote_coverage import record_capture_marks
@@ -2521,9 +2737,15 @@ def apply_capture(
     capture or a database that moved since the approval is planned again, never
     applied from an old preview. Pages the database already holds get a
     ``NO_CHANGES`` mark.
+
+    STORE-GUARD: refused before reading the capture unless the stores are the
+    deployment's mounted ones; after the last page every object the capture's
+    rows name is read back, and a missing or different one fails the import
+    (``STORED_FILES_MISSING``, with the counts) although its pages committed.
     """
     import os
 
+    require_stores()
     approved = (approved_plan_sha256 or "").strip().lower()
     capture = load_capture(Path(path), verify_all_bytes=True)
     plan = build_plan(capture)
@@ -2554,6 +2776,31 @@ def apply_capture(
         from app.legacy_import.onenote_coverage import record_capture_marks
 
         record_capture_marks(capture, untouched, actor=actor, reason="apply_capture: already held")
+    readback = verify(capture, check_bytes=True)
+    storage = storage_counts(readback)
+    report.stored_checked = storage["stored_checked"]
+    if storage_failing(storage):
+        logger.error(
+            "onenote import read-back failed: %s missing=%d mismatch=%d checked=%d",
+            STORED_FILES_MISSING,
+            storage["stored_missing"],
+            storage["stored_mismatch"],
+            storage["stored_checked"],
+        )
+        failed = dict.fromkeys(readback["storage_failed_pages"], "FAILED")
+        if failed:
+            from app.legacy_import.onenote_coverage import record_capture_marks
+
+            record_capture_marks(capture, failed, actor=actor, reason="apply_capture: read-back")
+        raise CaptureStorageError(
+            STORED_FILES_REFUSED.format(
+                missing=storage["stored_missing"],
+                mismatch=storage["stored_mismatch"],
+                checked=storage["stored_checked"],
+            ),
+            code=STORED_FILES_MISSING,
+            counts=storage,
+        )
     return report
 
 

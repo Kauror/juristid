@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import datetime as dt
 import inspect
+import logging
 import os
 import re
 from collections.abc import Callable, Iterable
@@ -65,6 +66,8 @@ from app.legacy_import.sync_requests_models import (
     SyncRequestLane,
     SyncRequestStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 #: A PENDING request nobody claimed for this long is marked EXPIRED.
 PENDING_EXPIRES_AFTER = dt.timedelta(hours=2)
@@ -141,6 +144,18 @@ FAILURE_REASONS: dict[str, str] = {
     "PLAN_CHANGED": "Impordiplaan oli pärast kontrolli muutunud; midagi ei imporditud.",
     "CAPTURE_ERROR": "Kogumit ei saanud lugeda või see ei läbinud kontrolli.",
     "IMPORT_FAILED": "Import katkes; juba kirjutatud lehed jäid, katkenud leht võeti tagasi.",
+    # STORE-GUARD: the import's stores and the read-back of what they hold.
+    "STORAGE_MISSING": (
+        "Impordi talletuskausta (tõendid või OneNote'i lehed) polnud; midagi ei kirjutatud."
+    ),
+    "STORAGE_NOT_WRITABLE": "Impordi talletuskaust polnud kirjutatav; midagi ei kirjutatud.",
+    "STORAGE_NOT_PERSISTENT": (
+        "Impordi talletuskaust polnud serveri püsiv andmeala (ühendamata konteineri kaust); "
+        "midagi ei kirjutatud."
+    ),
+    "STORED_FILES_MISSING": (
+        "Talletatud failid puuduvad või nende räsi ei klapi; import pole täielik."
+    ),
     # LS2-D: the runner's own refusals.
     "MODE_CHANGED": (
         "Režiim muutus pärast taotlemist; taotlust ei käivitatud. "
@@ -372,6 +387,8 @@ class RequestView:
     counts: dict[str, int]
     #: A PENDING request's honest wait: no runner seen, a silent one, or a host problem.
     waiting_note: str = ""
+    #: STORE-GUARD: the stores' read-back when it found a missing or different object.
+    storage: dict[str, int] = field(default_factory=dict)
 
 
 def _tone(status: str, stale: bool) -> str:
@@ -400,6 +417,7 @@ def request_view(
     )
     stale = expires is not None and moment > expires
     result = item.result if isinstance(item.result, dict) else {}
+    storage = int_counts(result.get("storage"))
     label = "Aegunud (ootab märkimist)" if stale else SyncRequestStatus(item.status).label
     waiting = ""
     if item.status == SyncRequestStatus.PENDING and not stale:
@@ -417,6 +435,7 @@ def request_view(
         expires_at=expires,
         counts=int_counts(result.get("counts")),
         waiting_note=waiting,
+        storage=storage if stored_files_failing(storage) else {},
     )
 
 
@@ -1884,7 +1903,13 @@ def _run_lovable(
 
 #: Exceptions whose messages are fixed sentences written in this code base (no
 #: value, no path, no credential): their message may be kept as a diagnostic.
-_FIXED_MESSAGE_ERRORS = ("SourceError", "SyncRefused", "SyncRequestRefused")
+_FIXED_MESSAGE_ERRORS = (
+    "SourceError",
+    "SyncRefused",
+    "SyncRequestRefused",
+    # STORE-GUARD: a store's name and counts, never a path or a key.
+    "CaptureStorageError",
+)
 
 
 def diagnostics(error: BaseException) -> dict[str, Any]:
@@ -1919,13 +1944,32 @@ def capture_check_result(check: Any) -> dict[str, Any]:
     ok = _attr(check, "ok", "verified", default=data.get("ok", data.get("verified")))
     verified = bool(ok) and problem_count == 0 and bool(_SHA256.fullmatch(plan))
     counts = int_counts(data.get("summary")) or int_counts(data.get("counts")) or int_counts(data)
-    return {
-        "verified": verified,
+    # STORE-GUARD: what the check read back from the stores. A missing or
+    # different object fails the check whatever the check itself said.
+    storage = int_counts(_attr(check, "storage", default=None) or data.get("storage"))
+    out: dict[str, Any] = {
+        "verified": verified and not stored_files_failing(storage),
         "plan_sha256": plan if _SHA256.fullmatch(plan) else "",
         "manifest_sha256": manifest if _SHA256.fullmatch(manifest) else "",
         "problems": problem_count,
         "counts": counts,
     }
+    if storage:
+        out["storage"] = storage
+    return out
+
+
+def stored_files_failing(storage: dict[str, int]) -> bool:
+    return bool(storage.get("stored_missing") or storage.get("stored_mismatch"))
+
+
+def _not_verified_code(check: dict[str, Any]) -> str:
+    """``STORED_FILES_MISSING`` when the stores lost bytes, else ``NOT_VERIFIED``."""
+    return (
+        "STORED_FILES_MISSING"
+        if stored_files_failing(check.get("storage") or {})
+        else "NOT_VERIFIED"
+    )
 
 
 def _capture_path(item: DataSyncRequest, root: str | None) -> Path | None:
@@ -1960,10 +2004,11 @@ def _run_onenote(
         return _finish(item, SyncRequestStatus.FAILED, code, diagnostics(error), now=now())
     if item.kind == SyncRequestKind.ONENOTE_VERIFY:
         status = SyncRequestStatus.DONE if check["verified"] else SyncRequestStatus.FAILED
-        return _finish(item, status, "" if check["verified"] else "NOT_VERIFIED", check, now=now())
+        code = "" if check["verified"] else _not_verified_code(check)
+        return _finish(item, status, code, check, now=now())
     # ONENOTE_IMPORT: the capture is checked again, and must still give the approved plan.
     if not check["verified"]:
-        return _finish(item, SyncRequestStatus.REFUSED, "NOT_VERIFIED", check, now=now())
+        return _finish(item, SyncRequestStatus.REFUSED, _not_verified_code(check), check, now=now())
     if check["plan_sha256"] != item.approved_plan_sha256:
         return _finish(item, SyncRequestStatus.REFUSED, "PLAN_CHANGED", check, now=now())
     if not callable(apply):
@@ -1974,9 +2019,18 @@ def _run_onenote(
         )
     except Exception as error:
         code = str(getattr(error, "code", "") or "IMPORT_FAILED")
-        return _finish(
-            item, SyncRequestStatus.FAILED, code, {**check, **diagnostics(error)}, now=now()
+        failed: dict[str, Any] = {**check, **diagnostics(error)}
+        storage = int_counts(getattr(error, "counts", None))
+        if storage:
+            failed["storage"] = storage
+        # STORE-GUARD: a store refused before any write is a refusal, not a failure.
+        status = (
+            SyncRequestStatus.REFUSED
+            if getattr(error, "before_writing", False) is True
+            else SyncRequestStatus.FAILED
         )
+        logger.error("onenote request %s ended %s %s", item.pk, status, code)
+        return _finish(item, status, code, failed, now=now())
     result = {**check, "counts": int_counts(_as_mapping(report)) or check["counts"]}
     return _finish(item, SyncRequestStatus.DONE, "", result, now=now())
 
