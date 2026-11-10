@@ -215,6 +215,9 @@ if [ "$ON_DEMAND" = 1 ]; then
         -e JURISTID_ONENOTE_CAPTURE_ROOT=/capture \
         -e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET" \
         -v "$CAPTURE_SOURCE:/capture:ro" \
+        -v "$APPDATA/evidence:/app/evidence" \
+        -v "$APPDATA/legacy-source:/app/legacy-source" \
+        -v "$APPDATA/derivatives:/app/derivatives" \
         --cpus 1 --memory 2g --pids-limit 256 --log-driver none \
         --entrypoint python "$IMAGE" manage.py data_sync_requests run-next --kind onenote \
         </dev/null || orc_onenote=$?
