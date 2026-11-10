@@ -232,6 +232,12 @@ def test_the_onenote_lane_imports_read_only_and_never_sees_the_credentials(host)
     assert result.returncode == 0, result.stdout + result.stderr
     importer = next(c for c in calls(host) if "run-next --kind onenote" in c)
     assert f"-v {host['capture']}:/capture:ro" in importer
+    # The import writes Documents and page XML: the container must see the same
+    # storage the web serves (compose.yml), or the bytes die with the container
+    # while the rows survive (production, OneNote batch 1, 2026-11-10).
+    appdata = host["appdata"]
+    for store in ("evidence", "legacy-source", "derivatives"):
+        assert f"-v {appdata}/{store}:/app/{store} " in importer, store
     assert "JURISTID_ONENOTE_BACKUP_SET=sets/20261109T000000Z" in importer
     assert not _with_credentials(importer) and "JURISTID_LOVABLE_SYNC" not in importer
     assert containers(host)[-1] == "data_sync_requests poll --kind lovable"
