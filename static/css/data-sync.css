@@ -242,3 +242,9 @@
   font-size: var(--typography-size-meta);
   color: var(--text-secondary);
 }
+
+/* The historical register's import holds (docs/adr/0213 §9.9): one closed
+   disclosure after every operational group, set apart from them. */
+.dsync__history {
+  margin-top: var(--spacing-3);
+}

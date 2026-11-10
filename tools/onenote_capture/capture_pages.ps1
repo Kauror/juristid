@@ -158,6 +158,8 @@ Utf8 (Join-Path $OutDir 'hierarchy-after.xml') (Read-Hierarchy)
 if ($originalPage) {
   try { $app.NavigateTo($originalPage, '', $false); $log.Add([pscustomobject]@{ event = 'restored'; at = [DateTime]::UtcNow.ToString('o') }) }
   catch { $log.Add([pscustomobject]@{ event = 'restore_failed'; at = [DateTime]::UtcNow.ToString('o') }) }
+} else {
+  $log.Add([pscustomobject]@{ event = 'restore_unavailable'; at = [DateTime]::UtcNow.ToString('o') })
 }
 $log.Add([pscustomobject]@{ event = 'end'; at = [DateTime]::UtcNow.ToString('o'); pages = $chosen.Count; files = $captured; bytes = $total; busy_retries = $script:busyRetries })
 Utf8 (Join-Path $OutDir 'run-log.json') ($log | ConvertTo-Json -Depth 3)

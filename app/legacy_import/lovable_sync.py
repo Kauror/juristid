@@ -76,7 +76,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from django.db import DatabaseError, IntegrityError, connection, transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Min, Q
 from django.utils import timezone
 
 from app.legacy_import.lovable_pilot import (
@@ -2634,6 +2634,35 @@ class PendingDifference:
     source: Any = None
     run_id: Any = None
     source_id: str = ""
+    #: The Teema's `LovableSyncState.cohort` (empty for a new topic): the pages
+    #: group by it (`historical_hold`), the engine never reads it here.
+    cohort: str = ""
+
+
+def historical_hold(cohort: str, reason: str, baseline: Any, source: Any) -> bool:
+    """A pending difference that is the historical register's own import hold
+    — a closed ARCHIVE Teema of the history cohort whose field the backfill held,
+    and Lovable has not changed it since the import (C = A) (docs/adr/0213 §9.9)
+    — rather than operational work.
+
+    `_hold_imported` gives every import-held field the reason IMPORT_HELD
+    whatever Lovable says, so the reason alone would hide a real change (Lovable
+    reopening a «lõpetatud» topic): that one, and any other difference on a
+    historical Teema (MATTER_CLOSED, a gone topic), stays operational.
+
+    Presentation only: the pages show these in their own group, after everything
+    else, and leave them out of the operational headline numbers. Nothing about
+    what is pending, applied or resolved depends on it. `historical_hold_q` is
+    the same rule for a query of decisions."""
+    return cohort == HISTORY_COHORT and reason == IMPORT_HELD and _j(baseline) == _j(source)
+
+
+def historical_hold_q() -> Q:
+    """`historical_hold` over `LovableSyncDecision` rows (jsonb equality; two
+    absent values are equal, as in Python)."""
+    return Q(state__cohort=HISTORY_COHORT, reason=IMPORT_HELD) & (
+        Q(source=F("baseline")) | Q(source__isnull=True, baseline__isnull=True)
+    )
 
 
 def latest_reconciled_run() -> LovableSyncRun | None:
@@ -2680,13 +2709,12 @@ def pending_differences(*, visible_to: Any = None) -> list[PendingDifference]:
                 .values_list("pk", flat=True)
             )
         matters = Matter.objects.in_bulk(list(readable))
+        rows = [d for d in rows if d.state.matter_id in readable]
+        settles = _settles(rows)
+        sinces = _pending_sinces(rows, settles, run)
         for d in rows:
-            if d.state.matter_id not in readable:
-                continue
-            settled = LovableSyncDecision.objects.filter(
-                state_id=d.state_id, field=d.field, created_at__gt=d.created_at
-            ).filter(Q(outcome__in=SETTLING_OUTCOMES) | Q(reason__startswith=RESOLVED_PREFIX))
-            if settled.exists():
+            key = (d.state_id, d.field)
+            if any(at > d.created_at for at in settles.get(key, ())):
                 continue
             out.append(
                 PendingDifference(
@@ -2695,7 +2723,7 @@ def pending_differences(*, visible_to: Any = None) -> list[PendingDifference]:
                     outcome=d.outcome,
                     reason=d.reason,
                     reference=d.state.reference,
-                    since=_pending_since(d),
+                    since=sinces.get(key),
                     policy=policy_of(d.field if d.field != "*" else "source_missing").policy,
                     matter=matters.get(d.state.matter_id),
                     baseline=d.baseline,
@@ -2703,6 +2731,7 @@ def pending_differences(*, visible_to: Any = None) -> list[PendingDifference]:
                     source=d.source,
                     run_id=run.pk,
                     source_id=str(d.state.source_id),
+                    cohort=d.state.cohort,
                 )
             )
     for row in LovableSyncNewTopic.objects.filter(
@@ -2729,32 +2758,78 @@ def pending_differences(*, visible_to: Any = None) -> list[PendingDifference]:
     return out
 
 
-def _pending_since(decision: LovableSyncDecision) -> dt.datetime | None:
-    """When this difference — this field, this source value — first appeared,
-    after the field last settled."""
-    settled = (
-        LovableSyncDecision.objects.filter(state_id=decision.state_id, field=decision.field)
+def _settles(rows: list[LovableSyncDecision]) -> dict[tuple[Any, str], list[dt.datetime]]:
+    """When each pending (state, field) settled — written, converged or decided —
+    in one query whatever the number of differences (settles are rare)."""
+    if not rows:
+        return {}
+    pairs = {(d.state_id, d.field) for d in rows}
+    out: dict[tuple[Any, str], list[dt.datetime]] = {}
+    for state_id, name, at in (
+        LovableSyncDecision.objects.filter(
+            state_id__in={d.state_id for d in rows}, field__in={d.field for d in rows}
+        )
         .filter(Q(outcome__in=SETTLING_OUTCOMES) | Q(reason__startswith=RESOLVED_PREFIX))
-        .filter(created_at__lt=decision.created_at)
-        .order_by("-created_at")
-        .values_list("created_at", flat=True)
-        .first()
-    )
-    earlier = LovableSyncDecision.objects.filter(
-        state_id=decision.state_id,
-        field=decision.field,
-        outcome__in=PENDING_OUTCOMES,
-        run__trigger__in=(SyncTrigger.SCHEDULED, SyncTrigger.MANUAL),
-    ).select_related("run")
-    if settled is not None:
-        earlier = earlier.filter(created_at__gt=settled)
-    first = None
-    wanted = _j(decision.source)
-    for d in earlier.order_by("created_at"):
-        if _j(d.source) == wanted:
-            first = d.run.started_at
-            break
-    return first or decision.run.started_at
+        .values_list("state_id", "field", "created_at")
+    ):
+        if (state_id, name) in pairs:
+            out.setdefault((state_id, name), []).append(at)
+    return out
+
+
+def _pending_sinces(
+    rows: list[LovableSyncDecision],
+    settles: dict[tuple[Any, str], list[dt.datetime]],
+    run: LovableSyncRun,
+) -> dict[tuple[Any, str], dt.datetime | None]:
+    """When each difference — this field, this source value — first appeared,
+    after the field last settled: the first scheduled or manual night that held
+    it pending with the same source value, else tonight's run.
+
+    One query for every row at once (the distinct source values each pair has
+    had since it last settled, with the first night of each), so its rows grow
+    neither with the nights nor with the number of differences."""
+    if not rows:
+        return {}
+    after: dict[tuple[Any, str], dt.datetime | None] = {}
+    for d in rows:
+        key = (d.state_id, d.field)
+        before = [at for at in settles.get(key, ()) if at < d.created_at]
+        after[key] = max(before) if before else None
+    by_moment: dict[tuple[str, dt.datetime | None], list[Any]] = {}
+    for (state_id, name), moment in after.items():
+        by_moment.setdefault((name, moment), []).append(state_id)
+    condition = Q()
+    for (name, moment), states in by_moment.items():
+        part = Q(field=name, state_id__in=states)
+        if moment is not None:
+            part &= Q(created_at__gt=moment)
+        condition |= part
+    firsts: dict[tuple[Any, str], list[tuple[str, dt.datetime, dt.datetime]]] = {}
+    for found in (
+        LovableSyncDecision.objects.filter(condition)
+        .filter(
+            outcome__in=PENDING_OUTCOMES,
+            run__trigger__in=(SyncTrigger.SCHEDULED, SyncTrigger.MANUAL),
+        )
+        .values("state_id", "field", "source")
+        .annotate(first=Min("created_at"), started=Min("run__started_at"))
+        .order_by()
+    ):
+        key = (found["state_id"], found["field"])
+        if key in after:
+            firsts.setdefault(key, []).append(
+                (_j(found["source"]), found["first"], found["started"])
+            )
+    out: dict[tuple[Any, str], dt.datetime | None] = {}
+    for d in rows:
+        key = (d.state_id, d.field)
+        wanted = _j(d.source)
+        matching = sorted(
+            (first, started) for value, first, started in firsts.get(key, ()) if value == wanted
+        )
+        out[key] = matching[0][1] if matching else run.started_at
+    return out
 
 
 def replay(

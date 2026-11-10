@@ -10,7 +10,10 @@
   teen / ootan / jälgin — the lawyer does that on the Teema. The rest follow by
   priority group, oldest first (`sync_admin.PRIORITY_GROUPS`). Named only for
   a Teema the reader may open (`Matter.objects.visible_to`); the others are
-  counted, never named.
+  counted, never named. The historical register's own import holds
+  (`sync_admin.HistoryGroup`) come last, in one closed disclosure, summarised by
+  field and reason: never in a card, an operational group or the count above
+  (docs/adr/0213 §9, amendment 2026-11-10).
 {% endcomment %}
 
 {% block haldus_content %}
@@ -83,10 +86,62 @@
         </nav>
       {% endif %}
     {% elif not diff.step_cards and not diff.hidden %}
-      <p>Ootel erinevusi pole.</p>
+      <p>{% if diff.history %}Operatiivseid ootel erinevusi pole.{% else %}Ootel erinevusi pole.{% endif %}</p>
     {% endif %}
     {% if diff.hidden %}
       <p class="acctnote">{{ diff.hidden }} erinevus{{ diff.hidden|pluralize:"t" }} teemadel, mida sinu valitud isik ei näe; nende sisu siin ei näidata (sh uued Lovable'i teemad, millel Juristides veel teemat pole). Vali kasutaja, kellel on teemadele ligipääs, et neid näha ja otsustada.</p>
+    {% endif %}
+
+    {% if diff.history %}
+      {% with h=diff.history %}
+      <details class="accordion dsync__history" id="ajalooline"{% if h.opened %} open{% endif %}>
+        <summary class="accordion__head">
+          <span class="accordion__caret" aria-hidden="true"></span>
+          <h3 class="accordion__title">Ajalooline register: impordil ootele jäetud väljad ({{ h.total }})</h3>
+          <span class="accordion__summary">{{ h.teemad }} lõpetatud arhiiviteema{{ h.teemad|pluralize:",t" }}</span>
+        </summary>
+        <div class="accordion__body">
+          <p class="acctnote">Ajaloolise registri teemad on Juristides lõpetatud. Import jättis need väljad ootele, sest Lovable'i väärtusel pole Juristides vastet (näiteks hetkeseis «lõpetatud»), ja Lovable pole neid pärast importi muutnud. Kui Lovable sellist välja muudab, on see ülal operatiivsete erinevuste hulgas. Need ei ole operatiivne töö ega lähe ülaltoodud arvude sisse; teemat ennast see ei muuda.</p>
+          <div class="accttable">
+            <table class="data-table dsync__table">
+              <thead><tr><th scope="col">Väli</th><th scope="col">Miks ootab</th><th scope="col">Välju</th></tr></thead>
+              <tbody>
+                {% for item in h.summary %}
+                  <tr><td>{{ item.field_label }}</td><td>{{ item.explanation|default:"—" }}</td><td>{{ item.count }}</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="accttable">
+            <table class="data-table dsync__table">
+              <thead>
+                <tr><th scope="col">Teema</th><th scope="col">Väli</th><th scope="col">Viimati aktsepteeritud</th><th scope="col">Juristides</th><th scope="col">Lovable'is</th><th scope="col"><span class="visually-hidden">Toiming</span></th></tr>
+              </thead>
+              <tbody>
+                {% for row in h.rows %}
+                  <tr>
+                    <td class="dsync__nowrap"><a href="{% url 'matters:matter_detail' row.matter.pk %}">{{ row.reference }}</a></td>
+                    <td>{{ row.field_label }}</td>
+                    <td>{{ row.accepted }}</td>
+                    <td>{{ row.juristid }}</td>
+                    <td>{{ row.source }}</td>
+                    <td>{% if row.resolvable %}<a class="button button--secondary button--tiny" href="{% url 'haldus:data_sync_resolve' %}?viide={{ row.reference|urlencode }}&amp;vali={{ row.field|urlencode }}">Otsusta…</a>{% endif %}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% if h.pages > 1 %}
+            <nav class="pagination" aria-label="Ajaloolise registri lehed">
+              {% if h.page > 1 %}<a class="pagination__step" rel="prev" href="?leht={{ diff.page }}&amp;ajalugu={{ h.page|add:'-1' }}#ajalooline"><span aria-hidden="true">‹</span><span class="visually-hidden">Eelmine leht</span></a>{% endif %}
+              <span class="pagination__status">Leht {{ h.page }} / {{ h.pages }} ({{ h.total }} kokku)</span>
+              {% if h.page < h.pages %}<a class="pagination__step" rel="next" href="?leht={{ diff.page }}&amp;ajalugu={{ h.page|add:'1' }}#ajalooline"><span aria-hidden="true">›</span><span class="visually-hidden">Järgmine leht</span></a>{% endif %}
+            </nav>
+          {% endif %}
+          {% if h.hidden %}<p class="acctnote">Lisaks {{ h.hidden }} teemadel, mida sinu valitud isik ei näe; nende sisu siin ei näidata.</p>{% endif %}
+        </div>
+      </details>
+      {% endwith %}
     {% endif %}
   </section>
 {% endblock %}

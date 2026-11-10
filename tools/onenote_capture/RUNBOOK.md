@@ -58,7 +58,9 @@ operational coverage is finished. The request file is still needed: its
    the source; nothing checks the server's time (ADR 0204 §6, §8.2).
 2. Do not edit pages while the capture runs. The capture opens pages
    (`NavigateTo`) only when placeholders remain; you will see OneNote move.
-3. Leave the page you are on; the script returns to it at the end.
+3. Note the page you are on: the script cannot read it through PowerShell
+   (`run-log.json` says `restore_unavailable`), so after a run that navigated
+   OneNote stays on the last captured page. Go back by hand.
 
 ## 3. Capture only those pages
 

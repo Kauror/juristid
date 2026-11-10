@@ -225,6 +225,10 @@ def susteem(request: HttpRequest) -> HttpResponse:
     )
 
 
+#: Haldus → Lovable lists at most this many of the run's changes by name.
+LOVABLE_ROWS_SHOWN = 200
+
+
 @never_cache
 @require_http_methods(["GET"])
 def lovable(request: HttpRequest) -> HttpResponse:
@@ -252,15 +256,26 @@ def lovable(request: HttpRequest) -> HttpResponse:
     latest = LovableSyncRun.objects.order_by("-started_at").first()
     pending: list[dict[str, Any]] = []
     hidden = 0
+    historical = 0
+    more = 0
     if latest is not None:
-        visible = set(Matter.objects.visible_to(request.user).values_list("pk", flat=True))
-        decisions = latest.decisions.exclude(
+        from app.legacy_import.lovable_sync import historical_hold_q
+
+        visible = Matter.objects.visible_to(request.user).values("pk")
+        changed = latest.decisions.exclude(
             outcome__in=[SyncOutcome.UNCHANGED, SyncOutcome.ALREADY_CONVERGED]
-        ).select_related("state", "state__matter")
+        )
+        # The historical register's import holds are counted, not listed
+        # (docs/adr/0213 §9.9); the rest is listed up to a cap, in counts beyond it.
+        historical = changed.filter(historical_hold_q()).count()
+        changed = changed.exclude(historical_hold_q())
+        hidden = changed.exclude(state__matter_id__in=visible).count()
+        shown = changed.filter(state__matter_id__in=visible)
+        more = max(0, shown.count() - LOVABLE_ROWS_SHOWN)
+        decisions = shown.select_related("state", "state__matter").order_by(
+            "state__reference", "field"
+        )[:LOVABLE_ROWS_SHOWN]
         for decision in decisions:
-            if decision.state.matter_id not in visible:
-                hidden += 1
-                continue
             pending.append(
                 {
                     "matter": decision.state.matter,
@@ -289,6 +304,8 @@ def lovable(request: HttpRequest) -> HttpResponse:
             stale_hours=int(STALE_AFTER.total_seconds() // 3600),
             pending=pending,
             hidden=hidden,
+            historical=historical,
+            more=more,
         ),
     )
 

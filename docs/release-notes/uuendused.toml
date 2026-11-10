@@ -10,17 +10,20 @@
 [[day]]
 date = 2026-11-10
 basis = "deployment"
-prs = [608]
+prs = [608, 610]
 # 10.11 väljalase r52 (#608, ADR 0213; legacy_import 0025–0030 — ainult lisanduvad tabelid, päästikud ja piirangud):
 # Lovable'i registri inventuur, ajalooliste teemade import, laiendatud öine sünkroonimine, «Andmete sünkroonimine»
 # ja OneNote'i järkjärguline hõive. Väljalase ise ühtegi teemat ei muuda ja sünkroonimine jääb võrdlusrežiimi;
 # ajaloo import, automaatne rakendamine ja Halduse käivitaja on eraldi, omaniku kinnitatud sammud.
 # Kui väljalase ei jõua tootmisse 10.11, liigub see kirje väljalaske päevale.
+# 10.11 väljalase r53 (#610, ADR 0213 §9.9; migratsioonita, ainult esitus): ajaloolise registri impordil ootele jäetud väljad eraldi rühmas.
+# Kui r53 ei jõua tootmisse 10.11, liigub selle rida väljalaske päevale.
 changes = [
   "Haldus → «Andmete sünkroonimine» näitab Lovable'i sünkroonimise režiimi, viimaseid käivitusi ja seda, kas serveri käivitaja töötab. «Vaata erinevusi» toob esimesena välja teemad, mille järgmine samm Lovable'is muutus, koos teema praeguse sammuga ja sellega, kui kaua erinevus on oodanud; vabateksti põhjal tegevust ise ümber ei liigitata.",
   "Ajaloolise OneNote'i lehe koopia näitab lehe viimast hõivet: näha on, mitmes versioon see on ja millal see salvestati, mis võrreldes eelmisega muutus (kus seda saab kindlalt öelda) ning millised failid lisandusid või said uue versiooni. Varasemad versioonid avanevad ühe klõpsuga ja midagi varasemat üle ei kirjutata.",
   "Halduses on uus leht «OneNote'i ootel kirjed»: seal näeb, miks OneNote'i fail või hilisem lugemine ootab, ja haldur saab iga kirje kohta teha ühe põhjendatud otsuse — siduda jagatud lehe faili ühe teemaga, võtta uue lugemise vastu järgmise versioonina, lükata selle tagasi või jätta ootele.",
   "Suletud arhiiviteema, mille lõpetamise põhjust allikas ei ole, ütleb seda nüüd teates: «Lõpetamise põhjus pole allikas kirjas.»",
+  "«Vaata erinevusi» näitab ajaloolise registri impordil ootele jäetud välju, mida Lovable pole muutnud, eraldi suletud rühmas lehe lõpus; ülevaatust ootavate erinevuste arvud loevad ainult operatiivset tööd.",
 ]
 
 [[day]]
