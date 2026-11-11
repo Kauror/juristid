@@ -97,7 +97,7 @@ class Migration(migrations.Migration):
                 ],
             },
         ),
-            migrations.AlterField(
+        migrations.AlterField(
             model_name="lovablesyncmembership",
             name="basis",
             field=models.CharField(
@@ -105,9 +105,12 @@ class Migration(migrations.Migration):
                     ("ENROLMENT", "Kanti kohorti seisu loomisel"),
                     ("DELETION", "Kinnitati kustutamisel kohordi päritolu järgi"),
                     ("NEW_TOPIC", "Lisati kohorti uue Lovable'i teemana"),
-                    ("MOVED", "Liikus ajaloolisest registrist operatiivsesse (Lovable avas teema)"),
+                    (
+                        "MOVED",
+                        "Liikus ajaloolisest registrist operatiivsesse (Lovable avas teema)",
+                    ),
                 ],
                 max_length=16,
             ),
         ),
-]
+    ]

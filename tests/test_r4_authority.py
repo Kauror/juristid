@@ -1016,7 +1016,7 @@ def _history(reference: dict[str, Any], rows: dict[str, dict[str, Any]]) -> None
     topics = [
         _register_topic(
             ref,
-            _row(ref, operatiivne_ulatus=False, **values),
+            _row(ref, **{"operatiivne_ulatus": False, "hetkeseis": "jõustunud", **values}),
             status_raw="jõustunud",
             stage="in_force",
             lifecycle="INACTIVE",
@@ -1296,3 +1296,220 @@ def test_history_owners_who_are_not_users_are_one_grouped_class(reference):
     assert LOVABLE_REASONS[lovable_sync.HISTORY_OWNER_UNRESOLVED]
     assert _matter("2026_106").owner == reference["world"]["jaan"]
     assert not _matter("2026_106").is_open
+
+
+# -- round 4c ------------------------------------------------------------------------
+
+
+def test_a_request_moved_onto_a_day_lovable_says_was_declined_ends_again(reference):
+    """Clone defect (2026_238): «ei saatnud» for 10.11; a lawyer set a new request;
+    the restore must end it as Lovable says, never leave it current."""
+    from app.matters.response_deadlines import change_response_deadline
+
+    source = reference["source"]
+    source.edit("2026_238", valja="ei saatnud")
+    _run(reference, at=_at(0))
+    matter = _matter("2026_238")
+    assert matter.response_deadline is None
+    change_response_deadline(matter=matter, deadline=dt.date(2099, 12, 15), actor=None)
+    run = _run(reference, at=_at(1))
+    decision = _decisions(run, "2026_238")["opinion_deadline"]
+    assert (decision.outcome, decision.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    matter.refresh_from_db()
+    assert matter.response_deadline is None
+    assert (
+        MatterResponseDeadline.objects.filter(matter=matter, outcome="NOT_ANSWERING").count() == 2
+    )
+    again = _run(reference, at=_at(2))
+    assert not again.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
+
+
+def test_a_history_teema_with_an_open_label_is_converged_until_lovable_changes(reference):
+    """P1: the backfill closed «Riigikogus» archive topics; that is no reopening."""
+    from app.matters.enums import RecordMode
+
+    _history(reference, {"2026_107": {"hetkeseis": "Riigikogus"}})
+    for night in (0, 1):
+        run = _run(reference, at=_at(night))
+        assert run.status == SyncRunStatus.SUCCEEDED, run.error
+        assert not run.decisions.filter(
+            state__reference="2026_107", outcome=SyncOutcome.REVIEW_REQUIRED
+        ).exists(), night
+        matter = _matter("2026_107")
+        assert (matter.is_open, matter.record_mode) == (False, RecordMode.ARCHIVE)
+    # Its scope becoming operational is a real change: it reopens.
+    reference["source"].edit("2026_107", operatiivne_ulatus=True)
+    run = _run(reference, at=_at(2))
+    assert _decisions(run, "2026_107")["stage"].outcome == SyncOutcome.APPLIED
+    assert _matter("2026_107").is_open
+
+
+def test_the_blank_sentence_drafting_step_follows_the_readers_predicate(reference):
+    """P2-2: a blank sentence is the drafting step only for an open, unsent,
+    non-initiative request whose day has not passed; a held outcome holds it."""
+    source = reference["source"]
+    source.edit("2026_253", jargmiseks="", koja_ettepanek=True)
+    _run(reference, at=_at(0))
+    assert _open_step("2026_253") is None  # an initiative: no drafting step
+    source.edit("2026_232", jargmiseks="", valja="ei saatnud", valja_kuupaev="2026-11-04")
+    run = _run(reference, at=_at(1))
+    step = _decisions(run, "2026_232")["next_action_text"]
+    assert (step.outcome, step.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.OUTCOME_HELD,
+    )
+
+
+def test_a_persons_own_commencement_is_never_reconciled(reference):
+    """P2-3: only commencements from Lovable (the import's provenance or the
+    sync's `source_text` mark) are compared; a person's own stays."""
+    from app.intelligence.models import MatterEffectiveDate
+    from app.intelligence.services import add_effective_date
+
+    matter = _matter("2026_253")
+    own = add_effective_date(
+        matter=matter,
+        kind="KNOWN_DATE",
+        date_value=dt.date(2030, 1, 1),
+        period_end=dt.date(2030, 1, 1),
+        actor=reference["world"]["mari"],
+    )
+    _commencements(reference["source"], "2026_253", ("Kindla kuupäevaga", "2027-01-01", "§ 2"))
+    run = _run(reference, at=_at(0))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert MatterEffectiveDate.objects.get(pk=own.pk).status == "ACTIVE"
+    added = lovable_sync.lovable_commencements(matter.pk)
+    assert added == [["MatterImportantDate", "PLANNED_COMMENCEMENT", "2027-01-01", "§ 2"]]
+
+
+def test_a_changed_scope_note_is_written_and_a_duplicate_row_added_once(reference):
+    """P3-1: the note is part of the value; P3-2: a row stated twice is one."""
+    source = reference["source"]
+    _commencements(
+        source,
+        "2026_253",
+        ("Kindla kuupäevaga", "2027-01-01", "§ 1"),
+        ("Kindla kuupäevaga", "2027-01-01", "§ 1"),
+    )
+    _run(reference, at=_at(0))
+    matter = _matter("2026_253")
+    assert lovable_sync.lovable_commencements(matter.pk) == [
+        ["MatterImportantDate", "PLANNED_COMMENCEMENT", "2027-01-01", "§ 1"]
+    ]
+    _commencements(source, "2026_253", ("Kindla kuupäevaga", "2027-01-01", "§ 1–3"))
+    run = _run(reference, at=_at(1))
+    assert _decisions(run, "2026_253")["commencements"].outcome == SyncOutcome.APPLIED
+    assert lovable_sync.lovable_commencements(matter.pk) == [
+        ["MatterImportantDate", "PLANNED_COMMENCEMENT", "2027-01-01", "§ 1–3"]
+    ]
+    again = _run(reference, at=_at(2))
+    assert not again.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
+
+
+def test_restores_have_their_own_breaker_and_never_stop_source_changes(reference, monkeypatch):
+    """P2-4: over `MAX_RESTORED_MATTERS` the restores wait; the source change is written."""
+    from app.matters.services import set_matter_title
+
+    _run(reference, at=_at(0))
+    monkeypatch.setattr(lovable_sync, "MAX_RESTORED_MATTERS", 1)
+    for ref in ("2026_232", "2026_238"):
+        set_matter_title(matter=_matter(ref), value="Juristi oma", actor=None)
+    reference["source"].edit("2026_253", teema="Uus pealkiri Lovableist")
+    run = _run(reference, at=_at(1))
+    assert (run.status, run.error) == (SyncRunStatus.REVIEW_ONLY, lovable_sync.RESTORE_BREAKER)
+    assert (run.counts["changed_source"], run.counts["changed_restores"]) == (1, 2)
+    assert run.counts["restore_limit"] == 1
+    assert _matter("2026_253").title == "Uus pealkiri Lovableist"
+    assert _matter("2026_232").title == "Juristi oma"
+    assert _decisions(run, "2026_232")["title"].outcome == SyncOutcome.ELIGIBLE
+    assert LOVABLE_REASONS[lovable_sync.RESTORE_BREAKER]
+    assert any("taastamisi: 2/1" in line for line in lovable_sync.summary_lines(run))
+
+
+def test_closure_reason_change_refuses_a_tombstone_and_forgets_the_old_successor(
+    reference, monkeypatch
+):
+    """P3-3."""
+    from django.utils import timezone
+
+    from app.matters import services
+
+    _lovable_now(reference["source"])
+    _run(reference, at=_at(0))
+    _run(reference, at=_at(24))
+    m140 = _matter("2026_140")
+    forgotten: list[Any] = []
+    monkeypatch.setattr(services, "forget_continuation_history", forgotten.append)
+    services.change_closure_from_source(
+        matter=m140, disposition=Disposition.MONITORING_STOPPED, reason="test"
+    )
+    assert _matter("2026_259").pk in {getattr(m, "pk", None) for m in forgotten}
+    Matter.all_objects.filter(pk=m140.pk).update(deleted_at=timezone.now())
+    with pytest.raises(Matter.DoesNotExist):
+        services.change_closure_from_source(
+            matter=m140, disposition=Disposition.COMPLETED, reason="test"
+        )
+
+
+def test_a_restored_closure_a_link_and_a_continuation(reference):
+    """P3-7: a lawyer reopens a Teema Lovable continues elsewhere (re-closed with
+    its successor), and a newer local OneNote link gives way to Lovable's."""
+    from app.legacy_import.lovable_sync import _append_link_observation
+    from app.matters.services import reopen_matter_into_stage
+    from app.workflow.models import StageVocabulary
+
+    _lovable_now(reference["source"])
+    _run(reference, at=_at(0))
+    _run(reference, at=_at(24))
+    reopen_matter_into_stage(
+        matter=_matter("2026_140"), stage=StageVocabulary.objects.get(key="parliament")
+    )
+    run_obj = LovableSyncDecision.objects.first().run
+    _append_link_observation(
+        matter=_matter("2026_253"),
+        url="https://example.invalid/kohalik",
+        run=run_obj,
+        snapshot={"sha256": "0" * 64},
+        provenance={},
+    )
+    run = _run(reference, at=_at(48))
+    stage = _decisions(run, "2026_140")["stage"]
+    assert (stage.outcome, stage.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    m140 = _matter("2026_140")
+    assert (m140.is_open, m140.superseded_by_id) == (False, _matter("2026_259").pk)
+    link = _decisions(run, "2026_253")["onenote_link"]
+    assert (link.outcome, link.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert lovable_sync.current_values(_matter("2026_253"))["onenote_link"] != (
+        "https://example.invalid/kohalik"
+    )
+
+
+def test_an_initiative_with_no_recorded_track_is_held_not_guessed(reference):
+    """P3-7: Juristid says Chamber initiative with no recorded earlier track."""
+    Matter.all_objects.filter(pk=_matter("2026_253").pk).update(track=Track.KODA_INITIATIVE)
+    run = _run(reference, at=_at(0))
+    koda = _decisions(run, "2026_253")["koda_initiative"]
+    assert (koda.outcome, koda.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.TRACK_NOT_STATED,
+    )
+
+
+def test_a_moved_history_teema_deleted_afterwards_keeps_the_cohorts_whole(reference):
+    """P3-7: moved to the register, then permanently deleted: both cohorts still add up."""
+    from app.legacy_import.lovable_pilot import HISTORY_COHORT
+    from app.matters.deletion import delete_matter
+
+    _history(reference, {"2026_108": {}})
+    _run(reference, at=_at(0))
+    reference["source"].edit("2026_108", hetkeseis="Riigikogus", operatiivne_ulatus=True)
+    _run(reference, at=_at(1))
+    assert LovableSyncState.objects.get(reference="2026_108").cohort == REGISTER_COHORT
+    sizes = lovable_sync.expected_cohorts()
+    delete_matter(matter=_matter("2026_108"), actor=None)
+    after = lovable_sync.expected_cohorts()
+    assert after[REGISTER_COHORT] == sizes[REGISTER_COHORT] - 1
+    assert after[HISTORY_COHORT] == sizes[HISTORY_COHORT]
+    del reference["source"].rows[_id("2026_108")]
+    run = _run(reference, at=_at(2))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error

@@ -95,6 +95,14 @@ LOVABLE_REASONS = {
     ),
     "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
     "RESTORED_SOURCE_VALUE": "Lovable'i väärtus taastati; Juristides oli seda muudetud.",
+    "ANSWERED_IN_JURISTID_NOT_IN_LOVABLE": (
+        "Arvamuse küsimine on Juristides vastatud või lõpetatud, kuid Lovable pole saatmist "
+        "veel kirja pannud; uut küsimist ei looda."
+    ),
+    "RESTORE_BREAKER": (
+        "Ühe öö taastamisi oli üle piiri: Lovable'i muudatused kirjutati, kohalike muudatuste "
+        "taastamised ootavad."
+    ),
     "HISTORY_OWNER_UNRESOLVED": (
         "Ajaloolise teema vastutaja nimi ei vasta ühelegi Juristide kasutajale "
         "(endine töötaja); nimi jääb Lovable'i allikasse."

@@ -5847,8 +5847,12 @@ def change_closure_from_source(
         if successor.deleted_at is not None:
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
         _refuse_continuation_cycle(locked, successor, rows)
+    if locked.deleted_at is not None:
+        # A tombstone takes no closure, as `close_matter` refuses one.
+        raise Matter.DoesNotExist(matter.pk)
     if locked.is_open:
         raise DomainError("Avatud teema lõpetamise põhjust ei muudeta; teema tuleb sulgeda.")
+    old_successor = locked.superseded_by
     before = {
         "disposition": locked.disposition,
         "successor": str(locked.superseded_by_id) if locked.superseded_by_id else None,
@@ -5857,8 +5861,13 @@ def change_closure_from_source(
     locked.disposition_reason = reason
     locked.superseded_by = successor
     locked.save(update_fields=["disposition", "disposition_reason", "superseded_by", "updated_at"])
+    # Every Matter whose earlier history this changes forgets what it memoised:
+    # the new successor gained a stage, an old one lost it (as `close_matter`
+    # and `reopen_matter` do).
     if successor is not None:
         forget_continuation_history(successor)
+    if old_successor is not None and (successor is None or old_successor.pk != successor.pk):
+        forget_continuation_history(old_successor)
     record_change_event(
         event_type=ChangeEventType.MATTER_CLOSURE_REASON_CHANGED,
         matter=locked,

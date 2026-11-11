@@ -939,19 +939,24 @@ def test_a_historical_cohort_is_enrollable_and_follows_lovable_closed(register):
 # ---------------------------------------------------------------------------
 
 
-def test_a_locally_ended_request_gives_way_to_lovables_current_request(register):
-    """Owner decision 11.11: Lovable's open request is Juristid's current one. The
-    locally ended request stays in the history; the request is set again."""
+def test_a_locally_ended_request_is_never_a_second_consultation(register):
+    """Answered or declined in Juristid while Lovable's `valja` is still blank: no
+    new request episode — a visible technical hold until Lovable records it."""
     from app.matters.response_deadlines import resolve_response_deadline
 
     matter = _matter("2026_253")
     resolve_response_deadline(matter=matter, outcome="NOT_ANSWERING", actor=None)
+    history = MatterResponseDeadline.objects.filter(matter=matter).count()
     register["source"].edit("2026_253", arvamuse_tahtaeg="2099-04-15")
     run = _run(register, at=_at(0))
-    assert _decisions(run, "2026_253")["opinion_deadline"].outcome == SyncOutcome.APPLIED
+    decision = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (decision.outcome, decision.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.ANSWERED_IN_JURISTID,
+    )
     matter.refresh_from_db()
-    assert matter.response_deadline == dt.date(2099, 4, 15)
-    assert MatterResponseDeadline.objects.filter(matter=matter, outcome="NOT_ANSWERING").exists()
+    assert matter.response_deadline is None
+    assert MatterResponseDeadline.objects.filter(matter=matter).count() == history
 
 
 def test_a_request_a_lawyer_opened_is_moved_never_a_second_request(register):
