@@ -96,7 +96,10 @@ MY_OPINIONS_DUE_HELP = FigureHelp(
 MY_OPINIONS_DRAFTING_HELP = FigureHelp(
     slug="minu-arvamus-koostamisel",
     title="Arvamus koostamisel",
-    paragraphs=("Menetluses olevad teemad, mille arvamus on koostamisel.",),
+    paragraphs=(
+        "Menetluses olevad teemad, mille arvamus on koostamisel: arvamust pole saadetud "
+        "ega otsustatud mitte saata.",
+    ),
 )
 
 
@@ -155,16 +158,22 @@ DEPT_NO_ACTION_HELP = FigureHelp(
 )
 
 #: `sent_this_week`: SENT Submissions, Monday to today on the local calendar,
-#: without `NOT_AN_OPINION_KINDS` (docs/adr/0149 §1, docs/adr/0174).
+#: without `NOT_AN_OPINION_KINDS` (docs/adr/0149 §1, docs/adr/0174). Not Lovable's
+#: «Välja saadetud arvamused», which counts topics by their VÄLJA date: the text
+#: says which records are counted (docs/adr/0149, amendment of 2026-11-11).
 DEPT_SENT_HELP = FigureHelp(
     slug="osakond-arvamus-saadetud",
     title="Arvamused saadetud sel nädalal",
-    paragraphs=("Loeb saadetud arvamusi.",),
+    paragraphs=("Loeb saadetud arvamusi, mis on Juristis Koja arvamusena salvestatud.",),
 )
 
-#: `drafting_matters` — `?arvamus=koostamisel` over open FULL Matters.
+#: `drafting_matters` — `?arvamus=koostamisel` over open FULL Matters: Lovable's
+#: «Arvamusi koostamisel», read from the opinion outcome (docs/adr/0149, 2026-11-11).
 DEPT_DRAFTING_HELP = FigureHelp(
     slug="osakond-arvamus-koostamisel",
     title="Arvamus koostamisel",
-    paragraphs=("Menetluses olevad teemad, mille arvamus on koostamisel.",),
+    paragraphs=(
+        "Menetluses olevad teemad, mille arvamus on koostamisel: arvamust pole saadetud "
+        "ega otsustatud mitte saata.",
+    ),
 )

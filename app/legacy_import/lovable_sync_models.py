@@ -255,6 +255,10 @@ class MembershipBasis(models.TextChoices):
     #: Lovable topic (docs/adr/0213), in the transaction that created it and
     #: seeded its state. A joined member: the cohort's required size counts it.
     NEW_TOPIC = "NEW_TOPIC", "Lisati kohorti uue Lovable'i teemana"
+    #: Written by the synchronisation when Lovable reopened a historical topic
+    #: inside its operational scope and the Teema moved into the register
+    #: (owner decision 11.11): the register gains it, the history cohort loses it.
+    MOVED = "MOVED", "Liikus ajaloolisest registrist operatiivsesse (Lovable avas teema)"
 
 
 class LovableSyncMembership(AppendOnlyModel):
@@ -576,3 +580,116 @@ class LovableSyncNewTopic(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.reference}: {self.status}"
+
+
+class OpinionOutcome(models.TextChoices):
+    """What Lovable's `valja` / `valja_kuupaev` say about a topic's opinion
+    (docs/adr/0213 §10, owner brief 2026-11-11)."""
+
+    #: A verified date: the opinion was sent on that day.
+    SENT = "SENT", "Arvamus saadetud"
+    #: «ei saatnud»: no opinion was sent for this process.
+    NOT_SENT = "NOT_SENT", "Arvamust ei saadetud"
+    #: The source no longer states either (both fields blank again). Blank is
+    #: never «sent»: the earlier statement is superseded, not deleted.
+    CLEARED = "CLEARED", "Allikas ei ütle enam midagi"
+
+
+#: What every page says where a sent opinion's document is not in Juristid.
+DOCUMENT_NOT_YET_AVAILABLE = "Arvamuse dokument pole veel saadaval."
+
+
+class LovableOpinionOutcome(BaseModel):
+    """Lovable's statement of whether a Teema's opinion went out, and when.
+
+    **Not a `Submission`, and never one.** A sent `Submission` must carry its
+    exact final document (`submissions_sent_requires_timestamp_and_evidence`),
+    and Lovable's register holds a date, not a letter: inventing a document,
+    a recipient, a signature or a transmission would be the fabricated
+    certainty the product refuses (docs/adr/0011). So the sent status lives
+    here, beside the import's other source statements, with what the source
+    said verbatim; the document is «pole veel saadaval» until an imported
+    OneNote file or a person's `+ Koja arvamus` supplies one
+    (`DOCUMENT_NOT_YET_AVAILABLE`).
+
+    **One current row per Teema**: the newest. Each change of the source's
+    statement — sent on another day, «ei saatnud», cleared — is a new row that
+    names the one it supersedes (``previous``), so the history of what Lovable
+    said stays readable; a row is never edited. Written only by the
+    synchronisation (`lovable_sync._apply_opinion_outcome`), in the transaction
+    of the field's `LovableSyncDecision` (APPLIED) and with its run. Removed only
+    with its Teema (the purge of a permanent deletion).
+
+    For readers (dashboards, counts): `current_for` / `LovableOpinionOutcome.
+    objects.current()` — the newest row per Teema whose outcome is not
+    ``CLEARED``. ``sent_on`` is set exactly when ``outcome`` is ``SENT``."""
+
+    matter = models.ForeignKey(
+        "matters.Matter", on_delete=models.CASCADE, related_name="lovable_opinion_outcomes"
+    )
+    #: The Lovable topic (`LovableSyncState.source_id`) the statement is about.
+    source_id = models.UUIDField()
+    outcome = models.CharField(max_length=16, choices=OpinionOutcome.choices)
+    sent_on = models.DateField(null=True, blank=True)
+    #: Lovable's `arvamuse_tahtaeg` when the statement was read: the request the
+    #: outcome answers (Lovable keeps one per topic). Source only.
+    request_deadline = models.DateField(null=True, blank=True)
+    #: Lovable's `koja_ettepanek`: a Chamber's own proposal rather than an answer.
+    koda_initiative = models.BooleanField(default=False)
+    #: The source's own words, verbatim (whitespace collapsed): `valja`,
+    #: `valja_kuupaev`, `kellele`.
+    source_valja = models.CharField(max_length=200, blank=True)
+    source_valja_kuupaev = models.CharField(max_length=40, blank=True)
+    addressee_raw = models.CharField(max_length=500, blank=True)
+    previous = models.OneToOneField(
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="superseded_by"
+    )
+    run = models.ForeignKey(LovableSyncRun, on_delete=models.PROTECT, related_name="+")
+    source_version = models.IntegerField(null=True, blank=True)
+    source_snapshot_sha256 = models.CharField(max_length=64)
+    recorded_at = models.DateTimeField()
+
+    class Meta:
+        verbose_name = "Lovable'i arvamuse saatmise seis"
+        ordering = ["matter", "-recorded_at"]
+        indexes = [
+            models.Index(fields=["matter", "-recorded_at"], name="lovable_outcome_matter_at"),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(outcome="SENT", sent_on__isnull=False)
+                    | (~models.Q(outcome="SENT") & models.Q(sent_on__isnull=True))
+                ),
+                name="lovable_outcome_sent_has_its_day",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.matter_id}: {self.outcome}"
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        if not self._state.adding:
+            raise ImmutableRecordError(
+                "Lovable'i arvamuse seisu ei muudeta; uus seis on uus kirje."
+            )
+        super().save(*args, **kwargs)
+
+    @property
+    def document_available(self) -> bool:
+        """Never from this row: the document comes from an imported file or a
+        person's own `Koja arvamus` (`DOCUMENT_NOT_YET_AVAILABLE`)."""
+        return False
+
+
+def current_opinion_outcomes(matter_ids: Any = None) -> dict[Any, LovableOpinionOutcome]:
+    """Matter id → its current `LovableOpinionOutcome` (the newest row, unless
+    that row is ``CLEARED``). One query; ``matter_ids`` narrows it."""
+    rows = LovableOpinionOutcome.objects.order_by("matter_id", "-recorded_at", "-created_at")
+    if matter_ids is not None:
+        rows = rows.filter(matter_id__in=list(matter_ids))
+    out: dict[Any, LovableOpinionOutcome] = {}
+    for row in rows.distinct("matter_id"):
+        if row.outcome != OpinionOutcome.CLEARED:
+            out[row.matter_id] = row
+    return out

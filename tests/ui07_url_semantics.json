@@ -125,7 +125,15 @@
   "Vaikne teema ilma vastutajata"
  ],
  "olek=avatud&liik=FULL&arvamus=koostamisel": [
-  "Ootel olev keskkonnateema"
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Ootel olev keskkonnateema",
+  "Piiratud juhi teema",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
  ],
  "olek=avatud&liik=FULL&saabus_alates=5.10.2026&saabus_kuni=7.10.2026": [
   "Saatja A ja adressaat B"
@@ -417,10 +425,24 @@
   "Testandmete teema"
  ],
  "olek=koik&arvamus=koostamisel&arvamus=saadetud": [
+  "Aktsiisimäärade muutmine registrist",
+  "Alkoholiaktsiisi töörühma märkmed",
+  "Avatud arhiivirida",
+  "Dateerimata OneNote'i teema",
+  "Jälgitav strateegia",
+  "Kaasatud juhi teema",
+  "Kahe lähtelehega arhiiviteema",
   "Konfidentsiaalne liikmete tagasiside",
   "Lõpetatud teema eelmisest aastast",
   "Ootel olev keskkonnateema",
-  "Pakendiaruandluse katse-eelnõu"
+  "Pakendiaruandluse katse-eelnõu",
+  "Piiratud juhi teema",
+  "Registririda ilma OneNote'i leheta",
+  "Saatja A ja adressaat B",
+  "Saatja B ja adressaat A",
+  "Testandmete teema",
+  "Tulevase tähtajaga teema",
+  "Vaikne teema ilma vastutajata"
  ],
  "olek=koik&asutus=puudub": [
   "Alkoholiaktsiisi töörühma märkmed",

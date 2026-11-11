@@ -141,7 +141,9 @@ def test_an_initiative_is_filed_with_no_saabus_and_no_deadline_by_default(signed
     assert matter.response_deadline is None
     assert matter.response_requested_at is None
     assert not response_obligation_of(matter, specialist).is_outstanding
-    assert matter not in drafting_matters(specialist)
+    # Nothing sent and nothing declined: «koostamisel», as Lovable counts a blank
+    # VÄLJA (docs/adr/0149, amendment of 2026-11-11).
+    assert matter in drafting_matters(specialist)
 
 
 def test_an_initiative_keeps_the_deadline_the_lawyer_gives(signed_in, specialist):

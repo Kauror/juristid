@@ -144,3 +144,58 @@ The owner's UX review of 2026-10-12. **Captions only; no migration.**
   `Hetkeseis` is still unset. Only this figure has one
   (`components/seis.html`, `help`).
 - Keys, values, queries, links, order, tones and the zero rule are unchanged.
+
+## Amendment, 2026-11-11 — «koostamisel» is Lovable's opinion outcome
+
+- Status: accepted (owner's round-4 brief of 2026-11-11: Lovable is the
+  authoritative source, and equivalent dashboard metrics must reconcile after a
+  successful synchronisation).
+
+### What was decided before
+
+§3 above: «koostamisel» was a DRAFT Submission, a blank register `VÄLJA`, or an
+open opinion step **and** a response obligation still owed. A Matter with an
+open «Koostan arvamuse» step counted however Lovable recorded the opinion, and
+a Matter with an owed deadline but no such step did not.
+
+### What is decided now
+
+Lovable computes «Arvamusi koostamisel» (`src/routes/_authenticated/index.tsx`,
+`src/components/dashboard/TopicsPage.tsx` via `topicsPage.kpiTopics`) as every
+topic of its operational register whose `valja_kuupaev` is empty and whose
+`valja` does not read «ei saatnud» (`logic.isEiSaatnud`). It reads the opinion
+**outcome**; no activity enters it. `register_filters.opinion_state_q(user,
+"koostamisel")` now says the same thing in Juristid's records:
+
+1. a current `Arvamuse tähtaeg` still owed —
+   `work_items.response_obligation_outstanding_q`, unchanged, so a passed
+   deadline is still owed and a later request after an earlier opinion is
+   drafting again; **or**
+2. no current deadline and **no outcome** (`opinion_outcome_recorded_q`): no
+   SENT Submission the reader may see, no CURRENT register `VÄLJA` mark (read
+   for presence, as ADR 0021 decided for the Excel-era register), and no ended
+   deadline whose outcome is `ANSWERED` or `NOT_ANSWERING`.
+
+A DRAFT Submission or an open opinion step is no longer part of the rule: work
+in progress is not an outcome. The lifecycle half — open, FULL, visible — stays
+the caller's, so authorization, restricted Teemad and the count-equals-list
+rule are unchanged, and every surface that read §3 (Osakond's strip figure and
+team column, Minu asjad's two opinion figures, the register's `?arvamus=`)
+follows on the next read.
+
+### What genuinely differs, and is labelled
+
+- **Saadetud arvamused.** Lovable counts topics by their `valja_kuupaev`
+  (Statistika and Muudatused, `overviewPeriod.sentInRange`). Juristid counts
+  SENT `Koja arvamus` records by `sent_at` (`SUBMISSIONS_SENT`, whose
+  description already says the register date is not read; Osakond's
+  «arvamust saadetud sel nädalal»). Osakond's `i` now says so: «Loeb saadetud
+  arvamusi, mis on Juristis Koja arvamusena salvestatud.»
+- **Lifecycle.** Lovable's formula has no lifecycle filter; Juristid's figure
+  counts open Teemad only. They agree while no closed operational topic has a
+  blank `VÄLJA`.
+
+### What this amendment does not change
+
+«saadetud» (`?arvamus=saadetud`), sending, the response-obligation rule, the
+data, and no migration.

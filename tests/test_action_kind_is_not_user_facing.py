@@ -287,7 +287,13 @@ def test_the_stored_kinds_are_exactly_what_they_were(three_steps):
     assert stored["MONITOR"].kind == ActionKind.MONITOR
 
     # The labels still exist on the enum, because the enum is not what changed.
-    assert dict(ActionKind.choices) == {"DO": "Teen", "WAIT": "Ootan", "MONITOR": "Jälgin"}
+    # `SOURCE` joined them for Lovable's unclassified sentences (docs/adr/0213 §10).
+    assert dict(ActionKind.choices) == {
+        "DO": "Teen",
+        "WAIT": "Ootan",
+        "MONITOR": "Jälgin",
+        "SOURCE": "Liik määramata",
+    }
 
 
 def test_the_intervention_row_states_the_dates_meaning_not_the_steps_kind(

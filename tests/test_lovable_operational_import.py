@@ -70,7 +70,7 @@ def _active(reference: str, **overrides: Any) -> dict[str, Any]:
         "hetkeseis": "Riigikogus",
         "valja": "",
         "valja_kuupaev": None,
-        "jargmiseks": "ootan 2. lugemist",
+        "jargmiseks": "ootan 2. lugemist, vaata üle 15.11",
         "tegevuse_tahtaeg": topic["next_action"]["target_date"],
     }
     topic["deadline"] = {"treatment": "NONE"}

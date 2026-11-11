@@ -199,7 +199,7 @@ def _active_topics() -> list[dict[str, Any]]:
             _lovable_row(
                 DRAFTING,
                 hetkeseis="kooskõlastusel",
-                jargmiseks="Koostan arvamust.",
+                jargmiseks="Koostan arvamuse",
                 tegevuse_tahtaeg="2027-01-20",
                 arvamuse_tahtaeg="2027-01-20",
                 sisse="2025-06-02",
@@ -446,13 +446,18 @@ def test_enrolment_seeds_the_new_cohort_from_the_import_and_leaves_the_pilot(enr
 # ---------------------------------------------------------------------------
 
 
-def test_the_first_night_holds_only_what_the_import_held(first_night):
+def test_the_first_night_plans_what_the_import_held(first_night):
+    """Source authority (docs/adr/0213 §10): what the import held converges on
+    Lovable — planned only, on this COMPARE night."""
     run = first_night["first"]
     assert run.counts["checked"] == 9
+    eligible = SyncOutcome.ELIGIBLE
     assert _found(run, NEW) == {
-        (NOT_SENT, "sent", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD),
-        (NO_STEP, "next_action_text", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD),
-        (NO_STEP, "next_action_date", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD),
+        (NOT_SENT, "sent", eligible, ""),
+        (NOT_SENT, "sent_date", eligible, ""),
+        (NOT_SENT, "addressee", eligible, ""),
+        (NO_STEP, "next_action_text", eligible, ""),
+        (NO_STEP, "next_action_date", eligible, ""),
     }
     assert not _found(run, PILOT_REFS)
     part = run.counts["by_cohort"][OPERATIONAL_COHORT]
@@ -460,11 +465,11 @@ def test_the_first_night_holds_only_what_the_import_held(first_night):
         "expected": 5,
         "checked": 5,
         "unchanged": 3,
-        "review": 2,
+        "review": 0,
         "conflicts": 0,
-        "eligible_unapplied": 0,
-        "import_held": 2,
-        "import_held_fields": 3,
+        "eligible_unapplied": 2,
+        "import_held": 0,
+        "import_held_fields": 0,
         "stopped_active": 0,
         "not_yet_read": 0,
         "activity": {
@@ -476,10 +481,15 @@ def test_the_first_night_holds_only_what_the_import_held(first_night):
         },
     }
     assert run.counts["by_cohort"][PILOT_COHORT]["checked"] == 4
-    assert (run.counts["eligible_unapplied"], run.counts["conflicts"]) == (0, 0)
-    # Nothing a lawyer could see changed, the imported Teemad included.
+    assert (run.counts["eligible_unapplied"], run.counts["conflicts"]) == (2, 0)
+    # Nothing a lawyer could see changed, the imported Teemad included. The
+    # drafting step's baseline settles (docs/adr/0213 §10: Lovable's «Koostan
+    # arvamust.» is the step Juristid already holds) — bookkeeping only.
     before, after = first_night["digests"]
-    assert len(before) == 11 and after == before
+    assert len(before) == len(after) == 11
+    # The baselines settle on the first comparison (bookkeeping only; the
+    # digests include the synchronisation state); nothing was applied.
+    assert not run.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
     # The same-reference Teema's topic is read only as an index row.
     assert not LovableSyncState.objects.filter(matter=first_night["same"]).exists()
     assert run.counts["outside_cohort"] == 1
@@ -507,7 +517,8 @@ def test_a_lovable_edit_after_the_snapshot_is_a_source_change_on_the_first_night
         "Näidisteema 2026_530",
         "Näidisteema 2026_530 (parandatud)",
     )
-    assert run.counts["by_cohort"][OPERATIONAL_COHORT]["eligible_unapplied"] == 1
+    # The title, and the two first convergences (NOT_SENT, NO_STEP) still planned.
+    assert run.counts["by_cohort"][OPERATIONAL_COHORT]["eligible_unapplied"] == 3
     assert _matter(REVIEW).title == "Näidisteema 2026_530"
     reader = factories.UserFactory(display_name="Lugeja Näidis")
     night = lovable_review.nightly_history(reader, now=NIGHT + 3 * DAY).nights[0]
@@ -523,11 +534,9 @@ def test_the_second_night_reports_a_date_and_a_finished_topic(second_night):
     run = second_night["second"]
     date = _decisions(run, REVIEW)["next_action_date"]
     assert (date.outcome, date.source) == (SyncOutcome.ELIGIBLE, "2027-02-01")
+    # «jõustunud»: the closure is planned (COMPARE), never a person's call now.
     stage = _decisions(run, ESTIMATE)["stage"]
-    assert (stage.outcome, stage.reason) == (
-        SyncOutcome.REVIEW_REQUIRED,
-        lovable_sync.STAGE_ENDS_WORK,
-    )
+    assert (stage.outcome, stage.reason) == (SyncOutcome.ELIGIBLE, "")
     # COMPARE: nothing written.
     step = NextAction.objects.get(matter=_matter(REVIEW), status=ActionStatus.OPEN)
     assert step.target_date == dt.date(2027, 1, 15)
@@ -536,12 +545,10 @@ def test_the_second_night_reports_a_date_and_a_finished_topic(second_night):
     part = run.counts["by_cohort"][OPERATIONAL_COHORT]
     assert part["stopped_active"] == 1 and run.counts["stopped_active"] == 1
     assert part["activity"]["FINISHED"] == 1 and part["activity"]["ONGOING"] == 4
-    assert part["eligible_unapplied"] == 1 and part["conflicts"] == 0
+    assert part["eligible_unapplied"] == 4 and part["conflicts"] == 0
     assert _matter(ESTIMATE).is_open
-    # The import's holds still wait.
-    assert (NOT_SENT, "sent", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD) in _found(
-        run, NEW
-    )
+    # The import's holds are planned like any other change.
+    assert (NOT_SENT, "sent", SyncOutcome.ELIGIBLE, "") in _found(run, NEW)
 
 
 def test_uuendused_shows_the_cohort_entering_then_its_changes(second_night):
@@ -568,7 +575,7 @@ def test_uuendused_shows_the_cohort_entering_then_its_changes(second_night):
         lovable_review.COMPARE_ONLY_NOTE,
     )
     [stage] = changes[ESTIMATE].fields
-    assert (stage.name, stage.result) == ("stage", lovable_review.REVIEW)
+    assert (stage.name, stage.result) == ("stage", lovable_review.NOT_APPLIED)
 
 
 # ---------------------------------------------------------------------------
@@ -576,7 +583,7 @@ def test_uuendused_shows_the_cohort_entering_then_its_changes(second_night):
 # ---------------------------------------------------------------------------
 
 
-def test_apply_writes_only_the_allowlisted_date(second_night, monkeypatch):
+def test_apply_writes_every_source_change_through_its_service(second_night, monkeypatch):
     from app.matters.workspace import change_current_action
 
     mari = second_night["world"]["mari"]
@@ -600,7 +607,8 @@ def test_apply_writes_only_the_allowlisted_date(second_night, monkeypatch):
     lovable_sync.set_mode(SyncMode.APPLY, reason="test")
     run = _night(second_night, NIGHT + 2 * DAY + HOUR, SyncTrigger.MANUAL)
     assert run.mode == SyncMode.APPLY and run.backup_set
-    assert run.verified and run.counts["updated"] == 1
+    # REVIEW's day, ESTIMATE's closure, NOT_SENT's outcome and NO_STEP's step.
+    assert run.verified and run.counts["updated"] == 4
 
     # The date, through `set_next_action`, with the synchronisation's provenance.
     new = NextAction.objects.get(matter=review, status=ActionStatus.OPEN)
@@ -623,25 +631,29 @@ def test_apply_writes_only_the_allowlisted_date(second_night, monkeypatch):
     # Valdkond, set in Juristid, survives the write on the same Teema.
     assert list(_matter(REVIEW).policy_areas.all()) == [area]
 
-    # The lawyer's step is kept; the finished stage and every import hold are not written.
+    # «jõustunud» closes ESTIMATE; the lawyer's step ends with the closure
+    # (cancelled, kept in the history, never completed).
     found = _decisions(run, ESTIMATE)
-    assert found["next_action_text"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
-    assert found["stage"].outcome == SyncOutcome.REVIEW_REQUIRED
-    assert NextAction.objects.get(matter=estimate, status=ActionStatus.OPEN).text == (
-        "ootan 2. lugemist ja helistan"
+    assert found["stage"].outcome == SyncOutcome.APPLIED
+    closed = _matter(ESTIMATE)
+    assert (closed.is_open, closed.stage.key, closed.disposition) == (
+        False,
+        "in_force",
+        "COMPLETED",
     )
-    assert _matter(ESTIMATE).is_open and _matter(ESTIMATE).stage.key == "parliament"
-    held = _found(run, (NOT_SENT, NO_STEP))
-    assert {(r, f) for r, f, o, why in held if why == lovable_sync.IMPORT_HELD} == {
-        (NOT_SENT, "sent"),
-        (NO_STEP, "next_action_text"),
-        (NO_STEP, "next_action_date"),
-    }
+    assert NextAction.objects.get(pk=local.pk).status == ActionStatus.SUPERSEDED
+    assert not NextAction.objects.filter(
+        matter=estimate, status__in=(ActionStatus.OPEN, ActionStatus.COMPLETED)
+    ).exists()
+    # «ei saatnud» recorded as Lovable's outcome; nothing sent, no document.
+    from app.legacy_import.lovable_sync_models import current_opinion_outcomes
+
+    outcome = current_opinion_outcomes([_matter(NOT_SENT).pk])[_matter(NOT_SENT).pk]
+    assert outcome.outcome == "NOT_SENT"
     assert not Submission.objects.exists()
-    assert not NextAction.objects.filter(matter=_matter(NO_STEP)).exists()
-    # Only the one Teema changed.
+    # Only the Teemad Lovable changed.
     after = _by_reference(_business_digests(monkeypatch))
-    assert {r for r in before if after[r] != before[r]} == {REVIEW}
+    assert {r for r in before if after[r] != before[r]} == {REVIEW, ESTIMATE, NOT_SENT, NO_STEP}
 
 
 # ---------------------------------------------------------------------------

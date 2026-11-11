@@ -501,131 +501,123 @@ def apply_child_windows(
     return queryset, echo
 
 
+def opinion_outcome_recorded_q(user: Any) -> Q:
+    """Has this Matter's opinion process reached an outcome, as this reader may see it.
+
+    Juristid's records of what Lovable keeps in ``valja`` / ``valja_kuupaev``
+    (docs/adr/0149, amendment of 2026-11-11): an opinion went out, or Koda
+    decided not to send one. Any one of three facts is an outcome:
+
+    * a SENT :class:`~app.submissions.models.Submission` this reader may see —
+      Koda's opinion as a record;
+    * a CURRENT register row whose ``VÄLJA`` holds anything — read for
+      presence, as ADR 0021 decided for the Excel-era register, whose unreadable
+      marks are not unsent opinions;
+    * an ended ``Arvamuse tähtaeg`` whose outcome is ``ANSWERED`` (answered,
+      with or without a document here) or ``NOT_ANSWERING`` («ei saatnud»).
+
+    A passed deadline is not an outcome, and neither is a moved, replaced,
+    cancelled or closed request: nothing in them says an opinion went out or
+    was declined. The Submission half is scoped to the reader, so a hidden send
+    decides nothing for somebody who may not see it (AUTH-003).
+    """
+    from app.legacy_import.current_state import CurrentRegisterState
+    from app.legacy_import.lovable_sync_models import OpinionOutcome
+    from app.matters.enums import ResponseDeadlineOutcome
+    from app.matters.models import MatterResponseDeadline
+    from app.submissions.models import Submission
+
+    sent = Submission.objects.visible_to(user).filter(matter=OuterRef("pk")).sent()
+    register = CurrentRegisterState.objects.filter(matter=OuterRef("pk")).current()
+    register = register.filter(opinion_sent_recorded=True)
+    concluded = MatterResponseDeadline.objects.filter(
+        matter=OuterRef("pk"),
+        outcome__in=(ResponseDeadlineOutcome.ANSWERED, ResponseDeadlineOutcome.NOT_ANSWERING),
+    )
+    # A CLEARED Lovable statement withdraws the outcome the synchronisation
+    # recorded, and with it the request it ended on that statement's word
+    # (docs/adr/0213 §10, review P3-3): the ended request is no outcome then.
+    return (
+        Q(Exists(sent))
+        | Q(Exists(register))
+        | (Q(Exists(concluded)) & ~lovable_outcome_q(OpinionOutcome.CLEARED))
+        | lovable_outcome_q(OpinionOutcome.SENT, OpinionOutcome.NOT_SENT)
+    )
+
+
+def lovable_outcome_q(*outcomes: str) -> Q:
+    """Is Lovable's CURRENT statement of this Matter's opinion one of ``outcomes``.
+
+    The synchronisation records ``valja`` / ``valja_kuupaev`` as
+    :class:`~app.legacy_import.lovable_sync_models.LovableOpinionOutcome` rows
+    (docs/adr/0213 §10): the current row is the one no later row supersedes.
+    Lovable is the authoritative source for this field, so its SENT or
+    NOT_SENT ends «koostamisel» whatever else Juristid holds; a CLEARED row
+    states nothing.
+    """
+    from app.legacy_import.lovable_sync_models import LovableOpinionOutcome
+
+    current = LovableOpinionOutcome.objects.filter(
+        matter=OuterRef("pk"), superseded_by__isnull=True, outcome__in=outcomes
+    )
+    return Q(Exists(current))
+
+
 def opinion_state_q(user: Any, value: str) -> Q:
     """The one definition of «Arvamus koostamisel» and «Arvamus saadetud», per Matter.
 
-    Osakond's ARVAMUS KOOSTAMISEL column counts it, each cell's link opens it,
-    and the register's ``?arvamus=`` *is* it. It used to read only the imported
-    register's VÄLJA column, so a native Matter — which never has a register
-    row — counted nowhere however many drafts it held, and a register-backed
-    Matter whose opinion then went out *here* stayed «koostamisel» beside the
-    send that finished it (ENG-019). Two sources, one rule:
+    Osakond's ARVAMUS KOOSTAMISEL column and strip figure, Minu asjad's opinion
+    figures and the register's ``?arvamus=`` all read this, so a figure and the
+    list behind it are one query.
 
-    **koostamisel** — either
+    **koostamisel follows Lovable's «Arvamusi koostamisel»** (docs/adr/0149,
+    amendment of 2026-11-11). Lovable counts a topic whose ``valja_kuupaev`` is
+    empty and whose ``valja`` is not «ei saatnud» — the opinion *outcome*, never
+    whether a «Koostan arvamust» step exists. In Juristid's records that is
+    either
 
-    * a DRAFT :class:`~app.submissions.models.Submission` on the Matter that this
-      reader may see — the canonical record of an opinion being written, and the
-      population /arvamused/ counts as «koostamisel», taken from the same
-      :func:`app.submissions.workspace.drafting` (ADR 0033 §4); or
-    * a CURRENT ``CurrentRegisterState`` row whose VÄLJA is blank — the register
-      era's way of saying the same thing (ADR 0021) — **unless** the Matter has a
-      SENT Submission this reader may see.
+    * a current ``Arvamuse tähtaeg`` still owed — the response obligation as
+      :func:`app.matters.work_items.response_obligation_outstanding_q` reads it,
+      so a later request after an earlier opinion is drafting again, and a
+      passed deadline is still owed; or
+    * no current deadline and no outcome at all
+      (:func:`opinion_outcome_recorded_q`): Lovable's blank ``valja`` on a topic
+      with no deadline is «koostamisel» too.
 
-    That exception is what makes the register half go stale correctly. A blank
-    VÄLJA says the register had not recorded a send *when it was last read*.
-    Once a canonical SENT Submission exists it is the outbound record and VÄLJA
-    is source metadata beside it (ADR 0021), so the blank cell no longer
-    describes the file. A DRAFT is never retired that way: a second opinion in
-    preparation after the first went out is drafting, which is why the
-    exception applies to the register half only.
+    A DRAFT Submission or an open opinion step changes neither: they are work in
+    progress, not an outcome, and Lovable counts the same topic without them.
 
-    * **or** the opinion is being prepared through the native workflow
-      (docs/adr/0149) — both of:
-
-      - an OPEN step this reader may see that *is* the opinion work: the
-        product's own sentence for it, ``OPINION_PREPARATION_TEXT``
-        («Koostan arvamuse»), or the work plan's opinion step, recognised by
-        its operation (``PlanStepOperation.SUBMISSION``) and never by its words
-        (docs/adr/0133 §6); and
-      - an ``Arvamuse tähtaeg`` still owed — the response obligation exactly as
-        :func:`app.matters.work_items.response_obligation_outstanding_q` reads
-        it.
-
-      Since docs/adr/0061 (amendment of 2026-09-27) the interface starts no
-      DRAFT: an opinion is recorded sent, in one act, from `Lisa teemale →
-      Koja arvamus`. Without this half nothing a lawyer does natively could
-      ever read as «koostamisel». The obligation is what ends it: the send that
-      answers the deadline discharges it, so the Matter leaves the count on the
-      next read even if nobody marks the old step done — and a send that does
-      not answer a request-tracked deadline leaves the work standing. Neither
-      half alone is drafting: an open file with an unanswered deadline may be
-      waited on or watched, and a step with no deadline owed is a plan, not an
-      opinion somebody is waiting for.
+    Lovable's own current outcome (:func:`lovable_outcome_q`) decides first:
+    SENT or NOT_SENT is never «koostamisel».
 
     **saadetud** — a SENT Submission this reader may see, **or** a CURRENT
-    register row whose VÄLJA is a date (``recorded_sent``). Not «something is
-    written in VÄLJA»: that includes **ei saatnud**, a decision not to send, and
-    marks nobody can read, and listing those under «Arvamus saadetud» said the
-    opposite of the register (RULE-04). Nor is it «the opinion work is
-    finished» — ``OPINION_WORK_COMPLETE_STATES`` answers that, and «ei saatnud»
-    finishes the work (ADR 0059) without having sent anything. A canonical send
-    needs no register agreement: a SENT Submission is sent whatever VÄLJA says.
+    register row whose VÄLJA is a date (``recorded_sent``), **or** Lovable's
+    current SENT outcome; never «ei saatnud» (RULE-04).
 
-    The two may both hold for one Matter (sent once, drafting again), and a
-    Matter satisfying either half of one of them is one row: both halves are
-    correlated ``EXISTS`` subqueries, so there is no join to fan out and nothing
-    for ``distinct()`` to repair.
-
-    **"SENT" is ``Submission.objects.sent()`` — status SENT, the opinion that
-    currently stands** — the reading `work_items._discharge_exists` already uses
-    for the response obligation. What a WITHDRAWN or SUPERSEDED opinion should
-    count as is a different question (ENG-062) and is deliberately not decided
-    here.
-
-    **The Submission halves are scoped to the reader; the register half is not.**
-    A Submission can be restricted below its Matter, and letting one this
-    reader may not open move a readable Matter between the two states would
-    disclose that it exists — so a hidden send leaves a blank VÄLJA standing for
-    that reader, exactly as if it had not happened. ``CurrentRegisterState`` has
-    no visibility of its own beyond its Matter's, which the caller's queryset
-    has already applied (``Matter.objects.visible_to``).
-
-    **Not «an open FULL Matter without a sent opinion».** That would pull in
-    every WAIT, MONITOR and information-only file, which are not opinions being
-    written. The lifecycle half — open, FULL, visible — is the caller's, asked
-    by the register's ordinary parameters or by ``active_matters``.
-
-    For **koostamisel** ``VÄLJA`` is read for presence (``opinion_sent_recorded``),
-    never for whether it parses as a date: fourteen current Matters in the
-    approved snapshot hold something the parser cannot read, and treating those
-    as unsent put them all back into the drafting population (ADR 0021). For
-    **saadetud** it is read for what it says (``opinion_sent_state``), because
-    presence is not a send.
-
+    The lifecycle half — open, FULL, visible — is the caller's, asked by the
+    register's ordinary parameters or by ``dashboard.active_matters``. Both
+    halves here are correlated ``EXISTS`` subqueries, so a Matter is one row.
     An unknown ``value`` matches nothing.
     """
     from app.legacy_import.current_state import CurrentRegisterState
+    from app.legacy_import.lovable_sync_models import OpinionOutcome
     from app.matters.work_items import response_obligation_outstanding_q
     from app.submissions.models import Submission
-    from app.submissions.workspace import drafting
-    from app.workflow.enums import ActionStatus, PlanStepOperation
-    from app.workflow.models import NextAction
-    from app.workflow.services import OPINION_PREPARATION_TEXT
 
     if value not in {OPINION_DRAFTING, OPINION_SENT}:
         return Q(pk__in=[])
 
-    readable = Submission.objects.visible_to(user).filter(matter=OuterRef("pk"))
-    register = CurrentRegisterState.objects.filter(matter=OuterRef("pk"))
-    sent_here = Q(Exists(readable.sent()))
     if value == OPINION_SENT:
-        return sent_here | Q(Exists(register.recorded_sent()))
-    # The opinion work as the native workflow records it: the current step is the
-    # opinion step, read under the reader's own scope, and a deadline is owed.
-    preparing = (
-        NextAction.objects.visible_to(user)
-        .filter(matter=OuterRef("pk"), status=ActionStatus.OPEN)
-        .filter(
-            Q(text=OPINION_PREPARATION_TEXT) | Q(plan_step__operation=PlanStepOperation.SUBMISSION)
+        readable = Submission.objects.visible_to(user).filter(matter=OuterRef("pk"))
+        register = CurrentRegisterState.objects.filter(matter=OuterRef("pk"))
+        return (
+            Q(Exists(readable.sent()))
+            | Q(Exists(register.recorded_sent()))
+            | lovable_outcome_q(OpinionOutcome.SENT)
         )
-    )
-    native = Q(Exists(preparing)) & response_obligation_outstanding_q(user)
-    # `drafting()` on both sides: the Submission population /arvamused/ counts,
-    # and the register rows the cutover counts — imported, not restated.
-    return (
-        Q(Exists(drafting(user, visible=readable)))
-        | (Q(Exists(register.drafting())) & ~sent_here)
-        | native
+    return ~lovable_outcome_q(OpinionOutcome.SENT, OpinionOutcome.NOT_SENT) & (
+        response_obligation_outstanding_q(user)
+        | (Q(response_deadline__isnull=True) & ~opinion_outcome_recorded_q(user))
     )
 
 

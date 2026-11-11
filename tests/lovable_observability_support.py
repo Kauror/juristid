@@ -126,6 +126,7 @@ class Pilot:
             title=row["teema"],
             owner=self.owner,
             visibility=visibility,
+            received_date=dt.date.fromisoformat(row["sisse"]) if row.get("sisse") else None,
         )
         step = factories.NextActionFactory(
             matter=matter,

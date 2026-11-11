@@ -371,5 +371,7 @@ def test_minu_asjad_draws_an_explanation_beside_every_figure(client, specialist,
     assert '<span class="seis__caption">tegevust sel nädalal</span>' in body
     assert "seis-selgitus-minu-sel-nadalal" not in body
     assert '<span class="seis__caption">arvamus tähtajaga sel nädalal</span>' in body
-    assert '<span class="seis__caption">arvamus koostamisel</span>' in body
+    # The stepped Teema has no outcome either, so it is in preparation too
+    # (docs/adr/0149, amendment of 2026-11-11): two, in the partitive.
+    assert '<span class="seis__caption">arvamust koostamisel</span>' in body
     assert "arvamust kokku" not in body

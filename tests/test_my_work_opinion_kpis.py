@@ -22,10 +22,10 @@ identities, through the register's own pipeline and through the view.
 Most worlds here put an opinion in preparation the historical way, with a DRAFT
 Submission: that reading is kept (docs/adr/0061), and it is the half of the
 definition every branch agrees on. Since the 2026-09-27 amendment to ADR 0061
-the interface records an opinion sent in one act and starts no DRAFT, so a
-lawyer's opinion work is a «Koostan arvamuse» step against an owed deadline
-(docs/adr/0149); the tests for that path — written natively, sent, requested
-again — are at the end.
+the interface records an opinion sent in one act and starts no DRAFT; since
+docs/adr/0149's amendment of 2026-11-11 «in preparation» is Lovable's reading —
+no opinion outcome yet, or an `Arvamuse tähtaeg` still owed — and the tests for
+the native path — written, sent, requested again — are at the end.
 
 No fixture uses an imported or confidential row. Dates that only the figures
 read are fixed and passed as ``today``; dates the clock-reading paths see — the
@@ -335,14 +335,18 @@ def test_an_opinion_belongs_to_the_owner_not_to_whoever_carries_a_step(
     assert listed(other_specialist, figures(other_specialist).due_url) == {theirs.pk}
 
 
-def test_dated_work_that_is_not_an_opinion_moves_only_the_week_figure(specialist) -> None:
+def test_dated_work_that_is_not_an_opinion_moves_only_the_week_figure(
+    specialist, organisation
+) -> None:
     """«sel nädalal» counts every kind of dated work; the opinion figure does not.
 
-    An ordinary step due this week, on a Matter whose `Arvamuse tähtaeg` is
-    this week as well, is week work and is not an opinion being written.
+    An ordinary step due this week, on a Matter whose opinion already went out,
+    is week work and is not an opinion being written (docs/adr/0149, amendment
+    of 2026-11-11: the outcome decides, as in Lovable).
     """
     today = timezone.localdate()
-    matter = a_matter(specialist, deadline=today, title="Tavaline töö")
+    matter = a_matter(specialist, title="Tavaline töö")
+    send_koja_arvamus(matter, specialist, [organisation], today)
     set_next_action(
         matter=matter,
         text="Helista ministeeriumi",
@@ -461,7 +465,9 @@ def mixed_desk(specialist, other_specialist):
     closed = drafted(specialist, deadline=today, title="Suletud")
     close_matter(matter=closed, disposition=Disposition.COMPLETED, actor=specialist)
     drafted(other_specialist, deadline=today, title="Kolleegi oma")
-    a_matter(specialist, deadline=today, title="Mustandita")
+    # No draft, deadline owed: Lovable's blank VÄLJA, so in preparation and due
+    # (docs/adr/0149, amendment of 2026-11-11).
+    due.add(a_matter(specialist, deadline=today, title="Mustandita").pk)
     return today, due, due | later
 
 
@@ -483,8 +489,8 @@ def test_each_figure_opens_exactly_the_matters_it_counts(
     shown = strip(work)
 
     assert work.today == today
-    assert shown[WEEK_KEY].value == len(due) == 3
-    assert shown[TOTAL_KEY].value == len(preparing) == 6
+    assert shown[WEEK_KEY].value == len(due) == 4
+    assert shown[TOTAL_KEY].value == len(preparing) == 7
     for key, expected in ((WEEK_KEY, due), (TOTAL_KEY, preparing)):
         assert listed(user, shown[key].url) == expected, key
         assert opened(client, shown[key].url) == expected, key

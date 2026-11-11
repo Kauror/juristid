@@ -221,15 +221,15 @@ def test_2026_220_wording_and_date_change_together(pilot, reader):
     topic = _topic(newest, "2026_220")
     assert "Järgmise tegevuse sõnastus ja kuupäev muutusid koos" in topic.summary
     fields = _fields(topic)
-    assert fields["next_action_text"].result == "REVIEW"
-    # The day is never carried on its own: it is held with the wording.
-    assert fields["next_action_date"].result == "REVIEW"
-    assert fields["next_action_date"].reason == "Kuupäev muutus koos sõnastusega."
+    # Source authority (docs/adr/0213 §10): one operation, planned on a COMPARE night.
+    assert fields["next_action_text"].result == "NOT_APPLIED"
+    assert fields["next_action_date"].result == "NOT_APPLIED"
+    assert fields["next_action_date"].reason == "Võrdlusrežiim: Juristidesse ei kirjutata."
     assert (fields["next_action_date"].before, fields["next_action_date"].after) == (
         "20.11.2026",
         "04.12.2026",
     )
-    assert newest.outcomes == {"REVIEW": 2}
+    assert newest.outcomes == {"NOT_APPLIED": 2}
     # The first night is a starting point, never a hundred changes.
     oldest = page.items[-1]
     assert oldest.comparison == "BASELINE" and oldest.topics == []
@@ -493,7 +493,8 @@ def test_2026_2_stage_given_up_while_work_continues_under_a_new_number(
     submissions = Submission.objects.count()
 
     stage = _fields(_topic(obs.nights(reader, now=LATER).items[0], "2026_2"))["stage"]
-    assert stage.result == "REVIEW" and stage.after == "Rohkem ei tegele"
+    # Lovable's own words close the Teema (planned on a COMPARE night).
+    assert stage.result == "NOT_APPLIED" and stage.after == "Rohkem ei tegele"
     new = obs.observed_changes(reader, kind=ObservedChangeKind.NEW, now=LATER).items
     assert [(t.reference, t.mapping, t.matter_id) for t in new] == [
         ("2026_250", MappingStatus.UNMATCHED, None)
@@ -669,17 +670,17 @@ def test_2026_243_preparing_an_opinion_becomes_monitoring(pilot, reader):
     texts = [i for i in page.items if i.field == "next_action_text"]
     assert len(texts) == 1  # one pending field, however many nights
     item = texts[0]
-    assert item.outcome == SyncOutcome.REVIEW_REQUIRED
-    assert item.reason == lovable_sync.TEXT_CHANGED
+    # Planned under source authority; pending only because the nights compare.
+    assert item.outcome == SyncOutcome.ELIGIBLE
+    assert item.reason == ""
     assert item.nights_pending == 3
     assert item.first_observed_at == night_at(1) and item.last_observed_at == night_at(3)
     assert item.last_applied == "Valmistada ette arvamus"
     assert item.lovable_now == "Jälgida menetlust"
     assert item.juristid_now == "Valmistada ette arvamus"
-    assert "tee/oota/jälgi" in item.suggested_action
-    assert item.suggested_action.endswith("Rea märgib lahendatuks haldur.")
+    assert item.suggested_action.startswith("Ohutu uuendus")
     assert "lovable_sync" not in item.suggested_action  # no server command for a lawyer
-    assert item.explanation.startswith("Järgmise tegevuse sõnastus muutus")
+    assert item.explanation == "Ohutu uuendus (rakendamata)"
     assert item.age_days == 2
     # Still held: nothing in Juristid moved.
     step = lovable_sync.current_values(pilot.matter("2026_243"))["next_action"]
@@ -700,10 +701,11 @@ def test_2026_186_local_change_and_link_change_are_told_apart(pilot, reader):
     )
     pilot.night(night_at(1))
     fields = _fields(_topic(obs.nights(reader, now=LATER).items[0], "2026_186"))
-    assert fields["next_action_date"].result == "CONFLICT"
+    # Source authority: Lovable's day replaces the lawyer's step (no conflict).
+    assert fields["next_action_date"].result == "NOT_APPLIED"
     assert fields["onenote_link"].result == "NOT_APPLIED"  # eligible, COMPARE only
     queue = {i.field: i for i in obs.review_queue(reader, now=LATER).items}
-    assert queue["next_action_date"].outcome == SyncOutcome.CONFLICT
+    assert queue["next_action_date"].outcome == SyncOutcome.ELIGIBLE
     assert queue["onenote_link"].outcome == SyncOutcome.ELIGIBLE
     assert "APPLY" in queue["onenote_link"].suggested_action
     assert queue["next_action_date"].juristid_now == "20.11.2026"
@@ -736,7 +738,7 @@ def test_2026_213_one_estimate_becomes_several(pilot, reader):
     assert change.after == "Hinnanguline 01.01.2027 (osa 1); Hinnanguline 01.07.2027 (osa 2)"
     assert topic.summary == "Lovable'i jõustumise hinnangud muutusid."
     item = next(i for i in obs.review_queue(reader, now=LATER).items if i.field == "commencements")
-    assert item.reason == lovable_sync.HELD
+    assert item.reason == lovable_sync.COMMENCEMENT_UNREADABLE  # «Hinnanguline» is no kind
     assert item.juristid_now == obs.NOT_COMPARED_IN_JURISTID
     assert "jõustunud" not in _dump(obs.matter_changes(reader, "2026_213", now=LATER).as_dict())
 
@@ -811,7 +813,7 @@ def test_matter_changes_by_reference_and_by_id(pilot, reader):
         "pending": True,
     }
     assert [t.reference for t in by_ref.nights] == ["2026_243"]
-    assert {d["field"] for d in by_ref.decisions} == {"next_action_text"}
+    assert {"next_action_text", "next_action_date"} <= {d["field"] for d in by_ref.decisions}
     assert [p.field for p in by_ref.pending] == ["next_action_text"]
     assert by_ref.source_events == [] and not by_ref.audit.available
 

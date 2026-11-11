@@ -2716,7 +2716,9 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
     "title": {
         "mapping": "EXACT",
         "service": "set_matter_title(provenance=…)",
-        "risks": ["Ainult kui import säilitas allika pealkirja; üle vaadatud pealkiri jääb alles."],
+        "risks": [
+            "Tühja pealkirja ei kirjutata.",
+        ],
         "blocking": "",
     },
     "owner": {
@@ -2730,86 +2732,99 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
     },
     "next_action_date": {
         "mapping": "EXACT",
-        "service": "set_next_action (sama sõnastus, liik ja vastutaja; carry_*)",
+        "service": "set_next_action",
         "risks": [
-            "Ainult kui sõnastus ei muutunud ja tegevus on piloodi täpse kuupäevaga tegevus.",
-            "Möödunud või kustutatud kuupäev jääb inimesele.",
+            "Päev käib koos sõnastusega; loetamatu kuupäev jääb ootele.",
         ],
         "blocking": "",
     },
     "onenote_link": {
         "mapping": "EXACT",
         "service": "uus MatterSourceReference (vana jääb alles)",
-        "risks": ["Ainult https-link; eemaldatud link jääb inimesele."],
+        "risks": [
+            "Ainult https-link; eemaldatud link jääb ootele.",
+        ],
         "blocking": "",
     },
     "next_action_text": {
-        "mapping": "NONE",
-        "service": "",
-        "risks": ["Uus sõnastus on uus tegevus; vana liiki ei kanta üle."],
-        "blocking": "Tegevuse liigi (tee/oota/jälgi) otsustab inimene.",
+        "mapping": "EXACT",
+        "service": "set_next_action / cancel_next_action",
+        "risks": [
+            "Liik loetakse lause esimesest tegusõnast; muu lause jääb «liik määramata».",
+            "Vana tegevus asendatakse (ajalugu jääb); tehtuks midagi ei märgita.",
+        ],
+        "blocking": "",
     },
     "stage": {
-        "mapping": "CONDITIONAL",
-        "service": "change_stage(origin=IMPORTED)",
+        "mapping": "EXACT",
+        "service": "close_matter_from_source / change_stage / reopen_matter_into_stage",
         "risks": [
-            "Ainult täpse sildivastavuse (lovable_reading.STAGE_MAPPING) kaudu avatud teemal, "
-            "mis on veel viimati rakendatud etapis.",
-            "Tööd lõpetav etapp (TERMINAL_STAGE_LABELS) jääb alati inimesele.",
+            "«Jõustunud» ja «rohkem ei tegele» sulgevad teema; jätkuseos sulgeb jätkuna.",
+            "Kaardistamata silt ja Juristides puuduv järglane jäävad ootele.",
         ],
         "blocking": "",
     },
     "opinion_deadline": {
-        "mapping": "CONDITIONAL",
-        "service": "request_response_deadline (uus küsimine)",
+        "mapping": "EXACT",
+        "service": "change_response_deadline",
         "risks": [
-            "Ainult kui praegust küsimist pole, midagi pole saadetud, see pole Koja algatus "
-            "ja päev pole möödas; olemasolevat tähtaega ei muudeta.",
+            "Praegune küsimine nihkub; teist küsimist ei looda; möödunud päev pole kohustus.",
         ],
         "blocking": "",
     },
     "sent": {
-        "mapping": "NONE",
-        "service": "",
-        "risks": ["Automaatne kandmine looks Juristidesse ekslikult välja saadetud arvamuse."],
-        "blocking": "Lovable'i «Välja» märge pole saadetud arvamus (Submission).",
+        "mapping": "EXACT",
+        "service": "LovableOpinionOutcome + resolve_response_deadline",
+        "risks": [
+            "Saatmine märgitakse ilma dokumendita; vastuolulised väljad jäävad ootele.",
+        ],
+        "blocking": "",
     },
     "sent_date": {
-        "mapping": "NONE",
-        "service": "",
-        "risks": ["Automaatne kandmine looks Juristidesse ekslikult välja saadetud arvamuse."],
-        "blocking": "Lovable'i «Välja» kuupäev pole saadetud arvamus (Submission).",
+        "mapping": "EXACT",
+        "service": "LovableOpinionOutcome",
+        "risks": [
+            "Kaks eri kuupäeva jäävad ootele.",
+        ],
+        "blocking": "",
     },
     "addressee": {
-        "mapping": "APPROXIMATE",
-        "service": "",
-        "risks": ["Vaba tekst, mitte organisatsioon."],
-        "blocking": "Adressaadi vastendusreeglit pole kinnitatud.",
+        "mapping": "EXACT",
+        "service": "LovableOpinionOutcome",
+        "risks": [
+            "Allika sõnastuses; ilma saatmiseta jääb ootele.",
+        ],
+        "blocking": "",
     },
     "koda_initiative": {
-        "mapping": "APPROXIMATE",
-        "service": "",
-        "risks": ["Märge muudaks teema päritolu."],
-        "blocking": "Koja ettepaneku vastendusreeglit pole kinnitatud.",
+        "mapping": "EXACT",
+        "service": "change_track",
+        "risks": [
+            "Algatuse lõppemine jääb ootele (menetlusliik pole teada).",
+        ],
+        "blocking": "",
     },
     "legal_act": {
-        "mapping": "APPROXIMATE",
-        "service": "",
-        "risks": ["Vaba tekst, mitte kinnitatud õigusakt."],
-        "blocking": "Õigusakti vastendusreeglit pole kinnitatud.",
+        "mapping": "EXACT",
+        "service": "set_legal_instruments",
+        "risks": [
+            "Ainult täpselt ühe kehtiva liigi silt; muu jääb ootele.",
+        ],
+        "blocking": "",
     },
     "received": {
-        "mapping": "APPROXIMATE",
-        "service": "",
-        "risks": ["Saabumise kuupäev on teema ajaloo osa."],
-        "blocking": "Saabumise kuupäeva vastendusreeglit pole kinnitatud.",
+        "mapping": "EXACT",
+        "service": "set_matter_dates",
+        "risks": [
+            "Tulevane päev jääb ootele.",
+        ],
+        "blocking": "",
     },
     "commencements": {
-        "mapping": "CONDITIONAL",
+        "mapping": "EXACT",
         "service": "add_effective_date / add_important_date (ainult lisandunud)",
         "risks": [
-            "Ainult üheselt loetava liigiga lisandunud jõustumine; eeldatav jääb hinnanguks "
-            "(docs/adr/0120). Muudetud või eemaldatud jõustumine jääb inimesele.",
+            "Eeldatav jääb hinnanguks; muudetud või eemaldatud jõustumine jääb ootele.",
         ],
         "blocking": "",
     },

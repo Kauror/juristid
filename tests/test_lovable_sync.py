@@ -52,10 +52,13 @@ def _row(reference: str, **values: Any) -> dict[str, Any]:
         "vastutaja": "Mari",
         "uus_vastutaja": "",
         "hetkeseis": "Riigikogus",
-        "jargmiseks": "ootan 2. lugemist",
+        "jargmiseks": "ootan 2. lugemist, vaata üle 15.11",
         "tegevuse_tahtaeg": "2026-11-15",
         "arvamuse_tahtaeg": None,
-        "valja": "2026-01-20",
+        # Nothing sent: source authority (docs/adr/0213 §10) would record a sent
+        # date as the Teema's opinion outcome on the first night, and these
+        # suites are about the other fields (`tests/test_r4_authority.py`).
+        "valja": "",
         "valja_kuupaev": None,
         "kellele": "",
         "koja_ettepanek": False,
@@ -96,8 +99,10 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
         "2026_502": _row(
             "2026_502",
             vastutaja="Jaan",
-            jargmiseks="Koostan arvamust.",
+            hetkeseis="kooskõlastusringil",
+            jargmiseks="Koostan arvamuse",
             tegevuse_tahtaeg="2026-11-12",
+            arvamuse_tahtaeg="2026-11-12",
         ),
         "2026_503": _row("2026_503", hetkeseis="jõustunud", jargmiseks="", tegevuse_tahtaeg=None),
         "2026_505": _row(
@@ -115,6 +120,18 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
         {**by_ref["2026_503"], "source": {**by_ref["2026_503"]["source"], "row": rows["2026_503"]}},
         _source_topic("2026_505", rows["2026_505"], owner_raw="Jaan", next_action=_do_step()),
     ]
+    drafting_id = topics[1]["source"]["id"]
+    topics[1]["source"]["commencements"] = [
+        {"id": f"c50{n}", "topic_id": drafting_id, "position": n, **values}
+        for n, values in enumerate(
+            (
+                {"liik": "Üldises korras", "kuupaev": None, "tapsustus": ""},
+                {"liik": "Eeldatava kuupäevaga", "kuupaev": "2027-01-01", "tapsustus": "§ 1 p 3"},
+                {"liik": "Kindla kuupäevaga", "kuupaev": "2027-07-01", "tapsustus": ""},
+            ),
+            1,
+        )
+    ]
     package = _package(*topics)
     package["snapshot"]["highest_reference"] = {"2026": 520}
     _apply(package)
@@ -123,6 +140,9 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
     source = FakeLovable()
     for topic in topics:
         source.put(topic["source"]["id"], copy.deepcopy(topic["source"]["row"]), version=3)
+    # 502's commencements as Lovable states them: the three the package wrote
+    # (Lovable is the source of truth at all times — docs/adr/0213 §10).
+    source.commencements.extend(copy.deepcopy(topics[1]["source"]["commencements"]))
     return {"source": source, "world": world, "topics": topics}
 
 
@@ -132,6 +152,8 @@ class FakeLovable:
     def __init__(self) -> None:
         self.rows: dict[str, dict[str, Any]] = {}
         self.commencements: list[dict[str, Any]] = []
+        #: `topic_stage_link` rows: ``{"prev_topic_id", "next_topic_id"}``.
+        self.stage_links: list[dict[str, str]] = []
         self.fail: Exception | None = None
         self.on_select: Any = None
 
@@ -161,6 +183,9 @@ class FakeLovable:
             return [{c: r.get(c) for c in columns} for r in sorted(rows, key=lambda r: r["id"])]
         if table == "topic_commencement":
             return [dict(r) for r in self.commencements if r["topic_id"] in (wanted or set())]
+        if table == "topic_stage_link" and filters:
+            column = next(iter(filters))
+            return [dict(r) for r in self.stage_links if r.get(column) in (wanted or set())]
         return []
 
 
@@ -310,21 +335,25 @@ def test_a_do_deadline_moves(cohort):
     )
 
 
-def test_a_day_moved_into_the_past_is_held_not_made_overdue(cohort):
+def test_a_day_moved_into_the_past_follows_the_source(cohort):
+    """Source authority (docs/adr/0213 §10): Lovable's day is the step's day."""
     cohort["source"].edit("2026_505", tegevuse_tahtaeg="2026-10-01")
     run = _run(cohort)
-    decision = _decisions(run, "2026_505")["next_action_date"]
-    assert (decision.outcome, decision.reason) == (
-        SyncOutcome.REVIEW_REQUIRED,
-        lovable_sync.DATE_PAST,
-    )
+    assert _decisions(run, "2026_505")["next_action_date"].outcome == SyncOutcome.APPLIED
+    step = NextAction.objects.get(matter=_matter("2026_505"), status=ActionStatus.OPEN)
+    assert (step.text, step.target_date) == ("Saadan märkused", dt.date(2026, 10, 1))
 
 
-def test_the_drafting_step_is_not_moved_by_the_source_day(cohort):
+def test_the_drafting_step_follows_the_source_day(cohort):
     cohort["source"].edit("2026_502", tegevuse_tahtaeg="2026-11-30")
     run = _run(cohort)
-    decision = _decisions(run, "2026_502")["next_action_date"]
-    assert decision.reason == lovable_sync.NOT_SOURCE_STEP
+    assert _decisions(run, "2026_502")["next_action_date"].outcome == SyncOutcome.APPLIED
+    step = NextAction.objects.get(matter=_matter("2026_502"), status=ActionStatus.OPEN)
+    assert (step.kind, step.date_semantics, step.target_date) == (
+        "DO",
+        "DEADLINE",
+        dt.date(2026, 11, 30),
+    )
 
 
 def test_a_new_onenote_link_is_a_new_observation_beside_the_old(cohort):
@@ -353,15 +382,22 @@ def test_a_cleared_onenote_link_is_held(cohort):
 # ---------------------------------------------------------------------------
 
 
-def test_new_next_step_wording_is_held_with_its_day(cohort):
+def test_new_next_step_wording_replaces_the_step_with_its_day(cohort):
     matter = _matter("2026_501")
     before = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     cohort["source"].edit("2026_501", jargmiseks="Koostan arvamuse", tegevuse_tahtaeg="2026-11-25")
     run = _run(cohort)
     found = _decisions(run, "2026_501")
-    assert found["next_action_text"].outcome == SyncOutcome.REVIEW_REQUIRED
-    assert found["next_action_date"].reason == lovable_sync.WITH_TEXT
-    assert NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).pk == before.pk
+    assert found["next_action_text"].outcome == SyncOutcome.APPLIED
+    assert found["next_action_date"].outcome == SyncOutcome.APPLIED
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    assert (step.text, step.kind, step.target_date) == (
+        "Koostan arvamuse",
+        "DO",
+        dt.date(2026, 11, 25),
+    )
+    before.refresh_from_db()
+    assert (before.status, before.replaced_by_id) == (ActionStatus.SUPERSEDED, step.pk)
 
 
 def test_a_held_change_stays_pending_the_next_night(cohort):
@@ -380,9 +416,24 @@ def test_a_held_change_stays_pending_the_next_night(cohort):
     [
         ({"arvamuse_tahtaeg": "2026-12-01"}, "opinion_deadline"),
         ({"valja": "saadetud", "valja_kuupaev": "2026-10-27"}, "sent"),
-        ({"kellele": "Näidisministeerium"}, "addressee"),
         ({"koja_ettepanek": True}, "koda_initiative"),
         ({"sisse": "2026-02-01"}, "received"),
+    ],
+)
+def test_source_fields_are_written_without_a_document(cohort, values, field):
+    """Source authority (docs/adr/0213 §10): written, but never a `Submission` or
+    a document — a sent status is Lovable's statement, not a letter."""
+    cohort["source"].edit("2026_501", **values)
+    run = _run(cohort)
+    assert _decisions(run, "2026_501")[field].outcome == SyncOutcome.APPLIED
+    assert not Submission.objects.exists()
+    assert not Document.objects.exists()
+
+
+@pytest.mark.parametrize(
+    ("values", "field"),
+    [
+        ({"kellele": "Näidisministeerium"}, "addressee"),
         ({"operatiivne_ulatus": False}, "operational_scope"),
     ],
 )
@@ -414,8 +465,10 @@ def test_a_changed_commencement_estimate_is_held_and_never_becomes_work(cohort):
     source.edit("2026_501")
     before = MatterImportantDate.objects.count()
     run = _run(cohort)
-    assert _decisions(run, "2026_501")["commencements"].outcome == SyncOutcome.REVIEW_REQUIRED
-    assert MatterImportantDate.objects.count() == before
+    # Added as Lovable states it — an estimate, even on a past day ...
+    assert _decisions(run, "2026_501")["commencements"].outcome == SyncOutcome.APPLIED
+    assert MatterImportantDate.objects.count() == before + 1
+    # ... and an estimate never becomes work.
     mari = cohort["world"]["mari"]
     assert not [
         i
@@ -438,15 +491,11 @@ def test_a_past_estimate_from_the_pilot_stays_out_of_work_after_a_sync(cohort):
     assert not kinds & {"ESTIMATED_COMMENCEMENT", "PLANNED_COMMENCEMENT"}
 
 
-def test_a_closed_teema_is_not_written(cohort):
+def test_a_closed_teemas_title_follows_the_source_and_it_stays_closed(cohort):
     cohort["source"].edit("2026_503", teema="Uus pealkiri")
     run = _run(cohort)
-    decision = _decisions(run, "2026_503")["title"]
-    assert (decision.outcome, decision.reason) == (
-        SyncOutcome.REVIEW_REQUIRED,
-        lovable_sync.MATTER_CLOSED,
-    )
-    assert _matter("2026_503").title != "Uus pealkiri"
+    assert _decisions(run, "2026_503")["title"].outcome == SyncOutcome.APPLIED
+    assert _matter("2026_503").title == "Uus pealkiri"
     assert not _matter("2026_503").is_open
 
 
@@ -481,17 +530,20 @@ def test_too_many_missing_rows_stop_the_whole_run(cohort, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_a_local_test_edit_is_kept(cohort):
+def test_a_local_edit_is_restored_to_lovables_value(cohort):
+    """Lovable is the source of truth at all times (owner decision 11.11)."""
     from app.matters.services import set_matter_title
 
     lawyer = cohort["world"]["mari"]
     set_matter_title(matter=_matter("2026_501"), value="Juristi oma pealkiri", actor=lawyer)
     run = _run(cohort)
-    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
-    assert _matter("2026_501").title == "Juristi oma pealkiri"
+    title = _decisions(run, "2026_501")["title"]
+    assert (title.outcome, title.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert _matter("2026_501").title == "Näidisteema 2026_501"
 
 
-def test_a_local_and_a_source_change_conflict_and_nothing_is_overwritten(cohort):
+def test_a_source_change_overwrites_a_local_one(cohort):
+    from app.audit.models import ChangeEvent
     from app.matters.services import set_matter_title
 
     set_matter_title(
@@ -499,9 +551,16 @@ def test_a_local_and_a_source_change_conflict_and_nothing_is_overwritten(cohort)
     )
     cohort["source"].edit("2026_501", teema="Lovable uus pealkiri")
     run = _run(cohort)
-    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.CONFLICT
-    assert _matter("2026_501").title == "Juristi oma pealkiri"
-    assert run.counts["conflicts"] == 1
+    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.APPLIED
+    assert _matter("2026_501").title == "Lovable uus pealkiri"
+    assert run.counts["conflicts"] == 0
+    event = ChangeEvent.objects.filter(
+        matter=_matter("2026_501"), event_type="MATTER_TITLE_CHANGED"
+    ).latest("occurred_at")
+    assert (event.payload["previous"], event.payload["current"]) == (
+        "Juristi oma pealkiri",
+        "Lovable uus pealkiri",
+    )
 
 
 def test_a_local_change_that_matches_the_source_converges_without_a_write(cohort):
@@ -521,7 +580,7 @@ def test_a_local_change_that_matches_the_source_converges_without_a_write(cohort
     )
 
 
-def test_an_edited_step_turns_a_date_change_into_a_conflict(cohort):
+def test_an_edited_step_is_replaced_by_a_source_date_change(cohort):
     from app.matters.workspace import change_current_action
 
     matter = _matter("2026_505")
@@ -537,11 +596,14 @@ def test_an_edited_step_turns_a_date_change_into_a_conflict(cohort):
     )
     cohort["source"].edit("2026_505", tegevuse_tahtaeg="2026-12-01")
     run = _run(cohort)
-    assert _decisions(run, "2026_505")["next_action_date"].outcome == SyncOutcome.CONFLICT
-    assert (
-        NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).text
-        == "Saadan märkused ja helistan"
-    )
+    # Source authority: the source's step replaces the local edit; the edit stays
+    # in the history.
+    assert _decisions(run, "2026_505")["next_action_date"].outcome == SyncOutcome.APPLIED
+    now = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    assert (now.text, now.target_date) == ("Saadan märkused", dt.date(2026, 12, 1))
+    assert NextAction.objects.filter(
+        matter=matter, text="Saadan märkused ja helistan", status=ActionStatus.SUPERSEDED
+    ).exists()
 
 
 def test_an_edit_made_after_planning_is_caught_under_the_lock(cohort, monkeypatch):
@@ -562,8 +624,10 @@ def test_an_edit_made_after_planning_is_caught_under_the_lock(cohort, monkeypatc
 
     monkeypatch.setattr(lovable_sync, "apply_matter", edit_then_apply)
     run = _run(cohort)
-    assert _matter("2026_501").title == "Vahepealne muudatus"
-    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.CONFLICT
+    # Planned again under the lock: the source change still wins, and the save
+    # that landed in between is the write's «previous» value, never lost silently.
+    assert _matter("2026_501").title == "Lovable uus pealkiri"
+    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.APPLIED
 
 
 # ---------------------------------------------------------------------------
@@ -580,7 +644,8 @@ def test_the_same_snapshot_twice_writes_once(cohort):
     assert second.counts["updated"] == 0
     assert _writes() == writes
     assert NextAction.objects.filter(status=ActionStatus.OPEN).count() == open_steps
-    assert LovableSyncDecision.objects.filter(outcome=SyncOutcome.APPLIED).count() == 2
+    # The title, and the step's one operation (its wording and its day).
+    assert LovableSyncDecision.objects.filter(outcome=SyncOutcome.APPLIED).count() == 3
 
 
 def test_the_nightly_run_happens_once_per_tallinn_date(cohort):
@@ -1041,7 +1106,7 @@ def test_run_needs_the_one_off_switches(db, settings):
 # ---------------------------------------------------------------------------
 
 
-def test_a_day_the_lawyer_reviewed_in_place_is_not_the_baseline(cohort):
+def test_a_day_the_lawyer_reviewed_in_place_yields_to_a_later_source_day(cohort):
     """«Vaatasin üle» moves the pilot's step's day in place, keeping its id: the
     baseline is the day the pilot wrote, so the lawyer's day is a local change and
     a later source day conflicts instead of replacing it."""
@@ -1054,14 +1119,14 @@ def test_a_day_the_lawyer_reviewed_in_place_is_not_the_baseline(cohort):
     )
     cohort["source"].edit("2026_501", tegevuse_tahtaeg="2026-11-25")
     run = _run(cohort)
-    assert _decisions(run, "2026_501")["next_action_date"].outcome == SyncOutcome.CONFLICT
-    step.refresh_from_db()
+    # Source authority: Lovable's new day wins over the lawyer's reviewed day.
+    assert _decisions(run, "2026_501")["next_action_date"].outcome == SyncOutcome.APPLIED
     assert NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).target_date == dt.date(
-        2026, 11, 20
+        2026, 11, 25
     )
 
 
-def test_a_resolved_wording_does_not_let_the_source_move_the_lawyers_own_step(cohort):
+def test_a_lawyers_own_step_is_replaced_when_lovable_changes_it(cohort):
     from app.matters.workspace import change_current_action
 
     matter = _matter("2026_505")
@@ -1076,16 +1141,18 @@ def test_a_resolved_wording_does_not_let_the_source_move_the_lawyers_own_step(co
         target_date=step.target_date,
     )
     cohort["source"].edit("2026_505", jargmiseks="Lovable uus sõnastus")
-    _run(cohort)
-    lovable_sync.resolve_field(reference="2026_505", field_name="next_action_text", note="jääb")
+    first = _run(cohort)
+    # Source authority: the new wording replaces the lawyer's own step at once.
+    assert _decisions(first, "2026_505")["next_action_text"].outcome == SyncOutcome.APPLIED
+    assert (
+        NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).text
+        == "Lovable uus sõnastus"
+    )
     cohort["source"].edit("2026_505", tegevuse_tahtaeg="2026-12-03")
     run = _run(cohort, at=NIGHT + dt.timedelta(days=1))
-    decision = _decisions(run, "2026_505")["next_action_date"]
-    assert decision.outcome == SyncOutcome.REVIEW_REQUIRED
-    assert decision.reason == lovable_sync.NOT_SOURCE_STEP
-    assert (
-        NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).target_date
-        == step.target_date
+    assert _decisions(run, "2026_505")["next_action_date"].outcome == SyncOutcome.APPLIED
+    assert NextAction.objects.get(matter=matter, status=ActionStatus.OPEN).target_date == dt.date(
+        2026, 12, 3
     )
 
 
@@ -1112,7 +1179,8 @@ def test_converged_wording_becomes_the_baseline_and_a_later_day_moves(cohort):
     )
     cohort["source"].edit("2026_505", tegevuse_tahtaeg="2026-11-29")
     second = _run(cohort, at=NIGHT + dt.timedelta(days=1))
-    assert "next_action_text" not in _decisions(second, "2026_505")
+    # One operation: the day moves and the wording and kind stay as they were.
+    assert _decisions(second, "2026_505")["next_action_date"].outcome == SyncOutcome.APPLIED
     after = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     assert (after.text, after.kind, after.target_date) == (
         "Ootan ministeeriumi vastust",
@@ -1142,25 +1210,31 @@ def test_a_run_with_a_failed_teema_is_not_a_success(cohort, monkeypatch):
     assert not lovable_sync.sync_health(now=NIGHT + dt.timedelta(hours=1)).ok
 
 
-def test_standing_conflicts_do_not_hold_every_later_night(cohort, monkeypatch):
+def test_a_local_and_a_source_change_raise_no_conflict_to_hold_the_night(cohort, monkeypatch):
+    """Source authority (docs/adr/0213 §10): a local edit and a source change is
+    no conflict — the source wins — so even a zero conflict allowance holds nothing."""
     from app.matters.services import set_matter_title
 
     monkeypatch.setattr(lovable_sync, "MAX_NEW_CONFLICTS", 0)
     set_matter_title(matter=_matter("2026_501"), value="Juristi oma", actor=cohort["world"]["mari"])
     cohort["source"].edit("2026_501", teema="Lovable oma")
     first = _run(cohort)
-    assert first.status == SyncRunStatus.REVIEW_ONLY  # a new conflict: the night is held
+    assert first.status == SyncRunStatus.SUCCEEDED, first.error
+    assert _matter("2026_501").title == "Lovable oma"
     cohort["source"].edit("2026_505", teema="Uus 505")
     second = _run(cohort, at=NIGHT + dt.timedelta(days=1))
     assert second.status == SyncRunStatus.SUCCEEDED, second.error
     assert _matter("2026_505").title == "Uus 505"
 
 
-def test_a_closed_teema_gets_no_new_link(cohort):
+def test_a_closed_teema_gets_the_new_link_beside_the_old(cohort):
     cohort["source"].edit("2026_503", onenote_link=NEW_URL)
     run = _run(cohort)
-    assert _decisions(run, "2026_503")["onenote_link"].reason == lovable_sync.MATTER_CLOSED
-    assert not MatterSourceReference.objects.filter(onenote_url=NEW_URL).exists()
+    assert _decisions(run, "2026_503")["onenote_link"].outcome == SyncOutcome.APPLIED
+    assert MatterSourceReference.objects.filter(
+        matter=_matter("2026_503"), onenote_url=NEW_URL
+    ).exists()
+    assert not _matter("2026_503").is_open
 
 
 def test_a_closed_teema_already_matching_the_source_converges(cohort):

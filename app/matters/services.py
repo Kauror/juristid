@@ -5574,6 +5574,7 @@ def close_matter(
     successor: Matter | None = None,
     stage_episode: MatterStageEpisode | None = None,
     follow_ups_confirmed: bool | str = False,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -5740,10 +5741,152 @@ def close_matter(
                 "overviews": list(ending.overview_ids),
                 "waits": list(ending.wait_ids),
             },
+            # Who closed it when no person did: the Lovable synchronisation's
+            # run, source reference and version (`close_matter_from_source`).
+            # Nested, so it can never shadow a key above.
+            **({"provenance": provenance} if provenance else {}),
         },
         **episode_binding,
     )
     return matter
+
+
+@transaction.atomic
+def close_matter_from_source(
+    *,
+    matter: Matter,
+    disposition: str,
+    stage: Any = None,
+    successor: Matter | None = None,
+    reason: str = "",
+    provenance: dict[str, Any] | None = None,
+) -> Matter:
+    """Close a Matter because its source of record says the work ended (docs/adr/0213 §10).
+
+    The Lovable synchronisation's one closing act: Lovable is authoritative for
+    the register (owner brief 2026-11-11), so «jõustunud», «rohkem ei tegele» and
+    a structured stage link to a successor close the Teema without a second
+    business decision. Nothing here chooses a reason — the caller passes the one
+    the source states — and nobody's confirmation is asked, because no person is
+    closing it (``follow_ups_confirmed=True``: the live work is ended as every
+    closure ends it, each piece with its own cancellation event, and no step is
+    ever completed).
+
+    ``stage`` — the stage the source names, moved first, as an import
+    (`StageEpisodeOrigin.IMPORTED`), **without** the terminal stage's own closure,
+    which would pick `TERMINAL_DISPOSITIONS`' reason and could not name a
+    successor; then `close_matter` writes `MATTER_CLOSED` in the period that
+    stage began, with ``provenance`` on the event. ``None`` keeps the stage.
+    One transaction: a refusal anywhere leaves the Matter open and its periods
+    as they were.
+    """
+    # The Matter's lock first, as every closure takes it (`close_matter`), so the
+    # stage move and the closure see one committed row (review P3-9).
+    locked = lock_matter_for_write(matter.pk)
+    if not locked.is_open:
+        raise DomainError("Teema on juba suletud.")
+    if stage is not None:
+        _move_stage(matter=locked, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+    closed = close_matter(
+        matter=locked,
+        disposition=disposition,
+        actor=None,
+        reason=reason,
+        successor=successor,
+        stage_episode=current_stage_episode(locked),
+        follow_ups_confirmed=True,
+        provenance=provenance,
+    )
+    for name in (
+        "is_open",
+        "disposition",
+        "disposition_reason",
+        "closed_at",
+        "closed_by",
+        "superseded_by",
+        "stage",
+    ):
+        setattr(matter, name, getattr(closed, name))
+    return closed
+
+
+@transaction.atomic
+def change_closure_from_source(
+    *,
+    matter: Matter,
+    disposition: str,
+    successor: Matter | None = None,
+    reason: str = "",
+    provenance: dict[str, Any] | None = None,
+) -> Matter:
+    """A closed Matter's closure reason (and successor) set to what its source of
+    record states (docs/adr/0213 §10, owner decision 11.11: Lovable wins).
+
+    Not a reopening and a new closure: the closing moment and person stay as
+    they were, nothing live exists to end, and one `MATTER_CLOSURE_REASON_CHANGED`
+    event records the reason and successor before and after, with the run's
+    ``provenance``. The same rules as `close_matter`: a successor only with
+    SUPERSEDED and required by it, never the Matter itself, never a deleted one,
+    never one whose chain leads back here."""
+    if disposition not in Disposition.values:
+        raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
+    if disposition == Disposition.SUPERSEDED and successor is None:
+        raise DomainError(SUPERSEDED_NEEDS_A_SUCCESSOR)
+    if successor is not None and disposition != Disposition.SUPERSEDED:
+        raise DomainError("Järglase saab määrata ainult siis, kui töö jätkub teise teema all.")
+    if successor is not None and successor.pk == matter.pk:
+        raise DomainError("Teema ei saa jätkuda iseenda all.")
+    if successor is None:
+        locked = lock_matter_for_write(matter.pk)
+    else:
+        rows = lock_matters_in_order(
+            matter.pk, successor.pk, *_forward_chain_ids(successor.pk, stop=matter.pk)
+        )
+        locked = rows[matter.pk]
+        successor = rows[successor.pk]
+        if successor.deleted_at is not None:
+            raise DomainError(SUCCESSOR_DELETED_REFUSAL)
+        _refuse_continuation_cycle(locked, successor, rows)
+    if locked.deleted_at is not None:
+        # A tombstone takes no closure, as `close_matter` refuses one.
+        raise Matter.DoesNotExist(matter.pk)
+    if locked.is_open:
+        raise DomainError("Avatud teema lõpetamise põhjust ei muudeta; teema tuleb sulgeda.")
+    old_successor = locked.superseded_by
+    before = {
+        "disposition": locked.disposition,
+        "successor": str(locked.superseded_by_id) if locked.superseded_by_id else None,
+    }
+    locked.disposition = disposition
+    locked.disposition_reason = reason
+    locked.superseded_by = successor
+    locked.save(update_fields=["disposition", "disposition_reason", "superseded_by", "updated_at"])
+    # Every Matter whose earlier history this changes forgets what it memoised:
+    # the new successor gained a stage, an old one lost it (as `close_matter`
+    # and `reopen_matter` do).
+    if successor is not None:
+        forget_continuation_history(successor)
+    if old_successor is not None and (successor is None or old_successor.pk != successor.pk):
+        forget_continuation_history(old_successor)
+    record_change_event(
+        event_type=ChangeEventType.MATTER_CLOSURE_REASON_CHANGED,
+        matter=locked,
+        actor=None,
+        obj=locked,
+        summary=reason[:200],
+        payload={
+            "from": before,
+            "to": {
+                "disposition": disposition,
+                "successor": str(successor.pk) if successor else None,
+            },
+            "reason": reason,
+            **({"provenance": provenance} if provenance else {}),
+        },
+    )
+    for name in ("disposition", "disposition_reason", "superseded_by"):
+        setattr(matter, name, getattr(locked, name))
+    return locked
 
 
 #: What `Jätkub teise teema all` naming no Matter is told (ENG-065).

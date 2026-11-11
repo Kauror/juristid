@@ -458,3 +458,19 @@ def reporting_context(world):
         )
 
     return build
+
+
+@pytest.fixture(autouse=True)
+def _pillow_bomb_limit_restored() -> Generator[None]:
+    """Give every test Pillow's own image-size guard back.
+
+    `configure_image_safety` sets the process-wide ``Image.MAX_IMAGE_PIXELS``
+    from the extraction limits, so a test that lowers the limit to 10,000
+    pixels left it lowered for whatever ran next on the same worker (the
+    favicon tests failed on a shard order that put them after it).
+    """
+    from PIL import Image
+
+    before = Image.MAX_IMAGE_PIXELS
+    yield
+    Image.MAX_IMAGE_PIXELS = before

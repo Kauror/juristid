@@ -256,13 +256,14 @@ def test_compare_mode_shows_an_eligible_change_as_not_applied(cohort, reader):
     assert night.mode_note == lovable_review.COMPARE_ONLY_NOTE and night.applied == 0
 
 
-def test_a_local_edit_and_a_source_change_are_a_conflict(cohort, reader):
+def test_a_local_edit_and_a_source_change_take_the_source(cohort, reader):
+    """Source authority (docs/adr/0213 §10): no conflict — Lovable's value is written."""
     _nights(cohort, {})
     set_matter_title(matter=_matter("2026_501"), value="Juristide oma pealkiri", actor=None)
     _nights(cohort, {"2026_501": {"teema": "Lovable'i uus pealkiri"}}, start=1)
     title = _fields(_topic(_history(reader).nights[0], "2026_501"))["title"]
-    assert (title.result, title.result_label) == ("CONFLICT", "Vastuolu")
-    assert _matter("2026_501").title == "Juristide oma pealkiri"
+    assert (title.result, title.result_label) == ("APPLIED", "Uuendatud")
+    assert _matter("2026_501").title == "Lovable'i uus pealkiri"
 
 
 def test_a_local_edit_alone_is_not_a_lovable_change(cohort, reader):
@@ -334,7 +335,7 @@ def test_a_changed_commencement_is_compared_by_content(cohort, reader):
     row = {"topic_id": topic_id, "liik": "Eeldatav", "kuupaev": "2027-01-01", "tapsustus": ""}
     source.commencements.append({**row, "id": "c1", "position": 1})
     _nights(cohort, {})
-    source.commencements[0]["kuupaev"] = "2027-07-01"
+    next(c for c in source.commencements if c["id"] == "c1")["kuupaev"] = "2027-07-01"
     _nights(cohort, {}, start=1)
     change = _fields(_topic(_history(reader).nights[0], "2026_501"))["commencements"]
     assert (change.label, change.before, change.after) == (

@@ -159,12 +159,13 @@ def test_h_a_register_date_is_sent_whatever_the_reader_may_see(
 # ---------------------------------------------------------------------------
 
 
-def test_i_sent_once_and_drafting_again_is_both(file, department_head, send):
+def test_i_a_draft_after_the_send_leaves_it_sent_only(file, department_head, send):
+    """Lovable keeps one VÄLJA per topic: a draft is not an outcome (ADR 0149, 2026-11-11)."""
     send(file)
     draft_on(file)
 
     assert listed(department_head, SENT) == {file.pk}
-    assert listed(department_head, DRAFTING) == {file.pk}
+    assert listed(department_head, DRAFTING) == set()
 
 
 def test_j_ei_saatnud_leaving_saadetud_does_not_make_it_a_draft(file, department_head):

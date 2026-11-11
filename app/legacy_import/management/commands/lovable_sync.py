@@ -143,6 +143,24 @@ class Command(BaseCommand):
             help="A credentials file; without it the LOVABLE_SYNC_* environment is read.",
         )
         parser.add_argument("--backup-set", default="")
+        parser.add_argument(
+            "--max-changed",
+            type=int,
+            default=0,
+            help=(
+                "run: raise the Teemad-written breaker for this one supervised run "
+                "(the first source-authoritative convergence); recorded in the run."
+            ),
+        )
+        parser.add_argument(
+            "--max-restored",
+            type=int,
+            default=None,
+            help=(
+                "run: raise the restore breaker for this one supervised run (a held "
+                "backlog of restores drains at once); recorded in the run."
+            ),
+        )
         parser.add_argument("--mode", choices=["off", "compare", "apply"], default="")
         parser.add_argument("--cut-over", action="store_true")
         parser.add_argument("--operator-intent", default="")
@@ -362,6 +380,8 @@ class Command(BaseCommand):
             trigger=trigger,
             transport=lovable_source.HttpTransport(config),
             backup_set=options["backup_set"],
+            max_changed=options["max_changed"] or None,
+            max_restored=options["max_restored"],
         )
         self._finish(options, run)
 

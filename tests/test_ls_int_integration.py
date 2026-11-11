@@ -49,7 +49,7 @@ def test_a_later_captures_new_version_is_dated_by_its_onenote_change_never_by_th
 
 
 def test_the_readiness_rules_agree_with_the_engines_field_policy():
-    automatic = {"AUTO": "EXACT", "CONDITIONAL": "CONDITIONAL"}
+    automatic = {"AUTO": "EXACT", "CONDITIONAL": "CONDITIONAL", "AUTHORITATIVE": "EXACT"}
     for name, rule in lovable_observability.FIELD_RULES.items():
         policy = lovable_sync.FIELD_POLICY[name].policy
         if policy in automatic:

@@ -1,6 +1,12 @@
 # ruff: noqa: F811 - pytest fixtures imported from the sync suites are used as arguments
-"""«Vaata erinevusi» keeps the historical register's import holds apart
+"""«Vaata erinevusi» keeps the historical register's own holds apart
 (docs/adr/0213 §9, amendment 2026-11-10), on synthetic data.
+
+Since the owner decision of 11.11 the historical register follows Lovable too
+(§10): «lõpetatud» on a closed Teema converges, so the group that remains is the
+former staff Lovable names as owners who are no Juristid users
+(`HISTORY_OWNER_UNRESOLVED`). The fixture's import held the owner, as the
+backfill does for a name with no account.
 
 On a rehearsal clone, enrolling the 1,833 historical Teemad (cohort
 ``lovable-history``) made every one whose Lovable «hetkeseis» is «lõpetatud»
@@ -50,18 +56,25 @@ GROUP = "Ajalooline register: impordil ootele jäetud väljad (3)"
 
 
 def _closed(reference: str) -> dict[str, Any]:
-    """A closed ARCHIVE Teema of the register whose Lovable stage is «lõpetatud»,
-    which is no Juristid stage: the import holds it for review."""
+    """A closed ARCHIVE Teema of the register whose Lovable stage is «lõpetatud»
+    and whose owner is former staff with no Juristid account: the import held
+    the owner for review."""
     return _source_topic(
         reference,
-        _row(reference, hetkeseis="lõpetatud", jargmiseks="", tegevuse_tahtaeg=None),
+        _row(
+            reference,
+            hetkeseis="lõpetatud",
+            jargmiseks="",
+            tegevuse_tahtaeg=None,
+            vastutaja="Endine Töötaja",
+        ),
         status_raw="lõpetatud",
         stage="in_force",
         lifecycle="INACTIVE",
         disposition="COMPLETED",
         next_action=None,
         deadline={"treatment": "NONE"},
-        field_decisions={"hetkeseis": HELD},
+        field_decisions={"vastutaja": HELD},
     )
 
 
@@ -113,9 +126,9 @@ def test_the_synthetic_night_reproduces_the_rehearsal_shape(night):
     held Teemad to «vajab ülevaatamist», which is what buried the work."""
     run = night["run"]
     part = run.counts["by_cohort"][HISTORY]
-    assert (part["checked"], part["review"], part["import_held"]) == (3, 3, 3)
-    held = run.decisions.filter(state__cohort=HISTORY, reason=lovable_sync.IMPORT_HELD)
-    assert {(d.field, d.outcome) for d in held} == {("stage", SyncOutcome.REVIEW_REQUIRED)}
+    assert (part["checked"], part["review"], part["import_held"]) == (3, 3, 0)
+    held = run.decisions.filter(state__cohort=HISTORY, reason=lovable_sync.HISTORY_OWNER_UNRESOLVED)
+    assert {(d.field, d.outcome) for d in held} == {("owner", SyncOutcome.REVIEW_REQUIRED)}
     assert held.count() == 3
     assert run.counts["review"] == part["review"] + run.counts["by_cohort"][
         lovable_sync.PILOT_COHORT
@@ -127,9 +140,9 @@ def test_history_holds_are_their_own_group_never_operational(night):
     history = diff.history
     assert history is not None
     assert (history.total, history.teemad, history.pages, history.hidden) == (3, 3, 1, 0)
-    assert [(s.field_label, s.count) for s in history.summary] == [("Hetkeseis", 3)]
+    assert [(s.field_label, s.count) for s in history.summary] == [("Vastutaja", 3)]
     assert [r.reference for r in history.rows] == list(HISTORICAL)
-    assert all(r.historical and r.field == "stage" for r in history.rows)
+    assert all(r.historical and r.field == "owner" for r in history.rows)
     operational = [r for _h, rows in diff.groups for r in rows] + [
         r for card in diff.step_cards for r in card.rows
     ]
@@ -143,7 +156,7 @@ def test_a_real_change_on_a_historical_teema_stays_operational(night):
     diff = sync_admin.differences(_reader(night))
     retitled = [r for r in diff.rows if r.reference == "2026_603"]
     assert [(r.field, r.historical) for r in retitled] == [("title", False)]
-    assert "2026_603" in [r.reference for r in diff.history.rows]  # its stage hold only
+    assert "2026_603" in [r.reference for r in diff.history.rows]  # its owner hold only
 
 
 def test_the_page_puts_the_history_group_last_and_closed(night, client):
@@ -193,7 +206,7 @@ def test_the_overview_counts_operational_work_and_the_history_apart(night, clien
     assert panel.decisions[SyncOutcome.REVIEW_REQUIRED] == every - 3
     historical = panel.historical
     assert historical is not None
-    assert (historical.checked, historical.review, historical.import_held) == (3, 3, 3)
+    assert (historical.checked, historical.review, historical.import_held) == (3, 3, 0)
     assert historical.held_decisions == 3 and historical.pending_fields == 3
     assert panel.import_held_fields == 0  # the pilot holds nothing; the history is apart
     from app.legacy_import import lovable_observability as obs
@@ -208,12 +221,13 @@ def test_the_overview_counts_operational_work_and_the_history_apart(night, clien
 
 def test_a_requests_run_line_takes_the_history_out_of_vajab_ulevaatamist(night):
     run = night["run"]
-    # 601 and 602 wait only on their stage hold; 603 also on a real title change,
-    # so it stays operational work (the field-level rule, counted per Teema).
-    assert sync_admin.historical_review_teemad([run.pk]) == {run.pk: 2}
+    # Every one waits for review only on its owner hold: 603's real title change
+    # is a planned write (ELIGIBLE on this COMPARE night), not a review item
+    # (docs/adr/0213 §10), so all three count as the history's (per Teema).
+    assert sync_admin.historical_review_teemad([run.pk]) == {run.pk: 3}
     counts = sync_admin.int_counts(run.counts)
-    shown = sync_admin._operational_counts(counts, 2)
-    assert (shown["review"], shown["review_history"]) == (counts["review"] - 2, 2)
+    shown = sync_admin._operational_counts(counts, 3)
+    assert (shown["review"], shown["review_history"]) == (counts["review"] - 3, 3)
     assert LovableSyncRun.objects.get(pk=run.pk).counts["review"] == counts["review"]
     # A run without the history cohort reads exactly as before.
     assert sync_admin._operational_counts({"review": 4}, 0) == {"review": 4}
@@ -227,38 +241,40 @@ def test_pending_and_resolve_are_unchanged_for_a_history_hold(night):
         if p.kind == "FIELD"
     }
     for ref in HISTORICAL:
-        item = pending[(ref, "stage")]
+        item = pending[(ref, "owner")]
         assert (item.outcome, item.reason, item.cohort) == (
             SyncOutcome.REVIEW_REQUIRED,
-            lovable_sync.IMPORT_HELD,
+            lovable_sync.HISTORY_OWNER_UNRESOLVED,
             HISTORY,
         )
-    row = sync_admin.difference_for(reader, "2026_601", "stage")
+    row = sync_admin.difference_for(reader, "2026_601", "owner")
     assert row is not None and row.historical and row.resolvable
     with refused(sync_admin.NEEDS_REASON):
         sync_admin.resolve_difference(
-            technical_admin()[0], reader, reference="2026_601", field_name="stage", note=" "
+            technical_admin()[0], reader, reference="2026_601", field_name="owner", note=" "
         )
     sync_admin.resolve_difference(
-        technical_admin()[0], reader, reference="2026_601", field_name="stage", note="Ajalugu"
+        technical_admin()[0], reader, reference="2026_601", field_name="owner", note="Ajalugu"
     )
     history = sync_admin.differences(reader).history
     assert [r.reference for r in history.rows] == ["2026_602", "2026_603"]
 
 
 def test_an_apply_night_still_never_applies_a_history_hold(night):
-    stages = {
-        m.pk: m.stage for m in Matter.objects.filter(lovable_sync_state__reference__in=HISTORICAL)
+    owners = {
+        m.pk: m.owner_id
+        for m in Matter.objects.filter(lovable_sync_state__reference__in=HISTORICAL)
     }
     lovable_sync.set_mode(SyncMode.APPLY, reason="test")
     run = _run(night, SyncTrigger.SCHEDULED, at=NIGHT + dt.timedelta(days=1))
-    held = run.decisions.filter(state__cohort=HISTORY, field="stage")
+    held = run.decisions.filter(state__cohort=HISTORY, field="owner")
     assert {(d.outcome, d.reason) for d in held} == {
-        (SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD)
+        (SyncOutcome.REVIEW_REQUIRED, lovable_sync.HISTORY_OWNER_UNRESOLVED)
     }
     assert {
-        m.pk: m.stage for m in Matter.objects.filter(lovable_sync_state__reference__in=HISTORICAL)
-    } == stages
+        m.pk: m.owner_id
+        for m in Matter.objects.filter(lovable_sync_state__reference__in=HISTORICAL)
+    } == owners
     assert sync_admin.differences(_reader(night)).history.total == 3
 
 
@@ -279,7 +295,7 @@ def test_pending_differences_reads_in_a_bounded_number_of_queries(night):
     assert len([p for p in later if p.kind == "FIELD"]) > len(fields)
     assert len(again) == len(few)
     # «Since» still names the first night a difference appeared with its value.
-    assert {p.since for p in later if p.cohort == HISTORY and p.field == "stage"} == {
+    assert {p.since for p in later if p.cohort == HISTORY and p.field == "owner"} == {
         night["run"].started_at
     }
     assert LovableSyncState.objects.filter(cohort=HISTORY).count() == 3
@@ -303,19 +319,15 @@ def _where(diff: Any, reference: str) -> dict[str, list[str]]:
 
 def test_reopened_stage_in_lovable_on_a_historical_teema(night):
     """Lovable moves a closed historical topic from «lõpetatud» back to
-    «Riigikogus»: the engine still says IMPORT_HELD, but it is a real change."""
+    «Riigikogus» (inside its operational scope): a real change, planned on this
+    COMPARE night as the reopening (docs/adr/0213 §10) — operational work, while
+    its owner hold stays in the history group."""
     night["source"].edit("2026_602", hetkeseis="Riigikogus")
     run = _run(night, SyncTrigger.SCHEDULED, at=NIGHT + dt.timedelta(days=1))
     d = run.decisions.get(state__reference="2026_602", field="stage")
-    assert (d.outcome, d.reason) == (SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD)
+    assert (d.outcome, d.reason) == (SyncOutcome.ELIGIBLE, "")
     where = _where(sync_admin.differences(_reader(night)), "2026_602")
-    assert where == {"operational": ["stage"], "history": []}
-    from app.legacy_import import lovable_observability as obs
-
-    assert obs.status(_reader(night)).pending_review_historical == 2
-    _ops, held = sync_admin.decision_counts(run)
-    assert held == 2
-    assert sync_admin.historical_review_teemad([run.pk]) == {run.pk: 1}
+    assert where == {"operational": ["stage"], "history": ["owner"]}
 
 
 def test_source_missing_on_a_historical_teema_is_operational(night):
@@ -379,7 +391,9 @@ def test_breakers_ignore_import_holds_and_since_stays_the_first_night(many_histo
     first = _run(many_history, SyncTrigger.SCHEDULED)
     second = _run(many_history, SyncTrigger.SCHEDULED, at=NIGHT + dt.timedelta(days=1))
     for run in (first, second):
-        held = run.decisions.filter(state__cohort=HISTORY, reason=lovable_sync.IMPORT_HELD)
+        held = run.decisions.filter(
+            state__cohort=HISTORY, reason=lovable_sync.HISTORY_OWNER_UNRESOLVED
+        )
         assert held.count() == 25
         assert not run.decisions.filter(reason=lovable_sync.BREAKER).exists()
     sinces = {p.since for p in lovable_sync.pending_differences() if p.cohort == HISTORY}
@@ -413,7 +427,7 @@ def test_the_pages_read_in_as_many_queries_for_25_history_holds_as_for_5(many_hi
     actor = technical_admin()[0]
     for n in range(601, 621):
         sync_admin.resolve_difference(
-            actor, user, reference=f"2026_{n}", field_name="stage", note="Ajalugu"
+            actor, user, reference=f"2026_{n}", field_name="owner", note="Ajalugu"
         )
     assert sync_admin.differences(user).history.total == 5
     assert counted() == many

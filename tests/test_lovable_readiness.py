@@ -130,23 +130,32 @@ def test_readiness_plans_with_the_existing_rules_and_writes_nothing(cases, reade
     assert row_counts() == before
     assert sorted(no_write_paths) == sorted(cases.states)
     rows = _rows(readiness)
-    assert rows[("2026_243", "next_action_text")] == "MANUAL_REVIEW"
-    assert rows[("2026_220", "next_action_text")] == "MANUAL_REVIEW"
-    assert rows[("2026_220", "next_action_date")] == "MANUAL_REVIEW"
-    assert rows[("2026_186", "next_action_text")] == "LOCAL_KEPT"
-    assert rows[("2026_186", "next_action_date")] == "CONFLICT"
-    assert rows[("2026_186", "onenote_link")] == "SAFE_UPDATE_CANDIDATE"
-    assert rows[("2026_213", "commencements")] == "UNSUPPORTED_FIELD"
-    assert rows[("2026_2", "stage")] == "UNSUPPORTED_FIELD"
-    assert rows[("2026_244", "sent")] == "UNSUPPORTED_FIELD"
-    assert rows[("2026_244", "sent_date")] == "UNSUPPORTED_FIELD"
+    # Source authority (docs/adr/0213 §10): every source change is a safe update
+    # through its service; only what cannot be represented needs a person.
+    safe = "SAFE_UPDATE_CANDIDATE"
+    for key in (
+        ("2026_243", "next_action_text"),
+        ("2026_220", "next_action_text"),
+        ("2026_220", "next_action_date"),
+        ("2026_186", "next_action_text"),
+        ("2026_186", "next_action_date"),
+        ("2026_186", "onenote_link"),
+        ("2026_2", "stage"),
+        # The closure planned for 2026_2 ends its open step with it.
+        ("2026_2", "next_action_text"),
+        ("2026_2", "next_action_date"),
+        ("2026_244", "sent"),
+        ("2026_244", "sent_date"),
+    ):
+        assert rows[key] == safe, key
+    assert rows[("2026_213", "commencements")] == "MANUAL_REVIEW"
     assert rows[("2026_300", "title")] == "CONVERGED"
-    assert rows[("2026_301", "owner")] == "MISSING_BASELINE"
+    assert rows[("2026_301", "owner")] == "MANUAL_REVIEW"
     assert rows[("2026_302", "*")] == "UNKNOWN_SOURCE"
     sim = readiness.simulation
-    assert sim["SAFE_UPDATE_CANDIDATE"] == 1 and sim["CONFLICT"] == 1
+    assert sim["SAFE_UPDATE_CANDIDATE"] == 13 and "CONFLICT" not in sim
     assert sim["UNKNOWN_SOURCE"] == 1 and sim["CONVERGED"] == 1
-    assert sim["UNSUPPORTED_FIELD"] == 4 and sim["MISSING_BASELINE"] == 1
+    assert sim["MANUAL_REVIEW"] == 2
     assert sum(sim.values()) == sum(
         1 for r in readiness.simulation_rows if r["field"] == "*"
     ) + sum(sum(f.simulated.values()) for f in readiness.fields)
@@ -167,19 +176,15 @@ def test_simulation_never_changes_juristid(cases, reader):
 
 def test_the_field_table_says_why_a_field_is_held(cases, reader):
     fields = {f.field: f for f in obs.readiness(reader, now=LATER).fields}
-    assert [f for f in fields if fields[f].automatic] == list(lovable_sync.AUTO_FIELDS)
-    for name in lovable_sync.AUTO_FIELDS:
-        assert fields[name].mapping == "EXACT" and fields[name].service
-        assert fields[name].blocking_reason == ""
-    # docs/adr/0213 §4: stage and commencements are CONDITIONAL — written only
-    # under exact preconditions, never automatically (AUTO).
-    assert fields["stage"].mapping == "CONDITIONAL" and not fields["stage"].automatic
-    assert "STAGE_MAPPING" in " ".join(fields["stage"].risks)
-    assert "tee/oota/jälgi" in fields["next_action_text"].blocking_reason
-    assert "saadetud arvamus" in fields["sent"].blocking_reason
-    assert fields["commencements"].mapping == "CONDITIONAL"
+    # Source authority (docs/adr/0213 §10): every source-owned field is written
+    # through its service; only the operational scope has no place in Juristid.
+    for name in lovable_sync.AUTHORITATIVE_FIELDS:
+        assert fields[name].mapping == "EXACT" and fields[name].service, name
+        assert fields[name].blocking_reason == "", name
+    assert "Operatiivse ulatuse" in fields["operational_scope"].blocking_reason
+    assert "dokumendita" in " ".join(fields["sent"].risks)
     assert "hinnanguks" in " ".join(fields["commencements"].risks)
-    assert fields["commencements"].simulated == {"UNCHANGED": 7, "UNSUPPORTED_FIELD": 1}
+    assert fields["commencements"].simulated == {"UNCHANGED": 7, "MANUAL_REVIEW": 1}
     dumped = json.dumps(obs.readiness(reader, now=LATER).as_dict(), ensure_ascii=False)
     assert "jõustunud" not in dumped
 
@@ -192,8 +197,9 @@ def test_blockers_and_owner_decisions(cases, reader):
     assert "muutmisajalugu pole kättesaadav" in text
     assert "etapisõnastiku vastendust" in text
     assert "Laiem vaatlus on välja lülitatud" in text
-    assert "Lahendamata vastuolusid: 1" in text
-    assert readiness.conflicts == 1 and readiness.oldest_conflict_days == 1
+    # Under source authority a local edit and a source change is no conflict.
+    assert "Lahendamata vastuolusid" not in text
+    assert readiness.conflicts == 0
     decisions = " ".join(readiness.owner_decisions)
     for needle in ("sidumata", "30 päeva", "access-sql", "etapisõnastiku", "kogu registri"):
         assert needle in decisions
@@ -221,8 +227,8 @@ def test_coverage_has_numerators_and_denominators(cases, reader):
     assert coverage["commencement_mapping"].value == 0
     assert coverage["new_topic_mapping"].value == 0
     assert coverage["next_action_text_mapping"].value == 0
-    assert coverage["outcome_conflict"].value == 1
-    assert coverage["unresolved_conflicts"].value == 1
+    assert coverage["outcome_conflict"].value == 0
+    assert coverage["unresolved_conflicts"].value == 0
     for indicator in readiness.coverage:
         assert indicator.denominator and indicator.window
     identity = readiness.identity
@@ -273,6 +279,6 @@ def test_a_reader_without_a_business_role_gets_counts_only(cases):
     admin = factories.AdministratorFactory()
     readiness = obs.readiness(admin, now=LATER)
     assert readiness.simulation_rows == []
-    assert readiness.simulation["CONFLICT"] == 1
+    assert readiness.simulation["SAFE_UPDATE_CANDIDATE"] == 13
     dumped = json.dumps(readiness.as_dict(), ensure_ascii=False)
     assert "Näidisteema" not in dumped and "Jälgida" not in dumped

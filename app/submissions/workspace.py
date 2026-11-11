@@ -247,11 +247,10 @@ def drafting(user: Any, visible: QuerySet[Submission] | None = None) -> QuerySet
     same rows — and ``tests/test_overview_drilldowns.py`` asserts that against
     the view rather than trusting this comment.
 
-    It is also the Submission half of the per-Matter «koostamisel» that Osakond
-    and the register's ``?arvamus=`` count
-    (``app.matters.register_filters.opinion_state_q``, ENG-019): a Matter is
-    being drafted there exactly when this returns a row on it for that reader,
-    or its register row still says so.
+    It is not the per-Matter «koostamisel» that Osakond and the register's
+    ``?arvamus=`` count: since docs/adr/0149's amendment of 2026-11-11 that reads
+    the opinion outcome, as Lovable does, and a draft is not an outcome
+    (``app.matters.register_filters.opinion_state_q``).
     """
     rows = Submission.objects.visible_to(user) if visible is None else visible
     return rows.filter(status=DRAFTING_STATUS)

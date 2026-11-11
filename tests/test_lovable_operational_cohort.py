@@ -218,7 +218,10 @@ def test_enrolment_seeds_baselines_from_the_import_snapshot(active):
     run = _run(active)
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
     assert run.counts["checked"] == 7
-    assert _decisions(run, "2026_510")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    # Lovable did not change the title; Juristid's differs: Lovable's is put back
+    # (owner decision 11.11) — planned on this COMPARE night.
+    title = _decisions(run, "2026_510")["title"]
+    assert (title.outcome, title.reason) == (SyncOutcome.ELIGIBLE, lovable_sync.RESTORED)
 
 
 def test_enrolment_leaves_every_pilot_state_as_it_was(active):
@@ -406,62 +409,37 @@ def test_the_size_check_is_per_cohort(active):
     assert "lovable-operational holds 2 Teemad, not 3" in run.error
 
 
-def test_import_held_fields_wait_every_night_and_only_a_resolution_clears_them(active):
+def test_import_held_fields_no_longer_wait_for_a_person(active):
+    """Source authority (docs/adr/0213 §10): a field the import held for a person
+    converges on Lovable instead — here Juristid already holds what Lovable says,
+    so the hold is lifted silently, and the next source change is written."""
     _enroll(active)
     first = _run(active)
     assert first.status == SyncRunStatus.SUCCEEDED, first.error
-    held = {
-        (d.state.reference, d.field)
-        for d in first.decisions.filter(reason=lovable_sync.IMPORT_HELD)
-    }
-    assert held == {
-        ("2026_510", "stage"),
-        ("2026_510", "sent"),
-        ("2026_511", "next_action_text"),
-        ("2026_511", "next_action_date"),
-        ("2026_512", "title"),
-    }
-    assert all(
-        d.outcome == SyncOutcome.REVIEW_REQUIRED
-        for d in first.decisions.filter(reason=lovable_sync.IMPORT_HELD)
-    )
-    part = first.counts["by_cohort"][OPERATIONAL_COHORT]
-    assert (part["expected"], part["checked"], part["review"]) == (3, 3, 3)
-    assert (part["import_held"], part["import_held_fields"]) == (3, 5)
-    assert first.counts["by_cohort"][PILOT_COHORT]["import_held"] == 0
-    assert first.counts["import_held"] == 3
+    assert not first.decisions.filter(reason=lovable_sync.IMPORT_HELD).exists()
+    assert first.counts["import_held"] == 0
+    for reference in ("2026_510", "2026_511", "2026_512"):
+        assert not lovable_sync.held_by_import(_state(reference).applied), reference
+    assert _state("2026_512").applied["title"][lovable_sync.MIRRORED] is True
 
-    # Lovable and Juristid agree on 512's new title: still a person's call.
+    lovable_sync.set_mode(SyncMode.APPLY, reason="test")
     active["source"].edit("2026_512", teema="Uus pealkiri 512")
-    Matter.all_objects.filter(pk=_matter("2026_512").pk).update(title="Uus pealkiri 512")
     second = _run(active, at=NIGHT + HOUR)
-    title = _decisions(second, "2026_512")["title"]
-    assert (title.outcome, title.reason) == (SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD)
-    assert _state("2026_512").applied["title"]["import_held"] is True
-
-    lovable_sync.resolve_field(reference="2026_512", field_name="title", note="vaadatud")
-    assert "import_held" not in _state("2026_512").applied["title"]
-    third = _run(active, at=NIGHT + 2 * HOUR)
-    assert "title" not in _decisions(third, "2026_512")
-    # The step is one operation: held together, and resolved together.
-    assert _state("2026_511").applied["next_action_date"]["import_held"] is True
-    lovable_sync.resolve_field(reference="2026_511", field_name="next_action_text", note="ok")
-    assert not lovable_sync.held_by_import(_state("2026_511").applied)
-    fourth = _run(active, at=NIGHT + 3 * HOUR)
-    assert not {"next_action_text", "next_action_date"} & set(_decisions(fourth, "2026_511"))
+    assert _decisions(second, "2026_512")["title"].outcome == SyncOutcome.APPLIED
+    assert _matter("2026_512").title == "Uus pealkiri 512"
 
 
-def test_an_import_held_step_is_never_applied(active):
+def test_an_import_held_step_follows_the_source_day(active):
     _enroll(active)
     lovable_sync.set_mode(SyncMode.APPLY, reason="test")
     step = NextAction.objects.get(matter=_matter("2026_511"), status=ActionStatus.OPEN)
     active["source"].edit("2026_511", tegevuse_tahtaeg="2026-11-27")
     run = _run(active)
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
-    date = _decisions(run, "2026_511")["next_action_date"]
-    assert (date.outcome, date.reason) == (SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD)
-    assert NextAction.objects.get(pk=step.pk).target_date == dt.date(2026, 11, 20)
-    assert run.counts["updated"] == 0
+    assert _decisions(run, "2026_511")["next_action_date"].outcome == SyncOutcome.APPLIED
+    now = NextAction.objects.get(matter=_matter("2026_511"), status=ActionStatus.OPEN)
+    assert (now.text, now.target_date) == ("Saadan märkused", dt.date(2026, 11, 27))
+    assert NextAction.objects.get(pk=step.pk).status == ActionStatus.SUPERSEDED
 
 
 class LinkedLovable(FakeLovable):
@@ -528,10 +506,15 @@ def test_open_teemad_whose_source_stopped_are_counted_not_acted_on(active):
     # 2026_503 is «jõustunud» in Lovable and closed in Juristid: not stopped work.
     assert pilot["activity"]["FINISHED"] == 1 and pilot["stopped_active"] == 0
     assert run.counts["stopped_active"] == 3
-    # Counts only: the held stage is still a person's call, every Teema stays open.
+    # A COMPARE night: 510's closure is planned, never written; 511's successor
+    # is not in Juristid (held); 512 leaving the scope is not representable.
     assert all(_matter(r).is_open for r in ("2026_510", "2026_511", "2026_512"))
-    stage = _decisions(run, "2026_510")["stage"]
-    assert stage.outcome == SyncOutcome.REVIEW_REQUIRED
+    assert _decisions(run, "2026_510")["stage"].outcome == SyncOutcome.ELIGIBLE
+    assert _decisions(run, "2026_511")["stage"].reason == lovable_sync.SUCCESSOR_MISSING
+    assert (
+        _decisions(run, "2026_512")["operational_scope"].reason
+        == lovable_sync.SCOPE_NOT_REPRESENTABLE
+    )
 
 
 def _local_fields(reference: str) -> dict[str, Any]:
@@ -564,7 +547,10 @@ def test_valdkond_and_local_fields_are_never_written(active):
     assert applied.status == SyncRunStatus.SUCCEEDED, applied.error
     assert _matter("2026_510").title == "Lovable'i uus pealkiri"  # on the allowlist
     stage = _decisions(applied, "2026_510")["stage"]
-    assert (stage.outcome, stage.reason) == (SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD)
+    assert (stage.outcome, stage.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.STAGE_UNMAPPED,
+    )
     assert _local_fields("2026_510") == before
 
 
@@ -574,7 +560,10 @@ def test_apply_on_the_new_cohort_obeys_the_allowlist_and_the_breaker(active, mon
     active["source"].edit("2026_512", kellele="Ministeerium")
     held = _run(active)
     addressee = _decisions(held, "2026_512")["addressee"]
-    assert (addressee.outcome, addressee.reason) == (SyncOutcome.REVIEW_REQUIRED, lovable_sync.HELD)
+    assert (addressee.outcome, addressee.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.ADDRESSEE_NO_SEND,
+    )
 
     monkeypatch.setattr(lovable_sync, "MAX_CHANGED_MATTERS", 1)
     active["source"].edit("2026_510", teema="Uus 510")
@@ -692,7 +681,7 @@ def test_the_new_cohort_is_counted_not_named_for_a_reader_who_may_not_open_it(
     assert status["cohorts"][OPERATIONAL_COHORT]["expected"] == 3
     assert status["cohorts"][OPERATIONAL_COHORT]["states"] == 3
     indicator = {i.key: i for i in answers[0].indicators}["cohort_lovable_operational"]
-    assert indicator.value == 3 and "ootele jäetud 3" in indicator.denominator
+    assert indicator.value == 3 and "ootele jäetud 0" in indicator.denominator
     assert {i.key: i for i in answers[0].indicators}["pilot_coverage"].denominator == (
         "7 sünkroonitavast teemast"
     )
