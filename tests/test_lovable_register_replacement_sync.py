@@ -34,7 +34,6 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncBaselineArchive,
     LovableSyncCohort,
     LovableSyncState,
-    SyncOutcome,
     SyncRunStatus,
     SyncTrigger,
 )
@@ -156,7 +155,9 @@ def test_the_first_night_compares_the_register_and_shows_it_entering(replaced):
     assert night.status == SyncRunStatus.SUCCEEDED, night.error
     assert night.counts["checked"] == 3 and set(night.counts["by_cohort"]) == {REGISTER_COHORT}
     found = {(d.state.reference, d.field, d.outcome, d.reason) for d in night.decisions.all()}
-    assert found == {("2026_601", "stage", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD)}
+    # The import's stage hold settles silently (Lovable and Juristid agree;
+    # docs/adr/0213 §10): nothing to report.
+    assert found == set()
     assert _decisions(night, "2026_610") == {}
 
     history = lovable_review.nightly_history(reader, now=NIGHT + 5 * DAY)

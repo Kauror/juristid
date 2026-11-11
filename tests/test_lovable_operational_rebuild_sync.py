@@ -359,13 +359,14 @@ def test_the_next_night_compares_one_cohort_against_the_new_baseline(rebuild):
     }
     rebased = {f for f in found if f[0] in PILOT_REFERENCES}
     assert rebased == {
-        ("2026_501", "stage", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD),
-        ("2026_501", "addressee", SyncOutcome.REVIEW_REQUIRED, lovable_sync.IMPORT_HELD),
+        # Source authority (docs/adr/0213 §10): an import hold is no longer a
+        # person's call; only what cannot be represented stays held.
+        ("2026_501", "stage", SyncOutcome.REVIEW_REQUIRED, lovable_sync.STAGE_UNMAPPED),
         # A lawyer's value the rebuild kept is reported, never silently converged.
         ("2026_502", "title", SyncOutcome.LOCAL_TEST_CHANGE, ""),
     }
-    # Every other finding is an import hold of a created Teema.
-    assert {f[3] for f in found - rebased} == {lovable_sync.IMPORT_HELD}
+    # Every other finding is a created Teema's technical hold or first convergence.
+    assert lovable_sync.IMPORT_HELD not in {f[3] for f in found - rebased}
     assert _decisions(night, "2026_505") == {}
 
     # The status and the report show the one rebuilt cohort.
@@ -487,9 +488,10 @@ def test_a_kept_lawyer_step_with_no_rebuild_record_stays_local(active):
     assert found["next_action_date"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
 
 
-def test_a_keep_local_step_with_no_rebuild_record_is_held(active):
-    """C ≠ A, B ≠ A, KEEP_LOCAL: the step is held for review, its baseline the
-    pilot's step — never the lawyer's."""
+def test_a_keep_local_step_with_no_rebuild_record_converges_on_lovable(active):
+    """C ≠ A, B ≠ A, KEEP_LOCAL: the baseline is the pilot's step, never the
+    lawyer's; under source authority (docs/adr/0213 §10) Lovable's new wording
+    then replaces the lawyer's step (planned on this night's mode)."""
 
     def before(world_: dict[str, Any]) -> None:
         _lawyer_step(world_)
@@ -508,10 +510,8 @@ def test_a_keep_local_step_with_no_rebuild_record_is_held(active):
     night = _run(active, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
     found = _decisions(night, "2026_505")
     for name in ("next_action_text", "next_action_date"):
-        assert (found[name].outcome, found[name].reason) == (
-            SyncOutcome.REVIEW_REQUIRED,
-            lovable_sync.IMPORT_HELD,
-        )
+        assert found[name].outcome in (SyncOutcome.ELIGIBLE, SyncOutcome.APPLIED)
+        assert found[name].reason == ""
 
 
 def test_a_night_reconciled_after_the_rebuild_refuses_the_enrolment(rebuild):

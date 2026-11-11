@@ -82,6 +82,46 @@ LOVABLE_REASONS = {
     "CREATE_FAILED": "Teema loomine ebaõnnestus; midagi ei jäänud pooleli.",
     "NEW_TOPIC_BREAKER": "Ühe öö uusi teemasid oli üle piiri; ühtegi ei loodud.",
     "RESOLVED": "Inimene otsustas; masin seda ei loo.",
+    # Source authority's technical holds (docs/adr/0213 §10): nothing else waits.
+    "SUCCESSOR_NOT_IN_JURISTID": (
+        "Lovable'i järgi jätkub teema teise teemana, mida Juristides veel pole; teema "
+        "suletakse jätkuna, kui järglane on olemas."
+    ),
+    "SUCCESSOR_AMBIGUOUS": "Lovable'i menetlusetappide seos nimetab mitu järglast või iseenda.",
+    "STAGE_UNMAPPED": "Lovable'i hetkeseisu silti ei saa Juristide hetkeseisuks kaardistada.",
+    "CLOSED_WITH_OTHER_REASON": (
+        "Teema on Juristides juba suletud teise põhjusega või teise järglasega; uuesti "
+        "sulgemiseks tuleks see avada."
+    ),
+    "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
+    "STEP_DATE_WITHOUT_TEXT": "Lovable'is on tegevuse kuupäev, aga pole tegevuse sõnastust.",
+    "DATE_UNREADABLE": "Lovable'i kuupäeva ei saa kuupäevana lugeda.",
+    "SENT_CONTRADICTORY": (
+        "Lovable'i «välja» ja saatmise kuupäev ütlevad eri asja (nt «ei saatnud» ja kuupäev)."
+    ),
+    "SENT_VALUE_UNREADABLE": (
+        "Lovable'i «välja» pole kuupäev ega «ei saatnud»; saatmist ei märgita arvates."
+    ),
+    "SENT_DATE_IN_FUTURE": "Lovable'i saatmise kuupäev on tulevikus.",
+    "ADDRESSEE_WITHOUT_SEND": (
+        "Adressaat on märgitud, kuid saatmist pole; seda pole kuhugi kirjutada."
+    ),
+    "TRACK_NOT_STATED": (
+        "Lovable'is pole see enam Koja algatus, kuid ei ütle, milline menetlusliik see on."
+    ),
+    "INSTRUMENT_UNMAPPED": "Õigusakti silt ei vasta ühelegi kehtivale liigile.",
+    "INSTRUMENT_SEVERAL": "Õigusakti silt nimetab mitu liiki; teemal saab olla üks.",
+    "INSTRUMENT_CLEARED": "Lovable'is eemaldati õigusakt; Juristide liigitust ei kustutata.",
+    "RECEIVED_IN_FUTURE": "Saabumise kuupäev on tulevikus.",
+    "RECEIVED_ON_INITIATIVE": "Koja algatusel pole saabumise kuupäeva.",
+    "SCOPE_NOT_REPRESENTABLE": (
+        "Juristides pole operatiivse ulatuse mõistet; ulatusest väljumine ei sulge teemat."
+    ),
+    "COMMENCEMENT_CHANGED_OR_REMOVED": (
+        "Lovable'is muudeti või eemaldati jõustumine; Juristide kirjet ei tühistata ise."
+    ),
+    "COMMENCEMENT_UNREADABLE": "Jõustumise liiki või päeva ei saa üheselt lugeda.",
+    "LINK_REMOVED_KEPT": "Lovable'is eemaldati OneNote'i link; allikaviiteid ei kustutata.",
 }
 
 #: Lovable's own column names, as its audit ledger (`topic_change_field`) names

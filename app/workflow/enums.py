@@ -98,6 +98,14 @@ class ActionKind(models.TextChoices):
     DO = "DO", "Teen"
     WAIT = "WAIT", "Ootan"
     MONITOR = "MONITOR", "Jälgin"
+    #: **Lovable's own sentence, kind not stated** (docs/adr/0213 §10, owner
+    #: brief 2026-11-11). The register is authoritative for the current step, so
+    #: its `jargmiseks` becomes the current step even when the wording names no
+    #: kind, or names two — and a kind nobody stated is not invented. Such a step
+    #: is never late (only DO + DEADLINE is) and comes round for a look on its
+    #: day like a WAIT or a MONITOR (`REVIEW_KINDS`). Written only by the
+    #: synchronisation; no form offers it.
+    SOURCE = "SOURCE", "Liik määramata"
 
 
 class DateSemantics(models.TextChoices):
@@ -191,7 +199,7 @@ OVERDUE_KIND = ActionKind.DO
 OVERDUE_SEMANTICS = DateSemantics.DEADLINE
 
 #: These are due for a look, never "missed".
-REVIEW_KINDS = (ActionKind.WAIT, ActionKind.MONITOR)
+REVIEW_KINDS = (ActionKind.WAIT, ActionKind.MONITOR, ActionKind.SOURCE)
 
 #: Steps that never take an ``Arvamuse tähtaeg`` off the work lists
 #: (docs/adr/0050, amendment of 2026-10-20). A WAIT names what somebody else

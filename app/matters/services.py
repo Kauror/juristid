@@ -5574,6 +5574,7 @@ def close_matter(
     successor: Matter | None = None,
     stage_episode: MatterStageEpisode | None = None,
     follow_ups_confirmed: bool | str = False,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -5740,10 +5741,69 @@ def close_matter(
                 "overviews": list(ending.overview_ids),
                 "waits": list(ending.wait_ids),
             },
+            # Who closed it when no person did: the Lovable synchronisation's
+            # run, source reference and version (`close_matter_from_source`).
+            # Nested, so it can never shadow a key above.
+            **({"provenance": provenance} if provenance else {}),
         },
         **episode_binding,
     )
     return matter
+
+
+@transaction.atomic
+def close_matter_from_source(
+    *,
+    matter: Matter,
+    disposition: str,
+    stage: Any = None,
+    successor: Matter | None = None,
+    reason: str = "",
+    provenance: dict[str, Any] | None = None,
+) -> Matter:
+    """Close a Matter because its source of record says the work ended (docs/adr/0213 §10).
+
+    The Lovable synchronisation's one closing act: Lovable is authoritative for
+    the register (owner brief 2026-11-11), so «jõustunud», «rohkem ei tegele» and
+    a structured stage link to a successor close the Teema without a second
+    business decision. Nothing here chooses a reason — the caller passes the one
+    the source states — and nobody's confirmation is asked, because no person is
+    closing it (``follow_ups_confirmed=True``: the live work is ended as every
+    closure ends it, each piece with its own cancellation event, and no step is
+    ever completed).
+
+    ``stage`` — the stage the source names, moved first, as an import
+    (`StageEpisodeOrigin.IMPORTED`), **without** the terminal stage's own closure,
+    which would pick `TERMINAL_DISPOSITIONS`' reason and could not name a
+    successor; then `close_matter` writes `MATTER_CLOSED` in the period that
+    stage began, with ``provenance`` on the event. ``None`` keeps the stage.
+    One transaction: a refusal anywhere leaves the Matter open and its periods
+    as they were.
+    """
+    if stage is not None:
+        _move_stage(matter=matter, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+    locked = lock_matter_for_write(matter.pk)
+    closed = close_matter(
+        matter=locked,
+        disposition=disposition,
+        actor=None,
+        reason=reason,
+        successor=successor,
+        stage_episode=current_stage_episode(locked),
+        follow_ups_confirmed=True,
+        provenance=provenance,
+    )
+    for name in (
+        "is_open",
+        "disposition",
+        "disposition_reason",
+        "closed_at",
+        "closed_by",
+        "superseded_by",
+        "stage",
+    ):
+        setattr(matter, name, getattr(closed, name))
+    return closed
 
 
 #: What `Jätkub teise teema all` naming no Matter is told (ENG-065).

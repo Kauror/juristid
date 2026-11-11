@@ -519,7 +519,8 @@ def test_a_next_step_correction_comes_first_with_juristid_step_as_it_is_now(pend
     assert card.reference == "2026_505" and card.group == "step_past"
     assert card.step is not None and card.step.past and card.step.missed
     assert card.step.target_date == dt.date(2026, 11, 20)
-    assert [r.field for r in card.rows] == ["next_action_text"]
+    # The step is one operation: its wording and its day (docs/adr/0213 §10).
+    assert [r.field for r in card.rows] == ["next_action_text", "next_action_date"]
     text = card.rows[0]
     assert text.source == "Ootan ministeeriumi vastust"
     assert text.accepted == "Saadan märkused"

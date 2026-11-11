@@ -624,3 +624,97 @@ def package_for(
         "expected_topics": len(topics),
         "topics": topics,
     }
+
+
+# ---------------------------------------------------------------------------
+# The synchronisation's reading of the current step (docs/adr/0213 §10)
+# ---------------------------------------------------------------------------
+
+#: Bumped whenever the step rule below changes its meaning; recorded in the
+#: provenance of every step the synchronisation writes.
+STEP_RULE_VERSION = "lovable-step/1"
+
+#: The sentence-initial verb forms that state a kind, per kind. Exactly the
+#: reviewed register vocabulary (`register_next_actions.DO_FORMS`, `WAIT_FORMS`,
+#: `MONITOR_FORMS` and the review verbs of `REVIEW_FORMS` without «küsi», which
+#: is asking, not looking), plus «kirjutan/kirjutame/kirjutada» for drafting.
+#: Closed forms, never stems: «oodatavasti» is not «ootan», «vaatasin» is not
+#: «vaatan».
+STEP_KIND_FORMS: dict[str, tuple[str, ...]] = {
+    "DO": (
+        "koostan",
+        "koostame",
+        "koostada",
+        "kirjutan",
+        "kirjutame",
+        "kirjutada",
+        "esitan",
+        "esitame",
+        "esitada",
+        "saadan",
+        "saadame",
+        "saata",
+    ),
+    "WAIT": ("ootan", "ootame", "oodata", "ootel"),
+    "MONITOR": ("jälgin", "jälgime", "jälgida", "vaata", "vaatan", "vaatame", "vaadata"),
+}
+#: What each kind's day means: a DO on Lovable's `tegevuse_tahtaeg` is due that
+#: day; a WAIT, a MONITOR and an unclassified sentence are looked at again that
+#: day and are never late (docs/adr/0202 §2: «WAIT / MONITOR … REVIEW_ON — never
+#: a deadline»).
+STEP_DATE_SEMANTICS = {
+    "DO": "DEADLINE",
+    "WAIT": "REVIEW_ON",
+    "MONITOR": "REVIEW_ON",
+    "SOURCE": "REVIEW_ON",
+}
+#: The kind of a sentence that states none clearly (`ActionKind.SOURCE`).
+UNCLASSIFIED_STEP = "SOURCE"
+
+
+def step_kind(text: Any) -> str:
+    """The kind Lovable's `jargmiseks` states, or `UNCLASSIFIED_STEP`.
+
+    The rule, whole:
+
+    1. the sentence's **first word** (lower-cased, quotes and punctuation
+       around it removed) is one of `STEP_KIND_FORMS` — that is the kind;
+    2. and the whole sentence names no other kind in the reviewed register
+       vocabulary (`register_next_actions.instruction_kinds`: «Ootan …, vaata
+       üle 10.11» is one WAIT there; «Koostan arvamuse ja ootan …» is two).
+
+    Anything else — no kind verb first, or two kinds — is `UNCLASSIFIED_STEP`:
+    the sentence still becomes the current step, verbatim, and no kind is
+    invented for it. Reads nothing but its argument."""
+    from app.legacy_import.register_next_actions import instruction_kinds
+
+    sentence = _text(text)
+    if not sentence:
+        return UNCLASSIFIED_STEP
+    first = sentence.split(" ", 1)[0].casefold().strip(" .,;:!?…\"'«»„“”()[]-–—")
+    kind = next((k for k, forms in STEP_KIND_FORMS.items() if first in forms), "")
+    if not kind:
+        return UNCLASSIFIED_STEP
+    named = instruction_kinds(sentence)
+    if named and named != (kind,):
+        return UNCLASSIFIED_STEP
+    return kind
+
+
+def step_reading(text: Any, day: Any) -> dict[str, Any] | None:
+    """Lovable's `jargmiseks` and `tegevuse_tahtaeg` → the current step Juristid
+    holds for them: the sentence verbatim (whitespace collapsed), `step_kind`,
+    `STEP_DATE_SEMANTICS`, Lovable's day as an exact day (or none), and the
+    sentence as its own source text. ``None`` for a blank sentence."""
+    sentence = _text(text)
+    if not sentence:
+        return None
+    kind = step_kind(sentence)
+    when = _day(day)
+    return {
+        "text": sentence,
+        "kind": kind,
+        "date_semantics": STEP_DATE_SEMANTICS[kind],
+        "target_date": when.isoformat() if when else None,
+        "date_precision": "EXACT",
+    }

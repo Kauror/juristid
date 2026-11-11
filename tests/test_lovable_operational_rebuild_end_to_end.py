@@ -128,7 +128,9 @@ def _pilot_topic(reference: str, **overrides: Any) -> dict[str, Any]:
         _pilot_id(reference),
         3,
         vastutaja=owner,
-        valja="2026-01-20",
+        # Nothing sent: a sent day would be the Teema's opinion outcome on the
+        # first night under source authority (docs/adr/0213 §10).
+        valja="",
         jargmiseks="ootan 2. lugemist",
         tegevuse_tahtaeg="2026-11-15",
         onenote_link=URL,
@@ -163,7 +165,7 @@ def _rebased(reference: str, changes: list[dict[str, Any]], **row: Any) -> dict[
     return _with_full_row(
         topic,
         vastutaja=owner,
-        valja="2026-01-20",
+        valja="",
         tegevuse_tahtaeg=row.pop("tegevuse_tahtaeg", "2026-11-15"),
         jargmiseks=row.pop("jargmiseks", "ootan 2. lugemist"),
         onenote_link=REBUILD_LINK,
@@ -519,24 +521,27 @@ def test_the_first_night_reports_only_the_rebuilds_holds(first_night):
     run = first_night["first"]
     assert run.counts["checked"] == 9
     assert set(run.counts["by_cohort"]) == {OPERATIONAL_COHORT}
-    held = lovable_sync.IMPORT_HELD
-    # The lawyer's step is IMPORT_HELD, not LOCAL_TEST_CHANGE: the rebuild's
-    # NEXT_ACTION record names the step Juristid kept (KEEP_LOCAL), so it *is* the
-    # new baseline's target (A = B), and the KEEP_LOCAL marked `jargmiseks` /
-    # `tegevuse_tahtaeg` HELD_FOR_REVIEW, so the step waits for a person every
-    # night instead of reading as a local edit or converging silently.
+    # Source authority (docs/adr/0213 §10): what the import held is no longer a
+    # person's call. The lawyer's step (KEEP_LOCAL, held at the rebuild) converges
+    # on Lovable's sentence, and 505 («jõustunud» in Lovable) closes — both only
+    # planned on this COMPARE night, so nothing is written.
     assert _found(run, (*REBASED, *CREATED)) == {
-        (LAWYER_STEP, "next_action_text", SyncOutcome.REVIEW_REQUIRED, held),
-        (LAWYER_STEP, "next_action_date", SyncOutcome.REVIEW_REQUIRED, held),
-        (FINISHED, "stage", SyncOutcome.REVIEW_REQUIRED, held),
+        (LAWYER_STEP, "next_action_text", SyncOutcome.ELIGIBLE, ""),
+        (LAWYER_STEP, "next_action_date", SyncOutcome.ELIGIBLE, ""),
+        (FINISHED, "stage", SyncOutcome.ELIGIBLE, ""),
     }
-    assert (run.counts["eligible_unapplied"], run.counts["conflicts"]) == (0, 0)
+    assert (run.counts["eligible_unapplied"], run.counts["conflicts"]) == (2, 0)
     part = run.counts["by_cohort"][OPERATIONAL_COHORT]
-    assert (part["import_held"], part["import_held_fields"]) == (2, 3)
+    assert (part["import_held"], part["import_held_fields"]) == (0, 0)
     assert part["stopped_active"] == 1  # 505: «jõustunud» in Lovable, open in Juristid
-    # The run changed no Teema.
+    # The run changed no Teema. A created Teema's synchronisation baseline may
+    # settle on its first comparison (docs/adr/0213 §10: unchanged in Lovable and
+    # already what Juristid holds); that is bookkeeping, not a business write.
     before, after = first_night["settled"]
-    assert len(before) == 11 and after == before
+    assert len(before) == 11
+    assert {k: v for k, v in after.items() if k not in CREATED} == {
+        k: v for k, v in before.items() if k not in CREATED
+    }
     seen = first_night["requests"][-1]
     assert seen[0] == ("POST", "/auth/v1/token")
     assert {method for method, _ in seen[1:]} == {"GET"}
@@ -567,8 +572,9 @@ def test_uuendused_shows_created_teemad_entering_and_rebased_ones_compared(secon
     fields = {(t.reference, f.name): f for t in first.topics for f in t.fields}
     step = fields[(NEW_READING, "next_action_text")]
     assert (step.result, step.note) == (lovable_review.SAME, lovable_review.REBASED_NOTE)
-    assert fields[(FINISHED, "stage")].result == lovable_review.REVIEW
-    assert fields[(LAWYER_STEP, "next_action_text")].result == lovable_review.REVIEW
+    # Planned under source authority, not written on a COMPARE night.
+    assert fields[(FINISHED, "stage")].result == lovable_review.NOT_APPLIED
+    assert fields[(LAWYER_STEP, "next_action_text")].result == lovable_review.NOT_APPLIED
 
     assert {t.reference: t.kind for t in second.topics} == {
         NEW_READING: "CHANGED",
