@@ -8,6 +8,22 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-11
+basis = "deployment"
+prs = [614]
+# 11.11 väljalase r54 (#614, ADR 0213 §10; audit 0042, legacy_import 0031, workflow 0017, reporting 0004 — ainult
+# lisanduvad tabelid, valikud ja piirangud): Lovable on Lovable'i väljade allikas. Esimene kooskõlastamine tehti
+# kirjutuskeelu ajal järelevalve all; öine automaatne rakendamine on eraldi omaniku otsus (Approval B).
+# Kui väljalase ei jõua tootmisse 11.11, liigub see kirje väljalaske päevale.
+changes = [
+  "Teemade seis on viidud Lovable'iga kooskõlla: Lovable'is lõpetatud teemad («jõustunud», «rohkem ei tegele») on suletud, teiseks teemaks jätkunud teema on suletud koos viitega jätkule, praegune tegevus on täpselt Lovable'i sõnastuses ja tähtajaga ning vastutaja on Lovable'i järgi. Juristidi märkmed, dokumendid ja tõendid jäid alles.",
+  "Arvamuse saatmise seis tuleb Lovable'ist: kuupäev tähendab, et arvamus saadeti sel päeval, ja «ei saatnud», et seda ei saadetud. Kui arvamuse dokumenti Juristidis veel pole, ütleb teema seda.",
+  "«Arvamusi koostamisel» loeb nüüd nagu Lovable: teemad, mille arvamust pole saadetud ega otsustatud jätta saatmata — mitte seda, kas teemal on samm «Koostan arvamust».",
+  "Kui Lovable'i järgmise tegevuse lause ei ütle, mis liiki tegevusega on tegu, on samm «Liik määramata» ja Lovable'i kuupäev on selle ülevaatamise päev.",
+  "Ajaloolise registri teemadel on nüüd Lovable'i järgi ka arvamuse saatmise seis ja vastutaja, kui vastutaja on Juristidi kasutaja.",
+]
+
+[[day]]
 date = 2026-11-10
 basis = "deployment"
 prs = [608, 610]
