@@ -19,6 +19,7 @@ import datetime as dt
 from typing import Any
 
 import pytest
+from django.utils import timezone
 
 from app.audit.models import ChangeEvent
 from app.legacy_import import lovable_sync
@@ -1598,7 +1599,8 @@ def test_a_persons_answer_holds_only_its_own_day(reference):
     assert _matter("2026_253").response_deadline is None
     reference["source"].edit("2026_253", arvamuse_tahtaeg="2099-12-20")
     run = _run(reference, at=_at(2))
-    assert _decisions(run, "2026_253")["opinion_deadline"].outcome == SyncOutcome.APPLIED
+    request = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (request.outcome, request.reason) == (SyncOutcome.APPLIED, "")  # a source change
     assert _matter("2026_253").response_deadline == dt.date(2099, 12, 20)
 
 
@@ -1808,14 +1810,112 @@ def test_only_the_syncs_own_ending_lifts_the_hold(reference):
     )
 
 
-def test_a_new_request_after_juristids_answer_is_a_source_change_not_a_restore(reference):
-    """P3-2: a person replaced Lovable's request with their own and answered it;
-    Lovable's day (unchanged) is not in that chain, so a request is set on it —
-    as Lovable's new request, never labelled a restore."""
+def _replace_and_answer(reference: dict[str, Any], previous_outcome: str) -> None:
     from app.matters.enums import ResponseDeadlineChange
     from app.matters.response_deadlines import change_response_deadline, resolve_response_deadline
 
+    mari = reference["world"]["mari"]
+    change_response_deadline(
+        matter=_matter("2026_253"),
+        deadline=dt.date(2099, 12, 24),
+        actor=mari,
+        change=ResponseDeadlineChange.REPLACED,
+        previous_outcome=previous_outcome,
+        previous_note="Vastatud e-kirjaga." if previous_outcome == "ANSWERED" else "",
+    )
+    resolve_response_deadline(
+        matter=_matter("2026_253"), outcome="ANSWERED", actor=mari, note="Vastatud."
+    )
+
+
+def test_a_request_set_again_after_juristids_answer_follows_whether_lovable_changed(reference):
+    """4e P3-2 as amended in 4f: a person replaced Lovable's request (SUPERSEDED,
+    not answered) and answered their own. Lovable unchanged: Lovable's request
+    is put back as a restore (its breaker applies); Lovable stating a new day is
+    a source change."""
     _run(reference, at=_at(0))
+    _replace_and_answer(reference, "SUPERSEDED")
+    run = _run(reference, at=_at(1))
+    request = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (request.outcome, request.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert _matter("2026_253").response_deadline == dt.date.fromisoformat(REQUEST)
+
+
+def test_lovables_request_answered_then_replaced_and_answered_is_held(reference):
+    """4f P2-A probe B: REPLACED with previous_outcome=ANSWERED — Lovable's own
+    request was answered in Juristid; the later answer must not hide it."""
+    _run(reference, at=_at(0))
+    _replace_and_answer(reference, "ANSWERED")
+    run = _run(reference, at=_at(1))
+    held = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (held.outcome, held.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.ANSWERED_IN_JURISTID,
+    )
+    assert _matter("2026_253").response_deadline is None
+
+
+def test_lovables_request_answered_then_a_fresh_one_answered_is_held(reference):
+    """4f P2-A probe A: Juristid answered Lovable's request, then asked and
+    answered a fresh request of its own: still held, no second consultation."""
+    from app.matters.response_deadlines import change_response_deadline, resolve_response_deadline
+
+    _run(reference, at=_at(0))
+    mari = reference["world"]["mari"]
+    resolve_response_deadline(
+        matter=_matter("2026_253"), outcome="ANSWERED", actor=mari, note="Vastatud."
+    )
+    change_response_deadline(matter=_matter("2026_253"), deadline=dt.date(2099, 12, 24), actor=mari)
+    resolve_response_deadline(
+        matter=_matter("2026_253"), outcome="ANSWERED", actor=mari, note="Vastatud ka."
+    )
+    run = _run(reference, at=_at(1))
+    held = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (held.outcome, held.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.ANSWERED_IN_JURISTID,
+    )
+
+
+def test_the_first_night_without_a_recorded_identity_falls_back_to_the_dates(reference):
+    """4f P3-1: no `requested_at` recorded yet and the first night is an ending:
+    a request recorded after the send, for another day, is withdrawn with the
+    «enne seda küsimist» note; recorded on the send day the dates cannot tell,
+    so it is taken as Lovable's (ANSWERED). Every Teema's identity is recorded
+    on that night."""
+    from app.matters.response_deadlines import change_response_deadline
+
+    for ref in ("2026_253", "2026_232"):
+        change_response_deadline(matter=_matter(ref), deadline=None, actor=None)
+        change_response_deadline(matter=_matter(ref), deadline=dt.date(2099, 12, 15), actor=None)
+    today = timezone.localdate()
+    reference["source"].edit(
+        "2026_253", valja=(today - dt.timedelta(days=3)).isoformat(), valja_kuupaev=None
+    )
+    # Sent today: the request was recorded today, not after the send.
+    reference["source"].edit("2026_232", valja=today.isoformat(), valja_kuupaev=None)
+    for state in LovableSyncState.objects.filter(reference__in=["2026_253", "2026_232"]):
+        assert lovable_sync.REQUESTED_AT not in state.applied.get("opinion_deadline", {})
+    run = _run(reference, at=dt.datetime.combine(today, dt.time(23, 0), tzinfo=TALLINN))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    later = _last_ended("2026_253")
+    assert (later.outcome, "enne seda küsimist" in later.note) == ("CANCELLED", True)
+    assert _last_ended("2026_232").outcome == "ANSWERED"
+    for state in LovableSyncState.objects.all():
+        if "opinion_deadline" in state.applied:
+            assert lovable_sync.REQUESTED_AT in state.applied["opinion_deadline"], state.reference
+
+
+def test_the_sent_path_ends_only_lovables_own_request(reference):
+    """4f P3-3 / P3-2: Lovable records the send for its request day, but the
+    current request on that day is a fresh one of Juristid's (REPLACED, then
+    moved onto Lovable's day): withdrawn, never answered by the send; recorded
+    on the send day, its note claims no order of events."""
+    from app.matters.enums import ResponseDeadlineChange
+    from app.matters.response_deadlines import change_response_deadline
+
+    today = timezone.localdate()
+    _run(reference, at=dt.datetime.combine(today, dt.time(21, 0), tzinfo=TALLINN))
     mari = reference["world"]["mari"]
     change_response_deadline(
         matter=_matter("2026_253"),
@@ -1824,11 +1924,54 @@ def test_a_new_request_after_juristids_answer_is_a_source_change_not_a_restore(r
         change=ResponseDeadlineChange.REPLACED,
         previous_outcome="SUPERSEDED",
     )
+    change_response_deadline(
+        matter=_matter("2026_253"),
+        deadline=dt.date.fromisoformat(REQUEST),
+        actor=mari,
+        change=ResponseDeadlineChange.MOVED,
+    )
+    reference["source"].edit("2026_253", valja=today.isoformat(), valja_kuupaev=None)
+    run = _run(reference, at=dt.datetime.combine(today, dt.time(22, 0), tzinfo=TALLINN))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    ended = _last_ended("2026_253")
+    assert (ended.deadline, ended.outcome) == (dt.date.fromisoformat(REQUEST), "CANCELLED")
+    assert "enne seda" not in ended.note and "ei ole Lovable'i" in ended.note
+    assert not MatterResponseDeadline.objects.filter(
+        matter=_matter("2026_253"), outcome="ANSWERED"
+    ).exists()
+
+
+def test_a_legacy_moved_request_keeps_its_whole_chain(reference):
+    """4f P3-4: a request with no `requested_at`, moved and then answered: the
+    MOVED rows lead back to Lovable's day, so it is held."""
+    from app.matters.enums import ResponseDeadlineChange
+    from app.matters.response_deadlines import change_response_deadline, resolve_response_deadline
+
+    _run(reference, at=_at(0))
+    mari = reference["world"]["mari"]
+    matter = _matter("2026_253")
+    Matter.all_objects.filter(pk=matter.pk).update(response_requested_at=None)
+    state = LovableSyncState.objects.get(reference="2026_253")
+    entry = dict(state.applied["opinion_deadline"])
+    entry.pop(lovable_sync.REQUESTED_AT, None)
+    LovableSyncState.objects.filter(pk=state.pk).update(
+        applied={**state.applied, "opinion_deadline": entry}
+    )
+    for day in (dt.date(2099, 12, 24), dt.date(2099, 12, 28)):
+        change_response_deadline(
+            matter=_matter("2026_253"),
+            deadline=day,
+            actor=mari,
+            change=ResponseDeadlineChange.MOVED,
+        )
     resolve_response_deadline(
         matter=_matter("2026_253"), outcome="ANSWERED", actor=mari, note="Vastatud."
     )
+    assert lovable_sync._last_ended_request(matter.pk)["days"] == [
+        REQUEST,
+        "2099-12-24",
+        "2099-12-28",
+    ]
     run = _run(reference, at=_at(1))
-    request = _decisions(run, "2026_253")["opinion_deadline"]
-    assert (request.outcome, request.reason) == (SyncOutcome.APPLIED, "")
-    assert _matter("2026_253").response_deadline == dt.date.fromisoformat(REQUEST)
-    assert run.counts["changed_restores"] == 0
+    held = _decisions(run, "2026_253")["opinion_deadline"]
+    assert held.reason == lovable_sync.ANSWERED_IN_JURISTID
