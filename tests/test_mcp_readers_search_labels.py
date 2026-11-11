@@ -16,6 +16,7 @@ from typing import Any
 import pytest
 from django.utils import timezone
 
+from app.core.dates import format_estonian_date
 from app.mcp_server import readers
 from app.search.indexing import rebuild_all
 from app.submissions.enums import SubmissionKind
@@ -117,8 +118,10 @@ def test_two_entries_of_one_matter_have_distinct_dated_titles(specialist):
     }
     first_title, second_title = titles[f"entry:{first.pk}"], titles[f"entry:{second.pk}"]
     assert first_title != second_title
+    # The label's own format (`7.9.2026`): a zero-padded expectation passed only
+    # while the day and the month both had two digits.
     day = timezone.localtime(first.occurred_at).date()
-    assert f"{day.day:02d}.{day.month:02d}.{day.year}" in first_title
+    assert format_estonian_date(day) in first_title
 
 
 def test_labels_cost_no_query_per_row(sends, specialist, django_assert_max_num_queries):
