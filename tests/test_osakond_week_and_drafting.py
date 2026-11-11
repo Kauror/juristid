@@ -4,9 +4,9 @@
   week to today, on the Tallinn calendar; recalculated on every read.
 * «N arvamust koostamisel» — `drafting_matters`, the same population as the team
   table's ARVAMUS KOOSTAMISEL column and the register's `?arvamus=koostamisel`.
-  Besides a readable DRAFT and the register's blank `VÄLJA`, it now recognises
-  the native workflow: the open opinion step — «Koostan arvamuse» or the work
-  plan's opinion step — while an `Arvamuse tähtaeg` is still owed.
+  Since docs/adr/0149's amendment of 2026-11-11 it is Lovable's definition: an
+  `Arvamuse tähtaeg` still owed, or no deadline and no opinion outcome — never
+  whether an opinion step is open (tests/test_lovable_kpi_parity.py).
 
 Every title and organisation here is invented.
 """
@@ -196,14 +196,15 @@ def test_the_open_opinion_step_with_a_deadline_owed_is_drafting(department_head,
     assert drafting(department_head) == {filed.pk}
 
 
-def test_the_step_alone_is_not_drafting(department_head, filed, specialist):
-    """A plan with no deadline owed is not an opinion anybody is waiting for."""
+def test_without_an_outcome_the_step_changes_nothing(department_head, filed, specialist):
+    """Lovable's blank VÄLJA: drafting with or without the step (ADR 0149, 2026-11-11)."""
+    assert drafting(department_head) == {filed.pk}
     set_next_action(matter=filed, text=OPINION_PREPARATION_TEXT, actor=specialist)
-    assert drafting(department_head) == set()
+    assert drafting(department_head) == {filed.pk}
 
 
-def test_an_unanswered_deadline_alone_is_not_drafting(department_head, filed, specialist):
-    """A file being waited on or watched has a deadline and is not being written."""
+def test_an_unanswered_deadline_alone_is_drafting(department_head, filed, specialist):
+    """Waited on or watched, the opinion is still owed: Lovable counts it (2026-11-11)."""
     request_response_deadline(matter=filed, deadline=dt.date(2026, 11, 2), actor=specialist)
     filed.refresh_from_db()
     set_next_action(
@@ -214,7 +215,7 @@ def test_an_unanswered_deadline_alone_is_not_drafting(department_head, filed, sp
         target_date=dt.date(2026, 11, 20),
         actor=specialist,
     )
-    assert drafting(department_head) == set()
+    assert drafting(department_head) == {filed.pk}
 
 
 def test_the_work_plans_opinion_step_counts_by_its_operation(department_head, filed, specialist):
@@ -368,8 +369,8 @@ def test_a_sent_opinion_with_no_draft_and_no_open_opinion_step_is_not_drafting(
     assert drafting(department_head) == set()
 
 
-def test_a_new_teema_gets_no_drafting_from_its_deadline_alone(department_head, specialist):
-    """docs/adr/0133 §8 is unchanged: no step is made from the deadline."""
+def test_a_new_teema_with_a_deadline_is_drafting_without_any_step(department_head, specialist):
+    """docs/adr/0133 §8 is unchanged — no step is made — and the owed deadline counts."""
     native = create_matter(
         title="Uus konsultatsioon",
         actor=specialist,
@@ -377,7 +378,7 @@ def test_a_new_teema_gets_no_drafting_from_its_deadline_alone(department_head, s
         response_deadline=dt.date(2026, 11, 30),
     )
     assert not NextAction.objects.filter(matter=native).exists()
-    assert drafting(department_head) == set()
+    assert drafting(department_head) == {native.pk}
 
 
 def test_the_outstanding_obligation_reads_the_response_obligation_rule(

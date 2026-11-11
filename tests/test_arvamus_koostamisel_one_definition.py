@@ -11,9 +11,12 @@ finished it.
 
 The definition is now one function, ``register_filters.opinion_state_q``:
 
-* **koostamisel** — a DRAFT Submission this reader may see, **or** a CURRENT
-  register row with a blank VÄLJA whose Matter has no SENT Submission this
-  reader may see;
+* **koostamisel** — since docs/adr/0149's amendment of 2026-11-11, Lovable's
+  «Arvamusi koostamisel»: an ``Arvamuse tähtaeg`` still owed, or no deadline
+  and no opinion outcome (no readable SENT Submission, no register VÄLJA date or
+  «ei saatnud», no answered or declined request). A draft is not an outcome, so
+  a native draft is drafting because nothing went out, and a second draft after
+  a send is not (tests/test_lovable_kpi_parity.py);
 * **saadetud** — a SENT Submission this reader may see, **or** a CURRENT
   register row whose VÄLJA is a date (RULE-04: «ei saatnud» and an unreadable
   mark are marked but not sent — `tests/test_opinion_sent_means_sent.py`).
@@ -202,16 +205,16 @@ def test_a_native_send_retires_a_stale_blank_valja(department_head, martin, send
     assert drafting_cell(department_head, str(martin.pk)).value == 0
 
 
-def test_a_second_opinion_in_preparation_after_a_send_is_being_drafted(
+def test_a_second_draft_after_a_send_is_not_an_open_opinion(
     department_head, martin, send_on
 ) -> None:
-    """The send retires the stale register cell, never a real draft beside it."""
+    """Lovable keeps one VÄLJA per topic: once it holds a date the topic is not drafting."""
     matter = factories.MatterFactory(owner=martin)
     register_row(matter, sent_recorded=False)
     send_on(matter)
     draft_on(matter, title="Täiendav arvamus")
 
-    assert listed(department_head, DRAFTING) == {matter.pk}
+    assert listed(department_head, DRAFTING) == set()
     assert listed(department_head, SENT) == {matter.pk}
 
 

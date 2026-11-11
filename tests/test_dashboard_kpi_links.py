@@ -176,7 +176,10 @@ def test_deadlines_opens_the_matters_inside_the_horizon(world, other_specialist)
 
 def test_drafting_opens_the_unsent_opinion_and_not_the_sent_one(world, other_specialist):
     rows = register_ids(other_specialist, _url("drafting"))
-    assert rows == {world["drafting"].pk}
+    # Since docs/adr/0149's amendment of 2026-11-11 every open Teema without an
+    # opinion outcome is «koostamisel», so the world's other open rows join it.
+    assert world["drafting"].pk in rows
+    assert world["sent"].pk not in rows
 
 
 def test_unassigned_opens_only_matters_with_no_owner(world, other_specialist):
@@ -292,6 +295,7 @@ def test_the_opinion_dimension_answers_both_of_its_values(world, other_specialis
     drafting = register_ids(other_specialist, "/teemad/?olek=avatud&arvamus=koostamisel")
     sent = register_ids(other_specialist, "/teemad/?olek=avatud&arvamus=saadetud")
 
-    assert drafting == {world["drafting"].pk}
+    assert world["drafting"].pk in drafting
+    assert world["sent"].pk not in drafting
     assert sent == {world["sent"].pk}
     assert drafting.isdisjoint(sent)
