@@ -332,3 +332,67 @@ def test_sent_still_means_a_date(department_head, make, specialist) -> None:
         department_head, {**OPEN_FULL, "arvamus": "saadetud"}, today=TODAY, population=population
     )
     assert matter.pk not in _ids(sent)
+
+
+# ---------------------------------------------------------------------------
+# Lovable's own outcome, as the synchronisation records it (docs/adr/0213 §10)
+# ---------------------------------------------------------------------------
+
+
+def _lovable_outcome(matter: Matter, outcome: str, sent_on: dt.date | None = None) -> Any:
+    import uuid
+
+    from app.legacy_import.lovable_sync_models import (
+        LovableOpinionOutcome,
+        LovableSyncRun,
+        SyncMode,
+        SyncTrigger,
+    )
+
+    at = dt.datetime(2026, 11, 11, 3, 0, tzinfo=dt.UTC)
+    run = LovableSyncRun.objects.create(
+        run_key=f"kpi-{uuid.uuid4().hex[:12]}",
+        trigger=SyncTrigger.SCHEDULED,
+        mode=SyncMode.APPLY,
+        started_at=at,
+        mapping_version="lovable-sync/test",
+    )
+    previous = (
+        LovableOpinionOutcome.objects.filter(matter=matter, superseded_by__isnull=True)
+        .order_by("-recorded_at")
+        .first()
+    )
+    return LovableOpinionOutcome.objects.create(
+        matter=matter,
+        source_id=uuid.uuid4(),
+        outcome=outcome,
+        sent_on=sent_on,
+        previous=previous,
+        run=run,
+        source_snapshot_sha256="0" * 64,
+        recorded_at=at + dt.timedelta(minutes=LovableOpinionOutcome.objects.count()),
+    )
+
+
+def test_lovables_current_outcome_decides_over_an_owed_request(
+    department_head, make, specialist
+) -> None:
+    """Lovable is authoritative: «ei saatnud» or a sent date ends «koostamisel»
+    even while a Juristid request still reads as owed; a later CLEARED row
+    returns the topic to Lovable's blank VÄLJA, and so to «koostamisel»."""
+    from app.legacy_import.lovable_sync_models import OpinionOutcome
+    from app.matters.register_filters import OPINION_SENT, opinion_state_q
+
+    declined = _requested(make("Lovable: ei saatnud"), specialist, dt.date(2026, 11, 4))
+    sent = _requested(make("Lovable: saadetud"), specialist, dt.date(2026, 11, 4))
+    assert {declined.pk, sent.pk} <= _ids(drafting_matters(department_head))
+
+    _lovable_outcome(declined, OpinionOutcome.NOT_SENT)
+    _lovable_outcome(sent, OpinionOutcome.SENT, dt.date(2026, 11, 4))
+    counted = _ids(drafting_matters(department_head))
+    assert declined.pk not in counted and sent.pk not in counted
+    sent_list = _ids(Matter.objects.filter(opinion_state_q(department_head, OPINION_SENT)))
+    assert sent.pk in sent_list and declined.pk not in sent_list
+
+    _lovable_outcome(declined, OpinionOutcome.CLEARED)
+    assert declined.pk in _ids(drafting_matters(department_head))

@@ -522,6 +522,7 @@ def opinion_outcome_recorded_q(user: Any) -> Q:
     decides nothing for somebody who may not see it (AUTH-003).
     """
     from app.legacy_import.current_state import CurrentRegisterState
+    from app.legacy_import.lovable_sync_models import OpinionOutcome
     from app.matters.enums import ResponseDeadlineOutcome
     from app.matters.models import MatterResponseDeadline
     from app.submissions.models import Submission
@@ -533,7 +534,30 @@ def opinion_outcome_recorded_q(user: Any) -> Q:
         matter=OuterRef("pk"),
         outcome__in=(ResponseDeadlineOutcome.ANSWERED, ResponseDeadlineOutcome.NOT_ANSWERING),
     )
-    return Q(Exists(sent)) | Q(Exists(register)) | Q(Exists(concluded))
+    return (
+        Q(Exists(sent))
+        | Q(Exists(register))
+        | Q(Exists(concluded))
+        | lovable_outcome_q(OpinionOutcome.SENT, OpinionOutcome.NOT_SENT)
+    )
+
+
+def lovable_outcome_q(*outcomes: str) -> Q:
+    """Is Lovable's CURRENT statement of this Matter's opinion one of ``outcomes``.
+
+    The synchronisation records ``valja`` / ``valja_kuupaev`` as
+    :class:`~app.legacy_import.lovable_sync_models.LovableOpinionOutcome` rows
+    (docs/adr/0213 §10): the current row is the one no later row supersedes.
+    Lovable is the authoritative source for this field, so its SENT or
+    NOT_SENT ends «koostamisel» whatever else Juristid holds; a CLEARED row
+    states nothing.
+    """
+    from app.legacy_import.lovable_sync_models import LovableOpinionOutcome
+
+    current = LovableOpinionOutcome.objects.filter(
+        matter=OuterRef("pk"), superseded_by__isnull=True, outcome__in=outcomes
+    )
+    return Q(Exists(current))
 
 
 def opinion_state_q(user: Any, value: str) -> Q:
@@ -560,9 +584,12 @@ def opinion_state_q(user: Any, value: str) -> Q:
     A DRAFT Submission or an open opinion step changes neither: they are work in
     progress, not an outcome, and Lovable counts the same topic without them.
 
+    Lovable's own current outcome (:func:`lovable_outcome_q`) decides first:
+    SENT or NOT_SENT is never «koostamisel».
+
     **saadetud** — a SENT Submission this reader may see, **or** a CURRENT
-    register row whose VÄLJA is a date (``recorded_sent``); never «ei saatnud»
-    (RULE-04).
+    register row whose VÄLJA is a date (``recorded_sent``), **or** Lovable's
+    current SENT outcome; never «ei saatnud» (RULE-04).
 
     The lifecycle half — open, FULL, visible — is the caller's, asked by the
     register's ordinary parameters or by ``dashboard.active_matters``. Both
@@ -570,6 +597,7 @@ def opinion_state_q(user: Any, value: str) -> Q:
     An unknown ``value`` matches nothing.
     """
     from app.legacy_import.current_state import CurrentRegisterState
+    from app.legacy_import.lovable_sync_models import OpinionOutcome
     from app.matters.work_items import response_obligation_outstanding_q
     from app.submissions.models import Submission
 
@@ -579,9 +607,14 @@ def opinion_state_q(user: Any, value: str) -> Q:
     if value == OPINION_SENT:
         readable = Submission.objects.visible_to(user).filter(matter=OuterRef("pk"))
         register = CurrentRegisterState.objects.filter(matter=OuterRef("pk"))
-        return Q(Exists(readable.sent())) | Q(Exists(register.recorded_sent()))
-    return response_obligation_outstanding_q(user) | (
-        Q(response_deadline__isnull=True) & ~opinion_outcome_recorded_q(user)
+        return (
+            Q(Exists(readable.sent()))
+            | Q(Exists(register.recorded_sent()))
+            | lovable_outcome_q(OpinionOutcome.SENT)
+        )
+    return ~lovable_outcome_q(OpinionOutcome.SENT, OpinionOutcome.NOT_SENT) & (
+        response_obligation_outstanding_q(user)
+        | (Q(response_deadline__isnull=True) & ~opinion_outcome_recorded_q(user))
     )
 
 
