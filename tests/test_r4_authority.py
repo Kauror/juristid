@@ -1707,3 +1707,128 @@ def test_standing_holds_are_counted_and_the_historical_ones_stay_in_the_archive_
     }
     assert by_cohort == {REGISTER_COHORT: False, HISTORY_COHORT: True}
     assert held.filter(lovable_sync.historical_hold_q()).count() == 1
+
+
+# -- round 4e: request identity --------------------------------------------------------
+
+
+def _last_ended(ref: str) -> MatterResponseDeadline:
+    return (
+        MatterResponseDeadline.objects.filter(matter=_matter(ref))
+        .order_by("-ended_at", "-created_at")
+        .first()
+    )
+
+
+def test_lovables_own_request_moved_by_lovable_with_an_earlier_send_is_answered(reference):
+    """P2-1 probe A: in one edit Lovable records the opinion sent on 01.11 and
+    moves its request day: the current request is Lovable's — ANSWERED."""
+    _run(reference, at=_at(0))
+    reference["source"].edit(
+        "2026_253", valja="2026-11-01", valja_kuupaev="2026-11-01", arvamuse_tahtaeg="2099-12-01"
+    )
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert _matter("2026_253").response_deadline is None
+    ended = _last_ended("2026_253")
+    assert (ended.deadline, ended.outcome) == (dt.date.fromisoformat(REQUEST), "ANSWERED")
+    assert ended.note.startswith("Lovable'i järgi saadetud")
+
+
+def test_lovables_request_moved_by_a_person_is_answered_by_an_earlier_send(reference):
+    """P2-1 probe B: a person moved Lovable's request (MOVED keeps its
+    `requested_at`); Lovable then records an earlier send — ANSWERED, no false note."""
+    from app.matters.enums import ResponseDeadlineChange
+    from app.matters.response_deadlines import change_response_deadline
+
+    _run(reference, at=_at(0))
+    change_response_deadline(
+        matter=_matter("2026_253"),
+        deadline=dt.date(2099, 12, 24),
+        actor=reference["world"]["mari"],
+        change=ResponseDeadlineChange.MOVED,
+    )
+    reference["source"].edit("2026_253", valja="2026-11-01", valja_kuupaev="2026-11-01")
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    ended = _last_ended("2026_253")
+    assert (ended.deadline, ended.outcome) == (dt.date(2099, 12, 24), "ANSWERED")
+    assert "enne seda küsimist" not in ended.note
+
+
+def test_a_request_moved_and_answered_by_a_person_is_still_lovables_request(reference):
+    """P2-2: a person moved Lovable's request (11.04 → 12.24) and answered it:
+    the chain holds Lovable's day — held, never a second consultation."""
+    from app.matters.enums import ResponseDeadlineChange
+    from app.matters.response_deadlines import change_response_deadline, resolve_response_deadline
+
+    _run(reference, at=_at(0))
+    mari = reference["world"]["mari"]
+    change_response_deadline(
+        matter=_matter("2026_253"),
+        deadline=dt.date(2099, 12, 24),
+        actor=mari,
+        change=ResponseDeadlineChange.MOVED,
+    )
+    resolve_response_deadline(
+        matter=_matter("2026_253"), outcome="ANSWERED", actor=mari, note="Vastatud."
+    )
+    run = _run(reference, at=_at(1))
+    held = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (held.outcome, held.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.ANSWERED_IN_JURISTID,
+    )
+    assert _matter("2026_253").response_deadline is None
+
+
+def test_only_the_syncs_own_ending_lifts_the_hold(reference):
+    """P3-1: an ending with no actor but Juristid's note (a pilot's, or one whose
+    person was since deleted), or with a submission, is Juristid's: held."""
+    from app.matters.response_deadlines import resolve_response_deadline
+
+    assert lovable_sync.is_sync_ending(
+        ended_by_id=None, note="Lovable'i järgi saadetud 01.11.2026.", submission_id=None
+    )
+    assert not lovable_sync.is_sync_ending(
+        ended_by_id=None, note="Lovable'i järgi saadetud 01.11.2026.", submission_id="x"
+    )
+    assert not lovable_sync.is_sync_ending(
+        ended_by_id=None, note="Vastatud e-kirjaga.", submission_id=None
+    )
+    _run(reference, at=_at(0))
+    resolve_response_deadline(
+        matter=_matter("2026_253"), outcome="ANSWERED", actor=None, note="Vastatud e-kirjaga."
+    )
+    run = _run(reference, at=_at(1))
+    held = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (held.outcome, held.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.ANSWERED_IN_JURISTID,
+    )
+
+
+def test_a_new_request_after_juristids_answer_is_a_source_change_not_a_restore(reference):
+    """P3-2: a person replaced Lovable's request with their own and answered it;
+    Lovable's day (unchanged) is not in that chain, so a request is set on it —
+    as Lovable's new request, never labelled a restore."""
+    from app.matters.enums import ResponseDeadlineChange
+    from app.matters.response_deadlines import change_response_deadline, resolve_response_deadline
+
+    _run(reference, at=_at(0))
+    mari = reference["world"]["mari"]
+    change_response_deadline(
+        matter=_matter("2026_253"),
+        deadline=dt.date(2099, 12, 24),
+        actor=mari,
+        change=ResponseDeadlineChange.REPLACED,
+        previous_outcome="SUPERSEDED",
+    )
+    resolve_response_deadline(
+        matter=_matter("2026_253"), outcome="ANSWERED", actor=mari, note="Vastatud."
+    )
+    run = _run(reference, at=_at(1))
+    request = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (request.outcome, request.reason) == (SyncOutcome.APPLIED, "")
+    assert _matter("2026_253").response_deadline == dt.date.fromisoformat(REQUEST)
+    assert run.counts["changed_restores"] == 0

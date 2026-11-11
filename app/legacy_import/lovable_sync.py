@@ -1300,19 +1300,46 @@ def conditional_values(matter: Any) -> dict[str, Any]:
 def _last_ended_request(matter_id: Any) -> dict[str, Any] | None:
     from app.matters.models import MatterResponseDeadline
 
+    rows = MatterResponseDeadline.objects.filter(matter_id=matter_id)
     row = (
-        MatterResponseDeadline.objects.filter(matter_id=matter_id)
-        .order_by("-ended_at", "-created_at")
-        .values("outcome", "deadline", "ended_by_id")
+        rows.order_by("-ended_at", "-created_at")
+        .values("outcome", "deadline", "ended_by_id", "note", "submission_id", "requested_at")
         .first()
     )
     if row is None:
         return None
+    # The request's chain: every day it had (a MOVED request keeps its
+    # `requested_at`). A request with no `requested_at` is only itself.
+    days = {row["deadline"]}
+    if row["requested_at"] is not None:
+        days |= set(
+            rows.filter(requested_at=row["requested_at"]).values_list("deadline", flat=True)
+        )
     return {
         "outcome": row["outcome"],
         "deadline": row["deadline"].isoformat() if row["deadline"] else None,
-        "by_person": row["ended_by_id"] is not None,
+        "days": sorted(day.isoformat() for day in days if day),
+        "by_sync": is_sync_ending(
+            ended_by_id=row["ended_by_id"],
+            note=row["note"],
+            submission_id=row["submission_id"],
+        ),
     }
+
+
+#: How every request ending the synchronisation writes begins (`_apply_request`,
+#: `_apply_opinion_outcome`); the sync writes no actor and no submission.
+SYNC_ENDING_NOTE = "Lovable'i järgi"
+
+
+def is_sync_ending(*, ended_by_id: Any, note: str, submission_id: Any) -> bool:
+    """Whether an ended request was ended by the synchronisation itself: no
+    actor, no submission, and the sync's own note. Anything else — a person, a
+    pilot's ending with a submission, an ending whose person was since deleted
+    (`ended_by` is SET_NULL, the note is theirs) — is Juristid's."""
+    return (
+        ended_by_id is None and submission_id is None and (note or "").startswith(SYNC_ENDING_NOTE)
+    )
 
 
 def _outcome_view(matter_id: Any) -> dict[str, Any] | None:
@@ -2591,7 +2618,11 @@ def _request_decision_authoritative(
 
     def same(target: Any) -> FieldDecision:
         if unchanged:
-            return _decision(name, SyncOutcome.UNCHANGED, target=target, **common)
+            quiet = _decision(name, SyncOutcome.UNCHANGED, target=target, **common)
+            # The request's identity (`requested_at`) is recorded with the
+            # baseline once (`_mirror`), so a later request can be told apart.
+            quiet.settle = REQUESTED_AT not in entry and target == b_day
+            return quiet
         return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=target, **common)
 
     if closed_after:
@@ -2617,6 +2648,10 @@ def _request_decision_authoritative(
         if b_day is None:
             return same(None)
         target_end = {"resolve": outcome["outcome"], "date": outcome.get("date"), "day": c_src}
+        if REQUESTED_AT in entry:
+            # Whose request is current: Lovable's (the one the sync set or saw,
+            # moved or not) or one recorded since (a fresh or REPLACED request).
+            target_end[REQUESTED_AT] = entry[REQUESTED_AT]
         restored = _restore_reason(inputs_same, entry, lambda before: before is None)
         return _decision(name, SyncOutcome.ELIGIBLE, restored, target=target_end, **common)
     if c_src is None:
@@ -2625,18 +2660,23 @@ def _request_decision_authoritative(
         target = c_src
     elif dt.date.fromisoformat(c_src) >= today:
         last = b.get("request_last_ended") or {}
+        juristid_end = bool(last) and not last.get("by_sync")
         if (
-            last.get("by_person")
+            juristid_end
             and last.get("outcome") in ("ANSWERED", "NOT_ANSWERING")
-            and last.get("deadline") == c_src
+            and c_src in (last.get("days") or [])
         ):
-            # A person answered or declined this very request (Lovable's day) in
-            # Juristid while Lovable's `valja` is still blank: never a second
-            # consultation; held until Lovable records it. One the sync ended
-            # (Lovable then blanked `valja`: Lovable wins), or one for another
-            # day (a new request), is set on Lovable's day.
+            # Juristid answered or declined this very request — any day of its
+            # chain is Lovable's day — while Lovable's `valja` is still blank:
+            # never a second consultation; held until Lovable records it. One
+            # the sync ended (Lovable then blanked `valja`: Lovable wins), or
+            # one for another day (a new request), is set on Lovable's day.
             return _decision(name, SyncOutcome.REVIEW_REQUIRED, ANSWERED_IN_JURISTID, **common)
         target = c_src
+        if juristid_end and last.get("outcome") in ("ANSWERED", "NOT_ANSWERING"):
+            # After Juristid ended its request, Lovable's other day states a new
+            # request: a source change, never a restore.
+            return _decision(name, SyncOutcome.ELIGIBLE, target=target, **common)
     else:
         return same(None)  # nothing is owed now
     if b_day == target:
@@ -3287,17 +3327,13 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
 
         day = decision.target.get("date")
         sent_on = dt.date.fromisoformat(day) if day else None
-        requested = fresh.response_requested_at
-        # A lawyer's own request: recorded after the opinion went out, for a day
-        # that is not Lovable's request day (Lovable's request, even moved by a
-        # person, keeps its first `requested_at`).
-        asked_later = (
-            sent_on is not None
-            and requested is not None
-            and timezone.localtime(requested).date() > sent_on
-            and (fresh.response_deadline.isoformat() if fresh.response_deadline else None)
-            != decision.target.get("day")
-        )
+        # Identity, never dates: the request is Lovable's when its `requested_at`
+        # is the one recorded with the baseline (a MOVED request keeps it); a
+        # fresh or REPLACED request has a new one — Juristid's own, which the
+        # earlier send never answered.
+        asked_later = REQUESTED_AT in decision.target and decision.target[
+            REQUESTED_AT
+        ] != _iso_moment(fresh.response_requested_at)
         if decision.target["resolve"] == "SENT" and asked_later and sent_on is not None:
             # A request made after the opinion went out was never answered by it:
             # withdrawn, with Lovable's word for what was sent — no answer claimed.
@@ -3459,6 +3495,7 @@ def _apply_authoritative(
                 "source": src["opinion_deadline"],
                 "target": None,
                 MIRRORED: True,
+                REQUESTED_AT: None,
             }
     elif name == "koda_initiative":
         track = Track.KODA_INITIATIVE if decision.target else _track_before_initiative(matter.pk)
@@ -3483,7 +3520,7 @@ def _apply_authoritative(
         new_b = decision.target
     else:
         raise SyncRefused("NOT_ALLOWLISTED", f"{name} is not a source-authoritative field.")
-    _mirror(applied, decision, new_b)
+    _mirror(applied, decision, new_b, matter_id=matter.pk)
     return new_b
 
 
@@ -3498,10 +3535,37 @@ def _riding_b(name: str, matter: Any) -> Any:
     return _outcome_view(matter.pk)
 
 
-def _mirror(applied: dict[str, Any], decision: FieldDecision, new_b: Any) -> None:
+#: `applied["opinion_deadline"]`: the current request's `response_requested_at`
+#: when the baseline was last recorded — Lovable's request's identity.
+REQUESTED_AT = "requested_at"
+
+
+def _iso_moment(value: Any) -> str | None:
+    return value.isoformat() if value is not None else None
+
+
+def _mirror(
+    applied: dict[str, Any], decision: FieldDecision, new_b: Any, *, matter_id: Any = None
+) -> None:
     """The baseline after a write or a convergence: A takes C, the target is
-    what Juristid now holds, and the field is settled (`MIRRORED`)."""
+    what Juristid now holds, and the field is settled (`MIRRORED`). The
+    request's baseline also records its `requested_at` (`REQUESTED_AT`)."""
     name = decision.field
+    if name == "opinion_deadline" and matter_id is not None:
+        from app.matters.models import Matter
+
+        requested = (
+            Matter.all_objects.filter(pk=matter_id)
+            .values_list("response_requested_at", flat=True)
+            .first()
+        )
+        applied[name] = {
+            "source": decision.source,
+            "target": new_b,
+            MIRRORED: True,
+            REQUESTED_AT: _iso_moment(requested),
+        }
+        return
     if name == "next_action_text":
         applied[name] = {"source": decision.source, MIRRORED: True}
         step = new_b
@@ -3790,7 +3854,7 @@ def apply_matter(
         for decision in fresh.decisions:
             if decision.outcome == SyncOutcome.ALREADY_CONVERGED or decision.settle:
                 if authoritative:
-                    _mirror(applied, decision, decision.target)
+                    _mirror(applied, decision, decision.target, matter_id=matter.pk)
                 else:
                     _advance(applied, decision)
         if (
@@ -5518,7 +5582,7 @@ def _execute(
             for decision in plan.decisions:
                 if decision.outcome == SyncOutcome.ALREADY_CONVERGED or decision.settle:
                     if authoritative:
-                        _mirror(applied, decision, decision.target)
+                        _mirror(applied, decision, decision.target, matter_id=plan.state.matter_id)
                     else:
                         _advance(applied, decision)
             if applied != state.applied:
