@@ -1513,3 +1513,197 @@ def test_a_moved_history_teema_deleted_afterwards_keeps_the_cohorts_whole(refere
     del reference["source"].rows[_id("2026_108")]
     run = _run(reference, at=_at(2))
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
+
+
+# -- round 4d ------------------------------------------------------------------------
+
+
+def test_a_teema_with_a_source_change_applies_its_restores_when_the_restore_breaker_trips(
+    reference, monkeypatch
+):
+    """P1: a lawyer closed 2026_216 and Lovable changed its step: the reopening (a
+    restore) is written with the step (the step needs the open Teema); only the
+    restore-only Teema waits. `--max-restored` drains it on a supervised run."""
+    from app.matters.services import close_matter, set_matter_title
+
+    _run(reference, at=_at(0))
+    close_matter(
+        matter=_matter("2026_216"),
+        disposition=Disposition.OTHER,
+        actor=None,
+        follow_ups_confirmed=True,
+    )
+    set_matter_title(matter=_matter("2026_232"), value="Juristi oma", actor=None)
+    reference["source"].edit("2026_216", jargmiseks="Jälgin ELi menetlust")
+    monkeypatch.setattr(lovable_sync, "MAX_RESTORED_MATTERS", 0)
+    run = _run(reference, at=_at(1))
+    assert (run.status, run.error) == (SyncRunStatus.REVIEW_ONLY, lovable_sync.RESTORE_BREAKER)
+    assert (run.counts["changed_source"], run.counts["changed_restores"]) == (1, 1)
+    assert run.counts["failed"] == 0
+    assert _matter("2026_216").is_open
+    assert _open_step("2026_216").text == "Jälgin ELi menetlust"
+    stage = _decisions(run, "2026_216")["stage"]
+    assert (stage.outcome, stage.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert _matter("2026_232").title == "Juristi oma"
+    drained = _run(reference, at=_at(2), max_restored=5)
+    assert drained.status == SyncRunStatus.SUCCEEDED, drained.error
+    assert drained.counts["restore_limit"] == 5
+    assert _matter("2026_232").title == "Näidisteema 2026_232"
+
+
+def test_the_command_takes_a_one_run_restore_limit():
+    from app.legacy_import.management.commands.lovable_sync import Command
+
+    parser = Command().create_parser("manage.py", "lovable_sync")
+    options = parser.parse_args(["run", "--max-restored", "250"])
+    assert options.max_restored == 250
+    assert parser.parse_args(["run"]).max_restored is None
+
+
+def test_a_request_the_sync_ended_comes_back_when_lovable_blanks_its_outcome(reference):
+    """P2-b, probe 2026_238: «ei saatnud» ended the request; Lovable then blanks
+    `valja` — Lovable wins, the request is set on its day, no answer invented."""
+    source = reference["source"]
+    source.edit("2026_238", valja="ei saatnud")
+    _run(reference, at=_at(0))
+    assert _matter("2026_238").response_deadline is None
+    source.edit("2026_238", valja=None)
+    run = _run(reference, at=_at(1))
+    request = _decisions(run, "2026_238")["opinion_deadline"]
+    assert request.outcome == SyncOutcome.APPLIED, request.reason
+    assert _matter("2026_238").response_deadline == dt.date.fromisoformat(REQUEST)
+    assert not MatterResponseDeadline.objects.filter(
+        matter=_matter("2026_238"), outcome="ANSWERED"
+    ).exists()
+
+
+def test_a_persons_answer_holds_only_its_own_day(reference):
+    """P2-b, probe 2026_253: a person answered Lovable's request in Juristid —
+    held while Lovable says nothing; a new day in Lovable is a new request."""
+    from app.matters.response_deadlines import resolve_response_deadline
+
+    _run(reference, at=_at(0))
+    resolve_response_deadline(
+        matter=_matter("2026_253"),
+        outcome="ANSWERED",
+        actor=reference["world"]["mari"],
+        note="Vastatud e-kirjaga.",
+    )
+    run = _run(reference, at=_at(1))
+    held = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (held.outcome, held.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.ANSWERED_IN_JURISTID,
+    )
+    assert _matter("2026_253").response_deadline is None
+    reference["source"].edit("2026_253", arvamuse_tahtaeg="2099-12-20")
+    run = _run(reference, at=_at(2))
+    assert _decisions(run, "2026_253")["opinion_deadline"].outcome == SyncOutcome.APPLIED
+    assert _matter("2026_253").response_deadline == dt.date(2099, 12, 20)
+
+
+def test_a_lawyers_later_request_is_withdrawn_not_answered_by_an_earlier_send(reference):
+    """P3-1: Lovable records the opinion sent on 01.11; the current request was
+    made after it (a lawyer's own, another day): ended CANCELLED, never ANSWERED."""
+    from app.matters.response_deadlines import change_response_deadline
+
+    _run(reference, at=_at(0))
+    matter = _matter("2026_253")
+    change_response_deadline(matter=matter, deadline=None, actor=None)
+    change_response_deadline(matter=_matter("2026_253"), deadline=dt.date(2099, 12, 15), actor=None)
+    reference["source"].edit("2026_253", valja="2026-11-01", valja_kuupaev="2026-11-01")
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert _matter("2026_253").response_deadline is None
+    ended = MatterResponseDeadline.objects.filter(matter=matter).order_by("-ended_at").first()
+    assert (ended.deadline, ended.outcome) == (dt.date(2099, 12, 15), "CANCELLED")
+    assert "enne seda küsimist" in ended.note
+    assert not MatterResponseDeadline.objects.filter(
+        matter=matter, deadline=dt.date(2099, 12, 15), outcome="ANSWERED"
+    ).exists()
+
+
+def test_a_derived_change_is_a_source_change_not_a_restore(reference, monkeypatch):
+    """P3-2: the drafting step ending because its day passed, and the request
+    ending because Lovable's sent status changed, are not restores — they count
+    as source changes and the restore breaker never holds them."""
+    source = reference["source"]
+    source.edit("2026_253", jargmiseks="", arvamuse_tahtaeg="2026-11-13")
+    _run(reference, at=_at(0))
+    assert _open_step("2026_253").target_date == dt.date(2026, 11, 13)
+    monkeypatch.setattr(lovable_sync, "MAX_RESTORED_MATTERS", 0)
+    late = _run(reference, at=_at(48))  # 14.11: the request day has passed
+    step = _decisions(late, "2026_253")["next_action_text"]
+    assert (step.outcome, step.reason) == (SyncOutcome.APPLIED, "")
+    assert _open_step("2026_253") is None
+    assert late.status == SyncRunStatus.SUCCEEDED, late.error
+    assert late.counts["changed_restores"] == 0
+
+    source.edit("2026_232", valja="2026-11-10", valja_kuupaev="2026-11-10")
+    run = _run(reference, at=_at(49))
+    request = _decisions(run, "2026_232")["opinion_deadline"]
+    assert request.reason != lovable_sync.RESTORED
+    assert _matter("2026_232").response_deadline is None
+
+
+def test_the_onenote_evidence_pilot_is_not_a_lovable_commencement(reference):
+    """P3-3: only the Lovable importer's cohorts (`lovable_pilot.COHORTS`) mark a
+    commencement as Lovable's; the OneNote evidence pilot writes the same kinds."""
+    from app.intelligence.services import add_effective_date
+    from app.legacy_import.evidence_pilot import PILOT as ONENOTE_PILOT
+    from app.legacy_import.lovable_pilot import COHORTS, T_EFFECTIVE_DATE
+
+    matter = _matter("2026_253")
+    record = add_effective_date(
+        matter=matter,
+        kind="KNOWN_DATE",
+        date_value=dt.date(2030, 1, 1),
+        period_end=dt.date(2030, 1, 1),
+        actor=None,
+    )
+    assert ONENOTE_PILOT not in COHORTS
+    for pilot, key in ((ONENOTE_PILOT, "onenote"), (REGISTER_COHORT, "lovable")):
+        EvidencePilotRecord.objects.create(
+            pilot=pilot,
+            pilot_version="1",
+            package_sha256="f" * 64,
+            record_key=key,
+            record_kind=T_EFFECTIVE_DATE,
+            matter=matter,
+            target_model=T_EFFECTIVE_DATE,
+            target_id=record.pk,
+        )
+        if pilot == ONENOTE_PILOT:
+            assert lovable_sync.lovable_commencements(matter.pk) == []
+    assert lovable_sync.lovable_commencements(matter.pk) == [
+        [T_EFFECTIVE_DATE, "KNOWN_DATE", "2030-01-01", ""]
+    ]
+
+
+def test_standing_holds_are_counted_and_the_historical_ones_stay_in_the_archive_group(
+    reference,
+):
+    """P3-4: fields held while Lovable is unchanged come back every night; the
+    run counts them per cohort and reason, and on a closed history Teema they
+    are the archive's own (`historical_hold`), not operational work."""
+    from app.legacy_import.lovable_pilot import HISTORY_COHORT
+
+    _history(reference, {"2026_107": {}})
+    _run(reference, at=_at(0))
+    # Juristid says Chamber initiative with no recorded earlier track, Lovable
+    # unchanged: `TRACK_NOT_STATED` every night (`_scalar`'s ``known_differs``).
+    for ref in ("2026_107", "2026_253"):
+        Matter.all_objects.filter(pk=_matter(ref).pk).update(track=Track.KODA_INITIATIVE)
+    key = lovable_sync.TRACK_NOT_STATED
+    for night in (1, 2):
+        run = _run(reference, at=_at(night))
+        counts = run.counts["standing_holds"]
+        assert counts.get(f"{REGISTER_COHORT}:{key}") == 1, counts
+        assert counts.get(f"{HISTORY_COHORT}:{key}") == 1, counts
+    held = LovableSyncDecision.objects.filter(run=run, reason=key).select_related("state")
+    by_cohort = {
+        d.state.cohort: lovable_sync.historical_hold(d.state.cohort, d.reason, d.baseline, d.source)
+        for d in held
+    }
+    assert by_cohort == {REGISTER_COHORT: False, HISTORY_COHORT: True}
+    assert held.filter(lovable_sync.historical_hold_q()).count() == 1

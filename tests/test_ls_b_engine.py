@@ -940,14 +940,16 @@ def test_a_historical_cohort_is_enrollable_and_follows_lovable_closed(register):
 
 
 def test_a_locally_ended_request_is_never_a_second_consultation(register):
-    """Answered or declined in Juristid while Lovable's `valja` is still blank: no
-    new request episode — a visible technical hold until Lovable records it."""
+    """A person answered or declined Lovable's request (its day) in Juristid while
+    Lovable's `valja` is still blank: no new request episode — a visible
+    technical hold until Lovable records it. Another day is a new request."""
     from app.matters.response_deadlines import resolve_response_deadline
+    from tests import factories
 
     matter = _matter("2026_253")
-    resolve_response_deadline(matter=matter, outcome="NOT_ANSWERING", actor=None)
+    assert matter.response_deadline == dt.date(2099, 3, 15)
+    resolve_response_deadline(matter=matter, outcome="NOT_ANSWERING", actor=factories.UserFactory())
     history = MatterResponseDeadline.objects.filter(matter=matter).count()
-    register["source"].edit("2026_253", arvamuse_tahtaeg="2099-04-15")
     run = _run(register, at=_at(0))
     decision = _decisions(run, "2026_253")["opinion_deadline"]
     assert (decision.outcome, decision.reason) == (
@@ -957,6 +959,11 @@ def test_a_locally_ended_request_is_never_a_second_consultation(register):
     matter.refresh_from_db()
     assert matter.response_deadline is None
     assert MatterResponseDeadline.objects.filter(matter=matter).count() == history
+    register["source"].edit("2026_253", arvamuse_tahtaeg="2099-04-15")
+    run = _run(register, at=_at(1))
+    assert _decisions(run, "2026_253")["opinion_deadline"].outcome == SyncOutcome.APPLIED
+    matter.refresh_from_db()
+    assert matter.response_deadline == dt.date(2099, 4, 15)
 
 
 def test_a_request_a_lawyer_opened_is_moved_never_a_second_request(register):

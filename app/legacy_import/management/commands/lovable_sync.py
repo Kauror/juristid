@@ -152,6 +152,15 @@ class Command(BaseCommand):
                 "(the first source-authoritative convergence); recorded in the run."
             ),
         )
+        parser.add_argument(
+            "--max-restored",
+            type=int,
+            default=None,
+            help=(
+                "run: raise the restore breaker for this one supervised run (a held "
+                "backlog of restores drains at once); recorded in the run."
+            ),
+        )
         parser.add_argument("--mode", choices=["off", "compare", "apply"], default="")
         parser.add_argument("--cut-over", action="store_true")
         parser.add_argument("--operator-intent", default="")
@@ -372,6 +381,7 @@ class Command(BaseCommand):
             transport=lovable_source.HttpTransport(config),
             backup_set=options["backup_set"],
             max_changed=options["max_changed"] or None,
+            max_restored=options["max_restored"],
         )
         self._finish(options, run)
 
