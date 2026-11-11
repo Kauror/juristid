@@ -199,7 +199,7 @@ def _active_topics() -> list[dict[str, Any]]:
             _lovable_row(
                 DRAFTING,
                 hetkeseis="kooskõlastusel",
-                jargmiseks="Koostan arvamust.",
+                jargmiseks="Koostan arvamuse",
                 tegevuse_tahtaeg="2027-01-20",
                 arvamuse_tahtaeg="2027-01-20",
                 sisse="2025-06-02",
@@ -486,8 +486,10 @@ def test_the_first_night_plans_what_the_import_held(first_night):
     # drafting step's baseline settles (docs/adr/0213 §10: Lovable's «Koostan
     # arvamust.» is the step Juristid already holds) — bookkeeping only.
     before, after = first_night["digests"]
-    assert len(before) == 11
-    assert {pk for pk in before if after[pk] != before[pk]} <= {str(_matter(DRAFTING).pk)}
+    assert len(before) == len(after) == 11
+    # The baselines settle on the first comparison (bookkeeping only; the
+    # digests include the synchronisation state); nothing was applied.
+    assert not run.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
     # The same-reference Teema's topic is read only as an index row.
     assert not LovableSyncState.objects.filter(matter=first_night["same"]).exists()
     assert run.counts["outside_cohort"] == 1

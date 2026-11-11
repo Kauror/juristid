@@ -635,16 +635,37 @@ def pilot_cohort(retired: int = 0) -> Cohort:
     return Cohort(PILOT_COHORT, PILOT, "", EXPECTED_COHORT, retired)
 
 
+def _arrivals() -> tuple[Counter[str], Counter[str]]:
+    """(joined, moved out) per cohort, in one query when nothing ever moved:
+    members a cohort gained as new topics or moved in from the historical
+    register when Lovable reopened them (owner decision 11.11), and members a
+    cohort lost to such a move (the Teema's earlier membership names it)."""
+    joined: Counter[str] = Counter()
+    into: dict[Any, str] = {}
+    for basis, cohort, matter_id in LovableSyncMembership.objects.filter(
+        basis__in=(MembershipBasis.NEW_TOPIC, MembershipBasis.MOVED)
+    ).values_list("basis", "cohort", "matter_id"):
+        joined[cohort] += 1
+        if basis == MembershipBasis.MOVED:
+            into[matter_id] = cohort
+    out: Counter[str] = Counter()
+    if into:
+        for matter_id, cohort in LovableSyncMembership.objects.filter(
+            matter_id__in=list(into)
+        ).values_list("matter_id", "cohort"):
+            if cohort != into[matter_id]:
+                out[cohort] += 1
+    return joined, out
+
+
 def joined_members() -> Counter[str]:
-    """How many members each cohort gained as new topics. Reads only."""
-    return Counter(
-        dict(
-            LovableSyncMembership.objects.filter(basis=MembershipBasis.NEW_TOPIC)
-            .values("cohort")
-            .annotate(n=Count("id"))
-            .values_list("cohort", "n")
-        )
-    )
+    """How many members each cohort gained (`_arrivals`). Reads only."""
+    return _arrivals()[0]
+
+
+def moved_out_members() -> Counter[str]:
+    """How many members each cohort lost to a move (`_arrivals`). Reads only."""
+    return _arrivals()[1]
 
 
 def retired_members() -> Counter[str]:
@@ -665,9 +686,16 @@ def cohorts() -> list[Cohort]:
     rows = list(LovableSyncCohort.objects.order_by("enrolled_at", "key"))
     retired = {row.key for row in rows if row.retired_at is not None}
     gone = retired_members()
-    joined = joined_members()
+    joined, left = _arrivals()
     enrolled = [
-        Cohort(row.key, row.pilot, row.package_sha256, row.expected, gone[row.key], joined[row.key])
+        Cohort(
+            row.key,
+            row.pilot,
+            row.package_sha256,
+            row.expected,
+            gone[row.key] + left[row.key],
+            joined[row.key],
+        )
         for row in rows
         if row.retired_at is None and row.key != PILOT_COHORT
     ]
@@ -1183,6 +1211,11 @@ def full_values(matter: Any) -> dict[str, Any]:
     return {**current_values(matter), **conditional_values(matter)}
 
 
+#: The important-date kinds that are commencements (`lovable_pilot.IMPORTANT_KINDS`);
+#: any other important date is a person's own and never Lovable's.
+COMMENCEMENT_IMPORTANT_KINDS = ("PLANNED_COMMENCEMENT", "ESTIMATED_COMMENCEMENT")
+
+
 def conditional_values(matter: Any) -> dict[str, Any]:
     """B for the conditional fields and the continuation (docs/adr/0213): the
     stage key, the current opinion request's day, whether the Teema is a Chamber
@@ -1201,7 +1234,9 @@ def conditional_values(matter: Any) -> dict[str, Any]:
     ] + [
         ["MatterImportantDate", str(kind or ""), day.isoformat() if day else None]
         for kind, day in MatterImportantDate.objects.filter(
-            matter_id=matter.pk, status=FactStatus.ACTIVE
+            matter_id=matter.pk,
+            status=FactStatus.ACTIVE,
+            kind__in=COMMENCEMENT_IMPORTANT_KINDS,
         ).values_list("kind", "date_value")
     ]
     successor = getattr(matter, "superseded_by_id", None)
@@ -1529,7 +1564,7 @@ def plan_matter(
         b = {**b, **conditional_values(state.matter)}
     closed = not b["is_open"]
     plan.open = not closed
-    if state.cohort != HISTORY_COHORT and getattr(state.matter, "deleted_at", None) is None:
+    if getattr(state.matter, "deleted_at", None) is None:
         # Lovable is authoritative for the operational register (docs/adr/0213
         # §10, owner brief 2026-11-11): every source-owned field follows the
         # source through its domain service; only technical problems hold.
@@ -1918,6 +1953,20 @@ SUCCESSOR_MISSING = "SUCCESSOR_NOT_IN_JURISTID"
 SUCCESSOR_AMBIGUOUS = "SUCCESSOR_AMBIGUOUS"
 #: The opinion outcome is held (contradictory or impossible): the request waits too.
 OUTCOME_HELD = "OUTCOME_HELD"
+#: A write that brings Lovable's unchanged value back over a local edit
+#: (owner decision 11.11: Lovable is the source of truth at all times).
+RESTORED = "RESTORED_SOURCE_VALUE"
+#: A historical Teema Lovable reopened outside its operational scope: no
+#: register membership to move it to, nothing changed.
+HISTORY_REOPENED_OUTSIDE_SCOPE = "HISTORY_REOPENED_OUTSIDE_SCOPE"
+#: Lovable calls an open Teema finished in words that state no reason
+#: («lõpetatud»): closing it would invent one.
+CLOSURE_REASON_UNKNOWN = "CLOSURE_REASON_UNKNOWN"
+#: A historical Teema's owner name resolves to no active Juristid user
+#: (former staff): shown in the historical register's own group.
+HISTORY_OWNER_UNRESOLVED = "HISTORY_OWNER_UNRESOLVED"
+#: «lõpetatud» — finished, no reason stated (docs/adr/0213 §9.1).
+FINISHED_NO_REASON = "lõpetatud"
 STAGE_UNMAPPED = "STAGE_UNMAPPED"
 CLOSED_OTHERWISE = "CLOSED_WITH_OTHER_REASON"
 LIFECYCLE_HELD = "LIFECYCLE_HELD"
@@ -1945,6 +1994,9 @@ TECHNICAL_HOLDS: dict[str, str] = {
     SUCCESSOR_MISSING: "missing successor identity",
     SUCCESSOR_AMBIGUOUS: "duplicate reference",
     OUTCOME_HELD: "contradictory snapshot",
+    HISTORY_REOPENED_OUTSIDE_SCOPE: "unrepresentable value",
+    CLOSURE_REASON_UNKNOWN: "unrepresentable value",
+    HISTORY_OWNER_UNRESOLVED: "unresolvable identity",
     TITLE_EMPTY: "unrepresentable value",
     STAGE_UNMAPPED: "unrepresentable value",
     STEP_DATE_NO_TEXT: "unrepresentable value",
@@ -1995,23 +2047,35 @@ def _scalar(
     hold: str = "",
     blank_converges: bool = False,
 ) -> FieldDecision:
-    """One source-authoritative scalar field: A = C and settled → unchanged (a
-    local value kept); otherwise B converges on, or is written to, C's target —
-    unless a technical hold applies."""
+    """One source-authoritative scalar field. Juristid must hold C's target after
+    the night (owner decision 11.11: Lovable is the source of truth at all
+    times):
+
+    * B already is it → nothing to write (unchanged, or converged);
+    * the source changed → written (ELIGIBLE);
+    * the source did not change but Juristid was edited → written back
+      (ELIGIBLE, reason `RESTORED`);
+    * C's target cannot be determined (a technical hold) → held, and a local
+      value is never «restored over» a hold."""
     entry = _entry(applied, name)
     a_src, a_tgt = entry.get("source"), entry.get("target")
+    unchanged = c_src == a_src and _settled(applied, name)
     common = {"baseline": a_src, "current": b, "source": c_src}
-    if c_src == a_src and _settled(applied, name):
-        if "target" not in entry or b == a_tgt:
-            return _decision(name, SyncOutcome.UNCHANGED, **common)
-        return _decision(name, SyncOutcome.LOCAL_TEST_CHANGE, **common)
-    if (c_tgt is not None or blank_converges) and not hold and b == c_tgt:
-        return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=c_tgt, **common)
-    if c_tgt is not None and b == c_tgt:
+    if not hold and (c_tgt is not None or blank_converges) and b == c_tgt:
+        if unchanged:
+            decision = _decision(name, SyncOutcome.UNCHANGED, target=c_tgt, **common)
+            decision.settle = a_tgt != c_tgt
+            return decision
         return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=c_tgt, **common)
     if hold:
+        if unchanged and ("target" not in entry or b == a_tgt):
+            return _decision(name, SyncOutcome.UNCHANGED, **common)
+        if c_tgt is not None and b == c_tgt:
+            return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=c_tgt, **common)
         return _decision(name, SyncOutcome.REVIEW_REQUIRED, hold, **common)
-    return _decision(name, SyncOutcome.ELIGIBLE, target=c_tgt, **common)
+    return _decision(
+        name, SyncOutcome.ELIGIBLE, RESTORED if unchanged else "", target=c_tgt, **common
+    )
 
 
 def _successor_matter(source_id: str) -> str | None:
@@ -2040,8 +2104,10 @@ def desired_lifecycle(
        või töö lõppes», MONITORING_STOPPED «Koda ei tegele edasi»).
     3. Lovable's own disposition-only words (`CLOSURE_BY_STATUS`, «rohkem pole
        tegevusi plaanis») → closed MONITORING_STOPPED, stage kept.
-    4. any other mapped stage → open at it.
-    5. anything else (an unmapped label, a blank one) → `STAGE_UNMAPPED`.
+    4. «lõpetatud» → closed, no reason stated: any closure is it (disposition
+       ``None``); an open Teema cannot be closed without inventing a reason.
+    5. any other mapped stage → open at it.
+    6. anything else (an unmapped label, a blank one) → `STAGE_UNMAPPED`.
 
     No more specific reason than the source states is ever recorded."""
     from app.legacy_import.lovable_reading import CLOSURE_BY_STATUS, TERMINAL_STAGES, stage_for
@@ -2073,19 +2139,26 @@ def desired_lifecycle(
     stated = CLOSURE_BY_STATUS.get(label.casefold())
     if stated is not None:
         return {"open": False, "stage": None, "disposition": stated[1], "successor": None}, ""
+    if label.casefold() == FINISHED_NO_REASON:
+        return {"open": False, "stage": None, "disposition": None, "successor": None}, ""
     if mapped:
         return {"open": True, "stage": mapped, "disposition": "", "successor": None}, ""
     return None, STAGE_UNMAPPED
 
 
 def _lifecycle_matches(desired: dict[str, Any], b_life: dict[str, Any]) -> bool:
+    """Whether Juristid's lifecycle already is the desired one. A closed Teema's
+    stage is not compared: it moves only with a reopening, and a closure the
+    source does not tell apart («lõpetatud», disposition ``None``) is any."""
     if desired["open"]:
         return bool(b_life["open"]) and b_life["stage"] == desired["stage"]
+    if b_life["open"]:
+        return False
+    if desired["disposition"] is None:
+        return True
     return (
-        not b_life["open"]
-        and b_life["disposition"] == desired["disposition"]
+        b_life["disposition"] == desired["disposition"]
         and b_life["successor"] == desired["successor"]
-        and (desired["stage"] is None or b_life["stage"] == desired["stage"])
     )
 
 
@@ -2094,7 +2167,16 @@ def _lifecycle_decisions(
 ) -> tuple[list[FieldDecision], dict[str, Any] | None, str]:
     """The stage and the continuation as one lifecycle operation. Returns the
     decisions (``stage``, and ``continuation`` when the link moved), the desired
-    lifecycle (``None`` when held) and the hold code."""
+    lifecycle (``None`` when held) and the hold code.
+
+    Lovable is the source of truth at all times (owner decision 11.11): a
+    lifecycle a person changed locally is put back — a Teema closed while
+    Lovable has it open is reopened, one reopened while Lovable has it closed
+    is closed again (reason `RESTORED`). A Teema closed for another reason than
+    Lovable states is never reopened and closed again: changed in Lovable it is
+    held (`CLOSED_OTHERWISE`), unchanged it stays as closed. A historical Teema
+    Lovable reopens moves to the register (`move_to`) only inside Lovable's
+    operational scope; outside it, it is held."""
     applied = state.applied
     entry = _entry(applied, "stage")
     a_stage = entry.get("source")
@@ -2109,62 +2191,55 @@ def _lifecycle_decisions(
     a_link = link.get("source") if link else (state.observed or {}).get(CONTINUATION, unknown)
     desired, hold = desired_lifecycle(c_stage, c_link, matter_id=state.matter_id)
     changed = c_stage != a_stage or (a_link or []) != c_link
+    unchanged = not changed and _settled(applied, "stage")
     common = {"baseline": a_stage, "current": b_life, "source": c_stage}
     link_common = {"baseline": a_link, "current": b.get(CONTINUATION) or [], "source": c_link}
-    out: list[FieldDecision] = []
-    if not changed and _settled(applied, "stage"):
-        # Unchanged in the source: whatever Juristid holds stays (a closure or
-        # a stage a person recorded) until the source next moves.
-        return [_decision("stage", SyncOutcome.UNCHANGED, **common)], desired, ""
+    link_moved = (a_link or []) != c_link
+
+    def decide(outcome: str, reason: str = "", target: Any = None) -> list[FieldDecision]:
+        found = [_decision("stage", outcome, reason, target=target, **common)]
+        if link_moved:
+            found.append(_decision(CONTINUATION, outcome, reason, target=target, **link_common))
+        return found
+
     if hold or desired is None:
+        if unchanged:
+            # A technical hold is never «restored over».
+            return [_decision("stage", SyncOutcome.UNCHANGED, **common)], None, ""
         hold = hold or STAGE_UNMAPPED
-        out.append(_decision("stage", SyncOutcome.REVIEW_REQUIRED, hold, **common))
-        if (a_link or []) != c_link:
-            out.append(_decision(CONTINUATION, SyncOutcome.REVIEW_REQUIRED, hold, **link_common))
-        return out, None, hold
-    target = dict(desired)
+        return decide(SyncOutcome.REVIEW_REQUIRED, hold), None, hold
     if _lifecycle_matches(desired, b_life):
-        outcome, reason = SyncOutcome.ALREADY_CONVERGED, ""
-        target = dict(b_life)
-    elif desired["open"] and not b_life["open"]:
-        a_desired, _a_hold = desired_lifecycle(a_stage, a_link or [], matter_id=state.matter_id)
-        if a_desired is not None and not a_desired["open"]:
-            outcome, reason = SyncOutcome.ELIGIBLE, ""  # Lovable reopened it: reopen
-        else:
-            # Closed in Juristid while Lovable still says the work goes on, and
-            # Lovable did not reopen it: the closure is kept (a local value).
-            outcome, reason = SyncOutcome.LOCAL_TEST_CHANGE, ""
-    elif not desired["open"] and not b_life["open"]:
-        # Closed already, for another reason or under another successor:
-        # re-closing would reopen and close again — held, never churned.
-        outcome, reason = SyncOutcome.REVIEW_REQUIRED, CLOSED_OTHERWISE
-    else:
-        outcome, reason = SyncOutcome.ELIGIBLE, ""
-    keep = outcome in (SyncOutcome.ELIGIBLE, SyncOutcome.ALREADY_CONVERGED)
-    out.append(_decision("stage", outcome, reason, target=target if keep else None, **common))
-    if (a_link or []) != c_link:
-        out.append(
-            _decision(
-                CONTINUATION,
-                outcome,
-                reason,
-                target=target if keep else None,
-                **link_common,
-            )
-        )
-    return out, desired, ""
+        if unchanged:
+            quiet = [_decision("stage", SyncOutcome.UNCHANGED, target=dict(b_life), **common)]
+            quiet[0].settle = MIRRORED not in entry
+            return quiet, desired, ""
+        return decide(SyncOutcome.ALREADY_CONVERGED, target=dict(b_life)), desired, ""
+    restored = RESTORED if unchanged else ""
+    target = dict(desired)
+    if not desired["open"] and not b_life["open"]:
+        # Closed in both, for another reason or under another successor:
+        # Lovable's reason wins, written as a closure-reason change (never a
+        # reopening and a new closure; the closing moment stays).
+        target["reclose"] = True
+        return decide(SyncOutcome.ELIGIBLE, restored, target), desired, ""
+    if not desired["open"] and desired["disposition"] is None:
+        # «lõpetatud» on an open Teema: closing it would invent a reason.
+        return decide(SyncOutcome.REVIEW_REQUIRED, CLOSURE_REASON_UNKNOWN), None, ""
+    if desired["open"] and not b_life["open"] and state.cohort == HISTORY_COHORT:
+        if not src.get("operational_scope"):
+            hold = HISTORY_REOPENED_OUTSIDE_SCOPE
+            return decide(SyncOutcome.REVIEW_REQUIRED, hold), None, ""
+        target["move_to"] = NEW_TOPIC_COHORT
+    return decide(SyncOutcome.ELIGIBLE, restored, target), desired, ""
 
 
 def _step_view(step: dict[str, Any] | None) -> dict[str, Any] | None:
+    """A step as compared with Lovable's: its exact sentence (whitespace
+    collapsed), kind, date meaning, day and precision — never its id."""
     if not step:
         return None
-    text = text_value(step.get("text"))
-    if step.get("kind") == "DO" and text.casefold().startswith(DRAFTING_WORDS):
-        # «Koostan arvamust.» in Lovable and «Koostan arvamuse» in Juristid are
-        # one drafting step (docs/adr/0148 §10): never replaced for its spelling.
-        text = DRAFTING_WORDS
     return {
-        "text": text,
+        "text": text_value(step.get("text")),
         "kind": step.get("kind"),
         "date_semantics": step.get("date_semantics"),
         "target_date": step.get("target_date"),
@@ -2185,22 +2260,29 @@ def _step_decisions_authoritative(
     lifecycle_hold: str,
     request_day: str | None = None,
     request_before: str | None = None,
+    outcome: dict[str, Any] | None = None,
 ) -> list[FieldDecision]:
-    """`jargmiseks` + `tegevuse_tahtaeg` → the current step, one operation.
+    """`jargmiseks` + `tegevuse_tahtaeg` → the current step, one operation, a pure
+    function of Lovable's current values (owner decision 11.11), re-derived on
+    every run:
 
-    * Unchanged in the source and settled → unchanged (a local edit is kept).
-    * A Teema that is (or tonight becomes) closed holds no current step: the
-      closure ends it (cancelled, never completed).
-    * A sentence → the step `lovable_reading.step_reading` reads (verbatim
-      text, the kind it states or `ActionKind.SOURCE`, Lovable's day); an
-      unclassified sentence keeps the kind a person already gave the very same
-      sentence. It replaces the current step through `set_next_action`, which
-      supersedes the old one and keeps it in the history.
-    * A blank sentence after a non-blank one: the source's own step ends
-      (cancelled); a step that is not the source's stays. A blank sentence that
-      was always blank asks nothing.
-    * A day with no sentence cannot be a step: held."""
-    from app.legacy_import.lovable_reading import UNCLASSIFIED_STEP, step_reading
+    * a closed Teema (or one closing tonight) holds no current step: the
+      closure ends it (cancelled, never completed), and Lovable's sentence
+      settles as «no step»;
+    * a sentence → `lovable_reading.step_reading`: the exact sentence, the kind
+      `lovable-step/1` reads from it (or `ActionKind.SOURCE`), Lovable's day; a
+      DO with no day of its own takes the request's day after tonight;
+    * no sentence → the structured drafting step of an open request with
+      nothing sent (DO «Koostan arvamuse» on the request's day, the reader's
+      own rule, docs/adr/0148 §10), else no step;
+    * a day with no sentence cannot be a step: held.
+
+    Whatever Juristid holds that differs — a new sentence, a day, a kind an
+    earlier import gave, a local edit — is replaced through `set_next_action`
+    (the old step superseded and kept, never completed); unchanged in Lovable it
+    is a restore (reason `RESTORED`)."""
+    from app.legacy_import.lovable_reading import step_reading
+    from app.workflow.services import OPINION_PREPARATION_TEXT
 
     text_entry = _entry(applied, "next_action_text")
     date_entry = _entry(applied, "next_action_date")
@@ -2211,7 +2293,7 @@ def _step_decisions_authoritative(
     settled = not held and (step_entry.get("treatment") or "") in SETTLED_STEP_TREATMENTS
     c_text, c_date = src["next_action_text"], src["next_action_date"]
     b_view = {k: v for k, v in (b_step or {}).items() if k != "id"} or None
-    changed = (c_text, c_date) != (a_text, a_date)
+    unchanged = (c_text, c_date) == (a_text, a_date) and settled
 
     def both(outcome: str, reason: str = "", target: Any = None) -> list[FieldDecision]:
         return [
@@ -2235,71 +2317,57 @@ def _step_decisions_authoritative(
             ),
         ]
 
-    if closed_after and not lifecycle_hold:
-        # A closed Teema (or one closing tonight) holds no current step: the
-        # closure ends it. Once it is gone, Lovable's unchanged sentence is not a
-        # local edit — the baseline settles on «no step» (`settle`).
-        if b_step is not None:
-            return both(SyncOutcome.ELIGIBLE, target={"end": True})
-        if changed or not settled:
-            return both(SyncOutcome.ALREADY_CONVERGED, target=None)
-        quiet = both(SyncOutcome.UNCHANGED)
-        for decision in quiet:
-            decision.settle = a_step is not None
-        return quiet
-    # A drafting step with no day of its own follows its request's day: when the
-    # request moves tonight, the step moves with it (docs/adr/0148 §10).
-    follows_request = (
-        c_date is None
-        and request_day is not None
-        and b_step is not None
-        and b_step.get("kind") == "DO"
-        and b_step.get("target_date") == request_before
-        and request_before != request_day
-    )
-    if not changed and settled and not follows_request:
-        local = (b_step or None) != a_step
-        return both(SyncOutcome.LOCAL_TEST_CHANGE if local else SyncOutcome.UNCHANGED)
+    def same(target: Any) -> list[FieldDecision]:
+        if unchanged:
+            quiet = both(SyncOutcome.UNCHANGED, target=target)
+            for decision in quiet:
+                decision.settle = _step_view(a_step) != _step_view(target) or (
+                    (a_step or {}).get("id") != (target or {}).get("id")
+                )
+            return quiet
+        return both(SyncOutcome.ALREADY_CONVERGED, target=target)
+
+    restored = RESTORED if unchanged else ""
     if lifecycle_hold:
-        return both(SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD)
+        return same(b_step) if unchanged else both(SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD)
     desired: dict[str, Any] | None
-    if not c_text:
+    if closed_after:
+        desired = None
+    elif not c_text:
         if c_date:
+            if unchanged:
+                return same(b_step)
             return both(SyncOutcome.REVIEW_REQUIRED, STEP_DATE_NO_TEXT)
-        if a_text and b_step is not None and b_step == a_step:
-            desired = None  # Lovable cleared its own step
+        if request_day and outcome is None:
+            desired = {
+                "text": OPINION_PREPARATION_TEXT,
+                "kind": "DO",
+                "date_semantics": "DEADLINE",
+                "target_date": request_day,
+                "date_precision": "EXACT",
+            }
         else:
-            # Nothing the source says replaces Juristid's step: kept as it is.
-            return both(SyncOutcome.ALREADY_CONVERGED, target=b_step)
+            desired = None
     else:
         if c_date is not None and str(c_date).startswith("?"):
+            if unchanged:
+                return same(b_step)
             return both(SyncOutcome.REVIEW_REQUIRED, DATE_UNREADABLE)
         desired = step_reading(c_text, c_date) or {}
-        if settled and c_text == a_text and b_step is not None and b_step == a_step:
-            # Only the day moved, and Juristid still holds the step it was given
-            # for this sentence: its reading (wording, kind) stays, the day moves.
-            desired = {**(_step_view(b_step) or {}), "text": b_step["text"], "target_date": c_date}
-        if (
-            desired["kind"] == UNCLASSIFIED_STEP
-            and b_step
-            and text_value(b_step.get("text")) == text_value(c_text)
-            and b_step.get("kind") != UNCLASSIFIED_STEP
-        ):
-            # A person already read this very sentence: their kind stays.
-            desired["kind"] = b_step["kind"]
-            desired["date_semantics"] = b_step["date_semantics"]
         if desired.get("kind") == "DO" and desired.get("target_date") is None and request_day:
-            # A drafting sentence with no action day is due on the open
-            # request's day, as the structured drafting rule reads it
-            # (docs/adr/0148 §10, `lovable_reading.read_topic`).
+            # A drafting sentence with no action day is due on the request's
+            # day after tonight (docs/adr/0148 §10, `lovable_reading.read_topic`).
             desired["target_date"] = request_day
     if desired is None:
         if b_step is None:
-            return both(SyncOutcome.ALREADY_CONVERGED, target=None)
-        return both(SyncOutcome.ELIGIBLE, target={"end": True})
+            return same(None)
+        if closed_after:
+            # The closure ends it: never a restore of its own.
+            return both(SyncOutcome.ELIGIBLE, target={"end": True})
+        return both(SyncOutcome.ELIGIBLE, restored, target={"end": True})
     if _step_view(b_step) == _step_view(desired):
-        return both(SyncOutcome.ALREADY_CONVERGED, target=b_step)
-    return both(SyncOutcome.ELIGIBLE, target=desired)
+        return same(b_step)
+    return both(SyncOutcome.ELIGIBLE, restored, target=desired)
 
 
 def desired_outcome(src: dict[str, Any], *, today: dt.date) -> tuple[dict[str, Any] | None, str]:
@@ -2409,107 +2477,127 @@ def _request_decision_authoritative(
     outcome_hold: str = "",
 ) -> FieldDecision:
     """`arvamuse_tahtaeg` → the current `Arvamuse tähtaeg`, never a second
-    consultation (`app.matters.response_deadlines`):
+    consultation (`app.matters.response_deadlines`). After the night:
 
+    * Lovable has no day → no current request (the current one is withdrawn,
+      CANCELLED, and stays in the history);
     * a current request → moved to Lovable's day (the same request, MOVED);
     * no current request, nothing sent or «ei saatnud», the day not passed →
       one is set (on a Chamber initiative too: its own deadline);
-    * no current request otherwise → nothing is owed now (a passed day is
-      never an obligation, an answered one is answered): converged;
-    * cleared in Lovable → the source's own current request is withdrawn
-      (CANCELLED); a request that was not the source's stays.
+    * no current request otherwise → nothing is owed now (a passed day is never
+      an obligation, an answered one is answered).
 
-    Unchanged in the source → unchanged. A closed Teema owes nothing current."""
+    Lovable unchanged but Juristid edited → the same rule puts it back (reason
+    `RESTORED`). A closed Teema owes nothing current; a held lifecycle or
+    outcome holds the request too."""
     name = "opinion_deadline"
     entry = _entry(applied, name)
     a_src = entry.get("source")
     c_src = src[name]
     b_day = b.get(name)
+    unchanged = c_src == a_src and _settled(applied, name)
     common = {"baseline": a_src, "current": b_day, "source": c_src}
-    if c_src == a_src and _settled(applied, name):
-        return _decision(name, SyncOutcome.UNCHANGED, **common)
-    if lifecycle_hold:
-        return _decision(name, SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD, **common)
+
+    def same(target: Any) -> FieldDecision:
+        if unchanged:
+            return _decision(name, SyncOutcome.UNCHANGED, target=target, **common)
+        return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=target, **common)
+
     if closed_after:
-        return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=b_day, **common)
+        return same(b_day)
+    if lifecycle_hold:
+        if unchanged:
+            return same(b_day)
+        return _decision(name, SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD, **common)
     if c_src is not None and str(c_src).startswith("?"):
+        if unchanged:
+            return same(b_day)
         return _decision(name, SyncOutcome.REVIEW_REQUIRED, DATE_UNREADABLE, **common)
     if outcome_hold and b_day != c_src:
         # Whether anything was sent is held (contradictory or impossible):
         # neither «nothing sent» nor «sent» — no request is set, moved or ended.
+        if unchanged:
+            return same(b_day)
         return _decision(name, SyncOutcome.REVIEW_REQUIRED, OUTCOME_HELD, **common)
     if c_src is None:
-        if b_day is None:
-            return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=None, **common)
-        if b_day == a_src:
-            return _decision(name, SyncOutcome.ELIGIBLE, target=None, **common)
-        return _decision(name, SyncOutcome.LOCAL_TEST_CHANGE, **common)
-    if b_day == c_src:
-        return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=c_src, **common)
-    if b_day is not None:
-        return _decision(name, SyncOutcome.ELIGIBLE, target=c_src, **common)
-    if b.get("request_history"):
-        # A request already ended in Juristid (answered, declined, withdrawn):
-        # a new day in Lovable cannot reopen it, and opening another would be a
-        # second consultation nobody asked for. Juristid's ending is kept.
-        return _decision(name, SyncOutcome.LOCAL_TEST_CHANGE, **common)
-    if outcome is not None or dt.date.fromisoformat(c_src) < today:
-        return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=None, **common)
-    return _decision(name, SyncOutcome.ELIGIBLE, target=c_src, **common)
+        target = None
+    elif b_day is not None:
+        target = c_src
+    elif outcome is None and dt.date.fromisoformat(c_src) >= today:
+        target = c_src
+    else:
+        return same(None)  # nothing is owed now
+    if b_day == target:
+        return same(target)
+    return _decision(
+        name, SyncOutcome.ELIGIBLE, RESTORED if unchanged else "", target=target, **common
+    )
 
 
 def _commencements_authoritative(
     applied: dict[str, Any], src: dict[str, Any], b: dict[str, Any], *, closed: bool
 ) -> FieldDecision:
-    """`joustumised`: an added commencement of a kind the reader reads exactly is
-    added (`lovable_reading.commencement_reading`; an estimate stays an
-    estimate), whatever Juristid holds beside it and whatever its day. A changed
-    or removed one is held: no service cancels a commencement on a source's
-    word without touching what a person recorded with it."""
+    """`joustumised` → the Teema's commencements, as one set (owner decision
+    11.11). Each Lovable row is read exactly (`lovable_reading.
+    commencement_reading`: «Üldises korras», «Kindla kuupäevaga» — known once
+    adopted —, «Eeldatava …» which stays an estimate) with its scope note
+    (`tapsustus`). Juristid's commencements are compared by (kind, day):
+
+    * one Lovable no longer states — an estimate that became fixed, general
+      order that got a day, a moved or removed day — is cancelled through
+      `cancel_effective_date` / `cancel_important_date`: its own audited event,
+      the record kept as it was;
+    * one Lovable states and Juristid lacks is added with its note.
+
+    Unchanged in Lovable but different in Juristid → the same reconciliation
+    (reason `RESTORED`). Held only where a row cannot be represented (an
+    unreadable kind or day) or the Teema is closed (the date services refuse a
+    closed file); unchanged, either stays as it is."""
     from app.legacy_import.lovable_reading import commencement_reading
 
     entry = _entry(applied, "commencements")
     a_src = entry.get("source") or []
     c_src = src["commencements"]
     have = b.get("commencements") or []
+    unchanged = c_src == a_src
     common = {"baseline": a_src, "current": have, "source": c_src}
-    if c_src == a_src:
-        return _decision("commencements", SyncOutcome.UNCHANGED, **common)
-    before = Counter(tuple(item) for item in a_src)
-    after = Counter(tuple(item) for item in c_src)
-    removed, added = before - after, after - before
-    readings = [
-        {
-            "liik": liik,
-            "note": note,
-            **commencement_reading({"liik": liik, "kuupaev": day}, status=src["stage"]),
-        }
-        for liik, day, note in added.elements()
-    ]
-    want = [[r["target"], r["kind"], r["date"]] for r in readings if r["target"]]
-    if not removed and len(want) == len(readings) and all(w in have for w in want):
+    readings = []
+    for liik, day, note in c_src:
+        reading = commencement_reading({"liik": liik, "kuupaev": day}, status=src["stage"])
+        readings.append({**reading, "note": note})
+    unreadable = any(not r["target"] for r in readings)
+    want = Counter((r["target"], r["kind"], r["date"]) for r in readings if r["target"])
+    now = Counter(tuple(item) for item in have)
+    if not unreadable and want == now:
+        if unchanged:
+            return _decision("commencements", SyncOutcome.UNCHANGED, **common)
         return _decision("commencements", SyncOutcome.ALREADY_CONVERGED, target=have, **common)
     reason = ""
-    if removed:
-        reason = COMMENCEMENT_REMOVED
-    elif len(want) != len(readings):
+    if unreadable:
         reason = COMMENCEMENT_UNREADABLE
     elif closed:
-        reason = MATTER_CLOSED  # the date services refuse a closed file
-    else:
-        missing = [w for w in want if w not in have]
-        days = {item[2] for item in have if item[2]}
-        general = any(item[1] == "GENERAL_ORDER" for item in have)
-        if any((w[2] in days) if w[2] else general for w in missing):
-            reason = COMMENCEMENT_CLASH
+        reason = MATTER_CLOSED
     if reason:
+        if unchanged:
+            return _decision("commencements", SyncOutcome.UNCHANGED, **common)
         return _decision("commencements", SyncOutcome.REVIEW_REQUIRED, reason, **common)
-    target = [
-        {"target": r["target"], "kind": r["kind"], "date": r["date"], "note": r["note"]}
-        for r in readings
-        if [r["target"], r["kind"], r["date"]] not in have
-    ]
-    return _decision("commencements", SyncOutcome.ELIGIBLE, target=target, **common)
+    add = []
+    remaining = Counter(now)
+    for r in readings:
+        key = (r["target"], r["kind"], r["date"])
+        if remaining[key] > 0:
+            remaining[key] -= 1
+            continue
+        add.append({"target": r["target"], "kind": r["kind"], "date": r["date"], "note": r["note"]})
+    cancel = [list(key) for key, n in (now - want).items() for _ in range(n)]
+    target = {"add": add, "cancel": cancel, "source": [list(r) for r in c_src]}
+    return _decision(
+        "commencements",
+        SyncOutcome.ELIGIBLE,
+        RESTORED if unchanged else "",
+        target=target,
+        **common,
+    )
 
 
 def _legal_act_target(c_src: str) -> tuple[list[str] | None, str]:
@@ -2563,10 +2651,11 @@ def _plan_authoritative(
             hold="" if src["title"] else TITLE_EMPTY,
         )
     )
-    owner_target, owner_hold = (None, "")
-    owner_entry = _entry(applied, "owner")
-    if src["owner"] != owner_entry.get("source") or not _settled(applied, "owner"):
-        owner_target, owner_hold = resolver.resolve(src["owner"])
+    owner_target, owner_hold = resolver.resolve(src["owner"])
+    if owner_hold and state.cohort == HISTORY_COHORT:
+        # Former staff with no Juristid account: one grouped, not-representable
+        # class of the historical register (`historical_hold`), never a flood.
+        owner_hold = HISTORY_OWNER_UNRESOLVED
     plan.decisions.append(
         _scalar(
             "owner",
@@ -2620,6 +2709,7 @@ def _plan_authoritative(
             lifecycle_hold=life_hold,
             request_day=request_day,
             request_before=b.get("opinion_deadline"),
+            outcome=outcome,
         )
     )
     plan.decisions.extend(life)
@@ -2630,9 +2720,13 @@ def _plan_authoritative(
     if "commencements" in applied:
         plan.decisions.append(_commencements_authoritative(applied, src, b, closed=closed))
     if "koda_initiative" in applied:
-        koda_hold = "" if src["koda_initiative"] else TRACK_NOT_STATED
-        if closed and src["koda_initiative"] != b["koda_initiative"]:
-            koda_hold = MATTER_CLOSED
+        koda_hold = ""
+        if not src["koda_initiative"] and b["koda_initiative"]:
+            # Back to the track it had before it became an initiative, when the
+            # Teema's own history names it; otherwise the track is not stated.
+            koda_hold = (
+                "" if _track_before_initiative(state.matter_id) is not None else (TRACK_NOT_STATED)
+            )
         plan.decisions.append(
             _scalar(
                 "koda_initiative",
@@ -2647,8 +2741,6 @@ def _plan_authoritative(
         keys, act_hold = _legal_act_target(src["legal_act"])
         if keys is None and not src["legal_act"] and not b["legal_act"]:
             keys, act_hold = [], ""  # blank in both: nothing to say
-        if closed and keys != b["legal_act"]:
-            act_hold = act_hold or MATTER_CLOSED
         plan.decisions.append(
             _scalar(
                 "legal_act",
@@ -2668,8 +2760,6 @@ def _plan_authoritative(
             received_hold = RECEIVED_IN_FUTURE
         elif day is not None and b["received"] is None and b["koda_initiative"]:
             received_hold = RECEIVED_ON_INITIATIVE
-        elif closed and day != b["received"]:
-            received_hold = MATTER_CLOSED
         plan.decisions.append(
             _scalar(
                 "received",
@@ -2694,8 +2784,10 @@ def _plan_authoritative(
             )
         )
     for decision in plan.decisions:
-        if decision.outcome == SyncOutcome.ALREADY_CONVERGED and _j(decision.baseline) == _j(
-            decision.source
+        if (
+            decision.outcome == SyncOutcome.ALREADY_CONVERGED
+            and decision.field not in (CONTINUATION,)
+            and _j(decision.baseline) == _j(decision.source)
         ):
             # Unchanged in Lovable, and Juristid already holds it: nothing to
             # report, only the baseline to settle.
@@ -2772,9 +2864,28 @@ def _apply_lifecycle(
     stage = StageVocabulary.objects.get(key=desired["stage"]) if desired.get("stage") else None
     if desired["open"]:
         if not b_life["open"]:
-            reopen_matter_into_stage(matter=fresh, stage=stage, actor=None)
+            # The request the Teema closed with stays current when it is Lovable's.
+            held_day = fresh.response_deadline
+            keep = held_day is not None and held_day.isoformat() == src.get("opinion_deadline")
+            reopen_matter_into_stage(
+                matter=fresh, stage=stage, actor=None, keep_response_deadline=keep
+            )
+            if desired.get("move_to"):
+                _move_to_register(fresh, desired["move_to"], provenance=provenance)
         else:
             change_stage(matter=fresh, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+    elif not b_life["open"]:
+        from app.matters.services import change_closure_from_source
+
+        change_closure_from_source(
+            matter=fresh,
+            disposition=desired["disposition"],
+            successor=(
+                Matter.objects.get(pk=desired["successor"]) if desired.get("successor") else None
+            ),
+            reason=_lifecycle_reason(desired, src),
+            provenance=provenance,
+        )
     else:
         successor = (
             Matter.objects.get(pk=desired["successor"]) if desired.get("successor") else None
@@ -2788,6 +2899,125 @@ def _apply_lifecycle(
             provenance=provenance,
         )
     return conditional_values(Matter.all_objects.get(pk=matter.pk))["lifecycle"]
+
+
+def _track_before_initiative(matter_id: Any) -> str | None:
+    """The track a Teema had before its latest change to a Chamber initiative,
+    from its own `MATTER_TRACK_CHANGED` history, or ``None`` when no such change
+    is recorded (an imported initiative): then the track is not stated."""
+    from app.audit.models import ChangeEvent
+    from app.workflow.enums import Track
+
+    event = (
+        ChangeEvent.objects.filter(
+            matter_id=matter_id,
+            event_type="MATTER_TRACK_CHANGED",
+            payload__to=Track.KODA_INITIATIVE,
+        )
+        .order_by("-occurred_at")
+        .first()
+    )
+    if event is None:
+        return None
+    return str((event.payload or {}).get("from") or "")
+
+
+def _move_to_register(matter: Any, cohort: str, *, provenance: dict[str, Any]) -> None:
+    """A historical Teema Lovable reopened inside its operational scope becomes
+    current work (owner decision 11.11): the archive record is promoted to a
+    full one (`promote_matter_to_full`, its identity and provenance unchanged)
+    and its synchronisation state joins the register cohort, recorded as an
+    append-only `MembershipBasis.MOVED` membership — the history cohort's
+    required size drops by it and the register's grows (`cohorts`)."""
+    from app.matters.enums import RecordMode
+    from app.matters.models import Matter
+    from app.matters.services import promote_matter_to_full
+
+    fresh = Matter.all_objects.get(pk=matter.pk)
+    if fresh.record_mode == RecordMode.ARCHIVE:
+        promote_matter_to_full(
+            matter=fresh,
+            actor=None,
+            reason="Lovable avas ajaloolise teema uuesti (operatiivne ulatus).",
+            provenance=provenance,
+        )
+    state = LovableSyncState.objects.select_for_update().get(matter_id=matter.pk)
+    LovableSyncState.objects.filter(pk=state.pk).update(cohort=cohort, updated_at=timezone.now())
+    remember_membership(
+        cohort=cohort,
+        matter_id=matter.pk,
+        source_id=state.source_id,
+        basis=MembershipBasis.MOVED,
+    )
+
+
+def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
+    """The commencement set Lovable states (`_commencements_authoritative`):
+    each one it no longer states is cancelled through its own service, with the
+    reason and its own audited event, and kept; each new one is added with its
+    scope note. Nothing is deleted."""
+    from app.intelligence.enums import FactStatus
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.intelligence.services import (
+        add_effective_date,
+        add_important_date,
+        cancel_effective_date,
+        cancel_important_date,
+    )
+    from app.legacy_import.lovable_pilot import COMMENCEMENT_TITLES, T_EFFECTIVE_DATE
+    from app.matters.models import Matter
+
+    target = decision.target
+    stated = "; ".join(
+        " ".join(str(part) for part in item if part) for item in target.get("source") or []
+    )
+    reason = f"Lovable'is muudeti jõustumist. Lovable'i järgi nüüd: {stated or 'puudub'}."[:500]
+    for model_name, kind, day in target["cancel"]:
+        found = {
+            "matter_id": matter.pk,
+            "status": FactStatus.ACTIVE,
+            "removed_at__isnull": True,
+            "kind": kind,
+            "date_value": dt.date.fromisoformat(day) if day else None,
+        }
+        if model_name == T_EFFECTIVE_DATE:
+            effective = MatterEffectiveDate.objects.filter(**found).order_by("created_at").first()
+            if effective is None:
+                raise SyncRefused("COMMENCEMENT_GONE", "A commencement to end is gone.")
+            cancel_effective_date(record=effective, actor=None, reason=reason)
+        else:
+            important = MatterImportantDate.objects.filter(**found).order_by("created_at").first()
+            if important is None:
+                raise SyncRefused("COMMENCEMENT_GONE", "A commencement to end is gone.")
+            cancel_important_date(record=important, actor=None, reason=reason)
+    for item in target["add"]:
+        day = dt.date.fromisoformat(item["date"]) if item["date"] else None
+        if item["target"] == T_EFFECTIVE_DATE:
+            add_effective_date(
+                matter=matter,
+                kind=item["kind"],
+                date_value=day,
+                period_end=day,
+                date_precision="EXACT",
+                description=item.get("note", ""),
+                actor=None,
+                source_text="Lovable",
+            )
+        else:
+            if day is None:
+                raise SyncRefused("NO_DAY", "An important date needs its day.")
+            add_important_date(
+                matter=matter,
+                title=COMMENCEMENT_TITLES[item["kind"]],
+                date_value=day,
+                period_end=day,
+                date_precision="EXACT",
+                kind=item["kind"],
+                note=item.get("note", ""),
+                actor=None,
+                source_text="Lovable",
+            )
+    return conditional_values(Matter.all_objects.get(pk=matter.pk))["commencements"]
 
 
 def _apply_step(
@@ -2952,7 +3182,7 @@ def _apply_authoritative(
             decision, matter=matter, provenance=provenance, run=run, snapshot=snapshot
         )
     elif name == "commencements":
-        new_b = _apply_conditional(decision, matter=matter)
+        new_b = _apply_commencements(decision, matter=matter)
     elif name == "stage":
         new_b = _apply_lifecycle(decision, matter=matter, src=src, provenance=provenance)
     elif name == "next_action_text":
@@ -2977,8 +3207,11 @@ def _apply_authoritative(
                 MIRRORED: True,
             }
     elif name == "koda_initiative":
-        change_track(matter=Matter.objects.get(pk=matter.pk), track=Track.KODA_INITIATIVE)
-        new_b = True
+        track = Track.KODA_INITIATIVE if decision.target else _track_before_initiative(matter.pk)
+        if track is None:
+            raise SyncRefused(TRACK_NOT_STATED, "The track before the initiative is not known.")
+        change_track(matter=Matter.objects.get(pk=matter.pk), track=track)
+        new_b = bool(decision.target)
     elif name == "legal_act":
         instruments = Matter._meta.get_field("legal_instruments").related_model
         fresh = Matter.objects.get(pk=matter.pk)
@@ -3029,10 +3262,11 @@ def _mirror(applied: dict[str, Any], decision: FieldDecision, new_b: Any) -> Non
 
 
 def is_authoritative(state: LovableSyncState) -> bool:
-    """Whether a Teema's fields follow Lovable (docs/adr/0213 §10): every
-    operational cohort's live Teema; never the closed historical register's."""
+    """Whether a Teema's fields follow Lovable (docs/adr/0213 §10): every live
+    synchronised Teema, the closed historical register included (owner
+    decision 11.11). Only a tombstone keeps the earlier rules."""
     matter = getattr(state, "matter", None)
-    return state.cohort != HISTORY_COHORT and getattr(matter, "deleted_at", None) is None
+    return getattr(matter, "deleted_at", None) is None
 
 
 # ---------------------------------------------------------------------------
@@ -3053,15 +3287,21 @@ def _provenance(
     }
 
 
-def idempotency_key(state: LovableSyncState, decision: FieldDecision, version: int | None) -> str:
+def idempotency_key(
+    state: LovableSyncState,
+    decision: FieldDecision,
+    version: int | None,
+    run: Any = None,
+) -> str:
     """One applied write per source row version and field. A value may come back
     (12.11 → 15.11 → 12.11 → 15.11); a Lovable version never does, because its
     guard makes every save exactly one higher."""
-    material = json.dumps(
-        [str(state.source_id), decision.field, version, decision.source],
-        sort_keys=True,
-        default=str,
-    )
+    parts: list[Any] = [str(state.source_id), decision.field, version, decision.source]
+    if decision.reason == RESTORED and run is not None:
+        # A restore writes the same source value again over a local edit: one per
+        # run, never colliding with the write that first brought the value.
+        parts.append(str(run.pk))
+    material = json.dumps(parts, sort_keys=True, default=str)
     return hashlib.sha256(material.encode()).hexdigest()
 
 
@@ -3285,7 +3525,8 @@ def apply_matter(
                 baseline=decision.baseline,
                 current=new_b,
                 source=decision.source,
-                idempotency_key=idempotency_key(state, decision, fresh.version),
+                reason=decision.reason[:60],
+                idempotency_key=idempotency_key(state, decision, fresh.version, run),
             )
         for decision in fresh.decisions:
             if decision.outcome == SyncOutcome.ALREADY_CONVERGED or decision.settle:
@@ -3951,14 +4192,17 @@ def historical_hold(cohort: str, reason: str, baseline: Any, source: Any) -> boo
     else, and leave them out of the operational headline numbers. Nothing about
     what is pending, applied or resolved depends on it. `historical_hold_q` is
     the same rule for a query of decisions."""
+    if cohort == HISTORY_COHORT and reason == HISTORY_OWNER_UNRESOLVED:
+        return True
     return cohort == HISTORY_COHORT and reason == IMPORT_HELD and _j(baseline) == _j(source)
 
 
 def historical_hold_q() -> Q:
     """`historical_hold` over `LovableSyncDecision` rows (jsonb equality; two
     absent values are equal, as in Python)."""
-    return Q(state__cohort=HISTORY_COHORT, reason=IMPORT_HELD) & (
-        Q(source=F("baseline")) | Q(source__isnull=True, baseline__isnull=True)
+    return Q(state__cohort=HISTORY_COHORT, reason=HISTORY_OWNER_UNRESOLVED) | (
+        Q(state__cohort=HISTORY_COHORT, reason=IMPORT_HELD)
+        & (Q(source=F("baseline")) | Q(source__isnull=True, baseline__isnull=True))
     )
 
 

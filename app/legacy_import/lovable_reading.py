@@ -655,7 +655,9 @@ STEP_KIND_FORMS: dict[str, tuple[str, ...]] = {
         "saadame",
         "saata",
     ),
-    "WAIT": ("ootan", "ootame", "oodata", "ootel"),
+    # «ooatn» is the register's own frequent typo of «ootan»; nothing else is
+    # guessed (no stems, no similarity).
+    "WAIT": ("ootan", "ootame", "oodata", "ootel", "ooatn"),
     "MONITOR": ("jälgin", "jälgime", "jälgida", "vaata", "vaatan", "vaatame", "vaadata"),
 }
 #: What each kind's day means: a DO on Lovable's `tegevuse_tahtaeg` is due that

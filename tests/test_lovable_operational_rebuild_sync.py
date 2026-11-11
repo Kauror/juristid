@@ -362,8 +362,11 @@ def test_the_next_night_compares_one_cohort_against_the_new_baseline(rebuild):
         # Source authority (docs/adr/0213 §10): an import hold is no longer a
         # person's call; only what cannot be represented stays held.
         ("2026_501", "stage", SyncOutcome.REVIEW_REQUIRED, lovable_sync.STAGE_UNMAPPED),
-        # A lawyer's value the rebuild kept is reported, never silently converged.
-        ("2026_502", "title", SyncOutcome.LOCAL_TEST_CHANGE, ""),
+        # A lawyer's value the rebuild kept is put back to Lovable's (owner
+        # decision 11.11), planned on this night's mode.
+        ("2026_502", "title", SyncOutcome.ELIGIBLE, lovable_sync.RESTORED),
+        # Lovable's commencements read once against what the rebuild wrote.
+        ("2026_502", "commencements", SyncOutcome.ALREADY_CONVERGED, ""),
     }
     # Every other finding is a created Teema's technical hold or first convergence.
     assert lovable_sync.IMPORT_HELD not in {f[3] for f in found - rebased}
@@ -407,7 +410,7 @@ def test_uuendused_reads_the_nights_before_and_after_the_rebuild(rebuild):
     assert after.enrolled == 3
 
 
-def test_a_lawyer_edit_between_the_apply_and_the_enrolment_stays_local(rebuild):
+def test_a_lawyer_edit_between_the_apply_and_the_enrolment_is_restored(rebuild):
     """The targets are what the rebuild wrote, by its records — never Juristid's
     value read at enrolment."""
     mari = rebuild["world"]["mari"]
@@ -420,8 +423,12 @@ def test_a_lawyer_edit_between_the_apply_and_the_enrolment_stays_local(rebuild):
     assert title == {"source": "Uus 505", "target": "Uus 505"}
     night = _run(rebuild, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
     assert night.status == SyncRunStatus.SUCCEEDED, night.error
-    assert _decisions(night, "2026_501")["owner"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
-    assert _decisions(night, "2026_505")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    # The targets are the rebuild's; Lovable is unchanged, so its values are put
+    # back over the lawyer's (owner decision 11.11).
+    for ref, name in (("2026_501", "owner"), ("2026_505", "title")):
+        decision = _decisions(night, ref)[name]
+        assert decision.outcome in (SyncOutcome.ELIGIBLE, SyncOutcome.APPLIED)
+        assert decision.reason == lovable_sync.RESTORED
 
 
 def test_without_a_written_record_a_genuine_convergence_is_the_target(rebuild):
@@ -450,7 +457,9 @@ def test_without_a_written_record_a_different_local_value_keeps_the_pilot_target
     owner = LovableSyncState.objects.get(reference="2026_501").applied["owner"]
     assert owner["target"] == str(rebuild["world"]["mari"].pk)  # the pilot's own target
     night = _run(rebuild, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
-    assert _decisions(night, "2026_505")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    title = _decisions(night, "2026_505")["title"]
+    assert title.outcome in (SyncOutcome.ELIGIBLE, SyncOutcome.APPLIED)
+    assert title.reason == lovable_sync.RESTORED
 
 
 def _lawyer_step(world_: dict[str, Any]) -> None:
@@ -474,7 +483,7 @@ def _pilot_step_id(reference: str) -> str:
     return str(record.target_id)
 
 
-def test_a_kept_lawyer_step_with_no_rebuild_record_stays_local(active):
+def test_a_kept_lawyer_step_with_no_rebuild_record_is_restored(active):
     """C = A, B ≠ A: the rebuild keeps the lawyer's step and records no step; the
     baseline is the pilot's own step, so the lawyer's reads as a local change."""
     _rebuild_world(active, before=_lawyer_step, no_step=("2026_505",))
@@ -484,8 +493,10 @@ def test_a_kept_lawyer_step_with_no_rebuild_record_stays_local(active):
     night = _run(active, SyncTrigger.SCHEDULED, at=NIGHT + 2 * DAY)
     assert night.status == SyncRunStatus.SUCCEEDED, night.error
     found = _decisions(night, "2026_505")
-    assert found["next_action_text"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
-    assert found["next_action_date"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    # Lovable is unchanged: its sentence is put back over the lawyer's step.
+    for name in ("next_action_text", "next_action_date"):
+        assert found[name].outcome in (SyncOutcome.ELIGIBLE, SyncOutcome.APPLIED)
+        assert found[name].reason == lovable_sync.RESTORED
 
 
 def test_a_keep_local_step_with_no_rebuild_record_converges_on_lovable(active):

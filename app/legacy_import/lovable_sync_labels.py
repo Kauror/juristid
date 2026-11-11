@@ -94,6 +94,19 @@ LOVABLE_REASONS = {
         "sulgemiseks tuleks see avada."
     ),
     "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
+    "RESTORED_SOURCE_VALUE": "Lovable'i väärtus taastati; Juristides oli seda muudetud.",
+    "HISTORY_OWNER_UNRESOLVED": (
+        "Ajaloolise teema vastutaja nimi ei vasta ühelegi Juristide kasutajale "
+        "(endine töötaja); nimi jääb Lovable'i allikasse."
+    ),
+    "HISTORY_REOPENED_OUTSIDE_SCOPE": (
+        "Lovable avas ajaloolise teema uuesti, kuid see pole Lovable'i operatiivses "
+        "ulatuses; Juristides ei muudetud midagi."
+    ),
+    "CLOSURE_REASON_UNKNOWN": (
+        "Lovable'i järgi on teema lõpetatud, kuid põhjust pole kirjas; põhjust ei "
+        "mõelda välja, nii et avatud teemat ei suleta."
+    ),
     "OUTCOME_HELD": (
         "Arvamuse saatmise seis on ootel (vastuoluline või võimatu), nii et arvamuse "
         "küsimist ei muudeta."

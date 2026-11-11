@@ -52,7 +52,7 @@ def _row(reference: str, **values: Any) -> dict[str, Any]:
         "vastutaja": "Mari",
         "uus_vastutaja": "",
         "hetkeseis": "Riigikogus",
-        "jargmiseks": "ootan 2. lugemist",
+        "jargmiseks": "ootan 2. lugemist, vaata üle 15.11",
         "tegevuse_tahtaeg": "2026-11-15",
         "arvamuse_tahtaeg": None,
         # Nothing sent: source authority (docs/adr/0213 §10) would record a sent
@@ -99,8 +99,10 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
         "2026_502": _row(
             "2026_502",
             vastutaja="Jaan",
-            jargmiseks="Koostan arvamust.",
+            hetkeseis="kooskõlastusringil",
+            jargmiseks="Koostan arvamuse",
             tegevuse_tahtaeg="2026-11-12",
+            arvamuse_tahtaeg="2026-11-12",
         ),
         "2026_503": _row("2026_503", hetkeseis="jõustunud", jargmiseks="", tegevuse_tahtaeg=None),
         "2026_505": _row(
@@ -118,6 +120,18 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
         {**by_ref["2026_503"], "source": {**by_ref["2026_503"]["source"], "row": rows["2026_503"]}},
         _source_topic("2026_505", rows["2026_505"], owner_raw="Jaan", next_action=_do_step()),
     ]
+    drafting_id = topics[1]["source"]["id"]
+    topics[1]["source"]["commencements"] = [
+        {"id": f"c50{n}", "topic_id": drafting_id, "position": n, **values}
+        for n, values in enumerate(
+            (
+                {"liik": "Üldises korras", "kuupaev": None, "tapsustus": ""},
+                {"liik": "Eeldatava kuupäevaga", "kuupaev": "2027-01-01", "tapsustus": "§ 1 p 3"},
+                {"liik": "Kindla kuupäevaga", "kuupaev": "2027-07-01", "tapsustus": ""},
+            ),
+            1,
+        )
+    ]
     package = _package(*topics)
     package["snapshot"]["highest_reference"] = {"2026": 520}
     _apply(package)
@@ -126,6 +140,9 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
     source = FakeLovable()
     for topic in topics:
         source.put(topic["source"]["id"], copy.deepcopy(topic["source"]["row"]), version=3)
+    # 502's commencements as Lovable states them: the three the package wrote
+    # (Lovable is the source of truth at all times — docs/adr/0213 §10).
+    source.commencements.extend(copy.deepcopy(topics[1]["source"]["commencements"]))
     return {"source": source, "world": world, "topics": topics}
 
 
@@ -135,6 +152,8 @@ class FakeLovable:
     def __init__(self) -> None:
         self.rows: dict[str, dict[str, Any]] = {}
         self.commencements: list[dict[str, Any]] = []
+        #: `topic_stage_link` rows: ``{"prev_topic_id", "next_topic_id"}``.
+        self.stage_links: list[dict[str, str]] = []
         self.fail: Exception | None = None
         self.on_select: Any = None
 
@@ -164,6 +183,9 @@ class FakeLovable:
             return [{c: r.get(c) for c in columns} for r in sorted(rows, key=lambda r: r["id"])]
         if table == "topic_commencement":
             return [dict(r) for r in self.commencements if r["topic_id"] in (wanted or set())]
+        if table == "topic_stage_link" and filters:
+            column = next(iter(filters))
+            return [dict(r) for r in self.stage_links if r.get(column) in (wanted or set())]
         return []
 
 
@@ -508,14 +530,16 @@ def test_too_many_missing_rows_stop_the_whole_run(cohort, monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_a_local_test_edit_is_kept(cohort):
+def test_a_local_edit_is_restored_to_lovables_value(cohort):
+    """Lovable is the source of truth at all times (owner decision 11.11)."""
     from app.matters.services import set_matter_title
 
     lawyer = cohort["world"]["mari"]
     set_matter_title(matter=_matter("2026_501"), value="Juristi oma pealkiri", actor=lawyer)
     run = _run(cohort)
-    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
-    assert _matter("2026_501").title == "Juristi oma pealkiri"
+    title = _decisions(run, "2026_501")["title"]
+    assert (title.outcome, title.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert _matter("2026_501").title == "Näidisteema 2026_501"
 
 
 def test_a_source_change_overwrites_a_local_one(cohort):

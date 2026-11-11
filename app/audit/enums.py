@@ -70,6 +70,12 @@ class ChangeEventType(models.TextChoices):
     # render it on (docs/adr/0096 §4).
     MATTER_DELETED = "MATTER_DELETED", "Teema kustutatud"
     MATTER_REOPENED = "MATTER_REOPENED", "Teema taasavatud"
+    # A closed Teema's closure reason (and successor) set to what its source of
+    # record states (docs/adr/0213 §10): not a reopening, not a new closure.
+    MATTER_CLOSURE_REASON_CHANGED = (
+        "MATTER_CLOSURE_REASON_CHANGED",
+        "Lõpetamise põhjus muudetud",
+    )
     # An archive register record activated as current work. Distinct from
     # MATTER_CREATED — nothing was created, the identity and the provenance are
     # the ones the register already had — and from MATTER_REOPENED, which is

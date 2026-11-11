@@ -5810,6 +5810,76 @@ def close_matter_from_source(
     return closed
 
 
+@transaction.atomic
+def change_closure_from_source(
+    *,
+    matter: Matter,
+    disposition: str,
+    successor: Matter | None = None,
+    reason: str = "",
+    provenance: dict[str, Any] | None = None,
+) -> Matter:
+    """A closed Matter's closure reason (and successor) set to what its source of
+    record states (docs/adr/0213 §10, owner decision 11.11: Lovable wins).
+
+    Not a reopening and a new closure: the closing moment and person stay as
+    they were, nothing live exists to end, and one `MATTER_CLOSURE_REASON_CHANGED`
+    event records the reason and successor before and after, with the run's
+    ``provenance``. The same rules as `close_matter`: a successor only with
+    SUPERSEDED and required by it, never the Matter itself, never a deleted one,
+    never one whose chain leads back here."""
+    if disposition not in Disposition.values:
+        raise DomainError(f"Tundmatu lõpetamise põhjus {disposition!r}.")
+    if disposition == Disposition.SUPERSEDED and successor is None:
+        raise DomainError(SUPERSEDED_NEEDS_A_SUCCESSOR)
+    if successor is not None and disposition != Disposition.SUPERSEDED:
+        raise DomainError("Järglase saab määrata ainult siis, kui töö jätkub teise teema all.")
+    if successor is not None and successor.pk == matter.pk:
+        raise DomainError("Teema ei saa jätkuda iseenda all.")
+    if successor is None:
+        locked = lock_matter_for_write(matter.pk)
+    else:
+        rows = lock_matters_in_order(
+            matter.pk, successor.pk, *_forward_chain_ids(successor.pk, stop=matter.pk)
+        )
+        locked = rows[matter.pk]
+        successor = rows[successor.pk]
+        if successor.deleted_at is not None:
+            raise DomainError(SUCCESSOR_DELETED_REFUSAL)
+        _refuse_continuation_cycle(locked, successor, rows)
+    if locked.is_open:
+        raise DomainError("Avatud teema lõpetamise põhjust ei muudeta; teema tuleb sulgeda.")
+    before = {
+        "disposition": locked.disposition,
+        "successor": str(locked.superseded_by_id) if locked.superseded_by_id else None,
+    }
+    locked.disposition = disposition
+    locked.disposition_reason = reason
+    locked.superseded_by = successor
+    locked.save(update_fields=["disposition", "disposition_reason", "superseded_by", "updated_at"])
+    if successor is not None:
+        forget_continuation_history(successor)
+    record_change_event(
+        event_type=ChangeEventType.MATTER_CLOSURE_REASON_CHANGED,
+        matter=locked,
+        actor=None,
+        obj=locked,
+        summary=reason[:200],
+        payload={
+            "from": before,
+            "to": {
+                "disposition": disposition,
+                "successor": str(successor.pk) if successor else None,
+            },
+            "reason": reason,
+            **({"provenance": provenance} if provenance else {}),
+        },
+    )
+    for name in ("disposition", "disposition_reason", "superseded_by"):
+        setattr(matter, name, getattr(locked, name))
+    return locked
+
+
 #: What `Jätkub teise teema all` naming no Matter is told (ENG-065).
 SUPERSEDED_NEEDS_A_SUCCESSOR = "Kui töö jätkub teise teema all, vali teema, mille all see jätkub."
 

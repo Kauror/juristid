@@ -255,6 +255,10 @@ class MembershipBasis(models.TextChoices):
     #: Lovable topic (docs/adr/0213), in the transaction that created it and
     #: seeded its state. A joined member: the cohort's required size counts it.
     NEW_TOPIC = "NEW_TOPIC", "Lisati kohorti uue Lovable'i teemana"
+    #: Written by the synchronisation when Lovable reopened a historical topic
+    #: inside its operational scope and the Teema moved into the register
+    #: (owner decision 11.11): the register gains it, the history cohort loses it.
+    MOVED = "MOVED", "Liikus ajaloolisest registrist operatiivsesse (Lovable avas teema)"
 
 
 class LovableSyncMembership(AppendOnlyModel):

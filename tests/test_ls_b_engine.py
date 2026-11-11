@@ -139,7 +139,9 @@ def _step(kind: str, text: str, day: str) -> dict[str, Any]:
 
 
 def _register_topic(reference: str, row: dict[str, Any], **overrides: Any) -> dict[str, Any]:
-    topic = _topic(reference, **{"deadline": {"treatment": "NONE"}, **overrides})
+    topic = _topic(
+        reference, **{"deadline": {"treatment": "NONE"}, "onenote_url": URL, **overrides}
+    )
     topic["source"]["id"] = _id(reference)
     topic["source"]["row"] = row
     return topic
@@ -168,13 +170,13 @@ class Source(FakeLovable):
 def register(world, pilot_on):
     """Five register Teemad (238, 232, 253, 240 open; 239 closed), enrolled."""
     rows = {
-        "2026_238": _row("2026_238", jargmiseks="Koostan arvamust.", arvamuse_tahtaeg="2099-03-01"),
+        "2026_238": _row("2026_238", jargmiseks="Koostan arvamuse", arvamuse_tahtaeg="2099-03-01"),
         "2026_232": _row(
             "2026_232",
             jargmiseks="Saadan arvamuse ministeeriumile",
             tegevuse_tahtaeg="2099-02-01",
         ),
-        "2026_253": _row("2026_253", jargmiseks="Koostan arvamust.", arvamuse_tahtaeg="2099-03-15"),
+        "2026_253": _row("2026_253", jargmiseks="Koostan arvamuse", arvamuse_tahtaeg="2099-03-15"),
         "2026_240": _row("2026_240", jargmiseks="ootan 2. lugemist", tegevuse_tahtaeg="2099-01-15"),
         "2026_239": _row("2026_239", hetkeseis="jõustunud"),
     }
@@ -525,14 +527,22 @@ def test_a_source_change_overwrites_a_local_one(register):
     assert _matter("2026_240").title == "Lovable'i uus pealkiri"
 
 
-def test_a_local_change_is_kept_and_a_matching_one_converges(register):
+def test_a_local_change_is_restored_and_a_matching_one_converges(register):
     from app.matters.services import change_stage
     from app.workflow.models import StageVocabulary
 
     matter = _matter("2026_240")
     change_stage(matter=matter, stage=StageVocabulary.objects.get(key="government"), actor=None)
     run = _run(register, at=_at(0))
-    assert "stage" not in _decisions(run, "2026_240")  # the source did not move
+    # Lovable did not move: its stage is put back (owner decision 11.11).
+    stage = _decisions(run, "2026_240")["stage"]
+    assert (stage.outcome, stage.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert _matter("2026_240").stage.key == "parliament"
+    change_stage(
+        matter=_matter("2026_240"),
+        stage=StageVocabulary.objects.get(key="government"),
+        actor=None,
+    )
     register["source"].edit("2026_240", hetkeseis="valitsuses")
     run = _run(register, at=_at(1))
     decision = _decisions(run, "2026_240")["stage"]
@@ -647,11 +657,9 @@ def test_an_added_estimate_stays_an_estimate_and_never_becomes_work(register):
     source.edit("2026_240")
     removed = _run(register, at=_at(1))
     decision = _decisions(removed, "2026_240")["commencements"]
-    assert (decision.outcome, decision.reason) == (
-        SyncOutcome.REVIEW_REQUIRED,
-        lovable_sync.COMMENCEMENT_REMOVED,
-    )
-    assert dates.count() == 1
+    # Removed in Lovable: cancelled through its service, kept in the history.
+    assert decision.outcome == SyncOutcome.APPLIED
+    assert dates.count() == 1 and dates.get().status == "CANCELLED"
 
 
 def test_a_new_continuation_closes_the_predecessor_under_its_successor(register):
@@ -869,7 +877,7 @@ def test_the_on_demand_gate_answers_only_for_a_waiting_request(register, monkeyp
 # ---------------------------------------------------------------------------
 
 
-def test_a_historical_cohort_is_enrollable_and_its_teemad_only_ever_review(register):
+def test_a_historical_cohort_is_enrollable_and_follows_lovable_closed(register):
     rows = {
         ref: _row(ref, hetkeseis="jõustunud", operatiivne_ulatus=False)
         for ref in ("2026_101", "2026_102")
@@ -909,11 +917,18 @@ def test_a_historical_cohort_is_enrollable_and_its_teemad_only_ever_review(regis
     run = _run(register, at=_at(0))
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
     found = _decisions(run, "2026_101")
-    assert {found["title"].reason, found["stage"].reason} == {lovable_sync.MATTER_CLOSED}
+    # The historical register follows Lovable too (owner decision 11.11): the
+    # title is written; a reopening outside the operational scope is held.
+    assert found["title"].outcome == SyncOutcome.APPLIED
+    assert (found["stage"].outcome, found["stage"].reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.HISTORY_REOPENED_OUTSIDE_SCOPE,
+    )
     assert _decisions(run, "2026_102")["*"].outcome == SyncOutcome.SOURCE_MISSING
     gone = _matter("2026_102")
     assert gone.deleted_at is None and not gone.is_open
-    assert _matter("2026_101").title == "Näidisteema 2026_101"
+    assert _matter("2026_101").title == "Ajaloolise teema uus pealkiri"
+    assert not _matter("2026_101").is_open
     assert run.counts["by_cohort"][lovable_sync.HISTORY_COHORT]["checked"] == 2
     # A historical topic is not operational: never a new-topic candidate.
     assert run.counts["new_topics_seen"] == 0
@@ -924,20 +939,19 @@ def test_a_historical_cohort_is_enrollable_and_its_teemad_only_ever_review(regis
 # ---------------------------------------------------------------------------
 
 
-def test_a_locally_ended_request_is_never_reopened_by_a_moved_source_deadline(register):
+def test_a_locally_ended_request_gives_way_to_lovables_current_request(register):
+    """Owner decision 11.11: Lovable's open request is Juristid's current one. The
+    locally ended request stays in the history; the request is set again."""
     from app.matters.response_deadlines import resolve_response_deadline
 
     matter = _matter("2026_253")
     resolve_response_deadline(matter=matter, outcome="NOT_ANSWERING", actor=None)
-    history = MatterResponseDeadline.objects.filter(matter=matter).count()
     register["source"].edit("2026_253", arvamuse_tahtaeg="2099-04-15")
     run = _run(register, at=_at(0))
-    decision = _decisions(run, "2026_253")["opinion_deadline"]
-    # Kept as Juristid ended it: no second consultation is invented.
-    assert decision.outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    assert _decisions(run, "2026_253")["opinion_deadline"].outcome == SyncOutcome.APPLIED
     matter.refresh_from_db()
-    assert matter.response_deadline is None
-    assert MatterResponseDeadline.objects.filter(matter=matter).count() == history
+    assert matter.response_deadline == dt.date(2099, 4, 15)
+    assert MatterResponseDeadline.objects.filter(matter=matter, outcome="NOT_ANSWERING").exists()
 
 
 def test_a_request_a_lawyer_opened_is_moved_never_a_second_request(register):

@@ -34,6 +34,7 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncBaselineArchive,
     LovableSyncCohort,
     LovableSyncState,
+    SyncOutcome,
     SyncRunStatus,
     SyncTrigger,
 )
@@ -157,7 +158,9 @@ def test_the_first_night_compares_the_register_and_shows_it_entering(replaced):
     found = {(d.state.reference, d.field, d.outcome, d.reason) for d in night.decisions.all()}
     # The import's stage hold settles silently (Lovable and Juristid agree;
     # docs/adr/0213 §10): nothing to report.
-    assert found == set()
+    # 602's commencements, which the package wrote and this fixture's Lovable
+    # does not state, are planned to end (Lovable wins at all times).
+    assert found == {("2026_602", "commencements", SyncOutcome.ELIGIBLE, "")}
     assert _decisions(night, "2026_610") == {}
 
     history = lovable_review.nightly_history(reader, now=NIGHT + 5 * DAY)

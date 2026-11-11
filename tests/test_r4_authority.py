@@ -69,9 +69,7 @@ def _held_step() -> dict[str, str]:
 
 
 def _drafting_topic(reference: str, status: str, stage: str) -> dict[str, Any]:
-    row = _row(
-        reference, hetkeseis=status, jargmiseks="Koostan arvamust.", arvamuse_tahtaeg=REQUEST
-    )
+    row = _row(reference, hetkeseis=status, jargmiseks="Koostan arvamuse", arvamuse_tahtaeg=REQUEST)
     return _register_topic(
         reference,
         row,
@@ -486,15 +484,17 @@ def test_a_source_change_overwrites_a_local_divergence(reference):
     )
 
 
-def test_a_local_value_is_kept_while_the_source_is_unchanged(reference):
+def test_a_local_title_is_restored_while_the_source_is_unchanged(reference):
+    """Lovable is the source of truth at all times (owner decision 11.11)."""
     from app.matters.services import set_matter_title
 
     _run(reference, at=_at(0))
     set_matter_title(matter=_matter("2026_253"), value="Juristi oma pealkiri", actor=None)
     run = _run(reference, at=_at(1))
-    assert _decisions(run, "2026_253")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
-    assert _matter("2026_253").title == "Juristi oma pealkiri"
-    # Kept, not waiting for anybody.
+    title = _decisions(run, "2026_253")["title"]
+    assert (title.outcome, title.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert _matter("2026_253").title == "Näidisteema 2026_253"
+    assert LOVABLE_REASONS[lovable_sync.RESTORED]
     assert not [p for p in lovable_sync.pending_differences() if p.reference == "2026_253"]
 
 
@@ -516,16 +516,27 @@ def test_an_unclassified_sentence_keeps_its_words_and_day_and_is_never_late(refe
     assert not NextAction.objects.overdue(dt.date(2026, 11, 12)).filter(pk=step.pk).exists()
 
 
-def test_a_cleared_sentence_ends_only_the_sources_own_step(reference):
+def test_a_cleared_sentence_ends_the_step_or_leaves_the_structured_drafting_step(reference):
     source = reference["source"]
     source.edit("2026_232", jargmiseks="Ootan valitsust", tegevuse_tahtaeg="2026-11-27")
     _run(reference, at=_at(0))
+    # Lovable clears the sentence; its request is still open and nothing sent:
+    # the structured drafting step (docs/adr/0148 §10) is the current step.
     source.edit("2026_232", jargmiseks="", tegevuse_tahtaeg=None)
     run = _run(reference, at=_at(1))
     assert _decisions(run, "2026_232")["next_action_text"].outcome == SyncOutcome.APPLIED
+    step = _open_step("2026_232")
+    assert (step.text, step.kind, step.target_date) == (
+        "Koostan arvamuse",
+        "DO",
+        dt.date(2099, 11, 4),
+    )
+    # With no request either, there is no current step at all.
+    source.edit("2026_232", arvamuse_tahtaeg=None)
+    _run(reference, at=_at(2))
     assert _open_step("2026_232") is None
-    cancelled = NextAction.objects.get(matter=_matter("2026_232"), text="Ootan valitsust")
-    assert cancelled.status == ActionStatus.CANCELLED  # never COMPLETED
+    replaced = NextAction.objects.get(matter=_matter("2026_232"), text="Ootan valitsust")
+    assert replaced.status == ActionStatus.SUPERSEDED  # never COMPLETED
 
 
 def test_a_moved_opinion_deadline_moves_the_same_request(reference):
@@ -618,22 +629,24 @@ def test_a_lovable_reopening_reopens_the_teema_at_the_mapped_stage(reference):
     assert (matter.is_open, matter.stage.key) == (True, "government")
 
 
-def test_a_teema_closed_in_juristid_stays_closed_while_lovable_is_unchanged(reference):
+def test_a_teema_closed_in_juristid_is_reopened_while_lovable_has_it_open(reference):
     from app.matters.services import close_matter
 
+    _run(reference, at=_at(0))
     close_matter(
         matter=_matter("2026_253"),
         disposition=Disposition.OTHER,
         actor=None,
         follow_ups_confirmed=True,
     )
-    reference["source"].edit("2026_253", jargmiseks="Ootan", tegevuse_tahtaeg="2026-11-30")
-    run = _run(reference, at=_at(0))
-    assert not _matter("2026_253").is_open
-    found = _decisions(run, "2026_253")
-    # The Teema is closed: Lovable's new step has nowhere current to go.
-    assert found["next_action_text"].outcome == SyncOutcome.ALREADY_CONVERGED
-    assert _open_step("2026_253") is None
+    run = _run(reference, at=_at(1))
+    stage = _decisions(run, "2026_253")["stage"]
+    assert (stage.outcome, stage.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    matter = _matter("2026_253")
+    assert (matter.is_open, matter.stage.key) == (True, "parliament")
+    # The step the closure ended is set again (a new step; the old one stays cancelled).
+    assert _open_step("2026_253").text == "Koostan arvamuse"
+    assert not NextAction.objects.filter(matter=matter, status=ActionStatus.COMPLETED).exists()
 
 
 # ---------------------------------------------------------------------------
@@ -673,26 +686,13 @@ def test_history_and_imported_documents_are_preserved(reference):
     assert EvidencePilotRecord.objects.filter(matter=m216).exists()
 
 
-def test_the_closed_historical_register_keeps_its_rules(reference):
-    from app.legacy_import.lovable_pilot import HISTORY_COHORT
+def test_a_tombstone_keeps_the_earlier_rules(reference):
+    from django.utils import timezone
 
     matter = _matter("2026_238")
-    LovableSyncState.objects.filter(matter=matter).update(cohort=HISTORY_COHORT)
+    Matter.all_objects.filter(pk=matter.pk).update(deleted_at=timezone.now())
     state = LovableSyncState.objects.select_related("matter").get(matter=matter)
     assert not lovable_sync.is_authoritative(state)
-    row = {**reference["source"].rows[_id("2026_238")], "hetkeseis": "jõustunud"}
-    plan = lovable_sync.plan_matter(
-        state,
-        {"row": row, "commencements": [], "stage_links": []},
-        resolver=lovable_sync.OwnerResolver([state]),
-        today=NIGHT.date(),
-    )
-    stage = next(d for d in plan.decisions if d.field == "stage")
-    # The rules of 0213 §4, unchanged: a stage that ends the work is a person's.
-    assert (stage.outcome, stage.reason) == (
-        SyncOutcome.REVIEW_REQUIRED,
-        lovable_sync.STAGE_ENDS_WORK,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -827,3 +827,472 @@ def test_an_mcp_change_of_a_source_step_keeps_its_review_day():
     current = SimpleNamespace(kind="SOURCE", date_semantics="REVIEW_ON")
     args = SetNextActionArguments.model_construct(date_meaning=None)
     assert SetNextAction()._semantics(args, current, "SOURCE", dated=True) == "REVIEW_ON"
+
+
+# ---------------------------------------------------------------------------
+# Owner decision 11.11: Lovable is the source of truth at all times
+# ---------------------------------------------------------------------------
+
+
+def _parity(reference: str) -> dict[str, Any]:
+    matter = _matter(reference)
+    values = lovable_sync.full_values(matter)
+    step = values["next_action"]
+    return {
+        "title": values["title"],
+        "owner": values["owner"],
+        "lifecycle": values["lifecycle"],
+        "step": {k: v for k, v in (step or {}).items() if k != "id"},
+        "request": values["opinion_deadline"],
+        "koda": values["koda_initiative"],
+        "received": values["received"],
+        "legal_act": values["legal_act"],
+        "commencements": sorted(map(tuple, values["commencements"]), key=str),
+    }
+
+
+def test_every_local_edit_of_a_source_owned_field_is_restored(reference):
+    from app.intelligence.models import MatterImportantDate
+    from app.intelligence.services import cancel_important_date
+    from app.matters.models import MatterResponseDeadline as Request
+    from app.matters.response_deadlines import change_response_deadline
+    from app.matters.services import (
+        assign_matter,
+        change_stage,
+        change_track,
+        set_legal_instruments,
+        set_matter_dates,
+        set_matter_title,
+    )
+    from app.submissions.models import Submission
+    from app.workflow.models import StageVocabulary
+    from app.workflow.services import set_next_action
+    from tests import factories
+
+    source = reference["source"]
+    source.commencements.append(
+        {
+            "id": "c253",
+            "topic_id": _id("2026_253"),
+            "liik": "Eeldatava kuupäevaga",
+            "kuupaev": "2027-05-01",
+            "tapsustus": "§ 3",
+            "position": 1,
+        }
+    )
+    source.edit("2026_253", oigusakt="seadus")
+    _run(reference, at=_at(0))
+    before = _parity("2026_253")
+    matter = _matter("2026_253")
+    # Juristid-only work on the same Teema: never touched.
+    entry = factories.EntryFactory(matter=matter)
+    document = factories.DocumentFactory(matter=matter)
+    draft = factories.SubmissionFactory(matter=matter)
+    own_date = factories.ImportantDateFactory(matter=matter)
+
+    jaan = reference["world"]["jaan"]
+    set_matter_title(matter=matter, value="Juristi oma pealkiri", actor=jaan)
+    assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
+    change_stage(
+        matter=_matter("2026_253"), stage=StageVocabulary.objects.get(key="government"), actor=jaan
+    )
+    set_next_action(matter=_matter("2026_253"), text="Helistan ministeeriumi", actor=jaan)
+    change_response_deadline(
+        matter=_matter("2026_253"),
+        deadline=dt.date(2099, 12, 24),
+        actor=jaan,
+        change="MOVED",
+    )
+    change_track(matter=_matter("2026_253"), track=Track.KODA_INITIATIVE, actor=jaan)
+    set_matter_dates(matter=_matter("2026_253"), received_date=dt.date(2026, 2, 2), actor=jaan)
+    other = (
+        Matter._meta.get_field("legal_instruments")
+        .related_model._default_manager.exclude(key="seadus")
+        .first()
+    )
+    set_legal_instruments(matter=_matter("2026_253"), legal_instruments=[other], actor=jaan)
+    estimate = MatterImportantDate.objects.get(
+        matter=matter, kind="ESTIMATED_COMMENCEMENT", status="ACTIVE"
+    )
+    cancel_important_date(record=estimate, actor=jaan, reason="kohalik")
+    assert _parity("2026_253") != before
+
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    restored = {
+        d.field
+        for d in run.decisions.filter(
+            state__reference="2026_253",
+            outcome=SyncOutcome.APPLIED,
+            reason=lovable_sync.RESTORED,
+        )
+    }
+    assert {
+        "title",
+        "owner",
+        "stage",
+        "next_action_text",
+        "opinion_deadline",
+        "koda_initiative",
+        "received",
+        "legal_act",
+        "commencements",
+    } <= restored
+    assert not run.decisions.filter(outcome=SyncOutcome.LOCAL_TEST_CHANGE).exists()
+    assert _parity("2026_253") == before
+    # The lawyer's step stays in the history, superseded, never completed.
+    local = NextAction.objects.get(matter=matter, text="Helistan ministeeriumi")
+    assert local.status == ActionStatus.SUPERSEDED
+    # The moved request stays in the history as moved.
+    assert Request.objects.filter(matter=matter, outcome="MOVED").exists()
+    # Juristid-only records are untouched.
+    for record in (entry, document, draft, own_date):
+        fresh = type(record)._default_manager.get(pk=record.pk)
+        assert fresh.matter_id == matter.pk
+        assert getattr(fresh, "removed_at", None) is None
+    assert MatterImportantDate.objects.get(pk=own_date.pk).status == "ACTIVE"
+    assert Submission.objects.get(pk=draft.pk).status == draft.status
+
+    events = ChangeEvent.objects.count()
+    again = _run(reference, at=_at(2))
+    assert not again.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
+    assert ChangeEvent.objects.count() == events
+
+
+def test_a_lifecycle_changed_locally_is_put_back(reference):
+    from app.matters.services import close_matter, reopen_matter_into_stage
+    from app.workflow.models import StageVocabulary
+
+    reference["source"].edit("2026_150", hetkeseis="jõustunud")
+    _run(reference, at=_at(0))
+    assert not _matter("2026_150").is_open
+    # A lawyer reopens what Lovable closed, and closes what Lovable keeps open.
+    reopen_matter_into_stage(
+        matter=_matter("2026_150"), stage=StageVocabulary.objects.get(key="parliament")
+    )
+    close_matter(
+        matter=_matter("2026_232"),
+        disposition=Disposition.OTHER,
+        actor=None,
+        follow_ups_confirmed=True,
+    )
+    run = _run(reference, at=_at(1))
+    for ref in ("2026_150", "2026_232"):
+        stage = _decisions(run, ref)["stage"]
+        assert (stage.outcome, stage.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED), ref
+    m150 = _matter("2026_150")
+    assert (m150.is_open, m150.disposition) == (False, Disposition.COMPLETED)
+    assert _matter("2026_232").is_open
+    events = ChangeEvent.objects.count()
+    third = _run(reference, at=_at(2))
+    assert not third.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
+    assert ChangeEvent.objects.count() == events
+
+
+def test_a_technical_hold_is_never_restored_over(reference):
+    from app.matters.services import assign_matter
+
+    reference["source"].edit("2026_253", vastutaja="Tundmatu Isik")
+    _run(reference, at=_at(0))
+    jaan = reference["world"]["jaan"]
+    assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
+    run = _run(reference, at=_at(1))
+    owner = _decisions(run, "2026_253")["owner"]
+    assert (owner.outcome, owner.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.UNRESOLVED_OWNER,
+    )
+    assert _matter("2026_253").owner == jaan
+
+
+# -- the historical register -----------------------------------------------------
+
+
+def _history(reference: dict[str, Any], rows: dict[str, dict[str, Any]]) -> None:
+    """Closed archive Teemad enrolled as `lovable-history`, the way the backfill
+    wrote them (closed ARCHIVE, no step), with Lovable serving ``rows``."""
+    from app.legacy_import.lovable_pilot import HISTORY_COHORT
+
+    topics = [
+        _register_topic(
+            ref,
+            _row(ref, operatiivne_ulatus=False, **values),
+            status_raw="jõustunud",
+            stage="in_force",
+            lifecycle="INACTIVE",
+            disposition="COMPLETED",
+            next_action=None,
+        )
+        for ref, values in rows.items()
+    ]
+    package = _package(*topics)
+    package["snapshot"]["highest_reference"] = {"2025": 200, "2026": 260}
+    package["reserve_through"] = {"2025": 200, "2026": 260}
+    digest = build_plan(package).digest
+    _apply(package)
+    EvidencePilotRecord.objects.filter(package_sha256=digest).update(pilot=HISTORY_COHORT)
+    lovable_sync.enroll(
+        cohort=HISTORY_COHORT, package_sha256=digest, expect=len(topics), reason="Ajalugu"
+    )
+    for topic in topics:
+        reference["source"].put(
+            topic["source"]["id"], copy.deepcopy(topic["source"]["row"]), version=3
+        )
+
+
+def test_the_historical_register_follows_lovable_and_stays_closed_archive(reference):
+    from app.legacy_import.lovable_pilot import HISTORY_COHORT
+    from app.matters.enums import RecordMode
+
+    _history(
+        reference,
+        {
+            "2026_101": {"hetkeseis": "lõpetatud", "valja": "2019-05-02"},
+            "2026_102": {"hetkeseis": "jõustunud", "jargmiseks": "Jõustus 2020"},
+        },
+    )
+    first = _run(reference, at=_at(0))
+    assert first.status == SyncRunStatus.SUCCEEDED, first.error
+    # «lõpetatud» on a closed Teema is converged, never held; no reason invented.
+    stage = _decisions(first, "2026_101").get("stage")
+    assert stage is None or stage.outcome in (SyncOutcome.UNCHANGED, SyncOutcome.ALREADY_CONVERGED)
+    assert not first.decisions.filter(
+        state__cohort=HISTORY_COHORT, outcome=SyncOutcome.REVIEW_REQUIRED
+    ).exists()
+    # The sent status is mirrored on the archive Teema.
+    assert _outcome("2026_101").sent_on == dt.date(2019, 5, 2)
+    # A changed title is written; the Teema stays closed ARCHIVE with no step.
+    reference["source"].edit("2026_102", teema="Ajaloolise teema uus pealkiri")
+    second = _run(reference, at=_at(1))
+    assert _decisions(second, "2026_102")["title"].outcome == SyncOutcome.APPLIED
+    for ref in ("2026_101", "2026_102"):
+        matter = _matter(ref)
+        assert (matter.is_open, matter.record_mode) == (False, RecordMode.ARCHIVE), ref
+        assert _open_step(ref) is None
+    assert _matter("2026_102").title == "Ajaloolise teema uus pealkiri"
+    third = _run(reference, at=_at(2))
+    assert not third.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
+    assert not third.decisions.filter(outcome=SyncOutcome.LOCAL_TEST_CHANGE).exists()
+
+
+def test_a_history_teema_lovable_reopens_inside_its_scope_joins_the_register(reference):
+    from app.legacy_import.lovable_pilot import HISTORY_COHORT
+    from app.legacy_import.lovable_sync_models import LovableSyncMembership, MembershipBasis
+    from app.matters.enums import RecordMode
+
+    _history(reference, {"2026_103": {}, "2026_104": {}})
+    _run(reference, at=_at(0))
+    sizes = lovable_sync.expected_cohorts()
+    reference["source"].edit("2026_103", hetkeseis="Riigikogus", operatiivne_ulatus=True)
+    reference["source"].edit("2026_104", hetkeseis="Riigikogus")  # still outside the scope
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    moved = _matter("2026_103")
+    assert (moved.is_open, moved.stage.key, moved.record_mode) == (
+        True,
+        "parliament",
+        RecordMode.FULL,
+    )
+    state = LovableSyncState.objects.get(matter=moved)
+    assert state.cohort == REGISTER_COHORT
+    assert (
+        LovableSyncMembership.objects.get(matter=moved, cohort=REGISTER_COHORT).basis
+        == MembershipBasis.MOVED
+    )
+    after = lovable_sync.expected_cohorts()
+    assert after[REGISTER_COHORT] == sizes[REGISTER_COHORT] + 1
+    assert after[HISTORY_COHORT] == sizes[HISTORY_COHORT] - 1
+    outside = _decisions(run, "2026_104")["stage"]
+    assert (outside.outcome, outside.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.HISTORY_REOPENED_OUTSIDE_SCOPE,
+    )
+    assert not _matter("2026_104").is_open
+    assert LOVABLE_REASONS[lovable_sync.HISTORY_REOPENED_OUTSIDE_SCOPE]
+    # The cohorts still add up: the next night runs.
+    nxt = _run(reference, at=_at(2))
+    assert nxt.status == SyncRunStatus.SUCCEEDED, nxt.error
+
+
+# -- commencements --------------------------------------------------------------------
+
+
+def _commencements(source: Source, ref: str, *rows: tuple[str, str | None, str]) -> None:
+    source.commencements[:] = [c for c in source.commencements if c["topic_id"] != _id(ref)] + [
+        {
+            "id": f"{ref}-{n}",
+            "topic_id": _id(ref),
+            "liik": liik,
+            "kuupaev": day,
+            "tapsustus": note,
+            "position": n,
+        }
+        for n, (liik, day, note) in enumerate(rows, 1)
+    ]
+    source.edit(ref)
+
+
+def _active(ref: str) -> list[tuple[str, str | None, str]]:
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+
+    matter = _matter(ref)
+    effective = [
+        (r.kind, r.date_value.isoformat() if r.date_value else None, r.description)
+        for r in MatterEffectiveDate.objects.filter(matter=matter, status="ACTIVE")
+    ]
+    important = [
+        (r.kind, r.date_value.isoformat(), r.note)
+        for r in MatterImportantDate.objects.filter(
+            matter=matter, status="ACTIVE", kind__endswith="COMMENCEMENT"
+        )
+    ]
+    return sorted(effective + important, key=str)
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "expected"),
+    [
+        (  # 2026_148: an estimate becomes fixed on the same day, with a §-scope, plus 2028
+            [("Eeldatava kuupäevaga", "2027-03-02", "")],
+            [
+                ("Kindla kuupäevaga jõustumine", "2027-03-02", "§ 1–4"),
+                ("Kindla kuupäevaga jõustumine", "2028-01-01", ""),
+            ],
+            [
+                ("PLANNED_COMMENCEMENT", "2027-03-02", "§ 1–4"),
+                ("PLANNED_COMMENCEMENT", "2028-01-01", ""),
+            ],
+        ),
+        (  # 2026_205: an estimate becomes fixed
+            [("Eeldatava kuupäevaga", "2027-01-01", "")],
+            [("Kindla kuupäevaga", "2027-01-01", "")],
+            [("PLANNED_COMMENCEMENT", "2027-01-01", "")],
+        ),
+        (  # 2026_212: general order gets a fixed day
+            [("Üldises korras", None, "")],
+            [("Kindla kuupäevaga", "2026-11-14", "")],
+            [("PLANNED_COMMENCEMENT", "2026-11-14", "")],
+        ),
+        (  # a fixed day moves
+            [("Kindla kuupäevaga", "2027-01-01", "")],
+            [("Kindla kuupäevaga", "2027-02-01", "")],
+            [("PLANNED_COMMENCEMENT", "2027-02-01", "")],
+        ),
+        (  # removed
+            [("Kindla kuupäevaga", "2027-01-01", "")],
+            [],
+            [],
+        ),
+    ],
+)
+def test_a_changed_or_removed_commencement_is_reconciled_with_its_history(
+    reference, before, after, expected
+):
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+
+    source = reference["source"]
+    _commencements(source, "2026_253", *before)
+    first = _run(reference, at=_at(0))
+    assert first.status == SyncRunStatus.SUCCEEDED, first.error
+    matter = _matter("2026_253")
+    earlier = list(MatterEffectiveDate.objects.filter(matter=matter)) + list(
+        MatterImportantDate.objects.filter(matter=matter)
+    )
+    assert len(earlier) == len(before)
+    _commencements(source, "2026_253", *after)
+    run = _run(reference, at=_at(1))
+    decision = _decisions(run, "2026_253")["commencements"]
+    assert decision.outcome == SyncOutcome.APPLIED, decision.reason
+    assert _active("2026_253") == sorted(expected, key=str)
+    # The earlier one is kept, cancelled with its own event — never deleted.
+    for record in earlier:
+        fresh = type(record)._default_manager.get(pk=record.pk)
+        assert fresh.status == "CANCELLED"
+    assert ChangeEvent.objects.filter(
+        matter=matter,
+        event_type__in=("EFFECTIVE_DATE_CANCELLED", "IMPORTANT_DATE_CANCELLED"),
+    ).count() == len(before)
+    again = _run(reference, at=_at(2))
+    assert not again.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
+
+
+# -- the 11.11 parity check (round 4b) ------------------------------------------------
+
+
+def test_the_step_is_lovables_exact_sentence_with_the_kind_the_rule_reads(reference):
+    """A: exact text, never an equivalence; B: the kind is re-derived from the
+    unchanged sentence every run and a kind an earlier import gave is restored."""
+    from app.workflow.models import NextAction as Step
+
+    source = reference["source"]
+    source.edit("2026_253", jargmiseks="Koostan arvamust. Arvamuse tähtaeg 11.11.2026")
+    _run(reference, at=_at(0))
+    step = _open_step("2026_253")
+    assert (step.text, step.kind, step.target_date) == (
+        "Koostan arvamust. Arvamuse tähtaeg 11.11.2026",
+        ActionKind.DO,
+        dt.date(2099, 11, 4),  # a DO with no day of its own: the request's day
+    )
+    source.edit("2026_232", jargmiseks="ooatn ministeeriumi vastust", tegevuse_tahtaeg="2026-11-30")
+    _run(reference, at=_at(1))
+    assert _open_step("2026_232").kind == ActionKind.WAIT
+    # An earlier classification differing from the rule, with Lovable unchanged.
+    Step.objects.filter(pk=_open_step("2026_232").pk).update(kind=ActionKind.MONITOR)
+    run = _run(reference, at=_at(2))
+    text = _decisions(run, "2026_232")["next_action_text"]
+    assert (text.outcome, text.reason) == (SyncOutcome.APPLIED, lovable_sync.RESTORED)
+    assert _open_step("2026_232").kind == ActionKind.WAIT
+    assert Step.objects.filter(
+        matter=_matter("2026_232"), kind=ActionKind.MONITOR, status=ActionStatus.SUPERSEDED
+    ).exists()
+
+
+def test_a_teema_closed_for_another_reason_takes_lovables_reason(reference):
+    """C (2026_217): «rohkem ei tegele» in Lovable, NO_POSITION_FORMED in Juristid."""
+    from app.matters.services import close_matter
+
+    _run(reference, at=_at(0))
+    matter = _matter("2026_238")
+    close_matter(
+        matter=matter,
+        disposition=Disposition.NO_POSITION_FORMED,
+        actor=None,
+        follow_ups_confirmed=True,
+    )
+    closed_at = _matter("2026_238").closed_at
+    reference["source"].edit("2026_238", hetkeseis="rohkem ei tegele")
+    run = _run(reference, at=_at(1))
+    assert _decisions(run, "2026_238")["stage"].outcome == SyncOutcome.APPLIED
+    matter = _matter("2026_238")
+    assert (matter.is_open, matter.disposition, matter.closed_at) == (
+        False,
+        Disposition.MONITORING_STOPPED,
+        closed_at,
+    )
+    event = ChangeEvent.objects.get(matter=matter, event_type="MATTER_CLOSURE_REASON_CHANGED")
+    assert event.payload["from"]["disposition"] == Disposition.NO_POSITION_FORMED
+    assert event.payload["to"]["disposition"] == Disposition.MONITORING_STOPPED
+    assert event.payload["provenance"]["sync_run"] == str(run.pk)
+    again = _run(reference, at=_at(2))
+    assert not again.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
+
+
+def test_history_owners_who_are_not_users_are_one_grouped_class(reference):
+    """D: former staff on archive Teemad are the historical register's own group;
+    a name that resolves to an active user is mirrored."""
+    from app.legacy_import.lovable_pilot import HISTORY_COHORT
+
+    _history(reference, {"2026_105": {}, "2026_106": {}})
+    _run(reference, at=_at(0))
+    reference["source"].edit("2026_105", vastutaja="Endine Töötaja")
+    reference["source"].edit("2026_106", vastutaja="Jaan Näidis")
+    run = _run(reference, at=_at(1))
+    held = _decisions(run, "2026_105")["owner"]
+    assert (held.outcome, held.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.HISTORY_OWNER_UNRESOLVED,
+    )
+    assert lovable_sync.historical_hold(HISTORY_COHORT, held.reason, held.baseline, held.source)
+    assert LOVABLE_REASONS[lovable_sync.HISTORY_OWNER_UNRESOLVED]
+    assert _matter("2026_106").owner == reference["world"]["jaan"]
+    assert not _matter("2026_106").is_open

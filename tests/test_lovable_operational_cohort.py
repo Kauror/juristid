@@ -218,7 +218,10 @@ def test_enrolment_seeds_baselines_from_the_import_snapshot(active):
     run = _run(active)
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
     assert run.counts["checked"] == 7
-    assert _decisions(run, "2026_510")["title"].outcome == SyncOutcome.LOCAL_TEST_CHANGE
+    # Lovable did not change the title; Juristid's differs: Lovable's is put back
+    # (owner decision 11.11) — planned on this COMPARE night.
+    title = _decisions(run, "2026_510")["title"]
+    assert (title.outcome, title.reason) == (SyncOutcome.ELIGIBLE, lovable_sync.RESTORED)
 
 
 def test_enrolment_leaves_every_pilot_state_as_it_was(active):

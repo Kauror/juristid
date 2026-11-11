@@ -335,7 +335,7 @@ def test_a_changed_commencement_is_compared_by_content(cohort, reader):
     row = {"topic_id": topic_id, "liik": "Eeldatav", "kuupaev": "2027-01-01", "tapsustus": ""}
     source.commencements.append({**row, "id": "c1", "position": 1})
     _nights(cohort, {})
-    source.commencements[0]["kuupaev"] = "2027-07-01"
+    next(c for c in source.commencements if c["id"] == "c1")["kuupaev"] = "2027-07-01"
     _nights(cohort, {}, start=1)
     change = _fields(_topic(_history(reader).nights[0], "2026_501"))["commencements"]
     assert (change.label, change.before, change.after) == (

@@ -131,7 +131,7 @@ def _pilot_topic(reference: str, **overrides: Any) -> dict[str, Any]:
         # Nothing sent: a sent day would be the Teema's opinion outcome on the
         # first night under source authority (docs/adr/0213 §10).
         valja="",
-        jargmiseks="ootan 2. lugemist",
+        jargmiseks="ootan 2. lugemist, vaata üle 15.11",
         tegevuse_tahtaeg="2026-11-15",
         onenote_link=URL,
     )
@@ -167,7 +167,7 @@ def _rebased(reference: str, changes: list[dict[str, Any]], **row: Any) -> dict[
         vastutaja=owner,
         valja="",
         tegevuse_tahtaeg=row.pop("tegevuse_tahtaeg", "2026-11-15"),
-        jargmiseks=row.pop("jargmiseks", "ootan 2. lugemist"),
+        jargmiseks=row.pop("jargmiseks", "ootan 2. lugemist, vaata üle 15.11"),
         onenote_link=REBUILD_LINK,
         **row,
     )
@@ -233,6 +233,12 @@ def _lovable_now(fake: FakeLovable, package: dict[str, Any]) -> None:
         fake.rows[str(topic["source"]["id"])] = copy.deepcopy(topic["source"]["row"])
     fake.commencements = [
         copy.deepcopy(c) for t in package["topics"] for c in t["source"].get("commencements") or []
+    ]
+    # Lovable's stage link of a continuing topic (its successor by identity).
+    fake.stage_links = [
+        {"prev_topic_id": str(t["source"]["id"]), "next_topic_id": t["source"]["successor_id"]}
+        for t in package["topics"]
+        if t["source"].get("successor_id")
     ]
 
 
@@ -537,14 +543,13 @@ def test_the_first_night_reports_only_the_rebuilds_holds(first_night):
     part = run.counts["by_cohort"][OPERATIONAL_COHORT]
     assert (part["import_held"], part["import_held_fields"]) == (0, 0)
     assert part["stopped_active"] == 1  # 505: «jõustunud» in Lovable, open in Juristid
-    # The run changed no Teema. A created Teema's synchronisation baseline may
-    # settle on its first comparison (docs/adr/0213 §10: unchanged in Lovable and
-    # already what Juristid holds); that is bookkeeping, not a business write.
+    # The run changed no Teema: a COMPARE night writes nothing. The baselines
+    # settle on their first comparison (docs/adr/0213 §10: unchanged in Lovable
+    # and already what Juristid holds) — bookkeeping, so the settled digests,
+    # which include the synchronisation state, move; nothing was applied.
     before, after = first_night["settled"]
-    assert len(before) == 11
-    assert {k: v for k, v in after.items() if k not in CREATED} == {
-        k: v for k, v in before.items() if k not in CREATED
-    }
+    assert len(before) == len(after) == 11
+    assert not run.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
     seen = first_night["requests"][-1]
     assert seen[0] == ("POST", "/auth/v1/token")
     assert {method for method, _ in seen[1:]} == {"GET"}
