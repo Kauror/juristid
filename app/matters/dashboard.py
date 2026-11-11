@@ -49,27 +49,20 @@ def without_next_action(user: Any) -> QuerySet[Matter]:
 
 
 def drafting_matters(user: Any) -> QuerySet[Matter]:
-    """Current work with an opinion still being written.
+    """Current work whose opinion has no outcome yet — Lovable's «Arvamusi koostamisel».
 
-    ``Arvamus koostamisel``, as Matters. Two halves, from different places on
-    purpose.
+    Two halves, from different places on purpose.
 
     The lifecycle half is ``active_matters`` — open FULL records this reader may
-    see. Leading with it is what makes the number self-correcting: a lawyer who
-    closes a Matter today drops out of this count on the next page load, without
-    anybody re-running the cutover.
+    see. A Matter closed today drops out on the next page load.
 
-    The opinion half is the register's own ``?arvamus=koostamisel``, which is
-    :func:`app.matters.register_filters.opinion_state_q`: a DRAFT Submission
-    this reader may see, or a CURRENT register row with a blank ``VÄLJA`` that no
-    readable SENT Submission has since overtaken (ENG-019). It is applied rather
-    than restated here, which is what lets Osakond's column, this function and
-    the list a lawyer lands on be the same query: a second copy of the
-    condition, written next door, is how a count and its drill-through start
-    disagreeing.
+    The opinion half is the register's own ``?arvamus=koostamisel``
+    (:func:`app.matters.register_filters.opinion_state_q`), applied rather than
+    restated, so Osakond's column, Minu asjad's figures and the list a lawyer
+    lands on are one query. Since docs/adr/0149's amendment of 2026-11-11 it is
+    Lovable's definition: no opinion sent and no decision not to send one — read
+    from the outcome, never from whether a «Koostan arvamuse» step exists.
 
-    Not a count of Submissions — a Matter with two drafts is one file being
-    worked on — and not «open without a sent opinion», which would count every
-    file somebody is merely waiting on or watching.
+    Not a count of Submissions: a Matter is one row however many drafts it has.
     """
     return filter_by_opinion_state(active_matters(user), user, OPINION_DRAFTING)
