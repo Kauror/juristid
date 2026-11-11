@@ -5780,9 +5780,13 @@ def close_matter_from_source(
     One transaction: a refusal anywhere leaves the Matter open and its periods
     as they were.
     """
-    if stage is not None:
-        _move_stage(matter=matter, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+    # The Matter's lock first, as every closure takes it (`close_matter`), so the
+    # stage move and the closure see one committed row (review P3-9).
     locked = lock_matter_for_write(matter.pk)
+    if not locked.is_open:
+        raise DomainError("Teema on juba suletud.")
+    if stage is not None:
+        _move_stage(matter=locked, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
     closed = close_matter(
         matter=locked,
         disposition=disposition,

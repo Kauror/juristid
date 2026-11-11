@@ -1916,6 +1916,8 @@ SETTLED_STEP_TREATMENTS = frozenset({"SOURCE_NEXT_STEP", "RESOLVED_LOCAL", MIRRO
 #: The technical holds (codes; the pages' words are `LOVABLE_REASONS`).
 SUCCESSOR_MISSING = "SUCCESSOR_NOT_IN_JURISTID"
 SUCCESSOR_AMBIGUOUS = "SUCCESSOR_AMBIGUOUS"
+#: The opinion outcome is held (contradictory or impossible): the request waits too.
+OUTCOME_HELD = "OUTCOME_HELD"
 STAGE_UNMAPPED = "STAGE_UNMAPPED"
 CLOSED_OTHERWISE = "CLOSED_WITH_OTHER_REASON"
 LIFECYCLE_HELD = "LIFECYCLE_HELD"
@@ -1942,6 +1944,7 @@ TECHNICAL_HOLDS: dict[str, str] = {
     NOT_ASSIGNABLE: "unresolvable identity",
     SUCCESSOR_MISSING: "missing successor identity",
     SUCCESSOR_AMBIGUOUS: "duplicate reference",
+    OUTCOME_HELD: "contradictory snapshot",
     TITLE_EMPTY: "unrepresentable value",
     STAGE_UNMAPPED: "unrepresentable value",
     STEP_DATE_NO_TEXT: "unrepresentable value",
@@ -2181,6 +2184,7 @@ def _step_decisions_authoritative(
     closed_after: bool,
     lifecycle_hold: str,
     request_day: str | None = None,
+    request_before: str | None = None,
 ) -> list[FieldDecision]:
     """`jargmiseks` + `tegevuse_tahtaeg` → the current step, one operation.
 
@@ -2231,15 +2235,35 @@ def _step_decisions_authoritative(
             ),
         ]
 
-    if not changed and settled:
+    if closed_after and not lifecycle_hold:
+        # A closed Teema (or one closing tonight) holds no current step: the
+        # closure ends it. Once it is gone, Lovable's unchanged sentence is not a
+        # local edit — the baseline settles on «no step» (`settle`).
+        if b_step is not None:
+            return both(SyncOutcome.ELIGIBLE, target={"end": True})
+        if changed or not settled:
+            return both(SyncOutcome.ALREADY_CONVERGED, target=None)
+        quiet = both(SyncOutcome.UNCHANGED)
+        for decision in quiet:
+            decision.settle = a_step is not None
+        return quiet
+    # A drafting step with no day of its own follows its request's day: when the
+    # request moves tonight, the step moves with it (docs/adr/0148 §10).
+    follows_request = (
+        c_date is None
+        and request_day is not None
+        and b_step is not None
+        and b_step.get("kind") == "DO"
+        and b_step.get("target_date") == request_before
+        and request_before != request_day
+    )
+    if not changed and settled and not follows_request:
         local = (b_step or None) != a_step
         return both(SyncOutcome.LOCAL_TEST_CHANGE if local else SyncOutcome.UNCHANGED)
     if lifecycle_hold:
         return both(SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD)
     desired: dict[str, Any] | None
-    if closed_after:
-        desired = None
-    elif not c_text:
+    if not c_text:
         if c_date:
             return both(SyncOutcome.REVIEW_REQUIRED, STEP_DATE_NO_TEXT)
         if a_text and b_step is not None and b_step == a_step:
@@ -2382,6 +2406,7 @@ def _request_decision_authoritative(
     lifecycle_hold: str,
     outcome: dict[str, Any] | None,
     today: dt.date,
+    outcome_hold: str = "",
 ) -> FieldDecision:
     """`arvamuse_tahtaeg` → the current `Arvamuse tähtaeg`, never a second
     consultation (`app.matters.response_deadlines`):
@@ -2409,6 +2434,10 @@ def _request_decision_authoritative(
         return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=b_day, **common)
     if c_src is not None and str(c_src).startswith("?"):
         return _decision(name, SyncOutcome.REVIEW_REQUIRED, DATE_UNREADABLE, **common)
+    if outcome_hold and b_day != c_src:
+        # Whether anything was sent is held (contradictory or impossible):
+        # neither «nothing sent» nor «sent» — no request is set, moved or ended.
+        return _decision(name, SyncOutcome.REVIEW_REQUIRED, OUTCOME_HELD, **common)
     if c_src is None:
         if b_day is None:
             return _decision(name, SyncOutcome.ALREADY_CONVERGED, target=None, **common)
@@ -2562,6 +2591,26 @@ def _plan_authoritative(
     )
 
     outcome_decisions, outcome = _outcome_decisions(applied, src, b, today=today)
+    outcome_hold = next(
+        (d.reason for d in outcome_decisions if d.outcome == SyncOutcome.REVIEW_REQUIRED),
+        "",
+    )
+    request: FieldDecision | None = None
+    request_day = b.get("opinion_deadline")
+    if "opinion_deadline" in applied:
+        request = _request_decision_authoritative(
+            applied,
+            src,
+            b,
+            closed_after=closed_after,
+            lifecycle_hold=life_hold,
+            outcome=outcome,
+            today=today,
+            outcome_hold=outcome_hold if outcome_hold != ADDRESSEE_NO_SEND else "",
+        )
+        if request.outcome in (SyncOutcome.ELIGIBLE, SyncOutcome.ALREADY_CONVERGED):
+            # The day the request has after tonight: a drafting step follows it.
+            request_day = request.target
     plan.decisions.extend(
         _step_decisions_authoritative(
             applied,
@@ -2569,22 +2618,13 @@ def _plan_authoritative(
             b["next_action"],
             closed_after=closed_after,
             lifecycle_hold=life_hold,
-            request_day=b.get("opinion_deadline"),
+            request_day=request_day,
+            request_before=b.get("opinion_deadline"),
         )
     )
     plan.decisions.extend(life)
-    if "opinion_deadline" in applied:
-        plan.decisions.append(
-            _request_decision_authoritative(
-                applied,
-                src,
-                b,
-                closed_after=closed_after,
-                lifecycle_hold=life_hold,
-                outcome=outcome,
-                today=today,
-            )
-        )
+    if request is not None:
+        plan.decisions.append(request)
     if "sent" in applied:
         plan.decisions.extend(outcome_decisions)
     if "commencements" in applied:

@@ -141,6 +141,9 @@ def test_readiness_plans_with_the_existing_rules_and_writes_nothing(cases, reade
         ("2026_186", "next_action_date"),
         ("2026_186", "onenote_link"),
         ("2026_2", "stage"),
+        # The closure planned for 2026_2 ends its open step with it.
+        ("2026_2", "next_action_text"),
+        ("2026_2", "next_action_date"),
         ("2026_244", "sent"),
         ("2026_244", "sent_date"),
     ):
@@ -150,7 +153,7 @@ def test_readiness_plans_with_the_existing_rules_and_writes_nothing(cases, reade
     assert rows[("2026_301", "owner")] == "MANUAL_REVIEW"
     assert rows[("2026_302", "*")] == "UNKNOWN_SOURCE"
     sim = readiness.simulation
-    assert sim["SAFE_UPDATE_CANDIDATE"] == 11 and "CONFLICT" not in sim
+    assert sim["SAFE_UPDATE_CANDIDATE"] == 13 and "CONFLICT" not in sim
     assert sim["UNKNOWN_SOURCE"] == 1 and sim["CONVERGED"] == 1
     assert sim["MANUAL_REVIEW"] == 2
     assert sum(sim.values()) == sum(
@@ -276,6 +279,6 @@ def test_a_reader_without_a_business_role_gets_counts_only(cases):
     admin = factories.AdministratorFactory()
     readiness = obs.readiness(admin, now=LATER)
     assert readiness.simulation_rows == []
-    assert readiness.simulation["SAFE_UPDATE_CANDIDATE"] == 11
+    assert readiness.simulation["SAFE_UPDATE_CANDIDATE"] == 13
     dumped = json.dumps(readiness.as_dict(), ensure_ascii=False)
     assert "Näidisteema" not in dumped and "Jälgida" not in dumped

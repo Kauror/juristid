@@ -39,7 +39,7 @@ from app.legacy_import.lovable_sync_models import (
 )
 from app.legacy_import.models import EvidencePilotRecord
 from app.matters.enums import ResponseDeadlineOutcome
-from app.matters.models import MatterResponseDeadline
+from app.matters.models import Matter, MatterResponseDeadline
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
@@ -539,8 +539,22 @@ def test_a_moved_opinion_deadline_moves_the_same_request(reference):
         ResponseDeadlineOutcome.MOVED,
         dt.date(2099, 12, 1),
     )
-    # The drafting step follows the request's day: one request, never a second.
+    # One request, never a second ...
     assert MatterResponseDeadline.objects.filter(matter=matter).count() == 1
+    # ... and the drafting step follows the request's new day (review P2-1),
+    # so it never sits late on the old one.
+    step = _open_step("2026_253")
+    assert (step.kind, step.date_semantics, step.target_date) == (
+        ActionKind.DO,
+        "DEADLINE",
+        dt.date(2099, 12, 1),
+    )
+    # Once mirrored, a second move moves the step again.
+    reference["source"].edit("2026_253", arvamuse_tahtaeg="2099-12-15")
+    again = _run(reference, at=_at(24))
+    assert again.status == SyncRunStatus.SUCCEEDED, again.error
+    assert _matter("2026_253").response_deadline == dt.date(2099, 12, 15)
+    assert _open_step("2026_253").target_date == dt.date(2099, 12, 15)
 
 
 def test_a_passed_deadline_is_never_sent(reference):
@@ -679,3 +693,137 @@ def test_the_closed_historical_register_keeps_its_rules(reference):
         SyncOutcome.REVIEW_REQUIRED,
         lovable_sync.STAGE_ENDS_WORK,
     )
+
+
+# ---------------------------------------------------------------------------
+# Review of 11.11 (PR #614)
+# ---------------------------------------------------------------------------
+
+
+def test_a_teema_with_an_outcome_chain_can_be_deleted(reference):
+    """P2-2: `previous` is SET_NULL, so the purge of a permanent deletion takes
+    a Teema with several outcome rows."""
+    from app.matters.deletion import delete_matter
+
+    source = reference["source"]
+    source.edit("2026_253", valja="2026-11-03", valja_kuupaev="2026-11-03")
+    _run(reference, at=_at(0))
+    source.edit("2026_253", valja="ei saatnud", valja_kuupaev=None)
+    _run(reference, at=_at(1))
+    matter = _matter("2026_253")
+    rows = LovableOpinionOutcome.objects.filter(matter=matter)
+    assert rows.count() == 2 and rows.filter(previous__isnull=False).count() == 1
+    delete_matter(matter=matter, actor=None)
+    assert not LovableOpinionOutcome.objects.filter(matter_id=matter.pk).exists()
+
+
+def test_a_teema_the_sync_closed_reads_unchanged_the_next_night(reference):
+    """Item 4: «jõustunud» closes the Teema and its step with it; Lovable's
+    unchanged sentence is then never a local edit."""
+    reference["source"].edit("2026_150", hetkeseis="jõustunud")
+    first = _run(reference, at=_at(0))
+    assert first.status == SyncRunStatus.SUCCEEDED, first.error
+    assert not _matter("2026_150").is_open
+    second = _run(reference, at=_at(24))
+    assert not second.decisions.filter(outcome=SyncOutcome.LOCAL_TEST_CHANGE).exists()
+    assert "next_action_text" not in _decisions(second, "2026_150")
+    third = _run(reference, at=_at(48))
+    assert not third.decisions.exists()
+
+
+def test_a_teema_closed_already_settles_lovables_unchanged_sentence(reference):
+    """Item 4, the shape seen on the clone: closed with a step baseline left over."""
+    reference["source"].edit("2026_150", hetkeseis="jõustunud")
+    _run(reference, at=_at(0))
+    state = LovableSyncState.objects.get(reference="2026_150")
+    assert state.applied["next_action"]["target"] is None
+    # The shape a run before this fix left: the step baseline still the old step.
+    applied = dict(state.applied)
+    applied["next_action"] = {
+        "target": {"id": "x", "text": "Ootan jõustumist", "kind": "WAIT"},
+        "treatment": "SOURCE_NEXT_STEP",
+    }
+    LovableSyncState.objects.filter(pk=state.pk).update(applied=applied)
+    second = _run(reference, at=_at(24))
+    assert not second.decisions.filter(outcome=SyncOutcome.LOCAL_TEST_CHANGE).exists()
+    assert (
+        LovableSyncState.objects.get(reference="2026_150").applied["next_action"]["target"] is None
+    )
+
+
+def test_a_cleared_outcome_is_no_outcome_any_more(reference):
+    """P3-3: Lovable clearing its sent day withdraws the outcome, and the request
+    the synchronisation ended on that word no longer reads as one."""
+    from app.matters.register_filters import opinion_outcome_recorded_q
+
+    reader = reference["world"]["mari"]
+    source = reference["source"]
+    source.edit("2026_225", valja="2026-11-04", valja_kuupaev="2026-11-04")
+    _run(reference, at=_at(0))
+    matter = _matter("2026_225")
+
+    def recorded() -> bool:
+        return Matter.objects.filter(opinion_outcome_recorded_q(reader), pk=matter.pk).exists()
+
+    assert recorded()
+    source.edit("2026_225", valja="", valja_kuupaev=None)
+    run = _run(reference, at=_at(1))
+    assert _decisions(run, "2026_225")["sent"].outcome == SyncOutcome.APPLIED
+    assert _outcome("2026_225") is None
+    assert LovableOpinionOutcome.objects.filter(matter=matter, outcome="CLEARED").exists()
+    assert not recorded()
+
+
+def test_a_held_outcome_neither_sets_nor_moves_a_request(reference):
+    """P3-8: a contradictory sent status is not «nothing sent»."""
+    reference["source"].edit(
+        "2026_253",
+        arvamuse_tahtaeg="2099-12-01",
+        valja="ei saatnud",
+        valja_kuupaev="2026-11-04",
+    )
+    run = _run(reference, at=_at(0))
+    decision = _decisions(run, "2026_253")["opinion_deadline"]
+    assert (decision.outcome, decision.reason) == (
+        SyncOutcome.REVIEW_REQUIRED,
+        lovable_sync.OUTCOME_HELD,
+    )
+    assert lovable_sync.OUTCOME_HELD in lovable_sync.TECHNICAL_HOLDS
+    assert LOVABLE_REASONS[lovable_sync.OUTCOME_HELD]
+    assert _matter("2026_253").response_deadline == dt.date(2099, 11, 4)
+
+
+def test_closing_from_the_source_takes_the_lock_and_refuses_a_closed_teema(reference):
+    """P3-9: the Matter's lock first; an already closed Teema is refused before
+    its stage could move."""
+    from app.core.errors import DomainError
+    from app.matters.services import close_matter_from_source
+    from app.workflow.models import StageVocabulary
+
+    reference["source"].edit("2026_150", hetkeseis="jõustunud")
+    _run(reference, at=_at(0))
+    matter = _matter("2026_150")
+    with pytest.raises(DomainError, match="juba suletud"):
+        close_matter_from_source(
+            matter=matter,
+            disposition=Disposition.MONITORING_STOPPED,
+            stage=StageVocabulary.objects.get(key="monitoring_stopped"),
+        )
+    matter.refresh_from_db()
+    assert (matter.stage.key, matter.disposition) == ("in_force", Disposition.COMPLETED)
+
+
+def test_an_mcp_change_of_a_source_step_keeps_its_review_day():
+    """P3-2: a `change_current` of Lovable's unclassified step is never a KeyError."""
+    from types import SimpleNamespace
+
+    from app.mcp_writes.operations.actions import (
+        ALLOWED_MEANINGS,
+        SetNextAction,
+        SetNextActionArguments,
+    )
+
+    assert ALLOWED_MEANINGS["SOURCE"] == ("REVIEW_ON",)
+    current = SimpleNamespace(kind="SOURCE", date_semantics="REVIEW_ON")
+    args = SetNextActionArguments.model_construct(date_meaning=None)
+    assert SetNextAction()._semantics(args, current, "SOURCE", dated=True) == "REVIEW_ON"

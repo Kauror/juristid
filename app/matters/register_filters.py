@@ -534,10 +534,13 @@ def opinion_outcome_recorded_q(user: Any) -> Q:
         matter=OuterRef("pk"),
         outcome__in=(ResponseDeadlineOutcome.ANSWERED, ResponseDeadlineOutcome.NOT_ANSWERING),
     )
+    # A CLEARED Lovable statement withdraws the outcome the synchronisation
+    # recorded, and with it the request it ended on that statement's word
+    # (docs/adr/0213 §10, review P3-3): the ended request is no outcome then.
     return (
         Q(Exists(sent))
         | Q(Exists(register))
-        | Q(Exists(concluded))
+        | (Q(Exists(concluded)) & ~lovable_outcome_q(OpinionOutcome.CLEARED))
         | lovable_outcome_q(OpinionOutcome.SENT, OpinionOutcome.NOT_SENT)
     )
 

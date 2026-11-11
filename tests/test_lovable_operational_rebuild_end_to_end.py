@@ -529,6 +529,9 @@ def test_the_first_night_reports_only_the_rebuilds_holds(first_night):
         (LAWYER_STEP, "next_action_text", SyncOutcome.ELIGIBLE, ""),
         (LAWYER_STEP, "next_action_date", SyncOutcome.ELIGIBLE, ""),
         (FINISHED, "stage", SyncOutcome.ELIGIBLE, ""),
+        # The closure ends 505's open step with it (planned, like the closure).
+        (FINISHED, "next_action_text", SyncOutcome.ELIGIBLE, ""),
+        (FINISHED, "next_action_date", SyncOutcome.ELIGIBLE, ""),
     }
     assert (run.counts["eligible_unapplied"], run.counts["conflicts"]) == (2, 0)
     part = run.counts["by_cohort"][OPERATIONAL_COHORT]

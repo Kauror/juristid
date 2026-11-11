@@ -246,6 +246,9 @@ ALLOWED_MEANINGS = {
     "DO": ("DEADLINE",),
     "WAIT": ("REVIEW_ON", "EXPECTED_AROUND"),
     "MONITOR": ("REVIEW_ON", "EXPECTED_AROUND"),
+    # Lovable's unclassified step (docs/adr/0213 §10): never written as new work
+    # here, but a `change_current` of one keeps its review day.
+    "SOURCE": ("REVIEW_ON",),
 }
 
 

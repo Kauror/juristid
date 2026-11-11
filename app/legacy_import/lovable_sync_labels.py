@@ -94,6 +94,10 @@ LOVABLE_REASONS = {
         "sulgemiseks tuleks see avada."
     ),
     "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
+    "OUTCOME_HELD": (
+        "Arvamuse saatmise seis on ootel (vastuoluline või võimatu), nii et arvamuse "
+        "küsimist ei muudeta."
+    ),
     "STEP_DATE_WITHOUT_TEXT": "Lovable'is on tegevuse kuupäev, aga pole tegevuse sõnastust.",
     "DATE_UNREADABLE": "Lovable'i kuupäeva ei saa kuupäevana lugeda.",
     "SENT_CONTRADICTORY": (

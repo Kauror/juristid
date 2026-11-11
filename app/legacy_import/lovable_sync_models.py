@@ -638,7 +638,7 @@ class LovableOpinionOutcome(BaseModel):
     source_valja_kuupaev = models.CharField(max_length=40, blank=True)
     addressee_raw = models.CharField(max_length=500, blank=True)
     previous = models.OneToOneField(
-        "self", on_delete=models.PROTECT, null=True, blank=True, related_name="superseded_by"
+        "self", on_delete=models.SET_NULL, null=True, blank=True, related_name="superseded_by"
     )
     run = models.ForeignKey(LovableSyncRun, on_delete=models.PROTECT, related_name="+")
     source_version = models.IntegerField(null=True, blank=True)

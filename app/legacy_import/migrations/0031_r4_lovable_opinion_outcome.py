@@ -60,7 +60,7 @@ class Migration(migrations.Migration):
                     models.OneToOneField(
                         blank=True,
                         null=True,
-                        on_delete=django.db.models.deletion.PROTECT,
+                        on_delete=django.db.models.deletion.SET_NULL,
                         related_name="superseded_by",
                         to="legacy_import.lovableopinionoutcome",
                     ),
