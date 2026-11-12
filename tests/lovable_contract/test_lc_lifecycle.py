@@ -199,6 +199,7 @@ def test_st007_a_same_run_successor_closes_the_predecessor_in_one_run(world):
     world.run()
     a = world.matter(ref(1))
     assert (a.is_open, a.superseded_by_id) == (False, world.matter(successor).pk)
+    assert _parity(world) == []
     assert not world.run().decisions.filter(outcome=SyncOutcome.APPLIED).exists()
 
 
@@ -230,6 +231,7 @@ def test_a_continuation_cycle_is_held_never_guessed(world):
     one, two = world.matter(ref(1)), world.matter(ref(2))
     assert (one.superseded_by_id, two.superseded_by_id) == (None, None)
     assert one.is_open and two.is_open
+    assert decisions(run, ref(1))["stage"].reason == lovable_sync.CONTINUATION_CYCLE
 
 
 # ---------------------------------------------------------------------------
@@ -477,8 +479,10 @@ def test_over_the_restore_limit_restores_wait_and_source_changes_are_written(db,
 def test_a_zero_source_limit_writes_nothing(world):
     """LC-B1 / LS-06: a limit of 0 means none, as `max_restored=0` already does."""
     world.lovable.edit(ref(1), teema="Kontraktiteema 2099_1 (Lovable)")
+    before = world.matter(ref(1)).title
     run = world.run(max_changed=0)
-    assert run.status == SyncRunStatus.REVIEW_ONLY
+    assert (run.status, run.error) == (SyncRunStatus.REVIEW_ONLY, lovable_sync.BREAKER)
+    assert world.matter(ref(1)).title == before
 
 
 # ---------------------------------------------------------------------------
