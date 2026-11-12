@@ -3084,12 +3084,23 @@ def _apply_lifecycle(
             held_day = fresh.response_deadline
             keep = held_day is not None and held_day.isoformat() == src.get("opinion_deadline")
             reopen_matter_into_stage(
-                matter=fresh, stage=stage, actor=None, keep_response_deadline=keep
+                matter=fresh,
+                stage=stage,
+                actor=None,
+                keep_response_deadline=keep,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=provenance,
             )
             if desired.get("move_to"):
                 _move_to_register(fresh, desired["move_to"], provenance=provenance)
         else:
-            change_stage(matter=fresh, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+            change_stage(
+                matter=fresh,
+                stage=stage,
+                actor=None,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=provenance,
+            )
     elif not b_life["open"]:
         from app.matters.services import change_closure_from_source
 
@@ -3250,7 +3261,9 @@ def lovable_commencements(matter_id: Any) -> list[list[Any]]:
     )
 
 
-def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
+def _apply_commencements(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
     """The commencement set Lovable states (`_commencements_authoritative`):
     each one it no longer states is cancelled through its own service, with the
     reason and its own audited event, and kept; each new one is added with its
@@ -3287,10 +3300,14 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
         record.used = True
         if model_name == T_EFFECTIVE_DATE:
             effective = MatterEffectiveDate.objects.get(pk=record.pk, status=FactStatus.ACTIVE)
-            cancel_effective_date(record=effective, actor=None, reason=reason)
+            cancel_effective_date(
+                record=effective, actor=None, reason=reason, provenance=provenance
+            )
         else:
             important = MatterImportantDate.objects.get(pk=record.pk, status=FactStatus.ACTIVE)
-            cancel_important_date(record=important, actor=None, reason=reason)
+            cancel_important_date(
+                record=important, actor=None, reason=reason, provenance=provenance
+            )
     for item in target["add"]:
         day = dt.date.fromisoformat(item["date"]) if item["date"] else None
         if item["target"] == T_EFFECTIVE_DATE:
@@ -3303,6 +3320,7 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
                 description=item.get("note", ""),
                 actor=None,
                 source_text=LOVABLE_COMMENCEMENT_MARK,
+                provenance=provenance,
             )
         else:
             if day is None:
@@ -3317,6 +3335,7 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
                 note=item.get("note", ""),
                 actor=None,
                 source_text=LOVABLE_COMMENCEMENT_MARK,
+                provenance=provenance,
             )
     return lovable_commencements(matter.pk)
 
@@ -3357,7 +3376,9 @@ def _apply_step(
     return _action_dict(new)
 
 
-def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
+def _apply_request(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
     from app.matters.enums import ResponseDeadlineChange, ResponseDeadlineOutcome
     from app.matters.models import Matter
     from app.matters.response_deadlines import change_response_deadline
@@ -3411,7 +3432,9 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             note = "Lovable'i järgi arvamust ei saadetud («ei saatnud»)."
             outcome = ResponseDeadlineOutcome.NOT_ANSWERING
         if fresh.response_deadline is not None:
-            resolve_response_deadline(matter=fresh, outcome=outcome, actor=None, note=note)
+            resolve_response_deadline(
+                matter=fresh, outcome=outcome, actor=None, note=note, provenance=provenance
+            )
         return conditional_values(Matter.all_objects.get(pk=matter.pk))["opinion_deadline"]
     if decision.target is None:
         change_response_deadline(
@@ -3420,6 +3443,7 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             actor=None,
             previous_outcome=ResponseDeadlineOutcome.CANCELLED,
             previous_note="Lovable'is arvamuse tähtaeg eemaldati.",
+            provenance=provenance,
         )
     else:
         moving = fresh.response_deadline is not None
@@ -3429,6 +3453,7 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             actor=None,
             change=ResponseDeadlineChange.MOVED if moving else "",
             previous_note="Lovable'is muutus arvamuse tähtaeg." if moving else "",
+            provenance=provenance,
         )
     return conditional_values(Matter.all_objects.get(pk=matter.pk))["opinion_deadline"]
 
@@ -3442,6 +3467,7 @@ def _apply_opinion_outcome(
     run: LovableSyncRun,
     snapshot: dict[str, Any],
     version: int | None,
+    provenance: dict[str, Any] | None = None,
 ) -> tuple[Any, bool]:
     """A new `LovableOpinionOutcome` (the newest is current), and — when the
     Teema is open and its current request is Lovable's — that request ends:
@@ -3510,7 +3536,9 @@ def _apply_opinion_outcome(
         else:
             note = "Lovable'i järgi arvamust ei saadetud («ei saatnud»)."
             outcome = ResponseDeadlineOutcome.NOT_ANSWERING
-        resolve_response_deadline(matter=fresh, outcome=outcome, actor=None, note=note)
+        resolve_response_deadline(
+            matter=fresh, outcome=outcome, actor=None, note=note, provenance=provenance
+        )
         ended = True
     return _outcome_view(matter.pk), ended
 
@@ -3543,13 +3571,13 @@ def _apply_authoritative(
             decision, matter=matter, provenance=provenance, run=run, snapshot=snapshot
         )
     elif name == "commencements":
-        new_b = _apply_commencements(decision, matter=matter)
+        new_b = _apply_commencements(decision, matter=matter, provenance=provenance)
     elif name == "stage":
         new_b = _apply_lifecycle(decision, matter=matter, src=src, provenance=provenance)
     elif name == "next_action_text":
         new_b = _apply_step(decision, matter=matter, provenance=provenance)
     elif name == "opinion_deadline":
-        new_b = _apply_request(decision, matter=matter)
+        new_b = _apply_request(decision, matter=matter, provenance=provenance)
     elif name == "sent":
         new_b, ended = _apply_opinion_outcome(
             decision,
@@ -3559,6 +3587,7 @@ def _apply_authoritative(
             run=run,
             snapshot=snapshot,
             version=plan.version,
+            provenance=provenance,
         )
         if ended:
             # The request Lovable's outcome answers is no longer current.
@@ -3742,11 +3771,13 @@ def _apply_field(
             matter=matter, url=decision.target, run=run, snapshot=snapshot, provenance=provenance
         )
     if decision.field in CONDITIONAL_FIELDS:
-        return _apply_conditional(decision, matter=matter)
+        return _apply_conditional(decision, matter=matter, provenance=provenance)
     raise SyncRefused("NOT_ALLOWLISTED", f"{decision.field} is not an automatic field.")
 
 
-def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
+def _apply_conditional(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
     """A conditional field of the earlier rules (docs/adr/0213 §4; a
     tombstone's plan only), through the service the rebuild used for the same
     change (docs/adr/0202 §3). The write's record is its `LovableSyncDecision`
@@ -3765,10 +3796,14 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
             stage=StageVocabulary.objects.get(key=decision.target),
             actor=None,
             origin=StageEpisodeOrigin.IMPORTED,
+            provenance=provenance,
         )
     elif decision.field == "opinion_deadline":
         request_response_deadline(
-            matter=matter, deadline=dt.date.fromisoformat(decision.target), actor=None
+            matter=matter,
+            deadline=dt.date.fromisoformat(decision.target),
+            actor=None,
+            provenance=provenance,
         )
     else:
         for item in decision.target:
@@ -3783,6 +3818,7 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
                     description=item.get("note", ""),
                     actor=None,
                     source_text="Lovable",
+                    provenance=provenance,
                 )
             else:
                 if day is None:
@@ -3797,6 +3833,7 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
                     note=item.get("note", ""),
                     actor=None,
                     source_text="Lovable",
+                    provenance=provenance,
                 )
     fresh = Matter.all_objects.get(pk=matter.pk)
     return conditional_values(fresh)[decision.field]

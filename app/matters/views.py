@@ -56,7 +56,9 @@ from app.accounts.selectors import (
     named_owner_in,
     owner_filter_choices,
 )
+from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.audit.provenance import source_actor_label
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     distinct_if_fans_out,
@@ -7409,6 +7411,46 @@ def _change_log_offset(raw: Any) -> int:
     return min(max(0, offset), CHANGE_LOG_MAX_OFFSET)
 
 
+#: How a closure-reason change names a successor this reader may not open: that
+#: the work continues elsewhere, never where (LK-01, AUTH-003).
+HIDDEN_SUCCESSOR = "jätkub teise teema all"
+
+
+def closure_reason_change_line(event: ChangeEvent, user: Any) -> str:
+    """`MATTER_CLOSURE_REASON_CHANGED` as one line of `Kõik muudatused`.
+
+    Built from what the event recorded — the reason before and after, each in
+    `Lõpeta teema`'s words — and never from its summary or its source's words,
+    which may name the successor. The successor is named («jätkub teemas
+    2099_7») only when this reader may open it, through `visible_to`; otherwise
+    the line says the work continues elsewhere and nothing about where
+    (docs/adr/0213 §10.9, LK-01).
+    """
+    from app.workflow.enums import closure_reason_label
+
+    payload = event.payload or {}
+    raw_before, raw_after = payload.get("from"), payload.get("to")
+    before: dict[str, Any] = raw_before if isinstance(raw_before, dict) else {}
+    after: dict[str, Any] = raw_after if isinstance(raw_after, dict) else {}
+    line = (
+        f"{closure_reason_label(str(before.get('disposition') or '')) or 'põhjuseta'} → "
+        f"{closure_reason_label(str(after.get('disposition') or '')) or 'põhjuseta'}"
+    )
+    successor_id = after.get("successor")
+    if successor_id:
+        successor = (
+            Matter.objects.visible_to(user)
+            .filter(pk=successor_id)
+            .only("reference_year", "reference_number")
+            .first()
+        )
+        if successor is not None and successor.reference_year:
+            line += f"; jätkub teemas {successor.reference_year}_{successor.reference_number}"
+        else:
+            line += f"; {HIDDEN_SUCCESSOR}"
+    return line
+
+
 @login_required
 def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
     """`Kõik muudatused` — the technical change history, read-only.
@@ -7467,6 +7509,16 @@ def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
     )
     has_more = len(page) > CHANGE_LOG_PAGE_SIZE
     del page[CHANGE_LOG_PAGE_SIZE:]
+    for row in page:
+        # Who wrote it when no person did: the Lovable synchronisation, read
+        # off the run's provenance on the row (LS-03); a person's row and a
+        # system row without provenance read as before.
+        row.source_actor = (  # type: ignore[attr-defined]
+            "" if row.actor_id else source_actor_label(row.payload)
+        )
+        if row.event_type == ChangeEventType.MATTER_CLOSURE_REASON_CHANGED:
+            # In memory only, never saved: the line this reader may be shown.
+            row.summary = closure_reason_change_line(row, request.user)
     return render(
         request,
         "matters/matter_changes.html",

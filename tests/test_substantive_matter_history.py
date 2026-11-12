@@ -39,6 +39,7 @@ from django.utils import timezone
 from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.audit.visibility import (
+    HIDDEN_BY_DESIGN_EVENT_TYPES,
     MATTER_LEVEL_EVENT_TYPES,
     change_log_event_types,
     child_event_types,
@@ -1249,6 +1250,94 @@ def test_the_change_log_vocabulary_is_a_subset_of_what_somebody_classified():
     # And the two halves are disjoint: a type is Matter-level or it is a child's,
     # never both, or one of the two answers is wrong about it.
     assert not (MATTER_LEVEL_EVENT_TYPES & child_event_types())
+
+
+def test_every_event_type_is_classified_exactly_once():
+    """Regression: LK-01. r54's `MATTER_CLOSURE_REASON_CHANGED` was in none of
+    the vocabularies, so a nightly sync could change a closed Teema's closure
+    reason and successor with no visible row anywhere.
+
+    Every `ChangeEventType` is Matter-level, a child's, or hidden by design —
+    exactly one of the three — so a new type is classified when it is added.
+    """
+    groups = {
+        "MATTER_LEVEL_EVENT_TYPES": set(MATTER_LEVEL_EVENT_TYPES),
+        "child_event_types()": set(child_event_types()),
+        "HIDDEN_BY_DESIGN_EVENT_TYPES": set(HIDDEN_BY_DESIGN_EVENT_TYPES),
+    }
+    problems = []
+    for event_type in ChangeEventType.values:
+        homes = [name for name, members in groups.items() if event_type in members]
+        if len(homes) != 1:
+            problems.append(f"{event_type}: {homes or 'unclassified'}")
+    assert not problems, "; ".join(problems)
+    # And nothing in a group that is not an event type.
+    assert set().union(*groups.values()) <= set(ChangeEventType.values)
+    assert ChangeEventType.MATTER_CLOSURE_REASON_CHANGED in change_log_event_types()
+
+
+def _source_reason_change(predecessor, successor):
+    """A closed Teema re-reasoned by the synchronisation, as `_apply_lifecycle`
+    does it: Lovable says it continues under ``successor``."""
+    from app.matters.services import change_closure_from_source, close_matter
+    from app.workflow.enums import Disposition
+
+    close_matter(
+        matter=predecessor,
+        disposition=Disposition.NO_POSITION_FORMED,
+        actor=None,
+        follow_ups_confirmed=True,
+    )
+    change_closure_from_source(
+        matter=predecessor,
+        disposition=Disposition.SUPERSEDED,
+        successor=successor,
+        reason=(
+            f"Lovable: jätkub teemana {successor.reference_year}_{successor.reference_number}."
+        ),
+        provenance={"provenance_source": "LOVABLE_SYNC", "sync_run": "run-1"},
+    )
+
+
+def test_the_change_log_shows_a_closure_reason_change_and_who_made_it(client, specialist, reader):
+    """Regression: LK-01. The row is in `Kõik muudatused`, names both reasons and
+    the successor to a reader who may open it, and says the synchronisation
+    made it — never a person, never an anonymous system row."""
+    predecessor = factories.MatterFactory(owner=specialist)
+    successor = factories.MatterFactory(owner=specialist)
+    _source_reason_change(predecessor, successor)
+
+    body = _changes(client, reader, predecessor).content.decode()
+
+    assert "Lõpetamise põhjus muudetud" in body
+    assert f"jätkub teemas {successor.reference_year}_{successor.reference_number}" in body
+    assert "Lovable&#x27;i sünkroonimine" in body or "Lovable'i sünkroonimine" in body
+    assert "run-1" not in body  # the payload is never rendered
+
+
+def test_a_closure_reason_change_never_names_a_successor_the_reader_may_not_open(specialist):
+    """Regression: LK-01. A successor the reader may not open is «another Teema»,
+    nothing more: not its reference in the line, the summary or the source's words.
+
+    Since docs/adr/0181 whoever may open the predecessor may open every Teema, so
+    the page cannot show the refusal today; the line is asked for a reader with
+    no business scope, which is what the lookup through `visible_to` protects.
+    """
+    from app.matters.views import HIDDEN_SUCCESSOR, closure_reason_change_line
+
+    predecessor = factories.MatterFactory(owner=specialist)
+    successor = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    _source_reason_change(predecessor, successor)
+    successor_reference = f"{successor.reference_year}_{successor.reference_number}"
+    event = ChangeEvent.objects.get(
+        matter=predecessor, event_type=ChangeEventType.MATTER_CLOSURE_REASON_CHANGED
+    )
+
+    assert successor_reference not in event.summary
+    hidden = closure_reason_change_line(event, _outsider())
+    assert hidden.endswith(f"; {HIDDEN_SUCCESSOR}")
+    assert successor_reference not in hidden
+    assert successor_reference in closure_reason_change_line(event, specialist)
 
 
 @pytest.mark.parametrize(

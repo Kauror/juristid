@@ -1975,3 +1975,124 @@ def test_a_legacy_moved_request_keeps_its_whole_chain(reference):
     run = _run(reference, at=_at(1))
     held = _decisions(run, "2026_253")["opinion_deadline"]
     assert held.reason == lovable_sync.ANSWERED_IN_JURISTID
+
+
+# -- every source-driven write names its run (LS-03) -----------------------------------
+
+
+def _drafting_reference(reference: dict[str, Any]) -> str:
+    """The fixture's last drafting topic: open, at «Riigikogus», with an open request."""
+    return str(reference["topics"][-1]["source"]["row"]["nr"])
+
+
+def _closed_locally(reference: dict[str, Any], ref: str) -> None:
+    """Run once, then a person closes the Teema in Juristid."""
+    from app.matters.services import close_matter
+
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    close_matter(
+        matter=_matter(ref),
+        disposition=Disposition.NO_POSITION_FORMED,
+        actor=None,
+        follow_ups_confirmed=True,
+    )
+
+
+def _source_reopens_into_another_stage(reference: dict[str, Any], ref: str) -> None:
+    _closed_locally(reference, ref)
+    reference["source"].edit(ref, hetkeseis="kooskõlastusringil")
+
+
+def _source_moves_the_stage(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, hetkeseis="kooskõlastusringil")
+
+
+def _source_moves_the_request(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, arvamuse_tahtaeg="2099-12-01")
+
+
+def _source_states_another_closure_reason(reference: dict[str, Any], ref: str) -> None:
+    _closed_locally(reference, ref)
+    reference["source"].edit(ref, hetkeseis="rohkem ei tegele")
+
+
+def _source_adds_a_general_order(reference: dict[str, Any], ref: str) -> None:
+    _commencements(reference["source"], ref, ("Üldises korras", None, ""))
+
+
+def _source_fixes_the_general_order(reference: dict[str, Any], ref: str) -> None:
+    _source_adds_a_general_order(reference, ref)
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    _commencements(reference["source"], ref, ("Kindla kuupäevaga", "2099-01-01", ""))
+
+
+def _source_adds_a_fixed_day(reference: dict[str, Any], ref: str) -> None:
+    _commencements(reference["source"], ref, ("Kindla kuupäevaga", "2099-01-01", ""))
+
+
+def _source_removes_the_fixed_day(reference: dict[str, Any], ref: str) -> None:
+    _source_adds_a_fixed_day(reference, ref)
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    _commencements(reference["source"], ref)
+
+
+@pytest.mark.parametrize(
+    ("event_type", "scenario", "old_and_new"),
+    [
+        ("MATTER_REOPENED", _source_reopens_into_another_stage, ()),
+        ("MATTER_STAGE_CHANGED", _source_reopens_into_another_stage, ("from_key", "to_key")),
+        ("MATTER_STAGE_CHANGED", _source_moves_the_stage, ("from_key", "to_key")),
+        ("RESPONSE_DEADLINE_ENDED", _source_moves_the_request, ("deadline", "next_deadline")),
+        ("MATTER_DATE_CHANGED", _source_moves_the_request, ("deadline_from", "deadline_to")),
+        ("MATTER_CLOSURE_REASON_CHANGED", _source_states_another_closure_reason, ("from", "to")),
+        ("EFFECTIVE_DATE_ADDED", _source_adds_a_general_order, ("kind", "date")),
+        ("EFFECTIVE_DATE_CANCELLED", _source_fixes_the_general_order, ("reason", "date")),
+        ("IMPORTANT_DATE_ADDED", _source_adds_a_fixed_day, ("kind", "date")),
+        ("IMPORTANT_DATE_CANCELLED", _source_removes_the_fixed_day, ("reason", "date")),
+    ],
+)
+def test_every_source_driven_change_is_audited_with_its_run_and_source(
+    reference, event_type, scenario, old_and_new
+):
+    """Regression: LS-03. A reopening, a stage move, a request moved or ended, a
+    commencement added or cancelled and a closure reason changed by the sync
+    each say what changed, from what to what, that Lovable did it (never a
+    person) and in which run — on the event an authorised reviewer reads."""
+    from app.audit.provenance import LOVABLE_SYNC_ACTOR, source_actor_label, source_provenance
+
+    ref = _drafting_reference(reference)
+    scenario(reference, ref)
+    earlier = list(ChangeEvent.objects.values_list("pk", flat=True))
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    events = ChangeEvent.objects.filter(matter=_matter(ref), event_type=event_type).exclude(
+        pk__in=earlier
+    )
+    assert events.exists(), f"no {event_type} written by the run"
+    for event in events:
+        assert event.actor_id is None  # never a fabricated person
+        provenance = source_provenance(event.payload)
+        assert provenance is not None, event.payload
+        assert provenance["provenance_source"] == lovable_sync.PROVENANCE_SOURCE
+        assert provenance["sync_run"] == str(run.pk)
+        assert provenance["source_reference"] == ref
+        assert source_actor_label(event.payload) == LOVABLE_SYNC_ACTOR
+        for key in old_and_new:
+            assert key in event.payload, (key, event.payload)
+
+
+def test_a_stage_period_the_sync_begins_is_imported_never_a_persons(reference):
+    """Regression: LS-03. A reopening the sync makes begins its stage period as
+    every other stage move of the sync does (IMPORTED), not as a person's
+    «Ava uuesti» (RECORDED)."""
+    from app.matters.enums import StageEpisodeOrigin
+    from app.matters.models import MatterStageEpisode
+
+    ref = _drafting_reference(reference)
+    _source_reopens_into_another_stage(reference, ref)
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    matter = _matter(ref)
+    assert matter.is_open
+    current = MatterStageEpisode.objects.get(matter=matter, is_current=True)
+    assert (current.stage.key, current.origin) == ("consultation", StageEpisodeOrigin.IMPORTED)

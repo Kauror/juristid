@@ -120,6 +120,7 @@ def add_important_date(
     actor: Any = None,
     source_text: str = "",
     legacy_source_page: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterImportantDate:
     # A closed Matter takes no new canonical fact, and the check belongs here
     # rather than in the callers that reach this — `Muuda`'s own route, the
@@ -169,6 +170,9 @@ def add_important_date(
             "period_end": _iso(period_end),
             "precision": date_precision,
             "kind": record.kind,
+            # Who added it when no person did: the Lovable synchronisation's
+            # run (docs/adr/0213 §10.6, §10.9). Nested, never shadowing a key.
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return record
@@ -319,7 +323,11 @@ def update_important_date(
 
 @transaction.atomic
 def cancel_important_date(
-    *, record: MatterImportantDate, actor: Any = None, reason: str = ""
+    *,
+    record: MatterImportantDate,
+    actor: Any = None,
+    reason: str = "",
+    provenance: dict[str, Any] | None = None,
 ) -> MatterImportantDate:
     """The expected milestone is not going to happen. It stays on the record.
 
@@ -338,7 +346,11 @@ def cancel_important_date(
         actor=actor,
         obj=record,
         summary=record.title[:SUMMARY_LIMIT],
-        payload={"reason": reason.strip()[:500], "date": _iso(record.date_value)},
+        payload={
+            "reason": reason.strip()[:500],
+            "date": _iso(record.date_value),
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return record
 
@@ -381,6 +393,7 @@ def add_effective_date(
     actor: Any = None,
     source_text: str = "",
     legacy_source_page: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterEffectiveDate:
     # A closed Matter takes no new canonical fact, and the check belongs here
     # rather than in the callers that reach this — `Muuda`'s own route, the
@@ -422,7 +435,12 @@ def add_effective_date(
         actor=actor,
         obj=record,
         summary=(description.strip() or record.display_when)[:SUMMARY_LIMIT],
-        payload={"kind": kind, "date": _iso(date_value), "precision": date_precision},
+        payload={
+            "kind": kind,
+            "date": _iso(date_value),
+            "precision": date_precision,
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return record
 
@@ -511,7 +529,11 @@ def update_effective_date(
 
 @transaction.atomic
 def cancel_effective_date(
-    *, record: MatterEffectiveDate, actor: Any = None, reason: str = ""
+    *,
+    record: MatterEffectiveDate,
+    actor: Any = None,
+    reason: str = "",
+    provenance: dict[str, Any] | None = None,
 ) -> MatterEffectiveDate:
     record = _lock_for_edit(record, None)
     if record.status != FactStatus.ACTIVE:
@@ -525,7 +547,11 @@ def cancel_effective_date(
         actor=actor,
         obj=record,
         summary=(record.description or record.display_when)[:SUMMARY_LIMIT],
-        payload={"reason": reason.strip()[:500], "date": _iso(record.date_value)},
+        payload={
+            "reason": reason.strip()[:500],
+            "date": _iso(record.date_value),
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return record
 
