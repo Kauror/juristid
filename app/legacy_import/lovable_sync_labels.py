@@ -89,10 +89,6 @@ LOVABLE_REASONS = {
     ),
     "SUCCESSOR_AMBIGUOUS": "Lovable'i menetlusetappide seos nimetab mitu järglast või iseenda.",
     "STAGE_UNMAPPED": "Lovable'i hetkeseisu silti ei saa Juristide hetkeseisuks kaardistada.",
-    "CLOSED_WITH_OTHER_REASON": (
-        "Teema on Juristides juba suletud teise põhjusega või teise järglasega; uuesti "
-        "sulgemiseks tuleks see avada."
-    ),
     "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
     "RESTORED_SOURCE_VALUE": "Lovable'i väärtus taastati; Juristides oli seda muudetud.",
     "ANSWERED_IN_JURISTID_NOT_IN_LOVABLE": (
