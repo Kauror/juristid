@@ -212,7 +212,7 @@ The owner's TL-02 decision of 12.11.2026 (docs/adr/0213 §10.13) holds a closure
 
 | Category | Source | Population (as the recipient) | Recipient | Default |
 |---|---|---|---|---|
-| `CLOSURE_HOLD` «Ootel sulgemine» | the Teema (`MATTER`); its date is the hold's escalation day (`escalates_on`, the hold's first night + 14) | open FULL Teemad the recipient owns whose newest reading holds the closure (`lovable_closure_hold.with_escalation_day`) | active owner; escalation to every holder of `department.view_management` | on, the day only; ACTION «Lovable'i sulgemine ootab pooleli töö tõttu» |
+| `CLOSURE_HOLD` «Ootel sulgemine» | the Teema (`MATTER`); its date is the hold's escalation day (`escalates_on`, the first night the hold stood while the synchronisation writes + 14; none while it has stood only in COMPARE) | open FULL Teemad the recipient owns whose newest reading holds the closure (`lovable_closure_hold.with_escalation_day`) | active owner; escalation to every holder of `department.view_management` | on, the day only; ACTION «Lovable'i sulgemine ootab pooleli töö tõttu» |
 
 - **The day** is the 14th day of the hold: the owner's on-the-day «Vajab tegevust» row, catch-up *D … D + 7* as for every category.
 - **Escalation** follows D3 unchanged: one INFO row per holder on *D + 1 … D + 7*, «Sulgemine ootel üle 14 päeva» (`Category.escalation_label`, the other categories keep «Tähtaeg ületatud»), never to a holder who is the owner, behind the same `OVERDUE_ESCALATION` preference.

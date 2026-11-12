@@ -99,6 +99,28 @@ RELEASE_NOT_WRITING = (
 )
 
 
+def lock_control_for_share() -> None:
+    """``FOR SHARE`` on the control row, inside the caller's transaction.
+
+    A release takes it first, before it asks `sync_writes` and before any
+    Matter lock: `set_mode` and `cut_over` take the same row ``FOR UPDATE`` (and
+    nothing else), so the mode cannot change under a release, and a release
+    cannot change it. The nightly run never locks the row (it reads it, and
+    holds its own advisory lock), so the order Matter → state it shares with
+    the release is unchanged and nothing waits in a cycle (review P3-D)."""
+    from django.db import connection
+
+    from app.legacy_import.lovable_sync_models import LovableSyncControl
+
+    meta = LovableSyncControl._meta
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"SELECT 1 FROM {connection.ops.quote_name(meta.db_table)} "  # noqa: S608 - model names
+            f"WHERE {connection.ops.quote_name(str(meta.pk.column))} = %s FOR SHARE",
+            [1],
+        )
+
+
 def sync_writes() -> bool:
     """Whether the synchronisation writes: APPLY, and not finally cut over.
 
@@ -135,7 +157,9 @@ class ClosureHold:
     reference: str
     run_id: Any
     since: dt.date
-    escalates_on: dt.date
+    #: 14 days after the first night the hold stood while the synchronisation
+    #: writes; ``None`` while it has stood only in COMPARE (review P2-A).
+    escalates_on: dt.date | None
     #: The work as the night counted it (counts only; the live work is re-read
     #: whenever something acts on it).
     counted: LiveWork
@@ -146,7 +170,7 @@ class ClosureHold:
         return max(0, (today - self.since).days)
 
     def escalated(self, today: dt.date) -> bool:
-        return today >= self.escalates_on
+        return self.escalates_on is not None and today >= self.escalates_on
 
     @property
     def phrases(self) -> str:
@@ -173,7 +197,7 @@ def _as_hold(row: dict[str, Any]) -> ClosureHold | None:
     current: dict[str, Any] = raw if isinstance(raw, dict) else {}
     since = _day(current.get("held_since"))
     escalates = _day(current.get("escalates_on"))
-    if since is None or escalates is None:
+    if since is None:
         return None
     return ClosureHold(
         matter_id=row["state__matter_id"],
@@ -363,6 +387,9 @@ class ReleasePreview:
     ending: LiveWork
     #: The Juristid-only part, whose digest binds the confirmation.
     local: LiveWork
+    #: A newer stored reading no longer closes the Teema the same way: the
+    #: release is not offered, because it would be refused (review P3-E).
+    stale: bool = False
 
     @property
     def digest(self) -> str:
@@ -441,8 +468,8 @@ def release_preview(matter: Any) -> ReleasePreview | None:
     hold = hold_of(matter)
     if hold is None:
         return None
-    _state, desired = _desired_now(matter)
-    if desired is None:
+    state, desired = _desired_now(matter)
+    if state is None or desired is None:
         return None
     ending = live_work_at_closure(matter)
     return ReleasePreview(
@@ -450,6 +477,7 @@ def release_preview(matter: Any) -> ReleasePreview | None:
         reason_label=str(Disposition(desired["disposition"]).label),
         ending=ending,
         local=juristid_only_work(matter, work=ending),
+        stale=_newer_reading_disagrees(state, desired),
     )
 
 
@@ -484,8 +512,12 @@ def release_closure_hold(*, matter: Any, actor: Any, confirmed: str) -> ReleaseR
     from app.matters.services import close_matter_from_source
     from app.workflow.models import StageVocabulary
 
-    refuse_release(actor, matter)
+    if not may_release(actor, matter):
+        raise DomainError(RELEASE_NOT_ALLOWED)
     with transaction.atomic():
+        # The control row first (FOR SHARE), then the mode, then the Matter.
+        lock_control_for_share()
+        refuse_release(actor, matter)
         locked = lock_matter_for_write(matter.pk)
         if not locked.is_open:
             return ReleaseResult(False, "Teema on juba suletud; midagi ei muudetud.")

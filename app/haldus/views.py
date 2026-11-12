@@ -297,6 +297,9 @@ def lovable(request: HttpRequest) -> HttpResponse:
 
     today = timezone.localdate()
     holds_write = sync_writes()
+    from app.legacy_import.lovable_sync import control
+
+    holds_mode = control().mode
     closure_holds = [
         {
             "reference": hold.reference,
@@ -327,6 +330,7 @@ def lovable(request: HttpRequest) -> HttpResponse:
             more=more,
             closure_holds=closure_holds,
             closure_holds_write=holds_write,
+            closure_holds_mode=holds_mode,
         ),
     )
 

@@ -330,6 +330,12 @@ def release_hold(request: HttpRequest) -> HttpResponseBase:
     if matter is None or preview is None:
         messages.info(request, "Sellel teemal pole ootel sulgemist.")
         return redirect("haldus:lovable")
+    if preview.stale:
+        # Not offered where it would be refused (review P3-E).
+        from app.legacy_import.lovable_closure_hold import NEWER_READING_DISAGREES
+
+        messages.info(request, NEWER_READING_DISAGREES)
+        return redirect("haldus:lovable")
     back = f"{reverse('haldus:data_sync_release_hold')}?{urlencode({'viide': reference})}"
     context = _context(request, "lovable", reference=reference, preview=preview)
     if request.method == "POST":
