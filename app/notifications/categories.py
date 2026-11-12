@@ -42,9 +42,9 @@ Escalation
 ----------
 Only `OPINION_DEADLINE` and `ACTION_DEADLINE` escalate (owner decision D3), and
 they use the **operational** overdue definition: `outstanding_response_deadlines`
-(an `Arvamuse tähtaeg` under an open Järgmiseks other than a WAIT is not
-today's work, ADR 0050) and `lateness.overdue_q` (only DO + DEADLINE can be
-late). A review date never escalates and is never called late.
+(an `Arvamuse tähtaeg` under an open DO or MONITOR is not today's work, ADR
+0050; a WAIT or an unclassified source step keeps it) and `lateness.overdue_q`
+(only DO + DEADLINE can be late). A review date never escalates and is never called late.
 """
 
 from __future__ import annotations
@@ -62,7 +62,7 @@ from app.matters.models import Matter, MatterEngagement
 from app.notifications.enums import NotificationCategory, NotificationKind, NotificationSource
 from app.notifications.models import ALLOWED_OFFSETS
 from app.notifications.services import DAY_PRECISIONS, eligibility_q
-from app.workflow.enums import ActionKind, ActionStatus, DateSemantics
+from app.workflow.enums import REVIEW_KINDS, ActionKind, ActionStatus, DateSemantics
 from app.workflow.lateness import overdue_q
 from app.workflow.models import NextAction
 
@@ -111,8 +111,10 @@ def _opinion_on_day_sources(reader: Any) -> QuerySet[Any]:
     """The day itself follows ADR 0050's precedence (owner decision, 2026-10-30).
 
     «Vajab tegevust» on the day is today's work, and while a visible open
-    Järgmiseks other than a WAIT says what happens next, the `Arvamuse tähtaeg`
-    is not today's work: the operational population,
+    Järgmiseks says what happens next — any kind but the deadline-keeping ones,
+    a WAIT and an unclassified source step (ADR 0050, amendments of 2026-10-20
+    and 2026-11-12) — the `Arvamuse tähtaeg` is not today's work: the
+    operational population,
     `work_items.outstanding_response_deadlines`, read rather than copied. The
     advance reminders keep following the obligation (:func:`_opinion_sources`).
     """
@@ -171,10 +173,17 @@ def _important_sources(reader: Any) -> QuerySet[Any]:
 
 
 def _review_sources(reader: Any) -> QuerySet[Any]:
+    """Every review kind, read from `REVIEW_KINDS` and never listed here.
+
+    A WAIT, a MONITOR and Lovable's unclassified sentence (`ActionKind.SOURCE`,
+    docs/adr/0213) all come round for a look on their day. A hand-written pair
+    once left the third out, so 53 synchronised steps were never notified
+    (2026-11-11 audit, DL-01).
+    """
     return (
         _open_steps(reader)
         .filter(
-            kind__in=(ActionKind.WAIT, ActionKind.MONITOR),
+            kind__in=REVIEW_KINDS,
             date_semantics__in=(DateSemantics.REVIEW_ON, DateSemantics.EXPECTED_AROUND),
         )
         .filter(_responsible_q(reader))
@@ -420,7 +429,8 @@ CATEGORIES: dict[str, Category] = {
             key=NotificationCategory.REVIEW_DATE,
             label="Ülevaatamise kuupäev",
             help_text=(
-                "Ootel või jälgitava tegevuse kuupäev, mil on aeg olukord üle vaadata. "
+                "Ootel, jälgitava või «Liik määramata» tegevuse kuupäev, mil on aeg "
+                "olukord üle vaadata. "
                 "See ei ole tähtaeg."
             ),
             source_type=NotificationSource.NEXT_ACTION,

@@ -217,3 +217,50 @@ separate product decision and is **not** taken here.
 undischarged `Arvamuse tähtaeg` now shows that deadline in the work lists (and
 as overdue if it has passed). That is the intended correction, but it can raise
 the overdue figures on the day it is released; the release note must say so.
+
+## Amendment, 2026-11-12 — an unclassified source step does not outrank it either
+
+**What was decided before.** The amendment of 2026-10-20 made a WAIT the one
+kind that leaves the `Arvamuse tähtaeg` live beside it
+(`DEADLINE_KEEPING_KINDS = (WAIT,)`). DO and MONITOR kept the precedence.
+
+**Why it is extended.** r54 (docs/adr/0213) added a fourth kind,
+`ActionKind.SOURCE` («Liik määramata»): Lovable's own `jargmiseks` sentence,
+written as the current step when its wording names no kind, or two. Nobody
+decided where it stands in this hierarchy, so it fell on the DO / MONITOR side
+by default: any open SOURCE step took the deadline off Minu asjad, Osakond,
+the register's `?too=` populations, the header's «N p üle», the on-the-day
+notice and the morning-after escalation. And unlike a DO, which is late on its
+own day and escalates in the deadline's place, a SOURCE step is never late
+(`OVERDUE_KIND`), so a Teema whose opinion deadline had passed disappeared
+from every overdue surface with nothing standing in for it (2026-11-11 audit,
+DL-02).
+
+**What is decided now (owner's rule, post-audit round of 2026-11-12).** An
+unclassified source step must not silently suppress an outstanding opinion
+deadline. It records what Lovable says happens next; it does not mean the
+lawyer has done the work, nor that somebody else has taken responsibility for
+the answer. So `DEADLINE_KEEPING_KINDS = (WAIT, SOURCE)`
+(`app/workflow/enums.py`): beside an open SOURCE step the deadline stays
+operational work — listed, banded, overdue when it passes, notified on the day
+and escalated the next morning — until a sent answer, a VÄLJA mark or an
+explicit resolution discharges it, exactly as beside a WAIT.
+
+**What this does not change.**
+- DO and MONITOR keep the precedence this record gives them; WAIT keeps the
+  2026-10-20 rule. The question left open there (whether MONITOR should follow
+  WAIT) is still not taken.
+- A SOURCE step is still never overdue and never a deadline; it remains a
+  review date (`REVIEW_KINDS`) and is notified as one (docs/adr/0198,
+  amendment of 2026-11-12).
+- Nothing is discharged by any `NextAction`. The stored column,
+  `response_obligations` and `Järgmise tegevuseta` are unchanged; a Matter with
+  a SOURCE step still has a next step.
+- No model change, no migration, no data change. Every surface reads
+  `outstanding_response_deadlines`, so the rule is still the one `.exclude()`.
+
+**Consequence for existing data.** A Matter that carries an open SOURCE step
+*and* an undischarged `Arvamuse tähtaeg` now shows that deadline in the work
+lists, and as overdue if it has passed. On the day this was written no open
+Teema combined the two (measured read-only on production), so the release
+moves no figure; the rule matters for the next synchronisation that writes one.
