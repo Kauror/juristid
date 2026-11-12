@@ -724,6 +724,28 @@ def test_compare_mode_reports_and_writes_nothing(cohort):
     assert _writes() == before
 
 
+def test_in_compare_a_persons_edit_is_refused_and_the_run_still_writes_nothing(cohort):
+    """Regression: TL-01/E9. COMPARE locks a person out (owner 12.11), and the lock adds no
+    business write to a COMPARE night: the run reports and Juristid stays as it was."""
+    from app.matters.services import set_matter_title
+    from app.matters.source_ownership import refusal_message
+    from tests.refusals import refused
+
+    lovable_sync.set_mode(SyncMode.COMPARE, reason="first nights")
+    _run(cohort)  # the first night seeds the states the lock reads
+    with refused(refusal_message("title")):
+        set_matter_title(
+            matter=_matter("2026_501"), value="Juristi oma", actor=cohort["world"]["mari"]
+        )
+    cohort["source"].edit("2026_501", teema="Uus 501")
+    before = _writes()
+    run = _run(cohort, at=NIGHT + dt.timedelta(days=1))
+    assert run.status == SyncRunStatus.SUCCEEDED
+    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.ELIGIBLE
+    assert _writes() == before
+    assert _matter("2026_501").title == "Näidisteema 2026_501"
+
+
 # ---------------------------------------------------------------------------
 # Pause and cutover
 # ---------------------------------------------------------------------------

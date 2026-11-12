@@ -22,9 +22,16 @@ audit trail requires it); the synchronisation writes with no actor and its
 importers that create and rebase these Teemas. There is no keyword a caller
 passes to be let through.
 
-**When.** Only while the synchronisation writes (APPLY): in COMPARE or OFF no
-night would put an edit back, so nothing is locked (`Ownership.active`). And
-never a field the night holds with an open technical hold — it is not
+**When.** While the synchronisation follows Lovable — COMPARE as well as APPLY
+(owner decision 12.11, docs/open-decisions.md E9): in COMPARE the night only
+reports, but Lovable is still the source, and an edit made then would be put
+back on the first APPLY night. Not after final cutover (`cut_over`: Juristid
+is the source, and a cut over row is always OFF), and not while the switch is
+OFF: the operator's pause, where no night runs, is the one lever that unlocks
+the Teemad — all of them at once; no setting unlocks a single one (E13). The
+cost: an edit made while OFF is put back on the first APPLY night after it.
+This exception awaits the owner's confirmation (E9). See `Ownership.active`.
+Never a field the night holds with an open technical hold — it is not
 «restored over» — which stays editable, with a note why (`Ownership.held`).
 
 **What stays editable** is everything Lovable does not own: notes, documents,
@@ -45,6 +52,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.core.errors import DomainError
+from app.legacy_import.lovable_sync_models import SyncMode
 
 #: The page's notice: where these facts come from and where they are changed.
 SOURCE_OWNED_NOTICE = (
@@ -57,6 +65,11 @@ SOURCE_OWNED_TIP = "See väli pärineb Lovable'i registrist ja seda saab muuta a
 NO_SOURCE_STEP_NOTE = (
     "Lovable'is pole järgmist tegevust märgitud; uue tegevuse saab määrata Lovable'is."
 )
+
+#: The `LovableSyncControl.mode` values in which Lovable owns its fields (E9,
+#: owner decision 12.11): the night compares or writes. OFF and cutover lock
+#: nothing (`Ownership.active`).
+FOLLOWING_MODES: tuple[str, ...] = (SyncMode.COMPARE, SyncMode.APPLY)
 
 #: Guard keys → what the refusal names (Estonian, the object of «ei saa muuta»).
 _REFUSED: dict[str, str] = {
@@ -147,10 +160,11 @@ HELD_LABELS: dict[str, str] = {
 class Ownership:
     """What Lovable owns on one Teema now.
 
-    ``active`` — the Teema is synchronised **and the synchronisation writes**
-    (`LovableSyncControl.mode` is APPLY). In COMPARE or OFF nothing would put
-    Lovable's value back over an edit, so nothing is locked; when APPLY resumes,
-    an edit made meanwhile is restored that night (docs/open-decisions.md E9).
+    ``active`` — the Teema is synchronised **and the synchronisation follows
+    Lovable** (`LovableSyncControl.mode` is COMPARE or APPLY, not cut over):
+    Lovable is the source in both, and an edit made in COMPARE would be put
+    back on the first APPLY night (docs/open-decisions.md E9). OFF (the
+    operator's pause, which unlocks every Teema) and cutover lock nothing.
 
     ``held`` — guard keys whose field the night holds with an open technical
     hold (`lovable_sync.TECHNICAL_HOLDS`) on its latest reading: it is never
@@ -183,7 +197,7 @@ def ownership(matter: Any) -> Ownership:
     """Whether Lovable owns this Teema's source fields now: a live Teema with a
     synchronisation state in a cohort that is not retired — exactly the Teemad
     the nightly run follows (`lovable_sync.population`, `is_authoritative`) —
-    while the synchronisation is in APPLY. One query, and a second only for a
+    while the synchronisation is in COMPARE or APPLY. One query, and a second only for a
     Teema that is owned (its open holds)."""
     pk = getattr(matter, "pk", None)
     if pk is None or getattr(matter, "deleted_at", None) is not None:
@@ -195,14 +209,13 @@ def ownership(matter: Any) -> Ownership:
         LovableSyncControl,
         LovableSyncDecision,
         LovableSyncState,
-        SyncMode,
         SyncOutcome,
     )
 
     retired = LovableSyncCohort.objects.filter(retired_at__isnull=False).values("key")
-    writing = LovableSyncControl.objects.filter(pk=1, mode=SyncMode.APPLY, cut_over=False)
+    following = LovableSyncControl.objects.filter(pk=1, mode__in=FOLLOWING_MODES, cut_over=False)
     state = (
-        LovableSyncState.objects.filter(Exists(writing), matter_id=pk)
+        LovableSyncState.objects.filter(Exists(following), matter_id=pk)
         .exclude(cohort__in=retired)
         .values("pk", "observed_run_id")
         .first()
