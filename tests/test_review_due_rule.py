@@ -40,6 +40,7 @@ clock themselves are given a patched one.
 
 from __future__ import annotations
 
+import ast
 import datetime
 from pathlib import Path
 
@@ -587,3 +588,95 @@ def test_no_module_compares_a_review_date_with_today_on_its_own():
         + ", ".join(offenders)
         + ". Use `app.workflow.lateness.review_due_q` (ADR 0079 §6)."
     )
+
+
+#: The review kinds by name. `app/workflow/enums.py` is the one place allowed to
+#: list them, as `REVIEW_KINDS` and `DEADLINE_KEEPING_KINDS`.
+_REVIEW_KIND_NAMES = frozenset({"WAIT", "MONITOR", "SOURCE"})
+
+
+def _kind_name(node: ast.AST) -> str | None:
+    """``ActionKind.WAIT`` (or ``enums.ActionKind.WAIT``) → ``"WAIT"``; a string as itself."""
+    if isinstance(node, ast.Attribute):
+        owner = node.value
+        if (isinstance(owner, ast.Name) and owner.id == "ActionKind") or (
+            isinstance(owner, ast.Attribute) and owner.attr == "ActionKind"
+        ):
+            return node.attr
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    return None
+
+
+def _hand_listed_review_kinds(tree: ast.AST) -> list[int]:
+    """Line numbers of a literal tuple, list or set naming two or more review kinds.
+
+    Two shapes: any collection of ``ActionKind`` members (``(ActionKind.WAIT,
+    ActionKind.MONITOR)``), and any literal handed to a ``kind__in`` lookup,
+    strings included (``kind__in=("WAIT", "MONITOR")``). A collection that also
+    names ``DO`` is the whole vocabulary, not a review rule, and is left alone.
+    """
+    flagged: list[int] = []
+
+    def names(node: ast.AST) -> set[str]:
+        if not isinstance(node, ast.Tuple | ast.List | ast.Set):
+            return set()
+        return {name for name in map(_kind_name, node.elts) if name}
+
+    def is_review_list(found: set[str]) -> bool:
+        return len(found & _REVIEW_KIND_NAMES) >= 2 and "DO" not in found
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Tuple | ast.List | ast.Set) and all(
+            isinstance(element, ast.Attribute) for element in node.elts
+        ):
+            if is_review_list(names(node)):
+                flagged.append(node.lineno)
+        if isinstance(node, ast.keyword) and (node.arg or "").endswith("kind__in"):
+            if is_review_list(names(node.value)):
+                flagged.append(node.value.lineno)
+    return sorted(set(flagged))
+
+
+def test_no_module_lists_the_review_kinds_by_hand():
+    """Regression: DL-01. `REVIEW_KINDS` is the one list of review kinds.
+
+    The notification population once filtered ``kind__in=(ActionKind.WAIT,
+    ActionKind.MONITOR)``; r54 added ``ActionKind.SOURCE`` to `REVIEW_KINDS`,
+    and that hand-written pair silently left it out (2026-11-11 audit). The
+    grep above only looks at lines comparing ``target_date__lte``, so it could
+    not see it. This one reads every module's syntax tree instead.
+    """
+    root = Path(__file__).resolve().parent.parent / "app"
+    allowed = root / "workflow" / "enums.py"
+    offenders = []
+    for path in root.rglob("*.py"):
+        if path == allowed or "migrations" in path.parts:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        offenders += [f"{path.relative_to(root)}:{n}" for n in _hand_listed_review_kinds(tree)]
+
+    assert not offenders, (
+        "a module lists review kinds by hand: "
+        + ", ".join(offenders)
+        + ". Use `app.workflow.enums.REVIEW_KINDS` (or `DEADLINE_KEEPING_KINDS`)."
+    )
+
+
+@pytest.mark.parametrize(
+    ("source", "caught"),
+    [
+        ("q.filter(kind__in=(ActionKind.WAIT, ActionKind.MONITOR))", True),
+        ("q.filter(kind__in=[ActionKind.MONITOR, ActionKind.SOURCE])", True),
+        ('Q(action__kind__in=("WAIT", "MONITOR"))', True),
+        ("KINDS = (ActionKind.WAIT, ActionKind.MONITOR)", True),
+        ("KINDS = {enums.ActionKind.WAIT, enums.ActionKind.SOURCE}", True),
+        ("q.filter(kind__in=REVIEW_KINDS)", False),
+        ("q.filter(kind__in=(ActionKind.DO, ActionKind.WAIT, ActionKind.MONITOR))", False),
+        ("q.filter(kind=ActionKind.WAIT)", False),
+        ('LABELS = ("WAIT", "MONITOR")', False),
+    ],
+)
+def test_the_hand_listing_guard_catches_what_it_should(source, caught):
+    """Regression: DL-01 — the guard itself, against the shapes it exists for."""
+    assert bool(_hand_listed_review_kinds(ast.parse(source))) is caught

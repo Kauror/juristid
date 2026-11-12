@@ -1361,7 +1361,12 @@ def outstanding_response_deadlines(user: Any, *, owner: Any = None) -> QuerySet[
       ``Arvamuse tähtaeg`` stays live work beside it — on the work lists, in the
       overdue counts and in the header — until it is answered or discharged.
       Letting a wait on a third party hide Koda's own deadline was solving one
-      gap by concealing another.
+      gap by concealing another. **Nor does an unclassified source step**
+      (``ActionKind.SOURCE``, docs/adr/0050 amendment of 2026-11-12): Lovable's
+      sentence with no stated kind says neither that the lawyer has done the
+      work nor that somebody else has taken it on, and since it is never late,
+      letting it outrank the deadline left a passed one unlisted and
+      unescalated (DL-02). Both are :data:`DEADLINE_KEEPING_KINDS`.
     * **It is not a judgement about who wrote the action.** A ``NextAction``
       materialised by the current-register enrichment carries the register's own
       structured ``JÄRGMISEKS`` value, so it is the department's instruction too.

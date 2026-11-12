@@ -195,3 +195,9 @@ Owner's brief of 2026-11-02. Proposed, not yet accepted; unmerged at the time of
 ## Amendment 2026-11-06 — the bell panel (UI-01)
 
 Superseded in part by [0212](0212-the-november-2026-ui-round-and-its-combined-release.md) §1: «Märgi loetuks» on a «Vajab tegevust» row now also takes it out of the bell, the Minu asjad block and the inbox sections (its deadline stays on the Teema and in the work lists); the bell opens a panel of unread items and history; «Märgi lugemata» and «Märgi kõik loetuks» are added. The rest of this ADR, the 2026-11-02 amendment included, stands.
+
+## Amendment 2026-11-12 — `REVIEW_DATE` reads `REVIEW_KINDS`; the opinion deadline follows ADR 0050's SOURCE rule
+
+The `REVIEW_DATE` row of the table in §2 named WAIT and MONITOR. Its population now reads `app.workflow.enums.REVIEW_KINDS`, which since r54 also holds Lovable's unclassified step (`ActionKind.SOURCE`, «Liik määramata», docs/adr/0213). Such a step is a review date like the other two: told on its day (INFO, «On aeg üle vaadata») and at any advance interval the person chose, never late, never escalated. The hand-written pair had left it out, so synchronised steps were never notified (2026-11-11 audit, DL-01); a structural test now refuses a hand-listed set of review kinds anywhere in `app/`.
+
+`OPINION_DEADLINE`'s on-the-day row and its escalation already read `outstanding_response_deadlines`, so they follow ADR 0050's amendment of the same day without a change here: an open SOURCE step, like a WAIT, no longer takes an outstanding `Arvamuse tähtaeg` off the day or out of the escalation (DL-02). Defaults, wording and every other category are unchanged.
