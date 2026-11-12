@@ -98,6 +98,14 @@ LOVABLE_REASONS = {
     ),
     "STAGE_UNMAPPED": "Lovable'i hetkeseisu silti ei saa Juristide hetkeseisuks kaardistada.",
     "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
+    "CLOSURE_HOLD_BREAKER": (
+        "Ühe öö uusi ootel sulgemisi (Juristides pooleli töö) oli üle piiri; "
+        "öö ei kirjutanud midagi."
+    ),
+    "CLOSURE_HELD_AT_WRITE": (
+        "Kirjutamise hetkel ilmus Juristides pooleli töö ja sulgemine jäi ootele; selle teema "
+        "muud muudatused ootavad järgmist ööd."
+    ),
     "LOCAL_WORK_AT_CLOSURE": (
         "Lovable sulges teema, kuid Juristides on pooleli töö (planeeritud tegevus, "
         "järelkontroll, kodulehe ülevaade või kaasamise ootus); sulgemine ootab, midagi "

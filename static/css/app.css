@@ -2071,6 +2071,13 @@ th[aria-sort="descending"] .colhead__mark::after {
   border-left-color: var(--status-info);
 }
 
+/* A closure from Lovable held for Juristid-only work (TL-02): a warning, not
+   a closed file — the Teema is still open. */
+.banner--hold {
+  border-left-color: var(--status-warning);
+  flex-wrap: wrap;
+}
+
 /* ====================================================================
  * Järgmiseks card
  * ==================================================================== */

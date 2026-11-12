@@ -3990,14 +3990,22 @@ def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -
 
     Counts only (`LiveWork.phrases`), so it says nothing about a record the
     reader may not open. The release form only for somebody who may release
-    (`may_release`: the owner here; an administrator releases in Haldus)."""
+    (`may_release`: the owner here; an administrator releases in Haldus), and
+    only while the synchronisation writes (`sync_writes`). In COMPARE the
+    banner is informational: what would be held once it writes, no release
+    and no promise about the night (lead decision 12.11.2026, review P2-1)."""
     if not held or not matter.is_open:
         return {}
-    from app.legacy_import.lovable_closure_hold import may_release, release_preview
+    from app.legacy_import.lovable_closure_hold import (
+        may_release,
+        release_preview,
+        sync_writes,
+    )
     from app.matters.closure_work import (
         CLOSURE_HOLD_BANNER,
         CLOSURE_HOLD_DONE,
         CLOSURE_HOLD_HELP,
+        CLOSURE_HOLD_PROPOSED,
         CLOSURE_HOLD_RELEASE_LABEL,
         CLOSURE_HOLD_RELEASE_TIP,
         joined_phrases,
@@ -4006,8 +4014,12 @@ def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -
     preview = release_preview(matter)
     if preview is None:
         return {}
+    writes = sync_writes()
     return {
         "closure_hold": {
+            "writes": writes,
+            "proposed": CLOSURE_HOLD_PROPOSED,
+            "read_at": preview.read_at,
             "banner": CLOSURE_HOLD_BANNER,
             # What is live now, not what the night counted: work finished today
             # is no longer named.
@@ -4019,7 +4031,7 @@ def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -
             "digest": preview.digest,
             "label": CLOSURE_HOLD_RELEASE_LABEL,
             "tip": CLOSURE_HOLD_RELEASE_TIP,
-            "can_release": may_release(request.user, matter),
+            "can_release": writes and may_release(request.user, matter),
         }
     }
 
@@ -4035,6 +4047,12 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # (`app.matters.source_ownership`). Read once, here, because the header,
     # the rail and `PRAEGUNE TEGEVUS` all ask.
     own = ownership(matter)
+    if not matter.is_open and own.held:
+        # A held closure frees nothing once the Teema is closed (TL-02, review
+        # P3-2): «Ava uuesti» is not offered after a release.
+        from app.legacy_import.lovable_closure_hold import effective_ownership
+
+        own = effective_ownership(matter, own)
     return {
         "matter": matter,
         # A closure from Lovable held for Juristid-only work (TL-02): asked only

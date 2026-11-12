@@ -2,12 +2,24 @@
 #
 # TL-02 (owner decision 12.11.2026, docs/adr/0213 §10.13, docs/adr/0198
 # amendment of 2026-11-12): the CLOSURE_HOLD category. The category vocabulary
-# is a CHECK constraint, so a seventh category is a migration. Additive, no data
-# touched. Rollback note: an older image does not know CLOSURE_HOLD rows, so an
-# image rollback after a hold has escalated retires them first (none exist
-# until a hold is 14 days old; production has 0 holds).
+# is a CHECK constraint, so a seventh category is a migration.
+#
+# Forward: schema only (the field's choices and the CHECK widened); no data.
+# Backward: the six-value CHECK cannot be re-added over CLOSURE_HOLD rows, so
+# the reverse first DELETES every CLOSURE_HOLD row (`_delete_closure_hold_rows`,
+# run first on the way back), then narrows the CHECK. Those rows are personal
+# notices derived from the sync ledger; nothing else refers to them.
+# An image rollback *without* migrating back leaves the rows in place, and an
+# older image does not know the category (its inbox would fail on them): roll
+# back with `migrate notifications 0003`, or delete the rows first. None exist
+# until a hold is 14 days old and the synchronisation writes (APPLY).
 
 from django.db import migrations, models
+
+
+def _delete_closure_hold_rows(apps, schema_editor):
+    DeadlineNotification = apps.get_model("notifications", "DeadlineNotification")
+    DeadlineNotification.objects.filter(category="CLOSURE_HOLD").delete()
 
 
 class Migration(migrations.Migration):
@@ -30,4 +42,6 @@ class Migration(migrations.Migration):
             model_name='deadlinenotification',
             constraint=models.CheckConstraint(condition=models.Q(('category__in', ['OPINION_DEADLINE', 'FEEDBACK_DEADLINE', 'ACTION_DEADLINE', 'COMMENCEMENT_CHECK', 'IMPORTANT_DATE', 'REVIEW_DATE', 'CLOSURE_HOLD'])), name='notifications_deadline_category_vocabulary'),
         ),
+        # Last forward, so first on the way back: the rows go before the CHECK narrows.
+        migrations.RunPython(migrations.RunPython.noop, _delete_closure_hold_rows),
     ]

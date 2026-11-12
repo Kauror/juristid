@@ -17,6 +17,7 @@
       <dt>Teema</dt><dd>{{ reference }}</dd>
       <dt>Ootel alates</dt><dd>{{ preview.hold.since|date:"j.n.Y" }}</dd>
       <dt>Lovable'i põhjus</dt><dd>{{ preview.reason_label }}</dd>
+      <dt>Lovable'i lugemine</dt><dd>{% if preview.read_at %}{{ preview.read_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
     </dl>
     <p class="dsync__effect">{{ preview.statement }} Tühistamised salvestatakse sinu nimel. Lovable'isse ei kirjutata.</p>
     <form method="post" action="{% url 'haldus:data_sync_release_hold' %}" class="form dsync__form">

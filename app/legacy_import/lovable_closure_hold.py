@@ -6,7 +6,8 @@ arvamuse järelkontroll», planned «Kodulehe ülevaade», open Kaasamine waits)
 nightly synchronisation does not cancel that work: it holds the closure with a
 `LOCAL_WORK_AT_CLOSURE` technical hold (`lovable_sync._lifecycle_decisions`),
 and the current step and the opinion request wait with it. Nothing is written;
-the hold counts toward no breaker.
+the hold counts toward neither Teemad breaker (it has its own cap on how many
+may begin in one night, `lovable_sync.MAX_NEW_CLOSURE_HOLDS`).
 
 **Where a hold lives.** No table of its own: it is the newest reading's
 decision — the ``stage`` decision with that reason in the state's
@@ -24,18 +25,34 @@ the same night repeats it with the same first night.
 * the lawyer closes the Teema themselves (allowed while the hold stands: the
   lock frees a field under an open technical hold, docs/open-decisions.md E11);
 * Lovable reopens it — the hold simply clears;
-* **release** (`release_closure_hold`): the Teema's owner, or a technical
-  administrator, is shown what would be cancelled and confirms it. The latest
-  reading is read again (still closed?) and so is the work (the digest). The
-  closure is written now, with Lovable's reason and the run's provenance, and
-  the releasing person is the actor of `MATTER_CLOSED` and of every
-  cancellation it causes — never a fabricated one.
+* **release** (`release_closure_hold`): the Teema's owner, or a verified
+  technical administrator, is shown what would be cancelled and confirms it.
+  The stored reading is read again (still closed?) and so is the work (the
+  digest). The closure is written now, with Lovable's reason and the run's
+  provenance, and the releasing person is the actor of `MATTER_CLOSED` and of
+  every cancellation it causes — never a fabricated one.
 
 **Escalation.** A hold still open on its 14th day reaches its owner (an
 «Vajab tegevust» row) and, the morning after, every holder of
 `department.view_management` — the department head — through the notifications
 package (`CLOSURE_HOLD`, docs/adr/0198), keyed on the hold's escalation day, so
 a re-run never delivers twice.
+
+**Only while the synchronisation writes** (lead decision 12.11.2026, review
+P2-1/P2-2). A hold leads to a write — a release — or to an escalation only in
+APPLY and before the final cutover (`sync_writes`). In COMPARE the night still
+records the hold, so it shows what APPLY would do (Haldus lists it as
+proposed, the Teema banner is informational only); OFF neither releases nor
+escalates; after the cutover, or with the Teema's cohort retired, there is no
+standing hold at all.
+
+**No live re-read** (review P2-4). The web process holds no Lovable
+credentials — only the host-run synchronisation container does
+(`app.haldus.data_sync_views`: the web process never reaches Lovable) — so a
+release rereads the **stored** reading: the hold's own, and any newer stored
+reading of the same topic (a run that read Lovable but did not get as far as
+observing it). A newer reading that no longer closes the Teema the same way
+refuses the release. The confirmation pages say when the reading was taken.
 """
 
 from __future__ import annotations
@@ -45,7 +62,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.db import transaction
-from django.db.models import DateField, OuterRef, QuerySet, Subquery
+from django.db.models import DateField, Exists, F, OuterRef, QuerySet, Subquery
 from django.db.models.fields.json import KT
 from django.db.models.functions import Cast
 
@@ -66,10 +83,48 @@ SOURCE_REOPENED = (
     "Lovable'i viimase lugemise järgi pole teema enam suletud; "
     "ootelolek lõpeb ise ja midagi ei muudetud."
 )
+#: Said when a newer stored reading disagrees with the hold's own.
+NEWER_READING_DISAGREES = (
+    "Lovable'i uuem lugemine ei näita teemat enam samamoodi suletuna; "
+    "midagi ei muudetud. Oota järgmist sünkroonimist."
+)
 #: Who may release.
 RELEASE_NOT_ALLOWED = (
     "Ootel sulgemise saab vabastada ainult teema vastutaja või süsteemiadministraator."
 )
+#: Only while the synchronisation writes (APPLY, not cut over).
+RELEASE_NOT_WRITING = (
+    "Ootel sulgemist saab vabastada ainult siis, kui sünkroonimine kirjutab Lovable'i "
+    "muudatused Juristidesse; praegu seda ei tehta."
+)
+
+
+def sync_writes() -> bool:
+    """Whether the synchronisation writes: APPLY, and not finally cut over.
+
+    Only then may a hold lead to a write (a release) or to an escalation
+    (lead decision 12.11.2026, review P2-1)."""
+    from app.legacy_import.lovable_sync_models import LovableSyncControl, SyncMode
+
+    return LovableSyncControl.objects.filter(pk=1, mode=SyncMode.APPLY, cut_over=False).exists()
+
+
+def _writing() -> Exists:
+    from app.legacy_import.lovable_sync_models import LovableSyncControl, SyncMode
+
+    return Exists(LovableSyncControl.objects.filter(pk=1, mode=SyncMode.APPLY, cut_over=False))
+
+
+def _not_cut_over() -> Any:
+    from app.legacy_import.lovable_sync_models import LovableSyncControl
+
+    return ~Exists(LovableSyncControl.objects.filter(pk=1, cut_over=True))
+
+
+def _retired_cohorts() -> Any:
+    from app.legacy_import.lovable_sync_models import LovableSyncCohort
+
+    return LovableSyncCohort.objects.filter(retired_at__isnull=False).values("key")
 
 
 @dataclass(frozen=True)
@@ -84,6 +139,8 @@ class ClosureHold:
     #: The work as the night counted it (counts only; the live work is re-read
     #: whenever something acts on it).
     counted: LiveWork
+    #: When the reading the hold rests on was taken.
+    read_at: dt.datetime | None = None
 
     def age_days(self, today: dt.date) -> int:
         return max(0, (today - self.since).days)
@@ -125,22 +182,26 @@ def _as_hold(row: dict[str, Any]) -> ClosureHold | None:
         since=since,
         escalates_on=escalates,
         counted=work_from_counts(current.get("local_work")),
+        read_at=row.get("run__snapshot_taken_at"),
     )
 
 
 def standing_holds(matter_ids: Any = None) -> list[ClosureHold]:
-    """Every standing hold — on its state's newest reading, on an open Teema —
-    or only those of ``matter_ids``. Two queries, however many."""
-    from django.db.models import F
-
+    """Every standing hold — on its state's newest reading, on an open Teema of
+    a cohort that is not retired, before the final cutover — or only those of
+    ``matter_ids``. One query, however many."""
     rows = (
         _hold_decisions()
         .filter(
+            _not_cut_over(),
             run_id=F("state__observed_run_id"),
             state__matter__is_open=True,
             state__matter__deleted_at__isnull=True,
         )
-        .values("state__matter_id", "state__reference", "run_id", "current")
+        .exclude(state__cohort__in=_retired_cohorts())
+        .values(
+            "state__matter_id", "state__reference", "run_id", "current", "run__snapshot_taken_at"
+        )
         .order_by("state__reference")
     )
     if matter_ids is not None:
@@ -155,6 +216,59 @@ def hold_of(matter: Any) -> ClosureHold | None:
 
 
 # ---------------------------------------------------------------------------
+# What the hold frees (docs/open-decisions.md E11), once the Teema is closed
+# ---------------------------------------------------------------------------
+
+
+def effective_ownership(matter: Any, own: Any) -> Any:
+    """``own`` without what only a `LOCAL_WORK_AT_CLOSURE` hold freed, once the
+    Teema is closed (review P3-2).
+
+    While the hold stands the Teema is open, and E11 frees the closure (and
+    the stage) so the lawyer can close it. After it closed — the lawyer's own
+    closure or a release — the hold's decision is still the newest reading's
+    until the next night, and E11 would also free «Ava uuesti»: a reopening
+    the night would undo. Other technical holds keep freeing what they free."""
+    if not own.active or not own.held or getattr(matter, "is_open", True):
+        return own
+    from app.legacy_import.lovable_sync import TECHNICAL_HOLDS
+    from app.legacy_import.lovable_sync_models import (
+        LovableSyncDecision,
+        LovableSyncState,
+        SyncOutcome,
+    )
+    from app.matters.source_ownership import HOLD_FIELDS, Ownership
+
+    state = (
+        LovableSyncState.objects.filter(matter_id=matter.pk).values("pk", "observed_run_id").first()
+    )
+    if state is None:
+        return own
+    others = set(
+        LovableSyncDecision.objects.filter(
+            state_id=state["pk"],
+            run_id=state["observed_run_id"],
+            outcome=SyncOutcome.REVIEW_REQUIRED,
+            reason__in=[r for r in TECHNICAL_HOLDS if r != LOCAL_WORK_AT_CLOSURE],
+        ).values_list("field", flat=True)
+    )
+    held = frozenset(key for key in own.held if set(HOLD_FIELDS[key]) & others)
+    return Ownership(active=own.active, held=held)
+
+
+def refuse_reopen_after_release(matter: Any, *, actor: Any) -> None:
+    """A person's reopening of a synchronised Teema that a held closure's
+    release (or the lawyer's own closure) has just closed stays refused, as
+    every Lovable-closed Teema's reopening is (E4)."""
+    from app.matters.source_ownership import SourceOwnedRefusal, ownership
+
+    if getattr(actor, "pk", None) is None:
+        return
+    if effective_ownership(matter, ownership(matter)).locks("reopen"):
+        raise SourceOwnedRefusal("reopen")
+
+
+# ---------------------------------------------------------------------------
 # The notifications' population (docs/adr/0198, category CLOSURE_HOLD)
 # ---------------------------------------------------------------------------
 
@@ -163,7 +277,9 @@ ESCALATES_FIELD = "closure_hold_escalates_on"
 
 
 def with_escalation_day(matters: QuerySet[Any]) -> QuerySet[Any]:
-    """``matters`` with a standing hold, annotated with its escalation day."""
+    """``matters`` with a standing hold, annotated with its escalation day —
+    only while the synchronisation writes (`sync_writes`): COMPARE, OFF, the
+    cutover and a retired cohort escalate nothing (review P2-1/P2-2)."""
     newest = _hold_decisions().filter(
         state__matter_id=OuterRef("pk"),
         run_id=OuterRef("lovable_sync_state__observed_run_id"),
@@ -173,7 +289,8 @@ def with_escalation_day(matters: QuerySet[Any]) -> QuerySet[Any]:
         output_field=DateField(),
     )
     return (
-        matters.filter(is_open=True)
+        matters.filter(_writing(), is_open=True)
+        .exclude(lovable_sync_state__cohort__in=_retired_cohorts())
         .annotate(**{ESCALATES_FIELD: day})
         .filter(**{f"{ESCALATES_FIELD}__isnull": False})
     )
@@ -227,6 +344,14 @@ def may_release(actor: Any, matter: Any) -> bool:
     return may_write_business_content(person) and getattr(matter, "owner_id", None) == person.pk
 
 
+def refuse_release(actor: Any, matter: Any) -> None:
+    """The two conditions every release needs, asked by the domain service too."""
+    if not may_release(actor, matter):
+        raise DomainError(RELEASE_NOT_ALLOWED)
+    if not sync_writes():
+        raise DomainError(RELEASE_NOT_WRITING)
+
+
 @dataclass(frozen=True)
 class ReleasePreview:
     """What a release would do now: Lovable's reason, and the work it would
@@ -244,6 +369,10 @@ class ReleasePreview:
         return self.local.digest
 
     @property
+    def read_at(self) -> dt.datetime | None:
+        return self.hold.read_at
+
+    @property
     def statement(self) -> str:
         """One sentence: what is closed, and what is cancelled in the releaser's name."""
         ended = joined_phrases(self.ending)
@@ -253,16 +382,15 @@ class ReleasePreview:
         return text
 
 
-def _desired_now(matter: Any) -> tuple[Any, dict[str, Any] | None]:
-    """The state, and what the latest reading of Lovable says the lifecycle is."""
+def _desired_now(matter: Any, *, lock: bool = False) -> tuple[Any, dict[str, Any] | None]:
+    """The state, and what the hold's reading of Lovable says the lifecycle is."""
     from app.legacy_import import lovable_sync
     from app.legacy_import.lovable_sync_models import LovableSyncState
 
-    state = (
-        LovableSyncState.objects.select_related("observed_run")
-        .filter(matter_id=getattr(matter, "pk", matter))
-        .first()
-    )
+    states = LovableSyncState.objects.filter(matter_id=getattr(matter, "pk", matter))
+    if lock:
+        states = states.select_for_update(of=("self",))
+    state = states.select_related("observed_run").first()
     if state is None or not state.observed:
         return state, None
     desired, _hold = lovable_sync.desired_lifecycle(
@@ -275,9 +403,39 @@ def _desired_now(matter: Any) -> tuple[Any, dict[str, Any] | None]:
     return state, desired
 
 
+def _newer_reading_disagrees(state: Any, desired: dict[str, Any]) -> bool:
+    """Whether a stored reading newer than the hold's own no longer closes the
+    Teema the same way (review P2-4: no live re-read is possible here)."""
+    from app.legacy_import import lovable_sync
+    from app.legacy_import.lovable_sync_models import LovableSyncSnapshot
+
+    run = state.observed_run
+    newer = LovableSyncSnapshot.objects.exclude(run_id=state.observed_run_id)
+    if run is not None and run.snapshot_taken_at is not None:
+        newer = newer.filter(taken_at__gt=run.snapshot_taken_at)
+    newest = newer.order_by("-taken_at").first()
+    if newest is None:
+        return False
+    bundle = lovable_sync.bundle_of(newest.document, state.source_id)
+    if bundle is None:
+        return True
+    source = lovable_sync.canonical_source(bundle)
+    again, _hold = lovable_sync.desired_lifecycle(
+        source.get("stage"),
+        lovable_sync.source_continuation(bundle),
+        matter_id=state.matter_id,
+    )
+    return (
+        again is None
+        or bool(again.get("open"))
+        or again.get("disposition") != desired.get("disposition")
+        or again.get("successor") != desired.get("successor")
+    )
+
+
 def release_preview(matter: Any) -> ReleasePreview | None:
     """What releasing this Teema's hold would do now, or ``None`` when there is
-    no standing hold or the latest reading no longer closes it."""
+    no standing hold or the hold's reading no longer closes it."""
     from app.workflow.enums import Disposition
 
     hold = hold_of(matter)
@@ -286,11 +444,12 @@ def release_preview(matter: Any) -> ReleasePreview | None:
     _state, desired = _desired_now(matter)
     if desired is None:
         return None
+    ending = live_work_at_closure(matter)
     return ReleasePreview(
         hold=hold,
         reason_label=str(Disposition(desired["disposition"]).label),
-        ending=live_work_at_closure(matter),
-        local=juristid_only_work(matter),
+        ending=ending,
+        local=juristid_only_work(matter, work=ending),
     )
 
 
@@ -301,20 +460,23 @@ class ReleaseResult:
 
 
 def release_closure_hold(*, matter: Any, actor: Any, confirmed: str) -> ReleaseResult:
-    """Release a standing hold: close the Teema now as the latest reading of
+    """Release a standing hold: close the Teema now as the stored reading of
     Lovable says, ending the work ``confirmed`` names, in ``actor``'s name.
 
-    * Who: `may_release`, refused otherwise.
-    * The hold is gone, the Teema is already closed, or Lovable's latest reading
-      no longer closes it → nothing is written, and the result says so («the
-      hold simply clears»).
+    * Who and when: `refuse_release` — the owner or a verified technical
+      administrator, and only while the synchronisation writes (APPLY, not cut
+      over); refused otherwise.
+    * The hold is gone, the Teema is already closed, or the hold's reading no
+      longer closes it → nothing is written, and the result says so («the hold
+      simply clears»). A newer stored reading that disagrees refuses it.
     * ``confirmed`` must be the digest of the Juristid-only work live now
       (`ReleasePreview.digest`); work that changed since the person was shown it
       is refused with the renewed counts (`closure_work.SourceClosureHeld`).
     * The closure: `close_matter_from_source` with Lovable's reason and stage,
       the hold's run provenance (``closure_hold: RELEASED``) and the actor —
-      one transaction, no half-applied closure: the current step is cancelled
-      with it and the request stays, exactly as a source closure leaves it.
+      one transaction, under the Matter's and the state's locks, no
+      half-applied closure: the current step is cancelled with it and the
+      request stays, exactly as a source closure leaves it.
     """
     from app.legacy_import import lovable_sync
     from app.matters.locks import lock_matter_for_write
@@ -322,17 +484,18 @@ def release_closure_hold(*, matter: Any, actor: Any, confirmed: str) -> ReleaseR
     from app.matters.services import close_matter_from_source
     from app.workflow.models import StageVocabulary
 
-    if not may_release(actor, matter):
-        raise DomainError(RELEASE_NOT_ALLOWED)
+    refuse_release(actor, matter)
     with transaction.atomic():
         locked = lock_matter_for_write(matter.pk)
         if not locked.is_open:
             return ReleaseResult(False, "Teema on juba suletud; midagi ei muudetud.")
         if hold_of(locked) is None:
             return ReleaseResult(False, HOLD_CLEARED)
-        state, desired = _desired_now(locked)
+        state, desired = _desired_now(locked, lock=True)
         if state is None or desired is None:
             return ReleaseResult(False, SOURCE_REOPENED)
+        if _newer_reading_disagrees(state, desired):
+            raise DomainError(NEWER_READING_DISAGREES)
         run = state.observed_run
         provenance = {
             **lovable_sync._provenance(
@@ -356,7 +519,7 @@ def release_closure_hold(*, matter: Any, actor: Any, confirmed: str) -> ReleaseR
             successor=successor,
             reason=lovable_sync._lifecycle_reason(desired, state.observed),
             provenance=provenance,
-            released_by=_person(actor),
+            released_by=actor,
             confirmed=str(confirmed or "").strip() or False,
         )
     if hasattr(matter, "is_open"):

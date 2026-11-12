@@ -225,7 +225,7 @@ LOCAL_WORK_AT_CLOSURE = "LOCAL_WORK_AT_CLOSURE"
 CLOSURE_HOLD_ESCALATION_DAYS = 14
 
 
-def juristid_only_work(matter: Any) -> LiveWork:
+def juristid_only_work(matter: Any, *, work: LiveWork | None = None) -> LiveWork:
     """The live work on a synchronised Teema that is **Juristid's alone** (TL-02).
 
     `live_work_at_closure` minus the current step: on a synchronised Teema the
@@ -242,11 +242,15 @@ def juristid_only_work(matter: Any) -> LiveWork:
 
     A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01),
     exactly as for any closure. The digest names these rows only, so a release
-    confirmed against them is refused when they change (docs/adr/0152 §7)."""
+    confirmed against them is refused when they change (docs/adr/0152 §7).
+
+    ``work`` — `live_work_at_closure` already read for this Matter in the same
+    transaction, so it is not read twice."""
     from app.workflow.enums import ActionStatus
     from app.workflow.models import NextAction
 
-    work = live_work_at_closure(matter)
+    if work is None:
+        work = live_work_at_closure(matter)
     if not work.current:
         return work
     lovables = {
@@ -304,6 +308,11 @@ CLOSURE_HOLD_DONE = (
     "Lovable on teema sulgenud ja Juristides pole enam pooleli tööd; "
     "järgmine öine sünkroonimine suleb teema."
 )
+#: The banner while the synchronisation only compares (COMPARE): what would happen.
+CLOSURE_HOLD_PROPOSED = (
+    "Lovable näitab teemat suletuna. Kui sünkroonimine hakkab Juristidesse kirjutama, "
+    "jääb sulgemine pooleli töö tõttu ootele"
+)
 #: Said under the banner: how the hold ends.
 CLOSURE_HOLD_HELP = (
     "Lõpeta, tühista või vii pooleli töö teisele teemale — siis suleb öine "
@@ -311,7 +320,7 @@ CLOSURE_HOLD_HELP = (
 )
 #: The one-sentence `i` beside the release action.
 CLOSURE_HOLD_RELEASE_TIP = (
-    "Sulgeb teema kohe Lovable'i põhjusega ja tühistab allpool nimetatud pooleli töö sinu nimel."
+    "Sulgeb teema kohe Lovable'i põhjusega ja tühistab ülal nimetatud pooleli töö sinu nimel."
 )
 CLOSURE_HOLD_RELEASE_LABEL = "Sulge teema ja tühista pooleli töö"
 

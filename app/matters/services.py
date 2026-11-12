@@ -5684,9 +5684,39 @@ def close_matter(
     stage_episode: MatterStageEpisode | None = None,
     follow_ups_confirmed: bool | str = False,
     provenance: dict[str, Any] | None = None,
-    successor_from_source: bool = False,
+) -> Matter:
+    """Stop active work on the Matter, for a stated reason (`_close_matter`)."""
+    return _close_matter(
+        matter=matter,
+        disposition=disposition,
+        actor=actor,
+        reason=reason,
+        successor=successor,
+        stage_episode=stage_episode,
+        follow_ups_confirmed=follow_ups_confirmed,
+        provenance=provenance,
+        successor_from_source=False,
+    )
+
+
+def _close_matter(
+    *,
+    matter: Matter,
+    disposition: str,
+    actor: Any,
+    reason: str,
+    successor: Matter | None,
+    stage_episode: MatterStageEpisode | None,
+    follow_ups_confirmed: bool | str,
+    provenance: dict[str, Any] | None,
+    successor_from_source: bool,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
+
+    ``successor_from_source`` is internal: only `close_matter_from_source`
+    passes it, for a successor the source states (a release's actor asserts
+    no relationship of their own, so the anti-oracle read is not theirs to
+    pass). `close_matter` — every person-facing caller — never sets it.
 
     **The ordinary way here is a `Hetkeseis` that ends the Matter**
     (`close_matter_for_terminal_stage`, docs/adr/0131 §10–§11), which passes
@@ -5907,13 +5937,22 @@ def close_matter_from_source(
     ``LOCAL_WORK_AT_CLOSURE`` hold.
 
     The one way past it is a **release**: ``released_by`` — the person who
-    explicitly releases the hold (`lovable_sync.release_closure_hold` checks who
-    may) — with ``confirmed``, the digest of exactly the work they were shown
+    explicitly releases the hold, checked here as well as by its caller
+    (`lovable_closure_hold.refuse_release`: the owner or a verified technical
+    administrator, only while the synchronisation writes; review P3-3, no
+    caller-passed bypass) — with ``confirmed``, the digest of exactly the work they were shown
     (docs/adr/0152 §7). Work that changed since is refused with the renewed
     counts. A release closes with that person as the actor: `MATTER_CLOSED`
     and every cancellation it causes name them, beside the run's provenance.
     """
     from app.matters.closure_work import SourceClosureHeld, juristid_only_work
+
+    person = None
+    if released_by is not None:
+        from app.legacy_import.lovable_closure_hold import refuse_release
+
+        refuse_release(released_by, matter)
+        person = getattr(released_by, "user", released_by)
 
     # The Matter's lock first, as every closure takes it (`close_matter`), so the
     # stage move and the closure see one committed row (review P3-9).
@@ -5934,10 +5973,10 @@ def close_matter_from_source(
             origin=StageEpisodeOrigin.IMPORTED,
             provenance=provenance,
         )
-    closed = close_matter(
+    closed = _close_matter(
         matter=locked,
         disposition=disposition,
-        actor=released_by,
+        actor=person,
         reason=reason,
         successor=successor,
         stage_episode=current_stage_episode(locked),
@@ -6229,6 +6268,11 @@ def reopen_matter_into_stage(
         raise DomainError("Teema on juba avatud.")
     # Lovable's lifecycle on a synchronised Teema (audit 2026-11-11 TL-01).
     refuse_source_owned_change(locked, "reopen", actor=actor)
+    # A closure-hold release must not leave «Ava uuesti» freed until the next
+    # night (TL-02, review P3-2): the hold's E11 freeing ends with the closure.
+    from app.legacy_import.lovable_closure_hold import refuse_reopen_after_release
+
+    refuse_reopen_after_release(locked, actor=actor)
 
     # Directly on the row locked above, past `_move_stage`'s closed-file
     # refusal: this is the one act that moves a closed file's stage, and it
@@ -6295,6 +6339,11 @@ def reopen_matter(
         raise DomainError("Teema on juba avatud.")
     # Lovable's lifecycle on a synchronised Teema (audit 2026-11-11 TL-01).
     refuse_source_owned_change(locked, "reopen", actor=actor)
+    # A closure-hold release must not leave «Ava uuesti» freed until the next
+    # night (TL-02, review P3-2): the hold's E11 freeing ends with the closure.
+    from app.legacy_import.lovable_closure_hold import refuse_reopen_after_release
+
+    refuse_reopen_after_release(locked, actor=actor)
 
     # Written through the instance the caller passed, as it always was. The
     # row is this transaction's whichever Python object the UPDATE goes

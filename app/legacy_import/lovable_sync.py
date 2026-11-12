@@ -196,6 +196,17 @@ MAX_RESTORED_MATTERS = 100
 #: or a broken reading, not a night's work: it writes nothing (`BREAKER`).
 #: Proposed value; production needs the owner's approval.
 MAX_NEW_HOLDS = 25
+#: Closures held for Juristid-only work (TL-02, `LOCAL_WORK_AT_CLOSURE`) that
+#: one night may *begin* (``held_since`` == tonight): more is a mass closure in
+#: Lovable or a broken reading, not a night's work. Over it an APPLY night is
+#: REVIEW_ONLY (`CLOSURE_HOLD_BREAKER`) and writes nothing. The holds count
+#: toward no other breaker (`BREAKER_EXEMPT_HOLDS`).
+#: Proposed value (review P2-3); production needs the owner's approval.
+MAX_NEW_CLOSURE_HOLDS = 20
+#: A held closure older than this many days makes `sync_health` not ok: the
+#: escalation (14 days) has not resolved it.
+#: Proposed value (review P2-3); production needs the owner's approval.
+MAX_CLOSURE_HOLD_AGE_DAYS = 21
 #: The live source population (the index of every live topic) may move this
 #: much against the previous baseline reading before an APPLY run refuses to
 #: write (`POPULATION_CHANGE`): more than `POPULATION_MAX_DELTA` topics and more
@@ -298,6 +309,11 @@ NEW_BREAKER = "NEW_TOPIC_BREAKER"
 #: The import held the field for a person (docs/adr/0202 §6); only `resolve_field` clears it.
 IMPORT_HELD = "IMPORT_HELD"
 BREAKER = "CIRCUIT_BREAKER"
+#: More closure holds began tonight than `MAX_NEW_CLOSURE_HOLDS` (TL-02).
+CLOSURE_HOLD_BREAKER = "CLOSURE_HOLD_BREAKER"
+#: The domain guard refused a source closure at the write (`SourceClosureHeld`,
+#: TL-02): the Teema's other eligible fields were not written that night.
+HELD_AT_WRITE = "CLOSURE_HELD_AT_WRITE"
 PARTIAL = "PARTIAL_FAILURE"
 NO_BACKUP = "NO_VERIFIED_BACKUP"
 COMPARE_ONLY = "COMPARE_ONLY"
@@ -2182,6 +2198,7 @@ LOCAL_WORK_AT_CLOSURE = _closure_work.LOCAL_WORK_AT_CLOSURE
 HOLD_WORK = "local_work"
 HOLD_SINCE = "held_since"
 HOLD_ESCALATES = "escalates_on"
+HOLD_NEW = "new"
 #: «lõpetatud» — finished, no reason stated (docs/adr/0213 §9.1).
 FINISHED_NO_REASON = "lõpetatud"
 STAGE_UNMAPPED = "STAGE_UNMAPPED"
@@ -2484,7 +2501,7 @@ def _lifecycle_decisions(
         # and the step and the request wait with it.
         work = _closure_work.juristid_only_work(state.matter_id)
         if not work.is_empty:
-            since = _closure_hold_since(state, today)
+            since, carried = _closure_hold_since(state, today)
             held = decide(SyncOutcome.REVIEW_REQUIRED, LOCAL_WORK_AT_CLOSURE)
             for decision in held:
                 if decision.field == "stage":
@@ -2492,6 +2509,8 @@ def _lifecycle_decisions(
                         **b_life,
                         HOLD_WORK: _closure_work.work_counts(work),
                         HOLD_SINCE: since.isoformat(),
+                        # First recorded by this run (`MAX_NEW_CLOSURE_HOLDS`).
+                        HOLD_NEW: not carried,
                         HOLD_ESCALATES: (
                             since + dt.timedelta(days=_closure_work.CLOSURE_HOLD_ESCALATION_DAYS)
                         ).isoformat(),
@@ -2516,17 +2535,18 @@ def _lifecycle_decisions(
     return decide(SyncOutcome.ELIGIBLE, restored, target), desired, ""
 
 
-def _closure_hold_since(state: LovableSyncState, today: dt.date | None) -> dt.date:
+def _closure_hold_since(state: LovableSyncState, today: dt.date | None) -> tuple[dt.date, bool]:
     """The first night of this `LOCAL_WORK_AT_CLOSURE` hold: carried from the
     state's previous observed run when that run held it too, else ``today``.
 
     One hold is one continuous stretch of nights: a night without it (Lovable
     reopened, the work was finished) ends it, and a later hold starts its own
     count — so its age, and the escalation day the notifications key on, never
-    restart on a re-run and never carry over from an earlier stretch."""
+    restart on a re-run and never carry over from an earlier stretch. The
+    second value says whether it was carried (not new tonight)."""
     day = today or timezone.localdate()
     if state.pk is None or state.observed_run_id is None:
-        return day
+        return day, False
     current = (
         LovableSyncDecision.objects.filter(
             state_id=state.pk,
@@ -2540,10 +2560,10 @@ def _closure_hold_since(state: LovableSyncState, today: dt.date | None) -> dt.da
     )
     if isinstance(current, dict) and current.get(HOLD_SINCE):
         try:
-            return min(dt.date.fromisoformat(str(current[HOLD_SINCE])), day)
+            return min(dt.date.fromisoformat(str(current[HOLD_SINCE])), day), True
         except ValueError:
-            return day
-    return day
+            return day, True
+    return day, False
 
 
 def _step_view(step: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -4926,6 +4946,23 @@ def held_fields(plans: Iterable[MatterPlan]) -> int:
     )
 
 
+def new_closure_holds(plans: Iterable[MatterPlan], today: dt.date) -> int:
+    """Closure holds first recorded by this run — not carried from the previous
+    reading — whose first night is ``today`` (`MAX_NEW_CLOSURE_HOLDS`)."""
+    day = today.isoformat()
+    return sum(
+        1
+        for plan in plans
+        for d in plan.decisions
+        if d.field == "stage"
+        and d.outcome == SyncOutcome.REVIEW_REQUIRED
+        and d.reason == LOCAL_WORK_AT_CLOSURE
+        and isinstance(d.current, dict)
+        and d.current.get(HOLD_NEW) is True
+        and d.current.get(HOLD_SINCE) == day
+    )
+
+
 def held_local_work(plans: Iterable[MatterPlan]) -> int:
     """Teemad whose closure from Lovable is held for Juristid-only work tonight."""
     return sum(
@@ -5425,6 +5462,9 @@ class RunCounts:
     #: Teemad Lovable closed whose closure is held for Juristid-only work
     #: (`LOCAL_WORK_AT_CLOSURE`, TL-02): an explained hold, never a difference.
     held_local_work: int = 0
+    #: Of them, holds that began tonight, and the cap (`MAX_NEW_CLOSURE_HOLDS`).
+    new_closure_holds: int = 0
+    closure_hold_limit: int = MAX_NEW_CLOSURE_HOLDS
     #: Codes of what went wrong without undoing the run (``SEARCH_REFRESH_FAILED``).
     warnings: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
@@ -6023,6 +6063,8 @@ def _execute(
         hold = COMPARE_ONLY
     elif len(changed) > change_limit or held - held_before > MAX_NEW_HOLDS:
         hold = BREAKER
+    elif new_closure_holds(plans, today) > MAX_NEW_CLOSURE_HOLDS:
+        hold = CLOSURE_HOLD_BREAKER
     elif not run.backup_set:
         hold = NO_BACKUP
     # Ordinary lawyer edits never stop the night: over their own limit, only the
@@ -6064,14 +6106,18 @@ def _execute(
             # Juristid-only work appeared between the plan and the write (the
             # domain guard under the Matter's lock, TL-02): planned again, the
             # closure is the hold it now is; nothing of this Teema was written.
-            final.append(
-                plan_matter(
-                    plan.state,
-                    bundle_of(snapshot, plan.state.source_id),
-                    resolver=resolver,
-                    today=today,
-                )
+            again = plan_matter(
+                plan.state,
+                bundle_of(snapshot, plan.state.source_id),
+                resolver=resolver,
+                today=today,
             )
+            # Nothing of this Teema was written: its other eligible fields wait
+            # for the next night, and say so (review P3-4).
+            again.not_executed = bool(again.eligible)
+            for decision in again.eligible:
+                decision.reason = HELD_AT_WRITE
+            final.append(again)
             continue
         except Exception as error:
             logger.warning(
@@ -6278,6 +6324,8 @@ def _execute(
         counts.held_fields = held
         counts.held_fields_before = held_before
         counts.held_local_work = held_local_work(final)
+        counts.new_closure_holds = new_closure_holds(final, today)
+        counts.closure_hold_limit = MAX_NEW_CLOSURE_HOLDS
         if search_pending:
             counts.search_refresh_pending = search_pending
             counts.warnings.append(SEARCH_REFRESH_FAILED)
@@ -6308,11 +6356,15 @@ def _execute(
             run.error = f"{PARTIAL}: {counts.failed} Teema(d) not applied; nothing half-written."
             if counts.new_topics_failed:
                 run.error += f" New topics not created: {counts.new_topics_failed}."
-        elif hold in (BREAKER, NO_BACKUP) or new_hold == NEW_BREAKER or hold_restores:
+        elif (
+            hold in (BREAKER, NO_BACKUP, CLOSURE_HOLD_BREAKER)
+            or new_hold == NEW_BREAKER
+            or hold_restores
+        ):
             run.status = SyncRunStatus.REVIEW_ONLY
             run.error = (
                 hold
-                if hold in (BREAKER, NO_BACKUP)
+                if hold in (BREAKER, NO_BACKUP, CLOSURE_HOLD_BREAKER)
                 else (NEW_BREAKER if new_hold == NEW_BREAKER else RESTORE_BREAKER)
             )
             if hold == NO_BACKUP and backup_problem:
@@ -6918,6 +6970,8 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
     if run.status == SyncRunStatus.FAILED:
         lines.append(f"EBAÕNNESTUS: {run.error.split(':')[0]}")
         return lines
+    if run.error == CLOSURE_HOLD_BREAKER:
+        lines.append("PEATATUD: ühe öö uusi ootel sulgemisi oli üle piiri; midagi ei kirjutatud.")
     lines += [
         f"Kontrollitud: {c.get('checked', 0)} teemat",
         f"Muutusteta: {c.get('unchanged', 0)}",
@@ -6927,9 +6981,11 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
         f"Vajab ülevaatamist: {c.get('review', 0)}",
         f"Vigu: {c.get('failed', 0)}",
     ]
-    if c.get("held_local_work"):
+    if c.get("held_local_work") or c.get("new_closure_holds"):
         lines.append(
-            f"Lovable'is suletud, Juristides pooleli töö tõttu ootel: {c['held_local_work']} teemat"
+            "Lovable'is suletud, Juristides pooleli töö tõttu ootel: "
+            f"{c.get('held_local_work', 0)} teemat (täna lisandus "
+            f"{c.get('new_closure_holds', 0)}/{c.get('closure_hold_limit', MAX_NEW_CLOSURE_HOLDS)})"
         )
     if c.get("not_yet_read"):
         lines.append(f"Veel lugemata (lisati pärast viimast lugemist): {c['not_yet_read']}")
@@ -6999,6 +7055,18 @@ def sync_health(*, now: dt.datetime | None = None) -> SyncHealth:
         # Written and verified, but not findable yet (LS-09): the next run, or
         # `manage.py refresh_matter_search`, refreshes them.
         return SyncHealth(False, f"search stale: {stale} Teema(d) not refreshed", last, good)
+    from app.legacy_import.lovable_closure_hold import standing_holds
+
+    today = moment.astimezone(TALLINN).date()
+    old = [h for h in standing_holds() if h.age_days(today) > MAX_CLOSURE_HOLD_AGE_DAYS]
+    if old:
+        # A hold the 14-day escalation did not resolve (review P2-3): a warning.
+        return SyncHealth(
+            False,
+            f"{len(old)} closure hold(s) older than {MAX_CLOSURE_HOLD_AGE_DAYS} days",
+            last,
+            good,
+        )
     detail = f"{ctl.mode.lower()}, last success {good.run_key}"
     held = (last.counts or {}).get("held_local_work") or 0
     if held:

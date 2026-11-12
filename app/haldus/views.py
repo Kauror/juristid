@@ -293,9 +293,10 @@ def lovable(request: HttpRequest) -> HttpResponse:
     # only, never a record's words.
     from django.utils import timezone
 
-    from app.legacy_import.lovable_closure_hold import standing_holds
+    from app.legacy_import.lovable_closure_hold import standing_holds, sync_writes
 
     today = timezone.localdate()
+    holds_write = sync_writes()
     closure_holds = [
         {
             "reference": hold.reference,
@@ -325,6 +326,7 @@ def lovable(request: HttpRequest) -> HttpResponse:
             historical=historical,
             more=more,
             closure_holds=closure_holds,
+            closure_holds_write=holds_write,
         ),
     )
 

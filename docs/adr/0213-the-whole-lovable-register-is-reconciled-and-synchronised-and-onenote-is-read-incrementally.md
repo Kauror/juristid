@@ -357,25 +357,36 @@ A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01).
 - **The step and the request are held with it**, so there is no half-applied closure. Their decisions carry the same code when Lovable changed them, and nothing is written for either.
 - The decision's `current` names the work in counts and a digest (`local_work`), the hold's first night (`held_since`, carried from the state's previous observed run while the hold stands) and its escalation day (`escalates_on`, 14 days later). There is no new table: the hold is the newest reading's decision, where every technical hold lives.
 - The domain service is the backstop. `close_matter_from_source` refuses under the Matter's lock while the work exists (`SourceClosureHeld`). Work added between the plan and the write is held at the write, and the run records the hold for that Teema, never a failure.
-- **It counts toward no breaker.** It is not a source change for `MAX_CHANGED_MATTERS`, not a restore, and it is excluded from the new-holds breaker (`BREAKER_EXEMPT_HOLDS`).
-- COMPARE and CHECK report it identically and write nothing. Repeat runs are idempotent: one hold decision per run, no event, no baseline move, the same first night.
+- **It counts toward neither Teemad breaker.** It is not a source change for `MAX_CHANGED_MATTERS`, not a restore, and it is excluded from the new-holds breaker (`BREAKER_EXEMPT_HOLDS`).
+- **Its own cap.** More than `MAX_NEW_CLOSURE_HOLDS` (20) holds *beginning* in one night (`held_since` = tonight) is a mass closure in Lovable or a broken reading. An APPLY night over it is REVIEW_ONLY with `CLOSURE_HOLD_BREAKER` and writes nothing; `sync_health` and the summary say so. **Proposed value; the owner's approval is needed.**
+- **Age warning.** A hold older than `MAX_CLOSURE_HOLD_AGE_DAYS` (21) makes `sync_health` not ok. **Proposed value; the owner's approval is needed.**
+- COMPARE and CHECK record it identically and write nothing. Repeat runs are idempotent: one hold decision per run, no event, no baseline move, the same first night.
+- **Work that appears at the write.** If the domain guard refuses at the write, that Teema's other eligible fields are recorded as not executed (`CLOSURE_HELD_AT_WRITE`) and wait for the next night.
+
+**Only while the synchronisation writes** (lead decision 12.11.2026, the more conservative choice before Approval B). A hold may lead to a write — a release — or to an escalation only in APPLY and before the final cutover:
+- **COMPARE:** the night records the hold, so it shows what APPLY would do. Haldus lists it as proposed. The Teema banner is informational only: Lovable shows the Teema closed, and the closure *would* be held once the synchronisation writes. There is no release and no escalation.
+- **OFF:** no release and no escalation.
+- **After the cutover, or with the Teema's cohort retired:** no standing hold at all, and nothing is listed or escalated.
 
 **Visibility.**
-- **Run counts:** `held_local_work`. The night's summary says «Lovable'is suletud, Juristides pooleli töö tõttu ootel: N teemat». `sync_health` stays ok and says «N closure(s) held for Juristid-only work». The hold is never reported as an unexplained difference and never suppressed.
+- **Run counts:** `held_local_work`, `new_closure_holds` and `closure_hold_limit`. The night's summary says «Lovable'is suletud, Juristides pooleli töö tõttu ootel: N teemat (täna lisandus n/20)». `sync_health` stays ok and says «N closure(s) held for Juristid-only work», unless a hold is older than 21 days. The hold is never reported as an unexplained difference and never suppressed.
 - **Haldus → Lovable'i üksikasjad** lists each held closure by reference, first night, age and kind of work (counts only), with the release.
 - **The Teema page** shows a banner, «Lovable on teema sulgenud, kuid Juristides on pooleli: …», with the counts (reader-blind, `LiveWork.phrases`), wherever the source-owned lock applies.
-- **The independent parity checks** (the in-repo oracle `tests/lovable_contract/oracle.py`, and the operator's `parity_check.py`) read such a Teema as HELD: a difference with a recorded hold, never MATCH.
+- **The in-repo independent oracle** (`tests/lovable_contract/oracle.py`) reads such a Teema as HELD: a difference with a recorded hold, never MATCH. A Lovable-owned value that differs in a way the hold does not explain (for example a step written during the hold) stays DIFFERENT.
+- **The operator's `parity_check.py`** (outside the repository) does not know the hold yet. It must be extended in the same way before the first APPLY night that can hold a closure; the rehearsal round does that.
 
 **Resolution.**
 1. **The lawyer finishes, cancels or moves the work.** The next night closes the Teema with Lovable's reason, as a source change (it counts once toward the 20).
 2. **The lawyer closes the Teema themselves.** While the hold stands, the lock frees the closure (`source_ownership.Ownership.held`, open-decisions E11), so «Lõpeta teema» with the 0152 confirmation is allowed. The next night sets Lovable's reason with `change_closure_from_source` and ends nothing again. While Lovable shows the Teema open, E3 still refuses it.
 3. **Lovable reopens it.** The next reading holds nothing, and the hold simply clears.
 4. **Release** (`lovable_closure_hold.release_closure_hold`).
-   - **Who:** the Teema's owner (from the Teema page) or a verified technical administrator (from Haldus). A person, always: there is no release without one, and nothing is attributed to anybody else.
+   - **Who:** the Teema's owner (from the Teema page) or a verified technical administrator (from Haldus). A person, always: there is no release without one, and nothing is attributed to anybody else. `close_matter_from_source` checks this itself, so no caller can pass a release around it.
+   - **When:** only while the synchronisation writes (APPLY, not cut over).
    - **What they see:** Lovable's reason, and what is cancelled in their name, in counts.
-   - **The recheck:** under the Matter's lock, the release reads the latest Lovable reading again (if it no longer closes the Teema, nothing changes). It reads the work again: the confirmation is the digest of exactly the work shown, and changed work is refused with the renewed counts.
+   - **The recheck:** under the Matter's and the state's locks, the release reads the stored Lovable reading again (if it no longer closes the Teema, nothing changes). A newer stored reading of the topic that no longer closes it the same way refuses the release. The web process holds no Lovable credentials, so there is no live re-read; both confirmation pages show when the reading was taken. It reads the work again: the confirmation is the digest of exactly the work shown, and changed work is refused with the renewed counts.
+   - **After it:** «Ava uuesti» stays refused. The hold's E11 freeing ends with the closure, although the hold's decision stays the newest reading's until the next night.
    - **The closure:** `close_matter_from_source` with Lovable's reason and stage, the hold's run provenance plus `closure_hold: RELEASED`, and the releasing person as the actor of `MATTER_CLOSED` and of every cancellation.
 
-**Escalation** (the notifications package; see the 0198 amendment of 2026-11-12). A hold still standing on its 14th day (`escalates_on`) gives its owner one «Vajab tegevust» row (category `CLOSURE_HOLD`). The next morning, every holder of `department.view_management` — the department head — gets one row. Both are keyed on the hold's escalation day, so a re-run never delivers twice, and both retire as DISCHARGED when the hold ends. The category vocabulary is a CHECK constraint, so the category adds the migration `notifications` 0004 (additive).
+**Escalation** (the notifications package; see the 0198 amendment of 2026-11-12). A hold still standing on its 14th day (`escalates_on`) gives its owner one «Vajab tegevust» row (category `CLOSURE_HOLD`). The next morning, every holder of `department.view_management` — the department head — gets one row. Both are keyed on the hold's escalation day, so a re-run never delivers twice, and both retire as DISCHARGED when the hold ends. Only while the synchronisation writes (APPLY). The category vocabulary is a CHECK constraint, so the category adds the migration `notifications` 0004: schema forward; on the way back it deletes the `CLOSURE_HOLD` rows before narrowing the CHECK.
 
 **Reopening still restores nothing** (0086 §7, 0081 §5, 0146 D9). The hold makes that loss unnecessary rather than undoing it.

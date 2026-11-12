@@ -599,13 +599,19 @@ def test_work_added_between_the_plan_and_the_write_is_held_at_the_write(world, m
             return blind_planner if name == "juristid_only_work" else getattr(closure_work, name)
 
     overview = _overview(world)
-    _close_in_lovable(world)
+    world.lovable.edit(ref(1), teema="Kirjutamata pealkiri", **CLOSED)
     monkeypatch.setattr(lovable_sync, "_closure_work", Planner())
     run = world.run()
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
     assert _stage(run).reason == LOCAL_WORK_AT_CLOSURE
     assert world.matter(ref(1)).is_open
     assert MatterWebsiteOverview.objects.get(pk=overview.pk).status == "PLANNED"
+    # The title that would have been written beside it waits, and says why
+    # (review P3-4): not executed, with its own reason.
+    title = decisions(run, ref(1))["title"]
+    assert (title.outcome, title.reason) == (SyncOutcome.ELIGIBLE, lovable_sync.HELD_AT_WRITE)
+    assert run.counts["not_executed"] == 1
+    assert world.matter(ref(1)).title != "Kirjutamata pealkiri"
 
 
 def test_haldus_lists_the_hold_with_its_age_and_an_administrator_releases_it(
@@ -641,3 +647,313 @@ def test_haldus_lists_the_hold_with_its_age_and_an_administrator_releases_it(
     assert response.status_code == 302, response
     one = world.matter(ref(1))
     assert (one.is_open, one.closed_by_id) == (False, admin.pk)
+
+
+# ---------------------------------------------------------------------------
+# Review of 12.11.2026 (P2-1 … P2-5, P3)
+# ---------------------------------------------------------------------------
+
+
+def _hold_one(world):
+    """One standing hold on 2099_1 (an overview), recorded by an APPLY night."""
+    overview = _overview(world)
+    _close_in_lovable(world)
+    world.run()
+    return overview
+
+
+def _newer_reading(document, *, at):
+    """A stored reading newer than the hold's own, from a run that read Lovable
+    but did not get as far as observing (it failed after storing the snapshot)."""
+    from app.legacy_import.lovable_sync_models import (
+        LovableSyncRun,
+        LovableSyncSnapshot,
+        SyncRunStatus,
+        SyncTrigger,
+    )
+
+    run = LovableSyncRun.objects.create(
+        run_key="test-newer-reading",
+        trigger=SyncTrigger.MANUAL,
+        mode=SyncMode.APPLY,
+        status=SyncRunStatus.FAILED,
+        started_at=at,
+        snapshot_taken_at=at,
+        mapping_version=lovable_sync.MAPPING_VERSION,
+    )
+    return LovableSyncSnapshot.objects.create(
+        run=run, taken_at=at, sha256="d" * 64, document=document
+    )
+
+
+def test_a_release_is_refused_in_compare_off_and_after_the_cutover(world):
+    """Regression: TL-02 review P2-1/P2-2. A hold leads to a write only while
+    the synchronisation writes: COMPARE and OFF refuse a release with one
+    sentence, and after the cutover there is no standing hold to release."""
+    from app.legacy_import.lovable_closure_hold import RELEASE_NOT_WRITING, standing_holds
+
+    _hold_one(world)
+    matter = world.matter(ref(1))
+    digest = release_preview(matter).digest
+    for mode in (SyncMode.COMPARE, SyncMode.OFF):
+        lovable_sync.set_mode(mode, reason="kontraktitest")
+        with refused(RELEASE_NOT_WRITING):
+            release_closure_hold(matter=matter, actor=world.person(AVA), confirmed=digest)
+        assert world.matter(ref(1)).is_open
+    lovable_sync.cut_over(reason="kontraktitest")
+    assert standing_holds() == []
+    with refused(RELEASE_NOT_WRITING):
+        release_closure_hold(matter=matter, actor=world.person(AVA), confirmed=digest)
+    assert world.matter(ref(1)).is_open
+
+
+def test_compare_shows_an_informational_banner_without_a_release(world, rf):
+    """Regression: TL-02 review P2-1. In COMPARE the hold is recorded and, where
+    the banner is drawn (#618 locks in COMPARE too), it says what *would*
+    happen once the synchronisation writes: no release form, and no promise
+    that the night closes the Teema."""
+    from django.template.loader import render_to_string
+
+    from app.matters.views import _closure_hold_context
+
+    _overview(world)
+    _close_in_lovable(world)
+    run = world.run(mode=SyncMode.COMPARE)
+    assert _stage(run).reason == LOCAL_WORK_AT_CLOSURE
+    matter = world.matter(ref(1))
+    request = rf.get("/")
+    request.user = world.person(AVA)
+    context = _closure_hold_context(request, matter, held=True)
+    assert context["closure_hold"]["writes"] is False
+    assert context["closure_hold"]["can_release"] is False
+    body = render_to_string(
+        "matters/partials/matter_banner.html", {"matter": matter, **context}, request=request
+    )
+    assert "data-closure-hold-proposed" in body
+    assert "Kui sünkroonimine hakkab Juristidesse kirjutama" in body
+    assert "data-closure-hold-release" not in body
+    assert "järgmine öine sünkroonimine suleb" not in body
+
+
+def test_no_escalation_in_compare_off_or_for_a_retired_cohort(world):
+    """Regression: TL-02 review P2-1/P2-2. The 14-day rows exist only while the
+    synchronisation writes and the Teema's cohort is live."""
+    from app.legacy_import.lovable_sync_models import LovableSyncCohort
+    from app.notifications.deadlines import reconcile_deadline_notifications
+    from app.notifications.enums import NotificationCategory
+    from app.notifications.models import DeadlineNotification
+
+    factories.DepartmentHeadFactory()
+    _hold_one(world)
+    rows = DeadlineNotification.objects.filter(category=NotificationCategory.CLOSURE_HOLD)
+    for mode in (SyncMode.COMPARE, SyncMode.OFF):
+        lovable_sync.set_mode(mode, reason="kontraktitest")
+        reconcile_deadline_notifications(dt.date(2026, 11, 26))
+        reconcile_deadline_notifications(dt.date(2026, 11, 27))
+        assert not rows.exists(), mode
+    lovable_sync.set_mode(SyncMode.APPLY, reason="kontraktitest")
+    cohort = LovableSyncState.objects.get(matter=world.matter(ref(1))).cohort
+    LovableSyncCohort.objects.filter(key=cohort).update(retired_at=NIGHT)
+    reconcile_deadline_notifications(dt.date(2026, 11, 26))
+    assert not rows.exists()
+
+
+def test_more_than_the_cap_of_new_closure_holds_stops_the_night(world, monkeypatch):
+    """Regression: TL-02 review P2-3. More closure holds beginning in one night
+    than `MAX_NEW_CLOSURE_HOLDS` (20, proposed, owner approval needed) is a
+    REVIEW_ONLY night with its own code that writes nothing; health and the
+    summary say so. The next night those holds are no longer new."""
+    assert lovable_sync.MAX_NEW_CLOSURE_HOLDS == 20
+    monkeypatch.setattr(lovable_sync, "MAX_NEW_CLOSURE_HOLDS", 1)
+    _overview(world, 1)
+    _overview(world, 2)
+    _close_in_lovable(world, 1)
+    _close_in_lovable(world, 2)
+    world.lovable.edit(ref(3), teema="Ootav pealkiri")
+    run = world.run()
+    assert (run.status, run.error) == (
+        SyncRunStatus.REVIEW_ONLY,
+        lovable_sync.CLOSURE_HOLD_BREAKER,
+    )
+    assert run.counts["new_closure_holds"] == 2
+    assert world.matter(ref(3)).title != "Ootav pealkiri"
+    health = lovable_sync.sync_health(now=run.started_at + dt.timedelta(minutes=5))
+    assert not health.ok and lovable_sync.CLOSURE_HOLD_BREAKER in health.detail
+    assert any("PEATATUD" in line for line in lovable_sync.summary_lines(run))
+    later = world.run()
+    assert later.status == SyncRunStatus.SUCCEEDED, later.error
+    assert later.counts["new_closure_holds"] == 0
+    assert world.matter(ref(3)).title == "Ootav pealkiri"
+
+
+def test_a_hold_older_than_21_days_makes_health_not_ok(world):
+    """Regression: TL-02 review P2-3. `MAX_CLOSURE_HOLD_AGE_DAYS` (21, proposed,
+    owner approval needed): the escalation did not resolve it — a warning."""
+    assert lovable_sync.MAX_CLOSURE_HOLD_AGE_DAYS == 21
+    _hold_one(world)
+    later = world.run(at=NIGHT + dt.timedelta(days=22))
+    assert later.status == SyncRunStatus.SUCCEEDED, later.error
+    health = lovable_sync.sync_health(now=later.started_at + dt.timedelta(minutes=5))
+    assert not health.ok
+    assert "older than 21 days" in health.detail
+
+
+def test_a_newer_stored_reading_that_reopens_refuses_the_release(world):
+    """Regression: TL-02 review P2-4. The web process cannot read Lovable live,
+    so the release rereads the stored readings: a newer one (a run that read
+    Lovable but did not observe) in which the Teema is open again refuses it.
+    The preview names when the hold's reading was taken."""
+    import copy
+
+    from app.legacy_import.lovable_closure_hold import NEWER_READING_DISAGREES
+
+    _hold_one(world)
+    matter = world.matter(ref(1))
+    preview = release_preview(matter)
+    state = LovableSyncState.objects.select_related("observed_run").get(matter=matter)
+    assert preview.read_at == state.observed_run.snapshot_taken_at
+    document = copy.deepcopy(state.observed_run.snapshot.document)
+    document["cohort"][str(state.source_id)]["row"]["hetkeseis"] = "Riigikogus"
+    _newer_reading(document, at=state.observed_run.snapshot_taken_at + dt.timedelta(hours=2))
+    with refused(NEWER_READING_DISAGREES):
+        release_closure_hold(matter=matter, actor=world.person(AVA), confirmed=preview.digest)
+    assert world.matter(ref(1)).is_open
+
+
+def test_the_migration_reverse_deletes_the_closure_hold_rows(world):
+    """Regression: TL-02 review P2-5. Back to `notifications` 0003 the narrower
+    CHECK cannot hold `CLOSURE_HOLD` rows: the reverse deletes them, and only
+    them."""
+    import importlib
+
+    from django.apps import apps
+
+    from app.notifications.enums import (
+        NotificationCategory,
+        NotificationKind,
+        NotificationPurpose,
+        NotificationSource,
+    )
+    from app.notifications.models import DeadlineNotification
+
+    matter = world.matter(ref(1))
+    common = {
+        "recipient": world.person(AVA),
+        "matter": matter,
+        "source_id": matter.pk,
+        "source_date": dt.date(2026, 11, 26),
+        "purpose": NotificationPurpose.ON_DAY,
+        "offset_days": 0,
+        "kind": NotificationKind.ACTION,
+        "due_on": dt.date(2026, 11, 26),
+        "source_type": NotificationSource.MATTER,
+    }
+    DeadlineNotification.objects.create(category=NotificationCategory.CLOSURE_HOLD, **common)
+    kept = DeadlineNotification.objects.create(
+        category=NotificationCategory.OPINION_DEADLINE, **common
+    )
+    migration = importlib.import_module("app.notifications.migrations.0004_closure_hold_category")
+    migration._delete_closure_hold_rows(apps, None)
+    assert list(DeadlineNotification.objects.values_list("pk", flat=True)) == [kept.pk]
+
+
+def test_reopen_is_not_freed_after_a_release(world, client):
+    """Regression: TL-02 review P3-2. The hold frees the closure while it stands;
+    once the Teema is closed it frees nothing more, so «Ava uuesti» is refused
+    and not offered until Lovable reopens it."""
+    from django.urls import reverse
+
+    from app.matters.services import reopen_matter_into_stage
+
+    _hold_one(world)
+    matter = world.matter(ref(1))
+    release_closure_hold(
+        matter=matter, actor=world.person(AVA), confirmed=release_preview(matter).digest
+    )
+    with refused("Teemat ei saa Juristides uuesti avada."):
+        reopen_matter_into_stage(
+            matter=world.matter(ref(1)),
+            stage=world.matter(ref(2)).stage,
+            actor=world.person(AVA),
+        )
+    client.force_login(world.person(AVA))
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert "data-source-owned-reopen" in body
+
+
+def test_the_domain_service_checks_the_releaser_and_has_no_bypass(world):
+    """Regression: TL-02 review P3-3. `close_matter_from_source` refuses a
+    `released_by` who may not release, whatever its caller checked, and
+    `close_matter` offers no successor-visibility bypass keyword."""
+    import inspect
+
+    from app.legacy_import.lovable_closure_hold import RELEASE_NOT_ALLOWED
+
+    _hold_one(world)
+    matter = world.matter(ref(1))
+    with refused(RELEASE_NOT_ALLOWED):
+        close_matter_from_source(
+            matter=matter,
+            disposition=Disposition.COMPLETED,
+            released_by=world.person(UKU),
+            confirmed=release_preview(matter).digest,
+        )
+    assert world.matter(ref(1)).is_open
+    assert "successor_from_source" not in inspect.signature(close_matter).parameters
+
+
+def test_a_department_head_who_is_not_the_owner_and_a_reader_are_refused(world):
+    """Regression: TL-02 review P3-9. Only the owner or a verified administrator:
+    a department head who is not the owner and a reader are refused at the
+    service."""
+    from app.legacy_import.lovable_closure_hold import RELEASE_NOT_ALLOWED
+
+    _hold_one(world)
+    matter = world.matter(ref(1))
+    digest = release_preview(matter).digest
+    for person in (factories.DepartmentHeadFactory(), factories.ReaderFactory()):
+        with refused(RELEASE_NOT_ALLOWED):
+            release_closure_hold(matter=matter, actor=person, confirmed=digest)
+    assert world.matter(ref(1)).is_open
+
+
+def test_a_released_kaasamine_wait_is_closed_in_the_owners_name(world):
+    """Regression: TL-02 review P3-9. The wait a release ends names the person
+    who released it, beside the hold's run provenance."""
+    engagement = _wait(world)
+    _close_in_lovable(world)
+    hold_run = world.run()
+    matter = world.matter(ref(1))
+    ava = world.person(AVA)
+    events = set(ChangeEvent.objects.values_list("pk", flat=True))
+    release_closure_hold(matter=matter, actor=ava, confirmed=release_preview(matter).digest)
+    closed = ChangeEvent.objects.exclude(pk__in=events).get(
+        event_type="ENGAGEMENT_FEEDBACK_CLOSED", object_id=engagement.pk
+    )
+    assert closed.actor_id == ava.pk
+    assert closed.payload["provenance"]["sync_run"] == str(hold_run.pk)
+    assert closed.payload["provenance"]["closure_hold"] == "RELEASED"
+
+
+def _verdicts(world, reference):
+    return {
+        c.field: c.verdict
+        for c in oracle.compare(world.lovable, today=world.today)
+        if c.reference == reference
+    }
+
+
+def test_the_oracle_does_not_swallow_a_wrong_step_written_during_a_hold(world):
+    """Regression: TL-02 review P3-9. During a hold whose step Lovable did not
+    change, the step must still read as Lovable states it: a different step
+    written meanwhile is DIFFERENT, not HELD."""
+    from app.workflow.services import set_next_action
+
+    _overview(world)
+    world.lovable.edit(ref(1), hetkeseis="jõustunud")  # the step sentence stays
+    world.run()
+    verdicts = _verdicts(world, ref(1))
+    assert verdicts["lifecycle"] == oracle.HELD
+    assert verdicts["step"] == oracle.MATCH
+    set_next_action(matter=world.matter(ref(1)), text="Vale samm", actor=None)
+    assert _verdicts(world, ref(1))["step"] == oracle.DIFFERENT

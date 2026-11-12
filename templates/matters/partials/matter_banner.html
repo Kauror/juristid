@@ -84,16 +84,25 @@ paragraph. The banner's own action slot keeps it inside and at the right.
     the digest of exactly the work it names (docs/adr/0152 §7): work that
     changed after the page was drawn is refused with the renewed counts.
   {% endcomment %}
-  <div class="banner banner--closed" id="sulgemine-ootel" data-closure-hold>
+  <div class="banner banner--hold" id="sulgemine-ootel" data-closure-hold{% if not closure_hold.writes %} data-closure-hold-proposed{% endif %}>
+    {% if not closure_hold.writes %}
+      {% comment %}
+        COMPARE (lead decision 12.11.2026, review P2-1): informational only —
+        what would be held once the synchronisation writes. No release and no
+        promise about the night.
+      {% endcomment %}
+      <p class="banner__text">{{ closure_hold.proposed }}{% if closure_hold.phrases %}: {{ closure_hold.phrases }}{% endif %}.</p>
+    {% else %}
     <p class="banner__text">
       {% if closure_hold.phrases %}<strong>{{ closure_hold.banner }}:</strong> {{ closure_hold.phrases }}.{% else %}<strong>{{ closure_hold.done }}</strong>{% endif %}
       <span class="muted">(ootel alates {{ closure_hold.since|date:"j.n.Y" }})</span>
     </p>
     {% if closure_hold.phrases %}<p class="banner__text">{{ closure_hold.help }}</p>{% endif %}
+    {% endif %}
     {% if closure_hold.can_release %}
       <form class="banner__actions" method="post" action="{% url 'matters:closure_hold_release' pk=matter.pk %}" data-closure-hold-release>
         {% csrf_token %}
-        <p class="banner__text">{{ closure_hold.statement }}</p>
+        <p class="banner__text">{{ closure_hold.statement }}{% if closure_hold.read_at %} <span class="muted">(Lovable'i lugemine {{ closure_hold.read_at|date:"j.n.Y H:i" }})</span>{% endif %}</p>
         <label class="cx-check" for="id_sulgemine_kinnitus">
           <input type="checkbox" name="kinnitus" id="id_sulgemine_kinnitus" value="{{ closure_hold.digest }}" required>
           <span>{{ closure_hold.label }}</span>

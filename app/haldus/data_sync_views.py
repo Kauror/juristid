@@ -305,10 +305,19 @@ def release_hold(request: HttpRequest) -> HttpResponseBase:
 
     Counts only: an administrator reads no business content (docs/adr/0181), so
     the page names the Teema by its reference and the work by its kinds."""
-    from app.legacy_import.lovable_closure_hold import release_closure_hold, release_preview
+    from app.legacy_import.lovable_closure_hold import (
+        RELEASE_NOT_WRITING,
+        release_closure_hold,
+        release_preview,
+        sync_writes,
+    )
     from app.matters.models import Matter
 
     _require(request)
+    if not sync_writes():
+        # Only while the synchronisation writes (lead decision 12.11.2026).
+        messages.info(request, RELEASE_NOT_WRITING)
+        return redirect("haldus:lovable")
     source = request.POST if request.method == "POST" else request.GET
     reference = str(source.get("viide", "")).strip()
     year, _sep, number = reference.partition("_")

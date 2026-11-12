@@ -58,8 +58,12 @@
 
   {% if closure_holds %}
   <section class="panel" aria-labelledby="sunk-sulgemine" data-closure-holds>
-    <h2 class="acctsection__title" id="sunk-sulgemine">Ootel sulgemised</h2>
+    <h2 class="acctsection__title" id="sunk-sulgemine">Ootel sulgemised{% if not closure_holds_write %} (ettepanek){% endif %}</h2>
+    {% if closure_holds_write %}
     <p class="acctnote">Lovable on need teemad sulgenud, kuid Juristides on pooleli töö. Midagi ei tühistatud; 14 päeva pärast teavitatakse vastutajat ja osakonnajuhti.</p>
+    {% else %}
+    <p class="acctnote" data-closure-holds-proposed>Sünkroonimine praegu ainult võrdleb: need sulgemised jääksid pooleli töö tõttu ootele, kui see hakkab kirjutama. Vabastamist ega teavitusi pole.</p>
+    {% endif %}
     <table class="data-table dsync__table">
       <thead><tr><th scope="col">Teema</th><th scope="col">Ootel alates</th><th scope="col">Päevi</th><th scope="col">Pooleli</th><th scope="col"><span class="visually-hidden">Tegevus</span></th></tr></thead>
       <tbody>
@@ -69,7 +73,7 @@
             <td>{{ hold.since|date:"j.n.Y" }}</td>
             <td>{{ hold.age }}{% if hold.escalated %} <span class="statechip statechip--problem">üle 14 päeva</span>{% endif %}</td>
             <td>{{ hold.work|default:"—" }}</td>
-            <td><a href="{% url 'haldus:data_sync_release_hold' %}?viide={{ hold.reference|urlencode }}">Vabasta…</a></td>
+            <td>{% if closure_holds_write %}<a href="{% url 'haldus:data_sync_release_hold' %}?viide={{ hold.reference|urlencode }}">Vabasta…</a>{% endif %}</td>
           </tr>
         {% endfor %}
       </tbody>
