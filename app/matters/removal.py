@@ -285,6 +285,13 @@ def remove_matter_record(
         return current
     if expected_revision is not None and record_revision(current) != expected_revision:
         raise RecordRemovalConflict(current)
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.matters.source_ownership import refuse_lovable_commencement_change
+
+    if type(current) in (MatterEffectiveDate, MatterImportantDate):
+        # A commencement from Lovable is Lovable's on a synchronised Teema
+        # (audit 2026-11-11 TL-01); a person's own date is removable as ever.
+        refuse_lovable_commencement_change(current, actor=actor)
 
     current.removed_at = timezone.now()
     current.removed_by = actor

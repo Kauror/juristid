@@ -75,6 +75,7 @@ from app.matters.models import (
     TagAssignment,
 )
 from app.matters.position_sources import live_source_document_count
+from app.matters.source_ownership import refuse_source_owned_change
 from app.submissions.models import Submission
 from app.workflow.dates import period_bounds
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
@@ -677,6 +678,8 @@ def assign_matter(
     matter.owner = previous
     if previous == owner:
         return matter
+    # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(matter, "owner", actor=actor)
     # A colleague changing who answers for a file needs `work.assign` — both
     # lawyer roles by default, withdrawable per person (docs/adr/0145 §3). Asked
     # here as well as at every route, so no view can be the one that forgot.
@@ -875,6 +878,11 @@ def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> Stage
     locked = lock_matter_for_write(matter.pk)
     if not locked.is_open and locked.stage_id != getattr(stage, "pk", None):
         raise DomainError(CLOSED_MATTER_STAGE_REFUSAL)
+    if locked.stage_id != getattr(stage, "pk", None):
+        # Lovable's `hetkeseis` on a synchronised Teema (audit 2026-11-11
+        # TL-01) — whichever surface moves it: the header, `Muuda teemat`, a
+        # composer's `Uus hetkeseis`. The same stage again is not a move.
+        refuse_source_owned_change(locked, "stage", actor=actor)
     return _move_locked_stage(locked=locked, matter=matter, stage=stage, actor=actor, origin=origin)
 
 
@@ -1043,6 +1051,10 @@ def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
     previous = matter.track
     if previous == track:
         return matter
+    if (previous == Track.KODA_INITIATIVE) != (track == Track.KODA_INITIATIVE):
+        # Whether it is a Chamber initiative is Lovable's `koja_ettepanek` on a
+        # synchronised Teema (audit 2026-11-11 TL-01); the other tracks are not.
+        refuse_source_owned_change(matter, "track", actor=actor)
 
     matter.track = track
     matter.save(update_fields=["track", "updated_at"])
@@ -1288,6 +1300,8 @@ def set_matter_dates(
         proposed["received_date"] = received_date
     refuse_new_incoming_dates(matter, **proposed)
     if received_date is not _UNSET and received_date != matter.received_date:
+        # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
+        refuse_source_owned_change(matter, "received", actor=actor)
         changed["received_from"] = (
             matter.received_date.isoformat() if matter.received_date else None
         )
@@ -1603,6 +1617,8 @@ def set_matter_title(
     cleaned = cleaned[:1000]
     if cleaned == matter.title:
         return matter
+    # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(matter, "title", actor=actor)
 
     previous = matter.title
     matter.title = cleaned
@@ -1913,6 +1929,8 @@ def set_legal_instruments(
     after = {item.pk for item in chosen}
     if before == after:
         return matter
+    # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(matter, "legal_act", actor=actor)
     refuse_several_legal_instruments(chosen)
 
     matter.legal_instruments.set(chosen)
@@ -5621,6 +5639,10 @@ def close_matter(
             raise DomainError("Järglase saab määrata ainult siis, kui töö jätkub teise teema all.")
         if successor.pk == matter.pk:
             raise DomainError("Teema ei saa jätkuda iseenda all.")
+    # Whether a synchronised Teema is open, and what it continues under, is
+    # Lovable's (audit 2026-11-11 TL-01): «Lõpeta teema» would be undone at
+    # night and its `Järglane` dropped.
+    refuse_source_owned_change(matter, "close", actor=actor)
 
     # The same row set_next_action locks, in the same order. Whichever
     # transaction reaches the Matter row first wins: a closure that lands first
@@ -6053,6 +6075,8 @@ def reopen_matter_into_stage(
     locked = lock_matter_for_write(matter.pk)
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
+    # Lovable's lifecycle on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked, "reopen", actor=actor)
 
     # Directly on the row locked above, past `_move_stage`'s closed-file
     # refusal: this is the one act that moves a closed file's stage, and it
@@ -6109,6 +6133,8 @@ def reopen_matter(
     locked = lock_matter_for_write(matter.pk)
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
+    # Lovable's lifecycle on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked, "reopen", actor=actor)
 
     # Written through the instance the caller passed, as it always was. The
     # row is this transaction's whichever Python object the UPDATE goes

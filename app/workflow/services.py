@@ -184,8 +184,13 @@ def set_next_action_for_new_work(
     The lock is the one `set_next_action` takes anyway, and re-entrant.
     """
     from app.matters.locks import lock_matter_for_write
+    from app.matters.source_ownership import refuse_source_owned_change
 
     locked_matter = lock_matter_for_write(matter.pk)
+    # The current step is Lovable's `järgmiseks` on a synchronised Teema, a
+    # blank one included (audit 2026-11-11 TL-01): a person's step there would
+    # be replaced or cancelled at night.
+    refuse_source_owned_change(locked_matter, "next_action", actor=actor)
     return set_next_action(
         matter=locked_matter,
         text=text,
@@ -758,6 +763,11 @@ def acknowledge_review(
     refuse_an_unsupported_precision(next_review_date, date_precision)
     if (action.target_date, action.date_precision) == (next_review_date, date_precision):
         return action
+    from app.matters.source_ownership import refuse_source_owned_change
+
+    # The step's day is Lovable's `tegevuse_tahtaeg` on a synchronised Teema
+    # (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(action.matter, "next_action", actor=actor)
 
     previous = action.target_date
     action.target_date = next_review_date

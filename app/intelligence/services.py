@@ -42,6 +42,7 @@ from app.intelligence.models import (
     MatterImportantDate,
     MatterWorkVictory,
 )
+from app.matters.source_ownership import refuse_lovable_commencement_change
 from app.workflow.dates import period_bounds
 from app.workflow.enums import DatePrecision
 
@@ -288,6 +289,9 @@ def update_important_date(
         note=note.strip(),
     ):
         return record
+    # A commencement from Lovable is Lovable's on a synchronised Teema (audit
+    # 2026-11-11 TL-01); a person's own date stays theirs.
+    refuse_lovable_commencement_change(record, actor=actor)
 
     before = {
         "title": record.title,
@@ -329,6 +333,9 @@ def cancel_important_date(
     record = _lock_for_edit(record, None)
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat tähtaega saab tühistada.")
+    # A commencement from Lovable is Lovable's on a synchronised Teema (audit
+    # 2026-11-11 TL-01); a person's own date stays theirs.
+    refuse_lovable_commencement_change(record, actor=actor)
 
     record.status = FactStatus.CANCELLED
     record.save(update_fields=["status", "updated_at"])
@@ -464,6 +471,9 @@ def update_effective_date(
         source_url=source_url.strip(),
     ):
         return record
+    # A commencement from Lovable is Lovable's on a synchronised Teema (audit
+    # 2026-11-11 TL-01); a person's own date stays theirs.
+    refuse_lovable_commencement_change(record, actor=actor)
 
     before = {
         "kind": record.kind,
@@ -516,6 +526,9 @@ def cancel_effective_date(
     record = _lock_for_edit(record, None)
     if record.status != FactStatus.ACTIVE:
         raise DomainError("Ainult kehtivat jõustumist saab tühistada.")
+    # A commencement from Lovable is Lovable's on a synchronised Teema (audit
+    # 2026-11-11 TL-01); a person's own date stays theirs.
+    refuse_lovable_commencement_change(record, actor=actor)
 
     record.status = FactStatus.CANCELLED
     record.save(update_fields=["status", "updated_at"])

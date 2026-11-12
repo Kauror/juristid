@@ -38,12 +38,17 @@
   and posted back as it is stored; it moves only through `Ava uuesti` (RULE-03,
   docs/adr/0131 §12). Never set on `Uus teema`.
 {% endcomment %}
-{% if form.stage_held %}
+{% if form.stage_held or form.source_owned %}
 <fieldset class="field">
   <legend class="field__label">{% field_label form.stage %}</legend>
   <input type="hidden" name="{{ form.stage.html_name }}" value="{{ form.matter.stage_id|default_if_none:'' }}">
   <p class="field__value">{% if form.matter.stage %}{{ form.matter.stage.label_et }}{% else %}Määramata{% endif %}</p>
-  <p class="field__help">{{ form.stage_held_note }}</p>
+  {% comment %}
+    `form.source_owned` — `Muuda teemat` on a synchronised Teema: the stage is
+    Lovable's `hetkeseis` (audit 2026-11-11 TL-01), stated with its `i`.
+  {% endcomment %}
+  {% if form.source_owned %}{% include "components/source_owned_tip.html" with field="stage" %}
+  {% else %}<p class="field__help">{{ form.stage_held_note }}</p>{% endif %}
   {% if form.stage.errors %}
     <span class="field__error" id="{{ form.stage.auto_id }}_error">{{ form.stage.errors|first }}</span>
   {% endif %}

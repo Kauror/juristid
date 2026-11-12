@@ -94,6 +94,7 @@ from app.matters.services import (
     plan_website_overview,
     publish_website_overview,
 )
+from app.matters.source_ownership import refuse_source_owned_change
 from app.workflow.dates import DAY_OUT_OF_RANGE, is_supported_day
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
@@ -375,6 +376,9 @@ def complete_current_action(
     # `DocumentVersion`, several `ChangeEvent`s — which is precisely the shape
     # that turns a plain `FOR UPDATE` into a deadlock.
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    # Finishing the current step is changing it: on a synchronised Teema it is
+    # Lovable's `järgmiseks`, put back at night (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked_matter, "next_action", actor=author)
     current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
     if moves_stage:

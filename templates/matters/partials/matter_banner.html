@@ -54,7 +54,13 @@ paragraph. The banner's own action slot keeps it inside and at the right.
       reading «Jõustunud». Never `Määramata`, and never a stage that would close
       it again (`offered_reopening_stages`).
     {% endcomment %}
-    {% if can_write and reopen_form %}
+    {% if source_owned %}
+      {% comment %}
+        Whether a synchronised Teema is open is Lovable's (audit 2026-11-11
+        TL-01): a reopening here was closed again at night, so it is not offered.
+      {% endcomment %}
+      <p class="banner__text" data-source-owned-reopen>Teema avatakse uuesti Lovable'is.{% include "components/source_owned_tip.html" with field="reopen" %}</p>
+    {% elif can_write and reopen_form %}
       <form class="banner__actions banner__reopen" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
         {% csrf_token %}
         <label class="visually-hidden" for="{{ reopen_form.stage.id_for_label }}">Uus hetkeseis</label>

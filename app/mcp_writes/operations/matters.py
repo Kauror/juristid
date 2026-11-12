@@ -301,6 +301,7 @@ class UpdateMatter:
                 raise OperationRefused("invalid_argument", "A Teema's title cannot be empty.")
             if title != current["title"]:
                 canonical["title"] = title
+                common.refuse_source_owned(matter, "title")
                 changes.append(Change("title", "Pealkiri", current["title"], title))
         if args.clear_brief_summary:
             if current["brief_summary"]:
@@ -466,6 +467,7 @@ class AssignMatter:
         common.require_writer(user)
         matter = common.resolve_matter(user, args.matter)
         _require_assignable(matter)
+        common.refuse_source_owned(matter, "owner")
         if not _may_assign(user):
             raise OperationRefused("forbidden", ASSIGN_REFUSED)
         person = (

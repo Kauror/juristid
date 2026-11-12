@@ -174,6 +174,17 @@ def require_writable_matter(matter: Any) -> None:
         raise OperationRefused("domain_rule", CLOSED)
 
 
+def refuse_source_owned(matter: Any, key: str) -> None:
+    """A field Lovable owns on a synchronised Teema (audit 2026-11-11 TL-01),
+    refused when the change is proposed, in the service's own words — so nobody
+    is asked to approve a change the commit would refuse
+    (`app.matters.source_ownership`; the service refuses it again at commit)."""
+    from app.matters.source_ownership import is_source_owned, refusal_message
+
+    if is_source_owned(matter):
+        raise OperationRefused("domain_rule", refusal_message(key))
+
+
 def lock_matter(matter_id: Any) -> Any:
     """The canonical Matter row lock (`FOR NO KEY UPDATE`), or not_found."""
     from app.matters.locks import lock_matter_for_write

@@ -683,3 +683,30 @@ separately promoted (B)?
 `matter_banner.html`, `set_next_action`'s refusal, and — under B —
 `app/reporting/selectors/activity.py::open_actions`, `?tegevus=` and the
 register's «Avatud» label.
+
+## Surfaced by the post-audit round (2026-11-12): fields Lovable owns (TL-01 = LS-04)
+
+Since 11.11 the nightly synchronisation puts Lovable's value back over a local
+edit (`lovable_sync.FIELD_POLICY`, reason `RESTORED`). So on a synchronised
+Teema the source-owned fields are now read-only on every surface and refused by
+the services (`app/matters/source_ownership.py`): title, Vastutaja, Hetkeseis,
+the current step, Arvamuse tähtaeg, the Koja-algatus mark, Õigusakt, Saabus,
+Lovable's own commencements, closing and reopening. Each exception below is
+implemented in its **conservative** form (refused, or kept exactly as before);
+each is the owner's to change.
+
+| # | Exception | Implemented now | If the owner wants it editable |
+| --- | --- | --- | --- |
+| E1 | A lawyer's own Järgmiseks where Lovable's `jargmiseks` is blank | Refused, with «Lovable'is pole järgmist tegevust märgitud; uue tegevuse saab määrata Lovable'is.» A dated planned action beside an existing step is still allowed. | The sync must stop cancelling a step it did not derive while `jargmiseks` stays blank (a sync rule change, re-rehearsed on the production copy). Otherwise the step is cancelled every night. |
+| E2 | «✓ Tehtud» on Lovable's current step | Refused (the toolbar is not drawn). An opinion follow-up check is still finished as before. | The note is kept, but the night creates the same step again until Lovable changes. Lawyers would see the step come back after they finished it. |
+| E3 | «Lõpeta teema» on a Teema Lovable still shows open (and «Jätkub teemas») | Refused. | The night reopens it and drops the successor, and the follow-ups the closing ended are not restored (TL-02). This needs the TL-02 decision first. |
+| E4 | «Ava uuesti» on a Teema Lovable shows closed | Refused. The banner says «Teema avatakse uuesti Lovable'is.» | The night closes it again. Only a change in Lovable reopens one. |
+| E5 | Ending Lovable's opinion request in Juristid | **Allowed** as answered or declined, because the night holds that case and does not undo it (`ANSWERED_IN_JURISTID`). Withdrawing it is refused. Setting, moving or replacing the date is refused. | Confirm that answered and declined stay allowed. Withdrawal would be undone by the night. |
+| E6 | `Uus hetkeseis` offered inside Juristid-only composers («✓ Tehtud», Koja arvamus, menetluse areng) | The composer is still drawn. Choosing another stage refuses the whole save with the Hetkeseis sentence. | Either hide the stage choice on synchronised Teemas (UI follow-up), or let the composers move the stage and accept the nightly restore. |
+| E7 | Lists: the owner select on register/Osakond rows and «Nihuta kuupäeva» on Minu asjad | Still drawn. The server refuses, and the person sees the reason. | UI follow-up: hide them for synchronised rows. This costs one query per list (`lovable_sync_state` prefetch). |
+| E8 | Õigusakt «Muu» text, and moving between non-initiative tracks | The «Muu» text is disabled with the instrument on «Muuda teemat». Moving between two non-initiative tracks stays editable, because Lovable states only *initiative or not*. | Nothing is needed unless the owner wants the «Muu» text editable on its own. |
+| E9 | When the lock applies | Already now, while production still runs COMPARE (Approval B pending). Nothing is restored yet, so today the lock prevents edits that the first APPLY night would undo. | The alternative is to lock only once APPLY is on. Edits made before then are put back on the first APPLY night. |
+| E10 | The closed historical register (`lovable-history`) | Covered: reopening and the other fields are refused, the same as on `is_authoritative`. | Exempt the archive. A reopened history Teema is closed again by the night. |
+
+**Owner:** the owner (Kaur), with the department head for E1–E3. **The
+question:** which of E1–E10 should change from the conservative default?

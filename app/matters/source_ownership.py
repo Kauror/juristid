@@ -1,0 +1,208 @@
+"""What Lovable owns on a synchronised Teema, and the one guard that keeps a person off it.
+
+Since 11.11.2026 Lovable is the source of truth for every Teema the nightly
+synchronisation follows (`app.legacy_import.lovable_sync.FIELD_POLICY`, owner
+decision 11.11): a value a person changes in Juristid while Lovable did not
+change is put back the next night («Lovable'i väärtus taastati»). Offering
+those edits made the page dishonest — the work was undone without a word
+(audit 2026-11-11 TL-01 = LS-04). So on a synchronised Teema the source-owned
+facts are read-only, here and on every surface that writes them:
+
+* the **pages** draw them without an editor, with an `i` that says where they
+  are changed (`source_owned` in the Teema contexts,
+  `components/source_owned_tip.html`);
+* the **services** refuse a person's change (`refuse_source_owned_change`),
+  with a sentence that says why — so a stale tab, a crafted POST and an MCP
+  write are refused exactly like the page would have been.
+
+**Who is refused.** A change *made by a person*: a call whose ``actor`` is a
+user. Every web view and every MCP write passes its user as the actor (the
+audit trail requires it); the synchronisation writes with no actor and its
+`LOVABLE_SYNC` provenance (`lovable_sync` module docstring), as do the
+importers that create and rebase these Teemas. There is no keyword a caller
+passes to be let through.
+
+**What stays editable** is everything Lovable does not own: notes, documents,
+submissions and opinions, evidence, a person's own important and commencement
+dates, planned Tegevused beside the current step, related materials, the
+summary, the senders and the policy areas. A native Teema, a Teema of a retired
+cohort and a deleted one are never restricted.
+
+**Unchanged values are not changes.** Each guarded service returns early when
+handed the value it already holds, and the guard sits after that return, so
+`Muuda teemat` — which posts every field — still saves a correction of the
+summary on a synchronised Teema.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from app.core.errors import DomainError
+
+#: The page's notice: where these facts come from and where they are changed.
+SOURCE_OWNED_NOTICE = (
+    "Need andmed pärinevad Lovable'i registrist. Muudatused tuleb teha algses registris."
+)
+#: The one-sentence `i` beside each source-owned field.
+SOURCE_OWNED_TIP = "See väli pärineb Lovable'i registrist ja seda saab muuta ainult seal."
+#: Said where the current step would be set on a synchronised Teema whose
+#: Lovable `järgmiseks` is blank: a blank there is still Lovable's answer.
+NO_SOURCE_STEP_NOTE = (
+    "Lovable'is pole järgmist tegevust märgitud; uue tegevuse saab määrata Lovable'is."
+)
+
+#: Guard keys → what the refusal names (Estonian, the object of «ei saa muuta»).
+_REFUSED: dict[str, str] = {
+    "title": "Pealkirja ei saa Juristides muuta.",
+    "owner": "Vastutajat ei saa Juristides muuta.",
+    "stage": "Hetkeseisu ei saa Juristides muuta.",
+    "next_action": "Praegust tegevust ei saa Juristides muuta.",
+    "opinion_deadline": "Arvamuse tähtaega ei saa Juristides muuta.",
+    "track": "Koja ettepaneku märget ei saa Juristides muuta.",
+    "legal_act": "Õigusakti ei saa Juristides muuta.",
+    "received": "Saabumise kuupäeva ei saa Juristides muuta.",
+    "commencement": "Lovable'ist tulnud jõustumist ei saa Juristides muuta ega eemaldada.",
+    "close": "Teemat ei saa Juristides lõpetada.",
+    "reopen": "Teemat ei saa Juristides uuesti avada.",
+}
+GUARD_KEYS = tuple(_REFUSED)
+
+#: Every `FIELD_POLICY` field Lovable is authoritative for → the guard key of
+#: the Teema surface that would change it, or ``None`` where Juristid offers no
+#: person any editor (the reason beside it). `tests/test_source_owned_fields.py`
+#: holds this table and `FIELD_POLICY` together, so a field the sync starts to
+#: own cannot be left editable by omission.
+POLICY_SURFACES: dict[str, str | None] = {
+    "title": "title",
+    "owner": "owner",
+    "next_action_text": "next_action",
+    "next_action_date": "next_action",
+    "stage": "stage",
+    "continuation": "close",
+    "opinion_deadline": "opinion_deadline",
+    "koda_initiative": "track",
+    "legal_act": "legal_act",
+    "received": "received",
+    "commencements": "commencement",
+    # Only the synchronisation writes these: a source reference is appended,
+    # never edited, and `LovableOpinionOutcome` has no person-facing writer.
+    "onenote_link": None,
+    "sent": None,
+    "sent_date": None,
+    "addressee": None,
+}
+
+
+class SourceOwnedRefusal(DomainError):
+    """A person tried to change a value Lovable owns on a synchronised Teema."""
+
+    def __init__(self, key: str) -> None:
+        self.key = key
+        super().__init__(refusal_message(key))
+
+
+def refusal_message(key: str) -> str:
+    """What the person is told: what cannot be changed, and where it is changed."""
+    return f"{_REFUSED[key]} {SOURCE_OWNED_NOTICE}"
+
+
+def is_source_owned(matter: Any) -> bool:
+    """Whether Lovable owns this Teema's source fields: a live Teema with a
+    synchronisation state in a cohort that is not retired — exactly the Teemad
+    the nightly run follows (`lovable_sync.population`, `is_authoritative`)."""
+    pk = getattr(matter, "pk", None)
+    if pk is None or getattr(matter, "deleted_at", None) is not None:
+        return False
+    from app.legacy_import.lovable_sync_models import LovableSyncCohort, LovableSyncState
+
+    retired = LovableSyncCohort.objects.filter(retired_at__isnull=False).values("key")
+    return LovableSyncState.objects.filter(matter_id=pk).exclude(cohort__in=retired).exists()
+
+
+def _is_person(actor: Any) -> bool:
+    return getattr(actor, "pk", None) is not None
+
+
+def refuse_source_owned_change(matter: Any, key: str, *, actor: Any) -> None:
+    """Refuse a person's change of ``key`` on a synchronised Teema.
+
+    Called by each guarded service **after** its own «nothing changed» return,
+    so only a real change is refused. A call with no person (the
+    synchronisation, an importer) is never refused here."""
+    if key not in _REFUSED:
+        raise ValueError(f"Unknown source-owned field {key!r}.")
+    if not _is_person(actor):
+        return
+    if is_source_owned(matter):
+        raise SourceOwnedRefusal(key)
+
+
+def is_lovable_commencement(record: Any) -> bool:
+    """Whether a commencement (`MatterEffectiveDate`, or a commencement-kind
+    `MatterImportantDate`) came from Lovable: recorded by a Lovable import or
+    written by the synchronisation — the rows the night mirrors
+    (`lovable_sync._lovable_commencement_records`). A person's own date is
+    neither."""
+    from app.intelligence.models import MatterImportantDate
+    from app.legacy_import.lovable_pilot import COHORTS, T_EFFECTIVE_DATE, T_IMPORTANT_DATE
+    from app.legacy_import.lovable_sync import (
+        COMMENCEMENT_IMPORTANT_KINDS,
+        LOVABLE_COMMENCEMENT_MARK,
+    )
+    from app.legacy_import.models import EvidencePilotRecord
+
+    if type(record) is MatterImportantDate and record.kind not in COMMENCEMENT_IMPORTANT_KINDS:
+        return False
+    if getattr(record, "source_text", "") == LOVABLE_COMMENCEMENT_MARK:
+        return True
+    return EvidencePilotRecord.objects.filter(
+        matter_id=record.matter_id,
+        pilot__in=COHORTS,
+        record_kind__in=(T_EFFECTIVE_DATE, T_IMPORTANT_DATE),
+        target_id=record.pk,
+    ).exists()
+
+
+def refuse_lovable_commencement_change(record: Any, *, actor: Any) -> None:
+    """Refuse a person's edit, cancellation or removal of a Lovable commencement
+    on a synchronised Teema; a person's own commencement stays theirs."""
+    if not _is_person(actor):
+        return
+    if is_source_owned(record.matter) and is_lovable_commencement(record):
+        raise SourceOwnedRefusal("commencement")
+
+
+def lovable_commencement_ids(matter: Any, *, source_owned: bool | None = None) -> frozenset[str]:
+    """The ids of this Teema's commencements that came from Lovable, as strings
+    (`is_lovable_commencement`, in two reads) — empty unless Lovable owns the
+    Teema. What the chronology draws without `Muuda` / `Kustuta` / `Tühista`."""
+    if source_owned is None:
+        source_owned = is_source_owned(matter)
+    if not source_owned:
+        return frozenset()
+    from django.db.models import Q
+
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.legacy_import.lovable_pilot import COHORTS, T_EFFECTIVE_DATE, T_IMPORTANT_DATE
+    from app.legacy_import.lovable_sync import (
+        COMMENCEMENT_IMPORTANT_KINDS,
+        LOVABLE_COMMENCEMENT_MARK,
+    )
+    from app.legacy_import.models import EvidencePilotRecord
+
+    imported = EvidencePilotRecord.objects.filter(
+        matter_id=matter.pk,
+        pilot__in=COHORTS,
+        record_kind__in=(T_EFFECTIVE_DATE, T_IMPORTANT_DATE),
+        target_id__isnull=False,
+    ).values("target_id")
+    lovable = Q(pk__in=imported) | Q(source_text=LOVABLE_COMMENCEMENT_MARK)
+    effective = MatterEffectiveDate.objects.filter(lovable, matter_id=matter.pk)
+    important = MatterImportantDate.objects.filter(
+        lovable, matter_id=matter.pk, kind__in=COMMENCEMENT_IMPORTANT_KINDS
+    )
+    return frozenset(
+        str(pk)
+        for pk in [*effective.values_list("pk", flat=True), *important.values_list("pk", flat=True)]
+    )

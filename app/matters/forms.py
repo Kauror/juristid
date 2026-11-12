@@ -2241,6 +2241,20 @@ class MatterEditForm(
             {held_stage.pk} if held_stage is not None and not held_stage.is_active else set()
         )
 
+        # **What Lovable owns is shown and kept, never changed**, on a
+        # synchronised Teema (audit 2026-11-11 TL-01): disabled, so the POST
+        # cannot move it and the save writes the value the Teema holds — the
+        # shape `owner` takes above without `work.assign`. The services refuse
+        # a change anyway (`app.matters.source_ownership`).
+        from app.matters.source_ownership import is_source_owned
+
+        self.source_owned = matter is not None and is_source_owned(matter)
+        if self.source_owned and matter is not None:
+            current = edit_initial(matter)
+            for name in SOURCE_OWNED_EDIT_FIELDS:
+                self.fields[name].disabled = True
+                self.initial[name] = current[name]
+
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
         # The sender union, by the rule all three sender forms share.
@@ -2265,6 +2279,19 @@ class MatterEditForm(
         if not value:
             raise forms.ValidationError("Teemal peab olema pealkiri.")
         return value
+
+
+#: `MatterEditForm` fields Lovable owns on a synchronised Teema (audit
+#: 2026-11-11 TL-01, `source_ownership.POLICY_SURFACES`).
+SOURCE_OWNED_EDIT_FIELDS = (
+    "title",
+    "owner",
+    "stage",
+    "received_date",
+    "response_deadline",
+    "legal_instruments",
+    "legal_instrument_other",
+)
 
 
 def held_legal_instruments_initial(matter: Matter) -> list[Any]:
