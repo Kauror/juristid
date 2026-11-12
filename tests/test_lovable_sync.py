@@ -774,13 +774,14 @@ def test_in_compare_a_persons_edit_is_refused_and_the_run_still_writes_nothing(c
     from tests.refusals import refused
 
     lovable_sync.set_mode(SyncMode.COMPARE, reason="first nights")
+    _run(cohort)  # the first night seeds the states the lock reads
     with refused(refusal_message("title")):
         set_matter_title(
             matter=_matter("2026_501"), value="Juristi oma", actor=cohort["world"]["mari"]
         )
     cohort["source"].edit("2026_501", teema="Uus 501")
     before = _writes()
-    run = _run(cohort)
+    run = _run(cohort, at=NIGHT + dt.timedelta(days=1))
     assert run.status == SyncRunStatus.SUCCEEDED
     assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.ELIGIBLE
     assert _writes() == before
