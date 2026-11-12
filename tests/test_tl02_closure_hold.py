@@ -389,6 +389,7 @@ def test_the_owner_releases_and_every_cancellation_names_them(world):
     ):
         row = written.get(event_type=kind, object_id=obj.pk)
         assert row.actor_id == ava.pk
+        assert row.payload["provenance"]["sync_run"] == str(hold_run.pk)
     assert MatterWebsiteOverview.objects.get(pk=overview.pk).status == (
         WebsiteOverviewStatus.CANCELLED
     )

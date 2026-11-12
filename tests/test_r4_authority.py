@@ -2084,21 +2084,14 @@ def _source_moves_the_received_day(reference: dict[str, Any], ref: str) -> None:
 
 
 def _source_closes_a_teema_with_live_work(reference: dict[str, Any], ref: str) -> None:
-    """A planned overview and an open Kaasamine wait beside the drafting step,
-    then Lovable says «jõustunud»: the source closure ends all three."""
-    from app.matters.enums import EngagementKind
-    from app.matters.services import add_engagement, plan_website_overview
+    """Lovable says «jõustunud» on a Teema whose only live work is its own
+    drafting step: the source closure ends it.
 
-    matter = _matter(ref)
-    plan_website_overview(matter=matter, actor=None)
-    add_engagement(
-        matter=matter,
-        kind=EngagementKind.SURVEY,
-        title="Liikmete küsitlus",
-        occurred_on=dt.date(2026, 11, 1),
-        feedback_deadline=dt.date(2099, 1, 1),
-        actor=None,
-    )
+    Since TL-02 (owner decision 12.11.2026, docs/adr/0213 §10.13) a planned
+    overview or an open Kaasamine wait *holds* a source closure instead of
+    being ended by it, so no sync-written WEBSITE_OVERVIEW_CANCELLED or
+    ENGAGEMENT_FEEDBACK_CLOSED exists any more; their cancellation by an
+    attributed release is `tests/test_tl02_closure_hold.py`."""
     reference["source"].edit(ref, hetkeseis="jõustunud")
 
 
@@ -2201,16 +2194,6 @@ def _reopened(payload: dict[str, Any]) -> None:
             "NEXT_ACTION_CANCELLED",
             _source_closes_a_teema_with_live_work,
             _ended_by_closure(CLOSED_WITH_MATTER),
-        ),
-        (
-            "WEBSITE_OVERVIEW_CANCELLED",
-            _source_closes_a_teema_with_live_work,
-            _ended_by_closure("matter_closed"),
-        ),
-        (
-            "ENGAGEMENT_FEEDBACK_CLOSED",
-            _source_closes_a_teema_with_live_work,
-            _ended_by_closure("matter_closed"),
         ),
     ],
 )
