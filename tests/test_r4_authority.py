@@ -44,6 +44,7 @@ from app.matters.models import Matter, MatterResponseDeadline
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
+from app.workflow.step_markers import CLOSED_WITH_MATTER
 from tests.test_lovable_pilot import _apply, _package, pilot_on, world  # noqa: F401
 from tests.test_lovable_sync import _decisions, _matter, _run
 from tests.test_ls_b_engine import Source, _drafting, _id, _register_topic, _row, _step
@@ -1967,3 +1968,259 @@ def test_a_legacy_moved_request_keeps_its_whole_chain(reference):
     run = _run(reference, at=_at(1))
     held = _decisions(run, "2026_253")["opinion_deadline"]
     assert held.reason == lovable_sync.ANSWERED_IN_JURISTID
+
+
+# -- every source-driven write names its run (LS-03) -----------------------------------
+
+
+def _drafting_reference(reference: dict[str, Any]) -> str:
+    """The fixture's last drafting topic: open, at «Riigikogus», with an open request."""
+    return str(reference["topics"][-1]["source"]["row"]["nr"])
+
+
+def _closed_locally(reference: dict[str, Any], ref: str) -> None:
+    """Run once, then a person closes the Teema in Juristid."""
+    from app.matters.services import close_matter
+
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    close_matter(
+        matter=_matter(ref),
+        disposition=Disposition.NO_POSITION_FORMED,
+        actor=None,
+        follow_ups_confirmed=True,
+    )
+
+
+def _source_reopens_into_another_stage(reference: dict[str, Any], ref: str) -> None:
+    _closed_locally(reference, ref)
+    reference["source"].edit(ref, hetkeseis="kooskõlastusringil")
+
+
+def _source_moves_the_stage(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, hetkeseis="kooskõlastusringil")
+
+
+def _source_moves_the_request(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, arvamuse_tahtaeg="2099-12-01")
+
+
+def _source_states_another_closure_reason(reference: dict[str, Any], ref: str) -> None:
+    _closed_locally(reference, ref)
+    reference["source"].edit(ref, hetkeseis="rohkem ei tegele")
+
+
+def _source_adds_a_general_order(reference: dict[str, Any], ref: str) -> None:
+    _commencements(reference["source"], ref, ("Üldises korras", None, ""))
+
+
+def _source_fixes_the_general_order(reference: dict[str, Any], ref: str) -> None:
+    _source_adds_a_general_order(reference, ref)
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    _commencements(reference["source"], ref, ("Kindla kuupäevaga", "2099-01-01", ""))
+
+
+def _source_adds_a_fixed_day(reference: dict[str, Any], ref: str) -> None:
+    _commencements(reference["source"], ref, ("Kindla kuupäevaga", "2099-01-01", ""))
+
+
+def _source_removes_the_fixed_day(reference: dict[str, Any], ref: str) -> None:
+    _source_adds_a_fixed_day(reference, ref)
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    _commencements(reference["source"], ref)
+
+
+def _source_marks_an_initiative(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, koja_ettepanek=True)
+
+
+def _source_names_the_act(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, oigusakt="määrus")
+
+
+def _source_moves_the_received_day(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, sisse="2026-02-02")
+
+
+def _source_closes_a_teema_with_live_work(reference: dict[str, Any], ref: str) -> None:
+    """A planned overview and an open Kaasamine wait beside the drafting step,
+    then Lovable says «jõustunud»: the source closure ends all three."""
+    from app.matters.enums import EngagementKind
+    from app.matters.services import add_engagement, plan_website_overview
+
+    matter = _matter(ref)
+    plan_website_overview(matter=matter, actor=None)
+    add_engagement(
+        matter=matter,
+        kind=EngagementKind.SURVEY,
+        title="Liikmete küsitlus",
+        occurred_on=dt.date(2026, 11, 1),
+        feedback_deadline=dt.date(2099, 1, 1),
+        actor=None,
+    )
+    reference["source"].edit(ref, hetkeseis="jõustunud")
+
+
+def _stage_keys(before: str, after: str) -> Any:
+    def check(payload: dict[str, Any]) -> None:
+        assert (payload["from_key"], payload["to_key"]) == (before, after)
+
+    return check
+
+
+def _deadline_moved(payload: dict[str, Any]) -> None:
+    assert (payload["deadline"], payload["outcome"], payload["next_deadline"]) == (
+        REQUEST,
+        ResponseDeadlineOutcome.MOVED,
+        "2099-12-01",
+    )
+
+
+def _deadline_field_moved(payload: dict[str, Any]) -> None:
+    assert (payload["deadline_from"], payload["deadline_to"]) == (REQUEST, "2099-12-01")
+
+
+def _reason_changed(payload: dict[str, Any]) -> None:
+    assert payload["from"]["disposition"] == Disposition.NO_POSITION_FORMED
+    assert payload["to"]["disposition"] == Disposition.MONITORING_STOPPED
+
+
+def _effective_added(payload: dict[str, Any]) -> None:
+    assert (payload["kind"], payload["date"]) == ("GENERAL_ORDER", None)
+
+
+def _effective_cancelled(payload: dict[str, Any]) -> None:
+    assert payload["date"] is None and payload["reason"].startswith("Lovable'is muudeti")
+
+
+def _important_added(payload: dict[str, Any]) -> None:
+    assert (payload["kind"], payload["date"]) == ("PLANNED_COMMENCEMENT", "2099-01-01")
+
+
+def _important_cancelled(payload: dict[str, Any]) -> None:
+    assert payload["date"] == "2099-01-01" and payload["reason"].startswith("Lovable'is muudeti")
+
+
+def _track_changed(payload: dict[str, Any]) -> None:
+    assert payload["to"] == Track.KODA_INITIATIVE and payload["from"] != Track.KODA_INITIATIVE
+
+
+def _act_named(payload: dict[str, Any]) -> None:
+    from app.taxonomy.legal_instruments import current_legal_instrument_keys
+
+    instruments = Matter._meta.get_field("legal_instruments").related_model
+    manager = instruments._default_manager
+    wanted = manager.get(key=current_legal_instrument_keys("määrus")[0])
+    held = manager.get(key=current_legal_instrument_keys("seadus")[0])  # the one the Teema held
+    assert (payload["added"], payload["removed"]) == ([str(wanted.pk)], [str(held.pk)])
+
+
+def _received_moved(payload: dict[str, Any]) -> None:
+    assert (payload["received_from"], payload["received_to"]) == ("2026-01-05", "2026-02-02")
+
+
+def _ended_by_closure(reason: str) -> Any:
+    """A closure's ended work names the closure as its reason."""
+
+    def check(payload: dict[str, Any]) -> None:
+        assert payload["reason"] == reason
+
+    return check
+
+
+def _reopened(payload: dict[str, Any]) -> None:
+    assert set(payload) == {"provenance"}  # the reopening itself has no value to carry
+
+
+@pytest.mark.parametrize(
+    ("event_type", "scenario", "values"),
+    [
+        ("MATTER_REOPENED", _source_reopens_into_another_stage, _reopened),
+        (
+            "MATTER_STAGE_CHANGED",
+            _source_reopens_into_another_stage,
+            _stage_keys("parliament", "consultation"),
+        ),
+        (
+            "MATTER_STAGE_CHANGED",
+            _source_moves_the_stage,
+            _stage_keys("parliament", "consultation"),
+        ),
+        ("RESPONSE_DEADLINE_ENDED", _source_moves_the_request, _deadline_moved),
+        ("MATTER_DATE_CHANGED", _source_moves_the_request, _deadline_field_moved),
+        ("MATTER_CLOSURE_REASON_CHANGED", _source_states_another_closure_reason, _reason_changed),
+        ("EFFECTIVE_DATE_ADDED", _source_adds_a_general_order, _effective_added),
+        ("EFFECTIVE_DATE_CANCELLED", _source_fixes_the_general_order, _effective_cancelled),
+        ("IMPORTANT_DATE_ADDED", _source_adds_a_fixed_day, _important_added),
+        ("IMPORTANT_DATE_CANCELLED", _source_removes_the_fixed_day, _important_cancelled),
+        ("MATTER_TRACK_CHANGED", _source_marks_an_initiative, _track_changed),
+        ("MATTER_LEGAL_INSTRUMENTS_CHANGED", _source_names_the_act, _act_named),
+        ("MATTER_DATE_CHANGED", _source_moves_the_received_day, _received_moved),
+        (
+            "NEXT_ACTION_CANCELLED",
+            _source_closes_a_teema_with_live_work,
+            _ended_by_closure(CLOSED_WITH_MATTER),
+        ),
+        (
+            "WEBSITE_OVERVIEW_CANCELLED",
+            _source_closes_a_teema_with_live_work,
+            _ended_by_closure("matter_closed"),
+        ),
+        (
+            "ENGAGEMENT_FEEDBACK_CLOSED",
+            _source_closes_a_teema_with_live_work,
+            _ended_by_closure("matter_closed"),
+        ),
+    ],
+)
+def test_every_source_driven_change_is_audited_with_its_run_and_source(
+    reference, event_type, scenario, values
+):
+    """Regression: LS-03. A reopening, a stage move, a request moved or ended, a
+    commencement added or cancelled, a closure reason changed, the track, the
+    act, the received day, and the step, overview and wait a source closure
+    ends — each written by the sync says from what to what, that Lovable did it
+    (never a person) and in which run, on the event an authorised reviewer reads."""
+    from app.audit.provenance import LOVABLE_SYNC_ACTOR, source_actor_label, source_provenance
+
+    ref = _drafting_reference(reference)
+    scenario(reference, ref)
+    earlier = list(ChangeEvent.objects.values_list("pk", flat=True))
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    events = ChangeEvent.objects.filter(matter=_matter(ref), event_type=event_type).exclude(
+        pk__in=earlier
+    )
+    if event_type == "MATTER_DATE_CHANGED":
+        # The request's field and the received day write the same type.
+        key = "received_to" if scenario is _source_moves_the_received_day else "deadline_to"
+        events = events.filter(payload__has_key=key)
+    assert events.exists(), f"no {event_type} written by the run"
+    for event in events:
+        assert event.actor_id is None  # never a fabricated person
+        provenance = source_provenance(event.payload)
+        assert provenance is not None, event.payload
+        assert provenance == event.payload["provenance"]  # nested, never spread
+        assert provenance["provenance_source"] == lovable_sync.PROVENANCE_SOURCE
+        assert provenance["sync_run"] == str(run.pk)
+        assert provenance["source_reference"] == ref
+        assert provenance["source_snapshot_sha256"] == run.snapshot_sha256
+        assert provenance["mapping_version"] == lovable_sync.MAPPING_VERSION
+        assert source_actor_label(event.payload) == LOVABLE_SYNC_ACTOR
+        values(event.payload)
+
+
+def test_a_stage_period_the_sync_begins_is_imported_never_a_persons(reference):
+    """Regression: LS-03. A reopening the sync makes begins its stage period as
+    every other stage move of the sync does (IMPORTED), not as a person's
+    «Ava uuesti» (RECORDED)."""
+    from app.matters.enums import StageEpisodeOrigin
+    from app.matters.models import MatterStageEpisode
+
+    ref = _drafting_reference(reference)
+    _source_reopens_into_another_stage(reference, ref)
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    matter = _matter(ref)
+    assert matter.is_open
+    current = MatterStageEpisode.objects.get(matter=matter, is_current=True)
+    assert (current.stage.key, current.origin) == ("consultation", StageEpisodeOrigin.IMPORTED)

@@ -1,71 +1,71 @@
 """The nightly Lovable → Juristid synchronisation (docs/adr/0192, 0202, 0213).
 
-**Since 11.11.2026 Lovable is authoritative** for the operational cohorts
-(docs/adr/0213 §10, `_plan_authoritative`): every source-owned field follows the
-latest verified Lovable value through its domain service, also over a local
-divergence, and only technical problems hold (`TECHNICAL_HOLDS`). What follows
-describes the rules the closed historical register (`lovable-history`) and
-tombstones still keep (`_plan_archive`); the machinery — snapshots, A/B/C,
-locks, read-back, idempotency, breakers — is shared.
+**Since 11.11.2026 Lovable is the source of truth** (docs/adr/0213 §10,
+`_plan_authoritative`) for every live synchronised Teema — the operational
+cohorts and the closed historical register (`lovable-history`) alike. After
+every successful APPLY run each source-owned field (`AUTHORITATIVE_FIELDS`)
+holds what the latest verified Lovable value derives to, written through its
+domain service:
 
-One way, for the Teemad of the approved cohorts and for nothing else: the 100
-Teemad the Lovable pilot created (docs/adr/0191) — the built-in cohort — and
-every cohort enrolled since (`LovableSyncCohort`, `enroll`), each found only
-through its approved provenance. Every run reads a consistent snapshot of those rows
-(`app.legacy_import.lovable_source`), compares three values per field and writes
-only what is safe:
-
-* **A** — what Lovable said when Juristid last accepted the field
+* **A** — what Lovable said when Juristid last mirrored the field
   (`LovableSyncState.applied`, seeded from the pilot's immutable provenance);
 * **B** — what Juristid holds now;
-* **C** — what Lovable says tonight.
+* **C** — what Lovable says tonight, and its *target* — what the rule derives
+  from it.
 
-=============================  ===================================================
-A = C, B = A                   UNCHANGED
-A = C, B ≠ A                   LOCAL_TEST_CHANGE — the lawyer's edit is kept
-A ≠ C, B = A, mapping exact    ELIGIBLE → APPLIED through the canonical service
-A ≠ C, B = C                   ALREADY_CONVERGED — baseline advances, no write
-A ≠ C, B ≠ A, B ≠ C            CONFLICT — nothing is overwritten
-no baseline / no mapping       REVIEW_REQUIRED
-=============================  ===================================================
+==================================  ================================================
+B is C's target, C = A              UNCHANGED
+B is C's target, C ≠ A              ALREADY_CONVERGED — the baseline moves, no write
+C ≠ A, B is not C's target          APPLIED — a source change, over any local value
+C = A, B is not C's target          APPLIED, reason `RESTORED` — a local edit put back
+C's target cannot be stated         a technical hold (`TECHNICAL_HOLDS`), never
+                                    «restored over»
+==================================  ================================================
 
-**The allowlist** (`AUTO_FIELDS`) is the title, the owner, the day of an
-unchanged current step, and the OneNote link (appended as a new source
-observation, never by editing the old one). Everything else is held and
-reported: new next-step wording (its DO/WAIT/MONITOR reading is a person's call),
-`hetkeseis` (no approved stage mapping exists; 0191 keeps it NEVER_AUTO), the
-opinion deadline, `valja`/`valja_kuupaev`, the addressee, commencements, the
-received date, the act, and lifecycle. A held change stays pending — the
-baseline does not move — until the source returns to it, Juristid converges on
-it, or an operator resolves it (`resolve_field`).
+A field the engine never mirrored (held by the import, or only ever observed)
+converges once and is then settled (``mirrored``). The step's kind comes from
+one fixed rule (`lovable_reading.step_kind`, «Liik määramata» when unclear); the
+stage and the stage link are one lifecycle operation that closes, reopens or
+re-reasons a Teema (`desired_lifecycle`); Lovable's sent status is a
+`LovableOpinionOutcome`, never a `Submission`; Lovable's commencements are
+reconciled as a set and a person's own dates are never touched. Juristid-only
+records — notes, documents, submissions, evidence, OneNote imports, Kaasamine,
+overviews — are never written. Only a **tombstone** keeps the earlier
+conservative rules (`_plan_archive`: AUTO / CONDITIONAL / REVIEW, docs/adr/0213
+§4); the machinery — snapshots, A/B/C, per-Teema locks with re-plan, read-back,
+idempotency, breakers — is shared.
 
-**Conditional fields and new topics** (docs/adr/0213, `FIELD_POLICY`): a stage
-that does not end the work, through the reader's exact `STAGE_MAPPING`; a new
-opinion request where none is open and nothing is sent; an added commencement of
-an unambiguous kind, never on a past day. Lovable's stage link (the
-continuation) is compared and always held. An operational topic with no Teema
-is discovered every run, checked (identity — tombstones included —, reference,
-reading, plan) and, on an APPLY night only, created once through the machine
-reader and the importer's own CREATE writer, then enrolled in the register with
-a ``NEW_TOPIC`` membership (`create_new_topic`).
+The population is the Teemad of the enrolled cohorts and nothing else: the 100
+Teemad the Lovable pilot created (docs/adr/0191) — the built-in cohort — and
+every cohort enrolled since (`LovableSyncCohort`, `enroll`), each found only
+through its approved provenance. A source topic in no cohort is counted, never
+written. Every run reads a consistent snapshot of those rows
+(`app.legacy_import.lovable_source`).
 
-**The limits, and why each stays** (brief 2026-11-09 §6 B6): ``MAX_CHANGED_MATTERS``
-(20 Teemad written a night) and ``MAX_NEW_HOLDS`` (25 more held fields than the
-previous run; it replaced ``MAX_NEW_CONFLICTS``, LS-07) were sized for daily
-work, not a backfill — a backfill goes through `lovable_pilot` packages, never
-through a night — and a night over them is a changed source or a broken mapping;
-``MAX_MISSING`` (5) separates a deleted topic from a broken read;
-``MAX_NEW_TOPICS`` (10 created a night) is new and separate. The field breakers
-hold every write of the night (REVIEW_ONLY) and the new-topic breaker every
-creation of it; ``MAX_MISSING`` fails the run.
+**New topics** (docs/adr/0213 §4, `NEW_TOPIC` in `FIELD_POLICY`): an
+operational topic with no Teema is discovered every run, checked (identity —
+tombstones included —, reference, reading, plan) and, on an APPLY night only,
+created once through the machine reader and the importer's own CREATE writer,
+enrolled in the register with a ``NEW_TOPIC`` membership (`create_new_topic`)
+and mirrored the same night (`_converge_created`).
 
-A field the import itself held for review (``HELD_FOR_REVIEW`` in the package's
-``field_decisions``) is seeded with ``import_held`` and reported
-``REVIEW_REQUIRED`` / ``IMPORT_HELD`` every night until an operator resolves it;
-a convergence never clears it (docs/adr/0202 §6).
+**The limits** (docs/adr/0213 §10.8): ``MAX_CHANGED_MATTERS`` (20 Teemad with a
+source or derived change a night; over it the whole night is REVIEW_ONLY);
+``MAX_RESTORED_MATTERS`` (100 restore-only Teemad; over it only the restores
+wait, `RESTORE_BREAKER`); both may be raised for one supervised run
+(`run_sync(max_changed=…, max_restored=…)`, recorded in the run's counts).
+``MAX_MISSING`` (5) separates a deleted topic from a broken read and fails the
+run; ``MAX_NEW_TOPICS`` (10) holds the night's creations. ``MAX_NEW_HOLDS``
+(25 more held fields than the previous run) replaced ``MAX_NEW_CONFLICTS``,
+which source authority had made inert (finding LS-07). A
+failed read-back stops every later write of the run (docs/adr/0192 §7).
+COMPARE plans, records and advances converged baselines and writes no business
+record; APPLY also needs a backup set (`NO_BACKUP`).
 
-Writes go through the domain services with ``actor=None`` and a ``LOVABLE_SYNC``
-provenance; nothing here sets a model field directly.
+Writes go through the domain services with ``actor=None`` — never a person —
+and the run's ``LOVABLE_SYNC`` provenance (`_provenance`: run, source
+reference, version, snapshot digest, mapping version) on their audit events;
+nothing here sets a model field directly.
 """
 
 from __future__ import annotations
@@ -333,7 +333,8 @@ NOT_REPRESENTABLE = "NOT_REPRESENTABLE"  # Juristid has no honest place for it
 #: Lovable is authoritative (docs/adr/0213 §10, owner brief 2026-11-11): the
 #: latest verified source value is written through the field's domain service,
 #: also over a local divergence; only a technical problem holds it
-#: (`TECHNICAL_HOLDS`). The historical register keeps the earlier classes.
+#: (`TECHNICAL_HOLDS`). Every live synchronised Teema, the historical register
+#: included; only a tombstone keeps the earlier classes (`_plan_archive`).
 AUTHORITATIVE = "AUTHORITATIVE"
 POLICY_CLASSES = (AUTO, CONDITIONAL, REVIEW, NOT_REPRESENTABLE, AUTHORITATIVE)
 #: The fields source authority writes.
@@ -372,8 +373,8 @@ def _policy(field_name: str, policy: str, explanation: str, service: str = "") -
 
 #: Every reconciled field, the continuation, a new topic and a vanished source
 #: (interface 3), as source authority writes them for the operational cohorts
-#: (docs/adr/0213 §10). The closed historical register (`lovable-history`) keeps
-#: the rules of 0213 §4: every change there is a person's (MATTER_CLOSED).
+#: (docs/adr/0213 §10), the closed historical register (`lovable-history`)
+#: included (§10.7). Only a tombstone keeps the rules of 0213 §4 (`_plan_archive`).
 #: `tests/test_r4_authority.py` holds the table and the engine together.
 FIELD_POLICY: dict[str, FieldPolicy] = {
     p.field: p
@@ -381,8 +382,8 @@ FIELD_POLICY: dict[str, FieldPolicy] = {
         _policy(
             "title",
             AUTHORITATIVE,
-            "Pealkiri järgib Lovable'it. Muutmata allika korral jääb Juristides tehtud muudatus "
-            "alles; allika muutus kirjutatakse üle. Tühja pealkirja ei kirjutata.",
+            "Pealkiri järgib Lovable'it: allika muutus kirjutatakse üle ja Juristides tehtud "
+            "muudatus taastatakse Lovable'i väärtuseks. Tühja pealkirja ei kirjutata.",
             "set_matter_title(provenance=…)",
         ),
         _policy(
@@ -480,10 +481,12 @@ FIELD_POLICY: dict[str, FieldPolicy] = {
         _policy(
             "commencements",
             AUTHORITATIVE,
-            "Lisandunud jõustumine lisatakse, kui selle liik on üheselt loetav (üldises korras, "
-            "kindel kuupäev, eeldatav kuupäev — eeldatav jääb hinnanguks). Muudetud või "
-            "eemaldatud jõustumine ja sama päeva teine kirje jäävad ootele.",
-            "add_effective_date / add_important_date",
+            "Lovable'i jõustumised järgivad Lovable'it ühe hulgana: lisandunud jõustumine "
+            "lisatakse, kui selle liik on üheselt loetav (üldises korras, kindel kuupäev, "
+            "eeldatav kuupäev — eeldatav jääb hinnanguks); jõustumine, mida Lovable enam ei "
+            "nimeta, tühistatakse ja jääb ajalukku. Inimese enda kuupäevi ei puudutata. "
+            "Loetamatu kirje ja suletud teema jäävad ootele.",
+            "add_/cancel_effective_date, add_/cancel_important_date",
         ),
         _policy(
             "operational_scope",
@@ -1759,9 +1762,8 @@ def plan_matter(
         # source through its domain service; only technical problems hold.
         _plan_authoritative(plan, state, plan.source, b, resolver=resolver, today=today)
         return plan
-    # The closed historical register (`lovable-history`) and tombstones keep the
-    # earlier rules exactly: a change there is a person's call (MATTER_CLOSED,
-    # IMPORT_HELD; docs/adr/0213 §9.9).
+    # Only a tombstone keeps the earlier rules exactly: a change there is a
+    # person's call (MATTER_CLOSED, IMPORT_HELD; docs/adr/0213 §4, §9.9).
     _plan_archive(plan, state, src, b, resolver=resolver, today=today)
     return plan
 
@@ -1775,8 +1777,9 @@ def _plan_archive(
     resolver: OwnerResolver,
     today: dt.date,
 ) -> None:
-    """The rules before source authority (docs/adr/0192, 0213 §4), for the
-    historical cohort and for tombstones only."""
+    """The rules before source authority (docs/adr/0192, 0213 §4), for a
+    tombstone only (`plan_matter`): the A/B/C table where a local edit is kept
+    (LOCAL_TEST_CHANGE) and a double change is a CONFLICT."""
     applied = state.applied
     closed = not b["is_open"]
 
@@ -2116,11 +2119,12 @@ def _is_open(matter: Any) -> bool:
 # For the operational cohorts (the pilot, the operational rebuild and the
 # register) every source-owned field follows the **latest verified** Lovable
 # value through its canonical domain service, also where Juristid diverged
-# locally (B ≠ A): a source change wins. What stays the same:
+# locally (B ≠ A): a source change wins, and so does an unchanged source
+# (owner decision 11.11, docs/adr/0213 §10.1):
 #
-# * a source value that did not change modifies nothing (A = C → UNCHANGED, or
-#   LOCAL_TEST_CHANGE when Juristid differs: the local value is kept until the
-#   source next changes);
+# * a source value that did not change, with Juristid still at its target,
+#   modifies nothing (UNCHANGED); with Juristid edited locally, the target is
+#   written back (ELIGIBLE, reason `RESTORED`, «Lovable'i väärtus taastati»);
 # * a field the engine has never mirrored (the import held it, or it was only
 #   ever observed) converges once: Juristid is brought to what the source says
 #   now, then it is settled (``mirrored``);
@@ -2170,7 +2174,6 @@ HISTORY_OWNER_UNRESOLVED = "HISTORY_OWNER_UNRESOLVED"
 #: «lõpetatud» — finished, no reason stated (docs/adr/0213 §9.1).
 FINISHED_NO_REASON = "lõpetatud"
 STAGE_UNMAPPED = "STAGE_UNMAPPED"
-CLOSED_OTHERWISE = "CLOSED_WITH_OTHER_REASON"
 LIFECYCLE_HELD = "LIFECYCLE_HELD"
 STEP_DATE_NO_TEXT = "STEP_DATE_WITHOUT_TEXT"
 DATE_UNREADABLE = "DATE_UNREADABLE"
@@ -2222,7 +2225,6 @@ TECHNICAL_HOLDS: dict[str, str] = {
     COMMENCEMENT_CLASH: "duplicate reference",
     LINK_NOT_HTTPS: "unsafe operation",
     LINK_REMOVED: "unsafe operation",
-    CLOSED_OTHERWISE: "unsafe operation",
     LIFECYCLE_HELD: "unsafe operation",
     MATTER_CLOSED: "unsafe operation",
 }
@@ -2393,9 +2395,11 @@ def _lifecycle_decisions(
     Lovable is the source of truth at all times (owner decision 11.11): a
     lifecycle a person changed locally is put back — a Teema closed while
     Lovable has it open is reopened, one reopened while Lovable has it closed
-    is closed again (reason `RESTORED`). A Teema closed for another reason than
-    Lovable states is never reopened and closed again: changed in Lovable it is
-    held (`CLOSED_OTHERWISE`), unchanged it stays as closed. A historical Teema
+    is closed again (reason `RESTORED`). A Teema closed for another reason or
+    under another successor than Lovable states is never reopened and closed
+    again: its closure reason (and successor) is set to Lovable's
+    (``target["reclose"]``, `change_closure_from_source`), the closing moment
+    kept. A historical Teema
     Lovable reopens moves to the register (`move_to`) only inside Lovable's
     operational scope; outside it, it is held."""
     applied = state.applied
@@ -3202,12 +3206,23 @@ def _apply_lifecycle(
             held_day = fresh.response_deadline
             keep = held_day is not None and held_day.isoformat() == src.get("opinion_deadline")
             reopen_matter_into_stage(
-                matter=fresh, stage=stage, actor=None, keep_response_deadline=keep
+                matter=fresh,
+                stage=stage,
+                actor=None,
+                keep_response_deadline=keep,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=provenance,
             )
             if desired.get("move_to"):
                 _move_to_register(fresh, desired["move_to"], provenance=provenance)
         else:
-            change_stage(matter=fresh, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+            change_stage(
+                matter=fresh,
+                stage=stage,
+                actor=None,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=provenance,
+            )
     elif not b_life["open"]:
         from app.matters.services import change_closure_from_source
 
@@ -3368,7 +3383,9 @@ def lovable_commencements(matter_id: Any) -> list[list[Any]]:
     )
 
 
-def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
+def _apply_commencements(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
     """The commencement set Lovable states (`_commencements_authoritative`):
     each one it no longer states is cancelled through its own service, with the
     reason and its own audited event, and kept; each new one is added with its
@@ -3405,10 +3422,14 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
         record.used = True
         if model_name == T_EFFECTIVE_DATE:
             effective = MatterEffectiveDate.objects.get(pk=record.pk, status=FactStatus.ACTIVE)
-            cancel_effective_date(record=effective, actor=None, reason=reason)
+            cancel_effective_date(
+                record=effective, actor=None, reason=reason, provenance=provenance
+            )
         else:
             important = MatterImportantDate.objects.get(pk=record.pk, status=FactStatus.ACTIVE)
-            cancel_important_date(record=important, actor=None, reason=reason)
+            cancel_important_date(
+                record=important, actor=None, reason=reason, provenance=provenance
+            )
     for item in target["add"]:
         day = dt.date.fromisoformat(item["date"]) if item["date"] else None
         if item["target"] == T_EFFECTIVE_DATE:
@@ -3421,6 +3442,7 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
                 description=item.get("note", ""),
                 actor=None,
                 source_text=LOVABLE_COMMENCEMENT_MARK,
+                provenance=provenance,
             )
         else:
             if day is None:
@@ -3435,6 +3457,7 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
                 note=item.get("note", ""),
                 actor=None,
                 source_text=LOVABLE_COMMENCEMENT_MARK,
+                provenance=provenance,
             )
     return lovable_commencements(matter.pk)
 
@@ -3475,7 +3498,9 @@ def _apply_step(
     return _action_dict(new)
 
 
-def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
+def _apply_request(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
     from app.matters.enums import ResponseDeadlineChange, ResponseDeadlineOutcome
     from app.matters.models import Matter
     from app.matters.response_deadlines import change_response_deadline
@@ -3529,7 +3554,9 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             note = "Lovable'i järgi arvamust ei saadetud («ei saatnud»)."
             outcome = ResponseDeadlineOutcome.NOT_ANSWERING
         if fresh.response_deadline is not None:
-            resolve_response_deadline(matter=fresh, outcome=outcome, actor=None, note=note)
+            resolve_response_deadline(
+                matter=fresh, outcome=outcome, actor=None, note=note, provenance=provenance
+            )
         return conditional_values(Matter.all_objects.get(pk=matter.pk))["opinion_deadline"]
     if decision.target is None:
         change_response_deadline(
@@ -3538,6 +3565,7 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             actor=None,
             previous_outcome=ResponseDeadlineOutcome.CANCELLED,
             previous_note="Lovable'is arvamuse tähtaeg eemaldati.",
+            provenance=provenance,
         )
     else:
         moving = fresh.response_deadline is not None
@@ -3547,6 +3575,7 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             actor=None,
             change=ResponseDeadlineChange.MOVED if moving else "",
             previous_note="Lovable'is muutus arvamuse tähtaeg." if moving else "",
+            provenance=provenance,
         )
     return conditional_values(Matter.all_objects.get(pk=matter.pk))["opinion_deadline"]
 
@@ -3560,6 +3589,7 @@ def _apply_opinion_outcome(
     run: LovableSyncRun,
     snapshot: dict[str, Any],
     version: int | None,
+    provenance: dict[str, Any] | None = None,
 ) -> tuple[Any, bool]:
     """A new `LovableOpinionOutcome` (the newest is current), and — when the
     Teema is open and its current request is Lovable's — that request ends:
@@ -3628,7 +3658,9 @@ def _apply_opinion_outcome(
         else:
             note = "Lovable'i järgi arvamust ei saadetud («ei saatnud»)."
             outcome = ResponseDeadlineOutcome.NOT_ANSWERING
-        resolve_response_deadline(matter=fresh, outcome=outcome, actor=None, note=note)
+        resolve_response_deadline(
+            matter=fresh, outcome=outcome, actor=None, note=note, provenance=provenance
+        )
         ended = True
     return _outcome_view(matter.pk), ended
 
@@ -3661,13 +3693,13 @@ def _apply_authoritative(
             decision, matter=matter, provenance=provenance, run=run, snapshot=snapshot
         )
     elif name == "commencements":
-        new_b = _apply_commencements(decision, matter=matter)
+        new_b = _apply_commencements(decision, matter=matter, provenance=provenance)
     elif name == "stage":
         new_b = _apply_lifecycle(decision, matter=matter, src=src, provenance=provenance)
     elif name == "next_action_text":
         new_b = _apply_step(decision, matter=matter, provenance=provenance)
     elif name == "opinion_deadline":
-        new_b = _apply_request(decision, matter=matter)
+        new_b = _apply_request(decision, matter=matter, provenance=provenance)
     elif name == "sent":
         new_b, ended = _apply_opinion_outcome(
             decision,
@@ -3677,6 +3709,7 @@ def _apply_authoritative(
             run=run,
             snapshot=snapshot,
             version=plan.version,
+            provenance=provenance,
         )
         if ended:
             # The request Lovable's outcome answers is no longer current.
@@ -3690,7 +3723,7 @@ def _apply_authoritative(
         track = Track.KODA_INITIATIVE if decision.target else _track_before_initiative(matter.pk)
         if track is None:
             raise SyncRefused(TRACK_NOT_STATED, "The track before the initiative is not known.")
-        change_track(matter=Matter.objects.get(pk=matter.pk), track=track)
+        change_track(matter=Matter.objects.get(pk=matter.pk), track=track, provenance=provenance)
         new_b = bool(decision.target)
     elif name == "legal_act":
         instruments = Matter._meta.get_field("legal_instruments").related_model
@@ -3698,6 +3731,7 @@ def _apply_authoritative(
         set_legal_instruments(
             matter=fresh,
             legal_instruments=list(instruments._default_manager.filter(key__in=decision.target)),
+            provenance=provenance,
         )
         new_b = conditional_values(fresh)["legal_act"]
     elif name == "received":
@@ -3705,6 +3739,7 @@ def _apply_authoritative(
         set_matter_dates(
             matter=fresh,
             received_date=dt.date.fromisoformat(decision.target) if decision.target else None,
+            provenance=provenance,
         )
         new_b = decision.target
     else:
@@ -3860,14 +3895,17 @@ def _apply_field(
             matter=matter, url=decision.target, run=run, snapshot=snapshot, provenance=provenance
         )
     if decision.field in CONDITIONAL_FIELDS:
-        return _apply_conditional(decision, matter=matter)
+        return _apply_conditional(decision, matter=matter, provenance=provenance)
     raise SyncRefused("NOT_ALLOWLISTED", f"{decision.field} is not an automatic field.")
 
 
-def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
-    """A conditional field (docs/adr/0213), through the service the rebuild used
-    for the same change (docs/adr/0202 §3). These services take no provenance;
-    the write's record is its `LovableSyncDecision` (APPLIED, idempotency key)."""
+def _apply_conditional(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
+    """A conditional field of the earlier rules (docs/adr/0213 §4; a
+    tombstone's plan only), through the service the rebuild used for the same
+    change (docs/adr/0202 §3). The write's record is its `LovableSyncDecision`
+    (APPLIED, idempotency key)."""
     from app.intelligence.services import add_effective_date, add_important_date
     from app.legacy_import.lovable_pilot import COMMENCEMENT_TITLES, T_EFFECTIVE_DATE
     from app.matters.enums import StageEpisodeOrigin
@@ -3882,10 +3920,14 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
             stage=StageVocabulary.objects.get(key=decision.target),
             actor=None,
             origin=StageEpisodeOrigin.IMPORTED,
+            provenance=provenance,
         )
     elif decision.field == "opinion_deadline":
         request_response_deadline(
-            matter=matter, deadline=dt.date.fromisoformat(decision.target), actor=None
+            matter=matter,
+            deadline=dt.date.fromisoformat(decision.target),
+            actor=None,
+            provenance=provenance,
         )
     else:
         for item in decision.target:
@@ -3900,6 +3942,7 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
                     description=item.get("note", ""),
                     actor=None,
                     source_text="Lovable",
+                    provenance=provenance,
                 )
             else:
                 if day is None:
@@ -3914,6 +3957,7 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
                     note=item.get("note", ""),
                     actor=None,
                     source_text="Lovable",
+                    provenance=provenance,
                 )
     fresh = Matter.all_objects.get(pk=matter.pk)
     return conditional_values(fresh)[decision.field]
@@ -3982,9 +4026,12 @@ def apply_matter(
 ) -> MatterPlan:
     """Every eligible field of one Teema, all or nothing, under its lock.
 
-    The plan is made again under the lock: a lawyer's save that landed after the
-    first reading turns ELIGIBLE into CONFLICT or LOCAL_TEST_CHANGE here, never
-    into an overwrite."""
+    The plan is made again under the lock, so what is written is decided on the
+    committed row: a lawyer's save that landed after the first reading is
+    overwritten by a source change or restored over, exactly as it would have
+    been planned (docs/adr/0213 §10.1), and a Teema whose re-plan holds or
+    converges writes nothing. A tombstone's plan keeps the earlier rules
+    (`_plan_archive`: CONFLICT / LOCAL_TEST_CHANGE, never an overwrite)."""
     from app.matters.locks import lock_matter_for_write
 
     with transaction.atomic():

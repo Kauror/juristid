@@ -67,6 +67,12 @@ readers, not professional chronology (master specification 16.5).
         {% endcomment %}
         {% if row.actor %}
           <span class="changelog__who">{{ row.actor.display_name }}{% if row.actor_qualifier %} ({{ row.actor_qualifier }}){% endif %}</span>
+        {% elif row.source_actor %}
+          {% comment %}
+            Nobody did it: the Lovable synchronisation did, and the row says so
+            rather than reading as an anonymous system act (docs/adr/0213 §10.9).
+          {% endcomment %}
+          <span class="changelog__who">{{ row.source_actor }}</span>
         {% endif %}
         {% if row.summary %}
           <span class="changelog__summary">{{ row.summary }}</span>

@@ -291,3 +291,37 @@ def actor_label(name: str, auth_method: str | None) -> str:
     if not name or not qualifier:
         return name
     return f"{name} ({qualifier})"
+
+
+#: The `provenance_source` a write made by the Lovable synchronisation carries
+#: (`app.legacy_import.lovable_sync.PROVENANCE_SOURCE`, docs/adr/0213 §10.9).
+LOVABLE_SYNC_SOURCE = "LOVABLE_SYNC"
+
+#: What a history row names as the actor of a write the synchronisation made.
+#: Never a person: the sync writes with ``actor=None`` (LS-03).
+LOVABLE_SYNC_ACTOR = "Lovable'i sünkroonimine"
+
+
+def source_provenance(payload: Any) -> dict[str, Any] | None:
+    """The source provenance an audit payload carries, or ``None``.
+
+    Two spellings exist: nested under ``"provenance"`` (closures, steps, stage
+    moves, reopenings, deadlines, dates) and spread into the payload itself
+    (`assign_matter`, `set_matter_title`). Either way it names its
+    ``provenance_source``; anything else is not a source write."""
+    if not isinstance(payload, dict):
+        return None
+    nested = payload.get("provenance")
+    if isinstance(nested, dict) and nested.get("provenance_source"):
+        return nested
+    if payload.get("provenance_source"):
+        return payload
+    return None
+
+
+def source_actor_label(payload: Any) -> str:
+    """«Lovable'i sünkroonimine» for a write the synchronisation made, else ""."""
+    found = source_provenance(payload)
+    if found is not None and found.get("provenance_source") == LOVABLE_SYNC_SOURCE:
+        return LOVABLE_SYNC_ACTOR
+    return ""

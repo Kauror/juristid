@@ -2822,9 +2822,10 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
     },
     "commencements": {
         "mapping": "EXACT",
-        "service": "add_effective_date / add_important_date (ainult lisandunud)",
+        "service": "add_/cancel_effective_date, add_/cancel_important_date",
         "risks": [
-            "Eeldatav jääb hinnanguks; muudetud või eemaldatud jõustumine jääb ootele.",
+            "Eeldatav jääb hinnanguks; jõustumine, mida Lovable enam ei nimeta, tühistatakse "
+            "ja jääb ajalukku; inimese enda kuupäevi ei puudutata.",
         ],
         "blocking": "",
     },

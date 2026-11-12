@@ -856,7 +856,14 @@ class StageMove:
 CLOSED_MATTER_STAGE_REFUSAL = "Suletud teema hetkeseisu ei saa muuta. Ava teema esmalt uuesti."
 
 
-def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> StageMove:
+def _move_stage(
+    *,
+    matter: Matter,
+    stage: Any,
+    actor: Any,
+    origin: str,
+    provenance: dict[str, Any] | None = None,
+) -> StageMove:
     """Matter.stage, the period it ends, the period it starts and the event — one write.
 
     The row is locked and its stage re-read under the lock: «is this a move at
@@ -875,11 +882,24 @@ def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> Stage
     locked = lock_matter_for_write(matter.pk)
     if not locked.is_open and locked.stage_id != getattr(stage, "pk", None):
         raise DomainError(CLOSED_MATTER_STAGE_REFUSAL)
-    return _move_locked_stage(locked=locked, matter=matter, stage=stage, actor=actor, origin=origin)
+    return _move_locked_stage(
+        locked=locked,
+        matter=matter,
+        stage=stage,
+        actor=actor,
+        origin=origin,
+        provenance=provenance,
+    )
 
 
 def _move_locked_stage(
-    *, locked: Matter, matter: Matter, stage: Any, actor: Any, origin: str
+    *,
+    locked: Matter,
+    matter: Matter,
+    stage: Any,
+    actor: Any,
+    origin: str,
+    provenance: dict[str, Any] | None = None,
 ) -> StageMove:
     """The move itself, on a row the caller has locked and judged.
 
@@ -887,6 +907,10 @@ def _move_locked_stage(
     and `reopen_matter_into_stage` — the one act allowed to move a closed
     file's stage — calls this directly with the row it locked. Nothing else
     should.
+
+    ``provenance`` — who moved it when no person did (the Lovable
+    synchronisation's run, docs/adr/0213 §10.9) — is written nested on the
+    event, so it can never shadow a key of the move itself.
     """
     previous = locked.stage
     if previous == stage:
@@ -924,6 +948,7 @@ def _move_locked_stage(
             # is the honest reading of what they recorded.
             "from_key": getattr(previous, "key", None),
             "to_key": getattr(stage, "key", None),
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return StageMove(
@@ -969,6 +994,7 @@ def stage_transition(
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
     follow_ups_confirmed: bool | str = False,
+    provenance: dict[str, Any] | None = None,
 ) -> Iterator[StageMove]:
     """Move `Hetkeseis`, let the caller record the act, then close if the stage ends the Matter.
 
@@ -990,7 +1016,9 @@ def stage_transition(
     which asks it under the Matter's lock (docs/adr/0146 §8).
     """
     with transaction.atomic():
-        move = _move_stage(matter=matter, stage=stage, actor=actor, origin=origin)
+        move = _move_stage(
+            matter=matter, stage=stage, actor=actor, origin=origin, provenance=provenance
+        )
         yield move
         if move.closes:
             close_matter_for_terminal_stage(
@@ -1006,6 +1034,7 @@ def change_stage(
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
     follow_ups_confirmed: bool | str = False,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Record where the external process now stands, as a new `Hetkeseis` period.
 
@@ -1024,6 +1053,10 @@ def change_stage(
 
     A closed Matter refuses a move here with `CLOSED_MATTER_STAGE_REFUSAL`;
     its stage is chosen again in `Ava uuesti` (RULE-03).
+
+    ``provenance`` is for a move no colleague made — the Lovable
+    synchronisation's — and rides on `MATTER_STAGE_CHANGED` (docs/adr/0213
+    §10.9). A person's move passes none.
     """
     with stage_transition(
         matter=matter,
@@ -1031,13 +1064,22 @@ def change_stage(
         actor=actor,
         origin=origin,
         follow_ups_confirmed=follow_ups_confirmed,
+        provenance=provenance,
     ):
         pass
     return matter
 
 
 @transaction.atomic
-def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
+def change_track(
+    *,
+    matter: Matter,
+    track: str,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> Matter:
+    """`Menetlusliik`. ``provenance`` names the run of a change no person made
+    (the Lovable synchronisation, docs/adr/0213 §10.9), nested on the event."""
     if track and track not in Track.values:
         raise DomainError(f"Tundmatu menetlusliik {track!r}.")
     previous = matter.track
@@ -1051,7 +1093,11 @@ def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
         matter=matter,
         actor=actor,
         obj=matter,
-        payload={"from": previous, "to": track},
+        payload={
+            "from": previous,
+            "to": track,
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return matter
 
@@ -1263,9 +1309,11 @@ def set_matter_dates(
     matter: Matter,
     received_date: Any = _UNSET,
     actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """`Saabunud`. The deadline has its own writer, which keeps its history
-    (`app.matters.response_deadlines.change_response_deadline`)."""
+    (`app.matters.response_deadlines.change_response_deadline`). ``provenance``:
+    as on `change_track`."""
     changed: dict[str, Any] = {}
     fields: list[str] = []
 
@@ -1304,7 +1352,7 @@ def set_matter_dates(
         matter=matter,
         actor=actor,
         obj=matter,
-        payload=changed,
+        payload={**changed, **({"provenance": provenance} if provenance else {})},
     )
     return matter
 
@@ -1884,7 +1932,11 @@ def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> M
 
 @transaction.atomic
 def set_legal_instruments(
-    *, matter: Matter, legal_instruments: Sequence[Any], actor: Any = None
+    *,
+    matter: Matter,
+    legal_instruments: Sequence[Any],
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Replace the Matter's Õigusakt with the chosen set.
 
@@ -1933,6 +1985,8 @@ def set_legal_instruments(
         payload={
             "added": sorted(str(pk) for pk in after - before),
             "removed": sorted(str(pk) for pk in before - after),
+            # Who changed it when no person did (docs/adr/0213 §10.9).
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return matter
@@ -2827,6 +2881,7 @@ def _close_one_feedback_wait(
     reason: str,
     feedback_received: Any = _UNSET,
     closing_reply: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterEngagement:
     """Write the closure on one already-locked row, and audit it.
 
@@ -2876,6 +2931,7 @@ def _close_one_feedback_wait(
             # Whether anything was written down, never what it said.
             "has_feedback_received": bool(engagement.feedback_received),
             **({"closing_reply": str(closing_reply.pk)} if closing_reply is not None else {}),
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return engagement
@@ -3069,7 +3125,10 @@ def open_engagement_feedback_wait(
 
 
 def close_open_feedback_waits_for_closure(
-    *, matter: Matter, actor: Any = None
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> list[MatterEngagement]:
     """Every round this Matter was still waiting on, ended with the file.
 
@@ -3110,7 +3169,11 @@ def close_open_feedback_waits_for_closure(
     )
     return [
         _close_one_feedback_wait(
-            engagement, matter=matter, actor=actor, reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE
+            engagement,
+            matter=matter,
+            actor=actor,
+            reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE,
+            provenance=provenance,
         )
         for engagement in waiting
     ]
@@ -3616,7 +3679,11 @@ def correct_website_overview_link(
 
 
 def _cancel_one_website_overview(
-    overview: MatterWebsiteOverview, *, actor: Any, reason: str
+    overview: MatterWebsiteOverview,
+    *,
+    actor: Any,
+    reason: str,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterWebsiteOverview:
     """Write the cancellation. The caller has already locked the row and checked it.
 
@@ -3636,7 +3703,11 @@ def _cancel_one_website_overview(
         matter=overview.matter,
         actor=actor,
         obj=overview,
-        payload={"status": overview.status, "reason": reason},
+        payload={
+            "status": overview.status,
+            "reason": reason,
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return overview
 
@@ -4016,7 +4087,10 @@ def correct_procedural_link(
 
 
 def cancel_planned_website_overviews_for_closure(
-    *, matter: Matter, actor: Any = None
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> list[MatterWebsiteOverview]:
     """Every plan this Matter still owed, dropped with the file that owed it.
 
@@ -4044,7 +4118,9 @@ def cancel_planned_website_overviews_for_closure(
         .order_by("created_at", "id")
     )
     return [
-        _cancel_one_website_overview(overview, actor=actor, reason="matter_closed")
+        _cancel_one_website_overview(
+            overview, actor=actor, reason="matter_closed", provenance=provenance
+        )
         for overview in planned
     ]
 
@@ -5521,7 +5597,12 @@ def correct_procedural_development(
     return current
 
 
-def end_live_work_for_closure(*, matter: Matter, actor: Any = None) -> None:
+def end_live_work_for_closure(
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> None:
     """End what a Matter owes only while it is active work. Every closure owes it (ENG-006).
 
     Three obligations exist because a Matter is current work, and none of them
@@ -5558,10 +5639,14 @@ def end_live_work_for_closure(*, matter: Matter, actor: Any = None) -> None:
     row locks, so a second call — a re-run cutover, a repeated refresh — finds
     nothing and writes nothing. The caller holds the Matter's row lock, taken
     first, which is the order `close_matter` has always used.
+
+    ``provenance`` — a closure no person made, the Lovable synchronisation's
+    (docs/adr/0213 §10.9) — rides nested on each of the three events, so the
+    cancelled step, overview and wait each name the run that ended them.
     """
-    end_open_action_for_closure(matter=matter, actor=actor)
-    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor)
-    close_open_feedback_waits_for_closure(matter=matter, actor=actor)
+    end_open_action_for_closure(matter=matter, actor=actor, provenance=provenance)
+    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor, provenance=provenance)
+    close_open_feedback_waits_for_closure(matter=matter, actor=actor, provenance=provenance)
 
 
 @transaction.atomic
@@ -5714,7 +5799,7 @@ def close_matter(
     # The step, the planned write-ups and the feedback waits end here, in this
     # transaction and under this lock — the same helper every other path that
     # makes a Matter inactive calls (ENG-006).
-    end_live_work_for_closure(matter=matter, actor=actor)
+    end_live_work_for_closure(matter=matter, actor=actor, provenance=provenance)
 
     episode_binding: dict[str, Any] = {}
     if stage_episode is not None:
@@ -5786,7 +5871,13 @@ def close_matter_from_source(
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
     if stage is not None:
-        _move_stage(matter=locked, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+        _move_stage(
+            matter=locked,
+            stage=stage,
+            actor=None,
+            origin=StageEpisodeOrigin.IMPORTED,
+            provenance=provenance,
+        )
     closed = close_matter(
         matter=locked,
         disposition=disposition,
@@ -5868,12 +5959,24 @@ def change_closure_from_source(
         forget_continuation_history(successor)
     if old_successor is not None and (successor is None or old_successor.pk != successor.pk):
         forget_continuation_history(old_successor)
+    # The summary names the two reasons and never the successor, and
+    # `Kõik muudatused` names a successor only after asking `visible_to`
+    # (LK-01). The payload is not so careful: its `reason` keeps the source's
+    # words, which may name the successor, and the admin's ChangeEvent page
+    # shows payloads raw — as `disposition_reason` and `MATTER_CLOSED` do. That
+    # is latent while every reader of the predecessor may read every Teema
+    # (docs/adr/0181), and listed as such in docs/adr/0213 §10.12.
+    from app.workflow.enums import closure_reason_label
+
     record_change_event(
         event_type=ChangeEventType.MATTER_CLOSURE_REASON_CHANGED,
         matter=locked,
         actor=None,
         obj=locked,
-        summary=reason[:200],
+        summary=(
+            f"{closure_reason_label(before['disposition'] or '') or 'põhjuseta'} → "
+            f"{closure_reason_label(disposition) or 'põhjuseta'}"
+        )[:200],
         payload={
             "from": before,
             "to": {
@@ -6026,7 +6129,13 @@ REOPEN_INTO_TERMINAL_STAGE = (
 
 @transaction.atomic
 def reopen_matter_into_stage(
-    *, matter: Matter, stage: Any, actor: Any = None, keep_response_deadline: bool = False
+    *,
+    matter: Matter,
+    stage: Any,
+    actor: Any = None,
+    keep_response_deadline: bool = False,
+    origin: str = StageEpisodeOrigin.RECORDED,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """«Ava uuesti» — a closed Matter becomes current work again, in a stage the person names.
 
@@ -6045,6 +6154,12 @@ def reopen_matter_into_stage(
     Matter. Reopening into the stage the file already holds — a file closed
     before `Hetkeseis` could close it — continues that stage's period rather
     than splitting it, because nothing moved.
+
+    **When no person reopens it** — the Lovable synchronisation putting back
+    what Lovable says (docs/adr/0213 §10.4) — the caller passes ``provenance``,
+    which rides on every event this writes (the stage move, an ended deadline,
+    `MATTER_REOPENED`), and ``origin=IMPORTED``, the origin of every other stage
+    period the synchronisation begins: `RECORDED` is a person's.
     """
     if stage is None:
         raise DomainError(REOPEN_NEEDS_A_STAGE)
@@ -6062,7 +6177,8 @@ def reopen_matter_into_stage(
         matter=matter,
         stage=stage,
         actor=actor,
-        origin=StageEpisodeOrigin.RECORDED,
+        origin=origin,
+        provenance=provenance,
     )
     episode = move.incoming if move.moved else ensure_current_stage_episode(matter=matter)
     if not keep_response_deadline:
@@ -6071,8 +6187,10 @@ def reopen_matter_into_stage(
         # as «lõppes teema sulgemisega» and stays in its history.
         from app.matters.response_deadlines import end_deadline_left_by_closure
 
-        end_deadline_left_by_closure(locked=locked, matter=matter, actor=actor)
-    return reopen_matter(matter=matter, actor=actor, stage_episode=episode)
+        end_deadline_left_by_closure(
+            locked=locked, matter=matter, actor=actor, provenance=provenance
+        )
+    return reopen_matter(matter=matter, actor=actor, stage_episode=episode, provenance=provenance)
 
 
 @transaction.atomic
@@ -6082,6 +6200,7 @@ def reopen_matter(
     actor: Any = None,
     reason: str = "",
     stage_episode: MatterStageEpisode | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Make a closed Matter current work again.
 
@@ -6105,6 +6224,10 @@ def reopen_matter(
     goes on to insert a `ChangeEvent` that references the Matter, and the mode
     conflicts with itself, so a concurrent `close_matter` — which takes the same
     row at the same strength since ENG-027 — cannot interleave with it.
+
+    ``provenance`` names the run of a reopening no person made (the Lovable
+    synchronisation, docs/adr/0213 §10.9); the event carries it nested, and a
+    person's reopening carries no payload, as before.
     """
     locked = lock_matter_for_write(matter.pk)
     if locked.is_open:
@@ -6146,6 +6269,7 @@ def reopen_matter(
         obj=matter,
         summary=reason[:200],
         stage_episode=stage_episode,
+        payload={"provenance": provenance} if provenance else None,
     )
     return matter
 

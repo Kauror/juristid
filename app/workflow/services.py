@@ -702,7 +702,12 @@ def cancel_next_action(
 
 
 @transaction.atomic
-def end_open_action_for_closure(*, matter: Any, actor: Any = None) -> NextAction | None:
+def end_open_action_for_closure(
+    *,
+    matter: Any,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> NextAction | None:
     """Close out the current action **and every planned one** when the Matter closes.
 
     A closed Matter with a live `Järgmiseks` — or a queued future one — would
@@ -712,11 +717,15 @@ def end_open_action_for_closure(*, matter: Any, actor: Any = None) -> NextAction
     for planned in NextAction.objects.filter(matter=matter, status=ActionStatus.PLANNED).order_by(
         "target_date", "created_at", "pk"
     ):
-        cancel_next_action(action=planned, actor=actor, reason=CLOSED_WITH_MATTER)
+        cancel_next_action(
+            action=planned, actor=actor, reason=CLOSED_WITH_MATTER, provenance=provenance
+        )
     action = current_next_action(matter)
     if action is None:
         return None
-    return cancel_next_action(action=action, actor=actor, reason=CLOSED_WITH_MATTER)
+    return cancel_next_action(
+        action=action, actor=actor, reason=CLOSED_WITH_MATTER, provenance=provenance
+    )
 
 
 @transaction.atomic
