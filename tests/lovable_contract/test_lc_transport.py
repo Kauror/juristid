@@ -70,16 +70,26 @@ def test_paging_the_server_cap_and_tie_order_do_not_change_the_result(
     assert not world.run(transport=transport).decisions.filter(outcome="APPLIED").exists()
 
 
-def test_a_server_cap_below_the_page_size_is_refused_never_truncated(db, pilot_on, monkeypatch):
+def test_a_server_cap_below_the_page_size_never_truncates_the_reading(db, pilot_on, monkeypatch):
     """LC-S1 / C-L-06: a server that silently returns fewer rows than the page
-    asks for is refused; the run fails and writes no business data.
+    asks for never makes a smaller source: the run either reads every row (the
+    result is the plain run's) or refuses and writes no business data.
 
     Five topics, pages of four, a cap of three: a reader that takes a short page
     for the end sees three topics and two «missing» — under the missing-topic
-    breaker (5), so only the transport's own refusal can stop it."""
+    breaker (5), so only the transport itself can keep the reading whole.
+    Observed at `f3eabea7` with the PostgREST fake: SUCCEEDED with two topics
+    silently missing."""
+    from app.legacy_import.lovable_sync_models import SyncOutcome
+
     world = _scenario(monkeypatch, count=5)
     transport, _ = _http(world, max_rows=PAGE - 1)
     before = table_hashes()
     run = world.run(transport=transport)
-    assert run.status == SyncRunStatus.FAILED
-    assert changed_tables(before, table_hashes()) <= BOOKKEEPING_TABLES
+    if run.status == SyncRunStatus.FAILED:
+        assert changed_tables(before, table_hashes()) <= BOOKKEEPING_TABLES
+        return
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert not run.decisions.filter(outcome=SyncOutcome.SOURCE_MISSING).exists()
+    assert run.counts["source_live"] == len(world.lovable.rows)
+    assert oracle.differences(world.lovable, today=world.today) == []
