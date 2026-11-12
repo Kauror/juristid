@@ -903,9 +903,9 @@ def test_the_domain_service_checks_the_releaser_and_has_no_bypass(world):
 
 
 def test_a_department_head_who_is_not_the_owner_and_a_reader_are_refused(world):
-    """Regression: TL-02 review P3-9. Only the owner or a verified administrator:
-    a department head who is not the owner and a reader are refused at the
-    service."""
+    """Guard: TL-02 review P3-9 (held before the review too). Only the owner or
+    a verified administrator: a department head who is not the owner and a
+    reader are refused at the service."""
     from app.legacy_import.lovable_closure_hold import RELEASE_NOT_ALLOWED
 
     _hold_one(world)
@@ -918,8 +918,9 @@ def test_a_department_head_who_is_not_the_owner_and_a_reader_are_refused(world):
 
 
 def test_a_released_kaasamine_wait_is_closed_in_the_owners_name(world):
-    """Regression: TL-02 review P3-9. The wait a release ends names the person
-    who released it, beside the hold's run provenance."""
+    """Guard: TL-02 review P3-9 (held before the review too). The wait a
+    release ends names the person who released it, beside the hold's run
+    provenance."""
     engagement = _wait(world)
     _close_in_lovable(world)
     hold_run = world.run()
