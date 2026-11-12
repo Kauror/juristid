@@ -71,7 +71,7 @@ class LovableRefused(Exception):
     """What Lovable's write layer raises: the scenario asked for a row it cannot hold."""
 
 
-#: Columns `topic_guard` makes immutable (0015 §3).
+#: Columns `topic_guard` makes immutable (Lovable `0015_canonical_topic_write_layer.sql` §3).
 IMMUTABLE = ("id", "nr", "aasta")
 
 
@@ -127,7 +127,7 @@ class ContractLovable(FakeLovable):
         super().edit(reference, **values)
 
     def touch(self, reference: str) -> None:
-        """A save that changes only a child table still bumps the version (0015 §6)."""
+        """A save that changes only a child table still bumps the version (Lovable 0015_…sql §6)."""
         super().edit(reference)
 
     def set_commencements(self, reference: str, items: list[dict[str, Any]]) -> None:

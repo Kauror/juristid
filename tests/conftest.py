@@ -242,14 +242,18 @@ _SYNC_RUNNERS = frozenset(
 def lovable_backup_proof_accepted(request):
     """An APPLY run in a sync test names a backup set taken minutes before it, as
     the host script does, but no host has mounted that set into the test: in the
-    modules that drive a run (`_SYNC_RUNNERS`), and only there, the verification's
+    modules that drive a run (`_SYNC_RUNNERS`, and the contract suite's
+    modules), and only there, the verification's
     proof (`lovable_sync.backup_proof_problem`, audit 2026-11-11 DR-05) is taken
     as given. `tests/test_sync_robustness.py` puts the real check back and proves
     it refuses; the set's name and age are still checked everywhere
     (`lovable_sync.backup_set_problem`). A patch of its own, so a test's
     ``monkeypatch.undo()`` does not take it away mid-test."""
     module = getattr(request, "module", None)
-    if module is None or not _SYNC_RUNNERS & set(vars(module)):
+    # The contract suite drives its runs through `World.run`
+    # (`tests/lovable_contract/world.py`), so its modules count whatever they import.
+    contract = module is not None and module.__name__.startswith("tests.lovable_contract.")
+    if module is None or not (contract or _SYNC_RUNNERS & set(vars(module))):
         yield
         return
     from app.legacy_import import lovable_sync

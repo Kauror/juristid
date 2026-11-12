@@ -111,7 +111,11 @@ def test_every_source_owned_field_changed_in_lovable_reads_lovables_value(db, pi
 
 
 def _local_edits(world):
-    """A lawyer edits one Lovable-owned field per Teema in Juristid; Lovable is unchanged."""
+    """A lawyer edits one Lovable-owned field per Teema in Juristid; Lovable is unchanged.
+
+    Since TL-01 a person is refused these edits in APPLY, so the divergence is
+    one from before the lock (`tests.source_ownership_support`): the restore
+    rule is what is under test here, not the lock."""
     from app.matters.services import (
         assign_matter,
         change_stage,
@@ -124,33 +128,37 @@ def _local_edits(world):
     from app.workflow.enums import Disposition, Track
     from app.workflow.models import StageVocabulary
     from app.workflow.services import set_next_action
+    from tests.source_ownership_support import divergence_from_before_the_lock
 
     lawyer = world.person(UKU)
-    set_matter_title(matter=world.matter(ref(1)), value="Juristi oma pealkiri", actor=lawyer)
-    assign_matter(matter=world.matter(ref(2)), owner=lawyer, actor=lawyer)
-    change_stage(
-        matter=world.matter(ref(3)),
-        stage=StageVocabulary.objects.get(key="government"),
-        actor=lawyer,
-    )
-    set_legal_instruments(
-        matter=world.matter(ref(4)),
-        legal_instruments=[
-            world.matter(ref(4))
-            ._meta.get_field("legal_instruments")
-            .related_model._default_manager.get(key="maarus")
-        ],
-        actor=lawyer,
-    )
-    set_next_action(matter=world.matter(ref(5)), text="Helistan ministeeriumi", actor=lawyer)
-    change_track(matter=world.matter(ref(6)), track=Track.KODA_INITIATIVE, actor=lawyer)
-    set_matter_dates(matter=world.matter(ref(7)), received_date=dt.date(2026, 3, 3), actor=lawyer)
-    close_matter(
-        matter=world.matter(ref(8)),
-        disposition=Disposition.OTHER,
-        actor=lawyer,
-        follow_ups_confirmed=True,
-    )
+    with divergence_from_before_the_lock():
+        set_matter_title(matter=world.matter(ref(1)), value="Juristi oma pealkiri", actor=lawyer)
+        assign_matter(matter=world.matter(ref(2)), owner=lawyer, actor=lawyer)
+        change_stage(
+            matter=world.matter(ref(3)),
+            stage=StageVocabulary.objects.get(key="government"),
+            actor=lawyer,
+        )
+        set_legal_instruments(
+            matter=world.matter(ref(4)),
+            legal_instruments=[
+                world.matter(ref(4))
+                ._meta.get_field("legal_instruments")
+                .related_model._default_manager.get(key="maarus")
+            ],
+            actor=lawyer,
+        )
+        set_next_action(matter=world.matter(ref(5)), text="Helistan ministeeriumi", actor=lawyer)
+        change_track(matter=world.matter(ref(6)), track=Track.KODA_INITIATIVE, actor=lawyer)
+        set_matter_dates(
+            matter=world.matter(ref(7)), received_date=dt.date(2026, 3, 3), actor=lawyer
+        )
+        close_matter(
+            matter=world.matter(ref(8)),
+            disposition=Disposition.OTHER,
+            actor=lawyer,
+            follow_ups_confirmed=True,
+        )
     return lawyer
 
 
@@ -264,26 +272,7 @@ def test_no_sync_write_names_a_lawyer(db, pilot_on, scenario):
     assert [e.event_type for e in new if e.actor_id is not None] == []
 
 
-@pytest.mark.parametrize(
-    "scenario",
-    [
-        pytest.param(
-            "source",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="LS-03/TL-03: reopen, stage, commencement and request writes "
-                "carry no run provenance",
-            ),
-        ),
-        pytest.param(
-            "restore",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="LS-03/TL-03: a restored stage or reopening carries no run provenance",
-            ),
-        ),
-    ],
-)
+@pytest.mark.parametrize("scenario", ["source", "restore"])
 def test_every_sync_write_names_its_run_and_source(db, pilot_on, scenario):
     """LC-A1 (provenance): every audit event a run writes names the
     synchronisation (`LOVABLE_SYNC`) and the run.

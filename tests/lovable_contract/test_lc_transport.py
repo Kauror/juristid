@@ -6,8 +6,6 @@ behind its ``opener=`` seam (`tests/lovable_postgrest_fake.py`, built by the
 transport stream; this suite builds no second one): page size, the server's
 row cap and the order of rows that tie do not change what a run writes, and a
 server cap below the page size is refused, never read as the end of the data.
-
-Skipped, with the reason, until that module is on the branch.
 """
 
 from __future__ import annotations
@@ -16,7 +14,9 @@ import pytest
 
 from app.legacy_import import lovable_source
 from app.legacy_import.lovable_sync_models import SyncRunStatus
+from tests import lovable_postgrest_fake as postgrest
 from tests.lovable_contract import oracle
+from tests.lovable_contract.fixtures import pilot_on, world  # noqa: F401 - fixtures
 from tests.lovable_contract.world import (
     BOOKKEEPING_TABLES,
     build_world,
@@ -24,14 +24,6 @@ from tests.lovable_contract.world import (
     ref,
     table_hashes,
 )
-
-postgrest = pytest.importorskip(
-    "tests.lovable_postgrest_fake",
-    reason="LC-S1 needs the PostgREST fake of the transport stream (QA-01); "
-    "it activates when tests/lovable_postgrest_fake.py lands",
-)
-
-from tests.lovable_contract.fixtures import pilot_on, world  # noqa: E402, F401 - fixtures
 
 pytestmark = pytest.mark.django_db
 

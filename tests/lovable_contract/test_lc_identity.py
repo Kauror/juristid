@@ -228,6 +228,7 @@ def test_juristid_only_records_are_byte_identical_after_any_run(db, pilot_on, sc
     scenario hashes the planned Tegevus of the Teema it closes separately."""
     from app.matters.services import set_matter_title
     from app.workflow.models import NextAction
+    from tests.source_ownership_support import divergence_from_before_the_lock
 
     world = build_world(3)
     other = world.matter(ref(3))
@@ -247,7 +248,9 @@ def test_juristid_only_records_are_byte_identical_after_any_run(db, pilot_on, sc
     if scenario == "source change":
         world.lovable.edit(ref(1), teema="Uus pealkiri Lovableist", oigusakt="ELi määrus")
     elif scenario == "restore":
-        set_matter_title(matter=world.matter(ref(1)), value="Oma", actor=world.person(AVA))
+        # A divergence from before the TL-01 lock (`tests.source_ownership_support`).
+        with divergence_from_before_the_lock():
+            set_matter_title(matter=world.matter(ref(1)), value="Oma", actor=world.person(AVA))
     elif scenario == "closure":
         world.lovable.edit(ref(1), hetkeseis="jõustunud", jargmiseks="", tegevuse_tahtaeg=None)
     else:

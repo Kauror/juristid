@@ -189,29 +189,6 @@ def _new_successor(world, number: int) -> str:
     return reference
 
 
-def test_st007_a_same_run_successor_converges_on_the_next_run_today(world):
-    """LC-C2 (successor created in the same run), current behaviour: run 1
-    creates B and holds A (`SUCCESSOR_NOT_IN_JURISTID`); run 2 closes A under B.
-
-    This is ST-007 / LS-01 as it stands; `test_st007_…_in_one_run` is the
-    contract and flips when the fix lands."""
-    successor = _new_successor(world, 50)
-    first = world.run()
-    assert first.counts["new_topics_created"] == 1
-    held = decisions(first, ref(1))
-    assert held["stage"].reason == lovable_sync.SUCCESSOR_MISSING
-    assert world.matter(ref(1)).is_open
-    second = world.run()
-    assert second.status == SyncRunStatus.SUCCEEDED, second.error
-    assert world.matter(ref(1)).superseded_by_id == world.matter(successor).pk
-    assert _parity(world) == []
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="ST-007 / LS-01: a successor created in the same run converges only on the next "
-    "run (stream C fixes it; this flips then)",
-)
 def test_st007_a_same_run_successor_closes_the_predecessor_in_one_run(world):
     """LC-C2: A→B with B new in Lovable: one run creates B and closes A under it,
     and the next run writes nothing.
@@ -238,11 +215,6 @@ def test_an_ambiguous_continuation_is_held_never_guessed(world):
     assert (a.is_open, a.superseded_by_id) == (True, None)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="QA-E-01 (new): a Lovable continuation cycle closes A under B (a guess), B fails "
-    "with a DomainError, and every night ends FAILED (PARTIAL_FAILURE)",
-)
 def test_a_continuation_cycle_is_held_never_guessed(world):
     """LC-C2 (A→B→A): neither Teema is closed under the other; the night is
     not a failure.
@@ -317,10 +289,6 @@ def test_commencements_mirror_lovable_by_kind_and_stage_and_removals_are_kept(db
     assert estimate.status == "CANCELLED"  # kept, never deleted
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="LS-03/TL-03: commencement writes carry no run provenance on their audit event",
-)
 def test_each_commencement_the_sync_writes_names_lovable_and_the_run(world):
     """LC-D1 (provenance): every commencement event of the run names the
     synchronisation and the run (source = Lovable, run key)."""
@@ -486,11 +454,14 @@ def test_over_the_restore_limit_restores_wait_and_source_changes_are_written(db,
     run's own override (`--max-restored`), as the approval's rehearsal did
     («the restore limit lowered on purpose to 3»)."""
     from app.matters.services import set_matter_title
+    from tests.source_ownership_support import divergence_from_before_the_lock
 
     world = build_world(4)
     lawyer = world.person(UKU)
-    for number in (1, 2, 3):
-        set_matter_title(matter=world.matter(ref(number)), value="Juristi oma", actor=lawyer)
+    # Divergences from before the TL-01 lock (`tests.source_ownership_support`).
+    with divergence_from_before_the_lock():
+        for number in (1, 2, 3):
+            set_matter_title(matter=world.matter(ref(number)), value="Juristi oma", actor=lawyer)
     world.lovable.edit(ref(3), oigusakt="ELi määrus")  # 3 has a source change and a restore
     world.lovable.edit(ref(4), teema="Kontraktiteema 2099_4 (Lovable)")
     run = world.run(max_restored=1)
@@ -503,7 +474,6 @@ def test_over_the_restore_limit_restores_wait_and_source_changes_are_written(db,
     assert _parity(world) == []
 
 
-@pytest.mark.xfail(strict=True, reason="LS-06: `--max-changed 0` behaves as the default (20)")
 def test_a_zero_source_limit_writes_nothing(world):
     """LC-B1 / LS-06: a limit of 0 means none, as `max_restored=0` already does."""
     world.lovable.edit(ref(1), teema="Kontraktiteema 2099_1 (Lovable)")
