@@ -5849,6 +5849,23 @@ def _close_matter(
         from app.legacy_import.lovable_closure_hold import closing_hold_stands
 
         sanctioned = closing_hold_stands(locked)
+    if sanctioned:
+        # What the hold kept waiting follows the stored reading before the
+        # Teema closes (rehearsal 2 follow-up D2/D3): the opinion request's
+        # date, and the stage — moved as an import while still open, since a
+        # closed Teema stays in the period it was closed in (ADR 0131).
+        from app.legacy_import.lovable_closure_hold import converge_held_fields
+
+        source_stage, held_provenance = converge_held_fields(locked, provenance=provenance)
+        if source_stage is not None:
+            _move_stage(
+                matter=locked,
+                stage=source_stage,
+                actor=None,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=held_provenance,
+            )
+            stage_episode = current_stage_episode(locked)
     # What this closure ends, by id, for its own record below — read under the
     # lock, before anything is ended.
     ending = live_work_at_closure(locked)
