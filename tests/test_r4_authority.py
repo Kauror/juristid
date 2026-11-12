@@ -272,7 +272,10 @@ def test_every_hold_code_is_technical_and_has_estonian_words():
 # ---------------------------------------------------------------------------
 
 
-def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_successor(reference):
+def test_the_reference_night_reproduces_lovable_and_its_new_successor_the_same_night(reference):
+    """Regression: LS-01 (ST-007) — 2026_140 continues under 2026_259, which
+    Lovable created tonight: 140 closes under it in the same run, not the next
+    night; a rerun writes nothing."""
     source = reference["source"]
     _lovable_now(source)
     steps_before = {
@@ -306,15 +309,14 @@ def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_succe
     assert old.status == ActionStatus.CANCELLED
     assert not NextAction.objects.filter(matter=m150, status=ActionStatus.COMPLETED).exists()
 
-    # 2026_140 → 2026_259: the successor was not in Juristid when 140 was read.
+    # 2026_140 → 2026_259: the successor was not in Juristid when 140 was first
+    # planned; it was created tonight, so 140 is planned again and closes now.
     found = _decisions(run, "2026_140")
-    assert (found["stage"].outcome, found["stage"].reason) == (
-        SyncOutcome.REVIEW_REQUIRED,
+    assert not {d.reason for d in found.values()} & {
         lovable_sync.SUCCESSOR_MISSING,
-    )
-    assert found[CONTINUATION].reason == lovable_sync.SUCCESSOR_MISSING
-    assert found["next_action_text"].reason == lovable_sync.LIFECYCLE_HELD
-    assert _matter("2026_140").is_open
+        lovable_sync.LIFECYCLE_HELD,
+    }
+    assert not _matter("2026_140").is_open
 
     # 2026_216 «ei saatnud» + «Jälgin …»: a MONITOR step with no day; the drafting
     # step superseded (kept in the history, never completed); the request ends
@@ -383,18 +385,8 @@ def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_succe
         dt.date(2026, 11, 10),
     )
 
-    # Only the missing successor is pending, with its technical code.
-    pending = {
-        (p.reference, p.field): p.reason
-        for p in lovable_sync.pending_differences()
-        if p.kind == "FIELD"
-    }
-    assert set(pending.values()) <= {lovable_sync.SUCCESSOR_MISSING, lovable_sync.LIFECYCLE_HELD}
-    assert {ref for ref, _f in pending} == {"2026_140"}
-
-    # The next night: the successor exists, so 2026_140 closes as continuing under it.
-    again = _run(reference, at=_at(24))
-    assert again.status == SyncRunStatus.SUCCEEDED, again.error
+    # Nothing is pending: the successor converged the predecessor the same night.
+    assert not [p for p in lovable_sync.pending_differences() if p.kind == "FIELD"]
     m140 = _matter("2026_140")
     assert (m140.is_open, m140.disposition, m140.superseded_by_id) == (
         False,
@@ -407,10 +399,10 @@ def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_succe
     assert _outcome("2026_140").sent_on == dt.date(2026, 6, 3)
     assert not [p for p in lovable_sync.pending_differences() if p.kind == "FIELD"]
 
-    # And a third night writes nothing at all.
+    # And the next night writes nothing at all.
     events = ChangeEvent.objects.count()
     outcomes = LovableOpinionOutcome.objects.count()
-    third = _run(reference, at=_at(48))
+    third = _run(reference, at=_at(24))
     assert third.status == SyncRunStatus.SUCCEEDED, third.error
     assert third.counts["updated"] == 0
     assert not third.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
