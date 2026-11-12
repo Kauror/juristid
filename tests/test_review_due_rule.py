@@ -594,9 +594,26 @@ def test_no_module_compares_a_review_date_with_today_on_its_own():
 #: list them, as `REVIEW_KINDS` and `DEADLINE_KEEPING_KINDS`.
 _REVIEW_KIND_NAMES = frozenset({"WAIT", "MONITOR", "SOURCE"})
 
+#: Hand-listed kinds this guard knowingly leaves, each with its reason. Keyed by
+#: the module and the exact literal on the flagged line, so a second listing in
+#: the same module is still caught.
+_HAND_LISTING_ALLOWED = {
+    # The 12-topic evidence pilot's package validator (docs/adr/0173) names the
+    # kinds its frozen package format carried. SOURCE postdates that format, and
+    # reading `REVIEW_KINDS` there would add a new refusal to a finished
+    # importer rather than restate the same rule.
+    ("legacy_import/lovable_pilot.py", '{"WAIT", "MONITOR"}'),
+}
+
 
 def _kind_name(node: ast.AST) -> str | None:
-    """``ActionKind.WAIT`` (or ``enums.ActionKind.WAIT``) → ``"WAIT"``; a string as itself."""
+    """The kind a literal element names, or ``None``.
+
+    ``ActionKind.WAIT``, ``enums.ActionKind.WAIT`` and either one's ``.value``
+    give ``"WAIT"``; a string constant is itself.
+    """
+    if isinstance(node, ast.Attribute) and node.attr == "value":
+        return _kind_name(node.value) if isinstance(node.value, ast.Attribute) else None
     if isinstance(node, ast.Attribute):
         owner = node.value
         if (isinstance(owner, ast.Name) and owner.id == "ActionKind") or (
@@ -608,34 +625,115 @@ def _kind_name(node: ast.AST) -> str | None:
     return None
 
 
+def _is_member(node: ast.AST) -> bool:
+    """``ActionKind.X`` or ``ActionKind.X.value``, never a bare string."""
+    return not isinstance(node, ast.Constant) and _kind_name(node) is not None
+
+
+def _literal_names(node: ast.AST) -> set[str] | None:
+    """The kinds a literal tuple, list or set names; ``None`` for anything else."""
+    if not isinstance(node, ast.Tuple | ast.List | ast.Set):
+        return None
+    return {name for name in map(_kind_name, node.elts) if name}
+
+
+def _names_review_kinds(found: set[str] | None, *, at_least: int) -> bool:
+    """Names ``at_least`` review kinds and is not the whole vocabulary (no ``DO``)."""
+    return found is not None and len(found & _REVIEW_KIND_NAMES) >= at_least and "DO" not in found
+
+
+def _is_kind_lookup(field: str) -> bool:
+    """``kind__in`` or a relation's ``…__kind__in``, never ``record_kind__in``."""
+    return field == "kind__in" or field.endswith("__kind__in")
+
+
+def _is_kind_field(field: str) -> bool:
+    return field == "kind" or field.endswith("__kind")
+
+
+def _mentions_kind(node: ast.AST) -> bool:
+    """Whether an expression reads a kind: ``x.kind``, ``kind``, ``x.get("kind")``."""
+    for part in ast.walk(node):
+        if isinstance(part, ast.Attribute) and part.attr == "kind":
+            return True
+        if isinstance(part, ast.Name) and part.id == "kind":
+            return True
+        if isinstance(part, ast.Constant) and part.value == "kind":
+            return True
+    return False
+
+
+def _q_kind_names(node: ast.AST) -> set[str]:
+    """The kinds an ``Q(kind=…) | Q(kind=…)`` chain names."""
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr):
+        return _q_kind_names(node.left) | _q_kind_names(node.right)
+    if isinstance(node, ast.Call):
+        found = set()
+        for keyword in node.keywords:
+            if keyword.arg and _is_kind_field(keyword.arg):
+                name = _kind_name(keyword.value)
+                if name:
+                    found.add(name)
+        return found
+    return set()
+
+
 def _hand_listed_review_kinds(tree: ast.AST) -> list[int]:
-    """Line numbers of a literal tuple, list or set naming two or more review kinds.
+    """Line numbers where review kinds are listed by hand instead of read.
 
-    Two shapes: any collection of ``ActionKind`` members (``(ActionKind.WAIT,
-    ActionKind.MONITOR)``), and any literal handed to a ``kind__in`` lookup,
-    strings included (``kind__in=("WAIT", "MONITOR")``). A collection that also
-    names ``DO`` is the whole vocabulary, not a review rule, and is left alone.
+    The shapes, each the way the next copy is likeliest to be written:
+
+    * a literal collection of two or more ``ActionKind`` review members, used
+      anywhere (``(ActionKind.WAIT, ActionKind.MONITOR)``, ``.value`` included);
+    * any literal handed to a kind lookup (``kind__in=…`` as a keyword or as
+      ``**{"kind__in": …}``) naming even **one** review kind, strings included:
+      ``kind__in=(ActionKind.WAIT,)`` is `DEADLINE_KEEPING_KINDS` written out;
+    * a membership test against a literal (``kind in {"WAIT", "MONITOR"}``)
+      naming two review kinds, or one when the left side reads a kind;
+    * a ``Q(kind=WAIT) | Q(kind=MONITOR)`` chain naming two review kinds.
+
+    A collection that also names ``DO`` is the whole vocabulary, not a review
+    rule, and is left alone; so is a lookup on another field (``record_kind__in``).
     """
-    flagged: list[int] = []
-
-    def names(node: ast.AST) -> set[str]:
-        if not isinstance(node, ast.Tuple | ast.List | ast.Set):
-            return set()
-        return {name for name in map(_kind_name, node.elts) if name}
-
-    def is_review_list(found: set[str]) -> bool:
-        return len(found & _REVIEW_KIND_NAMES) >= 2 and "DO" not in found
-
+    flagged: set[int] = set()
     for node in ast.walk(tree):
-        if isinstance(node, ast.Tuple | ast.List | ast.Set) and all(
-            isinstance(element, ast.Attribute) for element in node.elts
+        if (
+            isinstance(node, ast.Tuple | ast.List | ast.Set)
+            and node.elts
+            and all(_is_member(element) for element in node.elts)
+            and _names_review_kinds(_literal_names(node), at_least=2)
         ):
-            if is_review_list(names(node)):
-                flagged.append(node.lineno)
-        if isinstance(node, ast.keyword) and (node.arg or "").endswith("kind__in"):
-            if is_review_list(names(node.value)):
-                flagged.append(node.value.lineno)
-    return sorted(set(flagged))
+            flagged.add(node.lineno)
+        if (
+            isinstance(node, ast.keyword)
+            and node.arg
+            and _is_kind_lookup(node.arg)
+            and _names_review_kinds(_literal_names(node.value), at_least=1)
+        ):
+            flagged.add(node.value.lineno)
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                if (
+                    isinstance(key, ast.Constant)
+                    and isinstance(key.value, str)
+                    and _is_kind_lookup(key.value)
+                    and _names_review_kinds(_literal_names(value), at_least=1)
+                ):
+                    flagged.add(value.lineno)
+        if isinstance(node, ast.Compare):
+            for op, right in zip(node.ops, node.comparators, strict=True):
+                if not isinstance(op, ast.In | ast.NotIn):
+                    continue
+                needed = 1 if _mentions_kind(node.left) else 2
+                if _names_review_kinds(_literal_names(right), at_least=needed):
+                    flagged.add(node.lineno)
+        if (
+            isinstance(node, ast.BinOp)
+            and isinstance(node.op, ast.BitOr)
+            and _names_review_kinds(_q_kind_names(node), at_least=2)
+        ):
+            flagged.add(node.lineno)
+    return sorted(flagged)
 
 
 def test_no_module_lists_the_review_kinds_by_hand():
@@ -653,8 +751,16 @@ def test_no_module_lists_the_review_kinds_by_hand():
     for path in root.rglob("*.py"):
         if path == allowed or "migrations" in path.parts:
             continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        offenders += [f"{path.relative_to(root)}:{n}" for n in _hand_listed_review_kinds(tree)]
+        source = path.read_text(encoding="utf-8")
+        lines = source.splitlines()
+        relative = path.relative_to(root).as_posix()
+        for number in _hand_listed_review_kinds(ast.parse(source)):
+            if any(
+                module == relative and literal in lines[number - 1]
+                for module, literal in _HAND_LISTING_ALLOWED
+            ):
+                continue
+            offenders.append(f"{relative}:{number}")
 
     assert not offenders, (
         "a module lists review kinds by hand: "
@@ -663,20 +769,50 @@ def test_no_module_lists_the_review_kinds_by_hand():
     )
 
 
+def test_every_allowed_hand_listing_is_still_there():
+    """An allowance that outlives its line is a hole in the guard; remove it then."""
+    root = Path(__file__).resolve().parent.parent / "app"
+    for module, literal in _HAND_LISTING_ALLOWED:
+        assert literal in (root / module).read_text(encoding="utf-8"), (module, literal)
+
+
 @pytest.mark.parametrize(
     ("source", "caught"),
     [
+        # Collections of members, used anywhere.
         ("q.filter(kind__in=(ActionKind.WAIT, ActionKind.MONITOR))", True),
         ("q.filter(kind__in=[ActionKind.MONITOR, ActionKind.SOURCE])", True),
-        ('Q(action__kind__in=("WAIT", "MONITOR"))', True),
         ("KINDS = (ActionKind.WAIT, ActionKind.MONITOR)", True),
         ("KINDS = {enums.ActionKind.WAIT, enums.ActionKind.SOURCE}", True),
+        ("KINDS = (ActionKind.WAIT.value, ActionKind.MONITOR.value)", True),
+        # Kind lookups: one review kind is enough.
+        ("q.exclude(kind__in=(ActionKind.WAIT,))", True),
+        ('Q(action__kind__in=("WAIT", "MONITOR"))', True),
+        ('q.filter(kind__in=["SOURCE"])', True),
+        ('q.filter(**{"kind__in": ("WAIT", "MONITOR")})', True),
+        ('q.filter(**{"action__kind__in": [ActionKind.WAIT]})', True),
+        # Membership tests.
+        ('if step.get("kind") in {"WAIT", "MONITOR"}: pass', True),
+        ("if action.kind in (ActionKind.WAIT,): pass", True),
+        ("if action.kind not in [ActionKind.WAIT.value, ActionKind.SOURCE.value]: pass", True),
+        ('if label in ("WAIT", "MONITOR"): pass', True),
+        # Q chains.
+        ("q.filter(Q(kind=ActionKind.WAIT) | Q(kind=ActionKind.MONITOR))", True),
+        ('Q(kind="WAIT") | Q(kind="SOURCE") | Q(pk=1)', True),
+        # Left alone.
         ("q.filter(kind__in=REVIEW_KINDS)", False),
+        ("q.exclude(kind__in=DEADLINE_KEEPING_KINDS)", False),
         ("q.filter(kind__in=(ActionKind.DO, ActionKind.WAIT, ActionKind.MONITOR))", False),
         ("q.filter(kind=ActionKind.WAIT)", False),
         ('LABELS = ("WAIT", "MONITOR")', False),
+        ('q.filter(record_kind__in=("WAIT", "MONITOR"))', False),
+        ('q.filter(record_kind__in=["SOURCE"])', False),
+        ("if action.kind in REVIEW_KINDS: pass", False),
+        ('if label in ("WAIT",): pass', False),
+        ("q.filter(Q(kind=ActionKind.WAIT) | Q(status=ActionStatus.OPEN))", False),
+        ('if step.get("kind") in {"DO", "WAIT", "MONITOR"}: pass', False),
     ],
 )
 def test_the_hand_listing_guard_catches_what_it_should(source, caught):
-    """Regression: DL-01 — the guard itself, against the shapes it exists for."""
+    """Regression: DL-01. The guard itself, against the shapes it exists for."""
     assert bool(_hand_listed_review_kinds(ast.parse(source))) is caught

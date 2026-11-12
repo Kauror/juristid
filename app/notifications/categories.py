@@ -429,7 +429,8 @@ CATEGORIES: dict[str, Category] = {
             key=NotificationCategory.REVIEW_DATE,
             label="Ülevaatamise kuupäev",
             help_text=(
-                "Ootel või jälgitava tegevuse kuupäev, mil on aeg olukord üle vaadata. "
+                "Ootel, jälgitava või «Liik määramata» tegevuse kuupäev, mil on aeg "
+                "olukord üle vaadata. "
                 "See ei ole tähtaeg."
             ),
             source_type=NotificationSource.NEXT_ACTION,

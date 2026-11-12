@@ -25,6 +25,8 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
+from app.accounts.enums import UserRole
+from app.core.enums import Visibility
 from app.matters import department_dashboard as dd
 from app.matters import work_items as wi
 from app.matters.models import Matter
@@ -210,9 +212,10 @@ def test_a_closed_or_unreadable_teema_tells_nobody_of_its_review(specialist, adm
 # ---------------------------------------------------------------------------
 
 
-def _source_step(matter, *, on=None, status=ActionStatus.OPEN):
+def _source_step(matter, *, on=None, status=ActionStatus.OPEN, **extra):
     return factories.NextActionFactory(
         matter=matter,
+        **extra,
         text="Eelnõu arutelu komisjonis",
         kind=ActionKind.SOURCE,
         date_semantics=DateSemantics.REVIEW_ON,
@@ -345,3 +348,73 @@ def test_an_answered_deadline_beside_an_unclassified_step_is_told_to_nobody(
 
     assert _personal(category=OPINION) == []
     assert not wi.outstanding_response_deadlines(specialist).filter(pk=matter.pk).exists()
+
+
+# ---------------------------------------------------------------------------
+# Restricted records: the wider populations are still read as each person
+# ---------------------------------------------------------------------------
+
+
+def test_a_restricted_teema_tells_its_source_step_only_to_who_may_read_it(
+    specialist, other_specialist, administrator
+):
+    """Regression: DL-01 — a participant-restricted Teema, its step on a non-participant.
+
+    Under docs/adr/0181 `RESTRICTED` is a label, not an access boundary: every
+    business user reads it, participant or not, and nobody else does. So the
+    review reaches its named person exactly when that person may read the
+    Teema, and nobody else: not the owner (the step names somebody), not a
+    colleague, and not a non-participant without a business role.
+    """
+    colleague = factories.UserFactory()
+    for person in (specialist, other_specialist, administrator, colleague):
+        _set(person, REVIEW, enabled=True)
+    restricted = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    restricted.collaborators.add(specialist)
+    _step(
+        restricted,
+        on=TODAY,
+        kind=ActionKind.SOURCE,
+        date_semantics=DateSemantics.REVIEW_ON,
+        responsible=other_specialist,
+    )
+    # The same shape with a named person who reads no business content.
+    admins = factories.MatterFactory(owner=specialist, visibility=Visibility.RESTRICTED)
+    admins.collaborators.add(specialist)
+    _step(
+        admins,
+        on=TODAY,
+        kind=ActionKind.SOURCE,
+        date_semantics=DateSemantics.REVIEW_ON,
+        responsible=administrator,
+    )
+
+    _run(TODAY)
+
+    readable = Matter.objects.visible_to(other_specialist).filter(pk=restricted.pk).exists()
+    assert readable  # ADR 0181: a non-participant business user reads it.
+    assert [r.matter_id for r in _review_rows(recipient=other_specialist)] == [restricted.pk]
+    assert not Matter.objects.visible_to(administrator).filter(pk=admins.pk).exists()
+    for person in (specialist, administrator, colleague):
+        assert _review_rows(recipient=person) == []
+
+
+def test_a_restricted_source_step_keeps_the_deadline_for_every_reader(specialist):
+    """Regression: DL-02 — a restricted SOURCE step on a readable Teema.
+
+    A restricted DO takes the deadline off for owner and reader alike
+    (`tests/test_child_existence_visibility.py`). A restricted SOURCE step takes
+    it off for nobody, and somebody who reads no business content sees neither.
+    """
+    reader = factories.UserFactory(role=UserRole.READER)
+    outsider = factories.AdministratorFactory()
+    matter = _opinion(specialist, TODAY - timedelta(days=2))
+    _source_step(matter, on=TODAY + timedelta(days=5), visibility_override=Visibility.RESTRICTED)
+
+    for viewer in (specialist, reader):
+        assert wi.outstanding_response_deadlines(viewer).filter(pk=matter.pk).exists()
+        assert wi.response_deadline_is_outstanding(matter, viewer)
+        (deadline,) = _deadline_rows(viewer, matter)
+        assert deadline.is_overdue
+    assert not wi.outstanding_response_deadlines(outsider).exists()
+    assert not wi.response_deadline_is_outstanding(matter, outsider)
