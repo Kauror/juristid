@@ -20,6 +20,22 @@ kind), the opinion outcome (sent on a day / «ei saatnud»), the open opinion
 request, Koja ettepanek, received date, legal act, OneNote link and the
 commencements Lovable states. A value Juristid cannot represent is reported as
 NOT_REPRESENTABLE, never as a difference (approval §4).
+
+**A closure held for Juristid-only work** (TL-02, owner decision 12.11.2026):
+when Lovable closes a Teema that still has work only Juristid holds — a planned
+Tegevus, a «Koja arvamuse järelkontroll» (current or planned), a planned
+«Kodulehe ülevaade», an open Kaasamine wait, none of them removed — the closure
+is held, not applied: the Teema stays open and the work stays live. Such a
+Teema's lifecycle and stage are HELD — never MATCH, and never silently dropped
+— **provided the synchronisation recorded the hold** (a ``LOCAL_WORK_AT_CLOSURE``
+decision on its newest reading). The step and the request are HELD only where
+their own decision recorded the hold; otherwise they must read as Lovable
+states them for the open Teema, so a wrong write during a hold is DIFFERENT.
+Without the stage's record the lifecycle is DIFFERENT («held without a
+recorded hold»). HELD counts as a difference
+(`differences`): «no differences» means no held Teema either. The work is read
+here from the rows themselves, restated from the decision — not the engine's
+`juristid_only_work`.
 """
 
 from __future__ import annotations
@@ -37,6 +53,10 @@ from tests.lovable_contract import vocabulary
 MATCH = "MATCH"
 DIFFERENT = "DIFFERENT"
 NOT_REPRESENTABLE = "NOT_REPRESENTABLE"
+#: The closure Lovable states is held for Juristid-only work, with the hold recorded.
+HELD = "HELD"
+#: The ledger's code for that hold, restated (not imported from the engine).
+LOCAL_WORK_HOLD = "LOCAL_WORK_AT_CLOSURE"
 #: A Teema the oracle had to compare but could not: no synchronisation state, a
 #: deleted Teema or no Lovable row. Always a failure — parity over nothing is no
 #: evidence (`differences` returns it).
@@ -162,6 +182,7 @@ def expected(
     commencements: Iterable[Mapping[str, Any]],
     successor_ids: list[str],
     today: dt.date,
+    assume_open: bool = False,
 ) -> dict[str, Any]:
     """Every Lovable-owned field as Juristid must hold it, from Lovable's row alone.
 
@@ -184,7 +205,9 @@ def expected(
     else:
         lifecycle = NOT_REPRESENTABLE
 
-    is_open = isinstance(lifecycle, dict) and lifecycle["open"]
+    # ``assume_open``: the step and the request as Lovable states them for an
+    # open Teema — what a held closure keeps comparing (TL-02).
+    is_open = assume_open or (isinstance(lifecycle, dict) and lifecycle["open"])
     text = _text(row.get("jargmiseks"))
     step: Any = None
     if is_open and text:
@@ -322,6 +345,55 @@ def observed(matter: Any, *, exclude_dates: Iterable[Any] = ()) -> dict[str, Any
     }
 
 
+def juristid_only_work(matter: Any) -> dict[str, int]:
+    """The live work only Juristid holds, read from the rows (owner decision 12.11.2026).
+
+    Not Lovable's current step (an OPEN step that is not a follow-up check):
+    that is Lovable's own `jargmiseks`."""
+    next_action = apps.get_model("workflow", "NextAction")
+    overview = apps.get_model("matters", "MatterWebsiteOverview")
+    engagement = apps.get_model("matters", "MatterEngagement")
+    return {
+        "planned": next_action.objects.filter(
+            matter=matter, status="PLANNED", follow_up__isnull=True
+        ).count(),
+        "checks": next_action.objects.filter(
+            matter=matter, status__in=("OPEN", "PLANNED"), follow_up__isnull=False
+        ).count(),
+        "overviews": overview.objects.filter(
+            matter=matter, status="PLANNED", removed_at__isnull=True
+        ).count(),
+        "waits": engagement.objects.filter(
+            matter=matter,
+            lifecycle_tracked=True,
+            feedback_closed_at__isnull=True,
+            removed_at__isnull=True,
+        ).count(),
+    }
+
+
+def recorded_holds(state: Any) -> set[str]:
+    """The fields the newest reading recorded as held for local work."""
+    decision = apps.get_model("legacy_import", "LovableSyncDecision")
+    return set(
+        decision.objects.filter(
+            state=state,
+            run_id=state.observed_run_id,
+            outcome="REVIEW_REQUIRED",
+            reason=LOCAL_WORK_HOLD,
+        ).values_list("field", flat=True)
+    )
+
+
+#: Which recorded hold explains which compared field.
+HOLD_EXPLAINS = {
+    "lifecycle": ("stage",),
+    "stage": ("stage",),
+    "step": ("next_action_text", "next_action_date"),
+    "opinion_request": ("opinion_deadline",),
+}
+
+
 def compare(
     lovable: Any,
     *,
@@ -397,7 +469,33 @@ def compare(
             want["owner"] = NOT_REPRESENTABLE
         else:
             want["owner"] = owners[0].display_name
-        if not (isinstance(want["lifecycle"], dict) and want["lifecycle"]["open"]):
+        held: set[str] = set()
+        if (
+            isinstance(want["lifecycle"], dict)
+            and not want["lifecycle"]["open"]
+            and have["lifecycle"]["open"]
+            and any(juristid_only_work(state.matter).values())
+        ):
+            recorded = recorded_holds(state)
+            if "stage" in recorded:
+                # Held, as recorded: only what a recorded hold explains is HELD.
+                # A step or request with no hold of its own must still read as
+                # Lovable states it for the open Teema — a wrong write during
+                # the hold is DIFFERENT, never swallowed.
+                held = {name for name, fields in HOLD_EXPLAINS.items() if set(fields) & recorded}
+                as_open = expected(
+                    row,
+                    commencements=[],
+                    successor_ids=[],
+                    today=today,
+                    assume_open=True,
+                )
+                for name in ("step", "opinion_request"):
+                    if name not in held:
+                        want[name] = as_open[name]
+            else:
+                have["lifecycle"] = {**have["lifecycle"], "hold": "held without a recorded hold"}
+        elif not (isinstance(want["lifecycle"], dict) and want["lifecycle"]["open"]):
             # A closed Teema has no current step and no open request (approval §1).
             want["step"], want["opinion_request"] = None, None
         step = want["step"]
@@ -407,7 +505,9 @@ def compare(
             if isinstance(have["step"], dict):
                 have["step"] = {k: v for k, v in have["step"].items() if k != "kind"}
         for name, value in want.items():
-            if value == NOT_REPRESENTABLE:
+            if name in held:
+                verdict = HELD
+            elif value == NOT_REPRESENTABLE:
                 verdict = NOT_REPRESENTABLE
             else:
                 verdict = MATCH if value == have[name] else DIFFERENT
@@ -416,5 +516,6 @@ def compare(
 
 
 def differences(lovable: Any, **kw: Any) -> list[Comparison]:
-    """Every field that differs, and every Teema that could not be compared."""
-    return [c for c in compare(lovable, **kw) if c.verdict in (DIFFERENT, NOT_COMPARED)]
+    """Every field that differs or is held, and every Teema that could not be
+    compared: a held closure is never «no difference»."""
+    return [c for c in compare(lovable, **kw) if c.verdict in (DIFFERENT, NOT_COMPARED, HELD)]

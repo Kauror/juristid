@@ -808,6 +808,12 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: w["matter"].personal_notes.count(),
     ),
     WriteRoute(
+        name="matters:closure_hold_release",
+        label="Ootel sulgemise vabastamine (TL-02)",
+        request=lambda w: ({"pk": w["matter"].pk}, {"kinnitus": "0" * 16}),
+        probe=lambda w: Matter.objects.values_list("is_open", flat=True).get(pk=w["matter"].pk),
+    ),
+    WriteRoute(
         name="matters:reopen",
         label="Teema taasavamine",
         request=lambda w: ({"pk": w["closed"].pk}, {}),
@@ -1836,6 +1842,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "haldus:data_sync_check": "I: Lovable sync check, report-only, may_open_system",
     "haldus:data_sync_now": "I: records a sync request for the host, may_open_system",
     "haldus:data_sync_resolve": "I: one pending field's decision via resolve_field, visible only",
+    "haldus:data_sync_release_hold": (
+        "I: TL-02 release of a held Lovable closure, may_open_system, verified "
+        "administrator actor, fresh proof, digest-bound"
+    ),
     "haldus:data_sync_onenote_verify": "I: records a capture check for the host, may_open_system",
     "haldus:data_sync_onenote_import": "I: records a verified import for the host, may_open_system",
     "haldus:onenote_holds": (

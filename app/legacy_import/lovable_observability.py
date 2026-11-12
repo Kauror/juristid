@@ -2757,10 +2757,15 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
     },
     "stage": {
         "mapping": "EXACT",
-        "service": "close_matter_from_source / change_stage / reopen_matter_into_stage",
+        "service": (
+            "close_matter_from_source / change_stage / reopen_matter_into_stage; "
+            "ootel sulgemine: lovable_closure_hold.release_closure_hold"
+        ),
         "risks": [
             "«Jõustunud» ja «rohkem ei tegele» sulgevad teema; jätkuseos sulgeb jätkuna.",
             "Kaardistamata silt ja Juristides puuduv järglane jäävad ootele.",
+            "Juristides pooleli töö (planeeritud tegevus, järelkontroll, kodulehe ülevaade, "
+            "kaasamise ootus) jätab sulgemise ootele (LOCAL_WORK_AT_CLOSURE); midagi ei tühistata.",
         ],
         "blocking": "",
     },

@@ -1,4 +1,4 @@
-"""The six kinds of dated obligation a person can be told about (docs/adr/0198).
+"""The seven kinds of dated obligation a person can be told about (docs/adr/0198).
 
 One registry. Each :class:`Category` states, once:
 
@@ -190,6 +190,26 @@ def _review_sources(reader: Any) -> QuerySet[Any]:
     )
 
 
+def _closure_hold_sources(reader: Any) -> QuerySet[Any]:
+    """Held closures (TL-02) of Teemad this reader owns, dated by the day the
+    hold turns 14 days old (`lovable_closure_hold.with_escalation_day`)."""
+    from app.legacy_import.lovable_closure_hold import with_escalation_day
+
+    return with_escalation_day(
+        Matter.objects.visible_to(reader).filter(
+            record_mode=RecordMode.FULL, owner=reader, owner__is_active=True
+        )
+    )
+
+
+def _closure_hold_overdue(reader: Any, today: date) -> QuerySet[Any]:
+    from app.legacy_import.lovable_closure_hold import ESCALATES_FIELD, with_escalation_day
+
+    return with_escalation_day(
+        Matter.objects.visible_to(reader).filter(record_mode=RecordMode.FULL)
+    ).filter(**{f"{ESCALATES_FIELD}__lt": today})
+
+
 # -- escalation: the operational overdue population, department-wide -------
 
 
@@ -270,6 +290,18 @@ def _state_of_dated_facts(model: Any) -> Callable[[list[Any]], dict[Any, SourceS
     return state
 
 
+def _closure_hold_state(ids: list[Any]) -> dict[Any, SourceState]:
+    """Each Teema's newest hold's escalation day and its owner — the day of the
+    last hold even once it ended, so an ended hold's row reads as done."""
+    from app.legacy_import.lovable_closure_hold import last_escalation_days
+
+    days = last_escalation_days(ids)
+    return {
+        pk: SourceState(days.get(pk), owner)
+        for pk, owner in Matter.objects.filter(pk__in=ids).values_list("pk", "owner_id")
+    }
+
+
 def _important_state(ids: list[Any]) -> dict[Any, SourceState]:
     from app.intelligence.models import MatterImportantDate
 
@@ -307,6 +339,8 @@ class Category:
     on_day_sources: Callable[[Any], QuerySet[Any]] | None = None
     #: Where on the Teema page the source lives.
     anchor: str = ""
+    #: What management's escalation row says.
+    escalation_label: str = "Tähtaeg ületatud"
 
     @property
     def escalates(self) -> bool:
@@ -446,6 +480,30 @@ CATEGORIES: dict[str, Category] = {
             on_day_label="On aeg üle vaadata",
             sources=_review_sources,
             state=_state_of_steps,
+        ),
+        Category(
+            key=NotificationCategory.CLOSURE_HOLD,
+            label="Ootel sulgemine",
+            help_text=(
+                "Lovable on teema sulgenud, kuid Juristides pooleli töö tõttu on "
+                "sulgemine olnud 14 päeva ootel."
+            ),
+            source_type=NotificationSource.MATTER,
+            default_enabled=True,
+            default_offsets=(),
+            default_on_day=True,
+            supports_on_day=True,
+            on_day_kind=NotificationKind.ACTION,
+            date_field="closure_hold_escalates_on",
+            matter_field="pk",
+            date_label="14 päeva täitus",
+            advance_label="Ootel sulgemine",
+            on_day_label="Lovable'i sulgemine ootab pooleli töö tõttu",
+            sources=_closure_hold_sources,
+            state=_closure_hold_state,
+            overdue=_closure_hold_overdue,
+            anchor="#sulgemine-ootel",
+            escalation_label="Sulgemine ootel üle 14 päeva",
         ),
     )
 }

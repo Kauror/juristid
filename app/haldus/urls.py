@@ -33,6 +33,11 @@ urlpatterns = [
         data_sync_views.resolve,
         name="data_sync_resolve",
     ),
+    path(
+        "andmete-sunkroonimine/ootel-sulgemine/",
+        data_sync_views.release_hold,
+        name="data_sync_release_hold",
+    ),
     path("andmete-sunkroonimine/ajalugu/", data_sync_views.history, name="data_sync_history"),
     path(
         "andmete-sunkroonimine/onenote/kontrolli/",

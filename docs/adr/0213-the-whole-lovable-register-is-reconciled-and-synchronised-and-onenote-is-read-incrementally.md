@@ -1,6 +1,7 @@
 # 0213 — The whole Lovable register is reconciled and synchronised, and OneNote is read incrementally
 
-- Status: Proposed (owner brief «Full Lovable Register Reconciliation, Live Synchronization and OneNote Ingestion», 2026-11-09); amended 2026-11-11 by §10 (Lovable is the source of truth, owner approval of r54)
+- Status: Proposed — ready for owner acceptance (TL-02 approved 12.11.2026)
+- History: proposed with the owner brief «Full Lovable Register Reconciliation, Live Synchronization and OneNote Ingestion» (2026-11-09); amended 2026-11-11 by §10 (Lovable is the source of truth, owner approval of r54); amended 2026-11-12 by §10.13 (TL-02: a closure from Lovable is held while Juristid-only work is live)
 - Extends: 0191, 0192 (and its status updates), 0201, 0202, 0203, 0204, 0205, 0211, 0212
 - Migrations: `legacy_import` 0025 (engine), 0026 (inventory), 0027 (requests), 0028 (OneNote revisions and coverage). All four are additive.
 
@@ -232,12 +233,12 @@ The step is a pure function of Lovable's current values, re-derived every run (`
 6. anything else → `STAGE_UNMAPPED`.
 
 **How Juristid gets there** (`_apply_lifecycle`):
-- **Open → closed:** `close_matter_from_source`. It moves the stage as an import, then `close_matter` with Lovable's reason and `follow_ups_confirmed=True`, because no person is closing. The live work ends as every closure ends it, and `MATTER_CLOSED` carries the run's provenance.
+- **Open → closed:** `close_matter_from_source`. It moves the stage as an import, then `close_matter` with Lovable's reason. A source closure ends only what the source owns — the current step, cancelled with the run's provenance — and `MATTER_CLOSED` carries the run's provenance. **While Juristid-only work is live the closure is held, not applied** (§10.13): the plan holds it (`LOCAL_WORK_AT_CLOSURE`), and `close_matter_from_source` itself refuses under the Matter's lock (`SourceClosureHeld`).
 - **Closed → open:** `reopen_matter_into_stage`. The request the Teema closed with stays current only when it is Lovable's day.
 - **Open → open:** `change_stage`, as an import.
 - **Closed → closed** for another reason or another successor: `change_closure_from_source`, one `MATTER_CLOSURE_REASON_CHANGED`. Not a reopening and a new closure: the closing moment and person stay.
 
-A lawyer's local close or reopen is put back (§10.1). A historical Teema is reopened only when its label or its scope changed in Lovable. Inside the operational scope it is promoted to a full record and moves to the register (`MembershipBasis.MOVED`); outside it, it is held (`HISTORY_REOPENED_OUTSIDE_SCOPE`).
+A lawyer's local close or reopen is put back (§10.1); a reopened Teema that meanwhile gained Juristid-only work is held rather than closed again (§10.13). A historical Teema is reopened only when its label or its scope changed in Lovable. Inside the operational scope it is promoted to a full record and moves to the register (`MembershipBasis.MOVED`); outside it, it is held (`HISTORY_REOPENED_OUTSIDE_SCOPE`).
 
 *Reconcile (post-audit stream C, PR #617, LS-01):* at r54 a successor created in the same run is linked only on the next run. See that PR.
 
@@ -305,7 +306,7 @@ Each event records its before and after values, beside the provenance, which is 
 **Never touched by the sync:**
 - Juristid-only notes, entries, documents and their versions, submissions, evidence and OneNote imports;
 - a person's own important and commencement dates;
-- Kaasamine, website overviews, tags and relations;
+- Kaasamine, website overviews, tags and relations — and, since §10.13, a closure from Lovable no longer ends Juristid-only *pending work* either: planned Tegevused, «Koja arvamuse järelkontroll», planned «Kodulehe ülevaade» and open Kaasamine waits hold the closure instead;
 - `MatterSourcePage` rows;
 - the audit trail.
 
@@ -322,7 +323,7 @@ A hold is only ever technical: `TECHNICAL_HOLDS` names each code by its kind:
 - invalid read;
 - unsafe operation.
 
-A hold changes nothing, and a later unchanged night is not «restored over» it. Historical import holds are shown apart (§9.9).
+A hold changes nothing, and a later unchanged night is not «restored over» it. Historical import holds are shown apart (§9.9). `LOCAL_WORK_AT_CLOSURE` (§10.13) is an «unsafe operation» hold that is shown every night it stands, in the operational group, never as a standing or historical hold, and it counts toward no breaker.
 
 ### 10.11 Rollback
 
@@ -333,13 +334,59 @@ A hold changes nothing, and a later unchanged night is not «restored over» it.
 ### 10.12 Decisions this record does not take
 
 1. **Approval B**, the nightly APPLY. Item 3 of the r54 approval document, «automatic nightly mirroring», was **not** granted with Approval A. It is Approval B, still open; production runs COMPARE, and every write so far came from the supervised first run.
-2. **OPEN — TL-02: a source closure and Juristid-only planned work.** `close_matter_from_source` ends live work with `follow_ups_confirmed=True`. A planned «Kodulehe ülevaade», a Kaasamine wait and a «Koja arvamuse järelkontroll» are cancelled without the 0146 §8 confirmation, and a later reopening (`reopen_matter_into_stage`) does not bring them back. This is in tension with the rule that Juristid-only data never changes through the sync. The owner decides between:
-   - closing as built;
-   - closing but leaving that work for a person;
-   - holding the closure.
-
-   Until then, the behaviour above stands as built and is not a decision.
+2. **DECIDED 12.11.2026 — TL-02: a source closure and Juristid-only planned work.** The owner chose to hold the closure (Option A of the decision memo); see §10.13. At r54, `close_matter_from_source` cancelled that work with `follow_ups_confirmed=True`, and a later reopening did not bring it back. That is no longer the behaviour.
 3. **OPEN — LS-05:** whether an overdue drafting step with nothing sent ends the day after its deadline (as built) or stays until the request is resolved.
 4. Lovable-owned fields marked or read-only on synchronised Teemad (TL-01; a precondition of Approval B in the audit of 2026-11-11; post-audit stream B, PR #618).
 5. A name alias, or an account, for operational owners with no active Juristid account.
 6. **Latent, not decided here — successor names outside `Kõik muudatused`.** `MATTER_CLOSED`'s summary, `disposition_reason` (printed on the closed banner), and the raw `reason` in the closure events' payloads still carry the sync's own words, «Lovable: jätkub teemana NNNN_N». The admin's `ChangeEvent` page shows payloads raw. Since ADR 0181, anyone who may open the predecessor may open every Teema, so nothing leaks today. A future per-Teema restriction would make these name a successor the reader may not open. Not redesigned in this round.
+
+### 10.13 Amendment 2026-11-12: a closure from Lovable is held while Juristid-only work is live (TL-02)
+
+**Basis.** The owner's decision of 12.11.2026 on audit finding TL-02 (Option A of the TL-02 decision memo, with an attributed release). It amends 0152 §5 and 0146 §8 for one caller: a closure from the source is no longer an exception to «no outstanding work is ended unseen». It does not change who owns the lifecycle. Lovable still decides whether the Teema is open; Juristid only waits, visibly, until its own work is settled.
+
+**Juristid-only pending work** (`closure_work.juristid_only_work`) is everything a closure would end (`live_work_at_closure`, 0152) except the current step:
+- every planned Tegevus (`PLANNED`, no follow-up; 0143);
+- every «Koja arvamuse järelkontroll», current or planned (a step with a follow-up; 0146);
+- every live planned «Kodulehe ülevaade» (0081 §5);
+- every live open Kaasamine feedback wait (0086 §7).
+
+A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01). **Lovable's own current step is not Juristid-only.** On a synchronised Teema the `OPEN` step that is not a check is Lovable's `jargmiseks` (§10.3), and a closure ends it as Lovable says.
+
+**The hold.**
+- `_lifecycle_decisions` holds every closure of an open Teema while that work exists: a new closure, a closure under a successor (SUPERSEDED), and a lawyer's local reopening put back (`RESTORED`). The `stage` decision (and `continuation`, when the link moved) is REVIEW_REQUIRED `LOCAL_WORK_AT_CLOSURE`, an «unsafe operation» in `TECHNICAL_HOLDS`.
+- **The step and the request are held with it**, so there is no half-applied closure. Their decisions carry the same code when Lovable changed them, and nothing is written for either.
+- The decision's `current` names the work in counts and a digest (`local_work`), the hold's first night (`held_since`, carried from the state's previous observed run while the hold stands) and its escalation day (`escalates_on`, 14 days later). There is no new table: the hold is the newest reading's decision, where every technical hold lives.
+- The domain service is the backstop. `close_matter_from_source` refuses under the Matter's lock while the work exists (`SourceClosureHeld`). Work added between the plan and the write is held at the write, and the run records the hold for that Teema, never a failure.
+- **It counts toward neither Teemad breaker.** It is not a source change for `MAX_CHANGED_MATTERS`, not a restore, and it is excluded from the new-holds breaker (`BREAKER_EXEMPT_HOLDS`).
+- **Its own cap.** More than `MAX_NEW_CLOSURE_HOLDS` (20) holds *beginning* in one night (`held_since` = tonight) is a mass closure in Lovable or a broken reading. An APPLY night over it is REVIEW_ONLY with `CLOSURE_HOLD_BREAKER` and writes nothing; `sync_health` and the summary say so. **Proposed value; the owner's approval is needed.**
+- **Age warning.** A hold older than `MAX_CLOSURE_HOLD_AGE_DAYS` (21) makes `sync_health` not ok. **Proposed value; the owner's approval is needed.**
+- COMPARE and CHECK record it identically and write nothing. Repeat runs are idempotent: one hold decision per run, no event, no baseline move, the same first night.
+- **Work that appears at the write.** If the domain guard refuses at the write, that Teema's other eligible fields are recorded as not executed (`CLOSURE_HELD_AT_WRITE`) and wait for the next night.
+
+**Only while the synchronisation writes** (lead decision 12.11.2026, the more conservative choice before Approval B). A hold may lead to a write — a release — or to an escalation only in APPLY and before the final cutover:
+- **COMPARE:** the night records the hold, so it shows what APPLY would do. Haldus lists it as proposed. The Teema banner is informational only: Lovable shows the Teema closed, and the closure *would* be held once the synchronisation writes. There is no release and no escalation.
+- **OFF:** no release and no escalation.
+- **After the cutover, or with the Teema's cohort retired:** no standing hold at all, and nothing is listed or escalated.
+
+**Visibility.**
+- **Run counts:** `held_local_work`, `new_closure_holds` and `closure_hold_limit`. The night's summary says «Lovable'is suletud, Juristides pooleli töö tõttu ootel: N teemat (täna lisandus n/20)». `sync_health` stays ok and says «N closure(s) held for Juristid-only work», unless a hold is older than 21 days. The hold is never reported as an unexplained difference and never suppressed.
+- **Haldus → Lovable'i üksikasjad** lists each held closure by reference, first night, age and kind of work (counts only), with the release.
+- **The Teema page** shows a banner, «Lovable on teema sulgenud, kuid Juristides on pooleli: …», with the counts (reader-blind, `LiveWork.phrases`), wherever the source-owned lock applies.
+- **The in-repo independent oracle** (`tests/lovable_contract/oracle.py`) reads such a Teema as HELD: a difference with a recorded hold, never MATCH. A Lovable-owned value that differs in a way the hold does not explain (for example a step written during the hold) stays DIFFERENT.
+- **The operator's `parity_check.py`** (outside the repository) does not know the hold yet. It must be extended in the same way before the first APPLY night that can hold a closure; the rehearsal round does that.
+
+**Resolution.**
+1. **The lawyer finishes, cancels or moves the work.** The next night closes the Teema with Lovable's reason, as a source change (it counts once toward the 20).
+2. **The lawyer closes the Teema themselves.** While the hold stands, the lock frees the closure (`source_ownership.Ownership.held`, open-decisions E11), so «Lõpeta teema» with the 0152 confirmation is allowed. The next night sets Lovable's reason with `change_closure_from_source` and ends nothing again. While Lovable shows the Teema open, E3 still refuses it.
+3. **Lovable reopens it.** The next reading holds nothing, and the hold simply clears.
+4. **Release** (`lovable_closure_hold.release_closure_hold`).
+   - **Who:** the Teema's owner (from the Teema page) or a verified technical administrator (from Haldus). A person, always: there is no release without one, and nothing is attributed to anybody else. `close_matter_from_source` checks this itself, so no caller can pass a release around it.
+   - **When:** only while the synchronisation writes (APPLY, not cut over).
+   - **What they see:** Lovable's reason, and what is cancelled in their name, in counts.
+   - **The recheck:** under the Matter's and the state's locks, the release reads the stored Lovable reading again (if it no longer closes the Teema, nothing changes). A newer stored reading of the topic that no longer closes it the same way refuses the release. The web process holds no Lovable credentials, so there is no live re-read; both confirmation pages show when the reading was taken. It reads the work again: the confirmation is the digest of exactly the work shown, and changed work is refused with the renewed counts.
+   - **After it:** «Ava uuesti» stays refused. The hold's E11 freeing ends with the closure, although the hold's decision stays the newest reading's until the next night.
+   - **The closure:** `close_matter_from_source` with Lovable's reason and stage, the hold's run provenance plus `closure_hold: RELEASED`, and the releasing person as the actor of `MATTER_CLOSED` and of every cancellation.
+
+**Escalation** (the notifications package; see the 0198 amendment of 2026-11-12). A hold still standing on its 14th day (`escalates_on`) gives its owner one «Vajab tegevust» row (category `CLOSURE_HOLD`). The next morning, every holder of `department.view_management` — the department head — gets one row. Both are keyed on the hold's escalation day, so a re-run never delivers twice, and both retire as DISCHARGED when the hold ends. Only while the synchronisation writes (APPLY). The category vocabulary is a CHECK constraint, so the category adds the migration `notifications` 0004: schema forward; on the way back it deletes the `CLOSURE_HOLD` rows before narrowing the CHECK.
+
+**Reopening still restores nothing** (0086 §7, 0081 §5, 0146 D9). The hold makes that loss unnecessary rather than undoing it.

@@ -205,3 +205,17 @@ A syntax-tree test (`tests/test_review_due_rule.py::test_no_module_lists_the_rev
 **On the first run after release.** `REVIEW_DATE` stays off by default, so nobody who has not switched it on is affected. For a person who has, the first reconcile after the release delivers the day's row for every current SOURCE step of theirs whose `REVIEW_ON` day is today or one of the seven days before it (`CATCH_UP_DAYS`), as INFO rows at once, and any advance interval they chose for the days ahead. A one-time burst of information, never late and never escalated; the catch-up rule itself is unchanged.
 
 `OPINION_DEADLINE`'s on-the-day row and its escalation already read `outstanding_response_deadlines`, so they follow ADR 0050's amendment of the same day without a change here: an open SOURCE step, like a WAIT, no longer takes an outstanding `Arvamuse tähtaeg` off the day or out of the escalation (DL-02). Defaults, wording and every other category are unchanged.
+
+## Amendment 2026-11-12 (TL-02) — a seventh category, `CLOSURE_HOLD`
+
+The owner's TL-02 decision of 12.11.2026 (docs/adr/0213 §10.13) holds a closure from Lovable while the Teema still has Juristid-only work, and escalates a hold left unresolved for 14 days to the responsible lawyer and the department head. It uses this package rather than a second notice mechanism:
+
+| Category | Source | Population (as the recipient) | Recipient | Default |
+|---|---|---|---|---|
+| `CLOSURE_HOLD` «Ootel sulgemine» | the Teema (`MATTER`); its date is the hold's escalation day (`escalates_on`, the hold's first night + 14) | open FULL Teemad the recipient owns whose newest reading holds the closure (`lovable_closure_hold.with_escalation_day`) | active owner; escalation to every holder of `department.view_management` | on, the day only; ACTION «Lovable'i sulgemine ootab pooleli töö tõttu» |
+
+- **The day** is the 14th day of the hold: the owner's on-the-day «Vajab tegevust» row, catch-up *D … D + 7* as for every category.
+- **Escalation** follows D3 unchanged: one INFO row per holder on *D + 1 … D + 7*, «Sulgemine ootel üle 14 päeva» (`Category.escalation_label`, the other categories keep «Tähtaeg ületatud»), never to a holder who is the owner, behind the same `OVERDUE_ESCALATION` preference.
+- **Keys and retirement** are §1 and §4 unchanged. The source date is the escalation day, carried night to night while the hold stands, so a re-run of the sync or of the reconcile never delivers twice; a new hold after a gap is a new date. When the hold ends (the work settled, the Teema closed, Lovable reopened) the rows retire as `DISCHARGED`: the category's `state` reads the newest hold's day, standing or not.
+- **Only while the synchronisation writes.** The population is empty in COMPARE, in OFF, after the cutover and for a retired cohort (lead decision 12.11.2026): no row links to a banner that is not on the page.
+- **Migration** `notifications` 0004 widens the category CHECK constraint: schema only, forward. Its reverse first **deletes** every `CLOSURE_HOLD` row (a `RunPython` reverse; the forward does nothing), because the narrower CHECK cannot be re-added over them. Retiring the rows is not enough. An image rollback that does not migrate back leaves the rows, and the older image does not know the category, so roll back with `migrate notifications 0003` or delete the rows first.
