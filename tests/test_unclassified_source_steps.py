@@ -25,7 +25,6 @@ from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 
-from app.core.enums import Visibility
 from app.matters import department_dashboard as dd
 from app.matters import work_items as wi
 from app.matters.models import Matter
@@ -33,7 +32,13 @@ from app.matters.my_work import build_my_work
 from app.matters.register_filters import register_population
 from app.matters.selectors import response_deadline_of
 from app.notifications.enums import NotificationCategory, NotificationKind, NotificationPurpose
-from app.workflow.enums import ActionKind, ActionStatus, DatePrecision, DateSemantics
+from app.workflow.enums import (
+    ActionKind,
+    ActionStatus,
+    DatePrecision,
+    DateSemantics,
+    Disposition,
+)
 from tests import factories
 from tests.factories import send_opinion_through_services
 from tests.test_deadline_notifications import (
@@ -165,31 +170,39 @@ def test_a_second_reconcile_creates_no_second_review_row(specialist):
     assert len(_review_rows(recipient=specialist)) == 2
 
 
-def test_a_closed_or_unreadable_teema_tells_nobody_of_its_review(specialist, other_specialist):
+def test_a_closed_or_unreadable_teema_tells_nobody_of_its_review(specialist, administrator):
     """Regression: DL-01 — the wider population is still read as the recipient.
 
-    A closed Teema's step, a tombstoned Teema's step and a restricted Teema the
-    responsible person may not read produce nothing for that person.
+    A closed Teema's step produces nothing, and a step whose named person may
+    not read business content (an administrator without a business role,
+    docs/adr/0181) reaches nobody. (A deleted Teema's steps are purged with it,
+    `matters.deletion.delete_matter`, so there is no tombstoned step to read.)
     """
-    _set(specialist, REVIEW, enabled=True)
-    _review_step(specialist, on=TODAY, is_open=False)
-    tombstoned = _review_step(specialist, on=TODAY)
-    Matter.all_objects.filter(pk=tombstoned.matter_id).update(
-        deleted_at=datetime(2026, 11, 1, tzinfo=UTC)
+    for person in (specialist, administrator):
+        _set(person, REVIEW, enabled=True)
+    # Closed directly, so its step stays open: the population, not the closure
+    # service, is what must leave it out.
+    _review_step(
+        specialist,
+        on=TODAY,
+        is_open=False,
+        closed_at=datetime(2026, 11, 1, tzinfo=UTC),
+        disposition=Disposition.COMPLETED,
     )
-    hidden = factories.MatterFactory(owner=other_specialist, visibility=Visibility.RESTRICTED)
+    unreadable = factories.MatterFactory(owner=specialist)
     _step(
-        hidden,
+        unreadable,
         on=TODAY,
         kind=ActionKind.SOURCE,
         date_semantics=DateSemantics.REVIEW_ON,
-        responsible=specialist,
+        responsible=administrator,
     )
-    assert not Matter.objects.visible_to(specialist).filter(pk=hidden.pk).exists()
+    assert not Matter.objects.visible_to(administrator).filter(pk=unreadable.pk).exists()
 
     _run(TODAY)
 
     assert _review_rows(recipient=specialist) == []
+    assert _review_rows(recipient=administrator) == []
 
 
 # ---------------------------------------------------------------------------
