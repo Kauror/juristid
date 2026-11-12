@@ -104,7 +104,10 @@ def test_lovable_closes_with_its_own_reason_and_reopens_at_its_stage(db, pilot_o
     world.lovable.edit(ref(1), hetkeseis="jõustunud", jargmiseks="", tegevuse_tahtaeg=None)
     world.lovable.edit(ref(2), hetkeseis="rohkem ei tegele")
     world.lovable.edit(
-        ref(3), hetkeseis="Riigikogus", jargmiseks="Ootan 3. lugemist", tegevuse_tahtaeg="2099-05-01"
+        ref(3),
+        hetkeseis="Riigikogus",
+        jargmiseks="Ootan 3. lugemist",
+        tegevuse_tahtaeg="2099-05-01",
     )
     run = world.run()
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
@@ -137,7 +140,10 @@ def test_tl02_a_source_closure_cancels_juristid_only_planned_work_today(world):
     world.run()
     assert MatterWebsiteOverview.objects.get(pk=overview.pk).status == "CANCELLED"
     world.lovable.edit(
-        ref(1), hetkeseis="Riigikogus", jargmiseks="Ootan 3. lugemist", tegevuse_tahtaeg="2099-05-01"
+        ref(1),
+        hetkeseis="Riigikogus",
+        jargmiseks="Ootan 3. lugemist",
+        tegevuse_tahtaeg="2099-05-01",
     )
     world.run()
     assert world.matter(ref(1)).is_open
@@ -310,9 +316,7 @@ def test_each_commencement_the_sync_writes_names_lovable_and_the_run(world):
     synchronisation and the run (source = Lovable, run key)."""
     world.lovable.set_commencements(ref(1), [{"liik": ESTIMATED, "kuupaev": "2099-09-01"}])
     run = world.run()
-    events = ChangeEvent.objects.filter(
-        matter=world.matter(ref(1)), created_at__gte=run.created_at
-    )
+    events = ChangeEvent.objects.filter(matter=world.matter(ref(1)), created_at__gte=run.created_at)
     assert events.exists()
     for event in events:
         payload = event.payload or {}

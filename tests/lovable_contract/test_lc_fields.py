@@ -55,7 +55,11 @@ def _source_world():
     world.lovable.set_commencements(
         ref(10),
         [
-            {"liik": "Eeldatava kuupäevaga jõustumine", "kuupaev": "2099-07-01", "tapsustus": "§ 2"},
+            {
+                "liik": "Eeldatava kuupäevaga jõustumine",
+                "kuupaev": "2099-07-01",
+                "tapsustus": "§ 2",
+            },
             {"liik": "Üldises korras"},
         ],
     )

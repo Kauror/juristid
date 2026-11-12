@@ -168,14 +168,14 @@ def test_the_excluded_population_is_counted_and_never_written(db, pilot_on):
     assert run.counts["new_topics_created"] == 0
     from app.legacy_import.lovable_sync_models import LovableSyncNewTopic
 
-    holds = {
-        str(t.source_id): (t.status, t.reason) for t in LovableSyncNewTopic.objects.all()
-    }
+    holds = {str(t.source_id): (t.status, t.reason) for t in LovableSyncNewTopic.objects.all()}
     for number in (211, 212, 213, 214):
         assert holds[source_id(ref(number))] == ("HELD", lovable_sync.NEW_UUID_LIVE)
     for number in (5, 6):
         assert holds[source_id(ref(number))] == ("HELD", lovable_sync.NEW_UUID_TOMBSTONE)
-    assert oracle.differences(world.lovable, today=world.today, references=world.references[:4]) == []
+    assert (
+        oracle.differences(world.lovable, today=world.today, references=world.references[:4]) == []
+    )
 
     # One more archive topic in Lovable: outside +1, the write set unchanged.
     extra = ref(204)

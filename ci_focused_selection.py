@@ -82,6 +82,12 @@ ALWAYS: tuple[str, ...] = (
     "tests/test_architecture_decisions.py",
     "tests/test_negative_tests_name_their_refusal.py",
     "tests/test_e2e_contracts.py",
+    # The Lovable contract suite's cheap invariants (QA audit 2026-11-11 §D.4):
+    # the oracle's independence (I-6), synthetic data only (I-7), the read-only
+    # transport (LC-R1) and Lovable's vocabulary coverage (LC-V1). The rest of
+    # `tests/lovable_contract/` needs PostgreSQL and runs in FULL.
+    "tests/lovable_contract/test_contract_invariants.py",
+    "tests/lovable_contract/test_vocabulary_coverage.py",
 )
 
 #: A change under any of these is a change to CI itself.

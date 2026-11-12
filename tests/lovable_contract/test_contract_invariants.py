@@ -34,8 +34,8 @@ def _imports(path: Path) -> set[str]:
         elif (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Name | ast.Attribute)
-            and getattr(node.func, "id", getattr(node.func, "attr", "")) in
-            ("__import__", "import_module")
+            and getattr(node.func, "id", getattr(node.func, "attr", ""))
+            in ("__import__", "import_module")
         ):
             found.add("<dynamic import>")
     return found
@@ -142,9 +142,7 @@ def test_the_transport_protocol_can_only_select():
     Contract: approval 11.11 §2 «It read Lovable through GET requests only»;
     ADR 0192 §2 (owner rule 02.11: no write is ever sent, not even a probe)."""
     members = {
-        name
-        for name, _ in inspect.getmembers(lovable_source.Transport)
-        if not name.startswith("_")
+        name for name, _ in inspect.getmembers(lovable_source.Transport) if not name.startswith("_")
     }
     assert members == {"select"}
 

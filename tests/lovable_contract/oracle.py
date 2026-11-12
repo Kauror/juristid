@@ -155,9 +155,7 @@ def expected(
     act = _text(row.get("oigusakt"))
     act_treatment = vocabulary.TREATMENT.get(("oigusakt", act))
     legal_act: Any = (
-        [act_treatment[1]]
-        if act_treatment and act_treatment[0] == "MAPPED"
-        else NOT_REPRESENTABLE
+        [act_treatment[1]] if act_treatment and act_treatment[0] == "MAPPED" else NOT_REPRESENTABLE
     )
     link = _text(row.get("onenote_link"))
     onenote: Any = link if link.startswith("https://") else NOT_REPRESENTABLE
@@ -184,7 +182,7 @@ def expected(
         "owner": owner_name,
         "lifecycle": lifecycle,
         "stage": stage if stage is not None else NOT_REPRESENTABLE,
-        "step": step if is_open or step is None else None,
+        "step": step,
         "opinion_outcome": outcome,
         "opinion_request": request,
         "koda": bool(row.get("koja_ettepanek")),
@@ -218,13 +216,21 @@ def observed(matter: Any, *, exclude_dates: Iterable[Any] = ()) -> dict[str, Any
         .first()
     )
     dates = [
-        ("MatterEffectiveDate", r.kind, r.date_value.isoformat() if r.date_value else None,
-         _text(r.description))
+        (
+            "MatterEffectiveDate",
+            r.kind,
+            r.date_value.isoformat() if r.date_value else None,
+            _text(r.description),
+        )
         for r in effective.objects.filter(matter=matter, status="ACTIVE", removed_at__isnull=True)
         if str(r.pk) not in skip
     ] + [
-        ("MatterImportantDate", r.kind, r.date_value.isoformat() if r.date_value else None,
-         _text(r.note))
+        (
+            "MatterImportantDate",
+            r.kind,
+            r.date_value.isoformat() if r.date_value else None,
+            _text(r.note),
+        )
         for r in important.objects.filter(
             matter=matter,
             status="ACTIVE",
@@ -306,7 +312,8 @@ def compare(
             want["lifecycle"] = NOT_REPRESENTABLE
         have = observed(state.matter, exclude_dates=exclude_dates)
         owners = [
-            u for u in user_model.objects.filter(is_active=True)
+            u
+            for u in user_model.objects.filter(is_active=True)
             if _text(u.display_name).casefold() == want["owner"].casefold()
         ]
         if len(owners) != 1:
