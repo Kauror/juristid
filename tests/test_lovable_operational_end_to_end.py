@@ -243,7 +243,7 @@ def _http(fake: Any, seen: list[tuple[str, str]]) -> lovable_source.HttpTranspor
         columns = query.pop("select").split(",")
         order, offset, limit = query.pop("order"), int(query.pop("offset")), int(query.pop("limit"))
         rows = fake.select(table, columns, filters=query, order=order)
-        return _Answer(rows[offset : offset + limit], url=url)
+        return _Answer(rows[offset : offset + limit], url=url, total=len(rows))
 
     return lovable_source.HttpTransport(_config(), opener=opener)
 

@@ -63,10 +63,21 @@ FAKE_BACKUP = (
     "#!/usr/bin/env bash\n"
     'lock="${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}"\n'
     'mkdir "$lock" 2>/dev/null || { echo "ERROR: another operation holds $lock"; exit 1; }\n'
-    "echo 'Backup set: /backups/sets/20261109T000000Z'\n"
+    'root=""; while [ $# -gt 0 ]; do [ "$1" = --backup-root ] && root="$2"; shift; done\n'
+    'mkdir -p "$root/sets/20261109T000000Z"\n'
+    'echo "Backup set: $root/sets/20261109T000000Z"\n'
     'rm -rf -- "$lock"\n'
 )
-FAKE_VERIFY = "#!/usr/bin/env bash\nexit 0\n"
+# As the real one with --record (DR-05): the proof is written into the set only
+# when every check passed; `verify-no-proof` makes it pass without writing one.
+FAKE_VERIFY = (
+    "#!/usr/bin/env bash\n"
+    'set=""; record=0; while [ $# -gt 0 ]; do\n'
+    '  case "$1" in --set) set="$2" ;; --record) record=1 ;; esac; shift; done\n'
+    'if [ "$record" = 1 ] && [ ! -e "$FAKE_DIR/verify-no-proof" ]; then\n'
+    '  printf "set=%s\\nlevel=2\\n" "$(basename "$set")" > "$set/VERIFIED-L2"; fi\n'
+    "exit 0\n"
+)
 
 
 def _executable(path: Path, text: str) -> None:
@@ -192,6 +203,47 @@ def test_on_demand_in_apply_takes_and_hands_over_a_verified_backup(host):
     runner = next(c for c in calls(host) if "run-next --kind lovable" in c)
     assert "LOVABLE_SYNC_BACKUP_SET=sets/20261109T000000Z" in runner
     assert "verified (level 2)" in logs(host)
+    # DR-05: the set travels with its proof, read-only.
+    set_dir = host["tmp"] / "backups" / "sets" / "20261109T000000Z"
+    assert "20261109T000000Z:/backup-set:ro -e LOVABLE_SYNC_BACKUP_DIR=/backup-set" in runner
+    assert (set_dir / "VERIFIED-L2").exists()
+
+
+@pytest.mark.parametrize("arguments", [(), ("--on-demand",)])
+def test_a_backup_without_its_proof_hands_nothing_to_an_apply_run(host, arguments):
+    """Regression: DR-05 — a verification that left no proof is no verification:
+    the run gets no set and no mount, and so writes nothing (REVIEW_ONLY)."""
+    (host["fake"] / "verify-no-proof").write_text("")
+    (host["fake"] / "poll-lovable").write_text("DUE APPLY\n")
+    (host["fake"] / "due").write_text("DUE APPLY\n")
+    result = run(host, *arguments)
+    assert result.returncode == 0, result.stdout + result.stderr
+    engine = next(c for c in calls(host) if "run-next --kind lovable" in c or "sync run" in c)
+    assert "LOVABLE_SYNC_BACKUP_SET= " in engine and "/backup-set" not in engine
+    assert "--backup-set" not in engine
+    assert "nothing is written" in logs(host)
+
+
+def test_a_backup_the_host_lock_kept_out_writes_nothing(host):
+    """Regression: DR-05 — 10.11: another job held the lock the backup takes, so
+    no set was taken; the APPLY night gets no set and writes nothing, never an
+    older set."""
+    (host["tmp"] / "host-lock.sync-backup").mkdir()
+    (host["fake"] / "due").write_text("DUE APPLY\n")
+    result = run(host)
+    assert result.returncode == 0, result.stdout + result.stderr
+    engine = next(c for c in calls(host) if "lovable_sync run" in c)
+    assert "--backup-set" not in engine and "/backup-set" not in engine
+    assert "WARN backup failed: nothing is written" in logs(host)
+
+
+def test_the_scheduled_apply_night_runs_with_the_set_and_its_proof(host):
+    (host["fake"] / "due").write_text("DUE APPLY\n")
+    result = run(host)
+    assert result.returncode == 0, result.stdout + result.stderr
+    engine = next(c for c in calls(host) if "lovable_sync run" in c)
+    assert "--backup-set sets/20261109T000000Z" in engine
+    assert "sets/20261109T000000Z:/backup-set:ro" in engine
 
 
 def _pause(host: dict[str, Path]) -> None:
@@ -340,3 +392,18 @@ def test_an_unknown_argument_is_refused():
         [BASH, str(SCRIPT), "--apply"], capture_output=True, text=True, timeout=30
     )
     assert result.returncode == 64 and "usage" in result.stderr
+
+
+def test_a_backup_naming_a_set_outside_the_backup_root_hands_nothing_over(host):
+    """Regression: DR-05 (review P3-6) — only a set under $BACKUP_ROOT/sets,
+    named as a set is, is verified, mounted or handed to an APPLY run."""
+    _executable(
+        host["appdata"] / "repo" / "scripts" / "deploy" / "juristid-backup.sh",
+        "#!/usr/bin/env bash\necho 'Backup set: /elsewhere/sets/20261109T000000Z'\n",
+    )
+    (host["fake"] / "due").write_text("DUE APPLY\n")
+    result = run(host)
+    assert result.returncode == 0, result.stdout + result.stderr
+    engine = next(c for c in calls(host) if "lovable_sync run" in c)
+    assert "--backup-set" not in engine and "/backup-set" not in engine
+    assert "named no set under" in logs(host)
