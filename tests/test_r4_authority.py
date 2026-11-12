@@ -44,6 +44,7 @@ from app.matters.models import Matter, MatterResponseDeadline
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
+from tests.source_ownership_support import divergence_from_before_the_lock
 from tests.test_lovable_pilot import _apply, _package, pilot_on, world  # noqa: F401
 from tests.test_lovable_sync import _decisions, _matter, _run
 from tests.test_ls_b_engine import Source, _drafting, _id, _register_topic, _row, _step
@@ -892,30 +893,34 @@ def test_every_local_edit_of_a_source_owned_field_is_restored(reference):
     own_date = factories.ImportantDateFactory(matter=matter)
 
     jaan = reference["world"]["jaan"]
-    set_matter_title(matter=matter, value="Juristi oma pealkiri", actor=jaan)
-    assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
-    change_stage(
-        matter=_matter("2026_253"), stage=StageVocabulary.objects.get(key="government"), actor=jaan
-    )
-    set_next_action(matter=_matter("2026_253"), text="Helistan ministeeriumi", actor=jaan)
-    change_response_deadline(
-        matter=_matter("2026_253"),
-        deadline=dt.date(2099, 12, 24),
-        actor=jaan,
-        change="MOVED",
-    )
-    change_track(matter=_matter("2026_253"), track=Track.KODA_INITIATIVE, actor=jaan)
-    set_matter_dates(matter=_matter("2026_253"), received_date=dt.date(2026, 2, 2), actor=jaan)
-    other = (
-        Matter._meta.get_field("legal_instruments")
-        .related_model._default_manager.exclude(key="seadus")
-        .first()
-    )
-    set_legal_instruments(matter=_matter("2026_253"), legal_instruments=[other], actor=jaan)
-    estimate = MatterImportantDate.objects.get(
-        matter=matter, kind="ESTIMATED_COMMENCEMENT", status="ACTIVE"
-    )
-    cancel_important_date(record=estimate, actor=jaan, reason="kohalik")
+    # Edits made before the TL-01 lock (a person can no longer make them now).
+    with divergence_from_before_the_lock():
+        set_matter_title(matter=matter, value="Juristi oma pealkiri", actor=jaan)
+        assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
+        change_stage(
+            matter=_matter("2026_253"),
+            stage=StageVocabulary.objects.get(key="government"),
+            actor=jaan,
+        )
+        set_next_action(matter=_matter("2026_253"), text="Helistan ministeeriumi", actor=jaan)
+        change_response_deadline(
+            matter=_matter("2026_253"),
+            deadline=dt.date(2099, 12, 24),
+            actor=jaan,
+            change="MOVED",
+        )
+        change_track(matter=_matter("2026_253"), track=Track.KODA_INITIATIVE, actor=jaan)
+        set_matter_dates(matter=_matter("2026_253"), received_date=dt.date(2026, 2, 2), actor=jaan)
+        other = (
+            Matter._meta.get_field("legal_instruments")
+            .related_model._default_manager.exclude(key="seadus")
+            .first()
+        )
+        set_legal_instruments(matter=_matter("2026_253"), legal_instruments=[other], actor=jaan)
+        estimate = MatterImportantDate.objects.get(
+            matter=matter, kind="ESTIMATED_COMMENCEMENT", status="ACTIVE"
+        )
+        cancel_important_date(record=estimate, actor=jaan, reason="kohalik")
     assert _parity("2026_253") != before
 
     run = _run(reference, at=_at(1))
@@ -996,7 +1001,8 @@ def test_a_technical_hold_is_never_restored_over(reference):
     reference["source"].edit("2026_253", vastutaja="Tundmatu Isik")
     _run(reference, at=_at(0))
     jaan = reference["world"]["jaan"]
-    assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
+    with divergence_from_before_the_lock():
+        assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
     run = _run(reference, at=_at(1))
     owner = _decisions(run, "2026_253")["owner"]
     assert (owner.outcome, owner.reason) == (
