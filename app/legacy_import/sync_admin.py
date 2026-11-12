@@ -129,6 +129,18 @@ FAILURE_REASONS: dict[str, str] = {
     "CHECK_TOO_SOON": "Kontroll tehti vähem kui minut tagasi.",
     "SIGN_IN_FAILED": "Lovable'i sisselogimine ebaõnnestus.",
     "TOO_MANY_ROWS": "Lovable andis oodatust rohkem ridu.",
+    # QA-01 / LS-07: a source reading that is not whole refuses the run.
+    "TRUNCATED": "Lovable andis vähem ridu, kui ta ise loendas; midagi ei kirjutatud.",
+    "PAGES_INCONSISTENT": (
+        "Lovable'i lehekülgede kaupa loetud read ei moodustanud terviklikku seisu; "
+        "midagi ei kirjutatud."
+    ),
+    "NO_ROW_COUNT": "Lovable ei öelnud ridade täpset arvu; midagi ei kirjutatud.",
+    "POPULATION_CHANGE": (
+        "Lovable'i teemade arv muutus eelmisest lugemisest liiga palju; midagi ei kirjutatud."
+    ),
+    "OVERRIDE_NOT_MANUAL": "Piirangu tõstmine on lubatud ainult käsitsi käivitusel.",
+    "OVERRIDE_NEGATIVE": "Piirang ei saa olla negatiivne.",
     "RESPONSE_SHAPE": "Lovable'i vastus polnud oodatud kujul.",
     "RESPONSE_NOT_JSON": "Lovable'i vastus polnud loetav.",
     "RESPONSE_TOO_LARGE": "Lovable'i vastus oli liiga suur.",

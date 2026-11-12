@@ -22,6 +22,18 @@
 # not retried: the run goes ahead with no backup set and writes nothing
 # (REVIEW_ONLY), which Haldus and production_status then show.
 #
+# The proof of the verification (audit 2026-11-11 DR-05): `juristid-verify-backup.sh
+# --record` writes VERIFIED-L2 into the set once level 2 has passed, and the set
+# is mounted READ-ONLY into the run's container at /backup-set
+# (LOVABLE_SYNC_BACKUP_DIR). The engine writes only when that proof names the
+# set, is level 2, was written after the set was taken and less than two hours
+# before the run, and the dump still hashes to it (`lovable_sync.backup_proof_problem`);
+# a bare or old set name writes nothing. A backup this script could not take
+# (another job held its lock, the disk was full) or could not verify therefore
+# leaves the APPLY run REVIEW_ONLY, never writing on an older set: the nightly
+# 20:45Z set skipped on 10.11 (the host lock was held) was never an APPLY input,
+# and an APPLY run never falls back to it.
+#
 # After the pilot run, when it was due, the wider observation (`lovable_sync
 # observe`, docs/adr/0201) runs in the same way; it gates itself on the control
 # row and its failure never changes this script's exit status.
@@ -144,9 +156,11 @@ if [ "$ON_DEMAND" = 0 ]; then
   esac
 fi
 
-# A backup set taken and verified to level 2; its name in BACKUP_SET, or "".
+# A backup set taken and verified to level 2, its proof recorded in it; its name
+# in BACKUP_SET and its host directory in BACKUP_DIR, or "" for both.
 take_backup() {
   BACKUP_SET=""
+  BACKUP_DIR=""
   say "backup"
   # This run already holds the host lock ($HOST_LOCK), so a backup that asked
   # for the same one would be refused ("another operation holds …") and nothing
@@ -159,8 +173,10 @@ take_backup() {
     SET_PATH="$(sed -nE 's/.*Backup set: +([^ ]+).*/\1/p' "$LOG.backup" | tail -1)"
     if [ -n "$SET_PATH" ] && (cd "$REPO" && scripts/deploy/juristid-verify-backup.sh \
           --project juristid-main --compose-file deploy/unraid-main/compose.yml \
-          --set "$SET_PATH" --backup-root "$BACKUP_ROOT" --level 2 >"$LOG.verify" 2>&1 </dev/null); then
+          --set "$SET_PATH" --backup-root "$BACKUP_ROOT" --level 2 --record >"$LOG.verify" 2>&1 </dev/null) \
+        && [ -f "$SET_PATH/VERIFIED-L2" ]; then
       BACKUP_SET="sets/$(basename "$SET_PATH")"
+      BACKUP_DIR="$SET_PATH"
       say "backup $BACKUP_SET verified (level 2)"
     else
       say "WARN backup verification failed: nothing is written"
@@ -179,13 +195,19 @@ plain_manage() {
 }
 
 # The Lovable container: Docker reads the credentials file as root; the container
-# sees only the values, never the command line or this log.
+# sees only the values, never the command line or this log. An APPLY run's set
+# (SET, SET_DIR) is mounted read-only with its proof; with no set, nothing is.
 SET=""
+SET_DIR=""
 one_off_manage() {
+  local proof=()
+  if [ -n "$SET" ] && [ -n "$SET_DIR" ]; then
+    proof=(-v "$SET_DIR:/backup-set:ro" -e LOVABLE_SYNC_BACKUP_DIR=/backup-set)
+  fi
   timeout "$RUN_TIMEOUT" docker run --rm --name "juristid-main-lovable-sync-$$" \
     --network juristid-main-internal \
     --env-file "$ENV_FILE" --env-file "$CREDENTIALS" -e JURISTID_LOVABLE_SYNC=1 \
-    -e LOVABLE_SYNC_BACKUP_SET="$SET" \
+    -e LOVABLE_SYNC_BACKUP_SET="$SET" "${proof[@]}" \
     --cpus 1 --memory 1g --pids-limit 256 --log-driver none \
     --entrypoint python "$IMAGE" manage.py "$@" </dev/null
 }
@@ -246,6 +268,7 @@ if [ "$ON_DEMAND" = 1 ]; then
   if [ "$MODE" = apply ]; then
     take_backup
     SET="$BACKUP_SET"
+    SET_DIR="$BACKUP_DIR"
   fi
   # The administrator's request, through the request runner (interface 4): it
   # claims the request, refuses it if the mode is not the one it was confirmed
@@ -280,6 +303,7 @@ esac
 if [ "$MODE" = apply ]; then
   take_backup
   SET="$BACKUP_SET"
+  SET_DIR="$BACKUP_DIR"
 fi
 
 say "run"

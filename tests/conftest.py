@@ -232,6 +232,19 @@ def pdf_bytes():
 
 
 @pytest.fixture(autouse=True)
+def lovable_backup_proof_accepted(monkeypatch):
+    """An APPLY run in a test names a backup set taken minutes before it, as the
+    host script does, but no host has mounted that set into the test: the
+    verification's proof (`lovable_sync.backup_proof_problem`, audit 2026-11-11
+    DR-05) is taken as given here. `tests/test_sync_robustness.py` puts the real
+    check back and proves it refuses; the set's name and age are still checked
+    everywhere (`lovable_sync.backup_set_problem`)."""
+    from app.legacy_import import lovable_sync
+
+    monkeypatch.setattr(lovable_sync, "backup_proof_problem", lambda *_a, **_k: "", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def evidence_root(settings, tmp_path_factory):
     """Evidence, derivatives and OneNote source in this test's own directory.
 

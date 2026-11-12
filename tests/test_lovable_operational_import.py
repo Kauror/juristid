@@ -739,6 +739,9 @@ def test_a_three_topic_cycle_is_refused_in_version_1_too():
 class _Response:
     def __init__(self, body: Any) -> None:
         self.raw = json.dumps(body).encode()
+        # The whole answer in one page, with PostgREST's exact count (QA-01).
+        rows = len(body) if isinstance(body, list) else 0
+        self.headers = {"Content-Range": f"0-{rows - 1}/{rows}" if rows else "*/0"}
 
     def read(self, _n: int) -> bytes:
         return self.raw

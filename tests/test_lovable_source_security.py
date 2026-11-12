@@ -52,9 +52,21 @@ def _config(url: str = ORIGIN) -> SourceConfig:
 
 
 class _Answer:
-    def __init__(self, body: Any, *, url: str | None = None) -> None:
+    """One answer. A list of rows carries PostgREST's ``Content-Range`` — the
+    rows served from the request's ``offset``, out of ``total`` (default: this
+    page is the end) — which the paged reader requires (QA-01)."""
+
+    def __init__(self, body: Any, *, url: str | None = None, total: int | None = None) -> None:
         self.raw = json.dumps(body).encode()
         self.url = url
+        self.headers: dict[str, str] = {}
+        if isinstance(body, list):
+            query = dict(urllib.parse.parse_qsl(urllib.parse.urlsplit(url or "").query))
+            start = int(query.get("offset", "0"))
+            served = f"{start}-{start + len(body) - 1}" if body else "*"
+            self.headers["Content-Range"] = (
+                f"{served}/{start + len(body) if total is None else total}"
+            )
 
     def read(self, _n: int) -> bytes:
         return self.raw

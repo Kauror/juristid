@@ -887,6 +887,9 @@ class _Response:
         import json
 
         self.raw = json.dumps(body).encode()
+        # The whole answer in one page, with PostgREST's exact count (QA-01).
+        rows = len(body) if isinstance(body, list) else 0
+        self.headers = {"Content-Range": f"0-{rows - 1}/{rows}" if rows else "*/0"}
 
     def read(self, _n: int) -> bytes:
         return self.raw
@@ -1215,7 +1218,7 @@ def test_a_local_and_a_source_change_raise_no_conflict_to_hold_the_night(cohort,
     no conflict — the source wins — so even a zero conflict allowance holds nothing."""
     from app.matters.services import set_matter_title
 
-    monkeypatch.setattr(lovable_sync, "MAX_NEW_CONFLICTS", 0)
+    monkeypatch.setattr(lovable_sync, "MAX_NEW_HOLDS", 0)
     set_matter_title(matter=_matter("2026_501"), value="Juristi oma", actor=cohort["world"]["mari"])
     cohort["source"].edit("2026_501", teema="Lovable oma")
     first = _run(cohort)
@@ -1291,7 +1294,8 @@ def test_only_a_fresh_backup_set_opens_the_mutating_stage(backup_set, fresh):
 def test_a_stale_backup_set_writes_nothing(cohort):
     cohort["source"].edit("2026_501", teema="Uus 501")
     run = _run(cohort, backup_set="sets/20261020T000000Z")
-    assert run.status == SyncRunStatus.REVIEW_ONLY and run.error == lovable_sync.NO_BACKUP
+    assert run.status == SyncRunStatus.REVIEW_ONLY
+    assert run.error == f"{lovable_sync.NO_BACKUP}: SET_STALE"
     assert _matter("2026_501").title == "Näidisteema 2026_501"
 
 

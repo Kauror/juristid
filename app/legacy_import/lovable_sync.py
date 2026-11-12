@@ -50,13 +50,14 @@ reader and the importer's own CREATE writer, then enrolled in the register with
 a ``NEW_TOPIC`` membership (`create_new_topic`).
 
 **The limits, and why each stays** (brief 2026-11-09 §6 B6): ``MAX_CHANGED_MATTERS``
-(20 Teemad written a night) and ``MAX_NEW_CONFLICTS`` (10 more than the night
-before) were sized for daily work, not a backfill — a backfill goes through
-`lovable_pilot` packages, never through a night — and a night over them is a
-changed source or a broken mapping; ``MAX_MISSING`` (5) separates a deleted
-topic from a broken read; ``MAX_NEW_TOPICS`` (10 created a night) is new and
-separate. The field breakers hold every write of the night (REVIEW_ONLY) and
-the new-topic breaker every creation of it; ``MAX_MISSING`` fails the run.
+(20 Teemad written a night) and ``MAX_NEW_HOLDS`` (25 more held fields than the
+previous run; it replaced ``MAX_NEW_CONFLICTS``, LS-07) were sized for daily
+work, not a backfill — a backfill goes through `lovable_pilot` packages, never
+through a night — and a night over them is a changed source or a broken mapping;
+``MAX_MISSING`` (5) separates a deleted topic from a broken read;
+``MAX_NEW_TOPICS`` (10 created a night) is new and separate. The field breakers
+hold every write of the night (REVIEW_ONLY) and the new-topic breaker every
+creation of it; ``MAX_MISSING`` fails the run.
 
 A field the import itself held for review (``HELD_FOR_REVIEW`` in the package's
 ``field_decisions``) is seeded with ``import_held`` and reported
@@ -185,12 +186,34 @@ MAX_CHANGED_MATTERS = 20
 #: of local edits never stops the source's own changes; over it, the restores
 #: wait (`RESTORE_BREAKER`) and the source changes are written.
 MAX_RESTORED_MATTERS = 100
-#: Conflicts stay until a person resolves them, so the breaker is on the *rise*
-#: since the previous night, never on the standing total.
-MAX_NEW_CONFLICTS = 10
+#: Held fields (REVIEW_REQUIRED or CONFLICT, any reason: a technical hold, an
+#: import hold or a code no rule names) stay until a person or the source moves
+#: them, so this breaker is on the *rise* since the previous run that recorded
+#: its decisions, never on the standing total (audit 2026-11-11 LS-07; it
+#: replaces ``MAX_NEW_CONFLICTS``, which source authority had made inert). A
+#: night whose planner suddenly holds this many more fields is a broken mapping
+#: or a broken reading, not a night's work: it writes nothing (`BREAKER`).
+#: Proposed value; production needs the owner's approval.
+MAX_NEW_HOLDS = 25
+#: The live source population (the index of every live topic) may move this
+#: much against the previous baseline reading before an APPLY run refuses to
+#: write (`POPULATION_CHANGE`): more than `POPULATION_MAX_DELTA` topics and more
+#: than `POPULATION_MAX_SHARE` of the previous count. A changed scope, a row
+#: policy hiding rows or a truncated read, never a night's work. A COMPARE run
+#: reads and stores the new population as usual, which is how a person accepts
+#: a real change. Proposed values; production needs the owner's approval.
+POPULATION_MAX_DELTA = 50
+POPULATION_MAX_SHARE = 0.05
 #: How old a backup set may be when the mutating stage starts (the host script
 #: takes and verifies one minutes before; a stale or invented name writes nothing).
 BACKUP_MAX_AGE = dt.timedelta(hours=2)
+#: The verification a backup set must prove before an APPLY run writes (audit
+#: 2026-11-11 DR-05): the host's `juristid-verify-backup.sh --record` writes
+#: ``VERIFIED-L<level>`` into the set once level 1 (checksums) and level 2 (the
+#: archive reads to the end, the pools hold the set's objects) have passed, and
+#: the host script mounts the set read-only into the run's container at the
+#: directory `HOST_BACKUP_DIR_ENV` names (`backup_proof_problem`).
+BACKUP_PROOF_LEVEL = 2
 #: More cohort rows missing from the source than this is a broken read or a
 #: broken source, never a night's work: the run stops.
 MAX_MISSING = 5
@@ -4626,6 +4649,34 @@ def historical_hold(cohort: str, reason: str, baseline: Any, source: Any) -> boo
     )
 
 
+#: What a held field's decision says: it waits for a person (or the source).
+HELD_OUTCOMES = (SyncOutcome.REVIEW_REQUIRED, SyncOutcome.CONFLICT)
+#: A run whose writes are committed but whose search rows are stale (LS-09).
+SEARCH_REFRESH_FAILED = "SEARCH_REFRESH_FAILED"
+
+
+def held_fields(plans: Iterable[MatterPlan]) -> int:
+    """Fields held tonight, whatever the reason (`HELD_OUTCOMES`): what the holds
+    breaker (`MAX_NEW_HOLDS`) compares with the previous run's recorded decisions."""
+    return sum(1 for plan in plans for d in plan.decisions if d.outcome in HELD_OUTCOMES)
+
+
+def population_change(previous: dict[str, Any], current: dict[str, Any]) -> str:
+    """Why the live source population moved too far since ``previous`` (a stored
+    baseline reading) for an APPLY run to write, or ``""`` (`POPULATION_MAX_DELTA`,
+    `POPULATION_MAX_SHARE`; audit 2026-11-11 LS-07). Counts only."""
+    before = len(previous.get("index") or [])
+    now = len(current.get("index") or [])
+    delta = abs(now - before)
+    if delta > POPULATION_MAX_DELTA and delta > POPULATION_MAX_SHARE * before:
+        return (
+            f"The live Lovable population moved from {before} to {now} topics since the "
+            "previous reading; an APPLY run writes nothing until a person has looked "
+            "(a COMPARE run accepts it as the new reading)."
+        )
+    return ""
+
+
 def standing_holds(plans: Iterable[MatterPlan]) -> dict[str, int]:
     """``"cohort:reason"`` → how many fields are REVIEW_REQUIRED tonight while
     Lovable's value is what it was (C = A): the holds that recur every night."""
@@ -5061,6 +5112,15 @@ class RunCounts:
     #: Fields held while Lovable is unchanged (C = A): they come back every night
     #: until Lovable changes. ``"cohort:reason"`` → count.
     standing_holds: dict[str, int] = field(default_factory=dict)
+    #: Fields held tonight (`held_fields`) and in the previous recorded run: the
+    #: holds breaker (`MAX_NEW_HOLDS`) is on the rise between the two.
+    held_fields: int = 0
+    held_fields_before: int = 0
+    #: Teemad written and verified whose search rows could not be refreshed
+    #: (`SEARCH_REFRESH_FAILED`): `manage.py refresh_matter_search` recovers them.
+    search_refresh_pending: int = 0
+    #: Codes of what went wrong without undoing the run (``SEARCH_REFRESH_FAILED``).
+    warnings: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
 
     def add_new_topics(self, plans: Iterable[NewTopicPlan]) -> None:
@@ -5258,11 +5318,85 @@ def comparable_snapshots() -> Any:
 
 
 def fresh_backup_set(backup_set: str, started: dt.datetime) -> str:
-    """The set's name if it is a set taken shortly before this run, else ``""``."""
-    if not _BACKUP_SET.match(backup_set or ""):
-        return ""
+    """The set's name if it is a set taken shortly before this run and proven
+    verified (`backup_set_problem`), else ``""``."""
+    return backup_set if not backup_set_problem(backup_set, started) else ""
+
+
+def backup_set_problem(backup_set: str, started: dt.datetime) -> str:
+    """Why ``backup_set`` does not open the mutating stage, or ``""``: no name
+    (``NO_SET``), not a set's name (``SET_NAME``), not taken in the
+    `BACKUP_MAX_AGE` before the run (``SET_STALE``), or no proof of its
+    verification (`backup_proof_problem`). A name alone never passes."""
+    if not backup_set:
+        return "NO_SET"
+    if not _BACKUP_SET.match(backup_set):
+        return "SET_NAME"
     taken = dt.datetime.strptime(backup_set[5:], "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC)
-    return backup_set if dt.timedelta(0) <= started - taken <= BACKUP_MAX_AGE else ""
+    if not dt.timedelta(0) <= started - taken <= BACKUP_MAX_AGE:
+        return "SET_STALE"
+    return backup_proof_problem(backup_set, started)
+
+
+def backup_proof_problem(
+    backup_set: str, started: dt.datetime, *, set_dir: str | None = None
+) -> str:
+    """``""`` when the set mounted at ``set_dir`` (default: `HOST_BACKUP_DIR_ENV`)
+    proves it is ``backup_set``, verified to `BACKUP_PROOF_LEVEL` after it was
+    taken and before this run, and that the dump it verified is the dump the set
+    names; otherwise a code (audit 2026-11-11 DR-05). Fail-closed: no mount, no
+    marker, a marker for another set, a lower level, a marker older than the set
+    or than `BACKUP_MAX_AGE`, or a dump whose SHA-256 is not the one recorded —
+    each is a refusal, and the run writes nothing (`NO_BACKUP`).
+
+    The marker (``VERIFIED-L2``) is ``key=value`` lines written by the host's
+    `juristid-verify-backup.sh --record` after every level-1 and level-2 check
+    passed: ``set``, ``level``, ``verified_at`` (UTC, ``%Y-%m-%dT%H:%M:%SZ``),
+    ``database_sha256``. The dump is hashed again here, so a set changed after
+    its verification does not pass either."""
+    import hashlib
+    import os
+    from pathlib import Path
+
+    directory = set_dir if set_dir is not None else os.environ.get(HOST_BACKUP_DIR_ENV, "")
+    if not directory or not Path(directory).is_dir():
+        return "PROOF_NOT_MOUNTED"
+    root = Path(directory)
+    marker = root / f"VERIFIED-L{BACKUP_PROOF_LEVEL}"
+    try:
+        lines = marker.read_text(encoding="utf-8").splitlines()
+        sums = (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return "PROOF_MISSING"
+    fields = dict(line.split("=", 1) for line in lines if "=" in line)
+    if fields.get("set") != backup_set[5:]:
+        return "PROOF_OTHER_SET"
+    if not (fields.get("level") or "").isdigit() or int(fields["level"]) < BACKUP_PROOF_LEVEL:
+        return "PROOF_LEVEL"
+    try:
+        verified = dt.datetime.strptime(fields.get("verified_at", ""), "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return "PROOF_TIME"
+    verified = verified.replace(tzinfo=dt.UTC)
+    taken = dt.datetime.strptime(backup_set[5:], "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC)
+    if not taken <= verified <= started or started - verified > BACKUP_MAX_AGE:
+        return "PROOF_TIME"
+    recorded = {
+        parts[1].lstrip("*"): parts[0]
+        for parts in (line.split(None, 1) for line in sums)
+        if len(parts) == 2
+    }
+    sha = fields.get("database_sha256", "")
+    if not sha or recorded.get("database.dump") != sha:
+        return "PROOF_DUMP"
+    digest = hashlib.sha256()
+    try:
+        with (root / "database.dump").open("rb") as dump:
+            for block in iter(lambda: dump.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return "PROOF_DUMP"
+    return "" if digest.hexdigest() == sha else "PROOF_DUMP"
 
 
 def run_sync(
@@ -5283,7 +5417,23 @@ def run_sync(
     recorded in the run's counts (``breaker_limit``); no stored setting changes.
     ``max_restored`` does the same for the restore breaker (`MAX_RESTORED_MATTERS`,
     recorded as ``restore_limit``): the night stays all-or-nothing for restores,
-    and one supervised run with a higher limit is how a held backlog drains."""
+    and one supervised run with a higher limit is how a held backlog drains.
+
+    Both are a person's decision for one run: only on a MANUAL run, never
+    negative, and ``None`` (not ``0``) means the approved limit — ``0`` is a
+    limit of zero (audit 2026-11-11 LS-06). A scheduled run or a check with an
+    override is refused before anything is read."""
+    for name, value in (("max_changed", max_changed), ("max_restored", max_restored)):
+        if value is None:
+            continue
+        if trigger != SyncTrigger.MANUAL:
+            raise SyncRefused(
+                "OVERRIDE_NOT_MANUAL",
+                f"{name} is a person's decision for one supervised run; a {trigger} run "
+                "keeps the approved limits.",
+            )
+        if value < 0:
+            raise SyncRefused("OVERRIDE_NEGATIVE", f"{name} cannot be negative ({value}).")
     clock = now or timezone.now
     ctl = control()
     if ctl.cut_over:
@@ -5310,6 +5460,8 @@ def run_sync(
             "DUPLICATE", f"Run {key} already exists; the nightly run happens once per date."
         )
 
+    # A named set is accepted only with its verification's proof (DR-05).
+    backup_problem = backup_set_problem(backup_set, started) if backup_set else ""
     with run_lock():
         mode = SyncMode.COMPARE if trigger == SyncTrigger.CHECK else ctl.mode
         if trigger == SyncTrigger.CHECK:
@@ -5324,10 +5476,14 @@ def run_sync(
                     mode=mode,
                     started_at=started,
                     mapping_version=MAPPING_VERSION,
-                    backup_set=fresh_backup_set(backup_set, started),
+                    backup_set="" if backup_problem else backup_set,
                 )
         except IntegrityError as error:
             raise SyncRefused("DUPLICATE", f"Run {key} already exists.") from error
+        if backup_problem:
+            # Named but not proven: the run goes on and writes nothing (NO_BACKUP);
+            # the reason is the run's error once it finishes (DR-05).
+            logger.warning("Lovable sync run %s: backup set refused (%s)", run.pk, backup_problem)
         try:
             _execute(
                 run,
@@ -5336,6 +5492,7 @@ def run_sync(
                 pause=pause,
                 max_changed=max_changed,
                 max_restored=max_restored,
+                backup_problem=backup_problem,
             )
         except (SourceError, SyncRefused) as error:
             _fail(run, error.code, str(error), clock)
@@ -5421,6 +5578,7 @@ def _execute(
     pause: Callable[[float], None] | None,
     max_changed: int | None = None,
     max_restored: int | None = None,
+    backup_problem: str = "",
 ) -> None:
     from app.matters.models import Matter
     from app.search.indexing import refresh_matters
@@ -5521,6 +5679,12 @@ def _execute(
         raise SyncRefused(
             "COHORT_MISSING", f"{missing} synchronised Teemad are missing from the source read."
         )
+    if not check and run.mode == SyncMode.APPLY and previous_snapshot is not None:
+        # Before the snapshot is stored, as above: a population that moved this
+        # much is never a night's work and never tomorrow's baseline (LS-07).
+        moved = population_change(previous_snapshot.document, snapshot)
+        if moved:
+            raise SyncRefused("POPULATION_CHANGE", moved)
     if run.trigger != SyncTrigger.CHECK:
         LovableSyncSnapshot.objects.create(
             run=run, taken_at=run.snapshot_taken_at, sha256=snapshot["sha256"], document=snapshot
@@ -5528,7 +5692,6 @@ def _execute(
 
     changed = [p for p in plans if any(d.reason != RESTORED for d in p.eligible)]
     restoring = [p for p in plans if p.eligible and p not in changed]
-    conflicts = sum(1 for p in plans if SyncOutcome.CONFLICT in p.outcomes())
     previous_run = (
         LovableSyncRun.objects.exclude(pk=run.pk)
         .exclude(trigger=SyncTrigger.CHECK)
@@ -5536,14 +5699,17 @@ def _execute(
         .order_by("-started_at")
         .first()
     )
-    conflicts_before = (previous_run.counts or {}).get("conflicts", 0) if previous_run else 0
+    held = held_fields(plans)
+    held_before = (
+        previous_run.decisions.filter(outcome__in=HELD_OUTCOMES).exclude(field="*").count()
+        if previous_run
+        else held
+    )
+    change_limit = MAX_CHANGED_MATTERS if max_changed is None else max_changed
     hold = ""
     if run.mode != SyncMode.APPLY or check:
         hold = COMPARE_ONLY
-    elif (
-        len(changed) > (max_changed or MAX_CHANGED_MATTERS)
-        or conflicts - conflicts_before > MAX_NEW_CONFLICTS
-    ):
+    elif len(changed) > change_limit or held - held_before > MAX_NEW_HOLDS:
         hold = BREAKER
     elif not run.backup_set:
         hold = NO_BACKUP
@@ -5611,6 +5777,13 @@ def _execute(
             p.reason = NEW_NO_COHORT
     elif not new_hold:
         for p in creatable:
+            if not verified:
+                # A created Teema did not read back as written: no further one is
+                # created with the same writer, exactly as the cohort loop stops
+                # (ADR 0192 §7; audit 2026-11-11 LS-08). Held, and planned again
+                # on the next run.
+                p.reason = VERIFY_STOPPED
+                continue
             progress["affected"] = [p.reference]
             try:
                 matter = create_new_topic(p, run=run, cohort=target, snapshot=snapshot)  # type: ignore[arg-type]
@@ -5631,8 +5804,23 @@ def _execute(
                     verified = False
         progress["affected"] = []
 
+    search_pending = 0
     if applied_ids:
-        refresh_matters(Matter.objects.filter(pk__in=applied_ids))
+        try:
+            refresh_matters(Matter.objects.filter(pk__in=applied_ids))
+        except Exception as error:  # the writes are committed; their record must be too
+            # As `onenote_capture` does: a search-projection failure never throws
+            # away the run's counts, decisions, baselines or new-topic ledger
+            # (audit 2026-11-11 LS-09). The Teemad stay written and verified;
+            # their search rows are stale until `manage.py refresh_matter_search`
+            # (or the next run that writes them) refreshes them.
+            search_pending = len(set(applied_ids))
+            logger.error(
+                "Lovable sync run %s: search refresh failed for %s Teema(d) (%s)",
+                run.pk,
+                search_pending,
+                type(error).__name__,
+            )
 
     # The bookkeeping, all or nothing: a failure here leaves every baseline,
     # decision and observation as the previous run left them.
@@ -5692,7 +5880,12 @@ def _execute(
             counts, snapshot, cohort_ids, previous_snapshot.document if previous_snapshot else None
         )
         counts.add_new_topics(new_plans)
-        counts.breaker_limit = max_changed or MAX_CHANGED_MATTERS
+        counts.breaker_limit = change_limit
+        counts.held_fields = held
+        counts.held_fields_before = held_before
+        if search_pending:
+            counts.search_refresh_pending = search_pending
+            counts.warnings.append(SEARCH_REFRESH_FAILED)
         counts.changed_source = len(changed)
         counts.changed_restores = len(restoring)
         counts.restore_limit = restore_limit
@@ -5724,6 +5917,8 @@ def _execute(
                 if hold in (BREAKER, NO_BACKUP)
                 else (NEW_BREAKER if new_hold == NEW_BREAKER else RESTORE_BREAKER)
             )
+            if hold == NO_BACKUP and backup_problem:
+                run.error = f"{NO_BACKUP}: {backup_problem}"
         else:
             run.status = SyncRunStatus.SUCCEEDED
             run.error = ""
@@ -6423,6 +6618,9 @@ def due(*, trigger: str, now: dt.datetime | None = None) -> str:
 #: The environment variable the host script sets on an on-demand run's
 #: container: the verified backup set it took for an APPLY request.
 HOST_BACKUP_SET_ENV = "LOVABLE_SYNC_BACKUP_SET"
+#: Where the host script mounts that set, read-only, in the run's container: the
+#: proof of its verification is read there (`backup_proof_problem`).
+HOST_BACKUP_DIR_ENV = "LOVABLE_SYNC_BACKUP_DIR"
 
 
 def pending_sync_request(lane: str = "lovable") -> bool:

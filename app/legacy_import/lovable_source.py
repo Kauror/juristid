@@ -15,6 +15,10 @@ only ever issues ``GET`` against a fixed allowlist of tables and columns.
   anything is read (`refuse_privileged_token`).
 * **Bounded.** HTTPS only, a timeout on every request, a page size, a response
   size cap and a row cap.
+* **Whole or nothing.** A paged read asks for the exact row count and serves
+  every counted row exactly once, whatever page the server cuts, or refuses
+  (`HttpTransport.select`); a passing gateway error (502/503/504) is retried a
+  bounded number of times, anything else refuses at once.
 * **Consistent.** PostgREST reads are separate transactions, so the snapshot is
   read, then the cohort's versions and children are read again; any difference
   is a concurrent edit and the whole read is retried, a bounded number of times
@@ -170,6 +174,18 @@ MAX_RESPONSE_BYTES = 8 * 1024 * 1024
 MAX_INDEX_ROWS = 20_000
 ID_CHUNK = 50
 CONSISTENCY_ATTEMPTS = 3
+#: A paged read asks PostgREST for the exact row count (``Prefer: count=exact``)
+#: and serves every row of it, or refuses (`HttpTransport.select`, audit
+#: 2026-11-11 QA-01 / C-L-06): a server ``max-rows`` cap below `PAGE_SIZE`, a
+#: count that moves between pages, a page that overlaps or skips another, or a
+#: short read is never accepted as the whole table.
+_CONTENT_RANGE = re.compile(r"^(?:(\d+)-(\d+)|\*)/(\d+|\*)$")
+#: Answers a GET retries (a gateway or the service briefly unavailable), at most
+#: `READ_ATTEMPTS` times in all; a GET repeated changes nothing at the source.
+#: Anything else — 401, 403, 500, a refusal — refuses at once.
+RETRY_STATUS = frozenset({"HTTP_502", "HTTP_503", "HTTP_504"})
+READ_ATTEMPTS = 3
+RETRY_PAUSE_SECONDS = 5.0
 #: The only non-GET request ever sent: the service login's password sign-in.
 SIGN_IN_PATH = "/auth/v1/token?grant_type=password"
 
@@ -359,11 +375,21 @@ def _default_opener(request: urllib.request.Request, timeout: float) -> Any:
 class HttpTransport:
     """PostgREST over HTTPS as the service login. ``GET`` only."""
 
-    def __init__(self, config: SourceConfig, *, opener: Opener = _default_opener) -> None:
+    def __init__(
+        self,
+        config: SourceConfig,
+        *,
+        opener: Opener = _default_opener,
+        pause: Callable[[float], None] = time.sleep,
+    ) -> None:
         refuse_privileged_key(config.publishable_key)
         self.config = config
         self.opener = opener
+        self.pause = pause
         self.token = ""
+        #: The last answer's ``Content-Range`` (PostgREST's served range and, when
+        #: asked for, the exact count), or ``None``.
+        self.last_content_range: str | None = None
         #: What this transport has asked for, for the run's counts: requests made
         #: and response bytes received. Never a row.
         self.requests = 0
@@ -393,6 +419,10 @@ class HttpTransport:
                         "REDIRECT_REFUSED", "Lovable answered from another origin; nothing read."
                     )
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
+                answer_headers = getattr(response, "headers", None)
+                self.last_content_range = (
+                    answer_headers.get("Content-Range") if answer_headers else None
+                )
                 self.requests += 1
                 self.bytes_read += len(raw or b"")
         except urllib.error.HTTPError as error:
@@ -434,17 +464,57 @@ class HttpTransport:
     def select(
         self, table: str, columns: Iterable[str], *, filters: dict[str, str], order: str
     ) -> list[dict[str, Any]]:
+        """Every row the source holds for the query, or `SourceError`.
+
+        Paged by what the server actually served, not by what was asked for, and
+        held to PostgREST's exact count: a page smaller than asked (a server
+        ``max-rows`` below `PAGE_SIZE`) is followed by the next, the count may not
+        move between pages, a row may not appear twice, and the rows add up to
+        the count exactly. A source population that is truncated or inconsistent
+        refuses the read; it is never taken for a smaller source (audit
+        2026-11-11 QA-01, C-L-06)."""
         columns = tuple(columns)
         rows: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        total: int | None = None
         offset = 0
         while True:
-            page = self._page(table, columns, filters=filters, order=order, offset=offset)
-            rows.extend(page)
-            if len(rows) > MAX_INDEX_ROWS:
+            page = self._page(
+                table, columns, filters=filters, order=order, offset=offset, count=True
+            )
+            start, end, reported = _served_range(self.last_content_range, table)
+            if reported > MAX_INDEX_ROWS:
                 raise SourceError("TOO_MANY_ROWS", f"{table} returned more rows than the cap.")
-            if len(page) < PAGE_SIZE:
-                return rows
-            offset += PAGE_SIZE
+            if total is None:
+                total = reported
+            elif reported != total:
+                raise SourceError(
+                    "PAGES_INCONSISTENT", f"{table} changed its row count while it was paged."
+                )
+            if page and (start != offset or end - start + 1 != len(page)):
+                raise SourceError(
+                    "PAGES_INCONSISTENT", f"{table} served a page that is not the range it names."
+                )
+            for row in page:
+                key = json.dumps(row, sort_keys=True, default=str)
+                if key in seen:
+                    raise SourceError(
+                        "PAGES_INCONSISTENT", f"{table} served a row twice across pages."
+                    )
+                seen.add(key)
+            rows.extend(page)
+            if len(rows) >= total:
+                break
+            if not page:
+                raise SourceError(
+                    "TRUNCATED", f"{table} served {len(rows)} of the {total} rows it counted."
+                )
+            offset += len(page)
+        if len(rows) != total:
+            raise SourceError(
+                "PAGES_INCONSISTENT", f"{table} served {len(rows)} rows; it counted {total}."
+            )
+        return rows
 
     def select_page(
         self,
@@ -467,6 +537,7 @@ class HttpTransport:
         order: str,
         offset: int = 0,
         limit: int = PAGE_SIZE,
+        count: bool = False,
     ) -> list[dict[str, Any]]:
         if not allowlisted(table, columns):
             raise SourceError("NOT_ALLOWLISTED", f"Reading {table} is not allowlisted.")
@@ -475,18 +546,49 @@ class HttpTransport:
             self.sign_in()
         query = {"select": ",".join(columns), "order": order, **filters}
         query.update({"limit": str(min(limit, PAGE_SIZE)), "offset": str(offset)})
-        page = self._request(
-            "GET",
-            f"/rest/v1/{table}?{urllib.parse.urlencode(query)}",
-            headers={
-                "apikey": self.config.publishable_key,
-                "Authorization": f"Bearer {self.token}",
-                "Accept": "application/json",
-            },
-        )
+        headers = {
+            "apikey": self.config.publishable_key,
+            "Authorization": f"Bearer {self.token}",
+            "Accept": "application/json",
+        }
+        if count:
+            headers["Prefer"] = "count=exact"
+        path = f"/rest/v1/{table}?{urllib.parse.urlencode(query)}"
+        attempt = 1
+        while True:
+            try:
+                page = self._request("GET", path, headers=headers)
+                break
+            except SourceError as error:
+                if error.code not in RETRY_STATUS or attempt >= READ_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "lovable: %s answered %s; read attempt %s of %s",
+                    table,
+                    error.code,
+                    attempt,
+                    READ_ATTEMPTS,
+                )
+                self.pause(RETRY_PAUSE_SECONDS * attempt)
+                attempt += 1
         if not isinstance(page, list):
             raise SourceError("RESPONSE_SHAPE", f"{table} did not answer with rows.")
         return only_columns(page, columns, table=table)
+
+
+def _served_range(content_range: str | None, table: str) -> tuple[int, int, int]:
+    """``(first, last, total)`` from PostgREST's ``Content-Range`` (``0-999/2364``;
+    ``*/2364`` for an empty page). No header, or no exact count, refuses: the
+    read cannot then prove it saw every row."""
+    match = _CONTENT_RANGE.match((content_range or "").strip())
+    if match is None or match.group(3) == "*":
+        raise SourceError("NO_ROW_COUNT", f"{table} answered without an exact row count.")
+    first, last = match.group(1), match.group(2)
+    return (
+        int(first) if first is not None else -1,
+        int(last) if last is not None else -2,
+        int(match.group(3)),
+    )
 
 
 def only_columns(
