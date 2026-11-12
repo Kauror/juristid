@@ -50,6 +50,7 @@ from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from app.workflow.services import set_next_action
 from tests import factories
+from tests.source_ownership_support import lock_lifted_for_the_engine_tests  # noqa: F401 - autouse
 from tests.test_lovable_operational_import import _active, _sid
 from tests.test_lovable_pilot import _package as _pilot_package
 from tests.test_lovable_pilot import _topic

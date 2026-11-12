@@ -44,7 +44,10 @@ from app.matters.models import Matter, MatterResponseDeadline
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
-from tests.source_ownership_support import divergence_from_before_the_lock
+from tests.source_ownership_support import (  # noqa: F401 - autouse
+    divergence_from_before_the_lock,
+    lock_lifted_for_the_engine_tests,
+)
 from tests.test_lovable_pilot import _apply, _package, pilot_on, world  # noqa: F401
 from tests.test_lovable_sync import _decisions, _matter, _run
 from tests.test_ls_b_engine import Source, _drafting, _id, _register_topic, _row, _step

@@ -37,6 +37,7 @@ from app.submissions.models import Submission
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from tests import factories
+from tests.source_ownership_support import lock_lifted_for_the_engine_tests  # noqa: F401 - autouse
 from tests.test_lovable_pilot import URL, _apply, _package, _topic, pilot_on, world  # noqa: F401
 
 TALLINN = lovable_sync.TALLINN
