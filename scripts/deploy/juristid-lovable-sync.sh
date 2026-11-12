@@ -171,6 +171,12 @@ take_backup() {
         --compose-file deploy/unraid-main/compose.yml --data-root "$APPDATA" \
         --backup-root "$BACKUP_ROOT" >"$LOG.backup" 2>&1 </dev/null); then
     SET_PATH="$(sed -nE 's/.*Backup set: +([^ ]+).*/\1/p' "$LOG.backup" | tail -1)"
+    # Only a set this backup root holds, named as a set is (review of #617): any
+    # other path the log might name is never verified, mounted or handed over.
+    if ! [[ "$SET_PATH" =~ ^"$BACKUP_ROOT"/sets/[0-9]{8}T[0-9]{6}Z$ ]]; then
+      say "WARN the backup named no set under $BACKUP_ROOT/sets: nothing is written"
+      SET_PATH=""
+    fi
     if [ -n "$SET_PATH" ] && (cd "$REPO" && scripts/deploy/juristid-verify-backup.sh \
           --project juristid-main --compose-file deploy/unraid-main/compose.yml \
           --set "$SET_PATH" --backup-root "$BACKUP_ROOT" --level 2 --record >"$LOG.verify" 2>&1 </dev/null) \

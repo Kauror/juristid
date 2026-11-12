@@ -470,9 +470,12 @@ class HttpTransport:
         held to PostgREST's exact count: a page smaller than asked (a server
         ``max-rows`` below `PAGE_SIZE`) is followed by the next, the count may not
         move between pages, a row may not appear twice, and the rows add up to
-        the count exactly. A source population that is truncated or inconsistent
-        refuses the read; it is never taken for a smaller source (audit
-        2026-11-11 QA-01, C-L-06)."""
+        the count exactly. A repeated row is never legitimate: every table read
+        has a unique key in Lovable — an ``id``, ``topic_stage_link``'s primary
+        key ``prev_topic_id``, ``topic_link``'s primary key on the pair, and
+        ``topic_change_field``'s on ``(event_id, field)``. A source population
+        that is truncated or inconsistent refuses the read; it is never taken
+        for a smaller source (audit 2026-11-11 QA-01, C-L-06)."""
         columns = tuple(columns)
         rows: list[dict[str, Any]] = []
         seen: set[str] = set()

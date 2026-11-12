@@ -349,6 +349,10 @@ check_membership() {
 # check of that level passed. `lovable_sync.backup_proof_problem` reads it in the
 # synchronisation's container and hashes the dump again, so a proof for another
 # set, a lower level, an old verification or a dump changed since all refuse.
+# The proof's temporary file, removed on every exit (the level-2 cleanup too).
+PROOF_TMP=""
+trap 'rm -f -- "${PROOF_TMP:-}"' EXIT
+
 record_proof() {
   local level="$1" name sha tmp
   [ "$RECORD" -eq 1 ] || return 0
@@ -360,10 +364,12 @@ record_proof() {
   sha="$(sed -n 's/^\([0-9a-f]\{64\}\) [ *]database\.dump$/\1/p' "$SET_DIR/SHA256SUMS" | head -n 1)"
   [ -n "$sha" ] || die "SHA256SUMS names no database.dump checksum; no proof recorded."
   tmp="$SET_DIR/.VERIFIED-L$level.$$"
+  PROOF_TMP="$tmp"
   printf 'set=%s\nlevel=%s\nverified_at=%s\ndatabase_sha256=%s\n' \
     "$name" "$level" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sha" >"$tmp" ||
     die "could not write the proof into $SET_DIR."
   mv -f -- "$tmp" "$SET_DIR/VERIFIED-L$level" || die "could not write the proof into $SET_DIR."
+  PROOF_TMP=""
   note "  proof recorded: $SET_DIR/VERIFIED-L$level"
 }
 
@@ -475,6 +481,7 @@ step "Level 2 — the archive contains the schema it should"
 CONTAINER_PATH="/tmp/juristid-verify-$$.dump"
 cleanup() {
   juristid_compose exec -T db rm -f "$CONTAINER_PATH" >/dev/null 2>&1 || true
+  rm -f -- "${PROOF_TMP:-}"
 }
 trap cleanup EXIT
 

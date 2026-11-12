@@ -48,6 +48,7 @@
       <dt>Neist väljaspool sünkroonitavaid</dt><dd>{{ c.outside_cohort|default:0 }}</dd>
       <dt>Uued eelmisest korrast</dt><dd>{{ c.new_since_previous|default:0 }}</dd>
       <dt>Operatiivsed, Juristides puudu</dt><dd>{{ c.operational_not_in_juristid|default:0 }}</dd>
+      {% if c.search_refresh_pending %}<dt>Otsingus ajakohastamata</dt><dd><span class="statechip statechip--problem">{{ c.search_refresh_pending }} teemat</span> · järgmine käivitus ajakohastab</dd>{% endif %}
     </dl>
     {% endif %}
     {% endwith %}

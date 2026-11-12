@@ -339,3 +339,92 @@ def test_an_old_set_with_a_proof_still_writes_nothing(register, tmp_path, monkey
         f"{lovable_sync.NO_BACKUP}: SET_STALE",
     )
     assert _matter("2026_240").title != "Näidisteema 2026_240 parandatud"
+
+
+# ---------------------------------------------------------------------------
+# Review of #617
+# ---------------------------------------------------------------------------
+
+
+def _broken_search(monkeypatch) -> Any:
+    import app.search.indexing as indexing
+
+    real = indexing.refresh_matters
+
+    def broken(*_a: Any, **_k: Any) -> int:
+        raise RuntimeError("search projection unavailable")
+
+    monkeypatch.setattr(indexing, "refresh_matters", broken)
+    return real
+
+
+def test_stale_search_shows_in_health_and_the_next_run_refreshes_it(register, monkeypatch):
+    """Regression: LS-09 (review P2-1) — a stale search is visible in
+    `sync_health`, and the next run refreshes those Teemad with its own."""
+    import app.search.indexing as indexing
+
+    real = _broken_search(monkeypatch)
+    register["source"].edit("2026_240", teema="Näidisteema 2026_240 parandatud")
+    first = _run(register, at=_at(0))
+    assert first.counts["search_refresh_pending"] == 1
+    health = lovable_sync.sync_health(now=_at(0) + dt.timedelta(minutes=5))
+    assert not health.ok and health.detail == "search stale: 1 Teema(d) not refreshed"
+
+    refreshed: list[set[Any]] = []
+
+    def spy(matters: Any, **kw: Any) -> int:
+        refreshed.append({m.pk for m in matters})
+        return real(matters, **kw)
+
+    monkeypatch.setattr(indexing, "refresh_matters", spy)
+    again = _run(register, at=_at(1))
+    assert again.status == SyncRunStatus.SUCCEEDED, again.error
+    assert refreshed == [{_matter("2026_240").pk}]
+    assert again.counts["search_refreshed_carried"] == 1
+    assert again.counts["search_refresh_pending"] == 0
+    assert lovable_sync.sync_health(now=_at(1) + dt.timedelta(minutes=5)).ok
+    # And a third run has nothing left to carry.
+    refreshed.clear()
+    _run(register, at=_at(2))
+    assert refreshed == []
+
+
+def test_the_haldus_page_says_how_many_teemad_search_is_missing(
+    client, settings, register, monkeypatch
+):
+    """Regression: LS-09 (review P2-1) — the warning is on the Haldus page."""
+    from django.urls import reverse
+
+    from tests.admin_session import apply_admin_gate, technical_admin, verified
+
+    _broken_search(monkeypatch)
+    register["source"].edit("2026_240", teema="Näidisteema 2026_240 parandatud")
+    _run(register, at=_at(0))
+    apply_admin_gate(settings)
+    settings.REAL_DATA_ALLOWED = False
+    admin, secret = technical_admin()
+    verified(client, admin, secret)
+    body = client.get(reverse("haldus:lovable")).content.decode()
+    assert "Otsingus ajakohastamata" in body and "1 teemat" in body
+
+
+def test_a_run_killed_while_running_is_not_the_holds_baseline(register, monkeypatch):
+    """Regression: LS-07 (review P3-1) — a RUNNING run recorded no decisions;
+    taken as the previous run it made every standing hold look new."""
+    register["source"].edit("2026_240", hetkeseis="Riigikogus menetluses")
+    register["source"].edit("2026_238", hetkeseis="Riigikogus menetluses")
+    first = _run(register, at=_at(0))
+    assert first.counts["held_fields"] >= 2
+    LovableSyncRun.objects.create(
+        run_key="killed-1999",
+        trigger=SyncTrigger.MANUAL,
+        mode=SyncMode.APPLY,
+        started_at=_at(0) + dt.timedelta(minutes=30),
+        mapping_version=lovable_sync.MAPPING_VERSION,
+        status=SyncRunStatus.RUNNING,
+    )
+    monkeypatch.setattr(lovable_sync, "MAX_NEW_HOLDS", 0)
+    register["source"].edit("2026_232", teema="Näidisteema 2026_232 parandatud")
+    run = _run(register, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert run.counts["held_fields_before"] == first.counts["held_fields"]

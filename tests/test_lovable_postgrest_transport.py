@@ -309,3 +309,26 @@ def test_a_run_whose_source_is_truncated_refuses_and_writes_nothing(cohort):
     assert run.error.startswith(("PAGES_INCONSISTENT", "TRUNCATED")), run.error
     assert _writes() == before and _matter("2026_501").title == "Näidisteema 2026_501"
     assert not LovableSyncSnapshot.objects.filter(run=run).exists()
+
+
+def test_an_edit_between_pages_that_keeps_the_count_is_caught_by_the_double_read():
+    """QA-01 (review P3-4): paging by offset cannot see an edit that changes a
+    row's content between pages without moving any row; the snapshot's second
+    pass can (`take_snapshot` reads index and cohort twice and compares), and
+    the reading is taken again rather than stitched together."""
+    topics = _topics(30)
+    fake = PostgrestFake({"topic": topics}, max_rows=10)
+    edits = {"done": False}
+
+    def between(table: str, offset: int) -> None:
+        if offset == 10 and not edits["done"]:
+            edits["done"] = True
+            topics[0]["version"] = 2  # already served on page one
+
+    fake.between = between
+    pauses: list[float] = []
+    document = lovable_source.take_snapshot(
+        _transport(fake), [], mapping_version="t", now=lambda: T0, pause=pauses.append
+    )
+    assert document["attempts"] == 2 and pauses
+    assert document["index"][0]["version"] == 2

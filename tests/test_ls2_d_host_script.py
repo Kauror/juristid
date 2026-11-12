@@ -392,3 +392,18 @@ def test_an_unknown_argument_is_refused():
         [BASH, str(SCRIPT), "--apply"], capture_output=True, text=True, timeout=30
     )
     assert result.returncode == 64 and "usage" in result.stderr
+
+
+def test_a_backup_naming_a_set_outside_the_backup_root_hands_nothing_over(host):
+    """Regression: DR-05 (review P3-6) — only a set under $BACKUP_ROOT/sets,
+    named as a set is, is verified, mounted or handed to an APPLY run."""
+    _executable(
+        host["appdata"] / "repo" / "scripts" / "deploy" / "juristid-backup.sh",
+        "#!/usr/bin/env bash\necho 'Backup set: /elsewhere/sets/20261109T000000Z'\n",
+    )
+    (host["fake"] / "due").write_text("DUE APPLY\n")
+    result = run(host)
+    assert result.returncode == 0, result.stdout + result.stderr
+    engine = next(c for c in calls(host) if "lovable_sync run" in c)
+    assert "--backup-set" not in engine and "/backup-set" not in engine
+    assert "named no set under" in logs(host)

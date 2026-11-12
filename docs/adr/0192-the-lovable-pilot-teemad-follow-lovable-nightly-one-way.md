@@ -337,3 +337,39 @@ the write side is a single INDETERMINATE check that points to `access-sql`.
 The probe can therefore never PASS on its own; before APPLY is ever
 considered, the owner runs the `access-sql` catalogue queries and records the
 result. See docs/adr/0201 §1.
+
+## Status update 2026-11-12 — run robustness after the 11.11 QA audit
+
+The decision is unchanged; §7 (breakers) and §8 (backups) are tightened
+(audit 2026-11-11 QA-01, LS-06–LS-09, DR-05; PR #617). The new thresholds are
+proposals until the owner approves them for production.
+
+- **A source reading is whole or refused.** A paged read asks PostgREST for the
+  exact count and must serve every counted row exactly once; a server row cap,
+  a count that moves, an overlap or a short read fails the run
+  (`NO_ROW_COUNT`, `PAGES_INCONSISTENT`, `TRUNCATED`). Nothing is written.
+- **Breaker overrides** (`--max-changed`, `--max-restored`) are a person's
+  decision for one `--trigger manual` run, never negative; `0` is zero. The
+  nightly limits stay 20 Teemad changed and 100 restored.
+- **Holds breaker.** `MAX_NEW_HOLDS` (25) replaces `MAX_NEW_CONFLICTS`: more
+  held fields than the previous finished run by over 25 holds the night
+  (`CIRCUIT_BREAKER`).
+- **Population guard.** An APPLY run refuses (`POPULATION_CHANGE`) when the
+  live Lovable index moved by more than 50 topics and 5 % since the previous
+  baseline reading; the reading is not stored. *Operator recovery*, once a
+  person has confirmed the change is real: `lovable_sync control --mode compare
+  --reason R`, one run (`juristid-lovable-sync.sh --manual`, or «Sünkrooni nüüd»)
+  stores the new reading as the baseline, then `lovable_sync control --mode
+  apply --reason R`. If the change is not real (a row policy, a broken read),
+  stay in COMPARE and fix the source.
+- **A verified backup is proven, not named.** `juristid-verify-backup.sh
+  --record` writes `VERIFIED-L<level>` into the set after the level passed; the
+  host script mounts the set read-only into the run's container; the engine
+  writes only when a level-2 proof for this set, recorded after it was taken
+  and within two hours of the run, names the dump that still hashes to it.
+  Otherwise the run is REVIEW_ONLY `NO_VERIFIED_BACKUP: <reason>`. A backup the
+  host could not take or verify never falls back to an older set.
+- **Read-backs and search.** A created Teema that does not read back stops
+  further creation (`VERIFY_STOPPED`). A search refresh that fails after the
+  writes keeps the run's record, shows «search stale: N» in `sync_health` and on
+  Haldus, and the next run that reads Lovable refreshes those Teemad.

@@ -4655,6 +4655,33 @@ HELD_OUTCOMES = (SyncOutcome.REVIEW_REQUIRED, SyncOutcome.CONFLICT)
 SEARCH_REFRESH_FAILED = "SEARCH_REFRESH_FAILED"
 
 
+def stale_search_matter_ids(*, exclude: Any = None) -> set[Any]:
+    """The Teemad whose search rows a run left stale (LS-09): every Teema written
+    (an APPLIED decision) by the unbroken line of newest runs that recorded
+    ``search_refresh_pending``. The line ends at the first run that read Lovable
+    and recorded none; a FAILED run recorded no counts and is passed over."""
+    pending: set[Any] = set()
+    runs = (
+        LovableSyncRun.objects.exclude(trigger=SyncTrigger.CHECK)
+        .filter(status__in=(*BASELINE_STATUSES, SyncRunStatus.FAILED))
+        .order_by("-started_at")
+    )
+    if exclude is not None:
+        runs = runs.exclude(pk=exclude.pk)
+    for earlier in runs[:30]:
+        counts = earlier.counts or {}
+        if earlier.status == SyncRunStatus.FAILED and not counts:
+            continue
+        if not counts.get("search_refresh_pending"):
+            break
+        pending.update(
+            earlier.decisions.filter(outcome=SyncOutcome.APPLIED)
+            .exclude(state__matter_id__isnull=True)
+            .values_list("state__matter_id", flat=True)
+        )
+    return pending
+
+
 def held_fields(plans: Iterable[MatterPlan]) -> int:
     """Fields held tonight, whatever the reason (`HELD_OUTCOMES`): what the holds
     breaker (`MAX_NEW_HOLDS`) compares with the previous run's recorded decisions."""
@@ -5119,6 +5146,8 @@ class RunCounts:
     #: Teemad written and verified whose search rows could not be refreshed
     #: (`SEARCH_REFRESH_FAILED`): `manage.py refresh_matter_search` recovers them.
     search_refresh_pending: int = 0
+    #: Teemad an earlier run left stale in search, refreshed by this run.
+    search_refreshed_carried: int = 0
     #: Codes of what went wrong without undoing the run (``SEARCH_REFRESH_FAILED``).
     warnings: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
@@ -5692,10 +5721,13 @@ def _execute(
 
     changed = [p for p in plans if any(d.reason != RESTORED for d in p.eligible)]
     restoring = [p for p in plans if p.eligible and p not in changed]
+    # The previous run that finished and recorded its decisions: a failed run,
+    # or one killed while RUNNING, recorded none (or only some), and would make
+    # tonight's every hold look new — or none of them (review of #617).
     previous_run = (
         LovableSyncRun.objects.exclude(pk=run.pk)
         .exclude(trigger=SyncTrigger.CHECK)
-        .exclude(status=SyncRunStatus.FAILED)
+        .filter(status__in=BASELINE_STATUSES)
         .order_by("-started_at")
         .first()
     )
@@ -5805,16 +5837,21 @@ def _execute(
         progress["affected"] = []
 
     search_pending = 0
-    if applied_ids:
+    # Teemad an earlier run wrote but could not refresh in search (LS-09): this
+    # run refreshes them with its own.
+    carried = set() if check else stale_search_matter_ids(exclude=run)
+    to_refresh = set(applied_ids) | carried
+    if to_refresh:
         try:
-            refresh_matters(Matter.objects.filter(pk__in=applied_ids))
+            refresh_matters(Matter.objects.filter(pk__in=to_refresh))
         except Exception as error:  # the writes are committed; their record must be too
             # As `onenote_capture` does: a search-projection failure never throws
             # away the run's counts, decisions, baselines or new-topic ledger
             # (audit 2026-11-11 LS-09). The Teemad stay written and verified;
             # their search rows are stale until `manage.py refresh_matter_search`
-            # (or the next run that writes them) refreshes them.
-            search_pending = len(set(applied_ids))
+            # or the next run that reads Lovable refreshes them
+            # (`stale_search_matter_ids`); `sync_health` says so meanwhile.
+            search_pending = len(to_refresh)
             logger.error(
                 "Lovable sync run %s: search refresh failed for %s Teema(d) (%s)",
                 run.pk,
@@ -5886,6 +5923,8 @@ def _execute(
         if search_pending:
             counts.search_refresh_pending = search_pending
             counts.warnings.append(SEARCH_REFRESH_FAILED)
+        elif carried:
+            counts.search_refreshed_carried = len(carried)
         counts.changed_source = len(changed)
         counts.changed_restores = len(restoring)
         counts.restore_limit = restore_limit
@@ -6592,6 +6631,11 @@ def sync_health(*, now: dt.datetime | None = None) -> SyncHealth:
         return SyncHealth(False, "a run started over an hour ago and never finished", last, good)
     if good is None or moment - good.started_at > STALE_AFTER:
         return SyncHealth(False, "no successful run in the last 26 hours", last, good)
+    stale = (last.counts or {}).get("search_refresh_pending") or 0
+    if stale:
+        # Written and verified, but not findable yet (LS-09): the next run, or
+        # `manage.py refresh_matter_search`, refreshes them.
+        return SyncHealth(False, f"search stale: {stale} Teema(d) not refreshed", last, good)
     return SyncHealth(True, f"{ctl.mode.lower()}, last success {good.run_key}", last, good)
 
 

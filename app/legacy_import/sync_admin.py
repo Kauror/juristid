@@ -137,7 +137,9 @@ FAILURE_REASONS: dict[str, str] = {
     ),
     "NO_ROW_COUNT": "Lovable ei öelnud ridade täpset arvu; midagi ei kirjutatud.",
     "POPULATION_CHANGE": (
-        "Lovable'i teemade arv muutus eelmisest lugemisest liiga palju; midagi ei kirjutatud."
+        "Lovable'i teemade arv muutus eelmisest lugemisest liiga palju; midagi ei kirjutatud. "
+        "Kui muutus on tegelik: lülita sünkroonimine võrdlusrežiimi, käivita see üks kord "
+        "(uus lugemine salvestub) ja lülita tagasi kirjutamisrežiimi."
     ),
     "OVERRIDE_NOT_MANUAL": "Piirangu tõstmine on lubatud ainult käsitsi käivitusel.",
     "OVERRIDE_NEGATIVE": "Piirang ei saa olla negatiivne.",
