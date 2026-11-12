@@ -180,11 +180,19 @@ class World:
         *,
         trigger: str = SyncTrigger.MANUAL,
         backup: bool = True,
+        at: dt.datetime | None = None,
+        transport: Any = None,
         **breakers: Any,
     ) -> LovableSyncRun:
-        """One run of the real entry point, as the host script makes it."""
+        """One run of the real entry point, as the host script makes it.
+
+        Each run is an hour after the previous one, from `NIGHT`, unless ``at``
+        names its moment (a later night). ``transport`` replaces the in-process
+        fake (LC-S1 reads the same rows over `HttpTransport`)."""
         lovable_sync.set_mode(mode, reason="kontraktitest")
-        moment = NIGHT + len(self.runs) * HOUR
+        moment = at or (
+            (self.runs[-1].started_at + HOUR).astimezone(TALLINN) if self.runs else NIGHT
+        )
         backup_set = (
             (moment - dt.timedelta(minutes=5)).astimezone(dt.UTC).strftime("sets/%Y%m%dT%H%M%SZ")
             if backup
@@ -192,7 +200,7 @@ class World:
         )
         run = lovable_sync.run_sync(
             trigger=trigger,
-            transport=self.lovable,
+            transport=self.lovable if transport is None else transport,
             backup_set=backup_set,
             now=lambda: moment,
             pause=lambda _seconds: None,
@@ -206,7 +214,10 @@ class World:
 
     @property
     def today(self) -> dt.date:
-        return (NIGHT + len(self.runs) * HOUR).date()
+        """The day the last run read as today (the oracle's ``today``)."""
+        if not self.runs:
+            return NIGHT.date()
+        return self.runs[-1].started_at.astimezone(TALLINN).date()
 
     def matter(self, reference: str) -> Matter:
         year, number = reference.split("_")
@@ -313,3 +324,38 @@ def build_world(
         first = world.run()
         assert first.status == "SUCCEEDED", (first.status, first.error)
     return world
+
+
+def import_outside_cohort(world: World, numbers: list[int], *, operational: bool = True) -> None:
+    """Teemad the importer wrote from Lovable but no cohort synchronises: Juristid
+    holds their Lovable ids outside every cohort (a possible duplicate, LC-P1).
+    Lovable lists the topics too, as ``operational`` or not."""
+    topics = []
+    for number in numbers:
+        reference = ref(number)
+        row = lovable_row(reference, operatiivne_ulatus=operational)
+        topics.append(_package_topic(reference, row, closed=False))
+        world.lovable.put(source_id(reference), copy.deepcopy(row), version=3)
+    package = _package(topics, highest=max(numbers) + 100)
+    plan = build_plan(package)
+    apply_plan(
+        plan,
+        operator_intent=lovable_pilot.OPERATOR_INTENT,
+        expect_package_sha256=plan.digest,
+        expect_plan_sha256=lovable_pilot.plan_digest(plan),
+        backup_set="sets/20261026T160000Z",
+    )
+
+
+def row_hashes(records: list[Any]) -> dict[str, str]:
+    """A digest of each given row as the database holds it now (LC-J1)."""
+    import hashlib
+
+    out: dict[str, str] = {}
+    for record in records:
+        model = type(record)
+        values = model._base_manager.filter(pk=record.pk).values_list().first()
+        out[f"{model._meta.label_lower}:{record.pk}"] = hashlib.sha256(
+            repr(values).encode()
+        ).hexdigest()
+    return out
