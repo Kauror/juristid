@@ -24,7 +24,7 @@ from tests.test_r4_authority import _at, _lovable_now, reference  # noqa: F401
 def test_a_failed_read_back_of_the_successor_never_supersedes_the_predecessor(
     reference, monkeypatch
 ):
-    """Regression: LS-01 — 2026_259 is created but does not read back as
+    """Guard for LS-01 (passes before the fix too) — 2026_259 is created but does not read back as
     written: the run stops writing, and 2026_140 stays open, held as before."""
     real = lovable_sync.verify_matter
 
@@ -55,7 +55,7 @@ def test_the_re_plan_is_counted_once_against_the_teemad_written_breaker(referenc
 
 
 def test_a_night_over_the_breaker_re_plans_nothing(reference, monkeypatch):
-    """Regression: LS-01 — under the same breaker: a night over it writes
+    """Guard for LS-01 (passes before the fix too) — under the same breaker: a night over it writes
     nothing, creates nothing and re-plans nothing."""
     _lovable_now(reference["source"])
     monkeypatch.setattr(lovable_sync, "MAX_CHANGED_MATTERS", CHANGED - 1)
