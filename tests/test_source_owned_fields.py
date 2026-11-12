@@ -247,12 +247,15 @@ def test_muuda_teemat_still_saves_juristids_own_fields(signed_in, synced, other_
 
 def test_the_header_editor_refuses_with_the_reason(signed_in, synced, other_specialist):
     """Regression: TL-01. A crafted inline POST is refused with the source sentence, not a 404."""
+    from app.matters.services import matter_field_revision
+
     before = ChangeEvent.objects.filter(matter=synced).count()
     response = signed_in.post(
         _url("matters:update_field", synced, field="owner"),
-        {"owner": str(other_specialist.pk), "revision": ""},
+        {"owner": str(other_specialist.pk), "revision": matter_field_revision(synced, "owner")},
     )
-    assert response.status_code in (400, 409)
+    assert response.status_code == 400
+    assert escape(refusal_message("owner")) in response.content.decode()
     synced.refresh_from_db()
     assert synced.owner_id != other_specialist.pk
     assert ChangeEvent.objects.filter(matter=synced).count() == before
@@ -264,7 +267,7 @@ def test_a_reader_is_refused_exactly_as_before(client, reader, synced, native, o
     statuses = {
         client.post(
             _url("matters:update_field", matter, field="owner"),
-            {"owner": str(other_specialist.pk)},
+            {"owner": str(other_specialist.pk), "revision": matter_field_revision(synced, "owner")},
         ).status_code
         for matter in (synced, native)
     }
