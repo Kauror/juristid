@@ -219,7 +219,7 @@ The step is a pure function of Lovable's current values, re-derived every run (`
 - **No sentence.** An open request with nothing sent gives the structured drafting step (0148 §10); otherwise there is no step. A day with no sentence is held.
 - **Writing.** A differing step is replaced through `set_next_action`: the old step is superseded and kept, never completed. Its provenance names the rule version (`kind_basis`). A closed Teema holds no current step.
 - **Changing the rule** re-derives the kind of every synchronised step at once, so a new rule version ships as its own reviewed release with a production-copy run.
-- *Reconcile (post-audit stream A, DL-01/DL-02):* how an open SOURCE step relates to an outstanding Arvamuse tähtaeg (ADR 0050). See that stream's PR; at r54, `outstanding_response_deadlines` keeps only WAIT, so an open SOURCE step hides the deadline.
+- *Reconcile (post-audit stream A, PR #616, DL-01/DL-02):* how an open SOURCE step relates to an outstanding Arvamuse tähtaeg (ADR 0050). See that PR; at r54, `outstanding_response_deadlines` keeps only WAIT, so an open SOURCE step hides the deadline.
 
 ### 10.4 Lifecycle and continuation
 
@@ -239,7 +239,7 @@ The step is a pure function of Lovable's current values, re-derived every run (`
 
 A lawyer's local close or reopen is put back (§10.1). A historical Teema is reopened only when its label or its scope changed in Lovable. Inside the operational scope it is promoted to a full record and moves to the register (`MembershipBasis.MOVED`); outside it, it is held (`HISTORY_REOPENED_OUTSIDE_SCOPE`).
 
-*Reconcile (post-audit stream C, LS-01):* at r54 a successor created in the same run is linked only on the next run. See that stream's PR.
+*Reconcile (post-audit stream C, PR #617, LS-01):* at r54 a successor created in the same run is linked only on the next run. See that PR.
 
 ### 10.5 The opinion request and the outcome's identity
 
@@ -282,7 +282,7 @@ This record states the rule. The list of excluded topics is operational data and
 - **The restore breaker** (`MAX_RESTORED_MATTERS` = 100). More than 100 restore-only Teemad holds the restores (`RESTORE_BREAKER`), and the source changes are still written. A Teema with a source change applies its restores with it, because the change can depend on them.
 - **Per-run limits.** `run_sync(max_changed=…, max_restored=…)` (`lovable_sync run --max-changed --max-restored`) raises a limit for one supervised run. It is recorded in the run's counts; no stored setting changes.
 - **Unchanged breakers:** `MAX_MISSING` (5) fails the run; `MAX_NEW_TOPICS` (10); a failed read-back stops every later Teema (0192 §7). `MAX_NEW_CONFLICTS` is inert under source authority, because nothing is a CONFLICT any more (finding LS-07).
-- *Reconcile (post-audit stream C):* a verified-backup requirement for APPLY, bounded per-run overrides, a stop of new-topic creation after a failed read-back, a breaker on new technical holds, and the same-run successor. See that stream's PR; the r54 baseline is as stated above.
+- *Reconcile (post-audit stream C, PR #617):* a verified-backup requirement for APPLY, bounded per-run overrides, a stop of new-topic creation after a failed read-back, a breaker on new technical holds, and the same-run successor. See that PR; the r54 baseline is as stated above.
 
 ### 10.9 Provenance and what is never touched
 
@@ -328,5 +328,5 @@ A hold changes nothing, and a later unchanged night is not «restored over» it.
 
    Until then, the behaviour above stands as built and is not a decision.
 3. **OPEN — LS-05:** whether an overdue drafting step with nothing sent ends the day after its deadline (as built) or stays until the request is resolved.
-4. Lovable-owned fields marked or read-only on synchronised Teemad (TL-01; a precondition of Approval B in the audit of 2026-11-11).
+4. Lovable-owned fields marked or read-only on synchronised Teemad (TL-01; a precondition of Approval B in the audit of 2026-11-11; post-audit stream B, PR #618).
 5. A name alias, or an account, for operational owners with no active Juristid account.
