@@ -1071,7 +1071,15 @@ def change_stage(
 
 
 @transaction.atomic
-def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
+def change_track(
+    *,
+    matter: Matter,
+    track: str,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> Matter:
+    """`Menetlusliik`. ``provenance`` names the run of a change no person made
+    (the Lovable synchronisation, docs/adr/0213 §10.9), nested on the event."""
     if track and track not in Track.values:
         raise DomainError(f"Tundmatu menetlusliik {track!r}.")
     previous = matter.track
@@ -1085,7 +1093,11 @@ def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
         matter=matter,
         actor=actor,
         obj=matter,
-        payload={"from": previous, "to": track},
+        payload={
+            "from": previous,
+            "to": track,
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return matter
 
@@ -1297,9 +1309,11 @@ def set_matter_dates(
     matter: Matter,
     received_date: Any = _UNSET,
     actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """`Saabunud`. The deadline has its own writer, which keeps its history
-    (`app.matters.response_deadlines.change_response_deadline`)."""
+    (`app.matters.response_deadlines.change_response_deadline`). ``provenance``:
+    as on `change_track`."""
     changed: dict[str, Any] = {}
     fields: list[str] = []
 
@@ -1338,7 +1352,7 @@ def set_matter_dates(
         matter=matter,
         actor=actor,
         obj=matter,
-        payload=changed,
+        payload={**changed, **({"provenance": provenance} if provenance else {})},
     )
     return matter
 
@@ -1918,7 +1932,11 @@ def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> M
 
 @transaction.atomic
 def set_legal_instruments(
-    *, matter: Matter, legal_instruments: Sequence[Any], actor: Any = None
+    *,
+    matter: Matter,
+    legal_instruments: Sequence[Any],
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Replace the Matter's Õigusakt with the chosen set.
 
@@ -1967,6 +1985,8 @@ def set_legal_instruments(
         payload={
             "added": sorted(str(pk) for pk in after - before),
             "removed": sorted(str(pk) for pk in before - after),
+            # Who changed it when no person did (docs/adr/0213 §10.9).
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return matter
@@ -2861,6 +2881,7 @@ def _close_one_feedback_wait(
     reason: str,
     feedback_received: Any = _UNSET,
     closing_reply: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterEngagement:
     """Write the closure on one already-locked row, and audit it.
 
@@ -2910,6 +2931,7 @@ def _close_one_feedback_wait(
             # Whether anything was written down, never what it said.
             "has_feedback_received": bool(engagement.feedback_received),
             **({"closing_reply": str(closing_reply.pk)} if closing_reply is not None else {}),
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return engagement
@@ -3103,7 +3125,10 @@ def open_engagement_feedback_wait(
 
 
 def close_open_feedback_waits_for_closure(
-    *, matter: Matter, actor: Any = None
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> list[MatterEngagement]:
     """Every round this Matter was still waiting on, ended with the file.
 
@@ -3144,7 +3169,11 @@ def close_open_feedback_waits_for_closure(
     )
     return [
         _close_one_feedback_wait(
-            engagement, matter=matter, actor=actor, reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE
+            engagement,
+            matter=matter,
+            actor=actor,
+            reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE,
+            provenance=provenance,
         )
         for engagement in waiting
     ]
@@ -3650,7 +3679,11 @@ def correct_website_overview_link(
 
 
 def _cancel_one_website_overview(
-    overview: MatterWebsiteOverview, *, actor: Any, reason: str
+    overview: MatterWebsiteOverview,
+    *,
+    actor: Any,
+    reason: str,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterWebsiteOverview:
     """Write the cancellation. The caller has already locked the row and checked it.
 
@@ -3670,7 +3703,11 @@ def _cancel_one_website_overview(
         matter=overview.matter,
         actor=actor,
         obj=overview,
-        payload={"status": overview.status, "reason": reason},
+        payload={
+            "status": overview.status,
+            "reason": reason,
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return overview
 
@@ -4050,7 +4087,10 @@ def correct_procedural_link(
 
 
 def cancel_planned_website_overviews_for_closure(
-    *, matter: Matter, actor: Any = None
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> list[MatterWebsiteOverview]:
     """Every plan this Matter still owed, dropped with the file that owed it.
 
@@ -4078,7 +4118,9 @@ def cancel_planned_website_overviews_for_closure(
         .order_by("created_at", "id")
     )
     return [
-        _cancel_one_website_overview(overview, actor=actor, reason="matter_closed")
+        _cancel_one_website_overview(
+            overview, actor=actor, reason="matter_closed", provenance=provenance
+        )
         for overview in planned
     ]
 
@@ -5555,7 +5597,12 @@ def correct_procedural_development(
     return current
 
 
-def end_live_work_for_closure(*, matter: Matter, actor: Any = None) -> None:
+def end_live_work_for_closure(
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> None:
     """End what a Matter owes only while it is active work. Every closure owes it (ENG-006).
 
     Three obligations exist because a Matter is current work, and none of them
@@ -5592,10 +5639,14 @@ def end_live_work_for_closure(*, matter: Matter, actor: Any = None) -> None:
     row locks, so a second call — a re-run cutover, a repeated refresh — finds
     nothing and writes nothing. The caller holds the Matter's row lock, taken
     first, which is the order `close_matter` has always used.
+
+    ``provenance`` — a closure no person made, the Lovable synchronisation's
+    (docs/adr/0213 §10.9) — rides nested on each of the three events, so the
+    cancelled step, overview and wait each name the run that ended them.
     """
-    end_open_action_for_closure(matter=matter, actor=actor)
-    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor)
-    close_open_feedback_waits_for_closure(matter=matter, actor=actor)
+    end_open_action_for_closure(matter=matter, actor=actor, provenance=provenance)
+    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor, provenance=provenance)
+    close_open_feedback_waits_for_closure(matter=matter, actor=actor, provenance=provenance)
 
 
 @transaction.atomic
@@ -5748,7 +5799,7 @@ def close_matter(
     # The step, the planned write-ups and the feedback waits end here, in this
     # transaction and under this lock — the same helper every other path that
     # makes a Matter inactive calls (ENG-006).
-    end_live_work_for_closure(matter=matter, actor=actor)
+    end_live_work_for_closure(matter=matter, actor=actor, provenance=provenance)
 
     episode_binding: dict[str, Any] = {}
     if stage_episode is not None:
@@ -5908,10 +5959,13 @@ def change_closure_from_source(
         forget_continuation_history(successor)
     if old_successor is not None and (successor is None or old_successor.pk != successor.pk):
         forget_continuation_history(old_successor)
-    # The summary names the two reasons and never the successor: a successor
-    # may be a Matter the reader of `Kõik muudatused` or the admin may not open,
-    # and that page names it only after asking (LK-01). The source's words,
-    # which may name it, stay in the payload.
+    # The summary names the two reasons and never the successor, and
+    # `Kõik muudatused` names a successor only after asking `visible_to`
+    # (LK-01). The payload is not so careful: its `reason` keeps the source's
+    # words, which may name the successor, and the admin's ChangeEvent page
+    # shows payloads raw — as `disposition_reason` and `MATTER_CLOSED` do. That
+    # is latent while every reader of the predecessor may read every Teema
+    # (docs/adr/0181), and listed as such in docs/adr/0213 §10.12.
     from app.workflow.enums import closure_reason_label
 
     record_change_event(

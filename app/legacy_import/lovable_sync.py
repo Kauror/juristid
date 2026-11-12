@@ -3601,7 +3601,7 @@ def _apply_authoritative(
         track = Track.KODA_INITIATIVE if decision.target else _track_before_initiative(matter.pk)
         if track is None:
             raise SyncRefused(TRACK_NOT_STATED, "The track before the initiative is not known.")
-        change_track(matter=Matter.objects.get(pk=matter.pk), track=track)
+        change_track(matter=Matter.objects.get(pk=matter.pk), track=track, provenance=provenance)
         new_b = bool(decision.target)
     elif name == "legal_act":
         instruments = Matter._meta.get_field("legal_instruments").related_model
@@ -3609,6 +3609,7 @@ def _apply_authoritative(
         set_legal_instruments(
             matter=fresh,
             legal_instruments=list(instruments._default_manager.filter(key__in=decision.target)),
+            provenance=provenance,
         )
         new_b = conditional_values(fresh)["legal_act"]
     elif name == "received":
@@ -3616,6 +3617,7 @@ def _apply_authoritative(
         set_matter_dates(
             matter=fresh,
             received_date=dt.date.fromisoformat(decision.target) if decision.target else None,
+            provenance=provenance,
         )
         new_b = decision.target
     else:

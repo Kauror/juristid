@@ -288,7 +288,19 @@ This record states the rule. The list of excluded topics is operational data and
 
 **Provenance.** Every write goes through its domain service with `actor=None`; no human actor is ever recorded for the sync. Each write carries the run's provenance: `provenance_source` = `LOVABLE_SYNC`, `sync_run`, `source_reference`, `source_version`, `source_snapshot_sha256`, `mapping_version`, and the step's `kind_basis`. Each field also has its `LovableSyncDecision` row, with A, B, C, outcome, reason and idempotency key.
 
-**The post-audit round (finding LS-03)** threads the same provenance through every other source-driven write: reopening and stage moves (`reopen_matter*`, `change_stage`, the stage move inside `close_matter_from_source`), the opinion request (`change_response_deadline`, `resolve_response_deadline`), commencements (the date services) and the closure-reason change. A stage period the sync begins is IMPORTED, as the sync's other stage moves are. `MATTER_CLOSURE_REASON_CHANGED` is in the `Kõik muudatused` vocabulary (finding LK-01). Its successor is named only to a reader who may open it.
+**The post-audit round (finding LS-03)** threads the same provenance through every other source-driven write, so no write of the sync is an anonymous system act:
+- reopening and stage moves: `reopen_matter_into_stage`, `reopen_matter`, `change_stage`, and the stage move inside `close_matter_from_source`;
+- the work a source closure ends (`end_live_work_for_closure`): each cancelled step, website overview and Kaasamine wait;
+- the opinion request: `change_response_deadline`, `resolve_response_deadline` and the deadline a reopening ends;
+- commencements: `add_` / `cancel_effective_date` and `add_` / `cancel_important_date`;
+- the track (`change_track`), the legal act (`set_legal_instruments`) and the received date (`set_matter_dates`);
+- the closure-reason change.
+
+Each event records its before and after values, beside the provenance, which is nested under `provenance` so it can never shadow a key of the change itself.
+
+**Stage periods the sync begins are IMPORTED**, as the sync's other stage moves are; a person's «Ava uuesti» stays RECORDED. An IMPORTED period stores no start, and the period it ends stores no end, so a duration or a «since» display has no moment for a sync reopening or stage move. That is deliberate: Juristid learns the change from Lovable, not when it happened.
+
+`MATTER_CLOSURE_REASON_CHANGED` is in the `Kõik muudatused` vocabulary (finding LK-01). Each side's successor is named only to a reader who may open it. `Kõik muudatused` names «Lovable'i sünkroonimine» as the actor of a row the sync wrote.
 
 **Never touched by the sync:**
 - Juristid-only notes, entries, documents and their versions, submissions, evidence and OneNote imports;
@@ -320,7 +332,7 @@ A hold changes nothing, and a later unchanged night is not «restored over» it.
 
 ### 10.12 Decisions this record does not take
 
-1. **Approval B**, the nightly APPLY. Not granted; production runs COMPARE.
+1. **Approval B**, the nightly APPLY. Item 3 of the r54 approval document, «automatic nightly mirroring», was **not** granted with Approval A. It is Approval B, still open; production runs COMPARE, and every write so far came from the supervised first run.
 2. **OPEN — TL-02: a source closure and Juristid-only planned work.** `close_matter_from_source` ends live work with `follow_ups_confirmed=True`. A planned «Kodulehe ülevaade», a Kaasamine wait and a «Koja arvamuse järelkontroll» are cancelled without the 0146 §8 confirmation, and a later reopening (`reopen_matter_into_stage`) does not bring them back. This is in tension with the rule that Juristid-only data never changes through the sync. The owner decides between:
    - closing as built;
    - closing but leaving that work for a person;
@@ -330,3 +342,4 @@ A hold changes nothing, and a later unchanged night is not «restored over» it.
 3. **OPEN — LS-05:** whether an overdue drafting step with nothing sent ends the day after its deadline (as built) or stays until the request is resolved.
 4. Lovable-owned fields marked or read-only on synchronised Teemad (TL-01; a precondition of Approval B in the audit of 2026-11-11; post-audit stream B, PR #618).
 5. A name alias, or an account, for operational owners with no active Juristid account.
+6. **Latent, not decided here — successor names outside `Kõik muudatused`.** `MATTER_CLOSED`'s summary, `disposition_reason` (printed on the closed banner), and the raw `reason` in the closure events' payloads still carry the sync's own words, «Lovable: jätkub teemana NNNN_N». The admin's `ChangeEvent` page shows payloads raw. Since ADR 0181, anyone who may open the predecessor may open every Teema, so nothing leaks today. A future per-Teema restriction would make these name a successor the reader may not open. Not redesigned in this round.

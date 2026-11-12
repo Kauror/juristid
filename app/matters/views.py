@@ -7420,11 +7420,12 @@ def closure_reason_change_line(event: ChangeEvent, user: Any) -> str:
     """`MATTER_CLOSURE_REASON_CHANGED` as one line of `Kõik muudatused`.
 
     Built from what the event recorded — the reason before and after, each in
-    `Lõpeta teema`'s words — and never from its summary or its source's words,
-    which may name the successor. The successor is named («jätkub teemas
-    2099_7») only when this reader may open it, through `visible_to`; otherwise
-    the line says the work continues elsewhere and nothing about where
-    (docs/adr/0213 §10.9, LK-01).
+    `Lõpeta teema`'s words, and each side's successor — and never from its
+    summary or its source's words, which may name a successor. A successor is
+    named («jätkub teemas 2099_7», or by its title when it has no reference yet)
+    only when this reader may open it, through `visible_to`, in one query for
+    both sides; otherwise the line says the work continues elsewhere and
+    nothing about where (docs/adr/0213 §10.9, LK-01).
     """
     from app.workflow.enums import closure_reason_label
 
@@ -7432,23 +7433,29 @@ def closure_reason_change_line(event: ChangeEvent, user: Any) -> str:
     raw_before, raw_after = payload.get("from"), payload.get("to")
     before: dict[str, Any] = raw_before if isinstance(raw_before, dict) else {}
     after: dict[str, Any] = raw_after if isinstance(raw_after, dict) else {}
-    line = (
-        f"{closure_reason_label(str(before.get('disposition') or '')) or 'põhjuseta'} → "
-        f"{closure_reason_label(str(after.get('disposition') or '')) or 'põhjuseta'}"
-    )
-    successor_id = after.get("successor")
-    if successor_id:
-        successor = (
-            Matter.objects.visible_to(user)
-            .filter(pk=successor_id)
-            .only("reference_year", "reference_number")
-            .first()
-        )
-        if successor is not None and successor.reference_year:
-            line += f"; jätkub teemas {successor.reference_year}_{successor.reference_number}"
+    wanted = [str(side.get("successor")) for side in (before, after) if side.get("successor")]
+    visible = {
+        str(found.pk): found
+        for found in Matter.objects.visible_to(user)
+        .filter(pk__in=wanted)
+        .only("pk", "title", "reference_year", "reference_number")
+    }
+
+    def side(recorded: dict[str, Any]) -> str:
+        words = closure_reason_label(str(recorded.get("disposition") or "")) or "põhjuseta"
+        successor_id = recorded.get("successor")
+        if not successor_id:
+            return words
+        successor = visible.get(str(successor_id))
+        if successor is None:
+            return f"{words}; {HIDDEN_SUCCESSOR}"
+        if successor.reference_year:
+            name = f"{successor.reference_year}_{successor.reference_number}"
         else:
-            line += f"; {HIDDEN_SUCCESSOR}"
-    return line
+            name = f"«{successor.title}»"
+        return f"{words}; jätkub teemas {name}"
+
+    return f"{side(before)} → {side(after)}"
 
 
 @login_required

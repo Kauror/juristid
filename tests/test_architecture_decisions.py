@@ -142,87 +142,125 @@ def test_every_gap_in_the_numbering_is_explained() -> None:
 # The post-audit round of 2026-11-12 found twenty-one places citing «0213 §10»
 # while the record stopped at §9: the code documented a contract nobody could
 # read. A citation is checked the way a reader follows it — the number names a
-# record in this directory, and the section is a heading, a numbered item or a
-# bold paragraph lead of that record.
+# record in this directory, and the section is one the record gives a number
+# or a name to.
 
 #: Where citations are read. Prose under `docs/` cites records in its own way.
-_CITING_ROOTS = ("app", "scripts", "tests")
+_CITING_ROOTS = ("app", "scripts", "templates", "tests")
+#: This file quotes citations as examples; they are checked by the self-tests.
+_THIS_FILE = "tests/test_architecture_decisions.py"
 _CITING_SUFFIXES = frozenset(
     {".py", ".html", ".txt", ".sh", ".toml", ".js", ".yml", ".ps1", ".sql"}
 )
 
-#: `docs/adr/0213 §10`, `ADR 0050 §3`, `0192 §5`, `0061 §17, §18`, `0143 §A4`,
-#: `0072 §Failure`. The number has a leading zero (records stop at 0999), so a
-#: year or an amount is never read as one.
+#: One cited section: `§10`, `§ 3.3`, `§A4`, `§Failure`, `(§10)`, and a range
+#: `§10–§11` / `§10-11`, whose two ends are both checked.
+_SECTION = r"\(?§\s?[A-Za-z0-9.]+(?:\s?[–-]\s?§?\s?[A-Za-z0-9.]+)?\)?"
+#: `docs/adr/0213 §10`, `ADR 0050 §3`, `0192 §5`, `0213 (§10)`, `0061 §17, §18`,
+#: `0143 §A4`, `0072 §Failure`. The number has a leading zero (records stop at
+#: 0999), so a year or an amount is never read as one.
 _CITATION = re.compile(
     r"(?<![0-9A-Za-z_.])(0\d{3})(?:-[a-z0-9-]+\.md)?"
-    r"((?:\s*(?:,|and|or|ja)?\s*§\s?[A-Za-z0-9.]+)+)"
+    rf"((?:\s*(?:,|and|or|ja)?\s*{_SECTION})+)"
 )
-_CITED_SECTION = re.compile(r"§\s?([A-Za-z0-9.]+)")
+_CITED_SECTION = re.compile(r"§\s?([A-Za-z0-9.]+)(?:\s?[–-]\s?§?\s?([A-Za-z0-9.]+))?")
 _SECTION_ID = r"[A-Z]?\d+(?:\.\d+)*|[A-Z]"
 _HEADING = re.compile(r"^#{1,6}\s+(?:ADR\s+\d{4}\s+[—-]\s+)?(?:§\s*)?(.*)$")
-_LIST_ITEM = re.compile(r"^(\d+)\.\s")
+#: A numbered section written as a list item with a bold lead — `1. **Any live
+#: work stops a closure…**` — the form many records number their decisions in.
+#: A plain numbered list item is an enumeration, not a section.
+_NUMBERED_LEAD = re.compile(r"^(\d+)\.\s+\*\*")
+#: A bold paragraph lead naming a section: `**9.1 Closure reasons…**`,
+#: `**New topics.**`.
 _BOLD_LEAD = re.compile(r"^(?:[-*]\s+)?\*\*(?:§\s*)?(.*)$")
 
-#: Citations that resolved to nothing when this test arrived, each still to be
-#: corrected by whoever knows what it meant (most cite a paragraph by a number
-#: the record never gave it). The list only shrinks:
+#: Citations that resolved to nothing when this test arrived, by where they are
+#: written, so a *new* bad citation of the same section still fails. Each is to
+#: be corrected by whoever knows what it meant (most cite a paragraph by a
+#: number the record never gave it). The list only shrinks:
 #: `test_the_known_unresolved_citations_are_still_unresolved` fails once one is
 #: fixed, so its entry is removed with the fix. Never add to it — fix the
 #: citation, or the record.
-KNOWN_UNRESOLVED: frozenset[tuple[str, str]] = frozenset(
+KNOWN_UNRESOLVED: frozenset[tuple[str, str, str]] = frozenset(
     {
-        ("0041", "6"),
-        ("0051", "26"),
-        ("0052", "13"),
-        ("0052", "14"),
-        *(
-            ("0061", section)
-            for section in (
-                "5", "6", "7", "9", "10", "14", "15", "16", "17", "18", "19", "22", "25",
-                "26", "28", "29", "40", "45",
-            )
-        ),
-        ("0072", "Failure"),
-        ("0086", "9"),
-        ("0096", "6"),
-        ("0096", "7"),
-        ("0133", "11"),
-        # A record on another branch (the README names the gap): its sections
-        # cannot be checked here.
-        ("0157", "3"),
-        ("0198", "8"),
+        # 0157 is a record on another branch (the README names the gap).
+        ("app/core/admin.py", "0041", "6"),
+        ("app/legacy_import/lovable_pilot.py", "0157", "3"),
+        ("app/legacy_import/lovable_reading.py", "0157", "3"),
+        ("app/matters/intake_extraction.py", "0072", "Failure"),
+        ("app/matters/management/commands/run_intake_reader.py", "0072", "Failure"),
+        ("app/matters/models.py", "0086", "9"),
+        ("app/matters/services.py", "0051", "26"),
+        ("app/matters/urls.py", "0096", "6"),
+        ("app/matters/urls.py", "0096", "7"),
+        ("app/matters/views.py", "0061", "17"),
+        ("app/matters/workspace.py", "0061", "17"),
+        ("app/notifications/management/commands/generate_commencement_reminders.py", "0198", "8"),
+        ("app/submissions/opinions.py", "0061", "14"),
+        ("app/submissions/opinions.py", "0061", "5"),
+        ("app/submissions/services.py", "0061", "17"),
+        ("app/workflow/plan.py", "0133", "11"),
+        ("templates/matters/matter_documents.html", "0061", "22"),
+        ("templates/matters/matter_documents.html", "0061", "27"),
+        ("templates/matters/partials/opinion_manage.html", "0061", "13"),
+        ("templates/matters/partials/rail.html", "0052", "14"),
+        ("templates/submissions/metadata.html", "0061", "13"),
+        ("tests/test_admin_is_not_a_back_door.py", "0041", "6"),
+        ("tests/test_arvamused_workspace_retirement.py", "0061", "14"),
+        ("tests/test_arvamused_workspace_retirement.py", "0061", "16"),
+        ("tests/test_arvamused_workspace_retirement.py", "0061", "6"),
+        ("tests/test_child_projection_visibility.py", "0061", "25"),
+        ("tests/test_opinions_under_documents.py", "0061", "10"),
+        ("tests/test_opinions_under_documents.py", "0061", "26"),
+        ("tests/test_opinions_under_documents.py", "0061", "29"),
+        ("tests/test_opinions_under_documents.py", "0061", "40"),
+        ("tests/test_opinions_under_documents.py", "0061", "9"),
+        ("tests/test_opinions_workspace.py", "0061", "22"),
+        ("tests/test_qa_round_wording_and_navigation.py", "0061", "15"),
+        ("tests/test_qa_round_wording_and_navigation.py", "0061", "16"),
+        ("tests/test_simplified_next_action.py", "0052", "13"),
+        ("tests/test_teema_human_qa.py", "0061", "6"),
+        ("tests/test_teema_rail.py", "0052", "14"),
+        ("tests/test_teema_rail.py", "0061", "10"),
+        ("tests/test_teema_rail.py", "0061", "18"),
+        ("tests/test_teema_rail.py", "0061", "19"),
+        ("tests/test_teema_rail.py", "0061", "28"),
+        ("tests/test_teema_rail.py", "0061", "6"),
+        ("tests/test_teema_redesign.py", "0061", "45"),
+        ("tests/test_teema_redesign.py", "0061", "7"),
     }
-)  # fmt: skip
+)
 
 
 def _section_ids(path: Path) -> set[str]:
     """What a citation of this record may name: heading numbers and letters
-    (`## 10.`, `### 4.2`, `## A.`), numbered items, alone and under their
-    heading (`1.2`, `A4`), bold paragraph leads (`**9.1 …**`), and the first
-    word of a heading or bold lead (`§Amendment`, `§new topics`), lower-cased."""
+    (`## 10.`, `### 4.2`, `## A.`), bold-led numbered items alone and under
+    their heading (`1.2`, `A4`), bold paragraph leads (`**9.1 …**`), and the
+    first word of a heading or bold lead (`§Amendment`, `§new topics`),
+    lower-cased."""
     found: set[str] = set()
     current = ""
     for line in path.read_text(encoding="utf-8").splitlines():
         heading = _HEADING.match(line)
-        lead = None if heading else _BOLD_LEAD.match(line)
-        text = heading.group(1) if heading else (lead.group(1) if lead else None)
-        if text is not None:
-            token = re.match(rf"({_SECTION_ID})(?=[.)\s:—]|$)", text)
-            if token:
-                found.add(token.group(1))
-                if heading:
-                    current = token.group(1)
-            word = re.match(r"[A-Za-zÕÄÖÜõäöü]+", text)
-            if word:
-                found.add(word.group(0).lower())
-            continue
-        item = _LIST_ITEM.match(line)
+        item = None if heading else _NUMBERED_LEAD.match(line)
         if item:
             found.add(item.group(1))
             if current:
                 found.add(f"{current}.{item.group(1)}")
                 found.add(f"{current}{item.group(1)}")
+            continue
+        lead = None if heading else _BOLD_LEAD.match(line)
+        text = heading.group(1) if heading else (lead.group(1) if lead else None)
+        if text is None:
+            continue
+        token = re.match(rf"({_SECTION_ID})(?=[.)\s:—]|$)", text)
+        if token:
+            found.add(token.group(1))
+            if heading:
+                current = token.group(1)
+        word = re.match(r"[A-Za-zÕÄÖÜõäöü]+", text)
+        if word:
+            found.add(word.group(0).lower())
     return found
 
 
@@ -233,12 +271,32 @@ def _section_key(section: str) -> str:
     return section.lower()
 
 
-def _citations() -> list[tuple[str, str, str]]:
-    """(record, cited section as written, `path:line`) for every citation."""
+def _cited_sections(text: str) -> list[str]:
+    """Every section one citation names, both ends of a range included."""
+    found: list[str] = []
+    for start, end in _CITED_SECTION.findall(text):
+        found.append(start.rstrip("."))
+        if end:
+            found.append(end.rstrip("."))
+    return found
+
+
+def _citations_in(text: str) -> list[tuple[int, str, str]]:
+    """(line, record, section as written) for every citation in ``text``."""
+    found: list[tuple[int, str, str]] = []
+    for number, line in enumerate(text.splitlines(), 1):
+        for match in _CITATION.finditer(line):
+            for section in _cited_sections(match.group(2)):
+                found.append((number, match.group(1), section))
+    return found
+
+
+def _citations() -> list[tuple[str, int, str, str]]:
+    """(file, line, record, cited section) for every citation in the code."""
     from django.conf import settings
 
     base = Path(settings.BASE_DIR)
-    found: list[tuple[str, str, str]] = []
+    found: list[tuple[str, int, str, str]] = []
     for root in _CITING_ROOTS:
         for path in sorted((base / root).rglob("*")):
             if path.suffix not in _CITING_SUFFIXES or not path.is_file():
@@ -247,41 +305,75 @@ def _citations() -> list[tuple[str, str, str]]:
             if "§" not in text:
                 continue
             where = path.relative_to(base).as_posix()
-            for number, line in enumerate(text.splitlines(), 1):
-                for match in _CITATION.finditer(line):
-                    for section in _CITED_SECTION.findall(match.group(2)):
-                        found.append((match.group(1), section.rstrip("."), f"{where}:{number}"))
+            if where == _THIS_FILE:
+                continue  # its own examples, `test_the_citation_reader_…`
+            found.extend((where, *citation) for citation in _citations_in(text))
     return found
 
 
-def _unresolved() -> dict[tuple[str, str], list[str]]:
+def _unresolved() -> dict[tuple[str, str, str], list[int]]:
+    """(file, record, section) → the lines that cite a section that is not there."""
     paths = {number: ADR / names[0] for number, names in _records().items()}
     sections = {number: _section_ids(path) for number, path in paths.items()}
-    missing: dict[tuple[str, str], list[str]] = defaultdict(list)
-    for record, section, where in _citations():
+    missing: dict[tuple[str, str, str], list[int]] = defaultdict(list)
+    for where, line, record, section in _citations():
         if _section_key(section) not in sections.get(record, set()):
-            missing[(record, section)].append(where)
+            missing[(where, record, section)].append(line)
     return dict(missing)
 
 
 def test_the_section_reader_finds_the_forms_the_records_use() -> None:
     """Guards the guard, on records whose shapes differ: a numbered heading, a
-    lettered one with numbered items, a bold amendment lead, a word heading."""
+    lettered one with bold-led numbered items, a bold amendment lead, a word
+    heading; and a plain numbered list is not a section."""
     ids = _section_ids(next(ADR.glob("0213-*.md")))
     assert {"1", "9", "9.1", "9.9", "10", "10.4", "new"} <= ids
-    assert "99" not in ids
+    # §4's plain enumeration («1. Deploying the candidate.» under §8) gives no ids.
+    assert "99" not in ids and "8.1" not in ids
     assert {"A", "A4", "B"} <= _section_ids(next(ADR.glob("0143-*.md")))
+    assert {"1", "7"} <= _section_ids(next(ADR.glob("0152-*.md")))
     assert "amendment" in _section_ids(next(ADR.glob("0054-*.md")))
     assert len(_citations()) > 2000
+
+
+def test_the_citation_reader_finds_the_forms_the_code_uses() -> None:
+    sample = "\n".join(
+        [
+            "x (docs/adr/0213 §10) y",
+            "ADR 0050 §3 and ADR 0198 §2",
+            "0192 §5",
+            "per 0213 (§10)",
+            "docs/adr/0061 §17, §18",
+            "0213 §10–§11",
+            "0213 §9-10",
+            "ADR 0143 §A4, 0072 §Failure",
+            "2026 §3 is a year, 2099_7 §1 a reference",
+        ]
+    )
+    assert [(record, section) for _, record, section in _citations_in(sample)] == [
+        ("0213", "10"),
+        ("0050", "3"),
+        ("0198", "2"),
+        ("0192", "5"),
+        ("0213", "10"),
+        ("0061", "17"),
+        ("0061", "18"),
+        ("0213", "10"),
+        ("0213", "11"),
+        ("0213", "9"),
+        ("0213", "10"),
+        ("0143", "A4"),
+        ("0072", "Failure"),
+    ]
 
 
 def test_every_cited_adr_section_exists() -> None:
     """Regression: LS-02. The source-authority contract was cited as «0213 §10»
     from twenty-one places in `app/` before the section was written."""
-    unresolved = {key: where for key, where in _unresolved().items() if key not in KNOWN_UNRESOLVED}
+    unresolved = {key: lines for key, lines in _unresolved().items() if key not in KNOWN_UNRESOLVED}
     assert not unresolved, "\n".join(
-        f"ADR {record} §{section} does not exist: {', '.join(where[:3])}"
-        for (record, section), where in sorted(unresolved.items())
+        f"{where}:{lines[0]}: ADR {record} §{section} does not exist"
+        for (where, record, section), lines in sorted(unresolved.items())
     )
 
 

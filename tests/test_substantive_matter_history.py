@@ -1315,6 +1315,98 @@ def test_the_change_log_shows_a_closure_reason_change_and_who_made_it(client, sp
     assert "run-1" not in body  # the payload is never rendered
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [
+        None,
+        {},
+        {"provenance": {"provenance_source": "LOVABLE_PILOT", "sync_run": "run-1"}},
+        {"provenance_source": "REGISTER_IMPORT"},
+    ],
+)
+def test_only_the_lovable_sync_is_named_as_the_actor_of_a_system_row(client, specialist, payload):
+    """Regression: LS-03. «Lovable'i sünkroonimine» names a row the sync wrote,
+    and only that: an actor-less row with another provenance, or none, reads
+    as it always did."""
+    from app.audit.provenance import LOVABLE_SYNC_ACTOR, source_actor_label
+    from app.audit.services import record_change_event
+
+    matter = factories.MatterFactory(owner=specialist)
+    record_change_event(
+        event_type=ChangeEventType.MATTER_TRACK_CHANGED,
+        matter=matter,
+        actor=None,
+        obj=matter,
+        payload=payload,
+    )
+    assert source_actor_label(payload) == ""
+    assert LOVABLE_SYNC_ACTOR not in _changes(client, specialist, matter).content.decode().replace(
+        "&#x27;", "'"
+    )
+    assert source_actor_label({"provenance": {"provenance_source": "LOVABLE_SYNC"}}) == (
+        LOVABLE_SYNC_ACTOR
+    )
+
+
+def test_a_persons_reopening_stays_recorded_and_carries_no_provenance(specialist, consultation):
+    """Regression: LS-03. Only the sync's reopening begins an IMPORTED period;
+    «Ava uuesti» by a person is RECORDED, with no provenance on its events."""
+    from app.matters.enums import StageEpisodeOrigin
+    from app.matters.models import MatterStageEpisode
+    from app.matters.services import close_matter, reopen_matter_into_stage
+    from app.workflow.enums import Disposition
+
+    matter = factories.MatterFactory(owner=specialist)
+    close_matter(
+        matter=matter,
+        disposition=Disposition.NO_POSITION_FORMED,
+        actor=specialist,
+        follow_ups_confirmed=True,
+    )
+    reopen_matter_into_stage(matter=matter, stage=consultation, actor=specialist)
+
+    current = MatterStageEpisode.objects.get(matter=matter, is_current=True)
+    assert (current.stage, current.origin) == (consultation, StageEpisodeOrigin.RECORDED)
+    for event_type in (ChangeEventType.MATTER_REOPENED, ChangeEventType.MATTER_STAGE_CHANGED):
+        event = ChangeEvent.objects.filter(matter=matter, event_type=event_type).latest(
+            "occurred_at"
+        )
+        assert event.actor_id == specialist.pk
+        assert "provenance" not in (event.payload or {})
+
+
+def test_a_closure_reason_change_names_both_visible_successors(specialist):
+    """Regression: LK-01. The old successor is named too when the reader may
+    open it, and a visible successor with no reference yet is named by its
+    title — never read as hidden."""
+    from app.matters.services import change_closure_from_source
+    from app.matters.views import HIDDEN_SUCCESSOR, closure_reason_change_line
+    from app.workflow.enums import Disposition
+
+    predecessor = factories.MatterFactory(owner=specialist)
+    first = factories.MatterFactory(owner=specialist)
+    second = factories.MatterFactory(owner=specialist, title="Järglane numbrita")
+    _source_reason_change(predecessor, first)
+    from app.matters.models import Matter
+
+    Matter.all_objects.filter(pk=second.pk).update(reference_year=None, reference_number=None)
+    change_closure_from_source(
+        matter=predecessor,
+        disposition=Disposition.SUPERSEDED,
+        successor=second,
+        reason="Lovable: jätkub teise teemana.",
+        provenance={"provenance_source": "LOVABLE_SYNC", "sync_run": "run-2"},
+    )
+    event = ChangeEvent.objects.filter(
+        matter=predecessor, event_type=ChangeEventType.MATTER_CLOSURE_REASON_CHANGED
+    ).latest("occurred_at")
+    line = closure_reason_change_line(event, specialist)
+
+    assert f"jätkub teemas {first.reference_year}_{first.reference_number} →" in line
+    assert line.endswith("jätkub teemas «Järglane numbrita»")
+    assert HIDDEN_SUCCESSOR not in line
+
+
 def test_a_closure_reason_change_never_names_a_successor_the_reader_may_not_open(specialist):
     """Regression: LK-01. A successor the reader may not open is «another Teema»,
     nothing more: not its reference in the line, the summary or the source's words.

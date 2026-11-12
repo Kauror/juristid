@@ -317,8 +317,9 @@ MATTER_LEVEL_EVENT_TYPES: frozenset[str] = frozenset(
         ChangeEventType.MATTER_REOPENED,
         # A closed Teema's closure reason (and successor) set to its source's
         # (docs/adr/0213 §10.4, LK-01). The Matter is the subject; the summary
-        # names no other Matter, and `Kõik muudatused` names the successor only
+        # names no other Matter, and `Kõik muudatused` names a successor only
         # to a reader who may open it (`matters.views.closure_reason_change_line`).
+        # The payload's `reason` may name it (latent, docs/adr/0213 §10.12).
         ChangeEventType.MATTER_CLOSURE_REASON_CHANGED,
         ChangeEventType.MATTER_PROMOTED,
         ChangeEventType.MATTER_HISTORICAL_CUTOVER_CLOSED,
