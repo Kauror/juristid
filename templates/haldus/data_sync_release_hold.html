@@ -1,0 +1,35 @@
+{% extends "haldus/base.html" %}
+{% block title %}Ootel sulgemine · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  A closure from Lovable held for Juristid-only work (TL-02, docs/adr/0213
+  §10.13), released by a technical administrator. Counts only: the Teema is
+  named by its reference and its work by kind, never by a record's words. The
+  confirming box posts the digest of exactly the work shown; work that changed
+  is refused with the renewed counts.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel dsync__confirm" aria-labelledby="dsync-release">
+    <h2 class="dsync__title" id="dsync-release">Ootel sulgemine</h2>
+    <dl class="detailgrid">
+      <dt>Teema</dt><dd>{{ reference }}</dd>
+      <dt>Ootel alates</dt><dd>{{ preview.hold.since|date:"j.n.Y" }}</dd>
+      <dt>Lovable'i põhjus</dt><dd>{{ preview.reason_label }}</dd>
+    </dl>
+    <p class="dsync__effect">{{ preview.statement }} Tühistamised salvestatakse sinu nimel. Lovable'isse ei kirjutata.</p>
+    <form method="post" action="{% url 'haldus:data_sync_release_hold' %}" class="form dsync__form">
+      {% csrf_token %}
+      <input type="hidden" name="viide" value="{{ reference }}">
+      <label class="cx-check" for="dsync-release-confirm">
+        <input type="checkbox" name="kinnitus" id="dsync-release-confirm" value="{{ preview.digest }}" required>
+        <span>Sulge teema ja tühista pooleli töö</span>
+      </label>
+      <div class="form__actions">
+        <button type="submit" class="button button--primary">Sulge teema</button>
+        <a class="button button--quiet" href="{% url 'haldus:lovable' %}">Loobu</a>
+      </div>
+    </form>
+  </section>
+{% endblock %}

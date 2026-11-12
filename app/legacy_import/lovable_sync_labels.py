@@ -98,6 +98,11 @@ LOVABLE_REASONS = {
     ),
     "STAGE_UNMAPPED": "Lovable'i hetkeseisu silti ei saa Juristide hetkeseisuks kaardistada.",
     "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
+    "LOCAL_WORK_AT_CLOSURE": (
+        "Lovable sulges teema, kuid Juristides on pooleli töö (planeeritud tegevus, "
+        "järelkontroll, kodulehe ülevaade või kaasamise ootus); sulgemine ootab, midagi "
+        "ei tühistatud."
+    ),
     "RESTORED_SOURCE_VALUE": "Lovable'i väärtus taastati; Juristides oli seda muudetud.",
     "ANSWERED_IN_JURISTID_NOT_IN_LOVABLE": (
         "Arvamuse küsimine on Juristides vastatud või lõpetatud, kuid Lovable pole saatmist "

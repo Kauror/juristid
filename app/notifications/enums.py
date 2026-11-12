@@ -72,6 +72,8 @@ class NotificationCategory(models.TextChoices):
     COMMENCEMENT_CHECK = "COMMENCEMENT_CHECK", "Jõustumise kontroll"
     IMPORTANT_DATE = "IMPORTANT_DATE", "Oluline tähtaeg"
     REVIEW_DATE = "REVIEW_DATE", "Ülevaatamise kuupäev"
+    #: A closure from Lovable held for Juristid-only work for 14 days (TL-02).
+    CLOSURE_HOLD = "CLOSURE_HOLD", "Ootel sulgemine"
 
 
 class NotificationSource(models.TextChoices):

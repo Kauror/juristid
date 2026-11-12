@@ -569,4 +569,9 @@ urlpatterns = [
     # page had posted to it since docs/adr/0061, and owner decision D9
     # (2026-10-17) retired it (tests/test_retired_write_doors.py).
     path("teemad/<uuid:pk>/taasava/", views.reopen, name="reopen"),
+    path(
+        "teemad/<uuid:pk>/ootel-sulgemine/",
+        views.closure_hold_release,
+        name="closure_hold_release",
+    ),
 ]

@@ -42,6 +42,8 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.core.errors import DomainError
+
 #: Kept word for word for the one case ADR 0146 §8 always asked about.
 CHECKS_ONLY_LABEL = "Sulge teema ja lõpeta ka järelkontroll"
 LIVE_WORK_LABEL = "Sulge teema ja lõpeta pooleli töö"
@@ -211,3 +213,119 @@ def closure_warning(work: LiveWork) -> tuple[str, str] | None:
         "Kui midagi neist tuleb jätkata, vii see enne sulgemist teisele, seotud teemale.",
         LIVE_WORK_LABEL,
     )
+
+
+# ---------------------------------------------------------------------------
+# A closure from Lovable and the work only Juristid holds (TL-02, owner 12.11.2026)
+# ---------------------------------------------------------------------------
+
+#: The hold's code in the synchronisation ledger (`lovable_sync.TECHNICAL_HOLDS`).
+LOCAL_WORK_AT_CLOSURE = "LOCAL_WORK_AT_CLOSURE"
+#: How many days a hold may stand before its owner and the department head are told.
+CLOSURE_HOLD_ESCALATION_DAYS = 14
+
+
+def juristid_only_work(matter: Any) -> LiveWork:
+    """The live work on a synchronised Teema that is **Juristid's alone** (TL-02).
+
+    `live_work_at_closure` minus the current step: on a synchronised Teema the
+    current step (``OPEN``, not a follow-up check) is Lovable's own `jargmiseks`
+    (docs/adr/0213 §10.3), and a closure from Lovable ends it as Lovable says.
+    Everything else closure would end is something a person in Juristid planned
+    and Lovable never knew of:
+
+    * every **planned Tegevus** (``PLANNED``, no follow-up — docs/adr/0143);
+    * every **«Koja arvamuse järelkontroll»**, current or planned (a step with a
+      follow-up — docs/adr/0146; only an interactive send schedules one);
+    * every live **planned «Kodulehe ülevaade»** (docs/adr/0081 §5);
+    * every live **open Kaasamine feedback wait** (docs/adr/0086 §7).
+
+    A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01),
+    exactly as for any closure. The digest names these rows only, so a release
+    confirmed against them is refused when they change (docs/adr/0152 §7)."""
+    from app.workflow.enums import ActionStatus
+    from app.workflow.models import NextAction
+
+    work = live_work_at_closure(matter)
+    if not work.current:
+        return work
+    lovables = {
+        str(pk)
+        for pk in NextAction.objects.filter(
+            matter_id=getattr(matter, "pk", matter),
+            status=ActionStatus.OPEN,
+            follow_up__isnull=True,
+        ).values_list("pk", flat=True)
+    }
+    return LiveWork(
+        current=False,
+        planned=work.planned,
+        checks=work.checks,
+        overviews=work.overviews,
+        waits=work.waits,
+        action_ids=tuple(pk for pk in work.action_ids if pk not in lovables),
+        overview_ids=work.overview_ids,
+        wait_ids=work.wait_ids,
+        matter_id=work.matter_id,
+    )
+
+
+def work_counts(work: LiveWork) -> dict[str, Any]:
+    """Counts and the digest only — never a record's words (reader-blind)."""
+    return {
+        "planned": work.planned,
+        "checks": work.checks,
+        "overviews": work.overviews,
+        "waits": work.waits,
+        "digest": work.digest,
+    }
+
+
+def work_from_counts(counts: dict[str, Any] | None) -> LiveWork:
+    """A `LiveWork` drawn from `work_counts` (for its `phrases`), ids left out."""
+    counts = counts or {}
+    return LiveWork(
+        planned=int(counts.get("planned") or 0),
+        checks=int(counts.get("checks") or 0),
+        overviews=int(counts.get("overviews") or 0),
+        waits=int(counts.get("waits") or 0),
+    )
+
+
+def joined_phrases(work: LiveWork) -> str:
+    parts = work.phrases()
+    return _joined(parts) if parts else ""
+
+
+#: The Teema banner while a closure from Lovable is held (one sentence + the counts).
+CLOSURE_HOLD_BANNER = "Lovable on teema sulgenud, kuid Juristides on pooleli"
+#: The banner once the work is done and only the night's closure is left.
+CLOSURE_HOLD_DONE = (
+    "Lovable on teema sulgenud ja Juristides pole enam pooleli tööd; "
+    "järgmine öine sünkroonimine suleb teema."
+)
+#: Said under the banner: how the hold ends.
+CLOSURE_HOLD_HELP = (
+    "Lõpeta, tühista või vii pooleli töö teisele teemale — siis suleb öine "
+    "sünkroonimine teema Lovable'i põhjusega. Teema saab ka ise sulgeda."
+)
+#: The one-sentence `i` beside the release action.
+CLOSURE_HOLD_RELEASE_TIP = (
+    "Sulgeb teema kohe Lovable'i põhjusega ja tühistab allpool nimetatud pooleli töö sinu nimel."
+)
+CLOSURE_HOLD_RELEASE_LABEL = "Sulge teema ja tühista pooleli töö"
+
+
+class SourceClosureHeld(DomainError):
+    """A closure from Lovable refused while Juristid-only work is live (TL-02).
+
+    ``work`` is what holds it; ``stale`` — a release was confirmed for other
+    work than is live now."""
+
+    def __init__(self, work: LiveWork, *, stale: bool = False) -> None:
+        self.work = work
+        self.stale = stale
+        text = f"{CLOSURE_HOLD_BANNER}: {joined_phrases(work)}."
+        if stale:
+            text = f"{LIVE_WORK_CHANGED} {text}"
+        super().__init__(text)

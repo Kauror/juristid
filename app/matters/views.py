@@ -3985,6 +3985,45 @@ def _date_order_confirmation(request: HttpRequest) -> dict[str, Any]:
     }
 
 
+def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -> dict[str, Any]:
+    """The banner of a closure Lovable made and Juristid holds (TL-02).
+
+    Counts only (`LiveWork.phrases`), so it says nothing about a record the
+    reader may not open. The release form only for somebody who may release
+    (`may_release`: the owner here; an administrator releases in Haldus)."""
+    if not held or not matter.is_open:
+        return {}
+    from app.legacy_import.lovable_closure_hold import may_release, release_preview
+    from app.matters.closure_work import (
+        CLOSURE_HOLD_BANNER,
+        CLOSURE_HOLD_DONE,
+        CLOSURE_HOLD_HELP,
+        CLOSURE_HOLD_RELEASE_LABEL,
+        CLOSURE_HOLD_RELEASE_TIP,
+        joined_phrases,
+    )
+
+    preview = release_preview(matter)
+    if preview is None:
+        return {}
+    return {
+        "closure_hold": {
+            "banner": CLOSURE_HOLD_BANNER,
+            # What is live now, not what the night counted: work finished today
+            # is no longer named.
+            "phrases": joined_phrases(preview.local),
+            "done": CLOSURE_HOLD_DONE,
+            "since": preview.hold.since,
+            "help": CLOSURE_HOLD_HELP,
+            "statement": preview.statement,
+            "digest": preview.digest,
+            "label": CLOSURE_HOLD_RELEASE_LABEL,
+            "tip": CLOSURE_HOLD_RELEASE_TIP,
+            "can_release": may_release(request.user, matter),
+        }
+    }
+
+
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
@@ -3998,6 +4037,10 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     own = ownership(matter)
     return {
         "matter": matter,
+        # A closure from Lovable held for Juristid-only work (TL-02): asked only
+        # where the lock already found an open hold on the closure, so a Teema
+        # without one pays no query for it.
+        **_closure_hold_context(request, matter, held="close" in own.held),
         "source_owned": own.active,
         # Per field: what is locked now (a field under an open hold is not),
         # and the line that says why a held one is editable.
@@ -7369,6 +7412,32 @@ def reopen(request: HttpRequest, pk: Any) -> HttpResponse:
         messages.success(request, "Teema on taasavatud.")
     except DomainError as error:
         messages.error(request, str(error))
+    return redirect("matters:matter_detail", pk=matter.pk)
+
+
+@login_required
+@business_write_required
+@require_http_methods(["POST"])
+def closure_hold_release(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Sulge teema ja tühista pooleli töö» on a closure Lovable made that is held
+    for Juristid-only work (TL-02, docs/adr/0213 §10.13).
+
+    The Teema's owner confirms the counts the banner showed; the confirming box
+    posts their digest back, and `release_closure_hold` reads the latest
+    reading and the work again under the Matter's lock: a hold that cleared,
+    or Lovable reopening, changes nothing; work that changed is refused with
+    the renewed counts."""
+    from app.legacy_import.lovable_closure_hold import release_closure_hold
+
+    matter = get_visible_matter(request, pk)
+    try:
+        result = release_closure_hold(
+            matter=matter, actor=request.user, confirmed=request.POST.get("kinnitus", "")
+        )
+    except DomainError as error:
+        messages.error(request, str(error))
+        return redirect("matters:matter_detail", pk=matter.pk)
+    (messages.success if result.closed else messages.info)(request, result.message)
     return redirect("matters:matter_detail", pk=matter.pk)
 
 

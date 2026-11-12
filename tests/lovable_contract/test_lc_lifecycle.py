@@ -123,21 +123,22 @@ def test_lovable_closes_with_its_own_reason_and_reopens_at_its_stage(db, pilot_o
     assert ChangeEvent.objects.count() == events
 
 
-def test_tl02_a_source_closure_cancels_juristid_only_planned_work_today(world):
-    """TL-02 (owner decision pending) — current behaviour, pinned, not endorsed.
+def test_tl02_a_source_closure_with_juristid_only_work_is_held_not_cancelled(world):
+    """LC-C3 / TL-02 (owner decision 12.11.2026, flipped from the pinned r54 behaviour).
 
-    A closure that comes from Lovable ends the Teema's Juristid-only planned
-    work («Kodulehe ülevaade», a lawyer's planned Tegevus), and Lovable
-    reopening it does not bring that work back. The approval's «Never touched:
-    Juristid-only …» list does not name planned work, so this is a decision,
-    not a defect. Alternatives for the owner (audit §C.2 TL-02): (a) accept —
-    record it in ADR 0213; (b) a source closure leaves such work as a review
-    item; (c) a reopening restores it.
-    When the owner decides, flip this test to the decided rule."""
+    Regression: TL-02. A closure that comes from Lovable while the Teema holds
+    Juristid-only work («Kodulehe ülevaade», a lawyer's planned Tegevus) is
+    *held*: the Teema stays open, nothing is cancelled, and the oracle reads the
+    Teema as HELD — a difference with a recorded hold, never MATCH and never an
+    unexplained parity error. When the lawyer finishes the work, the next night
+    closes it with Lovable's reason and parity is clean.
+
+    Contract: owner decision 12.11.2026 points 1–3 and 8 (hold, preserve, make
+    the discrepancy visible, idempotent); approval 11.11 §1 lifecycle."""
     from app.matters.models import MatterWebsiteOverview
     from app.matters.services import plan_website_overview
     from app.workflow.models import NextAction
-    from app.workflow.services import add_planned_action
+    from app.workflow.services import add_planned_action, cancel_next_action
 
     matter = world.matter(ref(1))
     overview = plan_website_overview(matter=matter, actor=world.person(AVA))
@@ -145,19 +146,31 @@ def test_tl02_a_source_closure_cancels_juristid_only_planned_work_today(world):
         matter=matter, text="Helistan ministeeriumi", target_date=dt.date(2099, 4, 1)
     )
     world.lovable.edit(ref(1), hetkeseis="jõustunud", jargmiseks="", tegevuse_tahtaeg=None)
-    world.run()
-    assert MatterWebsiteOverview.objects.get(pk=overview.pk).status == "CANCELLED"
-    # A lawyer's own planned Tegevus ends with the closure as well.
-    assert NextAction.objects.get(pk=planned.pk).status == "CANCELLED"
-    world.lovable.edit(
-        ref(1),
-        hetkeseis="Riigikogus",
-        jargmiseks="Ootan 3. lugemist",
-        tegevuse_tahtaeg="2099-05-01",
-    )
-    world.run()
+    run = world.run()
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
     assert world.matter(ref(1)).is_open
-    assert not MatterWebsiteOverview.objects.filter(matter=matter, status="PLANNED").exists()
+    assert MatterWebsiteOverview.objects.get(pk=overview.pk).status == "PLANNED"
+    assert NextAction.objects.get(pk=planned.pk).status == "PLANNED"
+    stage = decisions(run, ref(1))["stage"]
+    assert (stage.outcome, stage.reason) == (SyncOutcome.REVIEW_REQUIRED, "LOCAL_WORK_AT_CLOSURE")
+    assert run.counts["held_local_work"] == 1
+    held = {c.field: c.verdict for c in _parity(world, ref(1))}
+    assert held["lifecycle"] == oracle.HELD
+    assert set(held.values()) == {oracle.HELD}
+    # The other Teemad are untouched by it.
+    assert _parity(world, ref(2), ref(3)) == []
+
+    # The lawyer finishes the work; the next night closes with Lovable's reason.
+    from app.matters.services import cancel_website_overview
+
+    cancel_website_overview(overview=overview, actor=world.person(AVA))
+    cancel_next_action(action=planned, actor=world.person(AVA), reason="Pole vaja")
+    later = world.run()
+    assert later.status == SyncRunStatus.SUCCEEDED, later.error
+    one = world.matter(ref(1))
+    assert (one.is_open, one.disposition) == (False, "COMPLETED")
+    assert later.counts["held_local_work"] == 0
+    assert _parity(world) == []
 
 
 # ---------------------------------------------------------------------------

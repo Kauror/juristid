@@ -122,6 +122,7 @@ from app.legacy_import.lovable_sync_models import (
     SyncRunStatus,
     SyncTrigger,
 )
+from app.matters import closure_work as _closure_work
 
 logger = logging.getLogger(__name__)
 
@@ -2171,6 +2172,16 @@ RESTORE_BREAKER = "RESTORE_BREAKER"
 #: A historical Teema's owner name resolves to no active Juristid user
 #: (former staff): shown in the historical register's own group.
 HISTORY_OWNER_UNRESOLVED = "HISTORY_OWNER_UNRESOLVED"
+#: Lovable closed an open Teema that still holds Juristid-only work (TL-02,
+#: owner decision 12.11.2026, docs/adr/0213 §10.13): the closure is held, the
+#: work preserved, and the step and the request are held with it.
+LOCAL_WORK_AT_CLOSURE = _closure_work.LOCAL_WORK_AT_CLOSURE
+#: The hold's own keys inside its decision's ``current`` (beside Juristid's
+#: lifecycle): the counts and digest of the work, and the first night of this
+#: hold and the day it escalates (carried night to night, `_closure_hold_since`).
+HOLD_WORK = "local_work"
+HOLD_SINCE = "held_since"
+HOLD_ESCALATES = "escalates_on"
 #: «lõpetatud» — finished, no reason stated (docs/adr/0213 §9.1).
 FINISHED_NO_REASON = "lõpetatud"
 STAGE_UNMAPPED = "STAGE_UNMAPPED"
@@ -2227,6 +2238,7 @@ TECHNICAL_HOLDS: dict[str, str] = {
     LINK_REMOVED: "unsafe operation",
     LIFECYCLE_HELD: "unsafe operation",
     MATTER_CLOSED: "unsafe operation",
+    LOCAL_WORK_AT_CLOSURE: "unsafe operation",
 }
 
 
@@ -2386,7 +2398,12 @@ def _lifecycle_matches(desired: dict[str, Any], b_life: dict[str, Any]) -> bool:
 
 
 def _lifecycle_decisions(
-    state: LovableSyncState, src: dict[str, Any], b: dict[str, Any], *, cycle: bool = False
+    state: LovableSyncState,
+    src: dict[str, Any],
+    b: dict[str, Any],
+    *,
+    cycle: bool = False,
+    today: dt.date | None = None,
 ) -> tuple[list[FieldDecision], dict[str, Any] | None, str]:
     """The stage and the continuation as one lifecycle operation. Returns the
     decisions (``stage``, and ``continuation`` when the link moved), the desired
@@ -2460,6 +2477,26 @@ def _lifecycle_decisions(
     if not desired["open"] and desired["disposition"] is None:
         # «lõpetatud» on an open Teema: closing it would invent a reason.
         return decide(SyncOutcome.REVIEW_REQUIRED, CLOSURE_REASON_UNKNOWN), None, ""
+    if not desired["open"] and b_life["open"]:
+        # An open Teema Lovable closes — a new closure, a successor's, or a
+        # lawyer's local reopening put back (`RESTORED`) — is held while it holds
+        # Juristid-only work (TL-02, docs/adr/0213 §10.13): nothing is cancelled,
+        # and the step and the request wait with it.
+        work = _closure_work.juristid_only_work(state.matter_id)
+        if not work.is_empty:
+            since = _closure_hold_since(state, today)
+            held = decide(SyncOutcome.REVIEW_REQUIRED, LOCAL_WORK_AT_CLOSURE)
+            for decision in held:
+                if decision.field == "stage":
+                    decision.current = {
+                        **b_life,
+                        HOLD_WORK: _closure_work.work_counts(work),
+                        HOLD_SINCE: since.isoformat(),
+                        HOLD_ESCALATES: (
+                            since + dt.timedelta(days=_closure_work.CLOSURE_HOLD_ESCALATION_DAYS)
+                        ).isoformat(),
+                    }
+            return held, None, LOCAL_WORK_AT_CLOSURE
     if desired["open"] and not b_life["open"] and state.cohort == HISTORY_COHORT:
         # The backfill closed every non-operational topic as ARCHIVE whatever its
         # label said: only a change in Lovable reopens one — its label moving
@@ -2477,6 +2514,36 @@ def _lifecycle_decisions(
             return decide(SyncOutcome.REVIEW_REQUIRED, hold), None, ""
         target["move_to"] = NEW_TOPIC_COHORT
     return decide(SyncOutcome.ELIGIBLE, restored, target), desired, ""
+
+
+def _closure_hold_since(state: LovableSyncState, today: dt.date | None) -> dt.date:
+    """The first night of this `LOCAL_WORK_AT_CLOSURE` hold: carried from the
+    state's previous observed run when that run held it too, else ``today``.
+
+    One hold is one continuous stretch of nights: a night without it (Lovable
+    reopened, the work was finished) ends it, and a later hold starts its own
+    count — so its age, and the escalation day the notifications key on, never
+    restart on a re-run and never carry over from an earlier stretch."""
+    day = today or timezone.localdate()
+    if state.pk is None or state.observed_run_id is None:
+        return day
+    current = (
+        LovableSyncDecision.objects.filter(
+            state_id=state.pk,
+            run_id=state.observed_run_id,
+            field="stage",
+            outcome=SyncOutcome.REVIEW_REQUIRED,
+            reason=LOCAL_WORK_AT_CLOSURE,
+        )
+        .values_list("current", flat=True)
+        .first()
+    )
+    if isinstance(current, dict) and current.get(HOLD_SINCE):
+        try:
+            return min(dt.date.fromisoformat(str(current[HOLD_SINCE])), day)
+        except ValueError:
+            return day
+    return day
 
 
 def _step_view(step: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2576,7 +2643,12 @@ def _step_decisions_authoritative(
         return both(SyncOutcome.ALREADY_CONVERGED, target=target)
 
     if lifecycle_hold:
-        return same(b_step) if unchanged else both(SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD)
+        # Held with the closure, under its own code when it is the TL-02 hold,
+        # so the whole hold reads as one explained thing (never a parity error).
+        reason = (
+            LOCAL_WORK_AT_CLOSURE if lifecycle_hold == LOCAL_WORK_AT_CLOSURE else LIFECYCLE_HELD
+        )
+        return same(b_step) if unchanged else both(SyncOutcome.REVIEW_REQUIRED, reason)
     desired: dict[str, Any] | None
     if closed_after:
         desired = None
@@ -2779,7 +2851,10 @@ def _request_decision_authoritative(
     if lifecycle_hold:
         if unchanged:
             return same(b_day)
-        return _decision(name, SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD, **common)
+        reason = (
+            LOCAL_WORK_AT_CLOSURE if lifecycle_hold == LOCAL_WORK_AT_CLOSURE else LIFECYCLE_HELD
+        )
+        return _decision(name, SyncOutcome.REVIEW_REQUIRED, reason, **common)
     if c_src is not None and str(c_src).startswith("?"):
         if unchanged:
             return same(b_day)
@@ -2957,7 +3032,7 @@ def _plan_authoritative(
     # The lifecycle first: whether the Teema is (or tonight becomes) closed
     # decides what the step and the request may be.
     life, desired_life, life_hold = _lifecycle_decisions(
-        state, src, b, cycle=plan.continuation_cycle
+        state, src, b, cycle=plan.continuation_cycle, today=today
     )
     if desired_life is not None and life[0].outcome in (
         SyncOutcome.ELIGIBLE,
@@ -2968,7 +3043,12 @@ def _plan_authoritative(
         closed_after = closed
     # Only a held closure holds the step and the request with it: an unmapped
     # stage label says nothing about either.
-    if life_hold not in (SUCCESSOR_MISSING, SUCCESSOR_AMBIGUOUS, CONTINUATION_CYCLE):
+    if life_hold not in (
+        SUCCESSOR_MISSING,
+        SUCCESSOR_AMBIGUOUS,
+        CONTINUATION_CYCLE,
+        LOCAL_WORK_AT_CLOSURE,
+    ):
         life_hold = ""
 
     plan.decisions.append(
@@ -4828,10 +4908,36 @@ def stale_search_matter_ids(*, exclude: Any = None) -> set[Any]:
     return pending
 
 
+#: Holds that are a business safeguard, not a technical problem growing: the
+#: holds breaker (`MAX_NEW_HOLDS`) counts neither side of them (TL-02 — a
+#: closure held for Juristid-only work counts toward no breaker).
+BREAKER_EXEMPT_HOLDS = frozenset({LOCAL_WORK_AT_CLOSURE})
+
+
 def held_fields(plans: Iterable[MatterPlan]) -> int:
-    """Fields held tonight, whatever the reason (`HELD_OUTCOMES`): what the holds
-    breaker (`MAX_NEW_HOLDS`) compares with the previous run's recorded decisions."""
-    return sum(1 for plan in plans for d in plan.decisions if d.outcome in HELD_OUTCOMES)
+    """Fields held tonight, whatever the reason (`HELD_OUTCOMES`) but the
+    breaker-exempt ones (`BREAKER_EXEMPT_HOLDS`): what the holds breaker
+    (`MAX_NEW_HOLDS`) compares with the previous run's recorded decisions."""
+    return sum(
+        1
+        for plan in plans
+        for d in plan.decisions
+        if d.outcome in HELD_OUTCOMES and d.reason not in BREAKER_EXEMPT_HOLDS
+    )
+
+
+def held_local_work(plans: Iterable[MatterPlan]) -> int:
+    """Teemad whose closure from Lovable is held for Juristid-only work tonight."""
+    return sum(
+        1
+        for plan in plans
+        if any(
+            d.field == "stage"
+            and d.outcome == SyncOutcome.REVIEW_REQUIRED
+            and d.reason == LOCAL_WORK_AT_CLOSURE
+            for d in plan.decisions
+        )
+    )
 
 
 def population_change(previous: dict[str, Any], current: dict[str, Any]) -> str:
@@ -5316,6 +5422,9 @@ class RunCounts:
     #: Teemad whose successor was created tonight but whose convergence would
     #: have gone over the Teemad-written breaker (`SUCCESSOR_DEFERRED`).
     successors_deferred: int = 0
+    #: Teemad Lovable closed whose closure is held for Juristid-only work
+    #: (`LOCAL_WORK_AT_CLOSURE`, TL-02): an explained hold, never a difference.
+    held_local_work: int = 0
     #: Codes of what went wrong without undoing the run (``SEARCH_REFRESH_FAILED``).
     warnings: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
@@ -5901,7 +6010,10 @@ def _execute(
     )
     held = held_fields(plans)
     held_before = (
-        previous_run.decisions.filter(outcome__in=HELD_OUTCOMES).exclude(field="*").count()
+        previous_run.decisions.filter(outcome__in=HELD_OUTCOMES)
+        .exclude(field="*")
+        .exclude(reason__in=sorted(BREAKER_EXEMPT_HOLDS))
+        .count()
         if previous_run
         else held
     )
@@ -5948,6 +6060,19 @@ def _execute(
                 resolver=resolver,
                 today=today,
             )
+        except _closure_work.SourceClosureHeld:
+            # Juristid-only work appeared between the plan and the write (the
+            # domain guard under the Matter's lock, TL-02): planned again, the
+            # closure is the hold it now is; nothing of this Teema was written.
+            final.append(
+                plan_matter(
+                    plan.state,
+                    bundle_of(snapshot, plan.state.source_id),
+                    resolver=resolver,
+                    today=today,
+                )
+            )
+            continue
         except Exception as error:
             logger.warning(
                 "Lovable sync: %s not applied (%s)", plan.state.reference, type(error).__name__
@@ -6152,6 +6277,7 @@ def _execute(
         counts.breaker_limit = change_limit
         counts.held_fields = held
         counts.held_fields_before = held_before
+        counts.held_local_work = held_local_work(final)
         if search_pending:
             counts.search_refresh_pending = search_pending
             counts.warnings.append(SEARCH_REFRESH_FAILED)
@@ -6801,6 +6927,10 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
         f"Vajab ülevaatamist: {c.get('review', 0)}",
         f"Vigu: {c.get('failed', 0)}",
     ]
+    if c.get("held_local_work"):
+        lines.append(
+            f"Lovable'is suletud, Juristides pooleli töö tõttu ootel: {c['held_local_work']} teemat"
+        )
     if c.get("not_yet_read"):
         lines.append(f"Veel lugemata (lisati pärast viimast lugemist): {c['not_yet_read']}")
     if c.get("retired"):
@@ -6869,7 +6999,12 @@ def sync_health(*, now: dt.datetime | None = None) -> SyncHealth:
         # Written and verified, but not findable yet (LS-09): the next run, or
         # `manage.py refresh_matter_search`, refreshes them.
         return SyncHealth(False, f"search stale: {stale} Teema(d) not refreshed", last, good)
-    return SyncHealth(True, f"{ctl.mode.lower()}, last success {good.run_key}", last, good)
+    detail = f"{ctl.mode.lower()}, last success {good.run_key}"
+    held = (last.counts or {}).get("held_local_work") or 0
+    if held:
+        # Explained holds, not a fault (TL-02): said, never hidden, never «not ok».
+        detail += f"; {held} closure(s) held for Juristid-only work"
+    return SyncHealth(True, detail, last, good)
 
 
 def due(*, trigger: str, now: dt.datetime | None = None) -> str:

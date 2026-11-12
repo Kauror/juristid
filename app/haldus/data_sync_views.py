@@ -35,6 +35,7 @@ from django.views.decorators.http import require_http_methods
 
 from app.accounts import admin_session
 from app.core.client_ip import client_ip
+from app.core.errors import DomainError
 from app.haldus.sections import visible_sections
 from app.legacy_import import sync_admin
 from app.legacy_import.lovable_sync_models import SyncMode
@@ -293,6 +294,50 @@ def resolve(request: HttpRequest) -> HttpResponseBase:
         )
         return redirect("haldus:data_sync_differences")
     return render(request, "haldus/data_sync_resolve.html", context)
+
+
+@never_cache
+@require_http_methods(["GET", "HEAD", "POST"])
+def release_hold(request: HttpRequest) -> HttpResponseBase:
+    """A closure from Lovable held for Juristid-only work (TL-02), released by a
+    technical administrator: GET states what would be closed and cancelled,
+    POST closes it in their name (`lovable_closure_hold.release_closure_hold`).
+
+    Counts only: an administrator reads no business content (docs/adr/0181), so
+    the page names the Teema by its reference and the work by its kinds."""
+    from app.legacy_import.lovable_closure_hold import release_closure_hold, release_preview
+    from app.matters.models import Matter
+
+    _require(request)
+    source = request.POST if request.method == "POST" else request.GET
+    reference = str(source.get("viide", "")).strip()
+    year, _sep, number = reference.partition("_")
+    matter = (
+        Matter.objects.filter(reference_year=int(year), reference_number=int(number)).first()
+        if year.isdigit() and number.isdigit()
+        else None
+    )
+    preview = release_preview(matter) if matter is not None else None
+    if matter is None or preview is None:
+        messages.info(request, "Sellel teemal pole ootel sulgemist.")
+        return redirect("haldus:lovable")
+    back = f"{reverse('haldus:data_sync_release_hold')}?{urlencode({'viide': reference})}"
+    context = _context(request, "lovable", reference=reference, preview=preview)
+    if request.method == "POST":
+        proof = _fresh_proof(request, back)
+        if proof is not None:
+            return proof
+        actor = _actor(request)
+        try:
+            result = release_closure_hold(
+                matter=matter, actor=actor, confirmed=request.POST.get("kinnitus", "")
+            )
+        except DomainError as error:
+            messages.error(request, str(error))
+            return render(request, "haldus/data_sync_release_hold.html", context, status=400)
+        (messages.success if result.closed else messages.info)(request, result.message)
+        return redirect("haldus:lovable")
+    return render(request, "haldus/data_sync_release_hold.html", context)
 
 
 @never_cache

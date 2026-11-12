@@ -288,6 +288,24 @@ def lovable(request: HttpRequest) -> HttpResponse:
                 }
             )
     observation = _observation_summary(request)
+    # Closures Lovable made that Juristid holds for Juristid-only work (TL-02):
+    # explained holds, listed with their age — by reference and kind of work
+    # only, never a record's words.
+    from django.utils import timezone
+
+    from app.legacy_import.lovable_closure_hold import standing_holds
+
+    today = timezone.localdate()
+    closure_holds = [
+        {
+            "reference": hold.reference,
+            "since": hold.since,
+            "age": hold.age_days(today),
+            "escalated": hold.escalated(today),
+            "work": hold.phrases,
+        }
+        for hold in standing_holds()
+    ]
     return render(
         request,
         "haldus/lovable.html",
@@ -306,6 +324,7 @@ def lovable(request: HttpRequest) -> HttpResponse:
             hidden=hidden,
             historical=historical,
             more=more,
+            closure_holds=closure_holds,
         ),
     )
 

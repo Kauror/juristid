@@ -5684,6 +5684,7 @@ def close_matter(
     stage_episode: MatterStageEpisode | None = None,
     follow_ups_confirmed: bool | str = False,
     provenance: dict[str, Any] | None = None,
+    successor_from_source: bool = False,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -5780,6 +5781,7 @@ def close_matter(
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
         if (
             actor is not None
+            and not successor_from_source
             and not Matter.objects.visible_to(actor).filter(pk=successor.pk).exists()
         ):
             # The same sentence as a deleted one: a refusal that said «you may
@@ -5873,6 +5875,8 @@ def close_matter_from_source(
     successor: Matter | None = None,
     reason: str = "",
     provenance: dict[str, Any] | None = None,
+    released_by: Any = None,
+    confirmed: bool | str = False,
 ) -> Matter:
     """Close a Matter because its source of record says the work ended (docs/adr/0213 §10).
 
@@ -5880,10 +5884,10 @@ def close_matter_from_source(
     the register (owner brief 2026-11-11), so «jõustunud», «rohkem ei tegele» and
     a structured stage link to a successor close the Teema without a second
     business decision. Nothing here chooses a reason — the caller passes the one
-    the source states — and nobody's confirmation is asked, because no person is
-    closing it (``follow_ups_confirmed=True``: the live work is ended as every
-    closure ends it, each piece with its own cancellation event, and no step is
-    ever completed).
+    the source states. What it ends is only what the source owns — the current
+    step, cancelled (never completed) with its own event — because any
+    Juristid-only work holds it (below); so no person's confirmation is asked
+    of it (``follow_ups_confirmed=True``), except on a release.
 
     ``stage`` — the stage the source names, moved first, as an import
     (`StageEpisodeOrigin.IMPORTED`), **without** the terminal stage's own closure,
@@ -5892,12 +5896,36 @@ def close_matter_from_source(
     stage began, with ``provenance`` on the event. ``None`` keeps the stage.
     One transaction: a refusal anywhere leaves the Matter open and its periods
     as they were.
+
+    **Juristid-only work holds it** (TL-02, owner decision 12.11.2026,
+    docs/adr/0213 §10.13). A closure from the source ends only what the source
+    owns — the current step. While a planned Tegevus, a «Koja arvamuse
+    järelkontroll», a planned «Kodulehe ülevaade» or an open Kaasamine wait is
+    live (`closure_work.juristid_only_work`), it is refused under the Matter's
+    lock with `SourceClosureHeld`, whatever the caller planned before: nothing
+    moves, nothing is ended. The synchronisation reads that as its
+    ``LOCAL_WORK_AT_CLOSURE`` hold.
+
+    The one way past it is a **release**: ``released_by`` — the person who
+    explicitly releases the hold (`lovable_sync.release_closure_hold` checks who
+    may) — with ``confirmed``, the digest of exactly the work they were shown
+    (docs/adr/0152 §7). Work that changed since is refused with the renewed
+    counts. A release closes with that person as the actor: `MATTER_CLOSED`
+    and every cancellation it causes name them, beside the run's provenance.
     """
+    from app.matters.closure_work import SourceClosureHeld, juristid_only_work
+
     # The Matter's lock first, as every closure takes it (`close_matter`), so the
     # stage move and the closure see one committed row (review P3-9).
     locked = lock_matter_for_write(matter.pk)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
+    work = juristid_only_work(locked)
+    if not work.is_empty:
+        if released_by is None or confirmed is True or not confirmed:
+            raise SourceClosureHeld(work)
+        if str(confirmed).strip() != work.digest:
+            raise SourceClosureHeld(work, stale=True)
     if stage is not None:
         _move_stage(
             matter=locked,
@@ -5909,12 +5937,15 @@ def close_matter_from_source(
     closed = close_matter(
         matter=locked,
         disposition=disposition,
-        actor=None,
+        actor=released_by,
         reason=reason,
         successor=successor,
         stage_episode=current_stage_episode(locked),
         follow_ups_confirmed=True,
         provenance=provenance,
+        # The successor is the source's statement, not the releasing person's
+        # claim (the anti-oracle refusal is about a person asserting one).
+        successor_from_source=True,
     )
     for name in (
         "is_open",
