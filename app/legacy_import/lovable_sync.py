@@ -4704,6 +4704,17 @@ def population_change(previous: dict[str, Any], current: dict[str, Any]) -> str:
     return ""
 
 
+def _waits_for_created_successor(plan: MatterPlan, created: set[str]) -> bool:
+    """Whether ``plan`` was held for want of its one successor in Juristid
+    (`SUCCESSOR_MISSING`), and that successor was created in this run (LS-01)."""
+    if plan.status or plan.not_executed:
+        return False
+    if not any(d.reason == SUCCESSOR_MISSING for d in plan.decisions):
+        return False
+    successors = plan.source.get(CONTINUATION) or []
+    return len(successors) == 1 and str(successors[0]) in created
+
+
 def standing_holds(plans: Iterable[MatterPlan]) -> dict[str, int]:
     """``"cohort:reason"`` → how many fields are REVIEW_REQUIRED tonight while
     Lovable's value is what it was (C = A): the holds that recur every night."""
@@ -5836,6 +5847,60 @@ def _execute(
                     verified = False
         progress["affected"] = []
 
+    # A Teema whose successor was created tonight converges tonight (audit
+    # 2026-11-11 LS-01 / ST-007): the cohort was planned before the creation, so
+    # it was held SUCCESSOR_NOT_IN_JURISTID. Only those plans are planned again,
+    # through `apply_matter` under the same gates — an APPLY night that writes,
+    # every read-back good so far, the Teemad-written breaker counting them —
+    # and read back; creation is never moved before the cohort.
+    created = {p.source_id for p in new_plans if p.created_matter_id is not None}
+    counted = {p.state.pk for p in changed}
+    teemad_written = len(changed)
+    if created and not hold:
+        progress["stage"] = "successors"
+        for index, plan in enumerate(final):
+            if not verified:
+                break
+            if not _waits_for_created_successor(plan, created):
+                continue
+            more = 0 if plan.state.pk in counted else 1
+            if teemad_written + more > change_limit:
+                # Over the night's limit: it waits for the next run, as before.
+                continue
+            progress["affected"] = [plan.state.reference]
+            state = LovableSyncState.objects.select_related("matter").get(pk=plan.state.pk)
+            again = plan_matter(
+                state, bundle_of(snapshot, state.source_id), resolver=resolver, today=today
+            )
+            if not again.eligible:
+                continue
+            try:
+                done = apply_matter(
+                    again, run=run, snapshot=snapshot, resolver=resolver, today=today
+                )
+            except Exception as error:
+                logger.warning(
+                    "Lovable sync: %s not converged with its new successor (%s)",
+                    plan.state.reference,
+                    type(error).__name__,
+                )
+                again.status = SyncOutcome.FAILED
+                final[index] = again
+                continue
+            teemad_written += more
+            counted.add(plan.state.pk)
+            # What this Teema already wrote tonight stays its record.
+            earlier = [d for d in plan.decisions if d.outcome == SyncOutcome.APPLIED]
+            kept = {d.field for d in earlier}
+            done.decisions = earlier + [d for d in done.decisions if d.field not in kept]
+            final[index] = done
+            if any(d.outcome == SyncOutcome.APPLIED for d in done.decisions):
+                applied_ids.append(done.state.matter_id)
+                if not verify_matter(done):
+                    done.verify_failed = True
+                    verified = False
+        progress["affected"] = []
+
     search_pending = 0
     # Teemad an earlier run wrote but could not refresh in search (LS-09): this
     # run refreshes them with its own.
@@ -5925,7 +5990,7 @@ def _execute(
             counts.warnings.append(SEARCH_REFRESH_FAILED)
         elif carried:
             counts.search_refreshed_carried = len(carried)
-        counts.changed_source = len(changed)
+        counts.changed_source = teemad_written
         counts.changed_restores = len(restoring)
         counts.restore_limit = restore_limit
         counts.standing_holds = standing_holds(final)
