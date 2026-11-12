@@ -5696,6 +5696,7 @@ def close_matter(
         follow_ups_confirmed=follow_ups_confirmed,
         provenance=provenance,
         successor_from_source=False,
+        released=False,
     )
 
 
@@ -5710,6 +5711,7 @@ def _close_matter(
     follow_ups_confirmed: bool | str,
     provenance: dict[str, Any] | None,
     successor_from_source: bool,
+    released: bool = False,
 ) -> Matter:
     """Stop active work on the Matter, for a stated reason.
 
@@ -5827,6 +5829,16 @@ def _close_matter(
     # Bound to the work the person was shown: a digest that no longer matches
     # what is live now is refused with the renewed warning (docs/adr/0152 §7).
     refuse_unconfirmed_closure(locked, confirmed=follow_ups_confirmed)
+    # Whether this closure is one Lovable asked for and Juristid held (TL-02):
+    # a release (`close_matter_from_source`), or a person closing while the
+    # Teema's closure from Lovable is held for Juristid-only work. Then ending
+    # Lovable's current step is part of the closure (rehearsal 2 D1). Read
+    # under the lock, while the Teema is still open.
+    sanctioned = released
+    if not sanctioned and getattr(actor, "pk", None) is not None:
+        from app.legacy_import.lovable_closure_hold import hold_of
+
+        sanctioned = hold_of(locked) is not None
     # What this closure ends, by id, for its own record below — read under the
     # lock, before anything is ended.
     ending = live_work_at_closure(locked)
@@ -5859,7 +5871,15 @@ def _close_matter(
     # The step, the planned write-ups and the feedback waits end here, in this
     # transaction and under this lock — the same helper every other path that
     # makes a Matter inactive calls (ENG-006).
-    end_live_work_for_closure(matter=matter, actor=actor, provenance=provenance)
+    if sanctioned:
+        # A closure Lovable asked for and Juristid held (TL-02, rehearsal 2 D1):
+        # ending Lovable's current step is part of it, not a person's edit.
+        from app.workflow.services import _ending_for_lovable_closure
+
+        with _ending_for_lovable_closure(matter.pk):
+            end_live_work_for_closure(matter=matter, actor=actor, provenance=provenance)
+    else:
+        end_live_work_for_closure(matter=matter, actor=actor, provenance=provenance)
 
     episode_binding: dict[str, Any] = {}
     if stage_episode is not None:
@@ -5985,6 +6005,7 @@ def close_matter_from_source(
         # The successor is the source's statement, not the releasing person's
         # claim (the anti-oracle refusal is about a person asserting one).
         successor_from_source=True,
+        released=person is not None,
     )
     for name in (
         "is_open",

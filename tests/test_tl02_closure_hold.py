@@ -1127,3 +1127,69 @@ def test_the_teema_page_in_compare_draws_at_most_an_informational_banner(world, 
         assert "data-closure-hold-proposed" in body
     else:
         assert "data-closure-hold" not in body
+
+
+# ---------------------------------------------------------------------------
+# Rehearsal 2, defect D1: Lovable closes and leaves its step as it was
+# ---------------------------------------------------------------------------
+
+
+def _close_keeping_the_step(world, number: int = 1) -> None:
+    """Lovable changes only `hetkeseis`: `jargmiseks` and `tegevuse_tahtaeg`
+    stay, so the step has no hold of its own and stays locked (TL-01)."""
+    world.lovable.edit(ref(number), hetkeseis="jõustunud")
+
+
+def test_d1_the_owner_releases_a_hold_whose_step_lovable_left_unchanged(world):
+    """Regression: TL-02 rehearsal 2 D1. Ending Lovable's current step is part
+    of the closure Lovable asked for: the owner's release is not refused by
+    the step lock, and the step is cancelled in the owner's name."""
+    _overview(world)
+    _close_keeping_the_step(world)
+    run = world.run()
+    held = decisions(run, ref(1))
+    assert held["stage"].reason == LOCAL_WORK_AT_CLOSURE
+    assert "next_action_text" not in held  # the step holds nothing of its own
+    matter = world.matter(ref(1))
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    ava = world.person(AVA)
+    result = release_closure_hold(
+        matter=matter, actor=ava, confirmed=release_preview(matter).digest
+    )
+    assert result.closed
+    step.refresh_from_db()
+    assert (step.status, step.ended_by_id) == (ActionStatus.CANCELLED, ava.pk)
+
+
+def test_d1_the_lawyer_may_close_a_held_teema_whose_step_lovable_left_unchanged(world):
+    """Regression: TL-02 rehearsal 2 D1. The lawyer's own «Lõpeta teema» on a
+    held Teema (freed by E11) ends Lovable's step with it."""
+    _overview(world)
+    _close_keeping_the_step(world)
+    world.run()
+    matter = world.matter(ref(1))
+    close_matter(
+        matter=matter,
+        disposition=Disposition.MONITORING_STOPPED,
+        actor=world.person(AVA),
+        follow_ups_confirmed=live_work_at_closure(matter).digest,
+    )
+    one = world.matter(ref(1))
+    assert not one.is_open
+    assert not NextAction.objects.filter(matter=one, status=ActionStatus.OPEN).exists()
+
+
+def test_d1_a_standalone_cancel_of_lovables_step_stays_refused(world):
+    """Regression guard: TL-02 rehearsal 2 D1. The exemption is only for the
+    step-ending inside that closure: cancelling Lovable's step on its own is
+    refused during the hold, and on a Teema with no hold."""
+    _overview(world)
+    _close_keeping_the_step(world)
+    world.run()
+    for number in (1, 2):
+        step = NextAction.objects.get(matter=world.matter(ref(number)), status=ActionStatus.OPEN)
+        with refused("Praegust tegevust ei saa Juristides muuta."):
+            cancel_next_action(action=step, actor=world.person(AVA), reason="Ise")
+        step.refresh_from_db()
+        assert step.status == ActionStatus.OPEN
+    assert world.matter(ref(1)).is_open
