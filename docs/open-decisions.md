@@ -683,3 +683,34 @@ separately promoted (B)?
 `matter_banner.html`, `set_next_action`'s refusal, and — under B —
 `app/reporting/selectors/activity.py::open_actions`, `?tegevus=` and the
 register's «Avatud» label.
+
+## Surfaced by the post-audit round (2026-11-12): fields Lovable owns (TL-01 = LS-04)
+
+Since 11.11 the nightly synchronisation puts Lovable's value back over a local
+edit (`lovable_sync.FIELD_POLICY`, reason `RESTORED`). So on a synchronised
+Teema the source-owned fields are now read-only on every surface and refused by
+the services (`app/matters/source_ownership.py`): title, Vastutaja, Hetkeseis,
+the current step, Arvamuse tähtaeg, the Koja-algatus mark, Õigusakt, Saabus,
+Lovable's own commencements, closing and reopening. Each exception below is
+implemented in its **conservative** form unless the row says it was decided (refused, or kept exactly as before);
+each is the owner's to change.
+
+| # | Exception | Implemented now | If the owner wants it editable |
+| --- | --- | --- | --- |
+| E1 | A lawyer's own Järgmiseks where Lovable's `jargmiseks` is blank | Refused, with «Lovable'is pole järgmist tegevust märgitud; uue tegevuse saab määrata Lovable'is.» A dated planned action beside an existing step is still allowed. | The sync must stop cancelling a step it did not derive while `jargmiseks` stays blank (a sync rule change, re-rehearsed on the production copy). Otherwise the step is cancelled every night. |
+| E2 | «✓ Tehtud» on Lovable's current step | Refused (the toolbar is not drawn). An opinion follow-up check is still finished as before. | The note is kept, but the night creates the same step again until Lovable changes. Lawyers would see the step come back after they finished it. |
+| E3 | «Lõpeta teema» on a Teema Lovable still shows open (and «Jätkub teemas») | Refused. | The night reopens it and drops the successor, and the follow-ups the closing ended are not restored (TL-02). This needs the TL-02 decision first. |
+| E4 | «Ava uuesti» on a Teema Lovable shows closed | Refused. The banner says «Teema avatakse uuesti Lovable'is.» | The night closes it again. Only a change in Lovable reopens one. |
+| E5 | Ending Lovable's opinion request in Juristid | **Allowed** as answered or declined, because the night holds that case and does not undo it (`ANSWERED_IN_JURISTID`). Withdrawing it is refused. Setting, moving or replacing the date is refused. | Confirm that answered and declined stay allowed. Withdrawal would be undone by the night. |
+| E6 | `Uus hetkeseis` offered inside Juristid-only composers («✓ Tehtud», Koja arvamus, menetluse areng) | The composer is still drawn. Choosing another stage refuses the whole save with the Hetkeseis sentence. | Either hide the stage choice on synchronised Teemas (UI follow-up), or let the composers move the stage and accept the nightly restore. |
+| E7 | Lists: the owner select on register/Osakond rows and «Nihuta kuupäeva» on Minu asjad | Still drawn. The server refuses, and the person sees the reason. | UI follow-up: hide them for synchronised rows. This costs one query per list (`lovable_sync_state` prefetch). |
+| E8 | Õigusakt «Muu» text, and moving between non-initiative tracks | The «Muu» text is disabled with the instrument on «Muuda teemat». Moving between two non-initiative tracks stays editable, because Lovable states only *initiative or not*. | Nothing is needed unless the owner wants the «Muu» text editable on its own. |
+| E9 | When the lock applies | **Decided by the lead (12.11): only while the synchronisation is in APPLY** (`LovableSyncControl.mode`), i.e. from Approval B. In COMPARE or OFF nothing restores an edit, so nothing is locked, and the markers follow the same rule. Consequence: an edit made while the sync is in COMPARE or paused (OFF) is put back on the first APPLY night after it. | Lock regardless of mode, so that no edit made before Approval B is undone later. |
+| E10 | The closed historical register (`lovable-history`) | Covered: reopening and the other fields are refused, the same as on `is_authoritative`. | Exempt the archive. A reopened history Teema is closed again by the night. |
+| E11 | A field the night holds with an open technical hold (`lovable_sync.TECHNICAL_HOLDS` on the latest reading: an unknown owner, an unmapped stage, a missing successor, …) | **Editable**, because the night never restores over a hold. The page says why: «Lovable'i väärtus on ootel, seega saab siin praegu muuta: …». The lock returns when the hold clears, and Lovable's value then wins. | Lock it anyway. A held field would then be correctable only in Lovable. |
+| E12 | A person's planned Tegevus when the current step ends (`promote_next_planned_action`) | **Not promoted** on a locked Teema. It stays planned, because the step is Lovable's and the night would cancel a promoted one. This was chosen over documenting the promotion, as the lower risk. | Promote as before, and accept that the night cancels it. |
+| E13 | Removing a Teema from Lovable's authority | The only person path is **deletion** (`delete_matter`, with its cohort retirement, docs/adr/0165). No setting unlocks a single Teema. | A per-Teema «leave the register» decision, if the owner wants one. |
+| E14 | UI follow-ups (not blocking) | The stage choice inside the Juristid-only composers (E6), and the list surfaces (E7), are still drawn and refused on save. | Hide them on locked Teemad. |
+
+**Owner:** the owner (Kaur), with the department head for E1–E3. **The
+question:** which of E1–E10 should change from the conservative default?

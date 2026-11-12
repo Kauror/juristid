@@ -94,6 +94,7 @@ from app.matters.services import (
     plan_website_overview,
     publish_website_overview,
 )
+from app.matters.source_ownership import refuse_source_owned_change
 from app.workflow.dates import DAY_OUT_OF_RANGE, is_supported_day
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.models import NextAction
@@ -375,6 +376,9 @@ def complete_current_action(
     # `DocumentVersion`, several `ChangeEvent`s — which is precisely the shape
     # that turns a plain `FOR UPDATE` into a deadlock.
     locked_matter = lock_open_matter_for_business_write(matter.pk)
+    # Finishing the current step is changing it: on a synchronised Teema it is
+    # Lovable's `järgmiseks`, put back at night (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked_matter, "next_action", actor=author)
     current = _named_open_action(locked_matter=locked_matter, action_id=action_id)
     moves_stage = stage is not None and stage.pk != locked_matter.stage_id
     if moves_stage:
@@ -887,6 +891,10 @@ def add_engagement_feedback(
             locked_matter=lock_open_matter_for_business_write(engagement.matter_id),
             action_id=complete_action_id,
         )
+        if named.follow_up_id is None:
+            # The step is Lovable's on a synchronised Teema (TL-01): refused
+            # before the round is finished; unticked, the round saves.
+            refuse_source_owned_change(named.matter, "next_action", actor=author)
     with composer_operation():
         completed = complete_engagement_feedback(
             engagement=engagement,
@@ -1698,6 +1706,11 @@ def add_matter_koda_opinion(
         if complete_action_id is not None
         else None
     )
+    if named is not None and named.follow_up_id is None:
+        # «Märgi praegune tegevus tehtuks» finishes Lovable's step on a
+        # synchronised Teema (audit 2026-11-11 TL-01): refused before the send
+        # writes anything. The opinion itself is Juristid's and saves unticked.
+        refuse_source_owned_change(locked_matter, "next_action", actor=author)
     # **A send that also ends the Matter** (a terminal `Uus hetkeseis`) closes
     # a file that, from this save on, has a check on this very opinion — and
     # perhaps checks on earlier ones. The closure cancels them all, so the save

@@ -33,6 +33,8 @@
 {% endcomment %}
 <fieldset class="field"{% if form.held_legal_instruments %} aria-describedby="oigusakt-mitu"{% endif %}>
   <legend class="field__label">{% field_label form.legal_instruments %}</legend>
+  {# Lovable's `oigusakt` on a synchronised Teema (audit 2026-11-11 TL-01). #}
+  {% if form.source_locked.legal_act %}{% include "components/source_owned_tip.html" with field="legal_act" %}{% endif %}
   {% if form.held_legal_instruments %}
     <p class="field__help" id="oigusakt-mitu">Sellel teemal on varasemast mitu õigusakti. Need jäävad alles, kuni valid ühe.</p>
   {% endif %}

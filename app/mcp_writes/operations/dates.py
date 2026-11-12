@@ -154,6 +154,7 @@ class ResponseDeadline:
         common.require_writer(user)
         matter = common.resolve_matter(user, args.matter)
         common.require_writable_matter(matter)
+        common.refuse_source_owned(matter, "opinion_deadline")
         deadline = common.parse_day(args.deadline, "deadline")
         current = matter.response_deadline
         note = (args.note or "").strip()

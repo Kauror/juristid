@@ -47,6 +47,7 @@ from app.core.errors import DomainError
 from app.matters.enums import ResponseDeadlineChange, ResponseDeadlineOutcome
 from app.matters.locks import lock_matter_for_write
 from app.matters.models import Matter, MatterResponseDeadline
+from app.matters.source_ownership import refuse_source_owned_change
 
 #: The outcomes a person may give a deadline a new request replaces.
 REPLACED_OUTCOMES: tuple[str, ...] = (
@@ -60,6 +61,15 @@ RESOLVED_OUTCOMES: tuple[str, ...] = (
     ResponseDeadlineOutcome.ANSWERED,
     ResponseDeadlineOutcome.NOT_ANSWERING,
     ResponseDeadlineOutcome.CANCELLED,
+)
+
+#: How a person may still end Lovable's request on a synchronised Teema
+#: (audit 2026-11-11 TL-01): answered or declined in Juristid. The night holds
+#: that, never undoes it, until Lovable records the sending
+#: (`lovable_sync.ANSWERED_IN_JURISTID`); a withdrawal it would undo.
+SOURCE_TOLERATED_ENDINGS: tuple[str, ...] = (
+    ResponseDeadlineOutcome.ANSWERED,
+    ResponseDeadlineOutcome.NOT_ANSWERING,
 )
 
 CHANGE_NEEDS_A_MEANING = "Vali, kas sama küsimise tähtaeg muutus või tuli uus arvamuse küsimine."
@@ -248,6 +258,11 @@ def change_response_deadline(
     current = locked.response_deadline
     if deadline == current:
         return matter
+    if not (deadline is None and previous_outcome in SOURCE_TOLERATED_ENDINGS):
+        # Lovable's `arvamuse_tahtaeg` on a synchronised Teema (audit
+        # 2026-11-11 TL-01); ending it as answered or declined is not
+        # (`SOURCE_TOLERATED_ENDINGS`).
+        refuse_source_owned_change(locked, "opinion_deadline", actor=actor)
     # A Chamber initiative may set, move and clear its own deadline since the
     # owner's decision of 2026-10-13 (docs/adr/0151 amendment); only a *new
     # request* below is refused on one.
@@ -385,6 +400,9 @@ def request_response_deadline(
 
     if is_koda_initiative(locked):
         raise DomainError(INITIATIVE_HAS_NO_NEW_REQUEST)
+    # A new request is Lovable's `arvamuse_tahtaeg` on a synchronised Teema
+    # (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked, "opinion_deadline", actor=actor)
     if locked.response_deadline is not None:
         legacy_settled = (
             locked.response_requested_at is None
@@ -433,6 +451,9 @@ def resolve_response_deadline(
         raise DomainError(NO_CURRENT_DEADLINE)
     if outcome not in RESOLVED_OUTCOMES:
         raise DomainError(RESOLVE_NEEDS_AN_OUTCOME)
+    if outcome not in SOURCE_TOLERATED_ENDINGS:
+        # Withdrawing Lovable's request is Lovable's (audit 2026-11-11 TL-01).
+        refuse_source_owned_change(locked, "opinion_deadline", actor=actor)
     row = _end_current(
         locked=locked,
         outcome=outcome,

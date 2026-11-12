@@ -567,17 +567,20 @@ def test_an_edited_step_is_replaced_by_a_source_date_change(cohort):
 def test_an_edit_made_after_planning_is_caught_under_the_lock(cohort, monkeypatch):
     """A lawyer's save between the plan and the write turns the write into a conflict."""
     from app.matters.services import set_matter_title
+    from tests.source_ownership_support import divergence_from_before_the_lock
 
     cohort["source"].edit("2026_501", teema="Lovable uus pealkiri")
     real_apply = lovable_sync.apply_matter
 
     def edit_then_apply(plan, **kw):
         if plan.state.reference == "2026_501":
-            set_matter_title(
-                matter=_matter("2026_501"),
-                value="Vahepealne muudatus",
-                actor=cohort["world"]["mari"],
-            )
+            # A save from before the TL-01 lock: a person is refused it in APPLY now.
+            with divergence_from_before_the_lock():
+                set_matter_title(
+                    matter=_matter("2026_501"),
+                    value="Vahepealne muudatus",
+                    actor=cohort["world"]["mari"],
+                )
         return real_apply(plan, **kw)
 
     monkeypatch.setattr(lovable_sync, "apply_matter", edit_then_apply)

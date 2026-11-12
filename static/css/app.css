@@ -8773,6 +8773,25 @@ button.opinionmenu__item {
   margin-top: var(--spacing-2);
 }
 
+/* What Lovable owns on a synchronised Teema (audit 2026-11-11 TL-01,
+   `components/source_owned_tip.html`): the same quiet `i` the figures use,
+   beside a value drawn without an editor, and one muted line that says where
+   those values are changed. */
+.sourceowned {
+  vertical-align: middle;
+  margin-left: var(--spacing-1);
+}
+
+.matterhead__source,
+.addrow__source {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
 /* ---- body grids ---------------------------------------------------- */
 
 .worklayout2 {
