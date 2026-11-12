@@ -21,8 +21,12 @@ from app.matters import source_ownership
 
 @contextmanager
 def divergence_from_before_the_lock() -> Iterator[None]:
-    """Edits inside are made as if no Teema were synchronised (TL-01 guard lifted)."""
-    with mock.patch.object(source_ownership, "is_source_owned", return_value=False):
+    """Edits inside are let through the TL-01 guard as if no person made them.
+
+    Patches the guard's own person test, never `is_source_owned`: modules that
+    import that name (the Teema views) would keep a mock bound for good if they
+    were first imported inside the patch."""
+    with mock.patch.object(source_ownership, "_is_person", return_value=False):
         yield
 
 
