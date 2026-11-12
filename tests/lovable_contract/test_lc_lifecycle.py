@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - the fixtures imported from fixtures.py are used as arguments
 """Lifecycle, opinions, commencements, unknown values and breakers.
 
 LC-O1, LC-C1, LC-C2, LC-D1, LC-U1 and LC-B1 (audit §D.2), plus the current
@@ -16,6 +17,7 @@ from app.legacy_import import lovable_sync
 from app.legacy_import.lovable_sync_models import SyncOutcome, SyncRunStatus
 from tests.lovable_contract import oracle
 from tests.lovable_contract.fake import LovableRefused
+from tests.lovable_contract.fixtures import pilot_on, world  # noqa: F401 - fixtures
 from tests.lovable_contract.world import (
     AVA,
     NIGHT,

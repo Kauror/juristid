@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - the fixtures imported from fixtures.py are used as arguments
 """Source-owned fields: parity, restoration, COMPARE, idempotency, attribution, read-only.
 
 LC-F1, LC-F2, LC-F3, LC-B2, LC-A1 and LC-R1 (audit §D.2), against the business
@@ -16,6 +17,7 @@ from app.audit.models import ChangeEvent
 from app.legacy_import import lovable_sync
 from app.legacy_import.lovable_sync_models import SyncMode, SyncOutcome, SyncRunStatus
 from tests.lovable_contract import oracle
+from tests.lovable_contract.fixtures import pilot_on, world  # noqa: F401 - fixtures
 from tests.lovable_contract.world import (
     BOOKKEEPING_TABLES,
     LINK,

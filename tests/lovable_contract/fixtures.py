@@ -1,4 +1,10 @@
-"""Fixtures of the contract suite: the synthetic world, built per test."""
+"""Fixtures of the contract suite: the synthetic world, built per test.
+
+Imported by each test module rather than kept in a `conftest.py`: a directory
+conftest is not applied when pytest is given this directory's files out of
+order with others (the FAST job's file list did exactly that), and `world`
+would then silently resolve to `tests/conftest.py`'s fixture of that name. A
+fixture imported into a module overrides that one for the module."""
 
 from __future__ import annotations
 

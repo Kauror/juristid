@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - the fixtures imported from fixtures.py are used as arguments
 """LC-S1 — the result does not depend on how Lovable pages its answer (QA-01, C-L-06).
 
 Through the real `lovable_source.HttpTransport` and the PostgREST stand-in
@@ -29,6 +30,8 @@ postgrest = pytest.importorskip(
     reason="LC-S1 needs the PostgREST fake of the transport stream (QA-01); "
     "it activates when tests/lovable_postgrest_fake.py lands",
 )
+
+from tests.lovable_contract.fixtures import pilot_on, world  # noqa: E402, F401 - fixtures
 
 pytestmark = pytest.mark.django_db
 

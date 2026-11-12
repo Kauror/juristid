@@ -1,3 +1,4 @@
+# ruff: noqa: F811 - the fixtures imported from fixtures.py are used as arguments
 """Topic identity, tombstones, the excluded population and Juristid-only data.
 
 LC-I1, LC-T1, LC-P1, LC-J1 and LC-J2 (audit §D.2), against the approved
@@ -20,6 +21,7 @@ from app.matters.models import Matter
 from tests import factories
 from tests.lovable_contract import oracle
 from tests.lovable_contract.fake import LovableRefused
+from tests.lovable_contract.fixtures import pilot_on, world  # noqa: F401 - fixtures
 from tests.lovable_contract.world import (
     AVA,
     UKU,
