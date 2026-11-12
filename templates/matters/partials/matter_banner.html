@@ -91,7 +91,7 @@ paragraph. The banner's own action slot keeps it inside and at the right.
         what would be held once the synchronisation writes. No release and no
         promise about the night.
       {% endcomment %}
-      <p class="banner__text">{{ closure_hold.proposed }}{% if closure_hold.phrases %}: {{ closure_hold.phrases }}{% endif %}.</p>
+      <p class="banner__text">{% if closure_hold.phrases %}{{ closure_hold.proposed }}: {{ closure_hold.phrases }}{% else %}{{ closure_hold.proposed_no_work }}{% endif %}.</p>
     {% else %}
     <p class="banner__text">
       {% if closure_hold.phrases %}<strong>{{ closure_hold.banner }}:</strong> {{ closure_hold.phrases }}.{% else %}<strong>{{ closure_hold.done }}</strong>{% endif %}

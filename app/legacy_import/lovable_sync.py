@@ -2199,6 +2199,7 @@ HOLD_WORK = "local_work"
 HOLD_SINCE = "held_since"
 HOLD_ESCALATES = "escalates_on"
 HOLD_NEW = "new"
+HOLD_WRITING = "writing_since"
 #: «lõpetatud» — finished, no reason stated (docs/adr/0213 §9.1).
 FINISHED_NO_REASON = "lõpetatud"
 STAGE_UNMAPPED = "STAGE_UNMAPPED"
@@ -2501,7 +2502,7 @@ def _lifecycle_decisions(
         # and the step and the request wait with it.
         work = _closure_work.juristid_only_work(state.matter_id)
         if not work.is_empty:
-            since, carried = _closure_hold_since(state, today)
+            since, carried, writing = _closure_hold_since(state, today)
             held = decide(SyncOutcome.REVIEW_REQUIRED, LOCAL_WORK_AT_CLOSURE)
             for decision in held:
                 if decision.field == "stage":
@@ -2511,9 +2512,18 @@ def _lifecycle_decisions(
                         HOLD_SINCE: since.isoformat(),
                         # First recorded by this run (`MAX_NEW_CLOSURE_HOLDS`).
                         HOLD_NEW: not carried,
+                        # The escalation clock runs on APPLY nights only (review
+                        # P2-A): a hold that stood through COMPARE starts its
+                        # 14 days on the first night the synchronisation writes.
+                        HOLD_WRITING: writing.isoformat() if writing else None,
                         HOLD_ESCALATES: (
-                            since + dt.timedelta(days=_closure_work.CLOSURE_HOLD_ESCALATION_DAYS)
-                        ).isoformat(),
+                            (
+                                writing
+                                + dt.timedelta(days=_closure_work.CLOSURE_HOLD_ESCALATION_DAYS)
+                            ).isoformat()
+                            if writing
+                            else None
+                        ),
                     }
             return held, None, LOCAL_WORK_AT_CLOSURE
     if desired["open"] and not b_life["open"] and state.cohort == HISTORY_COHORT:
@@ -2535,18 +2545,31 @@ def _lifecycle_decisions(
     return decide(SyncOutcome.ELIGIBLE, restored, target), desired, ""
 
 
-def _closure_hold_since(state: LovableSyncState, today: dt.date | None) -> tuple[dt.date, bool]:
-    """The first night of this `LOCAL_WORK_AT_CLOSURE` hold: carried from the
-    state's previous observed run when that run held it too, else ``today``.
+def _writing_now() -> bool:
+    """Whether the synchronisation writes now (APPLY, not cut over)."""
+    return LovableSyncControl.objects.filter(pk=1, mode=SyncMode.APPLY, cut_over=False).exists()
+
+
+def _closure_hold_since(
+    state: LovableSyncState, today: dt.date | None
+) -> tuple[dt.date, bool, dt.date | None]:
+    """This `LOCAL_WORK_AT_CLOSURE` hold's first night, whether it was carried
+    from the state's previous observed run (not new tonight), and the first
+    night it stood while the synchronisation writes (``writing_since``).
 
     One hold is one continuous stretch of nights: a night without it (Lovable
     reopened, the work was finished) ends it, and a later hold starts its own
-    count — so its age, and the escalation day the notifications key on, never
-    restart on a re-run and never carry over from an earlier stretch. The
-    second value says whether it was carried (not new tonight)."""
+    count — so its age never restarts on a re-run and never carries over from
+    an earlier stretch. ``held_since`` counts every night (display, age);
+    ``writing_since`` only APPLY nights, and the 14-day escalation runs from it
+    (review P2-A): a hold that stood through weeks of COMPARE starts its clock
+    on the first APPLY night, so its escalation is never already past the
+    notifications' catch-up window. ``None`` while it has stood only in
+    COMPARE."""
     day = today or timezone.localdate()
+    writing_today = day if _writing_now() else None
     if state.pk is None or state.observed_run_id is None:
-        return day, False
+        return day, False, writing_today
     current = (
         LovableSyncDecision.objects.filter(
             state_id=state.pk,
@@ -2558,12 +2581,17 @@ def _closure_hold_since(state: LovableSyncState, today: dt.date | None) -> tuple
         .values_list("current", flat=True)
         .first()
     )
-    if isinstance(current, dict) and current.get(HOLD_SINCE):
+    if not (isinstance(current, dict) and current.get(HOLD_SINCE)):
+        return day, False, writing_today
+
+    def _parsed(value: Any) -> dt.date | None:
         try:
-            return min(dt.date.fromisoformat(str(current[HOLD_SINCE])), day), True
+            return min(dt.date.fromisoformat(str(value)), day) if value else None
         except ValueError:
-            return day, True
-    return day, False
+            return None
+
+    since = _parsed(current[HOLD_SINCE]) or day
+    return since, True, _parsed(current.get(HOLD_WRITING)) or writing_today
 
 
 def _step_view(step: dict[str, Any] | None) -> dict[str, Any] | None:

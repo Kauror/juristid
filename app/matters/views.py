@@ -4006,6 +4006,7 @@ def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -
         CLOSURE_HOLD_DONE,
         CLOSURE_HOLD_HELP,
         CLOSURE_HOLD_PROPOSED,
+        CLOSURE_HOLD_PROPOSED_NO_WORK,
         CLOSURE_HOLD_RELEASE_LABEL,
         CLOSURE_HOLD_RELEASE_TIP,
         joined_phrases,
@@ -4019,6 +4020,7 @@ def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -
         "closure_hold": {
             "writes": writes,
             "proposed": CLOSURE_HOLD_PROPOSED,
+            "proposed_no_work": CLOSURE_HOLD_PROPOSED_NO_WORK,
             "read_at": preview.read_at,
             "banner": CLOSURE_HOLD_BANNER,
             # What is live now, not what the night counted: work finished today
@@ -4031,7 +4033,9 @@ def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -
             "digest": preview.digest,
             "label": CLOSURE_HOLD_RELEASE_LABEL,
             "tip": CLOSURE_HOLD_RELEASE_TIP,
-            "can_release": writes and may_release(request.user, matter),
+            # Not offered where it would be refused: outside APPLY, or when a
+            # newer stored reading disagrees (review P3-E).
+            "can_release": writes and not preview.stale and may_release(request.user, matter),
         }
     }
 

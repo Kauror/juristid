@@ -313,6 +313,8 @@ CLOSURE_HOLD_PROPOSED = (
     "Lovable näitab teemat suletuna. Kui sünkroonimine hakkab Juristidesse kirjutama, "
     "jääb sulgemine pooleli töö tõttu ootele"
 )
+#: The same, once no Juristid-only work is left: nothing would be held.
+CLOSURE_HOLD_PROPOSED_NO_WORK = "Lovable näitab teemat suletuna"
 #: Said under the banner: how the hold ends.
 CLOSURE_HOLD_HELP = (
     "Lõpeta, tühista või vii pooleli töö teisele teemale — siis suleb öine "

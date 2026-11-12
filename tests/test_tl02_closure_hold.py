@@ -958,3 +958,172 @@ def test_the_oracle_does_not_swallow_a_wrong_step_written_during_a_hold(world):
     assert verdicts["step"] == oracle.MATCH
     set_next_action(matter=world.matter(ref(1)), text="Vale samm", actor=None)
     assert _verdicts(world, ref(1))["step"] == oracle.DIFFERENT
+
+
+# ---------------------------------------------------------------------------
+# Second review of 12.11.2026 (P2-A, P3-A … P3-E)
+# ---------------------------------------------------------------------------
+
+
+def test_the_escalation_clock_starts_on_the_first_apply_night(world):
+    """Regression: TL-02 second review P2-A. A hold that stood for three weeks
+    of COMPARE starts its 14 days on the first APPLY night: the owner's row
+    comes 14 days after it and the department head's the morning after —
+    never an escalation day already outside the seven-day catch-up."""
+    from app.notifications.deadlines import reconcile_deadline_notifications
+    from app.notifications.enums import NotificationCategory, NotificationPurpose
+    from app.notifications.models import DeadlineNotification
+
+    head = factories.DepartmentHeadFactory()
+    _overview(world)
+    _close_in_lovable(world)
+    first = world.run(mode=SyncMode.COMPARE)
+    assert _stage(first).current["escalates_on"] is None
+    world.run(mode=SyncMode.COMPARE, at=NIGHT + dt.timedelta(days=22))
+    applying = world.run(at=NIGHT + dt.timedelta(days=23))
+    current = _stage(applying).current
+    assert current["held_since"] == NIGHT.date().isoformat()
+    assert current["writing_since"] == "2026-12-05"
+    assert current["escalates_on"] == "2026-12-19"
+    rows = DeadlineNotification.objects.filter(category=NotificationCategory.CLOSURE_HOLD)
+    reconcile_deadline_notifications(dt.date(2026, 12, 18))
+    assert not rows.exists()
+    reconcile_deadline_notifications(dt.date(2026, 12, 19))
+    owner = rows.get()
+    assert (owner.recipient_id, owner.purpose) == (world.person(AVA).pk, NotificationPurpose.ON_DAY)
+    reconcile_deadline_notifications(dt.date(2026, 12, 20))
+    assert rows.get(purpose=NotificationPurpose.ESCALATION).recipient_id == head.pk
+
+
+def test_holds_carried_from_compare_are_not_new_on_the_first_apply_night(world, monkeypatch):
+    """Regression guard: TL-02 second review P3-B. The closure-hold cap counts
+    holds first recorded by the run: carried from COMPARE they are not new,
+    so the first APPLY night is not stopped by them."""
+    monkeypatch.setattr(lovable_sync, "MAX_NEW_CLOSURE_HOLDS", 0)
+    _overview(world)
+    _close_in_lovable(world)
+    world.run(mode=SyncMode.COMPARE)
+    applying = world.run()
+    assert applying.status == SyncRunStatus.SUCCEEDED, applying.error
+    assert applying.counts["new_closure_holds"] == 0
+
+
+def test_the_compare_banner_with_no_work_left_promises_nothing(world, rf):
+    """Regression: TL-02 second review P3-C. In COMPARE, once the work is done,
+    the informational banner no longer says the closure would wait for it."""
+    from django.template.loader import render_to_string
+
+    from app.matters.services import cancel_website_overview
+    from app.matters.views import _closure_hold_context
+
+    overview = _overview(world)
+    _close_in_lovable(world)
+    world.run(mode=SyncMode.COMPARE)
+    cancel_website_overview(overview=overview, actor=world.person(AVA))
+    matter = world.matter(ref(1))
+    request = rf.get("/")
+    request.user = world.person(AVA)
+    context = _closure_hold_context(request, matter, held=True)
+    body = render_to_string(
+        "matters/partials/matter_banner.html", {"matter": matter, **context}, request=request
+    )
+    assert "Lovable näitab teemat suletuna." in body
+    assert "pooleli töö tõttu" not in body
+    assert "data-closure-hold-release" not in body
+
+
+def test_haldus_says_paused_in_off_and_shows_no_escalation_chip_outside_apply(
+    world, client, settings, monkeypatch
+):
+    """Regression: TL-02 second review P3-C. In OFF the closure-hold list does
+    not claim the synchronisation «ainult võrdleb», and the «üle 14 päeva»
+    chip shows only in APPLY."""
+    from django.urls import reverse
+
+    from app.legacy_import.lovable_closure_hold import ClosureHold
+    from tests.admin_session import apply_admin_gate, technical_admin, verified
+
+    apply_admin_gate(settings)
+    _hold_one(world)
+    monkeypatch.setattr(ClosureHold, "escalated", lambda self, today: True)
+    settings.REAL_DATA_ALLOWED = False
+    admin, secret = technical_admin()
+    verified(client, admin, secret)
+    page = client.get(reverse("haldus:lovable")).content.decode()
+    assert "üle 14 päeva" in page
+    lovable_sync.set_mode(SyncMode.OFF, reason="kontraktitest")
+    page = client.get(reverse("haldus:lovable")).content.decode()
+    assert "data-closure-holds" in page
+    assert "ainult võrdleb" not in page
+    assert "Sünkroonimine on peatatud" in page
+    assert "üle 14 päeva" not in page
+    assert "Vabasta…" not in page
+    lovable_sync.set_mode(SyncMode.COMPARE, reason="kontraktitest")
+    page = client.get(reverse("haldus:lovable")).content.decode()
+    assert "ainult võrdleb" in page
+    assert "üle 14 päeva" not in page
+
+
+def test_a_release_takes_the_control_row_for_share_before_the_matter(world):
+    """Regression: TL-02 second review P3-D. Inside the release transaction the
+    control row is locked FOR SHARE before the mode is read and before the
+    Matter's lock, so `set_mode`/`cut_over` cannot change the mode under it."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _hold_one(world)
+    matter = world.matter(ref(1))
+    digest = release_preview(matter).digest
+    with CaptureQueriesContext(connection) as queries:
+        release_closure_hold(matter=matter, actor=world.person(AVA), confirmed=digest)
+    sql = [q["sql"] for q in queries.captured_queries]
+    share = next(
+        i
+        for i, q in enumerate(sql)
+        if "lovablesynccontrol" in q and q.rstrip().endswith("FOR SHARE")
+    )
+    matter_lock = next(
+        i for i, q in enumerate(sql) if 'FROM "matters_matter"' in q and "FOR NO KEY UPDATE" in q
+    )
+    assert share < matter_lock
+
+
+def test_a_stale_reading_is_not_offered_for_release(world, rf):
+    """Regression: TL-02 second review P3-E. A release a newer stored reading
+    would refuse is not offered: the preview says so and the banner has no
+    button."""
+    import copy
+
+    from app.matters.views import _closure_hold_context
+
+    _hold_one(world)
+    matter = world.matter(ref(1))
+    state = LovableSyncState.objects.select_related("observed_run").get(matter=matter)
+    document = copy.deepcopy(state.observed_run.snapshot.document)
+    document["cohort"][str(state.source_id)]["row"]["hetkeseis"] = "Riigikogus"
+    _newer_reading(document, at=state.observed_run.snapshot_taken_at + dt.timedelta(hours=2))
+    assert release_preview(matter).stale
+    request = rf.get("/")
+    request.user = world.person(AVA)
+    assert _closure_hold_context(request, matter, held=True)["closure_hold"]["can_release"] is False
+
+
+def test_the_teema_page_in_compare_draws_at_most_an_informational_banner(world, client):
+    """Regression guard: TL-02 second review P3-A. With #618's lock in COMPARE
+    the page draws the informational banner without a button; with the lock
+    APPLY-only it draws none. Either way, never a release in COMPARE."""
+    from django.urls import reverse
+
+    from app.matters.source_ownership import ownership
+
+    _overview(world)
+    _close_in_lovable(world)
+    world.run(mode=SyncMode.COMPARE)
+    matter = world.matter(ref(1))
+    client.force_login(world.person(AVA))
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    assert "data-closure-hold-release" not in body
+    if ownership(matter).active:
+        assert "data-closure-hold-proposed" in body
+    else:
+        assert "data-closure-hold" not in body
