@@ -159,9 +159,9 @@ def test_lovables_own_current_step_is_not_juristid_only_work(world):
 
 
 def test_a_removed_overview_or_kaasamine_is_not_live_work(world):
-    """Regression: TL-02 (point 2, the definition). A record taken off the file
-    («Kustuta») is on no surface, so it holds nothing (QA-WORKFLOW-01 parity):
-    Lovable's closure goes through."""
+    """Guard: TL-02 (point 2, the definition; passes on the base by design). A
+    record taken off the file («Kustuta») is on no surface, so it holds nothing
+    (QA-WORKFLOW-01 parity): Lovable's closure goes through."""
     overview = _overview(world)
     engagement = _wait(world)
     matter = world.matter(ref(1))
