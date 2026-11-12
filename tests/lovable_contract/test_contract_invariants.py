@@ -75,38 +75,84 @@ def test_the_import_scan_sees_a_forbidden_import(tmp_path):
 REAL_LOOKING_REFERENCE = re.compile(r"(?<![\d-])(?!1999_|2099_)((?:19|20|21)\d\d)_\d{1,4}(?!\d)")
 UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
 SYNTHETIC_UUID_PREFIX = "00000000-0000-0000-"
-NAME_KEYWORDS = ("vastutaja", "uus_vastutaja", "display_name")
+#: Where a person's name is written: as a keyword argument or a dict key.
+NAME_KEYS = frozenset({"vastutaja", "uus_vastutaja", "display_name", "owner_raw", "kellele_nimi"})
+#: Where a year is written as a number.
+YEAR_KEYS = frozenset({"year", "reference_year", "aasta"})
+SYNTHETIC_YEARS = (1999, 2099)
 
 
 def _contract_files() -> list[Path]:
     return sorted(p for p in HERE.glob("*.py") if p.name != Path(__file__).name)
 
 
-def _strings(path: Path) -> list[str]:
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    return [
-        node.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Constant) and isinstance(node.value, str)
-    ]
+def _text_of(node: ast.AST) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def violations(source: str) -> list[str]:
+    """Everything in ``source`` that looks like real data (I-7)."""
+    found: list[str] = []
+    tree = ast.parse(source)
+
+    def name(value: ast.AST, where: str) -> None:
+        text = _text_of(value)
+        if text and not text.endswith("Näidis"):
+            found.append(f"{where}: name {text!r}")
+
+    def year(value: ast.AST, where: str) -> None:
+        if (
+            isinstance(value, ast.Constant)
+            and isinstance(value.value, int)
+            and not isinstance(value.value, bool)
+            and 1900 <= value.value <= 2200
+            and value.value not in SYNTHETIC_YEARS
+        ):
+            found.append(f"{where}: year {value.value}")
+
+    for node in ast.walk(tree):
+        text = _text_of(node)
+        if text is not None:
+            if REAL_LOOKING_REFERENCE.search(text):
+                found.append(f"reference in {text[:60]!r}")
+            found += [
+                f"uuid {u}" for u in UUID.findall(text) if not u.startswith(SYNTHETIC_UUID_PREFIX)
+            ]
+        if isinstance(node, ast.keyword) and node.arg in NAME_KEYS:
+            name(node.value, node.arg)
+        if isinstance(node, ast.keyword) and node.arg in YEAR_KEYS:
+            year(node.value, node.arg)
+        if isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values, strict=True):
+                label = _text_of(key) if key is not None else None
+                if label in NAME_KEYS:
+                    name(value, label)
+                elif label in YEAR_KEYS:
+                    year(value, label)
+                elif label == "people" and isinstance(value, ast.Dict):
+                    for person_key, person in zip(value.keys, value.values, strict=True):
+                        if person_key is not None:
+                            name(person_key, "people")
+                        name(person, "people")
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ref"
+            and len(node.args) > 1
+        ):
+            year(node.args[1], "ref()")
+    return found
 
 
 @pytest.mark.parametrize("path", _contract_files(), ids=lambda p: p.name)
 def test_contract_fixtures_hold_synthetic_data_only(path):
-    """I-7: no real-looking topic number, no production UUID, no real name.
+    """I-7: no real-looking topic number, no production UUID, no real name, no
+    real register year — in strings, keyword arguments and dict literals alike.
 
     Contract: audit §D.1 rule 3 — topic numbers use the reserved years 1999 or
     2099; Lovable ids are the invented `00000000-0000-0000-…` form; every person
     a scenario names is invented and carries the «Näidis» surname."""
-    for text in _strings(path):
-        assert not REAL_LOOKING_REFERENCE.search(text), (path.name, text[:80])
-        for found in UUID.findall(text):
-            assert found.startswith(SYNTHETIC_UUID_PREFIX), (path.name, found)
-    tree = ast.parse(path.read_text(encoding="utf-8"))
-    for node in ast.walk(tree):
-        if isinstance(node, ast.keyword) and node.arg in NAME_KEYWORDS:
-            if isinstance(node.value, ast.Constant) and node.value.value:
-                assert str(node.value.value).endswith("Näidis"), (path.name, node.value.value)
+    assert violations(path.read_text(encoding="utf-8")) == []
 
 
 def test_the_world_names_only_invented_people():
@@ -119,16 +165,36 @@ def test_the_world_names_only_invented_people():
 
 
 @pytest.mark.parametrize(
-    "text",
-    ["vt 2026_48", "Jätkub teemana 2025_7", "id 3f2b1c4d-1111-4222-8333-444455556666"],
+    "source",
+    [
+        'x = "vt 2031_7"',
+        'x = "Jätkub teemana 2031_12."',
+        'x = "id 3f2b1c4d-1111-4222-8333-444455556666"',
+        'lovable_row(r, vastutaja="Anna Kask")',
+        'row = {"owner_raw": "Anna Kask"}',
+        'package = {"people": {"Anna": "Anna Kask"}}',
+        "create_matter(title=t, reference_year=2031)",
+        'row = {"aasta": 2031}',
+        "ref(5, 2031)",
+    ],
 )
-def test_the_synthetic_data_guard_has_teeth(text):
-    """I-7 catches a real-looking reference and a production-shaped UUID."""
-    caught = bool(REAL_LOOKING_REFERENCE.search(text)) or any(
-        not u.startswith(SYNTHETIC_UUID_PREFIX) for u in UUID.findall(text)
+def test_the_synthetic_data_guard_has_teeth(source):
+    """I-7 catches a real-looking reference, a production-shaped UUID, a real
+    name in a keyword or a dict, and a real register year (invented examples)."""
+    assert violations(source)
+
+
+def test_the_synthetic_data_guard_lets_synthetic_data_through():
+    assert (
+        violations(
+            'x = "2099_12 ja 1999_3, kuupäev 2026-11-12"\n'
+            'lovable_row(r, vastutaja="Ava Näidis", aasta=2099)\n'
+            'p = {"people": {"Ava Näidis": "Ava Näidis"}}\n'
+            "ref(5, 1999)\n"
+            "dt.date(2026, 11, 12)\n"
+        )
+        == []
     )
-    assert caught
-    assert not REAL_LOOKING_REFERENCE.search("2099_12 ja 1999_3, kuupäev 2026-11-12")
 
 
 # ---------------------------------------------------------------------------

@@ -19,6 +19,7 @@ from app.legacy_import.lovable_sync_models import SyncMode, SyncOutcome, SyncRun
 from tests.lovable_contract import oracle
 from tests.lovable_contract.fixtures import pilot_on, world  # noqa: F401 - fixtures
 from tests.lovable_contract.world import (
+    BASELINE,
     BOOKKEEPING_TABLES,
     LINK,
     UKU,
@@ -185,17 +186,11 @@ def test_a_local_edit_of_a_lovable_owned_field_is_put_back(db, pilot_on):
         assert decision.outcome == SyncOutcome.APPLIED, (number, field)
         assert decision.reason == lovable_sync.RESTORED, (number, field, decision.reason)
         # Audited: an event of this run on the Teema, by no person.
-        events = ChangeEvent.objects.filter(
-            matter=world.matter(ref(number)), created_at__gte=run.created_at
-        )
+        events = world.events_of(run).filter(matter=world.matter(ref(number)))
         assert events.exists() and not events.filter(actor__isnull=False).exists(), number
     # The old value stays readable in the audit trail (approval §1 «audited with
     # the old value, the new value»).
-    title = ChangeEvent.objects.get(
-        matter=world.matter(ref(1)),
-        event_type="MATTER_TITLE_CHANGED",
-        created_at__gte=run.created_at,
-    )
+    title = world.events_of(run).get(matter=world.matter(ref(1)), event_type="MATTER_TITLE_CHANGED")
     assert title.payload["previous"] == "Juristi oma pealkiri"
     from app.workflow.enums import ActionStatus
     from app.workflow.models import NextAction
@@ -211,16 +206,21 @@ def test_a_local_edit_of_a_lovable_owned_field_is_put_back(db, pilot_on):
 
 
 def test_compare_writes_no_business_data_only_its_own_bookkeeping(db, pilot_on):
-    """LC-F3: in COMPARE, the same local edits are recorded per field and nothing
-    else is written: every business table is byte-identical, and only the
-    synchronisation's bookkeeping tables (`world.BOOKKEEPING_TABLES`) change.
+    """LC-F3: in COMPARE, local edits *and* Lovable's own changes are recorded
+    per field and nothing else is written: every business table is
+    byte-identical — the synchronisation state's baseline included, because it
+    decides restore against source change and so which breaker applies — and
+    only the bookkeeping tables (`world.BOOKKEEPING_TABLES`) change.
 
     Contract: approval 11.11 §5 «keeps the sync in COMPARE»; §6 «set the sync to
     COMPARE, which stops all further writes immediately»."""
-    world = build_world(8)
+    world = build_world(10)
     _local_edits(world)
+    world.lovable.edit(ref(9), teema="Kontraktiteema 2099_9 (Lovable)", hetkeseis="valitsuses")
+    world.lovable.edit(ref(10), valja="2026-11-02", valja_kuupaev="2026-11-02")
     juristid_before = oracle.compare(world.lovable, today=world.today)
     before = table_hashes()
+    assert BASELINE in before
     run = world.run(mode=SyncMode.COMPARE)
     assert run.status in (SyncRunStatus.SUCCEEDED, SyncRunStatus.REVIEW_ONLY), run.error
     changed = changed_tables(before, table_hashes())
@@ -230,6 +230,10 @@ def test_compare_writes_no_business_data_only_its_own_bookkeeping(db, pilot_on):
         decision = decisions(run, ref(number))[field]
         assert decision.outcome == SyncOutcome.ELIGIBLE, (number, field, decision.outcome)
         assert decision.reason == lovable_sync.RESTORED
+    for number, field in ((9, "title"), (9, "stage"), (10, "sent")):
+        decision = decisions(run, ref(number))[field]
+        assert decision.outcome == SyncOutcome.ELIGIBLE, (number, field, decision.outcome)
+        assert decision.reason != lovable_sync.RESTORED
 
 
 def _provenance(event):
@@ -255,7 +259,7 @@ def test_no_sync_write_names_a_lawyer(db, pilot_on, scenario):
         _local_edits(world)
     run = world.run()
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
-    new = list(ChangeEvent.objects.filter(created_at__gte=run.created_at))
+    new = list(world.events_of(run))
     assert new, "the run wrote no audit event"
     assert [e.event_type for e in new if e.actor_id is not None] == []
 
@@ -291,7 +295,7 @@ def test_every_sync_write_names_its_run_and_source(db, pilot_on, scenario):
         world = build_world(8)
         _local_edits(world)
     run = world.run()
-    new = list(ChangeEvent.objects.filter(created_at__gte=run.created_at))
+    new = list(world.events_of(run))
     assert new
     missing = [
         e.event_type for e in new if _provenance(e) != (lovable_sync.PROVENANCE_SOURCE, str(run.pk))
@@ -317,3 +321,29 @@ def test_the_synchronisation_only_ever_reads_lovable(world):
     with pytest.raises(AttributeError, match="read-only"):
         world.lovable.save_topic  # noqa: B018 - the access itself is the probe
     assert world.lovable.writes == [("SAVE_TOPIC", "?")]
+
+
+def test_the_oracle_never_reports_parity_over_a_teema_it_could_not_compare(world):
+    """P2-1: a Teema whose synchronisation state is dropped, whose Teema is
+    deleted, or that was asked for and does not exist is `NOT_COMPARED` — and
+    `differences` reports it, so parity can never be vacuous."""
+    from app.legacy_import.lovable_sync_models import LovableSyncState
+    from app.matters.deletion import delete_matter
+
+    assert oracle.differences(world.lovable, today=world.today) == []
+    LovableSyncState.objects.filter(reference=ref(1)).delete()
+    delete_matter(matter=world.matter(ref(2)), actor=None)
+    found = {
+        (c.reference, c.verdict, c.lovable)
+        for c in oracle.differences(
+            world.lovable, today=world.today, references=[ref(1), ref(2), ref(3), ref(9)]
+        )
+    }
+    assert found == {
+        (ref(1), oracle.NOT_COMPARED, "no synchronisation state"),
+        (ref(2), oracle.NOT_COMPARED, "the Teema was deleted"),
+        (ref(9), oracle.NOT_COMPARED, "no Lovable row"),
+    }
+    # The default population (no references) still reports both lost Teemad.
+    default = {c.reference for c in oracle.differences(world.lovable, today=world.today)}
+    assert default == {ref(1), ref(2)}

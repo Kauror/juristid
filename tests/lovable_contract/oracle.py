@@ -37,6 +37,39 @@ from tests.lovable_contract import vocabulary
 MATCH = "MATCH"
 DIFFERENT = "DIFFERENT"
 NOT_REPRESENTABLE = "NOT_REPRESENTABLE"
+#: A Teema the oracle had to compare but could not: no synchronisation state, a
+#: deleted Teema or no Lovable row. Always a failure — parity over nothing is no
+#: evidence (`differences` returns it).
+NOT_COMPARED = "NOT_COMPARED"
+
+#: Where the oracle deliberately does not decide, because the approved contract
+#: does not state the rule and the engine's choice is its own. These values are
+#: reported NOT_REPRESENTABLE — never MATCH or DIFFERENT — and listed here so the
+#: places oracle and engine could disagree are written down, not hidden.
+KNOWN_DIVERGENCES: dict[str, str] = {
+    "step kind, other verb forms": "the engine also reads plural and infinitive forms "
+    "(«ootame», «koostada», …) and the typo «ooatn» as a kind; the approval names only "
+    "«the first word». Text and day are still compared.",
+    "step kind, two kinds named": "a sentence naming a second kind beyond its first word "
+    "(«Koostan arvamuse ja ootan …») is «Liik määramata» in the engine. Text and day "
+    "are still compared.",
+    "opinion, contradictory": "«ei saatnud» beside a sent day, or two different days in "
+    "`valja` and `valja_kuupaev`: the engine holds (SENT_CONTRADICTORY).",
+    "opinion, future day": "a sent day after today: the engine holds (SENT_DATE_IN_FUTURE).",
+    "opinion, other forms": "`d.m.yy`, `d/m/yyyy`, «ei saatnud arvamust», free text: "
+    "pending LV-03 (`vocabulary.TREATMENT`).",
+    "opinion request, blank or passed": "the approval says a blank or a passed deadline "
+    "never *ends* a request (asserted in LC-O1); whether one is *opened* is not compared.",
+}
+#: The other forms of the kind verbs: a sentence starting with one, or naming
+#: one later, is not compared for its kind (`KNOWN_DIVERGENCES`).
+OTHER_KIND_FORMS = frozenset(
+    {
+        "koostame", "koostada", "kirjutame", "kirjutada", "esitame", "esitada",
+        "saadame", "saata", "ootame", "oodata", "ootel", "ooatn",
+        "jälgime", "jälgida", "vaatame", "vaadata",
+    }
+)  # fmt: skip
 
 #: Lovable's two finished stages and the reason each closes a Teema with
 #: (approval §2: «jõustunud» closes, «rohkem ei tegele» is Koda's own stop).
@@ -86,19 +119,37 @@ def step_kind(text: str) -> str:
     return FIRST_WORD_KIND.get(words[0], UNCLEAR_KIND) if words else UNCLEAR_KIND
 
 
-def sent_statement(valja: Any, valja_kuupaev: Any) -> tuple[str, str | None] | None:
+def kind_is_comparable(text: str) -> bool:
+    """Whether the approval's first-word rule alone decides the kind (`KNOWN_DIVERGENCES`)."""
+    words = re.findall(r"[\wÕÄÖÜõäöüŠšŽž]+", text.casefold())
+    if not words or words[0] in OTHER_KIND_FORMS:
+        return False
+    named = {FIRST_WORD_KIND[w] for w in words if w in FIRST_WORD_KIND}
+    return len(named) <= 1 and not any(w in OTHER_KIND_FORMS for w in words[1:])
+
+
+def sent_statement(
+    valja: Any, valja_kuupaev: Any, *, today: dt.date | None = None
+) -> tuple[str, str | None] | None:
     """What Lovable says about the opinion, as far as the approved contract
     reads it: ``("SENT", day)``, ``("NOT_SENT", None)``, ``None`` for nothing
-    said, or ``("HELD", None)`` for a form whose reading is pending (LV-03)."""
+    said, or ``("HELD", None)`` where the oracle does not decide (pending
+    forms, contradictions, a future day — `KNOWN_DIVERGENCES`)."""
     words = _text(valja).casefold().rstrip(".")
+    stated = _day(valja_kuupaev)
     if words == "ei saatnud":
-        return ("NOT_SENT", None)
-    day = _day(valja_kuupaev) or _day(valja)
-    if day is None and valja:
+        return ("HELD", None) if stated else ("NOT_SENT", None)
+    in_valja = _day(valja)
+    if in_valja is None and valja:
         found = re.fullmatch(r"(\d{1,2})\.(\d{1,2})\.(\d{4})", _text(valja))
         if found:
-            day = f"{found[3]}-{int(found[2]):02d}-{int(found[1]):02d}"
+            in_valja = f"{found[3]}-{int(found[2]):02d}-{int(found[1]):02d}"
+    if stated and in_valja and stated != in_valja:
+        return ("HELD", None)
+    day = stated or in_valja
     if day:
+        if today is not None and dt.date.fromisoformat(day) > today:
+            return ("HELD", None)
         return ("SENT", day)
     if _text(valja):
         return ("HELD", None)
@@ -137,11 +188,15 @@ def expected(
     text = _text(row.get("jargmiseks"))
     step: Any = None
     if is_open and text:
-        step = {"text": text, "day": _day(row.get("tegevuse_tahtaeg")), "kind": step_kind(text)}
+        step = {
+            "text": text,
+            "day": _day(row.get("tegevuse_tahtaeg")),
+            "kind": step_kind(text) if kind_is_comparable(text) else NOT_REPRESENTABLE,
+        }
     elif is_open:
         step = NOT_REPRESENTABLE  # a blank sentence: the request rule decides (LS-05)
 
-    said = sent_statement(row.get("valja"), row.get("valja_kuupaev"))
+    said = sent_statement(row.get("valja"), row.get("valja_kuupaev"), today=today)
     outcome: Any = NOT_REPRESENTABLE if said and said[0] == "HELD" else said
     request_day = _day(row.get("arvamuse_tahtaeg"))
     request: Any
@@ -278,21 +333,43 @@ def compare(
 
     ``lovable`` is the fake's live state (its ``rows``, ``commencements`` and
     ``stage_links``) — what a fresh reading would return. Identity is the
-    synchronisation state's `source_id` (the one stable key both sides share)."""
+    synchronisation state's `source_id` (the one stable key both sides share).
+
+    **Which Teemad must be compared:** ``references`` when given, otherwise
+    every operational topic Lovable lists plus every Teema a synchronisation
+    state names. Each yields its fields, or one `NOT_COMPARED` row when its
+    state was dropped, its Teema deleted or its Lovable row is gone — never
+    nothing (P2-1: parity over a vanished Teema is no evidence)."""
     state_model = apps.get_model("legacy_import", "LovableSyncState")
     user_model = apps.get_model("accounts", "User")
-    wanted = set(references) if references is not None else None
-    states = {
-        str(s.source_id): s
-        for s in state_model.objects.select_related("matter").filter(
-            matter__deleted_at__isnull=True
-        )
+    all_states = list(state_model.objects.select_related("matter"))
+    states = {str(s.source_id): s for s in all_states if s.matter.deleted_at is None}
+    by_reference = {s.reference for s in all_states}
+    deleted = {
+        f"{year}_{number}"
+        for year, number in apps.get_model("matters", "Matter")
+        ._base_manager.filter(deleted_at__isnull=False)
+        .values_list("reference_year", "reference_number")
     }
+    rows_by_nr = {row["nr"]: (source, row) for source, row in lovable.rows.items()}
+    if references is not None:
+        wanted = set(references)
+    else:
+        wanted = {r["nr"] for r in lovable.rows.values() if r.get("operatiivne_ulatus")}
+        wanted |= by_reference
     matter_of = {source: str(state.matter_id) for source, state in states.items()}
     out: list[Comparison] = []
-    for source, state in sorted(states.items(), key=lambda item: item[1].reference):
-        row = lovable.rows.get(source)
-        if row is None or (wanted is not None and row["nr"] not in wanted):
+    for reference in sorted(wanted):
+        source, row = rows_by_nr.get(reference, ("", None))
+        state = states.get(source)
+        if row is None or state is None:
+            if row is None:
+                why = "no Lovable row"
+            elif reference in deleted:
+                why = "the Teema was deleted"
+            else:
+                why = "no synchronisation state"
+            out.append(Comparison(reference, "*", NOT_COMPARED, why, None))
             continue
         successors = sorted(
             matter_of.get(link["next_topic_id"], NOT_REPRESENTABLE)
@@ -323,14 +400,21 @@ def compare(
         if not (isinstance(want["lifecycle"], dict) and want["lifecycle"]["open"]):
             # A closed Teema has no current step and no open request (approval §1).
             want["step"], want["opinion_request"] = None, None
+        step = want["step"]
+        if isinstance(step, dict) and step["kind"] == NOT_REPRESENTABLE:
+            # Text and day are still compared; only the kind is not (KNOWN_DIVERGENCES).
+            want["step"] = {k: v for k, v in step.items() if k != "kind"}
+            if isinstance(have["step"], dict):
+                have["step"] = {k: v for k, v in have["step"].items() if k != "kind"}
         for name, value in want.items():
             if value == NOT_REPRESENTABLE:
                 verdict = NOT_REPRESENTABLE
             else:
                 verdict = MATCH if value == have[name] else DIFFERENT
-            out.append(Comparison(row["nr"], name, verdict, value, have[name]))
+            out.append(Comparison(reference, name, verdict, value, have[name]))
     return out
 
 
 def differences(lovable: Any, **kw: Any) -> list[Comparison]:
-    return [c for c in compare(lovable, **kw) if c.verdict == DIFFERENT]
+    """Every field that differs, and every Teema that could not be compared."""
+    return [c for c in compare(lovable, **kw) if c.verdict in (DIFFERENT, NOT_COMPARED)]

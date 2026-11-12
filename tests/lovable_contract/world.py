@@ -173,6 +173,9 @@ class World:
     runs: list[LovableSyncRun] = field(default_factory=list)
     #: Records a scenario made on the Juristid side only (LC-J1), by kind.
     juristid_only: dict[str, list[Any]] = field(default_factory=dict)
+    #: Run id → the audit events that run wrote (a primary-key watermark, not a
+    #: clock: `events_of`).
+    written: dict[Any, frozenset[Any]] = field(default_factory=dict)
 
     def run(
         self,
@@ -189,7 +192,10 @@ class World:
         Each run is an hour after the previous one, from `NIGHT`, unless ``at``
         names its moment (a later night). ``transport`` replaces the in-process
         fake (LC-S1 reads the same rows over `HttpTransport`)."""
+        from app.audit.models import ChangeEvent
+
         lovable_sync.set_mode(mode, reason="kontraktitest")
+        existing = set(ChangeEvent.objects.values_list("pk", flat=True))
         moment = at or (
             (self.runs[-1].started_at + HOUR).astimezone(TALLINN) if self.runs else NIGHT
         )
@@ -210,7 +216,16 @@ class World:
         assert not breakers, f"unknown breaker override(s): {sorted(breakers)}"
         run.refresh_from_db()
         self.runs.append(run)
+        self.written[run.pk] = frozenset(
+            ChangeEvent.objects.exclude(pk__in=existing).values_list("pk", flat=True)
+        )
         return run
+
+    def events_of(self, run: LovableSyncRun) -> Any:
+        """The audit events ``run`` wrote, and only those."""
+        from app.audit.models import ChangeEvent
+
+        return ChangeEvent.objects.filter(pk__in=self.written[run.pk])
 
     @property
     def today(self) -> dt.date:
@@ -242,6 +257,11 @@ BOOKKEEPING_TABLES = frozenset(
 )
 
 
+#: The synchronisation state's baseline (`applied`, `applied_version`,
+#: `applied_snapshot_sha256`): hashed as business data by `table_hashes`.
+BASELINE = "legacy_import.lovablesyncstate#baseline"
+
+
 def table_hashes(only: Any = None) -> dict[str, str]:
     """A digest of every concrete table's rows (``app_label.model``), by primary key.
 
@@ -264,6 +284,18 @@ def table_hashes(only: Any = None) -> dict[str, str]:
         for row in manager.order_by("pk").values_list():
             digest.update(repr(row).encode())
         out[label] = digest.hexdigest()
+    if only is None or BASELINE in only:
+        # The baseline inside a bookkeeping row is business data: it decides
+        # whether a difference is a restore or a source change, and so which
+        # breaker holds the night (review P2-2). Its own digest, outside
+        # `BOOKKEEPING_TABLES`.
+        state = apps.get_model("legacy_import", "LovableSyncState")
+        digest = hashlib.sha256()
+        for row in state._base_manager.order_by("pk").values_list(
+            "pk", "applied", "applied_version", "applied_snapshot_sha256"
+        ):
+            digest.update(repr(row).encode())
+        out[BASELINE] = digest.hexdigest()
     return out
 
 

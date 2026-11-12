@@ -127,20 +127,28 @@ def test_tl02_a_source_closure_cancels_juristid_only_planned_work_today(world):
     """TL-02 (owner decision pending) — current behaviour, pinned, not endorsed.
 
     A closure that comes from Lovable ends the Teema's Juristid-only planned
-    work («Kodulehe ülevaade»), and Lovable reopening it does not bring that
-    work back. The approval's «Never touched: Juristid-only …» list does not
-    name planned work, so this is a decision, not a defect. Alternatives for the
-    owner (audit §C.2 TL-02): (a) accept — record it in ADR 0213; (b) a source
-    closure leaves such work as a review item; (c) a reopening restores it.
+    work («Kodulehe ülevaade», a lawyer's planned Tegevus), and Lovable
+    reopening it does not bring that work back. The approval's «Never touched:
+    Juristid-only …» list does not name planned work, so this is a decision,
+    not a defect. Alternatives for the owner (audit §C.2 TL-02): (a) accept —
+    record it in ADR 0213; (b) a source closure leaves such work as a review
+    item; (c) a reopening restores it.
     When the owner decides, flip this test to the decided rule."""
     from app.matters.models import MatterWebsiteOverview
     from app.matters.services import plan_website_overview
+    from app.workflow.models import NextAction
+    from app.workflow.services import add_planned_action
 
     matter = world.matter(ref(1))
     overview = plan_website_overview(matter=matter, actor=world.person(AVA))
+    planned = add_planned_action(
+        matter=matter, text="Helistan ministeeriumi", target_date=dt.date(2099, 4, 1)
+    )
     world.lovable.edit(ref(1), hetkeseis="jõustunud", jargmiseks="", tegevuse_tahtaeg=None)
     world.run()
     assert MatterWebsiteOverview.objects.get(pk=overview.pk).status == "CANCELLED"
+    # A lawyer's own planned Tegevus ends with the closure as well.
+    assert NextAction.objects.get(pk=planned.pk).status == "CANCELLED"
     world.lovable.edit(
         ref(1),
         hetkeseis="Riigikogus",
@@ -318,7 +326,7 @@ def test_each_commencement_the_sync_writes_names_lovable_and_the_run(world):
     synchronisation and the run (source = Lovable, run key)."""
     world.lovable.set_commencements(ref(1), [{"liik": ESTIMATED, "kuupaev": "2099-09-01"}])
     run = world.run()
-    events = ChangeEvent.objects.filter(matter=world.matter(ref(1)), created_at__gte=run.created_at)
+    events = world.events_of(run).filter(matter=world.matter(ref(1)))
     assert events.exists()
     for event in events:
         payload = event.payload or {}
@@ -386,8 +394,13 @@ def test_a_commencement_on_a_closed_teema_is_not_representable_and_writes_nothin
             "onenote_link",
             "LINK_NOT_HTTPS",
         ),
+        (
+            {"onenote_link": "http://example.invalid/sites/naidis/Leht"},
+            "onenote_link",
+            "LINK_NOT_HTTPS",
+        ),
     ],
-    ids=["unknown stage", "legal act Muu (LV-01)", "onenote: link (LV-03b)"],
+    ids=["unknown stage", "legal act Muu (LV-01)", "onenote: link (LV-03b)", "http: link"],
 )
 def test_an_unknown_value_is_held_and_the_rest_of_the_teema_still_syncs(
     world, values, field, reason
@@ -446,6 +459,20 @@ def test_a_night_over_the_source_limit_stops_visibly_and_writes_nothing(db, pilo
     assert not stopped.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
     supervised = world.run(max_changed=21)
     assert supervised.status == SyncRunStatus.SUCCEEDED, supervised.error
+    assert _parity(world) == []
+
+
+def test_a_night_at_exactly_the_source_limit_writes_everything(db, pilot_on):
+    """LC-B1 (the boundary): 20 Teemad changed in Lovable is within «up to 20
+    Teemad a night» — the night writes them all.
+
+    Contract: approval 11.11 §5 «Lovable's own changes: up to 20 Teemad a night»."""
+    world = build_world(20)
+    for number in range(1, 21):
+        world.lovable.edit(ref(number), teema=f"Kontraktiteema {ref(number)} (Lovable)")
+    run = world.run(trigger="SCHEDULED")
+    assert run.status == SyncRunStatus.SUCCEEDED, (run.status, run.error)
+    assert run.counts["changed_source"] == 20
     assert _parity(world) == []
 
 
@@ -508,3 +535,49 @@ def test_ls05_an_overdue_drafting_step_with_nothing_sent_is_ended_today(world):
     assert later > NIGHT
     world.run(at=later)
     assert not NextAction.objects.filter(pk=drafting.pk, status=ActionStatus.OPEN).exists()
+
+
+# ---------------------------------------------------------------------------
+# The step kinds end to end, and the request rule
+# ---------------------------------------------------------------------------
+
+
+def test_each_step_kind_is_read_from_lovables_first_word(world):
+    """The current step is Lovable's exact sentence and day; its kind comes from
+    the first word: «Jälgin» → MONITOR, an unclear sentence → «Liik määramata»
+    (SOURCE), never guessed. A plural form is compared for text and day only
+    (`oracle.KNOWN_DIVERGENCES`).
+
+    Contract: approval 11.11 §1 «Step type is worked out from Lovable's current
+    text by one fixed rule (the first word; if unclear, «Liik määramata»). It is
+    never guessed»."""
+    world.lovable.edit(ref(1), jargmiseks="Jälgin eelnõu menetlust", tegevuse_tahtaeg="2099-04-01")
+    world.lovable.edit(ref(2), jargmiseks="Jõustumisel.", tegevuse_tahtaeg="2099-04-02")
+    world.lovable.edit(ref(3), jargmiseks="Ootame ministeeriumi vastust", tegevuse_tahtaeg=None)
+    run = world.run()
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert _parity(world) == []
+    kinds = {n: oracle.observed(world.matter(ref(n)))["step"]["kind"] for n in (1, 2)}
+    assert kinds == {1: "MONITOR", 2: "SOURCE"}
+    compared = {
+        c.field: c for c in oracle.compare(world.lovable, today=world.today, references=[ref(3)])
+    }
+    assert "kind" not in compared["step"].lovable and compared["step"].verdict == oracle.MATCH
+
+
+def test_a_blank_or_a_passed_deadline_never_ends_lovables_request(world):
+    """The request Lovable states stays open while Lovable says nothing was sent
+    — the next nights, and after its day has passed.
+
+    Contract: approval 11.11 §1 «a sent date or «ei saatnud» ends Lovable's
+    request; a blank or a passed deadline never does»."""
+    world.lovable.edit(ref(1), arvamuse_tahtaeg="2026-11-20")
+    world.run()
+    assert world.matter(ref(1)).response_deadline == dt.date(2026, 11, 20)
+    world.run()  # nothing sent: blank `valja`
+    assert world.matter(ref(1)).response_deadline == dt.date(2026, 11, 20)
+    world.run(at=dt.datetime(2026, 11, 25, 0, 15, tzinfo=TALLINN))  # the day has passed
+    assert world.matter(ref(1)).response_deadline == dt.date(2026, 11, 20)
+    world.lovable.edit(ref(1), valja="ei saatnud")
+    world.run(at=dt.datetime(2026, 11, 26, 0, 15, tzinfo=TALLINN))
+    assert world.matter(ref(1)).response_deadline is None

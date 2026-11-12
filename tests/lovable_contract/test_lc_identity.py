@@ -18,13 +18,11 @@ from app.legacy_import.lovable_sync_models import (
     SyncRunStatus,
 )
 from app.matters.models import Matter
-from tests import factories
-from tests.lovable_contract import oracle
+from tests.lovable_contract import juristid_only, oracle
 from tests.lovable_contract.fake import LovableRefused
 from tests.lovable_contract.fixtures import pilot_on, world  # noqa: F401 - fixtures
 from tests.lovable_contract.world import (
     AVA,
-    UKU,
     build_world,
     decisions,
     import_outside_cohort,
@@ -156,9 +154,24 @@ def test_the_excluded_population_is_counted_and_never_written(db, pilot_on):
         for m in Matter.all_objects.all()
         if not LovableSyncState.objects.filter(matter=m, matter__deleted_at__isnull=True).exists()
     ]
+    from app.legacy_import.models import MatterSourceReference
+    from app.workflow.models import NextAction
+
+    # Each excluded Teema with what hangs on it: its steps and its source links.
+    excluded = [
+        *excluded,
+        *NextAction._base_manager.filter(matter__in=excluded),
+        *MatterSourceReference._base_manager.filter(matter__in=excluded),
+    ]
     before = row_hashes(excluded)
     for number in range(1, 5):
         world.lovable.edit(ref(number), teema=f"Kontraktiteema {ref(number)} (Lovable)")
+    # Lovable changes every excluded topic too, so an unchanged Teema means
+    # «not written», not «nothing to write» (review P2-3).
+    for number in (5, 6, 201, 202, 203, 211, 212, 213, 214):
+        world.lovable.edit(
+            ref(number), teema=f"Muudetud Lovable'is {ref(number)}", hetkeseis="valitsuses"
+        )
     run = world.run()
     assert run.status in (SyncRunStatus.SUCCEEDED, SyncRunStatus.REVIEW_ONLY), run.error
     population = len(world.lovable.rows)
@@ -193,38 +206,43 @@ def test_the_excluded_population_is_counted_and_never_written(db, pilot_on):
 # ---------------------------------------------------------------------------
 
 
-def _juristid_only(world, reference: str) -> list:
-    """What a lawyer adds that Lovable never owns: a note, a document, a draft
-    opinion, an own important date and an own commencement estimate."""
-    from app.intelligence.services import add_important_date
-
-    matter = world.matter(reference)
-    lawyer = world.person(UKU)
-    day = dt.date(2099, 4, 1)
-    return [
-        factories.EntryFactory(matter=matter, author=lawyer),
-        factories.DocumentFactory(matter=matter),
-        factories.SubmissionFactory(matter=matter),
-        add_important_date(
-            matter=matter, title="Oma tähtaeg", date_value=day, period_end=day, actor=lawyer
-        ),
-    ]
-
-
 @pytest.mark.parametrize("scenario", ["source change", "restore", "closure", "tombstone"])
 def test_juristid_only_records_are_byte_identical_after_any_run(db, pilot_on, scenario):
-    """LC-J1: notes, documents, submissions and a person's own dates on every
-    synchronised Teema are byte-identical after a source change, a restore, a
-    closure from Lovable and a Lovable tombstone.
+    """LC-J1: everything Juristid-only on a synchronised Teema is byte-identical
+    after a source change, a restore, a closure from Lovable and a Lovable
+    tombstone — and after the next run.
+
+    Covered (`juristid_only.add_everything`): a personal note, a note entry, a
+    draft submission, an own important date and an own `MatterEffectiveDate`, a
+    related-Teema link and a background opinion, a planned Tegevus, a OneNote
+    page with its imported file, a later page revision, a file revision with
+    its second `DocumentVersion` and a coverage mark; plus the import's own
+    `EvidencePilotRecord` provenance and every audit event that existed before
+    the run.
 
     Contract: approval 11.11 §1 «Never touched: Juristid-only notes, documents,
     submissions, evidence, OneNote imports, a person's own important or
     commencement dates, and the audit trail» (the r54 production check D, made
-    a test). Planned Juristid-only work is TL-02 (`test_lc_lifecycle.py`)."""
+    a test). The one exception is pinned apart: a closure from Lovable ends the
+    Teema's planned work (TL-02, `test_lc_lifecycle.py`), so the closure
+    scenario hashes the planned Tegevus of the Teema it closes separately."""
     from app.matters.services import set_matter_title
+    from app.workflow.models import NextAction
 
-    world = build_world(2)
-    records = [r for reference in world.references for r in _juristid_only(world, reference)]
+    world = build_world(3)
+    other = world.matter(ref(3))
+    records = [
+        r
+        for n, reference in enumerate(world.references[:2], 1)
+        for r in juristid_only.add_everything(world, reference, n, other=other)
+    ]
+    records += juristid_only.import_provenance([world.matter(r) for r in world.references])
+    records += juristid_only.audit_trail()
+    closed_planned = [
+        r for r in records if isinstance(r, NextAction) and r.matter_id == world.matter(ref(1)).pk
+    ]
+    if scenario == "closure":
+        records = [r for r in records if r not in closed_planned]
     before = row_hashes(records)
     if scenario == "source change":
         world.lovable.edit(ref(1), teema="Uus pealkiri Lovableist", oigusakt="ELi määrus")
