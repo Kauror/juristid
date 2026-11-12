@@ -37,6 +37,7 @@ from app.submissions.models import Submission
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from tests import factories
+from tests.lovable_contract.fake import FakeLovable  # re-exported: suites import it from here
 from tests.test_lovable_pilot import URL, _apply, _package, _topic, pilot_on, world  # noqa: F401
 
 TALLINN = lovable_sync.TALLINN
@@ -144,49 +145,6 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
     # (Lovable is the source of truth at all times — docs/adr/0213 §10).
     source.commencements.extend(copy.deepcopy(topics[1]["source"]["commencements"]))
     return {"source": source, "world": world, "topics": topics}
-
-
-class FakeLovable:
-    """Lovable's PostgREST as the sync reads it: the allowlisted tables only."""
-
-    def __init__(self) -> None:
-        self.rows: dict[str, dict[str, Any]] = {}
-        self.commencements: list[dict[str, Any]] = []
-        #: `topic_stage_link` rows: ``{"prev_topic_id", "next_topic_id"}``.
-        self.stage_links: list[dict[str, str]] = []
-        self.fail: Exception | None = None
-        self.on_select: Any = None
-
-    def put(self, topic_id: str, row: dict[str, Any], *, version: int) -> None:
-        self.rows[topic_id] = {**row, "id": topic_id, "version": version}
-
-    def edit(self, reference: str, **values: Any) -> None:
-        for row in self.rows.values():
-            if row["nr"] == reference:
-                row.update(values)
-                row["version"] += 1
-                return
-        raise KeyError(reference)
-
-    def select(
-        self, table: str, columns: Any, *, filters: dict[str, str], order: str
-    ) -> list[dict[str, Any]]:
-        if self.fail is not None:
-            raise self.fail
-        if self.on_select is not None:
-            self.on_select(table)
-        wanted = None
-        for value in filters.values():
-            wanted = set(value[4:-1].split(","))
-        if table == "topic":
-            rows = [r for r in self.rows.values() if wanted is None or r["id"] in wanted]
-            return [{c: r.get(c) for c in columns} for r in sorted(rows, key=lambda r: r["id"])]
-        if table == "topic_commencement":
-            return [dict(r) for r in self.commencements if r["topic_id"] in (wanted or set())]
-        if table == "topic_stage_link" and filters:
-            column = next(iter(filters))
-            return [dict(r) for r in self.stage_links if r.get(column) in (wanted or set())]
-        return []
 
 
 def _run(
