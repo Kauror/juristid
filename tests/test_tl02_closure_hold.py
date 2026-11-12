@@ -1153,12 +1153,17 @@ def test_d1_the_owner_releases_a_hold_whose_step_lovable_left_unchanged(world):
     matter = world.matter(ref(1))
     step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     ava = world.person(AVA)
+    events = set(ChangeEvent.objects.values_list("pk", flat=True))
     result = release_closure_hold(
         matter=matter, actor=ava, confirmed=release_preview(matter).digest
     )
     assert result.closed
     step.refresh_from_db()
     assert (step.status, step.ended_by_id) == (ActionStatus.CANCELLED, ava.pk)
+    cancelled = ChangeEvent.objects.exclude(pk__in=events).get(
+        event_type="NEXT_ACTION_CANCELLED", object_id=step.pk
+    )
+    assert cancelled.payload["provenance"]["closure_hold"] == "RELEASED"
 
 
 def test_d1_the_lawyer_may_close_a_held_teema_whose_step_lovable_left_unchanged(world):
@@ -1168,6 +1173,7 @@ def test_d1_the_lawyer_may_close_a_held_teema_whose_step_lovable_left_unchanged(
     _close_keeping_the_step(world)
     world.run()
     matter = world.matter(ref(1))
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
     close_matter(
         matter=matter,
         disposition=Disposition.MONITORING_STOPPED,
@@ -1176,7 +1182,8 @@ def test_d1_the_lawyer_may_close_a_held_teema_whose_step_lovable_left_unchanged(
     )
     one = world.matter(ref(1))
     assert not one.is_open
-    assert not NextAction.objects.filter(matter=one, status=ActionStatus.OPEN).exists()
+    step.refresh_from_db()
+    assert (step.status, step.ended_by_id) == (ActionStatus.CANCELLED, world.person(AVA).pk)
 
 
 def test_d1_a_standalone_cancel_of_lovables_step_stays_refused(world):
@@ -1193,3 +1200,81 @@ def test_d1_a_standalone_cancel_of_lovables_step_stays_refused(world):
         step.refresh_from_db()
         assert step.status == ActionStatus.OPEN
     assert world.matter(ref(1)).is_open
+
+
+def _lawyer_closes(world, number: int) -> NextAction:
+    matter = world.matter(ref(number))
+    step = NextAction.objects.get(matter=matter, status=ActionStatus.OPEN)
+    close_matter(
+        matter=matter,
+        disposition=Disposition.MONITORING_STOPPED,
+        actor=world.person(AVA),
+        follow_ups_confirmed=live_work_at_closure(matter).digest,
+    )
+    step.refresh_from_db()
+    return step
+
+
+def test_d1_review_the_lawyer_closes_under_other_closing_holds_too(world):
+    """Regression: TL-02 rehearsal 2 D1 review P2-1. Every stage hold whose
+    reading has Lovable closing the Teema frees «Lõpeta teema» (E11), and the
+    lawyer's closure then ends Lovable's unchanged step with it: «lõpetatud»
+    with no reason (`CLOSURE_REASON_UNKNOWN`) and an ambiguous successor
+    (`SUCCESSOR_AMBIGUOUS`)."""
+    world.lovable.edit(ref(1), hetkeseis="lõpetatud")  # the step sentence stays
+    world.lovable.link(ref(2), ref(1))
+    world.lovable.link(ref(2), ref(3))
+    run = world.run()
+    assert decisions(run, ref(1))["stage"].reason == lovable_sync.CLOSURE_REASON_UNKNOWN
+    assert decisions(run, ref(2))["stage"].reason == lovable_sync.SUCCESSOR_AMBIGUOUS
+    for number in (1, 2):
+        assert "next_action_text" not in decisions(run, ref(number))
+        step = _lawyer_closes(world, number)
+        assert (step.status, step.ended_by_id) == (ActionStatus.CANCELLED, world.person(AVA).pk)
+        assert not world.matter(ref(number)).is_open
+
+
+def test_d1_review_the_closing_holds_are_the_engines_codes():
+    """Guard: TL-02 rehearsal 2 D1 review P2-1. The closing stage holds are named
+    by the engine's own codes, and an unmapped stage is not one of them."""
+    from app.legacy_import.lovable_closure_hold import CLOSING_STAGE_HOLDS
+
+    assert CLOSING_STAGE_HOLDS == {
+        lovable_sync.LOCAL_WORK_AT_CLOSURE,
+        lovable_sync.CLOSURE_REASON_UNKNOWN,
+        lovable_sync.SUCCESSOR_MISSING,
+        lovable_sync.SUCCESSOR_AMBIGUOUS,
+        lovable_sync.SUCCESSOR_DEFERRED,
+        lovable_sync.CONTINUATION_CYCLE,
+    }
+    assert lovable_sync.STAGE_UNMAPPED not in CLOSING_STAGE_HOLDS
+    assert CLOSING_STAGE_HOLDS <= set(lovable_sync.TECHNICAL_HOLDS)
+
+
+def test_d1_review_a_failed_closure_leaves_no_exemption_behind(world, monkeypatch):
+    """Regression guard: TL-02 rehearsal 2 D1 review P3-3. A closure that fails
+    inside the exempted block leaves the exemption empty: a standalone cancel
+    of Lovable's step in the same thread is refused."""
+    from app.matters import services as matter_services
+    from app.workflow import services as workflow_services
+
+    _overview(world)
+    _close_keeping_the_step(world)
+    world.run()
+
+    def broken(**kwargs):
+        raise RuntimeError("näidisviga")
+
+    monkeypatch.setattr(matter_services, "cancel_planned_website_overviews_for_closure", broken)
+    matter = world.matter(ref(1))
+    with pytest.raises(RuntimeError, match="näidisviga"):
+        close_matter(
+            matter=matter,
+            disposition=Disposition.MONITORING_STOPPED,
+            actor=world.person(AVA),
+            follow_ups_confirmed=live_work_at_closure(matter).digest,
+        )
+    assert workflow_services._LOVABLE_CLOSURE_IN_PROGRESS.get() == frozenset()
+    step = NextAction.objects.get(matter=world.matter(ref(1)), status=ActionStatus.OPEN)
+    with refused("Praegust tegevust ei saa Juristides muuta."):
+        cancel_next_action(action=step, actor=world.person(AVA), reason="Ise")

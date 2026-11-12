@@ -233,6 +233,45 @@ def standing_holds(matter_ids: Any = None) -> list[ClosureHold]:
     return [hold for hold in (_as_hold(row) for row in rows) if hold is not None]
 
 
+#: The stage holds whose reading has Lovable *closing* the Teema (TL-02,
+#: rehearsal 2 D1 review): a closure held for Juristid-only work, «lõpetatud»
+#: with no reason, and every successor hold — Lovable says the work goes on
+#: elsewhere. While one stands the lock frees «Lõpeta teema» (E11, the stage
+#: and continuation fields), and a person's closure is the one Lovable asked
+#: for, so ending Lovable's current step with it is not refused. An unmapped
+#: stage or a history reopening is not a closure and is not here.
+CLOSING_STAGE_HOLDS = frozenset(
+    {
+        LOCAL_WORK_AT_CLOSURE,
+        "CLOSURE_REASON_UNKNOWN",
+        "SUCCESSOR_NOT_IN_JURISTID",
+        "SUCCESSOR_AMBIGUOUS",
+        "SUCCESSOR_DEFERRED_BY_BREAKER",
+        "CONTINUATION_CYCLE",
+    }
+)
+
+
+def closing_hold_stands(matter: Any) -> bool:
+    """Whether the newest reading holds, on this open Teema, a closure Lovable
+    states (`CLOSING_STAGE_HOLDS`), on its stage or continuation. One query."""
+    from app.legacy_import.lovable_sync_models import LovableSyncDecision, SyncOutcome
+
+    return (
+        LovableSyncDecision.objects.filter(
+            _not_cut_over(),
+            state__matter_id=getattr(matter, "pk", matter),
+            run_id=F("state__observed_run_id"),
+            field__in=("stage", "continuation"),
+            outcome=SyncOutcome.REVIEW_REQUIRED,
+            reason__in=sorted(CLOSING_STAGE_HOLDS),
+            state__matter__is_open=True,
+        )
+        .exclude(state__cohort__in=_retired_cohorts())
+        .exists()
+    )
+
+
 def hold_of(matter: Any) -> ClosureHold | None:
     """This Teema's standing hold, or ``None``."""
     found = standing_holds([getattr(matter, "pk", matter)])
