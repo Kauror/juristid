@@ -2143,6 +2143,9 @@ SUCCESSOR_AMBIGUOUS = "SUCCESSOR_AMBIGUOUS"
 #: Lovable's stage links lead from the topic back to itself (A→B→A or longer):
 #: every Teema on the cycle is held, its lifecycle untouched (QA-E-01).
 CONTINUATION_CYCLE = "CONTINUATION_CYCLE"
+#: The successor was created tonight, but converging its predecessor too would
+#: have gone over the Teemad-written breaker: the next run converges it (LS-01).
+SUCCESSOR_DEFERRED = "SUCCESSOR_DEFERRED_BY_BREAKER"
 #: The opinion outcome is held (contradictory or impossible): the request waits too.
 OUTCOME_HELD = "OUTCOME_HELD"
 #: A write that brings Lovable's unchanged value back over a local edit
@@ -2193,6 +2196,7 @@ TECHNICAL_HOLDS: dict[str, str] = {
     SUCCESSOR_MISSING: "missing successor identity",
     SUCCESSOR_AMBIGUOUS: "duplicate reference",
     CONTINUATION_CYCLE: "contradictory snapshot",
+    SUCCESSOR_DEFERRED: "missing successor identity",
     OUTCOME_HELD: "contradictory snapshot",
     HISTORY_REOPENED_OUTSIDE_SCOPE: "unrepresentable value",
     CLOSURE_REASON_UNKNOWN: "unrepresentable value",
@@ -2425,8 +2429,9 @@ def _lifecycle_decisions(
         return found
 
     if hold or desired is None:
-        if unchanged:
-            # A technical hold is never «restored over».
+        if unchanged and hold != CONTINUATION_CYCLE:
+            # A technical hold is never «restored over». A cycle is held every
+            # night it stands, so each Teema on it is visibly waiting (QA-E-01).
             return [_decision("stage", SyncOutcome.UNCHANGED, **common)], None, ""
         hold = hold or STAGE_UNMAPPED
         return decide(SyncOutcome.REVIEW_REQUIRED, hold), None, hold
@@ -4798,6 +4803,14 @@ def population_change(previous: dict[str, Any], current: dict[str, Any]) -> str:
     return ""
 
 
+def _defer_successor(plan: MatterPlan) -> None:
+    """A Teema whose successor exists now, held over the night's breaker: the
+    hold names that, not a missing successor (LS-01)."""
+    for decision in plan.decisions:
+        if decision.reason == SUCCESSOR_MISSING:
+            decision.reason = SUCCESSOR_DEFERRED
+
+
 def _waits_for_created_successor(plan: MatterPlan, created: set[str]) -> bool:
     """Whether ``plan`` was held for want of its one successor in Juristid
     (`SUCCESSOR_MISSING`), and that successor was created in this run (LS-01)."""
@@ -5253,6 +5266,9 @@ class RunCounts:
     search_refresh_pending: int = 0
     #: Teemad an earlier run left stale in search, refreshed by this run.
     search_refreshed_carried: int = 0
+    #: Teemad whose successor was created tonight but whose convergence would
+    #: have gone over the Teemad-written breaker (`SUCCESSOR_DEFERRED`).
+    successors_deferred: int = 0
     #: Codes of what went wrong without undoing the run (``SEARCH_REFRESH_FAILED``).
     warnings: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
@@ -5949,7 +5965,9 @@ def _execute(
     # and read back; creation is never moved before the cohort.
     created = {p.source_id for p in new_plans if p.created_matter_id is not None}
     counted = {p.state.pk for p in changed}
+    restore_only = {p.state.pk for p in restoring}
     teemad_written = len(changed)
+    successors_deferred = 0
     if created and not hold:
         progress["stage"] = "successors"
         for index, plan in enumerate(final):
@@ -5959,16 +5977,23 @@ def _execute(
                 continue
             more = 0 if plan.state.pk in counted else 1
             if teemad_written + more > change_limit:
-                # Over the night's limit: it waits for the next run, as before.
+                # Over the night's limit: it waits for the next run, named as such.
+                _defer_successor(plan)
+                successors_deferred += 1
                 continue
             progress["affected"] = [plan.state.reference]
-            state = LovableSyncState.objects.select_related("matter").get(pk=plan.state.pk)
-            again = plan_matter(
-                state, bundle_of(snapshot, state.source_id), resolver=resolver, today=today
-            )
-            if not again.eligible:
-                continue
             try:
+                state = LovableSyncState.objects.select_related("matter").get(pk=plan.state.pk)
+                again = plan_matter(
+                    state, bundle_of(snapshot, state.source_id), resolver=resolver, today=today
+                )
+                if not again.eligible:
+                    # Still held (a cycle, another hold): its own reason is the record.
+                    final[index] = again
+                    continue
+                if hold_restores and all(d.reason == RESTORED for d in again.eligible):
+                    # Restores wait tonight (`RESTORE_BREAKER`), re-planned or not.
+                    continue
                 done = apply_matter(
                     again, run=run, snapshot=snapshot, resolver=resolver, today=today
                 )
@@ -5983,6 +6008,7 @@ def _execute(
                 continue
             teemad_written += more
             counted.add(plan.state.pk)
+            restore_only.discard(plan.state.pk)
             # What this Teema already wrote tonight stays its record.
             earlier = [d for d in plan.decisions if d.outcome == SyncOutcome.APPLIED]
             kept = {d.field for d in earlier}
@@ -6085,7 +6111,8 @@ def _execute(
         elif carried:
             counts.search_refreshed_carried = len(carried)
         counts.changed_source = teemad_written
-        counts.changed_restores = len(restoring)
+        counts.changed_restores = len(restore_only)
+        counts.successors_deferred = successors_deferred
         counts.restore_limit = restore_limit
         counts.standing_holds = standing_holds(final)
         if not check:

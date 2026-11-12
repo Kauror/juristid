@@ -88,6 +88,10 @@ LOVABLE_REASONS = {
         "suletakse jätkuna, kui järglane on olemas."
     ),
     "SUCCESSOR_AMBIGUOUS": "Lovable'i menetlusetappide seos nimetab mitu järglast või iseenda.",
+    "SUCCESSOR_DEFERRED_BY_BREAKER": (
+        "Järglane loodi täna, kuid selle teema sulgemine oleks ületanud öise piirangu; "
+        "järgmine käivitus viib selle lõpuni."
+    ),
     "CONTINUATION_CYCLE": (
         "Lovable'i menetlusetappide seosed viivad ringiga tagasi samale teemale; "
         "teema elukäiku ei muudetud."
