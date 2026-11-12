@@ -85,7 +85,8 @@ def _mode(mode: str) -> None:
 
 @pytest.fixture(autouse=True)
 def writing_sync(db):
-    """The lock is on only while the synchronisation writes (E9): APPLY here."""
+    """The lock is on while the synchronisation follows Lovable (E9): APPLY here;
+    the E9 tests switch to COMPARE, OFF and cutover themselves."""
     _mode(SyncMode.APPLY)
 
 
@@ -555,19 +556,82 @@ def test_mcp_writes_to_lovables_fields_are_refused_when_proposed(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("mode", [SyncMode.COMPARE, SyncMode.OFF])
-def test_nothing_is_locked_while_the_sync_does_not_write(mode, signed_in, synced, specialist):
-    """Regression: TL-01 (E9). In COMPARE or OFF no night restores: editable, no markers."""
+def test_the_lock_follows_lovable_in_compare_and_apply_only():
+    """Regression: TL-01/E9. The owner's rule (12.11): COMPARE and APPLY lock, OFF does not."""
+    assert set(source_ownership.FOLLOWING_MODES) == {SyncMode.COMPARE, SyncMode.APPLY}
+    assert set(source_ownership.FOLLOWING_MODES) <= set(SyncMode.values)
+
+
+def test_a_persons_edit_is_refused_while_the_sync_compares(
+    signed_in, synced, specialist, other_specialist
+):
+    """Regression: TL-01/E9. In COMPARE Lovable is still the source: read-only and marked."""
+    from app.matters.services import (
+        assign_matter,
+        change_stage,
+        matter_field_revision,
+        set_matter_title,
+    )
+    from tests.test_mcp_write_operations_support import refusal
+
+    _mode(SyncMode.COMPARE)
+    assert is_source_owned(synced)
+    page = _page(signed_in, "matters:matter_detail", synced)
+    assert 'data-source-owned="owner"' in page
+    assert _url("matters:update_field", synced, field="owner") not in page
+    with refused(refusal_message("title")):
+        set_matter_title(matter=synced, value="Juristi pealkiri", actor=specialist)
+    with refused(refusal_message("owner")):
+        assign_matter(matter=synced, owner=other_specialist, actor=specialist)
+    with refused(refusal_message("stage")):
+        change_stage(matter=synced, stage=_stage("parliament"), actor=specialist)
+    response = signed_in.post(
+        _url("matters:update_field", synced, field="owner"),
+        {"owner": str(other_specialist.pk), "revision": matter_field_revision(synced, "owner")},
+    )
+    assert response.status_code == 400
+    assert escape(refusal_message("owner")) in response.content.decode()
+    found = refusal("update_matter", specialist, matter=str(synced.pk), title="Uus pealkiri")
+    assert (found.code, str(found)) == ("domain_rule", refusal_message("title"))
+    synced.refresh_from_db()
+    assert (synced.owner, synced.stage.key) == (specialist, "government")
+    assert synced.title != "Juristi pealkiri"
+
+
+def test_while_comparing_the_sync_writes_and_a_held_field_stays_editable(
+    synced, specialist, other_specialist
+):
+    """Regression: TL-01/E9. In COMPARE no actor is refused, and E11 holds still free a field."""
+    from app.matters.services import assign_matter, set_matter_title
+
+    _mode(SyncMode.COMPARE)
+    set_matter_title(matter=synced, value="Lovable'i pealkiri", actor=None)
+    synced.refresh_from_db()
+    assert synced.title == "Lovable'i pealkiri"
+    _hold(synced, "owner")
+    assert source_ownership.ownership(synced).held == {"owner"}
+    assign_matter(matter=synced, owner=other_specialist, actor=specialist)
+    with refused(refusal_message("title")):
+        set_matter_title(matter=synced, value="Juristi pealkiri", actor=specialist)
+
+
+@pytest.mark.parametrize("state", ["paused", "cut_over"])
+def test_nothing_is_locked_when_paused_or_after_cutover(state, signed_in, synced, specialist):
+    """TL-01 (E9). OFF — never activated or paused — and cutover lock nothing (E9's exception)."""
     from app.matters.services import set_matter_title
 
-    _mode(mode)
+    if state == "paused":
+        _mode(SyncMode.OFF)
+    else:
+        lovable_sync.cut_over(reason="test")
     page = _page(signed_in, "matters:matter_detail", synced)
     assert "data-source-owned=" not in page
     assert _url("matters:update_field", synced, field="owner") in page
     set_matter_title(matter=synced, value="Juristi pealkiri", actor=specialist)
-    _mode(SyncMode.APPLY)
-    with refused(refusal_message("title")):
-        set_matter_title(matter=synced, value="Teine", actor=specialist)
+    if state == "paused":
+        _mode(SyncMode.COMPARE)
+        with refused(refusal_message("title")):
+            set_matter_title(matter=synced, value="Teine", actor=specialist)
 
 
 def _hold(matter: Any, field: str, reason: str = lovable_sync.UNRESOLVED_OWNER) -> None:
