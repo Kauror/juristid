@@ -267,7 +267,7 @@ def test_a_reader_is_refused_exactly_as_before(client, reader, synced, native, o
     statuses = {
         client.post(
             _url("matters:update_field", matter, field="owner"),
-            {"owner": str(other_specialist.pk), "revision": matter_field_revision(synced, "owner")},
+            {"owner": str(other_specialist.pk)},
         ).status_code
         for matter in (synced, native)
     }
