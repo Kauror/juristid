@@ -8,6 +8,9 @@ maintained in the same transaction as the change.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import date
 from typing import Any, cast
 
@@ -685,8 +688,11 @@ def cancel_next_action(
         from app.matters.source_ownership import refuse_source_owned_change
 
         # The current step is Lovable's on a synchronised Teema (TL-01); an
-        # opinion follow-up check and a planned row are Juristid's own.
-        refuse_source_owned_change(action.matter, "next_action", actor=actor)
+        # opinion follow-up check and a planned row are Juristid's own. Ending
+        # it inside a closure Lovable asked for and Juristid held is not a
+        # person's change of it (`_ending_for_lovable_closure`, TL-02 D1).
+        if action.matter_id not in _LOVABLE_CLOSURE_IN_PROGRESS.get():
+            refuse_source_owned_change(action.matter, "next_action", actor=actor)
 
     action.status = ActionStatus.CANCELLED
     action.ended_at = timezone.now()
@@ -716,6 +722,29 @@ def cancel_next_action(
         payload=payload,
     )
     return action
+
+
+#: Matters whose closure, now in progress in this context, is one Lovable itself
+#: asked for and Juristid had held (TL-02, rehearsal 2 D1). Internal: set only
+#: by `app.matters.services._close_matter` around the live work it ends, never
+#: a keyword any caller can pass (review P3-3).
+_LOVABLE_CLOSURE_IN_PROGRESS: ContextVar[frozenset[Any]] = ContextVar(
+    "lovable_closure_in_progress", default=frozenset()
+)
+
+
+@contextmanager
+def _ending_for_lovable_closure(matter_id: Any) -> Iterator[None]:
+    """Inside a hold-sanctioned closure of ``matter_id`` — a release, or the
+    lawyer's own closure while Lovable's closure is held for Juristid-only work
+    — ending Lovable's current step is part of what Lovable asked for, so the
+    step lock (TL-01) does not refuse it. Only the step-ending this closure
+    does; a person's own edit or cancel of the step stays refused."""
+    token = _LOVABLE_CLOSURE_IN_PROGRESS.set(_LOVABLE_CLOSURE_IN_PROGRESS.get() | {matter_id})
+    try:
+        yield
+    finally:
+        _LOVABLE_CLOSURE_IN_PROGRESS.reset(token)
 
 
 @transaction.atomic
