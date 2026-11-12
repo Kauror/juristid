@@ -31,7 +31,15 @@ from app.audit.models import ChangeEvent
 from app.intelligence.models import MatterEffectiveDate
 from app.legacy_import import lovable_sync
 from app.legacy_import.lovable_pilot import REGISTER_COHORT
-from app.legacy_import.lovable_sync_models import LovableSyncCohort, LovableSyncState
+from app.legacy_import.lovable_sync_models import (
+    LovableSyncCohort,
+    LovableSyncControl,
+    LovableSyncDecision,
+    LovableSyncRun,
+    LovableSyncState,
+    SyncMode,
+    SyncOutcome,
+)
 from app.matters import source_ownership
 from app.matters.source_ownership import (
     GUARD_KEYS,
@@ -69,6 +77,16 @@ def _teema(owner: Any, *, synced: bool) -> Any:
     if synced:
         _synchronise(matter)
     return matter
+
+
+def _mode(mode: str) -> None:
+    LovableSyncControl.objects.update_or_create(pk=1, defaults={"mode": mode})
+
+
+@pytest.fixture(autouse=True)
+def writing_sync(db):
+    """The lock is on only while the synchronisation writes (E9): APPLY here."""
+    _mode(SyncMode.APPLY)
 
 
 @pytest.fixture
@@ -143,7 +161,6 @@ _DETAIL_EDITORS = {
     "owner": ("matters:update_field", {"field": "owner"}),
     "stage": ("matters:update_field", {"field": "stage"}),
     "received": ("matters:update_field", {"field": "received_date"}),
-    "opinion_deadline": ("matters:response_deadline", {}),
     "next_action": ("matters:complete_current_action", {}),
     "close": ("matters:close_from_workspace", {}),
 }
@@ -163,15 +180,18 @@ def test_the_teema_page_marks_lovables_fields_and_offers_no_editor(signed_in, sy
     """Regression: TL-01. Every source-owned field on the Teema page: marker, no editor."""
     page = _page(signed_in, "matters:matter_detail", synced)
     assert escape(SOURCE_OWNED_NOTICE) in page
-    for key in ("title", *_DETAIL_EDITORS):
+    for key in ("title", "opinion_deadline", *_DETAIL_EDITORS):
         assert f'data-source-owned="{key}"' in page, key
     for key, (name, kwargs) in _DETAIL_EDITORS.items():
         assert _url(name, synced, **kwargs) not in page, key
+    assert 'name="response_deadline"' not in page
     # «Muuda» and the stage moves of `✓ Tehtud` are behind the same toolbar.
     assert _url("matters:set_action", synced) not in page
 
     page = _page(signed_in, "matters:matter_detail", native)
     assert escape(SOURCE_OWNED_NOTICE) not in page
+    # The header's date editor; on a locked Teema only «Lõpeta tähtaeg» as answered (E5).
+    assert 'name="response_deadline"' in page
     assert "data-source-owned=" not in page
     for key, (name, kwargs) in _DETAIL_EDITORS.items():
         assert _url(name, native, **kwargs) in page, key
@@ -528,3 +548,173 @@ def test_mcp_writes_to_lovables_fields_are_refused_when_proposed(
         what_was_done="Tehtud.",
     )
     assert (found.code, str(found)) == ("domain_rule", refusal_message("next_action"))
+
+
+# ---------------------------------------------------------------------------
+# Review round 12.11: the mode, open holds, every completion door, the answer
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", [SyncMode.COMPARE, SyncMode.OFF])
+def test_nothing_is_locked_while_the_sync_does_not_write(mode, signed_in, synced, specialist):
+    """Regression: TL-01 (E9). In COMPARE or OFF no night restores: editable, no markers."""
+    from app.matters.services import set_matter_title
+
+    _mode(mode)
+    page = _page(signed_in, "matters:matter_detail", synced)
+    assert "data-source-owned=" not in page
+    assert _url("matters:update_field", synced, field="owner") in page
+    set_matter_title(matter=synced, value="Juristi pealkiri", actor=specialist)
+    _mode(SyncMode.APPLY)
+    with refused(refusal_message("title")):
+        set_matter_title(matter=synced, value="Teine", actor=specialist)
+
+
+def _hold(matter: Any, field: str, reason: str = lovable_sync.UNRESOLVED_OWNER) -> None:
+    state = LovableSyncState.objects.get(matter=matter)
+    run = LovableSyncRun.objects.create(
+        run_key=f"test-{uuid.uuid4().hex[:12]}",
+        trigger="MANUAL",
+        mode=SyncMode.APPLY,
+        started_at=timezone.now(),
+        mapping_version="test",
+    )
+    LovableSyncDecision.objects.create(
+        run=run, state=state, field=field, outcome=SyncOutcome.REVIEW_REQUIRED, reason=reason
+    )
+    LovableSyncState.objects.filter(pk=state.pk).update(observed_run=run)
+
+
+def test_a_field_under_an_open_hold_stays_editable_and_says_why(
+    signed_in, synced, specialist, other_specialist
+):
+    """Regression: TL-01 (E11). The night never restores over a technical hold."""
+    from app.matters.services import assign_matter, set_matter_title
+
+    _hold(synced, "owner")
+    page = _page(signed_in, "matters:matter_detail", synced)
+    assert "data-source-held" in page and "vastutaja" in page
+    assert 'data-source-owned="owner"' not in page
+    assert _url("matters:update_field", synced, field="owner") in page
+    assign_matter(matter=synced, owner=other_specialist, actor=specialist)
+    with refused(refusal_message("title")):
+        set_matter_title(matter=synced, value="Uus", actor=specialist)
+    # A hold that is not a technical one frees nothing.
+    _hold(synced, "title", reason="SOMETHING_ELSE")
+    with refused(refusal_message("title")):
+        set_matter_title(matter=synced, value="Uus", actor=specialist)
+
+
+def test_every_completion_door_refuses_lovables_step(synced, specialist, organisation):
+    """Regression: TL-01. The tick box on a round and on an opinion, and the core services."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from app.matters.enums import EngagementKind
+    from app.matters.services import add_engagement
+    from app.matters.workspace import add_engagement_feedback, add_matter_koda_opinion
+    from app.submissions.models import Submission
+    from app.workflow.services import cancel_next_action, complete_next_action
+
+    step = NextAction.objects.get(matter=synced, status=ActionStatus.OPEN)
+    today = timezone.localdate()
+    engagement = add_engagement(
+        matter=synced,
+        kind=EngagementKind.SURVEY,
+        title="liikmed",
+        occurred_on=today - dt.timedelta(days=1),
+        feedback_deadline=today + dt.timedelta(days=7),
+        actor=specialist,
+    )
+    with refused(refusal_message("next_action")):
+        add_engagement_feedback(
+            engagement=engagement, author=specialist, complete_action_id=step.pk
+        )
+    with refused(refusal_message("next_action")):
+        add_matter_koda_opinion(
+            matter=synced,
+            author=specialist,
+            upload=SimpleUploadedFile("Koja_arvamus.pdf", b"%PDF-1.4 arvamus"),
+            recipients=[organisation],
+            sent_on=today,
+            complete_action_id=step.pk,
+        )
+    assert not Submission.objects.filter(matter=synced).exists()
+    with refused(refusal_message("next_action")):
+        complete_next_action(action=step, actor=specialist)
+    with refused(refusal_message("next_action")):
+        cancel_next_action(action=step, actor=specialist)
+    # Unticked, both are Juristid's own and save.
+    engagement.refresh_from_db()
+    add_engagement_feedback(engagement=engagement, author=specialist)
+    add_matter_koda_opinion(
+        matter=synced,
+        author=specialist,
+        upload=SimpleUploadedFile("Koja_arvamus.pdf", b"%PDF-1.4 arvamus"),
+        recipients=[organisation],
+        sent_on=today,
+    )
+    step.refresh_from_db()
+    assert step.status == ActionStatus.OPEN
+
+
+def test_a_planned_row_is_not_promoted_into_lovables_place(synced, specialist):
+    """Regression: TL-01 (E12). A person's planned row stays planned on a locked Teema."""
+    from app.workflow.services import promote_next_planned_action
+
+    NextAction.objects.filter(matter=synced).update(status=ActionStatus.CANCELLED)
+    planned = factories.NextActionFactory(
+        matter=synced, status=ActionStatus.PLANNED, target_date=dt.date(2099, 5, 1)
+    )
+    assert promote_next_planned_action(matter=synced, actor=specialist) is None
+    planned.refresh_from_db()
+    assert planned.status == ActionStatus.PLANNED
+    assert promote_next_planned_action(matter=synced, actor=None) is not None
+
+
+def test_the_tick_box_is_not_offered_on_a_locked_teema(signed_in, synced, native):
+    """Regression: TL-01. «Märgi praegune tegevus tehtuks» is not drawn on a locked Teema."""
+    box = "id_koja_arvamus_tegevus_tehtud"
+    assert box not in _page(signed_in, "matters:matter_detail", synced)
+    assert box in _page(signed_in, "matters:matter_detail", native)
+
+
+def test_a_lawyer_records_koda_ei_esita_arvamust(signed_in, synced):
+    """Regression: TL-01 (E5). «Lõpeta tähtaeg» stays, limited to answered or declined."""
+    from app.matters.response_deadlines import deadline_revision
+
+    page = _page(signed_in, "matters:matter_detail", synced)
+    assert "data-deadline-answer" in page
+    answer = page[page.index("data-deadline-answer") :]
+    answer = answer[: answer.index("</details>")]
+    assert 'value="NOT_ANSWERING"' in answer and 'value="CANCELLED"' not in answer
+    assert 'name="response_deadline"' not in answer
+    response = signed_in.post(
+        _url("matters:response_deadline", synced),
+        {
+            "tegevus": "lopeta",
+            "previous_outcome": "NOT_ANSWERING",
+            "revision": deadline_revision(synced),
+        },
+    )
+    assert response.status_code == 200, response.content.decode()[:500]
+    synced.refresh_from_db()
+    assert synced.response_deadline is None
+
+
+def test_the_legal_instruments_other_text_is_lovables_too(synced, specialist):
+    """Regression: TL-01. The Õigusakt «Muu» text is part of the Õigusakt."""
+    from app.matters.services import set_legal_instrument_other
+
+    with refused(refusal_message("legal_act")):
+        set_legal_instrument_other(matter=synced, value="Muu akt", actor=specialist)
+
+
+def test_a_title_longer_than_the_cap_is_no_change(synced, specialist):
+    """Regression: TL-01. A stored title only the cap would shorten is not refused as a change."""
+    from app.matters.models import Matter
+    from app.matters.services import set_matter_title
+
+    long = "P" * 1200
+    Matter.objects.filter(pk=synced.pk).update(title=long)
+    synced.refresh_from_db()
+    set_matter_title(matter=synced, value=long, actor=specialist)

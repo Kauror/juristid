@@ -44,10 +44,7 @@ from app.matters.models import Matter, MatterResponseDeadline
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
-from tests.source_ownership_support import (  # noqa: F401 - autouse
-    divergence_from_before_the_lock,
-    lock_lifted_for_the_engine_tests,
-)
+from tests.source_ownership_support import divergence_from_before_the_lock
 from tests.test_lovable_pilot import _apply, _package, pilot_on, world  # noqa: F401
 from tests.test_lovable_sync import _decisions, _matter, _run
 from tests.test_ls_b_engine import Source, _drafting, _id, _register_topic, _row, _step
@@ -59,6 +56,15 @@ TALLINN = lovable_sync.TALLINN
 NIGHT = dt.datetime(2026, 11, 12, 0, 15, tzinfo=TALLINN)
 HOUR = dt.timedelta(hours=1)
 REQUEST = "2099-11-04"  # the import's open request / drafting day (see the docstring)
+
+
+@pytest.fixture
+def request_edits_from_before_the_lock():
+    """These tests move, replace and answer Lovable's request as a person — which
+    the TL-01 lock now refuses in APPLY except answering — to pin what the night
+    does with a request history made before the lock. Lifted for these alone."""
+    with divergence_from_before_the_lock():
+        yield
 
 
 def _at(n: int) -> dt.datetime:
@@ -487,6 +493,26 @@ def test_a_source_change_overwrites_a_local_divergence(reference):
     assert NextAction.objects.get(matter=m232, text="Helistan ministeeriumi").status == (
         ActionStatus.SUPERSEDED
     )
+
+
+def test_an_apply_night_writes_through_the_lock_a_person_meets(reference):
+    """Regression: TL-01. Un-patched: in APPLY a person's edit of a Lovable field is
+    refused, and the night still writes Lovable's change through the same services."""
+    from app.matters.services import set_matter_title
+    from app.matters.source_ownership import refusal_message
+    from tests.refusals import refused
+
+    _run(reference, at=_at(0))
+    assert lovable_sync.control().mode == SyncMode.APPLY
+    with refused(refusal_message("title")):
+        set_matter_title(
+            matter=_matter("2026_232"), value="Juristi pealkiri", actor=reference["world"]["jaan"]
+        )
+    reference["source"].edit("2026_232", teema="Lovable'i uus pealkiri")
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert _decisions(run, "2026_232")["title"].outcome == SyncOutcome.APPLIED
+    assert _matter("2026_232").title == "Lovable'i uus pealkiri"
 
 
 def test_a_local_title_is_restored_while_the_source_is_unchanged(reference):
@@ -1746,6 +1772,7 @@ def test_lovables_own_request_moved_by_lovable_with_an_earlier_send_is_answered(
     assert ended.note.startswith("Lovable'i järgi saadetud")
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_lovables_request_moved_by_a_person_is_answered_by_an_earlier_send(reference):
     """P2-1 probe B: a person moved Lovable's request (MOVED keeps its
     `requested_at`); Lovable then records an earlier send — ANSWERED, no false note."""
@@ -1767,6 +1794,7 @@ def test_lovables_request_moved_by_a_person_is_answered_by_an_earlier_send(refer
     assert "enne seda küsimist" not in ended.note
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_a_request_moved_and_answered_by_a_person_is_still_lovables_request(reference):
     """P2-2: a person moved Lovable's request (11.04 → 12.24) and answered it:
     the chain holds Lovable's day — held, never a second consultation."""
@@ -1837,6 +1865,7 @@ def _replace_and_answer(reference: dict[str, Any], previous_outcome: str) -> Non
     )
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_a_request_set_again_after_juristids_answer_follows_whether_lovable_changed(reference):
     """4e P3-2 as amended in 4f: a person replaced Lovable's request (SUPERSEDED,
     not answered) and answered their own. Lovable unchanged: Lovable's request
@@ -1850,6 +1879,7 @@ def test_a_request_set_again_after_juristids_answer_follows_whether_lovable_chan
     assert _matter("2026_253").response_deadline == dt.date.fromisoformat(REQUEST)
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_lovables_request_answered_then_replaced_and_answered_is_held(reference):
     """4f P2-A probe B: REPLACED with previous_outcome=ANSWERED — Lovable's own
     request was answered in Juristid; the later answer must not hide it."""
@@ -1864,6 +1894,7 @@ def test_lovables_request_answered_then_replaced_and_answered_is_held(reference)
     assert _matter("2026_253").response_deadline is None
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_lovables_request_answered_then_a_fresh_one_answered_is_held(reference):
     """4f P2-A probe A: Juristid answered Lovable's request, then asked and
     answered a fresh request of its own: still held, no second consultation."""
@@ -1915,6 +1946,7 @@ def test_the_first_night_without_a_recorded_identity_falls_back_to_the_dates(ref
             assert lovable_sync.REQUESTED_AT in state.applied["opinion_deadline"], state.reference
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_the_sent_path_ends_only_lovables_own_request(reference):
     """4f P3-3 / P3-2: Lovable records the send for its request day, but the
     current request on that day is a fresh one of Juristid's (REPLACED, then
@@ -1950,6 +1982,7 @@ def test_the_sent_path_ends_only_lovables_own_request(reference):
     ).exists()
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_a_legacy_moved_request_keeps_its_whole_chain(reference):
     """4f P3-4: a request with no `requested_at`, moved and then answered: the
     MOVED rows lead back to Lovable's day, so it is held."""

@@ -22,6 +22,11 @@ audit trail requires it); the synchronisation writes with no actor and its
 importers that create and rebase these Teemas. There is no keyword a caller
 passes to be let through.
 
+**When.** Only while the synchronisation writes (APPLY): in COMPARE or OFF no
+night would put an edit back, so nothing is locked (`Ownership.active`). And
+never a field the night holds with an open technical hold — it is not
+«restored over» — which stays editable, with a note why (`Ownership.held`).
+
 **What stays editable** is everything Lovable does not own: notes, documents,
 submissions and opinions, evidence, a person's own important and commencement
 dates, planned Tegevused beside the current step, related materials, the
@@ -36,6 +41,7 @@ summary on a synchronised Teema.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 from app.core.errors import DomainError
@@ -107,17 +113,121 @@ def refusal_message(key: str) -> str:
     return f"{_REFUSED[key]} {SOURCE_OWNED_NOTICE}"
 
 
-def is_source_owned(matter: Any) -> bool:
-    """Whether Lovable owns this Teema's source fields: a live Teema with a
+#: Guard keys → the synchronisation's fields whose open technical hold frees them.
+HOLD_FIELDS: dict[str, tuple[str, ...]] = {
+    "title": ("title",),
+    "owner": ("owner",),
+    "stage": ("stage", "continuation"),
+    "close": ("stage", "continuation"),
+    "reopen": ("stage", "continuation"),
+    "next_action": ("next_action_text", "next_action_date"),
+    "opinion_deadline": ("opinion_deadline",),
+    "track": ("koda_initiative",),
+    "legal_act": ("legal_act",),
+    "received": ("received",),
+    "commencement": ("commencements",),
+}
+#: How a field under an open hold is named in the page's note.
+HELD_LABELS: dict[str, str] = {
+    "title": "pealkiri",
+    "owner": "vastutaja",
+    "stage": "hetkeseis",
+    "close": "lõpetamine",
+    "reopen": "uuesti avamine",
+    "next_action": "praegune tegevus",
+    "opinion_deadline": "arvamuse tähtaeg",
+    "track": "Koja ettepanek",
+    "legal_act": "õigusakt",
+    "received": "saabumine",
+    "commencement": "jõustumised",
+}
+
+
+@dataclass(frozen=True)
+class Ownership:
+    """What Lovable owns on one Teema now.
+
+    ``active`` — the Teema is synchronised **and the synchronisation writes**
+    (`LovableSyncControl.mode` is APPLY). In COMPARE or OFF nothing would put
+    Lovable's value back over an edit, so nothing is locked; when APPLY resumes,
+    an edit made meanwhile is restored that night (docs/open-decisions.md E9).
+
+    ``held`` — guard keys whose field the night holds with an open technical
+    hold (`lovable_sync.TECHNICAL_HOLDS`) on its latest reading: it is never
+    «restored over», so a person may change it here until the hold clears."""
+
+    active: bool = False
+    held: frozenset[str] = frozenset()
+
+    def locks(self, key: str) -> bool:
+        return self.active and key not in self.held
+
+    @property
+    def locked(self) -> dict[str, bool]:
+        """Per guard key, for the templates (`source_locked.owner`)."""
+        return {key: self.locks(key) for key in GUARD_KEYS}
+
+    @property
+    def held_note(self) -> str:
+        """The one line that says why a held field is editable, or ``""``."""
+        if not self.active or not self.held:
+            return ""
+        names = ", ".join(HELD_LABELS[key] for key in GUARD_KEYS if key in self.held)
+        return f"Lovable'i väärtus on ootel, seega saab siin praegu muuta: {names}."
+
+
+NOT_OWNED = Ownership()
+
+
+def ownership(matter: Any) -> Ownership:
+    """Whether Lovable owns this Teema's source fields now: a live Teema with a
     synchronisation state in a cohort that is not retired — exactly the Teemad
-    the nightly run follows (`lovable_sync.population`, `is_authoritative`)."""
+    the nightly run follows (`lovable_sync.population`, `is_authoritative`) —
+    while the synchronisation is in APPLY. One query, and a second only for a
+    Teema that is owned (its open holds)."""
     pk = getattr(matter, "pk", None)
     if pk is None or getattr(matter, "deleted_at", None) is not None:
-        return False
-    from app.legacy_import.lovable_sync_models import LovableSyncCohort, LovableSyncState
+        return NOT_OWNED
+    from django.db.models import Exists
+
+    from app.legacy_import.lovable_sync_models import (
+        LovableSyncCohort,
+        LovableSyncControl,
+        LovableSyncDecision,
+        LovableSyncState,
+        SyncMode,
+        SyncOutcome,
+    )
 
     retired = LovableSyncCohort.objects.filter(retired_at__isnull=False).values("key")
-    return LovableSyncState.objects.filter(matter_id=pk).exclude(cohort__in=retired).exists()
+    writing = LovableSyncControl.objects.filter(pk=1, mode=SyncMode.APPLY, cut_over=False)
+    state = (
+        LovableSyncState.objects.filter(Exists(writing), matter_id=pk)
+        .exclude(cohort__in=retired)
+        .values("pk", "observed_run_id")
+        .first()
+    )
+    if state is None:
+        return NOT_OWNED
+    held: frozenset[str] = frozenset()
+    if state["observed_run_id"] is not None:
+        from app.legacy_import.lovable_sync import TECHNICAL_HOLDS
+
+        fields = set(
+            LovableSyncDecision.objects.filter(
+                state_id=state["pk"],
+                run_id=state["observed_run_id"],
+                outcome=SyncOutcome.REVIEW_REQUIRED,
+                reason__in=list(TECHNICAL_HOLDS),
+            ).values_list("field", flat=True)
+        )
+        held = frozenset(key for key, names in HOLD_FIELDS.items() if fields & set(names))
+    return Ownership(active=True, held=held)
+
+
+def is_source_owned(matter: Any) -> bool:
+    """Whether Lovable owns this Teema's source fields now (`ownership`)."""
+    return ownership(matter).active
 
 
 def _is_person(actor: Any) -> bool:
@@ -125,16 +235,18 @@ def _is_person(actor: Any) -> bool:
 
 
 def refuse_source_owned_change(matter: Any, key: str, *, actor: Any) -> None:
-    """Refuse a person's change of ``key`` on a synchronised Teema.
+    """Refuse a person's change of ``key`` on a Teema Lovable owns now.
 
     Called by each guarded service **after** its own «nothing changed» return,
-    so only a real change is refused. A call with no person (the
-    synchronisation, an importer) is never refused here."""
+    so only a real change is refused. A call with no person — the
+    synchronisation, an importer, an operator's management command
+    (`lovable_sync`, `lovable_pilot`, the register tools), each of which writes
+    with no actor and its own provenance — is never refused here."""
     if key not in _REFUSED:
         raise ValueError(f"Unknown source-owned field {key!r}.")
     if not _is_person(actor):
         return
-    if is_source_owned(matter):
+    if ownership(matter).locks(key):
         raise SourceOwnedRefusal(key)
 
 
@@ -169,7 +281,7 @@ def refuse_lovable_commencement_change(record: Any, *, actor: Any) -> None:
     on a synchronised Teema; a person's own commencement stays theirs."""
     if not _is_person(actor):
         return
-    if is_source_owned(record.matter) and is_lovable_commencement(record):
+    if ownership(record.matter).locks("commencement") and is_lovable_commencement(record):
         raise SourceOwnedRefusal("commencement")
 
 

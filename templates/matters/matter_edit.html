@@ -134,7 +134,7 @@
         {% if form.title.errors %}<span class="field__error" id="{{ form.title.auto_id }}_error">{{ form.title.errors|first }}</span>{% endif %}
       </label>
       {# Beside the label, never in it: a button inside would become what the label names. #}
-      {% if form.source_owned %}{% include "components/source_owned_tip.html" with field="title" %}{% endif %}
+      {% if form.source_locked.title %}{% include "components/source_owned_tip.html" with field="title" %}{% endif %}
     </div>
 
     {# 2 — What it is about. #}
@@ -187,14 +187,14 @@
           <span class="field__error" id="{{ form.received_date.auto_id }}_error">{{ form.received_date.errors|first }}</span>
         {% endif %}
       </label>
-      {% if form.source_owned %}{% include "components/source_owned_tip.html" with field="received" %}{% endif %}
+      {% if form.source_locked.received %}{% include "components/source_owned_tip.html" with field="received" %}{% endif %}
     </div>
 
     {# 4 — Who owns it, and who it came from. #}
     <div class="createform__row createform__pair createform__pair--people">
       <fieldset class="field">
         <legend class="field__label">{% field_label form.owner %}</legend>
-        {% if form.source_owned %}{% include "components/source_owned_tip.html" with field="owner" %}{% endif %}
+        {% if form.source_locked.owner %}{% include "components/source_owned_tip.html" with field="owner" %}{% endif %}
         <div class="chiprow">
           {% for choice in form.owner %}
             <label class="chip">
@@ -292,8 +292,8 @@
           <span class="field__error" id="{{ form.response_deadline.auto_id }}_error">{{ form.response_deadline.errors|first }}</span>
         {% endif %}
       </label>
-      {% if form.source_owned %}{% include "components/source_owned_tip.html" with field="opinion_deadline" %}{% endif %}
-      {% if matter.response_deadline and not form.source_owned %}
+      {% if form.source_locked.opinion_deadline %}{% include "components/source_owned_tip.html" with field="opinion_deadline" %}{% endif %}
+      {% if matter.response_deadline and not form.source_locked.opinion_deadline %}
         {% include "matters/partials/response_deadline_fields.html" with prefix="muuda-tahtaeg" %}
       {% endif %}
     </div>

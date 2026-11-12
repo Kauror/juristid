@@ -891,6 +891,10 @@ def add_engagement_feedback(
             locked_matter=lock_open_matter_for_business_write(engagement.matter_id),
             action_id=complete_action_id,
         )
+        if named.follow_up_id is None:
+            # The step is Lovable's on a synchronised Teema (TL-01): refused
+            # before the round is finished; unticked, the round saves.
+            refuse_source_owned_change(named.matter, "next_action", actor=author)
     with composer_operation():
         completed = complete_engagement_feedback(
             engagement=engagement,
@@ -1702,6 +1706,11 @@ def add_matter_koda_opinion(
         if complete_action_id is not None
         else None
     )
+    if named is not None and named.follow_up_id is None:
+        # «Märgi praegune tegevus tehtuks» finishes Lovable's step on a
+        # synchronised Teema (audit 2026-11-11 TL-01): refused before the send
+        # writes anything. The opinion itself is Juristid's and saves unticked.
+        refuse_source_owned_change(locked_matter, "next_action", actor=author)
     # **A send that also ends the Matter** (a terminal `Uus hetkeseis`) closes
     # a file that, from this save on, has a check on this very opinion — and
     # perhaps checks on earlier ones. The closure cancels them all, so the save

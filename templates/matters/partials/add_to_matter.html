@@ -133,7 +133,7 @@ row of controls that refuse (brief §30, §31).
           {% include "matters/partials/planned_action_form.html" with form=planned_action_form submit_label="Salvesta" %}
         </div>
       </div>
-    {% elif source_owned %}
+    {% elif source_locked.next_action %}
       {% comment %}
         No step on a synchronised Teema means Lovable's `järgmiseks` is blank,
         and a blank there is still Lovable's answer: a step set here was
@@ -261,7 +261,7 @@ row of controls that refuse (brief §30, §31).
             set, moved and cleared in the header (docs/adr/0151, amendment of
             2026-10-13).
           {% endcomment %}
-          {% if not koda_initiative and not source_owned %}
+          {% if not koda_initiative and not source_locked.opinion_deadline %}
           <input class="addpick" type="radio" name="marke-liik" id="marge-arvamuse-tahtaeg-valik"
                  data-addpick aria-controls="marge-arvamuse-tahtaeg"
                  {% if marge_choice == "marge-arvamuse-tahtaeg" %}checked{% endif %}>
@@ -330,7 +330,7 @@ row of controls that refuse (brief §30, §31).
       amendment of 2026-10-25). Last and apart, because it ends rather than
       adds; this whole section renders only for a writer on an open Matter.
     {% endcomment %}
-    {% if source_owned %}
+    {% if source_locked.close %}
       {% comment %}
         A synchronised Teema is closed in Lovable (audit 2026-11-11 TL-01): a
         closure here was reopened at night and its `Järglane` dropped.

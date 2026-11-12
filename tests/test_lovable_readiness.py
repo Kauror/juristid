@@ -29,7 +29,6 @@ from tests.lovable_observability_support import (
     row_counts,
     write_statements,
 )
-from tests.source_ownership_support import lock_lifted_for_the_engine_tests  # noqa: F401 - autouse
 
 pytestmark = pytest.mark.django_db
 

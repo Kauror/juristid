@@ -307,8 +307,8 @@ from app.matters.source_ownership import (
     NO_SOURCE_STEP_NOTE,
     SOURCE_OWNED_NOTICE,
     SOURCE_OWNED_TIP,
-    is_source_owned,
     lovable_commencement_ids,
+    ownership,
 )
 from app.matters.stage_episodes import (
     episodes_of,
@@ -3993,14 +3993,20 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # is changed, and the services refuse it anyway
     # (`app.matters.source_ownership`). Read once, here, because the header,
     # the rail and `PRAEGUNE TEGEVUS` all ask.
-    source_owned = is_source_owned(matter)
+    own = ownership(matter)
     return {
         "matter": matter,
-        "source_owned": source_owned,
+        "source_owned": own.active,
+        # Per field: what is locked now (a field under an open hold is not),
+        # and the line that says why a held one is editable.
+        "source_locked": own.locked,
+        "source_held_note": own.held_note,
         "source_owned_notice": SOURCE_OWNED_NOTICE,
         "source_owned_tip": SOURCE_OWNED_TIP,
         "no_source_step_note": NO_SOURCE_STEP_NOTE,
-        "lovable_commencement_ids": lovable_commencement_ids(matter, source_owned=source_owned),
+        "lovable_commencement_ids": lovable_commencement_ids(
+            matter, source_owned=own.locks("commencement")
+        ),
         # The open tab, which the header's tab bar marks (`aria-current`, the
         # underline). The header is redrawn by every inline edit and by saves
         # that send it out of band, and an answer drawn without this left both
@@ -4138,7 +4144,7 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # service refuses any other move — so the closed header states the
         # stage rather than inviting a save that can only be refused. Not
         # `can_write` itself: other corrections on a closed file stay allowed.
-        "can_change_stage": can_write and matter.is_open and not source_owned,
+        "can_change_stage": can_write and matter.is_open and not own.locks("stage"),
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over. Each opinion file with the
         # send that tells it apart and its working documents (docs/adr/0129 §9).

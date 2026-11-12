@@ -2246,14 +2246,18 @@ class MatterEditForm(
         # cannot move it and the save writes the value the Teema holds — the
         # shape `owner` takes above without `work.assign`. The services refuse
         # a change anyway (`app.matters.source_ownership`).
-        from app.matters.source_ownership import is_source_owned
+        from app.matters.source_ownership import NOT_OWNED, ownership
 
-        self.source_owned = matter is not None and is_source_owned(matter)
-        if self.source_owned and matter is not None:
+        own = ownership(matter) if matter is not None else NOT_OWNED
+        self.source_owned = own.active
+        #: Per guard key: what is locked now — a field under an open hold is not.
+        self.source_locked = own.locked
+        if own.active and matter is not None:
             current = edit_initial(matter)
-            for name in SOURCE_OWNED_EDIT_FIELDS:
-                self.fields[name].disabled = True
-                self.initial[name] = current[name]
+            for name, key in SOURCE_OWNED_EDIT_FIELDS.items():
+                if own.locks(key):
+                    self.fields[name].disabled = True
+                    self.initial[name] = current[name]
 
     def clean(self) -> dict[str, Any]:
         cleaned = super().clean() or {}
@@ -2281,17 +2285,17 @@ class MatterEditForm(
         return value
 
 
-#: `MatterEditForm` fields Lovable owns on a synchronised Teema (audit
-#: 2026-11-11 TL-01, `source_ownership.POLICY_SURFACES`).
-SOURCE_OWNED_EDIT_FIELDS = (
-    "title",
-    "owner",
-    "stage",
-    "received_date",
-    "response_deadline",
-    "legal_instruments",
-    "legal_instrument_other",
-)
+#: `MatterEditForm` fields Lovable owns on a synchronised Teema → their guard
+#: key (audit 2026-11-11 TL-01, `source_ownership.POLICY_SURFACES`).
+SOURCE_OWNED_EDIT_FIELDS = {
+    "title": "title",
+    "owner": "owner",
+    "stage": "stage",
+    "received_date": "received",
+    "response_deadline": "opinion_deadline",
+    "legal_instruments": "legal_act",
+    "legal_instrument_other": "legal_act",
+}
 
 
 def held_legal_instruments_initial(matter: Matter) -> list[Any]:

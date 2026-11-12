@@ -56,7 +56,6 @@ from app.submissions.models import Submission
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from tests import factories
-from tests.source_ownership_support import lock_lifted_for_the_engine_tests  # noqa: F401 - autouse
 from tests.test_lovable_operational_cohort import _pilot_dump
 from tests.test_lovable_operational_import import BACKUP, _active_package, _sid
 from tests.test_lovable_operational_import import _apply as _apply_package

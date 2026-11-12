@@ -148,7 +148,7 @@ background sequence — which can be started (`Alusta`) or dismissed (`×`);
     {% endcomment %}
     {% include "matters/partials/current_work_rows.html" %}
 
-    {% if can_write and recommendation and not source_owned %}
+    {% if can_write and recommendation and not source_locked.next_action %}
       {% comment %}
         **`Järgmisena?` — one suggestion, offered, not started**
         (docs/adr/0141). The first step still ahead in the Matter's background

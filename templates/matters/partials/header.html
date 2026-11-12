@@ -157,7 +157,8 @@ rather than read.
       The title's `i` is here rather than in the `<h1>`, whose accessible name
       must stay the title alone.
     {% endcomment %}
-    <p class="matterhead__source" data-source-owned-notice>{{ source_owned_notice }}{% include "components/source_owned_tip.html" with field="title" %}</p>
+    <p class="matterhead__source" data-source-owned-notice>{{ source_owned_notice }}{% if source_locked.title %}{% include "components/source_owned_tip.html" with field="title" %}{% endif %}</p>
+    {% if source_held_note %}<p class="matterhead__source" data-source-held>{{ source_held_note }}</p>{% endif %}
   {% endif %}
 
   {% comment %}
@@ -294,10 +295,10 @@ rather than read.
     {% endcomment %}
     <span class="metaline__item">
       <span class="metaline__label">Vastutaja</span>
-      {% if not can_write or not can_assign_work or source_owned %}
+      {% if not can_write or not can_assign_work or source_locked.owner %}
         {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner|name_among:owners }}</span>
         {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
-        {% if source_owned %}{% include "components/source_owned_tip.html" with field="owner" %}{% endif %}
+        {% if source_locked.owner %}{% include "components/source_owned_tip.html" with field="owner" %}{% endif %}
       {% else %}
       <details class="inlineedit">
         <summary class="inlineedit__trigger">
@@ -465,7 +466,7 @@ rather than read.
     {% if not koda_initiative or matter.received_date %}
     <span class="metaline__item">
       <span class="metaline__label">Saabus</span>
-      {% if can_write and not source_owned %}
+      {% if can_write and not source_locked.received %}
         {% comment %}
           Open again after a refusal, with what was typed and the reason beside
           it (`update_field` → `reopen`, E-04): reverting to the stored date
@@ -506,7 +507,7 @@ rather than read.
         </details>
       {% elif matter.received_date %}
         <span class="metaline__value">{{ matter.received_date|date:"j.n.Y" }}</span>
-        {% if source_owned %}{% include "components/source_owned_tip.html" with field="received" %}{% endif %}
+        {% if source_locked.received %}{% include "components/source_owned_tip.html" with field="received" %}{% endif %}
       {% endif %}
     </span>
     {% endif %}
@@ -553,7 +554,7 @@ rather than read.
       {% endcomment %}
       <span class="metaline__item metaline__item--deadline">
         <span class="metaline__label">Arvamuse tähtaeg</span>
-        {% if can_write and not source_owned %}
+        {% if can_write and not source_locked.opinion_deadline %}
         <details class="inlineedit" data-deadline-editor{% if reopen.editor == "response_deadline" %} open{% endif %}>
           <summary class="inlineedit__trigger">
             <span class="metaline__value metaline__value--deadline{% if response_deadline.settled %} metaline__value--settled{% endif %}"
@@ -592,7 +593,25 @@ rather than read.
           {% comment %}A reader sees the value, and no editor that opens on nothing.{% endcomment %}
           <span class="metaline__value metaline__value--deadline{% if response_deadline.settled %} metaline__value--settled{% endif %}"
                   title="{{ response_deadline.label }}">{{ response_deadline.display }}{% if response_deadline.settled %} · {{ response_deadline.settled }}{% elif not response_deadline.is_active %}{% elif response_deadline.is_today %} · täna{% elif response_deadline.is_overdue %} · {{ response_deadline.days_late }} p üle{% elif not response_deadline.is_past and response_deadline.days_remaining <= 60 %} · {{ response_deadline.days_remaining }} p{% endif %}</span>
-          {% if source_owned %}{% include "components/source_owned_tip.html" with field="opinion_deadline" %}{% endif %}
+          {% if source_locked.opinion_deadline %}{% include "components/source_owned_tip.html" with field="opinion_deadline" %}{% endif %}
+          {% if can_write and source_locked.opinion_deadline and matter.response_deadline %}
+            {% comment %}
+              The date is Lovable's, but answering it is Juristid's (TL-01, E5):
+              «Lõpeta tähtaeg» as answered or declined only, which the night
+              holds rather than undoes.
+            {% endcomment %}
+            <details class="inlineedit" data-deadline-answer{% if reopen.editor == "response_deadline" %} open{% endif %}>
+              <summary class="inlineedit__trigger"><span class="metaline__add">Lõpeta tähtaeg</span></summary>
+              <form class="inlineedit__form deadlineeditor inlineform inlineform--stacked"
+                    hx-post="{% url 'matters:response_deadline' pk=matter.pk %}"
+                    hx-target="#teema-pais" hx-swap="outerHTML">
+                {% csrf_token %}
+                <input type="hidden" name="revision" value="{{ deadline_revision }}">
+                {% include "matters/partials/response_deadline_fields.html" with prefix="paise-vastus" answer_only=True %}
+                <button class="button button--quiet button--tiny" type="submit" name="tegevus" value="lopeta">Lõpeta tähtaeg</button>
+              </form>
+            </details>
+          {% endif %}
         {% endif %}
       </span>
     {% else %}
@@ -610,7 +629,7 @@ rather than read.
           </span>
         {% endif %}
       {% endwith %}
-      {% if can_write and not source_owned %}
+      {% if can_write and not source_locked.opinion_deadline %}
         {% comment %}
           On a Chamber initiative too, since the owner's decision of 2026-10-13:
           a proposal may have a date it is due by, recorded by the lawyer

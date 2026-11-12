@@ -179,9 +179,9 @@ def refuse_source_owned(matter: Any, key: str) -> None:
     refused when the change is proposed, in the service's own words — so nobody
     is asked to approve a change the commit would refuse
     (`app.matters.source_ownership`; the service refuses it again at commit)."""
-    from app.matters.source_ownership import is_source_owned, refusal_message
+    from app.matters.source_ownership import ownership, refusal_message
 
-    if is_source_owned(matter):
+    if ownership(matter).locks(key):
         raise OperationRefused("domain_rule", refusal_message(key))
 
 

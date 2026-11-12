@@ -692,7 +692,7 @@ Teema the source-owned fields are now read-only on every surface and refused by
 the services (`app/matters/source_ownership.py`): title, Vastutaja, Hetkeseis,
 the current step, Arvamuse tähtaeg, the Koja-algatus mark, Õigusakt, Saabus,
 Lovable's own commencements, closing and reopening. Each exception below is
-implemented in its **conservative** form (refused, or kept exactly as before);
+implemented in its **conservative** form unless the row says it was decided (refused, or kept exactly as before);
 each is the owner's to change.
 
 | # | Exception | Implemented now | If the owner wants it editable |
@@ -705,8 +705,12 @@ each is the owner's to change.
 | E6 | `Uus hetkeseis` offered inside Juristid-only composers («✓ Tehtud», Koja arvamus, menetluse areng) | The composer is still drawn. Choosing another stage refuses the whole save with the Hetkeseis sentence. | Either hide the stage choice on synchronised Teemas (UI follow-up), or let the composers move the stage and accept the nightly restore. |
 | E7 | Lists: the owner select on register/Osakond rows and «Nihuta kuupäeva» on Minu asjad | Still drawn. The server refuses, and the person sees the reason. | UI follow-up: hide them for synchronised rows. This costs one query per list (`lovable_sync_state` prefetch). |
 | E8 | Õigusakt «Muu» text, and moving between non-initiative tracks | The «Muu» text is disabled with the instrument on «Muuda teemat». Moving between two non-initiative tracks stays editable, because Lovable states only *initiative or not*. | Nothing is needed unless the owner wants the «Muu» text editable on its own. |
-| E9 | When the lock applies | Already now, while production still runs COMPARE (Approval B pending). Nothing is restored yet, so today the lock prevents edits that the first APPLY night would undo. | The alternative is to lock only once APPLY is on. Edits made before then are put back on the first APPLY night. |
+| E9 | When the lock applies | **Decided by the lead (12.11): only while the synchronisation is in APPLY** (`LovableSyncControl.mode`), i.e. from Approval B. In COMPARE or OFF nothing restores an edit, so nothing is locked, and the markers follow the same rule. Consequence: an edit made while the sync is in COMPARE or paused (OFF) is put back on the first APPLY night after it. | Lock regardless of mode, so that no edit made before Approval B is undone later. |
 | E10 | The closed historical register (`lovable-history`) | Covered: reopening and the other fields are refused, the same as on `is_authoritative`. | Exempt the archive. A reopened history Teema is closed again by the night. |
+| E11 | A field the night holds with an open technical hold (`lovable_sync.TECHNICAL_HOLDS` on the latest reading: an unknown owner, an unmapped stage, a missing successor, …) | **Editable**, because the night never restores over a hold. The page says why: «Lovable'i väärtus on ootel, seega saab siin praegu muuta: …». The lock returns when the hold clears, and Lovable's value then wins. | Lock it anyway. A held field would then be correctable only in Lovable. |
+| E12 | A person's planned Tegevus when the current step ends (`promote_next_planned_action`) | **Not promoted** on a locked Teema. It stays planned, because the step is Lovable's and the night would cancel a promoted one. This was chosen over documenting the promotion, as the lower risk. | Promote as before, and accept that the night cancels it. |
+| E13 | Removing a Teema from Lovable's authority | The only person path is **deletion** (`delete_matter`, with its cohort retirement, docs/adr/0165). No setting unlocks a single Teema. | A per-Teema «leave the register» decision, if the owner wants one. |
+| E14 | UI follow-ups (not blocking) | The stage choice inside the Juristid-only composers (E6), and the list surfaces (E7), are still drawn and refused on save. | Hide them on locked Teemad. |
 
 **Owner:** the owner (Kaur), with the department head for E1–E3. **The
 question:** which of E1–E10 should change from the conservative default?

@@ -583,6 +583,12 @@ def complete_next_action(
     # tehtuks` — refuses one, and the database refuses a completed check
     # without an outcome underneath this.
     _refuse_a_follow_up_check(action)
+    from app.matters.source_ownership import refuse_source_owned_change
+
+    # Finishing the current step from any door — `✓ Tehtud`, a feedback or an
+    # opinion save's «Märgi praegune tegevus tehtuks» — changes Lovable's
+    # `järgmiseks` on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(action.matter, "next_action", actor=actor)
 
     action.status = ActionStatus.COMPLETED
     action.ended_at = timezone.now()
@@ -675,6 +681,12 @@ def cancel_next_action(
     action = _lock_for_transition(action, refusal)
     if action.status not in (ActionStatus.OPEN, ActionStatus.PLANNED):
         raise DomainError(refusal)
+    if action.status == ActionStatus.OPEN and action.follow_up_id is None:
+        from app.matters.source_ownership import refuse_source_owned_change
+
+        # The current step is Lovable's on a synchronised Teema (TL-01); an
+        # opinion follow-up check and a planned row are Juristid's own.
+        refuse_source_owned_change(action.matter, "next_action", actor=actor)
 
     action.status = ActionStatus.CANCELLED
     action.ended_at = timezone.now()
@@ -1071,6 +1083,14 @@ def promote_next_planned_action(*, matter: Any, actor: Any = None) -> NextAction
     """
     if NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).exists():
         return None
+    if getattr(actor, "pk", None) is not None:
+        from app.matters.source_ownership import ownership
+
+        if ownership(matter).locks("next_action"):
+            # On a synchronised Teema the current step is Lovable's, a blank
+            # one included (TL-01): a person's planned row stays planned
+            # rather than becoming a step the night would cancel.
+            return None
     action = (
         NextAction.objects.select_for_update(no_key=True)
         .filter(matter=matter, status=ActionStatus.PLANNED)

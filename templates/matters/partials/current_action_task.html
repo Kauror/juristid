@@ -82,7 +82,7 @@ panel is not carried across as if nothing had happened: its words are shown as
           </details>
         {% endif %}
         {% include "matters/partials/follow_up_subject.html" with subject=current_action.follow_up_subject %}
-  {% elif can_write and source_owned %}
+  {% elif can_write and source_locked.next_action %}
     {% comment %}
       On a synchronised Teema the current step is Lovable's `järgmiseks` and
       `tegevuse tähtaeg` (audit 2026-11-11 TL-01): finished, changed or moved
@@ -144,7 +144,7 @@ panel is not carried across as if nothing had happened: its words are shown as
   {% endif %}
 </div>
 
-{% if can_write and not source_owned and not current_action.follow_up_id %}
+{% if can_write and not source_locked.next_action and not current_action.follow_up_id %}
   {% comment %}
     The toolbar's panels, under the line and in the toolbar's order. A panel
     is open when the server says so — a refusal reopens the one it came from

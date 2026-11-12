@@ -54,7 +54,7 @@ paragraph. The banner's own action slot keeps it inside and at the right.
       reading «Jõustunud». Never `Määramata`, and never a stage that would close
       it again (`offered_reopening_stages`).
     {% endcomment %}
-    {% if source_owned %}
+    {% if source_locked.reopen %}
       {% comment %}
         Whether a synchronised Teema is open is Lovable's (audit 2026-11-11
         TL-01): a reopening here was closed again at night, so it is not offered.

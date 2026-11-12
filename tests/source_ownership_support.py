@@ -14,8 +14,6 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from unittest import mock
 
-import pytest
-
 from app.matters import source_ownership
 
 
@@ -27,13 +25,4 @@ def divergence_from_before_the_lock() -> Iterator[None]:
     import that name (the Teema views) would keep a mock bound for good if they
     were first imported inside the patch."""
     with mock.patch.object(source_ownership, "_is_person", return_value=False):
-        yield
-
-
-@pytest.fixture(autouse=True)
-def lock_lifted_for_the_engine_tests() -> Iterator[None]:
-    """Imported by the modules that test the *synchronisation engine* — what the
-    night does to a divergence however it arose — not the TL-01 lock, which
-    `tests/test_source_owned_fields.py` tests. Autouse wherever it is imported."""
-    with divergence_from_before_the_lock():
         yield

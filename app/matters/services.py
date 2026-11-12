@@ -1617,8 +1617,12 @@ def set_matter_title(
     cleaned = cleaned[:1000]
     if cleaned == matter.title:
         return matter
-    # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
-    refuse_source_owned_change(matter, "title", actor=actor)
+    if cleaned != (matter.title or "").strip()[:1000]:
+        # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01). Compared
+        # the way a title is stored, so a stored title only this
+        # normalisation changes — longer than the cap, or padded — is no
+        # change of a person's to refuse.
+        refuse_source_owned_change(matter, "title", actor=actor)
 
     previous = matter.title
     matter.title = cleaned
@@ -1972,6 +1976,8 @@ def set_legal_instrument_other(*, matter: Matter, value: str, actor: Any = None)
     cleaned = (value or "").strip()[:400]
     if cleaned == matter.legal_instrument_other:
         return matter
+    # Part of the Õigusakt on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(matter, "legal_act", actor=actor)
 
     matter.legal_instrument_other = cleaned
     matter.save(update_fields=["legal_instrument_other", "updated_at"])
