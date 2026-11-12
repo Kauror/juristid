@@ -251,14 +251,15 @@ def test_compare_reports_the_same_hold_and_writes_nothing(world):
 
 def test_a_restored_reclose_and_a_successor_closure_are_held_too(world, pilot_on):
     """Regression: TL-02 (memo cases 13, 14). A Teema a lawyer reopened locally
-    (the lock off, in COMPARE) and gave planned work is not closed again over
+    (the lock off, the switch OFF) and gave planned work is not closed again over
     it; a closure under a successor with local work is held as well."""
     from app.matters.services import reopen_matter_into_stage
 
     _close_in_lovable(world)
     world.run()
     assert not world.matter(ref(1)).is_open
-    lovable_sync.set_mode(SyncMode.COMPARE, reason="kontraktitest")
+    # The lock is off only while the switch is OFF (open-decisions E9).
+    lovable_sync.set_mode(SyncMode.OFF, reason="kontraktitest")
     reopen_matter_into_stage(
         matter=world.matter(ref(1)),
         stage=world.matter(ref(2)).stage,
