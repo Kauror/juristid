@@ -591,11 +591,91 @@ SOURCE_FIELDS: dict[str, Callable[[dict[str, Any]], Any]] = {
 
 def bundle_of(snapshot: dict[str, Any], source_id: Any) -> dict[str, Any] | None:
     """A topic's bundle in a reading: the cohort's, or — for a Teema the same
-    night created from a new topic (docs/adr/0213) — the new topics' reading."""
+    night created from a new topic (docs/adr/0213) — the new topics' reading.
+    A topic on a continuation cycle in that reading (`continuation_cycles`) is
+    marked ``CYCLE_MARK`` in a copy; the stored reading is never changed."""
     key = str(source_id)
     found = (snapshot.get("cohort") or {}).get(key)
     if found is None:
         found = ((snapshot.get("new_topics") or {}).get("cohort") or {}).get(key)
+    if found is not None and key in continuation_cycles(snapshot):
+        found = {**found, CYCLE_MARK: True}
+    return found
+
+
+#: Marks a bundle whose topic Lovable continues, through one or more stage
+#: links, back into itself (QA-E-01): held `CONTINUATION_CYCLE`, never guessed.
+CYCLE_MARK = "continuation_cycle"
+_CYCLES: dict[str, frozenset[str]] = {}
+
+
+def continuation_cycles(snapshot: dict[str, Any]) -> frozenset[str]:
+    """The Lovable ids that lie on a cycle of stage links (``prev`` → ``next``)
+    anywhere in the reading — A→B→A, or a longer chain back to its start. Every
+    link the reading holds counts, the cohort's and tonight's new topics' alike,
+    so a cycle through a topic created tonight is found as well. Cached per
+    reading (its digest)."""
+    digest = str(snapshot.get("sha256") or "")
+    if digest and digest in _CYCLES:
+        return _CYCLES[digest]
+    bundles = list((snapshot.get("cohort") or {}).values()) + list(
+        ((snapshot.get("new_topics") or {}).get("cohort") or {}).values()
+    )
+    graph: dict[str, set[str]] = {}
+    for bundle in bundles:
+        for link in (bundle or {}).get("stage_links") or []:
+            graph.setdefault(str(link.get("prev")), set()).add(str(link.get("next")))
+    # Tarjan's strongly connected components, iteratively: a component of two or
+    # more topics, or one topic linked to itself, is a cycle.
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    cyclic: set[str] = set()
+    counter = 0
+    for root in sorted(graph):
+        if root in index:
+            continue
+        work = [(root, iter(sorted(graph.get(root, ()))))]
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack.add(root)
+        while work:
+            node, children = work[-1]
+            advanced = False
+            for child in children:
+                if child not in index:
+                    index[child] = low[child] = counter
+                    counter += 1
+                    stack.append(child)
+                    on_stack.add(child)
+                    work.append((child, iter(sorted(graph.get(child, ())))))
+                    advanced = True
+                    break
+                if child in on_stack:
+                    low[node] = min(low[node], index[child])
+            if advanced:
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] == index[node]:
+                component = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                if len(component) > 1 or node in graph.get(node, ()):
+                    cyclic.update(component)
+    found = frozenset(cyclic)
+    if digest:
+        if len(_CYCLES) > 8:
+            _CYCLES.clear()
+        _CYCLES[digest] = found
     return found
 
 
@@ -1458,6 +1538,8 @@ class MatterPlan:
     #: open in Juristid: counted, never acted on (docs/adr/0202 §6).
     activity: str = ""
     open: bool = False
+    #: Lovable continues this topic back into itself (`continuation_cycles`).
+    continuation_cycle: bool = False
 
     def outcomes(self) -> set[str]:
         return {d.outcome for d in self.decisions} | ({self.status} if self.status else set())
@@ -1665,6 +1747,7 @@ def plan_matter(
         {**src, CONTINUATION: source_continuation(bundle)},
         row.get("version"),
     )
+    plan.continuation_cycle = bool(bundle.get(CYCLE_MARK))
     b = current if current is not None else current_values(state.matter)
     if "stage" not in b or "lifecycle" not in b:
         b = {**b, **conditional_values(state.matter)}
@@ -2057,6 +2140,9 @@ SETTLED_STEP_TREATMENTS = frozenset({"SOURCE_NEXT_STEP", "RESOLVED_LOCAL", MIRRO
 #: The technical holds (codes; the pages' words are `LOVABLE_REASONS`).
 SUCCESSOR_MISSING = "SUCCESSOR_NOT_IN_JURISTID"
 SUCCESSOR_AMBIGUOUS = "SUCCESSOR_AMBIGUOUS"
+#: Lovable's stage links lead from the topic back to itself (A→B→A or longer):
+#: every Teema on the cycle is held, its lifecycle untouched (QA-E-01).
+CONTINUATION_CYCLE = "CONTINUATION_CYCLE"
 #: The opinion outcome is held (contradictory or impossible): the request waits too.
 OUTCOME_HELD = "OUTCOME_HELD"
 #: A write that brings Lovable's unchanged value back over a local edit
@@ -2106,6 +2192,7 @@ TECHNICAL_HOLDS: dict[str, str] = {
     NOT_ASSIGNABLE: "unresolvable identity",
     SUCCESSOR_MISSING: "missing successor identity",
     SUCCESSOR_AMBIGUOUS: "duplicate reference",
+    CONTINUATION_CYCLE: "contradictory snapshot",
     OUTCOME_HELD: "contradictory snapshot",
     HISTORY_REOPENED_OUTSIDE_SCOPE: "unrepresentable value",
     CLOSURE_REASON_UNKNOWN: "unrepresentable value",
@@ -2293,7 +2380,7 @@ def _lifecycle_matches(desired: dict[str, Any], b_life: dict[str, Any]) -> bool:
 
 
 def _lifecycle_decisions(
-    state: LovableSyncState, src: dict[str, Any], b: dict[str, Any]
+    state: LovableSyncState, src: dict[str, Any], b: dict[str, Any], *, cycle: bool = False
 ) -> tuple[list[FieldDecision], dict[str, Any] | None, str]:
     """The stage and the continuation as one lifecycle operation. Returns the
     decisions (``stage``, and ``continuation`` when the link moved), the desired
@@ -2319,7 +2406,12 @@ def _lifecycle_decisions(
     # is taken as it stands — its closure was the import's reading of it.
     unknown = [] if b_life["open"] else c_link
     a_link = link.get("source") if link else (state.observed or {}).get(CONTINUATION, unknown)
-    desired, hold = desired_lifecycle(c_stage, c_link, matter_id=state.matter_id)
+    if cycle:
+        # Lovable continues the topic back into itself (QA-E-01): which Teema the
+        # work goes on in is unknowable, so nothing about the lifecycle is written.
+        desired, hold = None, CONTINUATION_CYCLE
+    else:
+        desired, hold = desired_lifecycle(c_stage, c_link, matter_id=state.matter_id)
     changed = c_stage != a_stage or (a_link or []) != c_link
     unchanged = not changed and _settled(applied, "stage")
     common = {"baseline": a_stage, "current": b_life, "source": c_stage}
@@ -2855,7 +2947,9 @@ def _plan_authoritative(
 
     # The lifecycle first: whether the Teema is (or tonight becomes) closed
     # decides what the step and the request may be.
-    life, desired_life, life_hold = _lifecycle_decisions(state, src, b)
+    life, desired_life, life_hold = _lifecycle_decisions(
+        state, src, b, cycle=plan.continuation_cycle
+    )
     if desired_life is not None and life[0].outcome in (
         SyncOutcome.ELIGIBLE,
         SyncOutcome.ALREADY_CONVERGED,
@@ -2865,7 +2959,7 @@ def _plan_authoritative(
         closed_after = closed
     # Only a held closure holds the step and the request with it: an unmapped
     # stage label says nothing about either.
-    if life_hold not in (SUCCESSOR_MISSING, SUCCESSOR_AMBIGUOUS):
+    if life_hold not in (SUCCESSOR_MISSING, SUCCESSOR_AMBIGUOUS, CONTINUATION_CYCLE):
         life_hold = ""
 
     plan.decisions.append(

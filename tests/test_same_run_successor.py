@@ -14,10 +14,15 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from app.legacy_import import lovable_sync
-from app.legacy_import.lovable_sync_models import SyncRunStatus
+from app.legacy_import.lovable_sync_models import SyncOutcome, SyncRunStatus
 from tests.test_lovable_pilot import pilot_on, world  # noqa: F401
 from tests.test_lovable_sync import _decisions, _matter, _run
+from tests.test_ls_b_engine import _at as _ls_at
+from tests.test_ls_b_engine import _id, register  # noqa: F401
+from tests.test_ls_b_engine import _row as _ls_row
 from tests.test_r4_authority import _at, _lovable_now, reference  # noqa: F401
 
 
@@ -69,3 +74,80 @@ def test_a_night_over_the_breaker_re_plans_nothing(reference, monkeypatch):
 
 #: Teemad of the reference night with a source change, 2026_140 among them.
 CHANGED = 8
+
+
+# ---------------------------------------------------------------------------
+# QA-E-01: a continuation cycle is held, never guessed
+# ---------------------------------------------------------------------------
+
+
+def _link(source: Any, prev: str, nxt: str) -> None:
+    source.links.append({"prev_topic_id": _id(prev), "next_topic_id": _id(nxt)})
+    for ref in (prev, nxt):
+        for row in source.rows.values():
+            if row["nr"] == ref:
+                row["version"] += 1
+
+
+def _held_cycle(run: Any, reference: str) -> None:
+    found = _decisions(run, reference)
+    assert found["stage"].outcome == SyncOutcome.REVIEW_REQUIRED, found
+    assert found["stage"].reason == lovable_sync.CONTINUATION_CYCLE
+
+
+@pytest.mark.parametrize(
+    "chain",
+    [("2026_238", "2026_232"), ("2026_238", "2026_232", "2026_253")],
+    ids=["two", "three"],
+)
+def test_a_continuation_cycle_holds_every_teema_on_it_and_the_rest_runs(register, chain):
+    """Regression: QA-E-01 — A→B→A (or a longer ring) closed A as SUPERSEDED
+    under B (a guess) and B failed, so every night ended FAILED. Every Teema on
+    the cycle is held CONTINUATION_CYCLE with its lifecycle untouched; the rest
+    of the night is written and the run succeeds."""
+    source = register["source"]
+    for prev, nxt in zip(chain, chain[1:] + chain[:1], strict=True):
+        _link(source, prev, nxt)
+    source.edit("2026_240", teema="Näidisteema 2026_240 parandatud")
+    run = _run(register, at=_ls_at(0))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    for ref in chain:
+        _held_cycle(run, ref)
+        matter = _matter(ref)
+        assert matter.is_open and matter.superseded_by_id is None, ref
+    assert _matter("2026_240").title == "Näidisteema 2026_240 parandatud"
+    again = _run(register, at=_ls_at(1))
+    assert again.status == SyncRunStatus.SUCCEEDED, again.error
+    assert all(_matter(r).is_open for r in chain)
+
+
+def test_a_cycle_through_a_topic_created_tonight_is_held_too(register):
+    """Regression: QA-E-01 — the same-run re-plan (LS-01) cannot close a Teema
+    into a cycle: 2026_238 continues as the new 2026_254, which continues as
+    2026_238. 254 is created; neither lifecycle is written."""
+    source = register["source"]
+    source.put(_id("2026_254"), _ls_row("2026_254"), version=1)
+    _link(source, "2026_238", "2026_254")
+    _link(source, "2026_254", "2026_238")
+    run = _run(register, at=_ls_at(0))
+    assert run.counts["new_topics_created"] == 1, run.counts
+    _held_cycle(run, "2026_238")
+    assert _matter("2026_238").is_open and _matter("2026_238").superseded_by_id is None
+    assert _matter("2026_254").superseded_by_id is None
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+
+
+def test_the_cycle_finder_names_only_the_ring():
+    def bundle(prev: str, nxt: str) -> dict[str, Any]:
+        return {"stage_links": [{"prev": prev, "next": nxt}]}
+
+    snapshot = {
+        "cohort": {
+            "a": bundle("a", "b"),
+            "b": bundle("b", "c"),
+            "c": bundle("c", "b"),
+            "d": bundle("d", "d"),
+            "e": bundle("e", "f"),
+        }
+    }
+    assert lovable_sync.continuation_cycles(snapshot) == {"b", "c", "d"}
