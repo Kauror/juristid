@@ -5766,7 +5766,15 @@ def _close_matter(
     # Whether a synchronised Teema is open, and what it continues under, is
     # Lovable's (audit 2026-11-11 TL-01): «Lõpeta teema» would be undone at
     # night and its `Järglane` dropped.
-    refuse_source_owned_change(matter, "close", actor=actor)
+    #
+    # `refuse_source_owned_change(matter, "close", actor=actor)`, spelled out so
+    # the one ownership read also says whether a closing hold freed it (TL-02,
+    # rehearsal 2 D1): a Teema the sync does not own pays nothing more.
+    from app.matters.source_ownership import NOT_OWNED, SourceOwnedRefusal, ownership
+
+    own = ownership(matter) if getattr(actor, "pk", None) is not None else NOT_OWNED
+    if own.locks("close"):
+        raise SourceOwnedRefusal("close")
 
     # The same row set_next_action locks, in the same order. Whichever
     # transaction reaches the Matter row first wins: a closure that lands first
@@ -5829,16 +5837,35 @@ def _close_matter(
     # Bound to the work the person was shown: a digest that no longer matches
     # what is live now is refused with the renewed warning (docs/adr/0152 §7).
     refuse_unconfirmed_closure(locked, confirmed=follow_ups_confirmed)
-    # Whether this closure is one Lovable asked for and Juristid held (TL-02):
-    # a release (`close_matter_from_source`), or a person closing while the
-    # Teema's closure from Lovable is held for Juristid-only work. Then ending
-    # Lovable's current step is part of the closure (rehearsal 2 D1). Read
-    # under the lock, while the Teema is still open.
+    # Whether this closure is one Lovable itself asked for (TL-02, rehearsal 2
+    # D1 and its review): a release (`close_matter_from_source`), or a person
+    # closing while the newest reading holds a closure Lovable states — any
+    # closing stage hold (`lovable_closure_hold.CLOSING_STAGE_HOLDS`), which is
+    # what freed «Lõpeta teema» (E11). Then ending Lovable's current step is
+    # part of the closure. Read while the Teema is still open; the hold is the
+    # newest reading's decision, which the night records without this lock.
     sanctioned = released
-    if not sanctioned and getattr(actor, "pk", None) is not None:
-        from app.legacy_import.lovable_closure_hold import hold_of
+    if not sanctioned and own.active and "close" in own.held:
+        from app.legacy_import.lovable_closure_hold import closing_hold_stands
 
-        sanctioned = hold_of(locked) is not None
+        sanctioned = closing_hold_stands(locked)
+    if sanctioned:
+        # What the hold kept waiting follows the stored reading before the
+        # Teema closes (rehearsal 2 follow-up D2/D3): the opinion request's
+        # date, and the stage — moved as an import while still open, since a
+        # closed Teema stays in the period it was closed in (ADR 0131).
+        from app.legacy_import.lovable_closure_hold import converge_held_fields
+
+        source_stage, held_provenance = converge_held_fields(locked, provenance=provenance)
+        if source_stage is not None:
+            _move_stage(
+                matter=locked,
+                stage=source_stage,
+                actor=None,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=held_provenance,
+            )
+            stage_episode = current_stage_episode(locked)
     # What this closure ends, by id, for its own record below — read under the
     # lock, before anything is ended.
     ending = live_work_at_closure(locked)
@@ -5969,6 +5996,9 @@ def close_matter_from_source(
 
     person = None
     if released_by is not None:
+        # Only `lovable_closure_hold.release_closure_hold` passes a releaser; it
+        # has read the standing hold, and so is this read again below (under
+        # the lock), so no caller can release a closure nothing holds.
         from app.legacy_import.lovable_closure_hold import refuse_release
 
         refuse_release(released_by, matter)
@@ -5979,6 +6009,11 @@ def close_matter_from_source(
     locked = lock_matter_for_write(matter.pk)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
+    if person is not None:
+        from app.legacy_import.lovable_closure_hold import HOLD_CLEARED, hold_of
+
+        if hold_of(locked) is None:
+            raise DomainError(HOLD_CLEARED)
     work = juristid_only_work(locked)
     if not work.is_empty:
         if released_by is None or confirmed is True or not confirmed:

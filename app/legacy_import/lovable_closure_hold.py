@@ -233,6 +233,45 @@ def standing_holds(matter_ids: Any = None) -> list[ClosureHold]:
     return [hold for hold in (_as_hold(row) for row in rows) if hold is not None]
 
 
+#: The stage holds whose reading has Lovable *closing* the Teema (TL-02,
+#: rehearsal 2 D1 review): a closure held for Juristid-only work, «lõpetatud»
+#: with no reason, and every successor hold — Lovable says the work goes on
+#: elsewhere. While one stands the lock frees «Lõpeta teema» (E11, the stage
+#: and continuation fields), and a person's closure is the one Lovable asked
+#: for, so ending Lovable's current step with it is not refused. An unmapped
+#: stage or a history reopening is not a closure and is not here.
+CLOSING_STAGE_HOLDS = frozenset(
+    {
+        LOCAL_WORK_AT_CLOSURE,
+        "CLOSURE_REASON_UNKNOWN",
+        "SUCCESSOR_NOT_IN_JURISTID",
+        "SUCCESSOR_AMBIGUOUS",
+        "SUCCESSOR_DEFERRED_BY_BREAKER",
+        "CONTINUATION_CYCLE",
+    }
+)
+
+
+def closing_hold_stands(matter: Any) -> bool:
+    """Whether the newest reading holds, on this open Teema, a closure Lovable
+    states (`CLOSING_STAGE_HOLDS`), on its stage or continuation. One query."""
+    from app.legacy_import.lovable_sync_models import LovableSyncDecision, SyncOutcome
+
+    return (
+        LovableSyncDecision.objects.filter(
+            _not_cut_over(),
+            state__matter_id=getattr(matter, "pk", matter),
+            run_id=F("state__observed_run_id"),
+            field__in=("stage", "continuation"),
+            outcome=SyncOutcome.REVIEW_REQUIRED,
+            reason__in=sorted(CLOSING_STAGE_HOLDS),
+            state__matter__is_open=True,
+        )
+        .exclude(state__cohort__in=_retired_cohorts())
+        .exists()
+    )
+
+
 def hold_of(matter: Any) -> ClosureHold | None:
     """This Teema's standing hold, or ``None``."""
     found = standing_holds([getattr(matter, "pk", matter)])
@@ -503,8 +542,9 @@ def release_closure_hold(*, matter: Any, actor: Any, confirmed: str) -> ReleaseR
     * The closure: `close_matter_from_source` with Lovable's reason and stage,
       the hold's run provenance (``closure_hold: RELEASED``) and the actor —
       one transaction, under the Matter's and the state's locks, no
-      half-applied closure: the current step is cancelled with it and the
-      request stays, exactly as a source closure leaves it.
+      half-applied closure: the current step is cancelled with it, and the
+      request is not cancelled but follows Lovable's stored reading first
+      (`converge_held_fields`, D3).
     """
     from app.legacy_import import lovable_sync
     from app.matters.locks import lock_matter_for_write
@@ -559,3 +599,83 @@ def release_closure_hold(*, matter: Any, actor: Any, confirmed: str) -> ReleaseR
     return ReleaseResult(
         True, "Teema suleti Lovable'i põhjusega; pooleli töö tühistati sinu nimel."
     )
+
+
+# ---------------------------------------------------------------------------
+# What a hold kept waiting, brought to Lovable at the closure (D2, D3)
+# ---------------------------------------------------------------------------
+
+
+def converge_held_fields(
+    matter: Any, *, provenance: dict[str, Any] | None = None
+) -> tuple[Any, dict[str, Any] | None]:
+    """Before a hold-sanctioned closure — a release, or a person's closure while
+    Lovable's closure is held — under the Matter's lock and while it is still
+    open: the fields the hold kept waiting follow the stored reading
+    (rehearsal 2 follow-up, D2/D3; ADR 0213 §10.13).
+
+    * **The opinion request** (D3): Lovable's own request rule
+      (`lovable_sync._request_decision_authoritative`, as if no hold stood) is
+      applied through `_apply_request` — moved to Lovable's day, set, withdrawn
+      or ended as Lovable states. The request is not cancelled by the closure;
+      its date follows Lovable. Once closed, no night could write it.
+    * **The stage** (D2): returned, for the caller to move as an import before
+      it closes — a closed Teema stays in the period it was closed in (ADR 0131),
+      so this is the one moment the stage can still follow Lovable.
+
+    Returns the stage to move to (or ``None``) and the provenance every write
+    here carries: the hold's run, ``closure_hold`` ``RELEASED`` for a release
+    (``provenance`` given) or ``CLOSED_WHILE_HELD`` for a person's closure."""
+    from django.utils import timezone
+
+    from app.legacy_import import lovable_sync
+    from app.legacy_import.lovable_sync_models import LovableSyncState, SyncOutcome
+    from app.workflow.models import StageVocabulary
+
+    state = (
+        LovableSyncState.objects.select_related("observed_run").filter(matter_id=matter.pk).first()
+    )
+    if state is None or not state.observed or state.observed_run is None:
+        return None, provenance
+    run = state.observed_run
+    if provenance is None:
+        provenance = {
+            **lovable_sync._provenance(
+                run, state, state.observed_version, run.snapshot_sha256 or ""
+            ),
+            "closure_hold": "CLOSED_WHILE_HELD",
+        }
+    src = state.observed
+    applied = state.applied
+    if "opinion_deadline" in applied and "opinion_deadline" in src:
+        today = timezone.localdate()
+        b = lovable_sync.full_values(matter)
+        outcome_decisions, outcome = lovable_sync._outcome_decisions(applied, src, b, today=today)
+        outcome_hold = next(
+            (d.reason for d in outcome_decisions if d.outcome == SyncOutcome.REVIEW_REQUIRED),
+            "",
+        )
+        request = lovable_sync._request_decision_authoritative(
+            applied,
+            src,
+            b,
+            closed_after=False,
+            lifecycle_hold="",
+            outcome=outcome,
+            today=today,
+            outcome_hold=outcome_hold if outcome_hold != lovable_sync.ADDRESSEE_NO_SEND else "",
+        )
+        if request.outcome == SyncOutcome.ELIGIBLE:
+            lovable_sync._apply_request(request, matter=matter, provenance=provenance)
+    desired, _hold = lovable_sync.desired_lifecycle(
+        src.get("stage"),
+        list(src.get(lovable_sync.CONTINUATION) or []),
+        matter_id=matter.pk,
+    )
+    key = (desired or {}).get("stage")
+    if not key or (desired or {}).get("open"):
+        return None, provenance
+    current = getattr(getattr(matter, "stage", None), "key", None)
+    if current == key:
+        return None, provenance
+    return StageVocabulary.objects.filter(key=key).first(), provenance
