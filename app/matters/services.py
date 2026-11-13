@@ -5770,9 +5770,12 @@ def _close_matter(
     # `refuse_source_owned_change(matter, "close", actor=actor)`, spelled out so
     # the one ownership read also says whether a closing hold freed it (TL-02,
     # rehearsal 2 D1): a Teema the sync does not own pays nothing more.
+    from app.matters import source_ownership
     from app.matters.source_ownership import NOT_OWNED, SourceOwnedRefusal, ownership
 
-    own = ownership(matter) if getattr(actor, "pk", None) is not None else NOT_OWNED
+    # The guard's own person test, read through the module so a test that lifts
+    # it (`divergence_from_before_the_lock`) lifts this check too.
+    own = ownership(matter) if source_ownership._is_person(actor) else NOT_OWNED
     if own.locks("close"):
         raise SourceOwnedRefusal("close")
 
