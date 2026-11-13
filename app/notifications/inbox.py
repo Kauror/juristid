@@ -260,7 +260,7 @@ def deadline_item(
     category = CATEGORIES[row.category]
     matter = row.matter
     if row.purpose == NotificationPurpose.ESCALATION:
-        label = "Tähtaeg ületatud"
+        label = category.escalation_label
         name = names.get(row.source_id, "")
         note = f"Vastutaja {name}" if name else "Vastutaja puudub"
     elif row.purpose == NotificationPurpose.ADVANCE:

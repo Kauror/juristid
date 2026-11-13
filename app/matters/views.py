@@ -56,7 +56,9 @@ from app.accounts.selectors import (
     named_owner_in,
     owner_filter_choices,
 )
+from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
+from app.audit.provenance import source_actor_label
 from app.audit.visibility import change_log_event_types, scope_change_events
 from app.core.authorization import (
     distinct_if_fans_out,
@@ -302,6 +304,13 @@ from app.matters.services import (
     set_rail_step_date,
     set_timeline_steps,
     timeline_steps_revision_token,
+)
+from app.matters.source_ownership import (
+    NO_SOURCE_STEP_NOTE,
+    SOURCE_OWNED_NOTICE,
+    SOURCE_OWNED_TIP,
+    lovable_commencement_ids,
+    ownership,
 )
 from app.matters.stage_episodes import (
     episodes_of,
@@ -3976,13 +3985,95 @@ def _date_order_confirmation(request: HttpRequest) -> dict[str, Any]:
     }
 
 
+def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -> dict[str, Any]:
+    """The banner of a closure Lovable made and Juristid holds (TL-02).
+
+    Counts only (`LiveWork.phrases`), so it says nothing about a record the
+    reader may not open. The release form only for somebody who may release
+    (`may_release`: the owner here; an administrator releases in Haldus), and
+    only while the synchronisation writes (`sync_writes`). In COMPARE the
+    banner is informational: what would be held once it writes, no release
+    and no promise about the night (lead decision 12.11.2026, review P2-1)."""
+    if not held or not matter.is_open:
+        return {}
+    from app.legacy_import.lovable_closure_hold import (
+        may_release,
+        release_preview,
+        sync_writes,
+    )
+    from app.matters.closure_work import (
+        CLOSURE_HOLD_BANNER,
+        CLOSURE_HOLD_DONE,
+        CLOSURE_HOLD_HELP,
+        CLOSURE_HOLD_PROPOSED,
+        CLOSURE_HOLD_PROPOSED_NO_WORK,
+        CLOSURE_HOLD_RELEASE_LABEL,
+        CLOSURE_HOLD_RELEASE_TIP,
+        joined_phrases,
+    )
+
+    preview = release_preview(matter)
+    if preview is None:
+        return {}
+    writes = sync_writes()
+    return {
+        "closure_hold": {
+            "writes": writes,
+            "proposed": CLOSURE_HOLD_PROPOSED,
+            "proposed_no_work": CLOSURE_HOLD_PROPOSED_NO_WORK,
+            "read_at": preview.read_at,
+            "banner": CLOSURE_HOLD_BANNER,
+            # What is live now, not what the night counted: work finished today
+            # is no longer named.
+            "phrases": joined_phrases(preview.local),
+            "done": CLOSURE_HOLD_DONE,
+            "since": preview.hold.since,
+            "help": CLOSURE_HOLD_HELP,
+            "statement": preview.statement,
+            "digest": preview.digest,
+            "label": CLOSURE_HOLD_RELEASE_LABEL,
+            "tip": CLOSURE_HOLD_RELEASE_TIP,
+            # Not offered where it would be refused: outside APPLY, or when a
+            # newer stored reading disagrees (review P3-E).
+            "can_release": writes and not preview.stale and may_release(request.user, matter),
+        }
+    }
+
+
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
     note_record = personal_note_record(matter=matter, author=request.user)
     can_write = may_write_business_content(request.user)
+    # **What Lovable owns is read-only here** on a synchronised Teema (audit
+    # 2026-11-11 TL-01): its editors are not drawn, an `i` says where the value
+    # is changed, and the services refuse it anyway
+    # (`app.matters.source_ownership`). Read once, here, because the header,
+    # the rail and `PRAEGUNE TEGEVUS` all ask.
+    own = ownership(matter)
+    if not matter.is_open and own.held:
+        # A held closure frees nothing once the Teema is closed (TL-02, review
+        # P3-2): «Ava uuesti» is not offered after a release.
+        from app.legacy_import.lovable_closure_hold import effective_ownership
+
+        own = effective_ownership(matter, own)
     return {
         "matter": matter,
+        # A closure from Lovable held for Juristid-only work (TL-02): asked only
+        # where the lock already found an open hold on the closure, so a Teema
+        # without one pays no query for it.
+        **_closure_hold_context(request, matter, held="close" in own.held),
+        "source_owned": own.active,
+        # Per field: what is locked now (a field under an open hold is not),
+        # and the line that says why a held one is editable.
+        "source_locked": own.locked,
+        "source_held_note": own.held_note,
+        "source_owned_notice": SOURCE_OWNED_NOTICE,
+        "source_owned_tip": SOURCE_OWNED_TIP,
+        "no_source_step_note": NO_SOURCE_STEP_NOTE,
+        "lovable_commencement_ids": lovable_commencement_ids(
+            matter, source_owned=own.locks("commencement")
+        ),
         # The open tab, which the header's tab bar marks (`aria-current`, the
         # underline). The header is redrawn by every inline edit and by saves
         # that send it out of band, and an answer drawn without this left both
@@ -4120,7 +4211,7 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # service refuses any other move — so the closed header states the
         # stage rather than inviting a save that can only be refused. Not
         # `can_write` itself: other corrections on a closed file stay allowed.
-        "can_change_stage": can_write and matter.is_open,
+        "can_change_stage": can_write and matter.is_open and not own.locks("stage"),
         # The rail renders on every Matter surface, so what the rail reads is
         # read here rather than three times over. Each opinion file with the
         # send that tells it apart and its working documents (docs/adr/0129 §9).
@@ -6739,6 +6830,7 @@ def _edit_context(
     return {
         "matter": matter,
         "form": form,
+        "source_owned_notice": SOURCE_OWNED_NOTICE,
         # Under the name `procedural_link_create.html` reads, because it is the
         # same block: `Uus teema` and `Muuda teemat` draw one control from one
         # partial, which is what stops `Link` and `Nimetus` drifting apart
@@ -7346,6 +7438,32 @@ def reopen(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
+@business_write_required
+@require_http_methods(["POST"])
+def closure_hold_release(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Sulge teema ja tühista pooleli töö» on a closure Lovable made that is held
+    for Juristid-only work (TL-02, docs/adr/0213 §10.13).
+
+    The Teema's owner confirms the counts the banner showed; the confirming box
+    posts their digest back, and `release_closure_hold` reads the latest
+    reading and the work again under the Matter's lock: a hold that cleared,
+    or Lovable reopening, changes nothing; work that changed is refused with
+    the renewed counts."""
+    from app.legacy_import.lovable_closure_hold import release_closure_hold
+
+    matter = get_visible_matter(request, pk)
+    try:
+        result = release_closure_hold(
+            matter=matter, actor=request.user, confirmed=request.POST.get("kinnitus", "")
+        )
+    except DomainError as error:
+        messages.error(request, str(error))
+        return redirect("matters:matter_detail", pk=matter.pk)
+    (messages.success if result.closed else messages.info)(request, result.message)
+    return redirect("matters:matter_detail", pk=matter.pk)
+
+
+@login_required
 def timeline_page(request: HttpRequest, pk: Any) -> HttpResponse:
     """Load the next slice of chronology without reloading the page."""
     matter = get_visible_matter(request, pk)
@@ -7409,6 +7527,53 @@ def _change_log_offset(raw: Any) -> int:
     return min(max(0, offset), CHANGE_LOG_MAX_OFFSET)
 
 
+#: How a closure-reason change names a successor this reader may not open: that
+#: the work continues elsewhere, never where (LK-01, AUTH-003).
+HIDDEN_SUCCESSOR = "jätkub teise teema all"
+
+
+def closure_reason_change_line(event: ChangeEvent, user: Any) -> str:
+    """`MATTER_CLOSURE_REASON_CHANGED` as one line of `Kõik muudatused`.
+
+    Built from what the event recorded — the reason before and after, each in
+    `Lõpeta teema`'s words, and each side's successor — and never from its
+    summary or its source's words, which may name a successor. A successor is
+    named («jätkub teemas 2099_7», or by its title when it has no reference yet)
+    only when this reader may open it, through `visible_to`, in one query for
+    both sides; otherwise the line says the work continues elsewhere and
+    nothing about where (docs/adr/0213 §10.9, LK-01).
+    """
+    from app.workflow.enums import closure_reason_label
+
+    payload = event.payload or {}
+    raw_before, raw_after = payload.get("from"), payload.get("to")
+    before: dict[str, Any] = raw_before if isinstance(raw_before, dict) else {}
+    after: dict[str, Any] = raw_after if isinstance(raw_after, dict) else {}
+    wanted = [str(side.get("successor")) for side in (before, after) if side.get("successor")]
+    visible = {
+        str(found.pk): found
+        for found in Matter.objects.visible_to(user)
+        .filter(pk__in=wanted)
+        .only("pk", "title", "reference_year", "reference_number")
+    }
+
+    def side(recorded: dict[str, Any]) -> str:
+        words = closure_reason_label(str(recorded.get("disposition") or "")) or "põhjuseta"
+        successor_id = recorded.get("successor")
+        if not successor_id:
+            return words
+        successor = visible.get(str(successor_id))
+        if successor is None:
+            return f"{words}; {HIDDEN_SUCCESSOR}"
+        if successor.reference_year:
+            name = f"{successor.reference_year}_{successor.reference_number}"
+        else:
+            name = f"«{successor.title}»"
+        return f"{words}; jätkub teemas {name}"
+
+    return f"{side(before)} → {side(after)}"
+
+
 @login_required
 def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
     """`Kõik muudatused` — the technical change history, read-only.
@@ -7467,6 +7632,16 @@ def matter_changes(request: HttpRequest, pk: Any) -> HttpResponse:
     )
     has_more = len(page) > CHANGE_LOG_PAGE_SIZE
     del page[CHANGE_LOG_PAGE_SIZE:]
+    for row in page:
+        # Who wrote it when no person did: the Lovable synchronisation, read
+        # off the run's provenance on the row (LS-03); a person's row and a
+        # system row without provenance read as before.
+        row.source_actor = (  # type: ignore[attr-defined]
+            "" if row.actor_id else source_actor_label(row.payload)
+        )
+        if row.event_type == ChangeEventType.MATTER_CLOSURE_REASON_CHANGED:
+            # In memory only, never saved: the line this reader may be shown.
+            row.summary = closure_reason_change_line(row, request.user)
     return render(
         request,
         "matters/matter_changes.html",

@@ -44,6 +44,8 @@ from app.matters.models import Matter, MatterResponseDeadline
 from app.submissions.models import Submission
 from app.workflow.enums import ActionKind, ActionStatus, Disposition, Track
 from app.workflow.models import NextAction
+from app.workflow.step_markers import CLOSED_WITH_MATTER
+from tests.source_ownership_support import divergence_from_before_the_lock
 from tests.test_lovable_pilot import _apply, _package, pilot_on, world  # noqa: F401
 from tests.test_lovable_sync import _decisions, _matter, _run
 from tests.test_ls_b_engine import Source, _drafting, _id, _register_topic, _row, _step
@@ -55,6 +57,15 @@ TALLINN = lovable_sync.TALLINN
 NIGHT = dt.datetime(2026, 11, 12, 0, 15, tzinfo=TALLINN)
 HOUR = dt.timedelta(hours=1)
 REQUEST = "2099-11-04"  # the import's open request / drafting day (see the docstring)
+
+
+@pytest.fixture
+def request_edits_from_before_the_lock():
+    """These tests move, replace and answer Lovable's request as a person — which
+    the TL-01 lock now refuses in APPLY except answering — to pin what the night
+    does with a request history made before the lock. Lifted for these alone."""
+    with divergence_from_before_the_lock():
+        yield
 
 
 def _at(n: int) -> dt.datetime:
@@ -272,7 +283,10 @@ def test_every_hold_code_is_technical_and_has_estonian_words():
 # ---------------------------------------------------------------------------
 
 
-def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_successor(reference):
+def test_the_reference_night_reproduces_lovable_and_its_new_successor_the_same_night(reference):
+    """Regression: LS-01 (ST-007) — 2026_140 continues under 2026_259, which
+    Lovable created tonight: 140 closes under it in the same run, not the next
+    night; a rerun writes nothing."""
     source = reference["source"]
     _lovable_now(source)
     steps_before = {
@@ -306,15 +320,14 @@ def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_succe
     assert old.status == ActionStatus.CANCELLED
     assert not NextAction.objects.filter(matter=m150, status=ActionStatus.COMPLETED).exists()
 
-    # 2026_140 → 2026_259: the successor was not in Juristid when 140 was read.
+    # 2026_140 → 2026_259: the successor was not in Juristid when 140 was first
+    # planned; it was created tonight, so 140 is planned again and closes now.
     found = _decisions(run, "2026_140")
-    assert (found["stage"].outcome, found["stage"].reason) == (
-        SyncOutcome.REVIEW_REQUIRED,
+    assert not {d.reason for d in found.values()} & {
         lovable_sync.SUCCESSOR_MISSING,
-    )
-    assert found[CONTINUATION].reason == lovable_sync.SUCCESSOR_MISSING
-    assert found["next_action_text"].reason == lovable_sync.LIFECYCLE_HELD
-    assert _matter("2026_140").is_open
+        lovable_sync.LIFECYCLE_HELD,
+    }
+    assert not _matter("2026_140").is_open
 
     # 2026_216 «ei saatnud» + «Jälgin …»: a MONITOR step with no day; the drafting
     # step superseded (kept in the history, never completed); the request ends
@@ -383,18 +396,8 @@ def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_succe
         dt.date(2026, 11, 10),
     )
 
-    # Only the missing successor is pending, with its technical code.
-    pending = {
-        (p.reference, p.field): p.reason
-        for p in lovable_sync.pending_differences()
-        if p.kind == "FIELD"
-    }
-    assert set(pending.values()) <= {lovable_sync.SUCCESSOR_MISSING, lovable_sync.LIFECYCLE_HELD}
-    assert {ref for ref, _f in pending} == {"2026_140"}
-
-    # The next night: the successor exists, so 2026_140 closes as continuing under it.
-    again = _run(reference, at=_at(24))
-    assert again.status == SyncRunStatus.SUCCEEDED, again.error
+    # Nothing is pending: the successor converged the predecessor the same night.
+    assert not [p for p in lovable_sync.pending_differences() if p.kind == "FIELD"]
     m140 = _matter("2026_140")
     assert (m140.is_open, m140.disposition, m140.superseded_by_id) == (
         False,
@@ -407,10 +410,10 @@ def test_the_reference_night_reproduces_lovable_and_holds_only_the_missing_succe
     assert _outcome("2026_140").sent_on == dt.date(2026, 6, 3)
     assert not [p for p in lovable_sync.pending_differences() if p.kind == "FIELD"]
 
-    # And a third night writes nothing at all.
+    # And the next night writes nothing at all.
     events = ChangeEvent.objects.count()
     outcomes = LovableOpinionOutcome.objects.count()
-    third = _run(reference, at=_at(48))
+    third = _run(reference, at=_at(24))
     assert third.status == SyncRunStatus.SUCCEEDED, third.error
     assert third.counts["updated"] == 0
     assert not third.decisions.filter(outcome=SyncOutcome.APPLIED).exists()
@@ -483,6 +486,26 @@ def test_a_source_change_overwrites_a_local_divergence(reference):
     assert NextAction.objects.get(matter=m232, text="Helistan ministeeriumi").status == (
         ActionStatus.SUPERSEDED
     )
+
+
+def test_an_apply_night_writes_through_the_lock_a_person_meets(reference):
+    """Regression: TL-01. Un-patched: in APPLY a person's edit of a Lovable field is
+    refused, and the night still writes Lovable's change through the same services."""
+    from app.matters.services import set_matter_title
+    from app.matters.source_ownership import refusal_message
+    from tests.refusals import refused
+
+    _run(reference, at=_at(0))
+    assert lovable_sync.control().mode == SyncMode.APPLY
+    with refused(refusal_message("title")):
+        set_matter_title(
+            matter=_matter("2026_232"), value="Juristi pealkiri", actor=reference["world"]["jaan"]
+        )
+    reference["source"].edit("2026_232", teema="Lovable'i uus pealkiri")
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert _decisions(run, "2026_232")["title"].outcome == SyncOutcome.APPLIED
+    assert _matter("2026_232").title == "Lovable'i uus pealkiri"
 
 
 def test_a_local_title_is_restored_while_the_source_is_unchanged(reference):
@@ -892,30 +915,34 @@ def test_every_local_edit_of_a_source_owned_field_is_restored(reference):
     own_date = factories.ImportantDateFactory(matter=matter)
 
     jaan = reference["world"]["jaan"]
-    set_matter_title(matter=matter, value="Juristi oma pealkiri", actor=jaan)
-    assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
-    change_stage(
-        matter=_matter("2026_253"), stage=StageVocabulary.objects.get(key="government"), actor=jaan
-    )
-    set_next_action(matter=_matter("2026_253"), text="Helistan ministeeriumi", actor=jaan)
-    change_response_deadline(
-        matter=_matter("2026_253"),
-        deadline=dt.date(2099, 12, 24),
-        actor=jaan,
-        change="MOVED",
-    )
-    change_track(matter=_matter("2026_253"), track=Track.KODA_INITIATIVE, actor=jaan)
-    set_matter_dates(matter=_matter("2026_253"), received_date=dt.date(2026, 2, 2), actor=jaan)
-    other = (
-        Matter._meta.get_field("legal_instruments")
-        .related_model._default_manager.exclude(key="seadus")
-        .first()
-    )
-    set_legal_instruments(matter=_matter("2026_253"), legal_instruments=[other], actor=jaan)
-    estimate = MatterImportantDate.objects.get(
-        matter=matter, kind="ESTIMATED_COMMENCEMENT", status="ACTIVE"
-    )
-    cancel_important_date(record=estimate, actor=jaan, reason="kohalik")
+    # Edits made before the TL-01 lock (a person can no longer make them now).
+    with divergence_from_before_the_lock():
+        set_matter_title(matter=matter, value="Juristi oma pealkiri", actor=jaan)
+        assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
+        change_stage(
+            matter=_matter("2026_253"),
+            stage=StageVocabulary.objects.get(key="government"),
+            actor=jaan,
+        )
+        set_next_action(matter=_matter("2026_253"), text="Helistan ministeeriumi", actor=jaan)
+        change_response_deadline(
+            matter=_matter("2026_253"),
+            deadline=dt.date(2099, 12, 24),
+            actor=jaan,
+            change="MOVED",
+        )
+        change_track(matter=_matter("2026_253"), track=Track.KODA_INITIATIVE, actor=jaan)
+        set_matter_dates(matter=_matter("2026_253"), received_date=dt.date(2026, 2, 2), actor=jaan)
+        other = (
+            Matter._meta.get_field("legal_instruments")
+            .related_model._default_manager.exclude(key="seadus")
+            .first()
+        )
+        set_legal_instruments(matter=_matter("2026_253"), legal_instruments=[other], actor=jaan)
+        estimate = MatterImportantDate.objects.get(
+            matter=matter, kind="ESTIMATED_COMMENCEMENT", status="ACTIVE"
+        )
+        cancel_important_date(record=estimate, actor=jaan, reason="kohalik")
     assert _parity("2026_253") != before
 
     run = _run(reference, at=_at(1))
@@ -996,7 +1023,8 @@ def test_a_technical_hold_is_never_restored_over(reference):
     reference["source"].edit("2026_253", vastutaja="Tundmatu Isik")
     _run(reference, at=_at(0))
     jaan = reference["world"]["jaan"]
-    assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
+    with divergence_from_before_the_lock():
+        assign_matter(matter=_matter("2026_253"), owner=jaan, actor=jaan)
     run = _run(reference, at=_at(1))
     owner = _decisions(run, "2026_253")["owner"]
     assert (owner.outcome, owner.reason) == (
@@ -1737,6 +1765,7 @@ def test_lovables_own_request_moved_by_lovable_with_an_earlier_send_is_answered(
     assert ended.note.startswith("Lovable'i järgi saadetud")
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_lovables_request_moved_by_a_person_is_answered_by_an_earlier_send(reference):
     """P2-1 probe B: a person moved Lovable's request (MOVED keeps its
     `requested_at`); Lovable then records an earlier send — ANSWERED, no false note."""
@@ -1758,6 +1787,7 @@ def test_lovables_request_moved_by_a_person_is_answered_by_an_earlier_send(refer
     assert "enne seda küsimist" not in ended.note
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_a_request_moved_and_answered_by_a_person_is_still_lovables_request(reference):
     """P2-2: a person moved Lovable's request (11.04 → 12.24) and answered it:
     the chain holds Lovable's day — held, never a second consultation."""
@@ -1828,6 +1858,7 @@ def _replace_and_answer(reference: dict[str, Any], previous_outcome: str) -> Non
     )
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_a_request_set_again_after_juristids_answer_follows_whether_lovable_changed(reference):
     """4e P3-2 as amended in 4f: a person replaced Lovable's request (SUPERSEDED,
     not answered) and answered their own. Lovable unchanged: Lovable's request
@@ -1841,6 +1872,7 @@ def test_a_request_set_again_after_juristids_answer_follows_whether_lovable_chan
     assert _matter("2026_253").response_deadline == dt.date.fromisoformat(REQUEST)
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_lovables_request_answered_then_replaced_and_answered_is_held(reference):
     """4f P2-A probe B: REPLACED with previous_outcome=ANSWERED — Lovable's own
     request was answered in Juristid; the later answer must not hide it."""
@@ -1855,6 +1887,7 @@ def test_lovables_request_answered_then_replaced_and_answered_is_held(reference)
     assert _matter("2026_253").response_deadline is None
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_lovables_request_answered_then_a_fresh_one_answered_is_held(reference):
     """4f P2-A probe A: Juristid answered Lovable's request, then asked and
     answered a fresh request of its own: still held, no second consultation."""
@@ -1906,6 +1939,7 @@ def test_the_first_night_without_a_recorded_identity_falls_back_to_the_dates(ref
             assert lovable_sync.REQUESTED_AT in state.applied["opinion_deadline"], state.reference
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_the_sent_path_ends_only_lovables_own_request(reference):
     """4f P3-3 / P3-2: Lovable records the send for its request day, but the
     current request on that day is a fresh one of Juristid's (REPLACED, then
@@ -1941,6 +1975,7 @@ def test_the_sent_path_ends_only_lovables_own_request(reference):
     ).exists()
 
 
+@pytest.mark.usefixtures("request_edits_from_before_the_lock")
 def test_a_legacy_moved_request_keeps_its_whole_chain(reference):
     """4f P3-4: a request with no `requested_at`, moved and then answered: the
     MOVED rows lead back to Lovable's day, so it is held."""
@@ -1975,3 +2010,242 @@ def test_a_legacy_moved_request_keeps_its_whole_chain(reference):
     run = _run(reference, at=_at(1))
     held = _decisions(run, "2026_253")["opinion_deadline"]
     assert held.reason == lovable_sync.ANSWERED_IN_JURISTID
+
+
+# -- every source-driven write names its run (LS-03) -----------------------------------
+
+
+def _drafting_reference(reference: dict[str, Any]) -> str:
+    """The fixture's last drafting topic: open, at «Riigikogus», with an open request."""
+    return str(reference["topics"][-1]["source"]["row"]["nr"])
+
+
+def _closed_locally(reference: dict[str, Any], ref: str) -> None:
+    """Run once, then a person closes the Teema in Juristid."""
+    from app.matters.services import close_matter
+
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    close_matter(
+        matter=_matter(ref),
+        disposition=Disposition.NO_POSITION_FORMED,
+        actor=None,
+        follow_ups_confirmed=True,
+    )
+
+
+def _source_reopens_into_another_stage(reference: dict[str, Any], ref: str) -> None:
+    _closed_locally(reference, ref)
+    reference["source"].edit(ref, hetkeseis="kooskõlastusringil")
+
+
+def _source_moves_the_stage(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, hetkeseis="kooskõlastusringil")
+
+
+def _source_moves_the_request(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, arvamuse_tahtaeg="2099-12-01")
+
+
+def _source_states_another_closure_reason(reference: dict[str, Any], ref: str) -> None:
+    _closed_locally(reference, ref)
+    reference["source"].edit(ref, hetkeseis="rohkem ei tegele")
+
+
+def _source_adds_a_general_order(reference: dict[str, Any], ref: str) -> None:
+    _commencements(reference["source"], ref, ("Üldises korras", None, ""))
+
+
+def _source_fixes_the_general_order(reference: dict[str, Any], ref: str) -> None:
+    _source_adds_a_general_order(reference, ref)
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    _commencements(reference["source"], ref, ("Kindla kuupäevaga", "2099-01-01", ""))
+
+
+def _source_adds_a_fixed_day(reference: dict[str, Any], ref: str) -> None:
+    _commencements(reference["source"], ref, ("Kindla kuupäevaga", "2099-01-01", ""))
+
+
+def _source_removes_the_fixed_day(reference: dict[str, Any], ref: str) -> None:
+    _source_adds_a_fixed_day(reference, ref)
+    assert _run(reference, at=_at(0)).status == SyncRunStatus.SUCCEEDED
+    _commencements(reference["source"], ref)
+
+
+def _source_marks_an_initiative(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, koja_ettepanek=True)
+
+
+def _source_names_the_act(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, oigusakt="määrus")
+
+
+def _source_moves_the_received_day(reference: dict[str, Any], ref: str) -> None:
+    reference["source"].edit(ref, sisse="2026-02-02")
+
+
+def _source_closes_a_teema_with_live_work(reference: dict[str, Any], ref: str) -> None:
+    """Lovable says «jõustunud» on a Teema whose only live work is its own
+    drafting step: the source closure ends it.
+
+    Since TL-02 (owner decision 12.11.2026, docs/adr/0213 §10.13) a planned
+    overview or an open Kaasamine wait *holds* a source closure instead of
+    being ended by it, so no sync-written WEBSITE_OVERVIEW_CANCELLED or
+    ENGAGEMENT_FEEDBACK_CLOSED exists any more; their cancellation by an
+    attributed release is `tests/test_tl02_closure_hold.py`."""
+    reference["source"].edit(ref, hetkeseis="jõustunud")
+
+
+def _stage_keys(before: str, after: str) -> Any:
+    def check(payload: dict[str, Any]) -> None:
+        assert (payload["from_key"], payload["to_key"]) == (before, after)
+
+    return check
+
+
+def _deadline_moved(payload: dict[str, Any]) -> None:
+    assert (payload["deadline"], payload["outcome"], payload["next_deadline"]) == (
+        REQUEST,
+        ResponseDeadlineOutcome.MOVED,
+        "2099-12-01",
+    )
+
+
+def _deadline_field_moved(payload: dict[str, Any]) -> None:
+    assert (payload["deadline_from"], payload["deadline_to"]) == (REQUEST, "2099-12-01")
+
+
+def _reason_changed(payload: dict[str, Any]) -> None:
+    assert payload["from"]["disposition"] == Disposition.NO_POSITION_FORMED
+    assert payload["to"]["disposition"] == Disposition.MONITORING_STOPPED
+
+
+def _effective_added(payload: dict[str, Any]) -> None:
+    assert (payload["kind"], payload["date"]) == ("GENERAL_ORDER", None)
+
+
+def _effective_cancelled(payload: dict[str, Any]) -> None:
+    assert payload["date"] is None and payload["reason"].startswith("Lovable'is muudeti")
+
+
+def _important_added(payload: dict[str, Any]) -> None:
+    assert (payload["kind"], payload["date"]) == ("PLANNED_COMMENCEMENT", "2099-01-01")
+
+
+def _important_cancelled(payload: dict[str, Any]) -> None:
+    assert payload["date"] == "2099-01-01" and payload["reason"].startswith("Lovable'is muudeti")
+
+
+def _track_changed(payload: dict[str, Any]) -> None:
+    assert payload["to"] == Track.KODA_INITIATIVE and payload["from"] != Track.KODA_INITIATIVE
+
+
+def _act_named(payload: dict[str, Any]) -> None:
+    from app.taxonomy.legal_instruments import current_legal_instrument_keys
+
+    instruments = Matter._meta.get_field("legal_instruments").related_model
+    manager = instruments._default_manager
+    wanted = manager.get(key=current_legal_instrument_keys("määrus")[0])
+    held = manager.get(key=current_legal_instrument_keys("seadus")[0])  # the one the Teema held
+    assert (payload["added"], payload["removed"]) == ([str(wanted.pk)], [str(held.pk)])
+
+
+def _received_moved(payload: dict[str, Any]) -> None:
+    assert (payload["received_from"], payload["received_to"]) == ("2026-01-05", "2026-02-02")
+
+
+def _ended_by_closure(reason: str) -> Any:
+    """A closure's ended work names the closure as its reason."""
+
+    def check(payload: dict[str, Any]) -> None:
+        assert payload["reason"] == reason
+
+    return check
+
+
+def _reopened(payload: dict[str, Any]) -> None:
+    assert set(payload) == {"provenance"}  # the reopening itself has no value to carry
+
+
+@pytest.mark.parametrize(
+    ("event_type", "scenario", "values"),
+    [
+        ("MATTER_REOPENED", _source_reopens_into_another_stage, _reopened),
+        (
+            "MATTER_STAGE_CHANGED",
+            _source_reopens_into_another_stage,
+            _stage_keys("parliament", "consultation"),
+        ),
+        (
+            "MATTER_STAGE_CHANGED",
+            _source_moves_the_stage,
+            _stage_keys("parliament", "consultation"),
+        ),
+        ("RESPONSE_DEADLINE_ENDED", _source_moves_the_request, _deadline_moved),
+        ("MATTER_DATE_CHANGED", _source_moves_the_request, _deadline_field_moved),
+        ("MATTER_CLOSURE_REASON_CHANGED", _source_states_another_closure_reason, _reason_changed),
+        ("EFFECTIVE_DATE_ADDED", _source_adds_a_general_order, _effective_added),
+        ("EFFECTIVE_DATE_CANCELLED", _source_fixes_the_general_order, _effective_cancelled),
+        ("IMPORTANT_DATE_ADDED", _source_adds_a_fixed_day, _important_added),
+        ("IMPORTANT_DATE_CANCELLED", _source_removes_the_fixed_day, _important_cancelled),
+        ("MATTER_TRACK_CHANGED", _source_marks_an_initiative, _track_changed),
+        ("MATTER_LEGAL_INSTRUMENTS_CHANGED", _source_names_the_act, _act_named),
+        ("MATTER_DATE_CHANGED", _source_moves_the_received_day, _received_moved),
+        (
+            "NEXT_ACTION_CANCELLED",
+            _source_closes_a_teema_with_live_work,
+            _ended_by_closure(CLOSED_WITH_MATTER),
+        ),
+    ],
+)
+def test_every_source_driven_change_is_audited_with_its_run_and_source(
+    reference, event_type, scenario, values
+):
+    """Regression: LS-03. A reopening, a stage move, a request moved or ended, a
+    commencement added or cancelled, a closure reason changed, the track, the
+    act, the received day, and the step, overview and wait a source closure
+    ends — each written by the sync says from what to what, that Lovable did it
+    (never a person) and in which run, on the event an authorised reviewer reads."""
+    from app.audit.provenance import LOVABLE_SYNC_ACTOR, source_actor_label, source_provenance
+
+    ref = _drafting_reference(reference)
+    scenario(reference, ref)
+    earlier = list(ChangeEvent.objects.values_list("pk", flat=True))
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    events = ChangeEvent.objects.filter(matter=_matter(ref), event_type=event_type).exclude(
+        pk__in=earlier
+    )
+    if event_type == "MATTER_DATE_CHANGED":
+        # The request's field and the received day write the same type.
+        key = "received_to" if scenario is _source_moves_the_received_day else "deadline_to"
+        events = events.filter(payload__has_key=key)
+    assert events.exists(), f"no {event_type} written by the run"
+    for event in events:
+        assert event.actor_id is None  # never a fabricated person
+        provenance = source_provenance(event.payload)
+        assert provenance is not None, event.payload
+        assert provenance == event.payload["provenance"]  # nested, never spread
+        assert provenance["provenance_source"] == lovable_sync.PROVENANCE_SOURCE
+        assert provenance["sync_run"] == str(run.pk)
+        assert provenance["source_reference"] == ref
+        assert provenance["source_snapshot_sha256"] == run.snapshot_sha256
+        assert provenance["mapping_version"] == lovable_sync.MAPPING_VERSION
+        assert source_actor_label(event.payload) == LOVABLE_SYNC_ACTOR
+        values(event.payload)
+
+
+def test_a_stage_period_the_sync_begins_is_imported_never_a_persons(reference):
+    """Regression: LS-03. A reopening the sync makes begins its stage period as
+    every other stage move of the sync does (IMPORTED), not as a person's
+    «Ava uuesti» (RECORDED)."""
+    from app.matters.enums import StageEpisodeOrigin
+    from app.matters.models import MatterStageEpisode
+
+    ref = _drafting_reference(reference)
+    _source_reopens_into_another_stage(reference, ref)
+    run = _run(reference, at=_at(1))
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    matter = _matter(ref)
+    assert matter.is_open
+    current = MatterStageEpisode.objects.get(matter=matter, is_current=True)
+    assert (current.stage.key, current.origin) == ("consultation", StageEpisodeOrigin.IMPORTED)

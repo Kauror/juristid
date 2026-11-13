@@ -243,7 +243,7 @@ def _http(fake: Any, seen: list[tuple[str, str]]) -> lovable_source.HttpTranspor
         columns = query.pop("select").split(",")
         order, offset, limit = query.pop("order"), int(query.pop("offset")), int(query.pop("limit"))
         rows = fake.select(table, columns, filters=query, order=order)
-        return _Answer(rows[offset : offset + limit], url=url)
+        return _Answer(rows[offset : offset + limit], url=url, total=len(rows))
 
     return lovable_source.HttpTransport(_config(), opener=opener)
 
@@ -585,6 +585,7 @@ def test_uuendused_shows_the_cohort_entering_then_its_changes(second_night):
 
 def test_apply_writes_every_source_change_through_its_service(second_night, monkeypatch):
     from app.matters.workspace import change_current_action
+    from tests.source_ownership_support import divergence_from_before_the_lock
 
     mari = second_night["world"]["mari"]
     review = _matter(REVIEW)
@@ -592,15 +593,17 @@ def test_apply_writes_every_source_change_through_its_service(second_night, monk
     review.policy_areas.add(area)
     estimate = _matter(ESTIMATE)
     local = NextAction.objects.get(matter=estimate, status=ActionStatus.OPEN)
-    change_current_action(
-        matter=estimate,
-        actor=mari,
-        action_id=local.pk,
-        text="ootan 2. lugemist ja helistan",
-        kind=local.kind,
-        date_semantics=local.date_semantics,
-        target_date=local.target_date,
-    )
+    # A local edit from before the TL-01 lock: a person is refused it in COMPARE now (E9).
+    with divergence_from_before_the_lock():
+        change_current_action(
+            matter=estimate,
+            actor=mari,
+            action_id=local.pk,
+            text="ootan 2. lugemist ja helistan",
+            kind=local.kind,
+            date_semantics=local.date_semantics,
+            target_date=local.target_date,
+        )
     old = NextAction.objects.get(matter=review, status=ActionStatus.OPEN)
     before = _by_reference(_business_digests(monkeypatch))
 

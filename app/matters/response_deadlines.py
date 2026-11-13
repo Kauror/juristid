@@ -47,6 +47,7 @@ from app.core.errors import DomainError
 from app.matters.enums import ResponseDeadlineChange, ResponseDeadlineOutcome
 from app.matters.locks import lock_matter_for_write
 from app.matters.models import Matter, MatterResponseDeadline
+from app.matters.source_ownership import refuse_source_owned_change
 
 #: The outcomes a person may give a deadline a new request replaces.
 REPLACED_OUTCOMES: tuple[str, ...] = (
@@ -60,6 +61,15 @@ RESOLVED_OUTCOMES: tuple[str, ...] = (
     ResponseDeadlineOutcome.ANSWERED,
     ResponseDeadlineOutcome.NOT_ANSWERING,
     ResponseDeadlineOutcome.CANCELLED,
+)
+
+#: How a person may still end Lovable's request on a synchronised Teema
+#: (audit 2026-11-11 TL-01): answered or declined in Juristid. The night holds
+#: that, never undoes it, until Lovable records the sending
+#: (`lovable_sync.ANSWERED_IN_JURISTID`); a withdrawal it would undo.
+SOURCE_TOLERATED_ENDINGS: tuple[str, ...] = (
+    ResponseDeadlineOutcome.ANSWERED,
+    ResponseDeadlineOutcome.NOT_ANSWERING,
 )
 
 CHANGE_NEEDS_A_MEANING = "Vali, kas sama küsimise tähtaeg muutus või tuli uus arvamuse küsimine."
@@ -142,8 +152,12 @@ def _end_current(
     submission: Any = None,
     note: str = "",
     next_deadline: date | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterResponseDeadline:
-    """Write the current deadline into history. The caller changes the field."""
+    """Write the current deadline into history. The caller changes the field.
+
+    ``provenance`` — the run of a change no person made (the Lovable
+    synchronisation, docs/adr/0213 §10.9) — rides nested on the event."""
     if outcome not in ResponseDeadlineOutcome.values:
         raise DomainError(UNKNOWN_OUTCOME)
     note = (note or "").strip()
@@ -179,13 +193,20 @@ def _end_current(
             "outcome": outcome,
             "next_deadline": next_deadline.isoformat() if next_deadline else None,
             "has_note": bool(note),
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return row
 
 
 def _write_field(
-    *, locked: Matter, matter: Matter, deadline: date | None, requested_at: Any, actor: Any
+    *,
+    locked: Matter,
+    matter: Matter,
+    deadline: date | None,
+    requested_at: Any,
+    actor: Any,
+    provenance: dict[str, Any] | None = None,
 ) -> None:
     before = locked.response_deadline
     locked.response_deadline = deadline
@@ -203,6 +224,7 @@ def _write_field(
             payload={
                 "deadline_from": before.isoformat() if before else None,
                 "deadline_to": deadline.isoformat() if deadline else None,
+                **({"provenance": provenance} if provenance else {}),
             },
         )
 
@@ -218,6 +240,7 @@ def change_response_deadline(
     previous_submission: Any = None,
     previous_note: str = "",
     expected_revision: str | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Set, move, replace or clear the current `Arvamuse tähtaeg`.
 
@@ -226,19 +249,34 @@ def change_response_deadline(
     `REPLACED` starts a new request and ends the old one with
     ``previous_outcome``, which the person must choose. Emptying the field ends
     the current deadline as withdrawn, or with the outcome given.
+
+    ``provenance`` is for a change no person made (the Lovable synchronisation,
+    docs/adr/0213 §10.9): every event this writes carries it.
     """
     locked = lock_matter_for_write(matter.pk)
     _check_revision(locked, expected_revision)
     current = locked.response_deadline
     if deadline == current:
         return matter
+    if not (deadline is None and previous_outcome in SOURCE_TOLERATED_ENDINGS):
+        # Lovable's `arvamuse_tahtaeg` on a synchronised Teema (audit
+        # 2026-11-11 TL-01); ending it as answered or declined is not
+        # (`SOURCE_TOLERATED_ENDINGS`).
+        refuse_source_owned_change(locked, "opinion_deadline", actor=actor)
     # A Chamber initiative may set, move and clear its own deadline since the
     # owner's decision of 2026-10-13 (docs/adr/0151 amendment); only a *new
     # request* below is refused on one.
     now = timezone.now()
 
     if current is None:
-        _write_field(locked=locked, matter=matter, deadline=deadline, requested_at=now, actor=actor)
+        _write_field(
+            locked=locked,
+            matter=matter,
+            deadline=deadline,
+            requested_at=now,
+            actor=actor,
+            provenance=provenance,
+        )
         return matter
 
     if deadline is None:
@@ -251,8 +289,16 @@ def change_response_deadline(
             actor=actor,
             submission=previous_submission,
             note=previous_note,
+            provenance=provenance,
         )
-        _write_field(locked=locked, matter=matter, deadline=None, requested_at=None, actor=actor)
+        _write_field(
+            locked=locked,
+            matter=matter,
+            deadline=None,
+            requested_at=None,
+            actor=actor,
+            provenance=provenance,
+        )
         return matter
 
     if change == ResponseDeadlineChange.MOVED:
@@ -262,6 +308,7 @@ def change_response_deadline(
             actor=actor,
             note=previous_note,
             next_deadline=deadline,
+            provenance=provenance,
         )
         _write_field(
             locked=locked,
@@ -269,6 +316,7 @@ def change_response_deadline(
             deadline=deadline,
             requested_at=locked.response_requested_at,
             actor=actor,
+            provenance=provenance,
         )
         return matter
 
@@ -289,8 +337,16 @@ def change_response_deadline(
             submission=previous_submission,
             note=previous_note,
             next_deadline=deadline,
+            provenance=provenance,
         )
-        _write_field(locked=locked, matter=matter, deadline=deadline, requested_at=now, actor=actor)
+        _write_field(
+            locked=locked,
+            matter=matter,
+            deadline=deadline,
+            requested_at=now,
+            actor=actor,
+            provenance=provenance,
+        )
         return matter
 
     raise DomainError(CHANGE_NEEDS_A_MEANING)
@@ -311,6 +367,7 @@ def request_response_deadline(
     deadline: date,
     actor: Any = None,
     expected_revision: str | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """`+ Lisa → Arvamuse tähtaeg` — a new request for an opinion on this Matter.
 
@@ -343,6 +400,9 @@ def request_response_deadline(
 
     if is_koda_initiative(locked):
         raise DomainError(INITIATIVE_HAS_NO_NEW_REQUEST)
+    # A new request is Lovable's `arvamuse_tahtaeg` on a synchronised Teema
+    # (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked, "opinion_deadline", actor=actor)
     if locked.response_deadline is not None:
         legacy_settled = (
             locked.response_requested_at is None
@@ -358,9 +418,15 @@ def request_response_deadline(
             actor=actor,
             note=LEGACY_DISCHARGE_NOTE,
             next_deadline=deadline,
+            provenance=provenance,
         )
     _write_field(
-        locked=locked, matter=matter, deadline=deadline, requested_at=timezone.now(), actor=actor
+        locked=locked,
+        matter=matter,
+        deadline=deadline,
+        requested_at=timezone.now(),
+        actor=actor,
+        provenance=provenance,
     )
     return matter
 
@@ -374,18 +440,36 @@ def resolve_response_deadline(
     submission: Any = None,
     note: str = "",
     expected_revision: str | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterResponseDeadline:
-    """`Lõpeta tähtaeg` — the current deadline was answered, declined or withdrawn."""
+    """`Lõpeta tähtaeg` — the current deadline was answered, declined or withdrawn.
+
+    ``provenance``: as on `change_response_deadline`."""
     locked = lock_matter_for_write(matter.pk)
     _check_revision(locked, expected_revision)
     if locked.response_deadline is None:
         raise DomainError(NO_CURRENT_DEADLINE)
     if outcome not in RESOLVED_OUTCOMES:
         raise DomainError(RESOLVE_NEEDS_AN_OUTCOME)
+    if outcome not in SOURCE_TOLERATED_ENDINGS:
+        # Withdrawing Lovable's request is Lovable's (audit 2026-11-11 TL-01).
+        refuse_source_owned_change(locked, "opinion_deadline", actor=actor)
     row = _end_current(
-        locked=locked, outcome=outcome, actor=actor, submission=submission, note=note
+        locked=locked,
+        outcome=outcome,
+        actor=actor,
+        submission=submission,
+        note=note,
+        provenance=provenance,
     )
-    _write_field(locked=locked, matter=matter, deadline=None, requested_at=None, actor=actor)
+    _write_field(
+        locked=locked,
+        matter=matter,
+        deadline=None,
+        requested_at=None,
+        actor=actor,
+        provenance=provenance,
+    )
     return row
 
 
@@ -457,16 +541,35 @@ def answer_initiative_deadline_by_send(
     return row
 
 
-def end_deadline_left_by_closure(*, locked: Matter, matter: Matter, actor: Any) -> None:
+def end_deadline_left_by_closure(
+    *,
+    locked: Matter,
+    matter: Matter,
+    actor: Any,
+    provenance: dict[str, Any] | None = None,
+) -> None:
     """On reopening: the deadline the file closed with is not current work again.
 
     Called by the reopening act unless the person carried the deadline forward.
-    Closing never answered it, so it ends as `CLOSED`, not as answered.
+    Closing never answered it, so it ends as `CLOSED`, not as answered. A
+    reopening no person made passes its ``provenance`` on.
     """
     if locked.response_deadline is None:
         return
-    _end_current(locked=locked, outcome=ResponseDeadlineOutcome.CLOSED, actor=actor)
-    _write_field(locked=locked, matter=matter, deadline=None, requested_at=None, actor=actor)
+    _end_current(
+        locked=locked,
+        outcome=ResponseDeadlineOutcome.CLOSED,
+        actor=actor,
+        provenance=provenance,
+    )
+    _write_field(
+        locked=locked,
+        matter=matter,
+        deadline=None,
+        requested_at=None,
+        actor=actor,
+        provenance=provenance,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -146,10 +146,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--max-changed",
             type=int,
-            default=0,
+            default=None,
             help=(
-                "run: raise the Teemad-written breaker for this one supervised run "
-                "(the first source-authoritative convergence); recorded in the run."
+                "run --trigger manual: raise the Teemad-written breaker for this one "
+                "supervised run (the first source-authoritative convergence); recorded "
+                "in the run. 0 is a limit of zero."
             ),
         )
         parser.add_argument(
@@ -157,8 +158,8 @@ class Command(BaseCommand):
             type=int,
             default=None,
             help=(
-                "run: raise the restore breaker for this one supervised run (a held "
-                "backlog of restores drains at once); recorded in the run."
+                "run --trigger manual: raise the restore breaker for this one supervised "
+                "run (a held backlog of restores drains at once); recorded in the run."
             ),
         )
         parser.add_argument("--mode", choices=["off", "compare", "apply"], default="")
@@ -370,17 +371,30 @@ class Command(BaseCommand):
     # -- running ---------------------------------------------------------------
 
     def _run(self, options: dict[str, Any]) -> None:
+        trigger = SyncTrigger.SCHEDULED if options["trigger"] == "scheduled" else SyncTrigger.MANUAL
+        # A breaker override is a person's decision for one supervised run (LS-06):
+        # never on the scheduled night, never negative; refused before any read.
+        for flag in ("max_changed", "max_restored"):
+            value = options[flag]
+            if value is None:
+                continue
+            if trigger != SyncTrigger.MANUAL:
+                raise CommandError(
+                    f"--{flag.replace('_', '-')} is only for a supervised --trigger manual run; "
+                    "the scheduled night keeps the approved limits."
+                )
+            if value < 0:
+                raise CommandError(f"--{flag.replace('_', '-')} cannot be negative.")
         if not (settings.LOVABLE_SYNC_ENABLED and settings.REAL_DATA_ALLOWED):
             raise CommandError(
                 "run needs JURISTID_LOVABLE_SYNC and REAL_DATA_ALLOWED on this container."
             )
         config = lovable_source.load_config(self._credentials(options))
-        trigger = SyncTrigger.SCHEDULED if options["trigger"] == "scheduled" else SyncTrigger.MANUAL
         run = lovable_sync.run_sync(
             trigger=trigger,
             transport=lovable_source.HttpTransport(config),
             backup_set=options["backup_set"],
-            max_changed=options["max_changed"] or None,
+            max_changed=options["max_changed"],
             max_restored=options["max_restored"],
         )
         self._finish(options, run)

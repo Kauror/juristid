@@ -351,6 +351,7 @@ class SetNextAction:
         common.require_writer(user)
         matter = common.resolve_matter(user, args.matter)
         common.require_writable_matter(matter)
+        common.refuse_source_owned(matter, "next_action")
         _refuse_a_departed_owner(matter)
         named = common.uuid_or_refuse(args.current_action_id, "current_action_id")
 
@@ -666,6 +667,9 @@ class CompleteAction:
         common.require_writable_matter(matter)
         named = common.uuid_or_refuse(args.action_id, "action_id")
         current = _resolve_current(user, matter, named)
+        if current.follow_up_id is None:
+            # An opinion follow-up check is Juristid's own; the step is Lovable's.
+            common.refuse_source_owned(matter, "next_action")
         said = (args.what_was_done or "").strip()
         canonical: dict[str, Any] = {"matter_id": str(matter.pk), "action_id": str(current.pk)}
         changes = [Change("status", "Olek", "Kehtiv", "Tehtud")]

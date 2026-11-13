@@ -40,6 +40,8 @@ header did not recognise as an editor.
   {% if not can_change_stage %}
     {% if matter.stage %}<span class="metaline__value">{{ matter.stage.label_et }}</span>
     {% else %}<span class="metaline__value metafield__missing">—</span>{% endif %}
+    {# Lovable's `hetkeseis` on a synchronised Teema (audit 2026-11-11 TL-01). #}
+    {% if source_locked.stage %}{% include "components/source_owned_tip.html" with field="stage" %}{% endif %}
   {% else %}
   <details class="inlineedit" data-uxpopover data-stagepick>
     <summary class="inlineedit__trigger"

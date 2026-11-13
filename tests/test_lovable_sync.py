@@ -37,6 +37,7 @@ from app.submissions.models import Submission
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from tests import factories
+from tests.lovable_contract.fake import FakeLovable  # re-exported: suites import it from here
 from tests.test_lovable_pilot import URL, _apply, _package, _topic, pilot_on, world  # noqa: F401
 
 TALLINN = lovable_sync.TALLINN
@@ -144,49 +145,6 @@ def cohort(world, pilot_on, monkeypatch):  # noqa: F811
     # (Lovable is the source of truth at all times — docs/adr/0213 §10).
     source.commencements.extend(copy.deepcopy(topics[1]["source"]["commencements"]))
     return {"source": source, "world": world, "topics": topics}
-
-
-class FakeLovable:
-    """Lovable's PostgREST as the sync reads it: the allowlisted tables only."""
-
-    def __init__(self) -> None:
-        self.rows: dict[str, dict[str, Any]] = {}
-        self.commencements: list[dict[str, Any]] = []
-        #: `topic_stage_link` rows: ``{"prev_topic_id", "next_topic_id"}``.
-        self.stage_links: list[dict[str, str]] = []
-        self.fail: Exception | None = None
-        self.on_select: Any = None
-
-    def put(self, topic_id: str, row: dict[str, Any], *, version: int) -> None:
-        self.rows[topic_id] = {**row, "id": topic_id, "version": version}
-
-    def edit(self, reference: str, **values: Any) -> None:
-        for row in self.rows.values():
-            if row["nr"] == reference:
-                row.update(values)
-                row["version"] += 1
-                return
-        raise KeyError(reference)
-
-    def select(
-        self, table: str, columns: Any, *, filters: dict[str, str], order: str
-    ) -> list[dict[str, Any]]:
-        if self.fail is not None:
-            raise self.fail
-        if self.on_select is not None:
-            self.on_select(table)
-        wanted = None
-        for value in filters.values():
-            wanted = set(value[4:-1].split(","))
-        if table == "topic":
-            rows = [r for r in self.rows.values() if wanted is None or r["id"] in wanted]
-            return [{c: r.get(c) for c in columns} for r in sorted(rows, key=lambda r: r["id"])]
-        if table == "topic_commencement":
-            return [dict(r) for r in self.commencements if r["topic_id"] in (wanted or set())]
-        if table == "topic_stage_link" and filters:
-            column = next(iter(filters))
-            return [dict(r) for r in self.stage_links if r.get(column) in (wanted or set())]
-        return []
 
 
 def _run(
@@ -609,17 +567,20 @@ def test_an_edited_step_is_replaced_by_a_source_date_change(cohort):
 def test_an_edit_made_after_planning_is_caught_under_the_lock(cohort, monkeypatch):
     """A lawyer's save between the plan and the write turns the write into a conflict."""
     from app.matters.services import set_matter_title
+    from tests.source_ownership_support import divergence_from_before_the_lock
 
     cohort["source"].edit("2026_501", teema="Lovable uus pealkiri")
     real_apply = lovable_sync.apply_matter
 
     def edit_then_apply(plan, **kw):
         if plan.state.reference == "2026_501":
-            set_matter_title(
-                matter=_matter("2026_501"),
-                value="Vahepealne muudatus",
-                actor=cohort["world"]["mari"],
-            )
+            # A save from before the TL-01 lock: a person is refused it in APPLY now.
+            with divergence_from_before_the_lock():
+                set_matter_title(
+                    matter=_matter("2026_501"),
+                    value="Vahepealne muudatus",
+                    actor=cohort["world"]["mari"],
+                )
         return real_apply(plan, **kw)
 
     monkeypatch.setattr(lovable_sync, "apply_matter", edit_then_apply)
@@ -763,6 +724,28 @@ def test_compare_mode_reports_and_writes_nothing(cohort):
     assert _writes() == before
 
 
+def test_in_compare_a_persons_edit_is_refused_and_the_run_still_writes_nothing(cohort):
+    """Regression: TL-01/E9. COMPARE locks a person out (owner 12.11), and the lock adds no
+    business write to a COMPARE night: the run reports and Juristid stays as it was."""
+    from app.matters.services import set_matter_title
+    from app.matters.source_ownership import refusal_message
+    from tests.refusals import refused
+
+    lovable_sync.set_mode(SyncMode.COMPARE, reason="first nights")
+    _run(cohort)  # the first night seeds the states the lock reads
+    with refused(refusal_message("title")):
+        set_matter_title(
+            matter=_matter("2026_501"), value="Juristi oma", actor=cohort["world"]["mari"]
+        )
+    cohort["source"].edit("2026_501", teema="Uus 501")
+    before = _writes()
+    run = _run(cohort, at=NIGHT + dt.timedelta(days=1))
+    assert run.status == SyncRunStatus.SUCCEEDED
+    assert _decisions(run, "2026_501")["title"].outcome == SyncOutcome.ELIGIBLE
+    assert _writes() == before
+    assert _matter("2026_501").title == "Näidisteema 2026_501"
+
+
 # ---------------------------------------------------------------------------
 # Pause and cutover
 # ---------------------------------------------------------------------------
@@ -887,6 +870,9 @@ class _Response:
         import json
 
         self.raw = json.dumps(body).encode()
+        # The whole answer in one page, with PostgREST's exact count (QA-01).
+        rows = len(body) if isinstance(body, list) else 0
+        self.headers = {"Content-Range": f"0-{rows - 1}/{rows}" if rows else "*/0"}
 
     def read(self, _n: int) -> bytes:
         return self.raw
@@ -1215,7 +1201,7 @@ def test_a_local_and_a_source_change_raise_no_conflict_to_hold_the_night(cohort,
     no conflict — the source wins — so even a zero conflict allowance holds nothing."""
     from app.matters.services import set_matter_title
 
-    monkeypatch.setattr(lovable_sync, "MAX_NEW_CONFLICTS", 0)
+    monkeypatch.setattr(lovable_sync, "MAX_NEW_HOLDS", 0)
     set_matter_title(matter=_matter("2026_501"), value="Juristi oma", actor=cohort["world"]["mari"])
     cohort["source"].edit("2026_501", teema="Lovable oma")
     first = _run(cohort)
@@ -1291,7 +1277,8 @@ def test_only_a_fresh_backup_set_opens_the_mutating_stage(backup_set, fresh):
 def test_a_stale_backup_set_writes_nothing(cohort):
     cohort["source"].edit("2026_501", teema="Uus 501")
     run = _run(cohort, backup_set="sets/20261020T000000Z")
-    assert run.status == SyncRunStatus.REVIEW_ONLY and run.error == lovable_sync.NO_BACKUP
+    assert run.status == SyncRunStatus.REVIEW_ONLY
+    assert run.error == f"{lovable_sync.NO_BACKUP}: SET_STALE"
     assert _matter("2026_501").title == "Näidisteema 2026_501"
 
 

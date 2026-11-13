@@ -315,6 +315,12 @@ MATTER_LEVEL_EVENT_TYPES: frozenset[str] = frozenset(
         ChangeEventType.MATTER_DATA_CLASS_CHANGED,
         ChangeEventType.MATTER_CLOSED,
         ChangeEventType.MATTER_REOPENED,
+        # A closed Teema's closure reason (and successor) set to its source's
+        # (docs/adr/0213 §10.4, LK-01). The Matter is the subject; the summary
+        # names no other Matter, and `Kõik muudatused` names a successor only
+        # to a reader who may open it (`matters.views.closure_reason_change_line`).
+        # The payload's `reason` may name it (latent, docs/adr/0213 §10.12).
+        ChangeEventType.MATTER_CLOSURE_REASON_CHANGED,
         ChangeEventType.MATTER_PROMOTED,
         ChangeEventType.MATTER_HISTORICAL_CUTOVER_CLOSED,
         ChangeEventType.MATTER_REGISTER_CUTOVER_RETIRED,
@@ -338,6 +344,49 @@ MATTER_LEVEL_EVENT_TYPES: frozenset[str] = frozenset(
         # the date and the outcome, never the opinion that answered it, which
         # keeps its own visibility on `MatterResponseDeadline`.
         ChangeEventType.RESPONSE_DEADLINE_ENDED,
+    }
+)
+
+
+#: Event types no history surface renders, each deliberately (LK-01): every
+#: `ChangeEventType` is in exactly one of `MATTER_LEVEL_EVENT_TYPES`,
+#: `child_event_types()` and this set, and
+#: `tests/test_substantive_matter_history.py` fails on a type in none of them,
+#: so a new event family is classified when it is added — never left out by
+#: accident, as `MATTER_CLOSURE_REASON_CHANGED` was in r54.
+HIDDEN_BY_DESIGN_EVENT_TYPES: frozenset[str] = frozenset(
+    {
+        # A tombstone's own event: no Teema page is left to show it on
+        # (docs/adr/0096 §4).
+        ChangeEventType.MATTER_DELETED,
+        # The other Matter, Document or Submission is named in the summary and
+        # has its own visibility, and no classifier in `_child_families` yet
+        # (see the note above `MATTER_LEVEL_EVENT_TYPES`).
+        ChangeEventType.MATTER_RELATION_ADDED,
+        ChangeEventType.MATTER_RELATION_REMOVED,
+        ChangeEventType.BACKGROUND_MATERIAL_ADDED,
+        ChangeEventType.BACKGROUND_MATERIAL_REMOVED,
+        # About a `Submission`, which carries its own override, with no
+        # classifier for these four: absent rather than allowed.
+        ChangeEventType.SUBMISSION_TAG_ASSIGNED,
+        ChangeEventType.SUBMISSION_TAG_REMOVED,
+        ChangeEventType.SUBMISSION_OVERVIEW_LINKED,
+        ChangeEventType.SUBMISSION_OVERVIEW_UNLINKED,
+        # A presentation preference for `Menetluse kulg`, not a change to the
+        # record (docs/adr/0074 §14).
+        ChangeEventType.TIMELINE_STEPS_CHANGED,
+        # The department's reference vocabulary: these name no Matter.
+        ChangeEventType.ORGANISATION_CREATED,
+        ChangeEventType.ORGANISATION_RENAMED,
+        ChangeEventType.ORGANISATION_ALIAS_ADDED,
+        ChangeEventType.ORGANISATION_ALIAS_REMOVED,
+        ChangeEventType.TAG_CREATED,
+        ChangeEventType.TAG_CHANGED,
+        ChangeEventType.TAG_ALIAS_ADDED,
+        ChangeEventType.TAG_ALIAS_REMOVED,
+        ChangeEventType.TAG_MERGED,
+        ChangeEventType.TAG_DEACTIVATED,
+        ChangeEventType.TAG_REACTIVATED,
     }
 )
 

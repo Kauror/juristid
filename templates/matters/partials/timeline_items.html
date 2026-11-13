@@ -245,7 +245,14 @@ record, not professional chronology (master specification 16.5).
             {% if not item.website_overview or not item.website_overview.is_published %}
             <div class="uxtl__editactions">
               {% include "matters/partials/row_copy_link.html" with row_key=item.row_key %}
-            {% if item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
+            {% if item.record and lovable_commencement_ids and item.record.pk|stringformat:"s" in lovable_commencement_ids %}
+                {% comment %}
+                  A commencement from Lovable on a synchronised Teema is
+                  Lovable's (audit 2026-11-11 TL-01): no `Muuda`, `Kustuta` or
+                  `Tühista`, an `i` instead. A person's own date keeps them.
+                {% endcomment %}
+                {% include "components/source_owned_tip.html" with field="commencement" tip_key=item.row_key %}
+            {% elif item.removable and not item.is_engagement and not item.external_position and not item.procedural_development and can_write_business_content and matter.is_open %}
                 {% comment %}
                   **`Muuda` and `Tühista` on an `Oluline tähtaeg`** (docs/adr/0120
                   §2). Since that record an upcoming milestone is the file's next

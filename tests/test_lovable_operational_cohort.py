@@ -591,7 +591,7 @@ def test_reads_are_get_only_across_both_cohorts(active):
         order, offset = query.pop("order"), int(query.pop("offset"))
         limit = int(query.pop("limit"))
         rows = fake.select(table, columns, filters=query, order=order)
-        return _Answer(rows[offset : offset + limit], url=url)
+        return _Answer(rows[offset : offset + limit], url=url, total=len(rows))
 
     transport = lovable_source.HttpTransport(_config(), opener=opener)
     run = lovable_sync.run_sync(

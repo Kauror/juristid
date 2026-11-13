@@ -17,7 +17,12 @@ outcome, the opinion and the note survive the refusal with the date.
 On a Chamber initiative «Uus arvamuse küsimine» is not offered: nobody asked
 Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
 2026-10-13). Its own deadline is moved or cleared.
+
+`answer_only` — a synchronised Teema (audit 2026-11-11 TL-01): the date is
+Lovable's, so only «Lõpeta tähtaeg» as answered or declined is offered, which
+the night holds rather than undoes (`SOURCE_TOLERATED_ENDINGS`).
 {% endcomment %}
+{% if not answer_only %}
 <fieldset class="field">
   <legend class="field__label field__label--plain">Kui kuupäev muutub</legend>
   <label class="cx-check" for="{{ prefix }}-change-moved">
@@ -31,14 +36,17 @@ Koda, and the service refuses a new request on one (docs/adr/0151, amendment of
   </label>
   {% endif %}
 </fieldset>
+{% endif %}
 <label class="field" for="{{ prefix }}-previous-outcome">
   <span class="field__label field__label--plain">Mis sai tähtajast {{ matter.response_deadline|date:"j.n.Y" }} (uue küsimise, tühjendamise või lõpetamise korral)</span>
   <select class="field__input field__input--compact" name="previous_outcome" id="{{ prefix }}-previous-outcome"{% if reopen.about == "outcome" %} aria-invalid="true" aria-describedby="{{ prefix }}-outcome-error"{% endif %}>
     <option value="">— vali —</option>
     <option value="ANSWERED"{% if reopen.values.previous_outcome == "ANSWERED" %} selected{% endif %}>Vastatud</option>
     <option value="NOT_ANSWERING"{% if reopen.values.previous_outcome == "NOT_ANSWERING" %} selected{% endif %}>Otsustati mitte vastata</option>
+    {% if not answer_only %}
     <option value="SUPERSEDED"{% if reopen.values.previous_outcome == "SUPERSEDED" %} selected{% endif %}>Jääb vastamata (asendub uue küsimisega)</option>
     <option value="CANCELLED"{% if reopen.values.previous_outcome == "CANCELLED" %} selected{% endif %}>Tühistatud</option>
+    {% endif %}
   </select>
   {% if reopen.about == "outcome" %}
     <span class="field__error" id="{{ prefix }}-outcome-error" role="alert">{{ reopen.error }}</span>

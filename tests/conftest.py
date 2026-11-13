@@ -231,6 +231,38 @@ def pdf_bytes():
     return b"%PDF-1.4 synthetic evidence"
 
 
+#: Names a test module holds when it drives a Lovable synchronisation run (its
+#: own import, or a helper imported from the sync suites).
+_SYNC_RUNNERS = frozenset(
+    {"lovable_sync", "run_sync", "_run", "run_next", "sync_admin", "data_sync_requests"}
+)
+
+
+@pytest.fixture(autouse=True)
+def lovable_backup_proof_accepted(request):
+    """An APPLY run in a sync test names a backup set taken minutes before it, as
+    the host script does, but no host has mounted that set into the test: in the
+    modules that drive a run (`_SYNC_RUNNERS`, and the contract suite's
+    modules), and only there, the verification's
+    proof (`lovable_sync.backup_proof_problem`, audit 2026-11-11 DR-05) is taken
+    as given. `tests/test_sync_robustness.py` puts the real check back and proves
+    it refuses; the set's name and age are still checked everywhere
+    (`lovable_sync.backup_set_problem`). A patch of its own, so a test's
+    ``monkeypatch.undo()`` does not take it away mid-test."""
+    module = getattr(request, "module", None)
+    # The contract suite drives its runs through `World.run`
+    # (`tests/lovable_contract/world.py`), so its modules count whatever they import.
+    contract = module is not None and module.__name__.startswith("tests.lovable_contract.")
+    if module is None or not (contract or _SYNC_RUNNERS & set(vars(module))):
+        yield
+        return
+    from app.legacy_import import lovable_sync
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(lovable_sync, "backup_proof_problem", lambda *_a, **_k: "", raising=False)
+        yield
+
+
 @pytest.fixture(autouse=True)
 def evidence_root(settings, tmp_path_factory):
     """Evidence, derivatives and OneNote source in this test's own directory.

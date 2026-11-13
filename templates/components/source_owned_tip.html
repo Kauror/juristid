@@ -1,0 +1,22 @@
+{% comment %}
+  The `i` beside a value Lovable owns on a synchronised Teema (audit 2026-11-11
+  TL-01, `app.matters.source_ownership`). One sentence, the house `i`
+  (`components/seis.html`): a sibling of the value, never part of its name, the
+  explanation reached through `aria-describedby`. `data-source-owned` names the
+  field, for the tests and nothing else. The sentence is
+  `source_ownership.SOURCE_OWNED_TIP`, written out so the `i` needs no context
+  (tests/test_source_owned_fields.py holds the two together).
+
+  `field` — the guard key (title, owner, stage, next_action, …); `tip_key`
+  tells apart several of one field on a page (each commencement).
+{% endcomment %}
+<span class="seis__item sourceowned" data-seishelp data-source-owned="{{ field }}">
+  <button type="button" class="seis__info"
+          aria-label="Selgitus: Lovable'i väli"
+          aria-describedby="lovable-{{ field }}{% if tip_key %}-{{ tip_key }}{% endif %}"
+          aria-controls="lovable-{{ field }}{% if tip_key %}-{{ tip_key }}{% endif %}"
+          aria-expanded="false">
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true" focusable="false"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="5" r="0.9" fill="currentColor"/><path d="M8 7.2v4.3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+  </button>
+  <span class="seis__tip" role="tooltip" id="lovable-{{ field }}{% if tip_key %}-{{ tip_key }}{% endif %}">See väli pärineb Lovable'i registrist ja seda saab muuta ainult seal.</span>
+</span>

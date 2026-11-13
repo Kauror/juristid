@@ -202,9 +202,13 @@ OVERDUE_SEMANTICS = DateSemantics.DEADLINE
 REVIEW_KINDS = (ActionKind.WAIT, ActionKind.MONITOR, ActionKind.SOURCE)
 
 #: Steps that never take an ``Arvamuse tähtaeg`` off the work lists
-#: (docs/adr/0050, amendment of 2026-10-20). A WAIT names what somebody else
-#: will do next; the answer Koda owes stays live work beside it.
-DEADLINE_KEEPING_KINDS = (ActionKind.WAIT,)
+#: (docs/adr/0050, amendments of 2026-10-20 and 2026-11-12). A WAIT names what
+#: somebody else will do next; the answer Koda owes stays live work beside it.
+#: An unclassified source step (`ActionKind.SOURCE`) states no decision about
+#: that answer either — it is never late, so letting it outrank the deadline
+#: would leave a passed opinion deadline unlisted, unnotified and unescalated
+#: (2026-11-11 audit, DL-02).
+DEADLINE_KEEPING_KINDS = (ActionKind.WAIT, ActionKind.SOURCE)
 
 
 # -- the work plan (docs/adr/0133) ------------------------------------------

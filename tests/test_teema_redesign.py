@@ -1385,7 +1385,10 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 #: One more since 2026-11-05: the chronology reads the Teema's linked OneNote
 #: pages once for their dated notes (`historical_notes.matter_notes`), however
 #: many pages, notes or files there are (tests/test_tl_b_note_queries.py).
-TEEMA_PAGE_QUERY_CEILING = 66
+#: One more since TL-01 (audit 2026-11-11): the page asks once whether Lovable
+#: owns this Teema (`source_ownership.ownership`, the synchronised cohorts), so
+#: its source-owned controls can say so; one read per page, none per field.
+TEEMA_PAGE_QUERY_CEILING = 67
 
 
 def test_the_matter_page_does_not_explode_into_queries(

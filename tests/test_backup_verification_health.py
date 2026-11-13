@@ -37,6 +37,9 @@ from pathlib import Path
 import pytest
 from django.conf import settings
 
+# The real check, bound before `tests/conftest.py` stands it in for each test.
+from app.legacy_import.lovable_sync import backup_proof_problem as REAL_BACKUP_PROOF
+
 ROOT = Path(settings.BASE_DIR)
 SCRIPTS = ROOT / "scripts" / "deploy"
 VERIFY = SCRIPTS / "juristid-verify-backup.sh"
@@ -1002,3 +1005,54 @@ def test_the_manifest_records_which_guards_were_relaxed() -> None:
     text = BACKUP.read_text(encoding="utf-8")
     assert '"empty_source_allowed_for": [$ALLOW_EMPTY_JSON]' in text
     assert "ALLOW_EMPTY_JSON=" in text
+
+
+# ---------------------------------------------------------------------------
+# The proof a passed verification leaves (audit 2026-11-11 DR-05)
+# ---------------------------------------------------------------------------
+
+
+def _proof(set_dir: Path, level: int) -> dict[str, str]:
+    text = (set_dir / f"VERIFIED-L{level}").read_text(encoding="utf-8")
+    return dict(line.split("=", 1) for line in text.splitlines())
+
+
+def test_record_leaves_a_proof_the_synchronisation_reads(tmp_path: Path, monkeypatch) -> None:
+    """Regression: DR-05 — `--record` writes VERIFIED-L<level> once the level has
+    passed: the set's name, the level, when, and the dump's recorded SHA-256 —
+    in the shape `lovable_sync.backup_proof_problem` reads (level 1 here: level
+    2 needs the deployment's PostgreSQL container)."""
+    import hashlib
+
+    from app.legacy_import import lovable_sync
+
+    taken = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=1)
+    stamp = taken.strftime("%Y%m%dT%H%M%SZ")
+    set_dir = _seal(_backup_root(tmp_path), stamp=stamp)
+    result = run(VERIFY, "--set", str(set_dir), "--level", "1", "--record")
+    assert result.returncode == 0, result.stdout + result.stderr
+    proof = _proof(set_dir, 1)
+    assert (proof["set"], proof["level"]) == (stamp, "1")
+    assert proof["database_sha256"] == hashlib.sha256(b"PGDMP0123456789").hexdigest()
+    started = datetime.now(UTC) + timedelta(minutes=1)
+
+    monkeypatch.setattr(lovable_sync, "BACKUP_PROOF_LEVEL", 1)
+    assert REAL_BACKUP_PROOF(f"sets/{stamp}", started, set_dir=str(set_dir)) == ""
+    # A level-1 proof is not the level-2 proof an APPLY run asks for.
+    monkeypatch.setattr(lovable_sync, "BACKUP_PROOF_LEVEL", 2)
+    assert REAL_BACKUP_PROOF(f"sets/{stamp}", started, set_dir=str(set_dir)) == "PROOF_MISSING"
+
+
+def test_no_proof_without_record_or_after_a_failure(tmp_path: Path) -> None:
+    """Regression: DR-05 — nothing is written unless asked, and never by a
+    verification that failed."""
+    root = _backup_root(tmp_path)
+    plain = _seal(root, stamp="20990101T221000Z")
+    assert run(VERIFY, "--set", str(plain), "--level", "1").returncode == 0
+    assert not list(plain.glob("VERIFIED-*"))
+
+    broken = _seal(root, stamp="20990101T222000Z")
+    (broken / "database.dump").write_bytes(b"PGDMP-muudetud-0")
+    result = run(VERIFY, "--set", str(broken), "--level", "1", "--record")
+    assert result.returncode != 0
+    assert not list(broken.glob("VERIFIED-*")) and not list(broken.glob(".VERIFIED-*"))

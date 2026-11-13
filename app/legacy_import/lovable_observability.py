@@ -2757,10 +2757,15 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
     },
     "stage": {
         "mapping": "EXACT",
-        "service": "close_matter_from_source / change_stage / reopen_matter_into_stage",
+        "service": (
+            "close_matter_from_source / change_stage / reopen_matter_into_stage; "
+            "ootel sulgemine: lovable_closure_hold.release_closure_hold"
+        ),
         "risks": [
             "«Jõustunud» ja «rohkem ei tegele» sulgevad teema; jätkuseos sulgeb jätkuna.",
             "Kaardistamata silt ja Juristides puuduv järglane jäävad ootele.",
+            "Juristides pooleli töö (planeeritud tegevus, järelkontroll, kodulehe ülevaade, "
+            "kaasamise ootus) jätab sulgemise ootele (LOCAL_WORK_AT_CLOSURE); midagi ei tühistata.",
         ],
         "blocking": "",
     },
@@ -2822,9 +2827,10 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
     },
     "commencements": {
         "mapping": "EXACT",
-        "service": "add_effective_date / add_important_date (ainult lisandunud)",
+        "service": "add_/cancel_effective_date, add_/cancel_important_date",
         "risks": [
-            "Eeldatav jääb hinnanguks; muudetud või eemaldatud jõustumine jääb ootele.",
+            "Eeldatav jääb hinnanguks; jõustumine, mida Lovable enam ei nimeta, tühistatakse "
+            "ja jääb ajalukku; inimese enda kuupäevi ei puudutata.",
         ],
         "blocking": "",
     },

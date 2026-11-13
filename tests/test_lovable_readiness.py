@@ -62,6 +62,7 @@ def cases():
     """The real-world cases, re-told with invented values, after one compared night."""
     from app.matters.services import set_matter_title
     from app.workflow.models import NextAction
+    from tests.source_ownership_support import divergence_from_before_the_lock
 
     control(SyncMode.COMPARE)
     pilot = Pilot()
@@ -90,9 +91,11 @@ def cases():
     del pilot.bundles["2026_302"]  # gone from the source
     pilot.night(night_at(1))
     # After the night the lawyer writes Lovable's new title: Juristid has converged.
-    set_matter_title(
-        matter=pilot.matter("2026_300"), value="Uus pealkiri 2026_300", actor=pilot.owner
-    )
+    # A save from before the TL-01 lock: a person is refused it in COMPARE now (E9).
+    with divergence_from_before_the_lock():
+        set_matter_title(
+            matter=pilot.matter("2026_300"), value="Uus pealkiri 2026_300", actor=pilot.owner
+        )
     return pilot
 
 

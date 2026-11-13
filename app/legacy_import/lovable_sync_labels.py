@@ -88,12 +88,29 @@ LOVABLE_REASONS = {
         "suletakse jätkuna, kui järglane on olemas."
     ),
     "SUCCESSOR_AMBIGUOUS": "Lovable'i menetlusetappide seos nimetab mitu järglast või iseenda.",
-    "STAGE_UNMAPPED": "Lovable'i hetkeseisu silti ei saa Juristide hetkeseisuks kaardistada.",
-    "CLOSED_WITH_OTHER_REASON": (
-        "Teema on Juristides juba suletud teise põhjusega või teise järglasega; uuesti "
-        "sulgemiseks tuleks see avada."
+    "SUCCESSOR_DEFERRED_BY_BREAKER": (
+        "Järglane loodi täna, kuid selle teema sulgemine oleks ületanud öise piirangu; "
+        "järgmine käivitus viib selle lõpuni."
     ),
+    "CONTINUATION_CYCLE": (
+        "Lovable'i menetlusetappide seosed viivad ringiga tagasi samale teemale; "
+        "teema elukäiku ei muudetud."
+    ),
+    "STAGE_UNMAPPED": "Lovable'i hetkeseisu silti ei saa Juristide hetkeseisuks kaardistada.",
     "LIFECYCLE_HELD": "Ootab teema sulgemist (järglane puudub Juristides).",
+    "CLOSURE_HOLD_BREAKER": (
+        "Ühe öö uusi ootel sulgemisi (Juristides pooleli töö) oli üle piiri; "
+        "öö ei kirjutanud midagi."
+    ),
+    "CLOSURE_HELD_AT_WRITE": (
+        "Kirjutamise hetkel ilmus Juristides pooleli töö ja sulgemine jäi ootele; selle teema "
+        "muud muudatused ootavad järgmist ööd."
+    ),
+    "LOCAL_WORK_AT_CLOSURE": (
+        "Lovable sulges teema, kuid Juristides on pooleli töö (planeeritud tegevus, "
+        "järelkontroll, kodulehe ülevaade või kaasamise ootus); sulgemine ootab, midagi "
+        "ei tühistatud."
+    ),
     "RESTORED_SOURCE_VALUE": "Lovable'i väärtus taastati; Juristides oli seda muudetud.",
     "ANSWERED_IN_JURISTID_NOT_IN_LOVABLE": (
         "Arvamuse küsimine on Juristides vastatud või lõpetatud, kuid Lovable pole saatmist "

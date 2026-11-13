@@ -75,6 +75,7 @@ from app.matters.models import (
     TagAssignment,
 )
 from app.matters.position_sources import live_source_document_count
+from app.matters.source_ownership import refuse_source_owned_change
 from app.submissions.models import Submission
 from app.workflow.dates import period_bounds
 from app.workflow.enums import ActionStatus, DatePrecision, Disposition, Track
@@ -677,6 +678,8 @@ def assign_matter(
     matter.owner = previous
     if previous == owner:
         return matter
+    # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(matter, "owner", actor=actor)
     # A colleague changing who answers for a file needs `work.assign` — both
     # lawyer roles by default, withdrawable per person (docs/adr/0145 §3). Asked
     # here as well as at every route, so no view can be the one that forgot.
@@ -856,7 +859,14 @@ class StageMove:
 CLOSED_MATTER_STAGE_REFUSAL = "Suletud teema hetkeseisu ei saa muuta. Ava teema esmalt uuesti."
 
 
-def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> StageMove:
+def _move_stage(
+    *,
+    matter: Matter,
+    stage: Any,
+    actor: Any,
+    origin: str,
+    provenance: dict[str, Any] | None = None,
+) -> StageMove:
     """Matter.stage, the period it ends, the period it starts and the event — one write.
 
     The row is locked and its stage re-read under the lock: «is this a move at
@@ -875,11 +885,29 @@ def _move_stage(*, matter: Matter, stage: Any, actor: Any, origin: str) -> Stage
     locked = lock_matter_for_write(matter.pk)
     if not locked.is_open and locked.stage_id != getattr(stage, "pk", None):
         raise DomainError(CLOSED_MATTER_STAGE_REFUSAL)
-    return _move_locked_stage(locked=locked, matter=matter, stage=stage, actor=actor, origin=origin)
+    if locked.stage_id != getattr(stage, "pk", None):
+        # Lovable's `hetkeseis` on a synchronised Teema (audit 2026-11-11
+        # TL-01) — whichever surface moves it: the header, `Muuda teemat`, a
+        # composer's `Uus hetkeseis`. The same stage again is not a move.
+        refuse_source_owned_change(locked, "stage", actor=actor)
+    return _move_locked_stage(
+        locked=locked,
+        matter=matter,
+        stage=stage,
+        actor=actor,
+        origin=origin,
+        provenance=provenance,
+    )
 
 
 def _move_locked_stage(
-    *, locked: Matter, matter: Matter, stage: Any, actor: Any, origin: str
+    *,
+    locked: Matter,
+    matter: Matter,
+    stage: Any,
+    actor: Any,
+    origin: str,
+    provenance: dict[str, Any] | None = None,
 ) -> StageMove:
     """The move itself, on a row the caller has locked and judged.
 
@@ -887,6 +915,10 @@ def _move_locked_stage(
     and `reopen_matter_into_stage` — the one act allowed to move a closed
     file's stage — calls this directly with the row it locked. Nothing else
     should.
+
+    ``provenance`` — who moved it when no person did (the Lovable
+    synchronisation's run, docs/adr/0213 §10.9) — is written nested on the
+    event, so it can never shadow a key of the move itself.
     """
     previous = locked.stage
     if previous == stage:
@@ -924,6 +956,7 @@ def _move_locked_stage(
             # is the honest reading of what they recorded.
             "from_key": getattr(previous, "key", None),
             "to_key": getattr(stage, "key", None),
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return StageMove(
@@ -969,6 +1002,7 @@ def stage_transition(
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
     follow_ups_confirmed: bool | str = False,
+    provenance: dict[str, Any] | None = None,
 ) -> Iterator[StageMove]:
     """Move `Hetkeseis`, let the caller record the act, then close if the stage ends the Matter.
 
@@ -990,7 +1024,9 @@ def stage_transition(
     which asks it under the Matter's lock (docs/adr/0146 §8).
     """
     with transaction.atomic():
-        move = _move_stage(matter=matter, stage=stage, actor=actor, origin=origin)
+        move = _move_stage(
+            matter=matter, stage=stage, actor=actor, origin=origin, provenance=provenance
+        )
         yield move
         if move.closes:
             close_matter_for_terminal_stage(
@@ -1006,6 +1042,7 @@ def change_stage(
     actor: Any = None,
     origin: str = StageEpisodeOrigin.RECORDED,
     follow_ups_confirmed: bool | str = False,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Record where the external process now stands, as a new `Hetkeseis` period.
 
@@ -1024,6 +1061,10 @@ def change_stage(
 
     A closed Matter refuses a move here with `CLOSED_MATTER_STAGE_REFUSAL`;
     its stage is chosen again in `Ava uuesti` (RULE-03).
+
+    ``provenance`` is for a move no colleague made — the Lovable
+    synchronisation's — and rides on `MATTER_STAGE_CHANGED` (docs/adr/0213
+    §10.9). A person's move passes none.
     """
     with stage_transition(
         matter=matter,
@@ -1031,18 +1072,31 @@ def change_stage(
         actor=actor,
         origin=origin,
         follow_ups_confirmed=follow_ups_confirmed,
+        provenance=provenance,
     ):
         pass
     return matter
 
 
 @transaction.atomic
-def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
+def change_track(
+    *,
+    matter: Matter,
+    track: str,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> Matter:
+    """`Menetlusliik`. ``provenance`` names the run of a change no person made
+    (the Lovable synchronisation, docs/adr/0213 §10.9), nested on the event."""
     if track and track not in Track.values:
         raise DomainError(f"Tundmatu menetlusliik {track!r}.")
     previous = matter.track
     if previous == track:
         return matter
+    if (previous == Track.KODA_INITIATIVE) != (track == Track.KODA_INITIATIVE):
+        # Whether it is a Chamber initiative is Lovable's `koja_ettepanek` on a
+        # synchronised Teema (audit 2026-11-11 TL-01); the other tracks are not.
+        refuse_source_owned_change(matter, "track", actor=actor)
 
     matter.track = track
     matter.save(update_fields=["track", "updated_at"])
@@ -1051,7 +1105,11 @@ def change_track(*, matter: Matter, track: str, actor: Any = None) -> Matter:
         matter=matter,
         actor=actor,
         obj=matter,
-        payload={"from": previous, "to": track},
+        payload={
+            "from": previous,
+            "to": track,
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return matter
 
@@ -1263,9 +1321,11 @@ def set_matter_dates(
     matter: Matter,
     received_date: Any = _UNSET,
     actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """`Saabunud`. The deadline has its own writer, which keeps its history
-    (`app.matters.response_deadlines.change_response_deadline`)."""
+    (`app.matters.response_deadlines.change_response_deadline`). ``provenance``:
+    as on `change_track`."""
     changed: dict[str, Any] = {}
     fields: list[str] = []
 
@@ -1288,6 +1348,8 @@ def set_matter_dates(
         proposed["received_date"] = received_date
     refuse_new_incoming_dates(matter, **proposed)
     if received_date is not _UNSET and received_date != matter.received_date:
+        # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
+        refuse_source_owned_change(matter, "received", actor=actor)
         changed["received_from"] = (
             matter.received_date.isoformat() if matter.received_date else None
         )
@@ -1304,7 +1366,7 @@ def set_matter_dates(
         matter=matter,
         actor=actor,
         obj=matter,
-        payload=changed,
+        payload={**changed, **({"provenance": provenance} if provenance else {})},
     )
     return matter
 
@@ -1603,6 +1665,12 @@ def set_matter_title(
     cleaned = cleaned[:1000]
     if cleaned == matter.title:
         return matter
+    if cleaned != (matter.title or "").strip()[:1000]:
+        # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01). Compared
+        # the way a title is stored, so a stored title only this
+        # normalisation changes — longer than the cap, or padded — is no
+        # change of a person's to refuse.
+        refuse_source_owned_change(matter, "title", actor=actor)
 
     previous = matter.title
     matter.title = cleaned
@@ -1884,7 +1952,11 @@ def set_policy_area_other(*, matter: Matter, value: str, actor: Any = None) -> M
 
 @transaction.atomic
 def set_legal_instruments(
-    *, matter: Matter, legal_instruments: Sequence[Any], actor: Any = None
+    *,
+    matter: Matter,
+    legal_instruments: Sequence[Any],
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Replace the Matter's Õigusakt with the chosen set.
 
@@ -1913,6 +1985,8 @@ def set_legal_instruments(
     after = {item.pk for item in chosen}
     if before == after:
         return matter
+    # Lovable's on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(matter, "legal_act", actor=actor)
     refuse_several_legal_instruments(chosen)
 
     matter.legal_instruments.set(chosen)
@@ -1933,6 +2007,8 @@ def set_legal_instruments(
         payload={
             "added": sorted(str(pk) for pk in after - before),
             "removed": sorted(str(pk) for pk in before - after),
+            # Who changed it when no person did (docs/adr/0213 §10.9).
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return matter
@@ -1954,6 +2030,8 @@ def set_legal_instrument_other(*, matter: Matter, value: str, actor: Any = None)
     cleaned = (value or "").strip()[:400]
     if cleaned == matter.legal_instrument_other:
         return matter
+    # Part of the Õigusakt on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(matter, "legal_act", actor=actor)
 
     matter.legal_instrument_other = cleaned
     matter.save(update_fields=["legal_instrument_other", "updated_at"])
@@ -2827,6 +2905,7 @@ def _close_one_feedback_wait(
     reason: str,
     feedback_received: Any = _UNSET,
     closing_reply: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterEngagement:
     """Write the closure on one already-locked row, and audit it.
 
@@ -2876,6 +2955,7 @@ def _close_one_feedback_wait(
             # Whether anything was written down, never what it said.
             "has_feedback_received": bool(engagement.feedback_received),
             **({"closing_reply": str(closing_reply.pk)} if closing_reply is not None else {}),
+            **({"provenance": provenance} if provenance else {}),
         },
     )
     return engagement
@@ -3069,7 +3149,10 @@ def open_engagement_feedback_wait(
 
 
 def close_open_feedback_waits_for_closure(
-    *, matter: Matter, actor: Any = None
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> list[MatterEngagement]:
     """Every round this Matter was still waiting on, ended with the file.
 
@@ -3110,7 +3193,11 @@ def close_open_feedback_waits_for_closure(
     )
     return [
         _close_one_feedback_wait(
-            engagement, matter=matter, actor=actor, reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE
+            engagement,
+            matter=matter,
+            actor=actor,
+            reason=FEEDBACK_CLOSED_BY_MATTER_CLOSURE,
+            provenance=provenance,
         )
         for engagement in waiting
     ]
@@ -3616,7 +3703,11 @@ def correct_website_overview_link(
 
 
 def _cancel_one_website_overview(
-    overview: MatterWebsiteOverview, *, actor: Any, reason: str
+    overview: MatterWebsiteOverview,
+    *,
+    actor: Any,
+    reason: str,
+    provenance: dict[str, Any] | None = None,
 ) -> MatterWebsiteOverview:
     """Write the cancellation. The caller has already locked the row and checked it.
 
@@ -3636,7 +3727,11 @@ def _cancel_one_website_overview(
         matter=overview.matter,
         actor=actor,
         obj=overview,
-        payload={"status": overview.status, "reason": reason},
+        payload={
+            "status": overview.status,
+            "reason": reason,
+            **({"provenance": provenance} if provenance else {}),
+        },
     )
     return overview
 
@@ -4016,7 +4111,10 @@ def correct_procedural_link(
 
 
 def cancel_planned_website_overviews_for_closure(
-    *, matter: Matter, actor: Any = None
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
 ) -> list[MatterWebsiteOverview]:
     """Every plan this Matter still owed, dropped with the file that owed it.
 
@@ -4044,7 +4142,9 @@ def cancel_planned_website_overviews_for_closure(
         .order_by("created_at", "id")
     )
     return [
-        _cancel_one_website_overview(overview, actor=actor, reason="matter_closed")
+        _cancel_one_website_overview(
+            overview, actor=actor, reason="matter_closed", provenance=provenance
+        )
         for overview in planned
     ]
 
@@ -5521,7 +5621,12 @@ def correct_procedural_development(
     return current
 
 
-def end_live_work_for_closure(*, matter: Matter, actor: Any = None) -> None:
+def end_live_work_for_closure(
+    *,
+    matter: Matter,
+    actor: Any = None,
+    provenance: dict[str, Any] | None = None,
+) -> None:
     """End what a Matter owes only while it is active work. Every closure owes it (ENG-006).
 
     Three obligations exist because a Matter is current work, and none of them
@@ -5558,10 +5663,14 @@ def end_live_work_for_closure(*, matter: Matter, actor: Any = None) -> None:
     row locks, so a second call — a re-run cutover, a repeated refresh — finds
     nothing and writes nothing. The caller holds the Matter's row lock, taken
     first, which is the order `close_matter` has always used.
+
+    ``provenance`` — a closure no person made, the Lovable synchronisation's
+    (docs/adr/0213 §10.9) — rides nested on each of the three events, so the
+    cancelled step, overview and wait each name the run that ended them.
     """
-    end_open_action_for_closure(matter=matter, actor=actor)
-    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor)
-    close_open_feedback_waits_for_closure(matter=matter, actor=actor)
+    end_open_action_for_closure(matter=matter, actor=actor, provenance=provenance)
+    cancel_planned_website_overviews_for_closure(matter=matter, actor=actor, provenance=provenance)
+    close_open_feedback_waits_for_closure(matter=matter, actor=actor, provenance=provenance)
 
 
 @transaction.atomic
@@ -5576,7 +5685,40 @@ def close_matter(
     follow_ups_confirmed: bool | str = False,
     provenance: dict[str, Any] | None = None,
 ) -> Matter:
+    """Stop active work on the Matter, for a stated reason (`_close_matter`)."""
+    return _close_matter(
+        matter=matter,
+        disposition=disposition,
+        actor=actor,
+        reason=reason,
+        successor=successor,
+        stage_episode=stage_episode,
+        follow_ups_confirmed=follow_ups_confirmed,
+        provenance=provenance,
+        successor_from_source=False,
+        released=False,
+    )
+
+
+def _close_matter(
+    *,
+    matter: Matter,
+    disposition: str,
+    actor: Any,
+    reason: str,
+    successor: Matter | None,
+    stage_episode: MatterStageEpisode | None,
+    follow_ups_confirmed: bool | str,
+    provenance: dict[str, Any] | None,
+    successor_from_source: bool,
+    released: bool = False,
+) -> Matter:
     """Stop active work on the Matter, for a stated reason.
+
+    ``successor_from_source`` is internal: only `close_matter_from_source`
+    passes it, for a successor the source states (a release's actor asserts
+    no relationship of their own, so the anti-oracle read is not theirs to
+    pass). `close_matter` — every person-facing caller — never sets it.
 
     **The ordinary way here is a `Hetkeseis` that ends the Matter**
     (`close_matter_for_terminal_stage`, docs/adr/0131 §10–§11), which passes
@@ -5621,6 +5763,21 @@ def close_matter(
             raise DomainError("Järglase saab määrata ainult siis, kui töö jätkub teise teema all.")
         if successor.pk == matter.pk:
             raise DomainError("Teema ei saa jätkuda iseenda all.")
+    # Whether a synchronised Teema is open, and what it continues under, is
+    # Lovable's (audit 2026-11-11 TL-01): «Lõpeta teema» would be undone at
+    # night and its `Järglane` dropped.
+    #
+    # `refuse_source_owned_change(matter, "close", actor=actor)`, spelled out so
+    # the one ownership read also says whether a closing hold freed it (TL-02,
+    # rehearsal 2 D1): a Teema the sync does not own pays nothing more.
+    from app.matters import source_ownership
+    from app.matters.source_ownership import NOT_OWNED, SourceOwnedRefusal, ownership
+
+    # The guard's own person test, read through the module so a test that lifts
+    # it (`divergence_from_before_the_lock`) lifts this check too.
+    own = ownership(matter) if source_ownership._is_person(actor) else NOT_OWNED
+    if own.locks("close"):
+        raise SourceOwnedRefusal("close")
 
     # The same row set_next_action locks, in the same order. Whichever
     # transaction reaches the Matter row first wins: a closure that lands first
@@ -5667,6 +5824,7 @@ def close_matter(
             raise DomainError(SUCCESSOR_DELETED_REFUSAL)
         if (
             actor is not None
+            and not successor_from_source
             and not Matter.objects.visible_to(actor).filter(pk=successor.pk).exists()
         ):
             # The same sentence as a deleted one: a refusal that said «you may
@@ -5682,6 +5840,35 @@ def close_matter(
     # Bound to the work the person was shown: a digest that no longer matches
     # what is live now is refused with the renewed warning (docs/adr/0152 §7).
     refuse_unconfirmed_closure(locked, confirmed=follow_ups_confirmed)
+    # Whether this closure is one Lovable itself asked for (TL-02, rehearsal 2
+    # D1 and its review): a release (`close_matter_from_source`), or a person
+    # closing while the newest reading holds a closure Lovable states — any
+    # closing stage hold (`lovable_closure_hold.CLOSING_STAGE_HOLDS`), which is
+    # what freed «Lõpeta teema» (E11). Then ending Lovable's current step is
+    # part of the closure. Read while the Teema is still open; the hold is the
+    # newest reading's decision, which the night records without this lock.
+    sanctioned = released
+    if not sanctioned and own.active and "close" in own.held:
+        from app.legacy_import.lovable_closure_hold import closing_hold_stands
+
+        sanctioned = closing_hold_stands(locked)
+    if sanctioned:
+        # What the hold kept waiting follows the stored reading before the
+        # Teema closes (rehearsal 2 follow-up D2/D3): the opinion request's
+        # date, and the stage — moved as an import while still open, since a
+        # closed Teema stays in the period it was closed in (ADR 0131).
+        from app.legacy_import.lovable_closure_hold import converge_held_fields
+
+        source_stage, held_provenance = converge_held_fields(locked, provenance=provenance)
+        if source_stage is not None:
+            _move_stage(
+                matter=locked,
+                stage=source_stage,
+                actor=None,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=held_provenance,
+            )
+            stage_episode = current_stage_episode(locked)
     # What this closure ends, by id, for its own record below — read under the
     # lock, before anything is ended.
     ending = live_work_at_closure(locked)
@@ -5714,7 +5901,15 @@ def close_matter(
     # The step, the planned write-ups and the feedback waits end here, in this
     # transaction and under this lock — the same helper every other path that
     # makes a Matter inactive calls (ENG-006).
-    end_live_work_for_closure(matter=matter, actor=actor)
+    if sanctioned:
+        # A closure Lovable asked for and Juristid held (TL-02, rehearsal 2 D1):
+        # ending Lovable's current step is part of it, not a person's edit.
+        from app.workflow.services import _ending_for_lovable_closure
+
+        with _ending_for_lovable_closure(matter.pk):
+            end_live_work_for_closure(matter=matter, actor=actor, provenance=provenance)
+    else:
+        end_live_work_for_closure(matter=matter, actor=actor, provenance=provenance)
 
     episode_binding: dict[str, Any] = {}
     if stage_episode is not None:
@@ -5760,6 +5955,8 @@ def close_matter_from_source(
     successor: Matter | None = None,
     reason: str = "",
     provenance: dict[str, Any] | None = None,
+    released_by: Any = None,
+    confirmed: bool | str = False,
 ) -> Matter:
     """Close a Matter because its source of record says the work ended (docs/adr/0213 §10).
 
@@ -5767,10 +5964,10 @@ def close_matter_from_source(
     the register (owner brief 2026-11-11), so «jõustunud», «rohkem ei tegele» and
     a structured stage link to a successor close the Teema without a second
     business decision. Nothing here chooses a reason — the caller passes the one
-    the source states — and nobody's confirmation is asked, because no person is
-    closing it (``follow_ups_confirmed=True``: the live work is ended as every
-    closure ends it, each piece with its own cancellation event, and no step is
-    ever completed).
+    the source states. What it ends is only what the source owns — the current
+    step, cancelled (never completed) with its own event — because any
+    Juristid-only work holds it (below); so no person's confirmation is asked
+    of it (``follow_ups_confirmed=True``), except on a release.
 
     ``stage`` — the stage the source names, moved first, as an import
     (`StageEpisodeOrigin.IMPORTED`), **without** the terminal stage's own closure,
@@ -5779,23 +5976,74 @@ def close_matter_from_source(
     stage began, with ``provenance`` on the event. ``None`` keeps the stage.
     One transaction: a refusal anywhere leaves the Matter open and its periods
     as they were.
+
+    **Juristid-only work holds it** (TL-02, owner decision 12.11.2026,
+    docs/adr/0213 §10.13). A closure from the source ends only what the source
+    owns — the current step. While a planned Tegevus, a «Koja arvamuse
+    järelkontroll», a planned «Kodulehe ülevaade» or an open Kaasamine wait is
+    live (`closure_work.juristid_only_work`), it is refused under the Matter's
+    lock with `SourceClosureHeld`, whatever the caller planned before: nothing
+    moves, nothing is ended. The synchronisation reads that as its
+    ``LOCAL_WORK_AT_CLOSURE`` hold.
+
+    The one way past it is a **release**: ``released_by`` — the person who
+    explicitly releases the hold, checked here as well as by its caller
+    (`lovable_closure_hold.refuse_release`: the owner or a verified technical
+    administrator, only while the synchronisation writes; review P3-3, no
+    caller-passed bypass) — with ``confirmed``, the digest of exactly the work they were shown
+    (docs/adr/0152 §7). Work that changed since is refused with the renewed
+    counts. A release closes with that person as the actor: `MATTER_CLOSED`
+    and every cancellation it causes name them, beside the run's provenance.
     """
+    from app.matters.closure_work import SourceClosureHeld, juristid_only_work
+
+    person = None
+    if released_by is not None:
+        # Only `lovable_closure_hold.release_closure_hold` passes a releaser; it
+        # has read the standing hold, and so is this read again below (under
+        # the lock), so no caller can release a closure nothing holds.
+        from app.legacy_import.lovable_closure_hold import refuse_release
+
+        refuse_release(released_by, matter)
+        person = getattr(released_by, "user", released_by)
+
     # The Matter's lock first, as every closure takes it (`close_matter`), so the
     # stage move and the closure see one committed row (review P3-9).
     locked = lock_matter_for_write(matter.pk)
     if not locked.is_open:
         raise DomainError("Teema on juba suletud.")
+    if person is not None:
+        from app.legacy_import.lovable_closure_hold import HOLD_CLEARED, hold_of
+
+        if hold_of(locked) is None:
+            raise DomainError(HOLD_CLEARED)
+    work = juristid_only_work(locked)
+    if not work.is_empty:
+        if released_by is None or confirmed is True or not confirmed:
+            raise SourceClosureHeld(work)
+        if str(confirmed).strip() != work.digest:
+            raise SourceClosureHeld(work, stale=True)
     if stage is not None:
-        _move_stage(matter=locked, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
-    closed = close_matter(
+        _move_stage(
+            matter=locked,
+            stage=stage,
+            actor=None,
+            origin=StageEpisodeOrigin.IMPORTED,
+            provenance=provenance,
+        )
+    closed = _close_matter(
         matter=locked,
         disposition=disposition,
-        actor=None,
+        actor=person,
         reason=reason,
         successor=successor,
         stage_episode=current_stage_episode(locked),
         follow_ups_confirmed=True,
         provenance=provenance,
+        # The successor is the source's statement, not the releasing person's
+        # claim (the anti-oracle refusal is about a person asserting one).
+        successor_from_source=True,
+        released=person is not None,
     )
     for name in (
         "is_open",
@@ -5868,12 +6116,24 @@ def change_closure_from_source(
         forget_continuation_history(successor)
     if old_successor is not None and (successor is None or old_successor.pk != successor.pk):
         forget_continuation_history(old_successor)
+    # The summary names the two reasons and never the successor, and
+    # `Kõik muudatused` names a successor only after asking `visible_to`
+    # (LK-01). The payload is not so careful: its `reason` keeps the source's
+    # words, which may name the successor, and the admin's ChangeEvent page
+    # shows payloads raw — as `disposition_reason` and `MATTER_CLOSED` do. That
+    # is latent while every reader of the predecessor may read every Teema
+    # (docs/adr/0181), and listed as such in docs/adr/0213 §10.12.
+    from app.workflow.enums import closure_reason_label
+
     record_change_event(
         event_type=ChangeEventType.MATTER_CLOSURE_REASON_CHANGED,
         matter=locked,
         actor=None,
         obj=locked,
-        summary=reason[:200],
+        summary=(
+            f"{closure_reason_label(before['disposition'] or '') or 'põhjuseta'} → "
+            f"{closure_reason_label(disposition) or 'põhjuseta'}"
+        )[:200],
         payload={
             "from": before,
             "to": {
@@ -6026,7 +6286,13 @@ REOPEN_INTO_TERMINAL_STAGE = (
 
 @transaction.atomic
 def reopen_matter_into_stage(
-    *, matter: Matter, stage: Any, actor: Any = None, keep_response_deadline: bool = False
+    *,
+    matter: Matter,
+    stage: Any,
+    actor: Any = None,
+    keep_response_deadline: bool = False,
+    origin: str = StageEpisodeOrigin.RECORDED,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """«Ava uuesti» — a closed Matter becomes current work again, in a stage the person names.
 
@@ -6045,6 +6311,12 @@ def reopen_matter_into_stage(
     Matter. Reopening into the stage the file already holds — a file closed
     before `Hetkeseis` could close it — continues that stage's period rather
     than splitting it, because nothing moved.
+
+    **When no person reopens it** — the Lovable synchronisation putting back
+    what Lovable says (docs/adr/0213 §10.4) — the caller passes ``provenance``,
+    which rides on every event this writes (the stage move, an ended deadline,
+    `MATTER_REOPENED`), and ``origin=IMPORTED``, the origin of every other stage
+    period the synchronisation begins: `RECORDED` is a person's.
     """
     if stage is None:
         raise DomainError(REOPEN_NEEDS_A_STAGE)
@@ -6053,6 +6325,13 @@ def reopen_matter_into_stage(
     locked = lock_matter_for_write(matter.pk)
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
+    # Lovable's lifecycle on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked, "reopen", actor=actor)
+    # A closure-hold release must not leave «Ava uuesti» freed until the next
+    # night (TL-02, review P3-2): the hold's E11 freeing ends with the closure.
+    from app.legacy_import.lovable_closure_hold import refuse_reopen_after_release
+
+    refuse_reopen_after_release(locked, actor=actor)
 
     # Directly on the row locked above, past `_move_stage`'s closed-file
     # refusal: this is the one act that moves a closed file's stage, and it
@@ -6062,7 +6341,8 @@ def reopen_matter_into_stage(
         matter=matter,
         stage=stage,
         actor=actor,
-        origin=StageEpisodeOrigin.RECORDED,
+        origin=origin,
+        provenance=provenance,
     )
     episode = move.incoming if move.moved else ensure_current_stage_episode(matter=matter)
     if not keep_response_deadline:
@@ -6071,8 +6351,10 @@ def reopen_matter_into_stage(
         # as «lõppes teema sulgemisega» and stays in its history.
         from app.matters.response_deadlines import end_deadline_left_by_closure
 
-        end_deadline_left_by_closure(locked=locked, matter=matter, actor=actor)
-    return reopen_matter(matter=matter, actor=actor, stage_episode=episode)
+        end_deadline_left_by_closure(
+            locked=locked, matter=matter, actor=actor, provenance=provenance
+        )
+    return reopen_matter(matter=matter, actor=actor, stage_episode=episode, provenance=provenance)
 
 
 @transaction.atomic
@@ -6082,6 +6364,7 @@ def reopen_matter(
     actor: Any = None,
     reason: str = "",
     stage_episode: MatterStageEpisode | None = None,
+    provenance: dict[str, Any] | None = None,
 ) -> Matter:
     """Make a closed Matter current work again.
 
@@ -6105,10 +6388,21 @@ def reopen_matter(
     goes on to insert a `ChangeEvent` that references the Matter, and the mode
     conflicts with itself, so a concurrent `close_matter` — which takes the same
     row at the same strength since ENG-027 — cannot interleave with it.
+
+    ``provenance`` names the run of a reopening no person made (the Lovable
+    synchronisation, docs/adr/0213 §10.9); the event carries it nested, and a
+    person's reopening carries no payload, as before.
     """
     locked = lock_matter_for_write(matter.pk)
     if locked.is_open:
         raise DomainError("Teema on juba avatud.")
+    # Lovable's lifecycle on a synchronised Teema (audit 2026-11-11 TL-01).
+    refuse_source_owned_change(locked, "reopen", actor=actor)
+    # A closure-hold release must not leave «Ava uuesti» freed until the next
+    # night (TL-02, review P3-2): the hold's E11 freeing ends with the closure.
+    from app.legacy_import.lovable_closure_hold import refuse_reopen_after_release
+
+    refuse_reopen_after_release(locked, actor=actor)
 
     # Written through the instance the caller passed, as it always was. The
     # row is this transaction's whichever Python object the UPDATE goes
@@ -6146,6 +6440,7 @@ def reopen_matter(
         obj=matter,
         summary=reason[:200],
         stage_episode=stage_episode,
+        payload={"provenance": provenance} if provenance else None,
     )
     return matter
 

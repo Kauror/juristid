@@ -69,6 +69,7 @@ SET_DIR=""
 BACKUP_ROOT=""
 LEVEL=2
 CHECK_MIRRORS=1
+RECORD=0
 
 #: Tables the archive must mention. Few, and chosen because their absence means
 #: something specific: no Matter is not the register, no DocumentVersion is no
@@ -92,6 +93,11 @@ Usage:
                      grandparent of --set, which is where the backup puts them.
   --no-mirror-check  verify only the set. For a set deliberately copied without
                      its byte pools — which is not a complete backup.
+  --record           once every check of the level has passed, write the proof
+                     VERIFIED-L<level> into the set (set, level, verified_at,
+                     database_sha256). The Lovable synchronisation writes
+                     nothing without a recent VERIFIED-L2 (audit 2026-11-11
+                     DR-05). Never written by --no-mirror-check, nor on a failure.
 USAGE
 }
 
@@ -103,6 +109,7 @@ while [ $# -gt 0 ]; do
     --backup-root) BACKUP_ROOT="${2:-}"; shift 2 ;;
     --level) LEVEL="${2:-}"; shift 2 ;;
     --no-mirror-check) CHECK_MIRRORS=0; shift ;;
+    --record) RECORD=1; shift ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; die "unknown argument '$1'" ;;
   esac
@@ -337,6 +344,35 @@ check_membership() {
   check_one_membership "legacy-source" "legacy_source_snapshot" "$BACKUP_ROOT/legacy-source"
 }
 
+# The proof a passed verification leaves in the set (--record): one file per
+# level, written whole (a temporary name, then a rename) and only after every
+# check of that level passed. `lovable_sync.backup_proof_problem` reads it in the
+# synchronisation's container and hashes the dump again, so a proof for another
+# set, a lower level, an old verification or a dump changed since all refuse.
+# The proof's temporary file, removed on every exit (the level-2 cleanup too).
+PROOF_TMP=""
+trap 'rm -f -- "${PROOF_TMP:-}"' EXIT
+
+record_proof() {
+  local level="$1" name sha tmp
+  [ "$RECORD" -eq 1 ] || return 0
+  if [ "$CHECK_MIRRORS" -ne 1 ]; then
+    note "  no proof recorded: the pools were not checked (--no-mirror-check)"
+    return 0
+  fi
+  name="$(basename -- "$SET_DIR")"
+  sha="$(sed -n 's/^\([0-9a-f]\{64\}\) [ *]database\.dump$/\1/p' "$SET_DIR/SHA256SUMS" | head -n 1)"
+  [ -n "$sha" ] || die "SHA256SUMS names no database.dump checksum; no proof recorded."
+  tmp="$SET_DIR/.VERIFIED-L$level.$$"
+  PROOF_TMP="$tmp"
+  printf 'set=%s\nlevel=%s\nverified_at=%s\ndatabase_sha256=%s\n' \
+    "$name" "$level" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$sha" >"$tmp" ||
+    die "could not write the proof into $SET_DIR."
+  mv -f -- "$tmp" "$SET_DIR/VERIFIED-L$level" || die "could not write the proof into $SET_DIR."
+  PROOF_TMP=""
+  note "  proof recorded: $SET_DIR/VERIFIED-L$level"
+}
+
 note "Verifying $SET_DIR (level $LEVEL)"
 
 # -- level 1 ---------------------------------------------------------------
@@ -401,6 +437,7 @@ note "  checksums match"
 note "  $(file_size_bytes "$SET_DIR/database.dump") bytes of custom-format archive"
 
 if [ "$LEVEL" -lt 2 ]; then
+  record_proof 1
   note ""
   note "Level 1 only. This proves the file is intact, not that it restores."
   exit 0
@@ -444,6 +481,7 @@ step "Level 2 — the archive contains the schema it should"
 CONTAINER_PATH="/tmp/juristid-verify-$$.dump"
 cleanup() {
   juristid_compose exec -T db rm -f "$CONTAINER_PATH" >/dev/null 2>&1 || true
+  rm -f -- "${PROOF_TMP:-}"
 }
 trap cleanup EXIT
 
@@ -480,6 +518,8 @@ if ! read_error="$(juristid_compose exec -T db pg_restore --file=/dev/null "$CON
   die "pg_restore could not read the archive's data to the end. It is not restorable, whatever its checksum and its table of contents say."
 fi
 note "  the whole archive read cleanly"
+
+record_proof 2
 
 note ""
 note "Levels 1 and 2 passed: this file is intact, reads to the end and contains the right schema."

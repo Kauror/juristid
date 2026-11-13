@@ -1,70 +1,71 @@
 """The nightly Lovable → Juristid synchronisation (docs/adr/0192, 0202, 0213).
 
-**Since 11.11.2026 Lovable is authoritative** for the operational cohorts
-(docs/adr/0213 §10, `_plan_authoritative`): every source-owned field follows the
-latest verified Lovable value through its domain service, also over a local
-divergence, and only technical problems hold (`TECHNICAL_HOLDS`). What follows
-describes the rules the closed historical register (`lovable-history`) and
-tombstones still keep (`_plan_archive`); the machinery — snapshots, A/B/C,
-locks, read-back, idempotency, breakers — is shared.
+**Since 11.11.2026 Lovable is the source of truth** (docs/adr/0213 §10,
+`_plan_authoritative`) for every live synchronised Teema — the operational
+cohorts and the closed historical register (`lovable-history`) alike. After
+every successful APPLY run each source-owned field (`AUTHORITATIVE_FIELDS`)
+holds what the latest verified Lovable value derives to, written through its
+domain service:
 
-One way, for the Teemad of the approved cohorts and for nothing else: the 100
-Teemad the Lovable pilot created (docs/adr/0191) — the built-in cohort — and
-every cohort enrolled since (`LovableSyncCohort`, `enroll`), each found only
-through its approved provenance. Every run reads a consistent snapshot of those rows
-(`app.legacy_import.lovable_source`), compares three values per field and writes
-only what is safe:
-
-* **A** — what Lovable said when Juristid last accepted the field
+* **A** — what Lovable said when Juristid last mirrored the field
   (`LovableSyncState.applied`, seeded from the pilot's immutable provenance);
 * **B** — what Juristid holds now;
-* **C** — what Lovable says tonight.
+* **C** — what Lovable says tonight, and its *target* — what the rule derives
+  from it.
 
-=============================  ===================================================
-A = C, B = A                   UNCHANGED
-A = C, B ≠ A                   LOCAL_TEST_CHANGE — the lawyer's edit is kept
-A ≠ C, B = A, mapping exact    ELIGIBLE → APPLIED through the canonical service
-A ≠ C, B = C                   ALREADY_CONVERGED — baseline advances, no write
-A ≠ C, B ≠ A, B ≠ C            CONFLICT — nothing is overwritten
-no baseline / no mapping       REVIEW_REQUIRED
-=============================  ===================================================
+==================================  ================================================
+B is C's target, C = A              UNCHANGED
+B is C's target, C ≠ A              ALREADY_CONVERGED — the baseline moves, no write
+C ≠ A, B is not C's target          APPLIED — a source change, over any local value
+C = A, B is not C's target          APPLIED, reason `RESTORED` — a local edit put back
+C's target cannot be stated         a technical hold (`TECHNICAL_HOLDS`), never
+                                    «restored over»
+==================================  ================================================
 
-**The allowlist** (`AUTO_FIELDS`) is the title, the owner, the day of an
-unchanged current step, and the OneNote link (appended as a new source
-observation, never by editing the old one). Everything else is held and
-reported: new next-step wording (its DO/WAIT/MONITOR reading is a person's call),
-`hetkeseis` (no approved stage mapping exists; 0191 keeps it NEVER_AUTO), the
-opinion deadline, `valja`/`valja_kuupaev`, the addressee, commencements, the
-received date, the act, and lifecycle. A held change stays pending — the
-baseline does not move — until the source returns to it, Juristid converges on
-it, or an operator resolves it (`resolve_field`).
+A field the engine never mirrored (held by the import, or only ever observed)
+converges once and is then settled (``mirrored``). The step's kind comes from
+one fixed rule (`lovable_reading.step_kind`, «Liik määramata» when unclear); the
+stage and the stage link are one lifecycle operation that closes, reopens or
+re-reasons a Teema (`desired_lifecycle`); Lovable's sent status is a
+`LovableOpinionOutcome`, never a `Submission`; Lovable's commencements are
+reconciled as a set and a person's own dates are never touched. Juristid-only
+records — notes, documents, submissions, evidence, OneNote imports, Kaasamine,
+overviews — are never written. Only a **tombstone** keeps the earlier
+conservative rules (`_plan_archive`: AUTO / CONDITIONAL / REVIEW, docs/adr/0213
+§4); the machinery — snapshots, A/B/C, per-Teema locks with re-plan, read-back,
+idempotency, breakers — is shared.
 
-**Conditional fields and new topics** (docs/adr/0213, `FIELD_POLICY`): a stage
-that does not end the work, through the reader's exact `STAGE_MAPPING`; a new
-opinion request where none is open and nothing is sent; an added commencement of
-an unambiguous kind, never on a past day. Lovable's stage link (the
-continuation) is compared and always held. An operational topic with no Teema
-is discovered every run, checked (identity — tombstones included —, reference,
-reading, plan) and, on an APPLY night only, created once through the machine
-reader and the importer's own CREATE writer, then enrolled in the register with
-a ``NEW_TOPIC`` membership (`create_new_topic`).
+The population is the Teemad of the enrolled cohorts and nothing else: the 100
+Teemad the Lovable pilot created (docs/adr/0191) — the built-in cohort — and
+every cohort enrolled since (`LovableSyncCohort`, `enroll`), each found only
+through its approved provenance. A source topic in no cohort is counted, never
+written. Every run reads a consistent snapshot of those rows
+(`app.legacy_import.lovable_source`).
 
-**The limits, and why each stays** (brief 2026-11-09 §6 B6): ``MAX_CHANGED_MATTERS``
-(20 Teemad written a night) and ``MAX_NEW_CONFLICTS`` (10 more than the night
-before) were sized for daily work, not a backfill — a backfill goes through
-`lovable_pilot` packages, never through a night — and a night over them is a
-changed source or a broken mapping; ``MAX_MISSING`` (5) separates a deleted
-topic from a broken read; ``MAX_NEW_TOPICS`` (10 created a night) is new and
-separate. The field breakers hold every write of the night (REVIEW_ONLY) and
-the new-topic breaker every creation of it; ``MAX_MISSING`` fails the run.
+**New topics** (docs/adr/0213 §4, `NEW_TOPIC` in `FIELD_POLICY`): an
+operational topic with no Teema is discovered every run, checked (identity —
+tombstones included —, reference, reading, plan) and, on an APPLY night only,
+created once through the machine reader and the importer's own CREATE writer,
+enrolled in the register with a ``NEW_TOPIC`` membership (`create_new_topic`)
+and mirrored the same night (`_converge_created`).
 
-A field the import itself held for review (``HELD_FOR_REVIEW`` in the package's
-``field_decisions``) is seeded with ``import_held`` and reported
-``REVIEW_REQUIRED`` / ``IMPORT_HELD`` every night until an operator resolves it;
-a convergence never clears it (docs/adr/0202 §6).
+**The limits** (docs/adr/0213 §10.8): ``MAX_CHANGED_MATTERS`` (20 Teemad with a
+source or derived change a night; over it the whole night is REVIEW_ONLY);
+``MAX_RESTORED_MATTERS`` (100 restore-only Teemad; over it only the restores
+wait, `RESTORE_BREAKER`); both may be raised for one supervised run
+(`run_sync(max_changed=…, max_restored=…)`, recorded in the run's counts).
+``MAX_MISSING`` (5) separates a deleted topic from a broken read and fails the
+run; ``MAX_NEW_TOPICS`` (10) holds the night's creations. ``MAX_NEW_HOLDS``
+(25 more held fields than the previous run) replaced ``MAX_NEW_CONFLICTS``,
+which source authority had made inert (finding LS-07). A
+failed read-back stops every later write of the run (docs/adr/0192 §7).
+COMPARE plans, records and advances converged baselines and writes no business
+record; APPLY also needs a backup set (`NO_BACKUP`).
 
-Writes go through the domain services with ``actor=None`` and a ``LOVABLE_SYNC``
-provenance; nothing here sets a model field directly.
+Writes go through the domain services with ``actor=None`` — never a person —
+and the run's ``LOVABLE_SYNC`` provenance (`_provenance`: run, source
+reference, version, snapshot digest, mapping version) on their audit events;
+nothing here sets a model field directly.
 """
 
 from __future__ import annotations
@@ -121,6 +122,7 @@ from app.legacy_import.lovable_sync_models import (
     SyncRunStatus,
     SyncTrigger,
 )
+from app.matters import closure_work as _closure_work
 
 logger = logging.getLogger(__name__)
 
@@ -185,12 +187,45 @@ MAX_CHANGED_MATTERS = 20
 #: of local edits never stops the source's own changes; over it, the restores
 #: wait (`RESTORE_BREAKER`) and the source changes are written.
 MAX_RESTORED_MATTERS = 100
-#: Conflicts stay until a person resolves them, so the breaker is on the *rise*
-#: since the previous night, never on the standing total.
-MAX_NEW_CONFLICTS = 10
+#: Held fields (REVIEW_REQUIRED or CONFLICT, any reason: a technical hold, an
+#: import hold or a code no rule names) stay until a person or the source moves
+#: them, so this breaker is on the *rise* since the previous run that recorded
+#: its decisions, never on the standing total (audit 2026-11-11 LS-07; it
+#: replaces ``MAX_NEW_CONFLICTS``, which source authority had made inert). A
+#: night whose planner suddenly holds this many more fields is a broken mapping
+#: or a broken reading, not a night's work: it writes nothing (`BREAKER`).
+#: Proposed value; production needs the owner's approval.
+MAX_NEW_HOLDS = 25
+#: Closures held for Juristid-only work (TL-02, `LOCAL_WORK_AT_CLOSURE`) that
+#: one night may *begin* (``held_since`` == tonight): more is a mass closure in
+#: Lovable or a broken reading, not a night's work. Over it an APPLY night is
+#: REVIEW_ONLY (`CLOSURE_HOLD_BREAKER`) and writes nothing. The holds count
+#: toward no other breaker (`BREAKER_EXEMPT_HOLDS`).
+#: Proposed value (review P2-3); production needs the owner's approval.
+MAX_NEW_CLOSURE_HOLDS = 20
+#: A held closure older than this many days makes `sync_health` not ok: the
+#: escalation (14 days) has not resolved it.
+#: Proposed value (review P2-3); production needs the owner's approval.
+MAX_CLOSURE_HOLD_AGE_DAYS = 21
+#: The live source population (the index of every live topic) may move this
+#: much against the previous baseline reading before an APPLY run refuses to
+#: write (`POPULATION_CHANGE`): more than `POPULATION_MAX_DELTA` topics and more
+#: than `POPULATION_MAX_SHARE` of the previous count. A changed scope, a row
+#: policy hiding rows or a truncated read, never a night's work. A COMPARE run
+#: reads and stores the new population as usual, which is how a person accepts
+#: a real change. Proposed values; production needs the owner's approval.
+POPULATION_MAX_DELTA = 50
+POPULATION_MAX_SHARE = 0.05
 #: How old a backup set may be when the mutating stage starts (the host script
 #: takes and verifies one minutes before; a stale or invented name writes nothing).
 BACKUP_MAX_AGE = dt.timedelta(hours=2)
+#: The verification a backup set must prove before an APPLY run writes (audit
+#: 2026-11-11 DR-05): the host's `juristid-verify-backup.sh --record` writes
+#: ``VERIFIED-L<level>`` into the set once level 1 (checksums) and level 2 (the
+#: archive reads to the end, the pools hold the set's objects) have passed, and
+#: the host script mounts the set read-only into the run's container at the
+#: directory `HOST_BACKUP_DIR_ENV` names (`backup_proof_problem`).
+BACKUP_PROOF_LEVEL = 2
 #: More cohort rows missing from the source than this is a broken read or a
 #: broken source, never a night's work: the run stops.
 MAX_MISSING = 5
@@ -274,6 +309,11 @@ NEW_BREAKER = "NEW_TOPIC_BREAKER"
 #: The import held the field for a person (docs/adr/0202 §6); only `resolve_field` clears it.
 IMPORT_HELD = "IMPORT_HELD"
 BREAKER = "CIRCUIT_BREAKER"
+#: More closure holds began tonight than `MAX_NEW_CLOSURE_HOLDS` (TL-02).
+CLOSURE_HOLD_BREAKER = "CLOSURE_HOLD_BREAKER"
+#: The domain guard refused a source closure at the write (`SourceClosureHeld`,
+#: TL-02): the Teema's other eligible fields were not written that night.
+HELD_AT_WRITE = "CLOSURE_HELD_AT_WRITE"
 PARTIAL = "PARTIAL_FAILURE"
 NO_BACKUP = "NO_VERIFIED_BACKUP"
 COMPARE_ONLY = "COMPARE_ONLY"
@@ -310,7 +350,8 @@ NOT_REPRESENTABLE = "NOT_REPRESENTABLE"  # Juristid has no honest place for it
 #: Lovable is authoritative (docs/adr/0213 §10, owner brief 2026-11-11): the
 #: latest verified source value is written through the field's domain service,
 #: also over a local divergence; only a technical problem holds it
-#: (`TECHNICAL_HOLDS`). The historical register keeps the earlier classes.
+#: (`TECHNICAL_HOLDS`). Every live synchronised Teema, the historical register
+#: included; only a tombstone keeps the earlier classes (`_plan_archive`).
 AUTHORITATIVE = "AUTHORITATIVE"
 POLICY_CLASSES = (AUTO, CONDITIONAL, REVIEW, NOT_REPRESENTABLE, AUTHORITATIVE)
 #: The fields source authority writes.
@@ -349,8 +390,8 @@ def _policy(field_name: str, policy: str, explanation: str, service: str = "") -
 
 #: Every reconciled field, the continuation, a new topic and a vanished source
 #: (interface 3), as source authority writes them for the operational cohorts
-#: (docs/adr/0213 §10). The closed historical register (`lovable-history`) keeps
-#: the rules of 0213 §4: every change there is a person's (MATTER_CLOSED).
+#: (docs/adr/0213 §10), the closed historical register (`lovable-history`)
+#: included (§10.7). Only a tombstone keeps the rules of 0213 §4 (`_plan_archive`).
 #: `tests/test_r4_authority.py` holds the table and the engine together.
 FIELD_POLICY: dict[str, FieldPolicy] = {
     p.field: p
@@ -358,8 +399,8 @@ FIELD_POLICY: dict[str, FieldPolicy] = {
         _policy(
             "title",
             AUTHORITATIVE,
-            "Pealkiri järgib Lovable'it. Muutmata allika korral jääb Juristides tehtud muudatus "
-            "alles; allika muutus kirjutatakse üle. Tühja pealkirja ei kirjutata.",
+            "Pealkiri järgib Lovable'it: allika muutus kirjutatakse üle ja Juristides tehtud "
+            "muudatus taastatakse Lovable'i väärtuseks. Tühja pealkirja ei kirjutata.",
             "set_matter_title(provenance=…)",
         ),
         _policy(
@@ -457,10 +498,12 @@ FIELD_POLICY: dict[str, FieldPolicy] = {
         _policy(
             "commencements",
             AUTHORITATIVE,
-            "Lisandunud jõustumine lisatakse, kui selle liik on üheselt loetav (üldises korras, "
-            "kindel kuupäev, eeldatav kuupäev — eeldatav jääb hinnanguks). Muudetud või "
-            "eemaldatud jõustumine ja sama päeva teine kirje jäävad ootele.",
-            "add_effective_date / add_important_date",
+            "Lovable'i jõustumised järgivad Lovable'it ühe hulgana: lisandunud jõustumine "
+            "lisatakse, kui selle liik on üheselt loetav (üldises korras, kindel kuupäev, "
+            "eeldatav kuupäev — eeldatav jääb hinnanguks); jõustumine, mida Lovable enam ei "
+            "nimeta, tühistatakse ja jääb ajalukku. Inimese enda kuupäevi ei puudutata. "
+            "Loetamatu kirje ja suletud teema jäävad ootele.",
+            "add_/cancel_effective_date, add_/cancel_important_date",
         ),
         _policy(
             "operational_scope",
@@ -568,11 +611,91 @@ SOURCE_FIELDS: dict[str, Callable[[dict[str, Any]], Any]] = {
 
 def bundle_of(snapshot: dict[str, Any], source_id: Any) -> dict[str, Any] | None:
     """A topic's bundle in a reading: the cohort's, or — for a Teema the same
-    night created from a new topic (docs/adr/0213) — the new topics' reading."""
+    night created from a new topic (docs/adr/0213) — the new topics' reading.
+    A topic on a continuation cycle in that reading (`continuation_cycles`) is
+    marked ``CYCLE_MARK`` in a copy; the stored reading is never changed."""
     key = str(source_id)
     found = (snapshot.get("cohort") or {}).get(key)
     if found is None:
         found = ((snapshot.get("new_topics") or {}).get("cohort") or {}).get(key)
+    if found is not None and key in continuation_cycles(snapshot):
+        found = {**found, CYCLE_MARK: True}
+    return found
+
+
+#: Marks a bundle whose topic Lovable continues, through one or more stage
+#: links, back into itself (QA-E-01): held `CONTINUATION_CYCLE`, never guessed.
+CYCLE_MARK = "continuation_cycle"
+_CYCLES: dict[str, frozenset[str]] = {}
+
+
+def continuation_cycles(snapshot: dict[str, Any]) -> frozenset[str]:
+    """The Lovable ids that lie on a cycle of stage links (``prev`` → ``next``)
+    anywhere in the reading — A→B→A, or a longer chain back to its start. Every
+    link the reading holds counts, the cohort's and tonight's new topics' alike,
+    so a cycle through a topic created tonight is found as well. Cached per
+    reading (its digest)."""
+    digest = str(snapshot.get("sha256") or "")
+    if digest and digest in _CYCLES:
+        return _CYCLES[digest]
+    bundles = list((snapshot.get("cohort") or {}).values()) + list(
+        ((snapshot.get("new_topics") or {}).get("cohort") or {}).values()
+    )
+    graph: dict[str, set[str]] = {}
+    for bundle in bundles:
+        for link in (bundle or {}).get("stage_links") or []:
+            graph.setdefault(str(link.get("prev")), set()).add(str(link.get("next")))
+    # Tarjan's strongly connected components, iteratively: a component of two or
+    # more topics, or one topic linked to itself, is a cycle.
+    index: dict[str, int] = {}
+    low: dict[str, int] = {}
+    stack: list[str] = []
+    on_stack: set[str] = set()
+    cyclic: set[str] = set()
+    counter = 0
+    for root in sorted(graph):
+        if root in index:
+            continue
+        work = [(root, iter(sorted(graph.get(root, ()))))]
+        index[root] = low[root] = counter
+        counter += 1
+        stack.append(root)
+        on_stack.add(root)
+        while work:
+            node, children = work[-1]
+            advanced = False
+            for child in children:
+                if child not in index:
+                    index[child] = low[child] = counter
+                    counter += 1
+                    stack.append(child)
+                    on_stack.add(child)
+                    work.append((child, iter(sorted(graph.get(child, ())))))
+                    advanced = True
+                    break
+                if child in on_stack:
+                    low[node] = min(low[node], index[child])
+            if advanced:
+                continue
+            work.pop()
+            if work:
+                parent = work[-1][0]
+                low[parent] = min(low[parent], low[node])
+            if low[node] == index[node]:
+                component = []
+                while True:
+                    member = stack.pop()
+                    on_stack.discard(member)
+                    component.append(member)
+                    if member == node:
+                        break
+                if len(component) > 1 or node in graph.get(node, ()):
+                    cyclic.update(component)
+    found = frozenset(cyclic)
+    if digest:
+        if len(_CYCLES) > 8:
+            _CYCLES.clear()
+        _CYCLES[digest] = found
     return found
 
 
@@ -1435,6 +1558,8 @@ class MatterPlan:
     #: open in Juristid: counted, never acted on (docs/adr/0202 §6).
     activity: str = ""
     open: bool = False
+    #: Lovable continues this topic back into itself (`continuation_cycles`).
+    continuation_cycle: bool = False
 
     def outcomes(self) -> set[str]:
         return {d.outcome for d in self.decisions} | ({self.status} if self.status else set())
@@ -1642,6 +1767,7 @@ def plan_matter(
         {**src, CONTINUATION: source_continuation(bundle)},
         row.get("version"),
     )
+    plan.continuation_cycle = bool(bundle.get(CYCLE_MARK))
     b = current if current is not None else current_values(state.matter)
     if "stage" not in b or "lifecycle" not in b:
         b = {**b, **conditional_values(state.matter)}
@@ -1653,9 +1779,8 @@ def plan_matter(
         # source through its domain service; only technical problems hold.
         _plan_authoritative(plan, state, plan.source, b, resolver=resolver, today=today)
         return plan
-    # The closed historical register (`lovable-history`) and tombstones keep the
-    # earlier rules exactly: a change there is a person's call (MATTER_CLOSED,
-    # IMPORT_HELD; docs/adr/0213 §9.9).
+    # Only a tombstone keeps the earlier rules exactly: a change there is a
+    # person's call (MATTER_CLOSED, IMPORT_HELD; docs/adr/0213 §4, §9.9).
     _plan_archive(plan, state, src, b, resolver=resolver, today=today)
     return plan
 
@@ -1669,8 +1794,9 @@ def _plan_archive(
     resolver: OwnerResolver,
     today: dt.date,
 ) -> None:
-    """The rules before source authority (docs/adr/0192, 0213 §4), for the
-    historical cohort and for tombstones only."""
+    """The rules before source authority (docs/adr/0192, 0213 §4), for a
+    tombstone only (`plan_matter`): the A/B/C table where a local edit is kept
+    (LOCAL_TEST_CHANGE) and a double change is a CONFLICT."""
     applied = state.applied
     closed = not b["is_open"]
 
@@ -2010,11 +2136,12 @@ def _is_open(matter: Any) -> bool:
 # For the operational cohorts (the pilot, the operational rebuild and the
 # register) every source-owned field follows the **latest verified** Lovable
 # value through its canonical domain service, also where Juristid diverged
-# locally (B ≠ A): a source change wins. What stays the same:
+# locally (B ≠ A): a source change wins, and so does an unchanged source
+# (owner decision 11.11, docs/adr/0213 §10.1):
 #
-# * a source value that did not change modifies nothing (A = C → UNCHANGED, or
-#   LOCAL_TEST_CHANGE when Juristid differs: the local value is kept until the
-#   source next changes);
+# * a source value that did not change, with Juristid still at its target,
+#   modifies nothing (UNCHANGED); with Juristid edited locally, the target is
+#   written back (ELIGIBLE, reason `RESTORED`, «Lovable'i väärtus taastati»);
 # * a field the engine has never mirrored (the import held it, or it was only
 #   ever observed) converges once: Juristid is brought to what the source says
 #   now, then it is settled (``mirrored``);
@@ -2034,6 +2161,12 @@ SETTLED_STEP_TREATMENTS = frozenset({"SOURCE_NEXT_STEP", "RESOLVED_LOCAL", MIRRO
 #: The technical holds (codes; the pages' words are `LOVABLE_REASONS`).
 SUCCESSOR_MISSING = "SUCCESSOR_NOT_IN_JURISTID"
 SUCCESSOR_AMBIGUOUS = "SUCCESSOR_AMBIGUOUS"
+#: Lovable's stage links lead from the topic back to itself (A→B→A or longer):
+#: every Teema on the cycle is held, its lifecycle untouched (QA-E-01).
+CONTINUATION_CYCLE = "CONTINUATION_CYCLE"
+#: The successor was created tonight, but converging its predecessor too would
+#: have gone over the Teemad-written breaker: the next run converges it (LS-01).
+SUCCESSOR_DEFERRED = "SUCCESSOR_DEFERRED_BY_BREAKER"
 #: The opinion outcome is held (contradictory or impossible): the request waits too.
 OUTCOME_HELD = "OUTCOME_HELD"
 #: A write that brings Lovable's unchanged value back over a local edit
@@ -2055,10 +2188,21 @@ RESTORE_BREAKER = "RESTORE_BREAKER"
 #: A historical Teema's owner name resolves to no active Juristid user
 #: (former staff): shown in the historical register's own group.
 HISTORY_OWNER_UNRESOLVED = "HISTORY_OWNER_UNRESOLVED"
+#: Lovable closed an open Teema that still holds Juristid-only work (TL-02,
+#: owner decision 12.11.2026, docs/adr/0213 §10.13): the closure is held, the
+#: work preserved, and the step and the request are held with it.
+LOCAL_WORK_AT_CLOSURE = _closure_work.LOCAL_WORK_AT_CLOSURE
+#: The hold's own keys inside its decision's ``current`` (beside Juristid's
+#: lifecycle): the counts and digest of the work, and the first night of this
+#: hold and the day it escalates (carried night to night, `_closure_hold_since`).
+HOLD_WORK = "local_work"
+HOLD_SINCE = "held_since"
+HOLD_ESCALATES = "escalates_on"
+HOLD_NEW = "new"
+HOLD_WRITING = "writing_since"
 #: «lõpetatud» — finished, no reason stated (docs/adr/0213 §9.1).
 FINISHED_NO_REASON = "lõpetatud"
 STAGE_UNMAPPED = "STAGE_UNMAPPED"
-CLOSED_OTHERWISE = "CLOSED_WITH_OTHER_REASON"
 LIFECYCLE_HELD = "LIFECYCLE_HELD"
 STEP_DATE_NO_TEXT = "STEP_DATE_WITHOUT_TEXT"
 DATE_UNREADABLE = "DATE_UNREADABLE"
@@ -2083,6 +2227,8 @@ TECHNICAL_HOLDS: dict[str, str] = {
     NOT_ASSIGNABLE: "unresolvable identity",
     SUCCESSOR_MISSING: "missing successor identity",
     SUCCESSOR_AMBIGUOUS: "duplicate reference",
+    CONTINUATION_CYCLE: "contradictory snapshot",
+    SUCCESSOR_DEFERRED: "missing successor identity",
     OUTCOME_HELD: "contradictory snapshot",
     HISTORY_REOPENED_OUTSIDE_SCOPE: "unrepresentable value",
     CLOSURE_REASON_UNKNOWN: "unrepresentable value",
@@ -2108,9 +2254,9 @@ TECHNICAL_HOLDS: dict[str, str] = {
     COMMENCEMENT_CLASH: "duplicate reference",
     LINK_NOT_HTTPS: "unsafe operation",
     LINK_REMOVED: "unsafe operation",
-    CLOSED_OTHERWISE: "unsafe operation",
     LIFECYCLE_HELD: "unsafe operation",
     MATTER_CLOSED: "unsafe operation",
+    LOCAL_WORK_AT_CLOSURE: "unsafe operation",
 }
 
 
@@ -2270,7 +2416,12 @@ def _lifecycle_matches(desired: dict[str, Any], b_life: dict[str, Any]) -> bool:
 
 
 def _lifecycle_decisions(
-    state: LovableSyncState, src: dict[str, Any], b: dict[str, Any]
+    state: LovableSyncState,
+    src: dict[str, Any],
+    b: dict[str, Any],
+    *,
+    cycle: bool = False,
+    today: dt.date | None = None,
 ) -> tuple[list[FieldDecision], dict[str, Any] | None, str]:
     """The stage and the continuation as one lifecycle operation. Returns the
     decisions (``stage``, and ``continuation`` when the link moved), the desired
@@ -2279,9 +2430,11 @@ def _lifecycle_decisions(
     Lovable is the source of truth at all times (owner decision 11.11): a
     lifecycle a person changed locally is put back — a Teema closed while
     Lovable has it open is reopened, one reopened while Lovable has it closed
-    is closed again (reason `RESTORED`). A Teema closed for another reason than
-    Lovable states is never reopened and closed again: changed in Lovable it is
-    held (`CLOSED_OTHERWISE`), unchanged it stays as closed. A historical Teema
+    is closed again (reason `RESTORED`). A Teema closed for another reason or
+    under another successor than Lovable states is never reopened and closed
+    again: its closure reason (and successor) is set to Lovable's
+    (``target["reclose"]``, `change_closure_from_source`), the closing moment
+    kept. A historical Teema
     Lovable reopens moves to the register (`move_to`) only inside Lovable's
     operational scope; outside it, it is held."""
     applied = state.applied
@@ -2296,7 +2449,12 @@ def _lifecycle_decisions(
     # is taken as it stands — its closure was the import's reading of it.
     unknown = [] if b_life["open"] else c_link
     a_link = link.get("source") if link else (state.observed or {}).get(CONTINUATION, unknown)
-    desired, hold = desired_lifecycle(c_stage, c_link, matter_id=state.matter_id)
+    if cycle:
+        # Lovable continues the topic back into itself (QA-E-01): which Teema the
+        # work goes on in is unknowable, so nothing about the lifecycle is written.
+        desired, hold = None, CONTINUATION_CYCLE
+    else:
+        desired, hold = desired_lifecycle(c_stage, c_link, matter_id=state.matter_id)
     changed = c_stage != a_stage or (a_link or []) != c_link
     unchanged = not changed and _settled(applied, "stage")
     common = {"baseline": a_stage, "current": b_life, "source": c_stage}
@@ -2310,8 +2468,9 @@ def _lifecycle_decisions(
         return found
 
     if hold or desired is None:
-        if unchanged:
-            # A technical hold is never «restored over».
+        if unchanged and hold != CONTINUATION_CYCLE:
+            # A technical hold is never «restored over». A cycle is held every
+            # night it stands, so each Teema on it is visibly waiting (QA-E-01).
             return [_decision("stage", SyncOutcome.UNCHANGED, **common)], None, ""
         hold = hold or STAGE_UNMAPPED
         return decide(SyncOutcome.REVIEW_REQUIRED, hold), None, hold
@@ -2336,6 +2495,37 @@ def _lifecycle_decisions(
     if not desired["open"] and desired["disposition"] is None:
         # «lõpetatud» on an open Teema: closing it would invent a reason.
         return decide(SyncOutcome.REVIEW_REQUIRED, CLOSURE_REASON_UNKNOWN), None, ""
+    if not desired["open"] and b_life["open"]:
+        # An open Teema Lovable closes — a new closure, a successor's, or a
+        # lawyer's local reopening put back (`RESTORED`) — is held while it holds
+        # Juristid-only work (TL-02, docs/adr/0213 §10.13): nothing is cancelled,
+        # and the step and the request wait with it.
+        work = _closure_work.juristid_only_work(state.matter_id)
+        if not work.is_empty:
+            since, carried, writing = _closure_hold_since(state, today)
+            held = decide(SyncOutcome.REVIEW_REQUIRED, LOCAL_WORK_AT_CLOSURE)
+            for decision in held:
+                if decision.field == "stage":
+                    decision.current = {
+                        **b_life,
+                        HOLD_WORK: _closure_work.work_counts(work),
+                        HOLD_SINCE: since.isoformat(),
+                        # First recorded by this run (`MAX_NEW_CLOSURE_HOLDS`).
+                        HOLD_NEW: not carried,
+                        # The escalation clock runs on APPLY nights only (review
+                        # P2-A): a hold that stood through COMPARE starts its
+                        # 14 days on the first night the synchronisation writes.
+                        HOLD_WRITING: writing.isoformat() if writing else None,
+                        HOLD_ESCALATES: (
+                            (
+                                writing
+                                + dt.timedelta(days=_closure_work.CLOSURE_HOLD_ESCALATION_DAYS)
+                            ).isoformat()
+                            if writing
+                            else None
+                        ),
+                    }
+            return held, None, LOCAL_WORK_AT_CLOSURE
     if desired["open"] and not b_life["open"] and state.cohort == HISTORY_COHORT:
         # The backfill closed every non-operational topic as ARCHIVE whatever its
         # label said: only a change in Lovable reopens one — its label moving
@@ -2353,6 +2543,55 @@ def _lifecycle_decisions(
             return decide(SyncOutcome.REVIEW_REQUIRED, hold), None, ""
         target["move_to"] = NEW_TOPIC_COHORT
     return decide(SyncOutcome.ELIGIBLE, restored, target), desired, ""
+
+
+def _writing_now() -> bool:
+    """Whether the synchronisation writes now (APPLY, not cut over)."""
+    return LovableSyncControl.objects.filter(pk=1, mode=SyncMode.APPLY, cut_over=False).exists()
+
+
+def _closure_hold_since(
+    state: LovableSyncState, today: dt.date | None
+) -> tuple[dt.date, bool, dt.date | None]:
+    """This `LOCAL_WORK_AT_CLOSURE` hold's first night, whether it was carried
+    from the state's previous observed run (not new tonight), and the first
+    night it stood while the synchronisation writes (``writing_since``).
+
+    One hold is one continuous stretch of nights: a night without it (Lovable
+    reopened, the work was finished) ends it, and a later hold starts its own
+    count — so its age never restarts on a re-run and never carries over from
+    an earlier stretch. ``held_since`` counts every night (display, age);
+    ``writing_since`` only APPLY nights, and the 14-day escalation runs from it
+    (review P2-A): a hold that stood through weeks of COMPARE starts its clock
+    on the first APPLY night, so its escalation is never already past the
+    notifications' catch-up window. ``None`` while it has stood only in
+    COMPARE."""
+    day = today or timezone.localdate()
+    writing_today = day if _writing_now() else None
+    if state.pk is None or state.observed_run_id is None:
+        return day, False, writing_today
+    current = (
+        LovableSyncDecision.objects.filter(
+            state_id=state.pk,
+            run_id=state.observed_run_id,
+            field="stage",
+            outcome=SyncOutcome.REVIEW_REQUIRED,
+            reason=LOCAL_WORK_AT_CLOSURE,
+        )
+        .values_list("current", flat=True)
+        .first()
+    )
+    if not (isinstance(current, dict) and current.get(HOLD_SINCE)):
+        return day, False, writing_today
+
+    def _parsed(value: Any) -> dt.date | None:
+        try:
+            return min(dt.date.fromisoformat(str(value)), day) if value else None
+        except ValueError:
+            return None
+
+    since = _parsed(current[HOLD_SINCE]) or day
+    return since, True, _parsed(current.get(HOLD_WRITING)) or writing_today
 
 
 def _step_view(step: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -2452,7 +2691,12 @@ def _step_decisions_authoritative(
         return both(SyncOutcome.ALREADY_CONVERGED, target=target)
 
     if lifecycle_hold:
-        return same(b_step) if unchanged else both(SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD)
+        # Held with the closure, under its own code when it is the TL-02 hold,
+        # so the whole hold reads as one explained thing (never a parity error).
+        reason = (
+            LOCAL_WORK_AT_CLOSURE if lifecycle_hold == LOCAL_WORK_AT_CLOSURE else LIFECYCLE_HELD
+        )
+        return same(b_step) if unchanged else both(SyncOutcome.REVIEW_REQUIRED, reason)
     desired: dict[str, Any] | None
     if closed_after:
         desired = None
@@ -2655,7 +2899,10 @@ def _request_decision_authoritative(
     if lifecycle_hold:
         if unchanged:
             return same(b_day)
-        return _decision(name, SyncOutcome.REVIEW_REQUIRED, LIFECYCLE_HELD, **common)
+        reason = (
+            LOCAL_WORK_AT_CLOSURE if lifecycle_hold == LOCAL_WORK_AT_CLOSURE else LIFECYCLE_HELD
+        )
+        return _decision(name, SyncOutcome.REVIEW_REQUIRED, reason, **common)
     if c_src is not None and str(c_src).startswith("?"):
         if unchanged:
             return same(b_day)
@@ -2832,7 +3079,9 @@ def _plan_authoritative(
 
     # The lifecycle first: whether the Teema is (or tonight becomes) closed
     # decides what the step and the request may be.
-    life, desired_life, life_hold = _lifecycle_decisions(state, src, b)
+    life, desired_life, life_hold = _lifecycle_decisions(
+        state, src, b, cycle=plan.continuation_cycle, today=today
+    )
     if desired_life is not None and life[0].outcome in (
         SyncOutcome.ELIGIBLE,
         SyncOutcome.ALREADY_CONVERGED,
@@ -2842,7 +3091,12 @@ def _plan_authoritative(
         closed_after = closed
     # Only a held closure holds the step and the request with it: an unmapped
     # stage label says nothing about either.
-    if life_hold not in (SUCCESSOR_MISSING, SUCCESSOR_AMBIGUOUS):
+    if life_hold not in (
+        SUCCESSOR_MISSING,
+        SUCCESSOR_AMBIGUOUS,
+        CONTINUATION_CYCLE,
+        LOCAL_WORK_AT_CLOSURE,
+    ):
         life_hold = ""
 
     plan.decisions.append(
@@ -3080,12 +3334,23 @@ def _apply_lifecycle(
             held_day = fresh.response_deadline
             keep = held_day is not None and held_day.isoformat() == src.get("opinion_deadline")
             reopen_matter_into_stage(
-                matter=fresh, stage=stage, actor=None, keep_response_deadline=keep
+                matter=fresh,
+                stage=stage,
+                actor=None,
+                keep_response_deadline=keep,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=provenance,
             )
             if desired.get("move_to"):
                 _move_to_register(fresh, desired["move_to"], provenance=provenance)
         else:
-            change_stage(matter=fresh, stage=stage, actor=None, origin=StageEpisodeOrigin.IMPORTED)
+            change_stage(
+                matter=fresh,
+                stage=stage,
+                actor=None,
+                origin=StageEpisodeOrigin.IMPORTED,
+                provenance=provenance,
+            )
     elif not b_life["open"]:
         from app.matters.services import change_closure_from_source
 
@@ -3246,7 +3511,9 @@ def lovable_commencements(matter_id: Any) -> list[list[Any]]:
     )
 
 
-def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
+def _apply_commencements(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
     """The commencement set Lovable states (`_commencements_authoritative`):
     each one it no longer states is cancelled through its own service, with the
     reason and its own audited event, and kept; each new one is added with its
@@ -3283,10 +3550,14 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
         record.used = True
         if model_name == T_EFFECTIVE_DATE:
             effective = MatterEffectiveDate.objects.get(pk=record.pk, status=FactStatus.ACTIVE)
-            cancel_effective_date(record=effective, actor=None, reason=reason)
+            cancel_effective_date(
+                record=effective, actor=None, reason=reason, provenance=provenance
+            )
         else:
             important = MatterImportantDate.objects.get(pk=record.pk, status=FactStatus.ACTIVE)
-            cancel_important_date(record=important, actor=None, reason=reason)
+            cancel_important_date(
+                record=important, actor=None, reason=reason, provenance=provenance
+            )
     for item in target["add"]:
         day = dt.date.fromisoformat(item["date"]) if item["date"] else None
         if item["target"] == T_EFFECTIVE_DATE:
@@ -3299,6 +3570,7 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
                 description=item.get("note", ""),
                 actor=None,
                 source_text=LOVABLE_COMMENCEMENT_MARK,
+                provenance=provenance,
             )
         else:
             if day is None:
@@ -3313,6 +3585,7 @@ def _apply_commencements(decision: FieldDecision, *, matter: Any) -> Any:
                 note=item.get("note", ""),
                 actor=None,
                 source_text=LOVABLE_COMMENCEMENT_MARK,
+                provenance=provenance,
             )
     return lovable_commencements(matter.pk)
 
@@ -3353,7 +3626,9 @@ def _apply_step(
     return _action_dict(new)
 
 
-def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
+def _apply_request(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
     from app.matters.enums import ResponseDeadlineChange, ResponseDeadlineOutcome
     from app.matters.models import Matter
     from app.matters.response_deadlines import change_response_deadline
@@ -3407,7 +3682,9 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             note = "Lovable'i järgi arvamust ei saadetud («ei saatnud»)."
             outcome = ResponseDeadlineOutcome.NOT_ANSWERING
         if fresh.response_deadline is not None:
-            resolve_response_deadline(matter=fresh, outcome=outcome, actor=None, note=note)
+            resolve_response_deadline(
+                matter=fresh, outcome=outcome, actor=None, note=note, provenance=provenance
+            )
         return conditional_values(Matter.all_objects.get(pk=matter.pk))["opinion_deadline"]
     if decision.target is None:
         change_response_deadline(
@@ -3416,6 +3693,7 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             actor=None,
             previous_outcome=ResponseDeadlineOutcome.CANCELLED,
             previous_note="Lovable'is arvamuse tähtaeg eemaldati.",
+            provenance=provenance,
         )
     else:
         moving = fresh.response_deadline is not None
@@ -3425,6 +3703,7 @@ def _apply_request(decision: FieldDecision, *, matter: Any) -> Any:
             actor=None,
             change=ResponseDeadlineChange.MOVED if moving else "",
             previous_note="Lovable'is muutus arvamuse tähtaeg." if moving else "",
+            provenance=provenance,
         )
     return conditional_values(Matter.all_objects.get(pk=matter.pk))["opinion_deadline"]
 
@@ -3438,6 +3717,7 @@ def _apply_opinion_outcome(
     run: LovableSyncRun,
     snapshot: dict[str, Any],
     version: int | None,
+    provenance: dict[str, Any] | None = None,
 ) -> tuple[Any, bool]:
     """A new `LovableOpinionOutcome` (the newest is current), and — when the
     Teema is open and its current request is Lovable's — that request ends:
@@ -3506,7 +3786,9 @@ def _apply_opinion_outcome(
         else:
             note = "Lovable'i järgi arvamust ei saadetud («ei saatnud»)."
             outcome = ResponseDeadlineOutcome.NOT_ANSWERING
-        resolve_response_deadline(matter=fresh, outcome=outcome, actor=None, note=note)
+        resolve_response_deadline(
+            matter=fresh, outcome=outcome, actor=None, note=note, provenance=provenance
+        )
         ended = True
     return _outcome_view(matter.pk), ended
 
@@ -3539,13 +3821,13 @@ def _apply_authoritative(
             decision, matter=matter, provenance=provenance, run=run, snapshot=snapshot
         )
     elif name == "commencements":
-        new_b = _apply_commencements(decision, matter=matter)
+        new_b = _apply_commencements(decision, matter=matter, provenance=provenance)
     elif name == "stage":
         new_b = _apply_lifecycle(decision, matter=matter, src=src, provenance=provenance)
     elif name == "next_action_text":
         new_b = _apply_step(decision, matter=matter, provenance=provenance)
     elif name == "opinion_deadline":
-        new_b = _apply_request(decision, matter=matter)
+        new_b = _apply_request(decision, matter=matter, provenance=provenance)
     elif name == "sent":
         new_b, ended = _apply_opinion_outcome(
             decision,
@@ -3555,6 +3837,7 @@ def _apply_authoritative(
             run=run,
             snapshot=snapshot,
             version=plan.version,
+            provenance=provenance,
         )
         if ended:
             # The request Lovable's outcome answers is no longer current.
@@ -3568,7 +3851,7 @@ def _apply_authoritative(
         track = Track.KODA_INITIATIVE if decision.target else _track_before_initiative(matter.pk)
         if track is None:
             raise SyncRefused(TRACK_NOT_STATED, "The track before the initiative is not known.")
-        change_track(matter=Matter.objects.get(pk=matter.pk), track=track)
+        change_track(matter=Matter.objects.get(pk=matter.pk), track=track, provenance=provenance)
         new_b = bool(decision.target)
     elif name == "legal_act":
         instruments = Matter._meta.get_field("legal_instruments").related_model
@@ -3576,6 +3859,7 @@ def _apply_authoritative(
         set_legal_instruments(
             matter=fresh,
             legal_instruments=list(instruments._default_manager.filter(key__in=decision.target)),
+            provenance=provenance,
         )
         new_b = conditional_values(fresh)["legal_act"]
     elif name == "received":
@@ -3583,6 +3867,7 @@ def _apply_authoritative(
         set_matter_dates(
             matter=fresh,
             received_date=dt.date.fromisoformat(decision.target) if decision.target else None,
+            provenance=provenance,
         )
         new_b = decision.target
     else:
@@ -3738,14 +4023,17 @@ def _apply_field(
             matter=matter, url=decision.target, run=run, snapshot=snapshot, provenance=provenance
         )
     if decision.field in CONDITIONAL_FIELDS:
-        return _apply_conditional(decision, matter=matter)
+        return _apply_conditional(decision, matter=matter, provenance=provenance)
     raise SyncRefused("NOT_ALLOWLISTED", f"{decision.field} is not an automatic field.")
 
 
-def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
-    """A conditional field (docs/adr/0213), through the service the rebuild used
-    for the same change (docs/adr/0202 §3). These services take no provenance;
-    the write's record is its `LovableSyncDecision` (APPLIED, idempotency key)."""
+def _apply_conditional(
+    decision: FieldDecision, *, matter: Any, provenance: dict[str, Any] | None = None
+) -> Any:
+    """A conditional field of the earlier rules (docs/adr/0213 §4; a
+    tombstone's plan only), through the service the rebuild used for the same
+    change (docs/adr/0202 §3). The write's record is its `LovableSyncDecision`
+    (APPLIED, idempotency key)."""
     from app.intelligence.services import add_effective_date, add_important_date
     from app.legacy_import.lovable_pilot import COMMENCEMENT_TITLES, T_EFFECTIVE_DATE
     from app.matters.enums import StageEpisodeOrigin
@@ -3760,10 +4048,14 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
             stage=StageVocabulary.objects.get(key=decision.target),
             actor=None,
             origin=StageEpisodeOrigin.IMPORTED,
+            provenance=provenance,
         )
     elif decision.field == "opinion_deadline":
         request_response_deadline(
-            matter=matter, deadline=dt.date.fromisoformat(decision.target), actor=None
+            matter=matter,
+            deadline=dt.date.fromisoformat(decision.target),
+            actor=None,
+            provenance=provenance,
         )
     else:
         for item in decision.target:
@@ -3778,6 +4070,7 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
                     description=item.get("note", ""),
                     actor=None,
                     source_text="Lovable",
+                    provenance=provenance,
                 )
             else:
                 if day is None:
@@ -3792,6 +4085,7 @@ def _apply_conditional(decision: FieldDecision, *, matter: Any) -> Any:
                     note=item.get("note", ""),
                     actor=None,
                     source_text="Lovable",
+                    provenance=provenance,
                 )
     fresh = Matter.all_objects.get(pk=matter.pk)
     return conditional_values(fresh)[decision.field]
@@ -3860,9 +4154,12 @@ def apply_matter(
 ) -> MatterPlan:
     """Every eligible field of one Teema, all or nothing, under its lock.
 
-    The plan is made again under the lock: a lawyer's save that landed after the
-    first reading turns ELIGIBLE into CONFLICT or LOCAL_TEST_CHANGE here, never
-    into an overwrite."""
+    The plan is made again under the lock, so what is written is decided on the
+    committed row: a lawyer's save that landed after the first reading is
+    overwritten by a source change or restored over, exactly as it would have
+    been planned (docs/adr/0213 §10.1), and a Teema whose re-plan holds or
+    converges writes nothing. A tombstone's plan keeps the earlier rules
+    (`_plan_archive`: CONFLICT / LOCAL_TEST_CHANGE, never an overwrite)."""
     from app.matters.locks import lock_matter_for_write
 
     with transaction.atomic():
@@ -4626,6 +4923,123 @@ def historical_hold(cohort: str, reason: str, baseline: Any, source: Any) -> boo
     )
 
 
+#: What a held field's decision says: it waits for a person (or the source).
+HELD_OUTCOMES = (SyncOutcome.REVIEW_REQUIRED, SyncOutcome.CONFLICT)
+#: A run whose writes are committed but whose search rows are stale (LS-09).
+SEARCH_REFRESH_FAILED = "SEARCH_REFRESH_FAILED"
+
+
+def stale_search_matter_ids(*, exclude: Any = None) -> set[Any]:
+    """The Teemad whose search rows a run left stale (LS-09): every Teema written
+    (an APPLIED decision) by the unbroken line of newest runs that recorded
+    ``search_refresh_pending``. The line ends at the first run that read Lovable
+    and recorded none; a FAILED run recorded no counts and is passed over."""
+    pending: set[Any] = set()
+    runs = (
+        LovableSyncRun.objects.exclude(trigger=SyncTrigger.CHECK)
+        .filter(status__in=(*BASELINE_STATUSES, SyncRunStatus.FAILED))
+        .order_by("-started_at")
+    )
+    if exclude is not None:
+        runs = runs.exclude(pk=exclude.pk)
+    for earlier in runs[:30]:
+        counts = earlier.counts or {}
+        if earlier.status == SyncRunStatus.FAILED and not counts:
+            continue
+        if not counts.get("search_refresh_pending"):
+            break
+        pending.update(
+            earlier.decisions.filter(outcome=SyncOutcome.APPLIED)
+            .exclude(state__matter_id__isnull=True)
+            .values_list("state__matter_id", flat=True)
+        )
+    return pending
+
+
+#: Holds that are a business safeguard, not a technical problem growing: the
+#: holds breaker (`MAX_NEW_HOLDS`) counts neither side of them (TL-02 — a
+#: closure held for Juristid-only work counts toward no breaker).
+BREAKER_EXEMPT_HOLDS = frozenset({LOCAL_WORK_AT_CLOSURE})
+
+
+def held_fields(plans: Iterable[MatterPlan]) -> int:
+    """Fields held tonight, whatever the reason (`HELD_OUTCOMES`) but the
+    breaker-exempt ones (`BREAKER_EXEMPT_HOLDS`): what the holds breaker
+    (`MAX_NEW_HOLDS`) compares with the previous run's recorded decisions."""
+    return sum(
+        1
+        for plan in plans
+        for d in plan.decisions
+        if d.outcome in HELD_OUTCOMES and d.reason not in BREAKER_EXEMPT_HOLDS
+    )
+
+
+def new_closure_holds(plans: Iterable[MatterPlan], today: dt.date) -> int:
+    """Closure holds first recorded by this run — not carried from the previous
+    reading — whose first night is ``today`` (`MAX_NEW_CLOSURE_HOLDS`)."""
+    day = today.isoformat()
+    return sum(
+        1
+        for plan in plans
+        for d in plan.decisions
+        if d.field == "stage"
+        and d.outcome == SyncOutcome.REVIEW_REQUIRED
+        and d.reason == LOCAL_WORK_AT_CLOSURE
+        and isinstance(d.current, dict)
+        and d.current.get(HOLD_NEW) is True
+        and d.current.get(HOLD_SINCE) == day
+    )
+
+
+def held_local_work(plans: Iterable[MatterPlan]) -> int:
+    """Teemad whose closure from Lovable is held for Juristid-only work tonight."""
+    return sum(
+        1
+        for plan in plans
+        if any(
+            d.field == "stage"
+            and d.outcome == SyncOutcome.REVIEW_REQUIRED
+            and d.reason == LOCAL_WORK_AT_CLOSURE
+            for d in plan.decisions
+        )
+    )
+
+
+def population_change(previous: dict[str, Any], current: dict[str, Any]) -> str:
+    """Why the live source population moved too far since ``previous`` (a stored
+    baseline reading) for an APPLY run to write, or ``""`` (`POPULATION_MAX_DELTA`,
+    `POPULATION_MAX_SHARE`; audit 2026-11-11 LS-07). Counts only."""
+    before = len(previous.get("index") or [])
+    now = len(current.get("index") or [])
+    delta = abs(now - before)
+    if delta > POPULATION_MAX_DELTA and delta > POPULATION_MAX_SHARE * before:
+        return (
+            f"The live Lovable population moved from {before} to {now} topics since the "
+            "previous reading; an APPLY run writes nothing until a person has looked "
+            "(a COMPARE run accepts it as the new reading)."
+        )
+    return ""
+
+
+def _defer_successor(plan: MatterPlan) -> None:
+    """A Teema whose successor exists now, held over the night's breaker: the
+    hold names that, not a missing successor (LS-01)."""
+    for decision in plan.decisions:
+        if decision.reason == SUCCESSOR_MISSING:
+            decision.reason = SUCCESSOR_DEFERRED
+
+
+def _waits_for_created_successor(plan: MatterPlan, created: set[str]) -> bool:
+    """Whether ``plan`` was held for want of its one successor in Juristid
+    (`SUCCESSOR_MISSING`), and that successor was created in this run (LS-01)."""
+    if plan.status or plan.not_executed:
+        return False
+    if not any(d.reason == SUCCESSOR_MISSING for d in plan.decisions):
+        return False
+    successors = plan.source.get(CONTINUATION) or []
+    return len(successors) == 1 and str(successors[0]) in created
+
+
 def standing_holds(plans: Iterable[MatterPlan]) -> dict[str, int]:
     """``"cohort:reason"`` → how many fields are REVIEW_REQUIRED tonight while
     Lovable's value is what it was (C = A): the holds that recur every night."""
@@ -5061,6 +5475,26 @@ class RunCounts:
     #: Fields held while Lovable is unchanged (C = A): they come back every night
     #: until Lovable changes. ``"cohort:reason"`` → count.
     standing_holds: dict[str, int] = field(default_factory=dict)
+    #: Fields held tonight (`held_fields`) and in the previous recorded run: the
+    #: holds breaker (`MAX_NEW_HOLDS`) is on the rise between the two.
+    held_fields: int = 0
+    held_fields_before: int = 0
+    #: Teemad written and verified whose search rows could not be refreshed
+    #: (`SEARCH_REFRESH_FAILED`): `manage.py refresh_matter_search` recovers them.
+    search_refresh_pending: int = 0
+    #: Teemad an earlier run left stale in search, refreshed by this run.
+    search_refreshed_carried: int = 0
+    #: Teemad whose successor was created tonight but whose convergence would
+    #: have gone over the Teemad-written breaker (`SUCCESSOR_DEFERRED`).
+    successors_deferred: int = 0
+    #: Teemad Lovable closed whose closure is held for Juristid-only work
+    #: (`LOCAL_WORK_AT_CLOSURE`, TL-02): an explained hold, never a difference.
+    held_local_work: int = 0
+    #: Of them, holds that began tonight, and the cap (`MAX_NEW_CLOSURE_HOLDS`).
+    new_closure_holds: int = 0
+    closure_hold_limit: int = MAX_NEW_CLOSURE_HOLDS
+    #: Codes of what went wrong without undoing the run (``SEARCH_REFRESH_FAILED``).
+    warnings: list[str] = field(default_factory=list)
     duration_seconds: float = 0.0
 
     def add_new_topics(self, plans: Iterable[NewTopicPlan]) -> None:
@@ -5258,11 +5692,85 @@ def comparable_snapshots() -> Any:
 
 
 def fresh_backup_set(backup_set: str, started: dt.datetime) -> str:
-    """The set's name if it is a set taken shortly before this run, else ``""``."""
-    if not _BACKUP_SET.match(backup_set or ""):
-        return ""
+    """The set's name if it is a set taken shortly before this run and proven
+    verified (`backup_set_problem`), else ``""``."""
+    return backup_set if not backup_set_problem(backup_set, started) else ""
+
+
+def backup_set_problem(backup_set: str, started: dt.datetime) -> str:
+    """Why ``backup_set`` does not open the mutating stage, or ``""``: no name
+    (``NO_SET``), not a set's name (``SET_NAME``), not taken in the
+    `BACKUP_MAX_AGE` before the run (``SET_STALE``), or no proof of its
+    verification (`backup_proof_problem`). A name alone never passes."""
+    if not backup_set:
+        return "NO_SET"
+    if not _BACKUP_SET.match(backup_set):
+        return "SET_NAME"
     taken = dt.datetime.strptime(backup_set[5:], "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC)
-    return backup_set if dt.timedelta(0) <= started - taken <= BACKUP_MAX_AGE else ""
+    if not dt.timedelta(0) <= started - taken <= BACKUP_MAX_AGE:
+        return "SET_STALE"
+    return backup_proof_problem(backup_set, started)
+
+
+def backup_proof_problem(
+    backup_set: str, started: dt.datetime, *, set_dir: str | None = None
+) -> str:
+    """``""`` when the set mounted at ``set_dir`` (default: `HOST_BACKUP_DIR_ENV`)
+    proves it is ``backup_set``, verified to `BACKUP_PROOF_LEVEL` after it was
+    taken and before this run, and that the dump it verified is the dump the set
+    names; otherwise a code (audit 2026-11-11 DR-05). Fail-closed: no mount, no
+    marker, a marker for another set, a lower level, a marker older than the set
+    or than `BACKUP_MAX_AGE`, or a dump whose SHA-256 is not the one recorded —
+    each is a refusal, and the run writes nothing (`NO_BACKUP`).
+
+    The marker (``VERIFIED-L2``) is ``key=value`` lines written by the host's
+    `juristid-verify-backup.sh --record` after every level-1 and level-2 check
+    passed: ``set``, ``level``, ``verified_at`` (UTC, ``%Y-%m-%dT%H:%M:%SZ``),
+    ``database_sha256``. The dump is hashed again here, so a set changed after
+    its verification does not pass either."""
+    import hashlib
+    import os
+    from pathlib import Path
+
+    directory = set_dir if set_dir is not None else os.environ.get(HOST_BACKUP_DIR_ENV, "")
+    if not directory or not Path(directory).is_dir():
+        return "PROOF_NOT_MOUNTED"
+    root = Path(directory)
+    marker = root / f"VERIFIED-L{BACKUP_PROOF_LEVEL}"
+    try:
+        lines = marker.read_text(encoding="utf-8").splitlines()
+        sums = (root / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return "PROOF_MISSING"
+    fields = dict(line.split("=", 1) for line in lines if "=" in line)
+    if fields.get("set") != backup_set[5:]:
+        return "PROOF_OTHER_SET"
+    if not (fields.get("level") or "").isdigit() or int(fields["level"]) < BACKUP_PROOF_LEVEL:
+        return "PROOF_LEVEL"
+    try:
+        verified = dt.datetime.strptime(fields.get("verified_at", ""), "%Y-%m-%dT%H:%M:%SZ")
+    except ValueError:
+        return "PROOF_TIME"
+    verified = verified.replace(tzinfo=dt.UTC)
+    taken = dt.datetime.strptime(backup_set[5:], "%Y%m%dT%H%M%SZ").replace(tzinfo=dt.UTC)
+    if not taken <= verified <= started or started - verified > BACKUP_MAX_AGE:
+        return "PROOF_TIME"
+    recorded = {
+        parts[1].lstrip("*"): parts[0]
+        for parts in (line.split(None, 1) for line in sums)
+        if len(parts) == 2
+    }
+    sha = fields.get("database_sha256", "")
+    if not sha or recorded.get("database.dump") != sha:
+        return "PROOF_DUMP"
+    digest = hashlib.sha256()
+    try:
+        with (root / "database.dump").open("rb") as dump:
+            for block in iter(lambda: dump.read(1 << 20), b""):
+                digest.update(block)
+    except OSError:
+        return "PROOF_DUMP"
+    return "" if digest.hexdigest() == sha else "PROOF_DUMP"
 
 
 def run_sync(
@@ -5283,7 +5791,23 @@ def run_sync(
     recorded in the run's counts (``breaker_limit``); no stored setting changes.
     ``max_restored`` does the same for the restore breaker (`MAX_RESTORED_MATTERS`,
     recorded as ``restore_limit``): the night stays all-or-nothing for restores,
-    and one supervised run with a higher limit is how a held backlog drains."""
+    and one supervised run with a higher limit is how a held backlog drains.
+
+    Both are a person's decision for one run: only on a MANUAL run, never
+    negative, and ``None`` (not ``0``) means the approved limit — ``0`` is a
+    limit of zero (audit 2026-11-11 LS-06). A scheduled run or a check with an
+    override is refused before anything is read."""
+    for name, value in (("max_changed", max_changed), ("max_restored", max_restored)):
+        if value is None:
+            continue
+        if trigger != SyncTrigger.MANUAL:
+            raise SyncRefused(
+                "OVERRIDE_NOT_MANUAL",
+                f"{name} is a person's decision for one supervised run; a {trigger} run "
+                "keeps the approved limits.",
+            )
+        if value < 0:
+            raise SyncRefused("OVERRIDE_NEGATIVE", f"{name} cannot be negative ({value}).")
     clock = now or timezone.now
     ctl = control()
     if ctl.cut_over:
@@ -5310,6 +5834,8 @@ def run_sync(
             "DUPLICATE", f"Run {key} already exists; the nightly run happens once per date."
         )
 
+    # A named set is accepted only with its verification's proof (DR-05).
+    backup_problem = backup_set_problem(backup_set, started) if backup_set else ""
     with run_lock():
         mode = SyncMode.COMPARE if trigger == SyncTrigger.CHECK else ctl.mode
         if trigger == SyncTrigger.CHECK:
@@ -5324,10 +5850,14 @@ def run_sync(
                     mode=mode,
                     started_at=started,
                     mapping_version=MAPPING_VERSION,
-                    backup_set=fresh_backup_set(backup_set, started),
+                    backup_set="" if backup_problem else backup_set,
                 )
         except IntegrityError as error:
             raise SyncRefused("DUPLICATE", f"Run {key} already exists.") from error
+        if backup_problem:
+            # Named but not proven: the run goes on and writes nothing (NO_BACKUP);
+            # the reason is the run's error once it finishes (DR-05).
+            logger.warning("Lovable sync run %s: backup set refused (%s)", run.pk, backup_problem)
         try:
             _execute(
                 run,
@@ -5336,6 +5866,7 @@ def run_sync(
                 pause=pause,
                 max_changed=max_changed,
                 max_restored=max_restored,
+                backup_problem=backup_problem,
             )
         except (SourceError, SyncRefused) as error:
             _fail(run, error.code, str(error), clock)
@@ -5421,6 +5952,7 @@ def _execute(
     pause: Callable[[float], None] | None,
     max_changed: int | None = None,
     max_restored: int | None = None,
+    backup_problem: str = "",
 ) -> None:
     from app.matters.models import Matter
     from app.search.indexing import refresh_matters
@@ -5521,6 +6053,12 @@ def _execute(
         raise SyncRefused(
             "COHORT_MISSING", f"{missing} synchronised Teemad are missing from the source read."
         )
+    if not check and run.mode == SyncMode.APPLY and previous_snapshot is not None:
+        # Before the snapshot is stored, as above: a population that moved this
+        # much is never a night's work and never tomorrow's baseline (LS-07).
+        moved = population_change(previous_snapshot.document, snapshot)
+        if moved:
+            raise SyncRefused("POPULATION_CHANGE", moved)
     if run.trigger != SyncTrigger.CHECK:
         LovableSyncSnapshot.objects.create(
             run=run, taken_at=run.snapshot_taken_at, sha256=snapshot["sha256"], document=snapshot
@@ -5528,23 +6066,33 @@ def _execute(
 
     changed = [p for p in plans if any(d.reason != RESTORED for d in p.eligible)]
     restoring = [p for p in plans if p.eligible and p not in changed]
-    conflicts = sum(1 for p in plans if SyncOutcome.CONFLICT in p.outcomes())
+    # The previous run that finished and recorded its decisions: a failed run,
+    # or one killed while RUNNING, recorded none (or only some), and would make
+    # tonight's every hold look new — or none of them (review of #617).
     previous_run = (
         LovableSyncRun.objects.exclude(pk=run.pk)
         .exclude(trigger=SyncTrigger.CHECK)
-        .exclude(status=SyncRunStatus.FAILED)
+        .filter(status__in=BASELINE_STATUSES)
         .order_by("-started_at")
         .first()
     )
-    conflicts_before = (previous_run.counts or {}).get("conflicts", 0) if previous_run else 0
+    held = held_fields(plans)
+    held_before = (
+        previous_run.decisions.filter(outcome__in=HELD_OUTCOMES)
+        .exclude(field="*")
+        .exclude(reason__in=sorted(BREAKER_EXEMPT_HOLDS))
+        .count()
+        if previous_run
+        else held
+    )
+    change_limit = MAX_CHANGED_MATTERS if max_changed is None else max_changed
     hold = ""
     if run.mode != SyncMode.APPLY or check:
         hold = COMPARE_ONLY
-    elif (
-        len(changed) > (max_changed or MAX_CHANGED_MATTERS)
-        or conflicts - conflicts_before > MAX_NEW_CONFLICTS
-    ):
+    elif len(changed) > change_limit or held - held_before > MAX_NEW_HOLDS:
         hold = BREAKER
+    elif new_closure_holds(plans, today) > MAX_NEW_CLOSURE_HOLDS:
+        hold = CLOSURE_HOLD_BREAKER
     elif not run.backup_set:
         hold = NO_BACKUP
     # Ordinary lawyer edits never stop the night: over their own limit, only the
@@ -5582,6 +6130,23 @@ def _execute(
                 resolver=resolver,
                 today=today,
             )
+        except _closure_work.SourceClosureHeld:
+            # Juristid-only work appeared between the plan and the write (the
+            # domain guard under the Matter's lock, TL-02): planned again, the
+            # closure is the hold it now is; nothing of this Teema was written.
+            again = plan_matter(
+                plan.state,
+                bundle_of(snapshot, plan.state.source_id),
+                resolver=resolver,
+                today=today,
+            )
+            # Nothing of this Teema was written: its other eligible fields wait
+            # for the next night, and say so (review P3-4).
+            again.not_executed = bool(again.eligible)
+            for decision in again.eligible:
+                decision.reason = HELD_AT_WRITE
+            final.append(again)
+            continue
         except Exception as error:
             logger.warning(
                 "Lovable sync: %s not applied (%s)", plan.state.reference, type(error).__name__
@@ -5611,6 +6176,13 @@ def _execute(
             p.reason = NEW_NO_COHORT
     elif not new_hold:
         for p in creatable:
+            if not verified:
+                # A created Teema did not read back as written: no further one is
+                # created with the same writer, exactly as the cohort loop stops
+                # (ADR 0192 §7; audit 2026-11-11 LS-08). Held, and planned again
+                # on the next run.
+                p.reason = VERIFY_STOPPED
+                continue
             progress["affected"] = [p.reference]
             try:
                 matter = create_new_topic(p, run=run, cohort=target, snapshot=snapshot)  # type: ignore[arg-type]
@@ -5631,8 +6203,92 @@ def _execute(
                     verified = False
         progress["affected"] = []
 
-    if applied_ids:
-        refresh_matters(Matter.objects.filter(pk__in=applied_ids))
+    # A Teema whose successor was created tonight converges tonight (audit
+    # 2026-11-11 LS-01 / ST-007): the cohort was planned before the creation, so
+    # it was held SUCCESSOR_NOT_IN_JURISTID. Only those plans are planned again,
+    # through `apply_matter` under the same gates — an APPLY night that writes,
+    # every read-back good so far, the Teemad-written breaker counting them —
+    # and read back; creation is never moved before the cohort.
+    created = {p.source_id for p in new_plans if p.created_matter_id is not None}
+    counted = {p.state.pk for p in changed}
+    restore_only = {p.state.pk for p in restoring}
+    teemad_written = len(changed)
+    successors_deferred = 0
+    if created and not hold:
+        progress["stage"] = "successors"
+        for index, plan in enumerate(final):
+            if not verified:
+                break
+            if not _waits_for_created_successor(plan, created):
+                continue
+            more = 0 if plan.state.pk in counted else 1
+            if teemad_written + more > change_limit:
+                # Over the night's limit: it waits for the next run, named as such.
+                _defer_successor(plan)
+                successors_deferred += 1
+                continue
+            progress["affected"] = [plan.state.reference]
+            try:
+                state = LovableSyncState.objects.select_related("matter").get(pk=plan.state.pk)
+                again = plan_matter(
+                    state, bundle_of(snapshot, state.source_id), resolver=resolver, today=today
+                )
+                if not again.eligible:
+                    # Still held (a cycle, another hold): its own reason is the record.
+                    final[index] = again
+                    continue
+                if hold_restores and all(d.reason == RESTORED for d in again.eligible):
+                    # Restores wait tonight (`RESTORE_BREAKER`), re-planned or not.
+                    continue
+                done = apply_matter(
+                    again, run=run, snapshot=snapshot, resolver=resolver, today=today
+                )
+            except Exception as error:
+                logger.warning(
+                    "Lovable sync: %s not converged with its new successor (%s)",
+                    plan.state.reference,
+                    type(error).__name__,
+                )
+                again.status = SyncOutcome.FAILED
+                final[index] = again
+                continue
+            teemad_written += more
+            counted.add(plan.state.pk)
+            restore_only.discard(plan.state.pk)
+            # What this Teema already wrote tonight stays its record.
+            earlier = [d for d in plan.decisions if d.outcome == SyncOutcome.APPLIED]
+            kept = {d.field for d in earlier}
+            done.decisions = earlier + [d for d in done.decisions if d.field not in kept]
+            final[index] = done
+            if any(d.outcome == SyncOutcome.APPLIED for d in done.decisions):
+                applied_ids.append(done.state.matter_id)
+                if not verify_matter(done):
+                    done.verify_failed = True
+                    verified = False
+        progress["affected"] = []
+
+    search_pending = 0
+    # Teemad an earlier run wrote but could not refresh in search (LS-09): this
+    # run refreshes them with its own.
+    carried = set() if check else stale_search_matter_ids(exclude=run)
+    to_refresh = set(applied_ids) | carried
+    if to_refresh:
+        try:
+            refresh_matters(Matter.objects.filter(pk__in=to_refresh))
+        except Exception as error:  # the writes are committed; their record must be too
+            # As `onenote_capture` does: a search-projection failure never throws
+            # away the run's counts, decisions, baselines or new-topic ledger
+            # (audit 2026-11-11 LS-09). The Teemad stay written and verified;
+            # their search rows are stale until `manage.py refresh_matter_search`
+            # or the next run that reads Lovable refreshes them
+            # (`stale_search_matter_ids`); `sync_health` says so meanwhile.
+            search_pending = len(to_refresh)
+            logger.error(
+                "Lovable sync run %s: search refresh failed for %s Teema(d) (%s)",
+                run.pk,
+                search_pending,
+                type(error).__name__,
+            )
 
     # The bookkeeping, all or nothing: a failure here leaves every baseline,
     # decision and observation as the previous run left them.
@@ -5692,9 +6348,20 @@ def _execute(
             counts, snapshot, cohort_ids, previous_snapshot.document if previous_snapshot else None
         )
         counts.add_new_topics(new_plans)
-        counts.breaker_limit = max_changed or MAX_CHANGED_MATTERS
-        counts.changed_source = len(changed)
-        counts.changed_restores = len(restoring)
+        counts.breaker_limit = change_limit
+        counts.held_fields = held
+        counts.held_fields_before = held_before
+        counts.held_local_work = held_local_work(final)
+        counts.new_closure_holds = new_closure_holds(final, today)
+        counts.closure_hold_limit = MAX_NEW_CLOSURE_HOLDS
+        if search_pending:
+            counts.search_refresh_pending = search_pending
+            counts.warnings.append(SEARCH_REFRESH_FAILED)
+        elif carried:
+            counts.search_refreshed_carried = len(carried)
+        counts.changed_source = teemad_written
+        counts.changed_restores = len(restore_only)
+        counts.successors_deferred = successors_deferred
         counts.restore_limit = restore_limit
         counts.standing_holds = standing_holds(final)
         if not check:
@@ -5717,13 +6384,19 @@ def _execute(
             run.error = f"{PARTIAL}: {counts.failed} Teema(d) not applied; nothing half-written."
             if counts.new_topics_failed:
                 run.error += f" New topics not created: {counts.new_topics_failed}."
-        elif hold in (BREAKER, NO_BACKUP) or new_hold == NEW_BREAKER or hold_restores:
+        elif (
+            hold in (BREAKER, NO_BACKUP, CLOSURE_HOLD_BREAKER)
+            or new_hold == NEW_BREAKER
+            or hold_restores
+        ):
             run.status = SyncRunStatus.REVIEW_ONLY
             run.error = (
                 hold
-                if hold in (BREAKER, NO_BACKUP)
+                if hold in (BREAKER, NO_BACKUP, CLOSURE_HOLD_BREAKER)
                 else (NEW_BREAKER if new_hold == NEW_BREAKER else RESTORE_BREAKER)
             )
+            if hold == NO_BACKUP and backup_problem:
+                run.error = f"{NO_BACKUP}: {backup_problem}"
         else:
             run.status = SyncRunStatus.SUCCEEDED
             run.error = ""
@@ -6325,6 +6998,8 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
     if run.status == SyncRunStatus.FAILED:
         lines.append(f"EBAÕNNESTUS: {run.error.split(':')[0]}")
         return lines
+    if run.error == CLOSURE_HOLD_BREAKER:
+        lines.append("PEATATUD: ühe öö uusi ootel sulgemisi oli üle piiri; midagi ei kirjutatud.")
     lines += [
         f"Kontrollitud: {c.get('checked', 0)} teemat",
         f"Muutusteta: {c.get('unchanged', 0)}",
@@ -6334,6 +7009,12 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
         f"Vajab ülevaatamist: {c.get('review', 0)}",
         f"Vigu: {c.get('failed', 0)}",
     ]
+    if c.get("held_local_work") or c.get("new_closure_holds"):
+        lines.append(
+            "Lovable'is suletud, Juristides pooleli töö tõttu ootel: "
+            f"{c.get('held_local_work', 0)} teemat (täna lisandus "
+            f"{c.get('new_closure_holds', 0)}/{c.get('closure_hold_limit', MAX_NEW_CLOSURE_HOLDS)})"
+        )
     if c.get("not_yet_read"):
         lines.append(f"Veel lugemata (lisati pärast viimast lugemist): {c['not_yet_read']}")
     if c.get("retired"):
@@ -6397,7 +7078,29 @@ def sync_health(*, now: dt.datetime | None = None) -> SyncHealth:
         return SyncHealth(False, "a run started over an hour ago and never finished", last, good)
     if good is None or moment - good.started_at > STALE_AFTER:
         return SyncHealth(False, "no successful run in the last 26 hours", last, good)
-    return SyncHealth(True, f"{ctl.mode.lower()}, last success {good.run_key}", last, good)
+    stale = (last.counts or {}).get("search_refresh_pending") or 0
+    if stale:
+        # Written and verified, but not findable yet (LS-09): the next run, or
+        # `manage.py refresh_matter_search`, refreshes them.
+        return SyncHealth(False, f"search stale: {stale} Teema(d) not refreshed", last, good)
+    from app.legacy_import.lovable_closure_hold import standing_holds
+
+    today = moment.astimezone(TALLINN).date()
+    old = [h for h in standing_holds() if h.age_days(today) > MAX_CLOSURE_HOLD_AGE_DAYS]
+    if old:
+        # A hold the 14-day escalation did not resolve (review P2-3): a warning.
+        return SyncHealth(
+            False,
+            f"{len(old)} closure hold(s) older than {MAX_CLOSURE_HOLD_AGE_DAYS} days",
+            last,
+            good,
+        )
+    detail = f"{ctl.mode.lower()}, last success {good.run_key}"
+    held = (last.counts or {}).get("held_local_work") or 0
+    if held:
+        # Explained holds, not a fault (TL-02): said, never hidden, never «not ok».
+        detail += f"; {held} closure(s) held for Juristid-only work"
+    return SyncHealth(True, detail, last, good)
 
 
 def due(*, trigger: str, now: dt.datetime | None = None) -> str:
@@ -6423,6 +7126,9 @@ def due(*, trigger: str, now: dt.datetime | None = None) -> str:
 #: The environment variable the host script sets on an on-demand run's
 #: container: the verified backup set it took for an APPLY request.
 HOST_BACKUP_SET_ENV = "LOVABLE_SYNC_BACKUP_SET"
+#: Where the host script mounts that set, read-only, in the run's container: the
+#: proof of its verification is read there (`backup_proof_problem`).
+HOST_BACKUP_DIR_ENV = "LOVABLE_SYNC_BACKUP_DIR"
 
 
 def pending_sync_request(lane: str = "lovable") -> bool:
