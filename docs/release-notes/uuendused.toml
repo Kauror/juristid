@@ -8,6 +8,20 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-13
+basis = "deployment"
+prs = [622]
+# 13.11 väljalase r55 (#622 = #616–#621 + #623, ADR 0213; notifications 0004 — ainult teavituse liigi piirangu
+# laiendus): Lovable'i väljad sünkroonitud teemadel ainult loetavad, Lovable'i sammu tähtaeg teavitab, Halduses
+# ootele jäävate sulgemiste ettepanek. Sünkroonimine jääb võrdlusrežiimi; öine rakendamine on eraldi omaniku otsus.
+# Kui väljalase ei jõua tootmisse 13.11, liigub see kirje väljalaske päevale.
+changes = [
+  "Lovable'iga sünkroonitud teemal on Lovable'ist tulevad andmed — pealkiri, vastutaja, hetkeseis, rada, kuupäevad, õigusakt ning «Lõpeta teema» ja «Ava uuesti» — ainult loetavad ja teema ütleb: «Need andmed pärinevad Lovable'i registrist. Muudatused tuleb teha algses registris.» Märkmed, dokumendid, planeeritud tegevused, kaasamine ja arvamused töötavad nagu enne.",
+  "Lovable'ist tulnud sammu kuupäev saadab nüüd teavituse neile, kes on sisse lülitanud «Ülevaatamise kuupäev» teavitused, ja arvamuse tähtaeg sellise sammu kõrval enam ei kao.",
+  "Haldus → Lovable näitab sulgemisi, mis jääksid pooleli töö tõttu ootele, kui sünkroonimine hakkaks kirjutama («Ootel sulgemised (ettepanek)»), ning teemasid, mis on otsingus veel ajakohastamata.",
+]
+
+[[day]]
 date = 2026-11-11
 basis = "deployment"
 prs = [614]
