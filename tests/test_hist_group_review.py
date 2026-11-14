@@ -155,7 +155,12 @@ def test_history_holds_are_their_own_group_never_operational(night):
 def test_a_real_change_on_a_historical_teema_stays_operational(night):
     diff = sync_admin.differences(_reader(night))
     retitled = [r for r in diff.rows if r.reference == "2026_603"]
-    assert [(r.field, r.historical) for r in retitled] == [("title", False)]
+    # On this COMPARE night the unresolved owner's name is a pending write of
+    # its own (`former_owner`, owner decision 14.11.2026), beside the title.
+    assert [(r.field, r.historical) for r in retitled] == [
+        ("title", False),
+        ("former_owner", False),
+    ]
     assert "2026_603" in [r.reference for r in diff.history.rows]  # its owner hold only
 
 
@@ -327,7 +332,9 @@ def test_reopened_stage_in_lovable_on_a_historical_teema(night):
     d = run.decisions.get(state__reference="2026_602", field="stage")
     assert (d.outcome, d.reason) == (SyncOutcome.ELIGIBLE, "")
     where = _where(sync_admin.differences(_reader(night)), "2026_602")
-    assert where == {"operational": ["stage"], "history": ["owner"]}
+    # `former_owner`: the unresolved owner's name, pending on a COMPARE night
+    # (owner decision 14.11.2026); the owner hold itself stays historical.
+    assert where == {"operational": ["former_owner", "stage"], "history": ["owner"]}
 
 
 def test_source_missing_on_a_historical_teema_is_operational(night):

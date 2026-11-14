@@ -636,7 +636,11 @@ def test_technical_problems_are_held_with_a_code_and_write_nothing(reference, va
     decision = _decisions(run, "2026_253")[field]
     assert (decision.outcome, decision.reason) == (SyncOutcome.REVIEW_REQUIRED, code)
     assert code in lovable_sync.TECHNICAL_HOLDS
-    assert ChangeEvent.objects.filter(matter=matter).count() == events
+    # The one write an unresolved owner makes is its name as the former owner
+    # (owner decision 14.11.2026, tests/lovable_contract/test_lc_former_owner.py).
+    named = ChangeEvent.objects.filter(matter=matter, payload__fields=["former_owner_name"])
+    assert named.count() == (1 if field == "owner" else 0)
+    assert ChangeEvent.objects.filter(matter=matter).count() - named.count() == events
     pending = [p for p in lovable_sync.pending_differences() if p.reference == "2026_253"]
     assert {p.reason for p in pending} == {code}
 
