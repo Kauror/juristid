@@ -78,14 +78,15 @@ services:
     # alone is a moving pointer: Docker Hub re-pushes it for every minor and
     # every Debian rebuild, so an unrelated pull on this host could change the
     # server under the register with nobody deciding to. The digest is the
-    # multi-platform index production was already running on 2026-10-22
-    # (`docker image inspect` RepoDigests, read-only), verified against
-    # docker.io/library/postgres: PostgreSQL 18.6 (`PG_VERSION=18.6-1.pgdg13+2`),
-    # Debian 13, built 2026-08-13. Moving it is a deliberate change: resolve the
+    # multi-platform index docker.io/library/postgres:18 resolved to on
+    # 2026-11-04: PostgreSQL 18.6 (`PG_VERSION=18.6-1.pgdg13+2`), Debian 13,
+    # built 2026-10-28 — a Debian rebuild of the same 18.6 production ran from
+    # 2026-08-13 (sha256:06cad38a…), so the cluster's files are unchanged and
+    # recreating `db` is a restart, not an upgrade. Moving it is a deliberate change: resolve the
     # new tag's index digest from the registry, replace it here and in the other
     # Compose files and CI services (tests/test_supply_chain_pinning.py keeps
     # them equal), and recreate `db` as an announced maintenance step.
-    image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+    image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
     container_name: juristid-main-db
     # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
     # planner's estimated cost and spent 150-350 ms compiling statements that
@@ -554,15 +555,17 @@ services:
     #
     # The version tag so the next person can see what they are moving from and
     # to; the digest because a tag is only a name the publisher can re-push
-    # (ADR 0179). It is the index production was running on 2026-10-22, and it
-    # is what docker.io/cloudflare/cloudflared:2026.8.2 resolves to: its amd64
-    # image carries `CI_GIT_COMMIT=733bfb93…`, the commit GitHub's 2026.8.2
-    # release tag names.
+    # (ADR 0179). It is what docker.io/cloudflare/cloudflared:2026.10.7
+    # resolved to on 2026-11-04 (built 2026-10-30, distroless Debian 13): its
+    # amd64 image carries `CI_GIT_COMMIT=872b241f…`, the commit GitHub's
+    # 2026.10.7 release tag names. It replaced 2026.8.2 (sha256:0aa26e28…);
+    # nothing between the two changes a locally managed named tunnel's
+    # `tunnel --config … run` (RELEASE_NOTES 2026.8.3–2026.10.7).
     #
     # No `env_file:` and no `environment:`: the tunnel's credential is the
     # locally managed one in the volume below, and it needs nothing of the
     # application's (tests/test_service_secret_isolation.py).
-    image: cloudflare/cloudflared:2026.8.2@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
+    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
     container_name: juristid-main-tunnel
     restart: unless-stopped
     logging: *bounded-logs
@@ -800,15 +803,16 @@ services:
   # bypass Cloudflare), not `tunnel`, not a worker. `mcp_edge` is an ordinary
   # bridge (not `internal: true`), which is what lets it reach api.openai.com.
   mcp-tunnel:
-    # Tag for the reader, digest for Docker (ADR 0179). v0.0.17 is the
-    # multi-platform OCI index ghcr.io/openai/tunnel-client:v0.0.17 resolved to
-    # on 2026-10-22 (anonymous registry read; amd64 manifest
-    # sha256:2a2a85e7…, image revision a248b7f7…, built 2026-10-21). Alpine
-    # 3.22, entrypoint `/usr/bin/tunnel-client run`. Moving it: read the
-    # release notes at https://github.com/openai/tunnel-client/releases,
-    # resolve the new tag's index digest, replace both here, and recreate only
-    # this service.
-    image: ghcr.io/openai/tunnel-client:v0.0.17@sha256:67b473b4bc23bc984e4a381752e9a2fa75649746edc06e46b27025611835c5c0
+    # Tag for the reader, digest for Docker (ADR 0179). v0.0.19 is the
+    # multi-platform OCI index ghcr.io/openai/tunnel-client:v0.0.19 resolved to
+    # on 2026-11-04 (anonymous registry read; amd64 manifest
+    # sha256:e57bdf9b…, image revision 01d67bb4…, built 2026-10-30). Alpine
+    # 3.22.7, entrypoint `/usr/bin/tunnel-client run`, as v0.0.17's was
+    # (index sha256:67b473b4…, which v0.0.17 still resolves to: it was never
+    # re-published). Moving it: read the release notes at
+    # https://github.com/openai/tunnel-client/releases, resolve the new tag's
+    # index digest, replace both here, and recreate only this service.
+    image: ghcr.io/openai/tunnel-client:v0.0.19@sha256:dcae53be336c062ffdc3f250a287b2a07724c344b8c370a50f54ad033af43151
     container_name: juristid-main-mcp-tunnel
     profiles: ["mcp"]
     restart: unless-stopped
@@ -817,6 +821,28 @@ services:
     # static Go binary making outbound connections and a loopback health
     # listener on an unprivileged port — so it runs as Alpine's `nobody`.
     user: "65534:65534"
+    # Wait for `mcp` to answer before the client starts, then become it.
+    #
+    # `depends_on` below is a Compose rule: it orders `docker compose up` and
+    # nothing else. After a host reboot dockerd restarts every
+    # `unless-stopped` container itself, in no particular order, and this one
+    # could come up while `mcp` was still waiting for the database. The client
+    # resolves `mcp` once at start; NXDOMAIN or a refused connection there is
+    # a permanent "startup catalog failed; control-plane polling disabled"
+    # (only `MCP_STARTUP_WAIT_TIMEOUT` retries, and only ECONNREFUSED — not a
+    # name that does not exist yet), `/readyz` stays 503 and nothing restarts
+    # an unhealthy container. Three reboots (2026-10-25, 2026-11-04 twice)
+    # each needed a manual `docker restart`. `/healthz` on `mcp` needs no token,
+    # serves no data and is in its Host allow-list; busybox `sh` and `wget` are
+    # in the image. `exec` hands PID 1 to the client, so `docker stop` signals
+    # it as before; the trap lets a stop during the wait end at once.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - >-
+        trap 'exit 143' TERM INT;
+        until wget -q -T 5 -O /dev/null http://mcp:8001/healthz; do sleep 5; done;
+        exec /usr/bin/tunnel-client run
     # The runtime API key and the tunnel id, and nothing else: no value of
     # `juristid.env` or `juristid-mcp.env` (tests/test_service_secret_isolation.py).
     env_file:
@@ -847,11 +873,16 @@ services:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/readyz"]
       interval: 30s
       timeout: 5s
-      start_period: 30s
+      # As long as `mcp`'s own (300s): the entrypoint above may wait that long
+      # for it after a reboot, and a wait is not a failure. Probed every 5s
+      # meanwhile, so a ready client turns healthy at once.
+      start_period: 300s
+      start_interval: 5s
       retries: 3
     depends_on:
       # Healthy, not merely started: a tunnel that announces itself before the
       # server answers hands ChatGPT errors that look like a broken connector.
+      # Compose only — the entrypoint above is what holds after a reboot.
       mcp:
         condition: service_healthy
     networks:
