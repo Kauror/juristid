@@ -8,6 +8,16 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-14
+basis = "deployment"
+prs = [625]
+# 14.11 väljalase r56 (#625; matters 0050 — uus veerg former_owner_name, db_default ""). Sünkroonimine jääb
+# rakendusrežiimi. Kui väljalase ei jõua tootmisse 14.11, liigub see kirje väljalaske päevale.
+changes = [
+  "Vanadel teemadel on nüüd näha endise juristi nimi kui «Endine vastutaja» ning teemasid saab selle nime järgi ka otsida.",
+]
+
+[[day]]
 date = 2026-11-13
 basis = "deployment"
 prs = [622]
