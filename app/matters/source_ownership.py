@@ -107,6 +107,9 @@ POLICY_SURFACES: dict[str, str | None] = {
     # Only the synchronisation writes these: a source reference is appended,
     # never edited, and `LovableOpinionOutcome` has no person-facing writer.
     "onenote_link": None,
+    # `Matter.former_owner_name`: a name only the sync writes (owner decision
+    # 14.11.2026); no person-facing editor exists.
+    "former_owner": None,
     "sent": None,
     "sent_date": None,
     "addressee": None,

@@ -249,6 +249,19 @@ class Matter(BaseModel):
         related_name="owned_matters",
         verbose_name="vastutaja",
     )
+    # A name, never a user (owner decision 14.11.2026): Lovable's owner of a
+    # synchronised Teema who has no assignable Juristid account — a lawyer who
+    # has left the Chamber. Written only by the Lovable synchronisation
+    # (`set_former_owner_name`), shown muted beside «Vastutaja» and searchable;
+    # never presented as the current owner and never edited by a person.
+    former_owner_name = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Endine vastutaja",
+        help_text="Lovable'is nimetatud vastutaja, kellel pole Juristides kasutajat.",
+    )
     collaborators = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,

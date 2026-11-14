@@ -143,6 +143,9 @@ second `tbody` of the same table. Two copies of a row are two rows that drift.
           </form>
         </div>
       </details>
+    {% elif matter.former_owner_name %}
+      {# Former staff Lovable names (owner decision 14.11.2026): a name, muted, never the current owner. #}
+      <span class="muted table__clip" data-former-owner title="Endine vastutaja: {{ matter.former_owner_name }}">endine: {{ matter.former_owner_name }}</span>
     {% else %}<span class="table__missing">Vastutajata</span>{% endif %}
   </td>
   {% endif %}

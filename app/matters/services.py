@@ -1687,6 +1687,47 @@ def set_matter_title(
 
 
 @transaction.atomic
+def set_former_owner_name(
+    *, matter: Matter, value: str, actor: Any = None, provenance: dict[str, Any] | None = None
+) -> Matter:
+    """Record the name of a synchronised Teema's former owner (owner decision
+    14.11.2026), or clear it.
+
+    Lovable names an owner who has no assignable Juristid account — a lawyer who
+    has left the Chamber. No user is created for them, and the Teema is not
+    shown as ownerless either: the name is kept as text beside «Vastutaja» and
+    is searchable. Only the nightly Lovable synchronisation writes it (``actor``
+    is ``None``, ``provenance`` names the run); no person has an editor for it.
+
+    Allowed on a closed Teema, like the title: it is a description of who held
+    the file, not work on it, and every Teema it exists for is closed. Trimmed
+    and capped like the column; an unchanged value writes nothing.
+    """
+    cleaned = (value or "").strip()[:255]  # the column's max_length
+    previous = matter.former_owner_name or ""
+    if cleaned == previous:
+        return matter
+    matter.former_owner_name = cleaned
+    matter.save(update_fields=["former_owner_name", "updated_at"])
+    record_change_event(
+        event_type=ChangeEventType.MATTER_SOURCE_FIELDS_REFRESHED,
+        matter=matter,
+        actor=actor,
+        obj=matter,
+        summary=(
+            f"Endine vastutaja: {cleaned}"[:200] if cleaned else "Endine vastutaja eemaldatud."
+        ),
+        payload={
+            "fields": ["former_owner_name"],
+            "previous": previous,
+            "current": cleaned,
+            **(provenance or {}),
+        },
+    )
+    return matter
+
+
+@transaction.atomic
 def set_tags(*, matter: Matter, tags: Sequence[Any], actor: Any = None) -> Matter:
     """Replace the Matter's Sildid with the chosen set.
 

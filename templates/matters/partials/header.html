@@ -297,12 +297,14 @@ rather than read.
       <span class="metaline__label">Vastutaja</span>
       {% if not can_write or not can_assign_work or source_locked.owner %}
         {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner|name_among:owners }}</span>
+        {% elif matter.former_owner_name %}<span class="metaline__value muted" data-former-owner title="Lovable'i järgi; Juristides pole sellele inimesele kasutajat">Endine vastutaja: {{ matter.former_owner_name }}</span>
         {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
         {% if source_locked.owner %}{% include "components/source_owned_tip.html" with field="owner" %}{% endif %}
       {% else %}
       <details class="inlineedit">
         <summary class="inlineedit__trigger">
           {% if matter.owner %}<span class="metaline__value" title="{{ matter.owner.display_name }}">{{ matter.owner|name_among:owners }}</span>
+          {% elif matter.former_owner_name %}<span class="metaline__value muted" data-former-owner title="Lovable'i järgi; Juristides pole sellele inimesele kasutajat">Endine vastutaja: {{ matter.former_owner_name }}</span>
           {% else %}<span class="metaline__value metafield__missing">Määramata</span>{% endif %}
         </summary>
         <form class="inlineedit__form inlineform"

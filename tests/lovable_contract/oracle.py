@@ -18,7 +18,9 @@ What it compares (approval §1 «Lovable-owned fields»): title, owner, lifecycl
 (open/closed, reason, continuation), stage, current step (exact text, day and
 kind), the opinion outcome (sent on a day / «ei saatnud»), the open opinion
 request, Koja ettepanek, received date, legal act, OneNote link and the
-commencements Lovable states. A value Juristid cannot represent is reported as
+commencements Lovable states — and the former owner's name (owner decision
+14.11.2026): Lovable's owner name when no one active in Juristid answers to it,
+otherwise empty. A value Juristid cannot represent is reported as
 NOT_REPRESENTABLE, never as a difference (approval §4).
 
 **A closure held for Juristid-only work** (TL-02, owner decision 12.11.2026):
@@ -255,9 +257,13 @@ def expected(
             stated = NOT_REPRESENTABLE  # type: ignore[assignment]  # «Teadmata» (LV-02)
             break
     owner_name = _text(row.get("uus_vastutaja")) or _text(row.get("vastutaja"))
+    # «Vastutaja puudub» as the new owner: Lovable names no one.
+    named = "" if owner_name.casefold().rstrip(".") == "vastutaja puudub" else owner_name
     return {
         "title": _text(row.get("teema")),
         "owner": owner_name,
+        # Restated against the users in `compare`, beside the owner.
+        "former_owner": named,
         "lifecycle": lifecycle,
         "stage": stage if stage is not None else NOT_REPRESENTABLE,
         "step": step,
@@ -320,6 +326,7 @@ def observed(matter: Any, *, exclude_dates: Iterable[Any] = ()) -> dict[str, Any
     return {
         "title": _text(matter.title),
         "owner": matter.owner.display_name if matter.owner_id else None,
+        "former_owner": _text(matter.former_owner_name),
         "lifecycle": {
             "open": bool(matter.is_open),
             "disposition": str(matter.disposition or ""),
@@ -467,8 +474,11 @@ def compare(
         ]
         if len(owners) != 1:
             want["owner"] = NOT_REPRESENTABLE
+            # A named owner with no account is kept as a name, open or closed
+            # (owner decision 14.11.2026); no one named, nothing kept.
         else:
             want["owner"] = owners[0].display_name
+            want["former_owner"] = ""
         held: set[str] = set()
         if (
             isinstance(want["lifecycle"], dict)
