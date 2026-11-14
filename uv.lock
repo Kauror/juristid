@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.13.*"
 
 [[package]]
@@ -391,11 +391,11 @@ wheels = [
 
 [[package]]
 name = "gunicorn"
-version = "26.1.0"
+version = "27.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/38/b8/ec4ba3f6cace4091c34e27478b576bb80f2f06fab80fd42c0ecc785b308f/gunicorn-26.1.0.tar.gz", hash = "sha256:1413d777bf99d31ebeb08acd354b01f1ecc44db0aa7b811ae7b86c669232e4f7", size = 755923, upload-time = "2026-08-18T11:49:39.438Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/0a/b3/addb4f148b938633977d983b852c82177b6c92d17837102a9a2aca061905/gunicorn-27.0.0.tar.gz", hash = "sha256:88d52e7c60b3af07bc8db431fbb450a94780f2cbe7c420c7cf1891392661c591", size = 932048, upload-time = "2026-11-10T11:20:59.207Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/19/dc/7a55fc605543fd5cb11c003fbbb21a1911d5e88a582cce6c5e063bf5c176/gunicorn-26.1.0-py3-none-any.whl", hash = "sha256:9f45bcddec5e9dc7a25a3bdccb0c6832f11fd5d4739b1ee36c8d2fec25f1dc86", size = 216237, upload-time = "2026-08-18T11:49:38.001Z" },
+    { url = "https://files.pythonhosted.org/packages/85/2b/367de7fc2fd4cfd1814b0a31da023195eb4037c1fddc4d9e11cc965e1c00/gunicorn-27.0.0-py3-none-any.whl", hash = "sha256:1380f2f520abc3beb9e72cd2e728bd2d08a19b3ff6ac03ebd8da71d1798a4008", size = 261789, upload-time = "2026-11-10T11:20:57.621Z" },
 ]
 
 [[package]]
@@ -744,7 +744,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorclass" },
     { name = "easygui" },
-    { name = "msoffcrypto-tool", marker = "(platform_python_implementation != 'PyPy' and sys_platform == 'darwin') or (platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
+    { name = "msoffcrypto-tool", marker = "platform_python_implementation != 'PyPy' or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "olefile" },
     { name = "pcodedmp" },
     { name = "pyparsing" },
