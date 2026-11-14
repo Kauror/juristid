@@ -154,9 +154,11 @@ def test_readiness_plans_with_the_existing_rules_and_writes_nothing(cases, reade
     assert rows[("2026_213", "commencements")] == "MANUAL_REVIEW"
     assert rows[("2026_300", "title")] == "CONVERGED"
     assert rows[("2026_301", "owner")] == "MANUAL_REVIEW"
+    # Its unresolved owner's name is kept as the former owner (owner decision 14.11.2026).
+    assert rows[("2026_301", "former_owner")] == safe
     assert rows[("2026_302", "*")] == "UNKNOWN_SOURCE"
     sim = readiness.simulation
-    assert sim["SAFE_UPDATE_CANDIDATE"] == 13 and "CONFLICT" not in sim
+    assert sim["SAFE_UPDATE_CANDIDATE"] == 14 and "CONFLICT" not in sim
     assert sim["UNKNOWN_SOURCE"] == 1 and sim["CONVERGED"] == 1
     assert sim["MANUAL_REVIEW"] == 2
     assert sum(sim.values()) == sum(
@@ -282,6 +284,6 @@ def test_a_reader_without_a_business_role_gets_counts_only(cases):
     admin = factories.AdministratorFactory()
     readiness = obs.readiness(admin, now=LATER)
     assert readiness.simulation_rows == []
-    assert readiness.simulation["SAFE_UPDATE_CANDIDATE"] == 13
+    assert readiness.simulation["SAFE_UPDATE_CANDIDATE"] == 14  # 13 + 2026_301's former owner
     dumped = json.dumps(readiness.as_dict(), ensure_ascii=False)
     assert "Näidisteema" not in dumped and "Jälgida" not in dumped

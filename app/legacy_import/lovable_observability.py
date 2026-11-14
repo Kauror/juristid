@@ -1035,6 +1035,7 @@ def current_values_bulk(matters: list[Any]) -> dict[Any, dict[str, Any]]:
         m.pk: {
             "title": lovable_sync.text_value(m.title),
             "owner": str(m.owner_id) if m.owner_id else None,
+            lovable_sync.FORMER_OWNER: m.former_owner_name or "",
             "onenote_link": links.get(m.pk, ""),
             "next_action": lovable_sync._action_dict(steps.get(m.pk)),
             "is_open": m.is_open and getattr(m, "deleted_at", None) is None,
@@ -2727,6 +2728,14 @@ FIELD_RULES: dict[str, dict[str, Any]] = {
         "risks": [
             "Nimi peab vastama täpselt ühele aktiivsele kasutajale, kellele saab tööd määrata.",
             "Vastutaja vahetus viib kaasa avatud tegevuse.",
+        ],
+        "blocking": "",
+    },
+    "former_owner": {
+        "mapping": "EXACT",
+        "service": "set_former_owner_name(provenance=…)",
+        "risks": [
+            "Ainult nimi: kasutajat ei looda ja nime ei näidata praeguse vastutajana.",
         ],
         "blocking": "",
     },

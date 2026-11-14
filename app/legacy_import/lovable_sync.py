@@ -244,6 +244,11 @@ AUTO_FIELDS = ("title", "owner", "next_action_date", "onenote_link")
 CONDITIONAL_FIELDS = ("stage", "opinion_deadline", "commencements")
 #: Every field a run may write, in the order it writes them.
 WRITABLE_FIELDS = AUTO_FIELDS + CONDITIONAL_FIELDS
+#: The name of Lovable's owner when no assignable Juristid user answers to it
+#: (owner decision 14.11.2026): written to `Matter.former_owner_name`, open or
+#: closed, and cleared once the owner resolves or Lovable names no one. Derived
+#: from Lovable's owner and the resolver, so it is no `SOURCE_FIELDS` column.
+FORMER_OWNER = "former_owner"
 HELD_FIELDS = (
     "next_action_text",
     "stage",
@@ -257,7 +262,7 @@ HELD_FIELDS = (
     "commencements",
     "operational_scope",
 )
-FIELDS = AUTO_FIELDS + HELD_FIELDS
+FIELDS = AUTO_FIELDS + HELD_FIELDS + (FORMER_OWNER,)
 #: The current step's wording and day: one operation (`_step_decisions`).
 STEP_FIELDS = ("next_action_text", "next_action_date")
 #: Lovable's structured stage link (`topic_stage_link`, this topic as `prev`):
@@ -358,6 +363,7 @@ POLICY_CLASSES = (AUTO, CONDITIONAL, REVIEW, NOT_REPRESENTABLE, AUTHORITATIVE)
 AUTHORITATIVE_FIELDS = (
     "title",
     "owner",
+    FORMER_OWNER,
     "onenote_link",
     "next_action_text",
     "next_action_date",
@@ -410,6 +416,15 @@ FIELD_POLICY: dict[str, FieldPolicy] = {
             "kellele saab tööd määrata; avatud tegevus liigub kaasa. Tuvastamata nimi jääb "
             "ootele.",
             "assign_matter(provenance=…)",
+        ),
+        _policy(
+            FORMER_OWNER,
+            AUTHORITATIVE,
+            "Endine vastutaja on Lovable'i vastutaja nimi, kui see ei vasta ühelegi aktiivsele "
+            "kasutajale, kellele saab tööd määrata (endine töötaja); kirjutatakse ka suletud "
+            "teemale. Kasutajat ei looda. Kui nimi tuvastub või Lovable ei nimeta kedagi, "
+            "väli tühjendatakse.",
+            "set_former_owner_name(provenance=…)",
         ),
         _policy(
             "next_action_date",
@@ -1324,6 +1339,7 @@ def current_values(matter: Any) -> dict[str, Any]:
     return {
         "title": text_value(matter.title),
         "owner": str(matter.owner_id) if matter.owner_id else None,
+        FORMER_OWNER: matter.former_owner_name or "",
         "onenote_link": link or "",
         "next_action": _action_dict(
             NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).first()
@@ -3124,6 +3140,9 @@ def _plan_authoritative(
             hold=owner_hold,
         )
     )
+    plan.decisions.append(
+        _former_owner_decision(applied, src["owner"], owner_hold, b[FORMER_OWNER])
+    )
     link = src["onenote_link"]
     link_hold = "" if link.startswith("https://") else (LINK_NOT_HTTPS if link else LINK_REMOVED)
     plan.decisions.append(
@@ -3260,12 +3279,39 @@ def _plan_authoritative(
             decision.outcome, decision.settle = SyncOutcome.UNCHANGED, True
 
 
+def former_owner_name(owner_name: str, owner_hold: str) -> str:
+    """What `Matter.former_owner_name` must hold (owner decision 14.11.2026):
+    Lovable's owner name when it names someone and no assignable active user
+    answers to it (any owner hold), else ``""``."""
+    return text_value(owner_name) if owner_name and owner_hold else ""
+
+
+def _former_owner_decision(
+    applied: dict[str, Any], owner_name: str, owner_hold: str, b: str
+) -> FieldDecision:
+    """The former owner's name, written open or closed alike (never held: a
+    name is always representable). A Teema with no baseline yet whose desired
+    and current values are both blank is unchanged — its baseline settles
+    quietly instead of every Teema reporting a convergence the first night."""
+    desired = former_owner_name(owner_name, owner_hold)
+    if FORMER_OWNER not in applied and not desired and not b:
+        decision = _decision(
+            FORMER_OWNER, SyncOutcome.UNCHANGED, target="", baseline=None, current=b, source=""
+        )
+        decision.settle = True
+        return decision
+    return _scalar(
+        FORMER_OWNER, applied=applied, c_src=desired, b=b, c_tgt=desired, blank_converges=True
+    )
+
+
 #: The order an authoritative Teema's writes go in: identity and classification
 #: first; a reopening before the step it makes possible; the request and the
 #: outcome before a closure; the step after a closure, which has already ended it.
 AUTHORITATIVE_ORDER = (
     "title",
     "owner",
+    FORMER_OWNER,
     "onenote_link",
     "koda_initiative",
     "legal_act",
@@ -3820,6 +3866,13 @@ def _apply_authoritative(
         new_b = _apply_field(
             decision, matter=matter, provenance=provenance, run=run, snapshot=snapshot
         )
+    elif name == FORMER_OWNER:
+        from app.matters.services import set_former_owner_name
+
+        set_former_owner_name(
+            matter=matter, value=decision.target or "", actor=None, provenance=provenance
+        )
+        new_b = matter.former_owner_name
     elif name == "commencements":
         new_b = _apply_commencements(decision, matter=matter, provenance=provenance)
     elif name == "stage":

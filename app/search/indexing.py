@@ -347,7 +347,11 @@ def indexed_text_for(matter: Matter) -> dict[str, str]:
         "title": _title_text_for(matter),
         "identifiers": _identifiers_for(matter),
         "alias_text": _alias_text_for(matter),
-        "people_text": "",
+        # A former owner's name (owner decision 14.11.2026): a person, kept as
+        # text because they have no Juristid account, so the Teema is found by
+        # who held it. Empty on every row until the synchronisation writes it,
+        # so no `INDEX_VERSION` bump: rows built before this hold the same text.
+        "people_text": matter.former_owner_name or "",
         # The Matter's own authored summaries. Entry, Submission and document
         # text live in their own rows, so a result can say which of them
         # matched — folding them in here would make every hit read "the matter

@@ -9,6 +9,7 @@ LOVABLE_FIELD_LABELS = {
     "reference": "Teema tunnus",
     "title": "Pealkiri",
     "owner": "Vastutaja",
+    "former_owner": "Endine vastutaja",
     "next_action_text": "Järgmine tegevus (sõnastus)",
     "next_action_date": "Järgmise tegevuse kuupäev",
     "onenote_link": "OneNote'i link",
