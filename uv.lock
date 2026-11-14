@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = "==3.13.*"
 
 [[package]]
@@ -331,7 +331,7 @@ wheels = [
 
 [[package]]
 name = "extract-msg"
-version = "0.57.0"
+version = "0.58.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -342,9 +342,9 @@ dependencies = [
     { name = "rtfde" },
     { name = "tzlocal" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/4c/34/5eed29dbedf4540baccf760556705b0ebecf0fee70e7d3d19fcc41876b88/extract_msg-0.57.0.tar.gz", hash = "sha256:5768fdf8035b5f67f0f1d2959668eb0577a4239ea5f2044315ef74645cb39236", size = 336810, upload-time = "2026-10-24T18:24:04.834Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/12/49/a19215988ef2ded6518c75717dc73aa0a773c2efcc5b367c00b2f10ca5a4/extract_msg-0.58.2.tar.gz", hash = "sha256:83bc225a0942d80fd97a445c0724e6472b3d821b59df1a5634421bbd19e265fa", size = 355002, upload-time = "2026-11-05T23:47:51.983Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b4/ea/ce698812c69a40338e15f3ddcb839ae685e20a410cfafa593b8cd4c8f1c7/extract_msg-0.57.0-py3-none-any.whl", hash = "sha256:bcbf918ac2e3c93180df3fbf0fc2e7ab344e37c1fd652802f185afd76578bc21", size = 339614, upload-time = "2026-10-24T18:24:03.674Z" },
+    { url = "https://files.pythonhosted.org/packages/5d/f2/d0a4a605aa9b03ce44c4b216e99413fac72f4beb835bb58dc255817057aa/extract_msg-0.58.2-py3-none-any.whl", hash = "sha256:6211f7ebe146855a6d69aef60f14c197b583ffef00b9dc190e35644b2ea1ebd7", size = 360413, upload-time = "2026-11-05T23:47:50.567Z" },
 ]
 
 [[package]]
@@ -744,7 +744,7 @@ source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorclass" },
     { name = "easygui" },
-    { name = "msoffcrypto-tool", marker = "(platform_python_implementation != 'PyPy' and sys_platform == 'darwin') or (platform_python_implementation != 'PyPy' and sys_platform == 'win32') or (sys_platform != 'darwin' and sys_platform != 'win32')" },
+    { name = "msoffcrypto-tool", marker = "platform_python_implementation != 'PyPy' or (sys_platform != 'darwin' and sys_platform != 'win32')" },
     { name = "olefile" },
     { name = "pcodedmp" },
     { name = "pyparsing" },
