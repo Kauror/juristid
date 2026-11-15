@@ -3631,17 +3631,8 @@ button.personaoption:focus-visible {
   color: var(--accent-link);
 }
 
-.personamenu__note {
-  margin: 3px 0 0;
-  padding: 7px var(--spacing-25) var(--spacing-1);
-  border-top: 1px solid var(--border-control);
-  font-size: var(--typography-size-label);
-  line-height: var(--typography-line-normal);
-  color: var(--text-muted);
-}
-
 /* «Halduri sisselogimine», or the verified administrator session: below the
-   note and ruled off from it, because it is a different act — a person's own
+   choices and ruled off from them, because it is a different act — a person's own
    sign-in, not a choice of whose work to show (docs/adr/0186). */
 .personamenu__admin {
   margin: var(--spacing-1) 0 0;

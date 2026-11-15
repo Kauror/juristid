@@ -686,13 +686,6 @@ def test_with_no_persona_the_pill_says_so(behind_the_gate, department):
     assert "Ilma kasutajata" in page
 
 
-def test_the_popover_footer_is_the_one_place_the_caveat_survives(behind_the_gate, department):
-    page = behind_the_gate.get(NO_PERSONA_PAGE).content.decode()
-
-    assert "Valik ei ole autentimine" in page
-    assert page.count("Valik ei ole autentimine") == 1
-
-
 def test_the_pill_declares_the_popover_it_controls(behind_the_gate, department):
     page = behind_the_gate.get(NO_PERSONA_PAGE).content.decode()
 
