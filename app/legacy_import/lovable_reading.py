@@ -159,6 +159,12 @@ NOT_SENT = "ei saatnud"
 COMMENCEMENT_GENERAL = "Üldises"  # «Üldises korras»: an effective date with no day
 COMMENCEMENT_FIXED = "Kindla"  # «Kindla kuupäevaga»: planned, known only once adopted
 COMMENCEMENT_ESTIMATED = "Eeldatava"  # «Eeldatava kuupäevaga»: an estimate, never work
+#: «Teadmata»: the lawyer states that the commencement is not known. With no day
+#: and no scope note it says nothing Juristid could record, so it is read as no
+#: commencement at all (kind `NOT_STATED`), never held. With a day or a note it
+#: states something Juristid cannot represent and stays held.
+COMMENCEMENT_UNKNOWN = "Teadmata"
+NOT_STATED = "NOT_STATED"
 
 #: Why something was held or left out: codes first, so a reader can count them.
 HELD_STEP = "STEP_HELD"
@@ -228,9 +234,14 @@ def activity(bundle: Mapping[str, Any]) -> str:
 
 
 def commencement_reading(record: Mapping[str, Any], *, status: str) -> dict[str, Any]:
-    """One Lovable commencement → what it may become, or why it is held."""
+    """One Lovable commencement → what it may become, or why it is held.
+
+    `kind == NOT_STATED` (no target): «Teadmata» with no day and no note — the
+    source states no commencement, so callers skip the row instead of holding it."""
     liik = _text(record.get("liik"))
     day = _day(record.get("kuupaev"))
+    if liik == COMMENCEMENT_UNKNOWN and day is None and not _text(record.get("tapsustus")):
+        return {"target": "", "kind": NOT_STATED, "date": None}
     if liik.startswith(COMMENCEMENT_GENERAL):
         return {"target": "MatterEffectiveDate", "kind": "GENERAL_ORDER", "date": None}
     if liik.startswith(COMMENCEMENT_FIXED) and day is not None:
@@ -433,6 +444,8 @@ def read_topic(
             sorted(bundle.get("commencements") or [], key=lambda r: r.get("position") or 0), 1
         ):
             reading = commencement_reading(record, status=status)
+            if reading["kind"] == NOT_STATED:
+                continue  # «Teadmata»: no commencement stated, nothing to write or hold
             liik = _text(record.get("liik"))
             note = _text(record.get("tapsustus"))
             entry: dict[str, Any] = {

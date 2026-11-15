@@ -144,10 +144,11 @@ TREATMENT: Final[dict[tuple[str, str], tuple[str, str]]] = {
     ("c_liik", "Kindla kuupäevaga jõustumine"): (MAPPED, "KNOWN_DATE|PLANNED_COMMENCEMENT"),
     ("c_liik", "Eeldatava kuupäevaga jõustumine"): (MAPPED, "ESTIMATED_COMMENCEMENT"),
     ("c_liik", "Üldises korras"): (MAPPED, "GENERAL_ORDER"),
-    ("c_liik", "Teadmata"): (
-        PENDING,
-        "LV-02: skip «Teadmata» (it asserts no date) or hold only that row",
-    ),
+    # LV-02 decided 15.11.2026 (owner): «Teadmata» asserts no date, so the row is
+    # skipped — never written, and it no longer holds the readable rows beside it.
+    # Not mapped to anything: with a day or a note (which `save_topic` refuses)
+    # it would still be held.
+    ("c_liik", "Teadmata"): (HELD, "LV-02: skipped, states no commencement"),
     # Opinion status (approval 11.11 §1 «Opinion requests»; audit §A.1 A11).
     ("valja", "iso"): (MAPPED, "SENT"),
     ("valja", "d.m.yyyy"): (MAPPED, "SENT"),
