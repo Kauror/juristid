@@ -9146,16 +9146,11 @@ button.opinionmenu__item {
   font-weight: var(--typography-weight-semibold);
 }
 
-.actfeed__hint,
 .actfeed__cap {
-  margin: 0 0 var(--spacing-2);
+  margin: var(--spacing-2) 0 0;
   padding: 0 var(--spacing-3);
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
-}
-
-.actfeed__cap {
-  margin: var(--spacing-2) 0 0;
 }
 
 /* The feed closes the left column, so it carries no bottom rule — the page

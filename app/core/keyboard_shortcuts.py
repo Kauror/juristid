@@ -88,18 +88,18 @@ GROUPS: tuple[ShortcutGroup, ...] = (
                 keys=(("Esc",),),
                 action=(
                     "Sulgeb avatud menüü ja viib kursori tagasi nupule, millega selle "
-                    "avasid. Päise «Veel» ja teema «⋯ Rohkem tegevusi» sulguvad alati; "
+                    "avasid. Teema «⋯ Rohkem tegevusi» sulgub alati; "
                     "«Täpsem otsing» ja tabelite valikumenüüd siis, kui kursor on "
                     "menüüs."
                 ),
                 note=(
-                    "«Veel», «⋯» ja tabelite valikumenüüd sulgeb ka klõps menüüst "
+                    "«⋯» ja tabelite valikumenüüd sulgeb ka klõps menüüst "
                     "väljas; «Täpsem otsing» sulgub uue klõpsuga oma nimel."
                 ),
                 evidence=(
                     (
                         "app.js",
-                        'var ESCAPABLE = "details.topnav__more, details.headmenu, '
+                        'var ESCAPABLE = "details.headmenu, '
                         'details.inlineedit, details.filterpanel";',
                     ),
                     ("ux.js", 'event.target.closest("details[data-uxpopover][open]")'),

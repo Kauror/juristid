@@ -314,14 +314,6 @@ The rail holds only what has no honest place on a timeline.
             <span class="foldout__label">Viimased tegevused</span>
           </summary>
           <div class="foldout__body">
-            <p class="actfeed__hint">
-              {% if is_self %}
-                Sisulised tegevused sinu teemadel, kes tahes need tegi, ja sinu sissekanded teiste teemadel.
-              {% else %}
-                Sisulised tegevused selle inimese teemadel, kes tahes need tegi, ja tema sissekanded teiste teemadel.
-              {% endif %}
-              Pealkirja, vastutaja ja muude andmete muutmist siin ei näidata.
-            </p>
             {% for row in work.activity.preview %}
               {% include "matters/partials/activity_row.html" with row=row %}
             {% empty %}
