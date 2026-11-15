@@ -320,7 +320,7 @@ def test_each_commencement_the_sync_writes_names_lovable_and_the_run(world):
 def test_lv02_teadmata_alone_states_no_commencement_and_holds_nothing(world):
     """LV-02 (decided 15.11.2026): «Teadmata» with no day and no note states no
     commencement. Nothing is written and the Teema is not held for review —
-    production 2026_258 was flagged every night for this."""
+    one production Teema was flagged every night for this."""
     world.lovable.set_commencements(ref(1), [{"liik": "Teadmata"}])
     run = world.run()
     assert run.status == SyncRunStatus.SUCCEEDED, run.error
