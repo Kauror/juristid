@@ -253,8 +253,10 @@ def expected(
             stated.append(("MatterImportantDate", "PLANNED_COMMENCEMENT", day, note))
         elif liik.startswith("Eeldatava"):
             stated.append(("MatterImportantDate", "ESTIMATED_COMMENCEMENT", day, note))
+        elif liik == "Teadmata" and day is None and not note:
+            continue  # LV-02 (decided 15.11.2026): «Teadmata» states no commencement
         else:
-            stated = NOT_REPRESENTABLE  # type: ignore[assignment]  # «Teadmata» (LV-02)
+            stated = NOT_REPRESENTABLE  # type: ignore[assignment]  # «Teadmata» with a day or note
             break
     owner_name = _text(row.get("uus_vastutaja")) or _text(row.get("vastutaja"))
     # «Vastutaja puudub» as the new owner: Lovable names no one.

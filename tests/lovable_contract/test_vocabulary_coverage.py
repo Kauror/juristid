@@ -3,7 +3,7 @@
 Every value Lovable's form or `save_topic` can write (`vocabulary.py`, read at
 Lovable `fe9cc1d8`) is in exactly one of: mapped, or intentionally held with
 the decision that says so. A value still waiting for the owner (LV-01 «Muu»,
-LV-02 «Teadmata», LV-03 the opinion and link forms) is a strict xfail: it
+LV-03 the opinion and link forms; LV-02 «Teadmata» was decided 15.11.2026) is a strict xfail: it
 turns green — and so fails the strict marker — the day its row in
 `vocabulary.TREATMENT` records a decision, which is exactly when this test
 must be revisited.
@@ -85,7 +85,7 @@ def test_each_lovable_value_is_mapped_or_intentionally_held(kind, value):
 
     Contract: audit §D.2 LC-V1; approval 11.11 §1 (the step-type and stage rules
     are fixed, «never guessed»). A pending value fails here by design: no
-    decision is recorded for it yet (LV-01, LV-02, LV-03)."""
+    decision is recorded for it yet (LV-01, LV-03)."""
     treatment, detail = TREATMENT[(kind, value)]
     assert treatment != PENDING, detail
     engine = _engine_treatment(kind, value)

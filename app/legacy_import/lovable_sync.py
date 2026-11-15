@@ -2027,7 +2027,7 @@ def _commencement_decision(
     day Juristid already holds another commencement for. A changed or removed
     commencement is a person's call; nothing is edited or cancelled. An added
     day before today is history, never a fresh fact: held."""
-    from app.legacy_import.lovable_reading import commencement_reading
+    from app.legacy_import.lovable_reading import NOT_STATED, commencement_reading
 
     entry = applied.get("commencements") or {}
     a_src = entry.get("source") or []
@@ -2043,10 +2043,13 @@ def _commencement_decision(
         {
             "liik": liik,
             "note": note,
-            **commencement_reading({"liik": liik, "kuupaev": day}, status=src["stage"]),
+            **commencement_reading(
+                {"liik": liik, "kuupaev": day, "tapsustus": note}, status=src["stage"]
+            ),
         }
         for liik, day, note in added.elements()
     ]
+    readings = [r for r in readings if r["kind"] != NOT_STATED]
     want = [[r["target"], r["kind"], r["date"]] for r in readings if r["target"]]
     if not removed and len(want) == len(readings) and all(w in have for w in want):
         return FieldDecision("commencements", SyncOutcome.ALREADY_CONVERGED, target=have, **common)
@@ -3006,7 +3009,7 @@ def _commencements_authoritative(
     (reason `RESTORED`). Held only where a row cannot be represented (an
     unreadable kind or day) or the Teema is closed (the date services refuse a
     closed file); unchanged, either stays as it is."""
-    from app.legacy_import.lovable_reading import commencement_reading
+    from app.legacy_import.lovable_reading import NOT_STATED, commencement_reading
 
     entry = _entry(applied, "commencements")
     a_src = entry.get("source") or []
@@ -3017,7 +3020,11 @@ def _commencements_authoritative(
     readings = []
     seen: set[tuple[Any, ...]] = set()
     for liik, day, note in c_src:
-        reading = commencement_reading({"liik": liik, "kuupaev": day}, status=src["stage"])
+        reading = commencement_reading(
+            {"liik": liik, "kuupaev": day, "tapsustus": note}, status=src["stage"]
+        )
+        if reading["kind"] == NOT_STATED:
+            continue  # «Teadmata» with no day or note: Lovable states no commencement
         key = (reading["target"], reading["kind"], reading["date"], text_value(note))
         if reading["target"] and key in seen:
             continue  # the same row stated twice is one commencement

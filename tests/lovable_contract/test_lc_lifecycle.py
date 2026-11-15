@@ -317,15 +317,23 @@ def test_each_commencement_the_sync_writes_names_lovable_and_the_run(world):
         assert (payload.get("sync_run") or nested.get("sync_run")) == str(run.pk), event.event_type
 
 
-def test_lv02_teadmata_beside_a_readable_date_holds_the_whole_set_today(world):
-    """LV-02 (owner decision pending) — current behaviour, pinned: one
-    «Teadmata» row holds every commencement of the Teema (nothing written).
+def test_lv02_teadmata_alone_states_no_commencement_and_holds_nothing(world):
+    """LV-02 (decided 15.11.2026): «Teadmata» with no day and no note states no
+    commencement. Nothing is written and the Teema is not held for review —
+    production 2026_258 was flagged every night for this."""
+    world.lovable.set_commencements(ref(1), [{"liik": "Teadmata"}])
+    run = world.run()
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    decision = decisions(run, ref(1))["commencements"]
+    assert decision.outcome != SyncOutcome.REVIEW_REQUIRED, decision.reason
+    assert oracle.observed(world.matter(ref(1)))["commencements"] == []
 
-    Alternatives (audit §C.1 LV-02): skip «Teadmata» (it asserts no date) and
-    reconcile the readable rows, or hold only that row.
-    `test_lv02_…_readable_date_is_written` is the contract once decided."""
+
+def test_lv02_teadmata_with_a_note_is_still_held(world):
+    """LV-02: a scope note beside «Teadmata» is text Juristid cannot store, so
+    that row still holds the set (fail closed), as before the decision."""
     world.lovable.set_commencements(
-        ref(1), [{"liik": "Teadmata"}, {"liik": FIXED, "kuupaev": "2099-07-01"}]
+        ref(1), [{"liik": "Teadmata", "tapsustus": "sõltub direktiivist"}]
     )
     run = world.run()
     decision = decisions(run, ref(1))["commencements"]
@@ -333,13 +341,11 @@ def test_lv02_teadmata_beside_a_readable_date_holds_the_whole_set_today(world):
         SyncOutcome.REVIEW_REQUIRED,
         lovable_sync.COMMENCEMENT_UNREADABLE,
     )
-    assert oracle.observed(world.matter(ref(1)))["commencements"] == []
 
 
-@pytest.mark.xfail(strict=True, reason="LV-02: pending owner decision («Teadmata» blocks the set)")
 def test_lv02_teadmata_beside_a_readable_date_the_readable_date_is_written(world):
-    """LC-D1 / LV-02: «Teadmata» states no date; the fixed day beside it is
-    written (the audit's recommended reading)."""
+    """LC-D1 / LV-02 (decided 15.11.2026): «Teadmata» states no date; the fixed
+    day beside it is written (the audit's recommended reading)."""
     world.lovable.set_commencements(
         ref(1), [{"liik": "Teadmata"}, {"liik": FIXED, "kuupaev": "2099-07-01"}]
     )
