@@ -17,8 +17,7 @@
  * `document.dispatchEvent(new CustomEvent("juristid:menu-open",
  * {detail: {id}}))`, and every other closes when it hears a different id. The
  * two other popups on the bar take part too, so no pair of them can overlap:
- * the persona popover (bound in app.js; it is watched here, not rewritten) and
- * «Veel».
+ * the persona popover (bound in app.js; it is watched here, not rewritten).
  *
  * Every listener is on `document` and every lookup happens at event time, so
  * there is nothing to rebind after an htmx swap and no second copy to leave
@@ -31,7 +30,6 @@
   var EVENT = "juristid:menu-open";
   var SETTINGS = "settings-menu";
   var PERSONA = "persona-menu";
-  var MORE = "topnav-more";
 
   function announce(id) {
     document.dispatchEvent(new CustomEvent(EVENT, { detail: { id: id } }));
@@ -73,12 +71,6 @@
     });
   }
 
-  function closeMore() {
-    document.querySelectorAll(".topnav__more[open]").forEach(function (more) {
-      more.open = false;
-    });
-  }
-
   /* Opening announces; closing does not. */
   document.addEventListener(
     "toggle",
@@ -89,8 +81,6 @@
       }
       if (target.matches("[data-settings-menu]")) {
         announce(SETTINGS);
-      } else if (target.matches(".topnav__more")) {
-        announce(MORE);
       }
     },
     true
@@ -129,9 +119,6 @@
     }
     if (id !== PERSONA) {
       closePersona();
-    }
-    if (id !== MORE) {
-      closeMore();
     }
   });
 

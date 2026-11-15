@@ -170,18 +170,6 @@
               {% include "components/topnav_secondary.html" %}
             </span>
 
-            <details class="topnav__more">
-              {% comment %}
-                Marked, not opened. Opening it on arrival would put a menu over
-                the page every time somebody visits Statistika, and the thing
-                worth saying is only "you are in here" — which the same inset
-                brand underline the bar uses everywhere else already says.
-              {% endcomment %}
-              <summary class="topnav__trigger{% if nav_active == 'statistika' %} is-active{% endif %}">Veel</summary>
-              <div class="topnav__menu">
-                {% include "components/topnav_secondary.html" %}
-              </div>
-            </details>
           </nav>
 
           {% comment %}

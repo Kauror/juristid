@@ -54,10 +54,7 @@ def test_the_saved_view_box_and_the_more_menu_stay_on_screen(page, base_url):
         page.set_viewport_size({"width": width, "height": 800})
         page.goto(f"{base_url}/teemad/")
         page.wait_for_load_state("networkidle")
-        for details, box in (
-            ("details.uxviews__save", ".uxviews__savebody"),
-            ("details.topnav__more", ".topnav__menu"),
-        ):
+        for details, box in (("details.uxviews__save", ".uxviews__savebody"),):
             _on_screen(page.evaluate(OPENED, [details, box]), f"{details} at {width}")
             page.evaluate(CLOSE, details)
 

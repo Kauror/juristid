@@ -266,22 +266,6 @@ def test_opening_the_menu_announces_it_and_another_menu_closes_it(page, base_url
     assert _is_open(page)
 
 
-def test_veel_and_the_settings_menu_close_each_other(page, base_url):
-    sign_in(page, base_url, SANDRA)
-    page.set_viewport_size({"width": 1280, "height": 800})
-    page.goto(f"{base_url}/minu-asjad/")
-    page.wait_for_load_state("networkidle")
-
-    page.locator(".topnav__trigger").click()
-    assert _is_open(page, ".topnav__more")
-    _open_menu(page)
-    page.wait_for_function("() => !document.querySelector('.topnav__more').open")
-
-    page.locator(".topnav__trigger").click()
-    page.wait_for_function("() => !document.querySelector('.settingsmenu').open")
-    assert _is_open(page, ".topnav__more")
-
-
 def test_the_persona_popover_and_the_settings_menu_close_each_other(page, gate_base_url):
     """Behind the shared gate, where the persona pill is a popover of its own."""
     pass_the_gate(page, gate_base_url)
