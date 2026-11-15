@@ -295,7 +295,7 @@ def test_the_head_sees_the_whole_page(client, department_head, world):
     body = client.get(PAGE).content.decode()
 
     assert "uxstat" in body
-    for heading in ("Vajab sekkumist", "Eesolev", "Tehtud", "Valdkonnad", "Uued teemad"):
+    for heading in ("Vajab sekkumist", "Eesolev", "Tehtud", "Uued teemad"):
         assert heading in body, heading
 
 
@@ -1624,7 +1624,9 @@ def test_the_rail_carries_three_blocks_and_no_repeat(client, department_head, wo
     # counted is the section, not the words.
     assert body.count('aria-label="Vajab sekkumist"') == 1
     assert body.count('aria-label="Aruandlus"') == 1
-    assert body.count('class="railblock"') == 3
+    # Valdkonnad is drawn only when some Teema has one; this world has none.
+    assert 'aria-label="Valdkonnad"' not in body
+    assert body.count('class="railblock"') == 2
 
 
 def test_meeskond_has_no_visible_heading(client, department_head, world):

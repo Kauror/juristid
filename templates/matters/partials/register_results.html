@@ -38,7 +38,7 @@ somebody is typing into would move the caret on every keystroke.
       (02-EKRAANID §C).
     {% endcomment %}
     <span class="registercount__note">
-      · kuvatud {{ page.object_list|length }} · näita korraga
+      · näita korraga
       {% for option in page_size_options %}{% if option.active %}<b>{{ option.label }}</b>{% else %}<a href="?{{ option.query }}#tulemused">{{ option.label }}</a>{% endif %}{% if not forloop.last %} · {% endif %}{% endfor %}
     </span>
     {% endif %}
