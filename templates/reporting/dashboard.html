@@ -172,7 +172,7 @@ The period, the lawyer and the trend range are links: the state is the URL.
       <div class="statcols" role="list">
         {% for bar in flow %}
           <span class="statcol" role="listitem" title="{{ bar.title }}: sisse {{ bar.received }}, välja {{ bar.sent }}">
-            <span class="statcol__value">{% if bar.received or bar.sent %}{{ bar.received }} / {{ bar.sent }}{% endif %}</span>
+            <span class="statcol__value statcol__value--pair">{% if bar.received or bar.sent %}{{ bar.received }} / {{ bar.sent }}{% endif %}</span>
             <span class="statcol__track statcol__track--pair">
               <span class="statcol__bar statseries--muted" style="height: {{ bar.received_css }}%"></span>
               <span class="statcol__bar statseries--0" style="height: {{ bar.sent_css }}%"></span>
@@ -189,6 +189,7 @@ The period, the lawyer and the trend range are links: the state is the URL.
         <h2 class="statpanel__title" id="stat-liigid">Õigusakti liigi järgi</h2>
       </div>
       {% if instruments %}
+        <div class="stattable__wrap">
         <table class="stattable">
           <thead>
             <tr>
@@ -213,6 +214,7 @@ The period, the lawyer and the trend range are links: the state is the URL.
             {% endfor %}
           </tbody>
         </table>
+        </div>
       {% else %}
         <p class="statpanel__empty">Andmed puuduvad.</p>
       {% endif %}

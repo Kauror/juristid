@@ -17124,6 +17124,15 @@ a.statcol:hover .statcol__value {
   border-radius: 4px 4px 0 0;
 }
 
+/* The table scrolls inside its panel on a phone; the page never does. */
+.stattable__wrap {
+  overflow-x: auto;
+}
+
+.statcol__value--pair {
+  white-space: nowrap;
+}
+
 .stattable {
   width: 100%;
   border-collapse: collapse;
@@ -17233,6 +17242,10 @@ a.statcol:hover .statcol__value {
   }
 
   .stattable__bar {
+    display: none;
+  }
+
+  .statcol__value--pair {
     display: none;
   }
 }
