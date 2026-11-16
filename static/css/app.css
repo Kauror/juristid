@@ -313,6 +313,35 @@
   display: flex;
 }
 
+/* On Haldus → Seaded the switch is a button among buttons, not a menu row. */
+.themetoggle--setting {
+  width: auto;
+  min-height: 32px;
+  padding: var(--spacing-15) var(--spacing-35);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-semibold);
+  background: var(--surface-elevated);
+  color: var(--text-primary);
+}
+
+.themetoggle--setting:hover {
+  border-color: var(--text-secondary);
+}
+
+/* Haldus → Seaded: the personal settings, one row of buttons that wraps. */
+.settingslist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.settingslist__form {
+  margin: 0;
+}
+
 .themetoggle:hover {
   background: var(--surface-overlay-hover);
   color: var(--text-primary);
@@ -3406,16 +3435,6 @@ fieldset.field > legend {
 
 .personamenu[hidden] {
   display: none;
-}
-
-.personamenu__label {
-  margin: 0;
-  padding: 5px var(--spacing-25) 7px;
-  font-size: 10.5px;
-  font-weight: var(--typography-weight-bold);
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 /* The form is only there to make the row a POST. It must not become a box in
@@ -8809,6 +8828,56 @@ button.opinionmenu__item {
   background: var(--surface-hover);
 }
 
+/* Minu asjad's filter (static/js/work-filter.js) hides rows and bands with
+   `hidden`, which `display: flex` would otherwise override. */
+.workrow2[hidden],
+.workband[hidden] {
+  display: none;
+}
+
+/* While filtering, «Näita veel» is open and its summary would only repeat
+   rows already shown: the summary goes, the rows stay. */
+.pw-more.is-filtering > summary {
+  display: none;
+}
+
+/* The filter field at the strip's right end: shown once its script runs. */
+.workfilter {
+  display: none;
+  align-items: center;
+  gap: var(--spacing-15);
+  min-width: 14rem;
+  padding: 0 var(--spacing-25);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-control);
+  background: var(--surface-raised);
+  color: var(--text-muted);
+}
+
+.workfilter.is-ready {
+  display: inline-flex;
+}
+
+.workfilter__icon {
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+}
+
+.workfilter__input {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--typography-size-sm);
+}
+
 /* Overdue carries a danger left edge as well as a danger date and the word.
    A passed review date is warning, never danger: the list is one list, so this
    distinction is the whole guard against a ministry that has not replied
@@ -8827,9 +8896,10 @@ button.opinionmenu__item {
   flex: 1;
   min-width: 0;
   display: grid;
-  /* 96 rather than the mockup's 86: OLULINE TÄHTAEG is a real value and the
-     narrower cell could not hold it on two lines either. */
-  grid-template-columns: 96px minmax(0, 1fr) 150px;
+  /* 72: the cell holds the date (and «12 p üle» over the day it was) and the
+     day-off icon — the kind word under it is gone (owner, 2026-11-16), and
+     the 96 it needed left a wide empty block on every row. */
+  grid-template-columns: 72px minmax(0, 1fr) 150px;
   gap: var(--spacing-35);
   align-items: center;
   padding: 9px var(--spacing-3);
@@ -8849,6 +8919,26 @@ button.opinionmenu__item {
   display: flex;
   flex-direction: column;
   gap: 1px;
+}
+
+.workrow2__dateline {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+/* A date on a weekend or a riigipüha: the icon, and the last working day
+   before it on hover (`WorkItem.rest_day_hint`). */
+.workrow2__restday {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.workrow2__restday svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
 }
 
 .workrow2__date,
@@ -8925,6 +9015,85 @@ button.opinionmenu__item {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* ---- the row's «!» marker: an unread notice about this Teema ---------
+   One slot on every row of the reader's own list, so the stage column stays
+   aligned. Hover or focus opens the panel; it sits flush against the mark so
+   the pointer can travel into it and press «Märgi loetuks». */
+.rownotice {
+  position: relative;
+  flex: none;
+  width: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.rownotice__mark {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+  background: none;
+  color: var(--status-warning);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: var(--typography-weight-bold);
+  line-height: 1;
+  cursor: default;
+}
+
+.rownotice__mark:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: var(--focus-ring-offset-width);
+}
+
+.rownotice__panel {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 25;
+  width: min(20rem, calc(100vw - var(--spacing-8)));
+  padding: var(--spacing-2);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-control);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+  flex-direction: column;
+  gap: var(--spacing-25);
+}
+
+.rownotice:hover .rownotice__panel,
+.rownotice:focus-within .rownotice__panel {
+  display: flex;
+}
+
+.rownotice__item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  font-size: var(--typography-size-meta);
+}
+
+.rownotice__item form {
+  margin: var(--spacing-1) 0 0;
+}
+
+.rownotice__label {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--status-warning);
+}
+
+.rownotice__date,
+.rownotice__note {
+  color: var(--text-secondary);
 }
 
 /* ---- the row overflow menu: a real disclosure, not a decorative glyph */
@@ -14665,6 +14834,25 @@ a.jcal__daynum {
 
 .rowmenu__shift > summary::-webkit-details-marker {
   display: none;
+}
+
+/* «Lisa meeldetuletus» in the same menu: a day and a note (owner, 2026-11-16). */
+.remindform {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-1);
+  width: min(17rem, calc(100vw - var(--spacing-8)));
+  padding: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+}
+
+.remindform .field__input {
+  width: 100%;
+}
+
+.remindform .button {
+  margin-top: var(--spacing-1);
 }
 
 .dateshift {

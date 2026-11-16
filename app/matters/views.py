@@ -562,6 +562,13 @@ def _render_person_work(request: HttpRequest, *, subject: Any, is_self: bool) ->
         # Which stored version the box is being filled from, so a second tab's
         # autosave can be refused rather than allowed to overwrite it (QA-09).
         context["scratchpad_revision"] = person_workspace.scratchpad_revision(context["scratchpad"])
+        # The rows' «!» markers: the reader's own unread notices, by Teema
+        # (owner, 2026-11-16). The same population as the bell and the block.
+        from app.notifications import inbox as notification_inbox
+
+        context["row_notices"] = notification_inbox.by_matter(
+            notification_inbox.inbox_for(request.user, today)
+        )
         # «Uus asi» and every other notification are read by the template's
         # `{% notifications_block %}`, inside the `is_self` branch, for
         # `request.user` only (docs/adr/0198 §6). A colleague's unread

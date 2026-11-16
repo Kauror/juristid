@@ -105,7 +105,7 @@ The rail holds only what has no honest place on a timeline.
     Matters (app/matters/my_work.py, `OpinionWork`). No tone: they are counts
     of work in hand, not warnings.
   {% endcomment %}
-  {% include "components/seis.html" with figures=work.seis compact=1 %}
+  {% include "components/seis.html" with figures=work.seis compact=1 trailing="matters/partials/work_filter.html" %}
 
   <div class="worklayout2">
     <div class="worklayout2__main">
@@ -183,6 +183,8 @@ The rail holds only what has no honest place on a timeline.
           {% endif %}
         </section>
       {% endfor %}
+
+      <p class="workempty" data-workfilter-empty hidden>Ei leitud.</p>
 
       {% if not work.has_work %}
         {% comment %}

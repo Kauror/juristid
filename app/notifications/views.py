@@ -43,6 +43,7 @@ from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods
 
 from app.core.authorization import may_view_department_management
@@ -53,6 +54,7 @@ from app.notifications import (
     deadlines,
     feed,
     inbox,
+    personal,
     preferences,
     selectors,
     services,
@@ -65,7 +67,7 @@ from app.notifications.categories import (
 )
 from app.notifications.email import EMAIL_NOT_YET
 from app.notifications.enums import NotificationCategory
-from app.notifications.forms import DeferForm
+from app.notifications.forms import DeferForm, PersonalReminderForm
 from app.notifications.models import ALLOWED_OFFSETS
 from app.notifications.templatetags.notifications import block_context
 
@@ -74,6 +76,8 @@ from app.notifications.templatetags.notifications import block_context
 RETURN_TO = {
     "teavitused": "notifications:list",
     "minu_asjad": "matters:my_work",
+    # A Minu asjad row's «!» marker or ⋯ menu: back to the list, not the block.
+    "minu_asjad_rida": "matters:my_work",
     # The panel needs scripting, so a plain POST from it should not happen; if
     # one does, the list is where its answer is visible.
     "paneel": "notifications:list",
@@ -139,6 +143,9 @@ def reminder_list(request: HttpRequest) -> HttpResponse:
         "info_items": [item for item in items if item.section == inbox.SECTION_INFO],
         "unowned_items": [item for item in items if item.section == inbox.SECTION_UNOWNED],
         "deferred_rows": selectors.deferred_reminders_for(user),
+        "upcoming_personal": list(
+            personal.upcoming(user, timezone.localdate()).select_related("matter")
+        ),
         "shows_unowned": may_view_department_management(user),
         "history": feed.history_page(user, cursor=cursor),
         "history_continued": cursor is not None,
@@ -379,6 +386,75 @@ def mark_assignment_unread(request: HttpRequest, notice_id: Any) -> HttpResponse
     notice = _own_notice_or_404(request, notice_id)
     acknowledgement.mark_unread(request.user, inbox.TYPE_ASSIGNMENT, notice)
     return _answer(request, inbox.TYPE_ASSIGNMENT, notice.pk, anchor=True)
+
+
+# ---------------------------------------------------------------------------
+# «Lisa meeldetuletus» — the reader's own reminders (owner, 2026-11-16)
+# ---------------------------------------------------------------------------
+
+
+def _own_personal_or_404(request: HttpRequest, pk: Any) -> Any:
+    row = personal.own_row(request.user, pk)
+    if row is None:
+        raise Http404("Meeldetuletust ei leitud.")
+    return row
+
+
+@login_required
+@require_http_methods(["POST"])
+def personal_create(request: HttpRequest, matter_id: Any) -> HttpResponse:
+    """Set a reminder for the signed-in person on a Teema they may see (`personal.create`)."""
+    from app.matters.models import Matter
+
+    matter = Matter.objects.visible_to(request.user).filter(pk=matter_id).first()
+    if matter is None:
+        raise Http404("Teemat ei leitud.")
+    form = PersonalReminderForm(request.POST)
+    if not form.is_valid():
+        errors = [str(error) for found in form.errors.values() for error in found]
+        messages.error(request, " ".join(errors))
+        return _back(request)
+    try:
+        row = personal.create(
+            user=request.user,
+            matter=matter,
+            remind_on=form.cleaned_data["remind_on"],
+            note=form.cleaned_data["note"],
+            today=timezone.localdate(),
+        )
+    except DomainError as refusal:
+        messages.error(request, str(refusal))
+        return _back(request)
+    messages.success(request, f"Meeldetuletus lisatud: {format_estonian_date(row.remind_on)}.")
+    return _back(request)
+
+
+@login_required
+@require_http_methods(["POST"])
+def personal_read(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Märgi loetuks» on the reader's own reminder."""
+    row = _own_personal_or_404(request, pk)
+    personal.mark_read(row)
+    return _answer(request, inbox.TYPE_PERSONAL, row.pk, anchor=True)
+
+
+@login_required
+@require_http_methods(["POST"])
+def personal_unread(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Märgi lugemata» on the reader's own reminder whose day has come."""
+    row = _own_personal_or_404(request, pk)
+    personal.mark_unread(row)
+    return _answer(request, inbox.TYPE_PERSONAL, row.pk, anchor=True)
+
+
+@login_required
+@require_http_methods(["POST"])
+def personal_remove(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Eemalda» an upcoming reminder, from `/teavitused/`."""
+    row = _own_personal_or_404(request, pk)
+    personal.remove(row)
+    messages.success(request, "Meeldetuletus eemaldatud.")
+    return _back(request)
 
 
 # ---------------------------------------------------------------------------

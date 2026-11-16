@@ -12,7 +12,9 @@ nothing else:
    for, less those this reader has marked read (a personal receipt; the check
    stays open for everybody else — ADR 0188 amendment 2026-11-02);
 3. unread «Uus asi» receipts (ADR 0051 unchanged: personal, acknowledged only
-   by its own POST).
+   by its own POST);
+4. the reader's own «Lisa meeldetuletus» reminders whose day has come
+   (`app.notifications.personal`, owner 2026-11-16).
 
 :func:`inbox_for` lists them and :func:`inbox_count` counts the same
 populations with three ``COUNT`` statements, so the bell, the Minu asjad block
@@ -64,6 +66,7 @@ INFO = NotificationKind.INFO.value
 TYPE_DEADLINE = "deadline"
 TYPE_COMMENCEMENT = "commencement"
 TYPE_ASSIGNMENT = "assignment"
+TYPE_PERSONAL = "personal"
 
 #: Where an item is listed on `/teavitused/`.
 SECTION_ACTION = "action"
@@ -74,7 +77,7 @@ KIND_LABELS = {ACTION: NotificationKind.ACTION.label, INFO: NotificationKind.INF
 
 #: The tie-break between sources at the same moment, for a stable newest-first
 #: order and a keyset cursor (`app.notifications.feed`).
-TYPE_RANK = {TYPE_DEADLINE: 0, TYPE_COMMENCEMENT: 1, TYPE_ASSIGNMENT: 2}
+TYPE_RANK = {TYPE_DEADLINE: 0, TYPE_COMMENCEMENT: 1, TYPE_ASSIGNMENT: 2, TYPE_PERSONAL: 3}
 
 #: The one state vocabulary the panel, the page and the block draw.
 STATE_UNREAD = "unread"
@@ -112,6 +115,8 @@ class InboxItem:
     can_defer: bool = False
     #: «Uus asi» opens through its own acknowledging POST (ADR 0051).
     opens_by_post: bool = False
+    #: The Teema it is about: what the Minu asjad row's «!» marker groups by.
+    matter_id: Any = field(default=None, compare=False)
 
     @property
     def kind_label(self) -> str:
@@ -160,6 +165,8 @@ _ROUTES: dict[tuple[str, str], tuple[str, str]] = {
     (TYPE_COMMENCEMENT, "defer"): ("notifications:defer", "pk"),
     (TYPE_ASSIGNMENT, "read"): ("notifications:assignment_read", "notice_id"),
     (TYPE_ASSIGNMENT, "unread"): ("notifications:assignment_unread", "notice_id"),
+    (TYPE_PERSONAL, "read"): ("notifications:personal_read", "pk"),
+    (TYPE_PERSONAL, "unread"): ("notifications:personal_unread", "pk"),
 }
 
 
@@ -289,6 +296,7 @@ def deadline_item(
         at=row.created_at,
         state=state,
         can_unread=can_unread,
+        matter_id=row.matter_id,
     )
 
 
@@ -314,6 +322,7 @@ def commencement_item(
         state=state,
         can_unread=can_unread,
         can_defer=unread,
+        matter_id=row.reminder.effective_date.matter_id,
     )
 
 
@@ -367,11 +376,50 @@ def assignment_item(
         state=state,
         can_unread=can_unread,
         opens_by_post=unread,
+        matter_id=notice.matter_id,
     )
 
 
 def _assignment_items(user: Any) -> list[InboxItem]:
     return [assignment_item(notice) for notice in _assignment_queryset(user)]
+
+
+#: The label of a «Lisa meeldetuletus» item, once.
+PERSONAL_LABEL = "Meeldetuletus"
+
+
+def personal_item(
+    row: Any, today: date, *, state: str = STATE_UNREAD, can_unread: bool = False
+) -> InboxItem:
+    """One of the reader's own reminders (`PersonalReminder`) as an item."""
+    unread = state == STATE_UNREAD
+    return InboxItem(
+        type=TYPE_PERSONAL,
+        kind=ACTION,
+        title=row.matter.title,
+        label=PERSONAL_LABEL,
+        date=row.remind_on,
+        date_label=f"{format_estonian_date(row.remind_on)} · {_when(row.remind_on, today)}",
+        url=reverse("matters:matter_detail", kwargs={"pk": row.matter_id}),
+        is_unread=unread,
+        pk=row.pk,
+        section=SECTION_ACTION,
+        can_read=unread,
+        note=row.note,
+        at=row.created_at,
+        state=state,
+        can_unread=can_unread,
+        matter_id=row.matter_id,
+    )
+
+
+def _personal_items(user: Any, today: date) -> list[InboxItem]:
+    from app.notifications import personal
+
+    return [
+        personal_item(row, today)
+        for row in personal.due_unread(user, today).select_related("matter")
+    ]
 
 
 def inbox_for(user: Any, today: date | None = None) -> list[InboxItem]:
@@ -384,18 +432,31 @@ def inbox_for(user: Any, today: date | None = None) -> list[InboxItem]:
     items = [deadline_item(row, day, names) for row in rows]
     items += _commencement_items(user, day)
     items += _assignment_items(user)
+    items += _personal_items(user, day)
     return sorted(items, key=lambda item: item.sort_key)
+
+
+def by_matter(items: list[InboxItem]) -> dict[Any, list[InboxItem]]:
+    """The unread items grouped by their Teema — the Minu asjad rows' «!» markers."""
+    grouped: dict[Any, list[InboxItem]] = {}
+    for item in items:
+        if item.matter_id is not None:
+            grouped.setdefault(item.matter_id, []).append(item)
+    return grouped
 
 
 def inbox_count(user: Any, today: date | None = None) -> int:
     """The bell's number: :func:`inbox_for`'s population, counted without loading it."""
     if not _signed_in(user):
         return 0
+    from app.notifications import personal
+
     day = _today(today)
     return (
         deadline_rows(user, day).count()
         + commencement.unresolved_count(user, today=day)
         + _assignment_queryset(user).count()
+        + personal.due_unread(user, day).count()
     )
 
 

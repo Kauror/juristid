@@ -42,11 +42,24 @@ keyboard hint for a control that is not on the row is a hint that does nothing.
 `data-workrow` is what J/K/Enter move over, and both of those have a visible
 control on this row: the row itself is the link.
 {% endcomment %}
+{% load notifications %}
 <div class="workrow2{% if item.is_overdue %} workrow2--overdue{% elif item.is_review_ripe %} workrow2--review{% endif %}"
      data-workrow>
   <a class="workrow2__link" href="{% if item.is_follow_up %}{{ item.record_url }}{% else %}{{ item.matter_url }}{% endif %}">
     <span class="workrow2__datecell">
-      <span class="workrow2__date{% if item.is_overdue %} workrow2__date--overdue{% elif item.is_review_ripe %} workrow2__date--review{% elif item.is_today %} workrow2__date--today{% endif %}">{{ item.short_date }}</span>
+      <span class="workrow2__dateline">
+        <span class="workrow2__date{% if item.is_overdue %} workrow2__date--overdue{% elif item.is_review_ripe %} workrow2__date--review{% elif item.is_today %} workrow2__date--today{% endif %}">{{ item.short_date }}</span>
+        {% if item.rest_day_hint %}
+          {% comment %}
+            A day off (owner, 2026-11-16): a weekend or a riigipüha, and the
+            last working day before it, on hover (app/core/holidays.py).
+          {% endcomment %}
+          <span class="workrow2__restday" title="{{ item.rest_day_hint }}">
+            <svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true" focusable="false"><rect x="4" y="5.5" width="16" height="14" rx="2"></rect><path d="M4 10h16M8.5 3.5v4M15.5 3.5v4"></path></svg>
+            <span class="visually-hidden">{{ item.rest_day_hint }}</span>
+          </span>
+        {% endif %}
+      </span>
       {% if item.late_original_date %}<span class="workrow2__meaning">{{ item.late_original_date }}</span>{% endif %}
     </span>
 
@@ -66,6 +79,39 @@ control on this row: the row itself is the link.
 
     <span class="workrow2__stage">{{ item.stage_label }}</span>
   </a>
+
+  {% if is_self %}
+    {% comment %}
+      The «!» marker (owner, 2026-11-16): this Teema has something unread in
+      the reader's own notices — the bell's population, nobody else's. Hover
+      or focus opens it: what each notice says, and «Märgi loetuks», which is
+      the same receipt the bell's panel gives, so the two never disagree. The
+      slot is kept on every row so the columns stay aligned.
+    {% endcomment %}
+    {% with notices=row_notices|notices_for:item.matter.pk %}
+      <div class="rownotice">
+        {% if notices %}
+          <button type="button" class="rownotice__mark" aria-describedby="rownotice-{{ item.source_type }}-{{ item.object_id }}">!<span class="visually-hidden">Lugemata teavitus: {{ item.matter.title }}</span></button>
+          <div class="rownotice__panel" id="rownotice-{{ item.source_type }}-{{ item.object_id }}" role="tooltip">
+            {% for notice in notices %}
+              <div class="rownotice__item">
+                <span class="rownotice__label">{{ notice.label }}</span>
+                <span class="rownotice__date">{{ notice.date_label }}</span>
+                {% if notice.note %}<span class="rownotice__note">{{ notice.note }}</span>{% endif %}
+                {% if notice.can_read %}
+                  <form method="post" action="{{ notice.read_url }}">
+                    {% csrf_token %}
+                    <input type="hidden" name="tagasi" value="minu_asjad_rida">
+                    <button type="submit" class="button button--quiet button--tiny">Märgi loetuks</button>
+                  </form>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    {% endwith %}
+  {% endif %}
 
   {% comment %}
     A real disclosure rather than a decorative "⋯". The menu offers only what
@@ -150,6 +196,30 @@ control on this row: the row itself is the link.
           (`WorkItem.record_url`, docs/adr/0086 §6).
         {% endcomment %}
         <a class="rowmenu__item" href="{{ item.record_url }}">Lõpeta kaasamine…</a>
+      {% endif %}
+      {% if is_self %}
+        {% comment %}
+          «Lisa meeldetuletus» (owner, 2026-11-16): the reader's own reminder
+          on this Teema, from a day they choose. It is presentation state of
+          their account — nothing about the work changes — so it is offered to
+          every reader on their own list (app/notifications/personal.py).
+        {% endcomment %}
+        <details class="rowmenu__shift">
+          <summary class="rowmenu__item">Lisa meeldetuletus</summary>
+          <form class="remindform" method="post"
+                action="{% url 'notifications:personal_create' matter_id=item.matter.pk %}">
+            {% csrf_token %}
+            <input type="hidden" name="tagasi" value="minu_asjad_rida">
+            <label class="field__label" for="meeldetuletus-{{ item.source_type }}-{{ item.object_id }}-paev">Kuupäev</label>
+            <input class="field__input dateinput" id="meeldetuletus-{{ item.source_type }}-{{ item.object_id }}-paev" type="text"
+                   inputmode="numeric" autocomplete="off" placeholder="pp.kk.aaaa"
+                   data-datepicker="true" name="remind_on" required>
+            <label class="field__label" for="meeldetuletus-{{ item.source_type }}-{{ item.object_id }}-markus">Märkus</label>
+            <input class="field__input" id="meeldetuletus-{{ item.source_type }}-{{ item.object_id }}-markus" type="text"
+                   name="note" maxlength="200" autocomplete="off">
+            <button type="submit" class="button button--primary button--tiny">Salvesta</button>
+          </form>
+        </details>
       {% endif %}
       <a class="rowmenu__item" href="{{ item.matter_url }}">Ava teema</a>
     </div>

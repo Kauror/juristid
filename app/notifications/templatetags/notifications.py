@@ -68,3 +68,16 @@ def notifications_block(context: Any, tagasi: str = "minu_asjad") -> dict[str, A
 def department_commencement_reminders(context: Any) -> dict[str, Any]:
     user = _user(context)
     return {"rows": selectors.department_unowned_reminders(user)}
+
+
+@register.filter
+def notices_for(row_notices: Any, matter_id: Any) -> list[Any]:
+    """The unread items about one Teema, for a Minu asjad row's «!» marker.
+
+    ``row_notices`` is `inbox.by_matter` of the signed-in reader's own inbox,
+    put in the context by Minu asjad's ``is_self`` branch only; anywhere else
+    it is absent and every row gets nothing.
+    """
+    if not row_notices:
+        return []
+    return list(row_notices.get(matter_id, ()))

@@ -7,7 +7,9 @@ a row that already exists for exactly that purpose, and nothing else:
 * a commencement check — this reader's `CommencementReminderPersonalState.read_at`
   (ADR 0188 amendment 2026-11-02); the shared prompt stays ``OPEN`` for everybody;
 * «Uus asi» — `MatterAssignmentNotice.viewed_at` (ADR 0051), through
-  `acknowledge_assignment_notice`, the same service its own «Ava» calls.
+  `acknowledge_assignment_notice`, the same service its own «Ava» calls;
+* the reader's own reminder — `PersonalReminder.read_at`
+  (`app.notifications.personal`).
 
 No business service is called and no `ChangeEvent` written: reading is not
 doing the work. A deadline, a current step, a Teema's lifecycle and every other
@@ -25,6 +27,8 @@ ones on pages the panel never loaded — and nothing that arrived afterwards, so
 a notice delivered while the panel was open stays unread. "Arrived", per
 source, is the last moment the item could have become unread for this reader:
 
+* the reader's own reminder: its day's Tallinn midnight, or a later write
+  (`personal.arrived_at`);
 * deadline notice and «Uus asi»: ``updated_at``. An unread row is only ever
   written when it is created, brought back (`deadlines._deliver`) or marked
   unread, so that stamp is when it last arrived;
@@ -54,7 +58,12 @@ from django.utils import timezone
 from app.core.authorization import may_read_business_content
 from app.notifications import deadlines, inbox, selectors, services
 from app.notifications.feed import unreadable_assignment_matters
-from app.notifications.inbox import TYPE_ASSIGNMENT, TYPE_COMMENCEMENT, TYPE_DEADLINE
+from app.notifications.inbox import (
+    TYPE_ASSIGNMENT,
+    TYPE_COMMENCEMENT,
+    TYPE_DEADLINE,
+    TYPE_PERSONAL,
+)
 from app.notifications.models import CommencementReminderPersonalState
 
 #: What a malformed or missing boundary is told. A form drawn by this
@@ -140,6 +149,10 @@ def resolve(user: Any, kind: str, pk: Any) -> Any:
         return selectors.readable_inbox_reminder(user, pk)
     if kind == TYPE_ASSIGNMENT:
         return _own_notice(user, pk)
+    if kind == TYPE_PERSONAL:
+        from app.notifications import personal
+
+        return personal.own_row(user, pk)
     return None
 
 
@@ -161,6 +174,10 @@ def mark_read(user: Any, kind: str, row: Any) -> bool:
             # acknowledge (closed, restricted, handed on): nothing to stamp.
             return False
         return acknowledge_assignment_notice(notice=row, actor=user)
+    if kind == TYPE_PERSONAL:
+        from app.notifications import personal
+
+        return personal.mark_read(row)
     return False  # pragma: no cover - `resolve` admits no other kind
 
 
@@ -178,6 +195,10 @@ def mark_unread(user: Any, kind: str, row: Any) -> bool:
         return services.mark_reminder_unread(reminder=row, reader=user)
     if kind == TYPE_ASSIGNMENT:
         return _mark_notice_unread(user, row)
+    if kind == TYPE_PERSONAL:
+        from app.notifications import personal
+
+        return personal.mark_unread(row)
     return False  # pragma: no cover - `resolve` admits no other kind
 
 
@@ -305,6 +326,11 @@ def mark_all_read(user: Any, *, until: datetime, today: date | None = None) -> M
                 marked += 1
         for notice in unread_assignment_notice_queryset(user).filter(updated_at__lte=cut):
             marked += int(acknowledge_assignment_notice(notice=notice, actor=user))
+        from app.notifications import personal
+
+        for own in personal.due_unread(user, day):
+            if personal.arrived_at(own) <= cut:
+                marked += int(personal.mark_read(own))
     return MarkAllResult(marked, inbox.inbox_count(user, day))
 
 

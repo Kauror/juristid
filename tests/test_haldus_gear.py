@@ -72,6 +72,14 @@ def _rakendus(body: str) -> str:
     return body[start : body.index("</section>", start)]
 
 
+def _seaded(body: str) -> str:
+    """Haldus → Seaded, the personal settings (owner, 2026-11-16); "" when absent."""
+    if 'aria-labelledby="seaded"' not in body:
+        return ""
+    start = body.index('aria-labelledby="seaded"')
+    return body[start : body.index("</section>", start)]
+
+
 def _as(client: Client, persona) -> Client:
     pass_gate(client)
     choose(client, persona)
@@ -239,10 +247,11 @@ def test_rakendus_links_uuendused_and_kiirklahvid_and_both_resolve(client):
         assert client.get(reverse(name)).status_code == 200, name
 
 
-def test_rakendus_offers_the_block_reset_as_a_post_to_its_endpoint(client):
-    section = _rakendus(
-        _as(client, factories.UserFactory()).get(reverse("haldus:index")).content.decode()
-    )
+def test_seaded_offers_the_block_reset_as_a_post_to_its_endpoint(client):
+    """The reset moved from Rakendus to Seaded with the other personal settings."""
+    body = _as(client, factories.UserFactory()).get(reverse("haldus:index")).content.decode()
+    assert reverse("accounts:reset_disclosures") not in _rakendus(body)
+    section = _seaded(body)
     start = section.index(f'action="{reverse("accounts:reset_disclosures")}"')
     form = section[section.rindex("<form", 0, start) : section.index("</form>", start)]
 
@@ -255,8 +264,9 @@ def test_rakendus_offers_the_block_reset_as_a_post_to_its_endpoint(client):
 def test_a_persona_less_administrator_is_not_offered_the_block_reset(client):
     admin, secret = technical_admin()
     verified(client, admin, secret)
-    section = _rakendus(client.get(reverse("haldus:index")).content.decode())
-    assert reverse("accounts:reset_disclosures") not in section
+    body = client.get(reverse("haldus:index")).content.decode()
+    assert reverse("accounts:reset_disclosures") not in body
+    assert _seaded(body) == ""
 
 
 # -- the persona menu ---------------------------------------------------------------

@@ -1,0 +1,19 @@
+{% comment %}
+Minu asjad's own filter (owner, 2026-11-16): the last child of the Seis strip,
+pushed to its right end by `seis__spacer`, like Osakond's sort control.
+
+Typing narrows the rows below as you go — every band, the rows behind «Näita
+veel» included — to those whose action, Teema or stage contains every word
+typed; a band with no match is hidden and each band's count follows. Esc or an
+empty field brings the page back as it was. Client-side only
+(static/js/work-filter.js): it filters what this page already holds and asks
+the server nothing. The top bar's search is still the search over everything.
+Without scripting the field is not shown.
+{% endcomment %}
+<span class="seis__spacer"></span>
+<label class="workfilter">
+  <svg class="workfilter__icon" viewBox="0 0 24 24" width="14" height="14" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"></circle><path d="M16 16l4.5 4.5"></path></svg>
+  <span class="visually-hidden">Otsi oma asjadest</span>
+  <input class="workfilter__input" type="search" placeholder="Otsi oma asjadest"
+         autocomplete="off" spellcheck="false" data-workfilter>
+</label>

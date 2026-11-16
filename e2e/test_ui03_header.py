@@ -6,8 +6,10 @@ properties only a laid-out page has:
 * the controls read search → «+ Uus teema» → (a gap) → bell → the account
   menu left to right, with the account menu at the bar's right edge; there is
   no settings gear and no «Välju» on the bar itself (owner, 2026-11-16);
-* the account menu holds «Teavituste seaded», Haldus, the theme switch and
-  «Välju», in that order, «Välju» last;
+* the account menu's own rows are Haldus and «Välju», «Välju» last; since
+  2026-11-16 (owner) neither the theme switch nor «Teavituste seaded» is in it
+  — both are on Haldus → Seaded, and «Teavituste seaded» is also the gear in
+  the bell's panel — and the gate's popover has no heading above the people;
 * one height for every control, one gap between neighbours and one wider gap
   before the personal controls;
 * no overlap and no sideways scroll at 1024, 768 and 390 px;
@@ -205,7 +207,7 @@ def test_the_signed_out_bar_has_the_gear_alone_at_its_right_edge(page, base_url)
 
 
 def test_the_account_menu_holds_its_rows_in_the_owners_order(page, base_url):
-    """«Teavituste seaded», Haldus, the theme switch, then «Välju» last."""
+    """Haldus, then «Välju» last — no theme switch and no «Teavituste seaded» (2026-11-16)."""
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
@@ -214,12 +216,16 @@ def test_the_account_menu_holds_its_rows_in_the_owners_order(page, base_url):
     expect(signout).to_be_visible()
 
     rows = page.evaluate(ROWS)
-    assert rows[:2] == ["Teavituste seaded", "Haldus"], rows
-    assert rows[2].startswith("Lülita "), rows
-    assert rows[3:] == ["Välju"], rows
-    # And «Välju» is drawn last, under the theme switch.
-    theme_box = page.locator(".topbar .accountmenu [data-theme-toggle]").bounding_box()
-    assert signout.bounding_box()["y"] > theme_box["y"]
+    assert rows == ["Haldus", "Välju"], rows
+    expect(page.locator(".topbar [data-theme-toggle]")).to_have_count(0)
+    expect(page.locator(".topbar .settingsmenu").get_by_text("Teavituste seaded")).to_have_count(0)
+    # And «Välju» is drawn last, under Haldus.
+    haldus_box = (
+        page.locator(".topbar .accountmenu")
+        .get_by_role("link", name="Haldus", exact=True)
+        .bounding_box()
+    )
+    assert signout.bounding_box()["y"] > haldus_box["y"]
 
 
 def test_escape_closes_the_menu_and_gives_the_focus_back_to_the_trigger(page, base_url):
@@ -250,7 +256,7 @@ def test_a_click_into_the_search_closes_the_menu_and_keeps_the_focus_there(page,
 def test_tabbing_out_of_the_menu_closes_it(page, base_url):
     sign_in(page, base_url, SANDRA)
     _open_menu(page)
-    for _ in range(4):  # Teavituste seaded, Haldus, the switch, then «Välju»
+    for _ in range(2):  # Haldus, then «Välju» (2026-11-16)
         page.keyboard.press("Tab")
     signout = page.locator(".topbar .accountmenu").get_by_role("button", name="Välju")
     expect(signout).to_be_focused()
@@ -262,24 +268,46 @@ def test_tabbing_out_of_the_menu_closes_it(page, base_url):
     ), "the focus stayed inside the closed menu"
 
 
-def test_the_theme_row_switches_without_closing_the_menu(page, base_url):
+def test_the_theme_switch_left_the_menu_for_haldus_seaded(page, base_url):
+    """The menu's Haldus row leads to the switch; pressing it there changes the theme.
+
+    Until 2026-11-16 the switch was a row of this menu and this test pressed it
+    without the menu closing. The row is gone (owner): signed in, the switch
+    is the first thing in Haldus → Seaded, one click from the menu.
+    """
     sign_in(page, base_url, SANDRA)
     _open_menu(page)
-    page.locator(".topbar [data-theme-toggle]").click()
+    expect(page.locator(".topbar [data-theme-toggle]")).to_have_count(0)
+    page.locator(".topbar .accountmenu").get_by_role("link", name="Haldus", exact=True).click()
+    page.wait_for_url(f"{base_url}/haldus/")
+    seaded = page.locator('section[aria-labelledby="seaded"]')
+    seaded.get_by_role("button", name="Lülita heledale teemale", exact=True).click()
     assert page.evaluate("() => document.documentElement.dataset.theme") == "light"
-    assert _is_open(page)
-    page.get_by_role("button", name="Lülita tumedale teemale", exact=True).click()
+    seaded.get_by_role("button", name="Lülita tumedale teemale", exact=True).click()
     assert page.evaluate("() => document.documentElement.dataset.theme") == "dark"
+    assert page.url == f"{base_url}/haldus/"
 
 
-def test_the_menu_links_to_notification_settings_and_haldus(page, base_url):
+def test_the_menu_links_to_haldus_and_notification_settings_are_elsewhere(page, base_url):
+    """Haldus from the menu; «Teavituste seaded» from the bell's gear and from Seaded.
+
+    «Teavituste seaded» left the menu on 2026-11-16; the two ways to it that
+    remain are the gear icon in the bell's panel header and the button in
+    Haldus → Seaded.
+    """
     sign_in(page, base_url, SANDRA)
-    _open_menu(page)
-    page.locator(".topbar .accountmenu").get_by_role("link", name="Teavituste seaded").click()
+    page.locator("[data-notifbell-trigger]").click()
+    expect(page.locator("[data-notifpanel]")).to_be_visible()
+    page.locator("[data-notifpanel] a.notifpanel__settings").click()
     page.wait_for_url(f"{base_url}/teavitused/seaded/")
+
     _open_menu(page)
     page.locator(".topbar .accountmenu").get_by_role("link", name="Haldus", exact=True).click()
     page.wait_for_url(f"{base_url}/haldus/")
+    page.locator('section[aria-labelledby="seaded"]').get_by_role(
+        "link", name="Teavituste seaded"
+    ).click()
+    page.wait_for_url(f"{base_url}/teavitused/seaded/")
 
 
 def test_the_trigger_shows_its_keyboard_focus(page, base_url):
@@ -357,10 +385,15 @@ def test_behind_the_gate_the_persona_popover_is_the_account_menu(page, gate_base
     menu = page.locator("#persona-menu")
     signout = menu.locator(".accountmenu").get_by_role("button", name="Välju")
     expect(signout).to_be_visible()
-    expect(menu.locator(".accountmenu [data-theme-toggle]")).to_be_visible()
+    # No theme switch, no «Teavituste seaded» and no «Näita kelle tööd»
+    # heading in the popover any more (owner, 2026-11-16).
+    expect(menu.locator("[data-theme-toggle]")).to_have_count(0)
+    expect(menu.locator(".personamenu__label")).to_have_count(0)
+    expect(menu.get_by_text("Näita kelle tööd")).to_have_count(0)
+    expect(menu.get_by_text("Teavituste seaded")).to_have_count(0)
     rows = page.evaluate(ROWS)
     assert rows[-1] == "Välju", rows
-    assert rows[-2].startswith("Lülita "), rows
+    assert not any(row.startswith("Lülita ") for row in rows), rows
     # The account rows come after the people.
     people = menu.locator(".personaoption").last.bounding_box()
     assert signout.bounding_box()["y"] > people["y"]

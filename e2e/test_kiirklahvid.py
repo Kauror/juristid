@@ -88,7 +88,7 @@ def test_enter_on_a_rows_menu_opens_the_menu_not_the_matter(page, base_url):
 
 
 def test_enter_elsewhere_on_the_page_does_not_open_the_selected_row(page, base_url):
-    """A selection left by J must not turn the bell's or the theme's Enter into a jump."""
+    """A selection left by J must not turn the bell's Enter into a jump."""
     sign_in(page, base_url, SANDRA)
     first = page.locator("[data-workrow]").first
     expect(first).to_be_visible()
@@ -96,12 +96,14 @@ def test_enter_elsewhere_on_the_page_does_not_open_the_selected_row(page, base_u
     page.keyboard.press("j")
     expect(first).to_have_class(re.compile(r"\bis-selected\b"))
 
-    # Off the row, on a header control that is a button with its own Enter:
-    # the theme switch, a row of the account menu (2026-11-16).
-    page.locator(".topbar .settingsmenu__trigger").click()
-    toggle = page.locator("[data-theme-toggle]").first
-    toggle.focus()
+    # Off the row, on a header control with an Enter of its own:
+    # the bell. (Until 2026-11-16 this was the theme switch in the account
+    # menu; signed in, the switch is only on Haldus → Seaded now.) Its Enter
+    # opens the notification panel, not the selected Matter.
+    bell = page.locator("[data-notifbell-trigger]")
+    bell.focus()
     page.keyboard.press("Enter")
+    expect(page.locator("[data-notifpanel]")).to_be_visible()
     page.wait_for_load_state("networkidle")
     assert page.url == f"{base_url}/minu-asjad/"
-    expect(toggle).to_be_focused()
+    expect(bell).to_have_attribute("aria-expanded", "true")

@@ -114,6 +114,7 @@ from django.utils import timezone
 from app.accounts.selectors import is_assignable_business_user
 from app.core import dates
 from app.core.dates import format_estonian_date, short_day_month
+from app.core.holidays import rest_day_hint
 from app.intelligence.enums import (
     INFORMATIONAL_IMPORTANT_DATE_KINDS,
     FactStatus,
@@ -601,6 +602,18 @@ class WorkItem:
         if self.when is not None and self.days_late:
             return self.display_date
         return ""
+
+    @property
+    def rest_day_hint(self) -> str:
+        """The marker beside a date that falls on a weekend or a riigipüha.
+
+        Only for an exact day still ahead (or today): a period names no day,
+        and a day already past is lateness, which the cell says otherwise
+        (owner, 2026-11-16). Empty on a working day.
+        """
+        if self.when is None or self.is_approximate or self.when < self.today:
+            return ""
+        return rest_day_hint(self.when)
 
 
 @dataclass(frozen=True)
