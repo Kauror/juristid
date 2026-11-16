@@ -129,7 +129,7 @@ def test_the_persona_menu_holds_the_people_then_the_account_rows(settings):
     body = client.get(reverse("matters:my_work")).content.decode()
     account = _account(body)
     _assert_rows(_rows(body))
-    assert account.index(reverse("accounts:act_as")) < account.index('<div class="accountmenu"')
+    assert account.index("personamenu__label") < account.index('<div class="accountmenu"')
     # The link leads somewhere that opens for this reader.
     assert client.get(SETTINGS_URL).status_code == 200
 
