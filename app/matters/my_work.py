@@ -76,7 +76,7 @@ RAIL_LIMIT = 8
 
 #: How many portfolio rows are on screen before the rest go behind
 #: «Näita veel N ▾». The rest are the same list, sliced.
-PORTFOLIO_VISIBLE = 6
+PORTFOLIO_VISIBLE = 11
 
 #: How many portfolio rows the page renders at all, preview and disclosure
 #: together (2026-10-17 audit, JPERF-005). A desk with four thousand open files

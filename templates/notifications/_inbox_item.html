@@ -43,8 +43,8 @@ reloading the page; without scripting they are the same plain forms.
         <form method="post" action="{% url 'notifications:read' notification_id=item.pk %}"{% if tagasi == "minu_asjad" %} hx-post="{% url 'notifications:read' notification_id=item.pk %}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
           {% csrf_token %}
           <input type="hidden" name="tagasi" value="{{ tagasi }}">
-          <button type="submit" class="button button--quiet button--tiny"
-                  aria-label="Märgi loetuks: {{ item.title }}">Märgi loetuks</button>
+          <button type="submit" class="notificon" title="Märgi loetuks"
+                  aria-label="Märgi loetuks: {{ item.title }}"><svg class="notificon__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
         </form>
       </div>
     {% endif %}

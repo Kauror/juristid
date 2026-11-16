@@ -180,8 +180,10 @@ def _url(name: str, matter: Any, **kwargs: Any) -> str:
 def test_the_teema_page_marks_lovables_fields_and_offers_no_editor(signed_in, synced, native):
     """Regression: TL-01. Every source-owned field on the Teema page: marker, no editor."""
     page = _page(signed_in, "matters:matter_detail", synced)
-    assert escape(SOURCE_OWNED_NOTICE) in page
-    for key in ("title", "opinion_deadline", *_DETAIL_EDITORS):
+    # No page-wide sentence (owner, 2026-11-16): each locked field says it.
+    assert escape(SOURCE_OWNED_NOTICE) not in page
+    assert "data-source-owned-notice" not in page
+    for key in ("opinion_deadline", *_DETAIL_EDITORS):
         assert f'data-source-owned="{key}"' in page, key
     for key, (name, kwargs) in _DETAIL_EDITORS.items():
         assert _url(name, synced, **kwargs) not in page, key

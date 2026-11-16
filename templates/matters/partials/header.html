@@ -149,15 +149,12 @@ rather than read.
   </h1>
   {% if source_owned %}
     {% comment %}
-      **A synchronised Teema says so** (audit 2026-11-11 TL-01). Lovable is the
-      source of truth for its register facts and the night puts Lovable's value
-      back over an edit here, so those facts are drawn without an editor, each
-      with its `i` (`app.matters.source_ownership`). Everything else on the page
-      — notes, documents, opinions, own dates — is Juristid's and edits as ever.
-      The title's `i` is here rather than in the `<h1>`, whose accessible name
-      must stay the title alone.
+      A synchronised Teema (audit 2026-11-11 TL-01): Lovable is the source of
+      truth for its register facts, so those facts are drawn without an editor,
+      each with its `i` (`app.matters.source_ownership`). The page-wide sentence
+      «Need andmed pärinevad Lovable'i registrist…» is gone (owner,
+      2026-11-16): the locked fields already say it. Only a held note shows.
     {% endcomment %}
-    <p class="matterhead__source" data-source-owned-notice>{{ source_owned_notice }}{% if source_locked.title %}{% include "components/source_owned_tip.html" with field="title" %}{% endif %}</p>
     {% if source_held_note %}<p class="matterhead__source" data-source-held>{{ source_held_note }}</p>{% endif %}
   {% endif %}
 

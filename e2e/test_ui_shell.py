@@ -316,16 +316,14 @@ def test_the_things_a_lawyer_reaches_for_are_on_the_bar(page, base_url, width, h
 
 
 @pytest.mark.parametrize("width,height", [*VIEWPORTS, (1600, 900)], ids=lambda v: str(v))
-def test_haldus_is_behind_the_gear_beside_valju_and_not_in_the_navigation(
-    page, base_url, width, height
-):
-    """The gear «Seaded» sits right of the persona and left of Välju; Haldus is in its menu.
+def test_haldus_is_in_the_account_menu_and_not_in_the_navigation(page, base_url, width, height):
+    """Haldus is a row of the account menu, the last control on the bar; never navigation.
 
     The owner's brief of 2026-10-28 put Haldus on a gear beside «Välju»; UI-03
-    (2026-11-06) made that gear a small menu holding the theme switch,
-    «Teavituste seaded» and Haldus. Inside the viewport at every supported
-    width, so the one-row, no-sideways-scroll rule above already covers what it
-    costs; never a navigation item.
+    (2026-11-06) made that gear a small menu; the 2026-11-16 round folded the
+    gear and «Välju» into the account menu behind the avatar (or the persona
+    pill behind the shared gate). Inside the viewport at every supported width,
+    so the one-row, no-sideways-scroll rule above already covers what it costs.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
@@ -334,31 +332,37 @@ def test_haldus_is_behind_the_gear_beside_valju_and_not_in_the_navigation(
     navigation = page.get_by_role("navigation", name="Peamine")
     expect(navigation.get_by_role("link", name="Haldus")).to_have_count(0)
 
-    gear = page.locator(".topbar .settingsmenu__trigger")
-    expect(gear).to_have_count(1)
-    expect(gear).to_be_visible()
-    expect(gear).to_have_attribute("title", "Seaded")
-    box = gear.bounding_box()
-    signout = page.locator(".topbar__signout").bounding_box()
-    persona = page.locator(".personapill, .avatar").first.bounding_box()
-    assert persona["x"] + persona["width"] <= box["x"] < signout["x"]
+    # No gear and no «Välju» on the bar any more.
+    expect(page.locator('.topbar summary[title="Seaded"]')).to_have_count(0)
+    expect(page.locator(".topbar__signout")).to_have_count(0)
+
+    trigger = page.locator(".topbar .settingsmenu__trigger")
+    expect(trigger).to_have_count(1)
+    expect(trigger).to_be_visible()
+    expect(trigger).to_have_attribute("title", SANDRA.display_name)
+    box = trigger.bounding_box()
+    for selector in ("#global-search", ".topbar__cta", ".topbar .notifbell"):
+        other = page.locator(selector).first
+        if other.count() and other.is_visible():
+            other_box = other.bounding_box()
+            assert other_box["x"] + other_box["width"] <= box["x"] + 0.5, selector
     assert box["x"] + box["width"] <= page.viewport_size["width"] + 1
 
     haldus = page.locator(".topbar").get_by_role("link", name="Haldus", exact=True)
     expect(haldus).to_be_hidden()
-    gear.click()
+    trigger.click()
     expect(haldus).to_be_visible()
     entry = haldus.bounding_box()
     assert entry["x"] >= 0 and entry["x"] + entry["width"] <= page.viewport_size["width"] + 1
 
 
-def test_the_gear_is_reached_by_keyboard_and_marks_haldus_current(page, base_url):
+def test_the_account_menu_is_reached_by_keyboard_and_marks_haldus_current(page, base_url):
     sign_in(page, base_url, SANDRA)
     open_register(page, base_url)
 
-    gear = page.locator(".topbar .settingsmenu__trigger")
-    gear.focus()
-    expect(gear).to_be_focused()
+    trigger = page.locator(".topbar .settingsmenu__trigger")
+    trigger.focus()
+    expect(trigger).to_be_focused()
     page.keyboard.press("Enter")
     haldus = page.locator(".topbar").get_by_role("link", name="Haldus", exact=True)
     for _ in range(4):
@@ -366,15 +370,15 @@ def test_the_gear_is_reached_by_keyboard_and_marks_haldus_current(page, base_url
         if haldus.evaluate("(link) => link === document.activeElement"):
             break
     else:
-        raise AssertionError("Tab never reached Haldus inside «Seaded»")
+        raise AssertionError("Tab never reached Haldus inside the account menu")
     page.keyboard.press("Enter")
     page.wait_for_url(f"{base_url}/haldus/")
 
-    gear = page.locator(".topbar .settingsmenu__trigger")
-    expect(gear).to_have_class(re.compile(r"\bis-active\b"))
+    trigger = page.locator(".topbar .settingsmenu__trigger")
+    expect(trigger).to_have_class(re.compile(r"\bis-active\b"))
     # The menu is shut on the new page, so its entry is out of the accessibility
-    # tree until the gear opens it again.
-    gear.click()
+    # tree until its trigger opens it again.
+    trigger.click()
     expect(haldus).to_have_attribute("aria-current", "page")
     expect(page.get_by_role("heading", name="Rakendus", exact=True)).to_be_visible()
     assert not document_overflows(page)

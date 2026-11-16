@@ -21,7 +21,7 @@ grid (app/matters/calendar.py).
 {% endif %}
 
 {% if calendar.view == "4n" %}
-  {% include "matters/partials/work_calendar_grid.html" with weeks=calendar.weeks weekdays=calendar.weekdays compact=calendar.is_department %}
+  {% include "matters/partials/work_calendar_grid.html" with weeks=calendar.weeks weekdays=calendar.weekdays compact=calendar.is_department wide=calendar.is_wide %}
 {% elif calendar.view == "aasta" %}
   <div class="wcal__year">
     {% for tile in calendar.year_months %}
@@ -47,7 +47,7 @@ grid (app/matters/calendar.py).
             <a href="{{ grid.query }}" hx-get="{{ grid.query }}" hx-target="#{{ calendar.element_id }}" hx-swap="outerHTML" hx-push-url="true">{{ grid.title }}</a>
           </h3>
         {% endif %}
-        {% include "matters/partials/work_calendar_grid.html" with weeks=grid.weeks weekdays=calendar.weekdays compact=calendar.is_department %}
+        {% include "matters/partials/work_calendar_grid.html" with weeks=grid.weeks weekdays=calendar.weekdays compact=calendar.is_department wide=calendar.is_wide %}
         {% if grid.month_events %}
           <h4 class="wcal__listlabel">{{ grid.title }}: kuu jooksul, päev teadmata</h4>
           <ul class="wcal__list">

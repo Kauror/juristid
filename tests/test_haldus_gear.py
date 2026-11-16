@@ -4,8 +4,8 @@ The owner's brief of 2026-10-28 moved how Haldus is reached and nothing it
 authorizes (docs/adr/0186, amendment 2026-10-28):
 
 * the everyday navigation is Minu asjad · Osakond · Teemad · Statistika, and
-  Haldus is reached from the gear beside «Välju» — since UI-03 (2026-11-06)
-  an entry «Haldus» in the gear's «Seaded» menu rather than the gear itself;
+  Haldus is an entry of the account menu — since 2026-11-16 the rows under
+  the name (persona pill or avatar), with no separate gear on the bar;
 * Haldus → Ülevaade opens for every signed-in persona, because it carries
   Rakendus — and that grants nothing: every protected route still refuses;
 * «Halduri sisselogimine» is at the bottom of the persona menu, the same for
@@ -13,6 +13,8 @@ authorizes (docs/adr/0186, amendment 2026-10-28):
 """
 
 from __future__ import annotations
+
+import re
 
 import pytest
 from django.test import Client
@@ -55,14 +57,14 @@ def _nav(body: str) -> str:
 
 
 def _gear(body: str) -> str:
-    """The settings menu behind the gear, which holds the Haldus entry (UI-03)."""
-    start = body.index('<details class="settingsmenu')
-    return body[start : body.index("</details>", start) + len("</details>")]
+    """The account menu's own rows, which hold the Haldus entry (2026-11-16)."""
+    start = body.index('<div class="accountmenu"')
+    return body[start : body.index("</form>", start) + len("</form>")]
 
 
 def _persona_menu(body: str) -> str:
     start = body.index('id="persona-menu"')
-    return body[start : body.index('<form class="topbar__signout"', start)]
+    return body[start : body.index('<div class="accountmenu"', start)]
 
 
 def _rakendus(body: str) -> str:
@@ -79,7 +81,7 @@ def _as(client: Client, persona) -> Client:
 # -- the gear -----------------------------------------------------------------------
 
 
-def test_haldus_is_a_gear_beside_valju_not_a_navigation_item(client):
+def test_haldus_is_in_the_account_menu_not_a_navigation_item(client):
     body = _as(client, person()[0]).get(reverse("matters:my_work")).content.decode()
 
     nav = _nav(body)
@@ -88,20 +90,19 @@ def test_haldus_is_a_gear_beside_valju_not_a_navigation_item(client):
         assert f">{label}</a>" in nav, label
 
     gear = _gear(body)
-    assert 'title="Seaded"' in gear and '<span class="visually-hidden">Seaded</span>' in gear
     assert 'href="/haldus/">Haldus</a>' in gear
-    assert 'aria-hidden="true"' in gear  # the icon is decoration; the name is the text
     assert "aria-current" not in gear
-    header = _header(body)
-    after = header[header.index(gear) + len(gear) :]
-    assert after.lstrip().startswith('<form class="topbar__signout"')
+    # Inside the persona popover, under the people; no gear of its own on the bar.
+    menu = body[body.index('id="persona-menu"') :]
+    assert menu.index('<div class="accountmenu"') > menu.index('class="personamenu__admin"')
+    assert 'title="Seaded"' not in _header(body)
 
 
 def test_the_gear_is_marked_current_on_a_haldus_page(client):
     body = _as(client, person()[0]).get(reverse("haldus:index")).content.decode()
     gear = _gear(body)
     assert 'aria-current="page"' in gear
-    assert 'class="settingsmenu__trigger is-active"' in gear
+    assert 'class="settingsmenu__item is-active"' in gear
     assert 'aria-current="page"' not in _nav(body)
 
 
@@ -115,12 +116,14 @@ def test_every_persona_sees_the_same_bar_and_the_same_menu_footer(client):
         choose(client, persona)
         body = client.get(reverse("matters:my_work")).content.decode()
         menu_footer = _persona_menu(body).split('class="personamenu__admin"', 1)[1]
-        return _nav(body), _gear(body), menu_footer
+        # «Välju» is a POST form in the menu; its CSRF token differs per request.
+        rows = re.sub(r'name="csrfmiddlewaretoken" value="[^"]*"', "", _gear(body))
+        return _nav(body), rows, menu_footer
 
     assert bar(manager) == bar(colleague) == bar(factories.DepartmentHeadFactory())
 
 
-def test_under_personal_sign_in_the_gear_sits_beside_the_avatar(client, settings):
+def test_under_personal_sign_in_the_avatar_menu_holds_haldus(client, settings):
     apply_local_password(settings)
     user, _ = person()
     sign_in(client, user)
@@ -129,7 +132,8 @@ def test_under_personal_sign_in_the_gear_sits_beside_the_avatar(client, settings
 
     assert reverse("accounts:profile") in header
     assert 'href="/haldus/"' in _gear(header)
-    assert header.index(reverse("accounts:profile")) < header.index("data-settings-menu")
+    assert header.index("data-settings-menu") < header.index(reverse("accounts:profile"))
+    assert header.index(reverse("accounts:profile")) < header.index('<div class="accountmenu"')
     # No step-up link: under personal sign-in the account itself is the administrator.
     assert reverse("haldus:sign_in") not in header
 

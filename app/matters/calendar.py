@@ -127,6 +127,9 @@ WEEKS_BEFORE = 1
 WEEKS_SHOWN = 4
 #: Dots drawn on one day before «+N».
 DOTS_SHOWN = 3
+#: The same, in the large panel, whose taller days have room for more
+#: (owner, 2026-11-16).
+DOTS_SHOWN_WIDE = 8
 
 CATEGORY_WORK = "too"
 CATEGORY_COMMENCEMENT = "joustumine"
@@ -639,6 +642,14 @@ class Day:
     @property
     def more(self) -> int:
         return max(len(self.events) - DOTS_SHOWN, 0)
+
+    @property
+    def dots_wide(self) -> list[CalendarEvent]:
+        return self.events[:DOTS_SHOWN_WIDE]
+
+    @property
+    def more_wide(self) -> int:
+        return max(len(self.events) - DOTS_SHOWN_WIDE, 0)
 
     @property
     def groups(self) -> list[CategoryGroup]:

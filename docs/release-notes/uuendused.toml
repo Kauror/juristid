@@ -11,7 +11,7 @@
 date = 2026-11-16
 basis = "deployment"
 revisions = ["2ade8941377f120f1a25b1d7f37aa067a921f4e8"]
-prs = [628]
+prs = [628, 633]
 # 16.11 väljalase r58 (#628, migratsioonita; tekst jäi esialgu välja ja tuli järgi väljalaskega, mis kannab ainult
 # seda kirjet).
 changes = [
@@ -19,6 +19,14 @@ changes = [
   "Sisenemislehel on halduri link lihtsalt «Halduri sisselogimine» ja kasutaja valiku menüüs pole enam märkust, et valik ei ole autentimine.",
   "Minu asjad, Osakond, kalender ja saadetud arvamused ei näita tühja ploki kohta enam selgituslauseid ning Osakonna «Valdkonnad» on näha ainult siis, kui valdkondi on.",
   "Teemade registris pole enam kordavat «kuvatud N» arvu ja kokkuvõtte väljadel vihjet «(2–3 lauset)».",
+  "Ülariba paremas servas on otsing ja «+ Uus teema» omaette, nende järel kelluke ja nimi; nime alt avanevad nüüd ka «Teavituste seaded», Haldus, teema vahetus ja «Välju».",
+  "Minu asjade märkmete kastis pole enam juhist ega märget «Salvestub ise».",
+  "Teavituse «Märgi loetuks» ja «Lükka edasi» on väikesed ikoonid teavituse paremas ülanurgas ning hiirega peale minnes on näha nende nimi.",
+  "Suures kalendris on päevad kõrgemad, ühel päeval on näha kuni kaheksa täppi ja ka tühi päev on kastis.",
+  "Minu asjade «Aktiivsed teemad» näitab kohe 11 teemat.",
+  "«Vali veerud» on korrapärases tabelis ja veergude selgitused on näha, kui hiirega veeru nimele minna.",
+  "Minu asjade töönimekirjas on kuupäeva all ainult kuupäev; hilinenud real ka algne kuupäev.",
+  "Lovable'iga sünkroonitud teema lehel pole enam lauset andmete päritolu kohta, sest lukus väljad ütlevad seda ise.",
 ]
 
 [[day]]

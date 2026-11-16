@@ -672,3 +672,24 @@ def test_only_one_heading_menu_is_open_at_a_time(page, base_url):
     heading(page, "Vastutaja").locator("summary").click()
 
     expect(page.locator(".colhead--filter[open]")).to_have_count(1)
+
+
+def test_the_column_chooser_lists_names_only_with_help_as_a_tooltip(page, base_url):
+    """«Vali veerud» (owner, 2026-11-16): a column's name and nothing after it.
+
+    The help that followed a name is its tooltip now, and the «Tabelis: …»
+    preview line, with the script that kept it in step, is gone.
+    """
+    sign_in(page, base_url, SANDRA)
+    open_register(page, base_url, "?olek=koik")
+    chooser = page.locator("details[data-column-chooser]")
+    chooser.locator("summary").click()
+    expect(chooser).to_have_attribute("open", "")
+
+    expect(chooser.locator("[data-column-preview]")).to_have_count(0)
+    expect(chooser).not_to_contain_text("Tabelis:")
+    viide = chooser.locator("label.checkline", has=page.locator("input[value='viide']"))
+    expect(viide).to_have_text(re.compile(r"^\s*Viide\s*$"))
+    expect(viide).to_have_attribute("title", "Registri viitenumber, nt 2026_14.")
+    for label in chooser.locator("label.checkline").all():
+        assert "—" not in label.inner_text(), label.inner_text()

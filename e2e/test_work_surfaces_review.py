@@ -85,28 +85,49 @@ def test_minu_too(page, base_url, width):
     _no_horizontal_overflow(page)
 
 
+#: The kind words the date cell carried until 2026-11-16 (now only in the row
+#: menu's accessible name).
+KIND_WORDS = ("PLAANIS", "VAATAN ÜLE", "OODATAV AEG", "OLULINE TÄHTAEG", "ARVAMUSE TÄHTAEG")
+
+
 def test_minu_too_states_what_every_date_means(page, base_url):
     """The rule a screenshot cannot check.
 
     Waiting is not lateness. A WAIT or MONITOR whose review date has passed is
     amber and worded *ülevaatamiseks küps*; only a DO deadline and an
     Oluline tähtaeg are ever red (master specification 18.8).
+
+    Since the owner's round of 2026-11-16 the date cell prints no kind word
+    («PLAANIS», «VAATAN ÜLE» …): the headline already says what to do. The
+    meaning stays in the row menu's accessible name, and a late row still shows
+    the original date under *N p üle*.
     """
     _open(page, base_url, SANDRA, "/minu-asjad/", 1440)
 
-    # Every rendered row carries its meaning in words beside the date.
-    meanings = page.locator(".workrow2__meaning")
     rows = page.locator(".workrow2")
-    assert meanings.count() == rows.count()
-
-    for index in range(meanings.count()):
+    assert rows.count(), "Minu töö rendered no rows"
+    for index in range(rows.count()):
+        row = rows.nth(index)
         # `text_content`, not `inner_text`: a band longer than its limit keeps
         # the rest of its rows inside a shut «Näita veel» `<details>`, whose
         # rendered text is empty although every row there carries its words.
         # Which band overflows depends on what else the shard filed before this
         # ran, so `inner_text` made this test a measure of the world's size.
-        text = (meanings.nth(index).text_content() or "").strip()
-        assert text, "a work row rendered a date with no stated meaning"
+        cell = (row.locator(".workrow2__datecell").text_content() or "").strip()
+        for retired in KIND_WORDS:
+            assert retired not in cell, f"the date cell still prints {retired!r}: {cell!r}"
+
+        # The meaning, in words, for a screen reader.
+        label = row.locator(".rowmenu__trigger").get_attribute("aria-label") or ""
+        meaning = label.split(" · ", 1)[1].strip() if " · " in label else ""
+        assert meaning, f"a work row's menu does not name what its date means: {label!r}"
+
+        # Under the date, the original day only when the value replaced it.
+        shown = (row.locator(".workrow2__date").text_content() or "").strip()
+        under = row.locator(".workrow2__meaning")
+        if under.count():
+            assert shown.endswith(" p üle") or shown.endswith(" p"), (shown, cell)
+            assert (under.text_content() or "").strip(), "a late row lost its original date"
 
 
 def test_a_ripe_review_is_never_styled_as_late(page, base_url):
@@ -116,7 +137,12 @@ def test_a_ripe_review_is_never_styled_as_late(page, base_url):
     for index in range(ripe.count()):
         row = ripe.nth(index)
         assert "workrow2--overdue" not in (row.get_attribute("class") or "")
-        assert "TÄHTAEG" not in row.locator(".workrow2__meaning").inner_text()
+        assert "workrow2__date--overdue" not in (
+            row.locator(".workrow2__date").get_attribute("class") or ""
+        )
+        assert "üle" not in (row.locator(".workrow2__date").text_content() or "")
+        label = row.locator(".rowmenu__trigger").get_attribute("aria-label") or ""
+        assert "TÄHTAEG" not in label.split(" · ", 1)[-1], label
 
 
 def test_the_range_control_is_in_the_url(page, base_url):

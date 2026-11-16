@@ -19,6 +19,7 @@ on it, which no visual baseline photographs and no other test reads.
 from __future__ import annotations
 
 import pytest
+from playwright.sync_api import expect
 
 from e2e.conftest import MARTIN, await_post, open_matter, sign_in
 
@@ -226,6 +227,11 @@ def test_the_desk_pad_saves_consecutively(page, base_url):
     page.wait_for_load_state("networkidle")
     box = page.locator("#pw-note-body")
     box.wait_for()
+    # No placeholder and no «Salvestub ise» (owner, 2026-11-16): the meta line
+    # says only when it last saved and who can read it.
+    assert box.get_attribute("placeholder") is None
+    assert "Salvestub" not in page.locator("#pw-note-meta").inner_text()
+    expect(page.locator("#pw-note-meta")).to_contain_text("nähtav ainult sulle")
 
     run = _texts()[0][-9:-1]
     seen: list[str] = []
@@ -234,6 +240,7 @@ def test_the_desk_pad_saves_consecutively(page, base_url):
         _autosave(page, lambda text=text: box.fill(text))
         meta = page.locator("#pw-note-meta").inner_text()
         assert "teises aknas" not in meta.lower(), f"save {number} was refused: {meta}"
+        assert "muudetud " in meta and "Salvestub" not in meta, meta
         token = page.locator("#pw-note-revision").get_attribute("value")
         assert token, f"save {number} left the hidden revision empty"
         seen.append(token)

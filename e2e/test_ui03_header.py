@@ -1,16 +1,20 @@
-"""UI-03 in a browser: the right-hand order, «Seaded», and the bar at narrow widths.
+"""The top bar in a browser: the right-hand order, the account menu, narrow widths.
 
 What the rendered HTML says is held in tests/test_ui03_header.py. These are the
 properties only a laid-out page has:
 
-* the controls read search → «+ Uus teema» → persona → bell → settings →
-  «Välju» left to right, with «Välju» at the bar's right edge;
-* one height for every control and one gap between them;
+* the controls read search → «+ Uus teema» → (a gap) → bell → the account
+  menu left to right, with the account menu at the bar's right edge; there is
+  no settings gear and no «Välju» on the bar itself (owner, 2026-11-16);
+* the account menu holds «Teavituste seaded», Haldus, the theme switch and
+  «Välju», in that order, «Välju» last;
+* one height for every control, one gap between neighbours and one wider gap
+  before the personal controls;
 * no overlap and no sideways scroll at 1024, 768 and 390 px;
-* «Seaded» opens and closes the way a menu should — Escape, a click outside,
-  the keyboard leaving it — gives the focus back to the gear, shows its focus,
-  and takes part in `juristid:menu-open`, so no two top-bar menus are open at
-  once.
+* the menu opens and closes the way a menu should — Escape, a click outside,
+  the keyboard leaving it — gives the focus back to its trigger, shows its
+  focus, and takes part in `juristid:menu-open`, so no two top-bar menus are
+  open at once.
 
 Nothing here writes a record.
 """
@@ -26,17 +30,26 @@ from e2e.conftest import SANDRA, document_overflows, pass_the_gate, sign_in
 
 pytestmark = pytest.mark.e2e
 
+#: The account menu's trigger: the avatar outside the shared gate (the default
+#: e2e server), the persona pill in it.
+ACCOUNT = ".topbar__account .settingsmenu__trigger, .topbar__account .personapill"
+
 CONTROLS = [
     ("search", "#global-search"),
     ("uus teema", ".topbar__cta"),
-    ("persona", ".topbar__account .personapill, .topbar__account .avatar"),
     ("bell", ".topbar__account .notifbell"),
-    ("settings", ".settingsmenu__trigger"),
-    ("välju", ".topbar__signout .button"),
+    ("account", ACCOUNT),
 ]
 
 #: The bar's control height (`--topbar-control-size`, tokens.css), in pixels.
 CONTROL = 32
+
+#: The account menu's rows, top to bottom (components/account_menu_items.html).
+ROWS = (
+    "() => Array.from(document.querySelectorAll("
+    "'.topbar .accountmenu a, .topbar .accountmenu button'"
+    ")).map((row) => row.innerText.trim())"
+)
 
 
 def _box(page, selector: str):
@@ -59,15 +72,26 @@ def _overlap(a, b) -> bool:
     )
 
 
+def _trigger(page):
+    return page.locator(".topbar .settingsmenu__trigger")
+
+
 def _open_menu(page):
-    page.locator(".settingsmenu__trigger").click()
-    menu = page.locator(".settingsmenu")
+    _trigger(page).click()
+    menu = page.locator(".topbar .settingsmenu")
     expect(menu).to_have_attribute("open", "")
     return menu
 
 
-def _is_open(page, selector: str = ".settingsmenu") -> bool:
+def _is_open(page, selector: str = ".topbar .settingsmenu") -> bool:
     return page.locator(selector).evaluate("(details) => details.open")
+
+
+def _assert_no_gear_and_no_signout_on_the_bar(page) -> None:
+    expect(page.locator(".topbar__signout")).to_have_count(0)
+    expect(page.locator('.topbar summary[title="Seaded"]')).to_have_count(0)
+    # «Välju» exists only inside the (closed) account menu.
+    expect(page.locator(".topbar").get_by_role("button", name="Välju")).to_be_hidden()
 
 
 # -- order, size, widths --------------------------------------------------------------
@@ -80,21 +104,24 @@ def test_the_controls_read_in_the_owners_order_on_one_row(page, base_url, width)
     page.goto(f"{base_url}/minu-asjad/")
     page.wait_for_load_state("networkidle")
 
+    _assert_no_gear_and_no_signout_on_the_bar(page)
     present = _present(page)
     names = [name for name, _ in present]
-    assert names[:3] == ["search", "uus teema", "persona"] and names[-2:] == ["settings", "välju"]
+    assert names == ["search", "uus teema", "bell", "account"], names
     xs = [box["x"] for _, box in present]
     assert xs == sorted(xs), present
 
     bar = page.locator(".topbar").bounding_box()
     assert bar["height"] == 48
-    signout = dict(present)["välju"]
+    account = dict(present)["account"]
     padding = page.locator(".topbar").evaluate(
         "(bar) => parseFloat(getComputedStyle(bar).paddingRight)"
     )
-    assert abs(bar["x"] + bar["width"] - padding - (signout["x"] + signout["width"])) <= 1, (
-        "«Välju» is not at the right edge"
+    assert abs(bar["x"] + bar["width"] - padding - (account["x"] + account["width"])) <= 1, (
+        "the account menu is not at the right edge"
     )
+    # The avatar names whose account it is, not «Seaded».
+    expect(_trigger(page)).to_have_attribute("title", SANDRA.display_name)
 
 
 @pytest.mark.parametrize("width", [1440, 1024])
@@ -112,12 +139,20 @@ def test_one_height_and_one_gap_for_every_control(page, base_url, width):
             continue  # the notification panel's own box (UI-01), sized from the same token
         assert abs(box["height"] - CONTROL) <= 0.5, (name, box["height"])
         assert abs(box["y"] + box["height"] / 2 - centre) <= 1, (name, "not centred")
-    # The same gap (`--topbar-gap`, 8px) between every neighbouring pair.
+    # The same gap (`--topbar-gap`, 8px) between every neighbouring pair, and
+    # the personal controls set apart from the work controls by the account
+    # group's own margin (owner, 2026-11-16).
+    apart = page.locator(".topbar__account").evaluate(
+        "(group) => parseFloat(getComputedStyle(group).marginLeft)"
+    )
+    assert apart > 0, "the personal controls are not set apart"
     gaps = [
-        (f"{a} → {b}", round(box_b["x"] - (box_a["x"] + box_a["width"]), 1))
+        (a, b, round(box_b["x"] - (box_a["x"] + box_a["width"]), 1))
         for (a, box_a), (b, box_b) in pairwise(present)
     ]
-    assert all(abs(gap - 8) <= 0.5 for _, gap in gaps), gaps
+    for a, b, gap in gaps:
+        expected = 8 + apart if (a, b) == ("uus teema", "bell") else 8
+        assert abs(gap - expected) <= 0.5, gaps
 
 
 @pytest.mark.parametrize("width,height", [(1024, 768), (768, 1024), (390, 844)])
@@ -128,21 +163,25 @@ def test_no_overlap_and_no_sideways_scroll_on_narrow_screens(page, base_url, wid
     page.wait_for_load_state("networkidle")
 
     present = _present(page)
-    assert {name for name, _ in present} >= {"search", "uus teema", "persona", "settings", "välju"}
+    assert {name for name, _ in present} >= {"search", "uus teema", "account"}
     for index, (name, box) in enumerate(present):
         assert box["x"] >= 0 and box["x"] + box["width"] <= width + 0.5, (name, box)
         for other, other_box in present[index + 1 :]:
             assert not _overlap(box, other_box), f"{name} overlaps {other} at {width}px"
     assert not document_overflows(page), "the document scrolls sideways"
 
-    # «Välju» is still the last control on its row, at the right.
-    signout = dict(present)["välju"]
-    same_row = [box for _, box in present if abs(box["y"] - signout["y"]) < 4]
-    assert max(box["x"] for box in same_row) == signout["x"]
+    # The account menu is still the last control on its row, at the right.
+    account = dict(present)["account"]
+    same_row = [box for _, box in present if abs(box["y"] - account["y"]) < 4]
+    assert max(box["x"] for box in same_row) == account["x"]
 
     _open_menu(page)
-    panel = page.locator(".settingsmenu__panel").bounding_box()
+    panel = page.locator(".topbar .settingsmenu__panel").bounding_box()
     assert panel["x"] >= 0 and panel["x"] + panel["width"] <= width + 0.5, panel
+    signout = page.locator(".topbar .accountmenu").get_by_role("button", name="Välju")
+    expect(signout).to_be_visible()
+    box = signout.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width + 0.5, box
     assert not document_overflows(page)
 
 
@@ -157,19 +196,39 @@ def test_the_signed_out_bar_has_the_gear_alone_at_its_right_edge(page, base_url)
         assert bar["x"] + bar["width"] - (gear["x"] + gear["width"]) <= 24, (width, gear)
         _open_menu(page)
         expect(page.locator(".topbar [data-theme-toggle]")).to_be_visible()
+        # Nobody to sign out before signing in.
+        expect(page.locator(".topbar").get_by_role("button", name="Välju")).to_have_count(0)
         assert not document_overflows(page)
 
 
 # -- the menu -------------------------------------------------------------------------
 
 
-def test_escape_closes_the_menu_and_gives_the_focus_back_to_the_gear(page, base_url):
+def test_the_account_menu_holds_its_rows_in_the_owners_order(page, base_url):
+    """«Teavituste seaded», Haldus, the theme switch, then «Välju» last."""
+    sign_in(page, base_url, SANDRA)
+    page.goto(f"{base_url}/minu-asjad/")
+    page.wait_for_load_state("networkidle")
+    _open_menu(page)
+    signout = page.locator(".topbar .accountmenu").get_by_role("button", name="Välju")
+    expect(signout).to_be_visible()
+
+    rows = page.evaluate(ROWS)
+    assert rows[:2] == ["Teavituste seaded", "Haldus"], rows
+    assert rows[2].startswith("Lülita "), rows
+    assert rows[3:] == ["Välju"], rows
+    # And «Välju» is drawn last, under the theme switch.
+    theme_box = page.locator(".topbar .accountmenu [data-theme-toggle]").bounding_box()
+    assert signout.bounding_box()["y"] > theme_box["y"]
+
+
+def test_escape_closes_the_menu_and_gives_the_focus_back_to_the_trigger(page, base_url):
     sign_in(page, base_url, SANDRA)
     _open_menu(page)
-    page.keyboard.press("Tab")  # onto the theme row
+    page.keyboard.press("Tab")  # onto the first row
     page.keyboard.press("Escape")
     assert not _is_open(page)
-    expect(page.locator(".settingsmenu__trigger")).to_be_focused()
+    expect(_trigger(page)).to_be_focused()
 
 
 def test_a_click_outside_closes_the_menu(page, base_url):
@@ -177,7 +236,7 @@ def test_a_click_outside_closes_the_menu(page, base_url):
     _open_menu(page)
     page.locator("main h1").first.click()
     assert not _is_open(page)
-    expect(page.locator(".settingsmenu__trigger")).to_be_focused()
+    expect(_trigger(page)).to_be_focused()
 
 
 def test_a_click_into_the_search_closes_the_menu_and_keeps_the_focus_there(page, base_url):
@@ -191,10 +250,16 @@ def test_a_click_into_the_search_closes_the_menu_and_keeps_the_focus_there(page,
 def test_tabbing_out_of_the_menu_closes_it(page, base_url):
     sign_in(page, base_url, SANDRA)
     _open_menu(page)
-    for _ in range(4):  # the switch, Teavituste seaded, Haldus, then «Välju»
+    for _ in range(4):  # Teavituste seaded, Haldus, the switch, then «Välju»
         page.keyboard.press("Tab")
-    expect(page.locator(".topbar__signout .button")).to_be_focused()
-    assert not _is_open(page)
+    signout = page.locator(".topbar .accountmenu").get_by_role("button", name="Välju")
+    expect(signout).to_be_focused()
+    assert _is_open(page)
+    page.keyboard.press("Tab")  # past the last row, out of the menu
+    page.wait_for_function("() => !document.querySelector('.topbar .settingsmenu').open")
+    assert page.evaluate(
+        "() => !document.querySelector('.topbar .settingsmenu').contains(document.activeElement)"
+    ), "the focus stayed inside the closed menu"
 
 
 def test_the_theme_row_switches_without_closing_the_menu(page, base_url):
@@ -210,24 +275,24 @@ def test_the_theme_row_switches_without_closing_the_menu(page, base_url):
 def test_the_menu_links_to_notification_settings_and_haldus(page, base_url):
     sign_in(page, base_url, SANDRA)
     _open_menu(page)
-    page.locator(".settingsmenu").get_by_role("link", name="Teavituste seaded").click()
+    page.locator(".topbar .accountmenu").get_by_role("link", name="Teavituste seaded").click()
     page.wait_for_url(f"{base_url}/teavitused/seaded/")
     _open_menu(page)
-    page.locator(".settingsmenu").get_by_role("link", name="Haldus", exact=True).click()
+    page.locator(".topbar .accountmenu").get_by_role("link", name="Haldus", exact=True).click()
     page.wait_for_url(f"{base_url}/haldus/")
 
 
-def test_the_gear_shows_its_keyboard_focus(page, base_url):
+def test_the_trigger_shows_its_keyboard_focus(page, base_url):
     sign_in(page, base_url, SANDRA)
     page.locator(".topbar__account").locator("a, button, summary").first.focus()
     for _ in range(4):
         if page.evaluate("() => document.activeElement.matches('.settingsmenu__trigger')"):
             break
         page.keyboard.press("Tab")
-    outline = page.locator(".settingsmenu__trigger").evaluate(
-        """(gear) => {
-            const style = getComputedStyle(gear);
-            return [style.outlineStyle, style.outlineWidth, gear.matches(':focus-visible')];
+    outline = _trigger(page).evaluate(
+        """(trigger) => {
+            const style = getComputedStyle(trigger);
+            return [style.outlineStyle, style.outlineWidth, trigger.matches(':focus-visible')];
         }"""
     )
     assert outline == ["solid", "2px", True], outline
@@ -266,23 +331,46 @@ def test_opening_the_menu_announces_it_and_another_menu_closes_it(page, base_url
     assert _is_open(page)
 
 
-def test_the_persona_popover_and_the_settings_menu_close_each_other(page, gate_base_url):
-    """Behind the shared gate, where the persona pill is a popover of its own."""
+def test_behind_the_gate_the_persona_popover_is_the_account_menu(page, gate_base_url):
+    """Behind the shared gate the persona pill opens the one menu, «Välju» at its foot.
+
+    No separate gear or «Välju» on the bar; the account rows follow the people
+    to switch between, and another menu opening still closes the popover.
+    """
     pass_the_gate(page, gate_base_url)
     page.goto(f"{gate_base_url}/konto/kasutaja/")
     page.wait_for_load_state("networkidle")
     page.locator("button.personarow").filter(has_text="Sandra").first.click()
     page.wait_for_load_state("networkidle")
 
+    _assert_no_gear_and_no_signout_on_the_bar(page)
+    expect(page.locator(".topbar .settingsmenu")).to_have_count(0)
+    # The pill is the last control on the bar.
     pill = page.locator("[data-persona-trigger]")
-    pill.click()
-    expect(pill).to_have_attribute("aria-expanded", "true")
-    _open_menu(page)
-    expect(pill).to_have_attribute("aria-expanded", "false")
-    expect(page.locator("#persona-menu")).to_be_hidden()
+    pill_box = pill.bounding_box()
+    for name, box in _present(page):
+        if name != "account":
+            assert box["x"] + box["width"] <= pill_box["x"] + 0.5, f"{name} is right of the pill"
 
     pill.click()
     expect(pill).to_have_attribute("aria-expanded", "true")
-    page.wait_for_function("() => !document.querySelector('.settingsmenu').open")
+    menu = page.locator("#persona-menu")
+    signout = menu.locator(".accountmenu").get_by_role("button", name="Välju")
+    expect(signout).to_be_visible()
+    expect(menu.locator(".accountmenu [data-theme-toggle]")).to_be_visible()
+    rows = page.evaluate(ROWS)
+    assert rows[-1] == "Välju", rows
+    assert rows[-2].startswith("Lülita "), rows
+    # The account rows come after the people.
+    people = menu.locator(".personaoption").last.bounding_box()
+    assert signout.bounding_box()["y"] > people["y"]
+
+    # Another top-bar menu opening closes the popover (header-menu.js).
+    page.evaluate(
+        """() => document.dispatchEvent(new CustomEvent("juristid:menu-open",
+            {detail: {id: "notification-panel"}}))"""
+    )
+    expect(pill).to_have_attribute("aria-expanded", "false")
+    expect(menu).to_be_hidden()
     # The persona stays one click away on the bar itself.
     expect(page.locator(".topbar__account [data-persona-trigger]")).to_be_visible()

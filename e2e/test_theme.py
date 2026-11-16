@@ -1,8 +1,9 @@
 """The theme switch, as a person uses it (docs/adr/0147).
 
 Dark is the default; light is the alternative a browser chooses with the moon
-and sun row of the settings menu behind the gear (UI-03; until 2026-11-06 a
-button on the bar of its own), and keeps. What these hold is the behaviour, not the
+and sun row of the account menu behind the avatar (2026-11-16; the gear
+«Seaded» from UI-03 before that, and until 2026-11-06 a button on the bar of
+its own; signed out, still the gear), and keeps. What these hold is the behaviour, not the
 palette — the palette's contrast is tests/test_text_contrast.py and
 e2e/test_theme_contrast.py, and its appearance is the `hele-*` scenarios of the
 visual suite:
@@ -13,7 +14,7 @@ visual suite:
 * blocked storage and a nonsense value in it;
 * the signed-out pages, and what signing out does to the choice;
 * a switch that writes nothing — no request at all — and loses nothing typed;
-* the gear and its menu at every width, in both themes.
+* the account menu and its switch at every width, in both themes.
 
 Nothing here files, edits or deletes a record: every test only reads the seeded
 world, so it can share a shard with anything.
@@ -63,7 +64,11 @@ def switch(page):
 
 
 def open_settings(page) -> None:
-    """Open «Seaded» if it is not open already; the switch is its first row."""
+    """Open the menu holding the switch if it is not open already.
+
+    Signed in, that is the account menu behind the avatar (2026-11-16); signed
+    out, the gear. Both are the one `.settingsmenu` on the bar.
+    """
     menu = page.locator(".topbar .settingsmenu")
     if not menu.evaluate("(details) => details.open"):
         page.locator(".topbar .settingsmenu__trigger").click()
@@ -177,7 +182,7 @@ def test_the_emblem_is_drawn_for_each_theme(page, base_url):
 
 
 def test_the_switch_works_from_the_keyboard_and_shows_its_focus(page, base_url):
-    """Tab to the gear, Enter opens «Seaded», Tab reaches the switch first."""
+    """Tab to the avatar, Enter opens the account menu, Tab reaches the switch."""
     sign_in(page, base_url, SANDRA)
     page.locator("#global-search").focus()
     for _ in range(12):
@@ -185,10 +190,15 @@ def test_the_switch_works_from_the_keyboard_and_shows_its_focus(page, base_url):
         if page.evaluate("() => document.activeElement.matches('.settingsmenu__trigger')"):
             break
     else:
-        raise AssertionError("Tab never reached the settings gear")
+        raise AssertionError("Tab never reached the account menu")
     page.keyboard.press("Enter")
-    page.keyboard.press("Tab")
-    assert page.evaluate("() => document.activeElement.matches('[data-theme-toggle]')")
+    # «Teavituste seaded» and Haldus come first, then the switch (2026-11-16).
+    for _ in range(3):
+        page.keyboard.press("Tab")
+        if page.evaluate("() => document.activeElement.matches('[data-theme-toggle]')"):
+            break
+    else:
+        raise AssertionError("Tab never reached the theme switch inside the account menu")
 
     outline = switch(page).evaluate(
         """(button) => {
@@ -422,12 +432,13 @@ def _overlap(a, b) -> bool:
 
 @pytest.mark.parametrize("width,height", WIDTHS, ids=lambda value: str(value))
 def test_the_switch_fits_the_bar_at_every_width_in_both_themes(page, base_url, width, height):
-    """The gear on screen and clear of its neighbours; its menu on screen too.
+    """The account menu's trigger on screen and clear of its neighbours; its menu too.
 
     At 861px and up the bar is one 48px row and must stay one; below that it is
     a deliberate wrapped layout, and opening the menu may not change it. Until
-    UI-03 this measured the sun/moon button; it measures the gear that holds
-    the switch now, and the opened menu with the switch in it.
+    UI-03 this measured the sun/moon button; it measures the avatar that opens
+    the account menu holding the switch since 2026-11-16 (the gear before),
+    and the opened menu with the switch in it.
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
@@ -438,18 +449,17 @@ def test_the_switch_fits_the_bar_at_every_width_in_both_themes(page, base_url, w
     for expected in ("dark", "light"):
         assert theme(page) == expected
         toggle = _box(page, ".topbar .settingsmenu__trigger")
-        assert toggle, "the settings gear is not on the bar"
+        assert toggle, "the account menu is not on the bar"
         assert toggle["x"] >= 0 and toggle["x"] + toggle["width"] <= width
         for neighbour in (
             ".personapill",
-            ".avatar",
-            ".topbar__signout",
+            ".topbar .notifbell",
             ".searchfield",
             ".topbar__cta",
             ".topbar__env",
         ):
             other = _box(page, neighbour)
-            assert not (other and _overlap(toggle, other)), f"the gear overlaps {neighbour}"
+            assert not (other and _overlap(toggle, other)), f"the account menu overlaps {neighbour}"
         open_settings(page)
         panel = _box(page, ".topbar .settingsmenu__panel")
         assert panel and panel["x"] >= 0 and panel["x"] + panel["width"] <= width, panel

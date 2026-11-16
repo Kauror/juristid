@@ -99,6 +99,9 @@ def test_the_minu_asjad_block_works_from_the_keyboard(page, base_url):
     page.goto(f"{base_url}/minu-asjad/")
     button = page.locator(BLOCK).get_by_role("button", name=f"Märgi loetuks: {title}")
     expect(button).to_be_visible()
+    # An icon (a tick) with its name as a tooltip (owner, 2026-11-16).
+    expect(button).to_have_attribute("title", "Märgi loetuks")
+    expect(button).to_have_text("")
     button.focus()
     expect(button).to_be_focused()
     page.keyboard.press("Enter")
@@ -107,8 +110,9 @@ def test_the_minu_asjad_block_works_from_the_keyboard(page, base_url):
     # gone from the block, and focus on the block rather than lost.
     expect(page.locator(f"{BLOCK} [data-inbox-item]", has_text=title)).to_have_count(0)
     assert page.url == f"{base_url}/minu-asjad/"
-    focus_in_rail = page.evaluate("() => document.activeElement !== document.body")
-    assert focus_in_rail
+    # Waited for, not read once: the landing is focused on `htmx:afterSettle`,
+    # a tick after the swap that already removed the item.
+    page.wait_for_function("() => document.activeElement !== document.body")
 
 
 def test_the_settings_page_saves_and_restores(page, base_url):

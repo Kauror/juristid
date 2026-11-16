@@ -589,6 +589,19 @@ class WorkItem:
             return f"{self.meaning} {self.display_date}"
         return self.meaning
 
+    @property
+    def late_original_date(self) -> str:
+        """The day it was, shown under *N p üle*; empty on a row that is not late.
+
+        The row shows no kind word under the date (owner, 2026-11-16: the
+        headline already says what to do); a late row still needs the date
+        its value replaced. The kind stays in `meaning_line` for the row
+        menu's accessible name.
+        """
+        if self.when is not None and self.days_late:
+            return self.display_date
+        return ""
+
 
 @dataclass(frozen=True)
 class WorkBand:

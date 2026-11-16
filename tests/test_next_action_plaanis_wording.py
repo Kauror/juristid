@@ -114,7 +114,13 @@ def date_meanings(body: str) -> list[str]:
 
 
 def work_meanings(body: str) -> list[str]:
-    return re.findall(r'<span class="workrow2__meaning">([^<]*)</span>', body)
+    """The kind word of each work row, from the row menu's accessible name.
+
+    The row no longer prints it under the date (owner, 2026-11-16: the
+    headline says what to do); «Rea tegevused: <teema> · PLAANIS 20.11» still
+    names it for a screen reader, and that is what is read here.
+    """
+    return re.findall(r'aria-label="Rea tegevused: [^"]*? · ([^"]*)"', body)
 
 
 def with_prefetch(user, matter_pk) -> Matter:
@@ -172,7 +178,7 @@ def test_a_minu_asjad_work_row_reads_plaanis(specialist, planned, today):
 def test_the_rendered_minu_asjad_row_says_plaanis(signed_in, planned):
     meanings = work_meanings(body_of(signed_in.get(reverse("matters:my_work"))))
 
-    assert PLAANIS_CAPS in meanings
+    assert any(meaning.startswith(PLAANIS_CAPS) for meaning in meanings), meanings
     for meaning in meanings:
         assert not meaning.startswith(TAHTAEG_CAPS), meaning
 
@@ -200,7 +206,7 @@ def test_a_shared_work_row_does_not_show_tahtaeg_as_its_meaning(
     url = reverse("matters:person_work", kwargs={"pk": specialist.pk})
     meanings = work_meanings(body_of(client.get(url)))
 
-    assert PLAANIS_CAPS in meanings
+    assert any(meaning.startswith(PLAANIS_CAPS) for meaning in meanings), meanings
     for meaning in meanings:
         assert not meaning.startswith(TAHTAEG_CAPS), meaning
 

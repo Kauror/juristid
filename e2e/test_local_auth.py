@@ -166,8 +166,8 @@ def test_the_first_administrator_activates_and_must_enrol(
     expect(page.locator(".acctcodes__code")).to_have_count(10)
     page.get_by_role("link", name="Olen koodid salvestanud").click()
     page.wait_for_load_state("networkidle")
-    # Haldus, in the settings menu behind the gear beside «Välju» (every
-    # signed-in account has it since 2026-10-28; a menu entry since UI-03),
+    # Haldus, a row of the account menu behind the avatar (every
+    # signed-in account has it since 2026-10-28; a menu row since 2026-11-16),
     # leads to the Haldus shell, whose sub-navigation holds Kasutajad for an
     # administrator with a second-factor session (docs/adr/0186, amendment).
     page.locator(".topbar .settingsmenu__trigger").click()
@@ -241,7 +241,13 @@ def test_the_colleague_activates_with_their_own_password(
 
     _sign_in(page, local_base_url, COLLEAGUE, COLLEAGUE_PASSWORD)
     expect(page).to_have_url(f"{local_base_url}/minu-asjad/")
-    page.get_by_role("link", name=re.compile("Minu konto")).click()
+    # «Minu konto» leads the account menu behind the avatar under personal
+    # sign-in (2026-11-16); the menu still ends with «Välju».
+    page.locator(".topbar .settingsmenu__trigger").click()
+    menu = page.locator(".topbar .settingsmenu__panel")
+    expect(menu.locator("a, button").first).to_have_text("Minu konto")
+    expect(menu.locator("a, button").last).to_have_text("Välju")
+    menu.get_by_role("link", name="Minu konto").click()
     expect(page.get_by_text("Osakonna juhtimisvaade")).to_be_visible()
     # A colleague who is not an administrator is offered no administration.
     assert "/haldus/kasutajad/" not in navigation_targets(page)

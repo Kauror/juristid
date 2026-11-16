@@ -1,0 +1,19 @@
+{% comment %}
+  The account menu outside the shared gate: the avatar opens it. A real
+  `<details>` (static/js/header-menu.js closes it on Escape, on a click outside
+  and when another top-bar menu opens). Under personal sign-in it leads with
+  «Minu konto» (docs/adr/0145); the rest is the shared item list.
+{% endcomment %}
+<details class="settingsmenu" id="settings-menu" data-settings-menu>
+  <summary class="settingsmenu__trigger accountmenu__trigger{% if nav_active == 'haldus' %} is-active{% endif %}"
+           title="{{ user.display_name }}">
+    <span class="avatar" aria-hidden="true">{{ user.initials }}</span>
+    <span class="visually-hidden">{{ user.display_name }} — konto</span>
+  </summary>
+  <div class="settingsmenu__panel" role="group" aria-label="Konto">
+    {% if local_password_mode %}
+      <a class="settingsmenu__item" href="{% url 'accounts:profile' %}">Minu konto</a>
+    {% endif %}
+    {% include "components/account_menu_items.html" %}
+  </div>
+</details>
