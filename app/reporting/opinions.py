@@ -63,6 +63,19 @@ class MatterFacts:
     is_eu: bool
     koda_initiative: bool
     instrument: str
+    #: The instrument's key, for links; "" when the Teema has none or several.
+    instrument_key: str = ""
+
+
+@dataclass(frozen=True)
+class DeclinedFact:
+    """One request Koda decided not to answer («ei saatnud»)."""
+
+    matter: MatterFacts
+    #: The day the decision is counted on: the request's deadline, else the
+    #: day the Teema arrived. ``None`` when neither is recorded.
+    when: date | None
+    source: str
 
 
 @dataclass(frozen=True)
@@ -139,6 +152,7 @@ def matter_facts(user: Any) -> dict[Any, MatterFacts]:
             is_eu=any(key in EU_INSTRUMENT_KEYS for key, _ in own),
             koda_initiative=m.track == Track.KODA_INITIATIVE,
             instrument=own[0][1] if len(own) == 1 else ("Mitu liiki" if own else "Määramata"),
+            instrument_key=own[0][0] if len(own) == 1 else "",
         )
     return facts
 
@@ -215,6 +229,44 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
             )
         )
     facts.sort(key=lambda fact: (fact.sent_on, fact.matter.reference, str(fact.matter.matter_id)))
+    return facts
+
+
+def declined_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> list[DeclinedFact]:
+    """Every request Koda decided not to answer, on a Teema the reader may see.
+
+    Two records hold that decision, both this application's: a request a
+    person ended as «otsustati mitte vastata» (`MatterResponseDeadline`,
+    ``NOT_ANSWERING``, not the synchronisation's own ending), and the imported
+    statement «ei saatnud» (`LovableOpinionOutcome`, current row,
+    ``NOT_SENT``). One fact per Teema and day, as for sent opinions.
+    """
+    from app.legacy_import.lovable_sync import is_sync_ending
+    from app.legacy_import.lovable_sync_models import OpinionOutcome, current_opinion_outcomes
+    from app.matters.enums import ResponseDeadlineOutcome
+    from app.matters.models import MatterResponseDeadline
+
+    known = matters if matters is not None else matter_facts(user)
+    if not known:
+        return []
+    facts: list[DeclinedFact] = []
+    seen: set[tuple[Any, date | None]] = set()
+    for row in MatterResponseDeadline.objects.filter(
+        matter_id__in=known, outcome=ResponseDeadlineOutcome.NOT_ANSWERING
+    ).values("matter_id", "deadline", "submission_id", "ended_by_id", "note"):
+        if is_sync_ending(
+            ended_by_id=row["ended_by_id"], note=row["note"], submission_id=row["submission_id"]
+        ):
+            continue
+        seen.add((row["matter_id"], row["deadline"]))
+        facts.append(DeclinedFact(known[row["matter_id"]], row["deadline"], SOURCE_ANSWERED))
+    for matter_id, outcome in current_opinion_outcomes(list(known)).items():
+        if outcome.outcome != OpinionOutcome.NOT_SENT:
+            continue
+        when = outcome.request_deadline or known[matter_id].received
+        if (matter_id, when) in seen:
+            continue
+        facts.append(DeclinedFact(known[matter_id], when, SOURCE_IMPORTED))
     return facts
 
 

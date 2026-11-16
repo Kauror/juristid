@@ -31,7 +31,7 @@ from datetime import date, timedelta
 from statistics import mean, median
 from typing import Any
 
-from app.reporting.opinions import MatterFacts, OpinionFact
+from app.reporting.opinions import DeclinedFact, MatterFacts, OpinionFact
 
 #: The first year of the long-term trends: the register's first year.
 FIRST_YEAR = 2011
@@ -337,6 +337,202 @@ def monthly(facts: list[OpinionFact], period: Period) -> tuple[list[MonthBar], l
         )
         cursor = last + timedelta(days=1)
     return bars, owners
+
+
+# ---------------------------------------------------------------------------
+# A closer look at the period (phase 2, 2026-11-16)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class FlowBar:
+    """One month: what arrived and what went out."""
+
+    label: str
+    title: str
+    received: int
+    sent: int
+    received_height: float
+    sent_height: float
+
+    @property
+    def received_css(self) -> str:
+        """For CSS: a decimal point, whatever the reader's language."""
+        return f"{self.received_height:.2f}"
+
+    @property
+    def sent_css(self) -> str:
+        return f"{self.sent_height:.2f}"
+
+
+def flow(facts: list[OpinionFact], matters: list[MatterFacts], period: Period) -> list[FlowBar]:
+    """Teemad received and opinions sent, month by month over the period."""
+    sent: Counter[tuple[int, int]] = Counter()
+    received: Counter[tuple[int, int]] = Counter()
+    for fact in facts:
+        if period.holds(fact.sent_on):
+            sent[(fact.sent_on.year, fact.sent_on.month)] += 1
+    for matter in matters:
+        if matter.received and period.holds(matter.received):
+            received[(matter.received.year, matter.received.month)] += 1
+    top = max([*sent.values(), *received.values()], default=0)
+    bars = []
+    cursor = date(period.start.year, period.start.month, 1)
+    while cursor <= period.end:
+        key = (cursor.year, cursor.month)
+        bars.append(
+            FlowBar(
+                label=f"{MONTHS_SHORT[cursor.month - 1]} {cursor.year % 100:02d}",
+                title=f"{MONTHS_LONG[cursor.month - 1]} {cursor.year}",
+                received=received[key],
+                sent=sent[key],
+                received_height=round(100 * received[key] / top, 2) if top else 0.0,
+                sent_height=round(100 * sent[key] / top, 2) if top else 0.0,
+            )
+        )
+        cursor = _shift_months(cursor, 1)
+    return bars
+
+
+@dataclass(frozen=True)
+class InstrumentRow:
+    """One act type over the period."""
+
+    key: str
+    label: str
+    sent: int
+    width: float
+    share: int
+    on_time_share: int | None
+    days_given: int | None
+    received: int
+
+
+def by_instrument(
+    facts: list[OpinionFact],
+    matters: list[MatterFacts],
+    deadlines: dict[Any, date],
+    period: Period,
+) -> list[InstrumentRow]:
+    """Sent opinions by the Teema's act type: count, on-time share, days given.
+
+    Days given is the median over the Teemad of that type that arrived in the
+    period; a type with nothing sent and nothing received is left out.
+    """
+    now = [fact for fact in facts if period.holds(fact.sent_on)]
+    arrived = [m for m in matters if m.received and period.holds(m.received)]
+    labels: dict[str, tuple[str, str]] = {}
+    for matter in [*(fact.matter for fact in now), *arrived]:
+        labels.setdefault(matter.instrument, (matter.instrument_key, matter.instrument))
+    sent = Counter(fact.matter.instrument for fact in now)
+    top = max(sent.values(), default=0)
+    rows = []
+    for label, (key, _) in labels.items():
+        own = [fact for fact in now if fact.matter.instrument == label]
+        dated = [fact for fact in own if fact.on_time is not None]
+        own_arrived = [m for m in arrived if m.instrument == label]
+        days = _days_given(own_arrived, deadlines)
+        rows.append(
+            InstrumentRow(
+                key=key,
+                label=label,
+                sent=len(own),
+                width=round(100 * len(own) / top, 2) if top else 0.0,
+                share=round(100 * len(own) / len(now)) if now else 0,
+                on_time_share=(
+                    round(100 * sum(1 for fact in dated if fact.on_time) / len(dated))
+                    if dated
+                    else None
+                ),
+                days_given=round(median(days)) if days else None,
+                received=len(own_arrived),
+            )
+        )
+    return sorted(rows, key=lambda row: (-row.sent, -row.received, row.label.casefold()))
+
+
+#: Days given to answer, as the bands the page shows: (upper bound, label).
+PRESSURE_BANDS: tuple[tuple[int | None, str], ...] = (
+    (7, "kuni 7 päeva"),
+    (14, "8–14 päeva"),
+    (30, "15–30 päeva"),
+    (None, "üle 30 päeva"),
+)
+
+
+@dataclass(frozen=True)
+class PressureBand:
+    label: str
+    count: int
+    share: int
+    width: float
+    slot: int
+
+
+@dataclass(frozen=True)
+class Pressure:
+    bands: list[PressureBand]
+    total: int
+    without: int
+
+
+def pressure(matters: list[MatterFacts], deadlines: dict[Any, date], period: Period) -> Pressure:
+    """How long requests gave Koda: the Teemad that arrived in the period, by days given."""
+    arrived = [m for m in matters if m.received and period.holds(m.received)]
+    days = _days_given(arrived, deadlines)
+    counts = [0] * len(PRESSURE_BANDS)
+    for given in days:
+        for index, (upper, _) in enumerate(PRESSURE_BANDS):
+            if upper is None or given <= upper:
+                counts[index] += 1
+                break
+    total = len(days)
+    return Pressure(
+        bands=[
+            PressureBand(
+                label,
+                counts[index],
+                round(100 * counts[index] / total) if total else 0,
+                round(100 * counts[index] / total, 2) if total else 0.0,
+                index,
+            )
+            for index, (_, label) in enumerate(PRESSURE_BANDS)
+        ],
+        total=total,
+        without=len(arrived) - total,
+    )
+
+
+@dataclass(frozen=True)
+class Decisions:
+    """What Koda decided about the period's requests."""
+
+    sent: int
+    declined: int
+
+    @property
+    def total(self) -> int:
+        return self.sent + self.declined
+
+    @property
+    def sent_share(self) -> int | None:
+        return round(100 * self.sent / self.total) if self.total else None
+
+    @property
+    def sent_width(self) -> float:
+        return round(100 * self.sent / self.total, 2) if self.total else 0.0
+
+    @property
+    def sent_css(self) -> str:
+        """For CSS: a decimal point, whatever the reader's language."""
+        return f"{self.sent_width:.2f}"
+
+
+def decisions(facts: list[OpinionFact], declined: list[DeclinedFact], period: Period) -> Decisions:
+    return Decisions(
+        sent=sum(1 for fact in facts if period.holds(fact.sent_on)),
+        declined=sum(1 for fact in declined if fact.when and period.holds(fact.when)),
+    )
 
 
 # ---------------------------------------------------------------------------

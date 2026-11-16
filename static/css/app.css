@@ -17098,3 +17098,154 @@ a.statcol:hover .statcol__value {
     font-size: 9px;
   }
 }
+
+/* ---- Statistika, a closer look at the period (phase 2, 2026-11-16) ---- */
+
+.statgrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-4);
+}
+
+.statseries--muted {
+  background: color-mix(in srgb, var(--text-secondary) 55%, transparent);
+}
+
+/* Two columns side by side in one month: arrived, then sent. */
+.statcol__track--pair {
+  gap: 2px;
+}
+
+.statcol__bar {
+  display: block;
+  flex: 1 1 0;
+  max-width: 12px;
+  min-height: 1px;
+  border-radius: 4px 4px 0 0;
+}
+
+/* The table scrolls inside its panel on a phone; the page never does. */
+.stattable__wrap {
+  overflow-x: auto;
+}
+
+.statcol__value--pair {
+  white-space: nowrap;
+}
+
+.stattable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--typography-size-sm);
+}
+
+.stattable th,
+.stattable td {
+  padding: var(--spacing-15) var(--spacing-2);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  font-weight: var(--typography-weight-regular);
+}
+
+.stattable thead th {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.stattable tbody tr:last-child th,
+.stattable tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.stattable .stattable__num {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.stattable__share {
+  display: inline-block;
+  min-width: 2.6em;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.stattable__bar {
+  width: 32%;
+}
+
+.stattable__fill {
+  display: block;
+  height: 10px;
+  min-width: 1px;
+  border-radius: 0 4px 4px 0;
+}
+
+/* One bar split into shares: the bands of days given, or sent / not sent. */
+.statshare {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.statshare__part {
+  display: block;
+  min-width: 2px;
+}
+
+.statshare__part--rest {
+  flex: 1;
+}
+
+/* Days given, shortest to longest: one hue, darkest where the time is shortest. */
+.statband--0 { background: var(--chart-series-0); }
+.statband--1 { background: color-mix(in srgb, var(--chart-series-0) 70%, transparent); }
+.statband--2 { background: color-mix(in srgb, var(--chart-series-0) 45%, transparent); }
+.statband--3 { background: color-mix(in srgb, var(--chart-series-0) 24%, transparent); }
+
+.statkey {
+  margin: var(--spacing-3) 0 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  font-size: var(--typography-size-sm);
+}
+
+.statkey__row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.statkey__label {
+  flex: 1;
+  color: var(--text-secondary);
+}
+
+.statkey__value {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.statkey__share {
+  min-width: 3em;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+@media (max-width: 900px) {
+  .statgrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stattable__bar {
+    display: none;
+  }
+
+  .statcol__value--pair {
+    display: none;
+  }
+}
