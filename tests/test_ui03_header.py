@@ -5,12 +5,14 @@ As rendered HTML in every sign-in mode:
 * the right-hand controls read search → «+ Uus teema» → the bell → the account
   menu (whose work is on screen), and the account menu is the last thing on
   the bar — no separate settings gear and no «Välju» button beside it;
-* clicking the name opens one menu whose own rows are «Teavituste seaded»,
-  Haldus, the light/dark switch and «Välju», in that order, each offered on its
-  own existing terms (components/account_menu_items.html). In the shared gate
-  they sit under the people to switch between; elsewhere the avatar opens them;
-* the light/dark switch is in that menu and nowhere else on the bar; before
-  signing in it is the only thing behind the gear.
+* clicking the name opens one menu whose own rows are Haldus and «Välju», in
+  that order (components/account_menu_items.html; owner, 2026-11-16). In the
+  shared gate they sit under the people to switch between, with no heading
+  above them; elsewhere the avatar opens them;
+* the light/dark switch and «Teavituste seaded» are not on the bar at all once
+  signed in: both are on Haldus → Seaded, and «Teavituste seaded» is also the
+  gear in the bell's panel. Before signing in the switch is the only thing
+  behind the gear.
 
 What a browser does with it — opening, closing, focus, widths — is in
 e2e/test_ui03_header.py.
@@ -79,15 +81,11 @@ def _assert_order(body: str, account_marker: str) -> None:
 
 
 def _assert_rows(rows: str) -> None:
-    """«Teavituste seaded», Haldus, the switch and «Välju», in that order."""
-    assert f'<a class="settingsmenu__item" href="{SETTINGS_URL}">Teavituste seaded</a>' in rows
+    """Haldus, then «Välju» — and neither the switch nor «Teavituste seaded»."""
     assert f'href="{reverse("haldus:index")}">Haldus</a>' in rows
-    assert (
-        rows.index(SETTINGS_URL)
-        < rows.index(">Haldus</a>")
-        < rows.index("data-theme-toggle")
-        < rows.index(">Välju</button>")
-    )
+    assert rows.index(">Haldus</a>") < rows.index(">Välju</button>")
+    assert SETTINGS_URL not in rows
+    assert "data-theme-toggle" not in rows
 
 
 # -- the order, in each mode ------------------------------------------------------------
@@ -129,9 +127,10 @@ def test_the_persona_menu_holds_the_people_then_the_account_rows(settings):
     body = client.get(reverse("matters:my_work")).content.decode()
     account = _account(body)
     _assert_rows(_rows(body))
-    assert account.index("personamenu__label") < account.index('<div class="accountmenu"')
-    # The link leads somewhere that opens for this reader.
-    assert client.get(SETTINGS_URL).status_code == 200
+    assert account.index("personaoption") < account.index('<div class="accountmenu"')
+    # No heading above the people any more (owner, 2026-11-16).
+    assert "personamenu__label" not in account
+    assert ">Näita kelle tööd<" not in account
 
 
 def test_the_avatar_menu_holds_the_account_rows(client, specialist):
@@ -144,8 +143,21 @@ def test_the_avatar_menu_holds_the_account_rows(client, specialist):
 def test_there_is_no_sun_and_moon_button_on_the_bar_once_signed_in(client, specialist):
     client.force_login(specialist)
     body = client.get(reverse("matters:my_work")).content.decode()
-    assert body.count("data-theme-toggle") == 1
-    assert "data-theme-toggle" in _rows(body)
+    assert "data-theme-toggle" not in body
+    assert SETTINGS_URL not in _header(body)
+
+
+def test_haldus_seaded_holds_every_personal_setting(client, specialist):
+    """Haldus → Seaded: the switch, «Teavituste seaded» and the blocks' reset."""
+    client.force_login(specialist)
+    body = client.get(reverse("haldus:index")).content.decode()
+    start = body.index('aria-labelledby="seaded"')
+    seaded = body[start : body.index("</section>", start)]
+    assert body.count("data-theme-toggle") == 1 and "data-theme-toggle" in seaded
+    assert "themetoggle--setting" in seaded
+    assert f'href="{SETTINGS_URL}"' in seaded
+    assert reverse("accounts:reset_disclosures") in seaded
+    assert body.count(reverse("accounts:reset_disclosures")) == 1
 
 
 def test_the_sign_in_page_keeps_only_the_theme_switch_behind_the_gear(settings):
@@ -165,8 +177,10 @@ def test_a_reader_is_offered_the_notification_settings_and_no_new_teema(client, 
     """A READER reads every record (docs/adr/0181), so it has the bell and its settings."""
     client.force_login(reader)
     body = client.get(reverse("matters:my_work")).content.decode()
-    assert SETTINGS_URL in _rows(body)
+    assert "notifbell" in _header(body)
     assert "topbar__cta" not in _header(body)
+    assert SETTINGS_URL in client.get(reverse("haldus:index")).content.decode()
+    assert SETTINGS_URL in client.get(reverse("notifications:panel")).content.decode()
 
 
 def test_a_persona_less_gate_session_can_still_leave(settings):
@@ -186,7 +200,7 @@ def test_a_technical_administrator_is_not_offered_notification_settings(client, 
     client.force_login(factories.UserFactory(role="ADMINISTRATOR"))
     response = client.get(reverse("haldus:index"))
     body = response.content.decode()
-    assert SETTINGS_URL not in _rows(body)
+    assert SETTINGS_URL not in body
     assert "notifbell" not in _header(body)
 
 

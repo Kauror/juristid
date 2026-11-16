@@ -5,16 +5,46 @@
   Haldus → Ülevaade. What the reader can do here, in a few lines: the
   verified administrator session (whose it is, what it may do, how long it
   lasts), whether the two-administrator rule holds, the sections this reader
-  may open, and Rakendus. Not a dashboard: the work lists live on their own
+  may open, Seaded and Rakendus. Not a dashboard: the work lists live on their own
   pages (docs/adr/0186).
 
   Every signed-in reader reaches this page (the owner's brief, 2026-10-28), so
-  only Rakendus is unconditional; the rest follows the verified administrator
+  only Seaded and Rakendus are unconditional; the rest follows the verified administrator
   session or each section's own predicate. The way to the administrator
   sign-in is the persona menu's, not a call to action here.
 {% endcomment %}
 
 {% block haldus_content %}
+  {% if user.is_authenticated %}
+    {% comment %}
+      Seaded: every personal setting in one place (owner, 2026-11-16). The
+      light/dark switch and «Teavituste seaded» left the name menu for here;
+      «Taasta plokkide vaikeseaded» moved up from Rakendus. Each still decides
+      for itself who it is for: the notification settings only for a reader
+      the bell is drawn for (`notification_settings_link`), «Minu konto» only
+      under personal sign-in (docs/adr/0145). The switch is the same button
+      the pre-login gear holds (static/js/theme.js).
+    {% endcomment %}
+    {% load haldus %}{% notification_settings_link as notification_settings_href %}
+    <section class="panel" aria-labelledby="seaded">
+      <h2 class="acctsection__title" id="seaded">Seaded</h2>
+      <div class="settingslist">
+        {% include "components/theme_toggle.html" with variant="setting" %}
+        {% if notification_settings_href %}
+          <a class="button button--secondary" href="{{ notification_settings_href }}">Teavituste seaded</a>
+        {% endif %}
+        {% if local_password_mode %}
+          <a class="button button--secondary" href="{% url 'accounts:profile' %}">Minu konto</a>
+        {% endif %}
+        <form method="post" action="{% url 'accounts:reset_disclosures' %}" class="settingslist__form">
+          {% csrf_token %}
+          <input type="hidden" name="next" value="{% url 'haldus:index' %}">
+          <button type="submit" class="button button--secondary"
+                  title="Meelde jäetud avatud ja suletud plokid avanevad jälle vaikimisi viisil — praegu valitud kasutaja jaoks.">Taasta plokkide vaikeseaded</button>
+        </form>
+      </div>
+    </section>
+  {% endif %}
   {% if session %}
     <section class="panel" aria-labelledby="halduri-seanss">
       <h2 class="acctsection__title" id="halduri-seanss">Halduri seanss</h2>
@@ -111,18 +141,5 @@
       <dt>Ehitatud</dt>
       <dd>{% if application_built_at %}{{ application_built_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
     </dl>
-    {% if user.is_authenticated %}
-      {% comment %}
-        Remembered blocks (docs/adr/0194): forgets the selected persona's
-        open/closed choices and nobody else's. Only for somebody signed in as
-        somebody — a persona-less administrator session has none to forget.
-      {% endcomment %}
-      <form method="post" action="{% url 'accounts:reset_disclosures' %}" class="acctactions">
-        {% csrf_token %}
-        <input type="hidden" name="next" value="{% url 'haldus:index' %}">
-        <button type="submit" class="button button--secondary">Taasta plokkide vaikeseaded</button>
-        <span class="acctnote">Meelde jäetud avatud ja suletud plokid avanevad jälle vaikimisi viisil — praegu valitud kasutaja jaoks.</span>
-      </form>
-    {% endif %}
   </section>
 {% endblock %}

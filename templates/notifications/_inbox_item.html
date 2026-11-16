@@ -31,7 +31,7 @@ reloading the page; without scripting they are the same plain forms.
   </li>
 {% else %}
   <li class="notifrow{% if item.is_unread %} notifrow--unread{% endif %}{% if item.kind == 'INFO' %} notifrow--info{% endif %}"
-      data-inbox-item data-inbox-type="deadline">
+      data-inbox-item data-inbox-type="{{ item.type }}">
     <div class="notifrow__main">
       <span class="notifrow__label">{{ item.label }}{% if item.is_unread %}<span class="visually-hidden"> · lugemata</span>{% endif %}</span>
       <a class="notifrow__matter" href="{{ item.url }}">{{ item.title }}</a>
@@ -40,7 +40,7 @@ reloading the page; without scripting they are the same plain forms.
     </div>
     {% if item.can_read %}
       <div class="notifrow__actions">
-        <form method="post" action="{% url 'notifications:read' notification_id=item.pk %}"{% if tagasi == "minu_asjad" %} hx-post="{% url 'notifications:read' notification_id=item.pk %}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
+        <form method="post" action="{{ item.read_url }}"{% if tagasi == "minu_asjad" %} hx-post="{{ item.read_url }}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
           {% csrf_token %}
           <input type="hidden" name="tagasi" value="{{ tagasi }}">
           <button type="submit" class="notificon" title="Märgi loetuks"

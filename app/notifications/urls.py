@@ -33,4 +33,9 @@ urlpatterns = [
         views.mark_assignment_unread,
         name="assignment_unread",
     ),
+    # «Lisa meeldetuletus»: the reader's own reminders (owner, 2026-11-16).
+    path("meeldetuletus/<uuid:matter_id>/lisa/", views.personal_create, name="personal_create"),
+    path("meeldetuletus/<uuid:pk>/loetud/", views.personal_read, name="personal_read"),
+    path("meeldetuletus/<uuid:pk>/lugemata/", views.personal_unread, name="personal_unread"),
+    path("meeldetuletus/<uuid:pk>/eemalda/", views.personal_remove, name="personal_remove"),
 ]

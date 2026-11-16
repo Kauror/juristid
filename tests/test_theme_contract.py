@@ -232,9 +232,10 @@ def test_the_switch_is_a_button_that_submits_nothing():
 def test_the_switch_names_the_action_in_estonian_for_each_state():
     """The name is what pressing does, and there is one per state.
 
-    Written on the row since UI-03 rather than visually hidden: the switch is a
-    row of the settings menu now, and a menu row is read, not recognised by its
-    icon alone. The stylesheet still shows exactly one of the two.
+    Written beside the icon rather than visually hidden: the switch is a menu
+    row behind the sign-in gear and a button on Haldus → Seaded, and either is
+    read, not recognised by its icon alone. The stylesheet still shows exactly
+    one of the two.
     """
     markup = TEMPLATE_COMMENT.sub("", TOGGLE)
     assert (
@@ -259,16 +260,16 @@ def test_the_icons_are_decoration_and_carry_no_colour_of_their_own():
     assert "fill=" not in markup and "stroke=" not in markup
 
 
-def test_the_switch_is_in_the_account_menu_signed_in_and_the_gear_signed_out():
-    """In the account menu after signing in, behind the gear on the sign-in page.
+def test_the_switch_is_on_haldus_signed_in_and_behind_the_gear_signed_out():
+    """On Haldus → Seaded after signing in, behind the gear on the sign-in page.
 
-    Since 2026-11-16 the switch is a row of the account menu
-    (components/account_menu_items.html) — under the persona pill in the shared
-    gate, under the avatar elsewhere — and before signing in it is the only
-    thing behind the gear (components/settings_menu.html). Never loose on the
-    bar, and still wherever somebody meets the default again: signing out
-    clears the browser's storage and the preference with it (`Clear-Site-Data`,
-    ENG-009).
+    Since 2026-11-16 (second round) the switch is not in the account menu any
+    more: it is one of the personal settings on Haldus → Seaded
+    (templates/haldus/index.html), which every signed-in reader opens; before
+    signing in it is the only thing behind the gear
+    (components/settings_menu.html). Never loose on the bar, and still wherever
+    somebody meets the default again: signing out clears the browser's storage
+    and the preference with it (`Clear-Site-Data`, ENG-009).
     """
     base = TEMPLATE_COMMENT.sub("", (ROOT / "templates" / "base.html").read_text(encoding="utf-8"))
     header = base[base.index('<header class="topbar">') : base.index("</header>")]
@@ -279,14 +280,11 @@ def test_the_switch_is_in_the_account_menu_signed_in_and_the_gear_signed_out():
     assert '{% include "components/account_menu.html" %}' in signed_in
     assert "settings_menu.html" not in signed_in
     assert signed_out.count('{% include "components/settings_menu.html" %}') == 1
-    for name in ("persona_switcher.html", "account_menu.html"):
-        text = (ROOT / "templates" / "components" / name).read_text(encoding="utf-8")
-        assert '{% include "components/account_menu_items.html" %}' in TEMPLATE_COMMENT.sub(
-            "", text
-        )
+    items = (ROOT / "templates" / "components" / "account_menu_items.html").read_text("utf-8")
+    assert "theme_toggle.html" not in TEMPLATE_COMMENT.sub("", items)
     includes = sorted(
         path.relative_to(ROOT / "templates").as_posix()
         for path in (ROOT / "templates").rglob("*.html")
         if "components/theme_toggle.html" in TEMPLATE_COMMENT.sub("", path.read_text("utf-8"))
     )
-    assert includes == ["components/account_menu_items.html", "components/settings_menu.html"]
+    assert includes == ["components/settings_menu.html", "haldus/index.html"]

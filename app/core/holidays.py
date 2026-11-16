@@ -183,3 +183,34 @@ def date_notice(day: date | None) -> str | None:
     if day.weekday() >= 5:
         return f"{written} valitud kuupäev on {WEEKDAY_NAMES[day.weekday()]}."
     return None
+
+
+def is_working_day(day: date) -> bool:
+    """Neither a weekend nor one of the riigipühad."""
+    return day.weekday() < 5 and holiday_name(day) is None
+
+
+def previous_working_day(day: date) -> date:
+    """The last working day before ``day``."""
+    before = day - timedelta(days=1)
+    while not is_working_day(before):
+        before -= timedelta(days=1)
+    return before
+
+
+def rest_day_hint(day: date) -> str:
+    """The row marker's tooltip for a date on a day off, or "" on a working day.
+
+    «Laupäev. Eelmine tööpäev on reede 21.11.» — the one thing a lawyer needs
+    from a deadline that falls on a day off: when the last day to act is. A
+    holiday wins over the weekend it may fall on, as in :func:`date_notice`.
+    """
+    if is_working_day(day):
+        return ""
+    name = holiday_name(day)
+    what = f"Riigipüha ({name})" if name is not None else WEEKDAY_NAMES[day.weekday()].capitalize()
+    before = previous_working_day(day)
+    return (
+        f"{what}. Eelmine tööpäev on {WEEKDAY_NAMES[before.weekday()]} "
+        f"{before.day:02d}.{before.month:02d}."
+    )

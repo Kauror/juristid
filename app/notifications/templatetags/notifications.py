@@ -44,13 +44,18 @@ def notifications_bell(context: Any) -> dict[str, Any]:
     }
 
 
-def block_context(user: Any, tagasi: str = "minu_asjad") -> dict[str, Any]:
+def block_context(
+    user: Any, tagasi: str = "minu_asjad", items: list[Any] | None = None
+) -> dict[str, Any]:
     """What the Minu asjad block draws: the reader's inbox, only what awaits them.
 
     Shared by the tag and by `notifications:block`, which redraws the block in
-    place after an answer, so the two can never disagree.
+    place after an answer, so the two can never disagree. ``items`` is the
+    inbox the page already read for its rows' «!» markers, so Minu asjad
+    reads it once (`inbox_items`, its ``is_self`` branch).
     """
-    items = inbox.inbox_for(user)
+    if items is None:
+        items = inbox.inbox_for(user)
     return {
         "items": items[:BLOCK_LIMIT],
         "total": len(items),
@@ -61,10 +66,26 @@ def block_context(user: Any, tagasi: str = "minu_asjad") -> dict[str, Any]:
 
 @register.inclusion_tag("notifications/_minu_asjad_block.html", takes_context=True)
 def notifications_block(context: Any, tagasi: str = "minu_asjad") -> dict[str, Any]:
-    return {**block_context(_user(context), tagasi), "csrf_token": context.get("csrf_token")}
+    return {
+        **block_context(_user(context), tagasi, context.get("inbox_items")),
+        "csrf_token": context.get("csrf_token"),
+    }
 
 
 @register.inclusion_tag("notifications/_department_block.html", takes_context=True)
 def department_commencement_reminders(context: Any) -> dict[str, Any]:
     user = _user(context)
     return {"rows": selectors.department_unowned_reminders(user)}
+
+
+@register.filter
+def notices_for(row_notices: Any, matter_id: Any) -> list[Any]:
+    """The unread items about one Teema, for a Minu asjad row's «!» marker.
+
+    ``row_notices`` is `inbox.by_matter` of the signed-in reader's own inbox,
+    put in the context by Minu asjad's ``is_self`` branch only; anywhere else
+    it is absent and every row gets nothing.
+    """
+    if not row_notices:
+        return []
+    return list(row_notices.get(matter_id, ()))

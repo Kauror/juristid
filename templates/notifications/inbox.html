@@ -44,7 +44,7 @@ something (`notificationsPageStale`), so the page never contradicts the panel.
     {% endif %}
   </div>
 
-  {% if not items and not deferred_rows and not history.items %}
+  {% if not items and not deferred_rows and not upcoming_personal and not history.items %}
     <p class="muted notifempty">Praegu ei ole ühtegi teavitust. <a href="{% url 'notifications:settings' %}">Teavituste seaded</a></p>
   {% endif %}
 
@@ -81,6 +81,36 @@ something (`notificationsPageStale`), so the page never contradicts the panel.
               <span class="notifrow__date">
                 Jõustumise kuupäev {{ row.date_label }} · tuleb tagasi {{ row.deferred_label }}
               </span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  {% if upcoming_personal %}
+    {% comment %}
+      The reader's own reminders set for a later day («Lisa meeldetuletus» in
+      a Minu asjad row's ⋯ menu). From their day they are in «Vajab tegevust»
+      above, like every other notice (app/notifications/personal.py).
+    {% endcomment %}
+    <section class="notifsection" id="meeldetuletused" aria-labelledby="notif-personal-heading">
+      <h2 class="sectionlabel" id="notif-personal-heading">Tulevased meeldetuletused</h2>
+      <ul class="notiflist">
+        {% for row in upcoming_personal %}
+          <li class="notifrow">
+            <div class="notifrow__main">
+              <a class="notifrow__matter" href="{% url 'matters:matter_detail' pk=row.matter_id %}">{{ row.matter.title }}</a>
+              <span class="notifrow__date">{{ row.remind_on|date:"j.n.Y" }}</span>
+              {% if row.note %}<span class="notifrow__source">{{ row.note }}</span>{% endif %}
+            </div>
+            <div class="notifrow__actions">
+              <form method="post" action="{% url 'notifications:personal_remove' pk=row.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="tagasi" value="teavitused">
+                <button type="submit" class="notificon" title="Eemalda"
+                        aria-label="Eemalda meeldetuletus: {{ row.matter.title }}"><svg class="notificon__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M6 6l12 12M18 6L6 18"></path></svg></button>
+              </form>
             </div>
           </li>
         {% endfor %}

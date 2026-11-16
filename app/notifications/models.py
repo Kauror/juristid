@@ -432,3 +432,50 @@ class CommencementReminderPersonalState(BaseModel):
 
     def __str__(self) -> str:
         return "loetud" if self.read_at else f"edasi {self.deferred_until}"
+
+
+class PersonalReminder(BaseModel):
+    """«Lisa meeldetuletus» — a person's own reminder on a Teema (owner, 2026-11-16).
+
+    Chosen from a Minu asjad row's ⋯ menu: a day and, if wanted, a short note.
+    From that day it is in the person's own inbox like every other notice —
+    the bell, its panel, `/teavitused/`, the Minu asjad block and the row's
+    «!» marker — until they mark it read (`app.notifications.personal`).
+
+    **The person's own presentation state, like a read receipt.** It is
+    nobody else's, no `ChangeEvent` is written and it changes nothing about the
+    work: the Teema, its steps and its dates are untouched. It is shown only
+    while its Teema is still visible to the person (`Matter.objects.visible_to`);
+    a Teema gone from their view since takes it out of every list. ``matter`` CASCADE:
+    deleting the Teema permanently (app/matters/deletion.py) takes it along.
+    """
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="personal_reminders",
+        verbose_name="kellele",
+    )
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="personal_reminders",
+        verbose_name="teema",
+    )
+    remind_on = models.DateField(verbose_name="kuupäev")
+    note = models.CharField(max_length=200, blank=True, verbose_name="märkus")
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
+
+    class Meta:
+        verbose_name = "isiklik meeldetuletus"
+        verbose_name_plural = "isiklikud meeldetuletused"
+        ordering = ["remind_on", "id"]
+        indexes = [
+            models.Index(
+                fields=["recipient", "remind_on"],
+                name="notif_personal_recipient_day",
+            )
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.remind_on} · {self.matter_id}"

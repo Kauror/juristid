@@ -22,6 +22,8 @@ check (ADR 0188)   reader's desk (or unowned, for  `CommencementReminderPersonal
 «Uus asi»          `unread_assignment_notice_      ``viewed_at`` (opened or marked
 (ADR 0051)         queryset`                       read) or ``superseded_at`` (handed
                                                    on) set
+«Meeldetuletus»    `personal.due_unread`: its      ``read_at`` set
+(2026-11-16)       day has come, not read
 =================  ==============================  ===================================
 
 An outstanding deadline row that is unread but hidden — its category switched
@@ -66,6 +68,7 @@ from app.notifications.inbox import (
     TYPE_ASSIGNMENT,
     TYPE_COMMENCEMENT,
     TYPE_DEADLINE,
+    TYPE_PERSONAL,
     TYPE_RANK,
     InboxItem,
 )
@@ -277,11 +280,19 @@ def _assignment_items(user: Any, notices: list[Any]) -> list[InboxItem]:
     return items
 
 
+def _personal_items(rows: list[Any], day: date) -> list[InboxItem]:
+    return [
+        inbox.personal_item(row, day, state=STATE_READ, can_unread=row.remind_on <= day)
+        for row in rows
+    ]
+
+
 def _unread_ids(items: list[InboxItem]) -> dict[str, set[Any]]:
     ids: dict[str, set[Any]] = {
         TYPE_DEADLINE: set(),
         TYPE_COMMENCEMENT: set(),
         TYPE_ASSIGNMENT: set(),
+        TYPE_PERSONAL: set(),
     }
     for item in items:
         ids[item.type].add(item.pk)
@@ -311,11 +322,20 @@ def _history(
         .select_related("matter")
         .order_by(*order)[:take]
     )
+    from app.notifications import personal
+
+    own = list(
+        personal.history(user, unread[TYPE_PERSONAL])
+        .filter(_after_q(cursor, TYPE_RANK[TYPE_PERSONAL]))
+        .select_related("matter")
+        .order_by(*order)[:take]
+    )
     merged = sorted(
         [
             *_deadline_items(user, deadline_rows, day),
             *_commencement_items(user, reminders, day),
             *_assignment_items(user, notices),
+            *_personal_items(own, day),
         ],
         key=_key,
         reverse=True,
@@ -393,6 +413,11 @@ def lookup(user: Any, kind: str, pk: Any, *, today: date | None = None) -> Inbox
         found = _commencement_items(
             user, list(commencement_history(user, ids[kind]).filter(pk=pk)), day
         )
+    elif kind == TYPE_PERSONAL:
+        from app.notifications import personal
+
+        own = list(personal.history(user, ids[kind]).filter(pk=pk).select_related("matter"))
+        found = _personal_items(own, day)
     else:
         notices = list(assignment_history(user, ids[kind]).filter(pk=pk).select_related("matter"))
         found = _assignment_items(user, notices)

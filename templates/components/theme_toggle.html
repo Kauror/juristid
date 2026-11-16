@@ -2,10 +2,11 @@
   The theme switch (docs/adr/0147). One button, no submenu: there are two
   themes, so the only choice is "the other one".
 
-  It is the first row of the settings menu behind the gear
-  (templates/components/settings_menu.html, UI-03), not a button on the bar of
-  its own any more, and as a menu row it says in words what it does beside its
-  icon.
+  Two places hold it: the gear before signing in
+  (templates/components/settings_menu.html), and once signed in Haldus →
+  Seaded (templates/haldus/index.html, `variant="setting"`, drawn as a
+  button there rather than a menu row). Either way it says in words what it
+  does beside its icon.
 
   The icon and the name say what pressing does, not what is on now — a sun
   offers the light theme, a moon offers the dark one. Both pairs are in the
@@ -21,7 +22,7 @@
   without that script it would be a control that does nothing, so it is not
   shown at all.
 {% endcomment %}
-<button type="button" class="themetoggle" data-theme-toggle>
+<button type="button" class="themetoggle{% if variant == 'setting' %} themetoggle--setting{% endif %}" data-theme-toggle>
   <svg class="themetoggle__icon themetoggle__icon--sun" viewBox="0 0 24 24" width="16" height="16"
        aria-hidden="true" focusable="false">
     <circle cx="12" cy="12" r="4.25"></circle>
