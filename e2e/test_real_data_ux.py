@@ -60,10 +60,10 @@ def test_a_year_survives_the_back_button(page, base_url):
         pytest.skip("this world spans fewer than two register years")
 
     first, second = years[0], years[1]
-    page.goto(f"{base_url}/statistika/?periood={first}")
+    page.goto(f"{base_url}/statistika/seis/?periood={first}")
     expect(page.locator(".yearpicker__year.is-active")).to_have_text(first)
 
-    page.goto(f"{base_url}/statistika/?periood={second}")
+    page.goto(f"{base_url}/statistika/seis/?periood={second}")
     expect(page.locator(".yearpicker__year.is-active")).to_have_text(second)
 
     page.go_back()
@@ -326,7 +326,7 @@ def test_all_years_is_still_one_click_away(page, base_url):
     (Stage-2E.1 brief 9).
     """
     sign_in(page, base_url, MARTIN)
-    page.goto(f"{base_url}/statistika/?periood=koik")
+    page.goto(f"{base_url}/statistika/seis/?periood=koik")
 
     expect(page.locator(".segmented__option.is-active")).to_have_text("Kõik aastad")
     # And no year is claiming to be selected at the same time.
@@ -341,6 +341,6 @@ def test_a_year_is_marked_selected_in_exactly_one_place(page, base_url):
     if not years:
         pytest.skip("this world has no register years")
 
-    page.goto(f"{base_url}/statistika/?periood={years[0]}")
+    page.goto(f"{base_url}/statistika/seis/?periood={years[0]}")
     expect(page.locator(".yearpicker__year.is-active")).to_have_text(years[0])
     expect(page.locator(".segmented__option.is-active")).to_have_count(0)
