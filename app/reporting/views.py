@@ -73,7 +73,8 @@ def compute_many_by_key(keys: list[str], context: ReportingContext) -> dict[str,
 #: the design names it as one of the five and because it is a destination like
 #: the others rather than an action.
 TABS: tuple[tuple[str, str, str], ...] = (
-    ("ulevaade", "Ülevaade", "reporting:overview"),
+    ("arvamused", "Ülevaade", "reporting:dashboard"),
+    ("ulevaade", "Seis", "reporting:overview"),
     ("teemad", "Teemad", "reporting:matters"),
     ("tegevus", "Tegevus", "reporting:activity"),
     ("ajalooline", "Ajalugu", "reporting:historical"),

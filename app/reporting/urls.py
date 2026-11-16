@@ -10,11 +10,15 @@ Minu töö — is linked to rather than reimplemented (Stage-2E brief 39).
 
 from django.urls import path
 
-from app.reporting import legacy_views, views
+from app.reporting import legacy_views, opinion_views, views
 from app.reporting.report_builder import views as report_views
 
 urlpatterns = [
-    path("", views.overview, name="overview"),
+    # The first page since 2026-11-16: Koda's opinions, from Juristid's own
+    # records. The counts-and-tables page it replaced there is «Seis».
+    path("", opinion_views.dashboard, name="dashboard"),
+    path("arvamused-valja/", opinion_views.opinion_rows, name="opinion_rows"),
+    path("seis/", views.overview, name="overview"),
     path("teemad/", views.matters, name="matters"),
     path("tegevus/", views.activity, name="activity"),
     path("ajalooline/", views.historical_materials, name="historical"),

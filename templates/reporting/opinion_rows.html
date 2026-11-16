@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Välja saadetud arvamused · Statistika · {{ application_name }}{% endblock %}
+
+{% comment %}
+The opinions a figure on Statistika counted (owner, 2026-11-16): sent in the
+period, by the lawyer the URL names, newest first. The same reader and the
+same period arithmetic as the page it came from, so the number that was
+clicked is the number of rows here (app/reporting/opinion_views.py).
+{% endcomment %}
+
+{% block content %}
+<div class="page statdash">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Välja saadetud arvamused</h1>
+    <span class="pagehead__context">{{ period.span }}{% if jurist %} · {{ jurist }}{% endif %} · {{ rows|length }}</span>
+    <div class="pagehead__actions statspage__actions">
+      <a class="button button--quiet" href="{{ back_url }}">← Statistika</a>
+    </div>
+  </div>
+
+  {% if rows %}
+    <table class="table statrows">
+      <thead>
+        <tr>
+          <th scope="col">Saadetud</th>
+          <th scope="col">Teema</th>
+          <th scope="col">Liik</th>
+          <th scope="col">Tähtaeg</th>
+          <th scope="col">Jurist</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for fact in rows %}
+          <tr>
+            <td class="statrows__date">{{ fact.sent_on|date:"d.m.Y" }}</td>
+            <td>
+              <a href="{% url 'matters:matter_detail' pk=fact.matter.matter_id %}">{{ fact.matter.title }}</a>
+              {% if fact.matter.reference %}<span class="statrows__ref">{{ fact.matter.reference }}</span>{% endif %}
+            </td>
+            <td>{{ fact.matter.instrument }}</td>
+            <td class="statrows__date">
+              {% if fact.deadline %}{{ fact.deadline|date:"d.m.Y" }}{% if fact.on_time is False %} <span class="statrows__late">hiljem</span>{% endif %}{% else %}—{% endif %}
+            </td>
+            <td>{{ fact.matter.owner }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="statpanel__empty">Sel perioodil ei ole välja saadetud arvamusi.</p>
+  {% endif %}
+</div>
+{% endblock %}

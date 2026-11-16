@@ -1,0 +1,213 @@
+{% extends "base.html" %}
+{% block title %}Statistika · {{ application_name }}{% endblock %}
+
+{% comment %}
+Statistika's first page (owner, 2026-11-16): Koda's opinions at a glance.
+
+Top to bottom, the order somebody asks the questions in: which period and
+whose work; the four figures, each beside the comparison period's; what went
+out month by month; then the long view from 2011 and the records.
+
+Every figure is read from Juristid's own records through one reader
+(app/reporting/opinions.py) and worked out on the server
+(app/reporting/opinion_stats.py). The charts are plain markup — a column is an
+element with a height, a segment is a link to the opinions it counted — so the
+page reads the same without scripting, and each column carries its numbers in
+words (`title`, and a visually hidden line).
+
+The period, the lawyer and the trend range are links: the state is the URL.
+{% endcomment %}
+
+{% block content %}
+<div class="page statdash">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Statistika</h1>
+    <span class="pagehead__context">{{ period.span }}</span>
+    <div class="pagehead__actions statspage__actions">
+      <a class="button button--quiet" href="{% url 'reporting:report_builder' %}">Majanduspoliitika ülevaade</a>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Statistika vaated">
+    {% for key, label, route in tabs %}
+      <a class="tabs__tab {% if active_tab == key %}is-active{% endif %}"
+         {% if active_tab == key %}aria-current="page"{% endif %}
+         href="{% url route %}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
+  <div class="statdash__controls">
+    {% for link in period_links %}
+      <a class="statchip{% if link.active %} is-active{% endif %}"
+         {% if link.active %}aria-current="true"{% endif %} href="{{ link.url }}">{{ link.label }}</a>
+    {% endfor %}
+    <details class="rangepicker">
+      <summary class="statchip{% if period.key == 'aasta' %} is-active{% endif %}">{% if period.key == 'aasta' %}{{ period.label }}{% else %}Vali aasta{% endif %} ▾</summary>
+      <div class="rangepicker__menu statdash__menu">
+        {% for link in year_links %}
+          <a class="rangepicker__item{% if link.active %} is-active{% endif %}" href="{{ link.url }}">{{ link.label }}</a>
+        {% endfor %}
+      </div>
+    </details>
+    <details class="rangepicker">
+      <summary class="statchip{% if period.key == 'vali' %} is-active{% endif %}">{% if period.key == 'vali' %}{{ period.label }}{% else %}Vali periood{% endif %} ▾</summary>
+      <form class="rangepicker__menu statdash__custom" method="get" action="{% url 'reporting:dashboard' %}">
+        <input type="hidden" name="periood" value="vali">
+        {% if jurist %}<input type="hidden" name="jurist" value="{{ jurist }}">{% endif %}
+        {% if trend %}<input type="hidden" name="trend" value="{{ trend }}">{% endif %}
+        <label class="field__label" for="stat-alates">Alates</label>
+        <input class="field__input" id="stat-alates" type="date" name="alates" required
+               min="{{ first_day|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"
+               value="{% if period.key == 'vali' %}{{ period.start|date:'Y-m-d' }}{% endif %}">
+        <label class="field__label" for="stat-kuni">Kuni</label>
+        <input class="field__input" id="stat-kuni" type="date" name="kuni" required
+               min="{{ first_day|date:'Y-m-d' }}" max="{{ today|date:'Y-m-d' }}"
+               value="{% if period.key == 'vali' %}{{ period.end|date:'Y-m-d' }}{% endif %}">
+        <button type="submit" class="button button--primary button--tiny">Rakenda</button>
+      </form>
+    </details>
+    <span class="statdash__spacer"></span>
+    <details class="rangepicker">
+      <summary class="statchip{% if jurist %} is-active{% endif %}">{% if jurist %}{{ jurist }}{% else %}Kõik juristid{% endif %} ▾</summary>
+      <div class="rangepicker__menu statdash__menu">
+        {% for link in jurist_links %}
+          <a class="rangepicker__item{% if link.active %} is-active{% endif %}" href="{{ link.url }}">{{ link.label }}</a>
+        {% endfor %}
+      </div>
+    </details>
+  </div>
+
+  <section class="stattiles" aria-label="Perioodi näitajad">
+    <a class="stattile stattile--link" href="{{ rows_url }}">
+      <span class="stattile__label">Välja saadetud arvamused</span>
+      <span class="stattile__value">{{ summary.sent }}</span>
+      <span class="stattile__delta" title="{{ period.comparison_label }}: {{ period.previous_span }}">
+        {% if summary.sent_diff > 0 %}↑ {{ summary.sent_diff }}{% elif summary.sent_diff < 0 %}↓ {{ summary.sent_diff|cut:"-" }}{% else %}→ 0{% endif %}
+        · enne {{ summary.sent_before }}
+      </span>
+    </a>
+    <div class="stattile">
+      <span class="stattile__label">Sisse tulnud teemad</span>
+      <span class="stattile__value">{{ summary.received }}</span>
+      <span class="stattile__delta" title="{{ period.comparison_label }}: {{ period.previous_span }}">
+        {% if summary.received_diff > 0 %}↑ {{ summary.received_diff }}{% elif summary.received_diff < 0 %}↓ {{ summary.received_diff|cut:"-" }}{% else %}→ 0{% endif %}
+        · enne {{ summary.received_before }}
+      </span>
+    </div>
+    <div class="stattile">
+      <span class="stattile__label">Tähtajaks esitatud</span>
+      <span class="stattile__value">{% if summary.on_time_share is not None %}{{ summary.on_time_share }}%{% else %}—{% endif %}</span>
+      <span class="stattile__delta" title="{{ summary.on_time }}/{{ summary.with_deadline }} tähtajaga arvamusest">
+        {% if summary.on_time_share_before is not None %}enne {{ summary.on_time_share_before }}%{% else %}enne —{% endif %}
+      </span>
+    </div>
+    <div class="stattile">
+      <span class="stattile__label">Aega vastamiseks</span>
+      <span class="stattile__value">{% if summary.days_given is not None %}{{ summary.days_given|floatformat:0 }} p{% else %}—{% endif %}</span>
+      <span class="stattile__delta" title="Tähtaja ja saabumise vahe päevades, mediaan">
+        mediaan{% if summary.days_given_before is not None %} · enne {{ summary.days_given_before|floatformat:0 }} p{% endif %}
+      </span>
+    </div>
+  </section>
+
+  {% if owner_rows %}
+    <section class="statowners" aria-label="Välja saadetud arvamused juristide kaupa">
+      {% for item in owner_rows %}
+        <a class="statowners__row" href="{{ item.url }}"
+           title="{{ period.comparison_label }}: enne {{ item.row.previous }}">
+          <span class="statowners__name">{{ item.row.owner }}</span>
+          <span class="statowners__count">{{ item.row.count }}</span>
+          <span class="statowners__diff">{% if item.row.diff > 0 %}↑ {{ item.row.diff }}{% elif item.row.diff < 0 %}↓ {{ item.row.diff|cut:"-" }}{% else %}→ 0{% endif %}</span>
+        </a>
+      {% endfor %}
+    </section>
+  {% endif %}
+
+  <section class="statpanel" aria-labelledby="stat-kuud">
+    <div class="statpanel__head">
+      <h2 class="statpanel__title" id="stat-kuud">Välja saadetud arvamused kuude lõikes</h2>
+      <span class="statlegend">
+        {% for item in bar_owners %}
+          <span class="statlegend__item"><span class="statlegend__mark statseries--{{ item.slot }}"></span>{{ item.owner }}</span>
+        {% endfor %}
+      </span>
+    </div>
+    {% if summary.sent %}
+      <div class="statcols" role="list">
+        {% for item in bars %}
+          <a class="statcol" role="listitem" href="{{ item.url }}"
+             title="{{ item.bar.title }}: {{ item.bar.total }}{% for s in item.bar.segments %} · {{ s.owner }} {{ s.count }}{% endfor %}">
+            <span class="statcol__value">{% if item.bar.total %}{{ item.bar.total }}{% endif %}</span>
+            <span class="statcol__track">
+              <span class="statcol__stack" style="height: {{ item.bar.height|stringformat:'.2f' }}%">
+                {% for s in item.bar.segments %}
+                  <span class="statcol__segment statseries--{{ s.slot }}" style="height: {{ s.height|stringformat:'.2f' }}%"></span>
+                {% endfor %}
+              </span>
+            </span>
+            <span class="statcol__label">{{ item.bar.label }}</span>
+            <span class="visually-hidden">{{ item.bar.title }}: {{ item.bar.total }}</span>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="statpanel__empty">Sel perioodil ei ole välja saadetud arvamusi.</p>
+    {% endif %}
+  </section>
+
+  <section class="statsection" id="trendid" aria-labelledby="stat-trendid">
+    <div class="statpanel__head">
+      <h2 class="statsection__title" id="stat-trendid">Pikaajalised trendid</h2>
+      <span class="statdash__controls statdash__controls--inline">
+        {% for link in trend_links %}
+          <a class="statchip{% if link.active %} is-active{% endif %}"
+             {% if link.active %}aria-current="true"{% endif %} href="{{ link.url }}">{{ link.label }}</a>
+        {% endfor %}
+      </span>
+    </div>
+    <div class="stattrends">
+      {% for trend in trends %}
+        <section class="statpanel{% if forloop.first %} statpanel--wide{% endif %}" aria-label="{{ trend.title }}">
+          <div class="statpanel__head">
+            <h3 class="statpanel__title">{{ trend.title }}</h3>
+            {% if trend.note %}<span class="statpanel__note">{{ trend.note }}</span>{% endif %}
+          </div>
+          {% if trend.has_data %}
+            <div class="statcols statcols--years" role="list">
+              {% for bar in trend.bars %}
+                <span class="statcol{% if bar.partial %} statcol--partial{% endif %}" role="listitem" title="{{ bar.title }}{% if bar.partial %} (aasta on pooleli){% endif %}">
+                  <span class="statcol__value">{{ bar.text }}</span>
+                  <span class="statcol__track">
+                    <span class="statcol__stack" style="height: {{ bar.height|stringformat:'.2f' }}%">
+                      <span class="statcol__segment statcol__segment--whole statseries--0"></span>
+                    </span>
+                  </span>
+                  <span class="statcol__label">{{ bar.year|stringformat:"d"|slice:"2:" }}</span>
+                  <span class="visually-hidden">{{ bar.title }}</span>
+                </span>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="statpanel__empty">Andmed puuduvad.</p>
+          {% endif %}
+        </section>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if records %}
+    <section class="statsection" aria-labelledby="stat-rekordid">
+      <h2 class="statsection__title" id="stat-rekordid">Rekordid <span class="statpanel__note">{{ trend_span }}</span></h2>
+      <div class="statrecords">
+        {% for record in records %}
+          <div class="statrecord">
+            <span class="statrecord__title">{{ record.title }}</span>
+            <span class="statrecord__value">{{ record.value }}</span>
+            <span class="statrecord__when">{{ record.when }}</span>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+  {% endif %}
+</div>
+{% endblock %}

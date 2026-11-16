@@ -19,6 +19,7 @@ pytestmark = pytest.mark.django_db
 
 TABS = (
     "/statistika/",
+    "/statistika/seis/",
     "/statistika/teemad/",
     "/statistika/tegevus/",
     "/statistika/ajalooline/",
@@ -81,21 +82,21 @@ def test_the_shared_gate_asks_for_a_persona_before_statistika(client, world, set
 
     assert client.post(reverse("accounts:shared_gate"), {"password": password}).status_code == 302
 
-    response = client.get("/statistika/", {"periood": "koik"})
+    response = client.get("/statistika/seis/", {"periood": "koik"})
     assert response.status_code == 302
     assert response.url.startswith(reverse("accounts:choose_persona"))
     body = response.content.decode()
     assert RESTRICTED_ONLY_WORD not in body
     assert world.native_open.title not in body
 
-    htmx = client.get("/statistika/", {"periood": "koik"}, HTTP_HX_REQUEST="true")
+    htmx = client.get("/statistika/seis/", {"periood": "koik"}, HTTP_HX_REQUEST="true")
     assert htmx.status_code == 401
     assert world.native_open.title not in htmx.content.decode()
 
     # Read off the strip, which is where the v2 overview puts its figures; the
     # metric behind the first one is the catalogue's own `ACTIVE_FULL_MATTERS`.
     client.force_login(world.martin)
-    entitled = client.get("/statistika/", {"periood": "koik"})
+    entitled = client.get("/statistika/seis/", {"periood": "koik"})
     assert entitled.status_code == 200
     figure = entitled.context["seis"][0]
     assert figure.caption == "avatud teemat"
@@ -153,7 +154,7 @@ def test_a_chip_shows_a_name_rather_than_a_key(client, world):
 
 def test_changing_tab_keeps_every_filter(client, world):
     client.force_login(world.martin)
-    response = client.get("/statistika/", {"periood": "koik", "vastutaja": str(world.martin.pk)})
+    response = client.get("/statistika/seis/", {"periood": "koik", "vastutaja": str(world.martin.pk)})
     body = response.content.decode()
     assert f"/statistika/teemad/?periood=koik&amp;vastutaja={world.martin.pk}" in body
 

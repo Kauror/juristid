@@ -295,6 +295,14 @@
      dot for work, a diamond for a commencement. Built on the semantic tokens,
      so the light theme follows without a second definition. */
   --calendar-work: var(--accent-link);
+  --chart-series-0: #3987e5;
+  --chart-series-1: #d95926;
+  --chart-series-2: #199e70;
+  --chart-series-3: #c98500;
+  --chart-series-4: #d55181;
+  --chart-series-5: #3f9a3f;
+  --chart-series-6: #9085e9;
+  --chart-series-7: #e66767;
   --calendar-commencement: var(--status-success);
   --calendar-overdue: var(--status-danger);
   /* Osakond's calendar: one colour per person responsible, picked by a stable
@@ -418,6 +426,14 @@
   --status-info: #0b6597;
   --status-info-soft: #e3eff8;
   --calendar-work: var(--accent-link);
+  --chart-series-0: #2a78d6;
+  --chart-series-1: #eb6834;
+  --chart-series-2: #1baf7a;
+  --chart-series-3: #eda100;
+  --chart-series-4: #e87ba4;
+  --chart-series-5: #008300;
+  --chart-series-6: #6250d6;
+  --chart-series-7: #e34948;
   --calendar-commencement: var(--status-success);
   --calendar-overdue: var(--status-danger);
   /* The same ten people, darker: at least 3:1 against the light surfaces. */
