@@ -11,7 +11,7 @@
 date = 2026-11-16
 basis = "deployment"
 revisions = ["2ade8941377f120f1a25b1d7f37aa067a921f4e8"]
-prs = [628, 633, 634]
+prs = [628, 633, 634, 635]
 # 16.11 väljalase r58 (#628, migratsioonita; tekst jäi esialgu välja ja tuli järgi väljalaskega, mis kannab ainult
 # seda kirjet).
 changes = [
@@ -35,6 +35,8 @@ changes = [
   "Minu asjade real on kollane «!», kui selle teema kohta on lugemata teavitus; hiirega peale minnes on näha, mis teavitus see on, ja selle saab sealt loetuks märkida.",
   "Kui tähtaeg on nädalavahetusel või riigipühal, on kuupäeva kõrval väike kalendri ikoon ja hiirega peale minnes on näha eelmine tööpäev.",
   "Minu asjade numbrite real on otsinguväli: kirjutades jäävad nimekirja ainult sobivad read.",
+  "Statistika avaneb nüüd Koja arvamuste ülevaatega: valitud perioodi välja saadetud arvamused, sisse tulnud teemad, tähtajaks esitatute osakaal ja vastamiseks antud aeg koos võrdlusega varasema perioodiga, arvamused kuude ja juristide kaupa ning pikaajalised trendid ja rekordid alates 2011. Kuu tulbale vajutades avaneb nende arvamuste loend.",
+  "Statistika senine esileht on nüüd vahekaardil «Seis».",
 ]
 
 [[day]]

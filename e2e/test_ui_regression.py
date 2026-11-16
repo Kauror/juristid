@@ -1943,7 +1943,7 @@ ULTRAWIDE = {"width": 3440, "height": 900}
         ("osakond-3440", OSAKOND_PINNED),
         ("minu-too-3440", MY_WORK_PINNED),
         ("teemad-3440", "/teemad/"),
-        ("statistika-3440", "/statistika/"),
+        ("statistika-3440", "/statistika/seis/"),
     ],
 )
 def test_the_bounded_workspace_at_3440(page, base_url, name, path):

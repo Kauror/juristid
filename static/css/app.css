@@ -16734,3 +16734,367 @@ a.jcal__daynum {
 }
 
 /* ==================== end: historical OneNote rows ==================== */
+
+/* ==========================================================================
+ * Statistika's first page (templates/reporting/dashboard.html, 2026-11-16).
+ * Period chips, four figure tiles, column charts drawn as plain elements with
+ * a height, and record cards. A column's colour is its series' token
+ * (`--chart-series-N`); text never wears a series colour.
+ * ========================================================================== */
+
+.statdash {
+  font-variant-numeric: tabular-nums;
+}
+
+.statowners__name {
+  color: var(--text-secondary);
+}
+
+.statdash__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin: var(--spacing-4) 0;
+}
+
+.statdash__controls--inline {
+  margin: 0;
+}
+
+.statdash__spacer {
+  flex: 1;
+}
+
+.statchip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 var(--spacing-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+  text-decoration: none;
+  list-style: none;
+  cursor: pointer;
+}
+
+.statchip::-webkit-details-marker {
+  display: none;
+}
+
+.statchip:hover {
+  color: var(--text-primary);
+  border-color: var(--text-secondary);
+}
+
+.statchip.is-active {
+  background: var(--surface-elevated);
+  border-color: var(--accent-link);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.statdash__menu {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+
+.statdash__custom {
+  gap: var(--spacing-1);
+  padding: var(--spacing-3);
+  min-width: 13rem;
+}
+
+.stattiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: var(--spacing-3);
+}
+
+.stattile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-05);
+  padding: var(--spacing-4);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+}
+
+.stattile--link:hover {
+  background: var(--surface-hover);
+}
+
+.stattile__label {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.stattile__value {
+  font-size: 2rem;
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.15;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.stattile__delta {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statowners {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-3);
+}
+
+.statowners__row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  padding: var(--spacing-15) var(--spacing-3);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  color: inherit;
+  text-decoration: none;
+  font-size: var(--typography-size-sm);
+}
+
+.statowners__row:hover {
+  background: var(--surface-hover);
+}
+
+.statowners__count {
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.statowners__diff {
+  color: var(--text-secondary);
+  font-size: var(--typography-size-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+.statpanel {
+  margin-top: var(--spacing-5);
+  padding: var(--spacing-4);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.statpanel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-2) var(--spacing-4);
+  margin-bottom: var(--spacing-3);
+}
+
+.statpanel__title {
+  margin: 0;
+  font-size: var(--typography-size-base);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.statpanel__note {
+  font-size: var(--typography-size-meta);
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+}
+
+.statpanel__empty {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.statlegend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-3);
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.statlegend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+.statlegend__mark {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.statseries--0 { background: var(--chart-series-0); }
+.statseries--1 { background: var(--chart-series-1); }
+.statseries--2 { background: var(--chart-series-2); }
+.statseries--3 { background: var(--chart-series-3); }
+.statseries--4 { background: var(--chart-series-4); }
+.statseries--5 { background: var(--chart-series-5); }
+.statseries--6 { background: var(--chart-series-6); }
+.statseries--7 { background: var(--chart-series-7); }
+
+/* The column chart: every column the same width, the plot 160px tall. */
+.statcols {
+  display: flex;
+  align-items: stretch;
+  gap: var(--spacing-1);
+}
+
+.statcol {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-05);
+  color: inherit;
+  text-decoration: none;
+}
+
+.statcol__value {
+  min-height: 1.2em;
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.statcol__track {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  height: 160px;
+  border-bottom: 1px solid var(--border-default);
+}
+
+.statcols--years .statcol__track {
+  height: 120px;
+}
+
+.statcol__stack {
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 2px;
+  width: 100%;
+  max-width: 24px;
+}
+
+.statcol__segment {
+  display: block;
+  min-height: 1px;
+}
+
+.statcol__segment:last-child {
+  border-radius: 4px 4px 0 0;
+}
+
+.statcol__segment--whole {
+  height: 100%;
+}
+
+.statcol--partial .statcol__segment {
+  opacity: 0.55;
+}
+
+a.statcol:hover .statcol__value {
+  color: var(--text-primary);
+}
+
+.statcol__label {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.statsection {
+  margin-top: var(--spacing-8);
+}
+
+.statsection__title {
+  margin: 0;
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+}
+
+.stattrends {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 var(--spacing-4);
+}
+
+.statpanel--wide {
+  grid-column: 1 / -1;
+}
+
+.statrecords {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--spacing-3);
+  margin-top: var(--spacing-3);
+}
+
+.statrecord {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-05);
+  padding: var(--spacing-4);
+  background: var(--surface-raised);
+  border-radius: var(--radius-md);
+}
+
+.statrecord__title {
+  font-size: var(--typography-size-meta);
+  color: var(--text-secondary);
+}
+
+.statrecord__value {
+  font-size: var(--typography-size-lg);
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+.statrecord__when {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.statrows {
+  margin-top: var(--spacing-4);
+}
+
+.statrows__date {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.statrows__ref {
+  margin-left: var(--spacing-2);
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+}
+
+.statrows__late {
+  font-size: var(--typography-size-meta);
+  color: var(--status-warning);
+}
+
+@media (max-width: 900px) {
+  .stattrends {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .statcol__label {
+    font-size: 9px;
+  }
+}

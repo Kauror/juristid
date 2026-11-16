@@ -27,7 +27,9 @@ from e2e.conftest import ADMIN, MARTIN, READER, SANDRA, go_to, open_disclosure, 
 pytestmark = pytest.mark.e2e
 
 
-def open_statistics(page, base_url: str, tab: str = "", period: str = "koik") -> None:
+def open_statistics(page, base_url: str, tab: str = "seis/", period: str = "koik") -> None:
+    """A catalogue tab of Statistika; by default «Seis», the counts page that was
+    the first page until 2026-11-16 (docs/adr/0214 moved it to `/statistika/seis/`)."""
     page.goto(f"{base_url}/statistika/{tab}?periood={period}")
     page.wait_for_load_state("networkidle")
 
