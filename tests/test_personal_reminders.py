@@ -161,7 +161,7 @@ def test_the_service_refuses_a_hidden_teema_too(specialist, other_specialist, to
     hidden = factories.MatterFactory(owner=other_specialist)
     _hide(hidden)
 
-    with pytest.raises(DomainError):
+    with pytest.raises(DomainError, match="Teemat ei leitud"):
         personal.create(user=specialist, matter=hidden, remind_on=today, note="", today=today)
 
 
