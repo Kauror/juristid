@@ -24,7 +24,7 @@ pytestmark = pytest.mark.e2e
 def test_a_single_year_is_one_click_away(page, base_url, screenshots):
     """Not a chart bar somebody has to find and click to discover the URL."""
     sign_in(page, base_url, MARTIN)
-    page.goto(f"{base_url}/statistika/")
+    page.goto(f"{base_url}/statistika/seis/")
 
     picker = page.locator(".yearpicker")
     expect(picker).to_be_visible()
@@ -48,7 +48,7 @@ def offered_years(page, base_url) -> list[str]:
     rather than about the picker — and the seeded world has neither 2024 nor a
     guarantee it ever will.
     """
-    page.goto(f"{base_url}/statistika/")
+    page.goto(f"{base_url}/statistika/seis/")
     return page.locator(".yearpicker__year").all_inner_texts()
 
 

@@ -91,7 +91,7 @@ def test_every_period_is_visible_on_a_phone(page, base_url):
     sign_in(page, base_url, HEAD)
     for width in WIDTHS:
         page.set_viewport_size({"width": width, "height": 800})
-        page.goto(f"{base_url}/statistika/")
+        page.goto(f"{base_url}/statistika/seis/")
         page.wait_for_load_state("networkidle")
         readings = page.evaluate(
             """() => {
