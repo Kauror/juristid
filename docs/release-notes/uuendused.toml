@@ -11,7 +11,7 @@
 date = 2026-11-16
 basis = "deployment"
 revisions = ["2ade8941377f120f1a25b1d7f37aa067a921f4e8"]
-prs = [628, 633]
+prs = [628, 633, 634]
 # 16.11 väljalase r58 (#628, migratsioonita; tekst jäi esialgu välja ja tuli järgi väljalaskega, mis kannab ainult
 # seda kirjet).
 changes = [
