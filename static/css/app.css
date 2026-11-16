@@ -127,99 +127,12 @@
   box-shadow: inset 0 -2px 0 0 var(--accent-primary);
 }
 
-/* -- secondary destinations ------------------------------------------------
- *
- * One set of links in one place in the DOM. Below the wide breakpoint they sit
- * in a disclosure menu; at and above it the same element lays them out inline
- * and the trigger goes away. The `:not([open])` selector is there to out-weigh
- * the user-agent rule that hides a closed disclosure's contents — without it
- * the inline row would only appear once somebody had opened the menu.
- */
+/* -- secondary destinations: inline on the bar at every width. -- */
 .topnav__wide {
   display: flex;
   align-items: center;
   gap: var(--spacing-45);
   height: 48px;
-}
-
-.topnav__more {
-  position: relative;
-  height: 48px;
-  display: flex;
-  align-items: center;
-}
-
-.topnav__trigger {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-1);
-  height: 48px;
-  font-size: var(--typography-size-base);
-  font-weight: var(--typography-weight-semibold);
-  color: var(--text-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-  list-style: none;
-}
-
-.topnav__trigger::-webkit-details-marker {
-  display: none;
-}
-
-.topnav__trigger::after {
-  content: "▾";
-  font-size: var(--typography-size-chip);
-  color: var(--text-muted);
-}
-
-.topnav__trigger:hover {
-  color: var(--text-primary);
-}
-
-.topnav__more[open] .topnav__trigger,
-.topnav__trigger.is-active {
-  color: var(--text-primary);
-}
-
-/* Same signal the bar uses for a destination you are on. */
-.topnav__trigger.is-active {
-  box-shadow: inset 0 -2px 0 0 var(--accent-primary);
-}
-
-/* Anchored at the trigger's right edge (ENG-099). «Veel» is the last item on
-   the bar, so a menu hanging rightwards from its left edge ran 66 px off a
-   375 px screen; hanging leftwards it stays on it at every width. */
-.topnav__menu {
-  position: absolute;
-  top: 44px;
-  left: auto;
-  right: 0;
-  z-index: 40;
-  min-width: 180px;
-  max-inline-size: calc(100vw - 2 * var(--spacing-4));
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-1);
-  padding: var(--spacing-2);
-  background: var(--surface-elevated);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-menu);
-}
-
-.topnav__menu .topnav__link {
-  height: 26px;
-  padding: 0 var(--spacing-2);
-  border-radius: var(--radius-sm);
-}
-
-.topnav__menu .topnav__link:hover {
-  background: var(--surface-hover);
-}
-
-.topnav__menu .topnav__link.is-active {
-  box-shadow: inset 2px 0 0 0 var(--accent-primary);
-  background: var(--surface-selected);
 }
 
 /* Gives way before anything else does, and never below the width at which the
@@ -2868,21 +2781,6 @@ fieldset.field > legend {
  *    860   the bar becomes a deliberate two-row layout, not a wrapped one
  * ==================================================================== */
 
-/* Wide desktop: everything is on the bar and the disclosure is not rendered.
-   Below it, the reverse. Exactly one branch exists at any width, so no
-   destination is announced twice. */
-@media (min-width: 1560px) {
-  .topnav__more {
-    display: none;
-  }
-}
-
-@media (max-width: 1559px) {
-  .topnav__wide {
-    display: none;
-  }
-}
-
 @media (max-width: 1320px) {
   .topbar__envlong {
     display: none;
@@ -3631,17 +3529,8 @@ button.personaoption:focus-visible {
   color: var(--accent-link);
 }
 
-.personamenu__note {
-  margin: 3px 0 0;
-  padding: 7px var(--spacing-25) var(--spacing-1);
-  border-top: 1px solid var(--border-control);
-  font-size: var(--typography-size-label);
-  line-height: var(--typography-line-normal);
-  color: var(--text-muted);
-}
-
 /* «Halduri sisselogimine», or the verified administrator session: below the
-   note and ruled off from it, because it is a different act — a person's own
+   choices and ruled off from them, because it is a different act — a person's own
    sign-in, not a choice of whose work to show (docs/adr/0186). */
 .personamenu__admin {
   margin: var(--spacing-1) 0 0;
@@ -9257,16 +9146,11 @@ button.opinionmenu__item {
   font-weight: var(--typography-weight-semibold);
 }
 
-.actfeed__hint,
 .actfeed__cap {
-  margin: 0 0 var(--spacing-2);
+  margin: var(--spacing-2) 0 0;
   padding: 0 var(--spacing-3);
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
-}
-
-.actfeed__cap {
-  margin: var(--spacing-2) 0 0;
 }
 
 /* The feed closes the left column, so it carries no bottom rule — the page

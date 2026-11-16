@@ -134,29 +134,14 @@ def test_the_head_reads_the_same_order_as_a_specialist(client, department_head):
 # ---------------------------------------------------------------------------
 
 
-def test_the_veel_trigger_is_not_marked_by_a_destination_that_no_longer_exists(client, specialist):
-    """The trigger lit up for `nav_active == 'jalgimine'` as well as Statistika.
-
-    Nothing sets that key any more, and a condition kept for a page that is gone
-    is a condition nobody would notice had stopped meaning anything.
-    """
-    client.force_login(specialist)
-    body = client.get(reverse("matters:matter_list")).content.decode()
-
-    trigger = re.search(r'<summary class="topnav__trigger[^"]*"', body)
-    assert trigger, "the disclosure trigger is not on the page"
-    assert "is-active" not in trigger.group(0)
-
-
-def test_the_veel_trigger_still_marks_statistika(client, specialist):
-    """Below 1560px Statistika is inside the disclosure and the closed trigger is
-    all a reader can see. It carries the signal, off its own key."""
+def test_statistika_is_marked_on_its_own_page(client, specialist):
+    """With «Veel» gone the Statistika link itself carries the active state."""
     client.force_login(specialist)
     body = client.get(reverse("reporting:overview")).content.decode()
 
-    trigger = re.search(r'<summary class="topnav__trigger[^"]*"', body)
-    assert trigger, "the disclosure trigger is not on the page"
-    assert "is-active" in trigger.group(0)
+    assert re.search(
+        r'class="topnav__link is-active"\s+aria-current="page"\s+href="[^"]*"\s*>Statistika<', body
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -248,19 +233,11 @@ def test_the_retired_item_is_absent_behind_the_gate_too(behind_the_gate, retired
 # ---------------------------------------------------------------------------
 
 
-def test_the_secondary_items_read_the_same_in_both_branches(signed_in):
-    """The wide row and the disclosure hold the same links in the same order,
-    because they are the same include.
-
-    The contract the shell depends on — exactly one branch displayed at a time,
-    so each destination reaches the accessibility tree once — is asserted in a
-    real browser (e2e/test_ui_shell.py). What is asserted here is the ordering
-    inside each branch, which no screenshot would show.
-    """
+def test_statistika_is_on_the_bar_once_and_there_is_no_veel(signed_in):
+    """A one-item «Veel» menu was a click for nothing: Statistika is a plain link."""
     navigation = navigation_of(signed_in.get(reverse("matters:department")))
 
     wide = navigation.index('<span class="topnav__wide">')
-    menu = navigation.index('<div class="topnav__menu">')
-
-    for branch in (navigation[wide:menu], navigation[menu:]):
-        assert labels_of(branch) == ["Statistika"]
+    assert labels_of(navigation[wide:]) == ["Statistika"]
+    assert "topnav__more" not in navigation
+    assert ">Veel<" not in navigation

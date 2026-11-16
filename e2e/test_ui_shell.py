@@ -43,7 +43,7 @@ PRIMARY = ["Minu asjad", "Osakond", "Teemad"]
 #: its models and its data exactly where they were (Ülevaade QA §2).
 NOT_ON_THE_BAR = ["Saabunud"]
 
-#: The reading surfaces, in order. Inline above 1560, behind "Veel" below it.
+#: The reading surfaces, in order, inline on the bar at every width.
 #: `Osakond` is deliberately absent from this list: it is a primary destination
 #: now, and there is exactly one of it — a second copy in here is the
 #: duplication the merge removed (ADR 0049).
@@ -116,14 +116,7 @@ def test_the_shell_is_one_row_and_never_scrolls_sideways(page, base_url, width, 
 
 @pytest.mark.parametrize("width,height", [*VIEWPORTS, (1600, 900)], ids=lambda v: str(v))
 def test_every_destination_stays_reachable_at_every_width(page, base_url, width, height):
-    """Priority navigation hides nothing; it only moves what is secondary.
-
-    Reachability is asserted through the accessibility tree, and each
-    destination must appear in it exactly once. The two branches — the wide row
-    and the "Veel" disclosure — are never both rendered, so nothing is
-    announced twice; below the wide breakpoint the secondary destinations are
-    one activation away, which is what a disclosure is for.
-    """
+    """Every destination is on the bar, once, at every width."""
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
     open_register(page, base_url)
@@ -131,11 +124,6 @@ def test_every_destination_stays_reachable_at_every_width(page, base_url, width,
     navigation = page.get_by_role("navigation", name="Peamine")
     for destination in PRIMARY:
         expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(1)
-
-    if width < 1560:
-        trigger = page.locator(".topnav__trigger")
-        expect(trigger).to_be_visible()
-        trigger.click()
 
     for destination in SECONDARY:
         expect(navigation.get_by_role("link", name=destination, exact=True)).to_have_count(1)
@@ -157,9 +145,6 @@ def test_the_bar_reads_in_the_approved_order(page, base_url, width, height):
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
     open_register(page, base_url)
-
-    if width < 1560:
-        page.locator(".topnav__trigger").click()
 
     navigation = page.get_by_role("navigation", name="Peamine")
     placed = []
@@ -393,22 +378,6 @@ def test_the_gear_is_reached_by_keyboard_and_marks_haldus_current(page, base_url
     expect(haldus).to_have_attribute("aria-current", "page")
     expect(page.get_by_role("heading", name="Rakendus", exact=True)).to_be_visible()
     assert not document_overflows(page)
-
-
-def test_the_secondary_navigation_disclosure_is_keyboard_operable(page, base_url):
-    """ "Veel" is a real disclosure: focusable, announced, and it opens on Enter.
-
-    A hover-only menu is one keyboard users cannot discover.
-    """
-    sign_in(page, base_url, SANDRA)
-    page.set_viewport_size({"width": 1280, "height": 800})
-    open_register(page, base_url)
-
-    trigger = page.locator(".topnav__trigger")
-    expect(trigger).to_be_visible()
-    trigger.focus()
-    page.keyboard.press("Enter")
-    expect(page.get_by_role("link", name="Statistika", exact=True)).to_be_visible()
 
 
 def test_the_skip_link_is_the_first_thing_a_keyboard_reaches(page, base_url):

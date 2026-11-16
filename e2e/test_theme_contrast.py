@@ -172,7 +172,6 @@ SURFACES = {
     "minu-asjad-rida": _then(
         _go("/minu-asjad/"), lambda p: p.locator(".rowmenu__trigger").first.click()
     ),
-    "veel": _then(_go("/minu-asjad/"), lambda p: p.locator(".topnav__trigger").click()),
     "otsingu-soovitused": _then(
         _go("/minu-asjad/"),
         lambda p: p.locator("#global-search").press_sequentially("sünteetiline", delay=20),

@@ -3274,7 +3274,7 @@
    * it. Delegated, so it costs nothing per menu and survives every swap.
    */
   document.addEventListener("click", function (event) {
-    document.querySelectorAll("details.topnav__more[open], details.headmenu[open]").forEach(function (menu) {
+    document.querySelectorAll("details.headmenu[open]").forEach(function (menu) {
       if (!menu.contains(event.target)) {
         menu.open = false;
       }
@@ -3294,7 +3294,7 @@
      one of these: Escape inside something else open in them — a calendar, a
      nested editor — belongs to that, and a key something closer already
      handled is left alone (JUX-007). */
-  var ESCAPABLE = "details.topnav__more, details.headmenu, details.inlineedit, details.filterpanel";
+  var ESCAPABLE = "details.headmenu, details.inlineedit, details.filterpanel";
 
   document.addEventListener("keydown", function (event) {
     if (event.key !== "Escape" || event.defaultPrevented) {
@@ -3303,7 +3303,7 @@
     var inner = event.target.closest ? event.target.closest("details[open]") : null;
     var open = inner && inner.matches(ESCAPABLE)
       ? inner
-      : document.querySelector("details.topnav__more[open], details.headmenu[open]");
+      : document.querySelector("details.headmenu[open]");
     if (open) {
       event.preventDefault();
       open.open = false;

@@ -572,7 +572,7 @@ def test_a_refused_reader_cannot_reach_the_archive_by_asking_for_it(client, admi
     assert "Salajane varasem kiri" not in body
     assert ">Arhiivikirjad" not in section
     # Falls back to the canonical source rather than showing nothing at all.
-    assert "ei ole veel ühtegi arvamust välja saadetud" in section
+    assert "Saadetud arvamusi pole." in section
 
 
 def test_the_fragment_route_refuses_the_archive_the_same_way(client, administrator) -> None:

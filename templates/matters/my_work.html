@@ -314,14 +314,6 @@ The rail holds only what has no honest place on a timeline.
             <span class="foldout__label">Viimased tegevused</span>
           </summary>
           <div class="foldout__body">
-            <p class="actfeed__hint">
-              {% if is_self %}
-                Sisulised tegevused sinu teemadel, kes tahes need tegi, ja sinu sissekanded teiste teemadel.
-              {% else %}
-                Sisulised tegevused selle inimese teemadel, kes tahes need tegi, ja tema sissekanded teiste teemadel.
-              {% endif %}
-              Pealkirja, vastutaja ja muude andmete muutmist siin ei näidata.
-            </p>
             {% for row in work.activity.preview %}
               {% include "matters/partials/activity_row.html" with row=row %}
             {% empty %}
@@ -425,8 +417,6 @@ The rail holds only what has no honest place on a timeline.
               <a class="quietrow__cta" href="{% url 'matters:matter_detail' pk=row.matter.pk %}#lisa-jargmine">Määra</a>
             </span>
           </div>
-        {% empty %}
-          <p class="railblock__empty">Kõigil avatud teemadel on järgmine tegevus määratud.</p>
         {% endfor %}
         {% if work.quiet_total > work.quiet|length %}
           <a class="railblock__more" href="{{ work.portfolio.register_url }}&amp;tegevus=puudub">Näita kõiki {{ work.quiet_total }} →</a>
@@ -457,10 +447,6 @@ The rail holds only what has no honest place on a timeline.
               {{ item.matter.title }}
             </span>
           </a>
-        {% empty %}
-          <p class="railblock__empty">
-            {% if is_self %}Igal sinu tegevusel on kuupäev.{% else %}Igal tegevusel on kuupäev.{% endif %}
-          </p>
         {% endfor %}
         {% if work.undated_total > work.undated|length %}
           <a class="railblock__more" href="{{ work.undated_url }}">Näita kõiki {{ work.undated_total }} →</a>

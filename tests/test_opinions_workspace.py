@@ -138,7 +138,7 @@ def test_the_empty_state_explains_the_boundary_rather_than_a_failed_query(signed
 
     assert response.status_code == 200
     body = response.content.decode()
-    assert "ei ole veel ühtegi arvamust välja saadetud" in body
+    assert "Saadetud arvamusi pole." in body
     # It names why, and it points at where the old letters really are.
     assert "arhiiv" in body.lower()
 
@@ -195,7 +195,7 @@ def test_a_submission_on_a_restricted_matter_is_listed_for_a_reader_and_not_an_o
     body = client.get(SENT_URL).content.decode()
 
     assert "Piiratud arvamus" not in body
-    assert "ei ole veel ühtegi arvamust" in body
+    assert "Saadetud arvamusi pole." in body
 
 
 def test_year_and_recipient_filters_narrow_the_list(

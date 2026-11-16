@@ -3802,7 +3802,7 @@ class BriefSummaryForm(forms.Form):
             attrs={
                 "class": "field__input inlineedit__area",
                 "rows": "3",
-                "placeholder": "Mida see teema ettevõtjatele tähendab? (2–3 lauset)",
+                "placeholder": "Mida see teema ettevõtjatele tähendab?",
             }
         ),
     )
@@ -3921,7 +3921,7 @@ class IncomingIntakeForm(OrganisationPickerChoicesMixin, forms.Form):
             attrs={
                 "class": "field__input",
                 "rows": "3",
-                "placeholder": "Mida see teema ettevõtjatele tähendab? (2–3 lauset)",
+                "placeholder": "Mida see teema ettevõtjatele tähendab?",
             }
         ),
     )

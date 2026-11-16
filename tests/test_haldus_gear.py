@@ -114,7 +114,7 @@ def test_every_persona_sees_the_same_bar_and_the_same_menu_footer(client):
     def bar(persona):
         choose(client, persona)
         body = client.get(reverse("matters:my_work")).content.decode()
-        menu_footer = _persona_menu(body).split('class="personamenu__note"', 1)[1]
+        menu_footer = _persona_menu(body).split('class="personamenu__admin"', 1)[1]
         return _nav(body), _gear(body), menu_footer
 
     assert bar(manager) == bar(colleague) == bar(factories.DepartmentHeadFactory())
@@ -265,8 +265,6 @@ def test_the_persona_menu_offers_the_administrator_sign_in_to_everybody(client):
         menu = _persona_menu(client.get(reverse("matters:my_work")).content.decode())
         assert f'<a class="personamenu__adminlink" href="{reverse("haldus:sign_in")}">' in menu
         assert ">Halduri sisselogimine<" in menu
-        # Choosing is still said not to be signing in.
-        assert "Valik ei ole autentimine" in menu
 
 
 def test_a_persona_less_gate_session_finds_the_sign_in_in_the_menu(client):

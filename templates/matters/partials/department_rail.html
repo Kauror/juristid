@@ -37,6 +37,7 @@ by HTMX under its own id and keeps `vaade` on every link.
     The bar is decoration on top of a number, never the carrier of it: a
     monochrome print of this page must still be readable.
   {% endcomment %}
+  {% if page.areas %}
   <section class="railblock" aria-label="Valdkonnad">
     <h2 class="railblock__label">Valdkonnad</h2>
     {% for row in page.areas %}
@@ -44,11 +45,10 @@ by HTMX under its own id and keeps `vaade` on every link.
         <span class="arearail__name">{{ row.label }}</span>
         <span class="arearail__count">{{ row.count }}</span>
       </a>
-    {% empty %}
-      <p class="railblock__empty">Ühtegi valdkonda ei ole kirjas.</p>
     {% endfor %}
     <a class="railblock__more" href="?vaade=valdkonniti">Kõik valdkonnad →</a>
   </section>
+  {% endif %}
 
   <section class="railblock" aria-label="Uued teemad">
     <h2 class="railblock__label">Uued teemad</h2>
