@@ -8,6 +8,20 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-16
+basis = "deployment"
+revisions = ["2ade8941377f120f1a25b1d7f37aa067a921f4e8"]
+prs = [628]
+# 16.11 väljalase r58 (#628, migratsioonita; tekst jäi esialgu välja ja tuli järgi väljalaskega, mis kannab ainult
+# seda kirjet).
+changes = [
+  "«Statistika» on alati otse ülaribal ja ühe valikuga menüüd «Veel» enam ei ole.",
+  "Sisenemislehel on halduri link lihtsalt «Halduri sisselogimine» ja kasutaja valiku menüüs pole enam märkust, et valik ei ole autentimine.",
+  "Minu asjad, Osakond, kalender ja saadetud arvamused ei näita tühja ploki kohta enam selgituslauseid ning Osakonna «Valdkonnad» on näha ainult siis, kui valdkondi on.",
+  "Teemade registris pole enam kordavat «kuvatud N» arvu ja kokkuvõtte väljadel vihjet «(2–3 lauset)».",
+]
+
+[[day]]
 date = 2026-11-14
 basis = "deployment"
 prs = [625]
