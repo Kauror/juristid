@@ -204,7 +204,7 @@ control on this row: the row itself is the link.
           their account — nothing about the work changes — so it is offered to
           every reader on their own list (app/notifications/personal.py).
         {% endcomment %}
-        <details class="rowmenu__shift">
+        <details class="rowmenu__remind">
           <summary class="rowmenu__item">Lisa meeldetuletus</summary>
           <form class="remindform" method="post"
                 action="{% url 'notifications:personal_create' matter_id=item.matter.pk %}">

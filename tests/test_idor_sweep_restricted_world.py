@@ -157,6 +157,11 @@ PERSONAL_INBOX = {
     "notifications:defer": "the responsible person's own inbox",
     # «Märgi lugemata» undoes the same personal receipt (UI-01): the same gate.
     "notifications:reminder_unread": "the responsible person's own inbox",
+    # «Lisa meeldetuletus» (2026-11-16): a reminder is its recipient's own row;
+    # the swept id is never one, so it is a 404 for everybody, the owner too.
+    "notifications:personal_read": "the recipient's own reminder",
+    "notifications:personal_unread": "the recipient's own reminder",
+    "notifications:personal_remove": "the recipient's own reminder",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.

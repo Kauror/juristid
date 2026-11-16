@@ -14827,12 +14827,14 @@ a.jcal__daynum {
  * the preview needs no script and nothing is saved until `Salvesta`.
  * ========================================================================== */
 
-.rowmenu__shift > summary {
+.rowmenu__shift > summary,
+.rowmenu__remind > summary {
   list-style: none;
   cursor: pointer;
 }
 
-.rowmenu__shift > summary::-webkit-details-marker {
+.rowmenu__shift > summary::-webkit-details-marker,
+.rowmenu__remind > summary::-webkit-details-marker {
   display: none;
 }
 

@@ -1712,6 +1712,14 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "notifications:assignment_read": "C: the recipient's own «Uus asi» receipt",
     "notifications:assignment_unread": "C: the recipient's own «Uus asi» receipt, undone",
     "notifications:mark_all_read": "C: the reader's own read stamps, all at once up to a boundary",
+    # «Lisa meeldetuletus» (owner, 2026-11-16): the signed-in person's own
+    # reminder on a Teema they may see — set, read, unread, removed. Resolved by
+    # ``recipient=request.user`` (another person's is a 404); no business
+    # service, no `ChangeEvent` (tests/test_personal_reminders.py).
+    "notifications:personal_create": "C: the signed-in person's own reminder on a visible Teema",
+    "notifications:personal_read": "C: the recipient's own read stamp on their reminder",
+    "notifications:personal_unread": "C: the recipient's own reminder read stamp, undone",
+    "notifications:personal_remove": "C: removes the recipient's own reminder",
     "notifications:settings": "C: the signed-in person's own notification preferences",
     "notifications:reset_settings": "C: resets the signed-in person's own preferences",
     # D — authentication and session control. Not business content, and two of

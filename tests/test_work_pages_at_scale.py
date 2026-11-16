@@ -83,7 +83,10 @@ OSAKOND_BUDGET = 48
 #: preferences, their pause setting and their own live deadline rows — read
 #: once each, whatever the desk holds; «Uus asi» and «Kontrolli jõustumist»
 #: keep the reads they already had.
-MINU_ASJAD_BUDGET = 45
+#: +1 for «Lisa meeldetuletus» (owner, 2026-11-16): the reader's own due
+#: reminders, one read whatever the desk holds. The rows' «!» markers reuse the
+#: inbox the block reads, so the page still reads it once.
+MINU_ASJAD_BUDGET = 46
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).

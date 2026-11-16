@@ -44,13 +44,18 @@ def notifications_bell(context: Any) -> dict[str, Any]:
     }
 
 
-def block_context(user: Any, tagasi: str = "minu_asjad") -> dict[str, Any]:
+def block_context(
+    user: Any, tagasi: str = "minu_asjad", items: list[Any] | None = None
+) -> dict[str, Any]:
     """What the Minu asjad block draws: the reader's inbox, only what awaits them.
 
     Shared by the tag and by `notifications:block`, which redraws the block in
-    place after an answer, so the two can never disagree.
+    place after an answer, so the two can never disagree. ``items`` is the
+    inbox the page already read for its rows' «!» markers, so Minu asjad
+    reads it once (`inbox_items`, its ``is_self`` branch).
     """
-    items = inbox.inbox_for(user)
+    if items is None:
+        items = inbox.inbox_for(user)
     return {
         "items": items[:BLOCK_LIMIT],
         "total": len(items),
@@ -61,7 +66,10 @@ def block_context(user: Any, tagasi: str = "minu_asjad") -> dict[str, Any]:
 
 @register.inclusion_tag("notifications/_minu_asjad_block.html", takes_context=True)
 def notifications_block(context: Any, tagasi: str = "minu_asjad") -> dict[str, Any]:
-    return {**block_context(_user(context), tagasi), "csrf_token": context.get("csrf_token")}
+    return {
+        **block_context(_user(context), tagasi, context.get("inbox_items")),
+        "csrf_token": context.get("csrf_token"),
+    }
 
 
 @register.inclusion_tag("notifications/_department_block.html", takes_context=True)
