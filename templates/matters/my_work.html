@@ -472,8 +472,7 @@ The rail holds only what has no honest place on a timeline.
               {% csrf_token %}
               <textarea id="pw-note-body" name="body"
                         aria-label="Isiklikud märkmed"
-                        maxlength="20000"
-                        placeholder="Kirjuta siia meeldetuletusi endale…">{{ scratchpad.body|default:"" }}</textarea>
+                        maxlength="20000">{{ scratchpad.body|default:"" }}</textarea>
               {% comment %}
                 Which stored version this box was filled from. Inside the form,
                 so the autosave posts it with the text it describes: a save

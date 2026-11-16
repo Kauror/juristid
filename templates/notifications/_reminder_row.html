@@ -7,7 +7,9 @@ möödunud». The description, the official source, the closed badge and the
 owner are on the Teema page, not repeated in every item (owner's review of
 2026-11-02). The type label stays, because the list mixes kinds.
 
-* «Märgi loetuks» (`notifications:reminder_read`) and «Lükka edasi»
+* «Märgi loetuks» (a tick) and «Lükka edasi» (a clock), icons at the item's
+  top-right with their names as tooltips (owner, 2026-11-16)
+  (`notifications:reminder_read`, «Lükka edasi»
   (`notifications:defer`) — both the reader's own state. Neither is a check,
   neither writes a `ChangeEvent`, and both leave the prompt open for a new
   owner and for every other manager. Offered to everybody the item is listed
@@ -29,12 +31,12 @@ post that redraws the block in place (UI-01).
     <form method="post" action="{% url 'notifications:reminder_read' pk=row.pk %}"{% if tagasi == "minu_asjad" %} hx-post="{% url 'notifications:reminder_read' pk=row.pk %}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
       {% csrf_token %}
       <input type="hidden" name="tagasi" value="{{ tagasi }}">
-      <button type="submit" class="button button--quiet button--tiny"
-              aria-label="Märgi loetuks: {{ row.matter_title }}">Märgi loetuks</button>
+      <button type="submit" class="notificon" title="Märgi loetuks"
+              aria-label="Märgi loetuks: {{ row.matter_title }}"><svg class="notificon__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><path d="M5 12.5l4.5 4.5L19 7.5"></path></svg></button>
     </form>
       <details class="notifrow__more">
-        <summary class="button button--quiet button--tiny"
-                 aria-label="Lükka edasi: {{ row.matter_title }}">Lükka edasi</summary>
+        <summary class="notificon" title="Lükka edasi"
+                 aria-label="Lükka edasi: {{ row.matter_title }}"><svg class="notificon__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.25"></circle><path d="M12 7.5V12l3 2"></path></svg></summary>
         <form class="notifrow__panel" method="post" action="{% url 'notifications:defer' pk=row.pk %}"{% if tagasi == "minu_asjad" %} hx-post="{% url 'notifications:defer' pk=row.pk %}" hx-target="#notif-sidebar" hx-swap="innerHTML"{% endif %}>
           {% csrf_token %}
           <input type="hidden" name="tagasi" value="{{ tagasi }}">

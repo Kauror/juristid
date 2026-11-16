@@ -1,8 +1,9 @@
 /* header-menu.css: UI-03 header settings menu (agent B). Loaded after ux.css from templates/base.html.
  *
- * The right-hand end of the top bar, in the owner's order (2026-11-06):
- * search → «+ Uus teema» → whose work is on screen → the bell → «Seaded» →
- * «Välju». Two rules hold it together:
+ * The right-hand end of the top bar, in the owner's order (2026-11-16):
+ * search → «+ Uus teema», a gap, then the bell → the account menu (the name,
+ * which also holds «Teavituste seaded», Haldus, the theme switch and «Välju»).
+ * Two rules hold it together:
  *
  *   1. One height and one gap. Every control is `--topbar-control-size` tall
  *      and sits `--topbar-gap` from its neighbour (tokens.css); nothing carries
@@ -10,8 +11,8 @@
  *      the notification panel's (`.notifbell`, notification-panel.css) and is
  *      sized from the same token; nothing here styles inside it.
  *   2. The search is what gives and takes width (`.searchfield`, app.css), so
- *      no button is ever squeezed, and «Välju» is always the last thing on the
- *      bar, at its right edge.
+ *      no button is ever squeezed, and the account menu is always the last
+ *      thing on the bar, at its right edge.
  *
  * No raw colours (tokens.css is the only place they live), and every colour is
  * a role, so the light theme needs nothing here.
@@ -31,30 +32,22 @@
   gap: var(--topbar-gap);
 }
 
+/* The personal controls stand apart from the work controls (search and
+   «+ Uus teema»): the one deliberate extra space on the bar. */
 .topbar__account {
   flex: none;
   display: flex;
   align-items: center;
   gap: var(--topbar-gap);
+  margin-left: var(--spacing-10);
 }
 
-/* One height for the two text buttons. `.button` is padded for forms; on the
-   bar the height is the token's and the padding only horizontal. */
-.topbar__cta,
-.topbar__signout .button {
+/* One height for the text button. `.button` is padded for forms; on the bar
+   the height is the token's and the padding only horizontal. */
+.topbar__cta {
   height: var(--topbar-control-size);
   min-height: 0;
   padding-block: 0;
-}
-
-/* A quiet word, not a box: the side padding is the menu rows' own, so the
-   word sits as far from the gear as the gear does from the bell. */
-.topbar__signout .button {
-  padding-inline: var(--spacing-25);
-}
-
-.topbar__signout {
-  display: flex;
 }
 
 /* The persona pill and the avatars, at the bar's height. */
@@ -172,11 +165,45 @@
   box-shadow: inset 2px 0 0 0 var(--accent-primary);
 }
 
-/* The theme row first, then the places: a hairline says they are two kinds. */
-:root[data-theme-switchable] .settingsmenu__panel .themetoggle + .settingsmenu__item {
+/* ---- the account menu (components/account_menu_items.html) ------------ */
+
+/* Its own rows, under whatever leads the menu (the people to switch between,
+   or «Minu konto»): a hairline says they are another kind. */
+.accountmenu {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
   margin-top: var(--spacing-1);
+  padding-top: var(--spacing-1);
   border-top: 1px solid var(--border-control);
-  border-radius: 0 0 var(--radius-control) var(--radius-control);
+}
+
+/* Alone in the avatar menu outside personal sign-in, nothing to separate. */
+.settingsmenu__panel > .accountmenu:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* The form only makes «Välju» a POST; the button is the row. */
+.accountmenu__signout {
+  display: contents;
+}
+
+.accountmenu__signoutbutton {
+  width: 100%;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/* The avatar is the trigger outside the shared gate: the summary takes its
+   size, not the gear's square. */
+.accountmenu__trigger {
+  width: auto;
+  padding: 0;
 }
 
 /* ---- widths ------------------------------------------------------------ */

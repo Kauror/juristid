@@ -266,8 +266,7 @@
 }
 
 .topbar__cta,
-.topbar__env,
-.topbar__signout {
+.topbar__env {
   flex: none;
 }
 
@@ -4661,13 +4660,6 @@ a.barchart__row:hover {
 
 .checkline--fixed {
   cursor: default;
-}
-
-.columnchooser__preview {
-  margin: var(--spacing-2) 0 0;
-  font-size: var(--typography-size-meta);
-  color: var(--text-secondary);
-  overflow-wrap: anywhere;
 }
 
 .exportmenu__body {
@@ -14455,16 +14447,59 @@ a.jcal__daynum {
   margin-top: 0;
 }
 
-/* The actions sit on their own line directly under the item's text, never at
- * the far edge of a wide page (owner's review of 2026-11-02), and an opened
- * «Lükka edasi» panel takes the full width under the item it belongs to. */
+/* The actions are small icons at the item's top-right, on the label's line
+ * (owner, 2026-11-16: no separate button row), with their names as tooltips
+ * and in `aria-label`. An opened «Lükka edasi» panel drops under the item and
+ * takes its full width. */
 .notifrow {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
   gap: var(--spacing-1);
   padding: var(--spacing-2) 0;
   border-bottom: 1px solid var(--border-subtle);
+}
+
+.notifrow > .notifrow__main,
+.notifrow > .newasjarow {
+  grid-column: 1;
+}
+
+.notifrow:has(.notifrow__more[open]) > .notifrow__actions {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  justify-content: flex-start;
+}
+
+.notificon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  list-style: none;
+}
+
+.notificon:hover,
+.notificon:focus-visible,
+.notifrow__more[open] > .notificon {
+  background: var(--surface-overlay-hover);
+  color: var(--text-primary);
+}
+
+.notificon__svg {
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .notifrow:last-child {
@@ -14508,10 +14543,13 @@ a.jcal__daynum {
 }
 
 .notifrow__actions {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: flex-start;
-  gap: var(--spacing-1);
+  gap: 2px;
 }
 
 .notifrow__more > summary {
@@ -15289,11 +15327,27 @@ a.jcal__daynum {
 
 .wcal__panel .wcal__grid {
   grid-template-columns: 1.8rem repeat(7, minmax(0, 1fr));
+  gap: 3px;
 }
 
+/* The large panel is for reading, not for fitting in a rail (owner,
+   2026-11-16): taller days with room for more dots, and every day boxed —
+   an empty one too — so the weeks read as a table. */
 .wcal__panel .wcal__daybtn,
 .wcal__panel .wcal__day--empty {
-  min-height: 40px;
+  min-height: 64px;
+  padding: 6px 4px 4px;
+  gap: 6px;
+}
+
+.wcal__panel .wcal__day--empty {
+  border-color: var(--border-subtle);
+}
+
+.wcal__panel .wcal__weeknum,
+.wcal__panel .wcal__weekbtn {
+  min-height: 64px;
+  padding-top: 7px;
 }
 
 @media (max-width: 860px) {

@@ -43,11 +43,6 @@
       idempotently, and again after every HTMX swap (static/js/ux.js).
     {% endcomment %}
     <script src="{% static 'js/ux.js' %}" defer></script>
-    {% comment %}
-      «Vali veerud»'s preview line (static/js/register_columns.js). Inert on
-      every page without the chooser.
-    {% endcomment %}
-    <script src="{% static 'js/register_columns.js' %}" defer></script>
     {# The November 2026 UI round's per-area scripts, after app.js so htmx and its helpers exist. #}
     <script src="{% static 'js/notification-panel.js' %}" defer></script>
     <script src="{% static 'js/header-menu.js' %}" defer></script>
@@ -270,53 +265,20 @@
           {% endcomment %}
           <div class="topbar__account">
           {% comment %}
-            Who the application is showing work for, and a way to change it.
-
-            Named rather than reduced to an avatar, because in shared-gate mode
-            this is not "you" — it is a view somebody selected, and it has to be
-            obvious at a glance which one is active before anybody reads a
-            dashboard as their own (Stage-2D auth brief 7).
-
-            The pill opens the same list the full page shows, so switching costs
-            a click and not a page: somebody comparing two people's queues stays
-            on the queue (Vali kasutaja brief 14, 19). It stays on the bar
-            itself, never inside the settings menu (UI-03).
-          {% endcomment %}
-          {% if shared_gate_mode %}
-            {% include "components/persona_switcher.html" %}
-          {% elif local_password_mode and user.is_authenticated %}
-            {% comment %}
-              Under personal sign-in the bar names the person who signed in,
-              and the avatar opens their own account page (docs/adr/0145).
-            {% endcomment %}
-            <a class="avatar avatar--link" href="{% url 'accounts:profile' %}"
-               title="{{ user.display_name }} — Minu konto"
-               aria-label="Minu konto ({{ user.display_name }})">{{ user.initials }}</a>
-          {% elif user.is_authenticated %}
-            <span class="avatar" title="{{ user.display_name }}">{{ user.initials }}</span>
-          {% endif %}
-
-          {% comment %}
-            «Teavitused» (docs/adr/0188, docs/adr/0198): what the tag renders is
-            the notification panel's own (UI-01); this bar only gives it its
-            place, between the persona and the settings gear. Renders nothing
-            for a reader with none to see.
+            The personal end of the bar, after a gap that separates it from the
+            work controls (owner, 2026-11-16): the bell, then whose work is on
+            screen. Clicking the name opens one menu that also holds
+            «Teavituste seaded», Haldus, the theme switch and «Välju»
+            (components/account_menu_items.html) — no separate gear or
+            «Välju» on the bar. In the shared gate the name stays visible: it
+            is a view somebody selected, not "you" (Stage-2D auth brief 7).
           {% endcomment %}
           {% load notifications %}{% notifications_bell %}
-
-          {% comment %}
-            «Seaded»: the gear that was Haldus, now a menu holding the theme
-            switch, «Teavituste seaded» and Haldus (UI-03). Haldus's landing
-            opens for every signed-in reader alike, so the gear says nothing
-            about who administers anything; each section behind it decides for
-            itself (app/accounts/templatetags/haldus.py, docs/adr/0186).
-          {% endcomment %}
-          {% include "components/settings_menu.html" %}
-
-          <form class="topbar__signout" method="post" action="{% url 'accounts:sign_out' %}">
-            {% csrf_token %}
-            <button type="submit" class="button button--quiet">Välju</button>
-          </form>
+          {% if shared_gate_mode %}
+            {% include "components/persona_switcher.html" %}
+          {% elif user.is_authenticated %}
+            {% include "components/account_menu.html" %}
+          {% endif %}
           </div>
           </div>
         {% else %}

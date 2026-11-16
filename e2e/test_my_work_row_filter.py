@@ -35,10 +35,11 @@ def _a_desk_with_folded_rows(page, base_url) -> str:
     title = unique_title("Žürii hindamiskorra eelnõu")
     create_matter(page, base_url, title)
     page.goto(f"{base_url}/minu-asjad/")
-    # Seven files is one past the preview (`PORTFOLIO_VISIBLE`); the seeded
-    # desk usually has them already, and filing more only when it does not
-    # keeps this test from growing the desk every other test reads.
-    for _ in range(7):
+    # Twelve files is one past the preview (`PORTFOLIO_VISIBLE`, 11 since
+    # 2026-11-16); the seeded desk may have them already, and filing more only
+    # when it does not keeps this test from growing the desk every other test
+    # reads.
+    for _ in range(12):
         if page.locator(MORE).count():
             break
         create_matter(page, base_url, unique_title("Laua täiteteema"))

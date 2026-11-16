@@ -447,7 +447,20 @@ def navigation_targets(page) -> set[str]:
 
 
 def sign_out(page, base_url: str) -> None:
-    page.get_by_role("button", name="Välju").click()
+    """«Välju» is the last row of the account menu (owner, 2026-11-16).
+
+    The menu is the avatar outside the shared gate and the persona pill in it;
+    either opens with one click on the name at the bar's right end.
+    """
+    # Open it only if it is not open already: a test may have left it open
+    # (the theme switch is a row of it), and a second click would shut it.
+    pill = page.locator(".topbar [data-persona-trigger]")
+    if pill.count():
+        if pill.get_attribute("aria-expanded") != "true":
+            pill.click()
+    elif not page.locator(".topbar .settingsmenu").evaluate("(menu) => menu.open"):
+        page.locator(".topbar .settingsmenu__trigger").click()
+    page.locator(".topbar .accountmenu").get_by_role("button", name="Välju").click()
     page.wait_for_load_state("networkidle")
 
 

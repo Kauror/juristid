@@ -52,7 +52,7 @@ keyboard can reach it and a tap opens its name. Nothing is disabled or moved.
           <summary class="wcal__daybtn" aria-label="{{ day.label }}"{% if day.holiday_label %} title="{{ day.holiday_label }}"{% endif %}{% if day.is_today %} aria-current="date"{% endif %}>
             <span class="wcal__num">{{ day.day.day }}</span>
             <span class="wcal__dots" aria-hidden="true">
-              {% for event in day.dots %}<span class="wcal__dot wcal__dot--{{ event.category }}{% if compact and event.is_work %} wcal__dot--{{ event.person_class }}{% endif %}{% if event.is_overdue %} is-overdue{% endif %}" title="{% if compact %}{{ event.compact_summary }}{% else %}{{ event.summary }}{% endif %}"></span>{% endfor %}{% if day.more %}<span class="wcal__more">+{{ day.more }}</span>{% endif %}
+              {% if wide %}{% for event in day.dots_wide %}<span class="wcal__dot wcal__dot--{{ event.category }}{% if compact and event.is_work %} wcal__dot--{{ event.person_class }}{% endif %}{% if event.is_overdue %} is-overdue{% endif %}" title="{% if compact %}{{ event.compact_summary }}{% else %}{{ event.summary }}{% endif %}"></span>{% endfor %}{% if day.more_wide %}<span class="wcal__more">+{{ day.more_wide }}</span>{% endif %}{% else %}{% for event in day.dots %}<span class="wcal__dot wcal__dot--{{ event.category }}{% if compact and event.is_work %} wcal__dot--{{ event.person_class }}{% endif %}{% if event.is_overdue %} is-overdue{% endif %}" title="{% if compact %}{{ event.compact_summary }}{% else %}{{ event.summary }}{% endif %}"></span>{% endfor %}{% if day.more %}<span class="wcal__more">+{{ day.more }}</span>{% endif %}{% endif %}
             </span>
           </summary>
           <div class="wcal__pop" data-uxfloat="fit">

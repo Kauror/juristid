@@ -259,30 +259,34 @@ def test_the_icons_are_decoration_and_carry_no_colour_of_their_own():
     assert "fill=" not in markup and "stroke=" not in markup
 
 
-def test_the_switch_is_in_the_settings_menu_signed_in_and_signed_out():
-    """Inside «Seaded», after signing in and on the sign-in page — never loose on the bar.
+def test_the_switch_is_in_the_account_menu_signed_in_and_the_gear_signed_out():
+    """In the account menu after signing in, behind the gear on the sign-in page.
 
-    UI-03 moved it from its own sun/moon button into the settings menu behind
-    the gear (templates/components/settings_menu.html). The bar includes that
-    menu in both of its branches, so the switch is still wherever somebody
-    meets the default again: signing out clears the browser's storage and the
-    preference with it (`Clear-Site-Data`, ENG-009).
+    Since 2026-11-16 the switch is a row of the account menu
+    (components/account_menu_items.html) — under the persona pill in the shared
+    gate, under the avatar elsewhere — and before signing in it is the only
+    thing behind the gear (components/settings_menu.html). Never loose on the
+    bar, and still wherever somebody meets the default again: signing out
+    clears the browser's storage and the preference with it (`Clear-Site-Data`,
+    ENG-009).
     """
     base = TEMPLATE_COMMENT.sub("", (ROOT / "templates" / "base.html").read_text(encoding="utf-8"))
     header = base[base.index('<header class="topbar">') : base.index("</header>")]
     assert "theme_toggle.html" not in header
     assert "data-theme-toggle" not in header
-    signed_in, signed_out = header.split("{% else %}")
-    for branch in (signed_in, signed_out):
-        assert branch.count('{% include "components/settings_menu.html" %}') == 1
-    menu = TEMPLATE_COMMENT.sub(
-        "", (ROOT / "templates" / "components" / "settings_menu.html").read_text(encoding="utf-8")
-    )
-    assert menu.count('{% include "components/theme_toggle.html" %}') == 1
-    # The only other place it is included is nowhere.
-    includes = [
+    signed_in, signed_out = header.split("{% else %}", 1)
+    assert '{% include "components/persona_switcher.html" %}' in signed_in
+    assert '{% include "components/account_menu.html" %}' in signed_in
+    assert "settings_menu.html" not in signed_in
+    assert signed_out.count('{% include "components/settings_menu.html" %}') == 1
+    for name in ("persona_switcher.html", "account_menu.html"):
+        text = (ROOT / "templates" / "components" / name).read_text(encoding="utf-8")
+        assert '{% include "components/account_menu_items.html" %}' in TEMPLATE_COMMENT.sub(
+            "", text
+        )
+    includes = sorted(
         path.relative_to(ROOT / "templates").as_posix()
         for path in (ROOT / "templates").rglob("*.html")
         if "components/theme_toggle.html" in TEMPLATE_COMMENT.sub("", path.read_text("utf-8"))
-    ]
-    assert includes == ["components/settings_menu.html"]
+    )
+    assert includes == ["components/account_menu_items.html", "components/settings_menu.html"]

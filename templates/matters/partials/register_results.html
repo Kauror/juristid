@@ -69,13 +69,12 @@ somebody is typing into would move the caret on every keystroke.
             <legend class="field__label">Tabeli veerud</legend>
             <span class="checkline checkline--fixed">Pealkiri <span class="muted">(alati)</span></span>
             {% for option in column_chooser %}
-              <label class="checkline">
-                <input type="checkbox" name="veerud" value="{{ option.key }}" data-heading="{{ option.heading }}" {% if option.checked %}checked{% endif %}>
-                {{ option.heading }}{% if option.help %} <span class="muted">— {{ option.help }}</span>{% endif %}
+              <label class="checkline"{% if option.help %} title="{{ option.help }}"{% endif %}>
+                <input type="checkbox" name="veerud" value="{{ option.key }}" {% if option.checked %}checked{% endif %}>
+                {{ option.heading }}
               </label>
             {% endfor %}
           </fieldset>
-          <p class="columnchooser__preview" data-column-preview aria-live="polite">Tabelis: {{ column_preview }}</p>
           {% if columns_are_default %}<p class="columnchooser__narrow muted">Kitsas aknas jätab vaikimisi tabel «Viimane tegevus» ja «Hetkeseis» veeru välja. Kui valid veerud ise, näidatakse kõiki valituid.</p>{% endif %}
           <div class="filterpanel__actions">
             <button class="button button--primary" type="submit" name="veerud" value="pealkiri">Rakenda</button>

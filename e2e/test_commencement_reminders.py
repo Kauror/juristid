@@ -94,10 +94,20 @@ def test_a_commencement_prompt_is_seen_read_and_gone(page, base_url):
     expect(row.get_by_role("button", name="Kontrollitud")).to_have_count(0)
     expect(row).not_to_contain_text("Ametlik allikas on märkimata")
     expect(row.locator("summary", has_text="Sulge")).to_have_count(0)
+    # «Märgi loetuks» and «Lükka edasi» are icons with their names as tooltips
+    # (owner, 2026-11-16); the accessible names still carry the title.
+    read = row.get_by_role("button", name=f"Märgi loetuks: {title}")
+    defer = row.locator(f'summary.notificon[aria-label="Lükka edasi: {title}"]')
+    expect(read).to_have_attribute("title", "Märgi loetuks")
+    expect(defer).to_have_attribute("title", "Lükka edasi")
+    for icon in (read, defer):
+        expect(icon).to_have_class(re.compile(r"\bnotificon\b"))
+        expect(icon).to_have_text("")
+        expect(icon.locator("svg")).to_be_visible()
     # «Lükka edasi» opens its date field directly under the item.
-    row.locator("summary", has_text="Lükka edasi").click()
+    defer.click()
     expect(row.get_by_label("Kuni")).to_be_visible()
-    row.get_by_role("button", name=f"Märgi loetuks: {title}").click()
+    read.click()
     page.wait_for_url(f"{base_url}/teavitused/")
     # Off the inbox, kept as this reader's history under «Varasemad» (UI-01).
     expect(page.locator("[data-inbox-item]", has_text=title)).to_have_count(0)

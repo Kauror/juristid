@@ -2186,9 +2186,6 @@ def matter_list(request: HttpRequest) -> HttpResponse:
         "column_chooser": register_columns.chooser_options(column_keys),
         "columns_param": register_columns.columns_value(column_keys),
         "columns_are_default": register_columns.is_default(column_keys),
-        "column_preview": " · ".join(
-            column.heading for column in register_columns.columns_for(column_keys)
-        ),
         "columns_reset_query": register_query(params, **{register_columns.COLUMNS_PARAM: None}),
         "chooser_carried": [
             (name, value)
