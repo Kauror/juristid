@@ -154,7 +154,9 @@ def test_a_chip_shows_a_name_rather_than_a_key(client, world):
 
 def test_changing_tab_keeps_every_filter(client, world):
     client.force_login(world.martin)
-    response = client.get("/statistika/seis/", {"periood": "koik", "vastutaja": str(world.martin.pk)})
+    response = client.get(
+        "/statistika/seis/", {"periood": "koik", "vastutaja": str(world.martin.pk)}
+    )
     body = response.content.decode()
     assert f"/statistika/teemad/?periood=koik&amp;vastutaja={world.martin.pk}" in body
 
