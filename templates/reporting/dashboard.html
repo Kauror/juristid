@@ -155,6 +155,122 @@ The period, the lawyer and the trend range are links: the state is the URL.
     {% endif %}
   </section>
 
+  {% comment %}
+    A closer look at the same period (phase 2, 2026-11-16): what arrived
+    beside what went out, the act types, how long requests gave Koda, and
+    what was decided. The same reader and the same period as the tiles above.
+  {% endcomment %}
+  <div class="statgrid">
+    <section class="statpanel statpanel--wide" aria-labelledby="stat-voog">
+      <div class="statpanel__head">
+        <h2 class="statpanel__title" id="stat-voog">Sisse tulnud ja välja saadetud kuude lõikes</h2>
+        <span class="statlegend">
+          <span class="statlegend__item"><span class="statlegend__mark statseries--muted"></span>Sisse tulnud teemad</span>
+          <span class="statlegend__item"><span class="statlegend__mark statseries--0"></span>Välja saadetud arvamused</span>
+        </span>
+      </div>
+      <div class="statcols" role="list">
+        {% for bar in flow %}
+          <span class="statcol" role="listitem" title="{{ bar.title }}: sisse {{ bar.received }}, välja {{ bar.sent }}">
+            <span class="statcol__value">{% if bar.received or bar.sent %}{{ bar.received }} / {{ bar.sent }}{% endif %}</span>
+            <span class="statcol__track statcol__track--pair">
+              <span class="statcol__bar statseries--muted" style="height: {{ bar.received_css }}%"></span>
+              <span class="statcol__bar statseries--0" style="height: {{ bar.sent_css }}%"></span>
+            </span>
+            <span class="statcol__label">{{ bar.label }}</span>
+            <span class="visually-hidden">{{ bar.title }}: sisse {{ bar.received }}, välja {{ bar.sent }}</span>
+          </span>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="statpanel statpanel--wide" aria-labelledby="stat-liigid">
+      <div class="statpanel__head">
+        <h2 class="statpanel__title" id="stat-liigid">Õigusakti liigi järgi</h2>
+      </div>
+      {% if instruments %}
+        <table class="stattable">
+          <thead>
+            <tr>
+              <th scope="col">Liik</th>
+              <th scope="col" class="stattable__num">Välja saadetud</th>
+              <th scope="col" class="stattable__bar"><span class="visually-hidden">Osakaal</span></th>
+              <th scope="col" class="stattable__num">Tähtajaks</th>
+              <th scope="col" class="stattable__num">Aega vastamiseks</th>
+              <th scope="col" class="stattable__num">Sisse tulnud</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in instruments %}
+              <tr>
+                <th scope="row">{% if item.url %}<a href="{{ item.url }}">{{ item.row.label }}</a>{% else %}{{ item.row.label }}{% endif %}</th>
+                <td class="stattable__num">{{ item.row.sent }} <span class="stattable__share">{{ item.row.share }}%</span></td>
+                <td class="stattable__bar"><span class="stattable__fill statseries--0" style="width: {{ item.row.width|stringformat:'.2f' }}%"></span></td>
+                <td class="stattable__num">{% if item.row.on_time_share is not None %}{{ item.row.on_time_share }}%{% else %}—{% endif %}</td>
+                <td class="stattable__num">{% if item.row.days_given is not None %}{{ item.row.days_given }} p{% else %}—{% endif %}</td>
+                <td class="stattable__num">{{ item.row.received }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% else %}
+        <p class="statpanel__empty">Andmed puuduvad.</p>
+      {% endif %}
+    </section>
+
+    <section class="statpanel" aria-labelledby="stat-aeg">
+      <div class="statpanel__head">
+        <h2 class="statpanel__title" id="stat-aeg">Kui palju aega vastamiseks anti</h2>
+        <span class="statpanel__note">{{ pressure.total }} tähtajaga teemat</span>
+      </div>
+      {% if pressure.total %}
+        <div class="statshare" role="img" aria-label="{% for band in pressure.bands %}{{ band.label }}: {{ band.count }} ({{ band.share }}%){% if not forloop.last %}, {% endif %}{% endfor %}">
+          {% for band in pressure.bands %}{% if band.count %}<span class="statshare__part statband--{{ band.slot }}" style="width: {{ band.width|stringformat:'.2f' }}%" title="{{ band.label }}: {{ band.count }} ({{ band.share }}%)"></span>{% endif %}{% endfor %}
+        </div>
+        <ul class="statkey">
+          {% for band in pressure.bands %}
+            <li class="statkey__row">
+              <span class="statlegend__mark statband--{{ band.slot }}"></span>
+              <span class="statkey__label">{{ band.label }}</span>
+              <span class="statkey__value">{{ band.count }}</span>
+              <span class="statkey__share">{{ band.share }}%</span>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="statpanel__empty">Andmed puuduvad.</p>
+      {% endif %}
+    </section>
+
+    <section class="statpanel" aria-labelledby="stat-otsus">
+      <div class="statpanel__head">
+        <h2 class="statpanel__title" id="stat-otsus">Saadetud ja saatmata jäetud</h2>
+      </div>
+      {% if decisions.total %}
+        <div class="statshare" role="img" aria-label="Saadetud {{ decisions.sent }}, ei saatnud {{ decisions.declined }}">
+          {% if decisions.sent %}<span class="statshare__part statseries--0" style="width: {{ decisions.sent_css }}%" title="Saadetud: {{ decisions.sent }}"></span>{% endif %}
+          {% if decisions.declined %}<span class="statshare__part statseries--muted statshare__part--rest" title="Ei saatnud: {{ decisions.declined }}"></span>{% endif %}
+        </div>
+        <ul class="statkey">
+          <li class="statkey__row">
+            <span class="statlegend__mark statseries--0"></span>
+            <span class="statkey__label">Arvamus saadetud</span>
+            <span class="statkey__value">{{ decisions.sent }}</span>
+            <span class="statkey__share">{{ decisions.sent_share }}%</span>
+          </li>
+          <li class="statkey__row">
+            <span class="statlegend__mark statseries--muted"></span>
+            <span class="statkey__label">Otsustati mitte saata</span>
+            <span class="statkey__value">{{ decisions.declined }}</span>
+            <span class="statkey__share"></span>
+          </li>
+        </ul>
+      {% else %}
+        <p class="statpanel__empty">Andmed puuduvad.</p>
+      {% endif %}
+    </section>
+  </div>
+
   <section class="statsection" id="trendid" aria-labelledby="stat-trendid">
     <div class="statpanel__head">
       <h2 class="statsection__title" id="stat-trendid">Pikaajalised trendid</h2>

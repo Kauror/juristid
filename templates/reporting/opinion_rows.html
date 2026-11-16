@@ -12,7 +12,7 @@ clicked is the number of rows here (app/reporting/opinion_views.py).
 <div class="page statdash">
   <div class="pagehead">
     <h1 class="pagehead__title">Välja saadetud arvamused</h1>
-    <span class="pagehead__context">{{ period.span }}{% if jurist %} · {{ jurist }}{% endif %} · {{ rows|length }}</span>
+    <span class="pagehead__context">{{ period.span }}{% if jurist %} · {{ jurist }}{% endif %}{% if liik %} · {{ liik }}{% endif %} · {{ rows|length }}</span>
     <div class="pagehead__actions statspage__actions">
       <a class="button button--quiet" href="{{ back_url }}">← Statistika</a>
     </div>

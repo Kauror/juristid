@@ -867,3 +867,99 @@ def test_an_imported_statement_and_a_native_record_of_another_day_are_two_opinio
         opinions.SOURCE_ANSWERED,
         opinions.SOURCE_IMPORTED,
     ]
+
+
+# ---------------------------------------------------------------------------
+# A closer look at the period (phase 2): declined requests, act types, the list by type
+# ---------------------------------------------------------------------------
+
+
+def test_an_imported_ei_saatnud_is_a_declined_fact_on_its_deadline(specialist):
+    matter = factories.MatterFactory(owner=specialist, received_date=dt.date(2026, 3, 1))
+    _imported(matter, OpinionOutcome.NOT_SENT, request_deadline=dt.date(2026, 3, 20))
+
+    (fact,) = opinions.declined_facts(specialist)
+
+    assert (fact.matter.matter_id, fact.when) == (matter.pk, dt.date(2026, 3, 20))
+    assert opinions.opinion_facts(specialist) == []
+
+
+def test_an_imported_ei_saatnud_without_a_deadline_counts_on_the_arrival_day(specialist):
+    matter = factories.MatterFactory(owner=specialist, received_date=dt.date(2026, 3, 1))
+    _imported(matter, OpinionOutcome.NOT_SENT)
+
+    (fact,) = opinions.declined_facts(specialist)
+
+    assert fact.when == dt.date(2026, 3, 1)
+
+
+def test_a_person_deciding_not_to_answer_is_a_declined_fact_and_the_syncs_ending_is_not(
+    specialist,
+):
+    by_person = factories.MatterFactory(owner=specialist)
+    by_sync = factories.MatterFactory(owner=specialist)
+    MatterResponseDeadline.objects.create(
+        matter=by_person,
+        deadline=dt.date(2026, 5, 5),
+        outcome=ResponseDeadlineOutcome.NOT_ANSWERING,
+        note="Ei puuduta meie liikmeid.",
+        ended_by=specialist,
+    )
+    MatterResponseDeadline.objects.create(
+        matter=by_sync,
+        deadline=dt.date(2026, 5, 6),
+        outcome=ResponseDeadlineOutcome.NOT_ANSWERING,
+        note=f"{SYNC_ENDING_NOTE} ei saatnud",
+        ended_by=None,
+    )
+
+    facts = opinions.declined_facts(specialist)
+
+    assert [(fact.matter.matter_id, fact.when) for fact in facts] == [
+        (by_person.pk, dt.date(2026, 5, 5))
+    ]
+
+
+def test_the_page_draws_the_four_closer_look_panels(client, specialist):
+    law = factories.MatterFactory(owner=specialist, received_date=dt.date(2026, 6, 1))
+    law.legal_instruments.add(_instrument("seadus"))
+    _imported(law, OpinionOutcome.SENT, dt.date(2026, 6, 10), request_deadline=dt.date(2026, 6, 12))
+    skipped = factories.MatterFactory(owner=specialist, received_date=dt.date(2026, 7, 1))
+    _imported(skipped, OpinionOutcome.NOT_SENT, request_deadline=dt.date(2026, 7, 20))
+    client.force_login(specialist)
+
+    response = client.get(reverse("reporting:dashboard"))
+
+    body = response.content.decode()
+    for heading in (
+        "Sisse tulnud ja välja saadetud kuude lõikes",
+        "Õigusakti liigi järgi",
+        "Kui palju aega vastamiseks anti",
+        "Saadetud ja saatmata jäetud",
+    ):
+        assert heading in body
+    decisions = response.context["decisions"]
+    assert (decisions.sent, decisions.declined) == (1, 1)
+    pressure = response.context["pressure"]
+    assert pressure.total == 2
+    rows = {item["row"].key: item for item in response.context["instruments"]}
+    assert rows["seadus"]["row"].sent == 1
+    assert "liik=seadus" in rows["seadus"]["url"]
+
+
+def test_the_list_narrows_to_one_act_type(client, specialist):
+    law = factories.MatterFactory(owner=specialist, title="Seaduse teema")
+    law.legal_instruments.add(_instrument("seadus"))
+    _imported(law, OpinionOutcome.SENT, dt.date(2026, 6, 10))
+    rule = factories.MatterFactory(owner=specialist, title="Määruse teema")
+    rule.legal_instruments.add(_instrument("maarus"))
+    _imported(rule, OpinionOutcome.SENT, dt.date(2026, 6, 11))
+    client.force_login(specialist)
+
+    response = client.get(reverse("reporting:opinion_rows"), {"liik": "seadus"})
+
+    assert [fact.matter.matter_id for fact in response.context["rows"]] == [law.pk]
+    assert len(client.get(reverse("reporting:opinion_rows")).context["rows"]) == 2
+    # An unknown type narrows nothing.
+    unknown = client.get(reverse("reporting:opinion_rows"), {"liik": "olematu"})
+    assert len(unknown.context["rows"]) == 2

@@ -83,6 +83,7 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     bars, bar_owners = stats.monthly(facts, period)
     found = stats.trends(facts, matters, deadlines, first=first_year, last=last_year, today=today)
     summary = stats.summary(facts, matters, deadlines, period)
+    declined = opinions.declined_facts(request.user, known)
 
     def rows_url(**extra: str) -> str:
         return _url("reporting:opinion_rows", **{**carried, **extra})
@@ -114,6 +115,14 @@ def dashboard(request: HttpRequest) -> HttpResponse:
                 for bar in bars
             ],
             "bar_owners": [{"owner": o, "slot": i % 8} for i, o in enumerate(bar_owners)],
+            # A closer look at the period (phase 2).
+            "flow": stats.flow(facts, matters, period),
+            "instruments": [
+                {"row": row, "url": rows_url(liik=row.key) if row.key and row.sent else ""}
+                for row in stats.by_instrument(facts, matters, deadlines, period)
+            ],
+            "pressure": stats.pressure(matters, deadlines, period),
+            "decisions": stats.decisions(facts, declined, period),
             "trends": found,
             "records": stats.records(facts, found, today),
             "period_links": [
@@ -189,8 +198,15 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
     facts, _known, _deadlines, owners = _load(request)
     jurist = str(request.GET.get("jurist", "") or "")
     jurist = jurist if jurist in owners else ""
+    kinds = {m.instrument_key: m.instrument for m in _known.values() if m.instrument_key}
+    liik = str(request.GET.get("liik", "") or "")
+    liik = liik if liik in kinds else ""
     rows = sorted(
-        (fact for fact in facts if period.holds(fact.sent_on)),
+        (
+            fact
+            for fact in facts
+            if period.holds(fact.sent_on) and (not liik or fact.matter.instrument_key == liik)
+        ),
         key=lambda fact: (fact.sent_on, fact.matter.reference),
         reverse=True,
     )
@@ -203,6 +219,7 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
             "nav_active": "statistika",
             "period": period,
             "jurist": jurist,
+            "liik": kinds.get(liik, ""),
             "rows": rows,
             "back_url": _url("reporting:dashboard", **_period_query(period), jurist=jurist),
         },
