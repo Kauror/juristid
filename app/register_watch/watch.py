@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from app.core.errors import DomainError
 from app.matters.models import Matter
-from app.register_watch import ai, notices
+from app.register_watch import ai, notices, phrases
 from app.register_watch.models import (
     FindingStatus,
     Relevance,
@@ -32,14 +32,26 @@ from app.register_watch.models import (
     WatchSource,
     WatchTarget,
 )
-from app.register_watch.sources import pdr, riigikogu
+from app.register_watch.sources import adr, pdr, riigikogu
 from app.register_watch.sources.http import FetchError
 from app.register_watch.sources.items import Item
 
 ALREADY_DECIDED = "See dokument on juba otsustatud."
 #: Sources whose items are found by a title search and so may not belong.
-SEARCHED = {WatchSource.HTM_REGISTER, WatchSource.KLIM_REGISTER}
 REGISTERS = {WatchSource.HTM_REGISTER: pdr.HTM, WatchSource.KLIM_REGISTER: pdr.KLIM}
+ADR_REGISTERS = {
+    WatchSource.ADR_JDM: adr.JDM,
+    WatchSource.ADR_MKM: adr.MKM,
+    WatchSource.ADR_RAM: adr.RAM,
+    WatchSource.ADR_SOM: adr.SOM,
+    WatchSource.ADR_KUM: adr.KUM,
+    WatchSource.ADR_KAM: adr.KAM,
+}
+SEARCHED = set(REGISTERS) | set(ADR_REGISTERS)
+#: The search phrases a person can see and change: from the title, or their own.
+PHRASE_ORIGINS = (TargetOrigin.PHRASE, TargetOrigin.PERSON)
+#: How far back a register search reaches; the first check keeps the older part as seen.
+SEARCH_DAYS = 120
 
 
 def watched_matters() -> QuerySet[Matter]:
@@ -74,20 +86,51 @@ def ensure_targets(matter: Matter) -> list[WatchTarget]:
                         "url": riigikogu.page_url(bill["uuid"]),
                     },
                 )
-        for source in SEARCHED:
+        for source in sorted(SEARCHED):
             WatchTarget.objects.get_or_create(
                 matter=matter,
                 source=source,
                 identifier=label,
                 defaults={"label": label, "origin": TargetOrigin.TITLE},
             )
+    else:
+        home = phrases.ministry_source(matter)
+        text = phrases.words(matter.title)
+        # A phrase is created once: a lawyer's own words, or their switching the
+        # search off, are never overwritten from the title again.
+        if (
+            home is not None
+            and text
+            and not matter.watch_targets.filter(source=home, origin__in=PHRASE_ORIGINS).exists()
+        ):
+            WatchTarget.objects.get_or_create(
+                matter=matter,
+                source=home,
+                identifier=text,
+                defaults={"label": text, "origin": TargetOrigin.PHRASE},
+            )
     return list(matter.watch_targets.filter(active=True).order_by("source"))
 
 
-def read(target: WatchTarget) -> list[Item]:
-    if target.source == WatchSource.RIIGIKOGU:
+def _has_every_word(item: Item, text: str) -> bool:
+    title = item.title.casefold()
+    return all(word.casefold() in title for word in text.split())
+
+
+def read(target: WatchTarget, *, today: dt.date) -> list[Item]:
+    source = WatchSource(target.source)
+    if source == WatchSource.RIIGIKOGU:
         return riigikogu.bill_items(target.identifier)
-    return pdr.search(REGISTERS[WatchSource(target.source)], target.identifier)
+    if source in ADR_REGISTERS:
+        since = today - dt.timedelta(days=SEARCH_DAYS)
+        return adr.search(ADR_REGISTERS[source], target.identifier, since=since)
+    if target.origin == TargetOrigin.TITLE:
+        return pdr.search(REGISTERS[source], target.identifier)
+    # The PDR search matches the text as one piece: search a phrase's first word
+    # and keep the titles that hold every word.
+    first = target.identifier.split()[0]
+    found = pdr.search(REGISTERS[source], first)
+    return [item for item in found if _has_every_word(item, target.identifier)]
 
 
 def store(target: WatchTarget, items: Iterable[Item], *, today: dt.date) -> tuple[int, int]:
@@ -130,7 +173,10 @@ def run(
     for matter in (
         matters
         if matters is not None
-        else watched_matters().order_by("reference_year", "reference_number")
+        else watched_matters()
+        .select_related("classification_suggestion__sender")
+        .prefetch_related("source_organisations")
+        .order_by("reference_year", "reference_number")
     ):
         try:
             targets = ensure_targets(matter)
@@ -139,7 +185,7 @@ def run(
             continue
         for target in targets:
             try:
-                new, offered = store(target, read(target), today=today)
+                new, offered = store(target, read(target, today=today), today=today)
             except FetchError as error:
                 target.last_error = str(error)[:500]
                 target.save(update_fields=["last_error", "updated_at"])
@@ -292,3 +338,59 @@ def dismiss(finding: WatchFinding, *, actor: Any) -> WatchFinding:
     locked.decided_at = timezone.now()
     locked.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
     return locked
+
+
+# -- the search phrase -------------------------------------------------------------
+
+PHRASE_MAX = 80
+
+
+def phrase_targets(matter: Any) -> list[WatchTarget]:
+    """The Teema's searches by words, the active one first in each register."""
+    return list(
+        WatchTarget.objects.filter(matter=matter, origin__in=PHRASE_ORIGINS).order_by(
+            "source", "-active", "-updated_at"
+        )
+    )
+
+
+@transaction.atomic
+def set_phrase(matter: Any, *, source: str, text: str) -> WatchTarget | None:
+    """A lawyer's words for one register, or none at all (the search off).
+
+    The words replace whatever the Teema was searched by in that register; the
+    title is never read for it again. Words used before are taken up again with
+    what they had already found, so nothing is offered twice.
+    """
+    if source not in SEARCHED:
+        raise DomainError("Tundmatu register.")
+    clean = " ".join((text or "").split())[:PHRASE_MAX]
+    now = timezone.now()
+    WatchTarget.objects.filter(
+        matter=matter, source=source, origin__in=PHRASE_ORIGINS, active=True
+    ).update(active=False, updated_at=now)
+    if not clean:
+        if not WatchTarget.objects.filter(
+            matter=matter, source=source, origin__in=PHRASE_ORIGINS
+        ).exists():
+            # Remember "off", so the title is not searched in this register again.
+            WatchTarget.objects.create(
+                matter=matter,
+                source=source,
+                identifier="",
+                origin=TargetOrigin.PERSON,
+                active=False,
+            )
+        return None
+    target, created = WatchTarget.objects.get_or_create(
+        matter=matter,
+        source=source,
+        identifier=clean,
+        defaults={"label": clean, "origin": TargetOrigin.PERSON},
+    )
+    if not created:
+        target.active = True
+        target.origin = TargetOrigin.PERSON
+        target.label = clean
+        target.save(update_fields=["active", "origin", "label", "updated_at"])
+    return target

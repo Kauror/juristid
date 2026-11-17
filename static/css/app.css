@@ -17443,3 +17443,30 @@ a.statpanel__note {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.regwatch__watch {
+  margin-bottom: var(--spacing-5);
+}
+
+.regwatch__source {
+  padding: var(--spacing-1) 0;
+}
+
+.regwatch__phrase {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-top: var(--spacing-2);
+}
+
+.regwatch__phrase .field__input {
+  width: auto;
+  min-width: 14rem;
+}
+
+/* «Registrite jälgimine» under the Menetluse link card: aligned with the rail's
+ * own rows, not indented like an inline quiet link (docs/adr/0217 §7). */
+.railwatch {
+  margin-left: 0;
+}

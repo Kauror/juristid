@@ -65,11 +65,27 @@ What a program may read (checked 2026-11-17):
    been added, linked or skipped. Documents the model called unrelated do not
    count. A Teema with no owner tells nobody.
 
+7. **Six more ministries, by words** (owner, 2026-11-17: «test the RIK ADR form and
+   build it»). Justice and Digital, Economic Affairs, Finance, Social Affairs,
+   Culture and Defence publish on RIK's ADR
+   (`adr.rik.ee/<jm|mkm|ram|som|kum|kaitseministeerium>`), which has no API: the
+   watch posts its search form (UTF-8, whole words, all of them, from a date) and
+   reads the results table; a page that is not a results page is an error, never
+   an empty answer. A bill Teema («NNN SE») is searched there too. A Teema with
+   no bill number is searched in its own ministry's register — a confirmed sender
+   first, else the proposed one — by the first two distinctive words of its title
+   (`app.register_watch.phrases`). A lawyer replaces the words, or switches the
+   search off, on the review page («Otsingusõnad»); the title is not read for that
+   register again. Not read: the Interior ministry (a bot challenge), Regional and
+   Agriculture (address unknown), Foreign Affairs (not on ADR; not found), and the
+   Government Office (its ADR instance is empty).
+
 ## Consequences
 
-- Teemad without a bill number are not watched yet. The next steps, each its own
-  decision: a lawyer-entered search phrase or `Menetluse link` per Teema; the
-  model proposing search phrases from the title; RIK ADR and EIS once their
+- Teemad from the eight ministries above are watched by words; others (Interior,
+  Regional and Agriculture, Foreign Affairs, the Government Office, Commission
+  files) are not yet. Next steps, each its own
+  decision: the model proposing better search words; EIS and an ADR API once their
   operators allow it; Commission consultations.
 - A finding never moves `Hetkeseis`, makes no next step and is not a deadline.
 - `MatterProceduralLink` stays a pointer (ADR 0089 §4): the watch reads nothing

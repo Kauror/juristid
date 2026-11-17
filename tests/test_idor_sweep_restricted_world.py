@@ -300,6 +300,9 @@ def _key_for(route: str, param: str) -> str | None:
         return "suggestion"
     if route == "register_watch:decide":
         return "finding"
+    if route == "register_watch:phrase":
+        # «Otsingusõnad» name the Teema they search for (ADR 0217 §7).
+        return "matter"
     return None
 
 
