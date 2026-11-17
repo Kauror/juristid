@@ -22,11 +22,11 @@ clicked is the number of rows here (app/reporting/opinion_views.py).
     <table class="table statrows">
       <thead>
         <tr>
-          <th scope="col">Saadetud</th>
-          <th scope="col">Teema</th>
-          <th scope="col">Liik</th>
-          <th scope="col">Tähtaeg</th>
-          <th scope="col">Jurist</th>
+          {% for header in headers %}
+            <th scope="col"{% if header.sort %} aria-sort="{{ header.sort }}"{% endif %}>
+              <a class="statrows__sort" href="{{ header.url }}">{{ header.label }}{% if header.sort == "ascending" %} ↑{% elif header.sort == "descending" %} ↓{% endif %}</a>
+            </th>
+          {% endfor %}
         </tr>
       </thead>
       <tbody>
@@ -39,7 +39,7 @@ clicked is the number of rows here (app/reporting/opinion_views.py).
             </td>
             <td>{{ fact.matter.instrument }}</td>
             <td class="statrows__date">
-              {% if fact.deadline %}{{ fact.deadline|date:"d.m.Y" }}{% if fact.on_time is False %} <span class="statrows__late">hiljem</span>{% endif %}{% else %}—{% endif %}
+              {% if fact.deadline %}{{ fact.deadline|date:"d.m.Y" }}{% if fact.on_time is False %} <span class="statrows__late" title="Saadetud {{ fact.days_late }} päeva pärast tähtaega ({{ fact.sent_on|date:'d.m.Y' }})">!<span class="visually-hidden"> saadetud {{ fact.days_late }} päeva pärast tähtaega</span></span>{% endif %}{% else %}—{% endif %}
             </td>
             <td>{{ fact.matter.owner }}</td>
           </tr>

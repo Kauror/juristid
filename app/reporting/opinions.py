@@ -100,6 +100,13 @@ class OpinionFact:
         return self.sent_on <= self.deadline
 
     @property
+    def days_late(self) -> int:
+        """Days the opinion went out after its deadline; 0 when on time or without one."""
+        if self.deadline is None:
+            return 0
+        return max(0, (self.sent_on - self.deadline).days)
+
+    @property
     def days_given(self) -> int | None:
         """Days between the request arriving and its deadline; ``None`` if either is unknown."""
         if self.deadline is None or self.matter.received is None:

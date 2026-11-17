@@ -778,7 +778,7 @@ def test_the_list_names_each_opinions_day_deadline_and_lawyer(client, specialist
     assert "Saatmata teema" not in body
     assert "04.05.2026" in body and "10.05.2026" in body
     # Sent 09.03 against a deadline of 01.03: the only late one.
-    assert body.count('<span class="statrows__late">hiljem</span>') == 1
+    assert body.count('class="statrows__late"') == 1
 
 
 def test_the_list_links_back_to_the_page_it_came_from(client, specialist, seeded):

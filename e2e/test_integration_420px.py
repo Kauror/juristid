@@ -241,7 +241,7 @@ def test_the_register_filter_panel_fits_420px_while_it_is_open(page, base_url):
 
 
 # ---------------------------------------------------------------------------
-# Statistika's six-tab nav, which used to take the page with it (QA-08)
+# Statistika's tab nav, which used to take the page with it (QA-08)
 # ---------------------------------------------------------------------------
 
 
@@ -276,10 +276,10 @@ def test_statistika_does_not_scroll_the_document_sideways(page, base_url, width)
 def test_every_statistika_tab_is_still_reachable_inside_its_own_scroller(page, base_url, width):
     """Kept, not hidden and not abbreviated.
 
-    The scroll is only the right answer if all six tabs are still there and each
-    one can be brought into view. A fix that dropped a tab, folded the row into
-    two lines or truncated «Andmekvaliteet» would satisfy the assertion above
-    and be worse than the defect.
+    All four tabs stay there and each one can be brought into view. A fix that
+    dropped a tab, folded the row into two lines or truncated a label would
+    satisfy the assertion above and be worse than the defect. (Since 2026-11-17
+    the data pages live under Haldus, and four tabs may fit without scrolling.)
     """
     page.set_viewport_size({"width": width, "height": 812})
     sign_in(page, base_url, MARTIN)
@@ -288,11 +288,9 @@ def test_every_statistika_tab_is_still_reachable_inside_its_own_scroller(page, b
 
     nav = page.locator("nav.tabs")
     tabs = nav.locator("a")
-    assert tabs.count() >= 6, tabs.count()
+    assert tabs.count() == 4, tabs.count()
 
-    # The row scrolls itself: it is wider than its box, and the box is inside the
-    # viewport.
-    assert nav.evaluate("node => node.scrollWidth > node.clientWidth")
+    # The row's box is inside the viewport; anything wider scrolls inside it.
     box = nav.bounding_box()
     assert box is not None and box["x"] >= -1 and box["x"] + box["width"] <= width + 1
 

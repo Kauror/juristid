@@ -129,6 +129,16 @@
         <a href="{% url 'core:keyboard_shortcuts' %}">Kiirklahvid</a>
         <span class="linklist__meta">Saadaolevad kiirklahvid ja nende kasutamine.</span>
       </li>
+      {# Moved here from Statistika's tab strip (owner, 2026-11-17): about the data, not the work. #}
+      <li class="linklist__item">
+        <a href="{% url 'reporting:historical' %}">Ajaloolised materjalid</a>
+      </li>
+      <li class="linklist__item">
+        <a href="{% url 'reporting:quality' %}">Andmekvaliteet</a>
+      </li>
+      <li class="linklist__item">
+        <a href="{% url 'reporting:definitions' %}">Statistika definitsioonid</a>
+      </li>
     </ul>
     <h3 class="acctsection__title" id="rakenduse-versioon">Rakenduse versioon</h3>
     <dl class="detailgrid" aria-labelledby="rakenduse-versioon">
