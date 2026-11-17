@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Saatja ja valdkond · Statistika · {{ application_name }}{% endblock %}
+
+{% comment %}
+Confirming the proposed sender and Valdkond of each Teema (ADR 0215). The
+proposals came from one review of the titles; a row changes nothing until a
+lawyer confirms it, and a confirmation is added to what the Teema holds through
+the Teema's own audited setters. Statistika counts only confirmed values.
+{% endcomment %}
+
+{% block content %}
+<div class="page statdash">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Saatja ja valdkond</h1>
+    <span class="pagehead__context">{{ total }}</span>
+    <div class="pagehead__actions statspage__actions">
+      <a class="button button--quiet" href="{{ back_url }}">← Statistika</a>
+    </div>
+  </div>
+
+  <form class="statdash__controls" method="get" action="{% url 'reporting:classification' %}">
+    <select class="field__input classify__filter" name="aasta" aria-label="Aasta" data-autosubmit>
+      <option value="">Kõik aastad</option>
+      {% for year in years %}<option value="{{ year }}"{% if filters.aasta == year|stringformat:'s' %} selected{% endif %}>{{ year }}</option>{% endfor %}
+    </select>
+    <select class="field__input classify__filter" name="kindlus" aria-label="Kindlus" data-autosubmit>
+      <option value="">Igasugune kindlus</option>
+      {% for key, label in confidences %}<option value="{{ key }}"{% if filters.kindlus == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <noscript><button type="submit" class="button button--quiet button--tiny">Näita</button></noscript>
+    {% if rows and can_write_business_content %}
+      <span class="statdash__spacer"></span>
+      <button type="submit" form="classify-page" class="button button--primary button--tiny">Kinnita kõik {{ rows|length }}</button>
+    {% endif %}
+  </form>
+  {% if rows and can_write_business_content %}
+    <form id="classify-page" method="post" action="{% url 'reporting:classification_accept_page' %}">
+      {% csrf_token %}
+      <input type="hidden" name="aasta" value="{{ filters.aasta }}">
+      <input type="hidden" name="kindlus" value="{{ filters.kindlus }}">
+      {% for item in rows %}<input type="hidden" name="ettepanek" value="{{ item.suggestion.pk }}">{% endfor %}
+    </form>
+  {% endif %}
+
+  {% if rows %}
+    <ul class="classify">
+      {% for item in rows %}
+        {% with s=item.suggestion %}
+          <li class="classify__row">
+            <div class="classify__topic">
+              <a href="{% url 'matters:matter_detail' pk=s.matter_id %}">{{ s.matter.title }}</a>
+              <span class="classify__meta">{{ s.matter.reporting_year|default:"" }}{% if s.confidence != 'h' %} · {{ item.confidence }}{% endif %}</span>
+            </div>
+            {% if can_write_business_content %}
+              <form class="classify__form" method="post" action="{% url 'reporting:classification_decide' pk=s.pk %}">
+                {% csrf_token %}
+                <input type="hidden" name="aasta" value="{{ filters.aasta }}">
+                <input type="hidden" name="kindlus" value="{{ filters.kindlus }}">
+                <span class="classify__areas">
+                  {% for area in item.areas %}
+                    <label class="classify__chip"><input type="checkbox" name="valdkond" value="{{ area.key }}" checked> {{ area.name_et }}</label>
+                  {% endfor %}
+                  <select class="field__input classify__add" name="valdkond" aria-label="Lisa valdkond">
+                    <option value="">+ valdkond</option>
+                    {% for area in offered_areas %}<option value="{{ area.key }}">{{ area.name_et }}</option>{% endfor %}
+                  </select>
+                </span>
+                <select class="field__input classify__sender" name="saatja" aria-label="Saatja">
+                  <option value="">Saatja teadmata</option>
+                  {% for org in offered_senders %}<option value="{{ org.pk }}"{% if org.pk == s.sender_id %} selected{% endif %}>{{ org.name }}</option>{% endfor %}
+                </select>
+                <button type="submit" name="otsus" value="kinnita" class="button button--primary button--tiny">Kinnita</button>
+                <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
+              </form>
+            {% else %}
+              <span class="classify__areas">{% for area in item.areas %}<span class="classify__chip">{{ area.name_et }}</span>{% endfor %}</span>
+              <span class="classify__meta">{{ s.sender.name|default:"Saatja teadmata" }}</span>
+            {% endif %}
+          </li>
+        {% endwith %}
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="statpanel__empty">Kinnitamata ettepanekuid ei ole.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -756,6 +756,11 @@ NORMALISED_TEXT: tuple[tuple[str, str], ...] = (
     # and every row under it would move on the first of the month. Held at a
     # value the product really prints for a period begun in October.
     (KAIK_PERIOD_LABEL[0], "alates 10.26"),
+    # «Viimased tegevused» on Minu asjad: «26.10 · Saabus». The date is `j.n`,
+    # so «6.10» is narrower than «26.10» and «11.10» narrower than «10.10», and
+    # the basis label after it moved with the calendar (2026-11-17, PR #637).
+    # Not required: the block renders only when something happened on the desk.
+    (".actline__when", "26.10"),
 )
 
 #: The same mechanism, for a value whose *selector* is not scenario-specific.

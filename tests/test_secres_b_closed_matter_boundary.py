@@ -68,6 +68,13 @@ CORRECTIONS_ALLOWED_WHEN_CLOSED: dict[tuple[str, str], str] = {
     ("related_materials:restore", "Soovituse taastamine"): (
         "app/related_materials/services.py `_lock_pair(require_open=False)`"
     ),
+    # Filing a past Teema under its sender and Valdkond describes the record;
+    # it adds no new content, and most proposals are on closed Teemad
+    # (docs/adr/0215 §5). «Kinnita kõik» uses the same service; in this matrix
+    # it finds the proposal already decided by the row above.
+    ("reporting:classification_decide", "Saatja ja valdkonna kinnitamine"): (
+        "docs/adr/0215 §5: classification is a correction, allowed on a closed Teema"
+    ),
 }
 
 

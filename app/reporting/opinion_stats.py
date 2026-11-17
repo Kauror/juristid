@@ -26,7 +26,8 @@ from __future__ import annotations
 
 import calendar
 from collections import Counter
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from statistics import mean, median
 from typing import Any
@@ -408,29 +409,43 @@ class InstrumentRow:
     received: int
 
 
-def by_instrument(
+#: The row for Teemad that hold no value in a grouping: no Õigusakt, no
+#: confirmed Valdkond, no confirmed sender. Always last.
+UNSET_KEY = ""
+
+
+def by_group(
     facts: list[OpinionFact],
     matters: list[MatterFacts],
     deadlines: dict[Any, date],
     period: Period,
+    groups: Callable[[MatterFacts], Sequence[tuple[str, str]]],
+    unset_label: str,
 ) -> list[InstrumentRow]:
-    """Sent opinions by the Teema's act type: count, on-time share, days given.
+    """Sent opinions by a grouping of the Teema: count, on-time share, days given.
 
-    Days given is the median over the Teemad of that type that arrived in the
-    period; a type with nothing sent and nothing received is left out.
+    A Teema in several groups counts in each, so shares may add up past 100.
+    Days given is the median over the group's Teemad that arrived in the period.
+    A group with nothing sent and nothing received is left out; the Teemad with
+    no value form one row, last.
     """
     now = [fact for fact in facts if period.holds(fact.sent_on)]
     arrived = [m for m in matters if m.received and period.holds(m.received)]
-    labels: dict[str, tuple[str, str]] = {}
+
+    def of(matter: MatterFacts) -> Sequence[tuple[str, str]]:
+        return groups(matter) or ((UNSET_KEY, unset_label),)
+
+    labels: dict[str, str] = {}
     for matter in [*(fact.matter for fact in now), *arrived]:
-        labels.setdefault(matter.instrument, (matter.instrument_key, matter.instrument))
-    sent = Counter(fact.matter.instrument for fact in now)
+        for key, label in of(matter):
+            labels.setdefault(key, label)
+    sent: Counter[str] = Counter(key for fact in now for key, _ in of(fact.matter))
     top = max(sent.values(), default=0)
     rows = []
-    for label, (key, _) in labels.items():
-        own = [fact for fact in now if fact.matter.instrument == label]
+    for key, label in labels.items():
+        own = [fact for fact in now if key in {k for k, _ in of(fact.matter)}]
         dated = [fact for fact in own if fact.on_time is not None]
-        own_arrived = [m for m in arrived if m.instrument == label]
+        own_arrived = [m for m in arrived if key in {k for k, _ in of(m)}]
         days = _days_given(own_arrived, deadlines)
         rows.append(
             InstrumentRow(
@@ -448,7 +463,46 @@ def by_instrument(
                 received=len(own_arrived),
             )
         )
-    return sorted(rows, key=lambda row: (-row.sent, -row.received, row.label.casefold()))
+    return sorted(
+        rows,
+        key=lambda row: (row.key == UNSET_KEY, -row.sent, -row.received, row.label.casefold()),
+    )
+
+
+def by_instrument(
+    facts: list[OpinionFact],
+    matters: list[MatterFacts],
+    deadlines: dict[Any, date],
+    period: Period,
+) -> list[InstrumentRow]:
+    """Sent opinions by the Teema's act type (phase 2)."""
+    rows = by_group(
+        facts,
+        matters,
+        deadlines,
+        period,
+        lambda m: ((m.instrument_key or m.instrument, m.instrument),),
+        "Määramata",
+    )
+    # The act type's key is its link; a Teema of several types has none.
+    return [
+        replace(row, key=row.key if row.key != row.label else "")
+        for row in sorted(rows, key=lambda row: (-row.sent, -row.received, row.label.casefold()))
+    ]
+
+
+def by_area(
+    facts: list[OpinionFact], matters: list[MatterFacts], deadlines: dict[Any, date], period: Period
+) -> list[InstrumentRow]:
+    """Sent opinions by confirmed Valdkond (ADR 0215)."""
+    return by_group(facts, matters, deadlines, period, lambda m: m.areas, "Märkimata")
+
+
+def by_sender(
+    facts: list[OpinionFact], matters: list[MatterFacts], deadlines: dict[Any, date], period: Period
+) -> list[InstrumentRow]:
+    """Sent opinions by confirmed sender (ADR 0215)."""
+    return by_group(facts, matters, deadlines, period, lambda m: m.senders, "Märkimata")
 
 
 #: Days given to answer, as the bands the page shows: (upper bound, label).

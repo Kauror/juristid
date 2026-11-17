@@ -8,6 +8,15 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-17
+basis = "deployment"
+prs = [637]
+changes = [
+  "Statistikas on kaks uut plokki: arvamused valdkonna järgi ja saatja järgi (kes teema Kojale saatis), mõlemas mitu saadeti, kui suur osa tähtajaks ja kui palju aega vastamiseks anti. Nimele vajutades avaneb nende arvamuste loend.",
+  "Iga teema kohta on ettepanek, mis valdkonda see kuulub ja kes selle saatis. Statistika lehel «Saatja ja valdkond» saab ettepaneku kinnitada, parandada või vahele jätta; Statistika loeb ainult kinnitatud väärtusi.",
+]
+
+[[day]]
 date = 2026-11-16
 basis = "deployment"
 revisions = ["2ade8941377f120f1a25b1d7f37aa067a921f4e8"]

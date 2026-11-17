@@ -10,7 +10,7 @@ Minu töö — is linked to rather than reimplemented (Stage-2E brief 39).
 
 from django.urls import path
 
-from app.reporting import legacy_views, opinion_views, views
+from app.reporting import classification_views, legacy_views, opinion_views, views
 from app.reporting.report_builder import views as report_views
 
 urlpatterns = [
@@ -18,6 +18,12 @@ urlpatterns = [
     # records. The counts-and-tables page it replaced there is «Seis».
     path("", opinion_views.dashboard, name="dashboard"),
     path("arvamused-valja/", opinion_views.opinion_rows, name="opinion_rows"),
+    # Confirming the proposed sender and Valdkond of each Teema (ADR 0215).
+    path("liigitamine/", classification_views.review, name="classification"),
+    path(
+        "liigitamine/kinnita/", classification_views.accept_page, name="classification_accept_page"
+    ),
+    path("liigitamine/<uuid:pk>/", classification_views.decide, name="classification_decide"),
     path("seis/", views.overview, name="overview"),
     path("teemad/", views.matters, name="matters"),
     path("tegevus/", views.activity, name="activity"),

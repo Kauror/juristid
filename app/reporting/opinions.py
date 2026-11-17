@@ -65,6 +65,10 @@ class MatterFacts:
     instrument: str
     #: The instrument's key, for links; "" when the Teema has none or several.
     instrument_key: str = ""
+    #: Valdkonnad as ``(key, name)``, and senders as ``(id, name)``: the
+    #: Teema's own confirmed fields, never a proposal (ADR 0215).
+    areas: tuple[tuple[str, str], ...] = ()
+    senders: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -110,8 +114,8 @@ def _owner_label(owner: Any, former: str) -> str:
 
 
 def matter_facts(user: Any) -> dict[Any, MatterFacts]:
-    """Every Teema the reader may see, as :class:`MatterFacts`. Two queries."""
-    from app.matters.models import Matter
+    """Every Teema the reader may see, as :class:`MatterFacts`. Four queries."""
+    from app.matters.models import Matter, MatterSourceOrganisation
     from app.workflow.enums import Track
 
     matters = list(
@@ -134,6 +138,16 @@ def matter_facts(user: Any) -> dict[Any, MatterFacts]:
         matter_id__in=[m.pk for m in matters]
     ).values_list("matter_id", "legalinstrumenttype__key", "legalinstrumenttype__label_et"):
         instruments.setdefault(matter_id, []).append((key, label))
+    areas: dict[Any, list[tuple[str, str]]] = {}
+    for matter_id, key, label in Matter.policy_areas.through.objects.filter(
+        matter_id__in=[m.pk for m in matters]
+    ).values_list("matter_id", "policyarea__key", "policyarea__name_et"):
+        areas.setdefault(matter_id, []).append((key, label))
+    senders: dict[Any, list[tuple[str, str]]] = {}
+    for matter_id, org_id, name in MatterSourceOrganisation.objects.filter(
+        matter_id__in=[m.pk for m in matters]
+    ).values_list("matter_id", "organisation_id", "organisation__name"):
+        senders.setdefault(matter_id, []).append((str(org_id), name))
     facts: dict[Any, MatterFacts] = {}
     for m in matters:
         own = sorted(instruments.get(m.pk, []))
@@ -153,6 +167,8 @@ def matter_facts(user: Any) -> dict[Any, MatterFacts]:
             koda_initiative=m.track == Track.KODA_INITIATIVE,
             instrument=own[0][1] if len(own) == 1 else ("Mitu liiki" if own else "Määramata"),
             instrument_key=own[0][0] if len(own) == 1 else "",
+            areas=tuple(sorted(areas.get(m.pk, []))),
+            senders=tuple(sorted(senders.get(m.pk, []))),
         )
     return facts
 

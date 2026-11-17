@@ -199,6 +199,9 @@ PARAMETER = {
 OWN_VISIBILITY = {
     "matter": False,
     "step": False,
+    # A sender/Valdkond proposal has no visibility of its own: it is exactly as
+    # visible as its Teema (ADR 0215).
+    "suggestion": False,
     "notice": True,
     "deadline_notification": True,
 }
@@ -289,6 +292,8 @@ def _key_for(route: str, param: str) -> str | None:
         return "reminder"
     if namespace == "documents":
         return "document"
+    if route == "reporting:classification_decide":
+        return "suggestion"
     return None
 
 
@@ -434,6 +439,9 @@ def _objects(matter: Any, made: dict[str, Any], world: dict[str, Any], *, restri
         ),
         "effective_date": effective_date,
         "reminder": reminder,
+        "suggestion": model("reporting", "ClassificationSuggestion").objects.create(
+            matter=matter, policy_area_keys=["maksud-ja-toll"], confidence="h", source="sweep"
+        ),
         "work_victory": model("intelligence", "MatterWorkVictory").objects.get(
             matter=matter, title=HIDDEN_PHRASE
         ),

@@ -1179,7 +1179,30 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         ),
         probe=lambda w: RelatedSuggestionDismissal.objects.count(),
     ),
+    # «Saatja ja valdkond» (ADR 0215): confirming a proposal writes the Teema's
+    # senders and Valdkonnad through the audited setters.
+    WriteRoute(
+        name="reporting:classification_decide",
+        label="Saatja ja valdkonna kinnitamine",
+        request=lambda w: ({"pk": w["suggestion"].pk}, {"otsus": "kinnita"}),
+        probe=lambda w: _suggestion_state(w),
+        events=(ChangeEventType.MATTER_POLICY_AREAS_CHANGED,),
+    ),
+    WriteRoute(
+        name="reporting:classification_accept_page",
+        label="Saatja ja valdkonna kinnitamine lehe kaupa",
+        request=lambda w: ({}, {"ettepanek": str(w["suggestion"].pk)}),
+        probe=lambda w: _suggestion_state(w),
+        events=(ChangeEventType.MATTER_POLICY_AREAS_CHANGED,),
+    ),
 )
+
+
+def _suggestion_state(world):
+    from app.reporting.models import ClassificationSuggestion
+
+    row = ClassificationSuggestion.objects.get(pk=world["suggestion"].pk)
+    return (row.status, sorted(row.matter.policy_areas.values_list("key", flat=True)))
 
 
 def _pdf(filename: str):
@@ -1441,7 +1464,16 @@ def _build_world():
         # opinion rather than creating taxonomy, so a world with no `Tag` would
         # have nothing for it to write and its refusal would prove nothing.
         "tag": factories.TagFactory(),
+        "suggestion": _suggestion(matter),
     }
+
+
+def _suggestion(matter):
+    from app.reporting.models import ClassificationSuggestion
+
+    return ClassificationSuggestion.objects.create(
+        matter=matter, policy_area_keys=["maksud-ja-toll"], confidence="h", source="test"
+    )
 
 
 def _post(client, route: WriteRoute, world: dict):
