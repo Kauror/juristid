@@ -32,6 +32,10 @@ never held either fact, and only 23 imported opinions name an addressee.
    and changes nothing. A second load never reopens a decided row.
 4. Confirming is a business write (`business_write_required`); a reader sees
    the proposals without the buttons. A proposal is as visible as its Teema.
+5. **Confirming works on a closed Teema.** Filing a past Teema under its
+   sender and Valdkond describes the record and adds no new content (the
+   correction rule of ADR 0075 §12 / 0076 §2); without it the history from
+   2011, almost all closed, could never be classified.
 
 ## Consequences
 
