@@ -55,17 +55,17 @@ def _teema(request: HttpRequest, reference: str) -> Any:
 
 
 def watch_line(user: Any, matter: Any) -> dict[str, Any] | None:
-    """For the Teema page: the way to its register watch, and how many documents wait.
+    """For the Teema page: how many documents wait, when any do.
 
-    On every open Teema, watched or not: it is also where a lawyer sets the words
-    a Teema with no bill number is searched by.
+    The way to the watch itself (and its search words) is the rail's
+    «Menetluse link» card, which needs no query.
     """
     if not matter.is_open:
         return None
     waiting = (
         watch.pending_for(user).filter(matter=matter).exclude(relevance=Relevance.UNRELATED).count()
     )
-    return {"waiting": waiting}
+    return {"waiting": waiting} if waiting else None
 
 
 def _home_source(teema: Any) -> str:
