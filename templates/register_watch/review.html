@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Uued dokumendid registrites · {{ application_name }}{% endblock %}
+
+{% comment %}
+What the nightly register watch found on the open Teemad (ADR 0217). A row
+changes nothing until a lawyer presses «Lisa märkena», which records a
+`Menetluse areng` on the Teema exactly as `+ Märge` does; «Jäta vahele» only
+records the decision. The model's verdict is shown, never acted on.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Uued dokumendid registrites</h1>
+    <span class="pagehead__context">{{ total }}</span>
+  </div>
+
+  <nav class="regwatch__filters" aria-label="Kelle teemad">
+    <a class="regwatch__tab{% if filters.kelle == 'minu' and not filters.teema %} is-active{% endif %}" href="?kelle=minu">Minu teemad</a>
+    <a class="regwatch__tab{% if filters.kelle == 'koik' and not filters.teema %} is-active{% endif %}" href="?kelle=koik">Kõik</a>
+    {% if filters.teema %}<a class="regwatch__tab is-active" href="?kelle={{ filters.kelle }}">{{ filters.teema }} ×</a>{% endif %}
+  </nav>
+
+  {% for group in groups %}
+    <section class="regwatch__teema" aria-labelledby="rw-{{ group.matter.pk }}">
+      <h2 class="regwatch__head" id="rw-{{ group.matter.pk }}">
+        <a href="{% url 'matters:matter_detail' pk=group.matter.pk %}">{{ group.matter.title }}</a>
+        <span class="regwatch__ref">{{ group.matter.display_reference }}{% if filters.kelle != 'minu' and group.matter.owner %} · {{ group.matter.owner.display_name }}{% endif %}</span>
+      </h2>
+      <ul class="regwatch__list">
+        {% for finding in group.shown %}{% include "register_watch/_finding.html" %}{% endfor %}
+      </ul>
+      {% if group.unrelated %}
+        <details class="regwatch__unrelated">
+          <summary>Ei puutu teemasse ({{ group.unrelated|length }})</summary>
+          <ul class="regwatch__list">
+            {% for finding in group.unrelated %}{% include "register_watch/_finding.html" %}{% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+    </section>
+  {% empty %}
+    <p class="regwatch__empty">Uusi dokumente ei ole.{% if filters.kelle == 'minu' and not filters.teema %} <a href="?kelle=koik">Kõik teemad</a>{% endif %}</p>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -1195,6 +1195,15 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: _suggestion_state(w),
         events=(ChangeEventType.MATTER_POLICY_AREAS_CHANGED,),
     ),
+    # «Uued dokumendid registrites» (ADR 0217): adding a finding records a
+    # `Menetluse areng` on the Teema through `+ Märge`'s use case.
+    WriteRoute(
+        name="register_watch:decide",
+        label="Registrist leitud dokumendi lisamine",
+        request=lambda w: ({"pk": w["finding"].pk}, {"otsus": "lisa"}),
+        probe=lambda w: _finding_state(w),
+        events=(ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,),
+    ),
 )
 
 
@@ -1203,6 +1212,14 @@ def _suggestion_state(world):
 
     row = ClassificationSuggestion.objects.get(pk=world["suggestion"].pk)
     return (row.status, sorted(row.matter.policy_areas.values_list("key", flat=True)))
+
+
+def _finding_state(world):
+    from app.matters.models import MatterProceduralDevelopment
+    from app.register_watch.models import WatchFinding
+
+    row = WatchFinding.objects.get(pk=world["finding"].pk)
+    return (row.status, MatterProceduralDevelopment.objects.filter(matter=row.matter).count())
 
 
 def _pdf(filename: str):
@@ -1465,7 +1482,19 @@ def _build_world():
         # have nothing for it to write and its refusal would prove nothing.
         "tag": factories.TagFactory(),
         "suggestion": _suggestion(matter),
+        "finding": _finding(matter),
     }
+
+
+def _finding(matter):
+    from app.register_watch.models import WatchFinding, WatchTarget
+
+    target = WatchTarget.objects.create(
+        matter=matter, source="HTM_REGISTER", identifier="973 SE", label="973 SE", origin="TITLE"
+    )
+    return WatchFinding.objects.create(
+        target=target, matter=matter, external_id="doc:1", title="Muudatusettepanekud"
+    )
 
 
 def _suggestion(matter):
@@ -1751,6 +1780,8 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "notifications:personal_create": "C: the signed-in person's own reminder on a visible Teema",
     "notifications:personal_read": "C: the recipient's own read stamp on their reminder",
     "notifications:personal_unread": "C: the recipient's own reminder read stamp, undone",
+    "notifications:register_read": "C: the owner's own read stamp on a register notice",
+    "notifications:register_unread": "C: the owner's own register notice read stamp, undone",
     "notifications:personal_remove": "C: removes the recipient's own reminder",
     "notifications:settings": "C: the signed-in person's own notification preferences",
     "notifications:reset_settings": "C: resets the signed-in person's own preferences",

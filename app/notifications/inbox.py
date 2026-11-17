@@ -14,7 +14,10 @@ nothing else:
 3. unread «Uus asi» receipts (ADR 0051 unchanged: personal, acknowledged only
    by its own POST);
 4. the reader's own «Lisa meeldetuletus» reminders whose day has come
-   (`app.notifications.personal`, owner 2026-11-16).
+   (`app.notifications.personal`, owner 2026-11-16);
+5. «Registris uus dokument»: the register watch found something new on a Teema
+   the reader owns, and it still waits (`app.register_watch.notices`,
+   docs/adr/0217 §6).
 
 :func:`inbox_for` lists them and :func:`inbox_count` counts the same
 populations with three ``COUNT`` statements, so the bell, the Minu asjad block
@@ -67,6 +70,7 @@ TYPE_DEADLINE = "deadline"
 TYPE_COMMENCEMENT = "commencement"
 TYPE_ASSIGNMENT = "assignment"
 TYPE_PERSONAL = "personal"
+TYPE_REGISTER = "register"
 
 #: Where an item is listed on `/teavitused/`.
 SECTION_ACTION = "action"
@@ -77,7 +81,13 @@ KIND_LABELS = {ACTION: NotificationKind.ACTION.label, INFO: NotificationKind.INF
 
 #: The tie-break between sources at the same moment, for a stable newest-first
 #: order and a keyset cursor (`app.notifications.feed`).
-TYPE_RANK = {TYPE_DEADLINE: 0, TYPE_COMMENCEMENT: 1, TYPE_ASSIGNMENT: 2, TYPE_PERSONAL: 3}
+TYPE_RANK = {
+    TYPE_DEADLINE: 0,
+    TYPE_COMMENCEMENT: 1,
+    TYPE_ASSIGNMENT: 2,
+    TYPE_PERSONAL: 3,
+    TYPE_REGISTER: 4,
+}
 
 #: The one state vocabulary the panel, the page and the block draw.
 STATE_UNREAD = "unread"
@@ -167,6 +177,8 @@ _ROUTES: dict[tuple[str, str], tuple[str, str]] = {
     (TYPE_ASSIGNMENT, "unread"): ("notifications:assignment_unread", "notice_id"),
     (TYPE_PERSONAL, "read"): ("notifications:personal_read", "pk"),
     (TYPE_PERSONAL, "unread"): ("notifications:personal_unread", "pk"),
+    (TYPE_REGISTER, "read"): ("notifications:register_read", "pk"),
+    (TYPE_REGISTER, "unread"): ("notifications:register_unread", "pk"),
 }
 
 
@@ -422,6 +434,41 @@ def _personal_items(user: Any, today: date) -> list[InboxItem]:
     ]
 
 
+#: The label of a «Registris uus dokument» item, once.
+REGISTER_LABEL = "Registris uus dokument"
+
+
+def register_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = False) -> InboxItem:
+    """The register watch's notice on a Teema the reader owns (docs/adr/0217 §6)."""
+    unread = state == STATE_UNREAD
+    day = timezone.localtime(row.updated_at).date()
+    count = row.documents
+    return InboxItem(
+        type=TYPE_REGISTER,
+        kind=INFO,
+        title=row.matter.title,
+        label=REGISTER_LABEL,
+        date=day,
+        date_label=format_estonian_date(day),
+        url=reverse("register_watch:review") + f"?teema={row.matter.display_reference}",
+        is_unread=unread,
+        pk=row.pk,
+        section=SECTION_INFO,
+        can_read=unread,
+        note="1 uus dokument" if count == 1 else f"{count} uut dokumenti",
+        at=row.created_at,
+        state=state,
+        can_unread=can_unread,
+        matter_id=row.matter_id,
+    )
+
+
+def _register_items(user: Any) -> list[InboxItem]:
+    from app.register_watch import notices
+
+    return [register_item(row) for row in notices.due_unread(user).select_related("matter")]
+
+
 def inbox_for(user: Any, today: date | None = None) -> list[InboxItem]:
     """Everything awaiting the signed-in reader's attention now, in one order."""
     if not _signed_in(user):
@@ -433,6 +480,7 @@ def inbox_for(user: Any, today: date | None = None) -> list[InboxItem]:
     items += _commencement_items(user, day)
     items += _assignment_items(user)
     items += _personal_items(user, day)
+    items += _register_items(user)
     return sorted(items, key=lambda item: item.sort_key)
 
 
@@ -450,6 +498,7 @@ def inbox_count(user: Any, today: date | None = None) -> int:
     if not _signed_in(user):
         return 0
     from app.notifications import personal
+    from app.register_watch import notices
 
     day = _today(today)
     return (
@@ -457,6 +506,7 @@ def inbox_count(user: Any, today: date | None = None) -> int:
         + commencement.unresolved_count(user, today=day)
         + _assignment_queryset(user).count()
         + personal.due_unread(user, day).count()
+        + notices.due_unread(user).count()
     )
 
 
