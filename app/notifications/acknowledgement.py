@@ -63,6 +63,7 @@ from app.notifications.inbox import (
     TYPE_COMMENCEMENT,
     TYPE_DEADLINE,
     TYPE_PERSONAL,
+    TYPE_REGISTER,
 )
 from app.notifications.models import CommencementReminderPersonalState
 
@@ -153,6 +154,10 @@ def resolve(user: Any, kind: str, pk: Any) -> Any:
         from app.notifications import personal
 
         return personal.own_row(user, pk)
+    if kind == TYPE_REGISTER:
+        from app.register_watch import notices
+
+        return notices.own_row(user, pk)
     return None
 
 
@@ -178,6 +183,10 @@ def mark_read(user: Any, kind: str, row: Any) -> bool:
         from app.notifications import personal
 
         return personal.mark_read(row)
+    if kind == TYPE_REGISTER:
+        from app.register_watch import notices
+
+        return notices.mark_read(row)
     return False  # pragma: no cover - `resolve` admits no other kind
 
 
@@ -199,6 +208,10 @@ def mark_unread(user: Any, kind: str, row: Any) -> bool:
         from app.notifications import personal
 
         return personal.mark_unread(row)
+    if kind == TYPE_REGISTER:
+        from app.register_watch import notices
+
+        return notices.mark_unread(row)
     return False  # pragma: no cover - `resolve` admits no other kind
 
 
@@ -331,6 +344,11 @@ def mark_all_read(user: Any, *, until: datetime, today: date | None = None) -> M
         for own in personal.due_unread(user, day):
             if personal.arrived_at(own) <= cut:
                 marked += int(personal.mark_read(own))
+        from app.register_watch import notices
+
+        for waiting in notices.due_unread(user):
+            if notices.arrived_at(waiting) <= cut:
+                marked += int(notices.mark_read(waiting))
     return MarkAllResult(marked, inbox.inbox_count(user, day))
 
 

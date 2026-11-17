@@ -16,7 +16,7 @@ changes = [
   "Iga teema kohta on ettepanek, mis valdkonda see kuulub ja kes selle saatis. Statistika lehel «Saatja ja valdkond» saab ettepaneku kinnitada, parandada või vahele jätta; Statistika loeb ainult kinnitatud väärtusi.",
   "Statistika vahekaardid on igal lehel samas kohas pealkirja all. «Ajalugu», «Andmekvaliteet» ja «Definitsioonid» on nüüd Halduse jaotises «Rakendus».",
   "Välja saadetud arvamuste loendit saab sortida veeru nimele vajutades. Hilinenud arvamuse tähtaja kõrval on «!» ning hiirega peale minnes on näha, mitu päeva hiljem see saadeti.",
-  "Juristid vaatab igal ööl Riigikogust ning Haridus- ja Teadusministeeriumi ja Kliimaministeeriumi dokumendiregistrist, kas Riigikogu eelnõu kohta on midagi uut. Teema lehel on siis link «Registrites N uut dokumenti»; lehel «Uued dokumendid registrites» saab dokumendi teemale märkena lisada või vahele jätta.",
+  "Juristid vaatab igal ööl Riigikogust ning Haridus- ja Teadusministeeriumi ja Kliimaministeeriumi dokumendiregistrist, kas Riigikogu eelnõu kohta on midagi uut. Teema vastutaja saab kellukesse teavituse «Registris uus dokument» ja teema lehel on link «Registrites N uut dokumenti»; lehel «Uued dokumendid registrites» saab dokumendi lisada teemale märkena või ainult lingina või jätta vahele.",
 ]
 
 [[day]]

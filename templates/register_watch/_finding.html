@@ -11,6 +11,7 @@
       <input type="hidden" name="kelle" value="{{ filters.kelle }}">
       <input type="hidden" name="teema" value="{{ filters.teema }}">
       <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa märkena</button>
+      {% if finding.url %}<button type="submit" name="otsus" value="link" class="button button--secondary button--tiny">Lisa link</button>{% endif %}
       <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
     </form>
   {% endif %}

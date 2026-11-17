@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from app.core.errors import DomainError
 from app.matters.models import Matter
-from app.register_watch import ai
+from app.register_watch import ai, notices
 from app.register_watch.models import (
     FindingStatus,
     Relevance,
@@ -167,6 +167,16 @@ def run(
                 ).select_related("target")
             )
             ai.judge(matter, unjudged, usage, client=ai_client)
+        # The owner's bell: what this run newly offers, less what the model
+        # called unrelated (ADR 0216 §6).
+        fresh = (
+            WatchFinding.objects.filter(
+                matter=matter, status=FindingStatus.PENDING, created_at__gte=record.started_at
+            )
+            .exclude(relevance=Relevance.UNRELATED)
+            .count()
+        )
+        notices.notify(matter, fresh)
     record.ai_calls = usage.calls
     record.ai_input_tokens = usage.input_tokens
     record.ai_output_tokens = usage.output_tokens
@@ -228,6 +238,47 @@ def add_to_teema(finding: WatchFinding, *, actor: Any) -> WatchFinding:
     locked.decided_at = timezone.now()
     locked.development = result.record
     locked.save(update_fields=["status", "decided_by", "decided_at", "development", "updated_at"])
+    return locked
+
+
+def _link_label(finding: WatchFinding) -> str:
+    """Which proceeding: the bill («973 SE») or the register number."""
+    if finding.target.source == WatchSource.RIIGIKOGU:
+        return finding.target.label[:120]
+    return (finding.detail.split(" · ")[0] or finding.title)[:120]
+
+
+@transaction.atomic
+def add_link(finding: WatchFinding, *, actor: Any) -> WatchFinding:
+    """«Lisa link»: keep the address as the Teema's `Menetluse link`, nothing more.
+
+    Through `+ Menetluse link`'s own use case, so a link the Teema already holds
+    is returned unchanged. No `Menetluse areng` is written.
+    """
+    from app.matters.enums import ProceduralLinkKind
+    from app.matters.workspace import add_matter_procedural_link
+
+    locked = (
+        WatchFinding.objects.select_for_update()
+        .select_related("target", "matter")
+        .get(pk=finding.pk)
+    )
+    if locked.status != FindingStatus.PENDING:
+        raise DomainError(ALREADY_DECIDED)
+    if not locked.url:
+        raise DomainError("Sellel dokumendil pole linki.")
+    kind = (
+        ProceduralLinkKind.RIIGIKOGU
+        if locked.target.source == WatchSource.RIIGIKOGU
+        else ProceduralLinkKind.MINISTRY_REGISTER
+    )
+    add_matter_procedural_link(
+        matter=locked.matter, author=actor, kind=kind, url=locked.url, label=_link_label(locked)
+    )
+    locked.status = FindingStatus.LINKED
+    locked.decided_by = actor
+    locked.decided_at = timezone.now()
+    locked.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
     return locked
 
 

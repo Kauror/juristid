@@ -29,6 +29,8 @@ class TargetOrigin(models.TextChoices):
 class FindingStatus(models.TextChoices):
     PENDING = "PENDING", "Ootab"
     ADDED = "ADDED", "Lisatud"
+    #: Kept only as the Teema's `Menetluse link`, nothing on the timeline.
+    LINKED = "LINKED", "Lisatud lingina"
     DISMISSED = "DISMISSED", "Jäetud vahele"
     #: Already in the register long before the first check; never offered.
     BASELINE = "BASELINE", "Varasem"
@@ -158,3 +160,34 @@ class WatchRun(BaseModel):
         verbose_name = "registrite kontroll"
         verbose_name_plural = "registrite kontrollid"
         ordering = ["-started_at"]
+
+
+class RegisterNotice(BaseModel):
+    """«Registris uus dokument» in the bell: one per Teema for its owner (ADR 0216 §6).
+
+    A run that offers new documents on a Teema tells the Teema's owner once; a
+    later run adds to the same unread notice instead of making another. It is
+    presentation state of the owner's account, like `PersonalReminder`: read and
+    unread by its own person only. It drops out of the inbox when every document
+    it points to has been added or skipped (`app.register_watch.notices`).
+    """
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="register_notices",
+        verbose_name="saaja",
+    )
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="register_notices",
+        verbose_name="teema",
+    )
+    documents = models.PositiveIntegerField(default=0, verbose_name="dokumente")
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
+
+    class Meta:
+        verbose_name = "registriteavitus"
+        verbose_name_plural = "registriteavitused"
+        indexes = [models.Index(fields=["recipient", "read_at"], name="register_notice_inbox")]

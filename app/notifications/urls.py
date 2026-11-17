@@ -38,4 +38,7 @@ urlpatterns = [
     path("meeldetuletus/<uuid:pk>/loetud/", views.personal_read, name="personal_read"),
     path("meeldetuletus/<uuid:pk>/lugemata/", views.personal_unread, name="personal_unread"),
     path("meeldetuletus/<uuid:pk>/eemalda/", views.personal_remove, name="personal_remove"),
+    # «Registris uus dokument» (docs/adr/0216 §6).
+    path("registrid/<uuid:pk>/loetud/", views.register_read, name="register_read"),
+    path("registrid/<uuid:pk>/lugemata/", views.register_unread, name="register_unread"),
 ]

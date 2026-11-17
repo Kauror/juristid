@@ -85,8 +85,11 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     if finding is None:
         raise Http404("Dokumenti ei leitud.")
     try:
-        if request.POST.get("otsus") == "lisa":
+        decision = request.POST.get("otsus")
+        if decision == "lisa":
             watch.add_to_teema(finding, actor=request.user)
+        elif decision == "link":
+            watch.add_link(finding, actor=request.user)
         else:
             watch.dismiss(finding, actor=request.user)
     except DomainError as refusal:

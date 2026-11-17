@@ -36,7 +36,9 @@ What a program may read (checked 2026-11-17):
    `register_watch.WatchFinding` on its Teema. Nothing is written to the Teema
    until a lawyer presses «Lisa märkena», which records a `Menetluse areng`
    through `add_procedural_development` — audited, on the locked open Teema,
-   exactly as `+ Märge` does. «Jäta vahele» records the decision and writes
+   exactly as `+ Märge` does. «Lisa link» keeps only the address, as the
+   Teema's `Menetluse link` through `+ Menetluse link`'s use case, and writes
+   nothing on the timeline. «Jäta vahele» records the decision and writes
    nothing. A finding is as visible as its Teema.
 3. **The first check of a Teema does not flood it.** What a register already
    held more than `REGISTER_WATCH_BASELINE_DAYS` (45) days before the first check
@@ -55,6 +57,13 @@ What a program may read (checked 2026-11-17):
    calls to one host, and a switch (`JURISTID_REGISTER_WATCH_FETCH`) that is off
    in tests and CI. Each run is recorded (`WatchRun`) with what it checked,
    found, failed and what the model cost.
+6. **The owner is told in the bell.** A run that offers new documents on a
+   Teema creates one «Registris uus dokument» notice for the Teema's owner, or
+   adds to their unread one (`RegisterNotice`, the inbox's fifth source). It
+   opens the review page for that Teema; it is read and unread like a
+   «Meeldetuletus», and it leaves the inbox once every document it points to has
+   been added, linked or skipped. Documents the model called unrelated do not
+   count. A Teema with no owner tells nobody.
 
 ## Consequences
 
@@ -63,5 +72,5 @@ What a program may read (checked 2026-11-17):
   model proposing search phrases from the title; RIK ADR and EIS once their
   operators allow it; Commission consultations.
 - A finding never moves `Hetkeseis`, makes no next step and is not a deadline.
-- `MatterProceduralLink` stays a pointer (ADR 0089 §4): the watch writes its
-  own rows beside it and reads nothing from it.
+- `MatterProceduralLink` stays a pointer (ADR 0089 §4): the watch reads nothing
+  from it, and writes one only when a lawyer presses «Lisa link».

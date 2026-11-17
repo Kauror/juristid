@@ -437,3 +437,123 @@ def test_the_teema_page_leaves_out_what_the_model_called_unrelated(client, speci
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
     assert "Registrites" not in body
+
+
+# -- the bell ----------------------------------------------------------------------
+
+
+def test_a_run_tells_the_owner_once_and_adds_to_the_unread_notice(registers, specialist):
+    from app.notifications import inbox
+    from app.register_watch.models import RegisterNotice
+
+    matter = _bill_teema(owner=specialist)
+    watch.run([matter], use_ai=False, today=TODAY)
+    registers.answers[("api.riigikogu.ee", f"/api/volumes/drafts/{UUID}")] = {
+        **BILL,
+        "opinions": [
+            *BILL["opinions"],
+            {"uuid": "o2", "title": "Uus arvamus", "date": "2026-11-17"},
+        ],
+    }
+    watch.run([matter], use_ai=False, today=TODAY)
+
+    notice = RegisterNotice.objects.get(recipient=specialist, matter=matter)
+    assert notice.documents == 4
+    items = [
+        item for item in inbox.inbox_for(specialist, TODAY) if item.type == inbox.TYPE_REGISTER
+    ]
+    assert [(item.label, item.note) for item in items] == [
+        ("Registris uus dokument", "4 uut dokumenti")
+    ]
+    assert items[0].url.endswith(f"?teema={matter.display_reference}")
+    assert inbox.inbox_count(specialist, TODAY) >= 1
+
+
+def test_no_notice_without_an_owner_or_for_what_the_model_called_unrelated(registers, specialist):
+    from app.register_watch.models import RegisterNotice
+
+    nobodys = _bill_teema(owner=None)
+    watch.run([nobodys], use_ai=False, today=TODAY)
+    assert not RegisterNotice.objects.exists()
+
+    with override_settings(REGISTER_WATCH_AI=True):
+        mine = factories.MatterFactory(title="Teine eelnõu (973 SE)", owner=specialist)
+        registers.answers[("api.riigikogu.ee", "/api/volumes/drafts")] = {
+            "_embedded": {"content": []}
+        }
+        watch.run([mine], use_ai=True, ai_client=FakeClient(["UNRELATED"]), today=TODAY)
+    assert not RegisterNotice.objects.filter(matter=mine).exists()
+
+
+def test_reading_the_notice_and_dealing_with_the_documents_takes_it_out(client, specialist):
+    from app.notifications import inbox
+    from app.register_watch import notices
+
+    matter = _bill_teema(owner=specialist)
+    finding = _finding(matter)
+    row = notices.notify(matter, 1)
+    client.force_login(specialist)
+
+    client.post(reverse("notifications:register_read", kwargs={"pk": row.pk}))
+    row.refresh_from_db()
+    assert row.read_at is not None
+    client.post(reverse("notifications:register_unread", kwargs={"pk": row.pk}))
+    assert notices.due_unread(specialist).count() == 1
+
+    watch.dismiss(finding, actor=specialist)
+
+    assert notices.due_unread(specialist).count() == 0
+    assert not [i for i in inbox.inbox_for(specialist, TODAY) if i.type == inbox.TYPE_REGISTER]
+
+
+def test_a_colleague_cannot_read_my_notice(client, specialist):
+    from app.register_watch import notices
+
+    matter = _bill_teema(owner=specialist)
+    _finding(matter)
+    row = notices.notify(matter, 1)
+    colleague = factories.UserFactory(role=specialist.role)
+    client.force_login(colleague)
+
+    response = client.post(reverse("notifications:register_read", kwargs={"pk": row.pk}))
+
+    assert response.status_code == 404
+
+
+def test_mark_all_read_includes_the_register_notice(specialist):
+    from django.utils import timezone
+
+    from app.notifications import acknowledgement
+    from app.register_watch import notices
+
+    matter = _bill_teema(owner=specialist)
+    _finding(matter)
+    notices.notify(matter, 1)
+
+    acknowledgement.mark_all_read(specialist, until=timezone.now())
+
+    assert notices.due_unread(specialist).count() == 0
+
+
+# -- «Lisa link» -------------------------------------------------------------------
+
+
+def test_add_link_keeps_the_address_as_a_menetluse_link_and_nothing_else(client, specialist):
+    from app.matters.enums import ProceduralLinkKind
+    from app.matters.models import MatterProceduralLink
+
+    matter = _bill_teema(owner=specialist)
+    finding = _finding(matter)
+    client.force_login(specialist)
+
+    client.post(reverse("register_watch:decide", kwargs={"pk": finding.pk}), {"otsus": "link"})
+
+    link = MatterProceduralLink.objects.get(matter=matter)
+    assert (link.kind, link.url, link.label) == (
+        ProceduralLinkKind.MINISTRY_REGISTER,
+        "https://dok.hm.ee/et/document.html?id=h1",
+        "8-1/26/5965",
+    )
+    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    finding.refresh_from_db()
+    assert finding.status == FindingStatus.LINKED
