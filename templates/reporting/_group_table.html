@@ -1,0 +1,34 @@
+{% comment %}
+One grouping of the period's opinions: act type, Valdkond or sender
+(templates/reporting/dashboard.html). `items` are {row, url}; `first` names the column.
+{% endcomment %}
+{% if items %}
+  <div class="stattable__wrap">
+  <table class="stattable">
+    <thead>
+      <tr>
+        <th scope="col">{{ first }}</th>
+        <th scope="col" class="stattable__num">Välja saadetud</th>
+        <th scope="col" class="stattable__bar"><span class="visually-hidden">Osakaal</span></th>
+        <th scope="col" class="stattable__num">Tähtajaks</th>
+        <th scope="col" class="stattable__num">Aega vastamiseks</th>
+        <th scope="col" class="stattable__num">Sisse tulnud</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+        <tr>
+          <th scope="row">{% if item.url %}<a href="{{ item.url }}">{{ item.row.label }}</a>{% else %}{{ item.row.label }}{% endif %}</th>
+          <td class="stattable__num">{{ item.row.sent }} <span class="stattable__share">{{ item.row.share }}%</span></td>
+          <td class="stattable__bar"><span class="stattable__fill statseries--0" style="width: {{ item.row.width|stringformat:'.2f' }}%"></span></td>
+          <td class="stattable__num">{% if item.row.on_time_share is not None %}{{ item.row.on_time_share }}%{% else %}—{% endif %}</td>
+          <td class="stattable__num">{% if item.row.days_given is not None %}{{ item.row.days_given }} p{% else %}—{% endif %}</td>
+          <td class="stattable__num">{{ item.row.received }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+{% else %}
+  <p class="statpanel__empty">Andmed puuduvad.</p>
+{% endif %}

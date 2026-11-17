@@ -240,3 +240,72 @@ class OperationalMatterSnapshot(BaseModel):
         if target is None:
             return False
         return target < self.snapshot_date
+
+
+class SuggestionStatus(models.TextChoices):
+    PENDING = "PENDING", "Ootab"
+    ACCEPTED = "ACCEPTED", "Kinnitatud"
+    DISMISSED = "DISMISSED", "Jäetud vahele"
+
+
+class ClassificationSuggestion(BaseModel):
+    """A proposed sender and Valdkond for one Teema, waiting for a person.
+
+    Statistika's «who sends» and «Valdkond» panels read the Teema's own fields
+    (`source_organisations`, `policy_areas`), which were empty on every Teema
+    when the panels were built (2026-11-17). A one-time review of the titles
+    proposed both; this row holds that proposal until a lawyer confirms it, and
+    a confirmed proposal is written through the ordinary audited setters. A
+    statistic never reads this table: an unconfirmed guess is not a figure.
+    """
+
+    matter = models.OneToOneField(
+        "matters.Matter",
+        on_delete=models.CASCADE,
+        related_name="classification_suggestion",
+        verbose_name="teema",
+    )
+    #: `PolicyArea.key`s, the main one first. Keys rather than rows, so a
+    #: retired or renamed area is skipped at confirmation instead of failing
+    #: the load.
+    policy_area_keys = models.JSONField(default=list, blank=True, verbose_name="valdkonnad")
+    sender = models.ForeignKey(
+        "organisations.Organisation",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="saatja",
+    )
+    #: h / m / l, as the review stated it.
+    confidence = models.CharField(max_length=1, verbose_name="kindlus")
+    source = models.CharField(max_length=64, verbose_name="allikas")
+    status = models.CharField(
+        max_length=16,
+        choices=SuggestionStatus.choices,
+        default=SuggestionStatus.PENDING,
+        db_index=True,
+        verbose_name="olek",
+    )
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="otsustaja",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True, verbose_name="otsustatud")
+
+    class Meta:
+        verbose_name = "liigituse ettepanek"
+        verbose_name_plural = "liigituse ettepanekud"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(confidence__in=["h", "m", "l"]),
+                name="classification_suggestion_confidence",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.matter_id} {self.status}"

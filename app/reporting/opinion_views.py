@@ -23,8 +23,8 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
+from app.reporting import classification, opinions
 from app.reporting import opinion_stats as stats
-from app.reporting import opinions
 
 TREND_SPANS = {"5": "Viimased 5 aastat", "10": "Viimased 10 aastat", "koik": "Alates 2011"}
 DEFAULT_TREND = "koik"
@@ -121,6 +121,16 @@ def dashboard(request: HttpRequest) -> HttpResponse:
                 {"row": row, "url": rows_url(liik=row.key) if row.key and row.sent else ""}
                 for row in stats.by_instrument(facts, matters, deadlines, period)
             ],
+            # Who sends, and about what (phase 3, ADR 0215): confirmed fields only.
+            "areas": [
+                {"row": row, "url": rows_url(valdkond=row.key) if row.key and row.sent else ""}
+                for row in stats.by_area(facts, matters, deadlines, period)
+            ],
+            "senders": [
+                {"row": row, "url": rows_url(saatja=row.key) if row.key and row.sent else ""}
+                for row in stats.by_sender(facts, matters, deadlines, period)
+            ],
+            "pending_classification": classification.pending_for(request.user).count(),
             "pressure": stats.pressure(matters, deadlines, period),
             "decisions": stats.decisions(facts, declined, period),
             "trends": found,
@@ -201,11 +211,20 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
     kinds = {m.instrument_key: m.instrument for m in _known.values() if m.instrument_key}
     liik = str(request.GET.get("liik", "") or "")
     liik = liik if liik in kinds else ""
+    areas = {key: name for m in _known.values() for key, name in m.areas}
+    valdkond = str(request.GET.get("valdkond", "") or "")
+    valdkond = valdkond if valdkond in areas else ""
+    senders = {key: name for m in _known.values() for key, name in m.senders}
+    saatja = str(request.GET.get("saatja", "") or "")
+    saatja = saatja if saatja in senders else ""
     rows = sorted(
         (
             fact
             for fact in facts
-            if period.holds(fact.sent_on) and (not liik or fact.matter.instrument_key == liik)
+            if period.holds(fact.sent_on)
+            and (not liik or fact.matter.instrument_key == liik)
+            and (not valdkond or valdkond in {key for key, _ in fact.matter.areas})
+            and (not saatja or saatja in {key for key, _ in fact.matter.senders})
         ),
         key=lambda fact: (fact.sent_on, fact.matter.reference),
         reverse=True,
@@ -219,7 +238,7 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
             "nav_active": "statistika",
             "period": period,
             "jurist": jurist,
-            "liik": kinds.get(liik, ""),
+            "liik": kinds.get(liik, "") or areas.get(valdkond, "") or senders.get(saatja, ""),
             "rows": rows,
             "back_url": _url("reporting:dashboard", **_period_query(period), jurist=jurist),
         },

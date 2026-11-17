@@ -17249,3 +17249,81 @@ a.statcol:hover .statcol__value {
     display: none;
   }
 }
+
+/* ---- «Saatja ja valdkond»: confirming proposals (ADR 0215, 2026-11-17) ---- */
+
+a.statpanel__note {
+  color: var(--text-secondary);
+}
+
+.classify__filter {
+  width: auto;
+}
+
+.classify {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.classify__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
+  gap: var(--spacing-2) var(--spacing-4);
+  align-items: center;
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.classify__topic {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.classify__meta {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+/* Areas | sender | the two buttons: the same columns on every row. */
+.classify__form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 13rem auto auto;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.classify__areas {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-1);
+}
+
+.classify__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 2px var(--spacing-2);
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  font-size: var(--typography-size-sm);
+}
+
+.classify__add {
+  width: 8.5rem;
+}
+
+.classify__add,
+.classify__sender {
+  padding-block: 2px;
+  font-size: var(--typography-size-sm);
+}
+
+@media (max-width: 900px) {
+  .classify__row,
+  .classify__form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

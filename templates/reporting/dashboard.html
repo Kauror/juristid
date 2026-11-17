@@ -188,36 +188,22 @@ The period, the lawyer and the trend range are links: the state is the URL.
       <div class="statpanel__head">
         <h2 class="statpanel__title" id="stat-liigid">Õigusakti liigi järgi</h2>
       </div>
-      {% if instruments %}
-        <div class="stattable__wrap">
-        <table class="stattable">
-          <thead>
-            <tr>
-              <th scope="col">Liik</th>
-              <th scope="col" class="stattable__num">Välja saadetud</th>
-              <th scope="col" class="stattable__bar"><span class="visually-hidden">Osakaal</span></th>
-              <th scope="col" class="stattable__num">Tähtajaks</th>
-              <th scope="col" class="stattable__num">Aega vastamiseks</th>
-              <th scope="col" class="stattable__num">Sisse tulnud</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for item in instruments %}
-              <tr>
-                <th scope="row">{% if item.url %}<a href="{{ item.url }}">{{ item.row.label }}</a>{% else %}{{ item.row.label }}{% endif %}</th>
-                <td class="stattable__num">{{ item.row.sent }} <span class="stattable__share">{{ item.row.share }}%</span></td>
-                <td class="stattable__bar"><span class="stattable__fill statseries--0" style="width: {{ item.row.width|stringformat:'.2f' }}%"></span></td>
-                <td class="stattable__num">{% if item.row.on_time_share is not None %}{{ item.row.on_time_share }}%{% else %}—{% endif %}</td>
-                <td class="stattable__num">{% if item.row.days_given is not None %}{{ item.row.days_given }} p{% else %}—{% endif %}</td>
-                <td class="stattable__num">{{ item.row.received }}</td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        </div>
-      {% else %}
-        <p class="statpanel__empty">Andmed puuduvad.</p>
-      {% endif %}
+      {% include "reporting/_group_table.html" with items=instruments first="Liik" %}
+    </section>
+
+    <section class="statpanel statpanel--wide" aria-labelledby="stat-valdkonnad">
+      <div class="statpanel__head">
+        <h2 class="statpanel__title" id="stat-valdkonnad">Valdkonna järgi</h2>
+        {% if pending_classification %}<a class="statpanel__note" href="{% url 'reporting:classification' %}">Kinnitamata ettepanekud: {{ pending_classification }}</a>{% endif %}
+      </div>
+      {% include "reporting/_group_table.html" with items=areas first="Valdkond" %}
+    </section>
+
+    <section class="statpanel statpanel--wide" aria-labelledby="stat-saatjad">
+      <div class="statpanel__head">
+        <h2 class="statpanel__title" id="stat-saatjad">Saatja järgi</h2>
+      </div>
+      {% include "reporting/_group_table.html" with items=senders first="Saatja" %}
     </section>
 
     <section class="statpanel" aria-labelledby="stat-aeg">
