@@ -62,6 +62,8 @@ ADD_NOTE_TEST_DOOR_ENABLED = True
 APPLICATION_ENVIRONMENT = "test"
 # The suite never contacts koda.ee; a test that needs a title patches the fetch.
 PUBLICATION_TITLE_FETCH = False
+REGISTER_WATCH_FETCH = False
+REGISTER_WATCH_AI = False
 
 # No `collectstatic` has run for a test process, so the hashed manifest the
 # production backend expects does not exist.

@@ -165,6 +165,8 @@ PERSONAL_INBOX = {
     # the swept id is never one, so it is a 404 for everybody, the owner too.
     "notifications:personal_read": "the recipient's own reminder",
     "notifications:personal_unread": "the recipient's own reminder",
+    "notifications:register_read": "the owner's own register notice (ADR 0217 §6)",
+    "notifications:register_unread": "the owner's own register notice (ADR 0217 §6)",
     "notifications:personal_remove": "the recipient's own reminder",
 }
 
@@ -206,6 +208,8 @@ OWN_VISIBILITY = {
     # A sender/Valdkond proposal has no visibility of its own: it is exactly as
     # visible as its Teema (ADR 0215).
     "suggestion": False,
+    # A register finding is exactly as visible as its Teema (ADR 0217).
+    "finding": False,
     "notice": True,
     "deadline_notification": True,
 }
@@ -298,6 +302,11 @@ def _key_for(route: str, param: str) -> str | None:
         return "document"
     if route == "reporting:classification_decide":
         return "suggestion"
+    if route == "register_watch:decide":
+        return "finding"
+    if route == "register_watch:phrase":
+        # «Otsingusõnad» name the Teema they search for (ADR 0217 §7).
+        return "matter"
     return None
 
 
@@ -448,6 +457,18 @@ def _objects(matter: Any, made: dict[str, Any], world: dict[str, Any], *, restri
         ),
         "work_victory": model("intelligence", "MatterWorkVictory").objects.get(
             matter=matter, title=HIDDEN_PHRASE
+        ),
+        "finding": model("register_watch", "WatchFinding").objects.create(
+            target=model("register_watch", "WatchTarget").objects.create(
+                matter=matter,
+                source="HTM_REGISTER",
+                identifier="973 SE",
+                label="973 SE",
+                origin="TITLE",
+            ),
+            matter=matter,
+            external_id="doc:sweep",
+            title=HIDDEN_PHRASE,
         ),
     }
 

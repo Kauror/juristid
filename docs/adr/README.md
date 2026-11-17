@@ -224,6 +224,7 @@ consequences and reversibility.
 | [0214](0214-statistika-opens-on-kodas-opinions-read-from-juristids-own-records.md) | Statistika opens on Koda's opinions, read from Juristid's own records (one reader; nothing depends on Lovable) | Accepted |
 | [0215](0215-statistika-reads-who-sends-and-valdkond-from-confirmed-teema-fields.md) | Statistika reads who sends and Valdkond from confirmed Teema fields (proposals from one title review, confirmed by a lawyer) | Accepted |
 | [0216](0216-postipoiss-letters-are-paired-with-teemad-by-calibrated-rule-and-by-lawyers.md) | Postipoiss letters are paired with Teemad by a calibrated rule and by lawyers (sealed package, seven-day rule, Ajaloolised kirjad) | Accepted |
+| [0217](0217-registers-are-watched-for-new-documents-and-a-lawyer-adds-them.md) | Registers are watched for new documents, and a lawyer adds them (Riigikogu API + PDR ministry registers nightly; the model judges, never writes) | Accepted |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -234,6 +235,9 @@ requires every gap in the numbering to be named here:
   lands with that PR.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
+- 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
+  rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
+  The record lands with that branch, which then removes this line.
 
 Naming: `NNNN-short-decision-title.md`.
 

@@ -3894,6 +3894,10 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     # «Tagasi tulemustesse», only when this page was opened from a narrowed
     # Teemad list (`app.matters.return_link`).
     context["results_return_url"] = results_return_url(request)
+    # «Registrite jälgimine» (docs/adr/0217): is it watched, and how much waits. Full page only.
+    from app.register_watch.views import watch_line
+
+    context["register_watch"] = watch_line(request.user, matter)
     return render(request, "matters/matter_detail.html", context)
 
 
