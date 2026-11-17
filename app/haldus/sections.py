@@ -23,7 +23,7 @@ from django.http import HttpRequest
 from django.urls import NoReverseMatch, reverse
 
 from app.accounts import admin_session
-from app.core.authorization import may_view_department_management
+from app.core.authorization import may_read_business_content, may_view_department_management
 
 
 @dataclass(frozen=True)
@@ -83,6 +83,15 @@ def may_open_department(request: HttpRequest) -> bool:
     return may_view_department_management(_persona(request))
 
 
+def may_open_letters(request: HttpRequest) -> bool:
+    """Ajaloolised kirjad: whoever reads business content — the lawyers (docs/adr/0216).
+
+    Deciding is a business write and its route asks that of its own; reading is
+    the department's own outgoing correspondence, read like the opinion archive.
+    """
+    return may_read_business_content(_persona(request))
+
+
 def may_open_system(request: HttpRequest) -> bool:
     """Süsteemi seis: a verified technical administrator, and nobody else."""
     return admin_session.is_technical_administrator(request)
@@ -137,6 +146,13 @@ SECTIONS: tuple[Section, ...] = (
         "haldus:osakond",
         may_open_department,
         "Osakonna juhtimisvaade, kolleegide töölauad ja ülevaatust ootavad töövõidud.",
+    ),
+    Section(
+        "kirjad",
+        "Ajaloolised kirjad",
+        "haldus:letters",
+        may_open_letters,
+        "Postipoisi väljaminevad kirjad 2008–2026: teemaga sidumine, ettepanekud ja taust.",
     ),
     Section(
         "susteem",

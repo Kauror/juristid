@@ -68,13 +68,28 @@ from app.legacy_import.opinion_search import (
     search_archive,
 )
 
-
 #: The filename an archive letter is served under. Deliberately not the name it
 #: had in the ZIP: those carry recipients and subjects, several are mojibake
 #: from a Windows-1257 zip entry, and a `Content-Disposition` is the wrong place
 #: to find out. The SHA is what identifies the bytes anyway.
+#: The suffix a served letter gets from its recorded type. The opinions archive
+#: was PDFs only; Postipoiss letters are also Word files, and a .docx served
+#: under a .pdf name opens as a broken PDF (docs/adr/0216).
+_SUFFIX_BY_MIME = {
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+    "application/msword": ".doc",
+    "application/rtf": ".rtf",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+    "application/vnd.ms-excel": ".xls",
+    "application/vnd.oasis.opendocument.text": ".odt",
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+}
+
+
 def _served_filename(binary: OpinionArchiveBinary) -> str:
-    return f"arhiiv-{binary.sha256[:16]}.pdf"
+    suffix = _SUFFIX_BY_MIME.get(binary.mime_type, ".pdf")
+    return f"arhiiv-{binary.sha256[:16]}{suffix}"
 
 
 # ---------------------------------------------------------------------------

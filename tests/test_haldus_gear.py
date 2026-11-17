@@ -173,8 +173,9 @@ def test_the_landing_grants_a_specialist_no_protected_route(client):
     _as(client, factories.UserFactory())
     landing = client.get(reverse("haldus:index"))
     assert landing.status_code == 200
-    # Ülevaade alone: no one-tab strip.
-    assert 'aria-label="Halduse osad"' not in landing.content.decode()
+    # Ülevaade and Ajaloolised kirjad, which every lawyer reads and decides
+    # (docs/adr/0216 §6); nothing protected.
+    assert _keys(landing) == ["ulevaade", "kirjad"]
 
     for name in PROTECTED:
         assert client.get(reverse(name)).status_code == 404, name
@@ -190,7 +191,8 @@ def test_a_signed_in_reader_opens_the_landing_and_no_protected_route(client, set
 
     page = client.get(reverse("haldus:index"))
 
-    assert page.status_code == 200 and _keys(page) == ["ulevaade"]
+    # A reader reads Ajaloolised kirjad and decides nothing there (docs/adr/0216 §6).
+    assert page.status_code == 200 and _keys(page) == ["ulevaade", "kirjad"]
     assert ">Rakendus</h2>" in page.content.decode()
     assert 'href="/haldus/">Haldus</a>' in _gear(page.content.decode())
     for name in PROTECTED:
