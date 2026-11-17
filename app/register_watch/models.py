@@ -23,6 +23,8 @@ class WatchSource(models.TextChoices):
     ADR_MKM = "ADR_MKM", "Majandus- ja Kommunikatsiooniministeeriumi dokumendiregister"
     ADR_RAM = "ADR_RAM", "Rahandusministeeriumi dokumendiregister"
     ADR_SOM = "ADR_SOM", "Sotsiaalministeeriumi dokumendiregister"
+    ADR_KUM = "ADR_KUM", "Kultuuriministeeriumi dokumendiregister"
+    ADR_KAM = "ADR_KAM", "Kaitseministeeriumi dokumendiregister"
 
 
 class TargetOrigin(models.TextChoices):

@@ -226,12 +226,14 @@ def test_a_bill_teema_is_watched_in_three_places(registers):
         WatchSource.ADR_MKM,
         WatchSource.ADR_RAM,
         WatchSource.ADR_SOM,
+        WatchSource.ADR_KUM,
+        WatchSource.ADR_KAM,
     }
     assert targets[WatchSource.ADR_JDM].identifier == "973 SE"
     assert targets[WatchSource.RIIGIKOGU].identifier == UUID
     assert targets[WatchSource.HTM_REGISTER].identifier == "973 SE"
     assert not WatchTarget.objects.filter(matter=unrelated).exists()
-    assert (record.targets_checked, record.errors) == (7, [])
+    assert (record.targets_checked, record.errors) == (9, [])
 
 
 def test_the_first_check_offers_only_what_is_recent(registers):
@@ -276,7 +278,7 @@ def test_a_failing_register_is_recorded_and_the_rest_goes_on(registers):
 
     record = watch.run([matter], use_ai=False, today=TODAY)
 
-    assert record.targets_checked == 6
+    assert record.targets_checked == 8
     assert record.errors[0]["viga"] == "dok.hm.ee vastas 404"
     assert WatchTarget.objects.get(matter=matter, source=WatchSource.HTM_REGISTER).last_error
 
@@ -286,7 +288,7 @@ def test_the_command_has_a_dry_run(registers, capsys):
 
     call_command("watch_registers", "--teema", "2026_190", "--dry-run")
 
-    assert "DRY-RUN checked=7" in capsys.readouterr().out
+    assert "DRY-RUN checked=9" in capsys.readouterr().out
     assert not WatchFinding.objects.exists() and not WatchRun.objects.exists()
 
 

@@ -44,6 +44,8 @@ ADR_REGISTERS = {
     WatchSource.ADR_MKM: adr.MKM,
     WatchSource.ADR_RAM: adr.RAM,
     WatchSource.ADR_SOM: adr.SOM,
+    WatchSource.ADR_KUM: adr.KUM,
+    WatchSource.ADR_KAM: adr.KAM,
 }
 SEARCHED = set(REGISTERS) | set(ADR_REGISTERS)
 #: The search phrases a person can see and change: from the title, or their own.

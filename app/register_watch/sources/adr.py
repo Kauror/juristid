@@ -1,7 +1,9 @@
-"""RIK's public document register (ADR) for four ministries, read through its search form.
+"""RIK's public document register (ADR) for six ministries, read through its search form.
 
-Justice and Digital (`jm`), Economic Affairs (`mkm`), Finance (`ram`) and
-Social Affairs (`som`) publish their registers on `adr.rik.ee/<code>/`. There
+Justice and Digital (`jm`), Economic Affairs (`mkm`), Finance (`ram`), Social
+Affairs (`som`), Culture (`kum`) and Defence (`kaitseministeerium`) publish
+their registers on `adr.rik.ee/<code>/` (the Government Office's instance there
+is empty: no document types, nothing found — not read). There
 is no API and no feed: the advanced search is an HTML form posted in a
 session, answered with a results table, newest first, twenty to a page. It
 matches whole words, case-insensitively, and all of them (checked
@@ -41,6 +43,8 @@ JDM = Register("jm")
 MKM = Register("mkm")
 RAM = Register("ram")
 SOM = Register("som")
+KUM = Register("kum")
+KAM = Register("kaitseministeerium")
 
 _opened: set[str] = set()
 _ROW = re.compile(r"<tr[^>]*>(.*?)</tr>", re.S)

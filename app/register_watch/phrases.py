@@ -44,6 +44,8 @@ MINISTRY_SOURCE = {
     "Majandus- ja Kommunikatsiooniministeerium": WatchSource.ADR_MKM,
     "Rahandusministeerium": WatchSource.ADR_RAM,
     "Sotsiaalministeerium": WatchSource.ADR_SOM,
+    "Kultuuriministeerium": WatchSource.ADR_KUM,
+    "Kaitseministeerium": WatchSource.ADR_KAM,
     "Haridus- ja Teadusministeerium": WatchSource.HTM_REGISTER,
     "Kliimaministeerium": WatchSource.KLIM_REGISTER,
 }
