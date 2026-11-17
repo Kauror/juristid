@@ -17360,7 +17360,7 @@ a.statpanel__note {
   padding: 2px var(--spacing-3);
   border: 1px solid var(--border-default);
   border-radius: 999px;
-  color: var(--text-default);
+  color: var(--text-primary);
   text-decoration: none;
   font-size: var(--typography-size-meta);
 }
@@ -17380,7 +17380,7 @@ a.statpanel__note {
   align-items: baseline;
   gap: var(--spacing-2);
   margin: 0 0 var(--spacing-2);
-  font-size: var(--typography-size-body);
+  font-size: var(--typography-size-base);
 }
 
 .regwatch__ref,

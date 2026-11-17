@@ -45,10 +45,7 @@ def pending_count(user: Any, matter: Any) -> int:
     """For the Teema page: how many findings wait on this Teema, leaving out the
     ones the model judged unrelated (they wait folded on the review page)."""
     return (
-        watch.pending_for(user)
-        .filter(matter=matter)
-        .exclude(relevance=Relevance.UNRELATED)
-        .count()
+        watch.pending_for(user).filter(matter=matter).exclude(relevance=Relevance.UNRELATED).count()
     )
 
 

@@ -1,7 +1,7 @@
 <li class="regwatch__row">
   <span class="regwatch__date">{{ finding.occurred_on|date:"d.m.Y"|default:"—" }}</span>
   <div class="regwatch__body">
-    {% if finding.url %}<a class="regwatch__title" href="{{ finding.url }}" target="_blank" rel="noopener noreferrer">{{ finding.title }}</a>{% else %}<span class="regwatch__title">{{ finding.title }}</span>{% endif %}
+    {% if finding.url %}<a href="{{ finding.url }}" target="_blank" rel="noopener noreferrer">{{ finding.title }}</a>{% else %}<span>{{ finding.title }}</span>{% endif %}
     <span class="regwatch__meta">{{ finding.target.get_source_display }}{% if finding.detail %} · {{ finding.detail }}{% endif %}</span>
     {% if finding.ai_note %}<span class="regwatch__note{% if finding.relevance == 'UNSURE' %} regwatch__note--unsure{% endif %}">{{ finding.ai_note }}</span>{% endif %}
   </div>
