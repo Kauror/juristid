@@ -41,6 +41,7 @@ see is never named on a row (the view passes it through visible_matter).
             <span class="classify__meta">
               {% for f in row.files %}<a href="{% url 'legacy_import:opinion_archive_file' pk=f.binary_id %}">{{ f.filename }}</a>{% if not forloop.last %} · {% endif %}{% empty %}fail puudub{% endfor %}
             </span>
+            {% if 'fail-kontrollimata' in p.signals %}<span class="classify__meta">Fail ei kanna selle kirja numbrit — kontrolli, kas see on õige kiri.</span>{% endif %}
             {% if p.state == 'APPLIED' %}
               <span class="classify__meta">Seotud: {% if row.chosen %}<a href="{% url 'matters:matter_detail' pk=row.chosen.pk %}">{{ row.chosen.display_reference }} {{ row.chosen.title }}</a>{% else %}teema, mida sa ei näe{% endif %} · {{ p.get_basis_display }}{% if p.joined_existing %} · liidetud olemasoleva arvamusega{% endif %}{% if p.decided_by %} · {{ p.decided_by }}{% endif %}</span>
             {% elif row.suggested %}
