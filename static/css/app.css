@@ -17464,3 +17464,9 @@ a.statpanel__note {
   width: auto;
   min-width: 14rem;
 }
+
+/* «Registrite jälgimine» under the Menetluse link card: aligned with the rail's
+ * own rows, not indented like an inline quiet link (docs/adr/0217 §7). */
+.railwatch {
+  margin-left: 0;
+}
