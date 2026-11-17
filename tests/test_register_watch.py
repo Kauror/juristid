@@ -453,7 +453,7 @@ def test_the_teema_page_links_to_its_waiting_documents(client, specialist):
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
     assert "Registrites 1 uus dokument" in body
-    assert "?teema=2026_190" in body
+    assert f"?teema={matter.pk}" in body
 
 
 def test_the_teema_page_leaves_out_what_the_model_called_unrelated(client, specialist):

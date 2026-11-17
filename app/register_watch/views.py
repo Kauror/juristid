@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from collections import OrderedDict
 from typing import Any
 from urllib.parse import urlencode
@@ -25,10 +26,18 @@ def _filters(source: Any) -> dict[str, str]:
     whose = str(source.get("kelle", "") or "")
     teema = str(source.get("teema", "") or "").strip()
     year, _, number = teema.partition("_")
-    return {
-        "kelle": whose if whose in WHOSE else "minu",
-        "teema": teema if year.isdigit() and number.isdigit() else "",
-    }
+    # «2026_190», or the Teema's id: the Teema page links by id, so its own
+    # number stays on that page once (tests/test_identifier_free_ui.py).
+    known = (year.isdigit() and number.isdigit()) or _is_uuid(teema)
+    return {"kelle": whose if whose in WHOSE else "minu", "teema": teema if known else ""}
+
+
+def _is_uuid(value: str) -> bool:
+    try:
+        uuid.UUID(value)
+    except ValueError:
+        return False
+    return True
 
 
 def _rows(request: HttpRequest, chosen: dict[str, str]) -> Any:
@@ -44,14 +53,13 @@ def _rows(request: HttpRequest, chosen: dict[str, str]) -> Any:
 def _teema(request: HttpRequest, reference: str) -> Any:
     from app.matters.models import Matter
 
+    visible = Matter.objects.visible_to(request.user).filter(deleted_at__isnull=True)
+    if _is_uuid(reference):
+        return visible.filter(pk=reference).first()
     year, _, number = reference.partition("_")
     if not (year.isdigit() and number.isdigit()):
         return None
-    return (
-        Matter.objects.visible_to(request.user)
-        .filter(reference_year=int(year), reference_number=int(number), deleted_at__isnull=True)
-        .first()
-    )
+    return visible.filter(reference_year=int(year), reference_number=int(number)).first()
 
 
 def watch_line(user: Any, matter: Any) -> dict[str, Any] | None:
@@ -85,6 +93,8 @@ def _home_source(teema: Any) -> str:
 def review(request: HttpRequest) -> HttpResponse:
     chosen = _filters(request.GET)
     teema = _teema(request, chosen["teema"]) if chosen["teema"] else None
+    if chosen["teema"]:
+        chosen["teema"] = teema.display_reference if teema is not None else ""
     groups: OrderedDict[Any, dict[str, Any]] = OrderedDict()
     for finding in _rows(request, chosen):
         group = groups.setdefault(

@@ -33,7 +33,7 @@ a gutter would turn a workspace back into a dashboard (Teema redesign §4).
   {% endif %}
   {% if register_watch %}
     <nav class="teema__return" aria-label="Registrid">
-      <a class="quietlink" href="{% url 'register_watch:review' %}?teema={{ matter.display_reference }}">{% if register_watch.waiting == 1 %}Registrites 1 uus dokument{% else %}Registrites {{ register_watch.waiting }} uut dokumenti{% endif %}</a>
+      <a class="quietlink" href="{% url 'register_watch:review' %}?teema={{ matter.pk }}">{% if register_watch.waiting == 1 %}Registrites 1 uus dokument{% else %}Registrites {{ register_watch.waiting }} uut dokumenti{% endif %}</a>
     </nav>
   {% endif %}
   {% include "matters/partials/header.html" %}
