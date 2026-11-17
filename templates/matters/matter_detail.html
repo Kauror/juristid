@@ -31,6 +31,11 @@ a gutter would turn a workspace back into a dashboard (Teema redesign §4).
       <a class="quietlink" href="{{ results_return_url }}">← Tagasi tulemustesse</a>
     </nav>
   {% endif %}
+  {% if register_findings %}
+    <nav class="teema__return teema__registers" aria-label="Registrid">
+      <a class="quietlink" href="{% url 'register_watch:review' %}?teema={{ matter.display_reference }}">Registrites {% if register_findings == 1 %}1 uus dokument{% else %}{{ register_findings }} uut dokumenti{% endif %}</a>
+    </nav>
+  {% endif %}
   {% include "matters/partials/header.html" %}
   {% include "matters/partials/overview.html" %}
 </div>

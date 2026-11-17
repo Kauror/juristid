@@ -1,0 +1,17 @@
+<li class="regwatch__row">
+  <span class="regwatch__date">{{ finding.occurred_on|date:"d.m.Y"|default:"—" }}</span>
+  <div class="regwatch__body">
+    {% if finding.url %}<a class="regwatch__title" href="{{ finding.url }}" target="_blank" rel="noopener noreferrer">{{ finding.title }}</a>{% else %}<span class="regwatch__title">{{ finding.title }}</span>{% endif %}
+    <span class="regwatch__meta">{{ finding.target.get_source_display }}{% if finding.detail %} · {{ finding.detail }}{% endif %}</span>
+    {% if finding.ai_note %}<span class="regwatch__note{% if finding.relevance == 'UNSURE' %} regwatch__note--unsure{% endif %}">{{ finding.ai_note }}</span>{% endif %}
+  </div>
+  {% if can_write_business_content %}
+    <form class="regwatch__actions" method="post" action="{% url 'register_watch:decide' pk=finding.pk %}">
+      {% csrf_token %}
+      <input type="hidden" name="kelle" value="{{ filters.kelle }}">
+      <input type="hidden" name="teema" value="{{ filters.teema }}">
+      <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa märkena</button>
+      <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
+    </form>
+  {% endif %}
+</li>

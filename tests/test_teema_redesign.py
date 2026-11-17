@@ -1388,7 +1388,9 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 #: One more since TL-01 (audit 2026-11-11): the page asks once whether Lovable
 #: owns this Teema (`source_ownership.ownership`, the synchronised cohorts), so
 #: its source-owned controls can say so; one read per page, none per field.
-TEEMA_PAGE_QUERY_CEILING = 67
+#: One more since docs/adr/0216: the page counts the register documents
+#: waiting on this open Teema once, for «Registrites N uut dokumenti».
+TEEMA_PAGE_QUERY_CEILING = 68
 
 
 def test_the_matter_page_does_not_explode_into_queries(

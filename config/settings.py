@@ -73,6 +73,7 @@ LOCAL_APPS = [
     "app.reporting",
     "app.intelligence",
     "app.related_materials",
+    "app.register_watch",
     "app.mcp_access",
     "app.mcp_server",
     "app.mcp_writes",
@@ -973,6 +974,20 @@ PUBLICATION_TITLE_FETCH = env_bool(
     "JURISTID_PUBLICATION_TITLE_FETCH",
     default=APPLICATION_ENVIRONMENT not in ("test", "ci", "recovery-rehearsal"),
 )
+# The register watch (app/register_watch, docs/adr/0216): the nightly
+# `watch_registers` reads the Riigikogu API and two ministry registers, fenced to
+# their hosts. Off where no network is wanted, like the title preview above.
+REGISTER_WATCH_FETCH = env_bool(
+    "JURISTID_REGISTER_WATCH_FETCH",
+    default=APPLICATION_ENVIRONMENT not in ("test", "ci", "recovery-rehearsal"),
+)
+# Claude judging what a title search found (ADR 0216 §4). Off until the owner
+# turns it on and the service has ANTHROPIC_API_KEY; public facts only.
+REGISTER_WATCH_AI = env_bool("JURISTID_REGISTER_WATCH_AI", default=False)
+REGISTER_WATCH_AI_MODEL = env("JURISTID_REGISTER_WATCH_AI_MODEL", "claude-opus-5-5")
+# What a register held this many days before a Teema's first check is kept as
+# seen and never offered.
+REGISTER_WATCH_BASELINE_DAYS = 45
 
 
 def _revision() -> str:
