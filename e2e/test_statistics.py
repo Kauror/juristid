@@ -55,8 +55,10 @@ def test_statistika_is_a_destination_of_its_own(page, base_url, screenshots):
     # unscoped lookup matches both — which is Playwright telling us the two
     # surfaces really are distinct, exactly as intended.
     tabs = page.get_by_label("Statistika vaated")
-    for tab in ("Ülevaade", "Teemad", "Tegevus", "Ajalugu", "Andmekvaliteet", "Definitsioonid"):
+    for tab in ("Ülevaade", "Seis", "Teemad", "Tegevus"):
         expect(tabs.get_by_role("link", name=tab, exact=True)).to_be_visible()
+    # The data pages live under Haldus (owner, 2026-11-17).
+    expect(tabs.get_by_role("link", name="Andmekvaliteet", exact=True)).to_have_count(0)
 
     screenshots(page, "statistika-ulevaade")
 
