@@ -77,10 +77,16 @@ TABS: tuple[tuple[str, str, str], ...] = (
     ("ulevaade", "Seis", "reporting:overview"),
     ("teemad", "Teemad", "reporting:matters"),
     ("tegevus", "Tegevus", "reporting:activity"),
+)
+
+#: The three pages that describe the data rather than Koda's work (owner,
+#: 2026-11-17): reached from Haldus → Rakendus, and showing only each other.
+ADMIN_TABS: tuple[tuple[str, str, str], ...] = (
     ("ajalooline", "Ajalugu", "reporting:historical"),
     ("andmekvaliteet", "Andmekvaliteet", "reporting:quality"),
     ("definitsioonid", "Definitsioonid", "reporting:definitions"),
 )
+ADMIN_TAB_KEYS = frozenset(key for key, _, _ in ADMIN_TABS)
 
 
 def _shell(request: HttpRequest, context: ReportingContext, tab: str) -> dict[str, Any]:
@@ -90,7 +96,7 @@ def _shell(request: HttpRequest, context: ReportingContext, tab: str) -> dict[st
     years = filters.available_years(context)
     return {
         "reporting": context,
-        "tabs": TABS,
+        "tabs": ADMIN_TABS if tab in ADMIN_TAB_KEYS else TABS,
         "active_tab": tab,
         "period_options": filters.period_options(
             context, also_offered=[year.key for year in years]
@@ -102,7 +108,7 @@ def _shell(request: HttpRequest, context: ReportingContext, tab: str) -> dict[st
         # everything else: the tab strip, the export button, the definitions.
         "filter_query": urlencode(context.query_params()),
         "query_string": request.GET.urlencode(),
-        "nav_active": "statistika",
+        "nav_active": "haldus" if tab in ADMIN_TAB_KEYS else "statistika",
         **filters.options(context, tab),
     }
 

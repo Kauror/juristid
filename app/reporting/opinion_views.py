@@ -197,6 +197,24 @@ def dashboard(request: HttpRequest) -> HttpResponse:
     )
 
 
+#: The opinions list's columns, in order, and how each one sorts.
+SORT_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("saadetud", "Saadetud"),
+    ("teema", "Teema"),
+    ("liik", "Liik"),
+    ("tahtaeg", "Tähtaeg"),
+    ("jurist", "Jurist"),
+)
+SORT_KEYS: dict[str, Any] = {
+    "saadetud": lambda fact: (fact.sent_on, fact.matter.reference),
+    "teema": lambda fact: fact.matter.title.casefold(),
+    "liik": lambda fact: (fact.matter.instrument.casefold(), fact.sent_on),
+    # A row with no deadline sorts before every dated one, either way round.
+    "tahtaeg": lambda fact: (fact.deadline is not None, fact.deadline or date.min),
+    "jurist": lambda fact: (fact.matter.owner.casefold(), fact.sent_on),
+}
+
+
 @login_required
 @require_GET
 def opinion_rows(request: HttpRequest) -> HttpResponse:
@@ -229,6 +247,35 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
         key=lambda fact: (fact.sent_on, fact.matter.reference),
         reverse=True,
     )
+    # Sortable by any column (owner, 2026-11-17): «jarjesta=<column>», a leading
+    # «-» for descending. Newest sent first is the default and the tie-break.
+    order = str(request.GET.get("jarjesta", "") or "")
+    column = order.lstrip("-")
+    if column in SORT_KEYS:
+        rows = sorted(rows, key=SORT_KEYS[column], reverse=order.startswith("-"))
+    else:
+        order = ""
+    here = {
+        **_period_query(period),
+        "jurist": jurist,
+        "liik": liik,
+        "valdkond": valdkond,
+        "saatja": saatja,
+    }
+    headers = []
+    for key, label in SORT_COLUMNS:
+        current = order.lstrip("-") == key
+        descending = order.startswith("-") if current else False
+        # A first click sorts dates newest first and text A–Z; a second reverses.
+        first = f"-{key}" if key in ("saadetud", "tahtaeg") else key
+        target = (key if descending else f"-{key}") if current else first
+        headers.append(
+            {
+                "label": label,
+                "url": _url("reporting:opinion_rows", **here, jarjesta=target),
+                "sort": ("descending" if descending else "ascending") if current else "",
+            }
+        )
     return render(
         request,
         "reporting/opinion_rows.html",
@@ -240,6 +287,7 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
             "jurist": jurist,
             "liik": kinds.get(liik, "") or areas.get(valdkond, "") or senders.get(saatja, ""),
             "rows": rows,
+            "headers": headers,
             "back_url": _url("reporting:dashboard", **_period_query(period), jurist=jurist),
         },
     )

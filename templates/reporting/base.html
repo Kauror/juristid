@@ -31,6 +31,20 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
     </div>
   </div>
 
+  {# The tab strip sits right under the heading on every Statistika page, as on Ülevaade (owner, 2026-11-17); the page's own period and filter controls follow it. #}
+  <nav class="tabs" aria-label="Statistika vaated">
+    {% for key, label, route in tabs %}
+      {% comment %}
+        The tab carries the whole filter state, not only the period. Changing
+        tab while silently dropping the owner filter would show a different
+        population under an unchanged chip strip.
+      {% endcomment %}
+      <a class="tabs__tab {% if active_tab == key %}is-active{% endif %}"
+         {% if active_tab == key %}aria-current="page"{% endif %}
+         href="{% url route %}?{{ filter_query }}">{{ label }}</a>
+    {% endfor %}
+  </nav>
+
   <div class="filters">
     <nav class="segmented" aria-label="Periood">
       {% for option in period_options %}
@@ -193,18 +207,6 @@ item rather than another tab on the dashboard (Stage-2E brief 6).
       </details>
     </div>
 
-    <nav class="tabs" aria-label="Statistika vaated">
-      {% for key, label, route in tabs %}
-        {% comment %}
-          The tab carries the whole filter state, not only the period. Changing
-          tab while silently dropping the owner filter would show a different
-          population under an unchanged chip strip.
-        {% endcomment %}
-        <a class="tabs__tab {% if active_tab == key %}is-active{% endif %}"
-           {% if active_tab == key %}aria-current="page"{% endif %}
-           href="{% url route %}?{{ filter_query }}">{{ label }}</a>
-      {% endfor %}
-    </nav>
   </div>
 
   {% block statistics %}{% endblock %}
