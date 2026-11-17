@@ -40,7 +40,7 @@ def _composer_with_two_topics(page, base_url):
         # composer, and a title typed into the new field before HTMX has bound
         # it sends no request at all (CI, 16.11 and 17.11).
         page.locator("input[name=otsing]").fill(title)
-        page.get_by_role("button", name="Otsi", exact=True).click()
+        page.locator("button[name=toiming][value=otsi]").click()
         wait_for_htmx(page)
         results = page.locator("#report-search-results .reportsearch__row", has_text=title)
         results.get_by_role("button").click()
