@@ -19,11 +19,19 @@ class WatchSource(models.TextChoices):
     RIIGIKOGU = "RIIGIKOGU", "Riigikogu"
     HTM_REGISTER = "HTM_REGISTER", "Haridus- ja Teadusministeeriumi dokumendiregister"
     KLIM_REGISTER = "KLIM_REGISTER", "Kliimaministeeriumi dokumendiregister"
+    ADR_JDM = "ADR_JDM", "Justiits- ja Digiministeeriumi dokumendiregister"
+    ADR_MKM = "ADR_MKM", "Majandus- ja Kommunikatsiooniministeeriumi dokumendiregister"
+    ADR_RAM = "ADR_RAM", "Rahandusministeeriumi dokumendiregister"
+    ADR_SOM = "ADR_SOM", "Sotsiaalministeeriumi dokumendiregister"
 
 
 class TargetOrigin(models.TextChoices):
     #: The Teema's own title names it («… eelnõu (973 SE)»).
     TITLE = "TITLE", "Pealkirjast"
+    #: Words taken from the Teema's title, searched in its ministry's register.
+    PHRASE = "PHRASE", "Pealkirja sõnadest"
+    #: Words a lawyer set for the Teema.
+    PERSON = "PERSON", "Juristi otsingusõnad"
 
 
 class FindingStatus(models.TextChoices):

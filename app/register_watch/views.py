@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.register_watch import watch
-from app.register_watch.models import Relevance
+from app.register_watch.models import Relevance, WatchSource
 
 WHOSE = ("minu", "koik")
 
@@ -41,17 +41,50 @@ def _rows(request: HttpRequest, chosen: dict[str, str]) -> Any:
     return rows
 
 
-def pending_count(user: Any, matter: Any) -> int:
-    """For the Teema page: how many findings wait on this Teema, leaving out the
-    ones the model judged unrelated (they wait folded on the review page)."""
+def _teema(request: HttpRequest, reference: str) -> Any:
+    from app.matters.models import Matter
+
+    year, _, number = reference.partition("_")
+    if not (year.isdigit() and number.isdigit()):
+        return None
     return (
+        Matter.objects.visible_to(request.user)
+        .filter(reference_year=int(year), reference_number=int(number), deleted_at__isnull=True)
+        .first()
+    )
+
+
+def watch_line(user: Any, matter: Any) -> dict[str, Any] | None:
+    """For the Teema page: the way to its register watch, and how many documents wait.
+
+    On every open Teema, watched or not: it is also where a lawyer sets the words
+    a Teema with no bill number is searched by.
+    """
+    if not matter.is_open:
+        return None
+    waiting = (
         watch.pending_for(user).filter(matter=matter).exclude(relevance=Relevance.UNRELATED).count()
     )
+    return {"waiting": waiting}
+
+
+def _home_source(teema: Any) -> str:
+    """The register the phrase form starts on: the one searched by words, else the ministry's."""
+    if teema is None:
+        return ""
+    from app.register_watch import phrases
+
+    active = teema.watch_targets.filter(origin__in=watch.PHRASE_ORIGINS, active=True).first()
+    if active is not None:
+        return str(active.source)
+    home = phrases.ministry_source(teema)
+    return str(home) if home else ""
 
 
 @login_required
 def review(request: HttpRequest) -> HttpResponse:
     chosen = _filters(request.GET)
+    teema = _teema(request, chosen["teema"]) if chosen["teema"] else None
     groups: OrderedDict[Any, dict[str, Any]] = OrderedDict()
     for finding in _rows(request, chosen):
         group = groups.setdefault(
@@ -67,6 +100,14 @@ def review(request: HttpRequest) -> HttpResponse:
             "filters": chosen,
             "groups": list(groups.values()),
             "total": sum(len(g["shown"]) + len(g["unrelated"]) for g in groups.values()),
+            "teema": teema,
+            "watching": (
+                list(teema.watch_targets.filter(active=True).order_by("source")) if teema else []
+            ),
+            "home_source": _home_source(teema),
+            "phrase_sources": [
+                (value, label) for value, label in WatchSource.choices if value in watch.SEARCHED
+            ],
         },
     )
 
@@ -95,3 +136,29 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as refusal:
         messages.error(request, str(refusal))
     return _back(request)
+
+
+@login_required
+@require_http_methods(["POST"])
+@business_write_required
+def phrase(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Otsingusõnad»: the words a Teema is searched by in one ministry register."""
+    from app.matters.models import Matter
+
+    matter = (
+        Matter.objects.visible_to(request.user)
+        .filter(pk=pk, is_open=True, deleted_at__isnull=True)
+        .first()
+    )
+    if matter is None:
+        raise Http404("Teemat ei leitud.")
+    try:
+        watch.set_phrase(
+            matter,
+            source=str(request.POST.get("allikas", "") or ""),
+            text=str(request.POST.get("sonad", "") or ""),
+        )
+    except DomainError as refusal:
+        messages.error(request, str(refusal))
+    query = urlencode({"teema": matter.display_reference})
+    return HttpResponseRedirect(f"{reverse('register_watch:review')}?{query}")

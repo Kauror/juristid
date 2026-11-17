@@ -1204,6 +1204,13 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: _finding_state(w),
         events=(ChangeEventType.PROCEDURAL_DEVELOPMENT_RECORDED,),
     ),
+    # «Otsingusõnad» (ADR 0217 §7): the words a Teema is searched by in a register.
+    WriteRoute(
+        name="register_watch:phrase",
+        label="Registri otsingusõnade muutmine",
+        request=lambda w: ({"pk": w["matter"].pk}, {"allikas": "ADR_RAM", "sonad": "kindlustus"}),
+        probe=lambda w: _phrase_state(w),
+    ),
 )
 
 
@@ -1212,6 +1219,14 @@ def _suggestion_state(world):
 
     row = ClassificationSuggestion.objects.get(pk=world["suggestion"].pk)
     return (row.status, sorted(row.matter.policy_areas.values_list("key", flat=True)))
+
+
+def _phrase_state(world):
+    from app.register_watch.models import WatchTarget
+
+    return sorted(
+        WatchTarget.objects.filter(matter=world["matter"]).values_list("identifier", "active")
+    )
 
 
 def _finding_state(world):

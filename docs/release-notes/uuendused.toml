@@ -10,13 +10,14 @@
 [[day]]
 date = 2026-11-17
 basis = "deployment"
-prs = [637, 638, 639]
+prs = [637, 638, 639, 640]
 changes = [
   "Statistikas on kaks uut plokki: arvamused valdkonna järgi ja saatja järgi (kes teema Kojale saatis), mõlemas mitu saadeti, kui suur osa tähtajaks ja kui palju aega vastamiseks anti. Nimele vajutades avaneb nende arvamuste loend.",
   "Iga teema kohta on ettepanek, mis valdkonda see kuulub ja kes selle saatis. Statistika lehel «Saatja ja valdkond» saab ettepaneku kinnitada, parandada või vahele jätta; Statistika loeb ainult kinnitatud väärtusi.",
   "Statistika vahekaardid on igal lehel samas kohas pealkirja all. «Ajalugu», «Andmekvaliteet» ja «Definitsioonid» on nüüd Halduse jaotises «Rakendus».",
   "Välja saadetud arvamuste loendit saab sortida veeru nimele vajutades. Hilinenud arvamuse tähtaja kõrval on «!» ning hiirega peale minnes on näha, mitu päeva hiljem see saadeti.",
   "Juristid vaatab igal ööl Riigikogust ning Haridus- ja Teadusministeeriumi ja Kliimaministeeriumi dokumendiregistrist, kas Riigikogu eelnõu kohta on midagi uut. Teema vastutaja saab kellukesse teavituse «Registris uus dokument» ja teema lehel on link «Registrites N uut dokumenti»; lehel «Uued dokumendid registrites» saab dokumendi lisada teemale märkena või ainult lingina või jätta vahele.",
+  "Registrite jälgimine hõlmab nüüd ka Justiits- ja Digiministeeriumi, Majandus- ja Kommunikatsiooniministeeriumi, Rahandusministeeriumi ja Sotsiaalministeeriumi dokumendiregistrit. Eelnõu numbrita teemat otsitakse tema ministeeriumi registrist pealkirja sõnade järgi; sõnu saab muuta teema lingilt «Registrite jälgimine».",
 ]
 
 [[day]]

@@ -26,7 +26,7 @@ from app.register_watch.models import (
     WatchSource,
     WatchTarget,
 )
-from app.register_watch.sources import http, pdr, riigikogu
+from app.register_watch.sources import adr, http, pdr, riigikogu
 from app.register_watch.sources.http import FetchError
 from tests import factories
 
@@ -141,7 +141,27 @@ def registers(monkeypatch):
 
     monkeypatch.setattr(riigikogu, "get_json", fake)
     monkeypatch.setattr(pdr, "get_json", fake)
-    return SimpleNamespace(calls=calls, answers=answers)
+    pages: dict[str, str] = {}
+
+    def fake_form(host, path, fields):
+        calls.append((host, path, dict(fields)))
+        return pages.get(path, ADR_EMPTY)
+
+    monkeypatch.setattr(adr, "get_text", lambda host, path: "")
+    monkeypatch.setattr(adr, "post_form", fake_form)
+    return SimpleNamespace(calls=calls, answers=answers, pages=pages)
+
+
+ADR_EMPTY = "<table><tr><th>Viit</th></tr></table> Näitan: 0-0 Kokku: 0"
+ADR_PAGE = (
+    "<table><tr><th>Viit</th><th>Reg. kpv</th><th>Pealkiri</th></tr>"
+    '<tr><td>1.1-10.1/1114-11</td><td>15.11.2026</td><td><a href="/ram/dokument/19160596">'
+    "Ettepanekud kindlustustegevuse seaduse muutmise seaduse eelnõule</a></td>"
+    "<td>Õigusakti eelnõu</td><td>Eesti Kindlustusseltside Liit</td></tr>"
+    '<tr><td>1.1-10.1/1114-9</td><td>08.07.2026</td><td><a href="/ram/dokument/18857238">'
+    "Kindlustustegevuse seaduse eelnõu</a></td><td>Sissetulev kiri</td><td></td></tr>"
+    "</table> Näitan: 1-2 Kokku: 2"
+)
 
 
 def _bill_teema(**extra):
@@ -202,11 +222,16 @@ def test_a_bill_teema_is_watched_in_three_places(registers):
         WatchSource.RIIGIKOGU,
         WatchSource.HTM_REGISTER,
         WatchSource.KLIM_REGISTER,
+        WatchSource.ADR_JDM,
+        WatchSource.ADR_MKM,
+        WatchSource.ADR_RAM,
+        WatchSource.ADR_SOM,
     }
+    assert targets[WatchSource.ADR_JDM].identifier == "973 SE"
     assert targets[WatchSource.RIIGIKOGU].identifier == UUID
     assert targets[WatchSource.HTM_REGISTER].identifier == "973 SE"
     assert not WatchTarget.objects.filter(matter=unrelated).exists()
-    assert (record.targets_checked, record.errors) == (3, [])
+    assert (record.targets_checked, record.errors) == (7, [])
 
 
 def test_the_first_check_offers_only_what_is_recent(registers):
@@ -251,7 +276,7 @@ def test_a_failing_register_is_recorded_and_the_rest_goes_on(registers):
 
     record = watch.run([matter], use_ai=False, today=TODAY)
 
-    assert record.targets_checked == 2
+    assert record.targets_checked == 6
     assert record.errors[0]["viga"] == "dok.hm.ee vastas 404"
     assert WatchTarget.objects.get(matter=matter, source=WatchSource.HTM_REGISTER).last_error
 
@@ -261,7 +286,7 @@ def test_the_command_has_a_dry_run(registers, capsys):
 
     call_command("watch_registers", "--teema", "2026_190", "--dry-run")
 
-    assert "DRY-RUN checked=3" in capsys.readouterr().out
+    assert "DRY-RUN checked=7" in capsys.readouterr().out
     assert not WatchFinding.objects.exists() and not WatchRun.objects.exists()
 
 
@@ -557,3 +582,137 @@ def test_add_link_keeps_the_address_as_a_menetluse_link_and_nothing_else(client,
     assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
     finding.refresh_from_db()
     assert finding.status == FindingStatus.LINKED
+
+
+# -- ministry registers by words (ADR 0217 §7) ---------------------------------------
+
+
+def test_the_search_words_are_the_titles_distinctive_words():
+    from app.register_watch import phrases
+
+    assert phrases.words("Pankrotiseaduse ja kohtutäituri seaduse muutmise seaduse eelnõu VTK") == (
+        "Pankrotiseaduse kohtutäituri"
+    )
+    assert (
+        phrases.words("Tulumaksuseaduse muutmise seaduse eelnõu (maksuküür)") == "Tulumaksuseaduse"
+    )
+    assert phrases.words("Seaduse eelnõu") == ""
+
+
+def test_an_adr_page_reads_as_documents_and_a_strange_page_is_an_error():
+    items = adr.parse(adr.RAM, ADR_PAGE)
+
+    assert [i.external_id for i in items] == ["adr:ram:19160596", "adr:ram:18857238"]
+    assert items[0].occurred_on == dt.date(2026, 11, 15)
+    assert items[0].url == "https://adr.rik.ee/ram/dokument/19160596"
+    assert items[0].detail == "1.1-10.1/1114-11 · Õigusakti eelnõu · Eesti Kindlustusseltside Liit"
+    with pytest.raises(FetchError, match="tulemuste leht"):
+        adr.parse(adr.RAM, "<html>Vabandust</html>")
+
+
+def _ministry_teema(title, ministry, **extra):
+    from app.organisations.models import OrganisationType
+    from app.reporting.models import ClassificationSuggestion
+
+    matter = factories.MatterFactory(title=title, **extra)
+    org = factories.OrganisationFactory(name=ministry, organisation_type=OrganisationType.MINISTRY)
+    ClassificationSuggestion.objects.create(matter=matter, sender=org, confidence="h", source="t")
+    return matter
+
+
+def test_a_ministry_teema_is_searched_in_its_register_by_its_words(registers, specialist):
+    matter = _ministry_teema(
+        "Kindlustustegevuse seaduse muutmise seaduse eelnõu",
+        "Rahandusministeerium",
+        owner=specialist,
+    )
+    registers.pages["/ram/otsing"] = ADR_PAGE
+
+    record = watch.run([matter], use_ai=False, today=TODAY)
+
+    target = WatchTarget.objects.get(matter=matter)
+    assert (target.source, target.identifier, target.origin) == (
+        WatchSource.ADR_RAM,
+        "Kindlustustegevuse",
+        "PHRASE",
+    )
+    posted = [fields for host, path, fields in registers.calls if path == "/ram/otsing"]
+    assert posted == [
+        {"title": "Kindlustustegevuse", "regDateBegin": "20.07.2026", "pageNumber": "1"}
+    ]
+    assert record.findings_offered == 1  # 15.11; 08.07 is older than the first check's 45 days
+    assert WatchFinding.objects.get(status=FindingStatus.PENDING).title.startswith("Ettepanekud")
+
+
+def test_a_lawyers_words_replace_the_titles_and_survive_the_next_run(client, registers, specialist):
+    matter = _ministry_teema(
+        "Kindlustustegevuse seaduse muutmise seaduse eelnõu",
+        "Rahandusministeerium",
+        owner=specialist,
+        reference_year=2026,
+        reference_number=73,
+    )
+    watch.run([matter], use_ai=False, today=TODAY)
+    client.force_login(specialist)
+
+    response = client.post(
+        reverse("register_watch:phrase", kwargs={"pk": matter.pk}),
+        {"allikas": "ADR_RAM", "sonad": "  kindlustustegevuse   võlaõigusseaduse "},
+    )
+    watch.run([matter], use_ai=False, today=TODAY)
+
+    assert response.status_code == 302 and response["Location"].endswith("?teema=2026_73")
+    active = WatchTarget.objects.get(matter=matter, active=True)
+    assert (active.identifier, active.origin) == ("kindlustustegevuse võlaõigusseaduse", "PERSON")
+    assert WatchTarget.objects.filter(matter=matter, origin="PHRASE", active=False).count() == 1
+
+
+def test_empty_words_switch_the_search_off_for_good(registers, specialist):
+    matter = _ministry_teema("Tulumaksuseaduse muutmise seaduse eelnõu", "Rahandusministeerium")
+
+    watch.set_phrase(matter, source="ADR_RAM", text="")
+    watch.run([matter], use_ai=False, today=TODAY)
+
+    assert not WatchTarget.objects.filter(matter=matter, active=True).exists()
+
+
+def test_a_reader_cannot_change_the_words(client, reader):
+    matter = _ministry_teema("Tulumaksuseaduse muutmise seaduse eelnõu", "Rahandusministeerium")
+    client.force_login(reader)
+
+    response = client.post(
+        reverse("register_watch:phrase", kwargs={"pk": matter.pk}),
+        {"allikas": "ADR_RAM", "sonad": "x"},
+    )
+
+    assert response.status_code == 404
+    assert not WatchTarget.objects.filter(matter=matter).exists()
+
+
+def test_a_pdr_phrase_keeps_only_titles_with_every_word(registers):
+    matter = _ministry_teema("Kutse- ja oskusseaduse eelnõu", "Haridus- ja Teadusministeerium")
+    registers.answers[("dok.hm.ee", "/api/v1/documents.json")] = {
+        "data": [
+            {
+                "id": "a",
+                "regDate": "2026-11-06T00:00:00",
+                "title": "Kutse- ja oskusseaduse muudatused",
+            },
+            {"id": "b", "regDate": "2026-11-06T00:00:00", "title": "Kutse- ja eriharidus aruanne"},
+        ]
+    }
+
+    watch.run([matter], use_ai=False, today=TODAY)
+
+    assert list(WatchFinding.objects.values_list("external_id", flat=True)) == ["doc:a"]
+
+
+def test_every_open_teema_has_the_way_to_its_watch(client, specialist):
+    matter = factories.MatterFactory(owner=specialist, reference_year=2026, reference_number=12)
+    client.force_login(specialist)
+
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    review = client.get(reverse("register_watch:review"), {"teema": "2026_12"}).content.decode()
+
+    assert "Registrite jälgimine" in body
+    assert "Otsingusõnad" in review and "Ei jälgita." in review
