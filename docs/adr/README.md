@@ -234,6 +234,9 @@ requires every gap in the numbering to be named here:
   lands with that PR.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
+- 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
+  rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
+  The record lands with that branch, which then removes this line.
 
 Naming: `NNNN-short-decision-title.md`.
 
