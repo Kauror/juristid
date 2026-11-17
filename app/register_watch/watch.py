@@ -1,4 +1,4 @@
-"""One run of the register watch, and what a lawyer does with what it found (ADR 0216).
+"""One run of the register watch, and what a lawyer does with what it found (ADR 0217).
 
 A run takes each open Teema, makes sure the sources its title names are watched
 (`ensure_targets`), reads each source (`check_target`), stores what is new, and
@@ -168,7 +168,7 @@ def run(
             )
             ai.judge(matter, unjudged, usage, client=ai_client)
         # The owner's bell: what this run newly offers, less what the model
-        # called unrelated (ADR 0216 §6).
+        # called unrelated (ADR 0217 §6).
         fresh = (
             WatchFinding.objects.filter(
                 matter=matter, status=FindingStatus.PENDING, created_at__gte=record.started_at

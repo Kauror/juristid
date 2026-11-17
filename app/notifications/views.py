@@ -459,7 +459,7 @@ def _own_register_or_404(request: HttpRequest, pk: Any) -> Any:
 @login_required
 @require_http_methods(["POST"])
 def register_read(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Märgi loetuks» on the reader's own register notice (docs/adr/0216 §6)."""
+    """«Märgi loetuks» on the reader's own register notice (docs/adr/0217 §6)."""
     from app.register_watch import notices
 
     row = _own_register_or_404(request, pk)

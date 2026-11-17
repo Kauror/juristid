@@ -1,4 +1,4 @@
-"""What the register watch looks at, what it found, and each run (ADR 0216).
+"""What the register watch looks at, what it found, and each run (ADR 0217).
 
 A `WatchTarget` is one place a Teema's proceeding can be read by a program: a
 Riigikogu bill, or a title search in a ministry register. A `WatchFinding` is one
@@ -163,7 +163,7 @@ class WatchRun(BaseModel):
 
 
 class RegisterNotice(BaseModel):
-    """«Registris uus dokument» in the bell: one per Teema for its owner (ADR 0216 §6).
+    """«Registris uus dokument» in the bell: one per Teema for its owner (ADR 0217 §6).
 
     A run that offers new documents on a Teema tells the Teema's owner once; a
     later run adds to the same unread notice instead of making another. It is

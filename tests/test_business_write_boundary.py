@@ -1195,7 +1195,7 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: _suggestion_state(w),
         events=(ChangeEventType.MATTER_POLICY_AREAS_CHANGED,),
     ),
-    # «Uued dokumendid registrites» (ADR 0216): adding a finding records a
+    # «Uued dokumendid registrites» (ADR 0217): adding a finding records a
     # `Menetluse areng` on the Teema through `+ Märge`'s use case.
     WriteRoute(
         name="register_watch:decide",

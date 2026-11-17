@@ -1,4 +1,4 @@
-"""Claude reads what a title search found and says whether it belongs (ADR 0216 §4).
+"""Claude reads what a title search found and says whether it belongs (ADR 0217 §4).
 
 One request per Teema, over that Teema's unjudged findings. The model receives
 public facts only — the Teema's title and the found documents' titles, dates,

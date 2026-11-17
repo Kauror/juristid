@@ -1,4 +1,4 @@
-"""The one door the register watch uses to the outside (ADR 0216 §5).
+"""The one door the register watch uses to the outside (ADR 0217 §5).
 
 `https`, a fixed list of hosts, no redirects, a timeout, a size cap, and a
 spacing between calls to one host. `settings.REGISTER_WATCH_FETCH` switches it

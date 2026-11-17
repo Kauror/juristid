@@ -17,7 +17,7 @@ nothing else:
    (`app.notifications.personal`, owner 2026-11-16);
 5. «Registris uus dokument»: the register watch found something new on a Teema
    the reader owns, and it still waits (`app.register_watch.notices`,
-   docs/adr/0216 §6).
+   docs/adr/0217 §6).
 
 :func:`inbox_for` lists them and :func:`inbox_count` counts the same
 populations with three ``COUNT`` statements, so the bell, the Minu asjad block
@@ -439,7 +439,7 @@ REGISTER_LABEL = "Registris uus dokument"
 
 
 def register_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = False) -> InboxItem:
-    """The register watch's notice on a Teema the reader owns (docs/adr/0216 §6)."""
+    """The register watch's notice on a Teema the reader owns (docs/adr/0217 §6)."""
     unread = state == STATE_UNREAD
     day = timezone.localtime(row.updated_at).date()
     count = row.documents

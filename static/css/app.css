@@ -17348,7 +17348,7 @@ a.statpanel__note {
   }
 }
 
-/* «Uued dokumendid registrites» (app/register_watch, docs/adr/0216). One section
+/* «Uued dokumendid registrites» (app/register_watch, docs/adr/0217). One section
  * per Teema; each row is date | what was found | the two buttons. */
 .regwatch__filters {
   display: flex;

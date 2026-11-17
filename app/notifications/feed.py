@@ -26,7 +26,7 @@ check (ADR 0188)   reader's desk (or unowned, for  `CommencementReminderPersonal
 (2026-11-16)       day has come, not read
 «Registris uus     `notices.due_unread`: unread,   ``read_at`` set, or every document
 dokument»          a document still waits          on the Teema added or skipped
-(ADR 0216)
+(ADR 0217)
 =================  ==============================  ===================================
 
 An outstanding deadline row that is unread but hidden — its category switched

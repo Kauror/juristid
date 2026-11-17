@@ -161,8 +161,8 @@ PERSONAL_INBOX = {
     # the swept id is never one, so it is a 404 for everybody, the owner too.
     "notifications:personal_read": "the recipient's own reminder",
     "notifications:personal_unread": "the recipient's own reminder",
-    "notifications:register_read": "the owner's own register notice (ADR 0216 §6)",
-    "notifications:register_unread": "the owner's own register notice (ADR 0216 §6)",
+    "notifications:register_read": "the owner's own register notice (ADR 0217 §6)",
+    "notifications:register_unread": "the owner's own register notice (ADR 0217 §6)",
     "notifications:personal_remove": "the recipient's own reminder",
 }
 
@@ -204,7 +204,7 @@ OWN_VISIBILITY = {
     # A sender/Valdkond proposal has no visibility of its own: it is exactly as
     # visible as its Teema (ADR 0215).
     "suggestion": False,
-    # A register finding is exactly as visible as its Teema (ADR 0216).
+    # A register finding is exactly as visible as its Teema (ADR 0217).
     "finding": False,
     "notice": True,
     "deadline_notification": True,

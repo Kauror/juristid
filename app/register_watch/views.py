@@ -1,4 +1,4 @@
-"""«Uued dokumendid registrites»: what the watch found, for a lawyer to add or skip (ADR 0216)."""
+"""«Uued dokumendid registrites»: what the watch found, for a lawyer to add or skip (ADR 0217)."""
 
 from __future__ import annotations
 

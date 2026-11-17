@@ -1,4 +1,4 @@
-"""The register watch: sources read, findings proposed, a lawyer adds them (ADR 0216).
+"""The register watch: sources read, findings proposed, a lawyer adds them (ADR 0217).
 
 No test contacts a register or the model: the sources' one door (`get_json`)
 and the model client are replaced here.

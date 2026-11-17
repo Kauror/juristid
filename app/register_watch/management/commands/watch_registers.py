@@ -1,4 +1,4 @@
-"""Check the registers for new documents on the open Teemad (ADR 0216).
+"""Check the registers for new documents on the open Teemad (ADR 0217).
 
     manage.py watch_registers [--teema 2026_190 ...] [--no-ai] [--dry-run]
 

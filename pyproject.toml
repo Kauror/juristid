@@ -65,7 +65,7 @@ dependencies = [
     # which only the `mcp` service process imports.
     "mcp>=2.3,<3",
     # The register watch's optional reading step (app/register_watch/ai.py,
-    # docs/adr/0216 §4): Claude judges what a title search found. Off unless
+    # docs/adr/0217 §4): Claude judges what a title search found. Off unless
     # the owner switches it on and the service holds an API key.
     "anthropic>=2.9,<3",
 ]

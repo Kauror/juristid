@@ -1,4 +1,4 @@
-# 0216 — Registers are watched for new documents, and a lawyer adds them
+# 0217 — Registers are watched for new documents, and a lawyer adds them
 
 Date: 2026-11-17 · Status: accepted (owner, 2026-11-17: «build 2+3 combined»)
 

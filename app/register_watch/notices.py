@@ -1,4 +1,4 @@
-"""«Registris uus dokument» — the bell's notice that a register has something new (ADR 0216 §6).
+"""«Registris uus dokument» — the bell's notice that a register has something new (ADR 0217 §6).
 
 One notice per Teema for its owner. A run that offers new documents on a
 Teema creates it, or adds to the owner's unread one. It is awaiting the owner
