@@ -16,7 +16,6 @@ import pytest
 from django.urls import reverse
 from django.utils import timezone
 
-from app.core.errors import DomainError
 from app.legacy_import import postipoiss
 from app.legacy_import.archive_views import _served_filename
 from app.legacy_import.opinion_binary import OpinionArchiveBinary, OpinionArchiveMatterLink
@@ -261,7 +260,7 @@ def test_an_applied_letter_is_not_applied_twice(tmp_path, matter, specialist):
 
 def test_an_unknown_reference_is_refused(tmp_path, specialist):
     pairing = _loaded(tmp_path, tier="F")
-    with pytest.raises(DomainError):
+    with refused("Teemat 2099_1 ei leitud"):
         postipoiss.choose(pairing, actor=specialist, reference="2099_1")
 
 
