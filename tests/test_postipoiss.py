@@ -193,6 +193,32 @@ def test_a_test_teema_is_refused(tmp_path):
 # -- a lawyer's decisions --------------------------------------------------------------------
 
 
+def test_a_letter_with_no_teema_is_background_from_the_start(tmp_path, specialist):
+    pairing = _loaded(tmp_path, tier="F")
+    assert postipoiss.auto_apply(write=False).background == 1
+    pairing.refresh_from_db()
+    assert pairing.state == PairingState.PENDING  # the dry run wrote nothing
+
+    assert postipoiss.auto_apply(write=True).background == 1
+    pairing.refresh_from_db()
+    assert pairing.state == PairingState.BACKGROUND and pairing.basis == PairingBasis.AUTOMATIC
+    assert pairing.decided_by is None and pairing.note == postipoiss.UNMATCHED_NOTE
+    assert pairing.matter is None and not Submission.objects.exists()
+
+    # A lawyer who takes it back keeps it waiting; a rerun does not overrule them.
+    postipoiss.reopen(pairing, actor=specialist)
+    assert postipoiss.auto_apply(write=True).background == 0
+    pairing.refresh_from_db()
+    assert pairing.state == PairingState.PENDING
+
+
+def test_only_tier_f_goes_to_background_by_itself(tmp_path):
+    pairing = _loaded(tmp_path, reference="2099_1", tier="B")
+    assert postipoiss.auto_apply(write=True).background == 0
+    pairing.refresh_from_db()
+    assert pairing.state == PairingState.PENDING
+
+
 def _loaded(tmp_path, **kw):
     postipoiss.load(_package(tmp_path, [_letter("V2014-0072", **kw)]), write=True)
     return PostipoissPairing.objects.get()

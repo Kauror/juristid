@@ -8,6 +8,15 @@
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
 [[day]]
+date = 2026-11-18
+basis = "deployment"
+prs = [641, 642]
+changes = [
+  "Koja arvamused, mis saadeti välja Postipoisi kaudu aastatel 2008–2026, on nüüd Juristidis. Kiri, mille teema on kindlalt teada, on teema ajajoonel saadetud arvamusena koos failiga; sama teema kohta nädala sees saadetud arvamust Statistika kaks korda ei loe.",
+  "Halduses on uus osa «Ajaloolised kirjad». Seal saab kirja otsida ID, pealkirja, saaja või teksti järgi ning ettepaneku kinnitada, siduda kirja teise teemaga viite järgi või jätta selle taustaks. Kirjad, millele teemat ei leitud, on seal taustaks ja otsitavad.",
+]
+
+[[day]]
 date = 2026-11-17
 basis = "deployment"
 prs = [637, 638, 639, 640]
