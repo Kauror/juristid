@@ -28,9 +28,12 @@
 5 4 * * * bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier daily --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
 0 5 * * 1 bash /mnt/user/appdata/juristid-main/repo/scripts/deploy/juristid-monitor.sh --tier weekly --env-file /mnt/user/appdata/juristid-main/config/monitor.env --state-dir /mnt/user/appdata/juristid-main/monitor-state &> /dev/null
 
-# Register watch (docs/adr/0217): the open Teemad's Riigikogu bills and the two
-# PDR ministry registers, nightly at 03:30 UTC (05:30 Tallinn), outside the
-# backup, sync and release windows. It writes proposals only. The model step is
-# off until juristid.env carries JURISTID_REGISTER_WATCH_AI=1 and
-# ANTHROPIC_API_KEY. Log: one line per run plus its errors.
-30 3 * * * docker exec juristid-main-web python manage.py watch_registers >> /mnt/user/appdata/juristid-main/register-watch.log 2>&1
+# Register watch (docs/adr/0217): the open Teemad's Riigikogu bills and the
+# ministry registers, nightly at 03:30 UTC (05:30 Tallinn), outside the backup,
+# sync and release windows. It writes proposals only. The model step reads
+# JURISTID_REGISTER_WATCH_AI=1 and ANTHROPIC_API_KEY from its own file,
+# config/register-watch.env (root, 0600), handed to this one exec — not
+# juristid.env, so no service holds the key. The file must exist: `docker exec
+# --env-file` refuses a missing one. Log: one line per run plus its errors; the
+# runs are also in Haldus → Registrite jälgimine.
+30 3 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_registers >> /mnt/user/appdata/juristid-main/register-watch.log 2>&1

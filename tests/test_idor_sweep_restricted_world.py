@@ -114,6 +114,9 @@ NOT_MATTER_DATA = {
     # like the archive; a Teema it names is shown only through `visible_to`
     # (docs/adr/0216 §6, tests/test_postipoiss.py).
     "haldus:letters_decide": "archive",
+    # One nightly register run: counts and errors of the whole watch; the
+    # documents on it are read through `visible_to` (ADR 0217 §8).
+    "haldus:register_watch_run": "register watch run",
     "legacy_import:opinion_archive_file": "archive",
     "legacy_import:opinion_archive_link": "archive",
     "legacy_import:opinion_decide": "archive",

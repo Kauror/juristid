@@ -1,0 +1,62 @@
+{% extends "haldus/base.html" %}
+{% block title %}Registrite kontroll {{ run.started_at|date:"j.n.Y H:i" }} · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  One nightly run (ADR 0217 §8): its counts, its errors and the documents it
+  found on Teemad the reader may see, with the model's verdict and what a
+  lawyer has done with each since. Documents already in the register before
+  the first check are counted, not listed.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_register_watch_nav.html" %}
+  <section class="panel" aria-labelledby="regwatchlog-run">
+    <h2 class="acctsection__title" id="regwatchlog-run">Kontroll {{ run.started_at|date:"j.n.Y H:i" }}</h2>
+    <dl class="detailgrid">
+      <dt>Kestus</dt>
+      <dd>{{ duration|default:"Käib" }}</dd>
+      <dt>Loetud</dt>
+      <dd>{{ run.targets_checked }} allikat · {{ run.findings_new }} uut dokumenti, neist {{ run.findings_offered }} pakutud{% if earlier %} · {{ earlier }} varasemat{% endif %}</dd>
+      <dt>AI</dt>
+      <dd>{% if run.ai_model %}<span class="mono">{{ run.ai_model }}</span> · {{ run.ai_calls }} päringut, {{ run.ai_judged }} hinnatud{% if run.ai_failures %}, {{ run.ai_failures }} ebaõnnestus{% endif %} · <span class="mono">{{ run.ai_input_tokens }} / {{ run.ai_output_tokens }}</span> tokenit{% else %}Väljas{% endif %}</dd>
+    </dl>
+  </section>
+
+  {% if errors %}
+    <section class="panel" aria-labelledby="regwatchlog-errors">
+      <h2 class="acctsection__title" id="regwatchlog-errors">Vead</h2>
+      <ul class="linklist">
+        {% for error in errors %}
+          <li class="linklist__item">{{ error.allikas|default:error.teema }} <span class="linklist__meta">{% if error.allikas and error.teema %}{{ error.teema }} · {% endif %}{{ error.viga }}</span></li>
+        {% endfor %}
+      </ul>
+    </section>
+  {% endif %}
+
+  <section class="panel" aria-labelledby="regwatchlog-found">
+    <h2 class="acctsection__title" id="regwatchlog-found">Leitud dokumendid</h2>
+    {% if findings %}
+      <div class="accttable">
+        <table class="data-table">
+          <thead>
+            <tr><th scope="col">Teema</th><th scope="col">Register</th><th scope="col">Kuupäev</th><th scope="col">Dokument</th><th scope="col">AI hinnang</th><th scope="col">Otsus</th></tr>
+          </thead>
+          <tbody>
+            {% for finding in findings %}
+              <tr>
+                <td><a href="{% url 'matters:matter_detail' pk=finding.matter.pk %}">{{ finding.matter.title }}</a></td>
+                <td>{{ finding.target.get_source_display }}</td>
+                <td class="regwatchlog__nowrap">{{ finding.occurred_on|date:"j.n.Y"|default:"—" }}</td>
+                <td>{% if finding.url %}<a href="{{ finding.url }}" rel="noopener noreferrer" target="_blank">{{ finding.title }}</a>{% else %}{{ finding.title }}{% endif %}</td>
+                <td>{{ finding.get_relevance_display }}{% if finding.ai_note %} <span class="linklist__meta">{{ finding.ai_note }}</span>{% endif %}</td>
+                <td>{{ finding.get_status_display }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p>Uusi dokumente ei leitud.</p>
+    {% endif %}
+  </section>
+{% endblock %}

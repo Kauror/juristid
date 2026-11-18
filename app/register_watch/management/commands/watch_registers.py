@@ -67,7 +67,8 @@ class Command(BaseCommand):
         self.stdout.write(
             f"{mode} checked={record.targets_checked} new={record.findings_new} "
             f"offered={record.findings_offered} errors={len(record.errors)} "
-            f"ai_calls={record.ai_calls} "
+            f"ai_model={record.ai_model or '-'} ai_calls={record.ai_calls} "
+            f"ai_judged={record.ai_judged} ai_failures={record.ai_failures} "
             f"ai_tokens={record.ai_input_tokens}/{record.ai_output_tokens}"
         )
         for error in record.errors[:20]:

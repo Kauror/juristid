@@ -92,6 +92,11 @@ def may_open_letters(request: HttpRequest) -> bool:
     return may_read_business_content(_persona(request))
 
 
+def may_open_register_watch(request: HttpRequest) -> bool:
+    """Registrite jälgimine: whoever reads business content, like the review page (ADR 0217 §8)."""
+    return may_read_business_content(_persona(request))
+
+
 def may_open_system(request: HttpRequest) -> bool:
     """Süsteemi seis: a verified technical administrator, and nobody else."""
     return admin_session.is_technical_administrator(request)
@@ -153,6 +158,13 @@ SECTIONS: tuple[Section, ...] = (
         "haldus:letters",
         may_open_letters,
         "Postipoisi väljaminevad kirjad 2008–2026: teemaga sidumine, ettepanekud ja taust.",
+    ),
+    Section(
+        "registrid",
+        "Registrite jälgimine",
+        "haldus:register_watch",
+        may_open_register_watch,
+        "Öised registrikontrollid: loetud allikad, leitud dokumendid, vead ja AI kasutus.",
     ),
     Section(
         "susteem",

@@ -165,6 +165,12 @@ class WatchRun(BaseModel):
     ai_calls = models.PositiveIntegerField(default=0)
     ai_input_tokens = models.PositiveIntegerField(default=0)
     ai_output_tokens = models.PositiveIntegerField(default=0)
+    #: The model the run asked, as the API named it in its answer; empty when
+    #: the AI step was off for the run. Defaults in the database too, so the
+    #: release before this one still records a run (rollout and rollback).
+    ai_model = models.CharField(max_length=80, blank=True, default="", db_default="")
+    ai_judged = models.PositiveIntegerField(default=0, db_default=0)
+    ai_failures = models.PositiveIntegerField(default=0, db_default=0)
 
     class Meta:
         verbose_name = "registrite kontroll"

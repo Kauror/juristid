@@ -718,3 +718,64 @@ def test_every_open_teema_has_the_way_to_its_watch(client, specialist):
 
     assert "Registrite jälgimine" in body
     assert "Otsingusõnad" in review and "Ei jälgita." in review
+
+
+# -- Haldus → Registrite jälgimine (ADR 0217 §8) -----------------------------------
+
+
+class FailingClient:
+    def __init__(self):
+        self.beta = SimpleNamespace(messages=SimpleNamespace(create=self._create))
+
+    def _create(self, **request):
+        error = RuntimeError("sk-ant-secret must never be shown")
+        error.status_code = 401  # type: ignore[attr-defined]
+        raise error
+
+
+@override_settings(REGISTER_WATCH_AI=True, REGISTER_WATCH_AI_MODEL="claude-opus-5-5")
+def test_a_run_records_the_model_what_it_judged_and_its_failures(registers):
+    judged = watch.run(
+        [_bill_teema()], use_ai=True, ai_client=FakeClient(["RELEVANT"]), today=TODAY
+    )
+    failed = watch.run(
+        [_bill_teema()],
+        use_ai=True,
+        ai_client=FailingClient(),
+        today=TODAY,
+    )
+
+    assert (judged.ai_model, judged.ai_judged, judged.ai_failures) == ("claude-opus-5-5", 1, 0)
+    assert (failed.ai_calls, failed.ai_failures) == (0, 1)
+    assert failed.errors[-1] == {
+        "allikas": "Claude",
+        "viga": "1 päringut ebaõnnestus: RuntimeError 401",
+    }
+
+
+def test_a_run_without_the_model_names_none(registers):
+    assert watch.run([_bill_teema()], use_ai=True, today=TODAY).ai_model == ""
+
+
+def test_haldus_lists_the_runs_their_documents_and_the_sources(client, specialist, registers):
+    record = watch.run([_bill_teema()], use_ai=False, today=TODAY)
+    client.force_login(specialist)
+
+    runs = client.get(reverse("haldus:register_watch")).content.decode()
+    one = client.get(reverse("haldus:register_watch_run", args=[record.pk])).content.decode()
+    sources = client.get(reverse("haldus:register_watch_sources")).content.decode()
+
+    assert reverse("haldus:register_watch_run", args=[record.pk]) in runs
+    assert "Väljas" in runs  # the model was off for the run
+    assert "Muudatusettepanekud" in one
+    assert "973 SE" in sources
+
+
+def test_haldus_shows_the_section_to_business_readers_only(client, reader, administrator):
+    client.force_login(reader)
+    assert client.get(reverse("haldus:register_watch")).status_code == 200
+    assert "Registrite jälgimine" in client.get(reverse("haldus:index")).content.decode()
+
+    client.force_login(administrator)
+    assert client.get(reverse("haldus:register_watch")).status_code == 404
+    assert client.get(reverse("haldus:register_watch_sources")).status_code == 404
