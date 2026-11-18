@@ -80,6 +80,19 @@ What a program may read (checked 2026-11-17):
    Agriculture (address unknown), Foreign Affairs (not on ADR; not found), and the
    Government Office (its ADR instance is empty).
 
+8. **A log in Haldus** (owner, 2026-11-18: «so it's easy to monitor what it's
+   doing … it has to be in the setting … just a log basically»). Haldus →
+   Registrite jälgimine lists every run — when, how long, sources read,
+   documents new and offered, errors, and the model's use: which model answered,
+   calls, documents judged, failed calls and tokens — with the last thirty days in
+   sum; a run opens to its errors and the documents it found, with the model's
+   verdict and what a lawyer did; «Allikad» lists every search with its last check
+   and error. Read-only, for whoever reads business content; a Teema is shown only
+   through `visible_to`. A failed model call is counted on the run and named by
+   its kind and HTTP status, never its message. The key stays in the nightly job's
+   own environment file on the host; the page shows the model a run used, never
+   whether a key exists.
+
 ## Consequences
 
 - Teemad from the eight ministries above are watched by words; others (Interior,

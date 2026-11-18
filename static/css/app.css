@@ -17470,3 +17470,8 @@ a.statpanel__note {
 .railwatch {
   margin-left: 0;
 }
+
+/* Haldus → Registrite jälgimine (ADR 0217 §8): dates and token counts on one line. */
+.regwatchlog__nowrap {
+  white-space: nowrap;
+}

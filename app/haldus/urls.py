@@ -11,7 +11,13 @@ none of them can shadow those.
 from django.urls import path
 
 from app.accounts import admin_session_views
-from app.haldus import data_sync_views, letters_views, onenote_holds, views
+from app.haldus import (
+    data_sync_views,
+    letters_views,
+    onenote_holds,
+    register_watch_views,
+    views,
+)
 
 urlpatterns = [
     path("", views.index, name="index"),
@@ -22,6 +28,10 @@ urlpatterns = [
     path("ajaloolised-kirjad/", letters_views.letters, name="letters"),
     path("ajaloolised-kirjad/<uuid:pk>/", letters_views.decide, name="letters_decide"),
     path("lovable/kontrolli/", views.lovable_check, name="lovable_check"),
+    # -- Registrite jälgimine: the nightly register watch's log (ADR 0217 §8) --
+    path("registrid/", register_watch_views.runs, name="register_watch"),
+    path("registrid/allikad/", register_watch_views.sources, name="register_watch_sources"),
+    path("registrid/<uuid:pk>/", register_watch_views.run, name="register_watch_run"),
     # -- Andmete sünkroonimine (LS-C): Lovable and OneNote, requests for the host --
     path("andmete-sunkroonimine/", data_sync_views.overview, name="data_sync"),
     path("andmete-sunkroonimine/kontrolli/", data_sync_views.check, name="data_sync_check"),

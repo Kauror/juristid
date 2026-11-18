@@ -61,6 +61,16 @@ class Usage:
     calls: int = 0
     input_tokens: int = 0
     output_tokens: int = 0
+    model: str = ""
+    judged: int = 0
+    failures: int = 0
+    #: The last failure's kind and HTTP status, never its message: shown in
+    #: Haldus → Registrite jälgimine.
+    last_failure: str = ""
+
+    def failed(self, reason: str) -> None:
+        self.failures += 1
+        self.last_failure = reason[:120]
 
 
 def enabled() -> bool:
@@ -117,18 +127,24 @@ def judge(matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: A
             fallbacks="default",
         )
     except Exception as error:  # the model is an aid; the watch goes on without it
-        logger.warning("register watch: model call failed: %s", type(error).__name__)
+        status = getattr(error, "status_code", None)
+        reason = type(error).__name__ + (f" {status}" if status else "")
+        logger.warning("register watch: model call failed: %s", reason)
+        usage.failed(reason)
         return 0
     usage.calls += 1
     usage.input_tokens += getattr(response.usage, "input_tokens", 0) or 0
     usage.output_tokens += getattr(response.usage, "output_tokens", 0) or 0
+    usage.model = str(getattr(response, "model", "") or usage.model)
     if response.stop_reason != "end_turn":
         logger.warning("register watch: model stopped with %s", response.stop_reason)
+        usage.failed(f"stop_reason {response.stop_reason}")
         return 0
     text = next((block.text for block in response.content if block.type == "text"), "")
     try:
         answers = {row["id"]: row for row in json.loads(text)["items"]}
     except (ValueError, KeyError, TypeError):
+        usage.failed("vastus ei olnud loetav")
         return 0
     judged = 0
     allowed = {Relevance.RELEVANT, Relevance.UNSURE, Relevance.UNRELATED}
@@ -140,4 +156,5 @@ def judge(matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: A
         finding.ai_note = str(row.get("note") or "").strip()[:500]
         finding.save(update_fields=["relevance", "ai_note", "updated_at"])
         judged += 1
+    usage.judged += judged
     return judged

@@ -1,0 +1,8 @@
+{% comment %}Registrite jälgimine's own pages, under the Haldus strip (ADR 0217 §8).{% endcomment %}
+<nav class="tabs" aria-label="Registrite jälgimise lehed">
+  {% for item in pages %}
+    <a class="tabs__tab {% if item.active %}is-active{% endif %}"
+       {% if item.active %}aria-current="page"{% endif %}
+       href="{{ item.url }}">{{ item.label }}</a>
+  {% endfor %}
+</nav>

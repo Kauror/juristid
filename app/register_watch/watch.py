@@ -170,6 +170,8 @@ def run(
     today = today or timezone.localdate()
     record = WatchRun.objects.create(started_at=timezone.now())
     usage = ai.Usage()
+    if use_ai and ai.enabled():
+        usage.model = str(getattr(settings, "REGISTER_WATCH_AI_MODEL", ""))
     for matter in (
         matters
         if matters is not None
@@ -226,6 +228,16 @@ def run(
     record.ai_calls = usage.calls
     record.ai_input_tokens = usage.input_tokens
     record.ai_output_tokens = usage.output_tokens
+    record.ai_model = usage.model[:80]
+    record.ai_judged = usage.judged
+    record.ai_failures = usage.failures
+    if usage.failures:
+        record.errors.append(
+            {
+                "allikas": "Claude",
+                "viga": f"{usage.failures} päringut ebaõnnestus: {usage.last_failure}",
+            }
+        )
     record.finished_at = timezone.now()
     record.save()
     return record
