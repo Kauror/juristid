@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load release_notes %}
 {% block title %}Uuendused · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -29,6 +30,13 @@ and painting over them would leave a baseline that no longer shows what the page
 says. The date is text either way, so nothing a reader or a screen reader
 receives depends on the element.
 
+Older months fold (owner's review 2026-11-18): the newest note's month is a
+list of days as before; every earlier month is one shut `<details>` row,
+«Oktoober 2026 · N uuendust», holding that month's day accordions unchanged
+(`release_sections`, app/core/release_notes.py). The month comes from the newest
+note, not from today, so nothing moves at midnight on the 1st. Inside a month a
+day's heading is an `<h3>` under the month's `<h2>`.
+
 Every bullet is plain text from a TOML file, rendered through ordinary
 autoescaping. Nothing here is `|safe`: a release note is prose somebody typed,
 and a typo in it must not be able to become markup.
@@ -46,30 +54,28 @@ and a typo in it must not be able to become markup.
 
   {% include "core/_uuendused_tabs.html" %}
 
+  {% with sections=release_days|release_sections %}
   <div class="relnotes">
-    {% for day in release_days %}
-      <details class="accordion relnotes__day" {% if forloop.first %}open{% endif %}>
-        <summary class="accordion__head">
-          <span class="accordion__caret" aria-hidden="true"></span>
-          <h2 class="accordion__title">{{ day.heading }}</h2>
-          {% comment %}
-            The count is supplementary and reads as such. The date beside it is
-            what identifies the group, and it is text, so nothing here depends
-            on seeing the number or the caret.
-          {% endcomment %}
-          <span class="accordion__summary">{{ day.count_label }}</span>
-        </summary>
-        <div class="accordion__body">
-          <ul class="relnotes__list">
-            {% for change in day.changes %}
-              <li>{{ change }}</li>
-            {% endfor %}
-          </ul>
-        </div>
-      </details>
+    {% for day in sections.current %}
+      {% include "core/_release_day.html" with day=day open=forloop.first level=2 %}
     {% empty %}
       <p class="empty">Uuendusi ei ole veel kirja pandud.</p>
     {% endfor %}
+    {% for month in sections.months %}
+      <details class="accordion relnotes__month">
+        <summary class="accordion__head">
+          <span class="accordion__caret" aria-hidden="true"></span>
+          <h2 class="accordion__title relnotes__monthtitle">{{ month.heading }}</h2>
+          <span class="accordion__summary">{{ month.count_label }}</span>
+        </summary>
+        <div class="relnotes__monthdays">
+          {% for day in month.days %}
+            {% include "core/_release_day.html" with day=day open=0 level=3 %}
+          {% endfor %}
+        </div>
+      </details>
+    {% endfor %}
   </div>
+  {% endwith %}
 </div>
 {% endblock %}

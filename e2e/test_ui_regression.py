@@ -1711,11 +1711,15 @@ RELEASE_NOTE_FIXTURE: tuple[tuple[str, tuple[str, ...]], ...] = (
 _RELEASE_NOTE_FIXTURE_SCRIPT = """
 (days) => {
   const list = document.querySelector('.relnotes');
-  const shown = list.querySelectorAll(':scope > details.relnotes__day');
+  const shown = list.querySelectorAll('details.relnotes__day');
   if (shown.length < 2) { return false; }
   const openTemplate = shown[0].cloneNode(true);
   const shutTemplate = shown[1].cloneNode(true);
+  shutTemplate.removeAttribute('open');
+  shutTemplate.querySelector('.accordion__title').outerHTML =
+    openTemplate.querySelector('.accordion__title').outerHTML;
   shown.forEach((day) => day.remove());
+  list.querySelectorAll(':scope > details.relnotes__month').forEach((month) => month.remove());
   days.forEach((day, index) => {
     const node = (index === 0 ? openTemplate : shutTemplate).cloneNode(true);
     node.querySelector('.accordion__title').textContent = day.heading;

@@ -1,0 +1,23 @@
+{% comment %}
+One release day's accordion (templates/core/release_notes.html). `level` is the
+heading level: 2 for the newest month's days, 3 for a day inside a folded month.
+{% endcomment %}
+<details class="accordion relnotes__day"{% if open %} open{% endif %}>
+  <summary class="accordion__head">
+    <span class="accordion__caret" aria-hidden="true"></span>
+    <h{{ level }} class="accordion__title">{{ day.heading }}</h{{ level }}>
+    {% comment %}
+      The count is supplementary and reads as such. The date beside it is
+      what identifies the group, and it is text, so nothing here depends
+      on seeing the number or the caret.
+    {% endcomment %}
+    <span class="accordion__summary">{{ day.count_label }}</span>
+  </summary>
+  <div class="accordion__body">
+    <ul class="relnotes__list">
+      {% for change in day.changes %}
+        <li>{{ change }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+</details>

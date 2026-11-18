@@ -457,7 +457,11 @@ def test_the_popover_entry_is_person_then_teema_then_meaning(
     assert entry.index(other_specialist.display_name) < entry.index("Kompaktne teema")
     assert " — " in entry
     assert f'href="{reverse("matters:matter_detail", kwargs={"pk": matter.pk})}' in entry
-    assert wi.MEANING_DEADLINE in entry
+    # One line (owner's review 2026-11-18): the meaning is no longer a visible
+    # second line — only the link's hover title and hidden text carry it.
+    assert "wcal__eventwhat" not in entry
+    assert f'title="{wi.MEANING_DEADLINE}' in entry
+    assert f'<span class="visually-hidden">, {wi.MEANING_DEADLINE}' in entry
     # Day popover: the heading states the day; the entry does not repeat it.
     assert "28.10.2026" not in entry
     # The legend names the person beside the colour.

@@ -30,6 +30,19 @@ def days(page):
     return page.locator(DAY)
 
 
+def shown(page, day):
+    """Open the month row a day is folded under, if any, so it can be clicked.
+
+    Finished months fold under one shut row (owner's review 2026-11-18), so
+    `days(page).nth(1)` can sit inside one when the newest month has one day.
+    """
+    month = day.locator("xpath=ancestor::details[contains(@class, 'relnotes__month')]")
+    if month.count() and month.get_attribute("open") is None:
+        month.locator(":scope > summary").click()
+        expect(month).to_have_attribute("open", "")
+    return day
+
+
 def open_from_the_footer(page, base_url: str):
     sign_in(page, base_url, SANDRA)
     page.goto(f"{base_url}/teemad/")
@@ -108,7 +121,7 @@ def test_the_open_day_shows_its_changes_and_a_shut_one_does_not(page, base_url):
 
 def test_an_older_day_opens_when_it_is_activated(page, base_url):
     open_from_the_footer(page, base_url)
-    older = days(page).nth(1)
+    older = shown(page, days(page).nth(1))
 
     older.locator("summary").click()
 
@@ -133,7 +146,7 @@ def test_the_keyboard_reaches_a_day_and_opens_it(page, base_url):
     """A `<summary>` is focusable and Enter toggles it — for free, if nothing
     has taken the behaviour over."""
     open_from_the_footer(page, base_url)
-    older = days(page).nth(1)
+    older = shown(page, days(page).nth(1))
 
     older.locator("summary").focus()
     page.keyboard.press("Enter")
@@ -154,7 +167,9 @@ def test_the_count_matches_the_number_of_changes_under_it(page, base_url):
     open_from_the_footer(page, base_url)
     for index in range(days(page).count()):
         day = days(page).nth(index)
-        stated = day.locator(".accordion__summary").inner_text().strip().split()[0]
+        stated = (day.locator(":scope > summary .accordion__summary").text_content() or "").split()[
+            0
+        ]
         assert int(stated) == day.locator("li").count()
 
 
@@ -188,7 +203,7 @@ def test_the_accordion_needs_no_javascript(browser, browser_context_args, base_u
         page.goto(f"{base_url}{URL}")
         expect(page.get_by_role("heading", name="Uuendused", exact=True)).to_be_visible()
 
-        newest, older = page.locator(DAY).first, page.locator(DAY).nth(1)
+        newest, older = page.locator(DAY).first, shown(page, page.locator(DAY).nth(1))
         expect(newest).to_have_attribute("open", "")
         expect(older.locator("li").first).to_be_hidden()
 

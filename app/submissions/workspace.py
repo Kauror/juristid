@@ -129,6 +129,11 @@ def _matches(term: str) -> Q:
     by construction — it is what *this* system recorded sending — and a reader
     typing a reference or half a recipient's name wants a substring, not a
     stemmed match that drops the fragment they were sure about.
+
+    The Teema's vastutaja is matched by name as well (owner's review
+    2026-11-18: «marko» should find Marko Udras's opinions) — the current
+    owner's display name, and the Lovable former owner's name, which the Teema
+    already shows beside «Vastutaja» and its own search already reads.
     """
     return (
         Q(title__icontains=term)
@@ -136,6 +141,8 @@ def _matches(term: str) -> Q:
         | Q(channel__icontains=term)
         | Q(matter__title__icontains=term)
         | Q(recipients__name__icontains=term)
+        | Q(matter__owner__display_name__icontains=term)
+        | Q(matter__former_owner_name__icontains=term)
     )
 
 

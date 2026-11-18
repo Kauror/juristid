@@ -365,6 +365,43 @@ def test_arvamused_search_still_narrows_arvamused(signed_in, specialist, capture
     assert "teine.pdf" not in section
 
 
+@pytest.mark.parametrize("term", ["marko", "Udras", "marko udras"])
+def test_arvamused_search_finds_the_vastutajas_opinions_by_name(
+    signed_in, specialist, capture_evidence, term
+) -> None:
+    """Owner's review 2026-11-18: a lawyer's name finds the opinions on the
+    Teemad they are responsible for — first name, surname or both, any case.
+    Neither title nor file carries the name, so only the vastutaja can match."""
+    marko = factories.UserFactory(display_name="Marko Udras")
+    mine = factories.MatterFactory(owner=marko, title="Esimene teema")
+    evidence = capture_evidence(mine, b"%PDF-1.4 m", "marko.pdf", "application/pdf")
+    sent_submission(mine, evidence=evidence, title="Seisukoht pakendist")
+    theirs = factories.MatterFactory(owner=specialist, title="Teine teema")
+    other = capture_evidence(theirs, b"%PDF-1.4 t", "teine.pdf", "application/pdf")
+    sent_submission(theirs, evidence=other, title="Seisukoht ehitusest")
+
+    section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL, {"arvamus_q": term})))
+
+    assert len(submission_rows_of(section)) == 1
+    assert "marko.pdf" in section
+    assert "teine.pdf" not in section
+
+
+def test_arvamused_search_finds_a_former_vastutaja_by_name(
+    signed_in, specialist, capture_evidence
+) -> None:
+    """A Teema whose Lovable owner has left keeps that name; it is searchable too."""
+    matter = factories.MatterFactory(owner=None, title="Vana teema")
+    matter.former_owner_name = "Kadri Lahkunud"
+    matter.save(update_fields=["former_owner_name"])
+    evidence = capture_evidence(matter, b"%PDF-1.4 k", "kadri.pdf", "application/pdf")
+    sent_submission(matter, evidence=evidence, title="Seisukoht vanast asjast")
+
+    section = opinion_section_of(body_of(signed_in.get(TEEMAD_URL, {"arvamus_q": "lahkunud"})))
+
+    assert "kadri.pdf" in section
+
+
 def test_searching_arvamused_leaves_the_teemad_list_alone(three_pairs, signed_in) -> None:
     """Requirement 6. The register answers the same before and after.
 
