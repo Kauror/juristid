@@ -22,8 +22,10 @@ Teema whose source says «saadetud» and writes row 3 for the same act, so its
 own endings are left out of 2 (`lovable_sync.is_sync_ending`); a request ended
 with a submission is that submission (1), not a second fact; and an imported
 statement (3) is left out when the same Teema already has a native fact (1 or
-2) for the same day — a person supplying the document for an opinion the
-register says went out. Different days are different opinions.
+2) within seven days — a person supplying the document for an opinion the
+register says went out, or a historical letter whose own date sits a few days
+from the register's (docs/adr/0216 §5). Further apart they are different
+opinions.
 
 **Authorization.** Facts are read only for Teemad the reader may see
 (`Matter.objects.visible_to`), so a restricted or deleted Teema contributes
@@ -33,13 +35,17 @@ nothing and an administrator without a business role reads an empty list
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from typing import Any
 
 from django.utils import timezone
 
 #: The legal-instrument keys that make a Teema «otseselt ELiga seotud».
+#: Two records of a sent opinion on one Teema this many days apart are one act
+#: (owner, 2026-11-17; docs/adr/0216 §5).
+SAME_ACT_DAYS = 7
+
 EU_INSTRUMENT_KEYS = frozenset({"direktiiv", "el-maarus", "eli-konsultatsioon", "muu-eli-dokument"})
 
 SOURCE_SUBMISSION = "submission"
@@ -234,14 +240,29 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
         )
 
     # 3. The imported register's «välja saadetud».
-    native_days = {(fact.matter.matter_id, fact.sent_on) for fact in facts}
+    native: dict[Any, list[int]] = {}
+    for index, fact in enumerate(facts):
+        native.setdefault(fact.matter.matter_id, []).append(index)
     for matter_id, outcome in current_opinion_outcomes(list(known)).items():
         if outcome.outcome != OpinionOutcome.SENT or outcome.sent_on is None:
             continue
-        if (matter_id, outcome.sent_on) in native_days:
+        sent_on: date = outcome.sent_on
+        same = [
+            index
+            for index in native.get(matter_id, [])
+            if abs((facts[index].sent_on - sent_on).days) <= SAME_ACT_DAYS
+        ]
+        if same:
             # The same act, already counted from Juristid's own record: a
             # person supplied the document for (or answered) the opinion the
-            # register says went out that day.
+            # register says went out, or a historical letter's own date sits a
+            # few days from the register's (owner, 2026-11-17: within seven
+            # days it is one opinion; docs/adr/0216 §5). The native fact keeps
+            # the register's request deadline when it has none of its own, so
+            # on-time and days-given figures lose nothing by the merge.
+            index = min(same, key=lambda i: abs((facts[i].sent_on - sent_on).days))
+            if facts[index].deadline is None and outcome.request_deadline is not None:
+                facts[index] = replace(facts[index], deadline=outcome.request_deadline)
             continue
         facts.append(
             OpinionFact(

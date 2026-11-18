@@ -1195,6 +1195,14 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: _suggestion_state(w),
         events=(ChangeEventType.MATTER_POLICY_AREAS_CHANGED,),
     ),
+    # Ajaloolised kirjad (ADR 0216): a decision on a Postipoiss letter — here
+    # «Jäta taustaks», which needs no Teema and still records its person.
+    WriteRoute(
+        name="haldus:letters_decide",
+        label="Ajaloolise kirja otsus",
+        request=lambda w: ({"pk": w["letter_pairing"].pk}, {"otsus": "taust"}),
+        probe=lambda w: _letter_pairing_state(w),
+    ),
     # «Uued dokumendid registrites» (ADR 0217): adding a finding records a
     # `Menetluse areng` on the Teema through `+ Märge`'s use case.
     WriteRoute(
@@ -1212,6 +1220,13 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
         probe=lambda w: _phrase_state(w),
     ),
 )
+
+
+def _letter_pairing_state(world):
+    from app.legacy_import.postipoiss_models import PostipoissPairing
+
+    row = PostipoissPairing.objects.get(pk=world["letter_pairing"].pk)
+    return (row.state, row.decided_by_id, row.matter_id)
 
 
 def _suggestion_state(world):
@@ -1497,8 +1512,18 @@ def _build_world():
         # have nothing for it to write and its refusal would prove nothing.
         "tag": factories.TagFactory(),
         "suggestion": _suggestion(matter),
+        "letter_pairing": _letter_pairing(),
         "finding": _finding(matter),
     }
+
+
+def _letter_pairing():
+    from app.legacy_import.postipoiss_models import PostipoissLetter, PostipoissPairing
+
+    letter = PostipoissLetter.objects.create(
+        kirja_id="V2014-0072", year=2014, title="Arvamus", package_sha256="0" * 64
+    )
+    return PostipoissPairing.objects.create(letter=letter, tier="F")
 
 
 def _finding(matter):

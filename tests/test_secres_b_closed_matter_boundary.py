@@ -75,6 +75,11 @@ CORRECTIONS_ALLOWED_WHEN_CLOSED: dict[tuple[str, str], str] = {
     ("reporting:classification_decide", "Saatja ja valdkonna kinnitamine"): (
         "docs/adr/0215 §5: classification is a correction, allowed on a closed Teema"
     ),
+    # A historical letter belongs to the closed Teema it was sent on; pairing it
+    # records what was sent, it is not new work (docs/adr/0216 §6).
+    ("haldus:letters_decide", "Ajaloolise kirja otsus"): (
+        "docs/adr/0216 §6: a historical letter is paired with a closed Teema by design"
+    ),
 }
 
 

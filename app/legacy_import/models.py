@@ -423,6 +423,11 @@ from app.legacy_import.opinion_binary import (  # noqa: E402
 from app.legacy_import.opinion_search_models import (  # noqa: E402
     OpinionArchiveSearchDocument,
 )
+from app.legacy_import.postipoiss_models import (  # noqa: E402
+    PostipoissLetter,
+    PostipoissLetterFile,
+    PostipoissPairing,
+)
 from app.legacy_import.source_pages import (  # noqa: E402
     CandidateClass,
     CandidateState,
@@ -804,6 +809,9 @@ __all__ = [
     "OpinionSubmissionImport",
     "OutreachChannel",
     "PilotGroup",
+    "PostipoissLetter",
+    "PostipoissLetterFile",
+    "PostipoissPairing",
     "ReconciliationStatus",
     "RegisterCurrency",
     "RegisterEngagementImport",

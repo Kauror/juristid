@@ -11,13 +11,16 @@ none of them can shadow those.
 from django.urls import path
 
 from app.accounts import admin_session_views
-from app.haldus import data_sync_views, onenote_holds, views
+from app.haldus import data_sync_views, letters_views, onenote_holds, views
 
 urlpatterns = [
     path("", views.index, name="index"),
     path("osakond/", views.osakond, name="osakond"),
     path("susteem/", views.susteem, name="susteem"),
     path("lovable/", views.lovable, name="lovable"),
+    # -- Ajaloolised kirjad: Postipoiss letters and their Teemad (docs/adr/0216) --
+    path("ajaloolised-kirjad/", letters_views.letters, name="letters"),
+    path("ajaloolised-kirjad/<uuid:pk>/", letters_views.decide, name="letters_decide"),
     path("lovable/kontrolli/", views.lovable_check, name="lovable_check"),
     # -- Andmete sünkroonimine (LS-C): Lovable and OneNote, requests for the host --
     path("andmete-sunkroonimine/", data_sync_views.overview, name="data_sync"),

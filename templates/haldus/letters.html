@@ -1,0 +1,87 @@
+{% extends "haldus/base.html" %}
+{% block title %}Ajaloolised kirjad · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+Haldus → Ajaloolised kirjad (docs/adr/0216). Koda's outgoing letters from
+Postipoiss, each with the Teema the offline matching proposed. The calibrated
+tier was applied without a person; everything else waits here for a lawyer:
+«Kinnita» takes the proposal, «Seo» takes a Teema by its reference, «Jäta
+taustaks» keeps the letter searchable with no Teema. A Teema the reader may not
+see is never named on a row (the view passes it through visible_matter).
+{% endcomment %}
+
+{% block haldus_title %}Ajaloolised kirjad{% endblock %}
+{% block haldus_context %}<span class="pagehead__context">{{ total }}</span>{% endblock %}
+
+{% block haldus_content %}
+<form class="statdash__controls" method="get" action="{% url 'haldus:letters' %}">
+  <select class="field__input classify__filter" name="olek" aria-label="Olek" data-autosubmit>
+    {% for key, label, count in states %}<option value="{{ key }}"{% if filters.olek == key %} selected{% endif %}>{{ label }}{% if count is not None %} ({{ count }}){% endif %}</option>{% endfor %}
+  </select>
+  <select class="field__input classify__filter" name="kindlus" aria-label="Kindlus" data-autosubmit>
+    <option value="">Igasugune kindlus</option>
+    {% for key, label in tiers %}<option value="{{ key }}"{% if filters.kindlus == key %} selected{% endif %}>{{ key }} · {{ label }}</option>{% endfor %}
+  </select>
+  <select class="field__input classify__filter" name="aasta" aria-label="Aasta" data-autosubmit>
+    <option value="">Kõik aastad</option>
+    {% for year in years %}<option value="{{ year }}"{% if filters.aasta == year|stringformat:'s' %} selected{% endif %}>{{ year }}</option>{% endfor %}
+  </select>
+  <input class="field__input classify__filter" type="search" name="q" value="{{ filters.q }}" aria-label="Otsi kirjadest" placeholder="Otsi: ID, pealkiri, saaja, tekst">
+  <button type="submit" class="button button--quiet button--tiny">Näita</button>
+</form>
+
+{% if rows %}
+  <ul class="classify">
+    {% for row in rows %}
+      {% with p=row.pairing l=row.letter %}
+        <li class="classify__row">
+          <div class="classify__topic">
+            <strong>{{ l.kirja_id }}</strong> · {{ l.title }}
+            <span class="classify__meta">{{ l.shown_date|date:"d.m.Y"|default:"kuupäev puudub" }} · {{ l.recipient|default:"saaja teadmata" }} · kindlus {{ p.tier }}</span>
+            <span class="classify__meta">
+              {% for f in row.files %}<a href="{% url 'legacy_import:opinion_archive_file' pk=f.binary_id %}">{{ f.filename }}</a>{% if not forloop.last %} · {% endif %}{% empty %}fail puudub{% endfor %}
+            </span>
+            {% if 'fail-kontrollimata' in p.signals %}<span class="classify__meta">Fail ei kanna selle kirja numbrit — kontrolli, kas see on õige kiri.</span>{% endif %}
+            {% if p.state == 'APPLIED' %}
+              <span class="classify__meta">Seotud: {% if row.chosen %}<a href="{% url 'matters:matter_detail' pk=row.chosen.pk %}">{{ row.chosen.display_reference }} {{ row.chosen.title }}</a>{% else %}teema, mida sa ei näe{% endif %} · {{ p.get_basis_display }}{% if p.joined_existing %} · liidetud olemasoleva arvamusega{% endif %}{% if p.decided_by %} · {{ p.decided_by }}{% endif %}</span>
+            {% elif row.suggested %}
+              <span class="classify__meta">Ettepanek: <a href="{% url 'matters:matter_detail' pk=row.suggested.pk %}">{{ row.suggested.display_reference }} {{ row.suggested.title }}</a></span>
+            {% elif p.suggested_reference %}
+              <span class="classify__meta">Ettepanek {{ p.suggested_reference }} — seda teemat siin ei ole</span>
+            {% else %}
+              <span class="classify__meta">Teemat ei leitud</span>
+            {% endif %}
+            {% if p.state == 'BACKGROUND' %}<span class="classify__meta">Taustaks{% if p.decided_by %} · {{ p.decided_by }}{% endif %}{% if p.note %} · {{ p.note }}{% endif %}</span>{% endif %}
+          </div>
+          {% if can_write_business_content and p.state != 'APPLIED' %}
+            <form class="classify__form" method="post" action="{% url 'haldus:letters_decide' pk=p.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="olek" value="{{ filters.olek }}">
+              <input type="hidden" name="kindlus" value="{{ filters.kindlus }}">
+              <input type="hidden" name="aasta" value="{{ filters.aasta }}">
+              <input type="hidden" name="q" value="{{ filters.q }}">
+              <input type="hidden" name="lk" value="{{ filters.lk }}">
+              {% if p.state == 'PENDING' %}
+                {% if row.suggested %}<button type="submit" name="otsus" value="kinnita" class="button button--primary button--tiny">Kinnita</button>{% endif %}
+                <input class="field__input classify__add" type="text" name="viide" aria-label="Teema viide" placeholder="2014_85" size="9">
+                <button type="submit" name="otsus" value="vali" class="button button--quiet button--tiny">Seo</button>
+                <button type="submit" name="otsus" value="taust" class="button button--quiet button--tiny">Jäta taustaks</button>
+              {% else %}
+                <button type="submit" name="otsus" value="taasta" class="button button--quiet button--tiny">Võta tagasi</button>
+              {% endif %}
+            </form>
+          {% endif %}
+        </li>
+      {% endwith %}
+    {% endfor %}
+  </ul>
+  {% if previous_url or next_url %}
+    <p class="classify__meta">
+      {% if previous_url %}<a href="{{ previous_url }}">← Eelmised</a>{% endif %}
+      {% if next_url %}<a href="{{ next_url }}">Järgmised →</a>{% endif %}
+    </p>
+  {% endif %}
+{% else %}
+  <p class="statpanel__empty">Selliseid kirju ei ole.</p>
+{% endif %}
+{% endblock %}

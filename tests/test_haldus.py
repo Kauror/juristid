@@ -37,6 +37,7 @@ def test_the_registry_is_the_contracted_one():
         "kasutajad",
         "klassifikaatorid",
         "osakond",
+        "kirjad",
         "susteem",
         "andmed",
     ]

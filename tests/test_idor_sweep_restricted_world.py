@@ -110,6 +110,10 @@ NOT_MATTER_DATA = {
     # with no visibility of their own (tests/test_opinion_archive_*,
     # tests/test_historical_*).
     "legacy_import:opinion_archive_detail": "archive",
+    # A Postipoiss letter's pairing: the department's own outgoing letter, read
+    # like the archive; a Teema it names is shown only through `visible_to`
+    # (docs/adr/0216 §6, tests/test_postipoiss.py).
+    "haldus:letters_decide": "archive",
     "legacy_import:opinion_archive_file": "archive",
     "legacy_import:opinion_archive_link": "archive",
     "legacy_import:opinion_decide": "archive",
