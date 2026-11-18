@@ -453,6 +453,7 @@ class AutoReport:
     applied: int = 0
     submissions_created: int = 0
     joined_existing: int = 0
+    background: int = 0
     skipped: list[str] = field(default_factory=list)
 
     def as_text(self) -> str:
@@ -460,6 +461,7 @@ class AutoReport:
             f"seotud automaatselt: {self.applied}",
             f"uusi väljasaadetud arvamusi: {self.submissions_created}",
             f"liidetud olemasoleva arvamusega (±{SAME_ACT_DAYS} päeva): {self.joined_existing}",
+            f"teemata, jäetud taustaks: {self.background}",
             f"vahele jäetud: {len(self.skipped)}",
         ]
         return "\n".join(lines + [f"  {s}" for s in self.skipped[:50]])
@@ -494,11 +496,31 @@ def auto_apply(*, write: bool) -> AutoReport:
             report.applied += 1
             report.submissions_created += int(outcome.submission_created)
             report.joined_existing += int(outcome.joined_existing)
+        report.background = _background_unmatched()
         if write:
             transaction.savepoint_commit(sid)
         else:
             transaction.savepoint_rollback(sid)
     return report
+
+
+#: Why a tier-F letter is background without a person (docs/adr/0216 §7).
+UNMATCHED_NOTE = "Teemat ei leitud; taustaks omaniku otsusega 18.11.2026."
+
+
+def _background_unmatched() -> int:
+    """Tier F — no Teema found — is background from the start (owner,
+    2026-11-18). Only a pairing nobody has decided: one a lawyer took back from
+    background stays waiting, and a rerun does not overrule that person."""
+    return PostipoissPairing.objects.filter(
+        state=PairingState.PENDING, tier=PairingTier.F, decided_at__isnull=True
+    ).update(
+        state=PairingState.BACKGROUND,
+        basis=PairingBasis.AUTOMATIC,
+        decided_at=timezone.now(),
+        note=UNMATCHED_NOTE,
+        updated_at=timezone.now(),
+    )
 
 
 # ---------------------------------------------------------------------------

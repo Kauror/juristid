@@ -69,6 +69,12 @@ Teemad carry neither, and Postipoiss letters are not named that way.
    pairing names is shown only through `Matter.objects.visible_to`.
 7. **Background is a state, not a deletion.** A letter with no Teema stays
    listed and searchable by ID, title, recipient and text, with its files.
+   Tier F — no Teema found, which includes every 2008–2010 letter, since
+   neither Juristid nor Lovable holds a Teema before 2011 — is background from
+   the start: `auto-apply` sets it with no person and a note saying why (owner,
+   2026-11-18). A lawyer may still take one back and pair it; a rerun leaves
+   that letter waiting. Letters registered after the 2026-11-17 export are a
+   later package.
 8. **The archive serves a file under the suffix of its recorded type.** The
    opinions archive was PDFs only; a Word letter served as `.pdf` opened broken.
 
