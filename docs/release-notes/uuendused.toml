@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-11-18
 basis = "deployment"
-prs = [641, 642, 643]
+prs = [641, 642, 643, 644, 645]
 changes = [
   "Halduses on uus osa «Registrite jälgimine»: iga öise registrikontrolli aeg ja kestus, loetud allikad, leitud ja pakutud dokumendid, vead ning AI päringud, hinnangud ja tokenid. Kontrolli avades on näha selle leitud dokumendid koos AI hinnangu ja otsusega; «Allikad» näitab iga teema otsingut, viimast kontrolli ja viga.",
   "Koja arvamused, mis saadeti välja Postipoisi kaudu aastatel 2008–2026, on nüüd Juristidis. Kiri, mille teema on kindlalt teada, on teema ajajoonel saadetud arvamusena koos failiga; sama teema kohta nädala sees saadetud arvamust Statistika kaks korda ei loe.",
