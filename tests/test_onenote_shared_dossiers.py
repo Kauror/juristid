@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 
 import pytest
 from django.urls import reverse
@@ -334,7 +335,12 @@ def test_held_files_offer_their_original_and_imported_ones_keep_their_document(
     html = _view(client, link).content.decode()
     kiri = _resource(1, "kiri.pdf")
     url = reverse("legacy_import:source_original", kwargs={"pk": link.pk, "resource_pk": kiri.pk})
-    assert f'<a href="{url}" download>Laadi alla (allikas)</a>' in html
+    # The file's name downloads its held original (redesign of 18.11.2026).
+    tag = re.search(rf'<a class="casefile__name"\s+href="{re.escape(url)}"[^>]*>kiri\.pdf<', html)
+    assert tag, "the held file's name is not its original's download"
+    assert 'title="Laadi alla (allikas)"' in tag.group(0)
+    assert 'aria-label="kiri.pdf — laadi alla (allikas)"' in tag.group(0)
+    assert " download>" in tag.group(0)
     # The empty file has nothing to download.
     assert html.count("Laadi alla (allikas)") == 2
     single = _view(client, _link(world["z"], 4)).content.decode()

@@ -575,9 +575,12 @@ def test_the_page_view_and_the_status_count_the_same_files_after_a_move(
     client.force_login(specialist)
     response = client.get(reverse("legacy_import:source_page", kwargs={"pk": link.pk}))
     shown = Counter(
-        b["state"]
-        for b in response.context["blocks"]
-        if b["kind"] == "file" and b["state"] != "superseded"
+        file["state"]
+        for section in response.context["sections"]
+        for entry in section["blocks"]
+        if entry["kind"] == "files"
+        for file in entry["items"]
+        if file["state"] != "superseded"
     )
     status = historical_summary(teema, specialist)["links"][0].import_status
     assert status.counts == dict(shown), (status.counts, shown)

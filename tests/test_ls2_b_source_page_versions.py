@@ -395,7 +395,7 @@ def test_files_are_listed_per_version_and_the_later_one_opens_v2(two_captures, s
     assert reverse("documents:open", kwargs={"pk": v1.pk}) not in latest
     assert "versioon 2, OneNote'is muudetud" in latest and "06.11.2026" in latest
     assert "Uus versioon selles hõives" in latest
-    assert 'lisatud <time datetime="2024-03-12">12.03.2024</time>' in latest
+    assert """<time datetime="2024-03-12" title="Lisatud OneNote'i">12.03.2024</time>""" in latest
     first = _flow(_get(signed_in, two_captures["link"], versions.ORIGINAL))
     assert reverse("documents:open", kwargs={"pk": v1.pk}) in first
     assert reverse("documents:open", kwargs={"pk": v2.pk}) not in first

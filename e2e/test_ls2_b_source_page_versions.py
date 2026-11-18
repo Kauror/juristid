@@ -161,7 +161,7 @@ def _html(*, latest: bool) -> str:
             "latest_reading": second,
             "version_summary": summary,
             "removed_blocks": removed,
-            "blocks": reading.reading_entries(blocks),
+            "sections": reading.sections(reading.reading_entries(blocks)),
             "contents": [],
             "file_summary": "Lehel on 1 fail; see on selle teema dokument.",
             "page_links": [],

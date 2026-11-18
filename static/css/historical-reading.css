@@ -1,17 +1,20 @@
 /* historical-reading.css: UI-12/UI-13 historical reading view and timeline (agent F). Loaded after ux.css from templates/base.html. */
 
 /* ====================================================================
- * UI-12 — `/ajalugu/<pk>/` reads as a document
+ * UI-12 — `/ajalugu/<pk>/` reads as a document (redesign of 18.11.2026)
  *
- * One column of reasonable width; the page's text at a reading measure; the
- * source's own headings, dated notes and indentation; one compact line per
- * file. #603's E-03 wrapping (app.css, `.casefile`, `.casefile__text`,
- * `.sourcepage .filelist__item`) is kept as it is: every rule here narrows or
- * spaces, none lets a long token stop wrapping.
+ * Two columns from 1100px: the page itself, and beside it a rail that stays
+ * in view — the page's contents list, its captured version and the shared
+ * dossier's status. Narrower, the rail is a block above the page. The page is
+ * one section per dated note with the note's day in a gutter beside it; files
+ * are one-line rows, gathered where they stood. #603's E-03 wrapping (app.css,
+ * `.casefile`, `.casefile__text`, `.sourcepage .filelist__item`) is kept as
+ * it is: every rule here narrows or spaces, none lets a long token stop
+ * wrapping, and nothing is shortened with an ellipsis.
  * ==================================================================== */
 
 .sourcepage {
-  max-width: 64rem;
+  max-width: 78rem;
 }
 
 .sourcepage__back {
@@ -19,6 +22,96 @@
   gap: var(--spacing-1);
   align-items: baseline;
   overflow-wrap: anywhere;
+}
+
+.sourcepage__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-4);
+}
+
+.sourcepage__rail,
+.sourcepage__main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: var(--spacing-3);
+  min-width: 0;
+}
+
+/* The rail's blocks are spaced by the rail, not by their own margins. */
+.sourcepage__rail > * {
+  margin: 0;
+  max-width: none;
+}
+
+/* The contents list as a list: only where the rail stands beside the page. */
+.sourcerail__toc {
+  display: none;
+}
+
+.sourcerail__toc .sectionlabel {
+  padding: 0 0 var(--spacing-1);
+}
+
+.sourcerail__list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sourcerail__list a {
+  display: grid;
+  gap: var(--spacing-05);
+  padding: var(--spacing-15) var(--spacing-25);
+  border-left: 2px solid var(--border-subtle);
+  font-size: var(--typography-size-sm);
+  line-height: 1.35;
+  color: var(--text-secondary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.sourcerail__list a:hover {
+  border-left-color: var(--accent-primary);
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.sourcerail__list .sourcetoc__date {
+  font-size: var(--typography-size-meta-sm);
+  color: var(--text-muted);
+}
+
+@media (min-width: 1100px) {
+  .sourcepage__layout {
+    grid-template-columns: minmax(0, 1fr) 19rem;
+    gap: var(--spacing-6);
+    align-items: start;
+  }
+
+  .sourcepage__main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .sourcepage__rail {
+    grid-column: 2;
+    grid-row: 1;
+    position: sticky;
+    top: calc(var(--layout-topbar) + var(--spacing-4));
+    max-height: calc(100vh - var(--layout-topbar) - var(--spacing-8));
+    overflow-y: auto;
+  }
+
+  .sourcerail__toc {
+    display: block;
+  }
+
+  .sourcepage__rail .sourcetoc {
+    display: none;
+  }
 }
 
 /* E-04 (prepared on fix/aud-w4 at 6d0f3290, folded in here): the source
@@ -36,16 +129,79 @@
   padding-right: 0;
 }
 
-/* Reading measure: prose stops at ~72 characters; files and lists line up
- * with it. */
-.sourcepage .casefile {
-  max-width: 72ch;
-  gap: var(--spacing-2);
+/* The reading card clips nothing (its text wraps, E-03), so a note's day can
+ * stay in view beside the note while it scrolls. */
+.sourcepage .sourcepage__reading {
+  overflow: visible;
 }
 
-.sourcepage .casefile__text {
-  font-size: var(--typography-size-base);
+.sourcepage .casefile {
+  gap: 0;
+  margin-top: 0;
+}
+
+/* One section per dated note: its day in the gutter, the note beside it. */
+.casenote {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-15) var(--spacing-4);
+  padding: var(--spacing-4) 0;
+}
+
+.casenote:first-child {
+  padding-top: var(--spacing-1);
+}
+
+.casenote:last-child {
+  padding-bottom: var(--spacing-1);
+}
+
+.casenote + .casenote {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.casenote__date {
+  margin: 0;
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
   line-height: 1.6;
+  color: var(--accent-link);
+}
+
+.casenote__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--spacing-25);
+  min-width: 0;
+  max-width: 46rem;
+}
+
+/* The gutter is drawn only on a page that has a dated note: a page with none
+ * reads from the card's own edge. */
+@media (min-width: 720px) {
+  .casefile:has(.casenote--dated) .casenote {
+    grid-template-columns: 5.5rem minmax(0, 1fr);
+  }
+
+  .casenote__date {
+    grid-column: 1;
+    align-self: start;
+    position: sticky;
+    top: calc(var(--layout-topbar) + var(--spacing-3));
+  }
+
+  .casefile:has(.casenote--dated) .casenote__body {
+    grid-column: 2;
+  }
+}
+
+/* Reading measure: prose stops at ~72 characters. */
+.sourcepage .casefile__text {
+  max-width: 72ch;
+  font-size: var(--typography-size-lg);
+  line-height: 1.6;
+  color: var(--text-body);
 }
 
 .sourcepage .casefile__text a {
@@ -54,18 +210,39 @@
 
 /* A source heading: a line the outline nests material under. */
 .casefile__heading {
-  margin: var(--spacing-3) 0 0;
-  font-size: var(--typography-size-base);
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--typography-size-lg);
   font-weight: var(--typography-weight-semibold);
   line-height: 1.4;
   color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
-/* The first line of a dated note starts a section of the page. */
-.casefile__text--dated {
-  margin-top: var(--spacing-3);
+/* The first line of a dated note. */
+.sourcepage .casefile__text--dated {
   color: var(--text-primary);
+}
+
+/* One short line directly above a file: what the file is called. */
+.sourcepage .casefile__text--label {
+  margin-bottom: calc(-1 * var(--spacing-15));
+  font-size: var(--typography-size-sm);
+  font-weight: var(--typography-weight-semibold);
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+/* A divider somebody typed as a row of dashes. Where it closes a section, the
+ * section's own border is that line. */
+.casefile__rule {
+  width: 100%;
+  margin: var(--spacing-1) 0;
+  border: 0;
+  border-top: 1px dashed var(--border-default);
+}
+
+.casenote__body > .casefile__rule:last-child {
+  display: none;
 }
 
 .casefile__list {
@@ -97,39 +274,106 @@
   margin-left: calc(var(--spacing-8) * 2);
 }
 
-/* One compact line per file: type, name, size, OneNote day, action. */
+/* The files that stood together: one bordered group, one line per file —
+ * type, name, then size and OneNote day at the right edge. */
+.casefiles {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 0;
+  margin-bottom: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--surface-panel);
+}
+
 .sourcepage .casefile__file {
-  gap: var(--spacing-1) var(--spacing-2);
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: var(--spacing-05) var(--spacing-25);
+  margin: 0;
   padding: var(--spacing-15) var(--spacing-3);
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.sourcepage .casefile__file + .casefile__file {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.sourcepage .casefile__file:hover {
+  background: var(--surface-hover);
 }
 
 .casefile__type {
-  flex: none;
+  justify-self: start;
   padding: 0 var(--spacing-15);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
   font-size: var(--typography-size-chip);
   font-weight: var(--typography-weight-semibold);
   letter-spacing: 0.03em;
+  text-transform: uppercase;
   color: var(--text-secondary);
 }
 
 .sourcepage .casefile__name {
+  grid-column: 2;
   min-width: 0;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
+}
+
+.sourcepage a.casefile__name {
+  color: var(--accent-link);
+  text-decoration: none;
+}
+
+.sourcepage a.casefile__name:hover {
+  text-decoration: underline;
+}
+
+.sourcepage .casefile__name--withheld {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+}
+
+.sourcepage .casefile__meta,
+.sourcepage .casefile__hint {
+  grid-column: 2;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (min-width: 720px) {
+  .sourcepage .casefile__file {
+    grid-template-columns: 3.25rem minmax(0, 1fr) fit-content(55%);
+  }
+
+  .sourcepage .casefile__meta {
+    grid-column: 3;
+    text-align: right;
+  }
+
+  .sourcepage .casefile__hint {
+    grid-column: 2 / -1;
+  }
 }
 
 /* What the page says about its own files, never text from the source. */
 .casefile__notice {
-  margin: var(--spacing-3) 0 0;
+  margin: 0;
   font-size: var(--typography-size-meta);
   font-style: italic;
   color: var(--text-muted);
 }
 
-/* Where a link lands: «OneNote'i koopia» or a contents entry. */
+/* Where a link lands: «OneNote'i koopia» or a contents entry — clear of the
+ * fixed top bar. */
 .casefile [id] {
-  scroll-margin-top: var(--spacing-8);
+  scroll-margin-top: calc(var(--layout-topbar) + var(--spacing-4));
 }
 
 .casefile [id]:target {
@@ -151,11 +395,8 @@
   overflow-wrap: anywhere;
 }
 
-/* The page's own contents: headings and dated notes, one line each. */
-.sourcetoc {
-  margin: var(--spacing-3) 0;
-}
-
+/* The contents list as a closed disclosure: where the rail stands above the
+ * page. Headings and dated notes, one line each. */
 .sourcetoc__list {
   display: grid;
   gap: var(--spacing-1);

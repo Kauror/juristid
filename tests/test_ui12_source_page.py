@@ -74,7 +74,9 @@ def test_decoded_markup_is_still_escaped_by_the_page():
             "matter": SimpleNamespace(pk=uuid.uuid4(), title="Näidisteema"),
             "link": SimpleNamespace(pk=uuid.uuid4()),
             "page": page,
-            "blocks": reading.reading_entries(_rendered_blocks(page, {}, {}, readable=set())),
+            "sections": reading.sections(
+                reading.reading_entries(_rendered_blocks(page, {}, {}, readable=set()))
+            ),
             "dossier": SimpleNamespace(shared=False),
         },
     )
@@ -143,8 +145,94 @@ def test_list_items_are_one_list_until_something_else_comes():
     other = {"kind": "text", "list_item": False, "text": "b"}
     file = {"kind": "file"}
     entries = reading.reading_entries([item, item, file, item, other])
-    assert [entry["kind"] for entry in entries] == ["list", "file", "list", "text"]
+    assert [entry["kind"] for entry in entries] == ["list", "files", "list", "text"]
     assert len(entries[0]["items"]) == 2 and len(entries[2]["items"]) == 1
+
+
+def test_files_that_stood_together_are_one_group_and_every_file_keeps_its_row():
+    def file(n, depth="casefile__block--d0"):
+        return {"kind": "file", "anchor": f"plokk-{n}", "depth_class": depth}
+
+    text = {"kind": "text", "text": "Vahetekst lõpeb punktiga."}
+    blocks = [file(1), file(2), file(3, "casefile__block--d1"), text, file(5)]
+    entries = reading.reading_entries(blocks)
+    assert [entry["kind"] for entry in entries] == ["files", "files", "text", "files"]
+    # A group is closed by other material and by a change of indentation.
+    groups = [[item["anchor"] for item in entry["items"]] for entry in entries if "items" in entry]
+    assert groups == [["plokk-1", "plokk-2"], ["plokk-3"], ["plokk-5"]]
+    assert entries[1]["depth_class"] == "casefile__block--d1"
+    assert "label" not in entries[2], "a sentence read as a file's label"
+
+
+@pytest.mark.parametrize(
+    ("text", "extra", "label"),
+    [
+        ("Seletuskiri", {}, True),
+        ("Teiste arvamused:", {}, True),
+        ("Koda ei esitanud märkusi.", {}, False),
+        ("Kas see on lõplik?", {}, False),
+        ("https://eelnoud.example.invalid/x", {}, False),
+        ("Kaks\nrida", {}, False),
+        ("x" * 61, {}, False),
+        ("Taust", {"heading": True}, False),
+        ("12.03.2024 - saadetud", {"dated": {"date": "12.03.2024"}}, False),
+        ("loendi rida", {"list_item": True}, False),
+    ],
+)
+def test_only_one_short_line_directly_above_a_file_is_its_label(text, extra, label):
+    block = {"kind": "text", "text": text, **extra}
+    before = dict(block)
+    entries = reading.reading_entries([block, {"kind": "file"}])
+    assert block == before, "the rendered block changed in place"
+    labelled = [entry for entry in entries if entry.get("label")]
+    assert bool(labelled) is label
+    # …and never when something other than a file follows it.
+    apart = reading.reading_entries([block, {"kind": "text", "text": "muu"}, {"kind": "file"}])
+    assert not apart[0].get("label") and not (apart[0].get("items") or [{}])[0].get("label")
+
+
+@pytest.mark.parametrize(
+    ("text", "rule"),
+    [
+        ("-----", True),
+        ("- - - - -", True),
+        ("=====", True),
+        ("—————", True),
+        ("***", True),
+        ("--", False),
+        ("-- vt allpool --", False),
+        ("", False),
+    ],
+)
+def test_a_typed_divider_is_a_rule_and_keeps_its_anchor(text, rule):
+    assert reading.is_rule(text) is rule
+    entries = reading.reading_entries([{"kind": "text", "text": text, "anchor": "plokk-7"}])
+    assert (entries[0]["kind"] == "rule") is rule
+    assert entries[0]["anchor"] == "plokk-7"
+
+
+def test_sections_follow_the_dated_notes_and_lose_nothing():
+    def text(n, dated=None):
+        return {"kind": "text", "text": f"t{n}", "anchor": f"plokk-{n}", "dated": dated}
+
+    first, second = {"date": "12.03.2024", "iso": "2024-03-12"}, {"date": "05.2024", "iso": ""}
+    entries = [
+        text(0),
+        {"kind": "files", "items": [{"kind": "file"}]},
+        text(2, first),
+        text(3),
+        text(4, second),
+        {"kind": "notice", "text": "…"},
+        {"kind": "files", "items": [{"kind": "file"}]},
+    ]
+    made = reading.sections(entries)
+    assert [section["dated"] for section in made] == [None, first, second, None]
+    assert [len(section["blocks"]) for section in made] == [2, 2, 1, 2]
+    # Every entry is in exactly one section, in the order given.
+    assert [block for section in made for block in section["blocks"]] == entries
+    assert reading.sections([]) == []
+    # A page with no dated note is one section with no day.
+    assert [s["dated"] for s in reading.sections([text(0), text(1)])] == [None]
 
 
 def test_contents_list_only_the_pages_own_headings_and_dated_notes():

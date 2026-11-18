@@ -36,6 +36,8 @@ import pytest
 from django.conf import settings
 from django.template.loader import render_to_string
 
+from app.legacy_import import historical_reading as reading
+
 pytestmark = pytest.mark.e2e
 
 STATIC = Path(settings.BASE_DIR) / "static"
@@ -173,7 +175,7 @@ def _source_page_html(*, shared: bool) -> str:
             "matter": SimpleNamespace(pk=pk, title="Näidisseaduse eelnõu"),
             "link": SimpleNamespace(pk=pk, get_match_method_display="Käsitsi seotud"),
             "page": page,
-            "blocks": blocks,
+            "sections": reading.sections(reading.reading_entries(blocks)),
             "page_links": [{"url": LONG_URL, "text": UNBROKEN}],
             "other_matters": [],
             "dossier": dossier,

@@ -157,7 +157,7 @@ def source_page(request: HttpRequest, pk: Any) -> HttpResponse:
             "latest_reading": readings[-1],
             "version_summary": _version_summary(shown, changes, files, blocks),
             "removed_blocks": changes.removed if changes is not None else (),
-            "blocks": reading.reading_entries(blocks),
+            "sections": reading.sections(reading.reading_entries(blocks)),
             "contents": reading.contents(blocks),
             "file_summary": file_summary(status),
             "unplaced_files": any(block["kind"] == "notice" for block in blocks),

@@ -10,11 +10,15 @@
   attachment list at the bottom would be easier to build and would throw away
   the only thing OneNote was ever good at (Stage-2D brief 22, 31).
 
-  Reading order, top to bottom: the way back to the Teema, one heading, one
-  line of source facts, the shared dossier's status said once, the page's own
-  contents list (its headings and dated notes, when it has enough of them),
-  the page itself, and last «Allikas» with every identifier, match method and
-  count behind «Tehnilised andmed».
+  Layout (redesign of 18.11.2026): the way back to the Teema and one heading
+  with one line of source facts, then two columns. The reading column holds
+  the page itself — one section per dated note, its day beside it, files as
+  one-line rows gathered where they stood — and after it the links and
+  «Allikas» with every identifier behind «Tehnilised andmed». The rail beside
+  it stays in view while the page scrolls: the page's own contents list (its
+  headings and dated notes), which captured version this is, and the shared
+  dossier's status said once. Below 1100px the rail is a block above the page
+  and the contents list is a closed disclosure.
 
   The view decided everything (app/legacy_import/historical_views.py,
   app/legacy_import/historical_reading.py). This template renders and makes no
@@ -55,6 +59,37 @@
       {% if file_summary %}· {{ file_summary }}{% endif %}
     </p>
   </header>
+
+  <div class="sourcepage__layout">
+  <aside class="sourcepage__rail" aria-label="Lehe ülevaade">
+  {% if contents %}
+    {% comment %}
+      The page's own headings and dated notes, nothing else: no heading is
+      written that the page did not have, and nothing is hidden — every entry
+      only jumps to its place in the full page. Drawn twice and shown once:
+      the list itself where the rail stands beside the page, a closed
+      disclosure of the same list where it stands above it
+      (`historical-reading.css` shows exactly one of the two at any width).
+    {% endcomment %}
+    <nav class="sourcerail__toc" aria-labelledby="sisukord-heading">
+      <h2 class="sectionlabel" id="sisukord-heading">Sisukord <span class="sectionlabel__count">{{ contents|length }}</span></h2>
+      <ol class="sourcerail__list">
+        {% for entry in contents %}
+          <li><a href="#{{ entry.anchor }}">{% if entry.date %}<time class="sourcetoc__date" datetime="{{ entry.iso }}">{{ entry.date }}</time> {% endif %}<span>{{ entry.label }}</span></a></li>
+        {% endfor %}
+      </ol>
+    </nav>
+    <details class="disclosure sourcetoc">
+      <summary>Lehe sisukord <span class="sectionlabel__count">{{ contents|length }}</span></summary>
+      <nav aria-label="Lehe sisukord">
+        <ol class="sourcetoc__list">
+          {% for entry in contents %}
+            <li><a href="#{{ entry.anchor }}">{% if entry.date %}<time class="sourcetoc__date" datetime="{{ entry.iso }}">{{ entry.date }}</time> {% endif %}{{ entry.label }}</a></li>
+          {% endfor %}
+        </ol>
+      </nav>
+    </details>
+  {% endif %}
 
   {% if readings %}
     {% comment %}
@@ -164,6 +199,9 @@
     </p>
   {% endif %}
 
+  </aside>
+
+  <div class="sourcepage__main">
   {% if page.reading_order_ambiguous %}
     {% comment %}
       Said out loud rather than smoothed over. OneNote is a free-form canvas,
@@ -176,57 +214,54 @@
     </p>
   {% endif %}
 
-  {% if contents %}
-    {% comment %}
-      The page's own headings and dated notes, nothing else: no heading is
-      written that the page did not have, and nothing is hidden — every entry
-      only jumps to its place in the full page below.
-    {% endcomment %}
-    <details class="disclosure sourcetoc">
-      <summary>Lehe sisukord <span class="sectionlabel__count">{{ contents|length }}</span></summary>
-      <nav aria-label="Lehe sisukord">
-        <ol class="sourcetoc__list">
-          {% for entry in contents %}
-            <li><a href="#{{ entry.anchor }}">{% if entry.date %}<time class="sourcetoc__date" datetime="{{ entry.iso }}">{{ entry.date }}</time> {% endif %}{{ entry.label }}</a></li>
-          {% endfor %}
-        </ol>
-      </nav>
-    </details>
-  {% endif %}
-
-  <section class="card" aria-labelledby="sisu-heading">
+  <section class="card sourcepage__reading" aria-labelledby="sisu-heading">
     <h2 class="sectionlabel" id="sisu-heading">Lehe sisu</h2>
 
-    {% if blocks %}
+    {% if sections %}
       <div class="casefile">
-        {% for block in blocks %}
+        {% for section in sections %}
+        {% comment %}
+          One section per dated note, its day beside it (the day the
+          chronology reads from the note's own first line, never a capture or
+          import time); what stands before the first dated note has none. The
+          note's first line keeps its own words and its anchor.
+        {% endcomment %}
+        <div class="casenote{% if section.dated %} casenote--dated{% endif %}">
+          {% if section.dated %}
+            <p class="casenote__date"><time datetime="{{ section.dated.iso }}">{{ section.dated.date }}</time></p>
+          {% endif %}
+          <div class="casenote__body">
+        {% for block in section.blocks %}
           {% if block.kind == "list" %}
             <ul class="casefile__list">
               {% for item in block.items %}
                 <li{% if item.anchor %} id="{{ item.anchor }}"{% endif %} class="casefile__text casefile__text--item {{ item.depth_class }}">{% if item.parts %}{% for piece, href in item.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ item.text }}{% endif %}{% if item.change == "added" %} <span class="statechip statechip--new">uus</span>{% elif item.change == "changed" %} <span class="statechip statechip--new">muudetud</span>{% endif %}</li>
               {% endfor %}
             </ul>
-          {% elif block.kind == "text" and block.list_item %}
-            <ul class="casefile__list"><li class="casefile__text casefile__text--item">{{ block.text }}</li></ul>
+          {% elif block.kind == "rule" %}
+            <hr{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__rule">
           {% elif block.kind == "text" and block.heading %}
             <h3{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__heading {{ block.depth_class }}">{{ block.text }}{% if block.change == "added" %} <span class="statechip statechip--new">uus</span>{% elif block.change == "changed" %} <span class="statechip statechip--new">muudetud</span>{% endif %}</h3>
           {% elif block.kind == "text" %}
-            <p{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__text {{ block.depth_class }}{% if block.dated %} casefile__text--dated{% endif %}">{% if block.parts %}{% for piece, href in block.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ block.text }}{% endif %}{% if block.change == "added" %} <span class="statechip statechip--new">uus</span>{% elif block.change == "changed" %} <span class="statechip statechip--new">muudetud</span>{% endif %}</p>
+            <p{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__text {{ block.depth_class }}{% if block.dated %} casefile__text--dated{% endif %}{% if block.label %} casefile__text--label{% endif %}">{% if block.parts %}{% for piece, href in block.parts %}{% if href %}<a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ piece }}</a>{% else %}{{ piece }}{% endif %}{% endfor %}{% else %}{{ block.text }}{% endif %}{% if block.change == "added" %} <span class="statechip statechip--new">uus</span>{% elif block.change == "changed" %} <span class="statechip statechip--new">muudetud</span>{% endif %}</p>
           {% elif block.kind == "notice" %}
             <p class="casefile__notice">{{ block.text }}</p>
-          {% else %}
+          {% elif block.kind == "files" %}
             {% comment %}
-              One compact line per file: its type, its name, its size, the
-              day it was added to OneNote when the source has one, and the one
-              action the existing routes allow. Its state is said only when it
-              is not the dossier's common state (`block.quiet`), because a
-              state on every line is a state on no line. Six attachments in the
-              real corpus are zero bytes in OneNote itself; showing those as
-              "Kopeerimisel" for ever would be the page lying about its own
-              material.
+              The files that stood together, as one group of one-line rows:
+              type, name, then size and the day the file was added to OneNote
+              when the source has one. The name is the action — it opens or
+              downloads the file wherever the existing routes allow it. A
+              file's state is said only when it is not the dossier's common
+              state (`file.quiet`), because a state on every line is a state
+              on no line. Six attachments in the real corpus are zero bytes in
+              OneNote itself; showing those as "Kopeerimisel" for ever would
+              be the page lying about its own material.
             {% endcomment %}
-            <div{% if block.anchor %} id="{{ block.anchor }}"{% endif %} class="casefile__file {{ block.depth_class }}">
-              {% if block.state == "withheld" %}
+            <ul class="casefiles {{ block.depth_class }}">
+            {% for file in block.items %}
+            <li{% if file.anchor %} id="{{ file.anchor }}"{% endif %} class="casefile__file">
+              {% if file.state == "withheld" %}
                 {% comment %}
                   A file whose own visibility is stricter than this page's.
                   Named by nothing — not its filename, size or id — because each
@@ -234,70 +269,83 @@
                 {% endcomment %}
                 <span class="casefile__name casefile__name--withheld">Fail, mida selles kasutajavaates ei kuvata</span>
               {% else %}
-                {% if block.type %}<span class="casefile__type">{{ block.type }}</span>{% endif %}
-                {% if block.state == "imported" %}
+                <span class="casefile__type">{{ file.type|default:"fail" }}</span>
+                {% if file.state == "imported" %}
                   {% comment %}
                     The filename does the useful thing. A PDF opens, a Word file
                     saves — nobody wants an intermediate page between them and the
                     material they clicked on. Document detail is still one link
                     away for provenance (Stage-2E.1 brief 11, 13).
                   {% endcomment %}
-                  {% if block.opens_inline %}
+                  {% if file.opens_inline %}
                     <a class="casefile__name"
-                       href="{% url 'documents:open' pk=block.version.pk %}"
-                       target="_blank" rel="noopener noreferrer">{{ block.filename }}<span
+                       href="{% url 'documents:open' pk=file.version.pk %}"
+                       target="_blank" rel="noopener noreferrer">{{ file.filename }}<span
                        class="visually-hidden"> — avaneb uues aknas</span></a>
                   {% else %}
                     <a class="casefile__name"
-                       href="{% url 'documents:download' pk=block.version.pk %}"
-                       download>{{ block.filename }}</a>
+                       href="{% url 'documents:download' pk=file.version.pk %}"
+                       download>{{ file.filename }}</a>
                   {% endif %}
+                {% elif file.original_pk %}
+                  {% comment %}
+                    A held file's sealed original (docs/adr/0208): the name
+                    downloads it, and its accessible name says so.
+                  {% endcomment %}
+                  <a class="casefile__name"
+                     href="{% url 'legacy_import:source_original' pk=link.pk resource_pk=file.original_pk %}"
+                     title="Laadi alla (allikas)"
+                     aria-label="{{ file.filename }} — laadi alla (allikas)"
+                     download>{{ file.filename }}</a>
                 {% else %}
-                  <span class="casefile__name">{{ block.filename }}</span>
+                  <span class="casefile__name">{{ file.filename }}</span>
                 {% endif %}
                 <span class="casefile__meta">
-                  {% if block.state == "empty" %}Tühi fail{% elif block.later %}{{ block.version.size_bytes|filesizeformat }}{% else %}{{ block.size_bytes|filesizeformat }}{% endif %}{% if block.added_known %} · lisatud <time datetime="{{ block.added_at|date:'Y-m-d' }}">{{ block.added_at|date:"d.m.Y" }}</time>{% endif %}{% if block.later %} · versioon {{ block.later.number }}{% if block.later.modified_at %}, OneNote'is muudetud <time datetime="{{ block.later.modified_at|date:'Y-m-d' }}">{{ block.later.modified_at|date:"d.m.Y" }}</time>{% endif %}{% endif %}{% if block.change == "added" %} · <span class="statechip statechip--new">Uus selles versioonis</span>{% elif block.change == "versioned" %} · <span class="statechip statechip--new">Uus versioon selles hõives</span>{% endif %}
-                  {% if block.state == "imported" %}
-                    {% if block.opens_inline %}
-                      · <a href="{% url 'documents:download' pk=block.version.pk %}">Laadi alla</a>
+                  {% if file.state == "empty" %}Tühi fail{% elif file.later %}{{ file.version.size_bytes|filesizeformat }}{% else %}{{ file.size_bytes|filesizeformat }}{% endif %}{% if file.added_known %} · <time datetime="{{ file.added_at|date:'Y-m-d' }}" title="Lisatud OneNote'i">{{ file.added_at|date:"d.m.Y" }}</time>{% endif %}{% if file.later %} · versioon {{ file.later.number }}{% if file.later.modified_at %}, OneNote'is muudetud <time datetime="{{ file.later.modified_at|date:'Y-m-d' }}">{{ file.later.modified_at|date:"d.m.Y" }}</time>{% endif %}{% endif %}{% if file.change == "added" %} · <span class="statechip statechip--new">Uus selles versioonis</span>{% elif file.change == "versioned" %} · <span class="statechip statechip--new">Uus versioon selles hõives</span>{% endif %}
+                  {% if file.state == "imported" %}
+                    {% if file.opens_inline %}
+                      · <a href="{% url 'documents:download' pk=file.version.pk %}">Laadi alla</a>
                     {% endif %}
                     · <a class="quietlink"
-                         href="{% url 'documents:document_detail' pk=block.document.pk %}">Päritolu</a>
-                  {% elif block.original_pk %}
-                    · <a href="{% url 'legacy_import:source_original' pk=link.pk resource_pk=block.original_pk %}" download>Laadi alla (allikas)</a>
+                         href="{% url 'documents:document_detail' pk=file.document.pk %}">Päritolu</a>
                   {% endif %}
                   {% comment %}
                     Held is not failed (ONENOTE-UI-003). A file the import kept
                     back on purpose reads as waiting for a person, and only a
                     copy that actually failed reads as a problem.
                   {% endcomment %}
-                  {% if block.quiet %}
-                  {% elif block.state == "empty" %}
+                  {% if file.quiet %}
+                  {% elif file.state == "empty" %}
                     · <span class="statechip">OneNote'is oli see fail tühi</span>
-                  {% elif block.state == "held_shared" %}
+                  {% elif file.state == "held_shared" %}
                     · <span class="statechip statechip--waiting">Ootab teemaga seostamist</span>
-                  {% elif block.state == "held_review" %}
+                  {% elif file.state == "held_review" %}
                     · <span class="statechip statechip--waiting">Ootab ülevaatust</span>
-                  {% elif block.state == "held_too_large" %}
+                  {% elif file.state == "held_too_large" %}
                     · <span class="statechip statechip--waiting">Suurem kui tõendi ülempiir</span>
-                  {% elif block.state == "superseded" %}
+                  {% elif file.state == "superseded" %}
                     · <span class="statechip">Varasema hõive kirje</span>
-                  {% elif block.state == "not_imported" %}
+                  {% elif file.state == "not_imported" %}
                     · <span class="statechip">Ei imporditud</span>
-                  {% elif block.state == "unavailable" %}
+                  {% elif file.state == "unavailable" %}
                     · <span class="statechip statechip--problem">Kopeerimine ebaõnnestus</span>
-                  {% elif block.state == "pending" %}
+                  {% elif file.state == "pending" %}
                     · <span class="statechip statechip--waiting">Kopeerimisel</span>
                   {% endif %}
                 </span>
-                {% if not block.quiet and block.state == "held_shared" %}
+                {% if not file.quiet and file.state == "held_shared" %}
                   <span class="casefile__hint">Leht on seotud mitme teemaga; faili kuuluvuse otsustab inimene. Originaal on lähtekorpuses alles.</span>
-                {% elif block.state == "held_too_large" %}
+                {% elif file.state == "held_too_large" %}
                   <span class="casefile__hint">Originaal on lähtekorpuses alles.</span>
                 {% endif %}
               {% endif %}
-            </div>
+            </li>
+            {% endfor %}
+            </ul>
           {% endif %}
+        {% endfor %}
+          </div>
+        </div>
         {% endfor %}
       </div>
     {% else %}
@@ -451,5 +499,7 @@
       </p>
     </details>
   </section>
+  </div>
+  </div>
 </div>
 {% endblock %}
