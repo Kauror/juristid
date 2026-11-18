@@ -105,9 +105,11 @@ def test_a_fragment_jump_lands_below_the_bar_without_a_doubled_gap(page, base_ur
     page.set_viewport_size(DESKTOP)
     page.goto(f"{base_url}/uuendused/")
     page.wait_for_load_state("networkidle")
-    days = page.locator("details.relnotes__day")
+    # Top-level rows only: a day folded inside a shut month row has no box to
+    # scroll to, and a month row carries the same 8px margin as a day.
+    days = page.locator(".relnotes > details")
     if days.count() < 3:
-        pytest.skip("not enough release-note days to scroll to one")
+        pytest.skip("not enough release-note rows to scroll to one")
     # The third day: far enough down to need a scroll, with enough page under
     # it that the browser can bring it to the top.
     target = days.nth(2)

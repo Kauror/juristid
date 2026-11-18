@@ -11022,6 +11022,26 @@ section:has(.pw-more[open]) tbody.uxextra {
   scroll-margin-top: 8px;
 }
 
+/* A finished month folded under one row (owner's review 2026-11-18). Its days
+   sit indented under it, each still its own accordion; the last day's bottom
+   rule is the month's own, so it is not drawn twice. */
+.relnotes__month {
+  scroll-margin-top: 8px;
+}
+
+.relnotes__monthtitle {
+  text-transform: none;
+}
+
+.relnotes__monthdays {
+  padding-left: var(--spacing-8);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.relnotes__monthdays > .relnotes__day:last-child {
+  border-bottom: 0;
+}
+
 /* Prose, not table cells. `ul` carries its inset and bottom margin from
    base.css; what it cannot know is that these items are sentences, which want
    the body line height and a paragraph measure rather than the accordion
@@ -15331,8 +15351,8 @@ a.jcal__daynum {
   font-size: var(--typography-size-meta-sm);
 }
 
-/* The department calendar's compact entry: person — Teema, then what the date
-   means. Not one big link: only the Teema is a link. */
+/* The department calendar's compact entry: one line, person — Teema (owner's
+   review 2026-11-18: no second line). Not one big link: only the Teema is a link. */
 .wcal__event--compact {
   display: flex;
   flex-direction: column;
@@ -15371,11 +15391,6 @@ a.jcal__daynum {
 
 .wcal__event--compact .wcal__eventmatter:hover {
   text-decoration: underline;
-}
-
-.wcal__event--compact .wcal__eventwhat {
-  color: var(--text-muted);
-  font-size: var(--typography-size-meta-sm);
 }
 
 .wcal__status.is-overdue {

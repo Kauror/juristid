@@ -99,6 +99,68 @@ class ReleaseDay:
         return f"{self.count} uuendus" if self.count == 1 else f"{self.count} uuendust"
 
 
+@dataclass(frozen=True)
+class ReleaseMonth:
+    """A finished month's days, folded under one row (owner's review 2026-11-18).
+
+    The day list grows by a row for every release day; once a newer month has
+    begun, the older month's days live under one collapsible month row so the
+    page stays short. The days inside are the same `ReleaseDay`s, unchanged.
+    """
+
+    year: int
+    month: int
+    days: tuple[ReleaseDay, ...]
+
+    @property
+    def heading(self) -> str:
+        """``Oktoober 2026`` — capitalised, because it opens the row."""
+        name = ESTONIAN_MONTHS[self.month - 1]
+        return f"{name[:1].upper()}{name[1:]} {self.year}"
+
+    @property
+    def count(self) -> int:
+        return sum(day.count for day in self.days)
+
+    @property
+    def count_label(self) -> str:
+        return f"{self.count} uuendus" if self.count == 1 else f"{self.count} uuendust"
+
+
+@dataclass(frozen=True)
+class ReleaseSections:
+    """The page's two parts: the newest month's days, then older months."""
+
+    current: tuple[ReleaseDay, ...]
+    months: tuple[ReleaseMonth, ...]
+
+
+def release_sections(days: tuple[ReleaseDay, ...]) -> ReleaseSections:
+    """Split newest-first days into the newest month's days and older months.
+
+    "Current month" is the month of the **newest note**, not today's date. So a
+    month folds only once a note from a later month exists: the page never
+    changes on its own at midnight on the 1st, the newest note is always a
+    top-level day (and the open one), and the rendering depends on the file
+    alone — the same reason the page needs no clock and no database.
+    """
+    ordered = tuple(sorted(days, key=lambda day: day.date, reverse=True))
+    if not ordered:
+        return ReleaseSections(current=(), months=())
+    newest = ordered[0].date
+    current = tuple(
+        day for day in ordered if (day.date.year, day.date.month) == (newest.year, newest.month)
+    )
+    grouped: dict[tuple[int, int], list[ReleaseDay]] = {}
+    for day in ordered[len(current) :]:
+        grouped.setdefault((day.date.year, day.date.month), []).append(day)
+    months = tuple(
+        ReleaseMonth(year=year, month=month, days=tuple(month_days))
+        for (year, month), month_days in grouped.items()
+    )
+    return ReleaseSections(current=current, months=months)
+
+
 def release_notes_path() -> Path:
     return Path(settings.BASE_DIR) / "docs" / "release-notes" / "uuendused.toml"
 

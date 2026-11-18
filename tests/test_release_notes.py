@@ -31,6 +31,7 @@ from app.core.release_notes import (
     load_release_notes,
     parse_release_notes,
     release_notes_path,
+    release_sections,
 )
 from tests.gate import apply_shared_gate
 
@@ -75,7 +76,7 @@ def test_the_page_renders_every_committed_day(client: Client) -> None:
         # As its own element: `1. september 2026` is a substring of
         # `11. september 2026`, so a bare `in` would let the second day stand in
         # for the first (see `_heading_at`).
-        assert f'<h2 class="accordion__title">{day.heading}</h2>' in body, day.heading
+        _heading_at(body, day.heading)
 
 
 def test_the_newest_day_comes_first(client: Client) -> None:
@@ -94,7 +95,7 @@ def test_the_newest_day_comes_first(client: Client) -> None:
 
 def test_the_newest_day_is_open_and_the_others_are_shut(client: Client) -> None:
     body = client.get(URL).content.decode()
-    opened = re.findall(r"<details class=\"accordion relnotes__day\"( open)?>", body)
+    opened = re.findall(r"<details class=\"accordion relnotes__(?:day|month)\"( open)?>", body)
     assert opened, "no day accordions were rendered"
     assert opened[0] == " open"
     assert set(opened[1:]) <= {""}
@@ -164,9 +165,81 @@ def test_a_day_with_several_changes_holds_them_all_inside_its_own_accordion() ->
 
 def test_no_date_gets_a_second_accordion(client: Client) -> None:
     body = client.get(URL).content.decode()
-    headings = re.findall(r"<h2 class=\"accordion__title\">([^<]+)</h2>", body)
+    headings = re.findall(r"<h[23] class=\"accordion__title\">([^<]+)</h[23]>", body)
     assert headings
     assert len(headings) == len(set(headings))
+
+
+# ---------------------------------------------------------------------------
+# Finished months fold under one row (owner's review 2026-11-18)
+# ---------------------------------------------------------------------------
+
+THREE_MONTHS = """
+[[day]]
+date = 2026-11-18
+changes = ["Novembri teine"]
+
+[[day]]
+date = 2026-11-03
+changes = ["Novembri esimene"]
+
+[[day]]
+date = 2026-10-30
+changes = ["Oktoobri viimane", "Oktoobri teine asi"]
+
+[[day]]
+date = 2026-10-01
+changes = ["Oktoobri esimene"]
+
+[[day]]
+date = 2026-09-09
+changes = ["Septembri oma"]
+"""
+
+
+def test_the_newest_notes_month_stays_a_list_of_days() -> None:
+    sections = release_sections(parse_release_notes(THREE_MONTHS))
+    assert [day.date for day in sections.current] == [date(2026, 11, 18), date(2026, 11, 3)]
+
+
+def test_every_earlier_month_is_one_row_holding_its_days_newest_first() -> None:
+    sections = release_sections(parse_release_notes(THREE_MONTHS))
+    assert [(m.year, m.month) for m in sections.months] == [(2026, 10), (2026, 9)]
+    october = sections.months[0]
+    assert [day.date for day in october.days] == [date(2026, 10, 30), date(2026, 10, 1)]
+    assert october.heading == "Oktoober 2026"
+    # The month counts changes, not days.
+    assert october.count_label == "3 uuendust"
+    assert sections.months[1].count_label == "1 uuendus"
+
+
+def test_the_current_month_is_the_newest_notes_not_todays() -> None:
+    """No clock: a file whose newest note is from March keeps March as days."""
+    sections = release_sections(
+        parse_release_notes(one_day('date = 2020-03-02\nchanges = ["Vana"]'))
+    )
+    assert [day.date for day in sections.current] == [date(2020, 3, 2)]
+    assert sections.months == ()
+
+
+def test_a_folded_month_renders_shut_with_its_days_inside() -> None:
+    rendered = _render(parse_release_notes(THREE_MONTHS))
+    months = re.findall(r"<details class=\"accordion relnotes__month\"( open)?>", rendered)
+    assert months == ["", ""]
+    october = rendered.split('relnotes__monthtitle">Oktoober 2026</h2>')[1].split(
+        '<details class="accordion relnotes__month"'
+    )[0]
+    assert "3 uuendust" in october
+    assert '<h3 class="accordion__title">30. oktoober 2026</h3>' in october
+    assert '<h3 class="accordion__title">1. oktoober 2026</h3>' in october
+    assert "Septembri oma" not in october
+    # The newest day is still the open one, at the top level.
+    assert re.search(
+        r'<details class="accordion relnotes__day" open>\s*<summary class="accordion__head">'
+        r'\s*<span[^>]*></span>\s*<h2 class="accordion__title">18\. november 2026</h2>',
+        rendered,
+    )
+    assert _heading_at(rendered, "3. november 2026") < rendered.index("Oktoober 2026")
 
 
 def test_the_lead_says_the_page_is_grouped_by_day(client: Client) -> None:
@@ -531,13 +604,13 @@ def _heading_at(body: str, heading: str) -> int:
     the search was wrong, and it stayed right for as long as no month held a
     one-digit and a two-digit day at once.
 
-    The `<h2>` is what `test_no_date_gets_a_second_accordion` already matches on,
-    and it closes immediately after the text, so it cannot contain another day.
+    The heading element (`<h2>`, or `<h3>` for a day inside a folded month) is
+    what `test_no_date_gets_a_second_accordion` already matches on, and it
+    closes immediately after the text, so it cannot contain another day.
     """
-    marker = f'<h2 class="accordion__title">{heading}</h2>'
-    index = body.find(marker)
-    assert index != -1, f"{heading!r} is not rendered as an accordion title"
-    return index
+    match = re.search(rf'<h([23]) class="accordion__title">{re.escape(heading)}</h\1>', body)
+    assert match is not None, f"{heading!r} is not rendered as an accordion title"
+    return match.start()
 
 
 def _accordion_holding(body: str, heading: str) -> str:
