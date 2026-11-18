@@ -1636,7 +1636,20 @@ jobs:
           resealed=/tmp/juristid-rehearsal/resealed-set
           cp -a "$SET_DIR" "$resealed"
           full="$(stat -c %s "$SET_DIR/database.dump")"
-          head -c "$(( full * 95 / 100 ))" "$SET_DIR/database.dump" > "$resealed/database.dump"
+          # The rehearsal database is nearly empty, so its archive is mostly
+          # table of contents and the data after it is only a few percent of
+          # the file — a share that shrinks each time a migration adds tables.
+          # A fixed 95 % cut once reached into the table of contents and left
+          # this step testing nothing. Take the deepest cut, from 95 % up to
+          # 99 %, whose table of contents still lists; the check below still
+          # refuses to go on if none does.
+          for keep in 95 96 97 98 99; do
+            head -c "$(( full * keep / 100 ))" "$SET_DIR/database.dump" > "$resealed/database.dump"
+            docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" cp "$resealed/database.dump" db:/tmp/resealed.dump
+            if docker compose -p "$PROJECT" -f "$COMPOSE_FILE_PATH" exec -T db pg_restore --list /tmp/resealed.dump > /dev/null 2>&1; then
+              echo "cut at $keep % of $full bytes"; break
+            fi
+          done
           size="$(stat -c %s "$resealed/database.dump")"
           digest="$(sha256sum "$resealed/database.dump" | cut -d' ' -f1)"
           sed -i \
