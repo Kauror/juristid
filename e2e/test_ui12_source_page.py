@@ -134,7 +134,7 @@ def _html() -> str:
             ),
             "link": SimpleNamespace(pk=here.pk, get_match_method_display="Lovable'i link"),
             "page": page,
-            "blocks": reading.reading_entries(rendered),
+            "sections": reading.sections(reading.reading_entries(rendered)),
             "contents": reading.contents(rendered),
             "file_summary": (
                 f"Lehel on {len(DOSSIER_FILES)} faili; ükski neist ei ole selle teema dokument."
@@ -208,13 +208,16 @@ def test_the_shared_status_reads_once_and_every_file_keeps_its_download(page):
     expect(page.get_by_role("link", name="Laadi alla (allikas)")).to_have_count(len(DOSSIER_FILES))
     first = page.locator(".casefile__file").first
     expect(first.locator(".casefile__type")).to_have_text("PDF")
-    expect(first).to_contain_text("lisatud 12.03.2024")
+    # The row's day is the day the file was added to OneNote, and says so.
+    expect(first.locator("time")).to_have_text("12.03.2024")
+    expect(first.locator("time")).to_have_attribute("title", "Lisatud OneNote'i")
 
 
-def test_the_contents_list_and_an_anchor_land_on_the_source_block(page):
+def test_the_contents_rail_stays_beside_the_page_and_lands_on_the_source_block(page):
     _open(page, 1440)
-    toc = page.locator("details.sourcetoc")
-    toc.locator("summary").click()
+    # Beside the page the contents are the list itself; the disclosure is not drawn.
+    expect(page.locator("details.sourcetoc")).to_be_hidden()
+    toc = page.locator("nav.sourcerail__toc")
     entries = toc.get_by_role("link")
     expect(entries).to_have_count(6)
     entries.filter(has_text="Eelnõu läks kolmandale lugemisele").click()
@@ -223,6 +226,58 @@ def test_the_contents_list_and_an_anchor_land_on_the_source_block(page):
     assert page.evaluate("() => location.hash") == "#plokk-23"
     outline = target.evaluate("el => getComputedStyle(el).outlineStyle")
     assert outline == "solid"
+    # The rail is still in view after the jump, and the block is clear of the top bar.
+    expect(toc).to_be_in_viewport()
+    assert target.evaluate("el => el.getBoundingClientRect().top") >= 48
+
+
+def test_the_contents_list_is_a_closed_disclosure_above_a_narrow_page(page):
+    _open(page, 390)
+    expect(page.locator("nav.sourcerail__toc")).to_be_hidden()
+    toc = page.locator("details.sourcetoc")
+    expect(toc.get_by_role("link").first).to_be_hidden()
+    toc.locator("summary").click()
+    entries = toc.get_by_role("link")
+    expect(entries).to_have_count(6)
+    entries.filter(has_text="Eelnõu läks kolmandale lugemisele").click()
+    expect(page.locator("#plokk-23")).to_be_in_viewport()
+
+
+@pytest.mark.parametrize("width", [1440, 390])
+def test_each_dated_note_is_a_section_with_its_day_beside_it(page, width):
+    _open(page, width)
+    days = page.locator(".casenote--dated > .casenote__date time")
+    expect(days).to_have_text(["12.03.2024", "05.2024", "18.09.2024"])
+    # What stands before the first dated note is a section with no day.
+    expect(page.locator(".casenote").first.locator(".casenote__date")).to_have_count(0)
+    note = page.locator(".casenote--dated").first
+    expect(note.locator("#plokk-4")).to_contain_text("12.03.2024 - Ministeerium saatis")
+    boxes = note.evaluate(
+        """el => [el.querySelector('.casenote__date'), el.querySelector('.casenote__body')]
+            .map(part => part.getBoundingClientRect()).map(r => [r.left, r.top, r.right])"""
+    )
+    (day_left, day_top, day_right), (body_left, body_top, _) = boxes
+    if width >= 720:
+        assert day_right <= body_left and abs(day_top - body_top) < 8, boxes
+    else:
+        assert day_left == body_left and day_top < body_top, boxes
+
+
+def test_files_that_stood_together_are_one_group_of_one_line_rows(page):
+    _open(page, 1440)
+    group = page.locator(".casefiles", has_text="Koja_arvamus_2024-04-02.pdf")
+    rows = group.locator(".casefile__file")
+    expect(rows).to_have_count(3)
+    heights = rows.evaluate_all("els => els.map(el => el.getBoundingClientRect().height)")
+    assert max(heights) < 40, heights
+    # The name is the download; size and OneNote day stand at the row's right edge.
+    name = rows.first.locator("a.casefile__name")
+    expect(name).to_have_attribute("download", "")
+    edges = rows.first.evaluate(
+        """el => [el.querySelector('.casefile__name'), el.querySelector('.casefile__meta')]
+            .map(part => part.getBoundingClientRect()).map(r => [r.left, r.right])"""
+    )
+    assert edges[0][1] <= edges[1][0], edges
 
 
 @pytest.mark.parametrize("width", [1440, 390])

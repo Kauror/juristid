@@ -65,6 +65,13 @@ DEPTH_LIMIT = 4
 #: A file type shown as its extension, no longer than this.
 TYPE_LIMIT = 5
 
+#: A typed divider is at least this many of these characters, and nothing else.
+RULE_MIN = 3
+RULE_CHARS = frozenset("-_=–—*")
+
+#: A file's label is one line of at most this many characters.
+LABEL_LIMIT = 60
+
 
 def is_capture_block(block: Mapping[str, Any]) -> bool:
     """A block written by the desktop capture import, whose text is entity-encoded."""
@@ -203,21 +210,97 @@ def file_type(filename: str) -> str:
     return extension if 0 < len(extension) <= TYPE_LIMIT and extension.isalnum() else ""
 
 
-def reading_entries(blocks: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The rendered blocks with each run of list items gathered into one list.
+def is_rule(text: str) -> bool:
+    """A line somebody typed as a divider: three or more of `-_=–—*` and nothing else."""
+    stripped = "".join(text.split())
+    return len(stripped) >= RULE_MIN and all(char in RULE_CHARS for char in stripped)
 
-    Order is kept exactly: a list is closed by the first block that is not a
-    list item, so a file between two items splits them into two lists.
+
+def _is_label(block: Mapping[str, Any]) -> bool:
+    """One short line that is not a sentence: what a file directly under it is called."""
+    if block.get("kind") != "text" or block.get("list_item"):
+        return False
+    if block.get("heading") or block.get("dated"):
+        return False
+    text = str(block.get("text") or "")
+    if "\n" in text or len(text) > LABEL_LIMIT or "://" in text:
+        return False
+    return not text.rstrip().endswith((".", "!", "?"))
+
+
+def reading_entries(blocks: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The rendered blocks gathered for reading; order is kept exactly.
+
+    * A run of list items is one list, closed by the first block that is not a
+      list item, so a file between two items splits them into two lists.
+    * A run of files at one indentation is one group (`files`), closed by the
+      first block that is not a file: every file is still its own row, with
+      its own anchor and state.
+    * A line typed as a divider (`is_rule`) is a rule, not a paragraph of
+      dashes. Its anchor is kept.
+    * One short line directly above a file is that file's label (`label`): the
+      same text in the same place, set closer to what it names.
+
+    Nothing is dropped, merged into other text or reordered.
     """
     out: list[dict[str, Any]] = []
     for block in blocks:
-        if block.get("kind") == "text" and block.get("list_item"):
+        kind = block.get("kind")
+        if kind == "text" and block.get("list_item"):
             if out and out[-1]["kind"] == "list":
                 out[-1]["items"].append(block)
             else:
                 out.append({"kind": "list", "items": [block]})
+        elif kind == "file":
+            if out and out[-1]["kind"] == "text" and _is_label(out[-1]):
+                out[-1] = {**out[-1], "label": True}
+            if (
+                out
+                and out[-1]["kind"] == "files"
+                and out[-1]["depth_class"] == block.get("depth_class", "")
+            ):
+                out[-1]["items"].append(block)
+            else:
+                out.append(
+                    {
+                        "kind": "files",
+                        "depth_class": block.get("depth_class", ""),
+                        "items": [block],
+                    }
+                )
+        elif (
+            kind == "text"
+            and not block.get("heading")
+            and not block.get("dated")
+            and is_rule(str(block.get("text") or ""))
+        ):
+            out.append({"kind": "rule", "anchor": block.get("anchor", "")})
         else:
             out.append(block)
+    return out
+
+
+def sections(entries: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The reading entries as the page's sections, in order: one per dated note.
+
+    A section starts at the first line of a dated note (`dated_starts`) and
+    runs to the next one, so it carries that note's day beside it; what stands
+    before the first dated note is a section with no day. The files the stored
+    text does not reach (a `notice` and what follows it) are a section of
+    their own, with no day either: they belong to no note. Every entry is in
+    exactly one section, in the order given.
+    """
+    out: list[dict[str, Any]] = []
+    current: dict[str, Any] = {"dated": None, "blocks": []}
+    for entry in entries:
+        dated = entry.get("dated") if entry.get("kind") == "text" else None
+        if dated or entry.get("kind") == "notice":
+            if current["blocks"]:
+                out.append(current)
+            current = {"dated": dated or None, "blocks": []}
+        current["blocks"].append(entry)
+    if current["blocks"]:
+        out.append(current)
     return out
 
 

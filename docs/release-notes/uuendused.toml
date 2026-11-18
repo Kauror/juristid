@@ -18,6 +18,7 @@ changes = [
   "Osakonna kalendris on iga kirje üks rida: vastutaja ja teema. «Vaatan üle», «Plaanis» ja kuupäev on näha, kui hiirega teema peale minna; «üle tähtaja» on endiselt rea lõpus.",
   "Uuendustes on lõppenud kuude päevad koondatud kuu alla, näiteks «Oktoober 2026»; kuule vajutades avanevad selle päevad.",
   "Arvamuste otsing leiab arvamused ka teema vastutaja nime järgi, näiteks «marko» leiab Marko Udrase teemade arvamused.",
+  "Ajaloolise OneNote'i lehe vaade on uus. Iga kuupäevaga märge on oma lõik ja selle kuupäev on vasakul; kõrvuti seisnud failid on ühes plokis, iga fail ühel real tüübi, nime, suuruse ja OneNote'i lisamise kuupäevaga. Failinimele vajutades fail avaneb või laaditakse alla. Laial ekraanil on sisukord ja ühise toimiku selgitus paremal ning jäävad kerides nähtavale.",
 ]
 
 [[day]]
