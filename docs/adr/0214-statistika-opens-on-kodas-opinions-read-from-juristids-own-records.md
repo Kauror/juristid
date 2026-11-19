@@ -73,6 +73,24 @@ The owner's conditions:
    month's column links to the opinions it counted
    (`reporting:opinion_rows`). No chart library and no script.
 
+6. **Every count of sent opinions reads the one reader** (owner, 2026-11-19;
+   quality audit Q1, QA26-DATA-01 and QA26-DUP-01). §3's «for this page only»
+   left Seis and Tegevus, Osakond and Minu asjad counting `Submission`s alone, so
+   one question had two answers under one label (2026: 227 on this page, 96 on
+   Seis and Tegevus). Now every «arvamusi välja» count — Seis's strip and
+   «Aruandlus» rail, Tegevus's trend, same-period comparison and month × year
+   table (`SUBMISSIONS_SENT*`, version raised), Osakond's week figure, team
+   table and rail, Minu asjad's person figures — reads
+   `reporting.selectors.sent_opinions` / `opinions.sent_between` and links to
+   `reporting:opinion_rows`, which holds exactly what it counted (the list
+   narrows by period and owner, `?vastutaja=<id>`; a figure under any other
+   filter carries no link). The reader keeps TEST Teemad out (`real_data`) and
+   «no comments» answers out (ADR 0174 §4); a withdrawn opinion went out on its
+   day and stays counted (ADR 0092 §3). What only a `Submission` has stays on
+   `Submission`: recipients, kind, file, `/statistika/arvamused/` and its CSV,
+   Osakond's Tehtud list and «Muudatused» — lists of documents registered in
+   Juristid, not this count.
+
 ## Alternatives considered
 
 * **Convert the imported statements to a native record now** — cleaner end

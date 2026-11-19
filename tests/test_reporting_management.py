@@ -35,6 +35,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.urls import reverse
 from django.utils import timezone
 
 from app.accounts.enums import UserRole
@@ -521,10 +522,13 @@ def test_on_time_declines_rather_than_reporting_zero_percent(mgmt):
 def test_the_comparison_cuts_both_years_on_the_same_day_in_tallinn(mgmt):
     result = compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, ctx(mgmt.head))
     comparison = result.comparison
-    # 2026 to 13 October: fast, legacy, nodl, moved, init, restricted Matter,
-    # restricted opinion, changed, same, and the one sent at 23:30 on the 13th.
-    # The withdrawn one is not SENT; the one at 00:30 on the 14th is after the cut.
-    assert comparison.current_value == 10
+    # 2026 to 13 October, from the one reader of sent opinions (docs/adr/0214 §6):
+    # fast, legacy, nodl, moved, init, restricted Matter, restricted opinion,
+    # changed, same, the one sent at 23:30 on the 13th — and, since that reader
+    # counts every opinion that went out, the withdrawn one (it went out on 1.8,
+    # docs/adr/0092 §3) and the request answered in words without a document
+    # (5.5, docs/adr/0214 §2). The one at 00:30 on the 14th is after the cut.
+    assert comparison.current_value == 12
     # 2025 to 13 October: only March. The 31 December letter is outside.
     assert comparison.previous_value == 1
     assert comparison.current_period_label == "1.1.2026 – 13.10.2026"
@@ -537,7 +541,7 @@ def test_the_comparison_counts_restricted_material_for_a_reader_not_an_outsider(
 ):
     """docs/adr/0181: the READER counts the head's ten; the outsider counts nothing."""
     for_reader = compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, ctx(mgmt.reader)).comparison
-    assert for_reader.current_value == 10
+    assert for_reader.current_value == 12
     for_outsider = compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, ctx(administrator)).comparison
     assert not for_outsider.current_value
 
@@ -552,7 +556,7 @@ def test_the_comparison_declines_when_last_year_was_never_measured(mgmt):
 def test_a_leap_day_is_compared_with_the_last_day_of_february(mgmt):
     result = compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, ctx(mgmt.head, today=date(2028, 2, 29)))
     assert result.comparison.previous_period_label == "1.1.2027 – 28.2.2027"
-    assert "kuni=02-28" in result.comparison.previous_url
+    assert "alates=2027-01-01&kuni=2027-02-28" in result.comparison.previous_url
 
 
 def test_both_sides_of_the_comparison_open_exactly_what_they_counted(mgmt, client):
@@ -666,7 +670,8 @@ def test_month_by_year_spans_the_measured_years_and_leaves_the_future_blank(mgmt
     assert not matrix.rows[9].cells[1].missing  # October 2026 has begun
     # October 2026: the 13th at 23:30 and the 14th at 00:30.
     assert matrix.rows[9].cells[1].value == 2
-    assert matrix.column_totals == (2, 11)
+    # 2026: +2 from the one reader — the withdrawn opinion and the answer in words.
+    assert matrix.column_totals == (2, 13)
 
 
 def test_every_month_cell_opens_exactly_what_it_counted(mgmt, client):
@@ -1003,6 +1008,10 @@ def test_cell_list_and_csv_agree_with_test_and_restricted_matters_present(
         assert total_at(client, url) == expected, (what, url)
         if parsed.path in CSV_FOR:
             assert _csv_rows(client, CSV_FOR[parsed.path], query) == expected, (what, url)
+        elif parsed.path == reverse("reporting:opinion_rows"):
+            # The one reader's own list (docs/adr/0214 §6): real data by
+            # construction, no CSV; the count above already matched it.
+            continue
         else:
             # The register has no CSV; it must carry the reporting data class.
             assert parsed.path.startswith("/teemad/"), url
@@ -1030,7 +1039,8 @@ def test_every_new_card_states_its_coverage_on_the_card(mixed, client):
     # On-time: only deadlines linked to an opinion, since 4.10.2026.
     assert "Katvus: arvesse lähevad ainult seotud tähtajad — alates 4.10.2026" in activity
     assert "tähtaegade ajalugu peetakse alates 4.10.2026" in activity
-    assert "Katvus: struktuursed arvamuse kirjed alates aastast 2025" in activity
+    # Sent opinions: the one reader, and what it counts (docs/adr/0214 §6).
+    assert "Loeb kõik saadetud arvamused" in activity
     # Initiatives: how many Teemad carry no track at all.
     assert "Katvus: menetlusliik puudub 9 teemal 12-st" in matters
     # EU: how many cannot be placed.

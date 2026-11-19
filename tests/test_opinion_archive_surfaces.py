@@ -425,9 +425,10 @@ def test_recipient_coverage_counts_a_submission_without_a_resolved_addressee_as_
 def test_the_submission_metrics_declare_a_new_version(context, specialist, normal_matter):
     """Stage 2H changed what these numbers mean, so the version had to move."""
     sent_submission(normal_matter, sent=datetime.date(2024, 4, 10))
+    # Version 3 since the counts read the one reader of sent opinions (docs/adr/0214 §6).
+    for key in (keys.SUBMISSIONS_SENT, keys.SUBMISSIONS_SENT_BY_PERIOD):
+        assert compute(key, context(specialist)).definition_version == 3
     for key in (
-        keys.SUBMISSIONS_SENT,
-        keys.SUBMISSIONS_SENT_BY_PERIOD,
         keys.SUBMISSIONS_BY_RECIPIENT,
         keys.SUBMISSIONS_BY_KIND,
         keys.MATTERS_BY_SUBMISSION_COUNT,
@@ -439,12 +440,15 @@ def test_the_submission_metrics_declare_a_new_version(context, specialist, norma
 def test_the_era_note_names_the_real_coverage_rather_than_denying_measurement(
     context, specialist, normal_matter
 ):
+    """Since the counts read the one reader (docs/adr/0214 §6) the history is
+    measured from the register's first year; the note says where each part comes
+    from and what only a native record has."""
     sent_submission(normal_matter, sent=datetime.date(2024, 4, 10))
     result = compute(keys.SUBMISSIONS_SENT, context(specialist))
     note = result.definition.source_era_limitations_et
-    assert "2020" in note
-    assert "mõõtmist ei ole" in note
-    assert "ei tähenda, et arvamusi ei saadetud" in note
+    assert "2011" in note
+    assert "registri ajaloost" in note
+    assert "Saaja, liik ja fail on ainult Juristidis registreeritud arvamusel" in note
 
 
 # ---------------------------------------------------------------------------

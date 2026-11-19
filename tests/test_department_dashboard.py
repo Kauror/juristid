@@ -379,7 +379,10 @@ def test_the_team_table_does_not_query_once_per_lawyer(
     for index in range(6):
         factories.UserFactory(display_name=f"Lisajurist {index}")
 
-    with django_assert_max_num_queries(14):
+    # +5 since the sent columns count from the one reader of sent opinions
+    # (docs/adr/0214 §6): one read of its Teemad and sent records, for both
+    # windows, whatever the headcount.
+    with django_assert_max_num_queries(19):
         list(team_rows(portfolio.people.head))
 
 

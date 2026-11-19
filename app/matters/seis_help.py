@@ -7,7 +7,7 @@ describe (components/seis.html, `help`; UX package 2026-10-28, requirement 6).
 **The words follow the code, never the other way round.** Each text below was
 written against the selector its figure calls — `work_items.real_deadlines`,
 `work_items.band_of`, `dashboard.drafting_matters`,
-`department_dashboard.sent_this_week` and the register parameters beside them —
+`reporting.opinions.opinion_facts` and the register parameters beside them —
 and a definition is never changed to make a sentence true. Where a figure counts
 something a reader might not expect (Osakond's strip counts every open Matter the
 reader may see, not one department's; Minu asjad's week figure counts rows, not
@@ -157,14 +157,19 @@ DEPT_NO_ACTION_HELP = FigureHelp(
     ),
 )
 
-#: `sent_this_week`: SENT Submissions, Monday to today on the local calendar,
-#: without `NOT_AN_OPINION_KINDS` (docs/adr/0149 §1, docs/adr/0174). Not Lovable's
-#: «Välja saadetud arvamused», which counts topics by their VÄLJA date: the text
-#: says which records are counted (docs/adr/0149, amendment of 2026-11-11).
+#: The one reader of sent opinions (`reporting.opinions.opinion_facts`,
+#: docs/adr/0214 §6), Monday to today on the local calendar (docs/adr/0149 §1):
+#: Juristid's own «Koja arvamus» without `NOT_AN_OPINION_KINDS` (docs/adr/0174),
+#: a request answered without a document, and the register's «välja saadetud» —
+#: one act counted once. Statistika counts the same.
 DEPT_SENT_HELP = FigureHelp(
     slug="osakond-arvamus-saadetud",
     title="Arvamused saadetud sel nädalal",
-    paragraphs=("Loeb saadetud arvamusi, mis on Juristis Koja arvamusena salvestatud.",),
+    paragraphs=(
+        "Loeb saadetud arvamusi esmaspäevast tänaseni: Juristis salvestatud Koja "
+        "arvamused, ilma dokumendita vastatud tähtajad ja registris «välja saadetud» "
+        "märgitud arvamused. Sama arv on Statistikas.",
+    ),
 )
 
 #: `drafting_matters` — `?arvamus=koostamisel` over open FULL Matters: Lovable's

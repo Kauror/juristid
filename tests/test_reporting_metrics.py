@@ -221,7 +221,8 @@ def test_the_trend_draws_no_bar_for_a_year_that_was_never_measured(world, report
     labels = [segment.label for segment in result.segments]
     assert labels == [str(world.previous_year), str(world.current_year)]
     assert str(world.archive_year) not in labels
-    assert any("mõõtmist" in note for note in result.notes)
+    # The years run from the first sent opinion on record (docs/adr/0214 §6).
+    assert f"Aastad: {world.previous_year}–{world.current_year}." in result.notes
 
 
 def test_no_submission_records_at_all_is_insufficient_data_not_zero(world, reporting_context):

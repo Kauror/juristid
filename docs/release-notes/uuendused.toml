@@ -15,6 +15,8 @@ changes = [
   "Ajaloolise OneNote'i lehe vaade on uus. Iga kuupäevaga märge on oma lõik ja selle kuupäev on vasakul; kõrvuti seisnud failid on ühes plokis, iga fail ühel real tüübi, nime, suuruse ja OneNote'i lisamise kuupäevaga. Failinimele vajutades fail avaneb või laaditakse alla. Laial ekraanil on sisukord ja ühise toimiku selgitus paremal ning jäävad kerides nähtavale.",
   "Öine registrite kontroll ei katke enam ühe registri ootamatu vastuse pärast: viga jääb selle allika juurde kirja ja ülejäänud teemad loetakse ikka läbi. Halduse «Registrite jälgimine» näitab katkenud kontrolli punase «Katkes» märgiga ning kirjutab Seisu alla, kui viimane kontroll katkes või kui üle 30 tunni pole ükski kontroll lõpuni jõudnud.",
   "Kellukese teavitus «Registris uus dokument» liigub koos teemaga uuele vastutajale, kui teema antakse üle. Teavituse kuupäev on dokumentide saabumise päev ka pärast selle loetuks märkimist.",
+  "Saadetud arvamuste arv on igal pool sama: Statistika kõik vahekaardid, Osakond ja Minu asjad loevad Juristidis salvestatud Koja arvamused, ilma dokumendita vastatud tähtajad ja registris «välja saadetud» arvamused, ühe arvamuse ühe korra. Seisu ja Tegevuse arvud kasvavad seetõttu, näiteks 2026. aasta arv on sama mis Ülevaates. Numbrile vajutades avaneb täpselt nende arvamuste loend; Osakonna «arvamust saadetud sel nädalal» avab nüüd samuti oma loendi.",
+  "Statistika «Arvamused» loend kannab pealkirja «Juristidis registreeritud arvamused»: seal on arvamused, millel on fail, saaja ja liik.",
 ]
 
 [[day]]

@@ -91,7 +91,8 @@ def filed(specialist):
 
 
 def week_count(user, today: dt.date) -> int:
-    return dd.sent_this_week(user, today).count()
+    """The strip's own figure: what the page prints, not a parallel count."""
+    return next(f for f in dd.seis_figures(user, today) if f.key == "sent").value
 
 
 # ---------------------------------------------------------------------------
@@ -408,7 +409,10 @@ def test_the_strip_ends_with_the_week_and_the_drafting_figures(department_head, 
     figures = dd.seis_figures(department_head, dt.date(2026, 10, 9))
     assert [f.key for f in figures][-2:] == ["sent", "drafting"]
     sent, draft = figures[-2], figures[-1]
-    assert (sent.caption, sent.url) == ("arvamust saadetud sel nädalal", "")
+    assert sent.caption == "arvamust saadetud sel nädalal"
+    # Statistika's list over exactly the week, Monday 5.10 to the day (docs/adr/0214 §6).
+    assert sent.url.startswith(reverse("reporting:opinion_rows"))
+    assert "alates=2026-10-05" in sent.url and "kuni=2026-10-09" in sent.url
     assert draft.caption == "arvamus koostamisel"
     assert draft.tone == "", "information, not a warning"
     assert draft.value == 1

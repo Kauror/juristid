@@ -68,7 +68,10 @@ pytestmark = pytest.mark.django_db
 #: once for the page (app/accounts/disclosures.py).
 #: −1 since the 2026-10-28 audit (D-03): «Uut läbi vaatamata» is counted once
 #: for the strip and the rail, which had baked the duplicate into the 49.
-OSAKOND_BUDGET = 48
+#: +3 since one count of sent opinions (docs/adr/0214 §6, quality audit 2026-11-19): the
+#: strip, the rail and the team table count from one read of the one reader — its
+#: Teemad, their instruments, areas and senders, and the three sent records.
+OSAKOND_BUDGET = 51
 #: Minu asjad +1 since the rail's Kalender (docs/adr/0158, amendment of
 #: 2026-10-26): its commencements, read once; its work is the page's own list.
 #: +1 since docs/adr/0120's amendment of 2026-10-27: planned and estimated
@@ -88,13 +91,17 @@ OSAKOND_BUDGET = 48
 #: inbox the block reads, so the page still reads it once.
 #: +1 for «Registris uus dokument» (docs/adr/0217 §6): the reader's own unread
 #: register notices, one read whatever the desk holds.
-MINU_ASJAD_BUDGET = 47
+#: +5 for the foldout's «arvamusi välja» from the one reader (docs/adr/0214 §6):
+#: one read of its Teemad and sent records, whatever the desk holds.
+MINU_ASJAD_BUDGET = 52
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).
 #: −1 since the 2026-10-28 audit (D-02): «teemat töövõiduga» is counted once for
 #: the strip and the rail.
-STATISTIKA_BUDGET = 33
+#: +6 since Seis counts sent opinions from the one reader (docs/adr/0214 §6): one
+#: read for the page's period and one for the rail's calendar year.
+STATISTIKA_BUDGET = 39
 #: Teemad (the register) on the same world. Its per-row flatness is
 #: `tests/test_matter_workflow.py::test_the_register_does_not_query_per_row`;
 #: this is the page's whole count, measured at 27 after D-04 (one organisation

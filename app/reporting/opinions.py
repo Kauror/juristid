@@ -1,8 +1,11 @@
 """Sent opinions, as one list read from Juristid's own database (owner, 2026-11-16).
 
-Statistika's opinion figures — how many went out, when, by whom, against which
-deadline — all read :func:`opinion_facts` and nothing else. It is the **one
-reader**: the only place that knows where a sent opinion is recorded.
+Every count of opinions Koda sent — Statistika's tabs, Osakond, Minu asjad
+(`reporting.selectors.sent_opinions`, docs/adr/0214 §6) — and how many went
+out, when, by whom, against which deadline, reads :func:`opinion_facts` and
+nothing else. It is the **one reader**: the only place that knows where a sent
+opinion is recorded. The lists of `Koja arvamus` documents (recipients, kind,
+file, the CSV) stay on `Submission` and say so.
 
 Three records hold that fact today, and every one of them is a table in this
 application's database. Nothing here asks Lovable anything, so the figures keep
@@ -75,6 +78,8 @@ class MatterFacts:
     #: Teema's own confirmed fields, never a proposal (ADR 0215).
     areas: tuple[tuple[str, str], ...] = ()
     senders: tuple[tuple[str, str], ...] = ()
+    #: The current owner's id, for counts per person (Osakond, Minu asjad).
+    owner_id: Any = None
 
 
 @dataclass(frozen=True)
@@ -127,12 +132,17 @@ def _owner_label(owner: Any, former: str) -> str:
 
 
 def matter_facts(user: Any) -> dict[Any, MatterFacts]:
-    """Every Teema the reader may see, as :class:`MatterFacts`. Four queries."""
+    """Every real Teema the reader may see, as :class:`MatterFacts`. Four queries.
+
+    Real data only, as every published statistic (`Matter.real_data`,
+    `reporting.selectors.base.visible_matters`): a TEST Teema is never counted.
+    """
     from app.matters.models import Matter, MatterSourceOrganisation
     from app.workflow.enums import Track
 
     matters = list(
         Matter.objects.visible_to(user)
+        .real_data()
         .select_related("owner")
         .only(
             "id",
@@ -142,6 +152,7 @@ def matter_facts(user: Any) -> dict[Any, MatterFacts]:
             "received_date",
             "track",
             "former_owner_name",
+            "owner_id",
             "owner__display_name",
         )
     )
@@ -182,6 +193,7 @@ def matter_facts(user: Any) -> dict[Any, MatterFacts]:
             instrument_key=own[0][0] if len(own) == 1 else "",
             areas=tuple(sorted(areas.get(m.pk, []))),
             senders=tuple(sorted(senders.get(m.pk, []))),
+            owner_id=m.owner_id,
         )
     return facts
 
@@ -192,6 +204,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
     from app.legacy_import.lovable_sync_models import OpinionOutcome, current_opinion_outcomes
     from app.matters.enums import ResponseDeadlineOutcome
     from app.matters.models import MatterResponseDeadline
+    from app.submissions.enums import NOT_AN_OPINION_KINDS
     from app.submissions.models import Submission
 
     known = matters if matters is not None else matter_facts(user)
@@ -213,6 +226,10 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
         Submission.objects.visible_to(user)
         .historically_sent()
         .filter(matter_id__in=known)
+        # An official «no comments» answer is a send, not an opinion: it is
+        # counted on its own (docs/adr/0174 §4). A withdrawn opinion still went
+        # out on its day (docs/adr/0092 §3) and stays counted.
+        .exclude(kind__in=NOT_AN_OPINION_KINDS)
         .values("id", "matter_id", "sent_at")
     ):
         facts.append(
@@ -350,3 +367,37 @@ def matter_deadlines(user: Any, matters: dict[Any, MatterFacts]) -> dict[Any, da
         if deadline is not None:
             out[matter_id] = deadline
     return out
+
+
+def sent_between(
+    facts: list[OpinionFact], since: date, until: date | None = None, *, owner_id: Any = None
+) -> list[OpinionFact]:
+    """The facts sent from ``since`` to ``until`` (inclusive), optionally on one person's Teemad."""
+    return [
+        fact
+        for fact in facts
+        if fact.sent_on >= since
+        and (until is None or fact.sent_on <= until)
+        and (owner_id is None or fact.matter.owner_id == owner_id)
+    ]
+
+
+def rows_url(since: date, until: date | None = None, *, jurist: str = "") -> str:
+    """Statistika's list of exactly the opinions sent between two days.
+
+    `reporting:opinion_rows` accepts days from :data:`opinion_stats.FIRST_YEAR`
+    to today, so the window is clamped to that span.
+    """
+    from urllib.parse import urlencode
+
+    from django.urls import reverse
+
+    from app.reporting.opinion_stats import FIRST_YEAR
+
+    today = timezone.localdate()
+    start = max(since, date(FIRST_YEAR, 1, 1))
+    end = min(until or today, today)
+    params = {"periood": "vali", "alates": start.isoformat(), "kuni": end.isoformat()}
+    if jurist:
+        params["jurist"] = jurist
+    return f"{reverse('reporting:opinion_rows')}?{urlencode(params)}"

@@ -249,11 +249,9 @@ def test_no_seis_figure_leads_nowhere(page, base_url):
     """No dead-end numbers, and no misleading ones either.
 
     Every figure that carries a link is a promise that a list exists behind it,
-    so a `#` or an empty `href` is a dead end. Exactly one figure carries no
-    link at all: «arvamust välja sel nädalal» counts a calendar week the Arvamused
-    workspace cannot narrow to, so it states the number and offers nothing
-    rather than opening a longer list — an honest number beats a link to a
-    different one (docs/adr/0049 §4, DS-24).
+    so a `#` or an empty `href` is a dead end. Every figure links now: the
+    week's sent opinions, once without a link, open Statistika's list of
+    exactly that week (docs/adr/0214 §6, DS-24).
     """
     _open(page, base_url, HEAD, "/osakond/", 1440)
 
@@ -270,10 +268,7 @@ def test_no_seis_figure_leads_nowhere(page, base_url):
             continue
         assert href and href != "#", f"{caption} leads nowhere"
 
-    assert unlinked in (
-        ["arvamust saadetud sel nädalal"],
-        ["arvamus saadetud sel nädalal"],
-    ), unlinked
+    assert unlinked == [], unlinked
 
 
 def test_the_area_accordion_is_a_real_disclosure(page, base_url):

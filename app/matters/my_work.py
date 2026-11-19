@@ -592,14 +592,16 @@ class PersonStats:
 
 def person_stats(user: Any, subject: Any, today: date) -> PersonStats:
     """The foldout's figures, from the selectors that already define them."""
-    from app.matters.department_dashboard import sent_submissions
+    from app.reporting import opinions
 
     month_start = today.replace(day=1)
     year_start = today.replace(month=1, day=1)
     owned = Matter.objects.visible_to(user).filter(owner=subject)
+    # Sent opinions from the one reader (docs/adr/0214 §6), on the person's Teemad.
+    facts = opinions.opinion_facts(user)
 
     def sent(since: date) -> int:
-        return sent_submissions(user, since=since).filter(matter__owner=subject).count()
+        return len(opinions.sent_between(facts, since, today, owner_id=subject.pk))
 
     # **A plain range on the timestamp, not `__date`** (2026-10-17 audit,
     # JPERF-005). `occurred_at__date__gte` cast every one of the person's entries

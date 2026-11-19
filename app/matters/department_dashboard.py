@@ -121,9 +121,10 @@ from app.matters.seis_help import (
     dept_unreviewed_help,
 )
 from app.matters.selectors import MISSING
+from app.reporting import opinions
 from app.submissions.enums import SubmissionStatus
 from app.submissions.models import Submission
-from app.submissions.workspace import OPINIONS_ONLY, OPINIONS_ONLY_PARAM, reportable_opinions
+from app.submissions.workspace import reportable_opinions
 
 #: How far back "recently arrived" reaches. A fortnight, because a department
 #: review is a fortnightly conversation.
@@ -209,20 +210,6 @@ class SeisFigure:
 
 #: How far back "recently arrived, nobody has looked" reaches.
 UNREVIEWED_WINDOW_DAYS = INCOMING_WINDOW_DAYS
-
-
-def sent_this_week(user: Any, today: date) -> QuerySet[Submission]:
-    """Opinions sent in the current ISO calendar week, up to and including today.
-
-    Monday to today, on the Tallinn calendar (docs/adr/0149 §1). A Monday
-    starts from nothing because the window starts that day; nothing is stored,
-    scheduled or reset. ``until=today`` keeps a send dated later this week out
-    of the figure until its day comes. Read through :func:`sent_submissions`, so
-    both precisions are compared on the local date: a DATE send is stored at
-    local midnight and a timestamp at whatever moment it was, and either belongs
-    to the day the sender was living in.
-    """
-    return sent_submissions(user, since=wi.start_of_iso_week(today), until=today)
 
 
 def _unreviewed_params(today: date) -> dict[str, Any]:
@@ -311,7 +298,11 @@ def closed_matters(user: Any, *, since: date, until: date | None = None) -> Quer
 
 
 def seis_figures(
-    user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
+    user: Any,
+    today: date | None = None,
+    *,
+    items: list[wi.WorkItem] | None = None,
+    facts: list[Any] | None = None,
 ) -> list[SeisFigure]:
     """The strip, in the head's reading order: what is late, then what is loose.
 
@@ -341,7 +332,11 @@ def seis_figures(
 
     week_count = count(this_week)
     unreviewed_count = count(unreviewed)
-    sent_count = sent_this_week(user, today).count()
+    # Sent opinions from the one reader (docs/adr/0214 §6): the same count
+    # Statistika prints, and the list it links to holds exactly these.
+    facts = facts if facts is not None else opinions.opinion_facts(user)
+    week_start = wi.start_of_iso_week(today)
+    sent_count = len(opinions.sent_between(facts, week_start, today))
     drafting_count = drafting_matters(user).count()
 
     # Captions and explanations: UX package of 2026-10-28. «tähtaeg sel
@@ -398,16 +393,13 @@ def seis_figures(
             "warning",
             help=DEPT_NO_ACTION_HELP,
         ),
-        # No link. The count is the current calendar week and the Arvamused
-        # workspace filters by year and month, so the only destination available
-        # lists more opinions than the number beside it — which is precisely the
-        # count-and-list disagreement this strip exists to make impossible
-        # (`e2e/test_kpi_navigation.py`, DS-24).
+        # Linked to Statistika's list of sent opinions over exactly this week,
+        # Monday to today: the list holds what the figure counts (DS-24).
         SeisFigure(
             "sent",
             sent_count,
             counted(sent_count, "arvamus saadetud sel nädalal", "arvamust saadetud sel nädalal"),
-            "",
+            opinions.rows_url(week_start, today),
             help=DEPT_SENT_HELP,
         ),
         # Information, not a warning: no tone. The team table's ARVAMUS
@@ -572,7 +564,9 @@ def _matters_changed_by_owner(user: Any, start: date, end: date) -> dict[Any, in
     return {row["owner_id"]: row["total"] for row in grouped}
 
 
-def _sent_by_owner(user: Any, *, since: date, until: date | None = None) -> dict[Any, int]:
+def _sent_by_owner(
+    user: Any, *, since: date, until: date | None = None, facts: list[Any] | None = None
+) -> dict[Any, int]:
     """Opinions sent in a window, grouped by whose file they went out on.
 
     **Opinions**, not files carrying one. It counted Matters, which is a
@@ -586,18 +580,21 @@ def _sent_by_owner(user: Any, *, since: date, until: date | None = None) -> dict
     :func:`_by_owner` gives: `Meta.ordering` and any annotation on the incoming
     query leak into the GROUP BY and split one total across rows.
     """
-    sent = sent_submissions(user, since=since, until=until)
-    grouped = (
-        Submission.objects.filter(pk__in=sent.values("pk"))
-        .order_by()
-        .values("matter__owner_id")
-        .annotate(total=Count("id"))
-    )
-    return {row["matter__owner_id"]: row["total"] for row in grouped}
+    # From the one reader of sent opinions (docs/adr/0214 §6), grouped by the
+    # Teema's current owner — the same population Statistika counts.
+    facts = facts if facts is not None else opinions.opinion_facts(user)
+    counted: dict[Any, int] = {}
+    for fact in opinions.sent_between(facts, since, until):
+        counted[fact.matter.owner_id] = counted.get(fact.matter.owner_id, 0) + 1
+    return counted
 
 
 def team_rows(
-    user: Any, today: date | None = None, *, items: list[wi.WorkItem] | None = None
+    user: Any,
+    today: date | None = None,
+    *,
+    items: list[wi.WorkItem] | None = None,
+    facts: list[Any] | None = None,
 ) -> list[TeamRow]:
     """Every current department worker, the two exceptional rows, and the total.
 
@@ -635,6 +632,8 @@ def team_rows(
     today = today or timezone.localdate()
     week_start, week_end = previous_week(today)
     year_start, year_end = reporting_year(today)
+    # One read of the sent-opinion facts for both windows (docs/adr/0214 §6).
+    facts = facts if facts is not None else opinions.opinion_facts(user)
 
     active = active_matters(user)
     # The page's own read when it has one — the same list, for the same reader
@@ -658,13 +657,13 @@ def team_rows(
         "no_action": _by_owner(without_next_action(user)),
         "drafting": _by_owner(drafting_matters(user)),
         "changed": _matters_changed_by_owner(user, week_start, week_end),
-        "sent_week": _sent_by_owner(user, since=week_start, until=week_end),
+        "sent_week": _sent_by_owner(user, since=week_start, until=week_end, facts=facts),
         # The whole calendar year, both ends, so this column and Aruandlus's
         # «Saadetud arvamusi» are one window as well as one population. Bounded
         # at today they would have disagreed about a letter somebody dated
         # forward, which is the kind of one-row difference nobody can explain
         # afterwards (`reporting_year`).
-        "sent_year": _sent_by_owner(user, since=year_start, until=year_end),
+        "sent_year": _sent_by_owner(user, since=year_start, until=year_end, facts=facts),
     }
 
     # The department's current members, alphabetically, from the one definition
@@ -1577,7 +1576,9 @@ def incoming_rail(
     ]
 
 
-def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
+def reporting_rail(
+    user: Any, today: date | None = None, *, facts: list[Any] | None = None
+) -> list[RailRow]:
     """What the department has produced this calendar year.
 
     The calendar year, not the reporting year: this asks what was finished, and
@@ -1606,8 +1607,12 @@ def reporting_rail(user: Any, today: date | None = None) -> list[RailRow]:
     return [
         RailRow(
             "Saadetud arvamusi",
-            sent_submissions(user, since=start, until=end).count(),
-            f"{reverse('submissions:sent')}?aasta={year}&{OPINIONS_ONLY_PARAM}={OPINIONS_ONLY}",
+            len(
+                opinions.sent_between(
+                    facts if facts is not None else opinions.opinion_facts(user), start, end
+                )
+            ),
+            opinions.rows_url(start, end),
         ),
         RailRow(
             "Teemasid töövõiduga",
