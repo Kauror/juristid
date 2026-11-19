@@ -156,7 +156,7 @@ def overview(request: HttpRequest) -> HttpResponse:
 def check(request: HttpRequest) -> HttpResponse:
     """«Kontrolli muudatusi»: the existing report-only CHECK, from this page."""
     from app.legacy_import.lovable_sync import SyncRefused, run_sync
-    from app.legacy_import.lovable_sync_models import SyncTrigger
+    from app.legacy_import.lovable_sync_models import SyncRunStatus, SyncTrigger
 
     _require(request)
     actor = _actor(request)
@@ -167,11 +167,15 @@ def check(request: HttpRequest) -> HttpResponse:
         messages.info(request, sync_admin.failure_reason(error.code))
     else:
         sync_admin.record_check(actor, run=run, client=_client(request))
-        messages.success(
-            request,
-            "Kontroll tehtud: viimati loetud Lovable'i seisu võrreldi Juristidega"
-            f" ({run.counts.get('checked', 0)} teemat). Ühtegi teemat ei muudetud.",
-        )
+        if run.status == SyncRunStatus.FAILED:
+            # A check that ran and failed says so, by its reason (QA26-BUG-02).
+            messages.error(request, sync_admin.failure_reason(sync_admin.run_error_code(run)))
+        else:
+            messages.success(
+                request,
+                "Kontroll tehtud: viimati loetud Lovable'i seisu võrreldi Juristidega"
+                f" ({run.counts.get('checked', 0)} teemat). Ühtegi teemat ei muudetud.",
+            )
     return redirect("haldus:data_sync")
 
 

@@ -19,6 +19,7 @@ changes = [
   "Statistika «Arvamused» loend kannab pealkirja «Juristidis registreeritud arvamused»: seal on arvamused, millel on fail, saaja ja liik.",
   "Statistika lehel «Saatja ja valdkond» on näha, kui ettepaneku valdkond ei ole enam kasutusel. Sellist ettepanekut ei saa kinnitada tühjana: vali teine valdkond või saatja või jäta ettepanek vahele. «Kinnita kõik» ütleb, mitu ettepanekut jäi seetõttu kinnitamata.",
   "Kui teema antakse Lovable'is teisele juristile või öine sünkroniseerimine loob uue teema, saab uus vastutaja «Uus asi» teavituse nagu siis, kui kolleeg teema üle annab.",
+  "Halduse «Andmete sünkroonimine»: katkenud käivitus märgitakse kuue tunni pärast ebaõnnestunuks ja uut sünkroonimist saab jälle tellida; ebaõnnestunud «Kontrolli muudatusi» ütleb põhjuse, mitte «Kontroll tehtud». OneNote'i lugemist, mille kohta on juba otsustatud, ei panda järgmisel lugemisel uuesti ootele.",
 ]
 
 [[day]]

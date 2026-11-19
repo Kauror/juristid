@@ -1038,21 +1038,44 @@ class Reading:
 
     bytes_: tuple[str, int, datetime | None] | None = None
     context: tuple[dict[str, Any], ...] | None = None
+    #: Bytes a person rejected for this Teema: seen again, they are not a change
+    #: and are not held again (quality audit QA26-BUG-03).
+    declined: frozenset[tuple[str, int]] = frozenset()
 
 
 def _resource_readings(capture: Capture, resources: list[Any]) -> dict[tuple[str, Any], Reading]:
-    """Per (Teema, resource): the accepted readings earlier captures recorded."""
-    from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision, RevisionState
+    """Per (Teema, resource): the accepted readings earlier captures recorded.
+
+    A HELD revision a person has settled counts too (QA26-BUG-03): one accepted
+    («Uus lugemine võetud vastu») is that Teema's baseline, like a VERSIONED
+    one; one rejected puts its bytes in ``declined``. An undecided HELD revision
+    is still never a baseline (independent review 2026-11-09, P2).
+    """
+    from app.legacy_import.onenote_coverage_models import (
+        HoldDecisionKind,
+        OneNoteHoldDecision,
+        OneNoteResourceRevision,
+        RevisionState,
+    )
 
     if not resources:
         return {}
+    settled = dict(
+        OneNoteHoldDecision.objects.filter(
+            revision__resource__in=resources,
+            final=True,
+            decision__in=[HoldDecisionKind.ACCEPT_REVISION, HoldDecisionKind.REJECT],
+        )
+        .order_by("decided_at", "pk")
+        .values_list("revision_id", "decision")
+    )
     out: dict[tuple[str, Any], Reading] = {}
-    for matter_id, resource_id, state, sha, size, added, context in (
+    for pk, matter_id, resource_id, state, sha, size, added, context in (
         OneNoteResourceRevision.objects.filter(resource__in=resources)
         .exclude(manifest_sha256=capture.manifest_sha256)
-        .exclude(state=RevisionState.HELD)
         .order_by("created_at", "pk")
         .values_list(
+            "pk",
             "matter_source_page__matter_id",
             "resource_id",
             "state",
@@ -1064,9 +1087,21 @@ def _resource_readings(capture: Capture, resources: list[Any]) -> dict[tuple[str
     ):
         key = (str(matter_id), resource_id)
         was = out.get(key, Reading())
+        if state == RevisionState.HELD:
+            decision = settled.get(pk)
+            if decision == HoldDecisionKind.ACCEPT_REVISION:
+                out[key] = Reading(
+                    bytes_=(sha, size, added), context=tuple(context or ()), declined=was.declined
+                )
+            elif decision == HoldDecisionKind.REJECT:
+                out[key] = Reading(
+                    bytes_=was.bytes_, context=was.context, declined=was.declined | {(sha, size)}
+                )
+            continue
         out[key] = Reading(
             bytes_=(sha, size, added) if state == RevisionState.VERSIONED else was.bytes_,
             context=tuple(context or ()),
+            declined=was.declined,
         )
     return out
 
@@ -1274,6 +1309,10 @@ def _later_capture_decisions(
             else (r.sha256, r.size_bytes, r.source_added_at)
         )
         e = by_key.get(o.block_object_id)
+        if latest is not None and (o.sha256, o.size) in latest.declined:
+            # The bytes a person already rejected for this Teema: not a change.
+            decided[o.block_object_id] = ("", "", CLASS_SAME if e is not None else "")
+            continue
         if sha != o.sha256 or size != o.size:
             decided[o.block_object_id] = _changed_bytes(
                 plan, page, o, e, removed=removed, limit=limit, matter_id=matter_id

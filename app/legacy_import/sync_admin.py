@@ -1512,16 +1512,26 @@ def constraint_of(error: IntegrityError) -> str:
 def record_check(
     actor: Any, *, run: LovableSyncRun | None, code: str = "", client: dict[str, Any] | None
 ) -> None:
-    """«Kontrolli muudatusi» from the page: one audit row naming who asked and what came of it."""
+    """«Kontrolli muudatusi» from the page: one audit row naming who asked and what came of it.
+
+    A check that ran and FAILED is a failure with its code, not a success because
+    a run row exists (quality audit QA26-BUG-02).
+    """
+    failed = run is None or run.status == SyncRunStatus.FAILED
     _audit(
         actor=actor,
         action="LOVABLE_CHECK_REQUESTED",
         subject=run,
-        succeeded=run is not None,
+        succeeded=not failed,
         client=client,
         run=str(run.pk) if run is not None else None,
-        code=code,
+        code=code or (run_error_code(run) if run is not None and failed else ""),
     )
+
+
+def run_error_code(run: LovableSyncRun) -> str:
+    """The code a failed run recorded first in its error («COHORT_MISSING: …»)."""
+    return (run.error or "").split(":", 1)[0].strip() or "INTERNAL"
 
 
 def _record(
@@ -2121,6 +2131,11 @@ def poll(lane: str, *, problem: str = "", now: dt.datetime | None = None) -> str
     moment = now or timezone.now()
     code = problem if problem in RUNNER_PROBLEMS else ("UNKNOWN_PROBLEM" if problem else "")
     expire_stale(now=moment)
+    # The host script asks here every few minutes and calls `run_next` only on
+    # DUE; a request whose runner died stays RUNNING and the lane refuses every
+    # new one. Recovered here too, so «failed after six hours» holds (ADR 0213;
+    # quality audit QA26-BUG-01). A live Lovable run is never declared lost.
+    recover_lost(lane, now=moment)
     if not code:
         answer = lovable_sync.due_on_demand(lane)
         record_beat(lane, answer=answer, now=moment)
@@ -2144,6 +2159,7 @@ def refuse_unpermitted(lane: str, *, now: dt.datetime | None = None) -> DataSync
     why, so nothing waits silently for a runner that may not run it."""
     moment = now or timezone.now()
     expire_stale(now=moment)
+    recover_lost(lane, now=moment)
     item = claim_next(lane, now=moment)
     answer = f"{REFUSED_ANSWER} NOT_PERMITTED" if item is not None else "NOT_DUE NO_REQUEST"
     record_beat(lane, answer=answer, problem="NOT_PERMITTED", now=moment)
