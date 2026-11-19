@@ -429,6 +429,10 @@ def test_the_pages_read_in_as_many_queries_for_25_history_holds_as_for_5(many_hi
             out.append(len(queries))
         return out
 
+    # A stored Lovable night is read and compared once per worker (QA26-PERF-02):
+    # the first pass also reads the snapshot documents. Count warm passes only —
+    # that is one read per night, never one per item.
+    counted()
     many = counted()
     assert sync_admin.differences(user).history.total == 25
     actor = technical_admin()[0]
