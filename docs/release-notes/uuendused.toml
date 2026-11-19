@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-11-19
 basis = "deployment"
-prs = [645, 648, 649, 650, 651]
+prs = [645, 648, 649, 650, 651, 652]
 changes = [
   "Ajaloolise OneNote'i lehe vaade on uus. Iga kuupäevaga märge on oma lõik ja selle kuupäev on vasakul; kõrvuti seisnud failid on ühes plokis, iga fail ühel real tüübi, nime, suuruse ja OneNote'i lisamise kuupäevaga. Failinimele vajutades fail avaneb või laaditakse alla. Laial ekraanil on sisukord ja ühise toimiku selgitus paremal ning jäävad kerides nähtavale.",
   "Öine registrite kontroll ei katke enam ühe registri ootamatu vastuse pärast: viga jääb selle allika juurde kirja ja ülejäänud teemad loetakse ikka läbi. Halduse «Registrite jälgimine» näitab katkenud kontrolli punase «Katkes» märgiga ning kirjutab Seisu alla, kui viimane kontroll katkes või kui üle 30 tunni pole ükski kontroll lõpuni jõudnud.",
@@ -19,6 +19,7 @@ changes = [
   "Statistika «Arvamused» loend kannab pealkirja «Juristidis registreeritud arvamused»: seal on arvamused, millel on fail, saaja ja liik.",
   "Statistika lehel «Saatja ja valdkond» on näha, kui ettepaneku valdkond ei ole enam kasutusel. Sellist ettepanekut ei saa kinnitada tühjana: vali teine valdkond või saatja või jäta ettepanek vahele. «Kinnita kõik» ütleb, mitu ettepanekut jäi seetõttu kinnitamata.",
   "Kui teema antakse Lovable'is teisele juristile või öine sünkroniseerimine loob uue teema, saab uus vastutaja «Uus asi» teavituse nagu siis, kui kolleeg teema üle annab.",
+  "Halduse «Andmete sünkroonimine»: katkenud käivitus märgitakse kuue tunni pärast ebaõnnestunuks ja uut sünkroonimist saab jälle tellida; ebaõnnestunud «Kontrolli muudatusi» ütleb põhjuse, mitte «Kontroll tehtud». OneNote'i lugemist, mille kohta on juba otsustatud, ei panda järgmisel lugemisel uuesti ootele.",
 ]
 
 [[day]]
