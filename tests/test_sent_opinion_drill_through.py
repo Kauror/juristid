@@ -8,6 +8,9 @@ clickable (decision 2 of 2026-10-29); the link now carries the explicit
 ``?ainult=arvamused`` the workspace applies with the same exclusion
 (`workspace.reportable_opinions`).
 
+Since 19.11.2026 the figure reads the one reader of sent opinions and opens
+Statistika's list of exactly the facts it counted (docs/adr/0214 §6).
+
 Scenario E of the remediation brief: two reportable SENT opinions and one SENT
 `NO_OBJECTION_RESPONSE` this year, one opinion last year, and a draft → the
 figure says 2 and the page it opens lists exactly those two.
@@ -93,14 +96,14 @@ def test_the_page_it_opens_lists_exactly_those_two(client, department_head, scen
     response = client.get(row.url)
 
     assert response.status_code == 200
-    listed = {submission.pk for submission in response.context["page"].object_list}
-    assert listed == {submission.pk for submission in scenario_e}
+    # Statistika's list of sent opinions (docs/adr/0214 §6): this year's two
+    # opinions on the Teema — not the «no comments» answer (docs/adr/0174),
+    # not last year's, not the draft.
+    listed = sorted((row.matter.matter_id, row.sent_on) for row in response.context["rows"])
+    assert listed == sorted(
+        (submission.matter_id, timezone.localdate(submission.sent_at)) for submission in scenario_e
+    )
     assert response.context["total"] == row.count == 2
-    body = response.content.decode()
-    assert "2 vastet." in body
-    assert "märkusteta vastused ei ole selles loendis" in body
-    # The narrowing survives the next search.
-    assert 'name="ainult" value="arvamused"' in body
 
 
 def test_the_figure_and_the_filter_are_one_population(department_head, scenario_e):

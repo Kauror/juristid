@@ -53,6 +53,7 @@ from app.matters import department_dashboard as dd
 from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.department_changes import changes_url
+from app.reporting import opinions
 
 #: How many *Vajab sekkumist* rows stand above the disclosure. Five, which is
 #: what frame C draws; the rest open in place on the same page, so a scan never
@@ -175,8 +176,11 @@ def build_department(
     # that used to read it themselves went to the database five times for one
     # answer while both modules' docstrings claimed they went once.
     items = wi.work_items(viewer, today=today)
+    # One read of the sent opinions too (docs/adr/0214 §6): the strip, the
+    # Aruandlus rail and the team table all count from it.
+    facts = opinions.opinion_facts(viewer)
 
-    page.seis = dd.seis_figures(viewer, today, items=items)
+    page.seis = dd.seis_figures(viewer, today, items=items, facts=facts)
 
     if calendar_query_for is not None:
         # Department-wide in both scopes, and over the page's own `items`: the
@@ -203,7 +207,7 @@ def build_department(
         # The same Aruandlus block the department scope prints, from the same
         # selectors. Switching scope must not change a number nobody asked to
         # change (docs/adr/0049 §8).
-        page.reporting = dd.reporting_rail(viewer, today)
+        page.reporting = dd.reporting_rail(viewer, today, facts=facts)
         return page
 
     people = ov.Populations.for_user(viewer)
@@ -240,13 +244,13 @@ def build_department(
     # «Uut läbi vaatamata» is on the strip and on the rail: one count (D-03).
     unreviewed = next(figure.value for figure in page.seis if figure.key == "unreviewed")
     page.incoming = dd.incoming_rail(viewer, today, items=items, unreviewed_count=unreviewed)
-    page.reporting = dd.reporting_rail(viewer, today)
+    page.reporting = dd.reporting_rail(viewer, today, facts=facts)
 
     if is_head:
         # Built only here. A specialist's request never reaches these two, so
         # the manager-only populations are not read at all rather than read and
         # withheld by a template condition (brief §4, §41).
-        page.team = dd.team_rows(viewer, today, items=items)
+        page.team = dd.team_rows(viewer, today, items=items, facts=facts)
         page.previous_week_label = dd.short_range(*dd.previous_week(today))
         period = dd.period_from(params, today)
         kind = dd.kind_from(params)

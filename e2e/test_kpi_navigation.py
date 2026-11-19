@@ -289,22 +289,21 @@ def test_the_unowned_areas_rail_lists_the_areas_and_not_the_files(page, base_url
         assert "vastutaja=puudub" in href, href
 
 
-def test_the_weeks_opinion_figure_states_a_number_it_cannot_open(page, base_url):
-    """The one figure on the strip that is deliberately not a link.
+def test_the_weeks_opinion_figure_opens_the_weeks_opinions(page, base_url):
+    """The week's sent opinions open Statistika's list of exactly that week.
 
-    It counts opinions sent in the current calendar week, and the Arvamused
-    workspace narrows by year and by month — so the only destination available holds more
-    letters than the number beside it. An honest number beats a link to a
-    different list, which is the same treatment the team table's three
-    historical columns get (docs/adr/0049 §4, DS-24).
+    It used to be the one figure without a link: the Arvamused workspace
+    narrows by year and month, not by week. Since every count of sent opinions
+    reads the one reader, the figure links to its list of Monday to today and
+    the list holds what the figure counted (docs/adr/0214 §6, DS-24).
     """
     sign_in(page, base_url, HEAD)
     open_overview(page, base_url, "osakond")
 
     figure = page.locator(".seis__figure").filter(has_text="saadetud sel nädalal").first
     expect(figure).to_be_visible()
-    assert figure.evaluate("node => node.tagName.toLowerCase()") == "span"
-    assert figure.locator("a").count() == 0
+    assert figure.evaluate("node => node.tagName.toLowerCase()") == "a"
+    assert "/statistika/arvamused-valja/" in (figure.get_attribute("href") or "")
 
 
 def test_the_strip_carries_the_seven_approved_figures(page, base_url):

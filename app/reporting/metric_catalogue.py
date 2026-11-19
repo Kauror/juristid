@@ -51,6 +51,23 @@ _ERA_SUBMISSION = (
     "teemaga seotud ja ootab ülevaatust."
 )
 
+#: What every «saadetud arvamused» count reads since the owner's decision of
+#: 2026-11-19 (docs/adr/0214 §6): the one reader `reporting.opinions.opinion_facts`.
+_SENT_OPINIONS_DESCRIPTION = (
+    "Kõik Koja saadetud arvamused ühest lugejast: Juristidis saadetud «Koja "
+    "arvamus», tähtaeg, millele vastati ilma dokumendita, ja registri ajaloo "
+    "«välja saadetud». Sama teema kaks kirjet seitsme päeva jooksul on üks arvamus."
+)
+_SENT_OPINIONS_POPULATION = "Nähtavad päris teemad; saadetud arvamused kolmest kirjest"
+_SENT_OPINIONS_EXCLUSIONS = (
+    "Mustandid; vastus märkusteta (loetakse eraldi); sünkroniseerimise enda lõpetatud tähtajad"
+)
+_ERA_SENT_OPINIONS = (
+    "Aastad 2011–2026 tulevad registri ajaloost («välja saadetud», ilma failita) ja "
+    "Juristidi kirjetest; Postipoisi kirjad on lisatud aastatest 2008–2026, kui teema "
+    "oli teada. Saaja, liik ja fail on ainult Juristidis registreeritud arvamusel."
+)
+
 #: The first year the opinions archive holds anything at all. Measured, not
 #: assumed: the register begins in 2011, the archive does not, and reporting a
 #: 2014 trend from a corpus that starts in 2020 would present absence as zero
@@ -470,37 +487,31 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     # -- Koja tegevus ------------------------------------------------------
     MetricDefinition(
         key=SUBMISSIONS_SENT,
-        version=2,
+        version=3,
         label_et="Saadetud arvamusi",
-        description_et=(
-            "Kanoonilised saadetud Submission-kirjed. Arvamust ei tuletata "
-            "failinimest, PDF-ist ega registri VÄLJA-kuupäevast."
-        ),
-        source_population_et="Nähtavad arvamused olekus SAADETUD",
+        description_et=_SENT_OPINIONS_DESCRIPTION,
+        source_population_et=_SENT_OPINIONS_POPULATION,
         time_basis=TimeBasis.SUBMISSION_SENT_AT,
         unit=Unit.SUBMISSIONS,
-        required_fields=("sent_at", "final_version"),
-        exclusions_et="Mustandid, tagasi võetud ja asendatud arvamused",
-        source_era_limitations_et=_ERA_SUBMISSION,
+        required_fields=("sent_at",),
+        exclusions_et=_SENT_OPINIONS_EXCLUSIONS,
+        source_era_limitations_et=_ERA_SENT_OPINIONS,
         minimum_population=1,
-        drillthrough_et="Arvamuste loend, samade filtritega",
+        drillthrough_et="Saadetud arvamuste loend, sama perioodiga",
     ),
     MetricDefinition(
         key=SUBMISSIONS_SENT_BY_PERIOD,
-        version=2,
-        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
+        version=3,
+        earliest_reliable_period=REGISTER_FIRST_YEAR,
         label_et="Saadetud arvamused ajas",
-        description_et=(
-            "Saadetud arvamused aastate kaupa. Enne süsteemi kasutuselevõttu "
-            "mõõtmist ei ole ja tühje aastaid ei joonistata."
-        ),
-        source_population_et="Nähtavad arvamused olekus SAADETUD",
+        description_et=_SENT_OPINIONS_DESCRIPTION + " Aastate kaupa.",
+        source_population_et=_SENT_OPINIONS_POPULATION,
         time_basis=TimeBasis.SUBMISSION_SENT_AT,
         unit=Unit.SUBMISSIONS,
-        source_era_limitations_et=_ERA_SUBMISSION,
+        source_era_limitations_et=_ERA_SENT_OPINIONS,
         minimum_population=1,
-        notes_et="Puuduv mõõtmine ei ole null.",
-        drillthrough_et="Arvamuste loend, filtreeritud aasta järgi",
+        notes_et="Aastad algavad esimesest saadetud arvamusest.",
+        drillthrough_et="Saadetud arvamuste loend, filtreeritud aasta järgi",
     ),
     MetricDefinition(
         key=SUBMISSIONS_BY_RECIPIENT,
@@ -1451,7 +1462,7 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     ),
     MetricDefinition(
         key=SUBMISSIONS_SENT_YOY_CHANGE,
-        version=1,
+        version=2,
         label_et="Saadetud arvamused eelmise aasta sama ajaga",
         description_et=(
             "Saadetud arvamused 1. jaanuarist tänaseni, võrrelduna eelmise aasta "
@@ -1546,26 +1557,23 @@ _DEFINITIONS: tuple[MetricDefinition, ...] = (
     ),
     MetricDefinition(
         key=SUBMISSIONS_SENT_BY_MONTH_AND_YEAR,
-        version=1,
+        version=2,
         label_et="Saadetud arvamused kuude ja aastate kaupa",
-        description_et=(
-            "Kanoonilised saadetud arvamused saatmise kuu ja aasta järgi, et "
-            "sama kuud saaks aastate vahel võrrelda."
-        ),
-        source_population_et="Nähtavad arvamused olekus SAADETUD",
+        description_et=_SENT_OPINIONS_DESCRIPTION
+        + " Saatmise kuu ja aasta järgi, et sama kuud saaks aastate vahel võrrelda.",
+        source_population_et=_SENT_OPINIONS_POPULATION,
         time_basis=TimeBasis.SUBMISSION_SENT_AT,
         unit=Unit.SUBMISSIONS,
         required_fields=("sent_at",),
         respects_period=False,
-        earliest_reliable_period=OPINION_ARCHIVE_FIRST_YEAR,
+        earliest_reliable_period=REGISTER_FIRST_YEAR,
         minimum_population=1,
-        source_era_limitations_et=_ERA_SUBMISSION,
+        source_era_limitations_et=_ERA_SENT_OPINIONS,
         notes_et=(
-            "Veerud on mõõdetud aastad esimesest salvestatud arvamusest tänaseni. "
-            "Jooksva aasta tulevased kuud on tühjad, mitte null. Arhiivi failid "
-            "on eraldi plokis ega kuulu siia."
+            "Veerud on aastad esimesest saadetud arvamusest tänaseni. Jooksva aasta "
+            "tulevased kuud on tühjad, mitte null."
         ),
-        drillthrough_et="Arvamuste loend, filtreeritud aasta ja kuu järgi",
+        drillthrough_et="Saadetud arvamuste loend, filtreeritud kuu järgi",
     ),
 )
 

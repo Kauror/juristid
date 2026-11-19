@@ -235,6 +235,10 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
     senders = {key: name for m in _known.values() for key, name in m.senders}
     saatja = str(request.GET.get("saatja", "") or "")
     saatja = saatja if saatja in senders else ""
+    # The Teema's current owner by id (Seis's owner chip, docs/adr/0214 §6):
+    # exact where «jurist» is a name label.
+    vastutaja = str(request.GET.get("vastutaja", "") or "")
+    vastutaja = vastutaja if vastutaja in {str(m.owner_id) for m in _known.values()} else ""
     rows = sorted(
         (
             fact
@@ -243,6 +247,7 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
             and (not liik or fact.matter.instrument_key == liik)
             and (not valdkond or valdkond in {key for key, _ in fact.matter.areas})
             and (not saatja or saatja in {key for key, _ in fact.matter.senders})
+            and (not vastutaja or str(fact.matter.owner_id) == vastutaja)
         ),
         key=lambda fact: (fact.sent_on, fact.matter.reference),
         reverse=True,
@@ -261,6 +266,7 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
         "liik": liik,
         "valdkond": valdkond,
         "saatja": saatja,
+        "vastutaja": vastutaja,
     }
     headers = []
     for key, label in SORT_COLUMNS:
@@ -287,6 +293,8 @@ def opinion_rows(request: HttpRequest) -> HttpResponse:
             "jurist": jurist,
             "liik": kinds.get(liik, "") or areas.get(valdkond, "") or senders.get(saatja, ""),
             "rows": rows,
+            # How many the list holds: what every count that links here counted.
+            "total": len(rows),
             "headers": headers,
             "back_url": _url("reporting:dashboard", **_period_query(period), jurist=jurist),
         },

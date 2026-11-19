@@ -688,5 +688,7 @@ def test_the_bucket_costs_no_query_per_outside_owner(
     for index in range(12):
         open_matter(factories.ReaderFactory(display_name=f"Valine {index}"))
 
-    with django_assert_max_num_queries(14):
+    # The team table's own ceiling, +5 for the one reader of sent opinions
+    # (docs/adr/0214 §6) — fixed, whoever is in the bucket.
+    with django_assert_max_num_queries(19):
         list(rows_for(department_head))

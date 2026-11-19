@@ -51,7 +51,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -80,7 +80,10 @@ from app.matters.models import Matter, MatterResponseDeadline
 from app.matters.selectors import DATA_CLASS_REAL, MISSING, UNKNOWN_YEAR
 from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
-from app.reporting.metric_catalogue import OPINION_ARCHIVE_FIRST_YEAR, definition
+from app.reporting.metric_catalogue import (
+    REGISTER_FIRST_YEAR,
+    definition,
+)
 from app.reporting.metric_types import (
     Comparison,
     Matrix,
@@ -91,10 +94,10 @@ from app.reporting.metric_types import (
     Segment,
     distribution_from,
 )
+from app.reporting.selectors import sent_opinions
 from app.reporting.selectors.base import (
     count,
     eligible_matters,
-    grouped_count,
     known_year_q,
     population_for,
     register_url,
@@ -104,8 +107,8 @@ from app.reporting.selectors.base import (
 from app.reporting.selectors.matters import UNKNOWN_YEAR_LABEL
 from app.reporting.selectors.portfolio import MONTH_LABELS, same_day_last_year
 from app.reporting.selectors.submissions import (
+    SENT_NOTE,
     all_sent,
-    measured_window,
     sent_submissions,
 )
 from app.submissions.enums import SentAtPrecision, SubmissionStatus
@@ -671,16 +674,16 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
     """1 January to today, against 1 January to the same date last year.
 
     Both sides are read in Tallinn and both end on the same calendar day, so
-    nine and a half months are never measured against twelve. A year before the
-    first recorded Submission is not a zero: it was never measured, and the card
-    declines rather than reporting a rise from nothing.
+    nine and a half months are never measured against twelve. Counted from the
+    one reader of sent opinions (docs/adr/0214 §6); a year before the first sent
+    opinion on record is not a zero, and the card declines.
     """
     spec = definition(keys.SUBMISSIONS_SENT_YOY_CHANGE)
     cutoff = context.today
     previous_cutoff = same_day_last_year(cutoff)
-
-    current = count(sent_submissions(context, year=cutoff.year, through=cutoff))
-    previous = count(sent_submissions(context, year=cutoff.year - 1, through=previous_cutoff))
+    rows = sent_opinions.facts(context)
+    current = len(sent_opinions.in_window(rows, year=cutoff.year, through=cutoff))
+    previous = len(sent_opinions.in_window(rows, year=cutoff.year - 1, through=previous_cutoff))
 
     def label(day: date) -> str:
         return f"1.1.{day.year} – {format_estonian_date(day)}"
@@ -692,35 +695,22 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
         previous_period_label=label(previous_cutoff),
         coverage_cutoff=cutoff,
         cutoff_note="Mõlemad perioodid algavad 1. jaanuaril ja lõpevad sama kuupäevaga.",
-        current_url=_submission_list_url(
-            context, aasta=str(cutoff.year), kuni=f"{cutoff.month:02d}-{cutoff.day:02d}"
-        ),
-        previous_url=_submission_list_url(
-            context,
-            aasta=str(previous_cutoff.year),
-            kuni=f"{previous_cutoff.month:02d}-{previous_cutoff.day:02d}",
+        current_url=sent_opinions.rows_url(context, since=date(cutoff.year, 1, 1), until=cutoff),
+        previous_url=sent_opinions.rows_url(
+            context, since=date(previous_cutoff.year, 1, 1), until=previous_cutoff
         ),
     )
-
-    ever = count(all_sent(context))
-    window = measured_window(context)
     notes = [
+        SENT_NOTE,
         "Mahu muutus, mitte tulemuslikkus. Rohkem saadetud arvamusi ei ole "
         "iseenesest parem ega halvem.",
-        "Arhiivist taastatud arvamused on kanoonilised kirjed ja kuuluvad siia; "
-        "arhiivi failid ise ei kuulu.",
     ]
     status: MetricStatus | None = None
-    if window is not None:
-        notes.insert(0, f"Katvus: struktuursed arvamuse kirjed alates aastast {window[0]}.")
-    first_day = _first_send_day(context) if window is not None else None
-    if window is None or first_day is None:
+    first_day = sent_opinions.first_day(context)
+    if first_day is None:
         status = MetricStatus.INSUFFICIENT_DATA
     elif first_day > previous_cutoff:
-        # Compared as a *date*, not a year (QA-STATS-05, ADR 0160 §5): a first
-        # send on 9.9.2025 leaves 1.1–1.8.2025 unmeasured, and comparing years
-        # (2025 > 2025 is false) reported «3 vs 0» against a window no record
-        # could speak for.
+        # Compared as a *date*, not a year (QA-STATS-05, ADR 0160 §5).
         status = MetricStatus.INSUFFICIENT_DATA
         notes.append(
             f"Eelmise aasta kohta mõõtmist ei ole: esimene salvestatud arvamus on "
@@ -731,7 +721,7 @@ def submissions_sent_yoy_change(context: ReportingContext) -> MetricResult:
         spec,
         context=context,
         value=current,
-        population_count=ever,
+        population_count=len(rows),
         eligible_count=current,
         url=comparison.current_url,
         comparison=comparison,
@@ -1071,52 +1061,50 @@ def koda_initiatives_by_year(context: ReportingContext) -> MetricResult:
 
 
 def submissions_sent_by_month_and_year(context: ReportingContext) -> MetricResult:
-    """Months down, measured years across, so one month reads across the years.
+    """Months down, years across, so one month reads across the years.
 
-    The columns are the measured window — the first year a Submission was
-    recorded (never before the archive's first year) to this one. A month of
-    this year still to come is printed as a dash: it has not been measured, and
-    a 0 there would read as a quiet month.
+    Counted from the one reader of sent opinions (docs/adr/0214 §6). The columns
+    run from the first sent opinion on record (never before the archive's first
+    year) to this year. A month of this year still to come is a dash: it has
+    not happened, and a 0 there would read as a quiet month.
     """
     spec = definition(keys.SUBMISSIONS_SENT_BY_MONTH_AND_YEAR)
-    ever = count(all_sent(context))
-    window = measured_window(context)
-    if window is None:
+    rows = sent_opinions.facts(context)
+    first_day = sent_opinions.first_day(context)
+    if first_day is None:
         return simple_result(
             spec,
             context=context,
             value=0,
             population_count=0,
-            notes=("Ühtki struktuurset arvamuse kirjet ei ole veel salvestatud.",),
+            notes=("Ühtki saadetud arvamust ei ole veel salvestatud.",),
         )
 
-    first_year = max(window[0], OPINION_ARCHIVE_FIRST_YEAR)
-    years = list(range(first_year, window[1] + 1))
-    population = all_sent(context)
-    counted: dict[tuple[int, int], int] = {
-        (row["sent_at__year"], row["sent_at__month"]): row["total"]
-        for row in population.order_by()
-        .values("sent_at__year", "sent_at__month")
-        .annotate(total=grouped_count())
-    }
+    first_year = max(first_day.year, REGISTER_FIRST_YEAR)
     today = context.today
+    years = list(range(first_year, today.year + 1))
+    counted: dict[tuple[int, int], int] = {}
+    for fact in rows:
+        key = (fact.sent_on.year, fact.sent_on.month)
+        counted[key] = counted.get(key, 0) + 1
 
-    rows: list[MatrixRow] = []
+    matrix_rows: list[MatrixRow] = []
     for month in range(1, 13):
         cells = []
         for year in years:
             future = (year, month) > (today.year, today.month)
             value = counted.get((year, month), 0)
+            last = _month_end(year, month)
             cells.append(
                 MatrixCell(
                     value=value,
                     missing=future,
-                    url=_submission_list_url(context, aasta=str(year), kuu=str(month))
+                    url=sent_opinions.rows_url(context, since=date(year, month, 1), until=last)
                     if value
                     else "",
                 )
             )
-        rows.append(
+        matrix_rows.append(
             MatrixRow(
                 label=MONTH_LABELS[month], cells=tuple(cells), total=sum(c.value for c in cells)
             )
@@ -1126,12 +1114,7 @@ def submissions_sent_by_month_and_year(context: ReportingContext) -> MetricResul
         for column in years
     )
     before = sum(value for (year, _month), value in counted.items() if year < first_year)
-    notes = [
-        f"Katvus: struktuursed arvamuse kirjed alates aastast {window[0]}; "
-        "varasemaid aastaid ei ole mõõdetud.",
-        "Arhiivist taastatud arvamused on kanoonilised kirjed ja kuuluvad siia; "
-        "arhiivi failid on eraldi plokis.",
-    ]
+    notes = [SENT_NOTE]
     if before:
         notes.append(
             f"{before} arvamust on dateeritud enne aastat {first_year}, millest "
@@ -1140,7 +1123,7 @@ def submissions_sent_by_month_and_year(context: ReportingContext) -> MetricResul
     matrix = Matrix(
         row_header="Kuu",
         columns=tuple(str(year) for year in years),
-        rows=tuple(rows),
+        rows=tuple(matrix_rows),
         column_totals=column_totals,
         grand_total=sum(column_totals),
         column_header="aasta",
@@ -1150,12 +1133,16 @@ def submissions_sent_by_month_and_year(context: ReportingContext) -> MetricResul
         spec,
         context=context,
         value=sum(column_totals),
-        population_count=ever,
+        population_count=len(rows),
         eligible_count=sum(column_totals),
-        url=_submission_list_url(context, periood=f"{first_year}-{window[1]}"),
+        url=sent_opinions.rows_url(context, since=date(first_year, 1, 1)),
         matrix=matrix,
         notes=tuple(notes),
     )
+
+
+def _month_end(year: int, month: int) -> date:
+    return date(year + (month == 12), 1 if month == 12 else month + 1, 1) - timedelta(days=1)
 
 
 # ---------------------------------------------------------------------------

@@ -60,6 +60,22 @@ def _send(matter: Matter, title: str, when: datetime, *, restricted: bool = Fals
     )
 
 
+def _fact_keys(client, url: str) -> list:
+    """The opinion list's rows as (Teema, day) — the one reader has no row ids."""
+    parsed = urlparse(url)
+    assert parsed.path == reverse("reporting:opinion_rows"), url
+    query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
+    response = client.get(parsed.path, query)
+    assert response.status_code == 200, url
+    keys = sorted((row.matter.matter_id, row.sent_on) for row in response.context["rows"])
+    assert len(keys) == response.context["total"]
+    return keys
+
+
+def _key(submission) -> tuple:
+    return (submission.matter_id, timezone.localdate(submission.sent_at))
+
+
 def _list_ids(client, url: str) -> set:
     parsed = urlparse(url)
     query = {k: v[0] for k, v in parse_qs(parsed.query).items()}
@@ -137,15 +153,27 @@ def test_year_figures_agree_by_record_identity_across_new_year(viewer_name, clie
     year_segment = next(s for s in by_period.segments if s.label == str(year))
     column = by_month.matrix.columns.index(str(year))
 
-    assert period_card.value == len(expected)
-    assert year_segment.value == len(expected)
-    assert by_month.matrix.column_totals[column] == len(expected)
-    assert _list_ids(client, period_card.drillthrough_url) == expected
-    assert _list_ids(client, year_segment.url) == expected
+    # The counts read the one reader of sent opinions (docs/adr/0214 §6): every
+    # sent opinion of the year, read on the Tallinn day, real Teemad only.
+    from app.reporting import opinions
+
+    facts = sorted(
+        (fact.matter.matter_id, fact.sent_on)
+        for fact in opinions.opinion_facts(viewer)
+        if fact.sent_on.year == year
+    )
+    assert _key(sends["real_early"]) in facts and _key(sends["real_late"]) not in facts
+    assert _key(sends["test_early"]) not in facts
+    assert facts.count(_key(sends["restricted_early"])) == 2  # with real_early, same Teema and day
+    assert period_card.value == len(facts)
+    assert year_segment.value == len(facts)
+    assert by_month.matrix.column_totals[column] == len(facts)
+    assert _fact_keys(client, period_card.drillthrough_url) == facts
+    assert _fact_keys(client, year_segment.url) == facts
     january = by_month.matrix.rows[0].cells[column]
-    january_ids = _list_ids(client, january.url)
-    assert sends["real_early"].pk in january_ids
-    assert sends["test_early"].pk not in january_ids
+    january_keys = _fact_keys(client, january.url)
+    assert _key(sends["real_early"]) in january_keys
+    assert _key(sends["test_early"]) not in january_keys
     titles = _csv_titles(client, viewer, periood="koik", aasta=str(year))
     assert sorted(titles) == sorted(
         Submission.objects.filter(pk__in=expected).values_list("title", flat=True)
@@ -167,16 +195,22 @@ def test_leap_day_comparison_cuts_both_sides_on_the_right_day(client, world):
 
     result = compute(keys.SUBMISSIONS_SENT_YOY_CHANGE, _ctx(world.head, "kaesolev", today))
     comparison = result.comparison
-    assert "kuni=02-29" in comparison.current_url and "aasta=2028" in comparison.current_url
-    assert "kuni=02-28" in comparison.previous_url and "aasta=2027" in comparison.previous_url
+    assert "alates=2028-01-01&kuni=2028-02-29" in comparison.current_url
+    assert "alates=2027-01-01&kuni=2027-02-28" in comparison.previous_url
 
-    client.force_login(world.head)
-    current_ids = _list_ids(client, comparison.current_url)
-    previous_ids = _list_ids(client, comparison.previous_url)
-    assert inside_now.pk in current_ids and outside_now.pk not in current_ids
-    assert inside_then.pk in previous_ids and outside_then.pk not in previous_ids
-    assert comparison.current_value == len(current_ids)
-    assert comparison.previous_value == len(previous_ids)
+    # The one reader (docs/adr/0214 §6), cut on the Tallinn day. Opened on the
+    # list only up to the real today, so the 2028 side is checked on the facts.
+    from app.reporting import opinions
+
+    facts = opinions.opinion_facts(world.head)
+    now = [f for f in facts if date(2028, 1, 1) <= f.sent_on <= today]
+    then = [f for f in facts if date(2027, 1, 1) <= f.sent_on <= date(2027, 2, 28)]
+    assert _key(inside_now) in [(f.matter.matter_id, f.sent_on) for f in now]
+    assert _key(outside_now) not in [(f.matter.matter_id, f.sent_on) for f in now]
+    assert _key(inside_then) in [(f.matter.matter_id, f.sent_on) for f in then]
+    assert _key(outside_then) not in [(f.matter.matter_id, f.sent_on) for f in then]
+    assert comparison.current_value == len(now)
+    assert comparison.previous_value == len(then)
 
 
 def test_comparison_declines_when_the_previous_window_predates_the_first_record(world):

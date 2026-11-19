@@ -20,7 +20,6 @@ from app.core.management.commands.seed_e2e_data import (
     OPEN_TITLE,
     OVERDUE_TITLE,
     RESTRICTED_TITLE,
-    SUBMISSION_TITLE,
 )
 from e2e.conftest import ADMIN, MARTIN, READER, SANDRA, go_to, open_disclosure, sign_in, sign_out
 
@@ -360,7 +359,8 @@ def test_the_workspace_is_operable_from_the_keyboard(page, base_url):
 
 
 def test_a_submission_number_reaches_the_submission_list(page, base_url):
-    """The product's only list of sent opinions, and the number above it."""
+    """«Saadetud arvamusi» opens the list of every opinion it counted, from the
+    one reader (docs/adr/0214 §6): the seeded opinion's Teema is in it."""
     sign_in(page, base_url, MARTIN)
     open_statistics(page, base_url, "tegevus/")
 
@@ -368,8 +368,8 @@ def test_a_submission_number_reaches_the_submission_list(page, base_url):
     card.locator("a.metric__value").click()
     page.wait_for_load_state("networkidle")
 
-    expect(page.get_by_role("heading", name="Saadetud arvamused")).to_be_visible()
-    expect(page.get_by_text(SUBMISSION_TITLE).first).to_be_visible()
+    expect(page.get_by_role("heading", name="Välja saadetud arvamused")).to_be_visible()
+    expect(page.get_by_text(OPEN_TITLE).first).to_be_visible()
 
 
 # ---------------------------------------------------------------------------

@@ -497,26 +497,24 @@ def test_a_seis_figure_opens_the_matters_it_counted(client, department_head, wor
     assert figure.value == len(counted)
 
 
-def test_the_sent_figure_states_a_number_it_cannot_open(department_head, world, today):
-    """The one figure on the strip that carries no link, and why.
+def test_the_sent_figure_opens_exactly_this_weeks_opinions(client, department_head, world, today):
+    """«arvamust saadetud sel nädalal» counts the one reader of sent opinions
+    (docs/adr/0214 §6) from Monday to today, and opens Statistika's list of
+    exactly those days — so the number and its list agree (DS-24). It used to
+    carry no link: the Arvamused workspace could not narrow to a week."""
+    from app.reporting import opinions
 
-    It counts the current calendar week; the Arvamused workspace narrows by year
-    and by month. The only destination available therefore holds more letters than the
-    number beside it, so the figure states the number and offers nothing — an
-    honest number beats a link to a different list, which is the treatment the
-    team table's three historical columns already get (docs/adr/0049 §4, DS-24).
-    """
     built = page_for(department_head, today=today)
     figure = next(item for item in built.seis if item.key == "sent")
+    facts = opinions.opinion_facts(department_head)
 
-    assert (
-        figure.value
-        == dd.sent_submissions(
-            department_head, since=wi.start_of_iso_week(today), until=today
-        ).count()
-    )
-    assert figure.url == ""
-    assert [item.key for item in built.seis if not item.url] == ["sent"]
+    assert figure.value == len(opinions.sent_between(facts, wi.start_of_iso_week(today), today))
+    assert figure.url.startswith(reverse("reporting:opinion_rows"))
+    client.force_login(department_head)
+    response = client.get(figure.url)
+    assert response.status_code == 200
+    assert response.context["total"] == figure.value
+    assert [item.key for item in built.seis if not item.url] == []
 
 
 def test_every_other_figure_lands_on_the_register_rows(department_head, world, today):

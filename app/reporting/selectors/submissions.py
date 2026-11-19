@@ -38,6 +38,7 @@ from app.reporting import metric_catalogue as keys
 from app.reporting.context import ReportingContext
 from app.reporting.metric_catalogue import definition
 from app.reporting.metric_types import MetricResult, Segment
+from app.reporting.selectors import sent_opinions
 from app.reporting.selectors.base import (
     count,
     grouped_count,
@@ -55,9 +56,11 @@ from app.submissions.enums import (
 )
 from app.submissions.models import Submission, addressed_to, addressee_prefetch
 
+#: Under every figure that still counts `Submission`s — recipients, kind, files
+#: per Teema: what only a document registered in Juristid has (docs/adr/0214 §6).
 _ERA_NOTE = (
-    "Struktuurne arvamuse kirje tekib alles selles süsteemis. Varasemate "
-    "aastate kohta ei ole mõõtmist — see ei tähenda, et arvamusi ei saadetud."
+    "Ainult Juristidis failiga registreeritud arvamused: saaja, liik ja fail on "
+    "olemas ainult neil. Kõigi saadetud arvamuste arv on «Saadetud arvamusi»."
 )
 
 
@@ -158,81 +161,75 @@ def _submission_url(context: ReportingContext, **extra: str) -> str:
 # ---------------------------------------------------------------------------
 
 
+#: What «arvamusi välja» counts, said under every count that reads the one reader.
+SENT_NOTE = (
+    "Loeb kõik saadetud arvamused: Juristidis registreeritud «Koja arvamus», "
+    "vastatud tähtaeg ilma dokumendita ja registri ajaloo «välja saadetud» "
+    "(üks arvamus loetakse üks kord)."
+)
+
+
 def submissions_sent(context: ReportingContext) -> MetricResult:
+    """How many opinions Koda sent in the period — the one reader (docs/adr/0214 §6)."""
     spec = definition(keys.SUBMISSIONS_SENT)
-    ever = count(all_sent(context))
-    value = count(sent_submissions(context))
+    ever = len(sent_opinions.facts(context))
+    value = len(sent_opinions.in_period(context))
     return simple_result(
         spec,
         context=context,
         value=value,
         population_count=ever,
         eligible_count=value,
-        url=_submission_url(context),
-        notes=(_ERA_NOTE,),
+        url=sent_opinions.rows_url(context),
+        notes=(SENT_NOTE,),
     )
 
 
 def submissions_sent_by_period(context: ReportingContext) -> MetricResult:
-    """A bar per year of the measured window, and none outside it.
+    """A bar per year from the first sent opinion on record to this year.
 
-    Inside the window a zero is a real measurement and is drawn. Outside it
-    there is no measurement, so there is no bar — the difference between "none
-    were sent" and "nobody recorded any" is the whole point of this metric.
+    The one reader holds the register's history from 2011 (docs/adr/0214), so
+    every year from the first opinion on is measured and a zero there is real.
     """
     spec = definition(keys.SUBMISSIONS_SENT_BY_PERIOD)
-    ever = count(all_sent(context))
-    window = measured_window(context)
-
-    if window is None:
+    rows = sent_opinions.facts(context)
+    first = sent_opinions.first_day(context)
+    if first is None:
         return simple_result(
             spec,
             context=context,
             value=0,
             population_count=0,
-            url=_submission_url(context),
-            notes=(_ERA_NOTE, "Ühtki struktuurset arvamuse kirjet ei ole veel salvestatud."),
+            url=sent_opinions.rows_url(context),
+            notes=(SENT_NOTE, "Ühtki saadetud arvamust ei ole veel salvestatud."),
         )
 
-    first_year, last_year = window
+    first_year, last_year = first.year, context.today.year
     if context.period.is_all:
         years = list(range(first_year, last_year + 1))
     else:
         years = [year for year in context.period.years if first_year <= year <= last_year]
-
-    # `.order_by()` clears the model's default ordering, and it is load-bearing.
-    # `Submission.Meta.ordering` is `["-sent_at", "-created_at"]`, and Django
-    # adds ordering fields to the GROUP BY — so without this the query groups by
-    # (year, sent_at, created_at) and every submission becomes its own group of
-    # one. The trend then showed 1 where the list showed 2. Caught by the
-    # drill-through equality test on the first CI round.
-    counted = {
-        row["sent_at__year"]: row["total"]
-        for row in all_sent(context)
-        .order_by()
-        .values("sent_at__year")
-        .annotate(total=grouped_count())
-    }
+    counted: dict[int, int] = {}
+    for fact in rows:
+        counted[fact.sent_on.year] = counted.get(fact.sent_on.year, 0) + 1
     segments = tuple(
         Segment(
             label=str(year),
             value=counted.get(year, 0),
-            url=_submission_url(context, aasta=str(year)),
+            url=sent_opinions.rows_url(context, year=year),
         )
         for year in years
     )
-
-    notes = [_ERA_NOTE, f"Mõõdetud aastad: {first_year}–{last_year}."]
+    notes = [SENT_NOTE, f"Aastad: {first_year}–{last_year}."]
     if not context.period.is_all and not years:
-        notes.append("Valitud periood jääb tervikuna mõõdetud akna alt välja.")
-
+        notes.append("Valitud periood jääb tervikuna enne esimest saadetud arvamust.")
     return simple_result(
         spec,
         context=context,
         value=sum(segment.value for segment in segments),
-        population_count=ever,
+        population_count=len(rows),
         segments=segments,
-        url=_submission_url(context),
+        url=sent_opinions.rows_url(context),
         notes=tuple(notes),
     )
 

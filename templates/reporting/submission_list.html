@@ -25,9 +25,14 @@ the presentation: the kind is still stored, still filtered on by whatever
 {% block statistics %}
   <section aria-labelledby="arvamuste-loend-heading">
     <h2 class="sectionlabel" id="arvamuste-loend-heading">
-      Saadetud arvamused
+      Juristidis registreeritud arvamused
       <span class="sectionlabel__count">{{ total }}</span>
     </h2>
+    {% comment %}
+      What only a «Koja arvamus» has — its file, recipients and kind — is listed here.
+      Every count of sent opinions reads the one reader instead (docs/adr/0214 §6).
+    {% endcomment %}
+    <p class="sectionlabel__note">Koja arvamused, mis on Juristidis failiga salvestatud. Kõik saadetud arvamused, ka registri ajalugu, on <a href="{% url 'reporting:opinion_rows' %}">saadetud arvamuste loendis</a>.</p>
 
     {% if page.object_list %}
       <div class="tablewrap">

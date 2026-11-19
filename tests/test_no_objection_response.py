@@ -155,7 +155,10 @@ def test_it_is_never_counted_as_an_opinion_sent(specialist, department_head, min
     _answer(other, specialist, ministry, kind=SubmissionKind.FORMAL_OPINION)
 
     # Osakond and Minu asjad: «arvamust välja».
-    assert department_dashboard.sent_this_week(department_head, TODAY).count() == 1
+    sent = next(
+        f for f in department_dashboard.seis_figures(department_head, TODAY) if f.key == "sent"
+    )
+    assert sent.value == 1
     stats = person_stats(department_head, specialist, TODAY)
     assert {row.label: row.value for row in stats.year}["arvamusi välja"] == 1
 

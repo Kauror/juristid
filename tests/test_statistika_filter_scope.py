@@ -266,19 +266,19 @@ def test_reporting_year_sends_open_that_years_records_with_the_owner_chip(
     ).content.decode()
     value, url = _reporting_block(page, year)["arvamusi välja"]
 
-    expected = set(
-        Submission.objects.filter(
-            status=SubmissionStatus.SENT,
-            matter__owner=world.sandra,
-            matter__data_class="REAL",
-            sent_at__year=year,
-        ).values_list("pk", flat=True)
+    # The one reader of sent opinions (docs/adr/0214 §6), on Sandra's Teemad, this year.
+    from app.reporting import opinions
+
+    expected = sorted(
+        (str(fact.matter.matter_id), fact.sent_on)
+        for fact in opinions.opinion_facts(world.head)
+        if fact.matter.owner_id == world.sandra.pk and fact.sent_on.year == year
     )
-    assert mine.pk in expected
+    assert (str(mine.matter_id), world.today) in expected
     response = client.get(
         urlparse(url).path, {k: v[0] for k, v in parse_qs(urlparse(url).query).items()}
     )
-    listed = {row.pk for row in response.context["paginator"].object_list}
+    listed = sorted((str(row.matter.matter_id), row.sent_on) for row in response.context["rows"])
     assert listed == expected
     assert value == len(expected)
 
