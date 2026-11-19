@@ -93,6 +93,17 @@ What a program may read (checked 2026-11-17):
    own environment file on the host; the page shows the model a run used, never
    whether a key exists.
 
+9. **A stopped or missing night is red** (quality audit 2026-11-18, QA26-BUG-04
+   and OPS-01). One register's unexpected answer is that source's error and the
+   night goes on; a run that itself fails is closed as stopped («katkes»), and one
+   killed from outside counts as stopped after three hours. One run at a time.
+   `production_status` has a «Register watch» row — red when the newest run
+   stopped, when no run finished in 30 hours, or when the last run read no
+   register — so the host monitor's daily status check tells someone, and Haldus
+   says «Katkes» and why. The model is asked in batches of 25 findings, so a cut
+   answer costs one batch. «Registris uus dokument» belongs to the Teema's current
+   owner, like every other inbox source.
+
 ## Consequences
 
 - Teemad from the eight ministries above are watched by words; others (Interior,
