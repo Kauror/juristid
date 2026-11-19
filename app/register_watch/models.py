@@ -9,8 +9,11 @@ addition wrote (`development`), not this row.
 
 from __future__ import annotations
 
+import datetime as dt
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from app.core.models import BaseModel
 
@@ -155,6 +158,11 @@ class WatchFinding(BaseModel):
         return self.title
 
 
+#: A run that has not finished after this long was stopped from outside. The
+#: nightly run takes about 16 minutes (18.11.2026, 335 sources).
+ABANDONED_AFTER = dt.timedelta(hours=3)
+
+
 class WatchRun(BaseModel):
     started_at = models.DateTimeField(verbose_name="algas")
     finished_at = models.DateTimeField(null=True, blank=True, verbose_name="lõppes")
@@ -176,6 +184,23 @@ class WatchRun(BaseModel):
         verbose_name = "registrite kontroll"
         verbose_name_plural = "registrite kontrollid"
         ordering = ["-started_at"]
+
+    @property
+    def aborted(self) -> bool:
+        """The run stopped before its end: it said so, or it never finished.
+
+        A run that raised records an error marked ``katkes`` and is closed; one
+        whose process was killed (a release recreating the container, the host
+        going down) never sets ``finished_at`` and is taken as stopped once it
+        is older than any run takes (`ABANDONED_AFTER`).
+        """
+        if any(isinstance(error, dict) and error.get("katkes") for error in self.errors):
+            return True
+        return self.finished_at is None and self.started_at < timezone.now() - ABANDONED_AFTER
+
+    @property
+    def running(self) -> bool:
+        return self.finished_at is None and not self.aborted
 
 
 class RegisterNotice(BaseModel):

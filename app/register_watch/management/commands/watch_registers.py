@@ -5,6 +5,11 @@
 Run nightly by the host's cron. It stores what is new as proposals; nothing on a
 Teema changes until a lawyer adds a proposal. ``--dry-run`` does the whole run
 and rolls it back.
+
+Exit 0 when the run finished, even if some registers could not be read (they
+are in the run's log). Exit 1 when another run is still going, or when the run
+itself stopped — it is then recorded as stopped (``katkes``), and
+`production_status` turns red until a run finishes.
 """
 
 from __future__ import annotations
@@ -14,6 +19,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from app.core.errors import DomainError
 from app.matters.models import Matter
 from app.register_watch import watch
 
@@ -49,6 +55,13 @@ class Command(BaseCommand):
         return chosen
 
     def handle(self, *args: Any, **options: Any) -> None:
+        try:
+            self._handle(options)
+        except DomainError as error:
+            # Another run holds the lock: the cron line's log says so, exit 1.
+            raise CommandError(str(error)) from None
+
+    def _handle(self, options: dict[str, Any]) -> None:
         matters = self._matters(options["teema"])
         use_ai = not options["no_ai"] and not options["dry_run"]
         if not options["dry_run"]:

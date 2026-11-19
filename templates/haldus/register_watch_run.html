@@ -14,7 +14,7 @@
     <h2 class="acctsection__title" id="regwatchlog-run">Kontroll {{ run.started_at|date:"j.n.Y H:i" }}</h2>
     <dl class="detailgrid">
       <dt>Kestus</dt>
-      <dd>{{ duration|default:"Käib" }}</dd>
+      <dd>{% if run.aborted %}<span class="statechip statechip--problem">Katkes</span>{% if duration %} {{ duration }}{% endif %}{% else %}{{ duration|default:"Käib" }}{% endif %}</dd>
       <dt>Loetud</dt>
       <dd>{{ run.targets_checked }} allikat · {{ run.findings_new }} uut dokumenti, neist {{ run.findings_offered }} pakutud{% if earlier %} · {{ earlier }} varasemat{% endif %}</dd>
       <dt>AI</dt>

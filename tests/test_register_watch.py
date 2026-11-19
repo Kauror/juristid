@@ -779,3 +779,345 @@ def test_haldus_shows_the_section_to_business_readers_only(client, reader, admin
     client.force_login(administrator)
     assert client.get(reverse("haldus:register_watch")).status_code == 404
     assert client.get(reverse("haldus:register_watch_sources")).status_code == 404
+
+
+# -- a night that goes wrong (audit QA26-BUG-04, OPS-01, BUG-05, DUP-04, TEST-06) ------
+
+
+def _bill_with_null_decision():
+    reading = {
+        "readingCode": "SECOND_READING",
+        "proceedingEvents": [
+            {
+                "date": "2026-11-10T10:00:00",
+                "sittingTitle": "Komisjoni istung",
+                "committeeDecisions": [{"decision": {"value": None}}],
+            }
+        ],
+    }
+    return {**BILL, "readings": [*BILL["readings"], reading]}
+
+
+def test_a_null_committee_decision_is_read_as_no_decision(registers):
+    registers.answers[("api.riigikogu.ee", f"/api/volumes/drafts/{UUID}")] = (
+        _bill_with_null_decision()
+    )
+
+    record = watch.run([_bill_teema()], use_ai=False, today=TODAY)
+
+    assert record.errors == []
+    assert record.targets_checked == 9
+
+
+def test_an_unexpected_answer_is_one_sources_error_and_the_night_goes_on(registers, monkeypatch):
+    first, second = _bill_teema(), _bill_teema()
+    real = riigikogu.bill_items
+    calls = {"n": 0}
+
+    def once_broken(identifier):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise AttributeError("'NoneType' object has no attribute 'strip'")
+        return real(identifier)
+
+    monkeypatch.setattr(riigikogu, "bill_items", once_broken)
+
+    record = watch.run([first, second], use_ai=False, today=TODAY)
+
+    assert record.finished_at is not None and not record.aborted
+    assert [e["teema"] for e in record.errors] == [first.display_reference]
+    assert record.errors[0]["viga"].startswith("AttributeError")
+    assert record.targets_checked == 9 + 8
+    assert all(t.checked_at for t in WatchTarget.objects.filter(matter=second))
+
+
+def test_a_teema_whose_sources_cannot_be_set_up_does_not_stop_the_others(registers, monkeypatch):
+    first, second = _bill_teema(), _bill_teema()
+    real = watch.ensure_targets
+
+    def broken_for_first(matter):
+        if matter.pk == first.pk:
+            raise KeyError("uuid")
+        return real(matter)
+
+    monkeypatch.setattr(watch, "ensure_targets", broken_for_first)
+
+    record = watch.run([first, second], use_ai=False, today=TODAY)
+
+    assert record.errors == [{"teema": first.display_reference, "viga": "KeyError: 'uuid'"}]
+    assert record.targets_checked == 9
+
+
+def test_a_run_that_stops_says_so_and_turns_the_status_red(registers):
+    def teemad():
+        yield _bill_teema()
+        raise RuntimeError("andmebaas kadus")
+
+    with pytest.raises(RuntimeError):
+        watch.run(teemad(), use_ai=False, today=TODAY)
+
+    record = WatchRun.objects.get()
+    assert record.finished_at is not None and record.aborted
+    assert record.errors[-1] == {
+        "viga": "Kontroll katkes: RuntimeError: andmebaas kadus",
+        "katkes": True,
+    }
+    with override_settings(REGISTER_WATCH_FETCH=True):
+        assert watch.watch_health() == watch.Health(
+            False, "last run stopped before its end", "Viimane kontroll katkes."
+        )
+
+
+def _ran(*, started_hours_ago, finished=True, **fields):
+    from django.utils import timezone
+
+    started = timezone.now() - dt.timedelta(hours=started_hours_ago)
+    return WatchRun.objects.create(
+        started_at=started,
+        finished_at=started + dt.timedelta(minutes=16) if finished else None,
+        **fields,
+    )
+
+
+@override_settings(REGISTER_WATCH_FETCH=True)
+def test_the_health_of_the_watch_for_production_status():
+    from app.core import production_status as status_module
+
+    assert watch.watch_health() == watch.Health(True, "never run")
+    _ran(started_hours_ago=10, targets_checked=300, errors=[{"viga": "x"}], ai_failures=2)
+    assert watch.watch_health() == watch.Health(True, "1 errors, 2 AI failures")
+    row = status_module._register_watch()
+    assert (row.key, row.label, row.ok) == ("register_watch", "Register watch", True)
+
+    WatchRun.objects.all().delete()
+    _ran(started_hours_ago=31, targets_checked=300)
+    assert watch.watch_health().detail == "no finished run in 30 h"
+
+    WatchRun.objects.all().delete()
+    _ran(started_hours_ago=2, targets_checked=0, errors=[{"viga": "a"}, {"viga": "b"}])
+    assert watch.watch_health().detail == "last run read no source (2 errors)"
+
+    WatchRun.objects.all().delete()
+    _ran(started_hours_ago=1, finished=False)  # tonight's run, still going
+    assert not watch.watch_health().ok  # nothing finished in 30 h before it
+    _ran(started_hours_ago=20, targets_checked=300)
+    assert watch.watch_health().ok
+
+
+@override_settings(REGISTER_WATCH_FETCH=True)
+def test_a_run_killed_from_outside_is_stopped_once_it_is_older_than_any_run(client, specialist):
+    from app.core import production_status as status_module
+
+    _ran(started_hours_ago=26, targets_checked=300)
+    killed = _ran(started_hours_ago=4, finished=False)
+
+    assert killed.aborted and not killed.running
+    row = status_module._register_watch()
+    assert (row.ok, row.detail) == (False, "last run stopped before its end")
+    client.force_login(specialist)
+    page = client.get(reverse("haldus:register_watch")).content.decode()
+    one = client.get(reverse("haldus:register_watch_run", args=[killed.pk])).content.decode()
+    assert "Katkes" in page and "Viimane kontroll katkes." in page and "Vigadeta" not in page
+    assert "Katkes" in one and "Käib" not in one
+
+
+def test_fetching_switched_off_is_green():
+    assert watch.watch_health() == watch.Health(True, "off")
+
+
+@pytest.mark.django_db(transaction=True, serialized_rollback=True)
+def test_only_one_run_at_a_time(registers):
+    import threading
+
+    from django.core.management.base import CommandError
+    from django.db import connection
+
+    from app.core.errors import DomainError
+
+    holding, release = threading.Event(), threading.Event()
+
+    def other_run():
+        with watch._one_run_at_a_time():
+            holding.set()
+            release.wait(10)
+        connection.close()
+
+    thread = threading.Thread(target=other_run)
+    thread.start()
+    try:
+        assert holding.wait(10)
+        with pytest.raises(DomainError, match=watch.ALREADY_RUNNING):
+            watch.run([], use_ai=False, today=TODAY)
+        with pytest.raises(CommandError, match=watch.ALREADY_RUNNING):
+            call_command("watch_registers", "--no-ai")
+        assert not WatchRun.objects.exists()
+    finally:
+        release.set()
+        thread.join(10)
+    assert watch.run([], use_ai=False, today=TODAY).finished_at is not None
+
+
+@override_settings(REGISTER_WATCH_AI=True)
+def test_the_model_is_asked_in_batches_and_a_cut_answer_costs_one_batch_only():
+    matter = _bill_teema()
+    first = _finding(matter)
+    findings = [first] + [
+        WatchFinding.objects.create(
+            target=first.target,
+            matter=matter,
+            external_id=f"doc:{n}",
+            title=f"Dokument {n}",
+            occurred_on=dt.date(2026, 11, 6),
+        )
+        for n in range(59)
+    ]
+
+    class CutSecond(FakeClient):
+        def _create(self, **request):
+            response = super()._create(**request)
+            if len(self.sent) == 2:
+                response.stop_reason = "max_tokens"
+            return response
+
+    client = CutSecond(["RELEVANT"] * ai.BATCH)
+    usage = ai.Usage()
+
+    judged = ai.judge(matter, findings, usage, client=client)
+
+    sizes = [
+        len(json.loads(r["messages"][0]["content"].split("Documents found:\n", 1)[1]))
+        for r in client.sent
+    ]
+    assert sizes == [25, 25, 10]
+    assert judged == 35 and usage.failures == 1 and usage.calls == 3
+    assert all(r["max_tokens"] == ai.MAX_TOKENS for r in client.sent)
+
+
+def test_a_handed_over_teema_takes_its_notice_to_the_new_owner(specialist, other_specialist):
+    from django.utils import timezone
+
+    from app.matters.services import assign_matter
+    from app.register_watch import notices
+    from app.register_watch.models import RegisterNotice
+
+    matter = _bill_teema(owner=specialist)
+    _finding(matter)
+    notices.notify(matter, 1)
+    assign_matter(matter=matter, owner=other_specialist, actor=specialist)
+
+    assert notices.due_unread(specialist).count() == 0
+    assert notices.due_unread(other_specialist).count() == 1
+    notices.notify(matter, 2)
+    row = RegisterNotice.objects.get(matter=matter)
+    assert (row.recipient_id, row.documents) == (other_specialist.pk, 3)
+
+    arrived = notices.arrived_at(row)
+    RegisterNotice.objects.filter(pk=row.pk).update(updated_at=arrived - dt.timedelta(days=5))
+    row.refresh_from_db()
+    before = notices.arrived_at(row)
+    assert notices.mark_read(row)
+    row.refresh_from_db()
+    assert notices.arrived_at(row) == before  # reading is not an arrival
+    assert row.read_at is not None and row.read_at > before
+    assert timezone.now() - row.read_at < dt.timedelta(minutes=1)
+
+
+# -- the one door, tested below its switch (TEST-06) --------------------------------
+
+
+class _Response:
+    def __init__(self, body: bytes):
+        self.body = body
+        self.asked: list[int] = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, size=-1):
+        self.asked.append(size)
+        return self.body if size is None or size < 0 else self.body[:size]
+
+
+class _Opener:
+    def __init__(self, outcome):
+        self.outcome = outcome
+        self.urls: list[str] = []
+
+    def open(self, request, timeout=None):
+        self.urls.append(request.full_url)
+        if isinstance(self.outcome, BaseException):
+            raise self.outcome
+        return self.outcome
+
+
+@pytest.fixture
+def door(monkeypatch, settings):
+    """`http` with the switch on and the network replaced; no time passes."""
+    settings.REGISTER_WATCH_FETCH = True
+    monkeypatch.setattr(http, "_last_call", {})
+    clock = {"now": 1000.0, "slept": []}
+    monkeypatch.setattr(http.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(http.time, "sleep", lambda s: clock["slept"].append(round(s, 2)))
+
+    def use(outcome):
+        opener = _Opener(outcome)
+        monkeypatch.setattr(http, "_OPENER", opener)
+        monkeypatch.setattr(http, "_FORM_OPENER", opener)
+        return opener
+
+    return SimpleNamespace(use=use, clock=clock)
+
+
+def test_the_door_never_follows_a_redirect():
+    import urllib.request
+
+    handler = http._NoRedirect()
+    request = urllib.request.Request("https://api.riigikogu.ee/api/volumes/drafts")
+    assert (
+        handler.redirect_request(request, None, 302, "Found", {}, "https://elsewhere.example/")
+        is None
+    )
+    for opener in (http._OPENER, http._FORM_OPENER):
+        redirects = [
+            h for h in opener.handlers if isinstance(h, urllib.request.HTTPRedirectHandler)
+        ]
+        assert redirects and all(isinstance(h, http._NoRedirect) for h in redirects)
+
+
+def test_an_answer_over_the_cap_is_refused_unread(door):
+    big = door.use(_Response(b"x" * (http.MAX_BYTES + 10)))
+    with pytest.raises(FetchError, match="liiga suur"):
+        http.get_json("api.riigikogu.ee", "/api/volumes/drafts")
+    with pytest.raises(FetchError, match="liiga suur"):
+        http.get_text("adr.rik.ee", "/ram/")
+    assert big.outcome.asked == [http.MAX_BYTES + 1, http.MAX_BYTES + 1]
+
+
+def test_http_and_network_failures_are_fetch_errors_with_safe_words(door):
+    import urllib.error
+
+    door.use(urllib.error.HTTPError("https://x", 503, "secret body", {}, None))
+    with pytest.raises(FetchError, match=r"^api\.riigikogu\.ee vastas 503$"):
+        http.get_json("api.riigikogu.ee", "/api/volumes/drafts")
+    with pytest.raises(FetchError, match=r"^adr\.rik\.ee vastas 503$"):
+        http.post_form("adr.rik.ee", "/ram/", {"a": "b"})
+    door.use(urllib.error.URLError("name lookup failed"))
+    with pytest.raises(FetchError, match=r"^dok\.hm\.ee ei vastanud \(URLError\)$"):
+        http.get_json("dok.hm.ee", "/api/v1/documents.json")
+    door.use(TimeoutError())
+    with pytest.raises(FetchError, match=r"ei vastanud \(TimeoutError\)"):
+        http.get_text("adr.rik.ee", "/ram/")
+
+
+def test_calls_to_one_host_are_spaced(door):
+    door.use(_Response(b"{}"))
+    http.get_json("api.riigikogu.ee", "/api/a")
+    http.get_json("api.riigikogu.ee", "/api/b")
+    http.get_json("dok.hm.ee", "/api/c")
+    door.clock["now"] += 10
+    http.get_json("api.riigikogu.ee", "/api/d")
+
+    assert door.clock["slept"] == [http.SPACING_SECONDS["api.riigikogu.ee"]]

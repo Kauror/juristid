@@ -217,7 +217,10 @@ nothing.
 Several checks above are read-only questions about the **currently running**
 application and database, and the procedure asks for them one after another.
 `manage.py production_status` asks five of them in one go and prints one row
-each:
+each, followed by three rows about the scheduled jobs — the nightly Lovable
+synchronisation (ADR 0192), the wider Lovable observation (ADR 0201) and the
+nightly register watch (ADR 0217: red when the newest run stopped before its end,
+when no run finished in 30 hours, or when the last run read no register at all):
 
 ```
 PRODUCTION STATUS
@@ -227,6 +230,9 @@ Search integrity          PASS
 Search freshness          PASS
 Era contracts             PASS
 Archive projection        PASS
+Lovable sync              PASS
+Lovable observation       PASS
+Register watch            PASS
 
 Overall                   PASS
 ```
