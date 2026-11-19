@@ -69,12 +69,28 @@ alert() {
 say "START nightly backup, project $PROJECT, rpo ${RPO_HOURS}h"
 say "docker compose: $(docker compose version 2>&1 | head -n 1 || echo 'not available')"
 
-rc=0
-bash "$REPO/scripts/deploy/juristid-backup.sh" \
-  --project "$PROJECT" \
-  --compose-file "$REPO/deploy/unraid-main/compose.yml" \
-  --data-root "$DATA_ROOT" \
-  --backup-root "$BACKUP_ROOT" >>"$LOG" 2>&1 || rc=$?
+# A held host lock is retried every minute for LOCK_WAIT_MINUTES (quality audit
+# QA26-ARCH-05: on 10.11 a running sync made the night's set skip, and nothing
+# tried again). Twenty minutes ends before the 21:15 UTC sync window; a
+# release's lock that is still held then fails the night as before, by name.
+LOCK_WAIT_MINUTES="${JURISTID_BACKUP_LOCK_WAIT_MINUTES:-20}"
+LOCK_RETRY_SECONDS="${JURISTID_BACKUP_LOCK_RETRY_SECONDS:-60}"
+attempt=0
+while :; do
+  rc=0
+  attempt=$((attempt + 1))
+  before="$(wc -l <"$LOG" 2>/dev/null || echo 0)"
+  bash "$REPO/scripts/deploy/juristid-backup.sh" \
+    --project "$PROJECT" \
+    --compose-file "$REPO/deploy/unraid-main/compose.yml" \
+    --data-root "$DATA_ROOT" \
+    --backup-root "$BACKUP_ROOT" >>"$LOG" 2>&1 || rc=$?
+  [ "$rc" != 0 ] || break
+  tail -n +"$((before + 1))" "$LOG" | grep -q 'another operation holds' || break
+  [ "$attempt" -lt "$LOCK_WAIT_MINUTES" ] || break
+  say "WAIT the host lock is held; trying again in ${LOCK_RETRY_SECONDS}s (attempt $attempt of $LOCK_WAIT_MINUTES)"
+  sleep "$LOCK_RETRY_SECONDS"
+done
 
 if [ "$rc" != 0 ]; then
   say "FAIL juristid-backup.sh exit $rc"

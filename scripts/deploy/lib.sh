@@ -37,9 +37,38 @@ die() {
 # for a test harness, never for a deployment.
 JURISTID_HOST_LOCK="${JURISTID_HOST_LOCK:-/tmp/juristid-host-lock}"
 
+#: A lock may be taken over only when its holder was a backup or a Lovable
+#: sync, that process is gone, and the lock is older than
+#: JURISTID_STALE_LOCK_MINUTES (quality audit QA26-ARCH-05: a killed holder
+#: made every later backup and sync skip until a person removed it). A
+#: release's or a restore's lock is never taken over: a release STOP leaves
+#: it on purpose, for a person to settle.
+JURISTID_STALE_LOCK_OWNERS="backup lovable-sync"
+JURISTID_STALE_LOCK_MINUTES="${JURISTID_STALE_LOCK_MINUTES:-30}"
+
+host_lock_is_stale() {
+  local line owner pid
+  line="$(cat "$JURISTID_HOST_LOCK/owner" 2>/dev/null)" || return 1
+  owner="$(printf '%s' "$line" | sed -nE 's/^owner=([^ ]+).*/\1/p')"
+  pid="$(printf '%s' "$line" | sed -nE 's/.* pid=([0-9]+).*/\1/p')"
+  [[ " $JURISTID_STALE_LOCK_OWNERS " == *" $owner "* ]] || return 1
+  [ -n "$pid" ] || return 1
+  kill -0 "$pid" 2>/dev/null && return 1
+  [ -n "$(find "$JURISTID_HOST_LOCK" -maxdepth 0 -mmin +"$JURISTID_STALE_LOCK_MINUTES" 2>/dev/null)" ]
+}
+
 take_host_lock() {
-  local owner="$1"
-  mkdir "$JURISTID_HOST_LOCK" 2>/dev/null || return 1
+  local owner="$1" stale
+  if ! mkdir "$JURISTID_HOST_LOCK" 2>/dev/null; then
+    host_lock_is_stale || return 1
+    stale="$(host_lock_owner)"
+    # Moved aside, not removed: one rename wins, and a lock someone took in the
+    # meantime is not stale (its holder is alive), so it is never moved.
+    host_lock_is_stale && mv -- "$JURISTID_HOST_LOCK" "$JURISTID_HOST_LOCK.stale.$$" 2>/dev/null || return 1
+    rm -rf -- "$JURISTID_HOST_LOCK.stale.$$"
+    mkdir "$JURISTID_HOST_LOCK" 2>/dev/null || return 1
+    note "took over a stale host lock (${stale}; its process is gone)"
+  fi
   printf 'owner=%s pid=%s %s\n' "$owner" "$$" "$(date -u +%FT%TZ)" > "$JURISTID_HOST_LOCK/owner"
 }
 
