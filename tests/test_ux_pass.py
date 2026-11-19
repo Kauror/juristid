@@ -994,7 +994,9 @@ def test_osakond_costs_the_same_whatever_the_department_holds(
     _department_world(department_head, people=people, matters=matters)
     client.force_login(department_head)
 
-    with django_assert_max_num_queries(45):
+    # +1 since the page counts sent opinions from one read of the one reader
+    # (docs/adr/0214 §6) — the same at 3, 12, 30 and 60.
+    with django_assert_max_num_queries(46):
         response = client.get(reverse("matters:department"))
     assert response.status_code == 200
 

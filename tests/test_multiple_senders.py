@@ -783,7 +783,9 @@ def test_the_department_overview_prefetches_its_senders(
             ],
         )
 
-    with django_assert_max_num_queries(30):
+    # +3 since the page counts sent opinions from one read of the one reader
+    # (docs/adr/0214 §6), whatever the senders.
+    with django_assert_max_num_queries(33):
         response = signed_in.get(reverse("matters:department"))
         response.content.decode()
 

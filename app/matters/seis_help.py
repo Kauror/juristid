@@ -167,7 +167,7 @@ DEPT_SENT_HELP = FigureHelp(
     title="Arvamused saadetud sel nädalal",
     paragraphs=(
         "Loeb saadetud arvamusi esmaspäevast tänaseni: Juristis salvestatud Koja "
-        "arvamused, ilma dokumendita vastatud tähtajad ja registris «välja saadetud» "
+        "arvamused, ilma dokumendita vastatud tähtajad ja registri ajaloos «välja saadetud» "
         "märgitud arvamused. Sama arv on Statistikas.",
     ),
 )
