@@ -599,7 +599,7 @@ LOVABLE_SYNC_PROVENANCE = "LOVABLE_SYNC"
 
 
 def raise_lovable_handover_notice(*, matter: Matter, owner: Any) -> None:
-    """«Uus asi» for a hand-over that arrived from Lovable (docs/adr/0051 §6).
+    """«Uus asi» for a hand-over that arrived from Lovable (docs/adr/0051, amendment of 2026-11-19).
 
     Since r55 a synchronised Teema's owner changes only in Lovable, so the sync
     is how a colleague hands such a Teema over — and the new owner heard nothing

@@ -230,7 +230,7 @@ BACKUP_PROOF_LEVEL = 2
 #: last stored reading, absent tonight — is a broken read or a broken source,
 #: never a night's work: the run stops. A topic deleted in Lovable on an earlier
 #: night stays missing for good (its Teema is kept) and never counts again
-#: (quality audit QA26-LS-01; docs/adr/0213 §13).
+#: (quality audit QA26-LS-01; docs/adr/0213 §11).
 MAX_MISSING = 5
 #: New Teemad one night may create (docs/adr/0213): the department opens a few
 #: topics a week; more than this in one night is a changed source scope or a
@@ -4781,7 +4781,7 @@ def create_new_topic(
                 "updated_at",
             ]
         )
-        # The lawyer the new Teema is filed to hears of it (docs/adr/0051 §6).
+        # The lawyer the new Teema is filed to hears of it (docs/adr/0051, amendment of 2026-11-19).
         from app.matters.services import raise_lovable_handover_notice
 
         raise_lovable_handover_notice(matter=matter, owner=matter.owner)
