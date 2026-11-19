@@ -40,6 +40,7 @@ list leaves it (docs/adr/0096).
 from __future__ import annotations
 
 import datetime as dt
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -314,14 +315,104 @@ def _local(moment: dt.datetime | None) -> str:
     return moment.astimezone(TALLINN).strftime("%d.%m.%Y kell %H.%M")
 
 
-def _document(snapshot: LovableSyncSnapshot | None) -> dict[str, Any] | None:
-    if snapshot is None:
-        return None
-    try:
-        verify_snapshot(snapshot.document)
-    except SourceError:
-        return None
-    return snapshot.document
+# A finished night never changes (quality audit QA26-PERF-02): a stored
+# snapshot is written once and only ever deleted by retention, so whether it
+# verifies, and what changed between two of them, is worked out once per
+# worker. Keys carry the stored digest; a new snapshot is a new key.
+
+
+@dataclass(frozen=True)
+class TopicDelta:
+    """One topic's difference between two readings: present in each, a new
+    number, and the fields whose compared value changed ``(name, was, now)``."""
+
+    old_present: bool
+    new_present: bool
+    renumbered: tuple[str, str] | None
+    fields: tuple[tuple[str, Any, Any], ...]
+
+
+@dataclass(frozen=True)
+class NightDelta:
+    #: Only the topics that differ (an unchanged topic is in neither list).
+    changes: dict[str, TopicDelta]
+    #: Every topic the later reading holds.
+    after_ids: frozenset[str]
+
+
+_CACHE_SIZE = 128
+_VERIFIED: OrderedDict[tuple[Any, str], bool] = OrderedDict()
+_DELTAS: OrderedDict[tuple[Any, ...], NightDelta] = OrderedDict()
+
+
+def _remember(cache: OrderedDict, key: Any, value: Any) -> Any:
+    cache[key] = value
+    cache.move_to_end(key)
+    while len(cache) > _CACHE_SIZE:
+        cache.popitem(last=False)
+    return value
+
+
+class _Documents:
+    """The stored documents one history needs, each read at most once and only
+    when no worked-out answer for it is remembered."""
+
+    def __init__(self) -> None:
+        self._docs: dict[Any, dict[str, Any]] = {}
+
+    def get(self, snapshot: LovableSyncSnapshot) -> dict[str, Any]:
+        if snapshot.pk not in self._docs:
+            self._docs[snapshot.pk] = (
+                LovableSyncSnapshot.objects.filter(pk=snapshot.pk)
+                .values_list("document", flat=True)
+                .get()
+            )
+        return self._docs[snapshot.pk]
+
+    def verified(self, snapshot: LovableSyncSnapshot | None) -> bool:
+        if snapshot is None:
+            return False
+        key = (snapshot.pk, snapshot.sha256)
+        if key in _VERIFIED:
+            _VERIFIED.move_to_end(key)
+            return _VERIFIED[key]
+        try:
+            verify_snapshot(self.get(snapshot))
+        except SourceError:
+            return _remember(_VERIFIED, key, False)
+        return _remember(_VERIFIED, key, True)
+
+    def delta(self, before: LovableSyncSnapshot, after: LovableSyncSnapshot) -> NightDelta:
+        key = (before.pk, before.sha256, after.pk, after.sha256)
+        if key in _DELTAS:
+            _DELTAS.move_to_end(key)
+            return _DELTAS[key]
+        return _remember(
+            _DELTAS,
+            key,
+            night_delta(self.get(before).get("cohort") or {}, self.get(after).get("cohort") or {}),
+        )
+
+
+def night_delta(before: dict[str, Any], after: dict[str, Any]) -> NightDelta:
+    """What differs between two readings' cohorts, topic by topic."""
+    changes: dict[str, TopicDelta] = {}
+    for source_id in set(before) | set(after):
+        old, new = before.get(source_id), after.get(source_id)
+        if old is None or new is None:
+            changes[source_id] = TopicDelta(old is not None, new is not None, None, ())
+            continue
+        old_nr, new_nr = str(old["row"].get("nr") or ""), str(new["row"].get("nr") or "")
+        was, now = canonical(old), canonical(new)
+        fields = tuple(
+            (name, was[name], now[name])
+            for name in FIELD_ORDER
+            if _key(name, was[name]) != _key(name, now[name])
+        )
+        renumbered = (old_nr, new_nr) if old_nr != new_nr else None
+        if fields or renumbered is not None:
+            changes[source_id] = TopicDelta(True, True, renumbered, fields)
+    return NightDelta(changes=changes, after_ids=frozenset(after))
 
 
 def _elsewhere(run: LovableSyncRun, night: LovableSyncRun) -> str:
@@ -403,8 +494,7 @@ def _matching(
 
 def _compare(
     night: Night,
-    before: dict[str, Any],
-    after: dict[str, Any],
+    delta: NightDelta,
     *,
     states: dict[str, LovableSyncState],
     visible: dict[Any, Any],
@@ -420,32 +510,34 @@ def _compare(
 ) -> None:
     run = night.run
     reconciled = run_reconciled(run)
-    for source_id in sorted(set(before) | set(after)):
+    # Only a topic that differs can say anything, and a Teema entering the
+    # synchronisation whatever its topic did (unchanged topics are skipped
+    # exactly as before: no field, no new number, not entering).
+    entering_ids = {
+        source_id
+        for source_id, s in states.items()
+        if s.pk in entering and source_id in delta.after_ids
+    }
+    for source_id in sorted(set(delta.changes) | entering_ids):
+        change = delta.changes.get(source_id)
+        old_present = change.old_present if change is not None else True
+        new_present = change.new_present if change is not None else True
         state = states.get(source_id)
         if state is None or state.matter_id not in live or state.pk in late:
             # Not a synchronised Teema any more (deleted, or replaced by a later
             # cohort whose state did not exist when this night ran): its change
             # is counted, never attributed to whatever holds the topic now.
-            old, new = before.get(source_id), after.get(source_id)
-            if (
-                old is None
-                or new is None
-                or any(
-                    _key(n, a) != _key(n, b)
-                    for n, a, b in ((n, canonical(old)[n], canonical(new)[n]) for n in FIELD_ORDER)
-                )
-            ):
+            if change is not None and (not old_present or not new_present or change.fields):
                 night.gone += 1
             continue
         matter = visible.get(state.matter_id)
-        old, new = before.get(source_id), after.get(source_id)
         topic = TopicChange(
             reference=state.reference,
             title=matter.title if matter is not None else "",
             matter_id=state.matter_id,
         )
-        if new is not None and (
-            (old is None and _enrolled_since(state, baseline_started)) or state.pk in entering
+        if new_present and (
+            (not old_present and _enrolled_since(state, baseline_started)) or state.pk in entering
         ):
             # Not synchronised at the earlier reading — whether or not Lovable's
             # topic was in it under an earlier Teema (docs/adr/0203): it enters.
@@ -454,27 +546,24 @@ def _compare(
             if matter is not None:
                 night.topics.append(topic)
             continue
-        if old is None or new is None:
-            topic.kind = "MISSING" if new is None else "BACK"
+        if not old_present or not new_present:
+            topic.kind = "MISSING" if not new_present else "BACK"
         else:
-            old_nr, new_nr = str(old["row"].get("nr") or ""), str(new["row"].get("nr") or "")
-            if old_nr != new_nr:
-                topic.renumbered = (old_nr, new_nr)
-            was, now = canonical(old), canonical(new)
-            for name in FIELD_ORDER:
-                if _key(name, was[name]) == _key(name, now[name]):
-                    continue
+            if change is None:
+                continue
+            topic.renumbered = change.renumbered
+            for name, was, now in change.fields:
                 result, note = _result(
                     name,
-                    now[name],
+                    now,
                     decision=decisions.get((state.pk, name)),
                     topic=decisions.get((state.pk, "*")),
-                    applied_in=_matching(applied.get((state.pk, name), []), name, now[name]),
-                    converged_in=_matching(converged.get((state.pk, name), []), name, now[name]),
+                    applied_in=_matching(applied.get((state.pk, name), []), name, now),
+                    converged_in=_matching(converged.get((state.pk, name), []), name, now),
                     resolved_at=_matching(
                         resolutions.get((state.pk, name), []),
                         name,
-                        now[name],
+                        now,
                         after=run.started_at,
                     ),
                     night=run,
@@ -485,8 +574,8 @@ def _compare(
                     FieldChange(
                         name=name,
                         label=LOVABLE_FIELD_LABELS.get(name, name),
-                        before=shown(name, was[name]),
-                        after=shown(name, now[name]),
+                        before=shown(name, was),
+                        after=shown(name, now),
                         result=result,
                         result_label=RESULT_LABELS[result],
                         note=note,
@@ -546,7 +635,10 @@ def nightly_history(
             (r for r in scheduled[position + 1 :] if r.pk in snapshot_runs), None
         )
     needed = {r.pk for r in shown_runs} | {b.pk for b in baseline_of.values() if b is not None}
-    snapshots = {s.run_id: s for s in LovableSyncSnapshot.objects.filter(run_id__in=needed)}
+    snapshots = {
+        s.run_id: s for s in LovableSyncSnapshot.objects.filter(run_id__in=needed).defer("document")
+    }
+    documents = _Documents()
 
     states = {str(s.source_id): s for s in LovableSyncState.objects.all()}
     matter_ids = {s.matter_id for s in states.values()}
@@ -616,8 +708,7 @@ def nightly_history(
         )
         nights.append(night)
         stored = snapshots.get(run.pk)
-        after = _document(stored)
-        if after is None:
+        if not documents.verified(stored):
             night.comparison = "NO_SNAPSHOT"
             night.message = NOT_READ if stored is None else NOT_VERIFIABLE
             continue
@@ -633,9 +724,9 @@ def nightly_history(
                 night.comparison = "BASELINE"
                 night.message = FIRST_READING
             continue
-        before = _document(snapshots.get(baseline.pk))
+        before = snapshots.get(baseline.pk)
         night.baseline_local = _local(baseline.started_at)
-        if before is None:
+        if not documents.verified(before):
             night.comparison = "UNAVAILABLE"
             night.message = NOT_VERIFIABLE
             continue
@@ -655,10 +746,11 @@ def nightly_history(
             night.warning = NOT_RECONCILED
         elif (run.error or "").startswith("VERIFY"):
             night.warning = VERIFY_STOPPED_NIGHT
+        if stored is None or before is None:  # `verified` said no to both above
+            continue
         _compare(
             night,
-            before.get("cohort") or {},
-            after.get("cohort") or {},
+            documents.delta(before, stored),
             states=states,
             visible=visible,
             live=live,

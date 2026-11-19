@@ -1033,6 +1033,33 @@ def _hold_querysets() -> tuple[Any, Any]:
     return rows, revisions
 
 
+#: What a list of held items never prints: the page's text and blocks, the
+#: reading's context and detail. Read only for one item's own page (`held_item`);
+#: a list read them for every held row — 11,649 JSON documents and 6 s on
+#: production for one page of 25 (quality audit QA26-PERF-03).
+_LIST_DEFERRED_ROWS = (
+    "error_detail",
+    "resource__archive_relative_path",
+    "resource__source_page__role_reason",
+    "resource__source_page__derived_text",
+    "resource__source_page__blocks",
+    "resource__source_page__links",
+    "resource__source_page__onenote_hyperlink",
+    "import_batch__notes",
+)
+_LIST_DEFERRED_REVISIONS = (
+    "detail",
+    "context",
+    "archive_relative_path",
+    "resource__archive_relative_path",
+    "resource__source_page__role_reason",
+    "resource__source_page__derived_text",
+    "resource__source_page__blocks",
+    "resource__source_page__links",
+    "resource__source_page__onenote_hyperlink",
+)
+
+
 def _teema(link: Any, row: Any = None) -> HoldTeema:
     matter = link.matter
     return HoldTeema(
@@ -1052,7 +1079,10 @@ def _collect_items(*, key: str | None = None, lock: bool = False) -> list[HeldIt
     from app.legacy_import.onenote_coverage_models import OneNoteResourceRevision
 
     rows, revisions = _hold_querysets()
-    if key is not None:
+    if key is None:
+        rows = rows.defer(*_LIST_DEFERRED_ROWS)
+        revisions = revisions.defer(*_LIST_DEFERRED_REVISIONS)
+    else:
         kind, _, raw = key.partition(":")
         try:
             # A shared file reopened for a Teema linked after a decision is

@@ -1368,93 +1368,136 @@ def conditional_values(matter: Any) -> dict[str, Any]:
     stage key, the current opinion request's day, whether the Teema is a Chamber
     initiative, its active commencements as ``[target, kind, day]`` (the shape
     `lovable_pilot.derived_values` gives), and the Lovable ids its continuation
-    names (through the successor's own synchronisation state, never a title)."""
+    names (through the successor's own synchronisation state, never a title).
+
+    One Teema's answer of `conditional_values_bulk` — one reader, so a page that
+    plans every Teema at once and an apply that re-reads one never disagree."""
+    return conditional_values_bulk([matter])[getattr(matter, "pk", None)]
+
+
+def conditional_values_bulk(matters: list[Any]) -> dict[Any, dict[str, Any]]:
+    """`conditional_values` for many Teemad in a constant number of queries
+    (quality audit QA26-PERF-01: «Valmisolek» planned 2,370 Teemad with ~10
+    queries each, 24 s per view)."""
     from app.intelligence.enums import FactStatus
     from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+    from app.legacy_import.lovable_sync_models import current_opinion_outcomes
+    from app.matters.models import Matter, MatterResponseDeadline
     from app.workflow.enums import Track
+    from app.workflow.models import StageVocabulary
 
-    dates = [
-        ["MatterEffectiveDate", str(kind or ""), day.isoformat() if day else None]
-        for kind, day in MatterEffectiveDate.objects.filter(
-            matter_id=matter.pk, status=FactStatus.ACTIVE
-        ).values_list("kind", "date_value")
-    ] + [
-        ["MatterImportantDate", str(kind or ""), day.isoformat() if day else None]
-        for kind, day in MatterImportantDate.objects.filter(
-            matter_id=matter.pk,
-            status=FactStatus.ACTIVE,
-            kind__in=COMMENCEMENT_IMPORTANT_KINDS,
-        ).values_list("kind", "date_value")
-    ]
-    successor = getattr(matter, "superseded_by_id", None)
-    continuation = (
-        sorted(
-            str(source)
-            for source in LovableSyncState.objects.filter(matter_id=successor).values_list(
-                "source_id", flat=True
-            )
+    ids = [m.pk for m in matters if getattr(m, "pk", None) is not None]
+    dates: dict[Any, list[list[Any]]] = {}
+    for matter_id, kind, day in MatterEffectiveDate.objects.filter(
+        matter_id__in=ids, status=FactStatus.ACTIVE
+    ).values_list("matter_id", "kind", "date_value"):
+        dates.setdefault(matter_id, []).append(
+            ["MatterEffectiveDate", str(kind or ""), day.isoformat() if day else None]
         )
-        if successor
-        else []
+    for matter_id, kind, day in MatterImportantDate.objects.filter(
+        matter_id__in=ids, status=FactStatus.ACTIVE, kind__in=COMMENCEMENT_IMPORTANT_KINDS
+    ).values_list("matter_id", "kind", "date_value"):
+        dates.setdefault(matter_id, []).append(
+            ["MatterImportantDate", str(kind or ""), day.isoformat() if day else None]
+        )
+    successors = {m.superseded_by_id for m in matters if getattr(m, "superseded_by_id", None)}
+    continued: dict[Any, list[str]] = {}
+    if successors:
+        for matter_id, source in LovableSyncState.objects.filter(
+            matter_id__in=successors
+        ).values_list("matter_id", "source_id"):
+            continued.setdefault(matter_id, []).append(str(source))
+    stage_ids = {m.stage_id for m in matters if getattr(m, "stage_id", None)}
+    stage_keys: dict[Any, str] = (
+        dict(StageVocabulary.objects.filter(pk__in=stage_ids).values_list("pk", "key"))
+        if stage_ids
+        else {}
     )
-    stage_key = None
-    if getattr(matter, "stage_id", None):
-        from app.workflow.models import StageVocabulary
+    acts: dict[Any, list[str]] = {}
+    if ids:
+        for matter_id, key in Matter.legal_instruments.through.objects.filter(
+            matter_id__in=ids
+        ).values_list("matter_id", "legalinstrumenttype__key"):
+            acts.setdefault(matter_id, []).append(str(key))
+    outcomes = current_opinion_outcomes(ids) if ids else {}
+    commencements = _lovable_commencement_records_bulk(ids)
+    requests: dict[Any, list[dict[str, Any]]] = {}
+    if ids:
+        for row in (
+            MatterResponseDeadline.objects.filter(matter_id__in=ids)
+            .order_by("matter_id", "-ended_at", "-created_at")
+            .values("matter_id", *_REQUEST_FIELDS)
+        ):
+            requests.setdefault(row["matter_id"], []).append(row)
 
-        stage_key = (
-            StageVocabulary.objects.filter(pk=matter.stage_id).values_list("key", flat=True).first()
-        )
-    deadline = getattr(matter, "response_deadline", None)
-    from app.matters.models import MatterResponseDeadline
-
-    received = getattr(matter, "received_date", None)
-    successor_id = getattr(matter, "superseded_by_id", None)
-    return {
-        # The lifecycle as source authority compares it (docs/adr/0213 §10).
-        "lifecycle": {
-            "open": bool(getattr(matter, "is_open", False)),
+    out: dict[Any, dict[str, Any]] = {}
+    for matter in matters:
+        pk = getattr(matter, "pk", None)
+        successor_id = getattr(matter, "superseded_by_id", None)
+        stage_key = stage_keys.get(getattr(matter, "stage_id", None))
+        deadline = getattr(matter, "response_deadline", None)
+        received = getattr(matter, "received_date", None)
+        outcome = outcomes.get(pk)
+        rows = requests.get(pk, []) if pk is not None else []
+        out[pk] = {
+            # The lifecycle as source authority compares it (docs/adr/0213 §10).
+            "lifecycle": {
+                "open": bool(getattr(matter, "is_open", False)),
+                "stage": stage_key,
+                "disposition": str(getattr(matter, "disposition", "") or ""),
+                "successor": str(successor_id) if successor_id else None,
+            },
+            "received": received.isoformat() if received else None,
+            "legal_act": sorted(acts.get(pk, [])) if pk is not None else [],
+            "opinion_outcome": None
+            if outcome is None
+            else {
+                "outcome": outcome.outcome,
+                "date": outcome.sent_on.isoformat() if outcome.sent_on else None,
+                "addressee": outcome.addressee_raw,
+            },
+            "lovable_commencements": _commencement_items(commencements.get(pk, [])) if pk else [],
+            # Requests that have ended (answered, withdrawn, replaced): a lawyer's
+            # decisions the request rule must never undo.
+            "request_history": len(rows),
+            # The latest ended request: how it ended, its day and whether a person
+            # ended it (the sync ends requests with no actor), or ``None``.
+            "request_last_ended": _last_ended_from_rows(rows) if pk else None,
             "stage": stage_key,
-            "disposition": str(getattr(matter, "disposition", "") or ""),
-            "successor": str(successor_id) if successor_id else None,
-        },
-        "received": received.isoformat() if received else None,
-        "legal_act": sorted(
-            str(key) for key in matter.legal_instruments.values_list("key", flat=True)
-        )
-        if getattr(matter, "pk", None)
-        else [],
-        "opinion_outcome": _outcome_view(matter.pk),
-        "lovable_commencements": lovable_commencements(matter.pk) if matter.pk else [],
-        # Requests that have ended (answered, withdrawn, replaced): a lawyer's
-        # decisions the request rule must never undo.
-        "request_history": MatterResponseDeadline.objects.filter(matter_id=matter.pk).count(),
-        # The latest ended request: how it ended, its day and whether a person
-        # ended it (the sync ends requests with no actor), or ``None``.
-        "request_last_ended": _last_ended_request(matter.pk) if matter.pk else None,
-        "stage": stage_key,
-        "opinion_deadline": deadline.isoformat() if deadline else None,
-        "koda_initiative": getattr(matter, "track", "") == Track.KODA_INITIATIVE,
-        "commencements": sorted(dates, key=lambda d: (d[0], d[1], d[2] or "")),
-        CONTINUATION: continuation,
-    }
+            "opinion_deadline": deadline.isoformat() if deadline else None,
+            "koda_initiative": getattr(matter, "track", "") == Track.KODA_INITIATIVE,
+            "commencements": sorted(dates.get(pk, []), key=lambda d: (d[0], d[1], d[2] or "")),
+            CONTINUATION: sorted(continued.get(successor_id, [])) if successor_id else [],
+        }
+    return out
+
+
+#: The request columns `_last_ended_from_rows` reads.
+_REQUEST_FIELDS = (
+    "outcome",
+    "deadline",
+    "next_deadline",
+    "ended_by_id",
+    "note",
+    "submission_id",
+    "requested_at",
+)
 
 
 def _last_ended_request(matter_id: Any) -> dict[str, Any] | None:
     from app.matters.models import MatterResponseDeadline
 
-    rows = list(
-        MatterResponseDeadline.objects.filter(matter_id=matter_id)
-        .order_by("-ended_at", "-created_at")
-        .values(
-            "outcome",
-            "deadline",
-            "next_deadline",
-            "ended_by_id",
-            "note",
-            "submission_id",
-            "requested_at",
+    return _last_ended_from_rows(
+        list(
+            MatterResponseDeadline.objects.filter(matter_id=matter_id)
+            .order_by("-ended_at", "-created_at")
+            .values(*_REQUEST_FIELDS)
         )
     )
+
+
+def _last_ended_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """`_last_ended_request` from one Teema's requests, newest ending first."""
     if not rows:
         return None
     row = rows[0]
@@ -1627,8 +1670,17 @@ class OwnerResolver:
             if owner.get("source") and owner.get("target") not in (None, "?"):
                 pairs.setdefault(name_key(owner["source"]), set()).add(owner["target"])
         self.pairs = pairs
+        #: One answer per name for the resolver's life (one plan or one night):
+        #: 2,370 Teemad name a few dozen people (quality audit QA26-PERF-01).
+        self._answers: dict[str, tuple[str | None, str]] = {}
 
     def resolve(self, name: str) -> tuple[str | None, str]:
+        key = name_key(name) if name else ""
+        if key not in self._answers:
+            self._answers[key] = self._resolve(name)
+        return self._answers[key]
+
+    def _resolve(self, name: str) -> tuple[str | None, str]:
         from app.accounts.models import User
         from app.accounts.selectors import is_assignable_business_user
 
@@ -3507,30 +3559,39 @@ def _lovable_commencement_records(matter_id: Any) -> list[_CommencementRecord]:
     MatterEffectiveDate / MatterImportantDate) and those the synchronisation
     wrote (`source_text` = `LOVABLE_COMMENCEMENT_MARK`). A person's own date —
     neither — is Juristid's only and never compared."""
+    return _lovable_commencement_records_bulk([matter_id]).get(matter_id, [])
+
+
+def _lovable_commencement_records_bulk(
+    matter_ids: list[Any],
+) -> dict[Any, list[_CommencementRecord]]:
+    """`_lovable_commencement_records` for many Teemad in three queries."""
     from app.intelligence.enums import FactStatus
     from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
     from app.legacy_import.lovable_pilot import COHORTS, T_EFFECTIVE_DATE, T_IMPORTANT_DATE
     from app.legacy_import.models import EvidencePilotRecord
 
+    if not matter_ids:
+        return {}
     # Only the Lovable importer's cohorts (`lovable_pilot.COHORTS`: the pilot, the
     # operational cohort and its rebuild, the register replacement, the history
     # backfill — new topics are created into one of these): the OneNote
     # evidence pilot (`evidence_pilot.PILOT`) and the Excel pilot write the same
     # record kinds, and their dates are not Lovable's.
     imported = {
-        str(pk)
-        for pk in EvidencePilotRecord.objects.filter(
-            matter_id=matter_id,
+        (matter_id, str(pk))
+        for matter_id, pk in EvidencePilotRecord.objects.filter(
+            matter_id__in=matter_ids,
             pilot__in=COHORTS,
             record_kind__in=(T_EFFECTIVE_DATE, T_IMPORTANT_DATE),
-        ).values_list("target_id", flat=True)
+        ).values_list("matter_id", "target_id")
     }
-    out: list[_CommencementRecord] = []
-    for pk, kind, day, note, mark in MatterEffectiveDate.objects.filter(
-        matter_id=matter_id, status=FactStatus.ACTIVE, removed_at__isnull=True
-    ).values_list("pk", "kind", "date_value", "description", "source_text"):
-        if str(pk) in imported or mark == LOVABLE_COMMENCEMENT_MARK:
-            out.append(
+    out: dict[Any, list[_CommencementRecord]] = {}
+    for matter_id, pk, kind, day, note, mark in MatterEffectiveDate.objects.filter(
+        matter_id__in=matter_ids, status=FactStatus.ACTIVE, removed_at__isnull=True
+    ).values_list("matter_id", "pk", "kind", "date_value", "description", "source_text"):
+        if (matter_id, str(pk)) in imported or mark == LOVABLE_COMMENCEMENT_MARK:
+            out.setdefault(matter_id, []).append(
                 _CommencementRecord(
                     pk,
                     T_EFFECTIVE_DATE,
@@ -3539,14 +3600,14 @@ def _lovable_commencement_records(matter_id: Any) -> list[_CommencementRecord]:
                     text_value(note),
                 )
             )
-    for pk, kind, day, note, mark in MatterImportantDate.objects.filter(
-        matter_id=matter_id,
+    for matter_id, pk, kind, day, note, mark in MatterImportantDate.objects.filter(
+        matter_id__in=matter_ids,
         status=FactStatus.ACTIVE,
         removed_at__isnull=True,
         kind__in=COMMENCEMENT_IMPORTANT_KINDS,
-    ).values_list("pk", "kind", "date_value", "note", "source_text"):
-        if str(pk) in imported or mark == LOVABLE_COMMENCEMENT_MARK:
-            out.append(
+    ).values_list("matter_id", "pk", "kind", "date_value", "note", "source_text"):
+        if (matter_id, str(pk)) in imported or mark == LOVABLE_COMMENCEMENT_MARK:
+            out.setdefault(matter_id, []).append(
                 _CommencementRecord(
                     pk,
                     T_IMPORTANT_DATE,
@@ -3561,8 +3622,12 @@ def _lovable_commencement_records(matter_id: Any) -> list[_CommencementRecord]:
 def lovable_commencements(matter_id: Any) -> list[list[Any]]:
     """B for source authority's commencements: ``[target, kind, day, note]`` of
     each Lovable commencement (`_lovable_commencement_records`), sorted."""
+    return _commencement_items(_lovable_commencement_records(matter_id))
+
+
+def _commencement_items(records: list[_CommencementRecord]) -> list[list[Any]]:
     return sorted(
-        ([r.model, r.kind, r.date, r.note] for r in _lovable_commencement_records(matter_id)),
+        ([r.model, r.kind, r.date, r.note] for r in records),
         key=lambda item: json.dumps(item, default=str),
     )
 

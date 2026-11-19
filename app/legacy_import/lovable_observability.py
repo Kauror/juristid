@@ -3059,14 +3059,18 @@ def readiness(user: Any, *, now: dt.datetime | None = None) -> Readiness:
     rows: list[dict[str, Any]] = []
     resolver = lovable_sync.OwnerResolver(states)
     if pilot_doc is not None and states:
-        current = current_values_bulk([s.matter for s in states])
+        # B for every Teema in a constant number of queries: the conditional
+        # fields too, so `plan_matter` asks nothing per Teema (QA26-PERF-01).
+        matters = [s.matter for s in states]
+        current = current_values_bulk(matters)
+        conditional = lovable_sync.conditional_values_bulk(matters)
         for state in states:
             plan = lovable_sync.plan_matter(
                 state,
                 cohort.get(str(state.source_id)),
                 resolver=resolver,
                 today=today,
-                current=current[state.matter_id],
+                current={**current[state.matter_id], **conditional[state.matter_id]},
             )
             matter = sight.visible.get(state.matter_id)
             if plan.status:
