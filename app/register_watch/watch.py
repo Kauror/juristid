@@ -12,11 +12,14 @@ A lawyer then adds a finding to the Teema (`add_to_teema`), which records a
 from __future__ import annotations
 
 import datetime as dt
-from collections.abc import Iterable
+import logging
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 
@@ -35,6 +38,8 @@ from app.register_watch.models import (
 from app.register_watch.sources import adr, pdr, riigikogu
 from app.register_watch.sources.http import FetchError
 from app.register_watch.sources.items import Item
+
+logger = logging.getLogger(__name__)
 
 ALREADY_DECIDED = "See dokument on juba otsustatud."
 #: Sources whose items are found by a title search and so may not belong.
@@ -159,52 +164,75 @@ def store(target: WatchTarget, items: Iterable[Item], *, today: dt.date) -> tupl
     return new, offered
 
 
-def run(
-    matters: Iterable[Matter] | None = None,
-    *,
-    use_ai: bool = True,
-    ai_client: Any = None,
-    today: dt.date | None = None,
-) -> WatchRun:
-    """Check every watched Teema once and record the run."""
-    today = today or timezone.localdate()
-    record = WatchRun.objects.create(started_at=timezone.now())
-    usage = ai.Usage()
-    if use_ai and ai.enabled():
-        usage.model = str(getattr(settings, "REGISTER_WATCH_AI_MODEL", ""))
-    for matter in (
-        matters
-        if matters is not None
-        else watched_matters()
-        .select_related("classification_suggestion__sender")
-        .prefetch_related("source_organisations")
-        .order_by("reference_year", "reference_number")
-    ):
-        try:
+#: One register watch at a time: a session-level advisory lock, released when
+#: the run ends or its process dies. The number is this app's own.
+RUN_LOCK = 217_0001
+ALREADY_RUNNING = "Registrite kontroll juba käib."
+
+
+def _error_text(error: BaseException) -> str:
+    """What a failure says in the run's log: a register's own words, or the class."""
+    if isinstance(error, FetchError):
+        return str(error)[:300]
+    return f"{type(error).__name__}: {error}"[:300]
+
+
+@contextmanager
+def _one_run_at_a_time() -> Iterator[None]:
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s)", [RUN_LOCK])
+        (taken,) = cursor.fetchone()
+    if not taken:
+        raise DomainError(ALREADY_RUNNING)
+    try:
+        yield
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s)", [RUN_LOCK])
+
+
+def _watch_matter(
+    record: WatchRun, matter: Matter, *, use_ai: bool, ai_client: Any, usage: Any, today: dt.date
+) -> None:
+    """One Teema. Whatever goes wrong here is written down and the run goes on.
+
+    A register that answers something unexpected (ADR 0217 §5) is one Teema's or
+    one source's problem: the rest of the night is still read, and the error is
+    in the run's log for Haldus and `production_status`.
+    """
+    try:
+        with transaction.atomic():
             targets = ensure_targets(matter)
-        except FetchError as error:
-            record.errors.append({"teema": matter.display_reference, "viga": str(error)[:300]})
+    except Exception as error:
+        if not isinstance(error, FetchError):
+            logger.exception("register watch: sources of %s", matter.display_reference)
+        record.errors.append({"teema": matter.display_reference, "viga": _error_text(error)})
+        return
+    for target in targets:
+        try:
+            items = read(target, today=today)
+            with transaction.atomic():
+                new, offered = store(target, items, today=today)
+        except Exception as error:
+            if not isinstance(error, FetchError):
+                logger.exception("register watch: %s", target)
+            target.last_error = _error_text(error)[:500]
+            target.save(update_fields=["last_error", "updated_at"])
+            record.errors.append(
+                {
+                    "teema": matter.display_reference,
+                    "allikas": str(target),
+                    "viga": _error_text(error),
+                }
+            )
             continue
-        for target in targets:
-            try:
-                new, offered = store(target, read(target, today=today), today=today)
-            except FetchError as error:
-                target.last_error = str(error)[:500]
-                target.save(update_fields=["last_error", "updated_at"])
-                record.errors.append(
-                    {
-                        "teema": matter.display_reference,
-                        "allikas": str(target),
-                        "viga": str(error)[:300],
-                    }
-                )
-                continue
-            target.checked_at = timezone.now()
-            target.last_error = ""
-            target.save(update_fields=["checked_at", "last_error", "updated_at"])
-            record.targets_checked += 1
-            record.findings_new += new
-            record.findings_offered += offered
+        target.checked_at = timezone.now()
+        target.last_error = ""
+        target.save(update_fields=["checked_at", "last_error", "updated_at"])
+        record.targets_checked += 1
+        record.findings_new += new
+        record.findings_offered += offered
+    try:
         if use_ai:
             unjudged = list(
                 WatchFinding.objects.filter(
@@ -224,7 +252,54 @@ def run(
             .exclude(relevance=Relevance.UNRELATED)
             .count()
         )
-        notices.notify(matter, fresh)
+        with transaction.atomic():
+            notices.notify(matter, fresh)
+    except Exception as error:
+        logger.exception("register watch: judging or telling %s", matter.display_reference)
+        record.errors.append({"teema": matter.display_reference, "viga": _error_text(error)})
+
+
+def run(
+    matters: Iterable[Matter] | None = None,
+    *,
+    use_ai: bool = True,
+    ai_client: Any = None,
+    today: dt.date | None = None,
+) -> WatchRun:
+    """Check every watched Teema once and record the run.
+
+    One run at a time (`ALREADY_RUNNING`). A failure on one Teema or source is
+    recorded and the run continues; a failure of the run itself closes it as
+    stopped (``katkes``) before it is raised, so the log never shows a stopped
+    run as clean.
+    """
+    today = today or timezone.localdate()
+    with _one_run_at_a_time():
+        record = WatchRun.objects.create(started_at=timezone.now())
+        usage = ai.Usage()
+        if use_ai and ai.enabled():
+            usage.model = str(getattr(settings, "REGISTER_WATCH_AI_MODEL", ""))
+        try:
+            for matter in (
+                matters
+                if matters is not None
+                else watched_matters()
+                .select_related("classification_suggestion__sender")
+                .prefetch_related("source_organisations")
+                .order_by("reference_year", "reference_number")
+            ):
+                _watch_matter(
+                    record, matter, use_ai=use_ai, ai_client=ai_client, usage=usage, today=today
+                )
+        except BaseException as error:
+            record.errors.append({"viga": f"Kontroll katkes: {_error_text(error)}", "katkes": True})
+            _close(record, usage)
+            raise
+        _close(record, usage)
+    return record
+
+
+def _close(record: WatchRun, usage: Any) -> None:
     record.ai_calls = usage.calls
     record.ai_input_tokens = usage.input_tokens
     record.ai_output_tokens = usage.output_tokens
@@ -240,7 +315,55 @@ def run(
         )
     record.finished_at = timezone.now()
     record.save()
-    return record
+
+
+# -- is it working ------------------------------------------------------------------
+
+#: The nightly run is due every 24 hours; a finished run older than this is missed.
+STALE_AFTER = dt.timedelta(hours=30)
+
+
+@dataclass(frozen=True)
+class Health:
+    ok: bool
+    #: For `production_status`: counts, in English like its other rows.
+    detail: str = ""
+    #: For Haldus: what is wrong, in the page's words; empty when nothing is.
+    problem: str = ""
+
+
+def watch_health(now: dt.datetime | None = None) -> Health:
+    """Did the register watch run, finish and read anything? For `production_status`.
+
+    Counts only, never a Teema or a register's words. Fetching switched off
+    (tests, CI, a recovery rehearsal) is green ``off``; a database that never
+    ran a check is green ``never run``.
+    """
+    if not getattr(settings, "REGISTER_WATCH_FETCH", False):
+        return Health(True, "off")
+    now = now or timezone.now()
+    latest = WatchRun.objects.order_by("-started_at").first()
+    if latest is None:
+        return Health(True, "never run")
+    if latest.aborted:
+        return Health(False, "last run stopped before its end", "Viimane kontroll katkes.")
+    finished = WatchRun.objects.filter(finished_at__isnull=False).order_by("-finished_at").first()
+    if finished is None or finished.finished_at is None or finished.finished_at < now - STALE_AFTER:
+        return Health(
+            False, "no finished run in 30 h", "Üle 30 tunni pole ükski kontroll lõpuni jõudnud."
+        )
+    if finished.targets_checked == 0 and finished.errors:
+        return Health(
+            False,
+            f"last run read no source ({len(finished.errors)} errors)",
+            "Viimane kontroll ei saanud lugeda ühtki registrit.",
+        )
+    parts = []
+    if finished.errors:
+        parts.append(f"{len(finished.errors)} errors")
+    if finished.ai_failures:
+        parts.append(f"{finished.ai_failures} AI failures")
+    return Health(True, ", ".join(parts))
 
 
 # -- the lawyer's side -------------------------------------------------------------

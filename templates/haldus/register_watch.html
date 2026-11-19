@@ -13,7 +13,7 @@
     <h2 class="acctsection__title" id="regwatchlog-state">Seis</h2>
     <dl class="detailgrid">
       <dt>Viimane kontroll</dt>
-      <dd>{% if latest %}{{ latest.started_at|date:"j.n.Y H:i" }} · {% if latest.errors %}<span class="statechip statechip--problem">{{ latest.errors|length }} viga</span>{% else %}<span class="statechip statechip--ok">Vigadeta</span>{% endif %}{% else %}—{% endif %}</dd>
+      <dd>{% if latest %}{{ latest.started_at|date:"j.n.Y H:i" }} · {% if latest.aborted %}<span class="statechip statechip--problem">Katkes</span>{% elif latest.running %}<span class="statechip">Käib</span>{% elif latest.errors %}<span class="statechip statechip--problem">{{ latest.errors|length }} viga</span>{% else %}<span class="statechip statechip--ok">Vigadeta</span>{% endif %}{% else %}—{% endif %}{% if health.problem %}<br><span class="statechip statechip--problem">{{ health.problem }}</span>{% endif %}</dd>
       <dt>AI</dt>
       <dd>{% if latest.ai_model %}<span class="mono">{{ latest.ai_model }}</span>{% else %}Väljas{% endif %}</dd>
       <dt>Ootab otsust</dt>
@@ -35,7 +35,7 @@
             {% for row in runs %}
               <tr>
                 <td class="regwatchlog__nowrap"><a href="{% url 'haldus:register_watch_run' row.run.pk %}">{{ row.run.started_at|date:"j.n.Y H:i" }}</a></td>
-                <td class="regwatchlog__nowrap">{{ row.duration|default:"Käib" }}</td>
+                <td class="regwatchlog__nowrap">{% if row.run.aborted %}<span class="statechip statechip--problem">Katkes</span>{% if row.duration %} {{ row.duration }}{% endif %}{% else %}{{ row.duration|default:"Käib" }}{% endif %}</td>
                 <td>{{ row.run.targets_checked }}</td>
                 <td>{{ row.run.findings_new }}</td>
                 <td>{{ row.run.findings_offered }}</td>

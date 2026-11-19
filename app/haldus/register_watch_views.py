@@ -25,6 +25,7 @@ from django.views.decorators.http import require_http_methods
 from app.haldus.views import NOT_HERE, _context, _require
 from app.matters.models import Matter
 from app.register_watch.models import FindingStatus, WatchFinding, WatchRun, WatchTarget
+from app.register_watch.watch import watch_health
 
 RUNS_SHOWN = 60
 TOTAL_DAYS = 30
@@ -82,6 +83,7 @@ def runs(request: HttpRequest) -> HttpResponse:
             pages=_pages("runs"),
             runs=[{"run": run, "duration": _duration(run)} for run in rows],
             latest=rows[0] if rows else None,
+            health=watch_health(),
             totals=totals,
             total_days=TOTAL_DAYS,
             waiting=WatchFinding.objects.filter(

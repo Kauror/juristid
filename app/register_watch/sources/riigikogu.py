@@ -80,7 +80,7 @@ def bill_items(uuid: str) -> list[Item]:
                 continue
             sitting = (event.get("sittingTitle") or "").strip()
             decisions = [
-                (d.get("decision") or {}).get("value", "").strip()
+                ((d.get("decision") or {}).get("value") or "").strip()
                 for d in event.get("committeeDecisions") or []
             ]
             decisions = [d for d in decisions if d]

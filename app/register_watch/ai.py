@@ -1,13 +1,14 @@
 """Claude reads what a title search found and says whether it belongs (ADR 0217 §4).
 
-One request per Teema, over that Teema's unjudged findings. The model receives
+One request per `BATCH` of a Teema's unjudged findings. The model receives
 public facts only — the Teema's title and the found documents' titles, dates,
 numbers and senders — and returns a verdict and one Estonian line per document.
 It searches nothing and writes nothing: the verdict is shown beside the
 proposal and the lawyer decides. A restricted Teema is never sent.
 
 Off unless `settings.REGISTER_WATCH_AI` is on and the SDK finds a key
-(`ANTHROPIC_API_KEY`). Any failure leaves the findings unjudged.
+(`ANTHROPIC_API_KEY`). Any failure leaves that batch's findings unjudged; the
+next night asks again.
 """
 
 from __future__ import annotations
@@ -111,15 +112,37 @@ def _prompt(matter: Any, findings: Sequence[WatchFinding]) -> str:
     )
 
 
+#: Findings per request. Each answer row is an id, a verdict and a line of at
+#: most 160 characters, so 25 fit well inside `MAX_TOKENS`; one Teema with a
+#: hundred findings once never fitted in a single answer, and the same set was
+#: sent again every night (audit QA26-BUG-05).
+BATCH = 25
+MAX_TOKENS = 4000
+
+
 def judge(matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: Any = None) -> int:
-    """Write a verdict and a line on each finding the model answered for; the count judged."""
+    """Write a verdict and a line on each finding the model answered for; the count judged.
+
+    The findings go in batches of `BATCH`, oldest first, so a batch the model
+    could not finish costs that batch only and the others are still judged.
+    """
     if not findings or not enabled() or not may_send(matter):
         return 0
+    ordered = sorted(findings, key=lambda finding: (finding.created_at, str(finding.pk)))
+    judged = 0
+    for start in range(0, len(ordered), BATCH):
+        judged += _judge_batch(matter, ordered[start : start + BATCH], usage, client)
+    return judged
+
+
+def _judge_batch(
+    matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: Any = None
+) -> int:
     try:
         client = client or _client()
         response = client.beta.messages.create(
             model=getattr(settings, "REGISTER_WATCH_AI_MODEL", "claude-opus-5-5"),
-            max_tokens=4000,
+            max_tokens=MAX_TOKENS,
             system=SYSTEM,
             messages=[{"role": "user", "content": _prompt(matter, findings)}],
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},

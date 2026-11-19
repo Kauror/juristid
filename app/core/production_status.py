@@ -211,6 +211,19 @@ def _lovable_observation() -> CheckResult:
     return CheckResult("lovable_observation", "Lovable observation", health.ok, health.detail)
 
 
+def _register_watch() -> CheckResult:
+    """The nightly register watch (docs/adr/0217): finished, recent, read something.
+
+    Red when the newest run stopped before its end, when no run finished in 30
+    hours (the cron line lost, the container recreated mid-run), or when the last
+    run could read no register at all. Some registers failing is routine and
+    stays green with the count. Fetching switched off is green ``off``."""
+    from app.register_watch.watch import watch_health
+
+    health = watch_health()
+    return CheckResult("register_watch", "Register watch", health.ok, health.detail)
+
+
 #: The checks, in the order they are printed. Order is part of the output
 #: contract: an operator reading two runs side by side compares rows by
 #: position, and a set would reorder between them.
@@ -222,6 +235,7 @@ CHECKS: tuple[Callable[[], CheckResult], ...] = (
     _archive_projection,
     _lovable_sync,
     _lovable_observation,
+    _register_watch,
 )
 
 

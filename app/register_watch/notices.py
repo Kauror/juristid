@@ -1,7 +1,9 @@
 """«Registris uus dokument» — the bell's notice that a register has something new (ADR 0217 §6).
 
 One notice per Teema for its owner. A run that offers new documents on a
-Teema creates it, or adds to the owner's unread one. It is awaiting the owner
+Teema creates it, or adds to the Teema's unread one. It belongs to whoever
+owns the Teema *now*, like every other inbox source: a hand-over moves it
+with the Teema (audit QA26-DUP-04). It is awaiting the owner
 while it is unread *and* the Teema still has a document waiting that the model
 did not call unrelated; once the documents are added or skipped it is resolved
 history, whether or not it was read. Read and unread by its own person only,
@@ -37,13 +39,15 @@ def _waiting() -> Exists:
 
 
 def own(user: Any) -> QuerySet[RegisterNotice]:
-    """The person's own notices on open Teemad they may still see."""
+    """Notices on the open Teemad the person owns now and may still see."""
     if not _reader(user):
         return RegisterNotice.objects.none()
     from app.matters.models import Matter
 
-    visible = Matter.objects.visible_to(user).filter(is_open=True, deleted_at__isnull=True)
-    return RegisterNotice.objects.filter(recipient=user, matter__in=visible)
+    visible = Matter.objects.visible_to(user).filter(
+        is_open=True, deleted_at__isnull=True, owner=user
+    )
+    return RegisterNotice.objects.filter(matter__in=visible)
 
 
 def due_unread(user: Any) -> QuerySet[RegisterNotice]:
@@ -61,22 +65,25 @@ def own_row(user: Any, pk: Any) -> RegisterNotice | None:
 
 
 def arrived_at(row: RegisterNotice) -> datetime:
+    """When the latest documents arrived: set by `notify`, never by reading."""
     return row.updated_at
 
 
 def notify(matter: Any, documents: int) -> RegisterNotice | None:
-    """Tell the Teema's owner; add to their unread notice if there is one."""
+    """Tell the Teema's owner; add to the Teema's unread notice if there is one.
+
+    ``recipient`` records who was told last; who sees the notice is the
+    current owner (`own`).
+    """
     owner = getattr(matter, "owner", None)
     if documents <= 0 or owner is None or not owner.is_active:
         return None
     now = timezone.now()
-    row = RegisterNotice.objects.filter(
-        recipient=owner, matter=matter, read_at__isnull=True
-    ).first()
+    row = RegisterNotice.objects.filter(matter=matter, read_at__isnull=True).first()
     if row is None:
         return RegisterNotice.objects.create(recipient=owner, matter=matter, documents=documents)
     RegisterNotice.objects.filter(pk=row.pk).update(
-        documents=row.documents + documents, updated_at=now
+        recipient=owner, documents=row.documents + documents, updated_at=now
     )
     row.refresh_from_db()
     return row
@@ -85,10 +92,10 @@ def notify(matter: Any, documents: int) -> RegisterNotice | None:
 def mark_read(row: RegisterNotice) -> bool:
     if row.read_at is not None:
         return False
-    now = timezone.now()
+    # `updated_at` is when the documents arrived (`arrived_at`); reading leaves it.
     return bool(
         RegisterNotice.objects.filter(pk=row.pk, read_at__isnull=True).update(
-            read_at=now, updated_at=now
+            read_at=timezone.now()
         )
     )
 
