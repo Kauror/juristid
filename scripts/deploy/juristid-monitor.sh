@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 #
 # Run the read-only checks the runbooks already name, and tell somebody when
-# one fails. Nothing here repairs, restarts, rebuilds or writes to the
-# application: every command below is one the runbooks document as safe to run
-# at any time, and the only things written are this script's own state files.
+# one fails. Nothing here repairs, rebuilds or writes to the application: every
+# command below is one the runbooks document as safe to run at any time. What
+# it writes: its own state files, and the application containers' logs it
+# keeps under MONITOR_APP_LOG_DIR. What it restarts: only a tunnel container
+# (`mcp-tunnel`, `tunnel`) that stayed unhealthy for two checks in a row, at
+# most once in six hours, and it says so (quality audit 2026-11, QA26-OPS-06).
 #
 # WHY THIS EXISTS
 #
@@ -17,14 +20,22 @@
 #
 # TIERS
 #
-#   --tier fast     every 15 minutes: containers, /healthz, the database,
-#                   free space, an optional heartbeat ping
+#   --tier fast     every 15 minutes: containers (restarting an unhealthy
+#                   tunnel), /healthz, the database, free space, keeping the
+#                   application logs, an optional heartbeat ping
 #   --tier daily    once a day: backup age against the RPO, unfinished
 #                   backup runs, the nightly dump's age, the Lovable sync's
 #                   last scheduled night, production_status, log error
 #                   counts, authentication failure counts
 #   --tier weekly   once a week: evidence integrity (structural), a level-2
 #                   verification of the newest set, and an INFO digest
+#   --tier logs     only keep the application logs: a release runs it before
+#                   it recreates the containers (their logs die with them)
+#
+# Every finished run writes `last-run-<tier>` in --state-dir; the host
+# watchdog reads `last-run-fast` to tell when the monitor itself has stopped.
+# A run that cannot start (environment file missing or open, a setting
+# absent) sends «CRIT monitor», at most once in six hours.
 #
 # ONE MESSAGE PER TRANSITION
 #
@@ -64,7 +75,7 @@ DRY_RUN=0
 
 usage() {
   cat <<'USAGE'
-usage: juristid-monitor.sh --tier fast|daily|weekly --env-file PATH --state-dir DIR [--dry-run]
+usage: juristid-monitor.sh --tier fast|daily|weekly|logs --env-file PATH --state-dir DIR [--dry-run]
 
 The environment file (root, mode 600) names the deployment and the thresholds:
 
@@ -77,6 +88,7 @@ The environment file (root, mode 600) names the deployment and the thresholds:
   MONITOR_SYNC_LOG_DIR       the Lovable sync's log directory (optional)
   MONITOR_APPDATA_BACKUP_DIR the Unraid Appdata Backup tree (optional)
   MONITOR_HEARTBEAT_URL      a dead-man's-switch URL to ping after a fast run (optional)
+  MONITOR_APP_LOG_DIR        where the application logs are kept (default: MONITOR_DATA_ROOT/app-logs, 30 days)
   MONITOR_MCP_PROFILE_ON     1 while the mcp profile is meant to be running (default 0)
   MONITOR_RPO_HOURS          the backup age limit — required for --tier daily, no default
   MONITOR_FREE_GIB_WARN      free space warning (default 20)
@@ -101,12 +113,29 @@ while [ $# -gt 0 ]; do
 done
 
 case "$TIER" in
-  fast | daily | weekly) : ;;
-  *) usage >&2; die "--tier must be fast, daily or weekly" ;;
+  fast | daily | weekly | logs) : ;;
+  *) usage >&2; die "--tier must be fast, daily, weekly or logs" ;;
 esac
 [ -n "$ENV_FILE" ] || { usage >&2; die "--env-file is required"; }
 [ -n "$STATE_DIR" ] || { usage >&2; die "--state-dir is required"; }
-[ -f "$ENV_FILE" ] || die "$ENV_FILE does not exist"
+
+#: A monitor that cannot run must not look like a healthy one (quality audit
+#: QA26-OPS-05): every alarm below depends on this script, and cron discards its
+#: output. Once its arguments are known, a refusal is also sent — at most once
+#: in six hours, so a broken setup does not alert every 15 minutes.
+monitor_cannot_run() {
+  local reason="$1" notifier marker
+  notifier="${MONITOR_NOTIFY:-${JURISTID_MONITOR_NOTIFY:-/usr/local/emhttp/webGui/scripts/notify}}"
+  marker="$STATE_DIR/monitor-cannot-run"
+  if [ "$DRY_RUN" != 1 ] && [ -x "$notifier" ] &&
+    { [ ! -e "$marker" ] || [ -n "$(find "$marker" -mmin +360 2>/dev/null)" ]; }; then
+    "$notifier" -e "Juristid monitor" -s "CRIT monitor" -d "the $TIER check could not run: $reason" -i alert >/dev/null 2>&1 || true
+    mkdir -p "$STATE_DIR" 2>/dev/null && touch "$marker" 2>/dev/null || true
+  fi
+  die "$reason"
+}
+
+[ -f "$ENV_FILE" ] || monitor_cannot_run "$ENV_FILE does not exist"
 
 # Root-owned and private on the host. Only checked where this runs as root: a
 # non-root test harness cannot hold a mode-600 file on every filesystem, and
@@ -115,7 +144,7 @@ if [ "$(id -u)" = 0 ]; then
   mode="$(stat -c '%a' "$ENV_FILE" 2>/dev/null || echo '')"
   case "$mode" in
     600 | 400 | '') : ;;
-    *) die "$ENV_FILE is mode $mode; it must be 600" ;;
+    *) monitor_cannot_run "$ENV_FILE is mode $mode; it must be 600" ;;
   esac
 fi
 
@@ -145,7 +174,7 @@ MONITOR_GATE_FAIL_WARN="$(monitor_setting MONITOR_GATE_FAIL_WARN)"
 MONITOR_LOCKED_OUT_WARN="$(monitor_setting MONITOR_LOCKED_OUT_WARN)"
 MONITOR_STEP_UP_FAIL_WARN="$(monitor_setting MONITOR_STEP_UP_FAIL_WARN)"
 MONITOR_NOTIFY="$(monitor_setting MONITOR_NOTIFY)"
-MONITOR_NOTIFY="${MONITOR_NOTIFY:-/usr/local/emhttp/webGui/scripts/notify}"
+MONITOR_NOTIFY="${MONITOR_NOTIFY:-${JURISTID_MONITOR_NOTIFY:-/usr/local/emhttp/webGui/scripts/notify}}"
 MONITOR_FREE_GIB_WARN="${MONITOR_FREE_GIB_WARN:-20}"
 MONITOR_FREE_GIB_CRIT="${MONITOR_FREE_GIB_CRIT:-5}"
 MONITOR_ERRORS_WARN="${MONITOR_ERRORS_WARN:-0}"
@@ -154,14 +183,18 @@ MONITOR_LOCKED_OUT_WARN="${MONITOR_LOCKED_OUT_WARN:-3}"
 MONITOR_STEP_UP_FAIL_WARN="${MONITOR_STEP_UP_FAIL_WARN:-3}"
 MONITOR_MCP_PROFILE_ON="${MONITOR_MCP_PROFILE_ON:-0}"
 
-[ -n "$MONITOR_COMPOSE_FILE" ] || die "$ENV_FILE sets no MONITOR_COMPOSE_FILE"
-[ -n "$MONITOR_DATA_ROOT" ] || die "$ENV_FILE sets no MONITOR_DATA_ROOT"
-[ -n "$MONITOR_BACKUP_ROOT" ] || die "$ENV_FILE sets no MONITOR_BACKUP_ROOT"
+[ -n "$MONITOR_COMPOSE_FILE" ] || monitor_cannot_run "$ENV_FILE sets no MONITOR_COMPOSE_FILE"
+[ -n "$MONITOR_DATA_ROOT" ] || monitor_cannot_run "$ENV_FILE sets no MONITOR_DATA_ROOT"
+[ -n "$MONITOR_BACKUP_ROOT" ] || monitor_cannot_run "$ENV_FILE sets no MONITOR_BACKUP_ROOT"
 if [ "$TIER" = daily ]; then
   case "$MONITOR_RPO_HOURS" in
-    '' | *[!0-9]*) die "$ENV_FILE sets no MONITOR_RPO_HOURS. The backup age limit is the RPO, a decision (docs/open-decisions.md); it has no default here either." ;;
+    '' | *[!0-9]*) monitor_cannot_run "$ENV_FILE sets no MONITOR_RPO_HOURS. The backup age limit is the RPO, a decision (docs/open-decisions.md); it has no default here either." ;;
   esac
 fi
+#: Where the application containers' logs are kept past a release (QA26-OPS-04).
+MONITOR_APP_LOG_DIR="$(monitor_setting MONITOR_APP_LOG_DIR)"
+MONITOR_APP_LOG_DIR="${MONITOR_APP_LOG_DIR:-$MONITOR_DATA_ROOT/app-logs}"
+MONITOR_APP_LOG_DAYS=30
 require_known_project "$MONITOR_PROJECT"
 require_command docker "the checks read the Compose stack"
 JURISTID_PROJECT="$MONITOR_PROJECT"
@@ -259,13 +292,52 @@ newest_file_age_hours() {
 
 # -- fast ----------------------------------------------------------------------
 
+#: The containers the monitor may restart on its own: the two tunnels, which hold
+#: no data and only reconnect. `mcp-tunnel` stayed unhealthy 0.5–12 h three
+#: times in 14 days after a db/mcp restart until a person restarted it (quality
+#: audit QA26-OPS-06). Restarted after two unhealthy runs in a row (~30 min), at
+#: most once in six hours each; every restart is sent.
+SELF_HEALING="mcp-tunnel tunnel"
+
+heal() {
+  local service="$1" name="$2" count_file="$STATE_DIR/unhealthy-$1" stamp="$STATE_DIR/restarted-$1" count
+  count=$(( $(cat "$count_file" 2>/dev/null || printf 0) + 1 ))
+  if [ "$DRY_RUN" = 1 ]; then
+    note "DRY-RUN $service unhealthy (run $count); would restart after 2"
+    return 1
+  fi
+  printf '%s\n' "$count" > "$count_file"
+  [ "$count" -ge 2 ] || return 1
+  if [ -e "$stamp" ] && [ -z "$(find "$stamp" -mmin +360 2>/dev/null)" ]; then
+    return 1
+  fi
+  touch "$stamp"
+  rm -f -- "$count_file"
+  if docker restart "$name" >/dev/null 2>&1; then
+    inform restarted "$service was unhealthy for two checks in a row and was restarted. If it stays unhealthy, see docs/mcp/OPERATIONS.md."
+    return 0
+  fi
+  inform restarted "$service was unhealthy for two checks in a row; restarting it failed."
+  return 1
+}
+
 check_containers() {
   local service name state down=""
   while read -r service; do
     name="$(container_name "$service")"
     state="$(docker inspect -f '{{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$name" 2>/dev/null || printf 'absent none')"
     case "$state" in
-      "running healthy" | "running none" | "running starting") : ;;
+      "running healthy" | "running none" | "running starting")
+        [ "$DRY_RUN" = 1 ] || rm -f -- "$STATE_DIR/unhealthy-$service"
+        ;;
+      "running unhealthy")
+        # Still reported until it is healthy again; the restart is sent on its own.
+        if [[ " $SELF_HEALING " == *" $service "* ]] && heal "$service" "$name"; then
+          down="$down $service(restarted)"
+        else
+          down="$down $service(${state// //})"
+        fi
+        ;;
       *) down="$down $service(${state// //})" ;;
     esac
   done < <(expected_containers)
@@ -315,6 +387,34 @@ check_space() {
   fi
 }
 
+#: The application containers whose logs are kept.
+APP_LOG_SERVICES="web intake-reader searchindex intake-sweeper notifications mcp mcp-writer"
+
+#: Append each application container's log since the last collection to
+#: `<service>-<UTC day>.log` under MONITOR_APP_LOG_DIR, with Docker's own
+#: timestamps, and drop files older than MONITOR_APP_LOG_DAYS. A container's
+#: log dies with the container at every release; collected every 15 minutes
+#: (and by a release before it recreates them, `--tier logs`), the history
+#: survives (quality audit QA26-OPS-04). Nothing leaves the host.
+collect_logs() {
+  local service name since_file since until day
+  [ "$DRY_RUN" = 1 ] && { note "DRY-RUN collect logs into $MONITOR_APP_LOG_DIR"; return 0; }
+  mkdir -p "$MONITOR_APP_LOG_DIR" && chmod 0700 "$MONITOR_APP_LOG_DIR" 2>/dev/null || true
+  until="$(date -u +%FT%T.%NZ)"
+  day="$(date -u +%Y%m%d)"
+  for service in $APP_LOG_SERVICES; do
+    name="$(container_name "$service")"
+    docker inspect -f '{{.State.Status}}' "$name" >/dev/null 2>&1 || continue
+    since_file="$STATE_DIR/logs-since-$service"
+    since="$(cat "$since_file" 2>/dev/null || printf '1h')"
+    if docker logs --timestamps --since "$since" --until "$until" "$name" >>"$MONITOR_APP_LOG_DIR/$service-$day.log" 2>&1; then
+      printf '%s\n' "$until" > "$since_file"
+    fi
+    chmod 0600 "$MONITOR_APP_LOG_DIR/$service-$day.log" 2>/dev/null || true
+  done
+  find "$MONITOR_APP_LOG_DIR" -maxdepth 1 -type f -name '*.log' -mtime +"$MONITOR_APP_LOG_DAYS" -delete 2>/dev/null || true
+}
+
 heartbeat() {
   [ -n "$MONITOR_HEARTBEAT_URL" ] || return 0
   [ "$DRY_RUN" = 1 ] && { note "DRY-RUN heartbeat ping"; return 0; }
@@ -357,17 +457,35 @@ check_dump_age() {
   fi
 }
 
+#: The scheduled sync fires at 21:15 and 22:15 UTC and only the one at Tallinn
+#: midnight runs; the other logs NOT_DUE and leaves without «END». The night to
+#: judge is the newest log that ran (« run») or failed (« FAIL »); a firing that
+#: was not due is not a night (quality audit QA26-ARCH-04: in summer time, and
+#: whenever the sync is off, the newest log is always a NOT_DUE one). A sync
+#: that is paused or off on purpose is said so, never «did not finish».
 check_lovable() {
   [ -n "$MONITOR_SYNC_LOG_DIR" ] || return 0
-  local newest age first
-  newest="$(find "$MONITOR_SYNC_LOG_DIR" -maxdepth 1 -type f -name '*-scheduled.log' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -n 1 | cut -d' ' -f2- || true)"
-  if [ -z "$newest" ]; then
+  local newest latest age first path
+  latest="$(find "$MONITOR_SYNC_LOG_DIR" -maxdepth 1 -type f -name '*-scheduled.log' -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -n 1 | cut -d' ' -f2- || true)"
+  if [ -z "$latest" ]; then
     report lovable WARN "no scheduled Lovable sync log in $MONITOR_SYNC_LOG_DIR."
+    return 0
+  fi
+  newest=""
+  while read -r path; do
+    if grep -qE ' run$| FAIL ' "$path"; then newest="$path"; break; fi
+  done < <(find "$MONITOR_SYNC_LOG_DIR" -maxdepth 1 -type f -name '*-scheduled.log' -printf '%T@ %p\n' 2>/dev/null | sort -rn | cut -d' ' -f2-)
+  if grep -qE 'SKIP paused|NOT_DUE (PAUSED|OFF)' "$latest" && { [ -z "$newest" ] || [ "$latest" -nt "$newest" ]; }; then
+    report lovable ok "the scheduled sync is paused or off on purpose ($(grep -oE 'SKIP paused|NOT_DUE [A-Z_]+' "$latest" | head -n 1))."
+    return 0
+  fi
+  if [ -z "$newest" ]; then
+    report lovable WARN "no scheduled Lovable sync night has run (only not-due firings in $MONITOR_SYNC_LOG_DIR)."
     return 0
   fi
   age=$(( ( $(date +%s) - $(stat -c %Y "$newest") ) / 3600 ))
   if [ "$age" -gt 26 ]; then
-    report lovable WARN "the newest scheduled Lovable sync log is ${age}h old; the cron line may not be running."
+    report lovable WARN "the newest scheduled Lovable sync night is ${age}h old; the cron line may not be running."
     return 0
   fi
   first="$(grep -E ' (FAIL|WARN) ' "$newest" | head -n 1 | cut -c21- || true)"
@@ -389,16 +507,31 @@ check_status() {
   fi
 }
 
+#: Error lines of one service in the last 24 hours: from the kept logs
+#: (`collect_logs`; they survive a release), or — before the first collection —
+#: from the container's own log, which starts at its last recreate.
+errors_in_24h() {
+  local service="$1" cutoff files
+  files="$(find "$MONITOR_APP_LOG_DIR" -maxdepth 1 -type f -name "$service-*.log" -mtime -2 2>/dev/null | sort || true)"
+  if [ -n "$files" ]; then
+    cutoff="$(date -u -d '-24 hours' +%FT%T)"
+    # shellcheck disable=SC2086 # the file names are ours, without spaces
+    awk -v cutoff="$cutoff" '$1 >= cutoff && ($0 ~ / (ERROR|CRITICAL) / || $2 == "Traceback") { n++ } END { print n + 0 }' $files
+    return 0
+  fi
+  docker logs --since 24h "$(container_name "$service")" 2>&1 | grep -cE ' (ERROR|CRITICAL) |^Traceback' || true
+}
+
 check_errors() {
   local service count summary="" worst=0
   for service in web intake-reader searchindex intake-sweeper notifications; do
-    count="$(docker logs --since 24h "$(container_name "$service")" 2>&1 | grep -cE ' (ERROR|CRITICAL) |^Traceback' || true)"
+    count="$(errors_in_24h "$service")"
     count="${count:-0}"
     summary="$summary $service=$count"
     [ "$count" -gt "$worst" ] && worst="$count"
   done
   if [ "$worst" -gt "$MONITOR_ERRORS_WARN" ]; then
-    report errors WARN "log error lines in the last 24h:$summary (limit $MONITOR_ERRORS_WARN). Counts only; read docker logs on the host."
+    report errors WARN "log error lines in the last 24h:$summary (limit $MONITOR_ERRORS_WARN). Counts only; read $MONITOR_APP_LOG_DIR on the host."
   else
     report errors ok "log error lines in the last 24h:$summary"
   fi
@@ -488,7 +621,12 @@ case "$TIER" in
     check_healthz
     check_database
     check_space
+    collect_logs
     heartbeat
+    ;;
+  logs)
+    # A release runs this before it recreates the containers (QA26-OPS-04).
+    collect_logs
     ;;
   daily)
     check_backup_age
@@ -506,4 +644,8 @@ case "$TIER" in
     digest
     ;;
 esac
+# Every finished run leaves its time: the host watchdog reads `last-run-fast`
+# and alerts when the monitor itself has stopped (quality audit QA26-OPS-05).
+[ "$DRY_RUN" = 1 ] || date -u +%FT%TZ > "$STATE_DIR/last-run-$TIER"
+rm -f -- "$STATE_DIR/monitor-cannot-run"
 exit 0

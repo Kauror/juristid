@@ -111,3 +111,29 @@ Dependabot proposes Actions and uv bumps.
   administrator, the off-host destination, the secrets escrow, retention, RPO,
   RTO and the alert recipient are deliberately not decided here; the review
   report lists them as owner decisions with the options and their consequences.
+
+## Amendment 2026-11-19 — quality audit package H
+
+The owner approved package H of the 2026-11 quality audit (QA26-OPS-04/-05/-06,
+QA26-ARCH-04/-05). Four rules above change, and only these:
+
+- **The monitor restarts one kind of container.** "It repairs, restarts and
+  rebuilds nothing" now has one exception: a tunnel (`mcp-tunnel`, `tunnel`) that
+  is `running unhealthy` on two fast checks in a row is restarted, at most once
+  in six hours each, and the restart is sent (`restarted`, INFO). A tunnel holds
+  no data and only reconnects; `mcp-tunnel` stayed unhealthy 0.5–12 h three
+  times in 14 days until a person restarted it. Every other container is only
+  reported.
+- **The monitor keeps the application logs.** The fast tier appends each
+  application container's log since its last collection, with Docker's
+  timestamps, to `MONITOR_APP_LOG_DIR/<service>-<UTC day>.log` (default under
+  the data root, 0700/0600, 30 days; nothing leaves the host), and the daily
+  `errors` count reads those files, so a release no longer resets it. A release
+  runs `--tier logs` before it recreates the containers.
+- **A stale host lock may be taken over** — only one left by a backup or a
+  Lovable sync whose process is gone and that is older than 30 minutes. A
+  release's or a restore's lock is never taken over. The nightly backup retries
+  a held lock every minute for 20 minutes (ending before the 21:15 UTC sync).
+- **The monitor reports on itself.** A run that cannot start sends `monitor`
+  (CRIT, at most once in six hours); every finished run writes
+  `last-run-<tier>`, which the host watchdog reads.
