@@ -311,7 +311,9 @@ PAGE_BUDGETS = [
     # +3: the rail's department calendar (commencements, estimates) and the
     # remembered Eesolev windows (one read of the reader's blocks).
     ("/osakond/", 51),
-    ("/osakond/?vaade=valdkonniti", 30),
+    # +4: the Aruandlus rail counts sent opinions from one read of the one reader
+    # (docs/adr/0214 §6) — fixed, whatever the areas hold.
+    ("/osakond/?vaade=valdkonniti", 34),
     ("/statistika/andmekvaliteet/", 62),
     ("/statistika/ajalooline/", 63),
     ("/statistika/teemad/", 68),
