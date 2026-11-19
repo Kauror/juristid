@@ -1396,7 +1396,10 @@ def _pilot_readings(user: Any, now: dt.datetime, *, full: bool) -> list[Reading]
     if not history.nights:
         return []
     baselines = _baselines()
-    by_matter = {s.matter_id: s for s in LovableSyncState.objects.all()}
+    by_matter = {
+        s.matter_id: s
+        for s in LovableSyncState.objects.only("pk", "source_id", "matter_id", "reference")
+    }
     readings = []
     for night in history.nights:
         run = night.run
@@ -1691,9 +1694,10 @@ def status(user: Any, *, now: dt.datetime | None = None) -> SyncStatus:
         obs_counts.get("operational") if isinstance(obs_counts.get("operational"), int) else None
     )
     states = list(
-        LovableSyncState.objects.select_related("matter", "observed_run").filter(
-            matter__deleted_at__isnull=True
-        )
+        LovableSyncState.objects.select_related("matter", "observed_run")
+        .filter(matter__deleted_at__isnull=True)
+        # The pending fields read the observing run's start only, never its counts.
+        .defer("observed_run__counts")
     )
     pending_items = _pending_fields(states)
     pending = len(pending_items)

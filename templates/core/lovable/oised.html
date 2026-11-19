@@ -52,13 +52,16 @@
           {% if night.message %}<p class="empty">{{ night.message }}</p>{% endif %}
           {% if night.hidden %}<p class="lovnight__note">Veel {{ night.hidden }} muudetud teema{{ night.hidden|pluralize:",t" }} ei ole sulle nähtav.</p>{% endif %}
           {% include "core/lovable/_unlinked.html" with unlinked=row.unlinked %}
-          {% if filters.active and night.comparison == "COMPARED" and row.topics|length < night.changed_topics %}
-            <p class="lovnight__note">Filtriga sobib {{ row.topics|length }} teema{{ row.topics|length|pluralize:",t" }}.</p>
+          {% if filters.active and night.comparison == "COMPARED" and row.matching < night.changed_topics %}
+            <p class="lovnight__note">Filtriga sobib {{ row.matching }} teema{{ row.matching|pluralize:",t" }}.</p>
           {% endif %}
 
           {% for topic in row.topics %}
             {% include "core/lovable/_topic.html" with topic=topic pilot=row.pilot %}
           {% endfor %}
+          {% if row.more %}
+            <p class="lovnight__note" data-testid="lovnight-more">Näidatud {{ row.topics|length }} teemat {{ row.matching }}-st. Ülejäänud {{ row.more }} leiad, kui kitsendad loendit teema numbri, välja või tulemuse järgi.</p>
+          {% endif %}
         </div>
       </details>
     {% endwith %}
