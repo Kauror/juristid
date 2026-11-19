@@ -1408,7 +1408,7 @@ def conditional_values_bulk(matters: list[Any]) -> dict[Any, dict[str, Any]]:
         ).values_list("matter_id", "source_id"):
             continued.setdefault(matter_id, []).append(str(source))
     stage_ids = {m.stage_id for m in matters if getattr(m, "stage_id", None)}
-    stage_keys = (
+    stage_keys: dict[Any, str] = (
         dict(StageVocabulary.objects.filter(pk__in=stage_ids).values_list("pk", "key"))
         if stage_ids
         else {}

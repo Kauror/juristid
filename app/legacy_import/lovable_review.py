@@ -746,6 +746,8 @@ def nightly_history(
             night.warning = NOT_RECONCILED
         elif (run.error or "").startswith("VERIFY"):
             night.warning = VERIFY_STOPPED_NIGHT
+        if stored is None or before is None:  # `verified` said no to both above
+            continue
         _compare(
             night,
             documents.delta(before, stored),
