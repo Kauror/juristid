@@ -590,6 +590,31 @@ def _compare(
     night.topics.sort(key=lambda t: _reference_order(t.reference))
 
 
+@dataclass(frozen=True)
+class _Evidence:
+    """One recorded write or convergence: its run (pk, start, trigger only), the
+    Teema's state, the field and the source value it matched."""
+
+    run: LovableSyncRun
+    state_id: Any
+    field: str
+    source: Any
+
+
+def _evidence_rows(decisions: Any) -> list[_Evidence]:
+    """The decisions as `_Evidence`, reading four columns and each run once."""
+    rows = list(decisions.values_list("run_id", "state_id", "field", "source"))
+    runs = {
+        r.pk: r
+        for r in LovableSyncRun.objects.filter(pk__in={run_id for run_id, *_ in rows}).only(
+            "pk", "started_at", "trigger"
+        )
+    }
+    return [
+        _Evidence(runs[run_id], state_id, name, source) for run_id, state_id, name, source in rows
+    ]
+
+
 def _enrolled_since(state: LovableSyncState, moment: dt.datetime | None) -> bool:
     """Whether the state was enrolled after the earlier reading was taken (its
     snapshot moment: a run seeds its states before it reads)."""
@@ -640,7 +665,15 @@ def nightly_history(
     }
     documents = _Documents()
 
-    states = {str(s.source_id): s for s in LovableSyncState.objects.all()}
+    # Only the columns the comparison reads (quality audit QA26-PERF-02, after
+    # r77): every decision row's three JSON values and its run's counts were
+    # decoded on every view — 54,000 JSON documents for one page.
+    states = {
+        str(s.source_id): s
+        for s in LovableSyncState.objects.only(
+            "pk", "source_id", "matter_id", "reference", "cohort", "created_at"
+        )
+    }
     matter_ids = {s.matter_id for s in states.values()}
     live = set(Matter.objects.filter(pk__in=matter_ids).values_list("pk", flat=True))
     visible = {m.pk: m for m in Matter.objects.visible_to(user).filter(pk__in=matter_ids)}
@@ -651,32 +684,35 @@ def nightly_history(
         LovableSyncDecision.objects.filter(run__in=shown_runs)
         .exclude(outcome=SyncOutcome.APPLIED)
         .exclude(reason__startswith=RESOLVED_PREFIX)
+        .only("pk", "run_id", "state_id", "field", "outcome", "reason")
     ):
         decisions[d.run_id][(d.state_id, d.field)] = d
     # An operator's resolution (`lovable_sync resolve`) is recorded on whichever
     # run last observed the field; it answers for the night the change appeared.
     resolutions: dict[tuple[Any, str], list[tuple[dt.datetime, Any]]] = {}
-    for d in LovableSyncDecision.objects.filter(
-        outcome=SyncOutcome.ALREADY_CONVERGED, reason__startswith=RESOLVED_PREFIX
-    ).order_by("created_at"):
-        resolutions.setdefault((d.state_id, d.field), []).append((d.created_at, d.source))
+    for state_id, name, created, source in (
+        LovableSyncDecision.objects.filter(
+            outcome=SyncOutcome.ALREADY_CONVERGED, reason__startswith=RESOLVED_PREFIX
+        )
+        .order_by("created_at")
+        .values_list("state_id", "field", "created_at", "source")
+    ):
+        resolutions.setdefault((state_id, name), []).append((created, source))
     oldest = min(
         [b.started_at for b in baseline_of.values() if b is not None]
         + [r.started_at for r in shown_runs]
     )
-    applied_rows = (
+    applied_rows = _evidence_rows(
         LovableSyncDecision.objects.filter(outcome=SyncOutcome.APPLIED, run__started_at__gt=oldest)
         .exclude(run__trigger=SyncTrigger.CHECK)
-        .select_related("run")
         .order_by("run__started_at")
     )
-    converged_rows = (
+    converged_rows = _evidence_rows(
         LovableSyncDecision.objects.filter(
             outcome=SyncOutcome.ALREADY_CONVERGED, run__started_at__gt=oldest
         )
         .exclude(run__trigger=SyncTrigger.CHECK)
         .exclude(reason__startswith=RESOLVED_PREFIX)
-        .select_related("run")
         .order_by("run__started_at")
     )
 

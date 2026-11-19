@@ -494,9 +494,16 @@ def _topic_needs_attention(topic: Any) -> bool:
     )
 
 
+#: Topics listed per night on «Öised võrdlused». A night that enrolled a whole
+#: cohort changed ~1,850 topics: listing every one made the page 1.2 MB (quality
+#: audit QA26-PERF-02). The counts are always whole; the filters narrow the list.
+NIGHT_TOPICS_SHOWN = 100
+
+
 def _night_rows(readings: list[Any], *, attention: bool) -> list[dict[str, Any]]:
     """Each reading with what its header shows. Counts are the service's; the
-    «Ainult tähelepanu vajavad» filter only narrows which topics are listed."""
+    «Ainult tähelepanu vajavad» filter only narrows which topics are listed, and
+    at most `NIGHT_TOPICS_SHOWN` are listed (``more`` says how many are not)."""
     from app.legacy_import.lovable_review import RESULT_LABELS
     from app.legacy_import.lovable_sync_labels import LOVABLE_OBSERVED_KINDS
 
@@ -504,13 +511,18 @@ def _night_rows(readings: list[Any], *, attention: bool) -> list[dict[str, Any]]
     for reading in readings:
         pilot = reading.kind == "PILOT_NIGHT"
         labels = RESULT_LABELS if pilot else LOVABLE_OBSERVED_KINDS
+        topics = (
+            [t for t in reading.topics if _topic_needs_attention(t)]
+            if attention
+            else reading.topics
+        )
         rows.append(
             {
                 "reading": reading,
                 "pilot": pilot,
-                "topics": [t for t in reading.topics if _topic_needs_attention(t)]
-                if attention
-                else reading.topics,
+                "topics": topics[:NIGHT_TOPICS_SHOWN],
+                "matching": len(topics),
+                "more": max(0, len(topics) - NIGHT_TOPICS_SHOWN),
                 "applied": reading.outcomes.get("APPLIED", 0),
                 "attention": sum(
                     n for k, n in reading.outcomes.items() if k in LOVABLE_ATTENTION_RESULTS

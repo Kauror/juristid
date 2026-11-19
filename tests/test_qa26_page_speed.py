@@ -189,3 +189,59 @@ def test_a_second_view_neither_reads_nor_compares_the_stored_nights(reader, monk
     third = obs.status(reader, now=LATER + dt.timedelta(days=1))
     assert calls["canonical"] > 0
     assert third.as_dict() != second.as_dict()
+
+
+def test_the_landing_page_reads_only_the_decision_columns_it_compares(reader):
+    """PERF-02 after r77: every decision row's baseline/current JSON and its run's
+    counts, and every Teema's observing run's counts, were decoded on each view
+    (54,000 JSON documents on production). The comparison reads none of them.
+    (The Teemad's own applied/observed values ARE read: the pending fields need them.)"""
+    control(SyncMode.COMPARE)
+    pilot = _world(3, 500)
+    pilot.night(night_at(2))
+    first = obs.status(reader, now=LATER)
+    with CaptureQueriesContext(connection) as queries:
+        second = obs.status(reader, now=LATER)
+        nights = obs.nights(reader, now=LATER)
+    read = [q["sql"] for q in queries.captured_queries]
+    decision_reads = [sql for sql in read if 'FROM "legacy_import_lovablesyncdecision"' in sql]
+    state_reads = [sql for sql in read if 'FROM "legacy_import_lovablesyncstate"' in sql]
+    assert decision_reads
+    named = [
+        column
+        for column in (
+            '"legacy_import_lovablesyncdecision"."baseline"',
+            '"legacy_import_lovablesyncdecision"."current"',
+            '"legacy_import_lovablesyncrun"."counts"',
+        )
+        if any(column in sql for sql in decision_reads)
+    ] + [
+        "state join: run counts"
+        for sql in state_reads
+        if '"legacy_import_lovablesyncrun"."counts"' in sql
+    ]
+    assert named == [], named
+    assert second.as_dict() == first.as_dict()
+    assert nights.items and any(r.topics for r in nights.items)
+
+
+def test_a_night_lists_its_first_topics_and_says_how_many_more(reader, monkeypatch):
+    """PERF-02 after r77: «Öised võrdlused» was 1.2 MB because a cohort night listed
+    ~1,850 topics. It lists `NIGHT_TOPICS_SHOWN`, says how many more, keeps counts whole."""
+    from django.test import Client
+    from django.urls import reverse
+
+    from app.core import views as core_views
+
+    control(SyncMode.COMPARE)
+    pilot = _world(3, 400)
+    pilot.night(night_at(2))
+    monkeypatch.setattr(core_views, "_lovable_now", lambda: LATER)
+    monkeypatch.setattr(core_views, "NIGHT_TOPICS_SHOWN", 2)
+    client = Client()
+    client.force_login(reader)
+    body = client.get(reverse("core:release_notes_lovable"), {"vaade": "oised"}).content.decode()
+    sections = body.count('<section class="lovnight__topic"')
+    assert sections == 2 * body.count("Näidatud 2 teemat 3-st")
+    assert "Näidatud 2 teemat 3-st. Ülejäänud 1 leiad" in body
+    assert "<dd>3</dd>" in body  # «Muudetud teemasid» still counts all three
