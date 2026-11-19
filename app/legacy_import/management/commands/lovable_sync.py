@@ -154,6 +154,16 @@ class Command(BaseCommand):
             ),
         )
         parser.add_argument(
+            "--max-new-topics",
+            type=int,
+            default=None,
+            help=(
+                "run --trigger manual: raise the new-topic breaker for this one supervised "
+                "run, so the topics a night held are created; recorded in the run. 0 is a "
+                "limit of zero."
+            ),
+        )
+        parser.add_argument(
             "--max-restored",
             type=int,
             default=None,
@@ -374,7 +384,7 @@ class Command(BaseCommand):
         trigger = SyncTrigger.SCHEDULED if options["trigger"] == "scheduled" else SyncTrigger.MANUAL
         # A breaker override is a person's decision for one supervised run (LS-06):
         # never on the scheduled night, never negative; refused before any read.
-        for flag in ("max_changed", "max_restored"):
+        for flag in ("max_changed", "max_restored", "max_new_topics"):
             value = options[flag]
             if value is None:
                 continue
@@ -396,6 +406,7 @@ class Command(BaseCommand):
             backup_set=options["backup_set"],
             max_changed=options["max_changed"],
             max_restored=options["max_restored"],
+            max_new_topics=options["max_new_topics"],
         )
         self._finish(options, run)
 

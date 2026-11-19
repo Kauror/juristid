@@ -212,6 +212,7 @@ class World:
             pause=lambda _seconds: None,
             max_changed=breakers.pop("max_changed", None),
             max_restored=breakers.pop("max_restored", None),
+            max_new_topics=breakers.pop("max_new_topics", None),
         )
         assert not breakers, f"unknown breaker override(s): {sorted(breakers)}"
         run.refresh_from_db()

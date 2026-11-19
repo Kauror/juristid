@@ -18,6 +18,7 @@ changes = [
   "Saadetud arvamuste arv on igal pool sama: Statistika kõik vahekaardid, Osakond ja Minu asjad loevad Juristidis salvestatud Koja arvamused, ilma dokumendita vastatud tähtajad ja registris «välja saadetud» arvamused, ühe arvamuse ühe korra. Seisu ja Tegevuse arvud kasvavad seetõttu, näiteks 2026. aasta arv on sama mis Ülevaates. Numbrile vajutades avaneb täpselt nende arvamuste loend; Osakonna «arvamust saadetud sel nädalal» avab nüüd samuti oma loendi.",
   "Statistika «Arvamused» loend kannab pealkirja «Juristidis registreeritud arvamused»: seal on arvamused, millel on fail, saaja ja liik.",
   "Statistika lehel «Saatja ja valdkond» on näha, kui ettepaneku valdkond ei ole enam kasutusel. Sellist ettepanekut ei saa kinnitada tühjana: vali teine valdkond või saatja või jäta ettepanek vahele. «Kinnita kõik» ütleb, mitu ettepanekut jäi seetõttu kinnitamata.",
+  "Kui teema antakse Lovable'is teisele juristile või öine sünkroniseerimine loob uue teema, saab uus vastutaja «Uus asi» teavituse nagu siis, kui kolleeg teema üle annab.",
 ]
 
 [[day]]

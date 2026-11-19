@@ -167,3 +167,15 @@ must not have to remember to add it.
 ## Amendment 2026-10-30 — shown in the one «Teavitused» block and counted by the bell (ADR 0198)
 
 The owner's notifications package of 2026-10-30 amends one sentence of this record: «no notification centre, no bell, no badge in the top bar, no counter». An unread notice is now an item of the single Minu asjad «Teavitused» rail block and of `/teavitused/`, and the top-bar bell counts it (ADR 0198 §6). Everything else stands: the product rule for raising a notice, its personal scope (absent from a colleague's desk, never resolvable by anybody else), acknowledgement only by its own POST «Ava» (a GET of the Matter never acknowledges), retirement on reassignment with a stale POST answering 404, no historical backfill, and no «Peida» — a notice leaves when it is opened. Pausing deadline notifications does not hide it.
+
+## Amendment 2026-11-19 — a hand-over that arrives from Lovable tells the new owner
+
+Since r55 a synchronised Teema's owner changes only in Lovable (ADR 0213 §10.2), so the nightly synchronisation is how a
+colleague hands such a Teema over — and this record's rule «a human actor, no provenance» kept every one of them silent
+(quality audit QA26-LS-03). The owner decided on 2026-11-19 that it should be heard. An assignment whose provenance names
+the Lovable synchronisation (`provenance_source = LOVABLE_SYNC`) raises «Uus asi» for the new owner, with no person as
+its sender, and so does a Teema the night creates for a lawyer (`services.raise_lovable_handover_notice`). One unread
+notice per Teema and person: the night that creates a Teema also converges it and names the same owner again. Every
+other system assignment — the owner backfill, an import, a seeding command — stays silent as before. Osakond
+«Muudatused» keeps listing a person's changes; these hand-overs stay in its count of system changes.
+

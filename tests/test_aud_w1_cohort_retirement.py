@@ -289,8 +289,17 @@ def test_a_vanished_topic_after_a_retirement_is_still_source_missing(active, mon
     run = _run(active, at=NIGHT + HOUR)
     assert _decisions(run, "2026_510")["*"].outcome == SyncOutcome.SOURCE_MISSING
     assert run.counts["missing"] == 1
-    # And a truncated read beyond the limit stops the whole night, as before.
+    # And a truncated read beyond the limit stops the whole night, as before:
+    # a row that goes missing tonight. 2026_510, missing since the last
+    # reading, no longer counts (docs/adr/0213 §11, QA26-LS-01).
     monkeypatch.setattr(lovable_sync, "MAX_MISSING", 0)
+    another = next(
+        t
+        for t in active["active_topics"]
+        if t["reference"] not in ("2026_510", "2026_511")
+        and t["source"]["id"] in active["source"].rows
+    )
+    del active["source"].rows[another["source"]["id"]]
     stopped = _run(active, at=NIGHT + 2 * HOUR)
     assert stopped.status == SyncRunStatus.FAILED
     assert stopped.error.startswith("COHORT_MISSING")

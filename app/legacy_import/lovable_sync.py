@@ -226,8 +226,11 @@ BACKUP_MAX_AGE = dt.timedelta(hours=2)
 #: the host script mounts the set read-only into the run's container at the
 #: directory `HOST_BACKUP_DIR_ENV` names (`backup_proof_problem`).
 BACKUP_PROOF_LEVEL = 2
-#: More cohort rows missing from the source than this is a broken read or a
-#: broken source, never a night's work: the run stops.
+#: More cohort rows newly missing from the source than this — present in the
+#: last stored reading, absent tonight — is a broken read or a broken source,
+#: never a night's work: the run stops. A topic deleted in Lovable on an earlier
+#: night stays missing for good (its Teema is kept) and never counts again
+#: (quality audit QA26-LS-01; docs/adr/0213 §13).
 MAX_MISSING = 5
 #: New Teemad one night may create (docs/adr/0213): the department opens a few
 #: topics a week; more than this in one night is a changed source scope or a
@@ -4017,6 +4020,22 @@ def _provenance(
     }
 
 
+def newly_missing(plans: list[Any], previous_snapshot: Any) -> int:
+    """How many Teemad went missing from the source since the last stored reading.
+
+    A topic deleted in Lovable stays missing night after night — its Teema is
+    kept as Juristid's history — and counting it every night made the sixth
+    deletion ever stop the whole synchronisation for good (QA26-LS-01). Only the
+    rows present in the last stored reading and absent tonight can be a broken
+    read. The first night, with no reading before it, counts every missing row.
+    """
+    missing = [p for p in plans if p.status == SyncOutcome.SOURCE_MISSING]
+    if previous_snapshot is None:
+        return len(missing)
+    seen = {str(row.get("id")) for row in (previous_snapshot.document or {}).get("index") or []}
+    return sum(1 for p in missing if str(p.state.source_id) in seen)
+
+
 def idempotency_key(
     state: LovableSyncState,
     decision: FieldDecision,
@@ -4028,7 +4047,12 @@ def idempotency_key(
     guard makes every save exactly one higher."""
     parts: list[Any] = [str(state.source_id), decision.field, version, decision.source]
     if run is not None and (
-        decision.reason == RESTORED or _j(decision.source) == _j(decision.baseline)
+        decision.reason == RESTORED
+        or _j(decision.source) == _j(decision.baseline)
+        # `former_owner` follows the Juristid account (active, a department
+        # worker), not the Lovable row: an account off → on → off with no Lovable
+        # edit writes the same value under the same version again (QA26-LS-04).
+        or decision.field == FORMER_OWNER
     ):
         # A restore writes the same source value again over a local edit, and a
         # derived change (a drafting step whose day passed, a request ended
@@ -4757,6 +4781,10 @@ def create_new_topic(
                 "updated_at",
             ]
         )
+        # The lawyer the new Teema is filed to hears of it (docs/adr/0051 §6).
+        from app.matters.services import raise_lovable_handover_notice
+
+        raise_lovable_handover_notice(matter=matter, owner=matter.owner)
         reference = MatterSourceReference.objects.get(matter=matter, import_batch=writer.batch)
         seeding = Cohort(cohort.key, cohort.key, topic_plan.package_sha256, 0)
         state = LovableSyncState.objects.create(matter=matter, **seed_values(reference, seeding))
@@ -5532,6 +5560,8 @@ class RunCounts:
     changed_source: int = 0
     changed_restores: int = 0
     restore_limit: int = MAX_RESTORED_MATTERS
+    #: The new-topic breaker this run used (`run_sync(max_new_topics=…)`).
+    new_topic_limit: int = MAX_NEW_TOPICS
     #: Fields held while Lovable is unchanged (C = A): they come back every night
     #: until Lovable changes. ``"cohort:reason"`` → count.
     standing_holds: dict[str, int] = field(default_factory=dict)
@@ -5842,6 +5872,7 @@ def run_sync(
     pause: Callable[[float], None] | None = None,
     max_changed: int | None = None,
     max_restored: int | None = None,
+    max_new_topics: int | None = None,
 ) -> LovableSyncRun:
     """One run, end to end. Returns the ledger row; never raises after it exists.
 
@@ -5852,12 +5883,19 @@ def run_sync(
     ``max_restored`` does the same for the restore breaker (`MAX_RESTORED_MATTERS`,
     recorded as ``restore_limit``): the night stays all-or-nothing for restores,
     and one supervised run with a higher limit is how a held backlog drains.
+    ``max_new_topics`` is the same for the new-topic breaker (`MAX_NEW_TOPICS`,
+    recorded as ``new_topic_limit``): a night over it creates none, and the
+    waiting topics are created by one supervised run (QA26-LS-02).
 
     Both are a person's decision for one run: only on a MANUAL run, never
     negative, and ``None`` (not ``0``) means the approved limit — ``0`` is a
     limit of zero (audit 2026-11-11 LS-06). A scheduled run or a check with an
     override is refused before anything is read."""
-    for name, value in (("max_changed", max_changed), ("max_restored", max_restored)):
+    for name, value in (
+        ("max_changed", max_changed),
+        ("max_restored", max_restored),
+        ("max_new_topics", max_new_topics),
+    ):
         if value is None:
             continue
         if trigger != SyncTrigger.MANUAL:
@@ -5926,6 +5964,7 @@ def run_sync(
                 pause=pause,
                 max_changed=max_changed,
                 max_restored=max_restored,
+                max_new_topics=max_new_topics,
                 backup_problem=backup_problem,
             )
         except (SourceError, SyncRefused) as error:
@@ -6012,6 +6051,7 @@ def _execute(
     pause: Callable[[float], None] | None,
     max_changed: int | None = None,
     max_restored: int | None = None,
+    max_new_topics: int | None = None,
     backup_problem: str = "",
 ) -> None:
     from app.matters.models import Matter
@@ -6107,11 +6147,13 @@ def _execute(
         for source_id in candidates
     ]
 
-    missing = sum(1 for p in plans if p.status == SyncOutcome.SOURCE_MISSING)
+    missing = newly_missing(plans, previous_snapshot)
     if missing > MAX_MISSING:
         # Before the snapshot is stored: a broken read is never kept as a reading.
         raise SyncRefused(
-            "COHORT_MISSING", f"{missing} synchronised Teemad are missing from the source read."
+            "COHORT_MISSING",
+            f"{missing} synchronised Teemad went missing from the source read "
+            "since the last reading.",
         )
     if not check and run.mode == SyncMode.APPLY and previous_snapshot is not None:
         # Before the snapshot is stored, as above: a population that moved this
@@ -6228,7 +6270,8 @@ def _execute(
     progress["stage"] = "new_topics"
     creatable = [p for p in new_plans if p.creatable]
     new_hold = hold or ("" if verified else VERIFY_STOPPED)
-    if not new_hold and len(creatable) > MAX_NEW_TOPICS:
+    new_topic_limit = MAX_NEW_TOPICS if max_new_topics is None else max_new_topics
+    if not new_hold and len(creatable) > new_topic_limit:
         new_hold = NEW_BREAKER
     target = next((c for c in active if c.key == NEW_TOPIC_COHORT), None)
     if not new_hold and creatable and target is None:
@@ -6423,6 +6466,7 @@ def _execute(
         counts.changed_restores = len(restore_only)
         counts.successors_deferred = successors_deferred
         counts.restore_limit = restore_limit
+        counts.new_topic_limit = new_topic_limit
         counts.standing_holds = standing_holds(final)
         if not check:
             _record_new_topics(run, new_plans, seen_at=run.started_at)
