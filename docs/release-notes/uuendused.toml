@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-11-19
 basis = "deployment"
-prs = [645, 648, 649, 650, 651]
+prs = [645, 648, 649, 650, 651, 652]
 changes = [
   "Ajaloolise OneNote'i lehe vaade on uus. Iga kuupäevaga märge on oma lõik ja selle kuupäev on vasakul; kõrvuti seisnud failid on ühes plokis, iga fail ühel real tüübi, nime, suuruse ja OneNote'i lisamise kuupäevaga. Failinimele vajutades fail avaneb või laaditakse alla. Laial ekraanil on sisukord ja ühise toimiku selgitus paremal ning jäävad kerides nähtavale.",
   "Öine registrite kontroll ei katke enam ühe registri ootamatu vastuse pärast: viga jääb selle allika juurde kirja ja ülejäänud teemad loetakse ikka läbi. Halduse «Registrite jälgimine» näitab katkenud kontrolli punase «Katkes» märgiga ning kirjutab Seisu alla, kui viimane kontroll katkes või kui üle 30 tunni pole ükski kontroll lõpuni jõudnud.",
