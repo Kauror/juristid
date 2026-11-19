@@ -593,6 +593,31 @@ def _raise_assignment_notice(*, matter: Matter, owner: Any, actor: Any) -> None:
     MatterAssignmentNotice.objects.create(matter=matter, recipient=owner, assigned_by=actor)
 
 
+#: `lovable_sync.PROVENANCE_SOURCE`, named here so the Matter services do not
+#: import the synchronisation.
+LOVABLE_SYNC_PROVENANCE = "LOVABLE_SYNC"
+
+
+def raise_lovable_handover_notice(*, matter: Matter, owner: Any) -> None:
+    """«Uus asi» for a hand-over that arrived from Lovable (docs/adr/0051, amendment of 2026-11-19).
+
+    Since r55 a synchronised Teema's owner changes only in Lovable, so the sync
+    is how a colleague hands such a Teema over — and the new owner heard nothing
+    (QA26-LS-03; owner, 19.11.2026: notify). The same row a colleague's hand-over
+    raises, with no person as its sender. A Teema the sync creates for a lawyer
+    is a hand-over too. Every other system assignment stays silent.
+    """
+    if owner is None or not getattr(owner, "is_active", False):
+        return
+    # One unread notice per Teema and person: the night that creates a Teema
+    # also converges it, and that write names the same owner again.
+    if MatterAssignmentNotice.objects.filter(
+        matter=matter, recipient=owner, viewed_at__isnull=True, superseded_at__isnull=True
+    ).exists():
+        return
+    MatterAssignmentNotice.objects.create(matter=matter, recipient=owner, assigned_by=None)
+
+
 @transaction.atomic
 def acknowledge_assignment_notice(*, notice: MatterAssignmentNotice, actor: Any) -> bool:
     """Mark one notice read, because its recipient opened it from the block.
@@ -769,6 +794,8 @@ def assign_matter(
     # rows for work materialised by a batch is noise rather than news.
     if provenance is None:
         _raise_assignment_notice(matter=matter, owner=owner, actor=actor)
+    elif provenance.get("provenance_source") == LOVABLE_SYNC_PROVENANCE:
+        raise_lovable_handover_notice(matter=matter, owner=owner)
     return matter
 
 

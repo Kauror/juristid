@@ -391,3 +391,24 @@ A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01).
 **Escalation** (the notifications package; see the 0198 amendment of 2026-11-12). A hold still standing on the 14th day of its APPLY nights (`escalates_on`, from `writing_since`: a hold that stood through weeks of COMPARE starts its clock on the first APPLY night, so its escalation never falls outside the notifications' seven-day catch-up) gives its owner one «Vajab tegevust» row (category `CLOSURE_HOLD`). The next morning, every holder of `department.view_management` — the department head — gets one row. Both are keyed on the hold's escalation day, so a re-run never delivers twice, and both retire as DISCHARGED when the hold ends. Only while the synchronisation writes (APPLY). The category vocabulary is a CHECK constraint, so the category adds the migration `notifications` 0004: schema forward; on the way back it deletes the `CLOSURE_HOLD` rows before narrowing the CHECK.
 
 **Reopening still restores nothing** (0086 §7, 0081 §5, 0146 D9). The hold makes that loss unnecessary rather than undoing it.
+
+## 11. Amendment 2026-11-19: limits that count tonight, and the new-topic override (quality audit, package E)
+
+**The missing-row limit counts what went missing since the last reading.** A topic deleted in Lovable is kept in
+Juristid as history (`FIELD_POLICY["source_missing"]`) and stays in the population, missing every night. `MAX_MISSING`
+counted every such row, so the sixth deletion ever stopped every APPLY and COMPARE night for the whole register while
+the fields stayed locked (QA26-LS-01, r49's C-L-03). It now counts the rows present in the last stored reading and absent
+tonight (`newly_missing`); the first night, with no reading before it, counts them all. A broken read that loses many
+rows at once still stops the night: the last stored reading is only ever one that was not refused. The run's
+`missing` count still reports every missing row.
+
+**The new-topic breaker has a supervised override.** A night with more creatable new topics than `MAX_NEW_TOPICS` still
+creates none (§4). One supervised run with `run_sync(max_new_topics=…)` / `lovable_sync run --trigger manual
+--max-new-topics N` creates what it held, exactly as `max_changed` and `max_restored` drain their breakers: only on a
+manual run, never negative, recorded in the run's counts (`new_topic_limit`) (QA26-LS-02).
+
+**`former_owner` writes are keyed per run.** Its value follows the Juristid account (active, a department worker), not
+the Lovable row, so an account off → on → off with no Lovable edit wrote the same value under the same version again and
+the idempotency key refused it every night (QA26-LS-04). Like a restore and a derived change, it is now one write per
+run.
+
