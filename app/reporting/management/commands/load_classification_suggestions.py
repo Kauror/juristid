@@ -39,5 +39,7 @@ class Command(BaseCommand):
         self.stdout.write(
             f"{mode} created={report.created} already={report.already} "
             f"missing_matter={report.missing_matter} "
-            f"unknown_sender={list(report.unknown_sender)} unknown_area={list(report.unknown_area)}"
+            f"unknown_sender={list(report.unknown_sender)} "
+            f"unknown_area={list(report.unknown_area)} "
+            f"retired_area={list(report.retired_area)}"
         )

@@ -36,6 +36,9 @@ class LoadReport:
     missing_matter: int
     unknown_sender: tuple[str, ...]
     unknown_area: tuple[str, ...]
+    #: Areas that exist but are no longer offered for filing (`selectable_policy_areas`):
+    #: left out of the proposal and reported, never stored to be dropped later (QA26-DATA-02).
+    retired_area: tuple[str, ...] = ()
 
 
 def load(data: dict[str, Any], *, dry_run: bool = False) -> LoadReport:
@@ -51,6 +54,7 @@ def load(data: dict[str, Any], *, dry_run: bool = False) -> LoadReport:
     rows = list(data.get("suggestions") or [])
     organisations = {org.name: org for org in Organisation.objects.all()}
     areas = set(PolicyArea.objects.values_list("key", flat=True))
+    selectable = {area.key for area in selectable_policy_areas()}
     known = {
         str(pk)
         for pk in Matter.objects.filter(pk__in=[row["matter"] for row in rows]).values_list(
@@ -65,6 +69,7 @@ def load(data: dict[str, Any], *, dry_run: bool = False) -> LoadReport:
     }
     unknown_sender: set[str] = set()
     unknown_area: set[str] = set()
+    retired_area: set[str] = set()
     created: list[ClassificationSuggestion] = []
     missing = already = 0
     for row in rows:
@@ -77,6 +82,7 @@ def load(data: dict[str, Any], *, dry_run: bool = False) -> LoadReport:
             continue
         keys = [key for key in row.get("areas") or [] if key]
         unknown_area.update(key for key in keys if key not in areas)
+        retired_area.update(key for key in keys if key in areas and key not in selectable)
         name = row.get("sender")
         sender = organisations.get(name) if name else None
         if name and sender is None:
@@ -87,7 +93,7 @@ def load(data: dict[str, Any], *, dry_run: bool = False) -> LoadReport:
         created.append(
             ClassificationSuggestion(
                 matter_id=matter_id,
-                policy_area_keys=[key for key in keys if key in areas],
+                policy_area_keys=[key for key in keys if key in selectable],
                 sender=sender,
                 confidence=confidence,
                 source=source,
@@ -102,6 +108,7 @@ def load(data: dict[str, Any], *, dry_run: bool = False) -> LoadReport:
         missing_matter=missing,
         unknown_sender=tuple(sorted(unknown_sender)),
         unknown_area=tuple(sorted(unknown_area)),
+        retired_area=tuple(sorted(retired_area)),
     )
 
 
@@ -123,6 +130,26 @@ def own_pending(user: Any, pk: Any) -> ClassificationSuggestion | None:
 
 def offered_areas() -> list[PolicyArea]:
     return list(selectable_policy_areas())
+
+
+#: Confirming a proposal that would write nothing is refused, not recorded as done
+#: (QA26-DATA-02): its area is no longer offered and it names no sender.
+NOTHING_TO_CONFIRM = (
+    "Ettepanekus pole midagi kinnitada: vali valdkond või saatja, või jäta ettepanek vahele."
+)
+
+
+def retired_area_names(suggestion: ClassificationSuggestion) -> list[str]:
+    """The proposal's areas that exist but are no longer offered, by name."""
+    offered = {area.key for area in selectable_policy_areas()}
+    keys = [key for key in suggestion.policy_area_keys if key not in offered]
+    if not keys:
+        return []
+    return list(
+        PolicyArea.objects.filter(key__in=keys)
+        .order_by("name_et")
+        .values_list("name_et", flat=True)
+    )
 
 
 def offered_senders() -> list[Organisation]:
@@ -158,6 +185,10 @@ def accept(
     if sender == "proposed":
         sender = locked.sender
     chosen_areas = list(areas)
+    if not chosen_areas and not isinstance(sender, Organisation):
+        # Nothing would reach the Teema: ACCEPTED here would hide a proposal
+        # whose only area was retired, and «Kinnita kõik» would count it.
+        raise DomainError(NOTHING_TO_CONFIRM)
     if chosen_areas:
         current = list(matter.policy_areas.all())
         held = {area.pk for area in current}

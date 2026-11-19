@@ -1184,7 +1184,12 @@ WRITE_ROUTES: tuple[WriteRoute, ...] = (
     WriteRoute(
         name="reporting:classification_decide",
         label="Saatja ja valdkonna kinnitamine",
-        request=lambda w: ({"pk": w["suggestion"].pk}, {"otsus": "kinnita"}),
+        # What the row's form sends: its proposed Valdkond comes checked. A
+        # confirmation that writes nothing is refused (QA26-DATA-02).
+        request=lambda w: (
+            {"pk": w["suggestion"].pk},
+            {"otsus": "kinnita", "valdkond": "maksud-ja-toll"},
+        ),
         probe=lambda w: _suggestion_state(w),
         events=(ChangeEventType.MATTER_POLICY_AREAS_CHANGED,),
     ),

@@ -24,6 +24,7 @@ from app.reporting import classification
 from app.reporting.models import ClassificationSuggestion, SuggestionStatus
 from app.taxonomy.models import PolicyArea
 from tests import factories
+from tests.refusals import refused
 from tests.test_statistika_dashboard import _imported
 
 pytestmark = pytest.mark.django_db
@@ -314,3 +315,67 @@ def test_the_list_narrows_to_one_area_and_one_sender(client, taxes, ministry, sp
     assert [f.matter.title for f in by_area.context["rows"]] == ["Maksuteema"]
     assert by_area.context["liik"] == "Maksud ja toll"
     assert [f.matter.title for f in by_sender.context["rows"]] == ["Ministeeriumi teema"]
+
+
+# -- quality audit 2026-11-18, package D (QA26-DATA-02) --------------------------------
+
+
+@pytest.fixture
+def retired(db):
+    area = PolicyArea.objects.get(key="energeetika")
+    area.is_active = False
+    area.save(update_fields=["is_active"])
+    return area
+
+
+def test_load_reports_a_retired_area_and_never_stores_it(taxes, retired, ministry):
+    matter = factories.MatterFactory()
+    report = classification.load(
+        {
+            "source": "test",
+            "suggestions": [
+                {
+                    "matter": str(matter.pk),
+                    "areas": [retired.key, taxes.key],
+                    "sender": None,
+                    "confidence": "h",
+                }
+            ],
+        }
+    )
+
+    assert report.retired_area == (retired.key,)
+    assert ClassificationSuggestion.objects.get(matter=matter).policy_area_keys == [taxes.key]
+
+
+def test_a_proposal_with_only_a_retired_area_is_never_confirmed_as_nothing(retired, specialist):
+    matter = factories.MatterFactory()
+    proposal = _proposal(matter, None, retired.key)
+
+    with refused(classification.NOTHING_TO_CONFIRM):
+        classification.accept(proposal, actor=specialist)
+    assert classification.accept_many([proposal], actor=specialist) == 0
+
+    proposal.refresh_from_db()
+    assert proposal.status == SuggestionStatus.PENDING
+    assert not matter.policy_areas.exists()
+
+
+def test_the_review_page_names_the_retired_area_and_the_page_confirm_says_what_it_left(
+    client, retired, taxes, ministry, specialist
+):
+    stale = _proposal(factories.MatterFactory(title="Vana valdkonnaga teema"), None, retired.key)
+    good = _proposal(factories.MatterFactory(title="Hea teema"), ministry, taxes.key)
+    client.force_login(specialist)
+
+    page = client.get(reverse("reporting:classification")).content.decode()
+    assert f"Ettepanek «{retired.name_et}» — valdkond ei ole enam kasutusel" in page
+
+    response = client.post(
+        reverse("reporting:classification_accept_page"),
+        {"ettepanek": [str(stale.pk), str(good.pk)]},
+        follow=True,
+    )
+    assert "Kinnitatud: 1. Kinnitamata jäi 1" in response.content.decode()
+    stale.refresh_from_db()
+    assert stale.status == SuggestionStatus.PENDING
