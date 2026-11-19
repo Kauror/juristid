@@ -72,6 +72,43 @@ pytestmark = pytest.mark.django_db
 CLOSED = {"hetkeseis": "jõustunud", "jargmiseks": "", "tegevuse_tahtaeg": None}
 
 
+def _feature_started(on: dt.date) -> None:
+    """Deadline notifications have been delivering since ``on``.
+
+    `deadlines.feature_start` reads the earliest row ever created, so without
+    this marker it is the real day the test runs — and a hold dated before that
+    day stops owing an escalation. One retired row of an inactive account, of
+    another category, whose `created_at` is ``on``; the CLOSURE_HOLD rows these
+    tests count never include it.
+    """
+    from app.notifications.enums import (
+        NotificationCategory,
+        NotificationKind,
+        NotificationPurpose,
+        RetiredReason,
+    )
+    from app.notifications.models import DeadlineNotification
+
+    gone = factories.UserFactory(is_active=False, display_name="Lahkunud kasutaja")
+    matter = factories.MatterFactory(owner=None)
+    row = DeadlineNotification.objects.create(
+        recipient=gone,
+        matter=matter,
+        category=NotificationCategory.OPINION_DEADLINE,
+        source_type="MATTER",
+        source_id=matter.pk,
+        source_date=on,
+        purpose=NotificationPurpose.ON_DAY,
+        kind=NotificationKind.ACTION,
+        due_on=on,
+        retired_at=dt.datetime(on.year, on.month, on.day, 9, 0, tzinfo=dt.UTC),
+        retired_reason=RetiredReason.INELIGIBLE,
+    )
+    DeadlineNotification.objects.filter(pk=row.pk).update(
+        created_at=dt.datetime(on.year, on.month, on.day, 9, 0, tzinfo=dt.UTC)
+    )
+
+
 def _close_in_lovable(world, number: int = 1) -> None:
     world.lovable.edit(ref(number), **CLOSED)
 
@@ -493,6 +530,7 @@ def test_a_hold_14_days_old_reaches_the_owner_and_the_department_head_once(world
     world.run()
     world.run()
     matter = world.matter(ref(1))
+    _feature_started(NIGHT.date())
     rows = DeadlineNotification.objects.filter(category=NotificationCategory.CLOSURE_HOLD)
     reconcile_deadline_notifications(dt.date(2026, 11, 25))
     assert not rows.exists()
@@ -985,6 +1023,7 @@ def test_the_escalation_clock_starts_on_the_first_apply_night(world):
     assert current["held_since"] == NIGHT.date().isoformat()
     assert current["writing_since"] == "2026-12-05"
     assert current["escalates_on"] == "2026-12-19"
+    _feature_started(NIGHT.date())
     rows = DeadlineNotification.objects.filter(category=NotificationCategory.CLOSURE_HOLD)
     reconcile_deadline_notifications(dt.date(2026, 12, 18))
     assert not rows.exists()
