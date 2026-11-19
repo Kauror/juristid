@@ -241,6 +241,7 @@ def test_a_night_lists_its_first_topics_and_says_how_many_more(reader, monkeypat
     client = Client()
     client.force_login(reader)
     body = client.get(reverse("core:release_notes_lovable"), {"vaade": "oised"}).content.decode()
-    assert body.count('<section class="lovnight__topic"') == 2 * body.count("Näidatud 2 teemat 3-st")
+    sections = body.count('<section class="lovnight__topic"')
+    assert sections == 2 * body.count("Näidatud 2 teemat 3-st")
     assert "Näidatud 2 teemat 3-st. Ülejäänud 1 leiad" in body
     assert "<dd>3</dd>" in body  # «Muudetud teemasid» still counts all three
