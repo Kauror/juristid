@@ -3,6 +3,10 @@
 * QA26-PERF-01 — «Valmisolek» (Uuendused → Lovable, Haldus → Lovable) planned
   every synchronised Teema with ~10 queries each: 24 s and 24,400 statements on
   production's 2,370 Teemad. It now reads Juristid's values in bulk.
+* QA26-PERF-02 — Uuendused → Lovable compared every stored night again on every
+  view (4.6 s). A night pair's difference is now worked out once per worker.
+* QA26-PERF-03 — Haldus → OneNote «ootel» read every held page's text and blocks
+  to print one page of 25 (6 s). The list now leaves them unread.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from app.legacy_import import lovable_sync
 from app.legacy_import.lovable_sync_models import LovableSyncRun, LovableSyncState, SyncMode
 from tests import factories
 from tests.lovable_observability_support import Pilot, control, night_at
+from tests.test_ls2_c_onenote_holds import NEW_BYTES, _later, world  # noqa: F401  (fixture)
 
 pytestmark = pytest.mark.django_db
 
@@ -108,3 +113,79 @@ def test_conditional_values_bulk_is_each_teemas_own(reader):
         str(LovableSyncState.objects.get(matter=second).source_id)
     ]
     assert bulk[first.pk][lovable_sync.CONTINUATION] == []
+
+
+# -- QA26-PERF-03: the OneNote «ootel» list ---------------------------------------------
+
+#: Columns a list of held items never prints (`onenote_coverage._LIST_DEFERRED_*`).
+_HEAVY = ('"derived_text"', '"blocks"', '"links"', '"context"', '"error_detail"', '"detail"')
+
+
+def test_the_holds_list_reads_no_page_text_or_context(world, reader):  # noqa: F811
+    """PERF-03: a page of held items never loads the pages' text, blocks or the
+    readings' context — not when listed, not when its row is printed."""
+    from app.legacy_import import onenote_coverage as cov
+    from app.legacy_import.onenote_coverage_models import HoldScope
+
+    _later(world, "cap-2", NEW_BYTES)
+    with CaptureQueriesContext(connection) as queries:
+        items, _hidden, counts = cov.held_items(viewer=reader)
+        before = len(queries.captured_queries)
+        # What the list template prints of each item.
+        printed = [
+            (
+                i.page.source_section,
+                i.page.title,
+                i.resource.original_filename,
+                [t.reference for t in i.teemad],
+                i.category_label,
+                i.reason_label,
+                i.final,
+            )
+            for i in items
+        ]
+    assert {i.scope for i in items} == {
+        HoldScope.SHARED_FILE,
+        HoldScope.HELD_IMPORT,
+        HoldScope.HELD_REVISION,
+    }
+    assert len(printed) == len(items) and sum(counts.values()) == len(items)
+    assert len(queries.captured_queries) == before, "printing a row read more"
+    read = [q["sql"] for q in queries.captured_queries]
+    assert not [c for c in _HEAVY if any(c in sql for sql in read)], read
+    # One item's own page still has everything.
+    one = cov.held_item(next(i.key for i in items if i.revision is not None), viewer=reader)
+    assert one.context_available is not None and one.detail is not None
+
+
+# -- QA26-PERF-02: Uuendused → Lovable compares a stored night once --------------------
+
+
+def test_a_second_view_neither_reads_nor_compares_the_stored_nights(reader, monkeypatch):
+    """PERF-02: the landing page's numbers come from nights already compared; the
+    second view reads no snapshot document and canonicalises no topic."""
+    from app.legacy_import import lovable_review
+
+    control(SyncMode.COMPARE)
+    pilot = _world(3, 600)
+    pilot.night(night_at(2))
+    first = obs.status(reader, now=LATER)
+    calls = {"canonical": 0}
+    real = lovable_review.canonical
+
+    def counting(bundle):
+        calls["canonical"] += 1
+        return real(bundle)
+
+    monkeypatch.setattr(lovable_review, "canonical", counting)
+    with CaptureQueriesContext(connection) as queries:
+        second = obs.status(reader, now=LATER)
+    assert calls["canonical"] == 0
+    assert not [q["sql"] for q in queries.captured_queries if '"document"' in q["sql"]]
+    assert second.as_dict() == first.as_dict()
+    # A new night is a new pair: compared once, and its change is seen.
+    pilot.edit("2026_601", jargmiseks="Veel uuem")
+    pilot.night(night_at(3))
+    third = obs.status(reader, now=LATER + dt.timedelta(days=1))
+    assert calls["canonical"] > 0
+    assert third.as_dict() != second.as_dict()
