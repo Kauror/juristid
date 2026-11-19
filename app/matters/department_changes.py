@@ -641,6 +641,8 @@ class DepartmentChanges:
     #: The per-person table's totals — equal to the KPIs by construction.
     people_total: PersonRow | None = None
     detail: DetailTable = field(default_factory=DetailTable)
+    #: The Tallinn day the page was built for — the same ``today`` that chose the window.
+    today: date | None = None
 
     @property
     def total(self) -> int:
@@ -673,7 +675,7 @@ class DepartmentChanges:
     @property
     def row_date_format(self) -> str:
         """Row dates carry the year when the window is not this year's alone."""
-        this_year = timezone.localdate().year
+        this_year = (self.today or timezone.localdate()).year
         same = self.period.start.year == self.period.end.year == this_year
         return "d.m" if same else "d.m.Y"
 
@@ -1723,6 +1725,7 @@ def build_changes(
     sent, closed = _outputs(user, period, filters)
     people, people_total = _people(detail, sent, closed, filters, period)
     return DepartmentChanges(
+        today=today,
         period=period,
         period_error=error,
         categories=_categories(plain, closures, filters, period),

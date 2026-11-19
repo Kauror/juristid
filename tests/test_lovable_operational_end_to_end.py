@@ -125,7 +125,7 @@ def _commencement_row(reference: str) -> dict[str, Any]:
         "id": f"00000000-0000-0000-0c01-{int(reference[5:]):012d}",
         "topic_id": _sid(reference),
         "liik": "Eeldatava kuupäevaga jõustumine",
-        "kuupaev": "2027-03-01",
+        "kuupaev": "2099-03-01",
         "tapsustus": "",
         "position": 0,
     }
@@ -134,15 +134,15 @@ def _commencement_row(reference: str) -> dict[str, Any]:
 def _active_topics() -> list[dict[str, Any]]:
     estimate = _active_topic(
         ESTIMATE,
-        _lovable_row(ESTIMATE, jargmiseks="ootan 2. lugemist", tegevuse_tahtaeg="2027-01-25"),
-        next_action=_review_step("WAIT", "2027-01-25", "ootan 2. lugemist"),
+        _lovable_row(ESTIMATE, jargmiseks="ootan 2. lugemist", tegevuse_tahtaeg="2099-01-25"),
+        next_action=_review_step("WAIT", "2099-01-25", "ootan 2. lugemist"),
         commencements=[
             {
                 "key": f"{ESTIMATE}-C01",
                 "review": "READY",
                 "target": "MatterImportantDate",
                 "kind": "ESTIMATED_COMMENCEMENT",
-                "date": "2027-03-01",
+                "date": "2099-03-01",
                 "date_precision": "EXACT",
                 "note": "",
             }
@@ -154,9 +154,9 @@ def _active_topics() -> list[dict[str, Any]]:
         _active_topic(
             REVIEW,
             _lovable_row(
-                REVIEW, jargmiseks="Jälgin eelnõu menetlust", tegevuse_tahtaeg="2027-01-15"
+                REVIEW, jargmiseks="Jälgin eelnõu menetlust", tegevuse_tahtaeg="2099-01-15"
             ),
-            next_action=_review_step("MONITOR", "2027-01-15", "Jälgin eelnõu menetlust"),
+            next_action=_review_step("MONITOR", "2099-01-15", "Jälgin eelnõu menetlust"),
             field_decisions={"jargmiseks": "APPLIED"},
         ),
         _active_topic(
@@ -167,12 +167,12 @@ def _active_topics() -> list[dict[str, Any]]:
                 hetkeseis="kooskõlastusel",
                 valja="ei saatnud",
                 jargmiseks="ootan kooskõlastuse tulemusi",
-                tegevuse_tahtaeg="2027-01-10",
+                tegevuse_tahtaeg="2099-01-10",
             ),
             owner_raw="Jaan",
             status_raw="kooskõlastusel",
             stage="consultation",
-            next_action=_review_step("WAIT", "2027-01-10", "ootan kooskõlastuse tulemusi"),
+            next_action=_review_step("WAIT", "2099-01-10", "ootan kooskõlastuse tulemusi"),
             field_decisions={"valja": HELD, "jargmiseks": "APPLIED"},
             review_notes=[{"field": "valja", "reason": "«ei saatnud» on a live stage"}],
         ),
@@ -200,8 +200,8 @@ def _active_topics() -> list[dict[str, Any]]:
                 DRAFTING,
                 hetkeseis="kooskõlastusel",
                 jargmiseks="Koostan arvamuse",
-                tegevuse_tahtaeg="2027-01-20",
-                arvamuse_tahtaeg="2027-01-20",
+                tegevuse_tahtaeg="2099-01-20",
+                arvamuse_tahtaeg="2099-01-20",
                 sisse="2025-06-02",
             ),
             status_raw="kooskõlastusel",
@@ -211,14 +211,14 @@ def _active_topics() -> list[dict[str, Any]]:
                 "review": "READY",
                 "kind": "DO",
                 "date_semantics": "DEADLINE",
-                "target_date": "2027-01-20",
+                "target_date": "2099-01-20",
                 "date_precision": "EXACT",
                 "text": "Koostan arvamuse",
                 "source_text": "Koostan arvamust.",
                 "treatment": "OPINION_DRAFTING",
                 "reason": "drafting",
             },
-            deadline={"treatment": "OPEN_REQUEST", "deadline": "2027-01-20"},
+            deadline={"treatment": "OPEN_REQUEST", "deadline": "2099-01-20"},
             field_decisions={"jargmiseks": "APPLIED"},
         ),
         estimate,
@@ -361,7 +361,7 @@ def first_night(enrolled, monkeypatch):
 @pytest.fixture
 def second_night(first_night, monkeypatch):
     """Lovable moves the clean topic's review day and finishes another."""
-    first_night["source"].edit(REVIEW, tegevuse_tahtaeg="2027-02-01")
+    first_night["source"].edit(REVIEW, tegevuse_tahtaeg="2099-02-01")
     first_night["source"].edit(ESTIMATE, hetkeseis="jõustunud")
     before = _business_digests(monkeypatch)
     run = _night(first_night, NIGHT + 2 * DAY)
@@ -533,13 +533,13 @@ def test_a_lovable_edit_after_the_snapshot_is_a_source_change_on_the_first_night
 def test_the_second_night_reports_a_date_and_a_finished_topic(second_night):
     run = second_night["second"]
     date = _decisions(run, REVIEW)["next_action_date"]
-    assert (date.outcome, date.source) == (SyncOutcome.ELIGIBLE, "2027-02-01")
+    assert (date.outcome, date.source) == (SyncOutcome.ELIGIBLE, "2099-02-01")
     # «jõustunud»: the closure is planned (COMPARE), never a person's call now.
     stage = _decisions(run, ESTIMATE)["stage"]
     assert (stage.outcome, stage.reason) == (SyncOutcome.ELIGIBLE, "")
     # COMPARE: nothing written.
     step = NextAction.objects.get(matter=_matter(REVIEW), status=ActionStatus.OPEN)
-    assert step.target_date == dt.date(2027, 1, 15)
+    assert step.target_date == dt.date(2099, 1, 15)
     before, after = second_night["digests"]
     assert after == before
     part = run.counts["by_cohort"][OPERATIONAL_COHORT]
@@ -615,7 +615,7 @@ def test_apply_writes_every_source_change_through_its_service(second_night, monk
 
     # The date, through `set_next_action`, with the synchronisation's provenance.
     new = NextAction.objects.get(matter=review, status=ActionStatus.OPEN)
-    assert new.pk != old.pk and new.target_date == dt.date(2027, 2, 1)
+    assert new.pk != old.pk and new.target_date == dt.date(2099, 2, 1)
     assert (new.kind, new.date_semantics, new.text, new.responsible_id) == (
         old.kind,
         old.date_semantics,

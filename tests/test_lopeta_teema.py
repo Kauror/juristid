@@ -469,7 +469,9 @@ def test_the_closed_file_shows_reason_explanation_actor_and_day(signed_in, speci
     page = _page(signed_in, matter)
     banner = page[page.index('class="banner banner--closed"') :].split("</div>")[0]
     assert "Koda ei tegele edasi" in banner and EXPLANATION in banner
-    assert f"{matter.closed_at.day}.{matter.closed_at.month}.{matter.closed_at.year}" in page
+    # The page shows the Tallinn day; `closed_at` is UTC and is a day behind 22:00–24:00 UTC.
+    closed_on = timezone.localdate(matter.closed_at)
+    assert f"{closed_on.day}.{closed_on.month}.{closed_on.year}" in page
     assert "Sulges" in page
     # `Teema käik`: «Teema suletud», the reason and the explanation under «Selgitus».
     history = page[page.index('id="ajalugu-loend"') :]

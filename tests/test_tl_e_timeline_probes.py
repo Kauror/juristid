@@ -8,7 +8,7 @@ test that fails here documents a defect; nothing in the application is changed.
 from __future__ import annotations
 
 import re
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.apps import apps
@@ -317,8 +317,9 @@ def test_a_note_dated_ahead_of_today_is_marked_eesolev_on_the_page(client, norma
     note written ahead (R7 lets 45 days through) carries `milestone.ahead` but
     the note template never prints it, so a planned reading reads as done."""
     today = timezone.localdate()
-    ahead = today.replace(day=1) if today.day > 20 else today
-    future = date.fromordinal(ahead.toordinal() + 10)
+    # Ten days ahead of today in calendar arithmetic. (Starting from the 1st of
+    # the month after the 20th put the note in the past on the 21st–31st.)
+    future = today + timedelta(days=10)
     block = text(0, f"{future.day:02d}.{future.month:02d}.{future.year} - kolmas lugemine")
     stamp = f"{today.isoformat()}T08:00:00.000Z"
     block["created"] = block["modified"] = stamp

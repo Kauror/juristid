@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.urls import reverse
@@ -705,9 +705,10 @@ def test_an_accepted_version_with_an_implausible_time_is_undated_not_decision_da
     normal_matter, specialist
 ):
     link = _page(normal_matter)
-    # After the capture's import: not a time the reading can have.
+    # After the capture's import: not a time the reading can have. The import is
+    # stamped by the real clock, so "after" is measured from now, not a fixed day.
     _revision, held, v2 = _held_then_accepted(
-        link, file_modified=datetime(2026, 12, 24, tzinfo=UTC)
+        link, file_modified=timezone.now() + timedelta(days=365)
     )
     imports = [
         r for r in _timeline(normal_matter, specialist) if r.item_type == HISTORICAL_IMPORT_ITEM
