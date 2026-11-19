@@ -182,7 +182,12 @@ def test_the_new_matter_is_reachable_from_at_least_one_number(
     reached = set()
     for url in destinations:
         response = signed_in.get(url)
-        reached.update(matter.title for matter in response.context["page"].object_list)
+        if "rows" in response.context and "page" not in response.context:
+            # The week's sent opinions open Statistika's list of them, whose
+            # rows name their Teema (docs/adr/0214 §6).
+            reached.update(row.matter.title for row in response.context["rows"])
+        else:
+            reached.update(matter.title for matter in response.context["page"].object_list)
     assert TITLE in reached
 
 
