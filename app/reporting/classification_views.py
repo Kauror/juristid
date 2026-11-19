@@ -74,6 +74,7 @@ def review(request: HttpRequest) -> HttpResponse:
                 {
                     "suggestion": row,
                     "areas": [by_key[key] for key in row.policy_area_keys if key in by_key],
+                    "retired": classification.retired_area_names(row),
                     "confidence": CONFIDENCE_LABELS[row.confidence],
                 }
                 for row in page
@@ -122,6 +123,9 @@ def accept_page(request: HttpRequest) -> HttpResponse:
     """«Kinnita kõik»: the rows the page showed, each as proposed."""
     wanted = request.POST.getlist("ettepanek")[:PAGE_SIZE]
     rows = classification.pending_for(request.user).filter(pk__in=wanted)
-    done = classification.accept_many(list(rows), actor=request.user)
-    messages.success(request, f"Kinnitatud: {done}.")
+    chosen = list(rows)
+    done = classification.accept_many(chosen, actor=request.user)
+    left = len(chosen) - done
+    note = f" Kinnitamata jäi {left}: neis pole midagi kinnitada." if left else ""
+    messages.success(request, f"Kinnitatud: {done}.{note}")
     return _back(request)

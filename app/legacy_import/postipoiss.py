@@ -131,6 +131,8 @@ class LoadReport:
     proposals_unresolved: int = 0
     by_tier: dict[str, int] = field(default_factory=dict)
     problems: list[str] = field(default_factory=list)
+    #: Archive search rows the load wrote for its files (docs/adr/0041).
+    search_rows_written: int = 0
 
     def as_text(self) -> str:
         tiers = ", ".join(f"{k}={v}" for k, v in sorted(self.by_tier.items()))
@@ -141,6 +143,7 @@ class LoadReport:
             f"taaskasutatud {self.binaries_reused}",
             f"ettepanekud: teema leitud {self.proposals_resolved}, "
             f"teemat pole {self.proposals_unresolved}",
+            f"arhiiviotsingu read: {self.search_rows_written}",
             f"kindlus: {tiers}",
         ]
         lines += [f"PROBLEEM: {problem}" for problem in self.problems]
@@ -176,6 +179,9 @@ def load(package: Package, *, write: bool) -> LoadReport:
     )
     storage = evidence_storage()
     seen_ids: set[str] = set()
+    #: Every archive file this load stored or reused: their search rows are
+    #: refreshed at the end (QA26-OPS-03 — 831 files once stayed unfindable).
+    touched: set[Any] = set()
     for row in package.letters:
         kirja_id = str(row.get("kirja_id") or "").strip()
         title = str(row.get("title") or "").strip()
@@ -253,6 +259,7 @@ def load(package: Package, *, write: bool) -> LoadReport:
                     report.binaries_created += 1
                 else:
                     report.binaries_reused += 1
+                touched.add(binary.pk)
                 PostipoissLetterFile.objects.get_or_create(
                     letter=letter,
                     binary=binary,
@@ -270,6 +277,13 @@ def load(package: Package, *, write: bool) -> LoadReport:
                 suggested_matter=matter,
             )
         report.letters_created += 1
+    if write and touched:
+        # The archive's search projection is written from canon, not by the
+        # rows' own signals here: the bounded refresh a bulk writer owes
+        # (docs/adr/0041, `opinion_search.refresh_archive_binaries`).
+        from app.legacy_import.opinion_search import refresh_archive_binaries
+
+        report.search_rows_written = refresh_archive_binaries(touched)
     return report
 
 
@@ -375,12 +389,18 @@ def _provenance(letter: PostipoissLetter, pairing: PostipoissPairing, basis: str
 def _apply(pairing: PostipoissPairing, matter: Any, *, actor: Any, basis: str) -> ApplyOutcome:
     from app.matters.enums import MatterDataClass
     from app.matters.locks import lock_matter_for_evidence_integrity
+    from app.matters.models import Matter
     from app.submissions.enums import SentAtPrecision, SubmissionKind, SubmissionStatus
     from app.submissions.models import Submission
 
     if pairing.state == PairingState.APPLIED:
         raise DomainError("See kiri on juba teemaga seotud.")
-    matter = lock_matter_for_evidence_integrity(matter.pk)
+    try:
+        matter = lock_matter_for_evidence_integrity(matter.pk)
+    except Matter.DoesNotExist:
+        # A Teema deleted after the proposal was made: this letter waits for a
+        # person, and the rest of the run goes on (QA26-BUG-08).
+        raise DomainError("Soovitatud teema on kustutatud.") from None
     if matter.data_class == MatterDataClass.TEST:
         raise DomainError("Testandmete teemaga ajaloolist kirja ei seota.")
     letter = pairing.letter
@@ -468,8 +488,18 @@ class AutoReport:
 
 
 def auto_apply(*, write: bool) -> AutoReport:
-    """Apply every pending calibrated pairing. Without ``write`` it rolls back."""
+    """Apply every pending calibrated pairing. Without ``write`` it rolls back.
+
+    A rehearsal runs the real path and rolls the database back. The evidence
+    bytes it stored for new final versions are outside the transaction, so they
+    are removed after the rollback — only those whose row did not survive — and
+    the rehearsal leaves nothing behind, as it says (QA26-BUG-07).
+    """
+    from app.documents.models import DocumentVersion
+
     report = AutoReport()
+    started = timezone.now()
+    written_keys: list[str] = []
     with transaction.atomic():
         sid = transaction.savepoint()
         rows = (
@@ -500,8 +530,29 @@ def auto_apply(*, write: bool) -> AutoReport:
         if write:
             transaction.savepoint_commit(sid)
         else:
+            written_keys = list(
+                DocumentVersion.objects.filter(
+                    source_identifier__startswith=f"{SOURCE_PREFIX}:", created_at__gte=started
+                ).values_list("storage_key", flat=True)
+            )
             transaction.savepoint_rollback(sid)
+    if written_keys:
+        _discard_rehearsal_bytes(written_keys)
     return report
+
+
+def _discard_rehearsal_bytes(keys: list[str]) -> None:
+    """Remove the evidence objects a rolled-back rehearsal stored, and nothing else."""
+    from app.documents.models import DocumentVersion
+    from app.documents.services import _discard_stored_object, evidence_storage
+
+    kept = set(
+        DocumentVersion.objects.filter(storage_key__in=keys).values_list("storage_key", flat=True)
+    )
+    storage = evidence_storage()
+    for key in keys:
+        if key not in kept:
+            _discard_stored_object(storage, key)
 
 
 #: Why a tier-F letter is background without a person (docs/adr/0216 §7).

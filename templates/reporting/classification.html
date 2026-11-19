@@ -60,6 +60,9 @@ the Teema's own audited setters. Statistika counts only confirmed values.
                   {% for area in item.areas %}
                     <label class="classify__chip"><input type="checkbox" name="valdkond" value="{{ area.key }}" checked> {{ area.name_et }}</label>
                   {% endfor %}
+                  {% for name in item.retired %}
+                    <span class="classify__meta">Ettepanek «{{ name }}» — valdkond ei ole enam kasutusel</span>
+                  {% endfor %}
                   <select class="field__input classify__add" name="valdkond" aria-label="Lisa valdkond">
                     <option value="">+ valdkond</option>
                     {% for area in offered_areas %}<option value="{{ area.key }}">{{ area.name_et }}</option>{% endfor %}
@@ -73,7 +76,7 @@ the Teema's own audited setters. Statistika counts only confirmed values.
                 <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
               </form>
             {% else %}
-              <span class="classify__areas">{% for area in item.areas %}<span class="classify__chip">{{ area.name_et }}</span>{% endfor %}</span>
+              <span class="classify__areas">{% for area in item.areas %}<span class="classify__chip">{{ area.name_et }}</span>{% endfor %}{% for name in item.retired %}<span class="classify__meta">«{{ name }}» — ei ole enam kasutusel</span>{% endfor %}</span>
               <span class="classify__meta">{{ s.sender.name|default:"Saatja teadmata" }}</span>
             {% endif %}
           </li>

@@ -325,3 +325,67 @@ def test_a_word_letter_is_served_under_its_own_suffix():
     assert _served_filename(
         OpinionArchiveBinary(sha256="b" * 64, mime_type="application/pdf")
     ).endswith(".pdf")
+
+
+# -- quality audit 2026-11-18, package D ------------------------------------------------------
+
+
+def _evidence_file_count() -> int:
+    from pathlib import Path
+
+    from django.conf import settings
+
+    return sum(1 for path in Path(settings.EVIDENCE_ROOT).rglob("*") if path.is_file())
+
+
+def test_loading_writes_the_archive_search_rows_for_its_files(tmp_path, matter):
+    """QA26-OPS-03: 831 loaded files once stayed out of archive search."""
+    from app.legacy_import.opinion_search import archive_index_findings, unindexed_binaries
+
+    report = postipoiss.load(
+        _package(tmp_path, [_letter("V2014-0101", reference="2014_85")]), write=True
+    )
+
+    assert report.search_rows_written == 1
+    assert not unindexed_binaries().exists()
+    assert archive_index_findings() == []
+
+
+def test_a_rehearsal_leaves_no_evidence_bytes_behind(tmp_path, matter):
+    """QA26-BUG-07: the dry run said «midagi ei salvestatud» and left one object per letter."""
+    postipoiss.load(_package(tmp_path, [_letter("V2014-0102", reference="2014_85")]), write=True)
+    before = _evidence_file_count()
+
+    assert postipoiss.auto_apply(write=False).applied == 1
+    assert postipoiss.auto_apply(write=False).applied == 1
+
+    assert _evidence_file_count() == before
+    assert not Submission.objects.exists()
+
+
+def test_a_deleted_teema_leaves_its_letter_waiting_and_applies_the_rest(tmp_path, specialist):
+    """QA26-BUG-08: one proposal for a deleted Teema rolled back the whole run."""
+    from app.matters.deletion import delete_matter
+
+    gone = factories.MatterFactory(reference_year=2014, reference_number=90)
+    live = factories.MatterFactory(reference_year=2014, reference_number=91)
+    postipoiss.load(
+        _package(
+            tmp_path,
+            [
+                _letter("V2014-0110", reference="2014_90"),
+                _letter("V2014-0111", reference="2014_91", letter_date="2014-04-01"),
+            ],
+        ),
+        write=True,
+    )
+    delete_matter(matter=gone, actor=specialist)
+
+    report = postipoiss.auto_apply(write=True)
+
+    assert report.applied == 1
+    assert any("V2014-0110" in line and "kustutatud" in line for line in report.skipped)
+    assert Submission.objects.get().matter == live
+    assert (
+        PostipoissPairing.objects.get(letter__kirja_id="V2014-0110").state == PairingState.PENDING
+    )
