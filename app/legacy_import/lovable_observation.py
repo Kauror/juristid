@@ -656,6 +656,34 @@ def _execute(
             older.append(candidate.snapshot.document)
 
     index = document["index"]
+    if not index and (pilot_ids or (baseline_doc or {}).get("index")):
+        # Zero live topics where Juristid knows there are some is the source's
+        # row rule refusing the service login, not a register emptied
+        # overnight: never stored, so it is never a baseline and never a
+        # night of «every topic removed» (coordinator QA 2026-11-20, QA-NEW-01).
+        raise SyncRefused(
+            "SOURCE_EMPTY",
+            "Lovable answered 0 live topics to the service login; nothing was stored.",
+        )
+    if baseline_doc is not None and run.trigger == SyncTrigger.SCHEDULED:
+        # A reading narrowed to part of the register (a row rule admitting some
+        # topics) would be stored as tomorrow's baseline, every hidden topic
+        # MISSING tonight and BACK the night access returns. By identity, the
+        # night's own limit: more than `MAX_MISSING` live topics of the
+        # baseline gone is refused and never stored. Growth is never narrowing.
+        # A manual reading, after a person has looked, accepts it (coordinator
+        # review and independent review 2026-11-20, P2-C).
+        from app.legacy_import import lovable_sync
+
+        gone = {str(e["id"]) for e in baseline_doc.get("index") or []} - {
+            str(e["id"]) for e in index
+        }
+        if len(gone) > lovable_sync.MAX_MISSING:
+            raise SyncRefused(
+                "SOURCE_NARROWED",
+                f"{len(gone)} live topics of the last reading are gone tonight; nothing was "
+                "stored (a manual reading accepts it after a person has looked).",
+            )
     counts: dict[str, Any] = {
         "comparison": "BASELINE" if baseline_doc is None else "COMPARED",
         "live": len(index),

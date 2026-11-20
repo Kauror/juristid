@@ -335,7 +335,7 @@ A hold changes nothing, and a later unchanged night is not «restored over» it.
 
 1. **DECIDED 14.11.2026 — Approval B**, the nightly APPLY. Item 3 of the r54 approval document, «automatic nightly mirroring», was **not** granted with Approval A (11.11); it was granted as Approval B on 14.11.2026 (recorded in the synchronisation control at 03:00:53Z). The text above this item was written on 12.11, while production ran COMPARE; §10.14 records what happened after.
 2. **DECIDED 12.11.2026 — TL-02: a source closure and Juristid-only planned work.** The owner chose to hold the closure (Option A of the decision memo); see §10.13. At r54, `close_matter_from_source` cancelled that work with `follow_ups_confirmed=True`, and a later reopening did not bring it back. That is no longer the behaviour.
-3. **OPEN — LS-05:** whether an overdue drafting step with nothing sent ends the day after its deadline (as built) or stays until the request is resolved.
+3. **DECIDED 20.11.2026 — LS-05 (owner, option B):** the drafting step of a request Juristid holds from Lovable, with no Lovable sentence and nothing sent, **stays open and overdue** after its day until Lovable says sent or «ei saatnud», or the Teema closes. Before, it was cancelled the night after the deadline with the reason «Lovable'is pole enam järgmist tegevust» (untrue: the step was derived), and the item became an overdue «Arvamuse tähtaeg» instead. The overdue count is the same either way; the label stays «Koostan arvamuse» and Teema käik gets no cancellation. Measured on production before the change: 0 Teemad affected (the two passed, unanswered requests carry Lovable's own sentence), so no backlog appears. A passed request is still never *opened* on a new Teema (`lovable_reading.read_topic`, unchanged; a separate backlog question, not decided here). **Reopening (coordinator decision 20.11.2026, option A):** when Lovable reopens a Teema whose request is still unanswered, past its deadline, with no sent or declined outcome and no other next action, the step comes back open and overdue on the **original** source deadline; no new request is created and the deadline is not renewed. It stays until Lovable resolves the request, writes another next action, or the Teema closes; the TL-02 closure hold (§10.13) applies unchanged. `lovable_sync._step_decisions_authoritative`; tests `tests/lovable_contract/test_qa_new03_ls05.py`.
 4. Lovable-owned fields marked or read-only on synchronised Teemad (TL-01; a precondition of Approval B in the audit of 2026-11-11; post-audit stream B, PR #618).
 5. A name alias, or an account, for operational owners with no active Juristid account.
 6. **Latent, not decided here — successor names outside `Kõik muudatused`.** `MATTER_CLOSED`'s summary, `disposition_reason` (printed on the closed banner), and the raw `reason` in the closure events' payloads still carry the sync's own words, «Lovable: jätkub teemana NNNN_N». The admin's `ChangeEvent` page shows payloads raw. Since ADR 0181, anyone who may open the predecessor may open every Teema, so nothing leaks today. A future per-Teema restriction would make these name a successor the reader may not open. Not redesigned in this round.
@@ -445,3 +445,32 @@ the Lovable row, so an account off → on → off with no Lovable edit wrote the
 the idempotency key refused it every night (QA26-LS-04). Like a restore and a derived change, it is now one write per
 run.
 
+## 12. Amendment 2026-11-20: a source that admits nothing is refused by name (coordinator QA, QA-NEW-01)
+
+On 19.11.2026 Lovable's migration 0035 made the live-topic row rule require an active staff session, which the
+profile-less service login does not have (by design, ADR 0192 §2). PostgREST then answers every read with HTTP 200 and
+no rows. The night of 20.11 was refused, correctly and before anything was stored, but as `COHORT_MISSING` («2370
+Teemad went missing»), which reads as mass deletion. Now:
+
+- **The synchronisation** refuses a complete reading of zero live topics, when it has a cohort or a previous reading
+  with rows, as `SOURCE_EMPTY` — before the plan, before the snapshot is stored, in every mode. A reading narrowed to
+  part of the register still stops on `COHORT_MISSING` / `POPULATION_CHANGE`, as before.
+- **A child record hidden under an unchanged version** is refused as `CHILDREN_HIDDEN` in APPLY, before the snapshot
+  is stored — like `POPULATION_CHANGE`, a supervised COMPARE run accepts it after a person has looked. Only readings
+  under the same mapping are compared, on the child columns both carry (a widened allowlist is not a hidden row). A child record is edited through its topic and every such edit moves the topic's version
+  (Lovable migration 0015_canonical_topic_write_layer, part six; 41 consecutive stored readings, 27.10–19.11.2026: never otherwise, except a stage link *added* from
+  its other end), so commencements or responsible changes that differ under an unchanged version, or a stage link gone
+  while both ends kept their versions, are rows the login no longer sees. Before this a hidden commencement was applied
+  as a removal (the Teema's important date cancelled). Replayed over those 41 pairs, the rule refuses none. A save of
+  the topic in Lovable moves its version and settles it.
+- **The observation** (0201) refuses a zero reading (`SOURCE_EMPTY`) and, on a scheduled reading, one narrowed by
+  identity — more than `MAX_MISSING` live topics of its baseline gone (growth never counts) — as `SOURCE_NARROWED`:
+  neither is stored as a baseline. A manual reading accepts a narrowed register after a person has looked.
+- **The access probe** judges by identity, never by a total (coordinator review 2026-11-20). With the last trusted
+  reading (`probe_baseline`) it reads every synchronised topic in full and fails «source identities match» when more
+  than `MAX_MISSING` live or synchronised topics of that reading are gone, or the population moved past
+  `population_change` — the same limits a night refuses at, and stricter (a hidden topic outside the cohort counts);
+  new topics never cover for missing ones. It fails «child records match» by the `CHILDREN_HIDDEN` rule. With no
+  trusted reading both checks are INDETERMINATE. «reads live topics» fails on zero rows; a «hidden» check is never
+  PASS from the same empty answer; and when every failure is a lost or narrowed read it says so — the remedy is a
+  SELECT-only read path in Lovable, never a staff profile or role for the identity (that would make it write-capable).
