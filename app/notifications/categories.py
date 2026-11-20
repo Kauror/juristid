@@ -77,10 +77,15 @@ ESCALATION_KEY = "OVERDUE_ESCALATION"
 
 
 def _responsible_q(reader: Any) -> Q:
-    """D2: the step's own person when they are active, the Matter's owner otherwise."""
-    return Q(responsible=reader, responsible__is_active=True) | (
-        (Q(responsible__isnull=True) | Q(responsible__is_active=False))
-        & Q(matter__owner=reader, matter__owner__is_active=True)
+    """D2: the step's own person when they are active, the Matter's owner otherwise.
+
+    The work surfaces' rule (`work_items.answers_for_q`, QA26-DUP-03) plus one
+    clause of the bell's own: a step with nobody responsible rings the owner.
+    """
+    from app.matters.work_items import answers_for_q
+
+    return answers_for_q(reader) | Q(
+        responsible__isnull=True, matter__owner=reader, matter__owner__is_active=True
     )
 
 

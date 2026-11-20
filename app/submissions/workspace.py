@@ -39,6 +39,7 @@ from typing import Any
 from django.db.models import Q, QuerySet
 
 from app.core.request_params import digits_or_none, uuid_or_none
+from app.core.text import folded_contains
 from app.organisations.models import Organisation
 from app.submissions.enums import NOT_AN_OPINION_KINDS, SubmissionKind, SubmissionStatus
 from app.submissions.models import (
@@ -135,14 +136,15 @@ def _matches(term: str) -> Q:
     owner's display name, and the Lovable former owner's name, which the Teema
     already shows beside «Vastutaja» and its own search already reads.
     """
-    return (
-        Q(title__icontains=term)
-        | Q(reference__icontains=term)
-        | Q(channel__icontains=term)
-        | Q(matter__title__icontains=term)
-        | Q(recipients__name__icontains=term)
-        | Q(matter__owner__display_name__icontains=term)
-        | Q(matter__former_owner_name__icontains=term)
+    return folded_contains(
+        term,
+        "title",
+        "reference",
+        "channel",
+        "matter__title",
+        "recipients__name",
+        "matter__owner__display_name",
+        "matter__former_owner_name",
     )
 
 

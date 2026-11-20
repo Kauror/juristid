@@ -18,6 +18,8 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from django.db.models import Q
+
 _WHITESPACE = re.compile(r"\s+")
 
 #: The Unicode bidirectional formatting characters: the embeddings, overrides
@@ -93,3 +95,18 @@ def clean_single_line_name(value: str | None) -> str:
     """A typed single-line name as it is stored: no direction controls, and
     whitespace collapsed to single spaces with none at either end."""
     return " ".join(strip_bidi_controls(value or "").split())
+
+
+def folded_contains(term: str, *fields: str) -> Q:
+    """A list filter's one text match: ``term`` inside any of ``fields``, diacritics folded.
+
+    «Smigun» finds «Šmigun» and «oigus» finds «õigus», as the header search
+    does, by the database's own ``unaccent`` on both sides and case ignored
+    (QA26-ARCH-09). For the small lists a reader narrows by typing — Saadetud,
+    Postipoiss's letters, the MCP person lookup — where a substring is what is
+    wanted and a stemmed full-text match would drop the fragment typed.
+    """
+    match = Q()
+    for field in fields:
+        match |= Q(**{f"{field}__unaccent__icontains": term})
+    return match

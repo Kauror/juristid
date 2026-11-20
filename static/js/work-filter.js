@@ -1,19 +1,16 @@
 /* Minu asjad's own filter (templates/matters/partials/work_filter.html).
  *
  * Narrows the rows on the page as the reader types: a row stays when its
- * action, Teema and stage contain every word typed. Each band's count follows
- * and a band with nothing left is hidden; «Näita veel» is opened while a
- * filter is on so the rows behind it are searched too, and closed again
- * afterwards if it was closed. Esc or an empty field restores the page.
+ * action, Teema and stage contain every word typed, diacritics folded: the
+ * one rule `window.JuristidRowFilter` (static/js/ux.js) gives every row filter
+ * (QA26-DUP-08). Each band's count follows and a band with nothing left is
+ * hidden; «Näita veel» opens while it holds a match and returns to how the
+ * reader left it afterwards. Esc or an empty field restores the page.
  * Nothing is sent anywhere. */
 (function () {
   "use strict";
 
-  function words(text) {
-    return text.toLocaleLowerCase("et").split(/\s+/).filter(Boolean);
-  }
-
-  function setUp(input) {
+  function setUp(input, rule) {
     var page = input.closest(".page") || document;
     var bands = Array.prototype.slice.call(page.querySelectorAll(".workband"));
     var empty = page.querySelector("[data-workfilter-empty]");
@@ -28,7 +25,7 @@
     });
 
     function apply() {
-      var terms = words(input.value);
+      var terms = rule.words(input.value);
       var filtering = terms.length > 0;
       var shown = 0;
       bands.forEach(function (band) {
@@ -41,15 +38,17 @@
           );
           var text = Array.prototype.map
             .call(parts, function (part) { return part.textContent; })
-            .join(" ")
-            .toLocaleLowerCase("et");
-          var match = terms.every(function (term) { return text.indexOf(term) !== -1; });
+            .join(" ");
+          var match = rule.matches(text, terms);
           row.hidden = filtering && !match;
           if (!row.hidden) visible += 1;
         });
         var more = band.querySelector("details.pw-more");
         if (more) {
-          more.open = filtering ? true : more.getAttribute("data-workfilter-open") === "1";
+          var wasOpen = more.getAttribute("data-workfilter-open") === "1";
+          more.open = filtering
+            ? wasOpen || more.querySelector("[data-workrow]:not([hidden])") !== null
+            : wasOpen;
           more.classList.toggle("is-filtering", filtering);
         }
         var count = band.querySelector(".workband__count");
@@ -76,7 +75,11 @@
   }
 
   function init() {
-    document.querySelectorAll("[data-workfilter]").forEach(setUp);
+    var rule = window.JuristidRowFilter;
+    if (!rule) return;
+    document.querySelectorAll("[data-workfilter]").forEach(function (input) {
+      setUp(input, rule);
+    });
   }
 
   if (document.readyState === "loading") {

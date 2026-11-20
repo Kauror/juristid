@@ -1772,6 +1772,24 @@
     return lowered.normalize ? lowered.normalize("NFD").replace(/[\u0300-\u036f]/g, "") : lowered;
   }
 
+  /* One matching rule for every row filter (QA26-DUP-08): diacritics folded on
+     both sides, and a row stays when it holds **every word** typed, in any
+     order: «maks seadus» finds «Seaduse muutmine (maksud)». Minu asjad's band
+     filter (static/js/work-filter.js) reads the same two functions, so the two
+     boxes on that page cannot answer the same words differently. */
+  function filterWords(query) {
+    return foldForFilter(query).split(/\s+/).filter(Boolean);
+  }
+
+  function rowMatches(text, words) {
+    var folded = foldForFilter(text);
+    return words.every(function (word) {
+      return folded.indexOf(word) !== -1;
+    });
+  }
+
+  window.JuristidRowFilter = { words: filterWords, matches: rowMatches };
+
   function bindRowFilter(root) {
     var inputs = root.querySelectorAll("[data-filter-rows]");
     Array.prototype.forEach.call(inputs, function (input) {
@@ -1782,14 +1800,14 @@
       var selector = input.getAttribute("data-filter-rows");
       var emptyId = input.getAttribute("data-filter-empty");
       input.addEventListener("input", function () {
-        var needle = foldForFilter(input.value.trim());
+        var words = filterWords(input.value);
+        var needle = words.join(" ");
         var groups = document.querySelectorAll(selector);
         var shown = 0;
         Array.prototype.forEach.call(groups, function (group) {
           var matchesHere = 0;
           Array.prototype.forEach.call(group.children, function (row) {
-            var text = foldForFilter(row.textContent);
-            row.hidden = needle !== "" && text.indexOf(needle) === -1;
+            row.hidden = needle !== "" && !rowMatches(row.textContent, words);
             if (!row.hidden) {
               matchesHere += 1;
             }
@@ -2163,10 +2181,11 @@
     var dotted = /^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$/.exec(value);
     if (dotted) {
       var y = parseInt(dotted[3], 10);
-      /* A two-digit year as Python's `%y` reads it on the server: 69–99 are
-         the 1900s, so the period shown is the one a day saved would be in. */
+      /* A two-digit year as the server reads it (app/core/dates
+         parse_estonian_date, QA26-DUP-06): always this century, so the period
+         shown is the one a day saved would be in. */
       if (dotted[3].length === 2) {
-        y = y < 69 ? 2000 + y : 1900 + y;
+        y += 2000;
       }
       return { month: parseInt(dotted[2], 10), year: y };
     }

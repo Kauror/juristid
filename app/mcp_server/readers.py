@@ -54,6 +54,7 @@ from django.utils import timezone
 from django.utils.html import strip_tags
 
 from app.core.authorization import may_read_business_content
+from app.core.text import folded_contains
 from app.mcp_server import ids, links
 from app.search.models import SearchSourceKind
 from app.search.services import (
@@ -2650,7 +2651,8 @@ def _people_named(user: Any, fragment: str) -> list[Any]:
     may see: today's department workers, and everybody who owns a Matter in
     that population — so a former colleague's files stay findable by their
     name (NEW-11), and nobody is named because of a record the reader cannot
-    see. Matched on the display name only, case-insensitively: an address
+    see. Matched on the display name only, case and diacritics folded
+    (`folded_contains`, QA26-ARCH-09): an address
     fragment such as «@orgusaar» would otherwise answer with the department's
     directory.
     """
@@ -2659,7 +2661,7 @@ def _people_named(user: Any, fragment: str) -> list[Any]:
 
     return list(
         owner_filter_choices(Matter.objects.visible_to(user))
-        .filter(display_name__icontains=fragment)
+        .filter(folded_contains(fragment, "display_name"))
         .order_by("display_name", "pk")[: MAX_NAME_MATCHES + 1]
     )
 

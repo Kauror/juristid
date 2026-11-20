@@ -148,6 +148,11 @@ later has none.
 > in the bucket when it falls inside; a month, quarter, half-year or year only
 > when the whole period does — so a 30-day month from its first day is inside
 > and a 31-day one is not; a running period stays in *Hiljem*.
+>
+> **Amended 2026-11-20 (QA26-DUP-05).** The deadline surfaces now follow the
+> same rule: Minu asjad's «Järgmised 30 päeva» and the register's «Tähtaeg 30
+> päeva jooksul» end on `today + 29` (they ended on `today + 30`). One helper,
+> `app.core.dates.last_of_n_days`, is the only reading of «N päeva».
 
 **Wording and bound accepted** (owner's decision of 2026-10-13, release
 preparation): the current Estonian captions, the 100-row-per-bucket bound and

@@ -18,6 +18,7 @@ from app.core.dates import (
     ESTONIAN_DATE_INPUT_FORMATS,
     ESTONIAN_DATE_PLACEHOLDER,
     format_estonian_date,
+    parse_estonian_date,
 )
 from app.workflow.dates import DAY_OUT_OF_RANGE, EARLIEST_DAY, LATEST_DAY
 
@@ -101,6 +102,19 @@ class EstonianDateField(forms.DateField):
                 MaxValueValidator(LATEST_DAY, message=DAY_OUT_OF_RANGE),
             )
         )
+
+    def to_python(self, value: Any) -> Any:
+        """A dotted day through `parse_estonian_date`, the one two-digit-year rule.
+
+        ``1.1.99`` is 1.1.2099 here as it is in the datepicker, the URL filters
+        and the period preview (QA26-DUP-06); everything else — ISO, an
+        impossible day, a date object — goes the way ``forms.DateField`` takes it.
+        """
+        if isinstance(value, str):
+            day = parse_estonian_date(value)
+            if day is not None:
+                return day
+        return super().to_python(value)
 
 
 class DescribedRadioSelect(forms.RadioSelect):
