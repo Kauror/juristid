@@ -2436,7 +2436,7 @@ jobs:
 
           echo "--- mcp-tunnel: the pinned version, as nobody, with wget"
           compose run --rm --no-deps --entrypoint /usr/bin/tunnel-client mcp-tunnel --version | tee tunnel-version.txt
-          grep -q '0\.0\.19' tunnel-version.txt
+          grep -q '0\.0\.21' tunnel-version.txt
           compose run --rm --no-deps --entrypoint /bin/sh mcp-tunnel -c '
             set -e
             test "$(id -u)" = 65534
