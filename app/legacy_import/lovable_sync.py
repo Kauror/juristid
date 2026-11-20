@@ -194,18 +194,18 @@ MAX_RESTORED_MATTERS = 100
 #: replaces ``MAX_NEW_CONFLICTS``, which source authority had made inert). A
 #: night whose planner suddenly holds this many more fields is a broken mapping
 #: or a broken reading, not a night's work: it writes nothing (`BREAKER`).
-#: Proposed value; production needs the owner's approval.
+#: Accepted unchanged 20.11.2026 (docs/adr/0213 §10.14); in force since 14.11.2026.
 MAX_NEW_HOLDS = 25
 #: Closures held for Juristid-only work (TL-02, `LOCAL_WORK_AT_CLOSURE`) that
 #: one night may *begin* (``held_since`` == tonight): more is a mass closure in
 #: Lovable or a broken reading, not a night's work. Over it an APPLY night is
 #: REVIEW_ONLY (`CLOSURE_HOLD_BREAKER`) and writes nothing. The holds count
 #: toward no other breaker (`BREAKER_EXEMPT_HOLDS`).
-#: Proposed value (review P2-3); production needs the owner's approval.
+#: Accepted unchanged 20.11.2026 (docs/adr/0213 §10.14); in force since 14.11.2026.
 MAX_NEW_CLOSURE_HOLDS = 20
 #: A held closure older than this many days makes `sync_health` not ok: the
 #: escalation (14 days) has not resolved it.
-#: Proposed value (review P2-3); production needs the owner's approval.
+#: Accepted unchanged 20.11.2026 (docs/adr/0213 §10.14); in force since 14.11.2026.
 MAX_CLOSURE_HOLD_AGE_DAYS = 21
 #: The live source population (the index of every live topic) may move this
 #: much against the previous baseline reading before an APPLY run refuses to
@@ -213,7 +213,7 @@ MAX_CLOSURE_HOLD_AGE_DAYS = 21
 #: than `POPULATION_MAX_SHARE` of the previous count. A changed scope, a row
 #: policy hiding rows or a truncated read, never a night's work. A COMPARE run
 #: reads and stores the new population as usual, which is how a person accepts
-#: a real change. Proposed values; production needs the owner's approval.
+#: a real change. Accepted unchanged 20.11.2026 (docs/adr/0213 §10.14).
 POPULATION_MAX_DELTA = 50
 POPULATION_MAX_SHARE = 0.05
 #: How old a backup set may be when the mutating stage starts (the host script
