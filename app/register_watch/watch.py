@@ -340,10 +340,15 @@ FIRST_RUN_GRACE = dt.timedelta(hours=6)
 
 
 class WatchSwitchError(ValueError):
-    """``JURISTID_REGISTER_WATCH_ENABLED_AT`` is set but is not a moment."""
+    """``JURISTID_REGISTER_WATCH_ENABLED_AT`` is set but unusable: not a moment,
+    or a moment still to come (a typo there would hide a missing schedule)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
-def watch_switched_on_at() -> dt.datetime | None:
+def watch_switched_on_at(now: dt.datetime | None = None) -> dt.datetime | None:
     """When the watch was switched on here: the later of the release that applied
     `register_watch` 0001 and ``REGISTER_WATCH_ENABLED_AT`` (the operator's
     record of turning ``JURISTID_REGISTER_WATCH_FETCH`` on, when that happened
@@ -361,9 +366,11 @@ def watch_switched_on_at() -> dt.datetime | None:
         try:
             moment = dt.datetime.fromisoformat(declared.replace("Z", "+00:00"))
         except ValueError as error:
-            raise WatchSwitchError(declared) from error
+            raise WatchSwitchError("is not a date and time") from error
         if moment.tzinfo is None:
             moment = moment.replace(tzinfo=dt.UTC)
+        if moment > (now or timezone.now()):
+            raise WatchSwitchError("is in the future")
         moments.append(moment)
     return max(moments) if moments else None
 
@@ -393,26 +400,31 @@ def watch_health(now: dt.datetime | None = None) -> Health:
         return Health(True, "off")
     now = now or timezone.now()
     latest = WatchRun.objects.order_by("-started_at").first()
-    if latest is None:
+    if latest is not None and latest.aborted:
+        return Health(False, "last run stopped before its end", "Viimane kontroll katkes.")
+    finished = WatchRun.objects.filter(finished_at__isnull=False).order_by("-finished_at").first()
+    if finished is None:
+        # No run has finished yet: the first one is not late before it was due —
+        # whether it has not started or is still running (the daily monitor
+        # looks at 04:05 UTC, 35 minutes after the 03:30 run; review of #659).
         try:
-            switched_on = watch_switched_on_at()
-        except WatchSwitchError:
+            switched_on = watch_switched_on_at(now)
+        except WatchSwitchError as error:
             return Health(
                 False,
-                "JURISTID_REGISTER_WATCH_ENABLED_AT is not a date and time",
+                f"JURISTID_REGISTER_WATCH_ENABLED_AT {error.reason}",
                 "Registrite jälgimise sisselülitamise aeg on vigaselt seadistatud.",
             )
         if switched_on is not None and now < first_run_due(switched_on):
-            return Health(True, "not run yet")
+            return Health(True, "first run in progress" if latest else "not run yet")
         return Health(
             False,
-            "never run",
-            "Registrite jälgimine on sisse lülitatud, kuid ükski kontroll pole veel käinud.",
+            "never run" if latest is None else "no finished run in 30 h",
+            "Registrite jälgimine on sisse lülitatud, kuid ükski kontroll pole veel käinud."
+            if latest is None
+            else "Üle 30 tunni pole ükski kontroll lõpuni jõudnud.",
         )
-    if latest.aborted:
-        return Health(False, "last run stopped before its end", "Viimane kontroll katkes.")
-    finished = WatchRun.objects.filter(finished_at__isnull=False).order_by("-finished_at").first()
-    if finished is None or finished.finished_at is None or finished.finished_at < now - STALE_AFTER:
+    if finished.finished_at is None or finished.finished_at < now - STALE_AFTER:
         return Health(
             False, "no finished run in 30 h", "Üle 30 tunni pole ükski kontroll lõpuni jõudnud."
         )

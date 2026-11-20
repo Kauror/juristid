@@ -107,7 +107,10 @@ What a program may read (checked 2026-11-17):
    the later of the release that applied `register_watch` 0001 and
    `JURISTID_REGISTER_WATCH_ENABLED_AT`, which the operator sets only when
    `JURISTID_REGISTER_WATCH_FETCH` (on by default) is turned on after that
-   release; without it a late switch-on reads red from the first night. The model is asked in batches of 25 findings, so a cut
+   release; without it a late switch-on reads red from the first night. The
+   grace also covers a first run that is still going (green «first run in
+   progress»; the daily monitor looks at 04:05 UTC), and a switch-on moment in
+   the future is refused (red), never trusted. The model is asked in batches of 25 findings, so a cut
    answer costs one batch. «Registris uus dokument» belongs to the Teema's current
    owner, like every other inbox source.
 

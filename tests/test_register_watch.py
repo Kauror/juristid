@@ -879,7 +879,7 @@ def _ran(*, started_hours_ago, finished=True, **fields):
     )
 
 
-@override_settings(REGISTER_WATCH_FETCH=True)
+@override_settings(REGISTER_WATCH_FETCH=True, REGISTER_WATCH_ENABLED_AT="")
 def test_the_health_of_the_watch_for_production_status():
     from django.utils import timezone
 
@@ -887,7 +887,7 @@ def test_the_health_of_the_watch_for_production_status():
 
     # Released moments ago: the first scheduled run is not due yet. (A reused
     # test database's own migration moment would make this depend on its age.)
-    _switched(None, migrated=timezone.now())
+    _switched(migrated=timezone.now())
     assert watch.watch_health() == watch.Health(True, "not run yet")
     _ran(started_hours_ago=10, targets_checked=300, errors=[{"viga": "x"}], ai_failures=2)
     assert watch.watch_health() == watch.Health(True, "1 errors, 2 AI failures")
@@ -903,6 +903,7 @@ def test_the_health_of_the_watch_for_production_status():
     assert watch.watch_health().detail == "last run read no source (2 errors)"
 
     WatchRun.objects.all().delete()
+    _switched(migrated=timezone.now() - dt.timedelta(days=14))  # installed long ago
     _ran(started_hours_ago=1, finished=False)  # tonight's run, still going
     assert not watch.watch_health().ok  # nothing finished in 30 h before it
     _ran(started_hours_ago=20, targets_checked=300)
@@ -912,7 +913,7 @@ def test_the_health_of_the_watch_for_production_status():
 UTC = dt.UTC
 
 
-def _switched(monkeypatch, *, migrated: dt.datetime) -> None:
+def _switched(*, migrated: dt.datetime) -> None:
     """The release that applied `register_watch` 0001 ran at ``migrated``."""
     from django.db.migrations.recorder import MigrationRecorder
 
@@ -957,7 +958,7 @@ def test_a_watch_that_never_ran_is_late_only_after_its_first_run_was_due(
     green until the first scheduled 03:30 UTC run after it was switched on was
     due (plus six hours), then red, with Haldus's words."""
     assert not WatchRun.objects.exists()
-    _switched(monkeypatch, migrated=migrated)
+    _switched(migrated=migrated)
     health = watch.watch_health(now)
     assert health.ok is ok
     assert health.detail == ("not run yet" if ok else "never run")
@@ -971,7 +972,7 @@ def test_a_watch_installed_two_weeks_before_it_was_switched_on_is_not_late_early
     it, not after the migration; without it, the migration is all there is."""
     from app.core import production_status as status_module
 
-    _switched(monkeypatch, migrated=dt.datetime(2026, 11, 5, 4, 0, tzinfo=UTC))
+    _switched(migrated=dt.datetime(2026, 11, 5, 4, 0, tzinfo=UTC))
     switched = dt.datetime(2026, 11, 19, 14, 0, tzinfo=UTC)
     evening = dt.datetime(2026, 11, 19, 20, 0, tzinfo=UTC)
     with override_settings(REGISTER_WATCH_ENABLED_AT=switched.isoformat()):
@@ -992,6 +993,63 @@ def test_a_watch_installed_two_weeks_before_it_was_switched_on_is_not_late_early
     # The first finished run settles it, whatever the anchor.
     _ran(started_hours_ago=2, targets_checked=300)
     assert watch.watch_health().ok
+
+
+@override_settings(REGISTER_WATCH_FETCH=True, REGISTER_WATCH_ENABLED_AT="")
+def test_the_first_run_still_going_before_it_was_due_is_not_late():
+    """Review of #659: the monitor looks at 04:05 UTC; the first night's run may
+    still be going. Not late before the first run was due; late after."""
+    from django.utils import timezone
+
+    now = timezone.now()
+    switched = now - dt.timedelta(hours=1)
+    _switched(migrated=switched)
+    _ran(started_hours_ago=0.5, finished=False)  # the first night's run, still going
+    assert watch.watch_health(now) == watch.Health(True, "first run in progress")
+    after = watch.first_run_due(switched) + dt.timedelta(minutes=1)
+    late = watch.watch_health(after)
+    assert (late.ok, late.detail) == (False, "no finished run in 30 h")
+
+
+@pytest.mark.parametrize(
+    ("declared", "switched"),
+    [
+        ("2026-11-19T03:30:00Z", dt.datetime(2026, 11, 19, 3, 30, tzinfo=UTC)),
+        ("2026-11-19T05:30:00+02:00", dt.datetime(2026, 11, 19, 3, 30, tzinfo=UTC)),
+        ("2026-11-19", dt.datetime(2026, 11, 19, 0, 0, tzinfo=UTC)),
+    ],
+    ids=["exactly-03-30-utc", "offset", "date-only"],
+)
+def test_the_switch_moment_reads_utc_offsets_and_dates(declared, switched):
+    _switched(migrated=dt.datetime(2026, 11, 1, tzinfo=UTC))
+    with override_settings(REGISTER_WATCH_ENABLED_AT=declared):
+        assert watch.watch_switched_on_at(dt.datetime(2026, 11, 20, tzinfo=UTC)) == switched
+    # A switch at 03:30 exactly is due that same morning (09:30), not a day later.
+    assert watch.first_run_due(dt.datetime(2026, 11, 19, 3, 30, tzinfo=UTC)) == dt.datetime(
+        2026, 11, 19, 9, 30, tzinfo=UTC
+    )
+
+
+@override_settings(REGISTER_WATCH_FETCH=True, REGISTER_WATCH_ENABLED_AT="2027-11-19T14:00:00Z")
+def test_a_switch_moment_in_the_future_is_refused_not_trusted():
+    """A typo there (2027) would keep a missing schedule green for a year."""
+    health = watch.watch_health(dt.datetime(2026, 11, 20, 12, 0, tzinfo=UTC))
+    assert not health.ok and health.detail.endswith("is in the future")
+
+
+@override_settings(REGISTER_WATCH_FETCH=True, REGISTER_WATCH_ENABLED_AT="")
+def test_no_record_of_the_release_is_no_reason_to_stay_green():
+    from django.db.migrations.recorder import MigrationRecorder
+
+    MigrationRecorder.Migration.objects.filter(
+        app="register_watch", name="0001_initial"
+    ).delete()  # rolled back with the test
+    assert watch.watch_switched_on_at() is None
+    assert watch.watch_health() == watch.Health(
+        False,
+        "never run",
+        "Registrite jälgimine on sisse lülitatud, kuid ükski kontroll pole veel käinud.",
+    )
 
 
 def test_the_watch_knows_when_this_database_installed_it():
