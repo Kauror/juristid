@@ -5230,7 +5230,8 @@ def children_hidden(
     review 2026-11-20).
 
     A child record is edited through its topic, and every such edit moves the
-    topic's version (Lovable 0015 §6; 42 stored readings 27.10–19.11.2026: no
+    topic's version (Lovable's migration 0015_canonical_topic_write_layer, part
+    six; 42 stored readings 27.10–19.11.2026: no
     child change without one, except a stage link *added* from its other end).
     So commencements or responsible changes that differ under an unchanged
     version, or a stage link gone while both its ends kept their versions, are

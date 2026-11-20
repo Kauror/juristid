@@ -425,7 +425,7 @@ Teemad went missing»), which reads as mass deletion. Now:
 - **A child record hidden under an unchanged version** is refused as `CHILDREN_HIDDEN` in APPLY, before the snapshot
   is stored — like `POPULATION_CHANGE`, a supervised COMPARE run accepts it after a person has looked. Only readings
   under the same mapping are compared, on the child columns both carry (a widened allowlist is not a hidden row). A child record is edited through its topic and every such edit moves the topic's version
-  (Lovable 0015 §6; 41 consecutive stored readings, 27.10–19.11.2026: never otherwise, except a stage link *added* from
+  (Lovable migration 0015_canonical_topic_write_layer, part six; 41 consecutive stored readings, 27.10–19.11.2026: never otherwise, except a stage link *added* from
   its other end), so commencements or responsible changes that differ under an unchanged version, or a stage link gone
   while both ends kept their versions, are rows the login no longer sees. Before this a hidden commencement was applied
   as a removal (the Teema's important date cancelled). Replayed over those 41 pairs, the rule refuses none. A save of
