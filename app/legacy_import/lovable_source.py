@@ -822,6 +822,25 @@ class ProbeResult:
         return all(check.status == PASS for check in self.checks)
 
     @property
+    def read_failed(self) -> bool:
+        """A check that the identity reads what the job needs failed: read access
+        lost or narrowed, which says nothing about the write side."""
+        return any(c.status == FAIL for c in self.checks if c.name in READ_CHECKS)
+
+    @property
+    def reads_ready(self) -> bool:
+        """Every check but the write side proved its point: what a night needs
+        to read is there, as the last trusted reading had it."""
+        return all(c.status == PASS for c in self.checks if c.name != WRITE_SIDE_CHECK)
+
+    @property
+    def only_reads_failed(self) -> bool:
+        """Every FAIL is a lost read: nothing suggests the identity sees or may
+        do more than it should (independent review 2026-11-20, P2-1)."""
+        failed = [c for c in self.checks if c.status == FAIL]
+        return bool(failed) and all(c.name in READ_CHECKS for c in failed)
+
+    @property
     def verdict(self) -> str:
         """PASS only when every check proved its point; any FAIL is FAIL;
         otherwise INDETERMINATE — never enough to switch the job on."""
@@ -844,15 +863,44 @@ def _hidden_verdict(error: SourceError | None, rows: Any) -> tuple[str, str]:
     return INDETERMINATE, f"unexpected answer ({type(rows).__name__})"
 
 
-def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> ProbeResult:
+#: The checks that show the identity can read what the job needs (the token's
+#: role is not one of them: a wrong role is a privilege problem, not a lost read).
+#: The two comparisons with the last trusted reading are reads too: a row rule
+#: narrowed to some topics, or to some child records, fails them.
+IDENTITY_CHECK = "source identities match the last trusted reading"
+CHILDREN_CHECK = "child records match the last trusted reading"
+READ_CHECKS = ("reads live topics", "reads topic children", IDENTITY_CHECK, CHILDREN_CHECK)
+NO_BASELINE = "no trusted reading yet: nothing to compare with, so not proven"
+
+
+class ProbeBaseline(Protocol):
+    """The last trusted reading, as the synchronisation holds it
+    (`lovable_sync.probe_baseline`): which topics to read in full, and how to
+    judge what was read against it. Kept out of this module, which never opens
+    the database."""
+
+    cohort_ids: list[str]
+
+    def judge(self, index: list[dict[str, Any]], cohort: dict[str, Any]) -> list[ProbeCheck]: ...
+
+
+def access_probe(
+    config: SourceConfig,
+    *,
+    baseline: ProbeBaseline | None = None,
+    opener: Opener = _default_opener,
+) -> ProbeResult:
     """Read what the job needs, and show the hidden reads stay hidden. GET only.
 
     Sign-in (the one POST), the token's role, the live topics and their
     children, and ``GET … limit=1`` on the admin-only history and on deleted
-    topics. The write side is reported as one INDETERMINATE check and nothing
-    write-shaped is sent (owner rule 2026-11-02): whether the identity can
-    write is shown only by `GRANT_INSPECTION_SQL`, run read-only in Lovable's SQL
-    editor. So the verdict is at best INDETERMINATE, never PASS. Counts only."""
+    topics. With the last trusted reading (``baseline``) every synchronised
+    topic is read in full and judged against it by identity, never by a total
+    (coordinator review 2026-11-20): without one, those two checks are
+    INDETERMINATE. The write side is reported as one INDETERMINATE check and
+    nothing write-shaped is sent (owner rule 2026-11-02): whether the identity
+    can write is shown only by `GRANT_INSPECTION_SQL`, run read-only in Lovable's
+    SQL editor. So the verdict is at best INDETERMINATE, never PASS. Counts only."""
     transport = HttpTransport(config, opener=opener)
     checks: list[ProbeCheck] = []
     transport.sign_in()
@@ -865,16 +913,31 @@ def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> P
 
     # 1. It reads the live topics and their children.
     index = _index(transport)
-    checks.append(ProbeCheck("reads live topics", PASS if index else FAIL, f"{len(index)} rows"))
-    sample = [str(r["id"]) for r in index[:ID_CHUNK]]
-    cohort = _read_cohort(transport, sample) if sample else {}
+    checks.append(
+        ProbeCheck(
+            "reads live topics",
+            PASS if index else FAIL,
+            f"{len(index)} rows" if index else "0 rows: the source's row rule admits none",
+        )
+    )
+    wanted = (
+        sorted(baseline.cohort_ids)
+        if baseline is not None
+        else [str(r["id"]) for r in index[:ID_CHUNK]]
+    )
+    cohort = _read_cohort(transport, wanted) if wanted and index else {}
     checks.append(
         ProbeCheck(
             "reads topic children",
-            PASS if sample and len(cohort) == len(sample) else FAIL,
-            f"{len(cohort)} topics read",
+            PASS if cohort else FAIL,
+            f"{len(cohort)} of {len(wanted)} topics read",
         )
     )
+    if baseline is None:
+        checks.append(ProbeCheck(IDENTITY_CHECK, INDETERMINATE, NO_BASELINE))
+        checks.append(ProbeCheck(CHILDREN_CHECK, INDETERMINATE, NO_BASELINE))
+    else:
+        checks.extend(baseline.judge(index, cohort))
 
     # 2. No administrative history, no deleted topics (GET, one row at most,
     #    identity columns only: a visible row is counted, never kept).
@@ -901,6 +964,10 @@ def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> P
                 raise
             rows, failure = None, refusal
         status, detail = _hidden_verdict(failure, rows)
+        if status == PASS and not index and failure is None:
+            # 0 rows proves nothing hidden when nothing at all is readable
+            # (coordinator QA 2026-11-20): it is the same empty answer.
+            status, detail = INDETERMINATE, "0 rows, but no live topic is readable either"
         checks.append(ProbeCheck(name, status, detail))
 
     # 3. The write side: not probed over HTTP at all.
