@@ -2342,8 +2342,8 @@ def _restore_reason(unchanged: bool, entry: dict[str, Any], matches: Callable[[A
     """`RESTORED` only when the decision's whole input is unchanged: Lovable's
     value is (``unchanged``) *and* what the rule derives from it tonight is what
     it derived last time (``matches(entry["target"])``). A target that moved
-    because another Lovable field changed (the sent status, the stage) or
-    because time passed (a drafting step's day) is a source or derived change,
+    because another Lovable field changed (the sent status, the stage, the
+    request ending) is a source or derived change,
     counted as one, never a restore. A baseline that holds no target yet keeps
     the plain rule."""
     if not unchanged:
@@ -2697,7 +2697,7 @@ def _step_decisions_authoritative(
     request_before: str | None = None,
     outcome: dict[str, Any] | None = None,
     outcome_hold: str = "",
-    today: dt.date | None = None,
+    today: dt.date | None = None,  # unused since LS-05 option B; kept for callers
 ) -> list[FieldDecision]:
     """`jargmiseks` + `tegevuse_tahtaeg` → the current step, one operation, a pure
     function of Lovable's current values (owner decision 11.11), re-derived on

@@ -25,7 +25,7 @@ from app.legacy_import.lovable_sync_models import SyncRunStatus
 from app.workflow.enums import ActionStatus
 from app.workflow.models import NextAction
 from tests.lovable_contract.fixtures import pilot_on, world  # noqa: F401 - fixtures
-from tests.lovable_contract.world import TALLINN, ref
+from tests.lovable_contract.world import AVA, TALLINN, ref
 
 pytestmark = pytest.mark.django_db
 
@@ -190,3 +190,96 @@ def test_ls05_a_new_teema_whose_deadline_had_passed_opens_no_request(world):
     assert not response_obligations(passed.owner).filter(pk=passed.pk).exists()
     assert future.response_deadline == dt.date(2026, 11, 30)
     assert response_obligations(future.owner).filter(pk=future.pk).exists()
+    # A later night opens nothing on the passed one either.
+    later = world.run(at=dt.datetime(2026, 11, 20, 0, 15, tzinfo=TALLINN))
+    assert later.status == SyncRunStatus.SUCCEEDED, later.error
+    passed.refresh_from_db()
+    assert passed.response_deadline is None
+    assert not NextAction.objects.filter(matter=passed, status=ActionStatus.OPEN).exists()
+
+
+def test_ls05_lovable_clearing_the_deadline_or_marking_its_own_initiative_ends_the_step(world):
+    """Review of #660: the request ending in Lovable (deadline cleared) and the
+    Koda initiative switched on are exits too; switched off again, the request
+    and its overdue drafting step are Lovable's again (the approved rule)."""
+    matter, drafting = _unanswered(world)
+    world.run(at=DAY_AFTER)
+
+    world.lovable.edit(ref(1), arvamuse_tahtaeg=None)
+    cleared = world.run(at=DAY_AFTER + dt.timedelta(days=1))
+    assert cleared.status == SyncRunStatus.SUCCEEDED, cleared.error
+    drafting.refresh_from_db()
+    assert drafting.status != ActionStatus.OPEN
+    matter.refresh_from_db()
+    assert matter.response_deadline is None
+
+    world.lovable.edit(ref(1), arvamuse_tahtaeg=DEADLINE.isoformat(), koja_ettepanek=True)
+    koda = world.run(at=DAY_AFTER + dt.timedelta(days=2))
+    assert koda.status == SyncRunStatus.SUCCEEDED, koda.error
+    assert not NextAction.objects.filter(
+        matter=matter, status=ActionStatus.OPEN, text="Koostan arvamuse"
+    ).exists()
+
+
+def test_ls05_a_held_outcome_neither_creates_nor_ends_the_step(world):
+    """A sent day in the future is an invalid read (held): no drafting step is
+    invented and none is ended on that word (`OUTCOME_HELD`)."""
+    matter, drafting = _unanswered(world)
+    world.run(at=DAY_AFTER)
+    world.lovable.edit(ref(1), valja_kuupaev="2026-12-24")
+    held = world.run(at=DAY_AFTER + dt.timedelta(days=1))
+    assert held.status in (SyncRunStatus.SUCCEEDED, SyncRunStatus.REVIEW_ONLY), held.error
+    drafting.refresh_from_db()
+    assert drafting.status == ActionStatus.OPEN
+    assert not world.events_of(held).filter(matter=matter).exists()
+
+
+def test_ls05_a_closure_held_for_juristid_work_keeps_the_step_until_it_closes(world):
+    """TL-02: Lovable closes, Juristid-only work holds the closure; the step is
+    held with it (nothing written). When the work is done the Teema closes and
+    the step ends with it."""
+    from app.workflow.services import add_planned_action, cancel_next_action
+
+    matter, drafting = _unanswered(world)
+    world.run(at=DAY_AFTER)
+    planned = add_planned_action(
+        matter=matter, text="Helistan ministeeriumi", target_date=dt.date(2099, 4, 1)
+    )
+    world.lovable.edit(ref(1), hetkeseis="jõustunud")
+    held = world.run(at=DAY_AFTER + dt.timedelta(days=1))
+    assert held.status == SyncRunStatus.SUCCEEDED, held.error
+    assert world.matter(ref(1)).is_open
+    drafting.refresh_from_db()
+    assert drafting.status == ActionStatus.OPEN
+
+    cancel_next_action(action=planned, actor=world.person(AVA), reason="Pole vaja")
+    closed = world.run(at=DAY_AFTER + dt.timedelta(days=2))
+    assert closed.status == SyncRunStatus.SUCCEEDED, closed.error
+    assert not world.matter(ref(1)).is_open
+    drafting.refresh_from_db()
+    assert drafting.status != ActionStatus.OPEN
+
+
+def test_ls05_a_teema_reopened_in_lovable_with_an_old_unanswered_request(world):
+    """Review of #660, pinned for a product decision: Lovable reopens a Teema
+    whose request day passed long ago with nothing sent and no sentence. Under
+    the approved rule (an unanswered request, no next step) the drafting step
+    comes back, dated on that old day and overdue. Production 20.11.2026: 0
+    closed synchronised Teemad hold an unsent Lovable request, so none is
+    exposed today. Before option B the `>= today` rule did not create it."""
+    matter, _drafting = _unanswered(world)
+    world.lovable.edit(ref(1), hetkeseis="rohkem ei tegele")
+    closed = world.run(at=DAY_AFTER)
+    assert closed.status == SyncRunStatus.SUCCEEDED, closed.error
+    assert not world.matter(ref(1)).is_open
+
+    world.lovable.edit(ref(1), hetkeseis="Riigikogus")
+    reopened = world.run(at=dt.datetime(2026, 12, 15, 0, 15, tzinfo=TALLINN))
+    assert reopened.status == SyncRunStatus.SUCCEEDED, reopened.error
+    assert world.matter(ref(1)).is_open
+    steps = list(
+        NextAction.objects.filter(matter=matter, status=ActionStatus.OPEN).values_list(
+            "text", "target_date"
+        )
+    )
+    assert steps == [("Koostan arvamuse", DEADLINE)]
