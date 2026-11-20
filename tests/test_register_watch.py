@@ -883,7 +883,8 @@ def _ran(*, started_hours_ago, finished=True, **fields):
 def test_the_health_of_the_watch_for_production_status():
     from app.core import production_status as status_module
 
-    assert watch.watch_health() == watch.Health(True, "never run")
+    # The test database applied the watch's migrations moments ago: first-run grace.
+    assert watch.watch_health() == watch.Health(True, "not run yet")
     _ran(started_hours_ago=10, targets_checked=300, errors=[{"viga": "x"}], ai_failures=2)
     assert watch.watch_health() == watch.Health(True, "1 errors, 2 AI failures")
     row = status_module._register_watch()
@@ -902,6 +903,41 @@ def test_the_health_of_the_watch_for_production_status():
     assert not watch.watch_health().ok  # nothing finished in 30 h before it
     _ran(started_hours_ago=20, targets_checked=300)
     assert watch.watch_health().ok
+
+
+@override_settings(REGISTER_WATCH_FETCH=True)
+def test_a_watch_switched_on_that_never_ran_turns_red_after_its_first_night(monkeypatch):
+    """QA-NEW-05 (coordinator QA 2026-11-20): an enabled watch whose scheduled run
+    never happened (a cron line never installed, a host rebuilt without it) was
+    green «never run» for ever. It has `STALE_AFTER` from the release that
+    switched it on; after that it is red, and Haldus says why."""
+    from django.utils import timezone
+
+    from app.core import production_status as status_module
+
+    assert not WatchRun.objects.exists()
+    now = timezone.now()
+    monkeypatch.setattr(watch, "watch_activated_at", lambda: now - dt.timedelta(hours=29))
+    assert watch.watch_health(now) == watch.Health(True, "not run yet")
+
+    monkeypatch.setattr(watch, "watch_activated_at", lambda: now - dt.timedelta(hours=31))
+    health = watch.watch_health(now)
+    assert (health.ok, health.detail) == (False, "never run")
+    assert health.problem
+    assert status_module._register_watch().ok is False
+
+    # No record of the release at all is no reason to stay green either.
+    monkeypatch.setattr(watch, "watch_activated_at", lambda: None)
+    assert watch.watch_health(now).ok is False
+
+    # The first finished run settles it.
+    _ran(started_hours_ago=2, targets_checked=300)
+    assert watch.watch_health().ok
+
+
+def test_the_watch_knows_when_this_database_switched_it_on():
+    activated = watch.watch_activated_at()
+    assert activated is not None
 
 
 @override_settings(REGISTER_WATCH_FETCH=True)

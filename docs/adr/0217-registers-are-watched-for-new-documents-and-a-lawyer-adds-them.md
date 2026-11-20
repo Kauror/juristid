@@ -100,7 +100,10 @@ What a program may read (checked 2026-11-17):
    `production_status` has a «Register watch» row — red when the newest run
    stopped, when no run finished in 30 hours, or when the last run read no
    register — so the host monitor's daily status check tells someone, and Haldus
-   says «Katkes» and why. The model is asked in batches of 25 findings, so a cut
+   says «Katkes» and why. A watch switched on that has never run is green «not run
+   yet» only for 30 hours from the release that applied `register_watch` 0001,
+   then red «never run» (coordinator QA 2026-11-20, QA-NEW-05: a schedule never
+   installed stayed green for ever). The model is asked in batches of 25 findings, so a cut
    answer costs one batch. «Registris uus dokument» belongs to the Teema's current
    owner, like every other inbox source.
 

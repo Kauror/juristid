@@ -332,19 +332,42 @@ class Health:
     problem: str = ""
 
 
+def watch_activated_at() -> dt.datetime | None:
+    """When this database first held the register watch: the moment its first
+    migration was applied (the release that switched it on), or ``None``."""
+    from django.db.migrations.recorder import MigrationRecorder
+
+    row = (
+        MigrationRecorder.Migration.objects.filter(app="register_watch", name="0001_initial")
+        .only("applied")
+        .first()
+    )
+    return row.applied if row is not None else None
+
+
 def watch_health(now: dt.datetime | None = None) -> Health:
     """Did the register watch run, finish and read anything? For `production_status`.
 
     Counts only, never a Teema or a register's words. Fetching switched off
-    (tests, CI, a recovery rehearsal) is green ``off``; a database that never
-    ran a check is green ``never run``.
+    (tests, CI, a recovery rehearsal) is green ``off``. With fetching on and no
+    run yet, the first scheduled run has `STALE_AFTER` from the release that
+    switched the watch on: green ``not run yet`` inside it, red ``never run``
+    after it — a schedule that was never installed must not stay green for
+    ever (coordinator QA 2026-11-20, QA-NEW-05).
     """
     if not getattr(settings, "REGISTER_WATCH_FETCH", False):
         return Health(True, "off")
     now = now or timezone.now()
     latest = WatchRun.objects.order_by("-started_at").first()
     if latest is None:
-        return Health(True, "never run")
+        activated = watch_activated_at()
+        if activated is not None and activated >= now - STALE_AFTER:
+            return Health(True, "not run yet")
+        return Health(
+            False,
+            "never run",
+            "Registrite jälgimine on sisse lülitatud, kuid ükski kontroll pole veel käinud.",
+        )
     if latest.aborted:
         return Health(False, "last run stopped before its end", "Viimane kontroll katkes.")
     finished = WatchRun.objects.filter(finished_at__isnull=False).order_by("-finished_at").first()
