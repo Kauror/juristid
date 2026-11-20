@@ -10,8 +10,9 @@
 [[day]]
 date = 2026-11-20
 basis = "deployment"
-prs = [656]
+prs = [656, 660]
 changes = [
+  "Kui teema Lovable'is küsitud arvamusel pole järgmist sammu kirjas, jääb Juristidis samm «Koostan arvamuse» alles ka pärast tähtaega ja on üle tähtaja, kuni Lovable'is on märgitud, et arvamus saadeti või jäeti saatmata, kirjutatakse uus järgmine samm, tähtaeg eemaldatakse või teema lõpetatakse. Varem kadus samm tähtajale järgneval päeval ja asemele jäi arvamuse tähtaeg.",
   "Kui sammu vastutaja konto on suletud, on see samm teema vastutaja töö kõikjal: Minu asjades, kalendris ja Teemade loendis vastutaja järgi, nagu kellukeses juba oli. Rida näitab vastutajana teema vastutajat.",
   "«Järgmised 30 päeva» Minu asjades ja «Tähtaeg 30 päeva jooksul» Teemade loendis on 30 kuupäeva koos tänasega, nagu Jõustumistes. Näiteks 18. novembril lõpeb vahemik 17. detsembril, mitte 18. detsembril.",
   "Kuupäevaväljale kirjutatud kahekohaline aasta tähendab alati 2000-ndaid: 1.1.99 on 1.1.2099, nagu kuupäevavalijas ja filtrites. Varem salvestus see 1999. aastana.",

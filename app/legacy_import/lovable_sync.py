@@ -2342,8 +2342,8 @@ def _restore_reason(unchanged: bool, entry: dict[str, Any], matches: Callable[[A
     """`RESTORED` only when the decision's whole input is unchanged: Lovable's
     value is (``unchanged``) *and* what the rule derives from it tonight is what
     it derived last time (``matches(entry["target"])``). A target that moved
-    because another Lovable field changed (the sent status, the stage) or
-    because time passed (a drafting step's day) is a source or derived change,
+    because another Lovable field changed (the sent status, the stage, the
+    request ending) is a source or derived change,
     counted as one, never a restore. A baseline that holds no target yet keeps
     the plain rule."""
     if not unchanged:
@@ -2697,7 +2697,7 @@ def _step_decisions_authoritative(
     request_before: str | None = None,
     outcome: dict[str, Any] | None = None,
     outcome_hold: str = "",
-    today: dt.date | None = None,
+    today: dt.date | None = None,  # unused since LS-05 option B; kept for callers
 ) -> list[FieldDecision]:
     """`jargmiseks` + `tegevuse_tahtaeg` → the current step, one operation, a pure
     function of Lovable's current values (owner decision 11.11), re-derived on
@@ -2710,8 +2710,9 @@ def _step_decisions_authoritative(
       `lovable-step/1` reads from it (or `ActionKind.SOURCE`), Lovable's day; a
       DO with no day of its own takes the request's day after tonight;
     * no sentence → the structured drafting step of an open request with
-      nothing sent (DO «Koostan arvamuse» on the request's day, the reader's
-      own rule, docs/adr/0148 §10), else no step;
+      nothing sent (DO «Koostan arvamuse» on the request's day, docs/adr/0148
+      §10), kept after that day has passed until Lovable says sent or «ei
+      saatnud» or the Teema closes (LS-05, owner 20.11.2026), else no step;
     * a day with no sentence cannot be a step: held.
 
     Whatever Juristid holds that differs — a new sentence, a day, a kind an
@@ -2785,12 +2786,15 @@ def _step_decisions_authoritative(
             if unchanged:
                 return same(b_step)
             return both(SyncOutcome.REVIEW_REQUIRED, OUTCOME_HELD)
+        # LS-05, owner decision 20.11.2026 (option B): the drafting step of a
+        # request Juristid holds stays open — overdue once its day passed — until
+        # Lovable says sent or «ei saatnud», or the Teema closes. It no longer
+        # ends the day after the deadline (docs/adr/0213 §10.12 item 3).
         drafting = (
             request_day is not None
             and not src.get("sent")
             and not src.get("sent_date")
             and not src.get("koda_initiative")
-            and (today is None or dt.date.fromisoformat(request_day) >= today)
         )
         if drafting:
             desired = {
@@ -2821,7 +2825,7 @@ def _step_decisions_authoritative(
     elif _step_view(b_step) == _step_view(desired):
         return same(b_step)
     # A restore only when the step the rule derives tonight is the one it
-    # derived last time: a drafting step ending because its day passed, or a
+    # derived last time: a drafting step ending because the request ended, or a
     # kind re-derived, is a derived change.
     restored = _restore_reason(
         unchanged, step_entry, lambda before: _step_view(before) == _step_view(desired)
@@ -4120,7 +4124,7 @@ def idempotency_key(
         or decision.field == FORMER_OWNER
     ):
         # A restore writes the same source value again over a local edit, and a
-        # derived change (a drafting step whose day passed, a request ended
+        # derived change (a drafting step whose request ended, a request ended
         # because the sent status changed) writes with this field's source
         # unchanged: one per run, never colliding with the write that first
         # brought the value.

@@ -1658,15 +1658,22 @@ def test_a_lawyers_later_request_is_withdrawn_not_answered_by_an_earlier_send(re
 
 
 def test_a_derived_change_is_a_source_change_not_a_restore(reference, monkeypatch):
-    """P3-2: the drafting step ending because its day passed, and the request
-    ending because Lovable's sent status changed, are not restores — they count
-    as source changes and the restore breaker never holds them."""
+    """P3-2: the drafting step ending because its request ended (Lovable cleared
+    the deadline; the step's own sentence is unchanged), and the request ending
+    because Lovable's sent status changed, are not restores — they count as
+    source changes and the restore breaker never holds them. (Before LS-05
+    option B, 20.11.2026, the first example was the day passing; a passed day no
+    longer ends the drafting step.)"""
     source = reference["source"]
     source.edit("2026_253", jargmiseks="", arvamuse_tahtaeg="2026-11-13")
     _run(reference, at=_at(0))
     assert _open_step("2026_253").target_date == dt.date(2026, 11, 13)
     monkeypatch.setattr(lovable_sync, "MAX_RESTORED_MATTERS", 0)
-    late = _run(reference, at=_at(48))  # 14.11: the request day has passed
+    late_day = _run(reference, at=_at(48))  # 14.11: the day passed, the step stays
+    assert late_day.status == SyncRunStatus.SUCCEEDED, late_day.error
+    assert _open_step("2026_253").target_date == dt.date(2026, 11, 13)
+    source.edit("2026_253", arvamuse_tahtaeg=None)
+    late = _run(reference, at=_at(72))  # Lovable ended the request
     step = _decisions(late, "2026_253")["next_action_text"]
     assert (step.outcome, step.reason) == (SyncOutcome.APPLIED, "")
     assert _open_step("2026_253") is None
@@ -1674,7 +1681,7 @@ def test_a_derived_change_is_a_source_change_not_a_restore(reference, monkeypatc
     assert late.counts["changed_restores"] == 0
 
     source.edit("2026_232", valja="2026-11-10", valja_kuupaev="2026-11-10")
-    run = _run(reference, at=_at(49))
+    run = _run(reference, at=_at(73))
     request = _decisions(run, "2026_232")["opinion_deadline"]
     assert request.reason != lovable_sync.RESTORED
     assert _matter("2026_232").response_deadline is None
