@@ -505,17 +505,16 @@ def test_a_zero_source_limit_writes_nothing(world):
 
 
 # ---------------------------------------------------------------------------
-# LS-05 — an overdue drafting step (owner question), current behaviour
+# LS-05 — an overdue drafting step stays (owner decision 20.11.2026, option B)
 # ---------------------------------------------------------------------------
 
 
-def test_ls05_an_overdue_drafting_step_with_nothing_sent_is_ended_today(world):
-    """LS-05 (owner question) — current behaviour, pinned, not endorsed.
-
-    Lovable asks for an opinion by a day and nothing is sent. The day after the
-    deadline the drafting step is ended by the synchronisation, exactly when
-    it is most urgent. Alternative (audit §C.2 LS-05): keep it until Lovable
-    says sent or «ei saatnud». Flip this test when the owner answers."""
+def test_ls05_an_overdue_drafting_step_with_nothing_sent_stays_open(world):
+    """LS-05, owner decision 20.11.2026 (option B): Lovable asks for an opinion
+    by a day and nothing is sent. The day after the deadline the drafting step
+    stays open — overdue — until Lovable says sent or «ei saatnud», or the Teema
+    closes (`tests/lovable_contract/test_qa_new03_ls05.py` has the exits).
+    Before the decision it was ended that night (pinned, not endorsed)."""
     from app.workflow.enums import ActionStatus
     from app.workflow.models import NextAction
 
@@ -527,7 +526,7 @@ def test_ls05_an_overdue_drafting_step_with_nothing_sent_is_ended_today(world):
     later = dt.datetime(2026, 11, 14, 0, 15, tzinfo=TALLINN)
     assert later > NIGHT
     world.run(at=later)
-    assert not NextAction.objects.filter(pk=drafting.pk, status=ActionStatus.OPEN).exists()
+    assert NextAction.objects.filter(pk=drafting.pk, status=ActionStatus.OPEN).exists()
 
 
 # ---------------------------------------------------------------------------
