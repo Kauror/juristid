@@ -422,9 +422,22 @@ Teemad went missing»), which reads as mass deletion. Now:
 - **The synchronisation** refuses a complete reading of zero live topics, when it has a cohort or a previous reading
   with rows, as `SOURCE_EMPTY` — before the plan, before the snapshot is stored, in every mode. A reading narrowed to
   part of the register still stops on `COHORT_MISSING` / `POPULATION_CHANGE`, as before.
-- **The observation** (0201) refuses the same reading by the same code: an empty reading is never a baseline.
-- **The access probe** fails «reads live topics» on zero rows, or when the reading is short of the last stored
-  reading's population by the synchronisation's own population rule (`--expect-live` overrides); a «hidden» check is
-  never PASS from the same empty answer; and when every failure is a lost read it says so — the remedy is a SELECT-only
-  read path in Lovable, never a staff profile or role for the identity (that would make it write-capable).
-
+- **A child record hidden under an unchanged version** is refused as `CHILDREN_HIDDEN` in APPLY, before the snapshot
+  is stored — like `POPULATION_CHANGE`, a supervised COMPARE run accepts it after a person has looked. Only readings
+  under the same mapping are compared, on the child columns both carry (a widened allowlist is not a hidden row). A child record is edited through its topic and every such edit moves the topic's version
+  (Lovable 0015 §6; 41 consecutive stored readings, 27.10–19.11.2026: never otherwise, except a stage link *added* from
+  its other end), so commencements or responsible changes that differ under an unchanged version, or a stage link gone
+  while both ends kept their versions, are rows the login no longer sees. Before this a hidden commencement was applied
+  as a removal (the Teema's important date cancelled). Replayed over those 41 pairs, the rule refuses none. A save of
+  the topic in Lovable moves its version and settles it.
+- **The observation** (0201) refuses a zero reading (`SOURCE_EMPTY`) and, on a scheduled reading, one narrowed by
+  identity — more than `MAX_MISSING` live topics of its baseline gone (growth never counts) — as `SOURCE_NARROWED`:
+  neither is stored as a baseline. A manual reading accepts a narrowed register after a person has looked.
+- **The access probe** judges by identity, never by a total (coordinator review 2026-11-20). With the last trusted
+  reading (`probe_baseline`) it reads every synchronised topic in full and fails «source identities match» when more
+  than `MAX_MISSING` live or synchronised topics of that reading are gone, or the population moved past
+  `population_change` — the same limits a night refuses at, and stricter (a hidden topic outside the cohort counts);
+  new topics never cover for missing ones. It fails «child records match» by the `CHILDREN_HIDDEN` rule. With no
+  trusted reading both checks are INDETERMINATE. «reads live topics» fails on zero rows; a «hidden» check is never
+  PASS from the same empty answer; and when every failure is a lost or narrowed read it says so — the remedy is a
+  SELECT-only read path in Lovable, never a staff profile or role for the identity (that would make it write-capable).

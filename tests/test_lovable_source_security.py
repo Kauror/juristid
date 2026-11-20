@@ -248,7 +248,7 @@ def _probe(
     hidden_answer: Any = None,
     topics: Any = None,
     seen: list | None = None,
-    expected_live: int | None = None,
+    baseline: Any = None,
 ):
     """The probe against a stub that answers every read; ``seen`` records
     (method, path) of everything the probe sent."""
@@ -268,7 +268,31 @@ def _probe(
             return _Answer(rows, url=url)
         return _Answer([], url=url)
 
-    return lovable_source.access_probe(_config(), expected_live=expected_live, opener=opener)
+    return lovable_source.access_probe(_config(), baseline=baseline, opener=opener)
+
+
+class _Trusting:
+    """A trusted reading that finds nothing wrong (the judging itself is
+    `tests/test_qa_new01_probe_identity.py`'s)."""
+
+    cohort_ids = [GHOST_TOPIC]
+
+    def judge(self, index, cohort):
+        return [
+            lovable_source.ProbeCheck(lovable_source.IDENTITY_CHECK, PASS, "-"),
+            lovable_source.ProbeCheck(lovable_source.CHILDREN_CHECK, PASS, "-"),
+        ]
+
+
+def test_without_a_trusted_reading_the_reads_are_never_ready():
+    """Initial start-up: no stored reading to compare identities with. The probe
+    reads, but proves nothing about what a night would see (coordinator review
+    2026-11-20)."""
+    result = _probe()
+    assert _status(result, "reads live topics") == PASS
+    assert _status(result, lovable_source.IDENTITY_CHECK) == INDETERMINATE
+    assert _status(result, lovable_source.CHILDREN_CHECK) == INDETERMINATE
+    assert not result.reads_ready and result.verdict == INDETERMINATE
 
 
 def _respond(url: str, answer: Any) -> Any:
@@ -294,9 +318,10 @@ def test_the_probe_sends_only_gets_after_the_sign_in():
 
 
 def test_a_clean_read_side_is_still_never_a_pass():
-    result = _probe()
+    result = _probe(baseline=_Trusting())
     reads = [c for c in result.checks if c.name != lovable_source.WRITE_SIDE_CHECK]
     assert reads and all(c.status == PASS for c in reads), reads
+    assert result.reads_ready
     assert _status(result, lovable_source.WRITE_SIDE_CHECK) == INDETERMINATE
     assert result.verdict == INDETERMINATE and not result.passed
 
@@ -341,23 +366,13 @@ def test_a_login_the_row_rule_no_longer_admits_fails_on_its_reads_not_its_writes
         assert _status(result, name) == INDETERMINATE
 
 
-def test_a_reading_well_short_of_the_last_population_fails():
-    one = [{"id": GHOST_TOPIC, "nr": "2026_1", "version": 1}]
-    narrowed = _probe(topics=one, expected_live=2524)
-    assert _status(narrowed, "reads live topics") == FAIL and narrowed.read_failed
-    assert "2524 expected" in next(
-        c.detail for c in narrowed.checks if c.name == "reads live topics"
-    )
-    assert _status(_probe(topics=one, expected_live=1), "reads live topics") == PASS
-    # A few topics deleted since the last reading is ordinary.
-    assert _status(_probe(topics=one, expected_live=40), "reads live topics") == PASS
-
-
 def test_the_probe_command_names_a_lost_read_and_never_suggests_widening(monkeypatch, capsys):
     from django.core.management import call_command
     from django.core.management.base import CommandError
 
     monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    # DB-free: the command's trusted reading is the database's (tested elsewhere).
+    monkeypatch.setattr("app.legacy_import.lovable_sync.probe_baseline", lambda: None)
     result = _probe(topics=[])
     seen: dict[str, Any] = {}
 
@@ -367,8 +382,8 @@ def test_the_probe_command_names_a_lost_read_and_never_suggests_widening(monkeyp
 
     monkeypatch.setattr(lovable_source, "access_probe", probe)
     with pytest.raises(CommandError, match="ACCESS PROBE FAILED") as failed:
-        call_command("lovable_sync", "access-probe", "--expect-live", "2524")
-    assert seen == {"expected_live": 2524}
+        call_command("lovable_sync", "access-probe")
+    assert set(seen) == {"baseline"}
     assert "not read-only" not in str(failed.value)
     assert "SELECT-only" in str(failed.value)
 
@@ -400,17 +415,12 @@ def test_a_lost_read_beside_a_privilege_failure_is_reported_as_the_privilege_fai
     )
     assert result.read_failed and not result.only_reads_failed
     monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    # DB-free: the command's trusted reading is the database's (tested elsewhere).
+    monkeypatch.setattr("app.legacy_import.lovable_sync.probe_baseline", lambda: None)
     monkeypatch.setattr(lovable_source, "access_probe", lambda _c, **_k: result)
     with pytest.raises(CommandError, match="not read-only") as failed:
-        call_command("lovable_sync", "access-probe", "--expect-live", "1")
+        call_command("lovable_sync", "access-probe")
     assert "ACCESS PROBE FAILED" not in str(failed.value)
-
-
-def test_the_probe_tolerance_is_the_synchronisations_population_rule():
-    from app.legacy_import import lovable_sync
-
-    assert lovable_source.PROBE_MAX_SHORTFALL == lovable_sync.POPULATION_MAX_DELTA
-    assert lovable_source.PROBE_MAX_SHORTFALL_SHARE == lovable_sync.POPULATION_MAX_SHARE
 
 
 @pytest.mark.parametrize(
@@ -443,10 +453,12 @@ def test_the_probe_command_blocks_activation_when_indeterminate(monkeypatch, cap
     from django.core.management.base import CommandError
 
     monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    # DB-free: the command's trusted reading is the database's (tested elsewhere).
+    monkeypatch.setattr("app.legacy_import.lovable_sync.probe_baseline", lambda: None)
     result = _probe()
     monkeypatch.setattr(lovable_source, "access_probe", lambda _c, **_k: result)
     with pytest.raises(CommandError, match="INDETERMINATE") as blocked:
-        call_command("lovable_sync", "access-probe", "--expect-live", "1")
+        call_command("lovable_sync", "access-probe")
     assert "access-sql" in str(blocked.value)
     out = capsys.readouterr().out
     assert "ACCESS PROBE PASSED" not in out

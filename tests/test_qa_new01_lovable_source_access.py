@@ -139,13 +139,138 @@ def test_a_refused_login_or_read_fails_closed(pilot_on, status):
     _business_tables_unchanged(before)
 
 
-def test_the_probe_expects_the_population_of_the_last_good_reading(pilot_on):
-    from app.legacy_import.management.commands.lovable_sync import _last_live_population
+# -- the access probe against the night it vouches for (coordinator review 2026-11-20) --
+
+
+def _probe_over(world: Any, *, visible: Any = None) -> Any:
+    """The access probe over the world's Lovable behind HTTP, judged against the
+    database's last trusted reading; the admin-only history and deleted topics
+    answer no rows."""
+    from tests.lovable_postgrest_fake import _Answer
+
+    _transport, fake = _over_http(world, visible=visible)
+
+    def opener(request: Any, timeout: float) -> Any:
+        url = request.full_url
+        if "topic_change" in url or "deleted_at" in url:
+            return _Answer([], url, {"Content-Range": "*/0"})
+        return fake(request, timeout)
+
+    return lovable_source.access_probe(
+        config(), baseline=lovable_sync.probe_baseline(), opener=opener
+    )
+
+
+def test_the_probe_is_not_ready_where_the_night_refuses_missing_topics(pilot_on, monkeypatch):
+    monkeypatch.setattr(lovable_sync, "MAX_MISSING", 2)
+    world = build_world(6)
+    hidden_ids = {source_id(ref(n)) for n in (1, 2, 3)}
+
+    def narrowed(table: str, row: dict[str, Any]) -> bool:
+        if table == "topic_stage_link":
+            return not ({str(row["prev_topic_id"]), str(row["next_topic_id"])} & hidden_ids)
+        return str(row.get("id") if table == "topic" else row.get("topic_id")) not in hidden_ids
+
+    probe = _probe_over(world, visible=narrowed)
+    assert not probe.reads_ready
+    assert next(c for c in probe.checks if c.name == lovable_source.IDENTITY_CHECK).status == "FAIL"
+
+    transport, _fake = _over_http(world, visible=narrowed)
+    night = world.run(transport=transport, at=world.runs[-1].started_at + DAY)
+    assert night.error.startswith("COHORT_MISSING"), night.error
+
+
+def test_the_probe_is_ready_for_new_topics_and_an_ordinary_night(pilot_on):
+    from tests.lovable_contract.world import lovable_row
 
     world = build_world(6)
-    stored = LovableSyncSnapshot.objects.order_by("-taken_at").first()
-    assert stored is not None
-    assert _last_live_population() == len(stored.document["index"]) > 0
+    for number in (11, 12):
+        world.lovable.put(source_id(ref(number)), lovable_row(ref(number)), version=1)
+
+    probe = _probe_over(world)
+    assert probe.reads_ready, [(c.name, c.status, c.detail) for c in probe.checks]
+    assert "2 new" in next(
+        c.detail for c in probe.checks if c.name == lovable_source.IDENTITY_CHECK
+    )
+
+
+def test_the_probe_is_not_ready_when_a_child_table_is_narrowed(pilot_on):
+    world = build_world(6)
+    world.lovable.set_commencements(
+        ref(1),
+        [
+            {"liik": "Kindla kuupäevaga jõustumine", "kuupaev": "2099-01-01"},
+            {"liik": "Üldises korras"},
+        ],
+    )
+    settled = world.run(at=world.runs[-1].started_at + DAY)
+    assert settled.status == SyncRunStatus.SUCCEEDED, settled.error
+    first = source_id(ref(1))
+    hidden_row = next(c["id"] for c in world.lovable.commencements if c["topic_id"] == first)
+
+    def one_child_hidden(table: str, row: dict[str, Any]) -> bool:
+        return not (table == "topic_commencement" and row.get("id") == hidden_row)
+
+    probe = _probe_over(world, visible=one_child_hidden)
+    checks = {c.name: c.status for c in probe.checks}
+    assert checks[lovable_source.IDENTITY_CHECK] == "PASS"
+    assert checks[lovable_source.CHILDREN_CHECK] == "FAIL"
+    assert not probe.reads_ready
+
+
+def test_the_probe_reads_the_trusted_reading_from_the_last_good_night_only(pilot_on):
+    world = build_world(6)
+    trusted = lovable_sync.probe_baseline()
+    assert trusted is not None and len(trusted.cohort_ids) == 6
     hidden, _fake = _over_http(world, visible=_nothing_admitted)
     world.run(transport=hidden, at=world.runs[-1].started_at + DAY)  # refused: not a baseline
-    assert _last_live_population() == len(stored.document["index"])
+    again = lovable_sync.probe_baseline()
+    assert again is not None and again.taken_at == trusted.taken_at
+
+
+def test_a_child_row_hidden_under_an_unchanged_version_is_refused_not_applied(pilot_on):
+    """Coordinator review 2026-11-20: a commencement hidden from the login while
+    its topic is visible and unedited was applied as a removal (the Teema's
+    important date cancelled). The night now refuses it before anything is
+    stored; a save of the topic in Lovable moves its version and settles it."""
+    world = build_world(6)
+    world.lovable.set_commencements(
+        ref(1),
+        [
+            {"liik": "Kindla kuupäevaga jõustumine", "kuupaev": "2099-01-01"},
+            {"liik": "Üldises korras"},
+        ],
+    )
+    settled = world.run(at=world.runs[-1].started_at + DAY)
+    assert settled.status == SyncRunStatus.SUCCEEDED, settled.error
+    first = source_id(ref(1))
+    hidden_row = next(c["id"] for c in world.lovable.commencements if c["topic_id"] == first)
+
+    def one_child_hidden(table: str, row: dict[str, Any]) -> bool:
+        return not (table == "topic_commencement" and row.get("id") == hidden_row)
+
+    snapshots = LovableSyncSnapshot.objects.count()
+    before = table_hashes()
+    transport, _fake = _over_http(world, visible=one_child_hidden)
+    night = world.run(transport=transport, at=world.runs[-1].started_at + DAY)
+
+    assert night.status == SyncRunStatus.FAILED
+    assert night.error.startswith("CHILDREN_HIDDEN: 1 "), night.error
+    assert LovableSyncSnapshot.objects.count() == snapshots
+    _business_tables_unchanged(before)
+    assert not world.events_of(night).exists()
+
+    # A supervised COMPARE run, after a person has looked, stores the reading
+    # (accepts it) and writes nothing; it is how every reading-level refusal is
+    # accepted (independent review 2026-11-20, P2-A).
+    before = table_hashes()
+    looked, _fake = _over_http(world, visible=one_child_hidden)
+    accepted = world.run(SyncMode.COMPARE, transport=looked, at=world.runs[-1].started_at + DAY)
+    assert accepted.status == SyncRunStatus.SUCCEEDED, accepted.error
+    _business_tables_unchanged(before)
+
+    # A real edit in Lovable (any save moves the version) is an ordinary night.
+    world.lovable.set_commencements(ref(1), [{"liik": "Üldises korras"}])
+    edited, _fake = _over_http(world)
+    after = world.run(transport=edited, at=world.runs[-1].started_at + DAY)
+    assert after.status == SyncRunStatus.SUCCEEDED, after.error

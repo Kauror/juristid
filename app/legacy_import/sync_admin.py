@@ -119,6 +119,10 @@ class SyncRequestRefused(DomainError):
 FAILURE_REASONS: dict[str, str] = {
     "COHORT_SIZE": "Sünkroonitavate teemade arv ei vastanud oodatule; midagi ei kirjutatud.",
     "COHORT_MISSING": "Liiga palju sünkroonitavaid teemasid puudus lähteandmetest.",
+    "CHILDREN_HIDDEN": (
+        "Mõne teema jõustumised, vastutaja muutused või etapiseosed puudusid lugemisest, "
+        "kuigi teemat polnud muudetud; midagi ei kirjutatud."
+    ),
     "SOURCE_EMPTY": (
         "Lovable ei näidanud sünkroonimise kontole ühtegi teemat (lugemisõigus on "
         "tõenäoliselt ära võetud); midagi ei kirjutatud."

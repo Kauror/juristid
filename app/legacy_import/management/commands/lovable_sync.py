@@ -212,12 +212,6 @@ class Command(BaseCommand):
             "--backfill", action="store_true", help="observe: read the audit ledger to the end."
         )
         parser.add_argument("--observe", choices=["on", "off"], default="")
-        parser.add_argument(
-            "--expect-live",
-            type=int,
-            default=None,
-            help="access-probe: the live population to expect (default: the last stored reading).",
-        )
         parser.add_argument("--cohort", default="", help="enroll / retire: the cohort key.")
         parser.add_argument(
             "--apply",
@@ -274,10 +268,9 @@ class Command(BaseCommand):
 
     def _access_probe(self, options: dict[str, Any]) -> None:
         config = lovable_source.load_config(self._credentials(options))
-        expected = options.get("expect_live")
-        if expected is None:
-            expected = _last_live_population()
-        result = lovable_source.access_probe(config, expected_live=expected)
+        from app.legacy_import.lovable_sync import probe_baseline
+
+        result = lovable_source.access_probe(config, baseline=probe_baseline())
         for check in result.checks:
             self.stdout.write(f"{check.status}  {check.name}  ({check.detail})")
         if result.only_reads_failed:
@@ -294,11 +287,7 @@ class Command(BaseCommand):
                 "The service login is not read-only as required; do not enable the job."
             )
         if result.verdict != lovable_source.PASS:
-            reads = all(
-                c.status == lovable_source.PASS
-                for c in result.checks
-                if c.name != lovable_source.WRITE_SIDE_CHECK
-            )
+            reads = result.reads_ready
             raise CommandError(
                 "ACCESS PROBE INDETERMINATE: "
                 + ("every read check passed; " if reads else "a read check was not proven; ")
@@ -570,30 +559,6 @@ class Command(BaseCommand):
 
     def _emit(self, options: dict[str, Any], data: dict[str, Any]) -> None:
         self.stdout.write(json.dumps(data, indent=None if options["json"] else 2, default=str))
-
-
-def _last_live_population() -> int | None:
-    """How many live topics the last stored reading saw, or ``None``."""
-    from django.db import DatabaseError
-    from django.db.models import F, Func, IntegerField
-
-    from app.legacy_import.lovable_sync import comparable_snapshots
-
-    try:
-        # Counted in SQL: the reading itself is megabytes of JSON.
-        count = (
-            comparable_snapshots()
-            .annotate(
-                live=Func(
-                    F("document__index"), function="jsonb_array_length", output_field=IntegerField()
-                )
-            )
-            .values_list("live", flat=True)
-            .first()
-        )
-    except DatabaseError:
-        return None
-    return count or None
 
 
 #: A string `report` prints: a code (``COMPARE``, ``HTTP_401``) or an ISO moment.
