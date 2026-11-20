@@ -690,3 +690,55 @@ def test_the_command_switches_observation_and_runs_it(monkeypatch, settings, cap
     assert status["observe"] is True and status["last_success"]["status"] == "SUCCEEDED"
     call_command("lovable_sync", "control", "--observe", "off", "--reason", "pause")
     assert not LovableSyncControl.objects.get().observe
+
+
+def test_a_reading_narrowed_to_part_of_the_register_is_never_a_baseline(observing):
+    """Coordinator review 2026-11-20: a row rule admitting only some topics was
+    stored as the baseline (every hidden topic MISSING, then BACK). Gone beyond
+    the night's `MAX_MISSING` since the baseline is refused and not stored."""
+    from app.legacy_import import lovable_sync
+
+    source = _register()
+    first = _observe(source)
+    hidden = {
+        k: source.topics.pop(k) for k in [_id(n) for n in range(lovable_sync.MAX_MISSING + 1)]
+    }
+    narrowed = _observe(source, NIGHT + dt.timedelta(days=1))
+    assert narrowed.status == ObservationRunStatus.FAILED
+    assert narrowed.error.startswith("SOURCE_NARROWED:"), narrowed.error
+    assert not LovableObservedChange.objects.filter(run=narrowed).exists()
+
+    source.topics.update(hidden)
+    back = _observe(source, NIGHT + dt.timedelta(days=2))
+    assert back.status == ObservationRunStatus.SUCCEEDED, back.error
+    assert back.baseline == first and _changes(back) == {}
+
+
+def test_a_reading_of_no_topics_is_refused_by_name(observing):
+    """QA-NEW-01: the source admitting nothing is never an empty baseline."""
+    source = _register()
+    _observe(source)
+    source.topics.clear()
+    empty = _observe(source, NIGHT + dt.timedelta(days=1))
+    assert empty.status == ObservationRunStatus.FAILED
+    assert empty.error.startswith("SOURCE_EMPTY:"), empty.error
+
+
+def test_a_manual_reading_accepts_a_narrowed_register_after_a_person_looked(observing):
+    from app.legacy_import import lovable_sync
+
+    source = _register()
+    _observe(source)
+    for n in range(lovable_sync.MAX_MISSING + 1):
+        source.topics.pop(_id(n))
+    manual = _observe(source, NIGHT + dt.timedelta(days=1), trigger=SyncTrigger.MANUAL)
+    assert manual.status == ObservationRunStatus.SUCCEEDED, manual.error
+
+
+def test_growth_is_never_narrowing(observing):
+    grown = _register()
+    _observe(grown)
+    for n in range(100, 200):
+        grown.topics[_id(n)] = _topic(n)
+    run = _observe(grown, NIGHT + dt.timedelta(days=1))
+    assert run.status == ObservationRunStatus.SUCCEEDED, run.error

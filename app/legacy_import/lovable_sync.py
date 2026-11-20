@@ -5178,6 +5178,126 @@ def population_change(previous: dict[str, Any], current: dict[str, Any]) -> str:
     return ""
 
 
+@dataclass
+class TrustedReading:
+    """The last trusted reading (`comparable_snapshots`), for the access probe:
+    the identities and child records a night would compare tonight's reading
+    with, and the same limits (coordinator review 2026-11-20). Counts only."""
+
+    taken_at: dt.datetime
+    index: list[dict[str, Any]]
+    cohort: dict[str, Any]
+    cohort_ids: list[str]
+
+    def judge(self, index: list[dict[str, Any]], cohort: dict[str, Any]) -> list[Any]:
+        from app.legacy_import.lovable_source import (
+            CHILDREN_CHECK,
+            FAIL,
+            IDENTITY_CHECK,
+            PASS,
+            ProbeCheck,
+        )
+
+        when = self.taken_at.astimezone(TALLINN).strftime("%d.%m.%Y %H:%M")
+        before = {str(r["id"]) for r in self.index}
+        now = {str(r["id"]): r for r in index}
+        gone = before - set(now)
+        # The night's own rule (`newly_missing`): a synchronised topic in the
+        # trusted reading's index that tonight's cohort read cannot see.
+        gone_synced = (set(self.cohort_ids) & before) - set(cohort)
+        new = set(now) - before
+        moved = population_change({"index": self.index}, {"index": index})
+        # Stricter than the night: any live topic gone counts, synchronised or
+        # not, so a row rule narrowed outside the cohort is caught too.
+        refused = len(gone_synced) > MAX_MISSING or len(gone) > MAX_MISSING or bool(moved)
+        identity = ProbeCheck(
+            IDENTITY_CHECK,
+            FAIL if refused else PASS,
+            f"since {when}: {len(gone)} gone ({len(gone_synced)} synchronised; a night "
+            f"refuses over {MAX_MISSING}), {len(new)} new"
+            + ("; the population moved past the night's limit" if moved else ""),
+        )
+        hidden = children_hidden({"index": self.index, "cohort": self.cohort}, index, cohort)
+        children = ProbeCheck(
+            CHILDREN_CHECK,
+            FAIL if hidden else PASS,
+            f"{len(hidden)} topics show other child records under an unchanged version",
+        )
+        return [identity, children]
+
+
+def children_hidden(
+    previous: dict[str, Any], index: list[dict[str, Any]], cohort: dict[str, Any]
+) -> set[str]:
+    """Topics whose child records differ from a trusted reading although nothing
+    edited them: rows the source no longer shows to this login (coordinator
+    review 2026-11-20).
+
+    A child record is edited through its topic, and every such edit moves the
+    topic's version (Lovable's migration 0015_canonical_topic_write_layer, part
+    six; 42 stored readings 27.10–19.11.2026: no
+    child change without one, except a stage link *added* from its other end).
+    So commencements or responsible changes that differ under an unchanged
+    version, or a stage link gone while both its ends kept their versions, are
+    hidden, never deleted."""
+    then_cohort = previous.get("cohort") or {}
+    versions_then = {str(r["id"]): r.get("version") for r in previous.get("index") or []}
+    versions_now = {str(r["id"]): r.get("version") for r in index}
+    hidden: set[str] = set()
+    for topic, bundle in cohort.items():
+        then = then_cohort.get(topic)
+        if then is None or then["row"].get("version") != bundle["row"].get("version"):
+            continue
+        for part in ("commencements", "responsible_changes"):
+            # Only the columns both readings carry: a widened allowlist adds a
+            # column to every row and is not a hidden row.
+            columns = {k for r in then[part] for k in r} & {k for r in bundle[part] for k in r}
+            if len(then[part]) != len(bundle[part]) or _child_rows(
+                then[part], columns
+            ) != _child_rows(bundle[part], columns):
+                hidden.add(topic)
+        links_now = {(link["prev"], link["next"]) for link in bundle["stage_links"]}
+        for link in then["stage_links"]:
+            pair = (link["prev"], link["next"])
+            kept = all(
+                end in versions_now and versions_now[end] == versions_then.get(end) for end in pair
+            )
+            if kept and pair not in links_now:
+                hidden.add(topic)
+    return hidden
+
+
+def _child_rows(rows: list[dict[str, Any]], columns: set[str] | None = None) -> list[str]:
+    return sorted(
+        json.dumps(
+            {k: v for k, v in r.items() if columns is None or k in columns},
+            sort_keys=True,
+            default=str,
+        )
+        for r in rows
+    )
+
+
+def probe_baseline() -> TrustedReading | None:
+    """The last trusted reading and the cohort a night would read, or ``None``
+    before the first one (the probe then proves nothing about identities)."""
+    snapshot = comparable_snapshots().first()
+    if snapshot is None:
+        return None
+    document = snapshot.document or {}
+    return TrustedReading(
+        taken_at=snapshot.taken_at,
+        index=list(document.get("index") or []),
+        cohort=dict(document.get("cohort") or {}),
+        cohort_ids=sorted(
+            str(i)
+            for i in LovableSyncState.objects.filter(
+                cohort__in=list(expected_cohorts())
+            ).values_list("source_id", flat=True)
+        ),
+    )
+
+
 def _defer_successor(plan: MatterPlan) -> None:
     """A Teema whose successor exists now, held over the night's breaker: the
     hold names that, not a missing successor (LS-01)."""
@@ -6162,6 +6282,21 @@ def _execute(
             pause=pause or time.sleep,
         )
         verify_snapshot(snapshot)
+        knew_some = bool(cohort_ids) or bool(
+            previous_snapshot is not None and (previous_snapshot.document or {}).get("index")
+        )
+        if knew_some and not (snapshot.get("index") or []):
+            # A complete, consistent answer of zero live topics is what a row
+            # rule that no longer admits the service login looks like (HTTP 200,
+            # no rows; Lovable 0035, 19.11.2026). It is the source refusing to
+            # be read, never a register emptied overnight: named for what it
+            # is, before any plan, and nothing is stored or written
+            # (coordinator QA 2026-11-20, QA-NEW-01).
+            raise SyncRefused(
+                "SOURCE_EMPTY",
+                "Lovable answered 0 live topics to the service login; its read access "
+                "was probably withdrawn or narrowed. Nothing was written.",
+            )
     candidates = new_topic_candidates(snapshot.get("index") or [], cohort_ids)
     holds = _identity_holds(candidates)
     if not check:
@@ -6224,6 +6359,32 @@ def _execute(
             f"{missing} synchronised Teemad went missing from the source read "
             "since the last reading.",
         )
+    if (
+        not check
+        and run.mode == SyncMode.APPLY
+        and previous_snapshot is not None
+        and (previous_snapshot.document or {}).get("mapping_version") == MAPPING_VERSION
+    ):
+        # APPLY only, like POPULATION_CHANGE: a supervised COMPARE run, after a
+        # person has looked, stores the reading and so accepts it (independent
+        # review 2026-11-20, P2-A). A reading under another mapping is not
+        # compared field by field.
+        hidden = children_hidden(
+            previous_snapshot.document or {},
+            snapshot.get("index") or [],
+            snapshot.get("cohort") or {},
+        )
+        if hidden:
+            # Before the snapshot is stored, as above: a child record that
+            # vanished under an unchanged version is a narrowed read, never a
+            # deletion to apply (an important date cancelled, a responsible
+            # change undone). Any save of the topic in Lovable moves its version
+            # and settles it (coordinator review 2026-11-20).
+            raise SyncRefused(
+                "CHILDREN_HIDDEN",
+                f"{len(hidden)} synchronised topics show other child records under an "
+                "unchanged version; their rows are probably hidden from the service login.",
+            )
     if not check and run.mode == SyncMode.APPLY and previous_snapshot is not None:
         # Before the snapshot is stored, as above: a population that moved this
         # much is never a night's work and never tomorrow's baseline (LS-07).
