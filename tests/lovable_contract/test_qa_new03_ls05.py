@@ -261,12 +261,11 @@ def test_ls05_a_closure_held_for_juristid_work_keeps_the_step_until_it_closes(wo
 
 
 def test_ls05_a_teema_reopened_in_lovable_with_an_old_unanswered_request(world):
-    """Review of #660, pinned for a product decision: Lovable reopens a Teema
-    whose request day passed long ago with nothing sent and no sentence. Under
-    the approved rule (an unanswered request, no next step) the drafting step
-    comes back, dated on that old day and overdue. Production 20.11.2026: 0
-    closed synchronised Teemad hold an unsent Lovable request, so none is
-    exposed today. Before option B the `>= today` rule did not create it."""
+    """Coordinator decision 20.11.2026 (option A): Lovable reopens a Teema whose
+    request is unanswered and past its deadline, with no outcome and no next
+    step. «Koostan arvamuse» comes back open and overdue on the ORIGINAL source
+    deadline; no new request is created and the deadline is not renewed.
+    Production 20.11.2026: 0 closed synchronised Teemad exposed."""
     matter, _drafting = _unanswered(world)
     world.lovable.edit(ref(1), hetkeseis="rohkem ei tegele")
     closed = world.run(at=DAY_AFTER)
@@ -283,3 +282,5 @@ def test_ls05_a_teema_reopened_in_lovable_with_an_old_unanswered_request(world):
         )
     )
     assert steps == [("Koostan arvamuse", DEADLINE)]
+    matter.refresh_from_db()
+    assert matter.response_deadline == DEADLINE  # the original deadline, not renewed
