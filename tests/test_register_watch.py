@@ -883,7 +883,11 @@ def _ran(*, started_hours_ago, finished=True, **fields):
 def test_the_health_of_the_watch_for_production_status():
     from app.core import production_status as status_module
 
-    # The test database applied the watch's migrations moments ago: first-run grace.
+    # Released moments ago: the first scheduled run is not due yet. (A reused
+    # test database's own migration moment would make this depend on its age.)
+    from django.utils import timezone
+
+    _switched(None, migrated=timezone.now())
     assert watch.watch_health() == watch.Health(True, "not run yet")
     _ran(started_hours_ago=10, targets_checked=300, errors=[{"viga": "x"}], ai_failures=2)
     assert watch.watch_health() == watch.Health(True, "1 errors, 2 AI failures")
@@ -905,39 +909,93 @@ def test_the_health_of_the_watch_for_production_status():
     assert watch.watch_health().ok
 
 
-@override_settings(REGISTER_WATCH_FETCH=True)
-def test_a_watch_switched_on_that_never_ran_turns_red_after_its_first_night(monkeypatch):
-    """QA-NEW-05 (coordinator QA 2026-11-20): an enabled watch whose scheduled run
-    never happened (a cron line never installed, a host rebuilt without it) was
-    green «never run» for ever. It has `STALE_AFTER` from the release that
-    switched it on; after that it is red, and Haldus says why."""
-    from django.utils import timezone
+UTC = dt.UTC
 
+
+def _switched(monkeypatch, *, migrated: dt.datetime) -> None:
+    """The release that applied `register_watch` 0001 ran at ``migrated``."""
+    from django.db.migrations.recorder import MigrationRecorder
+
+    MigrationRecorder.Migration.objects.filter(app="register_watch", name="0001_initial").update(
+        applied=migrated
+    )
+
+
+@override_settings(REGISTER_WATCH_FETCH=True, REGISTER_WATCH_ENABLED_AT="")
+@pytest.mark.parametrize(
+    ("migrated", "now", "ok"),
+    [
+        # Released 19.11 02:00Z: the first run is 19.11 03:30Z, late from 09:30Z.
+        (
+            dt.datetime(2026, 11, 19, 2, 0, tzinfo=UTC),
+            dt.datetime(2026, 11, 19, 9, 0, tzinfo=UTC),
+            True,
+        ),
+        (
+            dt.datetime(2026, 11, 19, 2, 0, tzinfo=UTC),
+            dt.datetime(2026, 11, 19, 10, 0, tzinfo=UTC),
+            False,
+        ),
+        # Released 19.11 12:00Z: nothing is due before 20.11 03:30Z.
+        (
+            dt.datetime(2026, 11, 19, 12, 0, tzinfo=UTC),
+            dt.datetime(2026, 11, 20, 9, 0, tzinfo=UTC),
+            True,
+        ),
+        (
+            dt.datetime(2026, 11, 19, 12, 0, tzinfo=UTC),
+            dt.datetime(2026, 11, 20, 9, 31, tzinfo=UTC),
+            False,
+        ),
+    ],
+)
+def test_a_watch_that_never_ran_is_late_only_after_its_first_run_was_due(
+    monkeypatch, migrated, now, ok
+):
+    """QA-NEW-05 (coordinator QA 2026-11-20): an enabled watch with no run was
+    green «never run» for ever, hiding a cron line never installed. Now it is
+    green until the first scheduled 03:30 UTC run after it was switched on was
+    due (plus six hours), then red, with Haldus's words."""
+    assert not WatchRun.objects.exists()
+    _switched(monkeypatch, migrated=migrated)
+    health = watch.watch_health(now)
+    assert health.ok is ok
+    assert health.detail == ("not run yet" if ok else "never run")
+    assert bool(health.problem) is not ok
+
+
+@override_settings(REGISTER_WATCH_FETCH=True)
+def test_a_watch_installed_two_weeks_before_it_was_switched_on_is_not_late_early(monkeypatch):
+    """Coordinator follow-up 20.11: the migration two weeks before fetching was
+    turned on. With the switch's moment recorded, the first run is due after
+    it, not after the migration; without it, the migration is all there is."""
     from app.core import production_status as status_module
 
-    assert not WatchRun.objects.exists()
-    now = timezone.now()
-    monkeypatch.setattr(watch, "watch_activated_at", lambda: now - dt.timedelta(hours=29))
-    assert watch.watch_health(now) == watch.Health(True, "not run yet")
-
-    monkeypatch.setattr(watch, "watch_activated_at", lambda: now - dt.timedelta(hours=31))
-    health = watch.watch_health(now)
-    assert (health.ok, health.detail) == (False, "never run")
-    assert health.problem
-    assert status_module._register_watch().ok is False
-
-    # No record of the release at all is no reason to stay green either.
-    monkeypatch.setattr(watch, "watch_activated_at", lambda: None)
-    assert watch.watch_health(now).ok is False
-
-    # The first finished run settles it.
+    _switched(monkeypatch, migrated=dt.datetime(2026, 11, 5, 4, 0, tzinfo=UTC))
+    switched = dt.datetime(2026, 11, 19, 14, 0, tzinfo=UTC)
+    evening = dt.datetime(2026, 11, 19, 20, 0, tzinfo=UTC)
+    with override_settings(REGISTER_WATCH_ENABLED_AT=switched.isoformat()):
+        assert watch.watch_switched_on_at() == switched
+        assert watch.first_run_due(switched) == dt.datetime(2026, 11, 20, 9, 30, tzinfo=UTC)
+        assert watch.watch_health(evening) == watch.Health(True, "not run yet")
+        # The cron line was never installed: red once the first run was due.
+        assert not watch.watch_health(dt.datetime(2026, 11, 20, 9, 31, tzinfo=UTC)).ok
+    with override_settings(REGISTER_WATCH_ENABLED_AT="2026-11-19T14:00:00Z"):
+        assert watch.watch_switched_on_at() == switched  # «Z» reads as UTC
+    with override_settings(REGISTER_WATCH_ENABLED_AT="eile õhtul"):
+        unreadable = watch.watch_health(evening)
+        assert not unreadable.ok and "ENABLED_AT" in unreadable.detail
+    with override_settings(REGISTER_WATCH_ENABLED_AT=""):
+        # No record of the switch: only the release, two weeks ago, is known.
+        assert not watch.watch_health(evening).ok
+        assert status_module._register_watch().ok is False
+    # The first finished run settles it, whatever the anchor.
     _ran(started_hours_ago=2, targets_checked=300)
     assert watch.watch_health().ok
 
 
-def test_the_watch_knows_when_this_database_switched_it_on():
-    activated = watch.watch_activated_at()
-    assert activated is not None
+def test_the_watch_knows_when_this_database_installed_it():
+    assert watch.watch_switched_on_at() is not None
 
 
 @override_settings(REGISTER_WATCH_FETCH=True)

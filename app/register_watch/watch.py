@@ -332,9 +332,22 @@ class Health:
     problem: str = ""
 
 
-def watch_activated_at() -> dt.datetime | None:
-    """When this database first held the register watch: the moment its first
-    migration was applied (the release that switched it on), or ``None``."""
+#: The host's cron line (deploy/unraid-main/cron/juristid.cron.example): every
+#: day at 03:30 UTC. The first run is due at the first such moment after the
+#: watch was switched on, and missed once `FIRST_RUN_GRACE` has passed after it.
+SCHEDULED_AT_UTC = dt.time(3, 30)
+FIRST_RUN_GRACE = dt.timedelta(hours=6)
+
+
+class WatchSwitchError(ValueError):
+    """``JURISTID_REGISTER_WATCH_ENABLED_AT`` is set but is not a moment."""
+
+
+def watch_switched_on_at() -> dt.datetime | None:
+    """When the watch was switched on here: the later of the release that applied
+    `register_watch` 0001 and ``REGISTER_WATCH_ENABLED_AT`` (the operator's
+    record of turning ``JURISTID_REGISTER_WATCH_FETCH`` on, when that happened
+    after the release; the switch is on by default, so normally it is not set)."""
     from django.db.migrations.recorder import MigrationRecorder
 
     row = (
@@ -342,7 +355,27 @@ def watch_activated_at() -> dt.datetime | None:
         .only("applied")
         .first()
     )
-    return row.applied if row is not None else None
+    moments = [row.applied] if row is not None else []
+    declared = (getattr(settings, "REGISTER_WATCH_ENABLED_AT", "") or "").strip()
+    if declared:
+        try:
+            moment = dt.datetime.fromisoformat(declared.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise WatchSwitchError(declared) from error
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=dt.UTC)
+        moments.append(moment)
+    return max(moments) if moments else None
+
+
+def first_run_due(switched_on: dt.datetime) -> dt.datetime:
+    """The moment the first scheduled run counts as missed: the first 03:30 UTC
+    at or after ``switched_on``, plus `FIRST_RUN_GRACE`."""
+    moment = switched_on.astimezone(dt.UTC)
+    slot = dt.datetime.combine(moment.date(), SCHEDULED_AT_UTC, tzinfo=dt.UTC)
+    if slot < moment:
+        slot += dt.timedelta(days=1)
+    return slot + FIRST_RUN_GRACE
 
 
 def watch_health(now: dt.datetime | None = None) -> Health:
@@ -350,18 +383,26 @@ def watch_health(now: dt.datetime | None = None) -> Health:
 
     Counts only, never a Teema or a register's words. Fetching switched off
     (tests, CI, a recovery rehearsal) is green ``off``. With fetching on and no
-    run yet, the first scheduled run has `STALE_AFTER` from the release that
-    switched the watch on: green ``not run yet`` inside it, red ``never run``
-    after it — a schedule that was never installed must not stay green for
-    ever (coordinator QA 2026-11-20, QA-NEW-05).
+    run yet, it is green ``not run yet`` until the first scheduled run was due
+    (`first_run_due` from `watch_switched_on_at`), then red ``never run``: a
+    schedule that was never installed must not stay green for ever, and a watch
+    switched on yesterday evening is not late before tonight's run (coordinator
+    QA 2026-11-20, QA-NEW-05).
     """
     if not getattr(settings, "REGISTER_WATCH_FETCH", False):
         return Health(True, "off")
     now = now or timezone.now()
     latest = WatchRun.objects.order_by("-started_at").first()
     if latest is None:
-        activated = watch_activated_at()
-        if activated is not None and activated >= now - STALE_AFTER:
+        try:
+            switched_on = watch_switched_on_at()
+        except WatchSwitchError:
+            return Health(
+                False,
+                "JURISTID_REGISTER_WATCH_ENABLED_AT is not a date and time",
+                "Registrite jälgimise sisselülitamise aeg on vigaselt seadistatud.",
+            )
+        if switched_on is not None and now < first_run_due(switched_on):
             return Health(True, "not run yet")
         return Health(
             False,

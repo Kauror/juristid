@@ -101,9 +101,13 @@ What a program may read (checked 2026-11-17):
    stopped, when no run finished in 30 hours, or when the last run read no
    register — so the host monitor's daily status check tells someone, and Haldus
    says «Katkes» and why. A watch switched on that has never run is green «not run
-   yet» only for 30 hours from the release that applied `register_watch` 0001,
-   then red «never run» (coordinator QA 2026-11-20, QA-NEW-05: a schedule never
-   installed stayed green for ever). The model is asked in batches of 25 findings, so a cut
+   yet» until its first scheduled run was due — the first 03:30 UTC after it was
+   switched on, plus six hours — then red «never run» (coordinator QA 2026-11-20,
+   QA-NEW-05: a schedule never installed stayed green for ever). «Switched on» is
+   the later of the release that applied `register_watch` 0001 and
+   `JURISTID_REGISTER_WATCH_ENABLED_AT`, which the operator sets only when
+   `JURISTID_REGISTER_WATCH_FETCH` (on by default) is turned on after that
+   release; without it a late switch-on reads red from the first night. The model is asked in batches of 25 findings, so a cut
    answer costs one batch. «Registris uus dokument» belongs to the Teema's current
    owner, like every other inbox source.
 
