@@ -1,7 +1,7 @@
 # 0213 — The whole Lovable register is reconciled and synchronised, and OneNote is read incrementally
 
-- Status: Proposed — ready for owner acceptance (TL-02 approved 12.11.2026)
-- History: proposed with the owner brief «Full Lovable Register Reconciliation, Live Synchronization and OneNote Ingestion» (2026-11-09); amended 2026-11-11 by §10 (Lovable is the source of truth, owner approval of r54); amended 2026-11-12 by §10.13 (TL-02: a closure from Lovable is held while Juristid-only work is live)
+- Status: Accepted 20.11.2026 — Approval B (nightly APPLY) granted 14.11.2026; the safeguards in force since then confirmed unchanged on 20.11.2026 (§10.14). TL-02 approved 12.11.2026.
+- History: proposed with the owner brief «Full Lovable Register Reconciliation, Live Synchronization and OneNote Ingestion» (2026-11-09); amended 2026-11-11 by §10 (Lovable is the source of truth, owner approval of r54); amended 2026-11-12 by §10.13 (TL-02: a closure from Lovable is held while Juristid-only work is live); amended 2026-11-19 by §11 (quality audit, package E); accepted 2026-11-20 (§10.14)
 - Extends: 0191, 0192 (and its status updates), 0201, 0202, 0203, 0204, 0205, 0211, 0212
 - Migrations: `legacy_import` 0025 (engine), 0026 (inventory), 0027 (requests), 0028 (OneNote revisions and coverage). All four are additive.
 
@@ -172,7 +172,7 @@ A decision settles only the held rows it saw; a Teema linked to the page later o
 
 ## 10. Amendment 2026-11-11: Lovable is the source of truth (r54, as built)
 
-**Basis.** The owner's decision of 11.11.2026, «Lovable is the source of truth at all times», approved with release r54 and its supervised first run (Approval A). This section records what r54 does. It was written after the release (post-audit round of 2026-11-12, finding LS-02), so the code cited «§10» before the section existed. Nightly APPLY is a separate owner approval (Approval B, §10.12); production runs in COMPARE until it is given.
+**Basis.** The owner's decision of 11.11.2026, «Lovable is the source of truth at all times», approved with release r54 and its supervised first run (Approval A). This section records what r54 does. It was written after the release (post-audit round of 2026-11-12, finding LS-02), so the code cited «§10» before the section existed. Nightly APPLY is a separate owner approval (Approval B, §10.12); production ran COMPARE until it was given on 14.11.2026 (§10.14).
 
 **What it supersedes.** For every live synchronised Teema it replaces §4's AUTO / CONDITIONAL / REVIEW classes, 0192 §5's allowlist and A/B/C table, and 0202 §6's rule that an import-held field stays held. A tombstone keeps the earlier rules (`lovable_sync._plan_archive`). The engine's machinery is unchanged: snapshots, per-Teema locks with re-plan, idempotency keys, read-back verification, the run ledger and its decisions.
 
@@ -333,7 +333,7 @@ A hold changes nothing, and a later unchanged night is not «restored over» it.
 
 ### 10.12 Decisions this record does not take
 
-1. **Approval B**, the nightly APPLY. Item 3 of the r54 approval document, «automatic nightly mirroring», was **not** granted with Approval A. It is Approval B, still open; production runs COMPARE, and every write so far came from the supervised first run.
+1. **DECIDED 14.11.2026 — Approval B**, the nightly APPLY. Item 3 of the r54 approval document, «automatic nightly mirroring», was **not** granted with Approval A (11.11); it was granted as Approval B on 14.11.2026 (recorded in the synchronisation control at 03:00:53Z). The text above this item was written on 12.11, while production ran COMPARE; §10.14 records what happened after.
 2. **DECIDED 12.11.2026 — TL-02: a source closure and Juristid-only planned work.** The owner chose to hold the closure (Option A of the decision memo); see §10.13. At r54, `close_matter_from_source` cancelled that work with `follow_ups_confirmed=True`, and a later reopening did not bring it back. That is no longer the behaviour.
 3. **DECIDED 20.11.2026 — LS-05 (owner, option B):** the drafting step of a request Juristid holds from Lovable, with no Lovable sentence and nothing sent, **stays open and overdue** after its day until Lovable says sent or «ei saatnud», or the Teema closes. Before, it was cancelled the night after the deadline with the reason «Lovable'is pole enam järgmist tegevust» (untrue: the step was derived), and the item became an overdue «Arvamuse tähtaeg» instead. The overdue count is the same either way; the label stays «Koostan arvamuse» and Teema käik gets no cancellation. Measured on production before the change: 0 Teemad affected (the two passed, unanswered requests carry Lovable's own sentence), so no backlog appears. A passed request is still never *opened* on a new Teema (`lovable_reading.read_topic`, unchanged; a separate backlog question, not decided here). **Reopening (coordinator decision 20.11.2026, option A):** when Lovable reopens a Teema whose request is still unanswered, past its deadline, with no sent or declined outcome and no other next action, the step comes back open and overdue on the **original** source deadline; no new request is created and the deadline is not renewed. It stays until Lovable resolves the request, writes another next action, or the Teema closes; the TL-02 closure hold (§10.13) applies unchanged. `lovable_sync._step_decisions_authoritative`; tests `tests/lovable_contract/test_qa_new03_ls05.py`.
 4. Lovable-owned fields marked or read-only on synchronised Teemad (TL-01; a precondition of Approval B in the audit of 2026-11-11; post-audit stream B, PR #618).
@@ -359,8 +359,8 @@ A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01).
 - The decision's `current` names the work in counts and a digest (`local_work`), the hold's first night (`held_since`, carried from the state's previous observed run while the hold stands; it gives the age), the first night it stood while the synchronisation writes (`writing_since`, APPLY nights only) and its escalation day (`escalates_on`, 14 days after `writing_since`; none while the hold has stood only in COMPARE). There is no new table: the hold is the newest reading's decision, where every technical hold lives.
 - The domain service is the backstop. `close_matter_from_source` refuses under the Matter's lock while the work exists (`SourceClosureHeld`). Work added between the plan and the write is held at the write, and the run records the hold for that Teema, never a failure.
 - **It counts toward neither Teemad breaker.** It is not a source change for `MAX_CHANGED_MATTERS`, not a restore, and it is excluded from the new-holds breaker (`BREAKER_EXEMPT_HOLDS`).
-- **Its own cap.** More than `MAX_NEW_CLOSURE_HOLDS` (20) holds *beginning* in one night (`held_since` = tonight) is a mass closure in Lovable or a broken reading. An APPLY night over it is REVIEW_ONLY with `CLOSURE_HOLD_BREAKER` and writes nothing; `sync_health` and the summary say so. It stops **that one run only** and needs no acknowledgement: the next night those holds are carried, not new, and the night runs. Holds carried from COMPARE into the first APPLY night likewise count as carried, not new — the same as `MAX_NEW_HOLDS`, which compares with the previous recorded run. **Proposed value; the owner's approval is needed** (including whether one stopped night is enough).
-- **Age warning.** A hold older than `MAX_CLOSURE_HOLD_AGE_DAYS` (21) makes `sync_health` not ok. **Proposed value; the owner's approval is needed.**
+- **Its own cap.** More than `MAX_NEW_CLOSURE_HOLDS` (20) holds *beginning* in one night (`held_since` = tonight) is a mass closure in Lovable or a broken reading. An APPLY night over it is REVIEW_ONLY with `CLOSURE_HOLD_BREAKER` and writes nothing; `sync_health` and the summary say so. It stops **that one run only** and needs no acknowledgement: the next night those holds are carried, not new, and the night runs. Holds carried from COMPARE into the first APPLY night likewise count as carried, not new — the same as `MAX_NEW_HOLDS`, which compares with the previous recorded run. **Accepted unchanged 20.11.2026 (§10.14), in force since 14.11.2026**; one stopped night is enough, as built.
+- **Age warning.** A hold older than `MAX_CLOSURE_HOLD_AGE_DAYS` (21) makes `sync_health` not ok. **Accepted unchanged 20.11.2026 (§10.14), in force since 14.11.2026.**
 - COMPARE and CHECK record it identically and write nothing. Repeat runs are idempotent: one hold decision per run, no event, no baseline move, the same first night.
 - **Work that appears at the write.** If the domain guard refuses at the write, that Teema's other eligible fields are recorded as not executed (`CLOSURE_HELD_AT_WRITE`) and wait for the next night.
 
@@ -391,6 +391,39 @@ A removed («Kustuta») overview or Kaasamine is not live work (QA-WORKFLOW-01).
 **Escalation** (the notifications package; see the 0198 amendment of 2026-11-12). A hold still standing on the 14th day of its APPLY nights (`escalates_on`, from `writing_since`: a hold that stood through weeks of COMPARE starts its clock on the first APPLY night, so its escalation never falls outside the notifications' seven-day catch-up) gives its owner one «Vajab tegevust» row (category `CLOSURE_HOLD`). The next morning, every holder of `department.view_management` — the department head — gets one row. Both are keyed on the hold's escalation day, so a re-run never delivers twice, and both retire as DISCHARGED when the hold ends. Only while the synchronisation writes (APPLY). The category vocabulary is a CHECK constraint, so the category adds the migration `notifications` 0004: schema forward; on the way back it deletes the `CLOSURE_HOLD` rows before narrowing the CHECK.
 
 **Reopening still restores nothing** (0086 §7, 0081 §5, 0146 D9). The hold makes that loss unnecessary rather than undoing it.
+
+### 10.14 Acceptance 2026-11-20: Approval B and the safeguards as implemented
+
+**The authorisation, as recorded.** Read from the production run ledger and the synchronisation control (counts and times only):
+
+| When (UTC) | What | Authority |
+|---|---|---|
+| 27.10–10.11 | COMPARE nights (and manual COMPARE runs); nothing written | ADR 0192, owner 27.10 |
+| 10.11 06:09–06:13 | Two supervised manual APPLY runs (12 Teemad updated, then 0) | r52 activation approval of 10.11 (`JURISTID_LIVE_SYNC_ACTIVATION_APPROVAL.md`) |
+| 10.11 22:18 | One scheduled APPLY night, run 2026-11-11 (1 updated) | the same r52 approval |
+| 11.11 18:01–18:07 | The supervised first run under §10 (2,364 updated), then two re-runs (1, 0) | Approval A, r54 (§10) |
+| 11.11–13.11, 22:18 each night | COMPARE nights 2026-11-12, -13, -14 | Approval B still open |
+| 14.11 03:00:53 | Mode set to APPLY, reason «Approval B granted by Kaur 14.11.2026 (r55 713cf33d): nightly APPLY» | **Approval B** |
+| 14.11 03:05–08:50 | Supervised manual APPLY runs (18 updated; one REVIEW_ONLY by the breaker; then the 961 former-owner names under `--max-changed 1000`) | Approval B, supervised |
+| 14.11 22:18 | The first scheduled APPLY night under this record, run 2026-11-15 | Approval B |
+
+**The safeguards, confirmed unchanged on 20.11.2026** (coordinator decision on the owner's behalf; values as implemented in `app/legacy_import/lovable_sync.py`, `app/matters/closure_work.py` and the host scripts, in force since 14.11.2026). This confirms the existing values; it neither raises nor removes any limit, and it adds none:
+
+| Safeguard | Value |
+|---|---|
+| Changed-Teemad breaker `MAX_CHANGED_MATTERS` | 20 per night |
+| Restore breaker `MAX_RESTORED_MATTERS` | 100 per night |
+| New-holds breaker `MAX_NEW_HOLDS` | 25 more held fields than the previous finished run |
+| New closure holds `MAX_NEW_CLOSURE_HOLDS` (§10.13) | 20 beginning in one night; that night only |
+| Closure-hold age warning `MAX_CLOSURE_HOLD_AGE_DAYS` (§10.13) | 21 days |
+| Closure-hold escalation `CLOSURE_HOLD_ESCALATION_DAYS` (§10.13) | the 14th APPLY night |
+| Population guard `POPULATION_MAX_DELTA` / `_SHARE` | more than 50 topics and more than 5 % (APPLY refuses; COMPARE accepts) |
+| Newly missing topics `MAX_MISSING` (§11) | 5 |
+| New topics `MAX_NEW_TOPICS` (§11) | 10 per night (supervised override) |
+| Backup before an APPLY run | a set at most 2 hours old, verified to level 2 |
+| Snapshot retention `SNAPSHOT_RETENTION_DAYS` | 30 days (the newest always kept) |
+
+A change to any of these values is a new decision and a new amendment.
 
 ## 11. Amendment 2026-11-19: limits that count tonight, and the new-topic override (quality audit, package E)
 
