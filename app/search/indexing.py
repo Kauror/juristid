@@ -241,7 +241,7 @@ def indexable_matters() -> QuerySet[Matter]:
     authorization filters. An index that only held rows the indexing user could
     see would silently differ between operators.
     """
-    return Matter.objects.select_related("addressee_organisation").prefetch_related(
+    return Matter.objects.select_related("addressee_organisation", "owner").prefetch_related(
         "source_organisations",
         "source_organisations__aliases",
         "addressee_organisation__aliases",
@@ -347,11 +347,23 @@ def indexed_text_for(matter: Matter) -> dict[str, str]:
         "title": _title_text_for(matter),
         "identifiers": _identifiers_for(matter),
         "alias_text": _alias_text_for(matter),
-        # A former owner's name (owner decision 14.11.2026): a person, kept as
-        # text because they have no Juristid account, so the Teema is found by
-        # who held it. Empty on every row until the synchronisation writes it,
-        # so no `INDEX_VERSION` bump: rows built before this hold the same text.
-        "people_text": matter.former_owner_name or "",
+        # Who holds the Teema, so it is found by its vastutaja's name the way
+        # the Saadetud filter and the MCP list already find it (QA26-ARCH-09):
+        # the current owner's display name, and a former owner's name (owner
+        # decision 14.11.2026) — a person kept as text because they have no
+        # Juristid account. No `INDEX_VERSION` bump: a row built before this
+        # is not unsafe, only missing the owner's name, and
+        # `check_search_integrity` reports it stale until the one
+        # `rebuild_search_index` the release runs. A rename of the person owes
+        # that rebuild already (`PERSON_RENAMED`, app/search/signals.py).
+        "people_text": " ".join(
+            name
+            for name in (
+                matter.owner.display_name if matter.owner is not None else "",
+                matter.former_owner_name or "",
+            )
+            if name
+        ),
         # The Matter's own authored summaries. Entry, Submission and document
         # text live in their own rows, so a result can say which of them
         # matched — folding them in here would make every hit read "the matter

@@ -14,7 +14,6 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Q
 from django.http import Http404, HttpRequest, HttpResponse, HttpResponseRedirect
 from django.shortcuts import render
 from django.urls import reverse
@@ -23,6 +22,7 @@ from django.views.decorators.http import require_http_methods
 
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
+from app.core.text import folded_contains
 from app.haldus.views import _context, _require
 from app.legacy_import import postipoiss
 from app.legacy_import.postipoiss_models import PairingState, PairingTier, PostipoissPairing
@@ -66,10 +66,9 @@ def _filtered(request: HttpRequest, chosen: dict[str, str]) -> Any:
     if chosen["q"]:
         q = chosen["q"]
         rows = rows.filter(
-            Q(letter__kirja_id__icontains=q)
-            | Q(letter__title__icontains=q)
-            | Q(letter__recipient__icontains=q)
-            | Q(letter__body__icontains=q)
+            folded_contains(
+                q, "letter__kirja_id", "letter__title", "letter__recipient", "letter__body"
+            )
         )
     return rows.order_by("-letter__year", "letter__register_row", "letter__kirja_id")
 

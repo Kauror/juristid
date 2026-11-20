@@ -40,12 +40,13 @@ from __future__ import annotations
 import calendar
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 from django.db.models import QuerySet
 from django.utils import timezone
 
+from app.core.dates import last_of_n_days
 from app.intelligence.enums import FactStatus
 from app.intelligence.models import MatterEffectiveDate
 from app.matters.register_filters import (
@@ -112,7 +113,7 @@ SOON_DAYS = 30
 
 def soon_last_day(day: date) -> date:
     """The last date inside «Järgmise 30 päeva jooksul» on ``day``."""
-    return day + timedelta(days=SOON_DAYS - 1)
+    return last_of_n_days(day, SOON_DAYS)
 
 
 BUCKET_SOON = "jargmised"

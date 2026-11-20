@@ -714,7 +714,8 @@ post_delete.connect(
     dispatch_uid="search_debt_area_deleted",
     weak=False,
 )
-# A person's display name is `alias_text` on every ENTRY row they authored. The
+# A person's display name is `alias_text` on every ENTRY row they authored, and
+# `people_text` on every MATTER row they own (QA26-ARCH-09). The
 # fanout is smaller than a ministry's and still unbounded by the write, and one
 # mechanism for "reference text changed" is better than a second one calibrated
 # to a smaller number.

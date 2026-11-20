@@ -113,7 +113,7 @@ from django.utils import timezone
 
 from app.accounts.selectors import is_assignable_business_user
 from app.core import dates
-from app.core.dates import format_estonian_date, short_day_month
+from app.core.dates import format_estonian_date, last_of_n_days, short_day_month
 from app.core.holidays import rest_day_hint
 from app.intelligence.enums import (
     INFORMATIONAL_IMPORTANT_DATE_KINDS,
@@ -259,7 +259,7 @@ BAND_VISIBLE: dict[str, int | None] = {
     BAND_LATER: 2,
 }
 
-#: How far past this week *Järgmised 30 päeva* reaches.
+#: How many dates *Järgmised 30 päeva* holds, today included (`last_of_n_days`).
 NEXT_30_DAYS = 30
 
 #: How many rows a page may render before it stops being read.
@@ -765,7 +765,7 @@ def action_item(action: NextAction, today: date, *, subject: Any = None) -> Work
         source_type=SOURCE_NEXT_ACTION,
         object_id=action.pk,
         matter=action.matter,
-        responsible=action.responsible,
+        responsible=answering_person(action),
         action_kind=action.kind,
         date_semantics=action.date_semantics,
         when=action.target_date,
@@ -976,6 +976,35 @@ def undated_feedback_waits(user: Any, *, owner: Any = None) -> QuerySet[MatterEn
     return open_feedback_waits(user, owner=owner).filter(feedback_deadline__isnull=True)
 
 
+def answers_for_q(person: Any) -> Q:
+    """The steps ``person`` answers for: one rule for every work surface (QA26-DUP-03).
+
+    Their own step while they are active, and a step whose responsible person
+    has been **deactivated** on a Teema they own and are active on: a colleague
+    who has left hands their steps to the Teema's owner rather than to nobody.
+    The bell's D2 rule (docs/adr/0198) is this plus one more clause — it also
+    rings the owner for a step with no responsible at all — which lives in
+    `app.notifications.categories`; a work list keeps those under «vastutajata».
+    """
+    return Q(responsible=person, responsible__is_active=True) | Q(
+        responsible__is_active=False, matter__owner=person, matter__owner__is_active=True
+    )
+
+
+def answering_person(action: NextAction) -> Any:
+    """Who answers for ``action`` now, by :func:`answers_for_q`'s rule.
+
+    The step's own person unless they have been deactivated; then the Teema's
+    owner, if active. With nobody active to take it the deactivated person
+    stays named, so the row does not pretend to be unassigned.
+    """
+    person = action.responsible
+    if person is None or person.is_active:
+        return person
+    owner = action.matter.owner
+    return owner if owner is not None and owner.is_active else person
+
+
 def dated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextAction]:
     """Live actions with a date, scoped to the reader and optionally to a person.
 
@@ -994,7 +1023,7 @@ def dated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextAction]
         .select_related("matter", "matter__stage", "matter__owner", "responsible")
     )
     if responsible is not None:
-        queryset = queryset.filter(responsible=responsible)
+        queryset = queryset.filter(answers_for_q(responsible))
     return queryset
 
 
@@ -1010,7 +1039,7 @@ def undated_actions(user: Any, *, responsible: Any = None) -> QuerySet[NextActio
         .select_related("matter", "matter__stage", "matter__owner", "responsible")
     )
     if responsible is not None:
-        queryset = queryset.filter(responsible=responsible)
+        queryset = queryset.filter(answers_for_q(responsible))
     return queryset
 
 
@@ -1700,7 +1729,7 @@ def band_of(
     # period never is — it falls through to *Hiljem*, the band with no last day.
     if item.in_window(today, week_end):
         return BAND_WEEK
-    next_30_end = next_30_end or today + timedelta(days=NEXT_30_DAYS)
+    next_30_end = next_30_end or last_of_n_days(today, NEXT_30_DAYS)
     if item.in_window(week_end + timedelta(days=1), next_30_end):
         return BAND_NEXT_30
     if horizon is None or when <= horizon:
@@ -1731,7 +1760,7 @@ def band_items(
     (``app/matters/my_work.py``).
     """
     week_end = week_end or end_of_iso_week(today)
-    next_30_end = today + timedelta(days=NEXT_30_DAYS)
+    next_30_end = last_of_n_days(today, NEXT_30_DAYS)
     grouped: dict[str, list[WorkItem]] = {key: [] for key in BAND_ORDER}
     for item in items:
         key = band_of(item, today, week_end, horizon, next_30_end=next_30_end)
@@ -1856,7 +1885,7 @@ WORK_UNDATED = "kuupaevata"
 #: A month, which is the review rhythm the department actually keeps.
 QUIET_DAYS = 30
 
-#: The thirty-day horizon the third deadline group ends at, counted from today.
+#: The thirty-day horizon the third deadline group ends at: 30 dates, today included.
 DEADLINE_MONTH_DAYS = 30
 
 #: What each value selects, and how it reads in a filter chip.
@@ -1905,7 +1934,7 @@ def deadline_window(key: str, today: date) -> tuple[date, date | None]:
     """
     week_end = end_of_iso_week(today)
     next_end = week_end + timedelta(days=7)
-    month_end = today + timedelta(days=DEADLINE_MONTH_DAYS)
+    month_end = last_of_n_days(today, DEADLINE_MONTH_DAYS)
     if key == WORK_DEADLINE_THIS_WEEK:
         return today, week_end
     if key == WORK_DEADLINE_NEXT_WEEK:
@@ -2032,7 +2061,7 @@ def work_population_ids(
             undated = undated.filter(responsible__isnull=True)
             rounds = rounds.filter(matter__owner__isnull=True)
         elif responsible is not ANY_PERSON:
-            undated = undated.filter(responsible=responsible)
+            undated = undated.filter(answers_for_q(responsible))
             rounds = rounds.filter(matter__owner=responsible)
         return set(undated.values_list("matter_id", flat=True)) | set(
             rounds.values_list("matter_id", flat=True)

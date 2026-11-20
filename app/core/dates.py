@@ -44,10 +44,14 @@ from django.utils.dateparse import parse_date
 #:
 #: ``%d.%m.%Y`` covers both ``07.09.2026`` and ``7.9.2026`` — Python's
 #: ``strptime`` accepts an unpadded number for ``%d`` and ``%m``, which is the
-#: single reason this list is three entries and not six.
+#: single reason this list is two entries and not four.
+#:
+#: **No ``%d.%m.%y``** (QA26-DUP-06). Python's ``%y`` puts 69–99 in the 1900s,
+#: so ``1.1.99`` saved as 1999 while the datepicker and every filter read 2099.
+#: A two-digit year is read by :func:`parse_estonian_date` alone
+#: (`widgets.EstonianDateField.to_python`), with its one century.
 ESTONIAN_DATE_INPUT_FORMATS: tuple[str, ...] = (
     "%d.%m.%Y",
-    "%d.%m.%y",
     "%Y-%m-%d",
 )
 
@@ -67,6 +71,17 @@ _DOTTED = re.compile(r"^(\d{1,2})\.(\d{1,2})\.(\d{2}|\d{4})$")
 #: this application will not outlive 2099; a sliding window would be a rule
 #: nobody could predict from the box they typed into.
 _CENTURY = 2000
+
+
+def last_of_n_days(today: date, days: int) -> date:
+    """The last date of «N päeva» counted from ``today``: N dates, today included.
+
+    «Järgmised 30 päeva» on 18.11 ends on 17.12. The owner's decision of
+    2026-10-14 (docs/adr/0158 §4 amendment, ADR 0159 §5); the one reading of
+    that rule, so Minu asjad's band, the register's «Tähtaeg 30 päeva jooksul»
+    and Jõustumised cannot count the same day differently (QA26-DUP-05).
+    """
+    return today + timedelta(days=days - 1)
 
 
 def format_estonian_date(value: date | None) -> str:

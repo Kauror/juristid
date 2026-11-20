@@ -351,7 +351,11 @@ def test_renaming_a_person_converges_their_entries(specialist):
     assert freshness.status().reasons == {SearchRebuildReason.PERSON_RENAMED.value: 1}
     consume()
 
-    assert found("Nimemuutus", specialist) == [(SearchSourceKind.ENTRY.value, str(matter.pk))]
+    # The entry they wrote, and the Teema they own (QA26-ARCH-09: `people_text`).
+    assert sorted(found("Nimemuutus", specialist)) == [
+        (SearchSourceKind.ENTRY.value, str(matter.pk)),
+        (SearchSourceKind.MATTER.value, str(matter.pk)),
+    ]
 
 
 # ---------------------------------------------------------------------------
