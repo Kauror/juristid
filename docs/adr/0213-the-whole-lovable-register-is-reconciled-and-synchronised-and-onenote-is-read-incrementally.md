@@ -412,3 +412,19 @@ the Lovable row, so an account off → on → off with no Lovable edit wrote the
 the idempotency key refused it every night (QA26-LS-04). Like a restore and a derived change, it is now one write per
 run.
 
+## 12. Amendment 2026-11-20: a source that admits nothing is refused by name (coordinator QA, QA-NEW-01)
+
+On 19.11.2026 Lovable's migration 0035 made the live-topic row rule require an active staff session, which the
+profile-less service login does not have (by design, ADR 0192 §2). PostgREST then answers every read with HTTP 200 and
+no rows. The night of 20.11 was refused, correctly and before anything was stored, but as `COHORT_MISSING` («2370
+Teemad went missing»), which reads as mass deletion. Now:
+
+- **The synchronisation** refuses a complete reading of zero live topics, when it has a cohort or a previous reading
+  with rows, as `SOURCE_EMPTY` — before the plan, before the snapshot is stored, in every mode. A reading narrowed to
+  part of the register still stops on `COHORT_MISSING` / `POPULATION_CHANGE`, as before.
+- **The observation** (0201) refuses the same reading by the same code: an empty reading is never a baseline.
+- **The access probe** fails «reads live topics» on zero rows, or when the reading is short of the last stored
+  reading's population by the synchronisation's own population rule (`--expect-live` overrides); a «hidden» check is
+  never PASS from the same empty answer; and when every failure is a lost read it says so — the remedy is a SELECT-only
+  read path in Lovable, never a staff profile or role for the identity (that would make it write-capable).
+

@@ -656,6 +656,15 @@ def _execute(
             older.append(candidate.snapshot.document)
 
     index = document["index"]
+    if not index and (pilot_ids or (baseline_doc or {}).get("index")):
+        # Zero live topics where Juristid knows there are some is the source's
+        # row rule refusing the service login, not a register emptied
+        # overnight: never stored, so it is never a baseline and never a
+        # night of «every topic removed» (coordinator QA 2026-11-20, QA-NEW-01).
+        raise SyncRefused(
+            "SOURCE_EMPTY",
+            "Lovable answered 0 live topics to the service login; nothing was stored.",
+        )
     counts: dict[str, Any] = {
         "comparison": "BASELINE" if baseline_doc is None else "COMPARED",
         "live": len(index),

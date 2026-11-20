@@ -822,6 +822,19 @@ class ProbeResult:
         return all(check.status == PASS for check in self.checks)
 
     @property
+    def read_failed(self) -> bool:
+        """A check that the identity reads what the job needs failed: read access
+        lost or narrowed, which says nothing about the write side."""
+        return any(c.status == FAIL for c in self.checks if c.name in READ_CHECKS)
+
+    @property
+    def only_reads_failed(self) -> bool:
+        """Every FAIL is a lost read: nothing suggests the identity sees or may
+        do more than it should (independent review 2026-11-20, P2-1)."""
+        failed = [c for c in self.checks if c.status == FAIL]
+        return bool(failed) and all(c.name in READ_CHECKS for c in failed)
+
+    @property
     def verdict(self) -> str:
         """PASS only when every check proved its point; any FAIL is FAIL;
         otherwise INDETERMINATE — never enough to switch the job on."""
@@ -844,7 +857,34 @@ def _hidden_verdict(error: SourceError | None, rows: Any) -> tuple[str, str]:
     return INDETERMINATE, f"unexpected answer ({type(rows).__name__})"
 
 
-def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> ProbeResult:
+#: How far below the expected live population the probe may read before it says
+#: the service login no longer sees the register: the synchronisation's own
+#: population rule (``lovable_sync.POPULATION_MAX_DELTA`` / ``_SHARE``), so the
+#: probe fails exactly where an APPLY night would refuse.
+PROBE_MAX_SHORTFALL = 50
+PROBE_MAX_SHORTFALL_SHARE = 0.05
+
+#: The checks that show the identity can read what the job needs (the token's
+#: role is not one of them: a wrong role is a privilege problem, not a lost read).
+READ_CHECKS = ("reads live topics", "reads topic children")
+
+
+def _live_verdict(rows: int, expected: int | None) -> tuple[str, str]:
+    """``reads live topics``: none is a FAIL, and so is a reading well short of
+    the population Juristid last read (a row rule narrowed to some rows)."""
+    if rows == 0:
+        return FAIL, "0 rows: the source's row rule admits none to this login"
+    if expected:
+        short = expected - rows
+        if short > PROBE_MAX_SHORTFALL and short > PROBE_MAX_SHORTFALL_SHARE * expected:
+            return FAIL, f"{rows} rows, {expected} expected: the login sees only part"
+        return PASS, f"{rows} rows ({expected} expected)"
+    return PASS, f"{rows} rows"
+
+
+def access_probe(
+    config: SourceConfig, *, expected_live: int | None = None, opener: Opener = _default_opener
+) -> ProbeResult:
     """Read what the job needs, and show the hidden reads stay hidden. GET only.
 
     Sign-in (the one POST), the token's role, the live topics and their
@@ -865,7 +905,7 @@ def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> P
 
     # 1. It reads the live topics and their children.
     index = _index(transport)
-    checks.append(ProbeCheck("reads live topics", PASS if index else FAIL, f"{len(index)} rows"))
+    checks.append(ProbeCheck("reads live topics", *_live_verdict(len(index), expected_live)))
     sample = [str(r["id"]) for r in index[:ID_CHUNK]]
     cohort = _read_cohort(transport, sample) if sample else {}
     checks.append(
@@ -901,6 +941,10 @@ def access_probe(config: SourceConfig, *, opener: Opener = _default_opener) -> P
                 raise
             rows, failure = None, refusal
         status, detail = _hidden_verdict(failure, rows)
+        if status == PASS and not index and failure is None:
+            # 0 rows proves nothing hidden when nothing at all is readable
+            # (coordinator QA 2026-11-20): it is the same empty answer.
+            status, detail = INDETERMINATE, "0 rows, but no live topic is readable either"
         checks.append(ProbeCheck(name, status, detail))
 
     # 3. The write side: not probed over HTTP at all.

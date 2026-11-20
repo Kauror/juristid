@@ -6158,6 +6158,21 @@ def _execute(
             pause=pause or time.sleep,
         )
         verify_snapshot(snapshot)
+        knew_some = bool(cohort_ids) or bool(
+            previous_snapshot is not None and (previous_snapshot.document or {}).get("index")
+        )
+        if knew_some and not (snapshot.get("index") or []):
+            # A complete, consistent answer of zero live topics is what a row
+            # rule that no longer admits the service login looks like (HTTP 200,
+            # no rows; Lovable 0035, 19.11.2026). It is the source refusing to
+            # be read, never a register emptied overnight: named for what it
+            # is, before any plan, and nothing is stored or written
+            # (coordinator QA 2026-11-20, QA-NEW-01).
+            raise SyncRefused(
+                "SOURCE_EMPTY",
+                "Lovable answered 0 live topics to the service login; its read access "
+                "was probably withdrawn or narrowed. Nothing was written.",
+            )
     candidates = new_topic_candidates(snapshot.get("index") or [], cohort_ids)
     holds = _identity_holds(candidates)
     if not check:

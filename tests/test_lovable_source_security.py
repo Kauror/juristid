@@ -243,7 +243,13 @@ def test_a_normal_authorised_read_is_get_only_and_carries_its_credentials_home()
 # ---------------------------------------------------------------------------
 
 
-def _probe(*, hidden_answer: Any = None, topics: Any = None, seen: list | None = None):
+def _probe(
+    *,
+    hidden_answer: Any = None,
+    topics: Any = None,
+    seen: list | None = None,
+    expected_live: int | None = None,
+):
     """The probe against a stub that answers every read; ``seen`` records
     (method, path) of everything the probe sent."""
     log = seen if seen is not None else []
@@ -262,7 +268,7 @@ def _probe(*, hidden_answer: Any = None, topics: Any = None, seen: list | None =
             return _Answer(rows, url=url)
         return _Answer([], url=url)
 
-    return lovable_source.access_probe(_config(), opener=opener)
+    return lovable_source.access_probe(_config(), expected_live=expected_live, opener=opener)
 
 
 def _respond(url: str, answer: Any) -> Any:
@@ -318,6 +324,95 @@ def test_an_error_body_is_never_carried_into_a_detail():
     assert "Teema puudub" not in " ".join(c.detail for c in result.checks)
 
 
+# ---------------------------------------------------------------------------
+# QA-NEW-01 (coordinator QA 2026-11-20): Lovable 0035 made the live-topic row
+# rule require an active staff session. The profile-less service login then
+# gets HTTP 200 with no rows from every table — the probe must call that a lost
+# read, never prove «hidden» from it, and never blame the write side.
+# ---------------------------------------------------------------------------
+
+
+def test_a_login_the_row_rule_no_longer_admits_fails_on_its_reads_not_its_writes():
+    result = _probe(topics=[], hidden_answer=[])
+    assert _status(result, "reads live topics") == FAIL
+    assert result.read_failed and result.verdict == FAIL
+    # The same empty answer proves nothing about what is hidden.
+    for name in ("hidden: topic_change_event", "hidden: deleted topics"):
+        assert _status(result, name) == INDETERMINATE
+
+
+def test_a_reading_well_short_of_the_last_population_fails():
+    one = [{"id": GHOST_TOPIC, "nr": "2026_1", "version": 1}]
+    narrowed = _probe(topics=one, expected_live=2524)
+    assert _status(narrowed, "reads live topics") == FAIL and narrowed.read_failed
+    assert "2524 expected" in next(
+        c.detail for c in narrowed.checks if c.name == "reads live topics"
+    )
+    assert _status(_probe(topics=one, expected_live=1), "reads live topics") == PASS
+    # A few topics deleted since the last reading is ordinary.
+    assert _status(_probe(topics=one, expected_live=40), "reads live topics") == PASS
+
+
+def test_the_probe_command_names_a_lost_read_and_never_suggests_widening(monkeypatch, capsys):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    result = _probe(topics=[])
+    seen: dict[str, Any] = {}
+
+    def probe(_config, **kwargs):
+        seen.update(kwargs)
+        return result
+
+    monkeypatch.setattr(lovable_source, "access_probe", probe)
+    with pytest.raises(CommandError, match="ACCESS PROBE FAILED") as failed:
+        call_command("lovable_sync", "access-probe", "--expect-live", "2524")
+    assert seen == {"expected_live": 2524}
+    assert "not read-only" not in str(failed.value)
+    assert "SELECT-only" in str(failed.value)
+
+
+@pytest.mark.parametrize(
+    "other_failure",
+    [
+        ("token role is authenticated", "service_role"),
+        ("hidden: topic_change_event", "1 rows visible"),
+    ],
+)
+def test_a_lost_read_beside_a_privilege_failure_is_reported_as_the_privilege_failure(
+    monkeypatch, other_failure
+):
+    """Independent review 2026-11-20, P2-1: the «lost read» remedy (a SELECT-only
+    path) is named only when every failure is a lost read."""
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from app.legacy_import.lovable_source import ProbeCheck, ProbeResult
+
+    name, detail = other_failure
+    result = ProbeResult(
+        [
+            ProbeCheck(name, FAIL, detail),
+            ProbeCheck("reads live topics", FAIL, "0 rows"),
+            ProbeCheck(lovable_source.WRITE_SIDE_CHECK, INDETERMINATE, "-"),
+        ]
+    )
+    assert result.read_failed and not result.only_reads_failed
+    monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    monkeypatch.setattr(lovable_source, "access_probe", lambda _c, **_k: result)
+    with pytest.raises(CommandError, match="not read-only") as failed:
+        call_command("lovable_sync", "access-probe", "--expect-live", "1")
+    assert "ACCESS PROBE FAILED" not in str(failed.value)
+
+
+def test_the_probe_tolerance_is_the_synchronisations_population_rule():
+    from app.legacy_import import lovable_sync
+
+    assert lovable_source.PROBE_MAX_SHORTFALL == lovable_sync.POPULATION_MAX_DELTA
+    assert lovable_source.PROBE_MAX_SHORTFALL_SHARE == lovable_sync.POPULATION_MAX_SHARE
+
+
 @pytest.mark.parametrize(
     ("method", "path"),
     [
@@ -349,9 +444,9 @@ def test_the_probe_command_blocks_activation_when_indeterminate(monkeypatch, cap
 
     monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
     result = _probe()
-    monkeypatch.setattr(lovable_source, "access_probe", lambda _c: result)
+    monkeypatch.setattr(lovable_source, "access_probe", lambda _c, **_k: result)
     with pytest.raises(CommandError, match="INDETERMINATE") as blocked:
-        call_command("lovable_sync", "access-probe")
+        call_command("lovable_sync", "access-probe", "--expect-live", "1")
     assert "access-sql" in str(blocked.value)
     out = capsys.readouterr().out
     assert "ACCESS PROBE PASSED" not in out
