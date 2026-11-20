@@ -268,19 +268,26 @@ class Command(BaseCommand):
 
     def _access_probe(self, options: dict[str, Any]) -> None:
         config = lovable_source.load_config(self._credentials(options))
-        result = lovable_source.access_probe(config)
+        from app.legacy_import.lovable_sync import probe_baseline
+
+        result = lovable_source.access_probe(config, baseline=probe_baseline())
         for check in result.checks:
             self.stdout.write(f"{check.status}  {check.name}  ({check.detail})")
+        if result.only_reads_failed:
+            # Read access lost or narrowed is not a write problem, and the
+            # remedy is never to widen the identity (owner rule): a SELECT-only
+            # path in Lovable (coordinator QA 2026-11-20, QA-NEW-01).
+            raise CommandError(
+                "ACCESS PROBE FAILED: the service login no longer reads the live register "
+                "as the job needs. Do not give it a staff profile or role (that would make "
+                "it write-capable); the fix is a SELECT-only read path in Lovable."
+            )
         if result.verdict == lovable_source.FAIL:
             raise CommandError(
                 "The service login is not read-only as required; do not enable the job."
             )
         if result.verdict != lovable_source.PASS:
-            reads = all(
-                c.status == lovable_source.PASS
-                for c in result.checks
-                if c.name != lovable_source.WRITE_SIDE_CHECK
-            )
+            reads = result.reads_ready
             raise CommandError(
                 "ACCESS PROBE INDETERMINATE: "
                 + ("every read check passed; " if reads else "a read check was not proven; ")

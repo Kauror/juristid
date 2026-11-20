@@ -243,7 +243,13 @@ def test_a_normal_authorised_read_is_get_only_and_carries_its_credentials_home()
 # ---------------------------------------------------------------------------
 
 
-def _probe(*, hidden_answer: Any = None, topics: Any = None, seen: list | None = None):
+def _probe(
+    *,
+    hidden_answer: Any = None,
+    topics: Any = None,
+    seen: list | None = None,
+    baseline: Any = None,
+):
     """The probe against a stub that answers every read; ``seen`` records
     (method, path) of everything the probe sent."""
     log = seen if seen is not None else []
@@ -262,7 +268,31 @@ def _probe(*, hidden_answer: Any = None, topics: Any = None, seen: list | None =
             return _Answer(rows, url=url)
         return _Answer([], url=url)
 
-    return lovable_source.access_probe(_config(), opener=opener)
+    return lovable_source.access_probe(_config(), baseline=baseline, opener=opener)
+
+
+class _Trusting:
+    """A trusted reading that finds nothing wrong (the judging itself is
+    `tests/test_qa_new01_probe_identity.py`'s)."""
+
+    cohort_ids = [GHOST_TOPIC]
+
+    def judge(self, index, cohort):
+        return [
+            lovable_source.ProbeCheck(lovable_source.IDENTITY_CHECK, PASS, "-"),
+            lovable_source.ProbeCheck(lovable_source.CHILDREN_CHECK, PASS, "-"),
+        ]
+
+
+def test_without_a_trusted_reading_the_reads_are_never_ready():
+    """Initial start-up: no stored reading to compare identities with. The probe
+    reads, but proves nothing about what a night would see (coordinator review
+    2026-11-20)."""
+    result = _probe()
+    assert _status(result, "reads live topics") == PASS
+    assert _status(result, lovable_source.IDENTITY_CHECK) == INDETERMINATE
+    assert _status(result, lovable_source.CHILDREN_CHECK) == INDETERMINATE
+    assert not result.reads_ready and result.verdict == INDETERMINATE
 
 
 def _respond(url: str, answer: Any) -> Any:
@@ -288,9 +318,10 @@ def test_the_probe_sends_only_gets_after_the_sign_in():
 
 
 def test_a_clean_read_side_is_still_never_a_pass():
-    result = _probe()
+    result = _probe(baseline=_Trusting())
     reads = [c for c in result.checks if c.name != lovable_source.WRITE_SIDE_CHECK]
     assert reads and all(c.status == PASS for c in reads), reads
+    assert result.reads_ready
     assert _status(result, lovable_source.WRITE_SIDE_CHECK) == INDETERMINATE
     assert result.verdict == INDETERMINATE and not result.passed
 
@@ -316,6 +347,80 @@ def test_an_identity_that_reads_nothing_fails():
 def test_an_error_body_is_never_carried_into_a_detail():
     result = _probe(hidden_answer=(400, {"code": "P0001", "message": "Teema puudub"}))
     assert "Teema puudub" not in " ".join(c.detail for c in result.checks)
+
+
+# ---------------------------------------------------------------------------
+# QA-NEW-01 (coordinator QA 2026-11-20): Lovable 0035 made the live-topic row
+# rule require an active staff session. The profile-less service login then
+# gets HTTP 200 with no rows from every table — the probe must call that a lost
+# read, never prove «hidden» from it, and never blame the write side.
+# ---------------------------------------------------------------------------
+
+
+def test_a_login_the_row_rule_no_longer_admits_fails_on_its_reads_not_its_writes():
+    result = _probe(topics=[], hidden_answer=[])
+    assert _status(result, "reads live topics") == FAIL
+    assert result.read_failed and result.verdict == FAIL
+    # The same empty answer proves nothing about what is hidden.
+    for name in ("hidden: topic_change_event", "hidden: deleted topics"):
+        assert _status(result, name) == INDETERMINATE
+
+
+def test_the_probe_command_names_a_lost_read_and_never_suggests_widening(monkeypatch, capsys):
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    # DB-free: the command's trusted reading is the database's (tested elsewhere).
+    monkeypatch.setattr("app.legacy_import.lovable_sync.probe_baseline", lambda: None)
+    result = _probe(topics=[])
+    seen: dict[str, Any] = {}
+
+    def probe(_config, **kwargs):
+        seen.update(kwargs)
+        return result
+
+    monkeypatch.setattr(lovable_source, "access_probe", probe)
+    with pytest.raises(CommandError, match="ACCESS PROBE FAILED") as failed:
+        call_command("lovable_sync", "access-probe")
+    assert set(seen) == {"baseline"}
+    assert "not read-only" not in str(failed.value)
+    assert "SELECT-only" in str(failed.value)
+
+
+@pytest.mark.parametrize(
+    "other_failure",
+    [
+        ("token role is authenticated", "service_role"),
+        ("hidden: topic_change_event", "1 rows visible"),
+    ],
+)
+def test_a_lost_read_beside_a_privilege_failure_is_reported_as_the_privilege_failure(
+    monkeypatch, other_failure
+):
+    """Independent review 2026-11-20, P2-1: the «lost read» remedy (a SELECT-only
+    path) is named only when every failure is a lost read."""
+    from django.core.management import call_command
+    from django.core.management.base import CommandError
+
+    from app.legacy_import.lovable_source import ProbeCheck, ProbeResult
+
+    name, detail = other_failure
+    result = ProbeResult(
+        [
+            ProbeCheck(name, FAIL, detail),
+            ProbeCheck("reads live topics", FAIL, "0 rows"),
+            ProbeCheck(lovable_source.WRITE_SIDE_CHECK, INDETERMINATE, "-"),
+        ]
+    )
+    assert result.read_failed and not result.only_reads_failed
+    monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    # DB-free: the command's trusted reading is the database's (tested elsewhere).
+    monkeypatch.setattr("app.legacy_import.lovable_sync.probe_baseline", lambda: None)
+    monkeypatch.setattr(lovable_source, "access_probe", lambda _c, **_k: result)
+    with pytest.raises(CommandError, match="not read-only") as failed:
+        call_command("lovable_sync", "access-probe")
+    assert "ACCESS PROBE FAILED" not in str(failed.value)
 
 
 @pytest.mark.parametrize(
@@ -348,8 +453,10 @@ def test_the_probe_command_blocks_activation_when_indeterminate(monkeypatch, cap
     from django.core.management.base import CommandError
 
     monkeypatch.setattr(lovable_source, "load_config", lambda _p=None: _config())
+    # DB-free: the command's trusted reading is the database's (tested elsewhere).
+    monkeypatch.setattr("app.legacy_import.lovable_sync.probe_baseline", lambda: None)
     result = _probe()
-    monkeypatch.setattr(lovable_source, "access_probe", lambda _c: result)
+    monkeypatch.setattr(lovable_source, "access_probe", lambda _c, **_k: result)
     with pytest.raises(CommandError, match="INDETERMINATE") as blocked:
         call_command("lovable_sync", "access-probe")
     assert "access-sql" in str(blocked.value)
