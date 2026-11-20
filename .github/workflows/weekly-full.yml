@@ -1,0 +1,35 @@
+name: Weekly full run
+
+# Once a week, the whole of `ci.yml` (FULL tier) on main as it stands — no new
+# job, nothing to keep in step with ci.yml: the same checks a pull request gets,
+# started the way `main-proof.yml` starts them when a merge is not proved.
+#
+# Why: CI otherwise runs only when a pull request changes. Tests that depend on
+# the calendar (a date-bomb red on the 21st–31st of every month, quality audit
+# package A) or on a runner image move break silently on a quiet week and are
+# found by the next unrelated pull request. A red weekly run names them first.
+# Coordinator QA 2026-11-20 (owner: a separate, low-risk change).
+#
+# Monday 03:00 UTC: before the working day in Tallinn, clear of the host's
+# nightly jobs (they run on the server, not here) and of Sunday's quiet.
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  # Starting `ci.yml` on main. Nothing else; no checkout.
+  actions: write
+
+jobs:
+  start:
+    name: Start the full CI run on main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Dispatch ci.yml on main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: gh workflow run ci.yml --repo "$REPOSITORY" --ref main
