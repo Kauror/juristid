@@ -881,12 +881,12 @@ def _ran(*, started_hours_ago, finished=True, **fields):
 
 @override_settings(REGISTER_WATCH_FETCH=True)
 def test_the_health_of_the_watch_for_production_status():
+    from django.utils import timezone
+
     from app.core import production_status as status_module
 
     # Released moments ago: the first scheduled run is not due yet. (A reused
     # test database's own migration moment would make this depend on its age.)
-    from django.utils import timezone
-
     _switched(None, migrated=timezone.now())
     assert watch.watch_health() == watch.Health(True, "not run yet")
     _ran(started_hours_ago=10, targets_checked=300, errors=[{"viga": "x"}], ai_failures=2)
