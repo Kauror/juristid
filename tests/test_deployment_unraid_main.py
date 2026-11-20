@@ -986,10 +986,10 @@ MCP_WRITER_ENV_EXAMPLE = DEPLOY / "juristid-mcp-writer.env.example"
 MCP_TUNNEL_ENV_EXAMPLE = DEPLOY / "juristid-mcp-tunnel.env.example"
 
 #: The tunnel client, by tag and by digest: the multi-platform index
-#: ghcr.io/openai/tunnel-client:v0.0.19 resolved to on 2026-11-04.
+#: ghcr.io/openai/tunnel-client:v0.0.21 resolved to on 2026-11-20.
 TUNNEL_CLIENT_IMAGE = (
-    "ghcr.io/openai/tunnel-client:v0.0.19"
-    "@sha256:dcae53be336c062ffdc3f250a287b2a07724c344b8c370a50f54ad033af43151"
+    "ghcr.io/openai/tunnel-client:v0.0.21"
+    "@sha256:983df88cd56d49ae3863ae52b751d106c95aba8a03783c87ac2304b4e0cd154a"
 )
 
 

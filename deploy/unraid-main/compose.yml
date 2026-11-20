@@ -79,14 +79,16 @@ services:
     # every Debian rebuild, so an unrelated pull on this host could change the
     # server under the register with nobody deciding to. The digest is the
     # multi-platform index docker.io/library/postgres:18 resolved to on
-    # 2026-11-04: PostgreSQL 18.6 (`PG_VERSION=18.6-1.pgdg13+2`), Debian 13,
-    # built 2026-10-28 — a Debian rebuild of the same 18.6 production ran from
-    # 2026-08-13 (sha256:06cad38a…), so the cluster's files are unchanged and
-    # recreating `db` is a restart, not an upgrade. Moving it is a deliberate change: resolve the
+    # 2026-11-20: PostgreSQL 18.7 (`PG_VERSION=18.7-1.pgdg13+5`), Debian 13,
+    # built 2026-11-20 — a minor release (2026-11-12, security fixes) over the
+    # 18.6 production ran from 2026-08-13 (sha256:06cad38a…): same on-disk
+    # format, no dump/restore; its notes ask to REINDEX a few index kinds (btree
+    # on unconstrained bpchar, GIN, gist_trgm_ops), which the maintenance step
+    # checks (package J, 2026-11-20). Moving it is a deliberate change: resolve the
     # new tag's index digest from the registry, replace it here and in the other
     # Compose files and CI services (tests/test_supply_chain_pinning.py keeps
     # them equal), and recreate `db` as an announced maintenance step.
-    image: postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81
+    image: postgres:18@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
     container_name: juristid-main-db
     # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
     # planner's estimated cost and spent 150-350 ms compiling statements that
@@ -555,17 +557,16 @@ services:
     #
     # The version tag so the next person can see what they are moving from and
     # to; the digest because a tag is only a name the publisher can re-push
-    # (ADR 0179). It is what docker.io/cloudflare/cloudflared:2026.10.7
-    # resolved to on 2026-11-04 (built 2026-10-30, distroless Debian 13): its
-    # amd64 image carries `CI_GIT_COMMIT=872b241f…`, the commit GitHub's
-    # 2026.10.7 release tag names. It replaced 2026.8.2 (sha256:0aa26e28…);
-    # nothing between the two changes a locally managed named tunnel's
-    # `tunnel --config … run` (RELEASE_NOTES 2026.8.3–2026.10.7).
+    # (ADR 0179). It is what docker.io/cloudflare/cloudflared:2026.11.1
+    # resolved to on 2026-11-20 (built 2026-11-17): its amd64 image carries
+    # `CI_GIT_COMMIT=518d7f79…`. It replaced 2026.8.2 (sha256:0aa26e28…), via
+    # 2026.10.7 in #594's first pass; RELEASE_NOTES 2026.8.3–2026.11.1 name no
+    # change to a locally managed named tunnel's `tunnel --config … run`.
     #
     # No `env_file:` and no `environment:`: the tunnel's credential is the
     # locally managed one in the volume below, and it needs nothing of the
     # application's (tests/test_service_secret_isolation.py).
-    image: cloudflare/cloudflared:2026.10.7@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba
+    image: cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
     container_name: juristid-main-tunnel
     restart: unless-stopped
     logging: *bounded-logs
@@ -803,16 +804,16 @@ services:
   # bypass Cloudflare), not `tunnel`, not a worker. `mcp_edge` is an ordinary
   # bridge (not `internal: true`), which is what lets it reach api.openai.com.
   mcp-tunnel:
-    # Tag for the reader, digest for Docker (ADR 0179). v0.0.19 is the
-    # multi-platform OCI index ghcr.io/openai/tunnel-client:v0.0.19 resolved to
-    # on 2026-11-04 (anonymous registry read; amd64 manifest
-    # sha256:e57bdf9b…, image revision 01d67bb4…, built 2026-10-30). Alpine
-    # 3.22.7, entrypoint `/usr/bin/tunnel-client run`, as v0.0.17's was
+    # Tag for the reader, digest for Docker (ADR 0179). v0.0.21 is the
+    # multi-platform OCI index ghcr.io/openai/tunnel-client:v0.0.21 resolved to
+    # on 2026-11-20 (anonymous registry read; image revision 714f2d67…, built
+    # 2026-11-14; v0.0.20/21 add opt-in options only — OAuth forward origins,
+    # residency, discovery opt-out). Entrypoint `/usr/bin/tunnel-client run`, as v0.0.17's was
     # (index sha256:67b473b4…, which v0.0.17 still resolves to: it was never
     # re-published). Moving it: read the release notes at
     # https://github.com/openai/tunnel-client/releases, resolve the new tag's
     # index digest, replace both here, and recreate only this service.
-    image: ghcr.io/openai/tunnel-client:v0.0.19@sha256:dcae53be336c062ffdc3f250a287b2a07724c344b8c370a50f54ad033af43151
+    image: ghcr.io/openai/tunnel-client:v0.0.21@sha256:983df88cd56d49ae3863ae52b751d106c95aba8a03783c87ac2304b4e0cd154a
     container_name: juristid-main-mcp-tunnel
     profiles: ["mcp"]
     restart: unless-stopped

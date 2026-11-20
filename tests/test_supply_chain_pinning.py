@@ -190,11 +190,11 @@ def test_production_postgres_is_the_digest_production_runs() -> None:
     """
     compose = yaml.safe_load((ROOT / "deploy/unraid-main/compose.yml").read_text("utf-8"))
     assert compose["services"]["db"]["image"] == (
-        "postgres:18@sha256:3a4264520e121176619f54ff867d12774bc81e95e7b84db58d63bccdb6144b81"
+        "postgres:18@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a"
     )
     assert compose["services"]["tunnel"]["image"] == (
-        "cloudflare/cloudflared:2026.10.7"
-        "@sha256:4955524aeaa379e154023d5a027c250f7b35041a2e7e950cf13f144bc9b9c5ba"
+        "cloudflare/cloudflared:2026.11.1"
+        "@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d"
     )
 
 

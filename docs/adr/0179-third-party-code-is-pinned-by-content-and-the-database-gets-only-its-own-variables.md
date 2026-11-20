@@ -29,6 +29,12 @@ index digest, so the same line serves amd64 production and an arm64 laptop.
 MCP tunnel client (ADR 0185) → `ghcr.io/openai/tunnel-client:v0.0.19@sha256:dcae53be…f43151`.
 The table keeps the values this decision was taken on.
 
+**Moved again 2026-11-20** (quality audit package J, #594 refreshed before it was deployed): `postgres:18` →
+`sha256:eb63372c…841e1a`, PostgreSQL **18.7** (`PG_VERSION=18.7-1.pgdg13+5`, a security minor of 2026-11-12;
+same on-disk format, its notes ask for REINDEX of btree-on-bpchar, GIN and `gist_trgm_ops` indexes where
+affected); `cloudflare/cloudflared` → `2026.11.1@sha256:e613aadb…b35f2d` (`CI_GIT_COMMIT=518d7f79…`); the MCP
+tunnel client → `ghcr.io/openai/tunnel-client:v0.0.21@sha256:983df88c…0cd154a` (revision 714f2d67…).
+
 The same name has the same digest in every file, so CI, the rehearsals and
 production run one PostgreSQL. `aquasec/trivy` and both Dockerfile bases were
 already pinned this way and are unchanged.

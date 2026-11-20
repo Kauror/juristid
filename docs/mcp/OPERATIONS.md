@@ -77,7 +77,7 @@ holds a colleague's authenticator can connect as that colleague (ADR 0185,
 | --- | --- | --- | --- | --- |
 | `web` (existing) | `juristid-main-web` | the release image | `juristid.env` + `MCP_ENABLED`, `JURISTID_PUBLIC_ORIGIN`, `MCP_RESOURCE_URLS` | serves `/.well-known/oauth-authorization-server`, `/oauth/authorize`, `/oauth/token`, `/oauth/revoke` and the enrolment pages through the Cloudflare tunnel |
 | `mcp` | `juristid-main-mcp` | the release image | `juristid-mcp.env` only; database role `juristid_mcp` (SELECT only) | `db` on `internal`; listens on `mcp:8001` on `mcp_edge`, no host port |
-| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.19@sha256:dcae53be…` | `juristid-mcp-tunnel.env` only | only `mcp_edge`: `http://mcp:8001/mcp`; `api.openai.com:443` outbound; the public origin's OAuth metadata — never `db`, `web` or `tunnel` |
+| `mcp-tunnel` | `juristid-main-mcp-tunnel` | `ghcr.io/openai/tunnel-client:v0.0.21@sha256:983df88c…` | `juristid-mcp-tunnel.env` only | only `mcp_edge`: `http://mcp:8001/mcp`; `api.openai.com:443` outbound; the public origin's OAuth metadata — never `db`, `web` or `tunnel` |
 
 Both new services are behind the `mcp` profile. A release's `up -d --no-build`,
 a restore's `up -d tunnel` and the backup scripts neither start, replace nor

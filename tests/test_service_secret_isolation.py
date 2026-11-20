@@ -697,12 +697,12 @@ def test_the_check_does_not_pass_over_the_writer(
 # a change here is a deliberate, announced maintenance step — update the digest
 # in the same commit and say so in the release note.
 #
-# Last moved 2026-11-04 (#594): the postgres 18.6 rebuild and cloudflared 2026.10.7
+# Last moved 2026-11-20 (#594, package J): postgres 18.7 and cloudflared 2026.11.1
 # pins; deploy/unraid-main maintenance plan, not a code release.
 
 PINNED_DEFINITIONS = {
-    "db": "aafc925c6a7b778da68f29cccabc4b946959436c4ceb6d9a1819c4e6916a28d4",
-    "tunnel": "e3192b1ae6024b39fda9f3a1e75f742863585da97ef63e92e0b2433baa59fd71",
+    "db": "075c3c7fb9488f60a65d4f843ded04bf249a4bb4ff93500feea1dfdfbfce2379",
+    "tunnel": "4cd9433dd540da3b31081d0f06d372423558df14df2678a3fad0aca06475d81d",
 }
 
 
