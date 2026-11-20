@@ -207,12 +207,12 @@ def test_a_deadline_creates_no_next_action_and_no_important_date(specialist, tod
     [
         (-1, wi.BAND_OVERDUE),
         (0, wi.BAND_WEEK),
-        (30, wi.BAND_NEXT_30),
-        (31, wi.BAND_LATER),
+        (29, wi.BAND_NEXT_30),
+        (30, wi.BAND_LATER),
     ],
 )
 def test_the_band_follows_the_date(specialist, offset, band):
-    """Yesterday, today, the thirtieth day and the thirty-first."""
+    """Yesterday, today, the 30th date counting today and the 31st (QA26-DUP-05)."""
     anchor = _wednesday()
     matter = _matter(specialist, deadline=anchor + timedelta(days=offset))
 
