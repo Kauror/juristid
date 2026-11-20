@@ -981,6 +981,10 @@ REGISTER_WATCH_FETCH = env_bool(
     "JURISTID_REGISTER_WATCH_FETCH",
     default=APPLICATION_ENVIRONMENT not in ("test", "ci", "recovery-rehearsal"),
 )
+# When `JURISTID_REGISTER_WATCH_FETCH` was turned on, if that was after the release
+# that installed the watch (ISO date-time, UTC unless it says otherwise). Only the
+# health check reads it: the first run is not late before it was due (ADR 0217 §9).
+REGISTER_WATCH_ENABLED_AT = env("JURISTID_REGISTER_WATCH_ENABLED_AT", "")
 # Claude judging what a title search found (ADR 0217 §4). Off until the owner
 # turns it on and the service has ANTHROPIC_API_KEY; public facts only.
 REGISTER_WATCH_AI = env_bool("JURISTID_REGISTER_WATCH_AI", default=False)
