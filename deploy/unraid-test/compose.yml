@@ -33,7 +33,7 @@ x-logging: &bounded-logs
 services:
   db:
     # Same digest as deploy/unraid-main/compose.yml (ADR 0179; PostgreSQL 18.6).
-    image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+    image: postgres:18@sha256:eb63372c1e05c755f55fa30cbd07aecc443676fc6c0fa90b9002d01537841e1a
     container_name: juristid-test-db
     # JIT off for this OLTP workload (AUD-039, docs/adr/0153): it fires on the
     # planner's estimated cost and spent 150-350 ms compiling statements that
@@ -347,7 +347,7 @@ services:
   tunnel:
     # Pinned like production's (ADR 0179): the same release and digest, not
     # `latest`, so a pull for something else cannot change this stack's tunnel.
-    image: cloudflare/cloudflared:2026.8.2@sha256:0aa26e284f05e6c77ae375b8c9c11d9eb6a448fb7bcd8d40f31cb6176189eb38
+    image: cloudflare/cloudflared:2026.11.1@sha256:e613aadbc2d9511785d2e67a86b0c8ac18dd63a3f9af0d06faf04cbfdcb35f2d
     container_name: juristid-test-tunnel
     restart: unless-stopped
     logging: *bounded-logs
