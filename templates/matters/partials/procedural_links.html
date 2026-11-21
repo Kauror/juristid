@@ -185,14 +185,7 @@ because what the file recorded and who recorded it is part of the file
     {% endif %}
   </div>
 {% endif %}
-{% if matter.is_open %}
-  {% comment %}
-    Where the register watch looks for this Teema, and its search words
-    (docs/adr/0217 §7). Beside the card, not in it: the card holds the
-    Teema's own references only. Linked by id, so the Teema's number is on
-    its page once.
-  {% endcomment %}
-  <div class="railcard__row">
-    <a class="quietlink railwatch" href="{% url 'register_watch:review' %}?teema={{ matter.pk }}">Registrite jälgimine</a>
-  </div>
-{% endif %}
+{% comment %}
+  «Registrite jälgimine» left the rail on 2026-11-21: the watch is the Teema's
+  own `Registritest` tab now (`partials/tabs.html`).
+{% endcomment %}

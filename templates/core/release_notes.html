@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% load release_notes %}
 {% block title %}Uuendused · {{ application_name }}{% endblock %}
 
@@ -42,15 +42,15 @@ autoescaping. Nothing here is `|safe`: a release note is prose somebody typed,
 and a typo in it must not be able to become markup.
 {% endcomment %}
 
-{% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Uuendused</h1>
+{% block haldus_title %}Uuendused{% endblock %}
+{% block haldus_context %}
     <span class="pagehead__context">
       Siit leiad Juristidi uuendused päevade kaupa. Ühe päeva alla on koondatud
       kõik samal päeval lisandunud muudatused.
     </span>
-  </div>
+{% endblock %}
+
+{% block haldus_content %}
 
   {% include "core/_uuendused_tabs.html" %}
 
@@ -77,5 +77,4 @@ and a typo in it must not be able to become markup.
     {% endfor %}
   </div>
   {% endwith %}
-</div>
 {% endblock %}

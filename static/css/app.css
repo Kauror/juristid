@@ -1927,6 +1927,22 @@ th[aria-sort="descending"] .colhead__mark::after {
   font-weight: var(--typography-weight-medium);
 }
 
+/* «Registritest»'s waiting documents: a count that asks to be looked at, in
+ * the accent, unlike `Dokumendid`'s quiet total. */
+.tabs__badge {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: var(--spacing-1);
+  padding: 0 0.4em;
+  border-radius: 999px;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.6;
+  text-align: center;
+}
+
 .rail {
   display: flex;
   flex-direction: column;
@@ -17480,10 +17496,38 @@ a.statpanel__note {
   min-width: 14rem;
 }
 
-/* «Registrite jälgimine» under the Menetluse link card: aligned with the rail's
- * own rows, not indented like an inline quiet link (docs/adr/0217 §7). */
-.railwatch {
-  margin-left: 0;
+/* The Teema's «Registritest» tab (owner, 2026-11-21): one line on whether the
+ * Teema is watched, then the waiting documents and the sources. A Teema the
+ * watch cannot cover says so in the warning colour, since nobody should wait
+ * for findings that will never come. */
+.regtab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.regtab__state {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.regtab__state--unread,
+.regtab__state--unknown {
+  padding: var(--spacing-2) var(--spacing-3);
+  border-left: 3px solid var(--status-warning);
+  color: var(--text-primary);
+}
+
+.regtab__subhead {
+  margin: 0 0 var(--spacing-1);
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+  font-weight: 600;
+}
+
+.regtab__watch {
+  margin-top: var(--spacing-3);
 }
 
 /* Haldus → Registrite jälgimine (ADR 0217 §8): dates and token counts on one line. */

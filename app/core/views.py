@@ -124,8 +124,27 @@ def release_notes(request: HttpRequest) -> HttpResponse:
     return render(
         request,
         "core/release_notes.html",
-        {"release_days": load_release_notes(), "uuendused_tab": "juristid"},
+        {
+            "release_days": load_release_notes(),
+            "uuendused_tab": "juristid",
+            **_haldus_shell(request),
+        },
     )
+
+
+def _haldus_shell(request: HttpRequest) -> dict[str, Any]:
+    """Uuendused is a Haldus tab since 2026-11-21: the strip and its active key.
+
+    Imported here, not at the top, so the core app does not load the Haldus
+    registry at import time (it reverses routes from every app).
+    """
+    from app.haldus.sections import visible_sections
+
+    return {
+        "haldus_sections": visible_sections(request),
+        "haldus_active": "uuendused",
+        "nav_active": "haldus",
+    }
 
 
 #: Said to a signed-in account that may not read business content — the
@@ -826,6 +845,7 @@ def release_notes_lovable(request: HttpRequest) -> HttpResponse:
     filters = _lovable_filters(request, view)
     context: dict[str, Any] = {
         "uuendused_tab": "lovable",
+        **_haldus_shell(request),
         "lovable_view": view,
         "lovable_views": LOVABLE_VIEWS,
         "filters": filters,

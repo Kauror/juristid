@@ -45,6 +45,11 @@ after it — it copies exactly that address and is named by it — and, for a
 page several Teemad share, «ühine leht». Then the note's own links, its direct
 files, the way to the page's other files once, and last the row's own
 permalink, which stays the history entry's address and nothing else.
+
+«Failid märkuse juures» (owner, 2026-11-21): the files that stand in the
+note's own run of lines on the page without being nested under it. They stay
+D9's page-level files — no tag on the line — but each opens or downloads from
+here, so the timeline is enough to reach the letter a note talks about.
 {% endcomment %}
 <article class="uxtl__item uxtl__item--secondary uxtl__item--historical"
          data-kaik-rida="{{ item.row_key }}">
@@ -119,6 +124,9 @@ permalink, which stays the history entry's address and nothing else.
         {% endif %}
         {% if note.direct_files %}
           {% include "matters/partials/timeline_historical_files.html" with files=note.direct_files heading="Selle märkuse failid" %}
+        {% endif %}
+        {% if note.beside_files %}
+          {% include "matters/partials/timeline_historical_files.html" with files=note.beside_files heading="Failid märkuse juures" %}
         {% endif %}
         <div class="uxtl__permalink">
           {% include "matters/partials/row_copy_link.html" with row_key=item.row_key %}
