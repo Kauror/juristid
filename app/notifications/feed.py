@@ -27,6 +27,9 @@ check (ADR 0188)   reader's desk (or unowned, for  `CommencementReminderPersonal
 «Registris uus     `notices.due_unread`: unread,   ``read_at`` set, or every document
 dokument»          a document still waits          on the Teema added or skipped
 (ADR 0217)
+«Uued eelnõud      `candidate_notices.due_unread`: ``read_at`` set, or nothing left on
+registrites»       unread, the list still waits    the list
+(ADR 0218)
 =================  ==============================  ===================================
 
 An outstanding deadline row that is unread but hidden — its category switched
@@ -69,6 +72,7 @@ from app.notifications.inbox import (
     STATE_READ,
     STATE_RESOLVED,
     TYPE_ASSIGNMENT,
+    TYPE_CANDIDATES,
     TYPE_COMMENCEMENT,
     TYPE_DEADLINE,
     TYPE_PERSONAL,
@@ -302,6 +306,17 @@ def _register_items(rows: list[Any]) -> list[InboxItem]:
     ]
 
 
+def _candidates_items(rows: list[Any]) -> list[InboxItem]:
+    return [
+        inbox.candidates_item(
+            row,
+            state=STATE_READ if row.read_at is not None else STATE_RESOLVED,
+            can_unread=row.read_at is not None,
+        )
+        for row in rows
+    ]
+
+
 def _unread_ids(items: list[InboxItem]) -> dict[str, set[Any]]:
     ids: dict[str, set[Any]] = {
         TYPE_DEADLINE: set(),
@@ -309,6 +324,7 @@ def _unread_ids(items: list[InboxItem]) -> dict[str, set[Any]]:
         TYPE_ASSIGNMENT: set(),
         TYPE_PERSONAL: set(),
         TYPE_REGISTER: set(),
+        TYPE_CANDIDATES: set(),
     }
     for item in items:
         ids[item.type].add(item.pk)
@@ -354,6 +370,13 @@ def _history(
         .select_related("matter")
         .order_by(*order)[:take]
     )
+    from app.register_watch import candidate_notices
+
+    sweeps = list(
+        candidate_notices.history(user, unread[TYPE_CANDIDATES])
+        .filter(_after_q(cursor, TYPE_RANK[TYPE_CANDIDATES]))
+        .order_by(*order)[:take]
+    )
     merged = sorted(
         [
             *_deadline_items(user, deadline_rows, day),
@@ -361,6 +384,7 @@ def _history(
             *_assignment_items(user, notices),
             *_personal_items(own, day),
             *_register_items(registers),
+            *_candidates_items(sweeps),
         ],
         key=_key,
         reverse=True,
@@ -449,6 +473,10 @@ def lookup(user: Any, kind: str, pk: Any, *, today: date | None = None) -> Inbox
         found = _register_items(
             list(register_notices.history(user, ids[kind]).filter(pk=pk).select_related("matter"))
         )
+    elif kind == TYPE_CANDIDATES:
+        from app.register_watch import candidate_notices
+
+        found = _candidates_items(list(candidate_notices.history(user, ids[kind]).filter(pk=pk)))
     else:
         notices = list(assignment_history(user, ids[kind]).filter(pk=pk).select_related("matter"))
         found = _assignment_items(user, notices)

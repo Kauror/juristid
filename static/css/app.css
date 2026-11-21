@@ -17490,3 +17490,62 @@ a.statpanel__note {
 .regwatchlog__nowrap {
   white-space: nowrap;
 }
+
+/* «Uued teemad» (app/register_watch, docs/adr/0218). Each row is strength |
+ * the draft and its register entries | the three answers. */
+.regwatch__audience {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-4);
+}
+
+.regwatch__strength {
+  font-size: var(--typography-size-meta);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.regwatch__strength--strong {
+  color: var(--status-success);
+}
+
+.regwatch__strength--possible {
+  color: var(--status-warning);
+}
+
+.regwatch__title {
+  font-weight: 600;
+}
+
+.regwatch__items {
+  margin: var(--spacing-1) 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--typography-size-meta);
+}
+
+.regwatch__actions--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.regwatch__attach {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.regwatch__teema-input {
+  width: 7rem;
+}
+
+.createform__candidate {
+  margin: 0 0 var(--spacing-4);
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+}
+
+.ovhead__link {
+  font-size: var(--typography-size-meta);
+  color: var(--text-primary);
+}

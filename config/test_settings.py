@@ -64,6 +64,8 @@ APPLICATION_ENVIRONMENT = "test"
 PUBLICATION_TITLE_FETCH = False
 REGISTER_WATCH_FETCH = False
 REGISTER_WATCH_AI = False
+REGISTER_SWEEP = False
+REGISTER_SWEEP_AI = False
 
 # No `collectstatic` has run for a test process, so the hashed manifest the
 # production backend expects does not exist.

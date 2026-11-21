@@ -60,6 +60,7 @@ from app.notifications import deadlines, inbox, selectors, services
 from app.notifications.feed import unreadable_assignment_matters
 from app.notifications.inbox import (
     TYPE_ASSIGNMENT,
+    TYPE_CANDIDATES,
     TYPE_COMMENCEMENT,
     TYPE_DEADLINE,
     TYPE_PERSONAL,
@@ -158,6 +159,10 @@ def resolve(user: Any, kind: str, pk: Any) -> Any:
         from app.register_watch import notices
 
         return notices.own_row(user, pk)
+    if kind == TYPE_CANDIDATES:
+        from app.register_watch import candidate_notices
+
+        return candidate_notices.own_row(user, pk)
     return None
 
 
@@ -187,6 +192,10 @@ def mark_read(user: Any, kind: str, row: Any) -> bool:
         from app.register_watch import notices
 
         return notices.mark_read(row)
+    if kind == TYPE_CANDIDATES:
+        from app.register_watch import candidate_notices
+
+        return candidate_notices.mark_read(row)
     return False  # pragma: no cover - `resolve` admits no other kind
 
 
@@ -212,6 +221,10 @@ def mark_unread(user: Any, kind: str, row: Any) -> bool:
         from app.register_watch import notices
 
         return notices.mark_unread(row)
+    if kind == TYPE_CANDIDATES:
+        from app.register_watch import candidate_notices
+
+        return candidate_notices.mark_unread(row)
     return False  # pragma: no cover - `resolve` admits no other kind
 
 
@@ -349,6 +362,11 @@ def mark_all_read(user: Any, *, until: datetime, today: date | None = None) -> M
         for waiting in notices.due_unread(user):
             if notices.arrived_at(waiting) <= cut:
                 marked += int(notices.mark_read(waiting))
+        from app.register_watch import candidate_notices
+
+        for sweep in candidate_notices.due_unread(user):
+            if candidate_notices.arrived_at(sweep) <= cut:
+                marked += int(candidate_notices.mark_read(sweep))
     return MarkAllResult(marked, inbox.inbox_count(user, day))
 
 

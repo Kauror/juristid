@@ -404,7 +404,12 @@ def test_the_default_status_does_not_read_evidence_bytes() -> None:
 
 def test_newer_rows_come_last_so_the_older_rows_keep_their_place() -> None:
     names = [check.__name__ for check in status_module.CHECKS]
-    assert names[-3:] == ["_lovable_sync", "_lovable_observation", "_register_watch"]
+    assert names[-4:] == [
+        "_lovable_sync",
+        "_lovable_observation",
+        "_register_watch",
+        "_register_sweep",
+    ]
 
 
 def test_the_lovable_observation_row_is_green_when_off_and_writes_nothing() -> None:

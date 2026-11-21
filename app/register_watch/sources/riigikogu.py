@@ -58,6 +58,41 @@ def find_bill(mark: int, type_code: str) -> dict[str, Any] | None:
     return max(rows, key=lambda row: (row.get("membership") or 0, row.get("initiated") or ""))
 
 
+#: The kinds of bill a sweep lists: laws, decisions and statements.
+SWEPT_TYPES = ("SE", "OE", "AE")
+SWEEP_PAGE = 100
+
+
+def recent_drafts(since: Any) -> list[Item]:
+    """Every bill initiated on or after ``since``, newest first (ADR 0218 §1)."""
+    data = get_json(
+        HOST,
+        "/api/volumes/drafts",
+        {"initiatedStartDate": since.isoformat(), "size": SWEEP_PAGE, "sort": "initiated,desc"},
+    )
+    if not isinstance(data, dict):
+        raise FetchError("Riigikogu vastus on võõra kujuga")
+    rows = (data.get("_embedded") or {}).get("content") or []
+    items: list[Item] = []
+    for row in rows:
+        key, kind, title = row.get("uuid"), row.get("draftTypeCode"), (row.get("title") or "")
+        if not key or kind not in SWEPT_TYPES or not title.strip():
+            continue
+        mark = row.get("mark")
+        committee = ((row.get("leadingCommittee") or {}).get("name") or "").strip()
+        label = f"{mark} {kind}" if mark else kind
+        items.append(
+            Item(
+                external_id=f"draft:{key}",
+                title=f"{title.strip()} ({label})"[:500],
+                occurred_on=parse_day(row.get("initiated")),
+                url=page_url(key),
+                detail=" · ".join(part for part in (label, committee) if part)[:300],
+            )
+        )
+    return items
+
+
 def _step(code: str | None) -> str:
     if not code:
         return ""
