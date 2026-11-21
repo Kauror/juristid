@@ -18,8 +18,8 @@ nothing else:
 5. «Registris uus dokument»: the register watch found something new on a Teema
    the reader owns, and it still waits (`app.register_watch.notices`,
    docs/adr/0217 §6);
-6. «Uued teemad registrites»: the nightly sweep put drafts that are not a
-   Teema yet on the «Uued teemad» list, for the department head (or everyone,
+6. «Uued eelnõud registrites»: the nightly sweep put drafts that are not a
+   Teema yet on the «Uued eelnõud» list, for the department head (or everyone,
    once opened) (`app.register_watch.candidate_notices`, docs/adr/0218 §7).
 
 :func:`inbox_for` lists them and :func:`inbox_count` counts the same
@@ -476,19 +476,19 @@ def _register_items(user: Any) -> list[InboxItem]:
     return [register_item(row) for row in notices.due_unread(user).select_related("matter")]
 
 
-#: The label of a «Uued teemad registrites» item, once.
-CANDIDATES_LABEL = "Uued teemad registrites"
+#: The label of a «Uued eelnõud registrites» item, once.
+CANDIDATES_LABEL = "Uued eelnõud registrites"
 
 
 def candidates_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = False) -> InboxItem:
-    """The sweep's notice: new drafts wait on «Uued teemad» (docs/adr/0218 §7)."""
+    """The sweep's notice: new drafts wait on «Uued eelnõud» (docs/adr/0218 §7)."""
     unread = state == STATE_UNREAD
     day = timezone.localtime(row.updated_at).date()
     count = row.candidates
     return InboxItem(
         type=TYPE_CANDIDATES,
         kind=INFO,
-        title="Uued teemad",
+        title="Uued eelnõud",
         label=CANDIDATES_LABEL,
         date=day,
         date_label=format_estonian_date(day),

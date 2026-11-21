@@ -2542,7 +2542,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     save was pressed while the upload was in flight — is filed once
     (`intake_staging.without_staged_copies`).
     """
-    # «Lisa teemaks» from «Uued teemad» (docs/adr/0218 §4): the candidate fills
+    # «Lisa teemaks» from «Uued eelnõud» (docs/adr/0218 §4): the candidate fills
     # what the registers say — title, sender ministry, when it appeared — as
     # the form's starting values, never as a decision. It is carried through
     # the form and closed only when this save succeeds.
@@ -3007,7 +3007,7 @@ def _create_context(
     from app.register_watch import candidates as topic_candidates
 
     return {
-        # «Lisa teemaks» from «Uued teemad» (docs/adr/0218 §4): carried as a
+        # «Lisa teemaks» from «Uued eelnõud» (docs/adr/0218 §4): carried as a
         # hidden field so a refused save still closes the candidate.
         "from_candidate": topic_candidates.for_create(
             request.user,

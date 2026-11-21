@@ -280,7 +280,7 @@ class TopicCandidate(BaseModel):
 
     class Meta:
         verbose_name = "uue teema kandidaat"
-        verbose_name_plural = "uute teemade kandidaadid"
+        verbose_name_plural = "uute eelnõude kandidaadid"
         constraints = [
             models.CheckConstraint(
                 condition=models.Q(status__in=[s.value for s in CandidateStatus]),
@@ -340,13 +340,13 @@ class SweepRun(BaseModel):
     ai_failures = models.PositiveIntegerField(default=0)
 
     class Meta:
-        verbose_name = "uute teemade otsing"
-        verbose_name_plural = "uute teemade otsingud"
+        verbose_name = "uute eelnõude otsing"
+        verbose_name_plural = "uute eelnõude otsingud"
         ordering = ["-started_at"]
 
 
 class CandidateAudience(BaseModel):
-    """Who the «Uued teemad» page is for, beyond the department's head (ADR 0218 §6).
+    """Who the «Uued eelnõud» page is for, beyond the department's head (ADR 0218 §6).
 
     One row: the page is open to every business reader (`everyone`), or only to
     the head and the administrators. Changed in Haldus.
@@ -355,12 +355,12 @@ class CandidateAudience(BaseModel):
     everyone = models.BooleanField(default=False, verbose_name="nähtav kõigile")
 
     class Meta:
-        verbose_name = "uute teemade lehe nähtavus"
-        verbose_name_plural = "uute teemade lehe nähtavus"
+        verbose_name = "uute eelnõude lehe nähtavus"
+        verbose_name_plural = "uute eelnõude lehe nähtavus"
 
 
 class CandidateNotice(BaseModel):
-    """«Uued teemad registrites» in the bell: one unread notice per reader (ADR 0218 §7)."""
+    """«Uued eelnõud registrites» in the bell: one unread notice per reader (ADR 0218 §7)."""
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -372,8 +372,8 @@ class CandidateNotice(BaseModel):
     read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
 
     class Meta:
-        verbose_name = "uute teemade teavitus"
-        verbose_name_plural = "uute teemade teavitused"
+        verbose_name = "uute eelnõude teavitus"
+        verbose_name_plural = "uute eelnõude teavitused"
         indexes = [models.Index(fields=["recipient", "read_at"], name="candidate_notice_inbox")]
 
 

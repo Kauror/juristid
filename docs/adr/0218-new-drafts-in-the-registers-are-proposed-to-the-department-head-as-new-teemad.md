@@ -38,10 +38,22 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
    open Teema's title names its bill («973 SE»), when the per-Teema watch
    already watches that bill, or when the watch already found that document.
    The rest are gathered into `TopicCandidate`s, one per draft: documents whose
-   titles share the same distinctive words (`candidates.match_key`, the
-   title less the words every draft and covering letter carry) join one
+   titles start with the same distinctive words (`candidates.match_key`, the
+   title less the words every draft and covering letter carry, and less the
+   sender ADR appends after «_»; the first three words decide) join one
    candidate, so «… eelnõu kooskõlastamiseks esitamine» and «Arvamus … eelnõule»
    are one row with two documents. Each document is stored once.
+
+   The first real sweep (21.11.2026, live registers, no model: 9 registers,
+   128 documents, 88 candidates) showed two kinds of noise, handled by rule:
+   - **Administrative acts** on one place, permit or person — detail plans,
+     building and environmental permits, design conditions, quarries, orders
+     to sign (`candidates.ADMINISTRATIVE`, 27 of 88) — are listed as «Ei puutu»
+     with a fixed reason, folded, and never sent to the model.
+   - **Letters whose title names no draft** («Eelnõu», «Eelnõu
+     kooskõlastamine», about 20) join nothing, are not sent to the model (it
+     would have nothing to read) and are listed apart, folded, under «Pealkiri
+     ei ütle, millise eelnõuga on tegu», with their register links.
 3. **The model judges, it does not decide.** When `JURISTID_REGISTER_SWEEP_AI`
    is on and a key exists, Claude reads each new candidate's register entries
    (titles, dates, numbers, senders — public facts only) against a written
@@ -52,9 +64,10 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
    Teemad and may name one the draft is plainly tied to; only an id it was
    offered is kept. A restricted Teema is never sent. Any failure leaves the
    batch unjudged for the next night.
-4. **Three answers, each by a person.** On «Uued teemad»
-   (`/arengud/uued-teemad/`): «Lisa teemaks» opens Uus teema with the title
-   (the Riigikogu's name with «NNN SE» when there is one), the sender ministry
+4. **Three answers, each by a person.** On «Uued eelnõud»
+   (`/arengud/uued-eelnoud/`): «Lisa teemaks» opens Uus teema with the title
+   (the Riigikogu's name with «NNN SE» when there is one, else the draft's name
+   cut from the letter's title, `candidates.draft_name`), the sender ministry
    and the day it first appeared filled in as starting values; the candidate is
    carried through the form and closed only when the Teema is saved, and its
    register addresses (at most five) become the new Teema's `Menetluse link`s
@@ -73,9 +86,9 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
    open it to every business reader and close it again (`CandidateAudience`,
    one row, changed on the page itself). Readers see it once opened; only those
    who may write business content answer. A Teema the reader cannot see is not
-   named to them. The way in is «Uued teemad (N)» on Osakond.
+   named to them. The way in is «Uued eelnõud (N)» on Osakond (not «Uued teemad», which Osakond already uses for newly filed Teemad).
 7. **The bell's sixth source.** A sweep that lists new candidates (not folded
-   ones) creates one «Uued teemad registrites» notice for each person who may
+   ones, not nameless letters) creates one «Uued eelnõud registrites» notice for each person who may
    decide, or adds to their unread one (`CandidateNotice`). It is read and
    unread like the register notice, and becomes history once nothing is left
    on the list.
@@ -90,4 +103,9 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
 - The grouping is by words, so two drafts with the same distinctive words share
   a row, and one draft named two ways can be two rows. The person decides.
 - Cost: one model call per twenty new candidates a night.
+- The page is called «Uued eelnõud», not «Uued teemad»: Osakond already uses
+  that name for newly filed Teemad (its rail and Muudatused).
+- The administrative list is a word list: a draft named like one of them
+  («… ehitusloa menetluse muutmine» as a law) is folded too, though it stays
+  on the page.
 - Nothing here creates a Teema, moves a stage or sets a deadline.

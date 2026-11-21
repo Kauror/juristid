@@ -1,7 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Uued teemad · {{ application_name }}{% endblock %}
+{% block title %}Uued eelnõud · {{ application_name }}{% endblock %}
 
 {% comment %}
+Letters whose title names no draft («Eelnõu kooskõlastamine») are a third,
+folded group: nobody can judge them from the title, so the model is not asked.
 Drafts the nightly sweep found in the registers that are not a Teema yet
 (docs/adr/0218). A row changes nothing until a person presses «Lisa teemaks»
 (Uus teema, filled from the row), «Seo» (the row's register links on an
@@ -12,7 +14,7 @@ never acted on; weak and unrelated rows are folded at the foot.
 {% block content %}
 <div class="page">
   <div class="pagehead">
-    <h1 class="pagehead__title">Uued teemad</h1>
+    <h1 class="pagehead__title">Uued eelnõud</h1>
     <span class="pagehead__context">{{ shown|length }}</span>
   </div>
 
@@ -43,6 +45,15 @@ never acted on; weak and unrelated rows are folded at the foot.
       <summary>Tõenäoliselt ettevõtjaid ei puuduta ({{ folded|length }})</summary>
       <ul class="regwatch__list">
         {% for candidate in folded %}{% include "register_watch/_candidate.html" %}{% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+
+  {% if nameless %}
+    <details class="regwatch__unrelated">
+      <summary>Pealkiri ei ütle, millise eelnõuga on tegu ({{ nameless|length }})</summary>
+      <ul class="regwatch__list">
+        {% for candidate in nameless %}{% include "register_watch/_candidate.html" %}{% endfor %}
       </ul>
     </details>
   {% endif %}

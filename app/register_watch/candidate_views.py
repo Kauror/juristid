@@ -1,4 +1,4 @@
-"""«Uued teemad»: drafts in the registers that are not a Teema yet (ADR 0218).
+"""«Uued eelnõud»: drafts in the registers that are not a Teema yet (ADR 0218).
 
 The department head's page. Each candidate is a proposal: «Lisa teemaks» opens
 Uus teema filled from it, «Seo olemasolevaga» writes its register addresses on
@@ -58,12 +58,18 @@ def candidate_list(request: HttpRequest) -> HttpResponse:
     )
     shown: list[Any] = []
     folded: list[Any] = []
+    nameless: list[Any] = []
     for row in rows:
         # A Teema the reader may not see is not named to them.
         cast(Any, row).related_shown = (
             row.related_matter if row.related_matter_id in visible else None
         )
-        (folded if row.strength in candidates.FOLDED else shown).append(row)
+        if not row.match_key:
+            nameless.append(row)
+        elif row.strength in candidates.FOLDED:
+            folded.append(row)
+        else:
+            shown.append(row)
     rank = {Strength.STRONG: 0, Strength.POSSIBLE: 1, Strength.UNJUDGED: 2}
     shown.sort(key=lambda row: rank.get(row.strength, 3))
     return render(
@@ -73,6 +79,7 @@ def candidate_list(request: HttpRequest) -> HttpResponse:
             "nav_active": "osakond",
             "shown": shown,
             "folded": folded,
+            "nameless": nameless,
             "may_decide": candidate_notices.may_decide(request.user),
             "is_head": candidate_notices.is_head(request.user),
             "everyone": candidate_notices.audience().everyone,

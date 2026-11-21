@@ -1,10 +1,10 @@
-"""Who sees «Uued teemad», and its notice in the bell (ADR 0218 §6–§7).
+"""Who sees «Uued eelnõud», and its notice in the bell (ADR 0218 §6–§7).
 
 The page is the department head's: always open to whoever holds the head's
 management view (`may_view_department_management`). The head can open it to
 every business reader (`CandidateAudience.everyone`), and close it again.
 
-Whoever may decide on candidates gets «Uued teemad registrites» in the bell
+Whoever may decide on candidates gets «Uued eelnõud registrites» in the bell
 after a sweep that put candidates on the list: one unread notice per person,
 which a later sweep adds to. It is awaiting the person while it is unread and
 something is still on the list; once the list is empty it is history.
@@ -89,9 +89,9 @@ def own(user: Any) -> QuerySet[CandidateNotice]:
 
 
 def _list_waits() -> bool:
-    from app.register_watch.candidates import FOLDED, waiting
+    from app.register_watch.candidates import worth_telling
 
-    return waiting().exclude(strength__in=FOLDED).exists()
+    return worth_telling().exists()
 
 
 def due_unread(user: Any) -> QuerySet[CandidateNotice]:

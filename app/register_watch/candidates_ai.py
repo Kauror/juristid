@@ -159,7 +159,9 @@ def judge_unjudged(usage: Usage, client: Any = None) -> int:
         return 0
     usage.model = usage.model or str(getattr(settings, "REGISTER_SWEEP_AI_MODEL", ""))
     pending = list(
+        # A letter whose title names no draft gives the model nothing to read.
         TopicCandidate.objects.filter(status="NEW", strength=Strength.UNJUDGED)
+        .exclude(match_key="")
         .prefetch_related("items")
         .order_by("listed_at", "pk")
     )

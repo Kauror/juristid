@@ -1,4 +1,4 @@
-"""«Uued teemad»: the nightly sweep for drafts that are not a Teema yet (ADR 0218).
+"""«Uued eelnõud»: the nightly sweep for drafts that are not a Teema yet (ADR 0218).
 
 No test contacts a register or the model: the sources' doors and the model
 client are replaced here, as in tests/test_register_watch.py.
@@ -184,6 +184,68 @@ def test_letters_about_one_draft_share_a_key():
     other = candidates.match_key("Pakendiseaduse muutmise seaduse eelnõu")
     assert sent == opinion == "äriseadustiku"
     assert other != sent
+
+
+def test_letters_with_a_sender_or_a_longer_name_join_the_same_draft():
+    assert candidates._same_draft(
+        candidates.match_key("Haldusmenetluse seaduse muutmise seaduse eelnõu kooskõlastamine"),
+        candidates.match_key(
+            "Haldusmenetluse seaduse muutmise eelnõu kooskõlastamine märkustega arvestamisel"
+        ),
+    )
+    assert candidates.match_key(
+        "Arvamus noortevaldkonna seaduse eelnõu VTK kohta_Soolise võrdõiguslikkuse volinik"
+    ) == candidates.match_key(
+        "Tagasiside noortevaldkonna seaduse väljatöötamiskavatsusele_Õiguskantsler"
+    )
+    assert not candidates._same_draft(
+        candidates.match_key(
+            "Riigikogu otsus «Ettepaneku tegemine Valitsusele muuta palgatoetuse tingimusi»"
+        ),
+        candidates.match_key(
+            "Riigikogu otsus «Ettepaneku tegemine Valitsusele taaskehtestada piirikontroll»"
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("letter", "draft"),
+    [
+        (
+            "Spordiseaduse täiendamise seaduse eelnõu kooskõlastamine",
+            "Spordiseaduse täiendamise seaduse eelnõu",
+        ),
+        (
+            "Arvamus riigihangete seaduse muutmise väljatöötamiskavatsusele",
+            "Riigihangete seaduse muutmise väljatöötamiskavatsus",
+        ),
+        ("Eelnõu kooskõlastamiseks", "Eelnõu kooskõlastamiseks"),
+        (
+            "Riigi Infosüsteemi Ameti põhimääruse eelnõu",
+            "Riigi Infosüsteemi Ameti põhimääruse eelnõu",
+        ),
+    ],
+)
+def test_uus_teema_gets_the_drafts_name_not_the_letters(letter, draft):
+    assert candidates.draft_name(letter) == draft
+
+
+def test_a_letter_that_names_no_draft_joins_nothing():
+    assert candidates.match_key("Eelnõu kooskõlastamiseks") == ""
+    assert not candidates._same_draft("", "")
+
+
+@override_settings(REGISTER_SWEEP=True)
+def test_an_administrative_act_is_listed_folded_and_never_sent_to_the_model(registers):
+    registers.pages["/kum/otsing"] = _adr_page(
+        "kum",
+        [("700", "7-1/1", "20.11.2026", "Pärnu linnas Aia tn 4 kinnistu detailplaneeringu eelnõu")],
+    )
+    candidates.sweep(use_ai=False, today=TODAY)
+
+    plan = TopicCandidate.objects.get(title__startswith="Pärnu linnas")
+    assert plan.strength == Strength.NONE
+    assert plan.reason == candidates.ADMINISTRATIVE_REASON
 
 
 # -- the sweep ---------------------------------------------------------------------
@@ -468,9 +530,21 @@ def test_a_stopped_or_missing_sweep_is_red(registers):
     assert candidates.sweep_health().ok
 
     assert candidates.sweep_health(now + dt.timedelta(hours=31)).ok is False
-    SweepRun.objects.create(started_at=now, errors=[{"viga": "x", "katkes": True}])
+    SweepRun.objects.create(started_at=timezone.now(), errors=[{"viga": "x", "katkes": True}])
     assert candidates.sweep_health().detail == "last run stopped before its end"
 
 
 def test_a_switched_off_sweep_is_green():
     assert candidates.sweep_health().detail == "off"
+
+
+def test_a_letter_naming_no_draft_is_folded_apart_and_not_counted(department_head):
+    nameless = _candidate("Eelnõu kooskõlastamiseks")
+    assert nameless.match_key == ""
+    candidate_notices.notify(1)
+
+    html = _signed_in(department_head).get(PAGE).content.decode()
+
+    assert "Pealkiri ei ütle, millise eelnõuga on tegu (1)" in html
+    assert candidate_notices.due_unread(department_head).count() == 0
+    assert candidates.worth_telling().count() == 0

@@ -27,7 +27,7 @@ check (ADR 0188)   reader's desk (or unowned, for  `CommencementReminderPersonal
 «Registris uus     `notices.due_unread`: unread,   ``read_at`` set, or every document
 dokument»          a document still waits          on the Teema added or skipped
 (ADR 0217)
-«Uued teemad       `candidate_notices.due_unread`: ``read_at`` set, or nothing left on
+«Uued eelnõud      `candidate_notices.due_unread`: ``read_at`` set, or nothing left on
 registrites»       unread, the list still waits    the list
 (ADR 0218)
 =================  ==============================  ===================================

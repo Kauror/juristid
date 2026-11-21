@@ -52,7 +52,7 @@ SWEEP_WORDS = ("eelnõu", "väljatöötamiskavatsus")
 #: It is also all the first sweep brings in: older drafts are not candidates.
 SWEEP_DAYS = 4
 ALREADY_DECIDED = "See kandidaat on juba otsustatud."
-ALREADY_RUNNING = "Uute teemade otsing juba käib."
+ALREADY_RUNNING = "Uute eelnõude otsing juba käib."
 RUN_LOCK = 218_0001
 #: The strengths shown folded at the foot of the list.
 FOLDED = (Strength.WEAK, Strength.NONE)
@@ -63,11 +63,52 @@ MAX_LINKS = 5
 _LETTER = frozenset(
     """
     edastamine esitamine arvamus arvamuse arvamuste avaldamiseks avaldamine kooskõlastamisele
-    kooskõlastus kooskõlastuse kiri kirja vastus vastuskiri seisukoht seisukoha seisukohad
-    tagasiside palve taotlus märkused märkuste ettepanekud ettepanekute teadmiseks
-    saatmine tutvumiseks arutelu kaasamine kaasamiseks täiendav täiendatud
+    kooskõlastus kooskõlastuse kooskõlastamisest kiri kirja vastus vastuskiri seisukoht seisukoha
+    seisukohad tagasiside palve taotlus märkused märkuste märkusega märkustega arvestamisel
+    ettepanekud ettepanekute teadmiseks saatmine tutvumiseks arutelu kaasamine kaasamiseks
+    täiendav täiendatud täiendavaks mittekooskõlastamine eelnõuga eelnõude eelnõus
+    väljatöötamiskavatsusele väljatöötamiskavatsuse väljatöötamiskavatsust istungile
+    riigikogu otsus ettepaneku tegemine valitsusele resolutsioon kooskõlastamine
     """.split()
 )
+#: How many leading distinctive words say which draft: two titles whose first
+#: words agree this far (or one ends where the other goes on) are one draft.
+KEY_WORDS = 3
+
+#: Titles that name an administrative act on one place, permit or person, not
+#: a rule for business: kept on the list as «Ei puutu», folded, and never sent
+#: to the model (ADR 0218 §3). Matched as word stems, lower case.
+ADMINISTRATIVE = (
+    "detailplaneering",
+    "projekteerimistingimus",
+    "ehitusloa",
+    "ehitusluba",
+    "keskkonnaloa",
+    "keskkonnaluba",
+    "korrastamistingimus",
+    "käskkiri",
+    "käskkirja",
+    "müügikäskkirja",
+    "finantskorrektsiooni",
+    "maareformi",
+    "ettekirjutuse",
+    "liivakarjäär",
+    "kruusakarjäär",
+    "mäeeraldise",
+    "kinnistu",
+    "kinnisasja",
+    "keskkonnamõju eelhinnang",
+    "hindamise algatamata",
+    "silla rekonstrueerimise",
+)
+ADMINISTRATIVE_REASON = (
+    "Haldusakt ühe koha, loa või isiku kohta, mitte ettevõtjaid puudutav õigusakt."
+)
+
+
+def administrative(title: str) -> bool:
+    text = (title or "").casefold()
+    return any(stem in text for stem in ADMINISTRATIVE)
 
 
 def enabled() -> bool:
@@ -79,11 +120,18 @@ def match_key(title: str) -> str:
 
     «Äriseadustiku muutmise seaduse eelnõu kooskõlastamiseks esitamine» and
     «Arvamus äriseadustiku muutmise seaduse eelnõule» share one key, so the
-    second document joins the first one's candidate.
+    second document joins the first one's candidate. A sender ADR appends after
+    «_» is not part of the draft's name. A title with no distinctive word at
+    all («Eelnõu kooskõlastamiseks») has the empty key: it names no draft, so it
+    joins nothing (`_same_draft`).
     """
-    text = re.sub(r"\([^)]*\)", " ", title or "")
+    text = re.sub(r"\([^)]*\)", " ", (title or "").split("_")[0])
+    text = re.sub(r"[„“”\"«»]", " ", text)
     chosen: list[str] = []
     for word in phrases.WORD.findall(text):
+        if word.endswith("-"):
+            # «Haridus- ja teadusministri»: the first half of a joined name.
+            continue
         clean = word.strip("-").casefold()
         if (
             len(clean) < 3
@@ -97,7 +145,29 @@ def match_key(title: str) -> str:
         chosen.append(clean)
         if len(chosen) == 8:
             break
-    return (" ".join(chosen) or " ".join((title or "").casefold().split()))[:300]
+    return " ".join(chosen)[:300]
+
+
+def _same_draft(one: str, other: str) -> bool:
+    """Two keys name one draft: their leading words agree as far as both go."""
+    a, b = one.split()[:KEY_WORDS], other.split()[:KEY_WORDS]
+    if not a or not b:
+        return False
+    shorter = min(len(a), len(b))
+    return a[:shorter] == b[:shorter]
+
+
+def _candidate_for(key: str) -> TopicCandidate | None:
+    """The newest candidate of the same draft, or ``None``."""
+    if not key:
+        return None
+    first = key.split()[0]
+    for candidate in TopicCandidate.objects.filter(match_key__startswith=first).order_by(
+        "-listed_at"
+    ):
+        if _same_draft(key, candidate.match_key):
+            return candidate
+    return None
 
 
 # -- reading -----------------------------------------------------------------------
@@ -196,10 +266,14 @@ def store(
         if _belongs_to_a_teema(source, item, marks):
             continue
         key = match_key(item.title)
-        candidate = TopicCandidate.objects.filter(match_key=key).order_by("-listed_at").first()
+        candidate = _candidate_for(key)
         if candidate is None:
+            noise = administrative(item.title)
             candidate = TopicCandidate.objects.create(
-                title=item.title[:500] or "(pealkirjata)", match_key=key
+                title=item.title[:500] or "(pealkirjata)",
+                match_key=key,
+                strength=Strength.NONE if noise else Strength.UNJUDGED,
+                reason=ADMINISTRATIVE_REASON if noise else "",
             )
             listed += 1
         elif _reopen_if_it_moved(candidate, source):
@@ -276,10 +350,7 @@ def sweep(*, use_ai: bool = True, ai_client: Any = None, today: dt.date | None =
                     record.errors.append({"allikas": "Claude", "viga": _error_text(error)})
             with transaction.atomic():
                 candidate_notices.notify(
-                    waiting()
-                    .filter(listed_at__gte=record.started_at)
-                    .exclude(strength__in=FOLDED)
-                    .count()
+                    worth_telling().filter(listed_at__gte=record.started_at).count()
                 )
         except BaseException as error:
             record.errors.append({"viga": f"Otsing katkes: {_error_text(error)}", "katkes": True})
@@ -313,6 +384,11 @@ def _close(record: SweepRun, usage: Any) -> None:
 def waiting() -> QuerySet[TopicCandidate]:
     """The list: candidates nobody has decided, newest first."""
     return TopicCandidate.objects.filter(status=CandidateStatus.NEW).order_by("-listed_at", "pk")
+
+
+def worth_telling() -> QuerySet[TopicCandidate]:
+    """What the bell and Osakond count: not folded, and named (a title that says which draft)."""
+    return waiting().exclude(strength__in=FOLDED).exclude(match_key="")
 
 
 def _lock_new(candidate: TopicCandidate) -> TopicCandidate:
@@ -401,10 +477,38 @@ def for_create(user: Any, pk: Any) -> TopicCandidate | None:
         return None
 
 
+#: Words a covering letter opens with before it names the draft.
+_LEADING = frozenset(
+    "arvamus tagasiside seisukoht seisukoha ettepanekud kooskõlastamiseks kooskõlastus".split()
+)
+#: The word that ends a draft's own name, as it is written in the Teema title.
+_DRAFT_WORDS = (("eelnõu", "eelnõu"), ("väljatöötamiskavatsus", "väljatöötamiskavatsus"))
+
+
+def draft_name(title: str) -> str:
+    """A covering letter's title cut to the draft it is about.
+
+    «Arvamus riigihangete seaduse muutmise väljatöötamiskavatsusele» becomes
+    «Riigihangete seaduse muutmise väljatöötamiskavatsus»; «Spordiseaduse
+    täiendamise seaduse eelnõu kooskõlastamine» becomes «… seaduse eelnõu». A
+    title that does not name a draft before the word is returned as it was.
+    """
+    words = (title or "").split()
+    while words and words[0].casefold().strip(":") in _LEADING:
+        words = words[1:]
+    for index, word in enumerate(words):
+        folded = word.casefold()
+        for stem, plain in _DRAFT_WORDS:
+            if folded.startswith(stem) and index > 0:
+                named = " ".join([*words[:index], plain])
+                return named[0].upper() + named[1:]
+    return title
+
+
 def _teema_title(candidate: TopicCandidate) -> str:
-    """The Riigikogu's name for the bill when it has one: it carries «NNN SE»."""
+    """The Riigikogu's name for the bill when it has one (it carries «NNN SE»), else the draft's."""
     bill = candidate.items.filter(source=WatchSource.RIIGIKOGU).order_by("-occurred_on").first()
-    return (bill.title if bill is not None else candidate.title)[:1000]
+    return (bill.title if bill is not None else draft_name(candidate.title))[:1000]
 
 
 def create_initial(candidate: TopicCandidate) -> dict[str, Any]:
@@ -503,7 +607,7 @@ def sweep_health(now: dt.datetime | None = None) -> Any:
         installed = _installed_at()
         if installed is not None and now < _first_run_due(installed):
             return Health(True, "first run in progress" if latest else "not run yet")
-        return Health(False, "never run", "Uute teemade otsing pole veel käinud.")
+        return Health(False, "never run", "Uute eelnõude otsing pole veel käinud.")
     if finished.finished_at is None or finished.finished_at < now - STALE_AFTER:
         return Health(False, "no finished run in 30 h", "Üle 30 tunni pole otsing lõpuni jõudnud.")
     if finished.sources_read == 0 and finished.errors:

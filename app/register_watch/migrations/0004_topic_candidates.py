@@ -25,8 +25,8 @@ class Migration(migrations.Migration):
                 ('everyone', models.BooleanField(default=False, verbose_name='nähtav kõigile')),
             ],
             options={
-                'verbose_name': 'uute teemade lehe nähtavus',
-                'verbose_name_plural': 'uute teemade lehe nähtavus',
+                'verbose_name': 'uute eelnõude lehe nähtavus',
+                'verbose_name_plural': 'uute eelnõude lehe nähtavus',
             },
         ),
         migrations.CreateModel(
@@ -49,8 +49,8 @@ class Migration(migrations.Migration):
                 ('ai_failures', models.PositiveIntegerField(default=0)),
             ],
             options={
-                'verbose_name': 'uute teemade otsing',
-                'verbose_name_plural': 'uute teemade otsingud',
+                'verbose_name': 'uute eelnõude otsing',
+                'verbose_name_plural': 'uute eelnõude otsingud',
                 'ordering': ['-started_at'],
             },
         ),
@@ -74,7 +74,7 @@ class Migration(migrations.Migration):
             ],
             options={
                 'verbose_name': 'uue teema kandidaat',
-                'verbose_name_plural': 'uute teemade kandidaadid',
+                'verbose_name_plural': 'uute eelnõude kandidaadid',
             },
         ),
         migrations.CreateModel(
@@ -108,8 +108,8 @@ class Migration(migrations.Migration):
                 ('recipient', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='candidate_notices', to=settings.AUTH_USER_MODEL, verbose_name='saaja')),
             ],
             options={
-                'verbose_name': 'uute teemade teavitus',
-                'verbose_name_plural': 'uute teemade teavitused',
+                'verbose_name': 'uute eelnõude teavitus',
+                'verbose_name_plural': 'uute eelnõude teavitused',
                 'indexes': [models.Index(fields=['recipient', 'read_at'], name='candidate_notice_inbox')],
             },
         ),

@@ -3,7 +3,7 @@
     manage.py sweep_registers [--no-ai] [--dry-run]
 
 Run nightly by the host's cron, after `watch_registers`. It stores what is new
-as candidates on the «Uued teemad» page; nothing becomes a Teema until a person
+as candidates on the «Uued eelnõud» page; nothing becomes a Teema until a person
 adds one. ``--dry-run`` does the whole run and rolls it back.
 
 Exit 0 when the run finished, even if some registers could not be read (they

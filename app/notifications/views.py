@@ -490,7 +490,7 @@ def _own_candidates_or_404(request: HttpRequest, pk: Any) -> Any:
 @login_required
 @require_http_methods(["POST"])
 def candidates_read(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Märgi loetuks» on the reader's own «Uued teemad» notice (docs/adr/0218 §7)."""
+    """«Märgi loetuks» on the reader's own «Uued eelnõud» notice (docs/adr/0218 §7)."""
     from app.register_watch import candidate_notices
 
     row = _own_candidates_or_404(request, pk)
@@ -501,7 +501,7 @@ def candidates_read(request: HttpRequest, pk: Any) -> HttpResponse:
 @login_required
 @require_http_methods(["POST"])
 def candidates_unread(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Märgi lugemata» on the reader's own «Uued teemad» notice."""
+    """«Märgi lugemata» on the reader's own «Uued eelnõud» notice."""
     from app.register_watch import candidate_notices
 
     row = _own_candidates_or_404(request, pk)

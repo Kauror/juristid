@@ -1,4 +1,4 @@
-<li class="regwatch__row regwatch__candidate">
+<li class="regwatch__row">
   <span class="regwatch__strength regwatch__strength--{{ candidate.strength|default:'unjudged'|lower }}">{{ candidate.get_strength_display }}</span>
   <div class="regwatch__body">
     <span class="regwatch__title">{{ candidate.title }}</span>
@@ -17,7 +17,7 @@
       <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa teemaks</button>
       <span class="regwatch__attach">
         <label class="visually-hidden" for="seo-{{ candidate.pk }}">Teema number</label>
-        <input id="seo-{{ candidate.pk }}" name="teema" class="field__input regwatch__teema-input" type="text" inputmode="numeric" placeholder="2026_190" value="{{ candidate.related_shown.display_reference|default:'' }}">
+        <input id="seo-{{ candidate.pk }}" name="teema" class="field__input regwatch__teema-input" type="text" inputmode="numeric" placeholder="Teema nr" value="{{ candidate.related_shown.display_reference|default:'' }}">
         <button type="submit" name="otsus" value="seo" class="button button--secondary button--tiny">Seo</button>
       </span>
       <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta kõrvale</button>
