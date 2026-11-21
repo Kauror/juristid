@@ -992,6 +992,15 @@ REGISTER_WATCH_AI_MODEL = env("JURISTID_REGISTER_WATCH_AI_MODEL", "claude-opus-5
 # What a register held this many days before a Teema's first check is kept as
 # seen and never offered.
 REGISTER_WATCH_BASELINE_DAYS = 45
+# The sweep for new drafts (app/register_watch/candidates.py, docs/adr/0218):
+# the nightly `sweep_registers` reads the same fenced registers for drafts that
+# are not a Teema yet. Off until the owner turns it on; it reads only when
+# `JURISTID_REGISTER_WATCH_FETCH` is on as well.
+REGISTER_SWEEP = env_bool("JURISTID_REGISTER_SWEEP", default=False)
+# Claude saying how a new draft may touch entrepreneurs (ADR 0218 §3). Public
+# facts only; needs ANTHROPIC_API_KEY.
+REGISTER_SWEEP_AI = env_bool("JURISTID_REGISTER_SWEEP_AI", default=False)
+REGISTER_SWEEP_AI_MODEL = env("JURISTID_REGISTER_SWEEP_AI_MODEL", "claude-opus-5-5")
 
 
 def _revision() -> str:

@@ -225,6 +225,7 @@ consequences and reversibility.
 | [0215](0215-statistika-reads-who-sends-and-valdkond-from-confirmed-teema-fields.md) | Statistika reads who sends and Valdkond from confirmed Teema fields (proposals from one title review, confirmed by a lawyer) | Accepted |
 | [0216](0216-postipoiss-letters-are-paired-with-teemad-by-calibrated-rule-and-by-lawyers.md) | Postipoiss letters are paired with Teemad by a calibrated rule and by lawyers (sealed package, seven-day rule, Ajaloolised kirjad) | Accepted |
 | [0217](0217-registers-are-watched-for-new-documents-and-a-lawyer-adds-them.md) | Registers are watched for new documents, and a lawyer adds them (Riigikogu API + PDR ministry registers nightly; the model judges, never writes) | Accepted |
+| [0218](0218-new-drafts-in-the-registers-are-proposed-to-the-department-head-as-new-teemad.md) | New drafts in the registers are proposed to the department head as new Teemad (nightly sweep, the model judges, «Uued teemad», the bell's sixth source) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:

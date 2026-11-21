@@ -203,6 +203,180 @@ class WatchRun(BaseModel):
         return self.finished_at is None and not self.aborted
 
 
+class CandidateStatus(models.TextChoices):
+    NEW = "NEW", "Uus"
+    #: «Lisa teemaks»: a new Teema was created from it (`matter`).
+    ADDED = "ADDED", "Lisatud teemaks"
+    #: «Seo olemasolevaga»: its documents were linked to an existing Teema (`matter`).
+    ATTACHED = "ATTACHED", "Seotud teemaga"
+    DISMISSED = "DISMISSED", "Jäetud kõrvale"
+
+
+class Strength(models.TextChoices):
+    #: Not judged yet: the model is off, or has not answered for it.
+    UNJUDGED = "", "Hindamata"
+    STRONG = "STRONG", "Tugev"
+    POSSIBLE = "POSSIBLE", "Võimalik"
+    WEAK = "WEAK", "Nõrk"
+    #: Not a legislative draft at all (an order to sign, a contract, a reply).
+    NONE = "NONE", "Ei puutu"
+
+
+class TopicCandidate(BaseModel):
+    """A draft the registers show that is not a Teema yet (ADR 0218).
+
+    One candidate gathers the register documents of one draft (`CandidateItem`).
+    It is a proposal to the head of the department: nothing becomes a Teema
+    until a person presses «Lisa teemaks» and saves Uus teema. The model's
+    strength and reason are shown, never acted on.
+    """
+
+    title = models.CharField(max_length=500, verbose_name="pealkiri")
+    #: The title without the words every draft carries; what later documents are matched by.
+    match_key = models.CharField(max_length=300, db_index=True, verbose_name="võrdlusvõti")
+    status = models.CharField(
+        max_length=16,
+        choices=CandidateStatus.choices,
+        default=CandidateStatus.NEW,
+        db_index=True,
+        verbose_name="olek",
+    )
+    strength = models.CharField(
+        max_length=16, choices=Strength.choices, blank=True, default="", verbose_name="hinnang"
+    )
+    #: The model's line: how the draft may touch entrepreneurs.
+    reason = models.CharField(max_length=500, blank=True, verbose_name="põhjendus")
+    #: An open Teema the draft seems tied to; a suggestion for «Seo olemasolevaga».
+    related_matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="seotud teema",
+    )
+    #: The Teema it became (ADDED) or was linked to (ATTACHED).
+    matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="topic_candidates",
+        verbose_name="teema",
+    )
+    #: When it was last put on the list: first seen, or brought back after a dismissal.
+    listed_at = models.DateTimeField(default=timezone.now, db_index=True, verbose_name="nimekirjas")
+    #: Set when a dismissed candidate came back because the draft reached the Riigikogu.
+    reopened_at = models.DateTimeField(null=True, blank=True, verbose_name="tagasi toodud")
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="otsustas",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True, verbose_name="otsustatud")
+
+    class Meta:
+        verbose_name = "uue teema kandidaat"
+        verbose_name_plural = "uute teemade kandidaadid"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(status__in=[s.value for s in CandidateStatus]),
+                name="register_watch_candidate_status",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(strength__in=[s.value for s in Strength]),
+                name="register_watch_candidate_strength",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class CandidateItem(BaseModel):
+    """One register document or Riigikogu bill a sweep saw, on its candidate."""
+
+    candidate = models.ForeignKey(
+        TopicCandidate, on_delete=models.CASCADE, related_name="items", verbose_name="kandidaat"
+    )
+    source = models.CharField(max_length=32, choices=WatchSource.choices, verbose_name="allikas")
+    external_id = models.CharField(max_length=200, verbose_name="välistunnus")
+    title = models.CharField(max_length=500, verbose_name="pealkiri")
+    occurred_on = models.DateField(null=True, blank=True, verbose_name="kuupäev")
+    url = models.URLField(max_length=1000, blank=True, verbose_name="link")
+    detail = models.CharField(max_length=300, blank=True, verbose_name="täpsustus")
+
+    class Meta:
+        verbose_name = "kandidaadi dokument"
+        verbose_name_plural = "kandidaatide dokumendid"
+        ordering = ["-occurred_on", "pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source", "external_id"], name="register_watch_candidate_item_once"
+            )
+        ]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class SweepRun(BaseModel):
+    """One nightly sweep for new drafts (`sweep_registers`)."""
+
+    started_at = models.DateTimeField(verbose_name="algas")
+    finished_at = models.DateTimeField(null=True, blank=True, verbose_name="lõppes")
+    sources_read = models.PositiveIntegerField(default=0)
+    items_new = models.PositiveIntegerField(default=0)
+    candidates_new = models.PositiveIntegerField(default=0)
+    errors = models.JSONField(default=list, blank=True)
+    ai_calls = models.PositiveIntegerField(default=0)
+    ai_input_tokens = models.PositiveIntegerField(default=0)
+    ai_output_tokens = models.PositiveIntegerField(default=0)
+    ai_model = models.CharField(max_length=80, blank=True, default="")
+    ai_judged = models.PositiveIntegerField(default=0)
+    ai_failures = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        verbose_name = "uute teemade otsing"
+        verbose_name_plural = "uute teemade otsingud"
+        ordering = ["-started_at"]
+
+
+class CandidateAudience(BaseModel):
+    """Who the «Uued teemad» page is for, beyond the department's head (ADR 0218 §6).
+
+    One row: the page is open to every business reader (`everyone`), or only to
+    the head and the administrators. Changed in Haldus.
+    """
+
+    everyone = models.BooleanField(default=False, verbose_name="nähtav kõigile")
+
+    class Meta:
+        verbose_name = "uute teemade lehe nähtavus"
+        verbose_name_plural = "uute teemade lehe nähtavus"
+
+
+class CandidateNotice(BaseModel):
+    """«Uued teemad registrites» in the bell: one unread notice per reader (ADR 0218 §7)."""
+
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="candidate_notices",
+        verbose_name="saaja",
+    )
+    candidates = models.PositiveIntegerField(default=0, verbose_name="kandidaate")
+    read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
+
+    class Meta:
+        verbose_name = "uute teemade teavitus"
+        verbose_name_plural = "uute teemade teavitused"
+        indexes = [models.Index(fields=["recipient", "read_at"], name="candidate_notice_inbox")]
+
+
 class RegisterNotice(BaseModel):
     """«Registris uus dokument» in the bell: one per Teema for its owner (ADR 0217 §6).
 

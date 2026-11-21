@@ -62,6 +62,15 @@ def _wants_calendar_fragment(request: HttpRequest) -> bool:
     )
 
 
+def _new_topics(user: Any) -> dict[str, int] | None:
+    """The way to «Uued teemad» and how many wait there, for who may see it."""
+    from app.register_watch import candidate_notices, candidates
+
+    if not candidate_notices.may_see(user):
+        return None
+    return {"waiting": candidates.waiting().exclude(strength__in=candidates.FOLDED).count()}
+
+
 @login_required
 def department(request: HttpRequest) -> HttpResponse:
     """Osakond — where the department stands, in two scopes behind one shell.
@@ -148,6 +157,8 @@ def department(request: HttpRequest) -> HttpResponse:
             # heading (app/matters/department_dashboard.py, `TEAM_COLUMNS`).
             "team_columns": TEAM_COLUMNS,
             "nav_active": "osakond",
+            # «Uued teemad» (docs/adr/0218): the head's, or everyone's once opened.
+            "new_topics": _new_topics(request.user),
         },
     )
 

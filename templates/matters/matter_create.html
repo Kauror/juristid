@@ -76,6 +76,10 @@
         action="{% url 'matters:matter_create' %}"
         enctype="multipart/form-data">
     {% csrf_token %}
+    {% if from_candidate %}
+      <input type="hidden" name="kandidaat" value="{{ from_candidate.pk }}">
+      <p class="createform__candidate">Registrist leitud eelnõu põhjal: {{ from_candidate.title }}. Lingid registritesse lisatakse teemale salvestamisel.</p>
+    {% endif %}
 
     {% comment %}
       Which offered suggestions are in use, carried across a refused save.

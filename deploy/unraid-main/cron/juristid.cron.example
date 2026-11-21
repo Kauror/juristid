@@ -37,3 +37,9 @@
 # --env-file` refuses a missing one. Log: one line per run plus its errors; the
 # runs are also in Haldus → Registrite jälgimine.
 30 3 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_registers >> /mnt/user/appdata/juristid-main/register-watch.log 2>&1
+
+# New topics sweep (docs/adr/0218): drafts in the same registers that are not a
+# Teema yet, for the «Uued teemad» page. At 04:20 UTC, after the register watch
+# has finished (~16 min), so a draft a Teema already follows is left out. Same
+# env file: JURISTID_REGISTER_SWEEP=1, JURISTID_REGISTER_SWEEP_AI=1, the key.
+20 4 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py sweep_registers >> /mnt/user/appdata/juristid-main/register-sweep.log 2>&1

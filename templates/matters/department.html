@@ -33,6 +33,7 @@ nothing to hide (app/matters/department.py).
       <time datetime="{{ today|date:'Y-m-d' }}">{{ today|date:"l, j. F Y" }}</time>
     </span>
     <span class="ovhead__spacer"></span>
+    {% if new_topics %}<a class="ovhead__link" href="{% url 'register_watch:candidates' %}">Uued teemad{% if new_topics.waiting %} ({{ new_topics.waiting }}){% endif %}</a>{% endif %}
     {% comment %}
       What the department is carrying, and nothing about how many people carry
       it. A count of colleagues is not a fact about the work, and the team table
