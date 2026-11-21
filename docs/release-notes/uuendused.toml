@@ -12,6 +12,10 @@ date = 2026-11-21
 basis = "deployment"
 prs = [660]
 changes = [
+  "Teema lehel on kolmas vahekaart «Registritest». Seal on registritest leitud dokumendid, mis ootavad otsust («Lisa märkena», «Lisa link», «Jäta vahele»), ja jälgitavad allikad koos otsingusõnadega. Vahekaardi juures olev number näitab, mitu dokumenti ootab. Kui teema ministeeriumi registrit ei saa automaatselt lugeda või pole teada, kust otsida, ütleb vahekaart seda kohe. Rida «Registrites N uut dokumenti» pealkirja kohal ja link «Registrite jälgimine» paremas veerus on ära, kellukese teavitus avab sama vahekaardi.",
+  "Teema, Dokumendid ja Registritest vahetuvad lehte uuesti laadimata: pealkiri, väljad ja parem veerg jäävad paigale ning muutub ainult ala vahekaartide all. Aadress muutub kaasa, nii et linki saab jagada ja «Tagasi» töötab.",
+  "OneNote'i märke avamisel teema ajajoonel on näha ka failid, mis on OneNote'i lehel selle märke juures, näiteks kiri, millest märge räägib. Iga faili saab sealt otse avada või alla laadida, «OneNote'i koopiat» avamata.",
+  "Uuendused on Halduse vahekaart: Halduse lehel saab otse Uuendustesse liikuda. Link «Rakenduse» all on alles.",
   "Kui teema Lovable'is küsitud arvamusel pole järgmist sammu kirjas, jääb Juristidis samm «Koostan arvamuse» alles ka pärast tähtaega ja on üle tähtaja, kuni Lovable'is on märgitud, et arvamus saadeti või jäeti saatmata, kirjutatakse uus järgmine samm, tähtaeg eemaldatakse või teema lõpetatakse. Varem kadus samm tähtajale järgneval päeval ja asemele jäi arvamuse tähtaeg.",
 ]
 

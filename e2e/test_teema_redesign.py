@@ -78,7 +78,8 @@ def test_a_normal_matter_answers_everything_above_the_fold(page, base_url):
     # fold as a whole — only its period accordions do.
     expect(page.locator("#ajajoon .accordion__body")).to_be_visible()
     expect(page.locator("#ajajoon > summary")).to_have_count(0)
-    expect(page.locator(".tabs__tab")).to_have_count(2)
+    # Teema, Dokumendid and Registritest (owner, 2026-11-21).
+    expect(page.locator(".tabs__tab")).to_have_count(3)
 
 
 def test_the_summary_is_written_and_read_in_the_same_place(page, base_url):

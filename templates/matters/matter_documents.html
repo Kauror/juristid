@@ -48,8 +48,14 @@ finds again (§23.5).
 {% endcomment %}
 
 {% block content %}
-<div class="teema">
+{% comment %}
+  The same wrapper as the Teema page — `#teema-vaade-wrap` and `#teema-tabsisu`
+  — so the tabs swap this area in place and its rules read the same on either
+  tab (owner, 2026-11-21; `partials/tabs.html`).
+{% endcomment %}
+<div class="teema" id="teema-vaade-wrap">
   {% include "matters/partials/header.html" %}
+  <div id="teema-tabsisu">
 
   {% comment %}
     Full width, and no facts rail. Browsing forty files is the task this tab
@@ -833,6 +839,7 @@ finds again (§23.5).
       {% endif %}
     </div>
 
+  </div>
   </div>
 </div>
 {% endblock %}

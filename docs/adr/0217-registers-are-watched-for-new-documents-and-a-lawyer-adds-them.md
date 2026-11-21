@@ -124,3 +124,26 @@ What a program may read (checked 2026-11-17):
 - A finding never moves `Hetkeseis`, makes no next step and is not a deadline.
 - `MatterProceduralLink` stays a pointer (ADR 0089 §4): the watch reads nothing
   from it, and writes one only when a lawyer presses «Lisa link».
+
+## Amendment 2026-11-21 — the Teema's own «Registritest» tab
+
+Owner, 2026-11-21: the waiting count above the title and «Registrite jälgimine»
+in the rail were in odd places and both led away from the Teema. The watch on
+one Teema is now the third tab of the Teema page, «Registritest»
+(`matters:matter_registers`), beside Teema and Dokumendid:
+
+- the tab is always there; its badge is the count that stood above the title
+  (pending, not what the model called unrelated, none on a closed Teema);
+- it lists the waiting documents with the same three decisions (§2), which
+  post to the same routes and come back to the tab (`tagasi=teema`, the
+  redirect built from the finding's own Teema), and the sources with
+  «Otsingusõnad» (§7);
+- it says in one line whether the Teema is covered: watched (an active source,
+  or one the next run would create from the title or the ministry); not read
+  (the sender is a ministry in the Consequences' unwatched list, so «kontrolli
+  registrit käsitsi»); or nothing to search by (choose a register and words);
+- the bell's notice (§6) opens this tab instead of the review page. The review
+  page stays as the view over every Teema; the rail link is gone.
+
+The three tabs swap the area under them in place (htmx, `#teema-tabsisu`,
+address pushed), so the header and the rail stay where they were.

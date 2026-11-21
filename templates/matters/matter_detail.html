@@ -31,12 +31,15 @@ a gutter would turn a workspace back into a dashboard (Teema redesign §4).
       <a class="quietlink" href="{{ results_return_url }}">← Tagasi tulemustesse</a>
     </nav>
   {% endif %}
-  {% if register_watch %}
-    <nav class="teema__return" aria-label="Registrid">
-      <a class="quietlink" href="{% url 'register_watch:review' %}?teema={{ matter.pk }}">{% if register_watch.waiting == 1 %}Registrites 1 uus dokument{% else %}Registrites {{ register_watch.waiting }} uut dokumenti{% endif %}</a>
-    </nav>
-  {% endif %}
   {% include "matters/partials/header.html" %}
-  {% include "matters/partials/overview.html" %}
+  {% comment %}
+    `#teema-tabsisu`: the area the three tabs swap (`partials/tabs.html`). Every
+    tab's page draws the same wrapper and header around it, so a tab fetched in
+    place keeps only this and the strip. The register count that stood above
+    the title is the `Registritest` tab's badge now (owner, 2026-11-21).
+  {% endcomment %}
+  <div id="teema-tabsisu">
+    {% include "matters/partials/overview.html" %}
+  </div>
 </div>
 {% endblock %}

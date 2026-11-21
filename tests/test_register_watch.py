@@ -452,8 +452,10 @@ def test_the_teema_page_links_to_its_waiting_documents(client, specialist):
 
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
-    assert "Registrites 1 uus dokument" in body
-    assert f"?teema={matter.pk}" in body
+    # The count is the «Registritest» tab's badge now, not a line above the title.
+    assert "Registrites 1 uus dokument" not in body
+    assert reverse("matters:matter_registers", kwargs={"pk": matter.pk}) in body
+    assert 'class="tabs__badge" title="1 uus dokument ootab">1<' in body
 
 
 def test_the_teema_page_leaves_out_what_the_model_called_unrelated(client, specialist):
@@ -463,7 +465,7 @@ def test_the_teema_page_leaves_out_what_the_model_called_unrelated(client, speci
 
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
 
-    assert "Registrites" not in body
+    assert "tabs__badge" not in body
 
 
 # -- the bell ----------------------------------------------------------------------
@@ -492,7 +494,7 @@ def test_a_run_tells_the_owner_once_and_adds_to_the_unread_notice(registers, spe
     assert [(item.label, item.note) for item in items] == [
         ("Registris uus dokument", "4 uut dokumenti")
     ]
-    assert items[0].url.endswith(f"?teema={matter.display_reference}")
+    assert items[0].url == reverse("matters:matter_registers", kwargs={"pk": matter.pk})
     assert inbox.inbox_count(specialist, TODAY) >= 1
 
 
@@ -714,9 +716,11 @@ def test_every_open_teema_has_the_way_to_its_watch(client, specialist):
     client.force_login(specialist)
 
     body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+    tab = client.get(reverse("matters:matter_registers", kwargs={"pk": matter.pk})).content.decode()
     review = client.get(reverse("register_watch:review"), {"teema": "2026_12"}).content.decode()
 
-    assert "Registrite jälgimine" in body
+    assert reverse("matters:matter_registers", kwargs={"pk": matter.pk}) in body
+    assert "Otsingusõnad" in tab and "Ei jälgita." in tab
     assert "Otsingusõnad" in review and "Ei jälgita." in review
 
 
