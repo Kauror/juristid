@@ -1922,10 +1922,11 @@ th[aria-sort="descending"] .colhead__mark::after {
   box-shadow: inset 0 -2px 0 0 var(--accent-primary);
 }
 
-/* Secondary, not muted: on the Teema header band (Dokumendid shares it since
- * 2026-11-21) muted ink is 3.5:1 in the dark theme, under AA. */
+/* The tab's own ink, not a quieter one: on the Teema header band (Dokumendid
+ * shares it since 2026-11-21) muted and secondary ink both measured under AA
+ * (3.5:1 and 4.3:1 dark, 4.47:1 light); the label beside it passes. */
 .tabs__count {
-  color: var(--text-secondary);
+  color: inherit;
   font-weight: var(--typography-weight-medium);
 }
 
