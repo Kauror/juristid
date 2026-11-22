@@ -122,11 +122,14 @@ def test_the_head_reads_the_same_order_as_a_specialist(client, department_head):
     «Haldus» followed the reader here until 2026-10-28; it is a gear beside
     «Välju» now, for everybody, and not a navigation item at all
     (docs/adr/0186, amendment).
+
+    One addition, at the end: «Monitooring» is the head's until the head opens it
+    to everyone (docs/adr/0219), so the head reads the same order plus that link.
     """
     client.force_login(department_head)
 
     labels = labels_of(navigation_of(client.get(reverse("matters:department"))))
-    assert labels == EXPECTED_ORDER
+    assert labels == [*EXPECTED_ORDER, "Monitooring"]
 
 
 # ---------------------------------------------------------------------------

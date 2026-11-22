@@ -2892,6 +2892,24 @@ fieldset.field > legend {
     position: static;
   }
 
+  /* On a phone the bar's links wrap to a second row rather than widen the page:
+     the department head's bar carries one more link («Monitooring», ADR 0219),
+     and 320px does not hold five. Where they fit, one row exactly as before. */
+  .topnav,
+  .topnav__wide {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 48px;
+    row-gap: 0;
+    min-width: 0;
+  }
+
+  /* Shrink, never grow: where the links fit, the row keeps its own width. */
+  .topnav {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
   /* The gutter is redefined rather than each padding overridden, so the
      message band, the footer and every full-bleed page's negative margin move
      with it. A bleed pulling itself out by 32px against 12px of shell padding

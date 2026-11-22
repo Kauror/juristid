@@ -1392,7 +1392,9 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 #: its source-owned controls can say so; one read per page, none per field.
 #: One more since docs/adr/0217: the page counts the register documents
 #: waiting on this open Teema once, for the «Registritest» tab's badge.
-TEEMA_PAGE_QUERY_CEILING = 68
+#: One more since docs/adr/0219: the bar asks once whether «Monitooring» is open
+#: to everyone (a specialist reads this page).
+TEEMA_PAGE_QUERY_CEILING = 69
 
 
 def test_the_matter_page_does_not_explode_into_queries(

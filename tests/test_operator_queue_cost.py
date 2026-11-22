@@ -54,7 +54,11 @@ ROWS = 12
 #: 9 since B-01: the operator reads the queue through a break-glass grant, and
 #: that request now writes its one ``BREAK_GLASS_USED`` row — one INSERT per
 #: request, whatever the backlog (`app.audit.access.record_break_glass_use`).
-QUERY_BUDGET = 9
+#:
+#: 10 since docs/adr/0219: the bar asks once whether «Monitooring» is open to
+#: everyone, for any business reader but the head — the operator reads through
+#: the grant, so it pays that one row too, whatever the backlog.
+QUERY_BUDGET = 10
 
 
 def _decided_rows(count, make):
