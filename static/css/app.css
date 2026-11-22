@@ -17423,7 +17423,34 @@ a.statpanel__note {
 }
 
 .regwatch__teema {
-  margin-bottom: var(--spacing-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* A Teema's fold head: title, reference and count, then «Ava teema» and
+   «Jäta kõik vahele» at the right (owner, 2026-11-22). */
+.regwatch__teema > summary {
+  padding: var(--spacing-2) 0;
+  cursor: pointer;
+}
+
+.regwatch__teema > summary::before {
+  content: "▸";
+  color: var(--text-muted);
+}
+
+.regwatch__teema[open] > summary::before {
+  content: "▾";
+}
+
+.regwatch__teematitle {
+  font-weight: 600;
+}
+
+.regwatch__headactions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-3);
+  margin-left: auto;
 }
 
 .regwatch__head {
@@ -17558,12 +17585,6 @@ a.statpanel__note {
 
 /* «Uued teemad» (app/register_watch, docs/adr/0218). Each row is strength |
  * the draft and its register entries | the three answers. */
-.regwatch__audience {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-2);
-  margin-bottom: var(--spacing-4);
-}
 
 .regwatch__strength {
   font-size: var(--typography-size-meta);
@@ -17612,13 +17633,6 @@ a.statpanel__note {
 
 /* Monitooring (docs/adr/0219): the section heading under the tab strip, the
  * week-not-found warning, and «Valitsuse info»: one fold per Government agenda. */
-.regwatch__section {
-  display: flex;
-  align-items: baseline;
-  gap: var(--spacing-2);
-  margin: var(--spacing-4) 0 var(--spacing-1);
-  font-size: var(--typography-size-base);
-}
 
 .regwatch__warning {
   padding: var(--spacing-2) var(--spacing-3);
@@ -17676,4 +17690,17 @@ a.statpanel__note {
 .agenda__text p {
   margin: var(--spacing-1) 0;
   font-size: var(--typography-size-meta);
+}
+
+/* Monitooring's pages sit closer than an ordinary page: the head, the tabs and
+   the list follow one another (owner, 2026-11-22). */
+.page--monitooring {
+  gap: var(--spacing-3);
+}
+
+.haldus__switch {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-3);
 }

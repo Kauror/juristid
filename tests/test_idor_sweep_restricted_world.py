@@ -312,8 +312,9 @@ def _key_for(route: str, param: str) -> str | None:
         return "suggestion"
     if route == "register_watch:decide":
         return "finding"
-    if route == "register_watch:phrase":
-        # «Otsingusõnad» name the Teema they search for (ADR 0217 §7).
+    if route in ("register_watch:phrase", "register_watch:dismiss_all"):
+        # «Otsingusõnad» name the Teema they search for (ADR 0217 §7); «Jäta kõik
+        # vahele» the Teema whose waiting documents it skips (ADR 0219).
         return "matter"
     return None
 

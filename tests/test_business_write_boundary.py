@@ -1864,6 +1864,9 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # person may see (tests/test_new_topics.py).
     "register_watch:candidate_decide": "A: gated; candidates belong to no Teema",
     "register_watch:candidate_audience": "B: department head only",
+    # «Jäta kõik vahele» (owner, 2026-11-22): «Jäta vahele» for every document still
+    # waiting on one Teema, each through `watch.dismiss` (tests/test_monitooring.py).
+    "register_watch:dismiss_all": "A: gated; sibling of register_watch:decide",
     # E — migration and reconciliation tooling, governed by their own explicit
     # administrator/reviewer checks rather than by business authorship.
     "legacy_import:opinion_archive_link": "E: archive reconciliation, reviewer-gated",

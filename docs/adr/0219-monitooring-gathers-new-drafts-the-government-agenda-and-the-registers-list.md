@@ -67,3 +67,15 @@ in full and older ones folded. Asked on 2026-11-22, the owner chose:
   read; the Postipoiss letters Juristid already holds stand in for «current work».
 - No e-mail is sent; whoever wants the weekly review opens Monitooring or follows the bell.
 - Migration `register_watch` 0005: two new tables and one column with a database default.
+
+## Amendment 2026-11-22 — owner's notes on the released tab
+
+- §1: «Näita kõigile» / «Näita ainult mulle» moved off Monitooring's pages to Haldus →
+  Osakonna töökorraldus (the head's), which the switch returns to.
+- Each tab carries its count instead of a section heading: «Uued eelnõud» the drafts on
+  the list's open part, «Valitsuse info» the newest agenda's items judged to matter,
+  «Registrite dokumendid» the **Teemad** with new documents waiting (not the documents).
+  The intro sentences are gone; «Viimati otsitud …» stays. The page is tighter.
+- «Registrite dokumendid» lists one shut fold per Teema (opened when filtered to one
+  Teema), and its head offers «Jäta kõik vahele»: every document still waiting on that
+  Teema is skipped through `watch.dismiss`, one by one, exactly as «Jäta vahele».

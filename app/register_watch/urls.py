@@ -15,5 +15,6 @@ urlpatterns = [
     path("valitsus/", candidate_views.agenda_list, name="agendas"),
     path("registrid/", views.review, name="review"),
     path("registrid/<uuid:pk>/", views.decide, name="decide"),
+    path("registrid/teema/<uuid:pk>/jata/", views.dismiss_all, name="dismiss_all"),
     path("registrid/teema/<uuid:pk>/otsing/", views.phrase, name="phrase"),
 ]

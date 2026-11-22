@@ -1,29 +1,15 @@
 {% comment %}
-Monitooring's head (docs/adr/0219): the title, the three sections as tabs and, for the
-department head, whether the tab is open to everyone. Included by every Monitooring page.
+Monitooring's head (docs/adr/0219): the title and the three sections as tabs, each with
+the count of what waits there. Whether the tab is open to everyone is set in Haldus →
+Osakonna töökorraldus (owner, 2026-11-22). Included by every Monitooring page.
 {% endcomment %}
 <div class="pagehead">
   <h1 class="pagehead__title">Monitooring</h1>
-  {% if is_head %}
-    <form class="regwatch__audience" method="post" action="{% url 'register_watch:candidate_audience' %}">
-      {% csrf_token %}
-      <input type="hidden" name="tagasi" value="{{ monitooring_active }}">
-      {% if everyone %}
-        <span class="regwatch__meta">Nähtav kõigile.</span>
-        <input type="hidden" name="koigile" value="0">
-        <button type="submit" class="button button--quiet button--tiny">Näita ainult mulle</button>
-      {% else %}
-        <span class="regwatch__meta">Nähtav ainult osakonnajuhatajale.</span>
-        <input type="hidden" name="koigile" value="1">
-        <button type="submit" class="button button--quiet button--tiny">Näita kõigile</button>
-      {% endif %}
-    </form>
-  {% endif %}
 </div>
 <nav class="tabs" aria-label="Monitooringu osad">
-  {% for key, label, url in monitooring_sections %}
-    <a class="tabs__tab {% if monitooring_active == key %}is-active{% endif %}"
-       {% if monitooring_active == key %}aria-current="page"{% endif %}
-       href="{{ url }}">{{ label }}</a>
+  {% for section in monitooring_sections %}
+    <a class="tabs__tab {% if monitooring_active == section.key %}is-active{% endif %}"
+       {% if monitooring_active == section.key %}aria-current="page"{% endif %}
+       href="{{ section.url }}">{{ section.label }}{% if section.count %}<span class="tabs__badge" title="{{ section.title }}">{{ section.count }}</span>{% endif %}</a>
   {% endfor %}
 </nav>

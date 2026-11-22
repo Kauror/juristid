@@ -12,11 +12,10 @@ never acted on; weak and unrelated rows are folded at the foot.
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="page page--monitooring">
   {% include "register_watch/_monitooring_head.html" %}
 
-  <h2 class="regwatch__section">Uued eelnõud <span class="pagehead__context">{{ shown|length }}</span></h2>
-  <p class="regwatch__meta">Eelnõud, mis on viimastel päevadel registritesse jõudnud ja pole veel teemad.{% if last_run %} Viimati otsitud {{ last_run.started_at|date:"d.m.Y H:i" }}.{% endif %}{% if not sweep_on %} Öine otsing on välja lülitatud.{% endif %}</p>
+  {% if last_run or not sweep_on %}<p class="regwatch__meta">{% if last_run %}Viimati otsitud {{ last_run.started_at|date:"d.m.Y H:i" }}.{% endif %}{% if not sweep_on %} Öine otsing on välja lülitatud.{% endif %}</p>{% endif %}
 
   <ul class="regwatch__list">
     {% for candidate in shown %}{% include "register_watch/_candidate.html" %}

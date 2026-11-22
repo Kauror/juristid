@@ -51,14 +51,56 @@ SECTIONS = (
 )
 
 
+def section_counts(user: Any) -> dict[str, int]:
+    """What waits in each section, for its tab (owner, 2026-11-22).
+
+    «Uued eelnõud»: the drafts on the list's open part. «Valitsuse info»: the items of
+    the newest agenda judged to matter. «Registrite dokumendid»: the Teemad with new
+    documents waiting (not the documents), among those the reader may see.
+    """
+    from app.register_watch import agenda, watch
+    from app.register_watch.models import AgendaItem, Relevance
+
+    newest = GovernmentAgenda.objects.order_by("-session_date").values_list("pk", flat=True).first()
+    return {
+        "eelnoud": candidates.worth_telling().count(),
+        "valitsus": (
+            AgendaItem.objects.filter(agenda_id=newest, strength__in=agenda.SHOWN).count()
+            if newest
+            else 0
+        ),
+        "registrid": watch.pending_for(user)
+        .exclude(relevance=Relevance.UNRELATED)
+        .values("matter_id")
+        .distinct()
+        .count(),
+    }
+
+
+#: What a tab's count says on hover.
+COUNT_TITLES = {
+    "eelnoud": "uut eelnõu ootab otsust",
+    "valitsus": "olulist punkti viimases päevakorras",
+    "registrid": "teemal on registrites uusi dokumente",
+}
+
+
 def monitooring_context(request: HttpRequest, active: str) -> dict[str, Any]:
-    """What every Monitooring page shares: the tab strip and the head's audience switch."""
+    """What every Monitooring page shares: the tab strip with its counts."""
+    counts = section_counts(request.user)
     return {
         "nav_active": "monitooring",
-        "monitooring_sections": [(key, label, reverse(name)) for key, label, name in SECTIONS],
+        "monitooring_sections": [
+            {
+                "key": key,
+                "label": label,
+                "url": reverse(name),
+                "count": counts[key],
+                "title": f"{counts[key]} {COUNT_TITLES[key]}",
+            }
+            for key, label, name in SECTIONS
+        ],
         "monitooring_active": active,
-        "is_head": candidate_notices.is_head(request.user),
-        "everyone": candidate_notices.audience().everyone,
     }
 
 
@@ -183,12 +225,15 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 @require_http_methods(["POST"])
 @business_write_required
 def audience(request: HttpRequest) -> HttpResponse:
-    """The head opens Monitooring to every reader, or keeps it to the head (ADR 0219)."""
+    """The head opens Monitooring to every reader, or keeps it to the head (ADR 0219).
+
+    Pressed in Haldus → Osakonna töökorraldus (owner, 2026-11-22), and back there.
+    """
     if not candidate_notices.is_head(request.user):
         raise Http404(NOT_HERE)
     candidate_notices.set_everyone(request.POST.get("koigile") == "1")
     # Back to the section it was pressed on, one of Monitooring's own (never a free URL).
-    names = {key: name for key, _label, name in SECTIONS}
+    names = {key: name for key, _label, name in SECTIONS} | {"haldus": "haldus:osakond"}
     return HttpResponseRedirect(
         reverse(names.get(str(request.POST.get("tagasi", "")), "register_watch:candidates"))
     )
