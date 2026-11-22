@@ -521,6 +521,7 @@ def test_every_removable_family_is_named_once_and_resolves(normal_matter, specia
         "tahtaeg",
         "joustumine",
         "toovoit",
+        "menetluslink",
     }
     for key, kind in kinds.items():
         assert kind.key == key

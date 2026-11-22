@@ -408,7 +408,7 @@ def _decide(candidate: TopicCandidate, status: CandidateStatus, actor: Any, matt
 
 @transaction.atomic
 def dismiss(candidate: TopicCandidate, *, actor: Any) -> TopicCandidate:
-    """«Jäta kõrvale». It returns only if the draft later reaches the Riigikogu."""
+    """«Märgi loetuks». It returns only if the draft later reaches the Riigikogu."""
     locked = _lock_new(candidate)
     _decide(locked, CandidateStatus.DISMISSED, actor, None)
     return locked

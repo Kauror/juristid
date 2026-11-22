@@ -155,7 +155,8 @@ rather than read.
       «Need andmed pärinevad Lovable'i registrist…» is gone (owner,
       2026-11-16): the locked fields already say it. Only a held note shows.
     {% endcomment %}
-    {% if source_held_note %}<p class="matterhead__source" data-source-held>{{ source_held_note }}</p>{% endif %}
+    {# The held-field line went 2026-11-22 (owner: no Lovable notes); the field is simply editable. #}
+    {% if source_held_note %}<span hidden data-source-held></span>{% endif %}
   {% endif %}
 
   {% comment %}

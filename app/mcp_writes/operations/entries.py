@@ -343,7 +343,7 @@ class AddProceduralLink:
             label = normalize_procedural_link_label(args.label or "")
         except common.DomainError as error:
             raise OperationRefused("invalid_argument", str(error)) from None
-        existing = MatterProceduralLink.objects.filter(matter=matter, url=url).first()
+        existing = MatterProceduralLink.objects.live().filter(matter=matter, url=url).first()
         if existing is not None:
             if existing.kind == kind and existing.label == label:
                 raise OperationRefused(
@@ -382,9 +382,9 @@ class AddProceduralLink:
         matter = common.state_matter(canonical["matter_id"])
         return {
             **common.matter_core_state(user, matter),
-            "address_recorded": MatterProceduralLink.objects.filter(
-                matter_id=matter.pk, url=canonical["url"]
-            ).exists(),
+            "address_recorded": MatterProceduralLink.objects.live()
+            .filter(matter_id=matter.pk, url=canonical["url"])
+            .exists(),
         }
 
     def execute(self, *, user: Any, canonical: dict[str, Any], once_token: uuid.UUID) -> Executed:

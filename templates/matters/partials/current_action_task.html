@@ -86,9 +86,9 @@ panel is not carried across as if nothing had happened: its words are shown as
     {% comment %}
       On a synchronised Teema the current step is Lovable's `järgmiseks` and
       `tegevuse tähtaeg` (audit 2026-11-11 TL-01): finished, changed or moved
-      here it was put back at night. No toolbar; the `i` says where it changes.
+      here it was put back at night. No toolbar, and (owner, 2026-11-22) no `i`.
     {% endcomment %}
-    <div class="curact__tools" data-source-owned-step>{% include "components/source_owned_tip.html" with field="next_action" %}</div>
+    <span hidden data-source-owned-step>{% include "components/source_owned_tip.html" with field="next_action" %}</span>
   {% elif can_write %}
     {% comment %}
       The toolbar. One group, never wrapped inside itself, pushed to the end of

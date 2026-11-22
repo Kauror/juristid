@@ -127,3 +127,24 @@ def post_form(host: str, path: str, fields: dict[str, str]) -> str:
         },
     )
     return _text(request, host)
+
+
+#: A register file brought onto a Teema with «Lisa märkena» (owner, 2026-11-22).
+FILE_MAX_BYTES = 25 * 1024 * 1024
+
+
+def get_bytes(host: str, path: str, *, max_bytes: int = FILE_MAX_BYTES) -> bytes:
+    """GET one file through the same door (hosts, no redirects, timeout), or raise `FetchError`."""
+    _check(host, path)
+    _space(host)
+    request = urllib.request.Request(f"https://{host}{path}", headers={"User-Agent": USER_AGENT})
+    try:
+        with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
+            raw = response.read(max_bytes + 1)
+    except urllib.error.HTTPError as error:
+        raise FetchError(f"{host} vastas {error.code}") from None
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise FetchError(f"{host} ei vastanud ({type(error).__name__})") from None
+    if len(raw) > max_bytes:
+        raise FetchError(f"{host} fail on liiga suur")
+    return raw

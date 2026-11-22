@@ -205,7 +205,7 @@ class WatchRun(BaseModel):
 
 class CandidateStatus(models.TextChoices):
     NEW = "NEW", "Uus"
-    #: «Lisa teemaks»: a new Teema was created from it (`matter`).
+    #: «Uus teema»: a new Teema was created from it (`matter`).
     ADDED = "ADDED", "Lisatud teemaks"
     #: «Seo olemasolevaga»: its documents were linked to an existing Teema (`matter`).
     ATTACHED = "ATTACHED", "Seotud teemaga"
@@ -227,7 +227,7 @@ class TopicCandidate(BaseModel):
 
     One candidate gathers the register documents of one draft (`CandidateItem`).
     It is a proposal to the head of the department: nothing becomes a Teema
-    until a person presses «Lisa teemaks» and saves Uus teema. The model's
+    until a person presses «Uus teema» and saves Uus teema. The model's
     strength and reason are shown, never acted on.
     """
 
@@ -409,7 +409,7 @@ class AgendaItem(BaseModel):
         verbose_name="seotud teema",
     )
     #: What a person did with the item on its Teema (owner, 2026-11-22): «Lisa teemale»
-    #: wrote a `Menetluse areng` (`development`), «Jäta vahele» only recorded it.
+    #: wrote a `Menetluse areng` (`development`), «Märgi loetuks» only recorded it.
     status = models.CharField(
         max_length=16,
         choices=AgendaItemStatus.choices,

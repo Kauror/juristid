@@ -11,9 +11,8 @@
       <input type="hidden" name="kelle" value="{{ filters.kelle }}">
       <input type="hidden" name="teema" value="{{ filters.teema }}">
       {% if register_return %}<input type="hidden" name="tagasi" value="{{ register_return }}">{% endif %}
-      <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa märkena</button>
-      {% if finding.url %}<button type="submit" name="otsus" value="link" class="button button--secondary button--tiny">Lisa link</button>{% endif %}
-      <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
+      {% include "register_watch/_add_note.html" with key=finding.pk %}
+      <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Märgi loetuks</button>
     </form>
   {% endif %}
 </li>

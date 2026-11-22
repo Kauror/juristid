@@ -3023,13 +3023,17 @@ class MatterTimelineStep(VisibilityInheritingModel):
         return format_at_precision(self.occurs_on, self.occurs_on_precision)
 
 
-class MatterProceduralLinkQuerySet(models.QuerySet):
+class MatterProceduralLinkQuerySet(RemovableQuerySet):
     def visible_to(self, user: object | None) -> MatterProceduralLinkQuerySet:
-        """The only supported entry point for reading procedural links."""
-        return apply_scope(self, child_visibility_q(scope_for_user(user)))
+        """The only supported entry point for reading procedural links.
+
+        Scoped and de-removed, as every removable record's is: a link a lawyer
+        removed (owner, 2026-11-22) is absent from the rail and every read.
+        """
+        return apply_scope(self, child_visibility_q(scope_for_user(user))).live()
 
 
-class MatterProceduralLink(VisibilityInheritingModel):
+class MatterProceduralLink(VisibilityInheritingModel, RemovableRecord):
     """`Menetluse link` — where the official proceeding on this Matter lives.
 
     A lawyer opening a file three months later asks one question before any
@@ -3182,6 +3186,8 @@ class MatterProceduralLink(VisibilityInheritingModel):
             # Matter and not to `(matter, kind)`: one address filed as `EIS` and
             # again as `Muu menetluslink` is one address, and the kind is
             # corrected rather than duplicated (docs/adr/0089 §6).
+            # One row per address, removed or not: adding a removed address
+            # again brings that row back (`record_procedural_link`, 2026-11-22).
             models.UniqueConstraint(
                 fields=["matter", "url"],
                 name="matters_procedural_link_one_row_per_address",

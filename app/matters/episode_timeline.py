@@ -90,6 +90,16 @@ class StageGroup:
     def dom_id(self) -> str:
         return f"etapp-{self.key}"
 
+    @property
+    def is_loose(self) -> bool:
+        """Work done while the Matter had no `Hetkeseis`: drawn without a fold.
+
+        Owner, 2026-11-22: the «Hetkeseis määramata» accordion hid recent work
+        one needs to see, so its rows stand in the list in their place, always
+        shown, under no heading.
+        """
+        return self.episode is None and self.key.startswith("maaramata")
+
 
 @dataclass
 class EpisodeTimeline:

@@ -1,0 +1,15 @@
+{% comment %}
+  «Lisa märkena» with the lawyer's own words (owner, 2026-11-22): the button
+  opens a small panel with an optional «Märkus», put first in the note; the
+  document's source and link follow it. Inside the row's decision form, so
+  «Lisa» posts `otsus=lisa` with `markus`. `key` makes the field's id unique.
+{% endcomment %}
+<details class="regwatch__add">
+  <summary class="button button--primary button--tiny">Lisa märkena</summary>
+  <div class="regwatch__addpanel">
+    <label class="field__label" for="markus-{{ key }}">Märkus</label>
+    <textarea class="field__input" id="markus-{{ key }}" name="markus" rows="3" maxlength="4000"
+              placeholder="Valikuline: miks see on oluline, mida teha"></textarea>
+    <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa</button>
+  </div>
+</details>

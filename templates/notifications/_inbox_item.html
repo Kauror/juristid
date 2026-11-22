@@ -33,9 +33,12 @@ reloading the page; without scripting they are the same plain forms.
   <li class="notifrow{% if item.is_unread %} notifrow--unread{% endif %}{% if item.kind == 'INFO' %} notifrow--info{% endif %}"
       data-inbox-item data-inbox-type="{{ item.type }}">
     <div class="notifrow__main">
-      <span class="notifrow__label">{{ item.label }}{% if item.is_unread %}<span class="visually-hidden"> · lugemata</span>{% endif %}</span>
+      {# The date beside the label, one line (owner, 2026-11-22: more compact). #}
+      <span class="notifrow__head">
+        <span class="notifrow__label">{{ item.label }}{% if item.is_unread %}<span class="visually-hidden"> · lugemata</span>{% endif %}</span>
+        <span class="notifrow__date">{{ item.date_label }}</span>
+      </span>
       <a class="notifrow__matter" href="{{ item.url }}">{{ item.title }}</a>
-      <span class="notifrow__date">{{ item.date_label }}</span>
       {% if item.note %}<span class="notifrow__source">{{ item.note }}</span>{% endif %}
     </div>
     {% if item.can_read %}

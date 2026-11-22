@@ -61,6 +61,8 @@ control on this row: the row itself is the link.
         {% endif %}
       </span>
       {% if item.late_original_date %}<span class="workrow2__meaning">{{ item.late_original_date }}</span>{% endif %}
+      {# The Teema's Teemaviide under the date (owner, 2026-11-22). #}
+      {% if item.matter.display_reference %}<span class="workrow2__ref" data-teemaviide>{{ item.matter.display_reference }}</span>{% endif %}
     </span>
 
     <span class="workrow2__body">

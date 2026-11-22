@@ -763,3 +763,23 @@ def test_the_page_prints_the_honest_total_and_the_way_to_the_rest(client, specia
 
     assert f"Näita kõiki {wi.BAND_LIMIT + 5} →" in body
     assert f'<span class="workband__count">{wi.BAND_LIMIT + 5}</span>' in body
+
+
+def test_each_row_shows_the_teemaviide_under_the_date(client, specialist, today):
+    """Owner, 2026-11-22: the Teema's Teemaviide under the row's date."""
+    client.force_login(specialist)
+    matter = _matter(specialist, title="Viitega teema")
+    set_next_action(
+        matter=matter,
+        text="Viitega tegevus",
+        kind=ActionKind.DO,
+        date_semantics=DateSemantics.DEADLINE,
+        target_date=today + timedelta(days=3),
+        actor=specialist,
+    )
+    matter.refresh_from_db()
+    assert matter.display_reference
+
+    body = client.get(reverse("matters:my_work")).content.decode()
+
+    assert f"data-teemaviide>{matter.display_reference}</span>" in body

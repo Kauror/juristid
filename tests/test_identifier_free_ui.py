@@ -228,7 +228,10 @@ def test_the_personal_queue_names_topics_by_title(signed_in, marked_matter, spec
     body = _get(signed_in, "matters:my_work")
 
     assert TITLE in body
-    assert REFERENCE not in body
+    # The one place it is shown: the Teemaviide under each row's date (owner,
+    # 2026-11-22). Nowhere else on the page names the Teema by its number.
+    assert f"data-teemaviide>{REFERENCE}</span>" in body
+    assert REFERENCE not in body.replace(f"data-teemaviide>{REFERENCE}</span>", "")
 
 
 def test_the_opinion_list_names_topics_by_title(signed_in, marked_matter):

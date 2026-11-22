@@ -96,7 +96,7 @@ def name_the_link(page, name: str) -> None:
     """Give the card's one link a name through its `Paranda` — the one place a
     stored name is still written (docs/adr/0130 §3)."""
     card(page).locator("details.proclink__fix summary").first.click()
-    form = card(page).locator("form")
+    form = card(page).locator("details.proclink__fix form")
     form.wait_for(state="visible")
     form.locator("[name=label]").fill(name)
     form.get_by_role("button", name="Salvesta").click()
@@ -195,7 +195,7 @@ def test_a_reference_can_be_corrected_from_its_own_row(page, base_url):
     name_the_link(page, "Vale nimi")
 
     card(page).locator("details.proclink__fix summary").first.click()
-    form = card(page).locator("form")
+    form = card(page).locator("details.proclink__fix form")
     form.wait_for(state="visible")
     expect(form.locator("[name=url]")).to_have_value(EIS_URL)
     form.locator("[name=label]").fill("Eelnõu 123 SE")

@@ -10,17 +10,27 @@
 [[day]]
 date = 2026-11-22
 basis = "deployment"
-prs = [664, 665, 667, 668, 669]
+prs = [664, 665, 667, 668, 669, 670]
 changes = [
-  "Teema lehel on uus vahekaart «Registritest». Seal on registritest leitud dokumendid, mis ootavad otsust: neid saab lisada teemale märkena või lingina või vahele jätta. Seal saab muuta ka sõnu, millega teemat registritest otsitakse. Vahekaardi juures olev number näitab, mitu dokumenti ootab, ja kellukese teavitus «Registris uus dokument» avab sama vahekaardi.",
+  "Teema lehel on uus vahekaart «Registritest». Seal on registritest leitud dokumendid, mis ootavad otsust: neid saab lisada teemale märkena või lingina või loetuks märkida. Seal saab muuta ka sõnu, millega teemat registritest otsitakse. Vahekaardi juures olev number näitab, mitu dokumenti ootab, ja kellukese teavitus «Registris uus dokument» avab sama vahekaardi.",
   "Teema, Dokumendid ja Registritest vahetuvad lehte uuesti laadimata: pealkiri, väljad ja parem veerg jäävad paigale ning muutub ainult ala vahekaartide all. Aadress muutub kaasa, nii et linki saab jagada ja «Tagasi» töötab.",
   "OneNote'i märke avamisel teema ajajoonel on näha ka failid, mis on OneNote'i lehel selle märke juures, näiteks kiri, millest märge räägib. Iga faili saab sealt otse avada või alla laadida, «OneNote'i koopiat» avamata.",
   "Uuendused on Halduse vahekaart: Halduse lehel saab otse Uuendustesse liikuda. Link «Rakenduse» all on alles.",
   "Ülemisel ribal on uus vahekaart «Monitooring» kolme osaga: «Uued eelnõud», «Valitsuse info» ja «Registrite dokumendid». Iga osa juures olev number näitab, kui palju seal uut on. See on osakonnajuhataja vaade, mille ta saab teha nähtavaks ka teistele: Haldus → Osakonna töökorraldus → «Näita kõigile».",
-  "«Uued eelnõud»: igal ööl otsitakse Riigikogu ja ministeeriumide registritest eelnõusid, mida ükski teema veel ei jälgi, ja hinnatakse, kas need võivad ettevõtjaid puudutada. Eelnõu saab lisada teemaks (Uus teema täidetakse ette), siduda olemasoleva teemaga või kõrvale jätta.",
+  "«Uued eelnõud»: igal ööl otsitakse Riigikogu ja ministeeriumide registritest eelnõusid, mida ükski teema veel ei jälgi, ja hinnatakse, kas need võivad ettevõtjaid puudutada. Eelnõu saab nupuga «Uus teema» teemaks teha (Uus teema täidetakse ette), siduda olemasoleva teemaga või loetuks märkida.",
   "«Valitsuse info»: valitsuse istungi kommenteeritud päevakord loetakse iga nädal valitsus.ee-st. Näha on punktid, mis võivad Kojale või ettevõtjatele olulised olla, koos valitsuse enda selgitusega; nõrgemad seosed ja ülejäänud punktid on eraldi kokku volditud. Uusim päevakord on lahti, varasemad kokku volditud.",
-  "«Registrite dokumendid»: kõigi teemade registritest leitud ootel dokumendid ühes nimekirjas, teema kaupa kokku volditud, nii et kõik teemad on ühe pilguga näha. Teema avamisel on näha selle dokumendid; nupp «Jäta kõik vahele» jätab teema ülejäänud dokumendid ühe korraga vahele. Uutest eelnõudest ja valitsuse päevakorrast annab teada kelluke.",
+  "«Registrite dokumendid»: kõigi teemade registritest leitud ootel dokumendid ühes nimekirjas, teema kaupa kokku volditud, nii et kõik teemad on ühe pilguga näha. Teema avamisel on näha selle dokumendid; nupp «Märgi kõik loetuks» märgib teema ülejäänud dokumendid ühe korraga loetuks. Uutest eelnõudest ja valitsuse päevakorrast annab teada kelluke.",
   "Kui valitsuse päevakorra punkt on seotud mõne teemaga, saab selle «Valitsuse info» lehel nupuga «Lisa teemale» teemale lisada: see jõuab teema ajajoonele menetluse arenguna koos valitsuse selgitusega. Sama punkt ootab otsust ka teema vahekaardil «Registritest» ning teema vastutaja saab sellest teada kellukese kaudu.",
+  "Monitooringus ja teema vahekaardil «Registritest» on nupu «Jäta vahele» (uutel eelnõudel «Jäta kõrvale») nimi nüüd «Märgi loetuks» ja nupu «Jäta kõik vahele» nimi «Märgi kõik loetuks». Loetuks märgitud kirje teemale ei jõua ja kaob ootavate hulgast. «Uute eelnõude» nupp «Lisa teemaks» on nüüd «Uus teema».",
+  "Teema lehel ei ole enam Lovable'i märkusi ega ⓘ-selgitusi (näiteks «Teema lõpetatakse Lovable'is»). Lovable'ist tulevad väljad on endiselt muutmiseks lukus.",
+  "Minu asjades on iga rea kuupäeva all teema teemaviide (näiteks 2026_236). Otsingukast «Otsi oma asjadest» on nüüd põhiveeru paremas servas, mitte parema veeru kohal.",
+  "Teavitustes on kuupäev sinise pealkirja kõrval samal real ja registriteavitusel pole enam rida «N uut dokumenti», nii et teavitused on lühemad.",
+  "Teema vahekaardil «Dokumendid» on paremal sama veerg «Teema andmed» nagu vahekaartidel «Teema» ja «Registritest».",
+  "Registrist leitud dokumendi nupp «Lisa märkena» avab välja «Märkus», kuhu saab kirjutada oma kommentaari; see läheb märke algusesse. Märkega tuleb kaasa ka dokumendi enda fail registrist (Riigikogu, ministeeriumide registrid); kui faili ei saa lisada, on märkes link ja sellest antakse teada. Nupp «Lisa link» on eemaldatud.",
+  "Menetluse linki saab teema paremast veerust eemaldada (✕). Kui sama aadress hiljem uuesti lisada, tuleb see tagasi.",
+  "«Registrite dokumendid»: teema pealkiri on link teemale; eraldi linki «Ava teema» pole enam.",
+  "Menetluse kulg ei näita enam algusest samme, mida teema pole läbinud (näiteks «Algus», «Kooskõlastusring» ja «Valitsuses» teemal, mis algas Riigikogus); rida algab esimesest sammust, mis teemal tegelikult on.",
+  "Tegevustes ei ole enam kokku volditud rühma «Hetkeseis määramata»: tegevused, mis tehti ajal, kui teemal hetkeseisu polnud, on loetelus kohe näha.",
 ]
 
 [[day]]

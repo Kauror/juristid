@@ -4,7 +4,7 @@
 {% comment %}
 What the nightly register watch found on the open Teemad (ADR 0217). A row
 changes nothing until a lawyer presses «Lisa märkena», which records a
-`Menetluse areng` on the Teema exactly as `+ Märge` does; «Jäta vahele» only
+`Menetluse areng` on the Teema exactly as `+ Märge` does; «Märgi loetuks» only
 records the decision. The model's verdict is shown, never acted on.
 {% endcomment %}
 
@@ -45,22 +45,23 @@ records the decision. The model's verdict is shown, never acted on.
 
   {% comment %}
     One fold per Teema, all shut at first so the page is an overview (owner,
-    2026-11-22); opened when the list is filtered to one Teema. «Jäta kõik vahele»
+    2026-11-22); opened when the list is filtered to one Teema. The title opens
+    the Teema; the arrow folds. «Märgi kõik loetuks»
     skips every document still waiting on that Teema in one press.
   {% endcomment %}
   {% for group in groups %}
     <details class="regwatch__teema"{% if filters.teema %} open{% endif %}>
       <summary class="regwatch__head">
-        <span class="regwatch__teematitle">{{ group.matter.title }}</span>
+        {# The title is the link to the Teema (owner, 2026-11-22; «Ava teema» went). #}
+        <a class="regwatch__teematitle" href="{% url 'matters:matter_detail' pk=group.matter.pk %}">{{ group.matter.title }}</a>
         <span class="regwatch__ref">{{ group.matter.display_reference }}{% if filters.kelle != 'minu' and group.matter.owner %} · {{ group.matter.owner.display_name }}{% endif %} · {{ group.count }} dokument{{ group.count|pluralize:"i" }}</span>
         <span class="regwatch__headactions">
-          <a class="regwatch__meta" href="{% url 'matters:matter_detail' pk=group.matter.pk %}">Ava teema</a>
           {% if can_write_business_content %}
             <form method="post" action="{% url 'register_watch:dismiss_all' pk=group.matter.pk %}">
               {% csrf_token %}
               <input type="hidden" name="kelle" value="{{ filters.kelle }}">
               <input type="hidden" name="teema" value="{{ filters.teema }}">
-              <button type="submit" class="button button--quiet button--tiny">Jäta kõik vahele</button>
+              <button type="submit" class="button button--quiet button--tiny">Märgi kõik loetuks</button>
             </form>
           {% endif %}
         </span>

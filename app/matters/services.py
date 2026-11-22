@@ -3997,6 +3997,9 @@ def _locked_procedural_link(
     project's deadlock cycles were built.
     """
     locked = MatterProceduralLink.objects.select_for_update(no_key=True).get(pk=link.pk)
+    if locked.removed_at is not None:
+        # Removed in another tab (owner, 2026-11-22): nothing to correct.
+        raise DomainError("Menetluse link on teemalt eemaldatud.")
     if expected_revision is not None and procedural_link_revision(locked) != expected_revision:
         raise ProceduralLinkConflict(locked)
     return locked
@@ -4054,6 +4057,27 @@ def record_procedural_link(
         .filter(matter=matter, url=clean_url)
         .first()
     )
+    if existing is not None and existing.removed_at is not None:
+        # A removed link added again (owner, 2026-11-22): the same row comes
+        # back, as the person names it now, so the address stays one row.
+        existing.removed_at = None
+        existing.removed_by = None
+        existing.kind = clean_kind
+        existing.label = clean_label
+        existing.save(update_fields=["removed_at", "removed_by", "kind", "label", "updated_at"])
+        record_change_event(
+            event_type=ChangeEventType.PROCEDURAL_LINK_RECORDED,
+            matter=matter,
+            actor=actor,
+            obj=existing,
+            payload={
+                "kind": existing.kind,
+                "url": existing.url,
+                "label": existing.label,
+                "restored": True,
+            },
+        )
+        return existing
     if existing is not None:
         return _answer_for(existing)
 

@@ -57,9 +57,10 @@ paragraph. The banner's own action slot keeps it inside and at the right.
     {% if source_locked.reopen %}
       {% comment %}
         Whether a synchronised Teema is open is Lovable's (audit 2026-11-11
-        TL-01): a reopening here was closed again at night, so it is not offered.
+        TL-01): a reopening here was closed again at night, so it is not offered
+        (and since 2026-11-22, owner, not said).
       {% endcomment %}
-      <p class="banner__text" data-source-owned-reopen>Teema avatakse uuesti Lovable'is.{% include "components/source_owned_tip.html" with field="reopen" %}</p>
+      <span hidden data-source-owned-reopen>{% include "components/source_owned_tip.html" with field="reopen" %}</span>
     {% elif can_write and reopen_form %}
       <form class="banner__actions banner__reopen" method="post" action="{% url 'matters:reopen' pk=matter.pk %}">
         {% csrf_token %}

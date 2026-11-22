@@ -109,15 +109,13 @@ def test_the_rail_names_the_opinion_and_holds_no_workflow(signed_in, specialist)
 
 
 def test_the_rail_travels_to_the_matter_surface_that_carries_it(signed_in, specialist):
-    """One surface now. Dokumendid is deliberately full-width with no rail at
-    all — browsing forty files is the task that tab exists for — and the third
-    surface the rail used to reach is retired
-    (templates/matters/matter_documents.html, docs/adr/0061)."""
+    """The rail stands on all three Teema tabs (owner, 2026-11-22: Dokumendid
+    gained it, so switching tabs does not move it)."""
     matter = factories.MatterFactory(owner=specialist)
 
-    body = _body(signed_in.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})))
-
-    assert 'id="koja-arvamus"' in body
+    for name in ("matters:matter_detail", "matters:matter_documents", "matters:matter_registers"):
+        body = _body(signed_in.get(reverse(name, kwargs={"pk": matter.pk})))
+        assert 'id="koja-arvamus"' in body, name
 
 
 # ---------------------------------------------------------------------------

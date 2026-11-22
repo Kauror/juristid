@@ -55,6 +55,7 @@ from app.matters.legal_process import (
     legal_process_rail,
     matter_rail,
     phase_context,
+    without_unused_start,
 )
 from app.matters.process_phases import PATTERNS
 from app.matters.process_timeline import SENT_LABEL, process_steps
@@ -309,6 +310,24 @@ def test_a_late_entry_manufactures_no_earlier_phase(specialist, send):
     # something proves, and the `Teadmata` phases before it stay muted.
     first_reached = labels.index(SENT_LABEL)
     assert all(step.reach == 0.0 for step in steps[:first_reached])
+
+
+def test_the_page_leaves_out_the_unused_phases_before_the_first_reached(specialist, send):
+    """Owner, 2026-11-22: a late entry draws no hollow `Algus` … `Valitsuses` ahead of it.
+
+    The rail still places them (above); the page starts at the opinion.
+    """
+    matter = _matter(specialist, instruments=("seadus",), stage="parliament")
+    send(matter, FIRST_SENT)
+
+    drawn = [step.label for step in without_unused_start(_rail(matter, specialist))]
+
+    assert drawn[0] == SENT_LABEL
+    assert "Algus" not in drawn and "Valitsuses" not in drawn
+    assert drawn.index(SENT_LABEL) < drawn.index("Riigikogus")
+    # A rail that already starts at something reached is drawn whole.
+    once = without_unused_start(_rail(matter, specialist))
+    assert without_unused_start(once) == once
 
 
 # ---------------------------------------------------------------------------

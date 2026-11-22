@@ -1,6 +1,6 @@
 {% comment %}
 «Registritest»'s column: one line on whether this Teema is watched, the
-documents waiting on it with «Lisa märkena» / «Lisa link» / «Jäta vahele», what
+documents waiting on it with «Lisa märkena» / «Märgi loetuks», what
 the model called unrelated folded away, and the sources with the search words.
 
 **Always drawn, and always honest about coverage.** A Teema the watch covers
@@ -42,8 +42,8 @@ watch's own routes and come back here (`tagasi=teema`).
             <form class="regwatch__actions" method="post" action="{% url 'register_watch:agenda_decide' pk=item.pk %}" {% include "matters/partials/registers_swap.html" %}>
               {% csrf_token %}
               <input type="hidden" name="tagasi" value="teema">
-              <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa märkena</button>
-              <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
+              {% include "register_watch/_add_note.html" with key=item.pk %}
+              <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Märgi loetuks</button>
             </form>
           {% endif %}
         </li>

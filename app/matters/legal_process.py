@@ -1211,6 +1211,28 @@ def matter_rail(
     return _one_backbone(steps, today)
 
 
+def without_unused_start(steps: list[RailStep]) -> list[RailStep]:
+    """Leave out the phases before the first one the file reached (owner, 2026-11-22).
+
+    A file that starts later in the procedure — filed in the Riigikogu, or the
+    next stage of an earlier Teema — drew `Algus`, `Kooskõlastusring` and
+    `Valitsuses` as hollow `Teadmata` nodes ahead of where it began: three
+    columns saying nothing. Only an undated phase with no evidence (`unknown`)
+    at the very start goes; a recorded, current or dated node, a dated point,
+    and every `Teadmata` node *after* the first reached one stay (that is the
+    late-entry rule of docs/adr/0092 §13, narrowed to the middle of the rail).
+    A rail with nothing reached is left whole. Presentation only, applied where
+    the page draws the strip: `matter_rail` itself still places every phase, and
+    the connectors it decided are untouched (the dropped nodes' were muted).
+    """
+    first = next((index for index, step in enumerate(steps) if not _unused(step)), None)
+    return steps[first:] if first else steps
+
+
+def _unused(step: RailStep) -> bool:
+    return step.is_phase and step.state == STATE_UNKNOWN and not step.display_date
+
+
 def _keep_recorded_phases(
     steps: list[RailStep],
     *,

@@ -500,8 +500,11 @@ def test_a_domestic_rail_draws_its_states_without_naming_them(page, base_url):
     # The five phases, each drawn once. `Jõustumine` is matched on the *phase*
     # rather than on the word: since docs/adr/0099 the dated points share this
     # row, and a seeded commencement carries the same noun.
-    for label in ("Algus", "Kooskõlastus", "Valitsus", "Riigikogu"):
+    for label in ("Kooskõlastus", "Valitsus", "Riigikogu"):
         expect(rail(page).locator(".tl-step__what").filter(has_text=label)).to_have_count(1)
+    # `Algus` was never reached on this file: the strip starts at the first
+    # phase it reached (owner, 2026-11-22).
+    expect(rail(page).locator(".tl-step__what").filter(has_text="Algus")).to_have_count(0)
     phases = rail(page).locator(".tl-step--phase")
     expect(phases.filter(has_text="Jõustumine")).to_have_count(1)
     current = rail(page).locator(".tl-step--current")
@@ -533,12 +536,17 @@ def test_an_eu_rail_makes_no_domestic_claim(page, base_url):
 
 
 def test_a_late_entry_reads_teadmata_and_never_as_three_completed_steps(page, base_url):
-    """Scenario B, the rule this component exists for (docs/adr/0092 §13)."""
+    """Scenario B (docs/adr/0092 §13), as the owner narrowed it on 2026-11-22.
+
+    The phases before the first one the file reached are not drawn at all —
+    neither as `Teadmata` nor, still, as completed steps.
+    """
     sign_in(page, base_url, SANDRA)
     _matter_with_instrument(page, base_url, "Seadus", stage="Riigikogus")
 
-    expect(rail(page).locator(".tl-step--phase")).to_have_count(5)
-    expect(rail(page).locator(".tl-step--unknown")).to_have_count(3)
+    expect(rail(page).locator(".tl-step--phase")).to_have_count(2)
+    expect(rail(page).locator(".tl-step--unknown")).to_have_count(0)
+    expect(rail(page).locator(".tl-step--recorded")).to_have_count(0)
     expect(rail(page).locator(".tl-step--current")).to_contain_text("Riigikogu")
     expect(rail(page).locator(".tl-step--possible")).to_contain_text("Jõustumine")
     # The words are gone (docs/adr/0099) and nothing is colour alone: the state
@@ -655,8 +663,9 @@ def test_nothing_overflows_sideways_at_narrow_widths(page, base_url, width):
         "() => document.documentElement.scrollWidth - document.documentElement.clientWidth"
     )
     assert overflow <= 1, f"the document scrolls sideways by {overflow}px at {width}px"
-    # Every node is still drawn, rather than dropped to fit.
-    expect(rail(page).locator(".tl-step--phase")).to_have_count(5)
+    # Every node is still drawn, rather than dropped to fit (the phases before
+    # the first reached one are left out by rule, not by width: 2026-11-22).
+    expect(rail(page).locator(".tl-step--phase")).to_have_count(2)
 
 
 # ---------------------------------------------------------------------------

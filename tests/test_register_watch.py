@@ -496,8 +496,8 @@ def test_a_run_tells_the_owner_once_and_adds_to_the_unread_notice(registers, spe
         item for item in inbox.inbox_for(specialist, TODAY) if item.type == inbox.TYPE_REGISTER
     ]
     assert [(item.label, item.note) for item in items] == [
-        ("Registris uus dokument", "4 uut dokumenti")
-    ]
+        ("Registris uus dokument", "")
+    ]  # no count line on the card (owner, 2026-11-22)
     assert items[0].url == reverse("matters:matter_registers", kwargs={"pk": matter.pk})
     assert inbox.inbox_count(specialist, TODAY) >= 1
 
@@ -566,30 +566,6 @@ def test_mark_all_read_includes_the_register_notice(specialist):
     acknowledgement.mark_all_read(specialist, until=timezone.now())
 
     assert notices.due_unread(specialist).count() == 0
-
-
-# -- «Lisa link» -------------------------------------------------------------------
-
-
-def test_add_link_keeps_the_address_as_a_menetluse_link_and_nothing_else(client, specialist):
-    from app.matters.enums import ProceduralLinkKind
-    from app.matters.models import MatterProceduralLink
-
-    matter = _bill_teema(owner=specialist)
-    finding = _finding(matter)
-    client.force_login(specialist)
-
-    client.post(reverse("register_watch:decide", kwargs={"pk": finding.pk}), {"otsus": "link"})
-
-    link = MatterProceduralLink.objects.get(matter=matter)
-    assert (link.kind, link.url, link.label) == (
-        ProceduralLinkKind.MINISTRY_REGISTER,
-        "https://dok.hm.ee/et/document.html?id=h1",
-        "8-1/26/5965",
-    )
-    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
-    finding.refresh_from_db()
-    assert finding.status == FindingStatus.LINKED
 
 
 # -- ministry registers by words (ADR 0217 §7) ---------------------------------------

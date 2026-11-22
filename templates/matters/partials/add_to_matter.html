@@ -137,9 +137,10 @@ row of controls that refuse (brief §30, §31).
       {% comment %}
         No step on a synchronised Teema means Lovable's `järgmiseks` is blank,
         and a blank there is still Lovable's answer: a step set here was
-        cancelled at night (audit 2026-11-11 TL-01). Said, not offered.
+        cancelled at night (audit 2026-11-11 TL-01). Not offered, and since
+        2026-11-22 (owner) not said either.
       {% endcomment %}
-      <span class="addrow__source" data-source-owned-step>{{ no_source_step_note }}{% include "components/source_owned_tip.html" with field="next_action" %}</span>
+      <span hidden data-source-owned-step>{% include "components/source_owned_tip.html" with field="next_action" %}</span>
     {% else %}
       {% include "matters/partials/next_action_panel.html" %}
     {% endif %}
@@ -333,9 +334,10 @@ row of controls that refuse (brief §30, §31).
     {% if source_locked.close %}
       {% comment %}
         A synchronised Teema is closed in Lovable (audit 2026-11-11 TL-01): a
-        closure here was reopened at night and its `Järglane` dropped.
+        closure here was reopened at night and its `Järglane` dropped. Not
+        offered, and since 2026-11-22 (owner) not said either.
       {% endcomment %}
-      <span class="addrow__source" data-source-owned-close>Teema lõpetatakse Lovable'is.{% include "components/source_owned_tip.html" with field="close" %}</span>
+      <span hidden data-source-owned-close>{% include "components/source_owned_tip.html" with field="close" %}</span>
     {% else %}
       {% include "matters/partials/add/lopeta.html" %}
     {% endif %}

@@ -243,3 +243,16 @@ Matter look natively authored.
   `has_open_feedback_wait`. The rounds a reply may name are spelled
   `answerable()`. These methods do not remove anything themselves: «removed»
   stays the caller's own `visible_to` or `.live()`, written next to the call.
+
+## Amendment of 2026-11-22 — `Menetluse link` is removable
+
+Owner, 2026-11-22: a wrong or stale `Menetluse link` could be corrected but not
+taken off the rail. `MatterProceduralLink` is now a `RemovableRecord` (migration
+matters 0051: `removed_at`, `removed_by`, both nullable) and the ninth row of
+`removal.REMOVABLE` (key «menetluslink», event `PROCEDURAL_LINK_REMOVED`, audit
+0043 adds the choice); its `visible_to` is de-removed like the others', and the
+rail's ✕ uses the shared `row_remove.html`. The one-row-per-address constraint
+(docs/adr/0089 §6) stays: adding a removed address again brings that row back,
+as the person names it now, with a `PROCEDURAL_LINK_RECORDED` event marked
+`restored` — so the migration is additive and the release serving before it is
+unaffected by it.

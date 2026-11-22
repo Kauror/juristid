@@ -341,19 +341,17 @@ def test_an_outsider_who_may_not_open_the_archive_sees_no_letters(client, specia
     assert "Varasem kiri" not in response.content.decode()
 
 
-def test_the_rail_is_where_it_always_was_and_dokumendid_still_has_none(signed_in, specialist):
-    """Dokumendid is full width and always was (Teema redesign §23).
+def test_the_rail_stands_on_dokumendid_as_on_the_teema_page(signed_in, specialist):
+    """Owner, 2026-11-22: Dokumendid has the rail too, so switching tabs does not move it.
 
-    Browsing forty files is the task that tab exists for, and a 300px column of
-    lookup facts beside it would take width from the thing somebody came here
-    to read. Retiring the Arvamused page moved the opinion *workflow* here; it
-    did not move the rail, which stays on the Teema page where it is read.
+    (It was full width before — Teema redesign §23.) The opinion *workflow*
+    stays here; the rail beside it is the Teema page's own.
     """
     matter = factories.MatterFactory(owner=specialist)
 
     documents = _page(signed_in, matter)
-    assert 'id="teema-andmed"' not in documents
-    assert 'id="koja-arvamus"' not in documents
+    assert 'id="teema-andmed"' in documents
+    assert 'id="koja-arvamus"' in documents
 
     teema = signed_in.get(
         reverse("matters:matter_detail", kwargs={"pk": matter.pk})

@@ -16,7 +16,7 @@ from django.views.decorators.http import require_http_methods
 
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
-from app.register_watch import watch
+from app.register_watch import register_files, watch
 from app.register_watch.models import Relevance, WatchSource
 
 WHOSE = ("minu", "koik")
@@ -262,20 +262,37 @@ def _back(request: HttpRequest, matter_id: Any = None) -> HttpResponseRedirect:
     return HttpResponseRedirect(f"{reverse('register_watch:review')}?{urlencode(query)}")
 
 
+def _tell_about_files(request: HttpRequest, fetched: register_files.Fetched) -> None:
+    if fetched.unreachable:
+        messages.warning(request, "Registrist ei saanud faili alla laadida; märkes on link.")
+    elif fetched.missed:
+        messages.warning(
+            request,
+            "Neid faile ei saanud lisada (link on märkes): " + ", ".join(fetched.missed) + ".",
+        )
+
+
 @login_required
 @require_http_methods(["POST"])
 @business_write_required
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Lisa märkena» or «Jäta vahele»."""
+    """«Lisa märkena» or «Märgi loetuks»."""
     finding = watch.own_pending(request.user, pk)
     if finding is None:
         raise Http404("Dokumenti ei leitud.")
     try:
         decision = request.POST.get("otsus")
         if decision == "lisa":
-            watch.add_to_teema(finding, actor=request.user)
-        elif decision == "link":
-            watch.add_link(finding, actor=request.user)
+            # The register's own files come with the note (owner, 2026-11-22),
+            # fetched before the save so no row lock waits on a register.
+            fetched = register_files.fetch(finding.target.source, finding.external_id)
+            watch.add_to_teema(
+                finding,
+                actor=request.user,
+                comment=request.POST.get("markus", "")[:4000],
+                uploads=fetched.uploads,
+            )
+            _tell_about_files(request, fetched)
         else:
             watch.dismiss(finding, actor=request.user)
     except DomainError as refusal:
@@ -287,11 +304,11 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 @require_http_methods(["POST"])
 @business_write_required
 def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Jäta kõik vahele»: skip every document still waiting on one Teema (owner, 2026-11-22).
+    """«Märgi kõik loetuks»: skip every document still waiting on one Teema (owner, 2026-11-22).
 
     For when the ones that matter have been added: the rest go in one press. Only
     the reader's own waiting findings on a Teema they may see; each is skipped
-    through `watch.dismiss`, exactly as one «Jäta vahele» would.
+    through `watch.dismiss`, exactly as one «Märgi loetuks» would.
     """
     waiting = list(watch.pending_for(request.user).filter(matter_id=pk))
     if not waiting:
@@ -305,7 +322,7 @@ def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
             continue  # decided by somebody else meanwhile
     messages.success(
         request,
-        "1 dokument jäeti vahele." if skipped == 1 else f"{skipped} dokumenti jäeti vahele.",
+        "1 dokument märgiti loetuks." if skipped == 1 else f"{skipped} dokumenti märgiti loetuks.",
     )
     return _back(request)
 
