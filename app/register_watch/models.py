@@ -359,8 +359,77 @@ class CandidateAudience(BaseModel):
         verbose_name_plural = "uute eelnõude lehe nähtavus"
 
 
+class GovernmentAgenda(BaseModel):
+    """One week's «Valitsuse istungi kommenteeritud päevakord» from valitsus.ee (ADR 0219)."""
+
+    url = models.URLField(max_length=500, unique=True, verbose_name="link")
+    title = models.CharField(max_length=300, verbose_name="pealkiri")
+    session_date = models.DateField(unique=True, verbose_name="istungi kuupäev")
+    published_at = models.DateTimeField(null=True, blank=True, verbose_name="avaldatud")
+    #: Items the model judged; with `judged_at` empty, the next run asks again.
+    judged_at = models.DateTimeField(null=True, blank=True, verbose_name="hinnatud")
+
+    class Meta:
+        verbose_name = "valitsuse päevakord"
+        verbose_name_plural = "valitsuse päevakorrad"
+        ordering = ["-session_date"]
+
+    def __str__(self) -> str:
+        return self.title
+
+
+class AgendaItem(BaseModel):
+    """One numbered item of a Government agenda, as published, with the model's verdict."""
+
+    agenda = models.ForeignKey(
+        GovernmentAgenda, on_delete=models.CASCADE, related_name="items", verbose_name="päevakord"
+    )
+    number = models.PositiveSmallIntegerField(verbose_name="punkt")
+    title = models.CharField(max_length=1000, verbose_name="pealkiri")
+    presenter = models.CharField(max_length=300, blank=True, verbose_name="esitaja")
+    kind = models.CharField(max_length=120, blank=True, verbose_name="tüüp")
+    text = models.TextField(blank=True, verbose_name="valitsuse selgitus")
+    strength = models.CharField(
+        max_length=16, choices=Strength.choices, blank=True, default="", verbose_name="hinnang"
+    )
+    reason = models.CharField(max_length=500, blank=True, verbose_name="põhjendus")
+    #: An open Teema the item is plainly about; only one the model was offered.
+    related_matter = models.ForeignKey(
+        "matters.Matter",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="seotud teema",
+    )
+
+    class Meta:
+        verbose_name = "päevakorrapunkt"
+        verbose_name_plural = "päevakorrapunktid"
+        ordering = ["number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["agenda", "number"], name="register_watch_agenda_item_once"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(strength__in=[s.value for s in Strength]),
+                name="register_watch_agenda_item_strength",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.number}. {self.title}"
+
+    @property
+    def text_paragraphs(self) -> list[str]:
+        return [part for part in self.text.split(chr(10) * 2) if part.strip()]
+
+
 class CandidateNotice(BaseModel):
-    """«Uued eelnõud registrites» in the bell: one unread notice per reader (ADR 0218 §7)."""
+    """«Monitooring» in the bell: one unread notice per reader (ADR 0218 §7, ADR 0219).
+
+    It counts the new drafts a sweep listed and the Government agendas a run stored.
+    """
 
     recipient = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -369,6 +438,8 @@ class CandidateNotice(BaseModel):
         verbose_name="saaja",
     )
     candidates = models.PositiveIntegerField(default=0, verbose_name="kandidaate")
+    #: New Government agendas with at least one item that may matter (ADR 0219).
+    agendas = models.PositiveIntegerField(default=0, db_default=0, verbose_name="päevakordi")
     read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
 
     class Meta:

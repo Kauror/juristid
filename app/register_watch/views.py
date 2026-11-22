@@ -172,6 +172,15 @@ def _home_source(teema: Any) -> str:
 
 @login_required
 def review(request: HttpRequest) -> HttpResponse:
+    """Monitooring → «Registrite dokumendid»: every Teema's waiting documents (ADR 0219).
+
+    The head's, like the rest of Monitooring, until the head opens it to everyone. A
+    lawyer decides on a Teema's documents on its own «Registritest» tab.
+    """
+    from app.register_watch import candidate_notices, candidate_views
+
+    if not candidate_notices.may_see(request.user):
+        raise Http404(candidate_views.NOT_HERE)
     chosen = _filters(request.GET)
     teema = _teema(request, chosen["teema"]) if chosen["teema"] else None
     if chosen["teema"]:
@@ -187,7 +196,7 @@ def review(request: HttpRequest) -> HttpResponse:
         request,
         "register_watch/review.html",
         {
-            "nav_active": "minu_asjad",
+            **candidate_views.monitooring_context(request, "registrid"),
             "filters": chosen,
             "groups": list(groups.values()),
             "total": sum(len(g["shown"]) + len(g["unrelated"]) for g in groups.values()),

@@ -17,7 +17,7 @@
       <dt>AI</dt>
       <dd>{% if latest.ai_model %}<span class="mono">{{ latest.ai_model }}</span>{% else %}Väljas{% endif %}</dd>
       <dt>Ootab otsust</dt>
-      <dd><a href="{% url 'register_watch:review' %}">{{ waiting }} dokument{{ waiting|pluralize:"i" }}</a></dd>
+      <dd>{% if show_monitooring %}<a href="{% url 'register_watch:review' %}">{{ waiting }} dokument{{ waiting|pluralize:"i" }}</a>{% else %}{{ waiting }} dokument{{ waiting|pluralize:"i" }}{% endif %}</dd>
       <dt>{{ total_days }} päeva kokku</dt>
       <dd>{{ totals.runs }} kontroll{{ totals.runs|pluralize:"i" }} · {{ totals.offered|default:0 }} pakutud dokument{{ totals.offered|default:0|pluralize:"i" }} · {{ totals.calls|default:0 }} AI päring{{ totals.calls|default:0|pluralize:"ut" }} ({{ totals.judged|default:0 }} hinnatud{% if totals.failures %}, {{ totals.failures }} ebaõnnestus{% endif %}) · <span class="mono">{{ totals.input_tokens|default:0 }} / {{ totals.output_tokens|default:0 }}</span> tokenit</dd>
     </dl>

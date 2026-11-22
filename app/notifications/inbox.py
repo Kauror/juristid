@@ -477,28 +477,39 @@ def _register_items(user: Any) -> list[InboxItem]:
     return [register_item(row) for row in notices.due_unread(user).select_related("matter")]
 
 
-#: The label of a «Uued eelnõud registrites» item, once.
-CANDIDATES_LABEL = "Uued eelnõud registrites"
+#: The label of a «Monitooring» item, once.
+CANDIDATES_LABEL = "Monitooring"
+
+
+def _monitooring_note(candidates: int, agendas: int) -> str:
+    parts = []
+    if candidates:
+        parts.append("1 uus eelnõu" if candidates == 1 else f"{candidates} uut eelnõu")
+    if agendas:
+        parts.append("valitsuse päevakord" if agendas == 1 else f"{agendas} valitsuse päevakorda")
+    return ", ".join(parts)
 
 
 def candidates_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = False) -> InboxItem:
-    """The sweep's notice: new drafts wait on «Uued eelnõud» (docs/adr/0218 §7)."""
+    """Monitooring's notice: new drafts on «Uued eelnõud», a Government agenda on
+    «Valitsuse info» (docs/adr/0218 §7, 0219). It opens the section that has news."""
     unread = state == STATE_UNREAD
     day = timezone.localtime(row.updated_at).date()
-    count = row.candidates
+    agendas = getattr(row, "agendas", 0) or 0
+    only_agenda = agendas and not row.candidates
     return InboxItem(
         type=TYPE_CANDIDATES,
         kind=INFO,
-        title="Uued eelnõud",
+        title="Valitsuse info" if only_agenda else "Uued eelnõud",
         label=CANDIDATES_LABEL,
         date=day,
         date_label=format_estonian_date(day),
-        url=reverse("register_watch:candidates"),
+        url=reverse("register_watch:agendas" if only_agenda else "register_watch:candidates"),
         is_unread=unread,
         pk=row.pk,
         section=SECTION_INFO,
         can_read=unread,
-        note="1 uus kandidaat" if count == 1 else f"{count} uut kandidaati",
+        note=_monitooring_note(row.candidates, agendas),
         at=row.created_at,
         state=state,
         can_unread=can_unread,
