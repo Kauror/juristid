@@ -1,0 +1,29 @@
+{% comment %}
+Monitooring's head (docs/adr/0219): the title, the three sections as tabs and, for the
+department head, whether the tab is open to everyone. Included by every Monitooring page.
+{% endcomment %}
+<div class="pagehead">
+  <h1 class="pagehead__title">Monitooring</h1>
+  {% if is_head %}
+    <form class="regwatch__audience" method="post" action="{% url 'register_watch:candidate_audience' %}">
+      {% csrf_token %}
+      <input type="hidden" name="tagasi" value="{{ monitooring_active }}">
+      {% if everyone %}
+        <span class="regwatch__meta">Nähtav kõigile.</span>
+        <input type="hidden" name="koigile" value="0">
+        <button type="submit" class="button button--quiet button--tiny">Näita ainult mulle</button>
+      {% else %}
+        <span class="regwatch__meta">Nähtav ainult osakonnajuhatajale.</span>
+        <input type="hidden" name="koigile" value="1">
+        <button type="submit" class="button button--quiet button--tiny">Näita kõigile</button>
+      {% endif %}
+    </form>
+  {% endif %}
+</div>
+<nav class="tabs" aria-label="Monitooringu osad">
+  {% for key, label, url in monitooring_sections %}
+    <a class="tabs__tab {% if monitooring_active == key %}is-active{% endif %}"
+       {% if monitooring_active == key %}aria-current="page"{% endif %}
+       href="{{ url }}">{{ label }}</a>
+  {% endfor %}
+</nav>

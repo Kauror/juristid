@@ -96,7 +96,9 @@ OSAKOND_BUDGET = 51
 #: +1 for «Uued eelnõud registrites» (docs/adr/0218 §7): the reader's own unread
 #: notice of the nightly sweep, one read whatever the desk holds (the audience
 #: and the list's state are conditions inside it, not reads of their own).
-MINU_ASJAD_BUDGET = 53
+#: +1 for «Monitooring» on the bar (docs/adr/0219): for anybody but the head,
+#: whether the head opened the tab to everyone — one row, read once per page.
+MINU_ASJAD_BUDGET = 54
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).
@@ -104,7 +106,8 @@ MINU_ASJAD_BUDGET = 53
 #: the strip and the rail.
 #: +6 since Seis counts sent opinions from the one reader (docs/adr/0214 §6): one
 #: read for the page's period and one for the rail's calendar year.
-STATISTIKA_BUDGET = 39
+#: +1 for «Monitooring» on the bar (docs/adr/0219), as Minu asjad.
+STATISTIKA_BUDGET = 40
 #: Teemad (the register) on the same world. Its per-row flatness is
 #: `tests/test_matter_workflow.py::test_the_register_does_not_query_per_row`;
 #: this is the page's whole count, measured at 27 after D-04 (one organisation
@@ -112,7 +115,8 @@ STATISTIKA_BUDGET = 39
 #: and `colleagues`), 30 before. +1 since the 2026-11-02 package (ADR 0200):
 #: Täpsem otsing's «Õigusakt» checkbox group reads the legal-instrument
 #: vocabulary once — a fixed cost of the page, never per row.
-TEEMAD_BUDGET = 28
+#: +1 for «Monitooring» on the bar (docs/adr/0219), as Minu asjad.
+TEEMAD_BUDGET = 29
 
 
 def _days_ago(days: int) -> datetime.datetime:

@@ -2892,6 +2892,24 @@ fieldset.field > legend {
     position: static;
   }
 
+  /* On a phone the bar's links wrap to a second row rather than widen the page:
+     the department head's bar carries one more link («Monitooring», ADR 0219),
+     and 320px does not hold five. Where they fit, one row exactly as before. */
+  .topnav,
+  .topnav__wide {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 48px;
+    row-gap: 0;
+    min-width: 0;
+  }
+
+  /* Shrink, never grow: where the links fit, the row keeps its own width. */
+  .topnav {
+    flex: 0 1 auto;
+    max-width: 100%;
+  }
+
   /* The gutter is redefined rather than each padding overridden, so the
      message band, the footer and every full-bleed page's negative margin move
      with it. A bleed pulling itself out by 32px against 12px of shell padding
@@ -17592,7 +17610,70 @@ a.statpanel__note {
   font-size: var(--typography-size-meta);
 }
 
-.ovhead__link {
-  font-size: var(--typography-size-meta);
+/* Monitooring (docs/adr/0219): the section heading under the tab strip, the
+ * week-not-found warning, and «Valitsuse info»: one fold per Government agenda. */
+.regwatch__section {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  margin: var(--spacing-4) 0 var(--spacing-1);
+  font-size: var(--typography-size-base);
+}
+
+.regwatch__warning {
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--status-warning-border);
+  border-radius: 4px;
+  background: var(--status-warning-soft);
   color: var(--text-primary);
+}
+
+.agenda {
+  margin-bottom: var(--spacing-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.agenda__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2);
+  padding: var(--spacing-2) 0;
+  cursor: pointer;
+}
+
+.agenda__title {
+  font-weight: 600;
+}
+
+.agenda__items {
+  margin: 0 0 var(--spacing-3);
+  padding: 0;
+  list-style: none;
+}
+
+.agenda__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-2) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.agenda__line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-2);
+}
+
+.agenda__text > summary {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+  cursor: pointer;
+}
+
+.agenda__text p {
+  margin: var(--spacing-1) 0;
+  font-size: var(--typography-size-meta);
 }

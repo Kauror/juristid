@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Valitsuse info · Monitooring · {{ application_name }}{% endblock %}
+
+{% comment %}
+«Valitsuse info» (docs/adr/0219): the Government's commented session agendas from
+valitsus.ee, one fold per week, the newest open. Each fold lists the items the model
+judged to matter (Tugev, Võimalik) with the Government's own text, then «Kontrollimist
+vajavad võimalikud seosed», then everything else folded. The model's line and its pointer
+to a Teema are shown, never acted on.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  {% include "register_watch/_monitooring_head.html" %}
+
+  <h2 class="regwatch__section">Valitsuse info</h2>
+  <p class="regwatch__meta">Valitsuse istungi kommenteeritud päevakord valitsus.ee-st ja punktid, mis võivad Kojale või ettevõtjatele olulised olla. Uut päevakorda otsitakse kolmapäeval kella 12-st neljapäeval kella 12-ni.{% if not watch_on %} Lugemine on välja lülitatud.{% endif %}</p>
+  {% if missing %}<p class="regwatch__warning">Selle nädala päevakorda ei leitud — vaata valitsus.ee-st käsitsi.</p>{% endif %}
+
+  {% for week in weeks %}
+    <details class="agenda"{% if forloop.first %} open{% endif %}>
+      <summary class="agenda__head">
+        <span class="agenda__title">{{ week.agenda.title }}</span>
+        <span class="regwatch__meta">{% if week.agenda.published_at %}avaldatud {{ week.agenda.published_at|date:"d.m.Y H:i" }} · {% endif %}{{ week.total }} punkti · {{ week.shown|length }} olulist{% if week.check %} · {{ week.check|length }} kontrollida{% endif %}</span>
+      </summary>
+      <p class="regwatch__meta"><a href="{{ week.agenda.url }}" target="_blank" rel="noopener noreferrer">Päevakord valitsus.ee-s</a>{% if not week.agenda.judged_at %} · hindamata{% endif %}</p>
+
+      {% if week.shown %}
+        <ul class="agenda__items">
+          {% for item in week.shown %}{% include "register_watch/_agenda_item.html" %}{% endfor %}
+        </ul>
+      {% else %}
+        <p class="regwatch__empty">Koja jaoks selgelt olulisi punkte ei leitud.</p>
+      {% endif %}
+
+      {% if week.check %}
+        <details class="regwatch__unrelated">
+          <summary>Kontrollimist vajavad võimalikud seosed ({{ week.check|length }})</summary>
+          <ul class="agenda__items">
+            {% for item in week.check %}{% include "register_watch/_agenda_item.html" %}{% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+
+      {% if week.rest %}
+        <details class="regwatch__unrelated">
+          <summary>Ülejäänud punktid ({{ week.rest|length }})</summary>
+          <ul class="agenda__items">
+            {% for item in week.rest %}{% include "register_watch/_agenda_item.html" %}{% endfor %}
+          </ul>
+        </details>
+      {% endif %}
+    </details>
+  {% empty %}
+    <p class="regwatch__empty">Päevakordi pole veel loetud.</p>
+  {% endfor %}
+</div>
+{% endblock %}

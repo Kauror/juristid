@@ -44,3 +44,10 @@
 # sweep is on by default in production; the model step reads
 # JURISTID_REGISTER_SWEEP_AI=1 and the key from the same env file.
 20 4 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py sweep_registers >> /mnt/user/appdata/juristid-main/register-sweep.log 2>&1
+
+# The Government's commented agenda for Monitooring → «Valitsuse info» (docs/adr/0219):
+# every half hour from Wednesday 12:00 to Thursday 12:00 Tallinn. In winter (UTC+2) that
+# is Wed 10:00 UTC – Thu 09:59 UTC; in summer (UTC+3) move both lines an hour earlier. A
+# week already read costs one query. Same env file (the model step and its key).
+*/30 10-23 * * 3 docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_government_agenda >> /mnt/user/appdata/juristid-main/government-agenda.log 2>&1
+*/30 0-9 * * 4 docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_government_agenda >> /mnt/user/appdata/juristid-main/government-agenda.log 2>&1

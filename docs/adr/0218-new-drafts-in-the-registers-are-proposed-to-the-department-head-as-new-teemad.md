@@ -109,3 +109,9 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
   («… ehitusloa menetluse muutmine» as a law) is folded too, though it stays
   on the page.
 - Nothing here creates a Teema, moves a stage or sets a deadline.
+
+## Amendment 2026-11-22 — moved into «Monitooring» (ADR 0219)
+
+§4 and §6: the page is Monitooring → «Uued eelnõud» at `/monitooring/eelnoud/`, not a
+link on Osakond; the head's «Näita kõigile» now opens the whole Monitooring tab. §7: the
+bell's source is labelled «Monitooring» and also counts the Government's agendas.

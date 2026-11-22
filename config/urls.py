@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import include, path
+from django.views.generic import RedirectView
 
 from app.accounts.admin_sign_in import admin_sign_in
 
@@ -25,9 +26,16 @@ urlpatterns = [
         include(("app.reporting.urls", "reporting"), namespace="reporting"),
     ),
     path(
-        "arengud/",
+        "monitooring/",
         include(("app.register_watch.urls", "register_watch"), namespace="register_watch"),
     ),
+    # The register watch's list lived at /arengud/ and the new drafts at
+    # /arengud/uued-eelnoud/ until Monitooring took them in (docs/adr/0219): GETs follow.
+    path(
+        "arengud/",
+        RedirectView.as_view(url="/monitooring/registrid/", query_string=True),
+    ),
+    path("arengud/uued-eelnoud/", RedirectView.as_view(url="/monitooring/eelnoud/")),
     # Structured Matter facts. Mounted at the root because Olulised tähtajad,
     # Jõustuvad aktid and Töövõidud are department destinations of their own;
     # the Matter-scoped write routes inside it are exact paths and cannot

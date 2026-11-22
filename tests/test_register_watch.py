@@ -17,7 +17,7 @@ from django.urls import reverse
 
 from app.core.enums import Visibility
 from app.matters.models import MatterProceduralDevelopment
-from app.register_watch import ai, watch
+from app.register_watch import ai, candidate_notices, watch
 from app.register_watch.models import (
     FindingStatus,
     Relevance,
@@ -378,6 +378,8 @@ def _finding(matter, **extra):
 
 
 def test_the_page_lists_my_waiting_documents(client, specialist):
+    # The list is Monitooring's, the head's until opened to everyone (docs/adr/0219).
+    candidate_notices.set_everyone(True)
     mine = _finding(_bill_teema(owner=specialist))
     other = _finding(
         factories.MatterFactory(title="Teise teema"), title="Teise dokument", external_id="doc:x"
@@ -394,6 +396,8 @@ def test_the_page_lists_my_waiting_documents(client, specialist):
 
 
 def test_a_reader_sees_the_documents_without_the_buttons(client, reader):
+    # The list is Monitooring's, the head's until opened to everyone (docs/adr/0219).
+    candidate_notices.set_everyone(True)
     _finding(_bill_teema())
     client.force_login(reader)
 
@@ -712,6 +716,8 @@ def test_a_pdr_phrase_keeps_only_titles_with_every_word(registers):
 
 
 def test_every_open_teema_has_the_way_to_its_watch(client, specialist):
+    # The list is Monitooring's, the head's until opened to everyone (docs/adr/0219).
+    candidate_notices.set_everyone(True)
     matter = factories.MatterFactory(owner=specialist, reference_year=2026, reference_number=12)
     client.force_login(specialist)
 

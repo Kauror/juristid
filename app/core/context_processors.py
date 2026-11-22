@@ -110,6 +110,10 @@ def application(request: HttpRequest) -> dict[str, Any]:
         "may_administer_accounts": SimpleLazyObject(
             lambda: admin_session.may_administer_accounts(request)
         ),
+        # «Monitooring» on the bar (docs/adr/0219): the department head's, and
+        # everyone's once the head opens it. Lazy: read only by the bar; for the
+        # head it reads nothing, for anybody else whether the tab is open (one row).
+        "show_monitooring": SimpleLazyObject(lambda: _show_monitooring(request)),
         # `can_read_opinion_archive` used to live here, for the second bar item
         # that opened the administrative archive browse. That item is gone —
         # one `Arvamused` destination, with the held corpus as its own tab
@@ -139,6 +143,12 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # a page that names somebody this way, none on any other.
         "colleagues": SimpleLazyObject(lambda: list(department_workers())),
     }
+
+
+def _show_monitooring(request: HttpRequest) -> bool:
+    from app.register_watch import candidate_notices
+
+    return candidate_notices.may_see(getattr(request, "user", None))
 
 
 def _current_persona_id(request: HttpRequest) -> Any:

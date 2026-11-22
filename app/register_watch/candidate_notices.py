@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.db.models import Exists, QuerySet
+from django.db.models import Exists, Q, QuerySet
 from django.utils import timezone
 
 from app.core.authorization import (
@@ -64,22 +64,34 @@ def _recipients() -> list[Any]:
     return [user for user in users if may_decide(user)]
 
 
-def notify(candidates: int) -> int:
-    """Tell each recipient; add to their unread notice if there is one. How many were told."""
-    if candidates <= 0:
+def _tell(*, candidates: int = 0, agendas: int = 0) -> int:
+    """Add to each recipient's unread notice, or create one. How many were told."""
+    if candidates <= 0 and agendas <= 0:
         return 0
     now = timezone.now()
     told = 0
     for user in _recipients():
         row = CandidateNotice.objects.filter(recipient=user, read_at__isnull=True).first()
         if row is None:
-            CandidateNotice.objects.create(recipient=user, candidates=candidates)
+            CandidateNotice.objects.create(recipient=user, candidates=candidates, agendas=agendas)
         else:
             CandidateNotice.objects.filter(pk=row.pk).update(
-                candidates=row.candidates + candidates, updated_at=now
+                candidates=row.candidates + candidates,
+                agendas=row.agendas + agendas,
+                updated_at=now,
             )
         told += 1
     return told
+
+
+def notify(candidates: int) -> int:
+    """A sweep listed ``candidates`` new drafts (ADR 0218 §7)."""
+    return _tell(candidates=candidates)
+
+
+def notify_agendas(agendas: int) -> int:
+    """A run stored ``agendas`` new Government agendas worth a look (ADR 0219)."""
+    return _tell(agendas=agendas)
 
 
 def own(user: Any) -> QuerySet[CandidateNotice]:
@@ -103,10 +115,10 @@ def own(user: Any) -> QuerySet[CandidateNotice]:
 
 
 def due_unread(user: Any) -> QuerySet[CandidateNotice]:
-    """Unread, and something worth telling is still on the list: one lazy query."""
+    """Unread, and it carries an agenda or a draft still waits on the list: one lazy query."""
     from app.register_watch.candidates import worth_telling
 
-    return own(user).filter(read_at__isnull=True).filter(Exists(worth_telling()))
+    return own(user).filter(read_at__isnull=True).filter(Q(agendas__gt=0) | Exists(worth_telling()))
 
 
 def history(user: Any, unread: set[Any]) -> QuerySet[CandidateNotice]:

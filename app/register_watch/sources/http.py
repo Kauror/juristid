@@ -19,7 +19,9 @@ from typing import Any
 from django.conf import settings
 
 #: adr.rik.ee is RIK's shared public register (the ministries' ADR): an HTML search form.
-ALLOWED_HOSTS = frozenset({"api.riigikogu.ee", "dok.hm.ee", "adr.envir.ee", "adr.rik.ee"})
+ALLOWED_HOSTS = frozenset(
+    {"api.riigikogu.ee", "dok.hm.ee", "adr.envir.ee", "adr.rik.ee", "valitsus.ee"}
+)
 TIMEOUT_SECONDS = 25
 MAX_BYTES = 8 * 1024 * 1024
 #: Seconds between two calls to one host. The Riigikogu answers 429 to bursts.

@@ -399,7 +399,7 @@ def test_the_sweep_tells_the_head_in_the_bell(registers, department_head, specia
     assert inbox.inbox_count(specialist) == 0
     items = [item for item in inbox.inbox_for(department_head) if item.type == "candidates"]
     assert len(items) == 1
-    assert items[0].note == "3 uut kandidaati"
+    assert items[0].note == "3 uut eelnõu"
     assert items[0].url == PAGE
 
     # Read in the bell, it is history.

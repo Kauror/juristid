@@ -10,13 +10,16 @@
 [[day]]
 date = 2026-11-22
 basis = "deployment"
-prs = [664, 665]
+prs = [664, 665, 667]
 changes = [
-  "Teema lehel on kolmas vahekaart «Registritest». Seal on registritest leitud dokumendid, mis ootavad otsust («Lisa märkena», «Lisa link», «Jäta vahele»), ja jälgitavad allikad koos otsingusõnadega. Vahekaardi juures olev number näitab, mitu dokumenti ootab. Kui teema ministeeriumi registrit ei saa automaatselt lugeda või pole teada, kust otsida, ütleb vahekaart seda kohe. Rida «Registrites N uut dokumenti» pealkirja kohal ja link «Registrite jälgimine» paremas veerus on ära, kellukese teavitus avab sama vahekaardi.",
+  "Teema lehel on uus vahekaart «Registritest». Seal on registritest leitud dokumendid, mis ootavad otsust: neid saab lisada teemale märkena või lingina või vahele jätta. Seal saab muuta ka sõnu, millega teemat registritest otsitakse. Vahekaardi juures olev number näitab, mitu dokumenti ootab, ja kellukese teavitus «Registris uus dokument» avab sama vahekaardi.",
   "Teema, Dokumendid ja Registritest vahetuvad lehte uuesti laadimata: pealkiri, väljad ja parem veerg jäävad paigale ning muutub ainult ala vahekaartide all. Aadress muutub kaasa, nii et linki saab jagada ja «Tagasi» töötab.",
   "OneNote'i märke avamisel teema ajajoonel on näha ka failid, mis on OneNote'i lehel selle märke juures, näiteks kiri, millest märge räägib. Iga faili saab sealt otse avada või alla laadida, «OneNote'i koopiat» avamata.",
   "Uuendused on Halduse vahekaart: Halduse lehel saab otse Uuendustesse liikuda. Link «Rakenduse» all on alles.",
-  "Osakonnajuhataja näeb Osakonna lehel uut lehte «Uued eelnõud». Igal ööl otsitakse Riigikogu ja ministeeriumide registritest eelnõusid, mis on viimastel päevadel lisandunud ja mida ükski teema veel ei jälgi, ning hinnatakse, kas need võivad ettevõtjaid puudutada. Eelnõu saab lisada teemaks (Uus teema täidetakse pealkirja, saatja ja kuupäevaga ette ning registrilingid lisatakse teemale), siduda olemasoleva teemaga või kõrvale jätta. Uutest eelnõudest annab teada kelluke. Osakonnajuhataja saab lehe teha nähtavaks ka teistele.",
+  "Ülemisel ribal on uus vahekaart «Monitooring». See on osakonnajuhataja vaade, mille ta saab nupuga «Näita kõigile» teha nähtavaks ka teistele. Monitooringus on kolm osa: «Uued eelnõud», «Valitsuse info» ja «Registrite dokumendid».",
+  "«Uued eelnõud»: igal ööl otsitakse Riigikogu ja ministeeriumide registritest eelnõusid, mida ükski teema veel ei jälgi, ja hinnatakse, kas need võivad ettevõtjaid puudutada. Eelnõu saab lisada teemaks (Uus teema täidetakse ette), siduda olemasoleva teemaga või kõrvale jätta.",
+  "«Valitsuse info»: valitsuse istungi kommenteeritud päevakord loetakse iga nädal valitsus.ee-st. Näha on punktid, mis võivad Kojale või ettevõtjatele olulised olla, koos valitsuse enda selgitusega; nõrgemad seosed ja ülejäänud punktid on eraldi kokku volditud. Uusim päevakord on lahti, varasemad kokku volditud.",
+  "«Registrite dokumendid»: kõigi teemade registritest leitud ootel dokumendid ühes nimekirjas (varem leht «Uued dokumendid registrites»). Uutest eelnõudest ja valitsuse päevakorrast annab teada kelluke.",
 ]
 
 [[day]]

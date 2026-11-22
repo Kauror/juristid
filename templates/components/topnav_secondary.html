@@ -62,6 +62,9 @@ and the two sections that were genuinely the head's are decided on the page
 <a class="topnav__link {% if nav_active == 'statistika' %}is-active{% endif %}"
    {% if nav_active == 'statistika' %}aria-current="page"{% endif %}
    href="{% url 'reporting:dashboard' %}">Statistika</a>
+{% if show_monitooring %}<a class="topnav__link {% if nav_active == 'monitooring' %}is-active{% endif %}"
+   {% if nav_active == 'monitooring' %}aria-current="page"{% endif %}
+   href="{% url 'register_watch:home' %}">Monitooring</a>{% endif %}
 {% comment %}
   The held opinion archive is deliberately *not* a destination of its own here.
 

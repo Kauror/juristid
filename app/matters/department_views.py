@@ -62,18 +62,6 @@ def _wants_calendar_fragment(request: HttpRequest) -> bool:
     )
 
 
-def _new_topics(user: Any) -> bool:
-    """Whether Osakond shows the way to «Uued eelnõud» (docs/adr/0218 §6).
-
-    No count beside it: the bell already says how many wait, and a count here
-    would be one more query on every Osakond view (its budget in
-    tests/test_work_pages_at_scale.py). For the head this reads nothing.
-    """
-    from app.register_watch import candidate_notices
-
-    return candidate_notices.may_see(user)
-
-
 @login_required
 def department(request: HttpRequest) -> HttpResponse:
     """Osakond — where the department stands, in two scopes behind one shell.
@@ -160,8 +148,6 @@ def department(request: HttpRequest) -> HttpResponse:
             # heading (app/matters/department_dashboard.py, `TEAM_COLUMNS`).
             "team_columns": TEAM_COLUMNS,
             "nav_active": "osakond",
-            # «Uued eelnõud» (docs/adr/0218): the head's, or everyone's once opened.
-            "new_topics": _new_topics(request.user),
         },
     )
 

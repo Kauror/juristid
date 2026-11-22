@@ -1,0 +1,15 @@
+<li class="agenda__item">
+  <div class="agenda__line">
+    {% if item.strength %}<span class="regwatch__strength regwatch__strength--{{ item.strength|lower }}">{{ item.get_strength_display }}</span>{% endif %}
+    <span class="regwatch__title">{{ item.number }}. {{ item.title }}</span>
+  </div>
+  <span class="regwatch__meta">{% if item.presenter %}Esitaja: {{ item.presenter }}{% endif %}{% if item.presenter and item.kind %} · {% endif %}{% if item.kind %}{{ item.kind }}{% endif %}</span>
+  {% if item.reason %}<span class="regwatch__note">{{ item.reason }}</span>{% endif %}
+  {% if item.related_shown %}<span class="regwatch__meta">Seotud teema: <a href="{% url 'matters:matter_detail' pk=item.related_shown.pk %}">{{ item.related_shown.title }}</a></span>{% endif %}
+  {% if item.text %}
+    <details class="agenda__text">
+      <summary>Valitsuse selgitus</summary>
+      {% for paragraph in item.text_paragraphs %}<p>{{ paragraph }}</p>{% endfor %}
+    </details>
+  {% endif %}
+</li>

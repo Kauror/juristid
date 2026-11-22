@@ -19,7 +19,7 @@ from django.views.decorators.http import require_http_methods
 from app.core.decorators import business_write_required
 from app.core.errors import DomainError
 from app.register_watch import candidate_notices, candidates
-from app.register_watch.models import Strength, SweepRun
+from app.register_watch.models import GovernmentAgenda, Strength, SweepRun
 
 NOT_HERE = "Lehte ei leitud."
 NO_TEEMA = "Sellist avatud teemat ei leitud."
@@ -40,6 +40,65 @@ def _visible_open_teema(user: Any, reference: str) -> Any:
             reference_number=int(number),
         )
         .first()
+    )
+
+
+#: Monitooring's sections, in the order of its tabs (ADR 0219).
+SECTIONS = (
+    ("eelnoud", "Uued eelnõud", "register_watch:candidates"),
+    ("valitsus", "Valitsuse info", "register_watch:agendas"),
+    ("registrid", "Registrite dokumendid", "register_watch:review"),
+)
+
+
+def monitooring_context(request: HttpRequest, active: str) -> dict[str, Any]:
+    """What every Monitooring page shares: the tab strip and the head's audience switch."""
+    return {
+        "nav_active": "monitooring",
+        "monitooring_sections": [(key, label, reverse(name)) for key, label, name in SECTIONS],
+        "monitooring_active": active,
+        "is_head": candidate_notices.is_head(request.user),
+        "everyone": candidate_notices.audience().everyone,
+    }
+
+
+@login_required
+@require_http_methods(["GET"])
+def agenda_list(request: HttpRequest) -> HttpResponse:
+    """«Valitsuse info»: the Government's weekly agendas, newest open (ADR 0219)."""
+    if not candidate_notices.may_see(request.user):
+        raise Http404(NOT_HERE)
+    from app.matters.models import Matter
+    from app.register_watch import agenda
+
+    agendas = list(GovernmentAgenda.objects.prefetch_related("items")[:12])
+    related_ids = {
+        item.related_matter_id for a in agendas for item in a.items.all() if item.related_matter_id
+    }
+    visible = {m.pk: m for m in Matter.objects.visible_to(request.user).filter(pk__in=related_ids)}
+    weeks = []
+    for a in agendas:
+        groups: dict[str, list[Any]] = {"shown": [], "check": [], "rest": []}
+        for item in a.items.all():
+            # A Teema the reader may not see is not named to them.
+            cast(Any, item).related_shown = visible.get(item.related_matter_id)
+            if item.strength in agenda.SHOWN:
+                groups["shown"].append(item)
+            elif item.strength in agenda.CHECK:
+                groups["check"].append(item)
+            else:
+                groups["rest"].append(item)
+        groups["shown"].sort(key=lambda i: (i.strength != Strength.STRONG, i.number))
+        weeks.append({"agenda": a, **groups, "total": len(a.items.all())})
+    return render(
+        request,
+        "register_watch/agendas.html",
+        {
+            **monitooring_context(request, "valitsus"),
+            "weeks": weeks,
+            "missing": agenda.missing_this_week(),
+            "watch_on": agenda.enabled(),
+        },
     )
 
 
@@ -76,13 +135,11 @@ def candidate_list(request: HttpRequest) -> HttpResponse:
         request,
         "register_watch/candidates.html",
         {
-            "nav_active": "osakond",
+            **monitooring_context(request, "eelnoud"),
             "shown": shown,
             "folded": folded,
             "nameless": nameless,
             "may_decide": candidate_notices.may_decide(request.user),
-            "is_head": candidate_notices.is_head(request.user),
-            "everyone": candidate_notices.audience().everyone,
             "last_run": SweepRun.objects.order_by("-started_at").first(),
             "sweep_on": candidates.enabled(),
         },
@@ -126,8 +183,12 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 @require_http_methods(["POST"])
 @business_write_required
 def audience(request: HttpRequest) -> HttpResponse:
-    """The head opens the page to every reader, or keeps it to the head."""
+    """The head opens Monitooring to every reader, or keeps it to the head (ADR 0219)."""
     if not candidate_notices.is_head(request.user):
         raise Http404(NOT_HERE)
     candidate_notices.set_everyone(request.POST.get("koigile") == "1")
-    return _back()
+    # Back to the section it was pressed on, one of Monitooring's own (never a free URL).
+    names = {key: name for key, _label, name in SECTIONS}
+    return HttpResponseRedirect(
+        reverse(names.get(str(request.POST.get("tagasi", "")), "register_watch:candidates"))
+    )
