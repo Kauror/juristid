@@ -40,6 +40,7 @@
 
 # New topics sweep (docs/adr/0218): drafts in the same registers that are not a
 # Teema yet, for the «Uued eelnõud» page. At 04:20 UTC, after the register watch
-# has finished (~16 min), so a draft a Teema already follows is left out. Same
-# env file: JURISTID_REGISTER_SWEEP=1, JURISTID_REGISTER_SWEEP_AI=1, the key.
+# has finished (~16 min), so a draft a Teema already follows is left out. The
+# sweep is on by default in production; the model step reads
+# JURISTID_REGISTER_SWEEP_AI=1 and the key from the same env file.
 20 4 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py sweep_registers >> /mnt/user/appdata/juristid-main/register-sweep.log 2>&1

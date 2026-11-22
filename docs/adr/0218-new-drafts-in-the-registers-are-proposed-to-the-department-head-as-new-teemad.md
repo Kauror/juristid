@@ -33,7 +33,7 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
    names «eelnõu» or «väljatöötamiskavatsus». Documents older than the window
    are never brought in — not even by the first sweep. A register that fails is
    that night's error in the run's log (`SweepRun`); the others are still read.
-   Off unless `JURISTID_REGISTER_SWEEP` is on.
+   On wherever the register watch reads (production), off in tests, CI and rehearsals (`JURISTID_REGISTER_SWEEP` overrides); every service reads the switch, so the page and `production_status` know whether the sweep runs.
 2. **What a Teema already follows is not new.** A document is left out when an
    open Teema's title names its bill («973 SE»), when the per-Teema watch
    already watches that bill, or when the watch already found that document.
