@@ -20,7 +20,7 @@ lying, so each keeps its own column, its own service and its own audit event:
 **Not a delete, and not a workflow engine.** `removed_at` and `removed_by` on
 the record (`app.core.models.RemovableRecord`), one audit event per record kind,
 and nothing else. No row is destroyed, no evidence byte is touched, no
-append-only table is written to twice. :data:`REMOVABLE` is a table of eight
+append-only table is written to twice. :data:`REMOVABLE` is a table of nine
 explicit facts rather than a registry a later record kind joins by declaring an
 attribute: adding a ninth is a deliberate line in this file, reviewed with the
 model it names.
@@ -57,6 +57,7 @@ from app.matters.models import (
     MatterEngagement,
     MatterExternalPosition,
     MatterProceduralDevelopment,
+    MatterProceduralLink,
     MatterWebsiteOverview,
 )
 
@@ -169,6 +170,15 @@ def _table() -> tuple[RemovableKind, ...]:
             event_type=ChangeEventType.EXTERNAL_POSITION_REMOVED,
             label="seisukoht",
             genitive="seisukoha",
+        ),
+        # The rail's `Menetluse link` (owner, 2026-11-22): a wrong or stale
+        # address comes off the file; it was a pointer, so nothing else goes.
+        RemovableKind(
+            key="menetluslink",
+            model=MatterProceduralLink,
+            event_type=ChangeEventType.PROCEDURAL_LINK_REMOVED,
+            label="menetluse link",
+            genitive="menetluse lingi",
         ),
         RemovableKind(
             key="ulevaade",

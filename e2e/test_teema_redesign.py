@@ -275,9 +275,8 @@ def test_evidence_and_working_references_look_like_opposites(page, base_url):
     expect(row).not_to_contain_text("Saabunud ametlik dokument")
 
     # A SharePoint reference is not evidence, and does not look like it.
-    # (No facts rail on this tab: browsing files is the task, and it gets the
-    # width.)
-    expect(page.locator(".teemadocs .rail")).to_have_count(0)
+    # The rail stands beside the files as on the other tabs (owner, 2026-11-22).
+    expect(page.locator("#teema-vaade .rail")).to_have_count(1)
     working = page.locator("#toodokumendid")
     # Shut by default (a remembered block, docs/adr/0194; sign-in resets it).
     expect(working).not_to_have_attribute("open", "")

@@ -205,7 +205,7 @@ class WatchRun(BaseModel):
 
 class CandidateStatus(models.TextChoices):
     NEW = "NEW", "Uus"
-    #: «Lisa teemaks»: a new Teema was created from it (`matter`).
+    #: «Uus teema»: a new Teema was created from it (`matter`).
     ADDED = "ADDED", "Lisatud teemaks"
     #: «Seo olemasolevaga»: its documents were linked to an existing Teema (`matter`).
     ATTACHED = "ATTACHED", "Seotud teemaga"
@@ -227,7 +227,7 @@ class TopicCandidate(BaseModel):
 
     One candidate gathers the register documents of one draft (`CandidateItem`).
     It is a proposal to the head of the department: nothing becomes a Teema
-    until a person presses «Lisa teemaks» and saves Uus teema. The model's
+    until a person presses «Uus teema» and saves Uus teema. The model's
     strength and reason are shown, never acted on.
     """
 

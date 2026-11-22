@@ -1,6 +1,6 @@
 """«Uued eelnõud»: drafts in the registers that are not a Teema yet (ADR 0218).
 
-The department head's page. Each candidate is a proposal: «Lisa teemaks» opens
+The department head's page. Each candidate is a proposal: «Uus teema» opens
 Uus teema filled from it, «Seo olemasolevaga» writes its register addresses on
 a Teema that already exists, «Märgi loetuks» only records the decision.
 """
@@ -196,7 +196,7 @@ def _back() -> HttpResponseRedirect:
 @require_http_methods(["POST"])
 @business_write_required
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Lisa teemaks», «Seo olemasolevaga» or «Märgi loetuks»."""
+    """«Uus teema», «Seo olemasolevaga» or «Märgi loetuks»."""
     if not candidate_notices.may_decide(request.user):
         raise Http404(NOT_HERE)
     candidate = candidates.waiting().filter(pk=pk).first()
@@ -238,7 +238,9 @@ def agenda_decide(request: HttpRequest, pk: Any) -> HttpResponse:
         raise Http404("Päevakorrapunkti ei leitud.")
     try:
         if request.POST.get("otsus") == "lisa":
-            agenda.add_to_teema(item, actor=request.user)
+            agenda.add_to_teema(
+                item, actor=request.user, comment=request.POST.get("markus", "")[:4000]
+            )
             messages.success(request, "Päevakorrapunkt lisati teemale.")
         else:
             agenda.dismiss(item, actor=request.user)

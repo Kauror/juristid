@@ -14,7 +14,7 @@
   {% if may_decide %}
     <form class="regwatch__actions regwatch__actions--stack" method="post" action="{% url 'register_watch:candidate_decide' pk=candidate.pk %}">
       {% csrf_token %}
-      <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa teemaks</button>
+      <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Uus teema</button>
       <span class="regwatch__attach">
         <label class="visually-hidden" for="seo-{{ candidate.pk }}">Teema number</label>
         <input id="seo-{{ candidate.pk }}" name="teema" class="field__input regwatch__teema-input" type="text" inputmode="numeric" placeholder="Teema nr" value="{{ candidate.related_shown.display_reference|default:'' }}">

@@ -143,6 +143,10 @@ because what the file recorded and who recorded it is part of the file
               </form>
             </div>
           </details>
+          {# Off the rail (owner, 2026-11-22): the shared ✕ and its confirmation. #}
+          {% if matter.is_open %}
+            {% include "matters/partials/row_remove.html" with record=link remove_kind="menetluslink" remove_label="menetluse link" remove_genitive="menetluse lingi" remove_where="teemalt" remove_revision=link.updated_at.isoformat %}
+          {% endif %}
         {% endif %}
           </span>
         </div>

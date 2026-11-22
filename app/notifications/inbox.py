@@ -449,7 +449,6 @@ def register_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = Fal
     """The register watch's notice on a Teema the reader owns (docs/adr/0217 §6)."""
     unread = state == STATE_UNREAD
     day = timezone.localtime(row.updated_at).date()
-    count = row.documents
     return InboxItem(
         type=TYPE_REGISTER,
         kind=INFO,
@@ -463,7 +462,7 @@ def register_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = Fal
         pk=row.pk,
         section=SECTION_INFO,
         can_read=unread,
-        note="1 uus dokument" if count == 1 else f"{count} uut dokumenti",
+        # No «N uut dokumenti» line (owner, 2026-11-22): the tab's badge counts them.
         at=row.created_at,
         state=state,
         can_unread=can_unread,

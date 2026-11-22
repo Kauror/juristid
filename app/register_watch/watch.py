@@ -463,6 +463,12 @@ def own_pending(user: Any, pk: Any) -> WatchFinding | None:
     return pending_for(user).filter(pk=pk).first()
 
 
+def with_comment(comment: str, provenance: str) -> str:
+    """The lawyer's comment, then where the document came from."""
+    comment = (comment or "").strip()
+    return f"{comment}\n\n{provenance}" if comment else provenance
+
+
 def _provenance(finding: WatchFinding) -> str:
     parts = [finding.target.get_source_display()]
     if finding.detail:
@@ -472,8 +478,15 @@ def _provenance(finding: WatchFinding) -> str:
 
 
 @transaction.atomic
-def add_to_teema(finding: WatchFinding, *, actor: Any) -> WatchFinding:
-    """Record the finding on its Teema as a `Menetluse areng`, through `+ Märge`'s use case."""
+def add_to_teema(
+    finding: WatchFinding, *, actor: Any, comment: str = "", uploads: Any = ()
+) -> WatchFinding:
+    """Record the finding on its Teema as a `Menetluse areng`, through `+ Märge`'s use case.
+
+    ``comment`` is the lawyer's own words, put first in the note, and
+    ``uploads`` the register's own files (`register_files.fetch`), attached to
+    it as `+ Märge` attaches a person's (owner, 2026-11-22).
+    """
     from app.matters.workspace import add_procedural_development
 
     locked = (
@@ -488,54 +501,14 @@ def add_to_teema(finding: WatchFinding, *, actor: Any) -> WatchFinding:
         author=actor,
         title=locked.title,
         occurred_on=locked.occurred_on,
-        note=_provenance(locked),
+        note=with_comment(comment, _provenance(locked)),
+        uploads=list(uploads),
     )
     locked.status = FindingStatus.ADDED
     locked.decided_by = actor
     locked.decided_at = timezone.now()
     locked.development = result.record
     locked.save(update_fields=["status", "decided_by", "decided_at", "development", "updated_at"])
-    return locked
-
-
-def _link_label(finding: WatchFinding) -> str:
-    """Which proceeding: the bill («973 SE») or the register number."""
-    if finding.target.source == WatchSource.RIIGIKOGU:
-        return finding.target.label[:120]
-    return (finding.detail.split(" · ")[0] or finding.title)[:120]
-
-
-@transaction.atomic
-def add_link(finding: WatchFinding, *, actor: Any) -> WatchFinding:
-    """«Lisa link»: keep the address as the Teema's `Menetluse link`, nothing more.
-
-    Through `+ Menetluse link`'s own use case, so a link the Teema already holds
-    is returned unchanged. No `Menetluse areng` is written.
-    """
-    from app.matters.enums import ProceduralLinkKind
-    from app.matters.workspace import add_matter_procedural_link
-
-    locked = (
-        WatchFinding.objects.select_for_update()
-        .select_related("target", "matter")
-        .get(pk=finding.pk)
-    )
-    if locked.status != FindingStatus.PENDING:
-        raise DomainError(ALREADY_DECIDED)
-    if not locked.url:
-        raise DomainError("Sellel dokumendil pole linki.")
-    kind = (
-        ProceduralLinkKind.RIIGIKOGU
-        if locked.target.source == WatchSource.RIIGIKOGU
-        else ProceduralLinkKind.MINISTRY_REGISTER
-    )
-    add_matter_procedural_link(
-        matter=locked.matter, author=actor, kind=kind, url=locked.url, label=_link_label(locked)
-    )
-    locked.status = FindingStatus.LINKED
-    locked.decided_by = actor
-    locked.decided_at = timezone.now()
-    locked.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
     return locked
 
 

@@ -412,6 +412,7 @@ class ChangeEventType(models.TextChoices):
     # still leave their row on the page saying `Tühistatud`
     # (OWNER-04, docs/adr/0102).
     ENTRY_REMOVED = "ENTRY_REMOVED", "Sissekanne eemaldatud"
+    PROCEDURAL_LINK_REMOVED = "PROCEDURAL_LINK_REMOVED", "Menetluse link eemaldatud"
     PROCEDURAL_DEVELOPMENT_REMOVED = (
         "PROCEDURAL_DEVELOPMENT_REMOVED",
         "Märge eemaldatud",

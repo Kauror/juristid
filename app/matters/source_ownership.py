@@ -8,9 +8,9 @@ those edits made the page dishonest — the work was undone without a word
 (audit 2026-11-11 TL-01 = LS-04). So on a synchronised Teema the source-owned
 facts are read-only, here and on every surface that writes them:
 
-* the **pages** draw them without an editor, with an `i` that says where they
-  are changed (`source_owned` in the Teema contexts,
-  `components/source_owned_tip.html`);
+* the **pages** draw them without an editor (`source_owned` in the Teema
+  contexts, `components/source_owned_tip.html`); since 2026-11-22 (owner) no
+  `i` or sentence says so — the page simply offers no editor;
 * the **services** refuse a person's change (`refuse_source_owned_change`),
   with a sentence that says why — so a stale tab, a crafted POST and an MCP
   write are refused exactly like the page would have been.
@@ -57,13 +57,6 @@ from app.legacy_import.lovable_sync_models import SyncMode
 #: The page's notice: where these facts come from and where they are changed.
 SOURCE_OWNED_NOTICE = (
     "Need andmed pärinevad Lovable'i registrist. Muudatused tuleb teha algses registris."
-)
-#: The one-sentence `i` beside each source-owned field.
-SOURCE_OWNED_TIP = "See väli pärineb Lovable'i registrist ja seda saab muuta ainult seal."
-#: Said where the current step would be set on a synchronised Teema whose
-#: Lovable `järgmiseks` is blank: a blank there is still Lovable's answer.
-NO_SOURCE_STEP_NOTE = (
-    "Lovable'is pole järgmist tegevust märgitud; uue tegevuse saab määrata Lovable'is."
 )
 
 #: The `LovableSyncControl.mode` values in which Lovable owns its fields (E9,

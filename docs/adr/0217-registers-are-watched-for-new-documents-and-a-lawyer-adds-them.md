@@ -147,3 +147,29 @@ one Teema is now the third tab of the Teema page, «Registritest»
 
 The three tabs swap the area under them in place (htmx, `#teema-tabsisu`,
 address pushed), so the header and the rail stay where they were.
+
+## Amendment 2026-11-22 — «Lisa märkena» brings the file and the lawyer's words; «Lisa link» goes
+
+Owner, 2026-11-22: a document added with «Lisa märkena» reached the Teema as a
+note pointing back at the register, so the lawyer still had to open the register,
+download it and attach it by hand, and had nowhere to say why it mattered.
+
+- **The file comes with it.** The press fetches the document's public files
+  (`app/register_watch/register_files.py`) through the same door as the nightly
+  read (§5: the fixed hosts, no redirects, a timeout, a 25 MB cap per file) and
+  hands them to `+ Märge`'s use case as its uploads, so they pass the same type
+  check, evidence store and malware scan as a file a person attaches. Where each
+  register keeps them: PDR (HTM, Kliima) `/api/v1/documents/<id>/file`; adr.rik.ee
+  the page's `/<code>/fail/<id>/<name>` links; the Riigikogu `/api/documents/<uuid>`
+  files marked `PUBLIC`. A sitting and the bill itself have none. Fetched before
+  the save, so no row lock waits on a register. Nothing here can stop the note: a
+  register that does not answer, a type the store refuses (a Riigikogu opinion is
+  often `.html`) or a file too large is left out and named in a message, and the
+  note keeps its link. This is the first time the watch reads a document's
+  content rather than its listing; it happens only on a person's press.
+- **The lawyer's words.** «Lisa märkena» opens a «Märkus» field; what is written
+  there opens the note, before the source and link (§2's provenance).
+- **«Lisa link» is gone.** Keeping only the address was rarely wanted beside a
+  note that carries the address and the file; `watch.add_link` went with it
+  (status `LINKED` stays for rows already decided).
+- The decision words are «Märgi loetuks» / «Märgi kõik loetuks» (was «Jäta vahele»).

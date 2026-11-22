@@ -98,6 +98,12 @@ here and everything older comes from `timeline_page` when somebody asks for it.
         done. A repeated stage is a second accordion, never the first reopened.
       {% endcomment %}
         {% for group in timeline_groups %}
+          {% if group.is_loose %}
+            {# No `Hetkeseis` then: the rows, shown, with no fold (owner, 2026-11-22). #}
+            <div class="uxtl kaikstage__body kaikstage--loose" id="{{ group.dom_id }}" data-kaik-etapp="{{ group.key }}">
+              {% include "matters/partials/timeline_items.html" with timeline_items=group.items timeline_has_more=False matter=matter timeline_only=timeline_only stage_group=group %}
+            </div>
+          {% else %}
           <details class="kaikstage{% if group.is_current %} kaikstage--current{% endif %}{% if not group.episode %} kaikstage--unplaced{% endif %}"
                    id="{{ group.dom_id }}" data-kaik-etapp="{{ group.key }}"{% if group.is_open %} open{% endif %}>
             <summary class="kaikstage__head">
@@ -115,6 +121,7 @@ here and everything older comes from `timeline_page` when somebody asks for it.
               {% endif %}
             </div>
           </details>
+          {% endif %}
         {% endfor %}
         {% comment %}
           **Bounded, and the rest one click away** (AUD-008, product decision

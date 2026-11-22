@@ -8445,12 +8445,6 @@ button.opinionmenu__item {
 }
 
 /* The Dokumendid tab: one column, full width, no rail. */
-.teemadocs {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
 /* ====================================================================
  * Koja arvamus, in the facts rail
  *
@@ -8717,25 +8711,6 @@ button.opinionmenu__item {
   margin-top: var(--spacing-2);
 }
 
-/* What Lovable owns on a synchronised Teema (audit 2026-11-11 TL-01,
-   `components/source_owned_tip.html`): the same quiet `i` the figures use,
-   beside a value drawn without an editor, and one muted line that says where
-   those values are changed. */
-.sourceowned {
-  vertical-align: middle;
-  margin-left: var(--spacing-1);
-}
-
-.matterhead__source,
-.addrow__source {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--spacing-1);
-  margin: 0;
-  color: var(--text-muted);
-  font-size: var(--typography-size-meta);
-}
-
 /* ---- body grids ---------------------------------------------------- */
 
 .worklayout2 {
@@ -8895,6 +8870,24 @@ button.opinionmenu__item {
   display: inline-flex;
 }
 
+/* Its right edge on the main column's, not over the rail (owner, 2026-11-22):
+   the strip spans both columns, so it stops one rail-width short. */
+.page--work .workfilter {
+  margin-right: 372px;
+}
+
+@media (max-width: 1400px) {
+  .page--work .workfilter {
+    margin-right: 300px;
+  }
+}
+
+@media (max-width: 1100px) {
+  .page--work .workfilter {
+    margin-right: 0;
+  }
+}
+
 .workfilter__icon {
   flex: none;
   fill: none;
@@ -9008,6 +9001,16 @@ button.opinionmenu__item {
 /* Wraps rather than ellipsising. An elided meaning is a bare date, which is
    the one thing a row on these pages may never be: OLULINE TÄHTAEG and
    TÄHTAEG 14.08 mean different things and «OLULINE TÄHT…» means neither. */
+/* The Teema's Teemaviide under the date on Minu asjad (owner, 2026-11-22). */
+.workrow2__ref {
+  display: block;
+  font-size: var(--typography-size-meta);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .workrow2__meaning,
 .interrow__meaning {
   font-size: 10.5px;
@@ -14758,6 +14761,14 @@ a.jcal__daynum {
   color: var(--accent-link);
 }
 
+/* Label and date on one line (owner, 2026-11-22). */
+.notifrow__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 var(--spacing-2);
+}
+
 .notifrow__date,
 .notifrow__source {
   font-size: var(--typography-size-meta);
@@ -17444,6 +17455,14 @@ a.statpanel__note {
 
 .regwatch__teematitle {
   font-weight: 600;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.regwatch__teematitle:hover,
+.regwatch__teematitle:focus-visible {
+  color: var(--accent-link);
+  text-decoration: underline;
 }
 
 .regwatch__headactions {
@@ -17503,7 +17522,39 @@ a.statpanel__note {
 
 .regwatch__actions {
   display: flex;
+  align-items: flex-start;
   gap: var(--spacing-2);
+}
+
+/* «Lisa märkena» opens a small comment panel (owner, 2026-11-22). */
+.regwatch__add > summary {
+  list-style: none;
+}
+
+.regwatch__add > summary::-webkit-details-marker {
+  display: none;
+}
+
+.regwatch__add[open] > summary {
+  display: none;
+}
+
+.regwatch__addpanel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--spacing-1);
+  width: 18rem;
+  max-width: 70vw;
+}
+
+.regwatch__addpanel .field__label {
+  align-self: flex-start;
+}
+
+.regwatch__addpanel textarea {
+  width: 100%;
+  resize: vertical;
 }
 
 .regwatch__unrelated > summary {

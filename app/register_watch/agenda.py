@@ -381,11 +381,12 @@ def _lock(item: AgendaItem) -> AgendaItem:
 
 
 @transaction.atomic
-def add_to_teema(item: AgendaItem, *, actor: Any) -> AgendaItem:
+def add_to_teema(item: AgendaItem, *, actor: Any, comment: str = "") -> AgendaItem:
     """«Lisa teemale»: a `Menetluse areng` on its Teema, through `+ Märge`'s own use case."""
     from app.core.errors import DomainError
     from app.matters.workspace import add_procedural_development
     from app.register_watch.models import AgendaItemStatus
+    from app.register_watch.watch import with_comment
 
     locked = _lock(item)
     if locked.related_matter is None:
@@ -395,7 +396,7 @@ def add_to_teema(item: AgendaItem, *, actor: Any) -> AgendaItem:
         author=actor,
         title=f"Valitsuse istung: {locked.title}"[:500],
         occurred_on=locked.agenda.session_date,
-        note=_note(locked),
+        note=with_comment(comment, _note(locked)),
     )
     locked.status = AgendaItemStatus.ADDED
     locked.decided_by = actor

@@ -443,6 +443,24 @@ def test_work_after_the_stage_was_cleared_reads_under_no_stage(specialist):
     top = timeline.groups[0]
     assert top.label == NO_STAGE_LABEL and top.is_open
     assert [item.entry.body for item in top.items if item.entry] == ["Hetkeseisuta."]
+    # Drawn with no fold, always shown (owner, 2026-11-22); «Varasem tegevus»
+    # and the periods keep theirs.
+    assert top.is_loose
+    assert not any(group.is_loose for group in timeline.groups[1:])
+
+
+def test_the_page_shows_no_stage_work_without_a_heading(client, specialist):
+    from django.urls import reverse
+
+    matter = _matter(specialist, stage="idea")
+    change_stage(matter=matter, stage=None, actor=specialist)
+    add_entry(matter=matter, author=specialist, body="Hetkeseisuta tehtud.")
+    client.force_login(specialist)
+
+    body = client.get(reverse("matters:matter_detail", kwargs={"pk": matter.pk})).content.decode()
+
+    assert "kaikstage--loose" in body and "Hetkeseisuta tehtud." in body
+    assert f'<span class="kaikstage__stage">{NO_STAGE_LABEL}</span>' not in body
 
 
 def test_a_matter_with_no_period_keeps_the_flat_chronology(specialist):

@@ -45,7 +45,6 @@ from app.matters.source_ownership import (
     GUARD_KEYS,
     POLICY_SURFACES,
     SOURCE_OWNED_NOTICE,
-    SOURCE_OWNED_TIP,
     is_source_owned,
     refusal_message,
 )
@@ -122,13 +121,14 @@ def test_every_field_lovable_owns_has_a_guarded_surface_or_no_editor():
         assert refusal_message(key).endswith(SOURCE_OWNED_NOTICE)
 
 
-def test_the_tip_template_says_the_rules_sentence():
-    """Regression: TL-01. The `i` is written out in the template; it must say the rule's words."""
+def test_the_marker_says_nothing():
+    """Owner, 2026-11-22: no Lovable `i` or sentence on the page; only a hidden marker."""
     from django.template.loader import render_to_string
 
     html = render_to_string("components/source_owned_tip.html", {"field": "title"})
-    assert SOURCE_OWNED_TIP in html
-    assert 'data-source-owned="title"' in html
+    assert 'data-source-owned="title"' in html and " hidden " in html
+    assert "Lovable" not in html.split("<span", 1)[1]
+    assert "seis__info" not in html
 
 
 def test_only_a_live_teema_of_a_live_cohort_is_source_owned(db, specialist):
@@ -205,7 +205,7 @@ def test_a_synchronised_teema_with_no_step_says_lovable_sets_it(signed_in, synce
     for matter in (synced, native):
         NextAction.objects.filter(matter=matter).update(status=ActionStatus.CANCELLED)
     page = _page(signed_in, "matters:matter_detail", synced)
-    assert escape(source_ownership.NO_SOURCE_STEP_NOTE) in page
+    assert "Lovable'is pole järgmist tegevust" not in page
     assert 'data-source-owned="next_action"' in page
     assert _url("matters:set_action", synced) not in page
     assert _url("matters:set_action", native) in _page(signed_in, "matters:matter_detail", native)
@@ -659,7 +659,7 @@ def test_a_field_under_an_open_hold_stays_editable_and_says_why(
 
     _hold(synced, "owner")
     page = _page(signed_in, "matters:matter_detail", synced)
-    assert "data-source-held" in page and "vastutaja" in page
+    assert "data-source-held" in page and "Lovable'i väärtus on ootel" not in page
     assert 'data-source-owned="owner"' not in page
     assert _url("matters:update_field", synced, field="owner") in page
     assign_matter(matter=synced, owner=other_specialist, actor=specialist)

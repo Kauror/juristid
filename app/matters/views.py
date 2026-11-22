@@ -224,6 +224,7 @@ from app.matters.legal_process import (
     KODA_STOPPED_LABEL,
     legal_process_rail,
     matter_rail,
+    without_unused_start,
 )
 from app.matters.models import (
     WEBSITE_OVERVIEW_TITLE_MAX_LENGTH,
@@ -306,9 +307,7 @@ from app.matters.services import (
     timeline_steps_revision_token,
 )
 from app.matters.source_ownership import (
-    NO_SOURCE_STEP_NOTE,
     SOURCE_OWNED_NOTICE,
-    SOURCE_OWNED_TIP,
     lovable_commencement_ids,
     ownership,
 )
@@ -2542,7 +2541,7 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     save was pressed while the upload was in flight — is filed once
     (`intake_staging.without_staged_copies`).
     """
-    # «Lisa teemaks» from «Uued eelnõud» (docs/adr/0218 §4): the candidate fills
+    # «Uus teema» from «Uued eelnõud» (docs/adr/0218 §4): the candidate fills
     # what the registers say — title, sender ministry, when it appeared — as
     # the form's starting values, never as a decision. It is carried through
     # the form and closed only when this save succeeds.
@@ -3007,7 +3006,7 @@ def _create_context(
     from app.register_watch import candidates as topic_candidates
 
     return {
-        # «Lisa teemaks» from «Uued eelnõud» (docs/adr/0218 §4): carried as a
+        # «Uus teema» from «Uued eelnõud» (docs/adr/0218 §4): carried as a
         # hidden field so a refused save still closes the candidate.
         "from_candidate": topic_candidates.for_create(
             request.user,
@@ -3686,8 +3685,12 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # ordered list — the second strip is gone and its content is here, still
         # read by `process_timeline.process_steps` and handed over rather than
         # read again (app/matters/legal_process.py `matter_rail`).
-        "rail_steps": matter_rail(
-            matter=matter, user=request.user, rail=rail, milestones=steps, step_rows=step_rows
+        # The phases before the first one the file reached are left out
+        # (owner, 2026-11-22, `without_unused_start`).
+        "rail_steps": without_unused_start(
+            matter_rail(
+                matter=matter, user=request.user, rail=rail, milestones=steps, step_rows=step_rows
+            )
         ),
         # Which rail items a click dates (`rail_step_date_view`): this file's
         # own phases and the steps somebody added — never an event, a sent
@@ -4142,8 +4145,6 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "source_locked": own.locked,
         "source_held_note": own.held_note,
         "source_owned_notice": SOURCE_OWNED_NOTICE,
-        "source_owned_tip": SOURCE_OWNED_TIP,
-        "no_source_step_note": NO_SOURCE_STEP_NOTE,
         "lovable_commencement_ids": lovable_commencement_ids(
             matter, source_owned=own.locks("commencement")
         ),
@@ -4764,7 +4765,10 @@ def matter_documents(request: HttpRequest, pk: Any) -> HttpResponse:
     # matters app, and a module-level import here would close the circle.
     from app.legacy_import.opinion_links import archive_letters_for_matter
 
-    context = _header_context(request, matter)
+    # The rail stands beside the files as on the other two tabs (owner,
+    # 2026-11-22), so the Teema column's context is read here too.
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
     context.update(
         {
             "source_links": _lovable_source_links(matter),
@@ -4898,8 +4902,9 @@ def _render_overview(
     # service locked and wrote: a `+ Märge` that moved the stage wrote it on
     # `locked_matter`, and this one would render the stage it had before.
     matter.refresh_from_db(fields=["stage"])
-    if _on_registers_tab(request):
-        # A rail save on `Registritest` (a `Menetluse link`, say) answers into
+    if _on_registers_tab(request) or _on_documents_tab(request):
+        # A rail save on `Registritest` or `Dokumendid` (a `Menetluse link`,
+        # say; the rail stands on both since 2026-11-22) answers into
         # `#teema-vaade`, which there holds the register column. Drawing the
         # Teema column under the `Registritest` marker would be the wrong page;
         # the save is stored, so the tab is simply drawn again.
@@ -10226,14 +10231,16 @@ def _timeline_steps_form(
     # **`+ Lisa samm` places a step after something the person can see**, so the
     # panel reads the rail exactly as the page draws it — the same three reads,
     # the same merge — and offers its items, in its order (docs/adr/0119 §2).
-    drawn = matter_rail(
-        matter=matter,
-        user=request.user,
-        rail=legal_process_rail(
-            matter=matter, user=request.user, context=phases, step_rows=step_rows
-        ),
-        milestones=process_steps(matter=matter, user=request.user),
-        step_rows=step_rows,
+    drawn = without_unused_start(
+        matter_rail(
+            matter=matter,
+            user=request.user,
+            rail=legal_process_rail(
+                matter=matter, user=request.user, context=phases, step_rows=step_rows
+            ),
+            milestones=process_steps(matter=matter, user=request.user),
+            step_rows=step_rows,
+        )
     )
     # An event marker is placed by its own date and may be removed or moved
     # with its record, so it is never offered as the place an added step goes.

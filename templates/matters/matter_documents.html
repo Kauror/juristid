@@ -58,12 +58,13 @@ finds again (§23.5).
   <div id="teema-tabsisu">
 
   {% comment %}
-    Full width, and no facts rail. Browsing forty files is the task this tab
-    exists for and it is the only surface on the record that legitimately runs
-    to forty rows; a 300px column of lookup facts beside it would be taking
-    width from the thing somebody came here to read (Teema redesign §23).
+    The rail stands beside the files as on `Teema` and `Registritest` (owner,
+    2026-11-22, replacing Teema redesign §23's full-width table), so switching
+    tabs does not move it. The grid keeps the Teema tab's id, `#teema-vaade`,
+    because a rail save answers into it; on this tab that answer reloads the
+    page (`views._render_overview`).
   {% endcomment %}
-  <div class="teemadocs">
+  <div class="teemagrid" id="teema-vaade">
     <div class="teemamain teemamain--padded">
       {% include "matters/partials/matter_banner.html" %}
 
@@ -838,7 +839,7 @@ finds again (§23.5).
         </section>
       {% endif %}
     </div>
-
+    {% include "matters/partials/rail.html" %}
   </div>
   </div>
 </div>
