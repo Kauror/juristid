@@ -10,11 +10,10 @@ to a Teema are shown, never acted on.
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="page page--monitooring">
   {% include "register_watch/_monitooring_head.html" %}
 
-  <h2 class="regwatch__section">Valitsuse info</h2>
-  <p class="regwatch__meta">Valitsuse istungi kommenteeritud päevakord valitsus.ee-st ja punktid, mis võivad Kojale või ettevõtjatele olulised olla. Uut päevakorda otsitakse kolmapäeval kella 12-st neljapäeval kella 12-ni.{% if not watch_on %} Lugemine on välja lülitatud.{% endif %}</p>
+  {% if not watch_on %}<p class="regwatch__meta">Lugemine on välja lülitatud.</p>{% endif %}
   {% if missing %}<p class="regwatch__warning">Selle nädala päevakorda ei leitud — vaata valitsus.ee-st käsitsi.</p>{% endif %}
 
   {% for week in weeks %}

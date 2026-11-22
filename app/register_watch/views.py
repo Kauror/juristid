@@ -192,6 +192,8 @@ def review(request: HttpRequest) -> HttpResponse:
         )
         bucket = "unrelated" if finding.relevance == Relevance.UNRELATED else "shown"
         group[bucket].append(finding)
+    for group in groups.values():
+        group["count"] = len(group["shown"]) + len(group["unrelated"])
     return render(
         request,
         "register_watch/review.html",
@@ -243,6 +245,33 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     except DomainError as refusal:
         messages.error(request, str(refusal))
     return _back(request, finding.matter_id)
+
+
+@login_required
+@require_http_methods(["POST"])
+@business_write_required
+def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Jäta kõik vahele»: skip every document still waiting on one Teema (owner, 2026-11-22).
+
+    For when the ones that matter have been added: the rest go in one press. Only
+    the reader's own waiting findings on a Teema they may see; each is skipped
+    through `watch.dismiss`, exactly as one «Jäta vahele» would.
+    """
+    waiting = list(watch.pending_for(request.user).filter(matter_id=pk))
+    if not waiting:
+        raise Http404("Ootel dokumente ei leitud.")
+    skipped = 0
+    for finding in waiting:
+        try:
+            watch.dismiss(finding, actor=request.user)
+            skipped += 1
+        except DomainError:
+            continue  # decided by somebody else meanwhile
+    messages.success(
+        request,
+        "1 dokument jäeti vahele." if skipped == 1 else f"{skipped} dokumenti jäeti vahele.",
+    )
+    return _back(request)
 
 
 @login_required

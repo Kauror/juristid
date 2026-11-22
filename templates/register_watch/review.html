@@ -9,11 +9,8 @@ records the decision. The model's verdict is shown, never acted on.
 {% endcomment %}
 
 {% block content %}
-<div class="page">
+<div class="page page--monitooring">
   {% include "register_watch/_monitooring_head.html" %}
-
-  <h2 class="regwatch__section">Registrite dokumendid <span class="pagehead__context">{{ total }}</span></h2>
-  <p class="regwatch__meta">Registritest leitud dokumendid, mis ootavad teemadel otsust. Teema enda dokumendid on ka teema vahekaardil «Registritest».</p>
 
   <nav class="regwatch__filters" aria-label="Kelle teemad">
     <a class="regwatch__tab{% if filters.kelle == 'minu' and not filters.teema %} is-active{% endif %}" href="?kelle=minu">Minu teemad</a>
@@ -46,12 +43,28 @@ records the decision. The model's verdict is shown, never acted on.
     </section>
   {% endif %}
 
+  {% comment %}
+    One fold per Teema, all shut at first so the page is an overview (owner,
+    2026-11-22); opened when the list is filtered to one Teema. «Jäta kõik vahele»
+    skips every document still waiting on that Teema in one press.
+  {% endcomment %}
   {% for group in groups %}
-    <section class="regwatch__teema" aria-labelledby="rw-{{ group.matter.pk }}">
-      <h2 class="regwatch__head" id="rw-{{ group.matter.pk }}">
-        <a href="{% url 'matters:matter_detail' pk=group.matter.pk %}">{{ group.matter.title }}</a>
-        <span class="regwatch__ref">{{ group.matter.display_reference }}{% if filters.kelle != 'minu' and group.matter.owner %} · {{ group.matter.owner.display_name }}{% endif %}</span>
-      </h2>
+    <details class="regwatch__teema"{% if filters.teema %} open{% endif %}>
+      <summary class="regwatch__head">
+        <span class="regwatch__teematitle">{{ group.matter.title }}</span>
+        <span class="regwatch__ref">{{ group.matter.display_reference }}{% if filters.kelle != 'minu' and group.matter.owner %} · {{ group.matter.owner.display_name }}{% endif %} · {{ group.count }} dokument{{ group.count|pluralize:"i" }}</span>
+        <span class="regwatch__headactions">
+          <a class="regwatch__meta" href="{% url 'matters:matter_detail' pk=group.matter.pk %}">Ava teema</a>
+          {% if can_write_business_content %}
+            <form method="post" action="{% url 'register_watch:dismiss_all' pk=group.matter.pk %}">
+              {% csrf_token %}
+              <input type="hidden" name="kelle" value="{{ filters.kelle }}">
+              <input type="hidden" name="teema" value="{{ filters.teema }}">
+              <button type="submit" class="button button--quiet button--tiny">Jäta kõik vahele</button>
+            </form>
+          {% endif %}
+        </span>
+      </summary>
       <ul class="regwatch__list">
         {% for finding in group.shown %}{% include "register_watch/_finding.html" %}{% endfor %}
       </ul>
@@ -63,7 +76,7 @@ records the decision. The model's verdict is shown, never acted on.
           </ul>
         </details>
       {% endif %}
-    </section>
+    </details>
   {% empty %}
     {% if not teema %}<p class="regwatch__empty">Uusi dokumente ei ole.{% if filters.kelle == 'minu' and not filters.teema %} <a href="?kelle=koik">Kõik teemad</a>{% endif %}</p>{% endif %}
   {% endfor %}

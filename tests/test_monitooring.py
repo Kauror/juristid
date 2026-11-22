@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -271,15 +272,107 @@ def test_the_agenda_page_opens_the_newest_week_and_folds_the_rest(department_hea
     assert "<p>Esimene lõik.</p><p>Teine lõik.</p>" in html
 
 
-def test_the_switch_returns_to_the_section_it_was_pressed_on(department_head):
+def test_the_switch_lives_in_haldus_and_returns_there(department_head, specialist):
+    """Owner, 2026-11-22: «Näita kõigile» is set in Haldus, not on Monitooring's pages."""
+    haldus = reverse("haldus:osakond")
+    page = _signed_in(department_head).get(haldus).content.decode()
+    assert "Näita kõigile" in page
+    assert "Näita kõigile" not in _signed_in(department_head).get(DRAFTS).content.decode()
+
     answer = _signed_in(department_head).post(
-        reverse("register_watch:candidate_audience"), {"koigile": "1", "tagasi": "valitsus"}
+        reverse("register_watch:candidate_audience"), {"koigile": "1", "tagasi": "haldus"}
     )
-    assert answer["Location"] == AGENDAS
+    assert answer["Location"] == haldus
+    assert candidate_notices.audience().everyone is True
     answer = _signed_in(department_head).post(
         reverse("register_watch:candidate_audience"), {"koigile": "0", "tagasi": "https://evil"}
     )
     assert answer["Location"] == DRAFTS
+
+
+def test_the_tabs_carry_their_counts(department_head):
+    from app.register_watch.models import TopicCandidate
+
+    _agenda_with_items()  # newest week: one Tugev item
+    TopicCandidate.objects.create(
+        title="Pakendiseaduse eelnõu", match_key="pakendiseaduse", strength="STRONG"
+    )
+    first = _register_finding(department_head, "Esimene dokument", "adr:mkm:1")
+    _register_finding(department_head, "Teine dokument", "adr:mkm:2", matter=first.matter)
+    _register_finding(department_head, "Kolmas dokument", "adr:mkm:3")
+
+    html = _signed_in(department_head).get(AGENDAS).content.decode()
+
+    badges = re.findall(
+        r">(Uued eelnõud|Valitsuse info|Registrite dokumendid)"
+        r'<span class="tabs__badge"[^>]*>(\d+)<',
+        html,
+    )
+    # Registrite dokumendid counts Teemad with something new (two), not documents (three).
+    assert badges == [
+        ("Uued eelnõud", "1"),
+        ("Valitsuse info", "1"),
+        ("Registrite dokumendid", "2"),
+    ]
+    assert '<h2 class="regwatch__section">' not in html
+
+
+def test_each_teema_is_a_shut_fold_with_skip_all(department_head):
+    candidate_notices.set_everyone(True)
+    finding = _register_finding(department_head, "Esimene dokument", "adr:mkm:1")
+    _register_finding(department_head, "Teine dokument", "adr:mkm:2", matter=finding.matter)
+
+    html = _signed_in(department_head).get(REGISTERS, {"kelle": "koik"}).content.decode()
+
+    assert '<details class="regwatch__teema">' in html
+    assert "2 dokumenti" in html and "Jäta kõik vahele" in html
+
+
+def test_skip_all_skips_only_that_teemas_waiting_documents(department_head):
+    from app.register_watch.models import FindingStatus, WatchFinding
+
+    one = _register_finding(department_head, "Esimene dokument", "adr:mkm:1")
+    _register_finding(department_head, "Teine dokument", "adr:mkm:2", matter=one.matter)
+    other = _register_finding(department_head, "Teise teema dokument", "adr:mkm:3")
+
+    answer = _signed_in(department_head).post(
+        reverse("register_watch:dismiss_all", kwargs={"pk": one.matter.pk}), {"kelle": "koik"}
+    )
+
+    assert answer.status_code == 302
+    statuses = dict(WatchFinding.objects.values_list("external_id", "status"))
+    assert statuses == {
+        "adr:mkm:1": FindingStatus.DISMISSED,
+        "adr:mkm:2": FindingStatus.DISMISSED,
+        "adr:mkm:3": FindingStatus.PENDING,
+    }
+    assert WatchFinding.objects.get(external_id="adr:mkm:1").decided_by == department_head
+    other.refresh_from_db()
+
+
+def test_skip_all_refuses_a_reader_and_a_teema_with_nothing_waiting(department_head, reader):
+    one = _register_finding(department_head, "Esimene dokument", "adr:mkm:1")
+    url = reverse("register_watch:dismiss_all", kwargs={"pk": one.matter.pk})
+    assert _signed_in(reader).post(url).status_code == 404
+    empty = factories.MatterFactory(owner=department_head)
+    assert (
+        _signed_in(department_head)
+        .post(reverse("register_watch:dismiss_all", kwargs={"pk": empty.pk}))
+        .status_code
+        == 404
+    )
+
+
+def _register_finding(owner, title, external_id, matter=None):
+    from app.register_watch.models import WatchFinding, WatchSource, WatchTarget
+
+    matter = matter or factories.MatterFactory(owner=owner)
+    target, _ = WatchTarget.objects.get_or_create(
+        matter=matter, source=WatchSource.ADR_MKM, identifier="x", defaults={"origin": "PHRASE"}
+    )
+    return WatchFinding.objects.create(
+        target=target, matter=matter, external_id=external_id, title=title
+    )
 
 
 def test_the_old_addresses_lead_into_monitooring(department_head):

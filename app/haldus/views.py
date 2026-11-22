@@ -143,8 +143,19 @@ def osakond(request: HttpRequest) -> HttpResponse:
             "osakond",
             colleagues=list(department_workers()) if may_view_department_management(user) else [],
             candidate_victories=_candidate_victories(user),
+            # «Monitooring» for everyone or the head only (docs/adr/0219; moved here
+            # from the Monitooring pages, owner 2026-11-22). The head's to set.
+            monitooring_everyone=_monitooring_everyone(user),
         ),
     )
+
+
+def _monitooring_everyone(user: Any) -> bool | None:
+    from app.register_watch import candidate_notices
+
+    if not candidate_notices.is_head(user):
+        return None
+    return candidate_notices.audience().everyone
 
 
 def _safely(read: Any) -> Any:
