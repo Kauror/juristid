@@ -145,6 +145,9 @@ def _open_matter(page, base_url: str, title: str, tab: str = "") -> None:
     page.wait_for_load_state("networkidle")
     if tab:
         page.get_by_role("link", name=tab).first.click()
+        # An in-place tab swap starts no navigation (2026-11-21): wait for the
+        # clicked tab to be the current one, then for the network.
+        page.locator("#teema-vaated [aria-current='page']", has_text=tab).wait_for()
         page.wait_for_load_state("networkidle")
 
 
