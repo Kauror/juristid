@@ -2,7 +2,7 @@
 
 The department head's page. Each candidate is a proposal: «Lisa teemaks» opens
 Uus teema filled from it, «Seo olemasolevaga» writes its register addresses on
-a Teema that already exists, «Jäta kõrvale» only records the decision.
+a Teema that already exists, «Märgi loetuks» only records the decision.
 """
 
 from __future__ import annotations
@@ -196,7 +196,7 @@ def _back() -> HttpResponseRedirect:
 @require_http_methods(["POST"])
 @business_write_required
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Lisa teemaks», «Seo olemasolevaga» or «Jäta kõrvale»."""
+    """«Lisa teemaks», «Seo olemasolevaga» or «Märgi loetuks»."""
     if not candidate_notices.may_decide(request.user):
         raise Http404(NOT_HERE)
     candidate = candidates.waiting().filter(pk=pk).first()
@@ -225,7 +225,7 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 @require_http_methods(["POST"])
 @business_write_required
 def agenda_decide(request: HttpRequest, pk: Any) -> HttpResponse:
-    """«Lisa teemale» or «Jäta vahele» on a Government agenda item tied to a Teema.
+    """«Lisa teemale» or «Märgi loetuks» on a Government agenda item tied to a Teema.
 
     From Monitooring → «Valitsuse info» or from the Teema's «Registritest» tab
     (``tagasi=teema``), and back there. Only a waiting item on an open Teema the

@@ -409,7 +409,7 @@ class AgendaItem(BaseModel):
         verbose_name="seotud teema",
     )
     #: What a person did with the item on its Teema (owner, 2026-11-22): «Lisa teemale»
-    #: wrote a `Menetluse areng` (`development`), «Jäta vahele» only recorded it.
+    #: wrote a `Menetluse areng` (`development`), «Märgi loetuks» only recorded it.
     status = models.CharField(
         max_length=16,
         choices=AgendaItemStatus.choices,

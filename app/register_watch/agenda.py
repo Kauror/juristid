@@ -407,7 +407,7 @@ def add_to_teema(item: AgendaItem, *, actor: Any) -> AgendaItem:
 
 @transaction.atomic
 def dismiss(item: AgendaItem, *, actor: Any) -> AgendaItem:
-    """«Jäta vahele»: recorded, nothing written on the Teema."""
+    """«Märgi loetuks»: recorded, nothing written on the Teema."""
     from app.register_watch.models import AgendaItemStatus
 
     locked = _lock(item)

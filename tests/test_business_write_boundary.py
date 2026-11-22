@@ -1864,10 +1864,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # person may see (tests/test_new_topics.py).
     "register_watch:candidate_decide": "A: gated; candidates belong to no Teema",
     "register_watch:candidate_audience": "B: department head only",
-    # «Jäta kõik vahele» (owner, 2026-11-22): «Jäta vahele» for every document still
+    # «Märgi kõik loetuks» (owner, 2026-11-22): «Märgi loetuks» for every document still
     # waiting on one Teema, each through `watch.dismiss` (tests/test_monitooring.py).
     "register_watch:dismiss_all": "A: gated; sibling of register_watch:decide",
-    # «Lisa teemale» / «Jäta vahele» on a Government agenda item tied to a Teema
+    # «Lisa teemale» / «Märgi loetuks» on a Government agenda item tied to a Teema
     # (ADR 0219, amendment 2026-11-22): `Menetluse areng` through `+ Märge`'s use case.
     "register_watch:agenda_decide": "A: gated; sibling of register_watch:decide",
     # E — migration and reconciliation tooling, governed by their own explicit

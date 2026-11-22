@@ -4,7 +4,7 @@
 {% comment %}
 What the nightly register watch found on the open Teemad (ADR 0217). A row
 changes nothing until a lawyer presses «Lisa märkena», which records a
-`Menetluse areng` on the Teema exactly as `+ Märge` does; «Jäta vahele» only
+`Menetluse areng` on the Teema exactly as `+ Märge` does; «Märgi loetuks» only
 records the decision. The model's verdict is shown, never acted on.
 {% endcomment %}
 
@@ -45,7 +45,7 @@ records the decision. The model's verdict is shown, never acted on.
 
   {% comment %}
     One fold per Teema, all shut at first so the page is an overview (owner,
-    2026-11-22); opened when the list is filtered to one Teema. «Jäta kõik vahele»
+    2026-11-22); opened when the list is filtered to one Teema. «Märgi kõik loetuks»
     skips every document still waiting on that Teema in one press.
   {% endcomment %}
   {% for group in groups %}
@@ -60,7 +60,7 @@ records the decision. The model's verdict is shown, never acted on.
               {% csrf_token %}
               <input type="hidden" name="kelle" value="{{ filters.kelle }}">
               <input type="hidden" name="teema" value="{{ filters.teema }}">
-              <button type="submit" class="button button--quiet button--tiny">Jäta kõik vahele</button>
+              <button type="submit" class="button button--quiet button--tiny">Märgi kõik loetuks</button>
             </form>
           {% endif %}
         </span>

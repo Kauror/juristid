@@ -325,7 +325,7 @@ def test_each_teema_is_a_shut_fold_with_skip_all(department_head):
     html = _signed_in(department_head).get(REGISTERS, {"kelle": "koik"}).content.decode()
 
     assert '<details class="regwatch__teema">' in html
-    assert "2 dokumenti" in html and "Jäta kõik vahele" in html
+    assert "2 dokumenti" in html and "Märgi kõik loetuks" in html
 
 
 def test_skip_all_skips_only_that_teemas_waiting_documents(department_head):
