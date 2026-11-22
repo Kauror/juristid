@@ -450,7 +450,8 @@ def register_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = Fal
         label=REGISTER_LABEL,
         date=day,
         date_label=format_estonian_date(day),
-        url=reverse("register_watch:review") + f"?teema={row.matter.display_reference}",
+        # The Teema's own «Registritest» tab (owner, 2026-11-21).
+        url=reverse("matters:matter_registers", kwargs={"pk": row.matter_id}),
         is_unread=unread,
         pk=row.pk,
         section=SECTION_INFO,

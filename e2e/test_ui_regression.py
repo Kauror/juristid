@@ -1310,6 +1310,10 @@ def signed_in_matter(page, base_url: str, title: str, tab: str = "", persona=SAN
     page.wait_for_load_state("networkidle")
     if tab:
         page.get_by_role("link", name=tab).click()
+        # The tabs swap the area under them in place (owner, 2026-11-21): no
+        # navigation starts, so `networkidle` alone can return before the
+        # answer lands. The clicked tab marked current is the swap done.
+        page.locator("#teema-vaated [aria-current='page']", has_text=tab).wait_for()
         page.wait_for_load_state("networkidle")
     return page
 

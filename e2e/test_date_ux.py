@@ -50,6 +50,23 @@ def typed(days: int, *, padded: bool = False) -> str:
     return f"{on.day:02d}.{on.month:02d}.{on.year}" if padded else f"{on.day}.{on.month}.{on.year}"
 
 
+def quiet_offset(days: int) -> int:
+    """``days``, or the first later offset that is neither a weekend nor a riigipüha.
+
+    A weekend or holiday draws a notice under the date box (docs/adr/0197) a
+    moment after the date is typed, and the notice moves what is under it: a
+    click aimed at a radio there lands on its neighbour. On 22.11.2026 `typed(40)`
+    was 1.1.2027 and the header deadline test failed that way twice.
+    """
+    from app.core.holidays import estonian_public_holidays
+
+    while True:
+        on = date.today() + timedelta(days=days)
+        if on.weekday() < 5 and on not in estonian_public_holidays(on.year):
+            return days
+        days += 1
+
+
 def create_form(page, base_url) -> None:
     """Open Uus teema.
 
@@ -481,10 +498,11 @@ def test_a_refused_header_deadline_is_corrected_without_retyping(page, base_url)
     page.wait_for_url(re.compile(r"/teemad/[0-9a-f-]{36}/$"))
     start_first_step(page)
 
+    later = typed(quiet_offset(40))
     editor = page.locator("#teema-pais details[data-deadline-editor]")
     editor.locator("summary").click()
     form = editor.locator("form")
-    form.locator("input[name=response_deadline]").fill(typed(40))
+    form.locator("input[name=response_deadline]").fill(later)
     form.locator("#paise-tahtaeg-change-replaced").check(force=True)
     form.locator("input[name=previous_note]").fill("Ministeerium saatis uue kirja")
     form.locator("button[name=tegevus][value=muuda]").click()
@@ -493,7 +511,7 @@ def test_a_refused_header_deadline_is_corrected_without_retyping(page, base_url)
     editor = page.locator("#teema-pais details[data-deadline-editor]")
     form = editor.locator("form")
     expect(form.locator(".field__error")).to_contain_text("Vali, mis sai praegusest")
-    expect(form.locator("input[name=response_deadline]")).to_have_value(typed(40))
+    expect(form.locator("input[name=response_deadline]")).to_have_value(later)
     expect(form.locator("#paise-tahtaeg-change-replaced")).to_be_checked()
     expect(form.locator("input[name=previous_note]")).to_have_value("Ministeerium saatis uue kirja")
     expect(page.locator("#teema-pais .formerror")).to_have_count(0)
@@ -501,7 +519,7 @@ def test_a_refused_header_deadline_is_corrected_without_retyping(page, base_url)
     form.locator("select[name=previous_outcome]").select_option("SUPERSEDED")
     form.locator("button[name=tegevus][value=muuda]").click()
     page.wait_for_load_state("networkidle")
-    expect(page.locator("#teema-pais .metaline__value--deadline").first).to_contain_text(typed(40))
+    expect(page.locator("#teema-pais .metaline__value--deadline").first).to_contain_text(later)
 
 
 def test_an_impossible_saabus_in_the_header_stays_open_to_correct(page, base_url):

@@ -6,10 +6,11 @@
     {% if finding.ai_note %}<span class="regwatch__note{% if finding.relevance == 'UNSURE' %} regwatch__note--unsure{% endif %}">{{ finding.ai_note }}</span>{% endif %}
   </div>
   {% if can_write_business_content %}
-    <form class="regwatch__actions" method="post" action="{% url 'register_watch:decide' pk=finding.pk %}">
+    <form class="regwatch__actions" method="post" action="{% url 'register_watch:decide' pk=finding.pk %}"{% if register_return %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
       {% csrf_token %}
       <input type="hidden" name="kelle" value="{{ filters.kelle }}">
       <input type="hidden" name="teema" value="{{ filters.teema }}">
+      {% if register_return %}<input type="hidden" name="tagasi" value="{{ register_return }}">{% endif %}
       <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa märkena</button>
       {% if finding.url %}<button type="submit" name="otsus" value="link" class="button button--secondary button--tiny">Lisa link</button>{% endif %}
       <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>

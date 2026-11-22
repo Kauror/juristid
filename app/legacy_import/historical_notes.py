@@ -160,6 +160,12 @@ class HistoricalNoteRow:
     #: **Extension** (UI-13): the page is linked to more than one live Teema
     #: (`SharedDossier.shared`'s rule, readable or not), for «ühine leht».
     shared_page: bool = False
+    #: **Extension** (owner, 2026-11-21): the files that stand inside the
+    #: note's own run of lines without being nested under it — D9's category 2,
+    #: still page-level and never in the tag, but shown under the opened note
+    #: so the file can be opened from the timeline without the copy view.
+    #: Repeated even when the file also reads on a row of its own.
+    beside_files: tuple[HistoricalFile, ...] = ()
 
     @property
     def source_url(self) -> str:
@@ -481,6 +487,8 @@ class ParsedNote:
     start: int
     #: R2a, R2b's «TRAILING», or "" for a «Järgmised tegevused» heading.
     form: str = ""
+    #: The resource keys of `adjacent_files`, in the same order.
+    adjacent_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -751,6 +759,10 @@ def parse_page(
                     str(by_ordinal[ordinal].get("resource_key") or "") for ordinal in segment.direct
                 ),
                 adjacent_files=tuple(segment.adjacent),
+                adjacent_keys=tuple(
+                    str(by_ordinal[ordinal].get("resource_key") or "")
+                    for ordinal in segment.adjacent
+                ),
                 links=_note_links(
                     segment.paragraphs, page_links if shape == "LEGACY" else (), inside
                 ),
@@ -993,6 +1005,11 @@ def project_page(
     out: list[ProjectedNote] = []
     for note in parsed.notes:
         mine = direct[note.start]
+        beside = tuple(
+            by_key[key].file
+            for key in dict.fromkeys(note.adjacent_keys)
+            if key in by_key and by_key[key].version_id not in taken
+        )
         text = " ".join(note.paragraphs)
         row = HistoricalNoteRow(
             date_display=note.date.display if note.date is not None else "",
@@ -1010,6 +1027,7 @@ def project_page(
             date_iso=note.date.iso if note.date is not None else "",
             anchor=f"plokk-{note.start}" if counts.get(note.start) == 1 else "",
             shared_page=shared_page,
+            beside_files=beside,
         )
         out.append(
             ProjectedNote(

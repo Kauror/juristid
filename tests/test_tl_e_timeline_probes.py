@@ -111,9 +111,11 @@ def test_every_html_channel_shows_the_note_to_a_reader_and_the_same_once(client,
         # Short enough to be its own headline: once, in the line — the opened
         # row does not repeat it (UI-13).
         assert html.count("Näidisamet saatis kooskõlastusringile näidiseelnõu") == 1
-        # The direct file once under its note, the other once on its own row.
+        # The direct file once under its note; the other on its own row and,
+        # since 2026-11-21, under the note it stands beside as well («Failid
+        # märkuse juures», owner: open the letter from the timeline).
         assert html.count(">Otsene-näidisfail.pdf</a>") == 1
-        assert html.count(">Kõrvalfail-näidis.pdf</a>") == 1
+        assert html.count(">Kõrvalfail-näidis.pdf</a>") == 2
         assert f"/ajalugu/{link.pk}/" in html
 
 

@@ -62,18 +62,99 @@ def _teema(request: HttpRequest, reference: str) -> Any:
     return visible.filter(reference_year=int(year), reference_number=int(number)).first()
 
 
-def watch_line(user: Any, matter: Any) -> dict[str, Any] | None:
-    """For the Teema page: how many documents wait, when any do.
+def waiting_count(user: Any, matter: Any) -> int:
+    """For the Teema page's «Registritest» tab: how many documents wait on it.
 
-    The way to the watch itself (and its search words) is the rail's
-    «Menetluse link» card, which needs no query.
+    One query, and none on a closed Teema (the watch reads open ones only).
+    What the model called unrelated is not counted: it waits folded away.
     """
     if not matter.is_open:
-        return None
-    waiting = (
+        return 0
+    return (
         watch.pending_for(user).filter(matter=matter).exclude(relevance=Relevance.UNRELATED).count()
     )
-    return {"waiting": waiting} if waiting else None
+
+
+#: Senders whose document registers the watch does not read (ADR 0217 §3 and
+#: `docs/adr/0217`'s «deliberately not read»): their Teemad are not updated
+#: automatically, and the tab says so instead of waiting for nothing.
+UNREAD_REGISTERS = frozenset(
+    {
+        "Siseministeerium",
+        "Regionaal- ja Põllumajandusministeerium",
+        "Maaeluministeerium",
+        "Välisministeerium",
+        "Riigikantselei",
+    }
+)
+
+#: The «Registritest» tab's three states besides being watched.
+CLOSED_LINE = "Lõpetatud teemat registrites ei jälgita."
+UNREAD_LINE = (
+    "Seda teemat ei uuendata automaatselt: {sender} dokumendiregistrit ei saa masinaga "
+    "lugeda. Kontrolli registrit käsitsi."
+)
+UNKNOWN_LINE = (
+    "Seda teemat ei uuendata automaatselt: pealkirjast ega saatjast ei selgu, millises "
+    "registris otsida. Vali register ja lisa otsingusõnad, siis kontrollitakse seda igal ööl."
+)
+WATCHED_LINE = (
+    "Registreid kontrollitakse automaatselt igal ööl. Leitud dokument jõuab teemasse "
+    "alles siis, kui sa selle lisad."
+)
+
+
+def _sender_name(matter: Any) -> str:
+    """The Teema's ministry as the watch would read it: confirmed sender, else the proposed one."""
+    for organisation in matter.source_organisations.all():
+        return str(organisation.name)
+    suggestion = getattr(matter, "classification_suggestion", None)
+    sender = suggestion.sender if suggestion is not None else None
+    return str(sender.name) if sender is not None else ""
+
+
+def watch_state(matter: Any, watching: list[Any]) -> dict[str, str]:
+    """Whether the nightly check covers this Teema, and the one line that says so.
+
+    Watched when it already has an active source, or when the next run would
+    give it one (`watch.ensure_targets`: a bill number in the title, or words
+    from the title in its ministry's register). Read without the network.
+    """
+    from app.register_watch import phrases
+    from app.register_watch.sources import riigikogu
+
+    if not matter.is_open:
+        return {"state": "closed", "line": CLOSED_LINE}
+    if watching or riigikogu.bill_mark(matter.title) is not None:
+        return {"state": "watched", "line": WATCHED_LINE}
+    if phrases.ministry_source(matter) is not None and phrases.words(matter.title):
+        return {"state": "watched", "line": WATCHED_LINE}
+    sender = _sender_name(matter)
+    if sender in UNREAD_REGISTERS:
+        return {"state": "unread", "line": UNREAD_LINE.format(sender=sender)}
+    return {"state": "unknown", "line": UNKNOWN_LINE}
+
+
+def teema_panel(user: Any, matter: Any) -> dict[str, Any]:
+    """The «Registritest» tab's own context: this Teema's waiting documents and its watch."""
+    shown: list[Any] = []
+    unrelated: list[Any] = []
+    for finding in watch.pending_for(user).filter(matter=matter):
+        (unrelated if finding.relevance == Relevance.UNRELATED else shown).append(finding)
+    watching = list(matter.watch_targets.filter(active=True).order_by("source"))
+    return {
+        "register_shown": shown,
+        "register_unrelated": unrelated,
+        "register_watching": watching,
+        "register_state": watch_state(matter, watching),
+        "home_source": _home_source(matter),
+        "phrase_sources": [
+            (value, label) for value, label in WatchSource.choices if value in watch.SEARCHED
+        ],
+        # The decide and phrase forms come back to this tab, not the review page.
+        "filters": {"kelle": "", "teema": ""},
+        "register_return": "teema",
+    }
 
 
 def _home_source(teema: Any) -> str:
@@ -122,7 +203,14 @@ def review(request: HttpRequest) -> HttpResponse:
     )
 
 
-def _back(request: HttpRequest) -> HttpResponseRedirect:
+def _back(request: HttpRequest, matter_id: Any = None) -> HttpResponseRedirect:
+    """Where a decision returns: the Teema's «Registritest» tab when it came from there.
+
+    The tab is built from the finding's own Teema, never from the request, so the
+    field can only choose between two of this application's own pages.
+    """
+    if matter_id is not None and request.POST.get("tagasi") == "teema":
+        return HttpResponseRedirect(reverse("matters:matter_registers", kwargs={"pk": matter_id}))
     query = {key: value for key, value in _filters(request.POST).items() if value}
     return HttpResponseRedirect(f"{reverse('register_watch:review')}?{urlencode(query)}")
 
@@ -145,7 +233,7 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
             watch.dismiss(finding, actor=request.user)
     except DomainError as refusal:
         messages.error(request, str(refusal))
-    return _back(request)
+    return _back(request, finding.matter_id)
 
 
 @login_required
@@ -170,5 +258,7 @@ def phrase(request: HttpRequest, pk: Any) -> HttpResponse:
         )
     except DomainError as refusal:
         messages.error(request, str(refusal))
+    if request.POST.get("tagasi") == "teema":
+        return HttpResponseRedirect(reverse("matters:matter_registers", kwargs={"pk": matter.pk}))
     query = urlencode({"teema": matter.display_reference})
     return HttpResponseRedirect(f"{reverse('register_watch:review')}?{query}")

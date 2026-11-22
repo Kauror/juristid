@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Registritest · {{ matter.title|truncatechars:60 }} · {{ application_name }}{% endblock %}
+
+{% comment %}
+The Teema's third tab, «Registritest» (owner, 2026-11-21; docs/adr/0217): what
+the nightly register watch found on this Teema, and whether it is watched at
+all. It replaces the «Registrites N uut dokumenti» line above the title and the
+round trip to «Uued dokumendid registrites» filtered to one Teema; that page
+stays, for every Teema at once.
+
+The same wrapper, header and rail as the Teema tab, so switching between them
+changes only the column (`partials/tabs.html`). The grid keeps the Teema tab's
+id, `#teema-vaade`, because a rail save answers into it; on this tab such an
+answer reloads the page (`views._render_overview`) rather than drawing the
+Teema column under the wrong tab.
+{% endcomment %}
+{% block content %}
+<div class="teema" id="teema-vaade-wrap">
+  {% include "matters/partials/header.html" %}
+  <div id="teema-tabsisu">
+    <div class="teemagrid" id="teema-vaade">
+      <div class="teemamain teemamain--padded">
+        {% include "matters/partials/registers_panel.html" %}
+      </div>
+      {% include "matters/partials/rail.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

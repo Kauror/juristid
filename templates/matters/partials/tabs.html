@@ -1,23 +1,47 @@
 {% comment %}
-Two tabs, and that is the whole Matter-level navigation.
+Three tabs, and that is the whole Matter-level navigation.
 
 `Teema` is understanding the issue and recording work; `Dokumendid` is browsing
-and managing files. They are genuinely different tasks, and the file list is the
-only thing on the record that can legitimately run to forty rows.
+and managing files; `Registritest` is what the nightly register watch found on
+this Teema and whether it is watched at all (owner, 2026-11-21; docs/adr/0217).
+They are genuinely different tasks, and the file list is the only thing on the
+record that can legitimately run to forty rows.
 
 Everything that used to be a third tab is now in the main view where it is read:
 `Koja seisukoht` in the reading flow, `Kaasamine` as an accordion, sent opinions
 as a compact strip. A tab per database concern is what made a lawyer navigate to
 find out whether anything had happened (Teema redesign §3).
+
+**The tabs swap the area under them, not the page** (owner, 2026-11-21). Each
+is a real link to its own address, so it works with no script, opens in a new
+tab and can be sent; with htmx it fetches that same page, keeps only
+`#teema-tabsisu` (and this strip, out of band, for the marker and the counts)
+and pushes the address, so the header and its editors stay where they were.
+`plain` draws links alone, for a page without `#teema-tabsisu`.
+
+The `Registritest` count is the documents waiting on this Teema
+(`app.register_watch.views.waiting_count`) — the old «Registrites N uut
+dokumenti» line above the title, moved to where the list now is.
 {% endcomment %}
 <nav class="tabs" id="teema-vaated" aria-label="Teema vaated"{% if tabs_out_of_band %} hx-swap-oob="true"{% endif %}>
+  {% with matter_pk=matter.pk %}
   <a class="tabs__tab {% if tab == 'teema' %}is-active{% endif %}"
      {% if tab == 'teema' %}aria-current="page"{% endif %}
-     href="{% url 'matters:matter_detail' pk=matter.pk %}">Teema</a>
+     href="{% url 'matters:matter_detail' pk=matter_pk %}"
+     {% if not plain %}hx-get="{% url 'matters:matter_detail' pk=matter_pk %}" hx-target="#teema-tabsisu" hx-select="#teema-tabsisu > *" hx-select-oob="#teema-vaated" hx-swap="innerHTML show:none" hx-push-url="true"{% endif %}>Teema</a>
   <a class="tabs__tab {% if tab == 'dokumendid' %}is-active{% endif %}"
      {% if tab == 'dokumendid' %}aria-current="page"{% endif %}
-     href="{% url 'matters:matter_documents' pk=matter.pk %}">
+     href="{% url 'matters:matter_documents' pk=matter_pk %}"
+     {% if not plain %}hx-get="{% url 'matters:matter_documents' pk=matter_pk %}" hx-target="#teema-tabsisu" hx-select="#teema-tabsisu > *" hx-select-oob="#teema-vaated" hx-swap="innerHTML show:none" hx-push-url="true"{% endif %}>
     Dokumendid
     {% if document_count %}<span class="tabs__count">· {{ document_count }}</span>{% endif %}
   </a>
+  <a class="tabs__tab {% if tab == 'registrid' %}is-active{% endif %}"
+     {% if tab == 'registrid' %}aria-current="page"{% endif %}
+     href="{% url 'matters:matter_registers' pk=matter_pk %}"
+     {% if not plain %}hx-get="{% url 'matters:matter_registers' pk=matter_pk %}" hx-target="#teema-tabsisu" hx-select="#teema-tabsisu > *" hx-select-oob="#teema-vaated" hx-swap="innerHTML show:none" hx-push-url="true"{% endif %}>
+    Registritest
+    {% if register_waiting %}<span class="tabs__badge" title="{% if register_waiting == 1 %}1 uus dokument ootab{% else %}{{ register_waiting }} uut dokumenti ootab{% endif %}">{{ register_waiting }}<span class="visually-hidden"> uut</span></span>{% endif %}
+  </a>
+  {% endwith %}
 </nav>
