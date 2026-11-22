@@ -62,13 +62,16 @@ def _wants_calendar_fragment(request: HttpRequest) -> bool:
     )
 
 
-def _new_topics(user: Any) -> dict[str, int] | None:
-    """The way to «Uued eelnõud» and how many wait there, for who may see it."""
-    from app.register_watch import candidate_notices, candidates
+def _new_topics(user: Any) -> bool:
+    """Whether Osakond shows the way to «Uued eelnõud» (docs/adr/0218 §6).
 
-    if not candidate_notices.may_see(user):
-        return None
-    return {"waiting": candidates.worth_telling().count()}
+    No count beside it: the bell already says how many wait, and a count here
+    would be one more query on every Osakond view (its budget in
+    tests/test_work_pages_at_scale.py). For the head this reads nothing.
+    """
+    from app.register_watch import candidate_notices
+
+    return candidate_notices.may_see(user)
 
 
 @login_required

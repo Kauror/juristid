@@ -16,7 +16,7 @@ from datetime import datetime
 from typing import Any
 
 from django.contrib.auth import get_user_model
-from django.db.models import QuerySet
+from django.db.models import Exists, QuerySet
 from django.utils import timezone
 
 from app.core.authorization import (
@@ -83,20 +83,30 @@ def notify(candidates: int) -> int:
 
 
 def own(user: Any) -> QuerySet[CandidateNotice]:
-    if not may_see(user) or getattr(user, "pk", None) is None:
+    """The person's notices, while the page is theirs to see. Lazy: no query here.
+
+    Whether the head opened the page to everyone is a condition inside the same
+    query rather than a read of its own, so the bell, Minu asjad and the inbox
+    pay one query for this source, whatever it holds (query budgets in
+    tests/test_work_pages_at_scale.py).
+    """
+    if (
+        not getattr(user, "is_authenticated", False)
+        or getattr(user, "pk", None) is None
+        or not may_read_business_content(user)
+    ):
         return CandidateNotice.objects.none()
-    return CandidateNotice.objects.filter(recipient=user)
-
-
-def _list_waits() -> bool:
-    from app.register_watch.candidates import worth_telling
-
-    return worth_telling().exists()
+    rows = CandidateNotice.objects.filter(recipient=user)
+    if not is_head(user):
+        rows = rows.filter(Exists(CandidateAudience.objects.filter(everyone=True)))
+    return rows
 
 
 def due_unread(user: Any) -> QuerySet[CandidateNotice]:
-    rows = own(user).filter(read_at__isnull=True)
-    return rows if _list_waits() else rows.none()
+    """Unread, and something worth telling is still on the list: one lazy query."""
+    from app.register_watch.candidates import worth_telling
+
+    return own(user).filter(read_at__isnull=True).filter(Exists(worth_telling()))
 
 
 def history(user: Any, unread: set[Any]) -> QuerySet[CandidateNotice]:

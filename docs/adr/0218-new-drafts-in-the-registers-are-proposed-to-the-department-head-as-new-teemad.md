@@ -86,7 +86,7 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
    open it to every business reader and close it again (`CandidateAudience`,
    one row, changed on the page itself). Readers see it once opened; only those
    who may write business content answer. A Teema the reader cannot see is not
-   named to them. The way in is «Uued eelnõud (N)» on Osakond (not «Uued teemad», which Osakond already uses for newly filed Teemad).
+   named to them. The way in is «Uued eelnõud» on Osakond (not «Uued teemad», which Osakond already uses for newly filed Teemad); the bell, not the link, says how many wait, so Osakond reads nothing more for the head.
 7. **The bell's sixth source.** A sweep that lists new candidates (not folded
    ones, not nameless letters) creates one «Uued eelnõud registrites» notice for each person who may
    decide, or adds to their unread one (`CandidateNotice`). It is read and

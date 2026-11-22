@@ -785,7 +785,9 @@ def test_the_department_overview_prefetches_its_senders(
 
     # +3 since the page counts sent opinions from one read of the one reader
     # (docs/adr/0214 §6), whatever the senders.
-    with django_assert_max_num_queries(33):
+    # +1 since «Uued eelnõud» (docs/adr/0218 §6): for anyone but the head, whether
+    # the head opened that page to everyone is read once, for its link.
+    with django_assert_max_num_queries(34):
         response = signed_in.get(reverse("matters:department"))
         response.content.decode()
 
