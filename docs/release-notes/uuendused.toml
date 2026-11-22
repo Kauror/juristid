@@ -10,7 +10,7 @@
 [[day]]
 date = 2026-11-22
 basis = "deployment"
-prs = [664, 665, 667, 668, 669]
+prs = [664, 665, 667, 668, 669, 670]
 changes = [
   "Teema lehel on uus vahekaart «Registritest». Seal on registritest leitud dokumendid, mis ootavad otsust: neid saab lisada teemale märkena või lingina või loetuks märkida. Seal saab muuta ka sõnu, millega teemat registritest otsitakse. Vahekaardi juures olev number näitab, mitu dokumenti ootab, ja kellukese teavitus «Registris uus dokument» avab sama vahekaardi.",
   "Teema, Dokumendid ja Registritest vahetuvad lehte uuesti laadimata: pealkiri, väljad ja parem veerg jäävad paigale ning muutub ainult ala vahekaartide all. Aadress muutub kaasa, nii et linki saab jagada ja «Tagasi» töötab.",
