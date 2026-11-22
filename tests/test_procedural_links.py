@@ -654,17 +654,22 @@ def test_a_correction_onto_another_rows_address_is_refused_by_name(normal_matter
 
 
 def test_there_is_no_route_that_deletes_a_link(signed_in, normal_matter, specialist):
-    """Create and correct. A mistaken row is corrected, never removed.
+    """Removed, never deleted (owner, 2026-11-22; docs/adr/0102 amendment).
 
-    The rule `MatterEngagement` and `MatterExternalPosition` both keep: what the
-    file recorded and who recorded it is part of the file (docs/adr/0084 §8).
+    The rail offers the shared ✕ (`matters:remove_record`, «menetluslink»),
+    which sets `removed_at`; no route destroys the row.
     """
     link = _record(normal_matter, specialist, url=EIS_URL)
 
     body = _card(_detail(signed_in, normal_matter))
 
-    assert "Kustuta" not in body
-    assert "Eemalda" not in body
+    assert (
+        reverse(
+            "matters:remove_record",
+            kwargs={"pk": normal_matter.pk, "kind": "menetluslink", "record_id": link.pk},
+        )
+        in body
+    )
     response = signed_in.post(
         reverse(
             "matters:correct_procedural_link", kwargs={"pk": normal_matter.pk, "link_id": link.pk}

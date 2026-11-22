@@ -191,6 +191,7 @@ REMOVABLE = {
     "tahtaeg": "important_date",
     "joustumine": "effective_date",
     "toovoit": "work_victory",
+    "menetluslink": "link",
 }
 
 #: A URL parameter -> the world's key for the object it names.

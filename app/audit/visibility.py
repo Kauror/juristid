@@ -192,6 +192,7 @@ def _child_families() -> tuple[tuple[tuple[str, ...], Any, dict[str, str]], ...]
             (
                 ChangeEventType.PROCEDURAL_LINK_RECORDED,
                 ChangeEventType.PROCEDURAL_LINK_CORRECTED,
+                ChangeEventType.PROCEDURAL_LINK_REMOVED,
             ),
             MatterProceduralLink,
             direct,

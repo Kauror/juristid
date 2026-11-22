@@ -14152,6 +14152,11 @@ section:has(.pw-more[open]) tbody.uxextra {
   padding: var(--spacing-2) 0 var(--spacing-3) var(--spacing-2);
 }
 
+/* Work done with no `Hetkeseis`: shown, under no heading (owner, 2026-11-22). */
+.kaikstage--loose {
+  padding-top: 0;
+}
+
 /* «Ava uuesti» with the stage the file is reopened in, on one line. */
 .banner__reopen {
   display: flex;
