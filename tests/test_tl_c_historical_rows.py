@@ -61,6 +61,7 @@ class HistoricalNoteRow:
     date_iso: str = ""
     anchor: str = ""
     shared_page: bool = False
+    beside_files: tuple[HistoricalFile, ...] = ()
 
     @property
     def source_url(self) -> str:

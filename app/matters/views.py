@@ -3920,11 +3920,27 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     # «Tagasi tulemustesse», only when this page was opened from a narrowed
     # Teemad list (`app.matters.return_link`).
     context["results_return_url"] = results_return_url(request)
-    # «Registrite jälgimine» (docs/adr/0217): is it watched, and how much waits. Full page only.
-    from app.register_watch.views import watch_line
-
-    context["register_watch"] = watch_line(request.user, matter)
     return render(request, "matters/matter_detail.html", context)
+
+
+@login_required
+def matter_registers(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Registritest»: the register watch on this one Teema (owner, 2026-11-21).
+
+    The Teema tab's column context as well, because the rail stands beside this
+    column exactly as it does there: switching tabs must not move it. The
+    findings and the watch come from `app.register_watch.views.teema_panel`,
+    which reads only what `pending_for` lets this reader see.
+    """
+    from app.register_watch.views import teema_panel
+
+    matter = get_visible_matter(request, pk)
+    context = _overview_context(request, matter)
+    context.update(_header_context(request, matter))
+    context.update(teema_panel(request.user, matter))
+    context["tab"] = "registrid"
+    context["nav_active"] = "teemad"
+    return render(request, "matters/matter_registers.html", context)
 
 
 def _legal_instrument_line(matter: Matter) -> list[str]:
@@ -4000,8 +4016,31 @@ def _on_documents_tab(request: HttpRequest) -> bool:
     return DOCUMENTS_TAB_PATH in request.headers.get("HX-Current-URL", "")
 
 
+#: The `Registritest` tab's path, read like `DOCUMENTS_TAB_PATH`.
+REGISTERS_TAB_PATH = "/registrid/"
+
+
+def _on_registers_tab(request: HttpRequest) -> bool:
+    """Whether the page that sent this request is a Matter's `Registritest` tab."""
+    return REGISTERS_TAB_PATH in request.headers.get("HX-Current-URL", "")
+
+
+def _without_column(request: HttpRequest) -> bool:
+    """Whether the asking tab has no Teema column for a header save to redraw."""
+    return _on_documents_tab(request) or _on_registers_tab(request)
+
+
+def register_waiting_count(user: Any, matter: Matter) -> int:
+    """`Registritest`'s badge; imported here, like the other register reads, lazily."""
+    from app.register_watch.views import waiting_count
+
+    return waiting_count(user, matter)
+
+
 def _open_tab(request: HttpRequest) -> str:
-    return "dokumendid" if _on_documents_tab(request) else "teema"
+    if _on_documents_tab(request):
+        return "dokumendid"
+    return "registrid" if _on_registers_tab(request) else "teema"
 
 
 def _date_order_confirmation(request: HttpRequest) -> dict[str, Any]:
@@ -4149,6 +4188,9 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # No `submission_count`. The tab that displayed it is gone, and a count
         # nothing renders is a query nothing needs.
         "document_count": Document.objects.filter(matter=matter).visible_to(request.user).count(),
+        # The `Registritest` tab's badge: documents the register watch found and
+        # nobody has decided yet (docs/adr/0217). One count, none when closed.
+        "register_waiting": register_waiting_count(request.user, matter),
         # The inline owner control. Current department workers plus this
         # Matter's own owner, so a file held by a departed colleague still says
         # who holds it and can still be handed to somebody who is here — the
@@ -4856,6 +4898,14 @@ def _render_overview(
     # service locked and wrote: a `+ Märge` that moved the stage wrote it on
     # `locked_matter`, and this one would render the stage it had before.
     matter.refresh_from_db(fields=["stage"])
+    if _on_registers_tab(request):
+        # A rail save on `Registritest` (a `Menetluse link`, say) answers into
+        # `#teema-vaade`, which there holds the register column. Drawing the
+        # Teema column under the `Registritest` marker would be the wrong page;
+        # the save is stored, so the tab is simply drawn again.
+        response = HttpResponse(status=status)
+        response["HX-Refresh"] = "true"
+        return response
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
     # The column exists only on `Teema`, so an answer that carries it answers
@@ -7028,7 +7078,7 @@ def update_field(request: HttpRequest, pk: Any, field: str) -> HttpResponse:
         return render(request, surface, context, status=400)
 
     matter.refresh_from_db()
-    if field == "stage" and matter.is_open and not _on_documents_tab(request):
+    if field == "stage" and matter.is_open and not _without_column(request):
         # **A stage change is not a header-only fact.** `Tegevused` groups the
         # chronology by `Hetkeseis` period and marks the current one, and
         # `Menetluse kulg` and the offered next stages read the same stage; a
@@ -7139,9 +7189,10 @@ def response_deadline_view(request: HttpRequest, pk: Any) -> HttpResponse:
         )
         return render(request, "matters/partials/header.html", context, status=400)
     matter.refresh_from_db()
-    if _on_documents_tab(request):
-        # The header is shared by both tabs, and `Dokumendid` has no
-        # `#teema-vaade` to answer into: there the header alone is the answer.
+    if _without_column(request):
+        # The header is shared by every tab, and neither `Dokumendid` nor
+        # `Registritest` has the Teema column to answer into: there the header
+        # alone is the answer.
         return render(request, "matters/partials/header.html", _header_context(request, matter))
     response = _render_overview(request, matter, header_out_of_band=True)
     response["HX-Retarget"] = "#teema-vaade"

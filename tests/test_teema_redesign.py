@@ -67,13 +67,15 @@ def _detail(client, matter) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_a_matter_has_exactly_two_tabs(signed_in, specialist):
+def test_a_matter_has_exactly_three_tabs(signed_in, specialist):
+    """Teema, Dokumendid and, since 2026-11-21, Registritest (the register watch)."""
     matter = factories.MatterFactory(owner=specialist)
     body = _detail(signed_in, matter)
 
-    assert body.count('class="tabs__tab') == 2
+    assert body.count('class="tabs__tab') == 3
     assert ">Teema<" in body
     assert "Dokumendid" in body
+    assert "Registritest" in body
     assert "Seisukoht ja kaasamine" not in body
 
 
@@ -1389,7 +1391,7 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 #: owns this Teema (`source_ownership.ownership`, the synchronised cohorts), so
 #: its source-owned controls can say so; one read per page, none per field.
 #: One more since docs/adr/0217: the page counts the register documents
-#: waiting on this open Teema once, for «Registrites N uut dokumenti».
+#: waiting on this open Teema once, for the «Registritest» tab's badge.
 TEEMA_PAGE_QUERY_CEILING = 68
 
 

@@ -97,6 +97,16 @@ def may_open_register_watch(request: HttpRequest) -> bool:
     return may_read_business_content(_persona(request))
 
 
+def may_open_release_notes(request: HttpRequest) -> bool:
+    """Uuendused: anybody signed in as somebody (owner, 2026-11-21).
+
+    The page itself stays open behind the shared gate alone (docs/adr/0034);
+    this predicate only decides whether the strip offers it as a tab. A
+    shared-gate session with no persona still reads it at its own address.
+    """
+    return bool(getattr(_persona(request), "is_authenticated", False))
+
+
 def may_open_system(request: HttpRequest) -> bool:
     """Süsteemi seis: a verified technical administrator, and nobody else."""
     return admin_session.is_technical_administrator(request)
@@ -165,6 +175,13 @@ SECTIONS: tuple[Section, ...] = (
         "haldus:register_watch",
         may_open_register_watch,
         "Öised registrikontrollid: loetud allikad, leitud dokumendid, vead ja AI kasutus.",
+    ),
+    Section(
+        "uuendused",
+        "Uuendused",
+        "core:release_notes",
+        may_open_release_notes,
+        "Juristide rakenduse uuendused ja Lovable'i öiste muudatuste osa.",
     ),
     Section(
         "susteem",

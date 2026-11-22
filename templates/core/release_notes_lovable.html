@@ -1,4 +1,4 @@
-{% extends "base.html" %}
+{% extends "haldus/base.html" %}
 {% block title %}Lovable · Uuendused · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -20,15 +20,15 @@ Moments are text, not `<time>`, for the reason the release notes give: the
 visual suite masks every `<time>`, and a reading's date identifies its group.
 {% endcomment %}
 
-{% block content %}
-<div class="page">
-  <div class="pagehead">
-    <h1 class="pagehead__title">Uuendused</h1>
+{% block haldus_title %}Uuendused{% endblock %}
+{% block haldus_context %}
     <span class="pagehead__context">
       Mida Lovable'is muudeti, mida Juristid oma lugemistes nägi ja mida ta sellega tegi.
       Lovable'it ainult loetakse: siin ei muudeta midagi.
     </span>
-  </div>
+{% endblock %}
+
+{% block haldus_content %}
 
   {% include "core/_uuendused_tabs.html" %}
 
@@ -52,5 +52,4 @@ visual suite masks every `<time>`, and a reading's date identifies its group.
   {% endif %}
 
   {% with "core/lovable/"|add:lovable_view|add:".html" as part %}{% include part %}{% endwith %}
-</div>
 {% endblock %}
