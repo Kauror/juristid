@@ -1236,7 +1236,9 @@ def test_archive_letters_are_kept_apart_from_the_file_table(client, specialist):
     client.force_login(specialist)
 
     body = _page(client, matter)
-    letters = body.split('id="seotud-arhiivikirjad"', 1)[1]
+    # Up to the rail, which stands beside the files since 2026-11-22 and
+    # names the sent opinion in its own «Koja arvamus» card.
+    letters = body.split('id="seotud-arhiivikirjad"', 1)[1].split('id="teema-andmed"', 1)[0]
 
     assert "Varasem kiri" in letters
     assert "Koja_arvamus.pdf" not in letters

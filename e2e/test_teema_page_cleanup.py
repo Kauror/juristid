@@ -470,7 +470,8 @@ def test_nine_columns_at_768_never_print_one_label_over_another(page, base_url):
         page.set_viewport_size({"width": width, "height": 900})
         page.wait_for_timeout(150)
         boxes = label_boxes(page)
-        assert len(boxes) == 9, [box["label"] for box in boxes]
+        # Eight since 2026-11-22: `Algus` was never reached, so it is not drawn.
+        assert len(boxes) == 8, [box["label"] for box in boxes]
         assert overprinted(boxes) == [], (width, overprinted(boxes))
         for box in boxes:
             assert box["right"] <= box["columnRight"] + 0.5, (width, box)
