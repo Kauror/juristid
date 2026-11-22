@@ -5,7 +5,18 @@
   </div>
   <span class="regwatch__meta">{% if item.presenter %}Esitaja: {{ item.presenter }}{% endif %}{% if item.presenter and item.kind %} · {% endif %}{% if item.kind %}{{ item.kind }}{% endif %}</span>
   {% if item.reason %}<span class="regwatch__note">{{ item.reason }}</span>{% endif %}
-  {% if item.related_shown %}<span class="regwatch__meta">Seotud teema: <a href="{% url 'matters:matter_detail' pk=item.related_shown.pk %}">{{ item.related_shown.title }}</a></span>{% endif %}
+  {% if item.related_shown %}
+    <div class="agenda__teema">
+      <span class="regwatch__meta">Seotud teema: <a href="{% url 'matters:matter_detail' pk=item.related_shown.pk %}">{{ item.related_shown.title }}</a>{% if item.status == "ADDED" %} · lisatud teemale{% elif item.status == "DISMISSED" %} · jäetud vahele{% endif %}</span>
+      {% if item.status == "PENDING" and item.strength != "NONE" and can_write_business_content and item.related_shown.is_open %}
+        <form class="regwatch__actions" method="post" action="{% url 'register_watch:agenda_decide' pk=item.pk %}">
+          {% csrf_token %}
+          <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa teemale</button>
+          <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
   {% if item.text %}
     <details class="agenda__text">
       <summary>Valitsuse selgitus</summary>

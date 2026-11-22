@@ -13,6 +13,7 @@ urlpatterns = [
     path("eelnoud/<uuid:pk>/", candidate_views.decide, name="candidate_decide"),
     path("nahtavus/", candidate_views.audience, name="candidate_audience"),
     path("valitsus/", candidate_views.agenda_list, name="agendas"),
+    path("valitsus/<uuid:pk>/", candidate_views.agenda_decide, name="agenda_decide"),
     path("registrid/", views.review, name="review"),
     path("registrid/<uuid:pk>/", views.decide, name="decide"),
     path("registrid/teema/<uuid:pk>/jata/", views.dismiss_all, name="dismiss_all"),

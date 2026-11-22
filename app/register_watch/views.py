@@ -70,9 +70,41 @@ def waiting_count(user: Any, matter: Any) -> int:
     """
     if not matter.is_open:
         return 0
-    return (
-        watch.pending_for(user).filter(matter=matter).exclude(relevance=Relevance.UNRELATED).count()
+    # Register documents and the Government's agenda items tied to the Teema
+    # (docs/adr/0219, amendment 2026-11-22), counted together in one query.
+    from django.db.models import Count, IntegerField, OuterRef, Subquery
+    from django.db.models.functions import Coalesce
+
+    from app.matters.models import Matter
+    from app.register_watch import agenda
+
+    documents = (
+        watch.pending_for(user)
+        .filter(matter=OuterRef("pk"))
+        .exclude(relevance=Relevance.UNRELATED)
+        .order_by()
+        .values("matter")
+        .annotate(n=Count("pk"))
+        .values("n")
     )
+    items = (
+        agenda.proposals()
+        .filter(related_matter=OuterRef("pk"))
+        .order_by()
+        .values("related_matter")
+        .annotate(n=Count("pk"))
+        .values("n")
+    )
+    row = (
+        Matter.objects.filter(pk=matter.pk)
+        .annotate(
+            d=Coalesce(Subquery(documents), 0, output_field=IntegerField()),
+            a=Coalesce(Subquery(items), 0, output_field=IntegerField()),
+        )
+        .values_list("d", "a")
+        .first()
+    )
+    return sum(row) if row else 0
 
 
 #: Senders whose document registers the watch does not read (ADR 0217 §3 and
@@ -142,7 +174,11 @@ def teema_panel(user: Any, matter: Any) -> dict[str, Any]:
     for finding in watch.pending_for(user).filter(matter=matter):
         (unrelated if finding.relevance == Relevance.UNRELATED else shown).append(finding)
     watching = list(matter.watch_targets.filter(active=True).order_by("source"))
+    from app.register_watch import agenda
+
     return {
+        # The Government's agenda items tied to this Teema, waiting for a decision.
+        "agenda_proposals": agenda.teema_proposals(matter) if matter.is_open else [],
         "register_shown": shown,
         "register_unrelated": unrelated,
         "register_watching": watching,
