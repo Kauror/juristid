@@ -128,7 +128,15 @@ def test_every_persona_sees_the_same_bar_and_the_same_menu_footer(client):
         rows = re.sub(r'name="csrfmiddlewaretoken" value="[^"]*"', "", _gear(body))
         return _nav(body), rows, menu_footer
 
-    assert bar(manager) == bar(colleague) == bar(factories.DepartmentHeadFactory())
+    assert bar(manager) == bar(colleague)
+    # The department head's bar differs by one business link, never by
+    # administrative standing: «Monitooring» is the head's (docs/adr/0219).
+    head_nav, head_rows, head_footer = bar(factories.DepartmentHeadFactory())
+    link = re.search(
+        r'<a class="topnav__link[^"]*"\s*href="/monitooring/">Monitooring</a>', head_nav
+    )
+    assert link is not None
+    assert (head_nav.replace(link.group(0), ""), head_rows, head_footer) == bar(colleague)
 
 
 def test_under_personal_sign_in_the_avatar_menu_holds_haldus(client, settings):
