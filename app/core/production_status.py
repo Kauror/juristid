@@ -224,6 +224,16 @@ def _register_watch() -> CheckResult:
     return CheckResult("register_watch", "Register watch", health.ok, health.detail)
 
 
+def _register_sweep() -> CheckResult:
+    """The nightly sweep for new drafts (docs/adr/0218): finished, recent, read something.
+
+    The same rules as the register watch's row. Switched off is green ``off``."""
+    from app.register_watch.candidates import sweep_health
+
+    health = sweep_health()
+    return CheckResult("register_sweep", "Register sweep", health.ok, health.detail)
+
+
 #: The checks, in the order they are printed. Order is part of the output
 #: contract: an operator reading two runs side by side compares rows by
 #: position, and a set would reorder between them.
@@ -236,6 +246,7 @@ CHECKS: tuple[Callable[[], CheckResult], ...] = (
     _lovable_sync,
     _lovable_observation,
     _register_watch,
+    _register_sweep,
 )
 
 

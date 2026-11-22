@@ -2542,7 +2542,20 @@ def matter_create(request: HttpRequest) -> HttpResponse:
     save was pressed while the upload was in flight — is filed once
     (`intake_staging.without_staged_copies`).
     """
-    form = MatterCreateForm(request.POST or None, viewer=request.user)
+    # «Lisa teemaks» from «Uued eelnõud» (docs/adr/0218 §4): the candidate fills
+    # what the registers say — title, sender ministry, when it appeared — as
+    # the form's starting values, never as a decision. It is carried through
+    # the form and closed only when this save succeeds.
+    from app.register_watch import candidates as topic_candidates
+
+    from_candidate = topic_candidates.for_create(
+        request.user, (request.POST if request.method == "POST" else request.GET).get("kandidaat")
+    )
+    form = MatterCreateForm(
+        request.POST or None,
+        viewer=request.user,
+        initial=topic_candidates.create_initial(from_candidate) if from_candidate else None,
+    )
     # **No second form for the first step, and no second date.**
     #
     # Two blocks used to be bound conditionally here: a free-text `Järgmiseks`
@@ -2824,6 +2837,11 @@ def matter_create(request: HttpRequest) -> HttpResponse:
                     # materjaliga» beside it would be work nobody has left.
                     seed_plan=not sends_proposal,
                 )
+                if from_candidate is not None:
+                    # Its register addresses become the Teema's `Menetluse
+                    # link`s, in this transaction; decided by someone else
+                    # meanwhile, it is left as it is and the Teema still stands.
+                    topic_candidates.adopt_if_new(from_candidate, matter, actor=request.user)
 
         except _FormAlreadySubmitted as replay:
             return _answer_repeated_create(request, replay.session)
@@ -2986,7 +3004,15 @@ def _create_context(
 ) -> dict[str, Any]:
     held_files = pending_uploads.describe(request.session, held_keys or [])
     intake = _intake_context(intake_session, answered=CurrentValues.answered_on(form))
+    from app.register_watch import candidates as topic_candidates
+
     return {
+        # «Lisa teemaks» from «Uued eelnõud» (docs/adr/0218 §4): carried as a
+        # hidden field so a refused save still closes the candidate.
+        "from_candidate": topic_candidates.for_create(
+            request.user,
+            (request.POST if request.method == "POST" else request.GET).get("kandidaat"),
+        ),
         # `Õigusakt -> Hetkeseis` guidance, for the page's script: which stages
         # stay normal for which instrument. Presentation only — nothing on the
         # write path reads it (app/workflow/stage_guidance.py, docs/adr/0130).

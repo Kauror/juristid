@@ -89,7 +89,7 @@ def parse(register: Register, page: str) -> list[Item]:
     return items
 
 
-def search(register: Register, words: str, *, since: dt.date) -> list[Item]:
+def search(register: Register, words: str, *, since: dt.date, page_number: int = 1) -> list[Item]:
     """Documents registered since ``since`` whose title has every word in ``words``."""
     if register.code not in _opened:
         get_text(HOST, register.search_path)
@@ -97,6 +97,25 @@ def search(register: Register, words: str, *, since: dt.date) -> list[Item]:
     page = post_form(
         HOST,
         register.search_path,
-        {"title": words, "regDateBegin": since.strftime("%d.%m.%Y"), "pageNumber": "1"},
+        {
+            "title": words,
+            "regDateBegin": since.strftime("%d.%m.%Y"),
+            "pageNumber": str(page_number),
+        },
     )
     return parse(register, page)
+
+
+#: Results to a page, as the register serves them.
+PAGE_SIZE = 20
+
+
+def search_all(register: Register, words: str, *, since: dt.date, max_pages: int = 3) -> list[Item]:
+    """`search`, page after page while pages come back full (the sweep, ADR 0218 §1)."""
+    found: list[Item] = []
+    for number in range(1, max_pages + 1):
+        rows = search(register, words, since=since, page_number=number)
+        found.extend(rows)
+        if len(rows) < PAGE_SIZE:
+            break
+    return found

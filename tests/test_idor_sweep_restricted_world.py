@@ -117,6 +117,9 @@ NOT_MATTER_DATA = {
     # One nightly register run: counts and errors of the whole watch; the
     # documents on it are read through `visible_to` (ADR 0217 §8).
     "haldus:register_watch_run": "register watch run",
+    # A new-topic candidate: a draft in a public register that is no Teema yet;
+    # a Teema it names is shown only through `visible_to` (ADR 0218).
+    "register_watch:candidate_decide": "new-topic candidate",
     "legacy_import:opinion_archive_file": "archive",
     "legacy_import:opinion_archive_link": "archive",
     "legacy_import:opinion_decide": "archive",
@@ -170,6 +173,8 @@ PERSONAL_INBOX = {
     "notifications:personal_unread": "the recipient's own reminder",
     "notifications:register_read": "the owner's own register notice (ADR 0217 §6)",
     "notifications:register_unread": "the owner's own register notice (ADR 0217 §6)",
+    "notifications:candidates_read": "the recipient's own new-topics notice (ADR 0218 §7)",
+    "notifications:candidates_unread": "the recipient's own new-topics notice (ADR 0218 §7)",
     "notifications:personal_remove": "the recipient's own reminder",
 }
 

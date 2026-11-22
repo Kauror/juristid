@@ -17,7 +17,10 @@ nothing else:
    (`app.notifications.personal`, owner 2026-11-16);
 5. «Registris uus dokument»: the register watch found something new on a Teema
    the reader owns, and it still waits (`app.register_watch.notices`,
-   docs/adr/0217 §6).
+   docs/adr/0217 §6);
+6. «Uued eelnõud registrites»: the nightly sweep put drafts that are not a
+   Teema yet on the «Uued eelnõud» list, for the department head (or everyone,
+   once opened) (`app.register_watch.candidate_notices`, docs/adr/0218 §7).
 
 :func:`inbox_for` lists them and :func:`inbox_count` counts the same
 populations with three ``COUNT`` statements, so the bell, the Minu asjad block
@@ -71,6 +74,7 @@ TYPE_COMMENCEMENT = "commencement"
 TYPE_ASSIGNMENT = "assignment"
 TYPE_PERSONAL = "personal"
 TYPE_REGISTER = "register"
+TYPE_CANDIDATES = "candidates"
 
 #: Where an item is listed on `/teavitused/`.
 SECTION_ACTION = "action"
@@ -87,6 +91,7 @@ TYPE_RANK = {
     TYPE_ASSIGNMENT: 2,
     TYPE_PERSONAL: 3,
     TYPE_REGISTER: 4,
+    TYPE_CANDIDATES: 5,
 }
 
 #: The one state vocabulary the panel, the page and the block draw.
@@ -179,6 +184,8 @@ _ROUTES: dict[tuple[str, str], tuple[str, str]] = {
     (TYPE_PERSONAL, "unread"): ("notifications:personal_unread", "pk"),
     (TYPE_REGISTER, "read"): ("notifications:register_read", "pk"),
     (TYPE_REGISTER, "unread"): ("notifications:register_unread", "pk"),
+    (TYPE_CANDIDATES, "read"): ("notifications:candidates_read", "pk"),
+    (TYPE_CANDIDATES, "unread"): ("notifications:candidates_unread", "pk"),
 }
 
 
@@ -470,6 +477,40 @@ def _register_items(user: Any) -> list[InboxItem]:
     return [register_item(row) for row in notices.due_unread(user).select_related("matter")]
 
 
+#: The label of a «Uued eelnõud registrites» item, once.
+CANDIDATES_LABEL = "Uued eelnõud registrites"
+
+
+def candidates_item(row: Any, *, state: str = STATE_UNREAD, can_unread: bool = False) -> InboxItem:
+    """The sweep's notice: new drafts wait on «Uued eelnõud» (docs/adr/0218 §7)."""
+    unread = state == STATE_UNREAD
+    day = timezone.localtime(row.updated_at).date()
+    count = row.candidates
+    return InboxItem(
+        type=TYPE_CANDIDATES,
+        kind=INFO,
+        title="Uued eelnõud",
+        label=CANDIDATES_LABEL,
+        date=day,
+        date_label=format_estonian_date(day),
+        url=reverse("register_watch:candidates"),
+        is_unread=unread,
+        pk=row.pk,
+        section=SECTION_INFO,
+        can_read=unread,
+        note="1 uus kandidaat" if count == 1 else f"{count} uut kandidaati",
+        at=row.created_at,
+        state=state,
+        can_unread=can_unread,
+    )
+
+
+def _candidates_items(user: Any) -> list[InboxItem]:
+    from app.register_watch import candidate_notices
+
+    return [candidates_item(row) for row in candidate_notices.due_unread(user)]
+
+
 def inbox_for(user: Any, today: date | None = None) -> list[InboxItem]:
     """Everything awaiting the signed-in reader's attention now, in one order."""
     if not _signed_in(user):
@@ -482,6 +523,7 @@ def inbox_for(user: Any, today: date | None = None) -> list[InboxItem]:
     items += _assignment_items(user)
     items += _personal_items(user, day)
     items += _register_items(user)
+    items += _candidates_items(user)
     return sorted(items, key=lambda item: item.sort_key)
 
 
@@ -499,7 +541,7 @@ def inbox_count(user: Any, today: date | None = None) -> int:
     if not _signed_in(user):
         return 0
     from app.notifications import personal
-    from app.register_watch import notices
+    from app.register_watch import candidate_notices, notices
 
     day = _today(today)
     return (
@@ -508,6 +550,7 @@ def inbox_count(user: Any, today: date | None = None) -> int:
         + _assignment_queryset(user).count()
         + personal.due_unread(user, day).count()
         + notices.due_unread(user).count()
+        + candidate_notices.due_unread(user).count()
     )
 
 

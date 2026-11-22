@@ -1,0 +1,26 @@
+<li class="regwatch__row">
+  <span class="regwatch__strength regwatch__strength--{{ candidate.strength|default:'unjudged'|lower }}">{{ candidate.get_strength_display }}</span>
+  <div class="regwatch__body">
+    <span class="regwatch__title">{{ candidate.title }}</span>
+    {% if candidate.reason %}<span class="regwatch__note">{{ candidate.reason }}</span>{% endif %}
+    {% if candidate.reopened_at %}<span class="regwatch__meta">Tagasi nimekirjas: jõudis Riigikokku.</span>{% endif %}
+    <ul class="regwatch__items">
+      {% for item in candidate.items.all %}
+        <li><span class="regwatch__date">{{ item.occurred_on|date:"d.m.Y"|default:"—" }}</span> {% if item.url %}<a href="{{ item.url }}" target="_blank" rel="noopener noreferrer">{{ item.get_source_display }}</a>{% else %}{{ item.get_source_display }}{% endif %}{% if item.detail %} <span class="regwatch__meta">· {{ item.detail }}</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% if candidate.related_shown %}<span class="regwatch__meta">Võib olla seotud: <a href="{% url 'matters:matter_detail' pk=candidate.related_shown.pk %}">{{ candidate.related_shown.title }}</a></span>{% endif %}
+  </div>
+  {% if may_decide %}
+    <form class="regwatch__actions regwatch__actions--stack" method="post" action="{% url 'register_watch:candidate_decide' pk=candidate.pk %}">
+      {% csrf_token %}
+      <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa teemaks</button>
+      <span class="regwatch__attach">
+        <label class="visually-hidden" for="seo-{{ candidate.pk }}">Teema number</label>
+        <input id="seo-{{ candidate.pk }}" name="teema" class="field__input regwatch__teema-input" type="text" inputmode="numeric" placeholder="Teema nr" value="{{ candidate.related_shown.display_reference|default:'' }}">
+        <button type="submit" name="otsus" value="seo" class="button button--secondary button--tiny">Seo</button>
+      </span>
+      <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta kõrvale</button>
+    </form>
+  {% endif %}
+</li>

@@ -1827,6 +1827,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "notifications:personal_unread": "C: the recipient's own reminder read stamp, undone",
     "notifications:register_read": "C: the owner's own read stamp on a register notice",
     "notifications:register_unread": "C: the owner's own register notice read stamp, undone",
+    # «Uued eelnõud registrites» (ADR 0218 §7): the same personal stamps on the
+    # sweep's notice, resolved by ``recipient=request.user``.
+    "notifications:candidates_read": "C: the recipient's own read stamp on a new-topics notice",
+    "notifications:candidates_unread": "C: the recipient's own new-topics notice stamp, undone",
     "notifications:personal_remove": "C: removes the recipient's own reminder",
     "notifications:settings": "C: the signed-in person's own notification preferences",
     "notifications:reset_settings": "C: resets the signed-in person's own preferences",
@@ -1854,6 +1858,12 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # business-write rule and cannot be satisfied by a READER or ADMINISTRATOR.
     "intelligence:confirm_work_victory": "B: department head only",
     "intelligence:reject_work_victory": "B: department head only",
+    # «Uued eelnõud» (ADR 0218 §4, §6): gated by `business_write_required` and
+    # the page's own audience; a candidate is no Teema's record, and «Seo»
+    # writes on a Teema only through `add_matter_procedural_link` on one the
+    # person may see (tests/test_new_topics.py).
+    "register_watch:candidate_decide": "A: gated; candidates belong to no Teema",
+    "register_watch:candidate_audience": "B: department head only",
     # E — migration and reconciliation tooling, governed by their own explicit
     # administrator/reviewer checks rather than by business authorship.
     "legacy_import:opinion_archive_link": "E: archive reconciliation, reviewer-gated",

@@ -93,7 +93,10 @@ OSAKOND_BUDGET = 51
 #: register notices, one read whatever the desk holds.
 #: +5 for the foldout's «arvamusi välja» from the one reader (docs/adr/0214 §6):
 #: one read of its Teemad and sent records, whatever the desk holds.
-MINU_ASJAD_BUDGET = 52
+#: +1 for «Uued eelnõud registrites» (docs/adr/0218 §7): the reader's own unread
+#: notice of the nightly sweep, one read whatever the desk holds (the audience
+#: and the list's state are conditions inside it, not reads of their own).
+MINU_ASJAD_BUDGET = 53
 #: Statistika +1 since the UX package of 2026-10-28: «Mida need arvud
 #: tähendavad» is a remembered block, and the reader's saved block states are
 #: read once per request (app/accounts/disclosures.py).

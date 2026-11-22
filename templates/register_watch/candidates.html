@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Uued eelnõud · {{ application_name }}{% endblock %}
+
+{% comment %}
+Letters whose title names no draft («Eelnõu kooskõlastamine») are a third,
+folded group: nobody can judge them from the title, so the model is not asked.
+Drafts the nightly sweep found in the registers that are not a Teema yet
+(docs/adr/0218). A row changes nothing until a person presses «Lisa teemaks»
+(Uus teema, filled from the row), «Seo» (the row's register links on an
+existing Teema) or «Jäta kõrvale». The model's strength and reason are shown,
+never acted on; weak and unrelated rows are folded at the foot.
+{% endcomment %}
+
+{% block content %}
+<div class="page">
+  <div class="pagehead">
+    <h1 class="pagehead__title">Uued eelnõud</h1>
+    <span class="pagehead__context">{{ shown|length }}</span>
+  </div>
+
+  <p class="regwatch__meta">Eelnõud, mis on viimastel päevadel registritesse jõudnud ja pole veel teemad.{% if last_run %} Viimati otsitud {{ last_run.started_at|date:"d.m.Y H:i" }}.{% endif %}{% if not sweep_on %} Öine otsing on välja lülitatud.{% endif %}</p>
+
+  {% if is_head %}
+    <form class="regwatch__audience" method="post" action="{% url 'register_watch:candidate_audience' %}">
+      {% csrf_token %}
+      {% if everyone %}
+        <span class="regwatch__meta">Leht on nähtav kõigile.</span>
+        <input type="hidden" name="koigile" value="0">
+        <button type="submit" class="button button--quiet button--tiny">Näita ainult mulle</button>
+      {% else %}
+        <span class="regwatch__meta">Leht on nähtav ainult osakonnajuhatajale.</span>
+        <input type="hidden" name="koigile" value="1">
+        <button type="submit" class="button button--quiet button--tiny">Näita kõigile</button>
+      {% endif %}
+    </form>
+  {% endif %}
+
+  <ul class="regwatch__list">
+    {% for candidate in shown %}{% include "register_watch/_candidate.html" %}
+    {% empty %}<li class="regwatch__empty">Uusi kandidaate ei ole.</li>{% endfor %}
+  </ul>
+
+  {% if folded %}
+    <details class="regwatch__unrelated">
+      <summary>Tõenäoliselt ettevõtjaid ei puuduta ({{ folded|length }})</summary>
+      <ul class="regwatch__list">
+        {% for candidate in folded %}{% include "register_watch/_candidate.html" %}{% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+
+  {% if nameless %}
+    <details class="regwatch__unrelated">
+      <summary>Pealkiri ei ütle, millise eelnõuga on tegu ({{ nameless|length }})</summary>
+      <ul class="regwatch__list">
+        {% for candidate in nameless %}{% include "register_watch/_candidate.html" %}{% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+</div>
+{% endblock %}

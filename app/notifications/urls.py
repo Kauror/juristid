@@ -41,4 +41,6 @@ urlpatterns = [
     # «Registris uus dokument» (docs/adr/0217 §6).
     path("registrid/<uuid:pk>/loetud/", views.register_read, name="register_read"),
     path("registrid/<uuid:pk>/lugemata/", views.register_unread, name="register_unread"),
+    path("uued-eelnoud/<uuid:pk>/loetud/", views.candidates_read, name="candidates_read"),
+    path("uued-eelnoud/<uuid:pk>/lugemata/", views.candidates_unread, name="candidates_unread"),
 ]

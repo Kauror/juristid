@@ -478,6 +478,37 @@ def register_unread(request: HttpRequest, pk: Any) -> HttpResponse:
     return _answer(request, inbox.TYPE_REGISTER, row.pk, anchor=True)
 
 
+def _own_candidates_or_404(request: HttpRequest, pk: Any) -> Any:
+    from app.register_watch import candidate_notices
+
+    row = candidate_notices.own_row(request.user, pk)
+    if row is None:
+        raise Http404("Teavitust ei leitud.")
+    return row
+
+
+@login_required
+@require_http_methods(["POST"])
+def candidates_read(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Märgi loetuks» on the reader's own «Uued eelnõud» notice (docs/adr/0218 §7)."""
+    from app.register_watch import candidate_notices
+
+    row = _own_candidates_or_404(request, pk)
+    candidate_notices.mark_read(row)
+    return _answer(request, inbox.TYPE_CANDIDATES, row.pk, anchor=True)
+
+
+@login_required
+@require_http_methods(["POST"])
+def candidates_unread(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Märgi lugemata» on the reader's own «Uued eelnõud» notice."""
+    from app.register_watch import candidate_notices
+
+    row = _own_candidates_or_404(request, pk)
+    candidate_notices.mark_unread(row)
+    return _answer(request, inbox.TYPE_CANDIDATES, row.pk, anchor=True)
+
+
 @login_required
 @require_http_methods(["POST"])
 def personal_remove(request: HttpRequest, pk: Any) -> HttpResponse:
