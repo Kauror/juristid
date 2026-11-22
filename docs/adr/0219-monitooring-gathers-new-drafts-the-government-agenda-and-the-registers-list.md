@@ -79,3 +79,19 @@ in full and older ones folded. Asked on 2026-11-22, the owner chose:
 - «Registrite dokumendid» lists one shut fold per Teema (opened when filtered to one
   Teema), and its head offers «Jäta kõik vahele»: every document still waiting on that
   Teema is skipped through `watch.dismiss`, one by one, exactly as «Jäta vahele».
+
+## Amendment 2026-11-22 (2) — agenda items onto their Teema (owner: «both»)
+
+- An agenda item the model tied to a Teema (§3: only an offered open, unrestricted one) and
+  judged Tugev, Võimalik or Nõrk is a **proposal on that Teema**: on «Valitsuse info» with
+  «Lisa teemale» / «Jäta vahele», and on the Teema's own «Registritest» tab under
+  «Valitsuse istungi päevakorrast» with «Lisa märkena» / «Jäta vahele».
+- «Lisa teemale» writes a `Menetluse areng` through `add_procedural_development`: dated the
+  session, titled «Valitsuse istung: <item>», its note the item's number, presenter, type, the
+  Government's text and the agenda's link. «Jäta vahele» records the decision only. Only a
+  waiting item on an open Teema the reader may see; a decided one is refused.
+- The «Registritest» badge counts waiting proposals with the register documents (one query);
+  a run that stores an agenda tells each tied Teema's owner in the bell («Registris uus
+  dokument», ADR 0217 §6), and that notice stays due while a proposal waits.
+- Migration `register_watch` 0006: `AgendaItem.status` (NOT NULL, database default PENDING),
+  `decided_by`, `decided_at`, `development` (nullable).

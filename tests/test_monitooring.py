@@ -401,3 +401,118 @@ def test_a_lawyer_still_decides_on_the_teemas_own_tab(specialist):
     assert answer["Location"] == reverse("matters:matter_registers", kwargs={"pk": matter.pk})
     finding.refresh_from_db()
     assert finding.status == FindingStatus.DISMISSED
+
+
+# -- agenda items onto their Teema (owner, 2026-11-22: «both») ------------------------
+
+
+def _tied(owner, strength=Strength.STRONG, **matter):
+    teema = factories.MatterFactory(owner=owner, **matter)
+    a, _ = GovernmentAgenda.objects.get_or_create(
+        url="https://valitsus.ee/uudised/valitsuse-191126-istungi-kommenteeritud-paevakord",
+        defaults={
+            "title": "Valitsuse 19.11.26 istungi kommenteeritud päevakord",
+            "session_date": SESSION,
+        },
+    )
+    item = AgendaItem.objects.create(
+        agenda=a,
+        number=a.items.count() + 1,
+        title="Maksukorralduse seaduse eelnõu",
+        presenter="rahandusminister",
+        kind="Seaduse eelnõu",
+        text="Esimene lõik.\n\nTeine lõik.",
+        strength=strength,
+        reason="Puudutab ettevõtjaid.",
+        related_matter=teema,
+    )
+    return teema, item
+
+
+def test_a_tied_item_waits_on_the_teemas_registritest_tab(specialist):
+    teema, item = _tied(specialist)
+    client = _signed_in(specialist)
+
+    tab = client.get(reverse("matters:matter_registers", kwargs={"pk": teema.pk})).content.decode()
+    detail = client.get(reverse("matters:matter_detail", kwargs={"pk": teema.pk})).content.decode()
+
+    assert "Valitsuse istungi päevakorrast" in tab
+    assert "1. Maksukorralduse seaduse eelnõu" in tab
+    assert reverse("register_watch:agenda_decide", kwargs={"pk": item.pk}) in tab
+    # The tab's badge counts it, as a register document would be.
+    assert re.search(r'Registritest\s*<span class="tabs__badge"[^>]*>1<', detail)
+
+
+def test_an_item_the_model_found_irrelevant_is_no_proposal(specialist):
+    teema, _ = _tied(specialist, strength=Strength.NONE)
+    tab = _signed_in(specialist).get(reverse("matters:matter_registers", kwargs={"pk": teema.pk}))
+    assert "Valitsuse istungi päevakorrast" not in tab.content.decode()
+
+
+def test_adding_writes_a_menetluse_areng_and_returns_to_the_tab(specialist):
+    from app.matters.models import MatterProceduralDevelopment
+    from app.register_watch.models import AgendaItemStatus
+
+    teema, item = _tied(specialist)
+
+    answer = _signed_in(specialist).post(
+        reverse("register_watch:agenda_decide", kwargs={"pk": item.pk}),
+        {"otsus": "lisa", "tagasi": "teema"},
+    )
+
+    assert answer["Location"] == reverse("matters:matter_registers", kwargs={"pk": teema.pk})
+    development = MatterProceduralDevelopment.objects.get(matter=teema)
+    assert development.title == "Valitsuse istung: Maksukorralduse seaduse eelnõu"
+    assert development.occurred_on == SESSION
+    assert "punkt 1 · Esitaja: rahandusminister · Tüüp: Seaduse eelnõu" in development.note
+    assert "Teine lõik." in development.note and item.agenda.url in development.note
+    item.refresh_from_db()
+    assert item.status == AgendaItemStatus.ADDED and item.development == development
+    assert item.decided_by == specialist
+
+
+def test_skipping_writes_nothing_and_a_second_decision_is_refused(specialist):
+    from app.matters.models import MatterProceduralDevelopment
+    from app.register_watch.models import AgendaItemStatus
+
+    teema, item = _tied(specialist)
+    url = reverse("register_watch:agenda_decide", kwargs={"pk": item.pk})
+
+    _signed_in(specialist).post(url, {"otsus": "jata"})
+
+    item.refresh_from_db()
+    assert item.status == AgendaItemStatus.DISMISSED
+    assert not MatterProceduralDevelopment.objects.filter(matter=teema).exists()
+    assert _signed_in(specialist).post(url, {"otsus": "lisa"}).status_code == 404
+
+
+def test_a_reader_cannot_add(specialist, reader):
+    _, item = _tied(specialist)
+    url = reverse("register_watch:agenda_decide", kwargs={"pk": item.pk})
+    assert _signed_in(reader).post(url, {"otsus": "lisa"}).status_code == 404
+
+
+def test_valitsuse_info_offers_lisa_teemale_and_then_says_it_was_added(department_head):
+    _, item = _tied(department_head)
+    client = _signed_in(department_head)
+
+    assert "Lisa teemale" in client.get(AGENDAS).content.decode()
+    client.post(reverse("register_watch:agenda_decide", kwargs={"pk": item.pk}), {"otsus": "lisa"})
+    page = client.get(AGENDAS).content.decode()
+
+    assert "lisatud teemale" in page and "Lisa teemale" not in page
+
+
+@override_settings(REGISTER_SWEEP_AI=True)
+def test_a_run_tells_the_owner_of_a_tied_teema(site, specialist):
+    from app.register_watch import notices
+
+    teema = factories.MatterFactory(owner=specialist, title="Maksukorralduse muudatused")
+
+    agenda.run(today=SESSION, ai_client=FakeClient(related=str(teema.pk)))
+
+    assert notices.due_unread(specialist).filter(matter=teema).count() == 1
+    item = AgendaItem.objects.get(number=1)
+    agenda.dismiss(item, actor=specialist)
+    # Nothing waits on the Teema any more: the notice is history.
+    assert notices.due_unread(specialist).filter(matter=teema).count() == 0

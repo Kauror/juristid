@@ -151,6 +151,9 @@ def run(
     if worth:
         with transaction.atomic():
             candidate_notices.notify_agendas(len(worth))
+    if stored:
+        with transaction.atomic():
+            tell_owners(stored)
     return Outcome(stored=stored, judged=judged, usage=usage, errors=errors)
 
 
@@ -308,3 +311,125 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             agenda.save(update_fields=["judged_at", "updated_at"])
     usage.judged += judged
     return judged
+
+
+# -- onto the Teema (owner, 2026-11-22: «both») ------------------------------------------
+#
+# An item the model tied to a Teema is a proposal on that Teema: on Monitooring's
+# «Valitsuse info» («Lisa teemale») and on the Teema's own «Registritest» tab, counted in
+# the tab's badge and told to the owner in the bell. Nothing reaches the Teema until a
+# person adds it; then it is a `Menetluse areng` through `+ Märge`'s own use case.
+
+#: The strengths that make a tied item a proposal on its Teema (Ei puutu never does).
+PROPOSED = (Strength.STRONG, Strength.POSSIBLE, Strength.WEAK)
+ALREADY_DECIDED = "See päevakorrapunkt on juba otsustatud."
+
+
+def proposals() -> Any:
+    """Every waiting proposal: tied to a Teema, judged to matter, not yet decided."""
+    from app.register_watch.models import AgendaItemStatus
+
+    return AgendaItem.objects.filter(
+        related_matter__isnull=False, status=AgendaItemStatus.PENDING, strength__in=PROPOSED
+    )
+
+
+def teema_proposals(matter: Any) -> list[AgendaItem]:
+    """The waiting proposals on one Teema, newest session first (the caller has checked access)."""
+    return list(
+        proposals()
+        .filter(related_matter=matter)
+        .select_related("agenda")
+        .order_by("-agenda__session_date", "number")
+    )
+
+
+def own_pending(user: Any, pk: Any) -> AgendaItem | None:
+    """A waiting proposal on an open Teema the reader may see, or ``None``."""
+    from app.matters.models import Matter
+
+    visible = Matter.objects.visible_to(user).filter(is_open=True, deleted_at__isnull=True)
+    return proposals().filter(pk=pk, related_matter__in=visible).select_related("agenda").first()
+
+
+def _note(item: AgendaItem) -> str:
+    head = [f"Valitsuse {item.agenda.session_date:%d.%m.%Y} istungi päevakord, punkt {item.number}"]
+    if item.presenter:
+        head.append(f"Esitaja: {item.presenter}")
+    if item.kind:
+        head.append(f"Tüüp: {item.kind}")
+    parts = [" · ".join(head)]
+    if item.text:
+        parts.append(item.text)
+    parts.append(item.agenda.url)
+    return "\n\n".join(parts)
+
+
+def _lock(item: AgendaItem) -> AgendaItem:
+    from app.core.errors import DomainError
+    from app.register_watch.models import AgendaItemStatus
+
+    locked = (
+        # Lock the item's own row only: the Teema is a nullable join.
+        AgendaItem.objects.select_for_update(of=("self",))
+        .select_related("agenda", "related_matter")
+        .get(pk=item.pk)
+    )
+    if locked.status != AgendaItemStatus.PENDING:
+        raise DomainError(ALREADY_DECIDED)
+    return locked
+
+
+@transaction.atomic
+def add_to_teema(item: AgendaItem, *, actor: Any) -> AgendaItem:
+    """«Lisa teemale»: a `Menetluse areng` on its Teema, through `+ Märge`'s own use case."""
+    from app.core.errors import DomainError
+    from app.matters.workspace import add_procedural_development
+    from app.register_watch.models import AgendaItemStatus
+
+    locked = _lock(item)
+    if locked.related_matter is None:
+        raise DomainError(ALREADY_DECIDED)
+    result = add_procedural_development(
+        matter=locked.related_matter,
+        author=actor,
+        title=f"Valitsuse istung: {locked.title}"[:500],
+        occurred_on=locked.agenda.session_date,
+        note=_note(locked),
+    )
+    locked.status = AgendaItemStatus.ADDED
+    locked.decided_by = actor
+    locked.decided_at = timezone.now()
+    locked.development = result.record
+    locked.save(update_fields=["status", "decided_by", "decided_at", "development", "updated_at"])
+    return locked
+
+
+@transaction.atomic
+def dismiss(item: AgendaItem, *, actor: Any) -> AgendaItem:
+    """«Jäta vahele»: recorded, nothing written on the Teema."""
+    from app.register_watch.models import AgendaItemStatus
+
+    locked = _lock(item)
+    locked.status = AgendaItemStatus.DISMISSED
+    locked.decided_by = actor
+    locked.decided_at = timezone.now()
+    locked.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+    return locked
+
+
+def tell_owners(agendas: list[GovernmentAgenda]) -> int:
+    """The owner's bell («Registris uus dokument») for each Teema a new agenda's items tie to."""
+    from collections import Counter
+
+    from app.matters.models import Matter
+    from app.register_watch import notices
+
+    counts = Counter(
+        proposals().filter(agenda__in=agendas).values_list("related_matter_id", flat=True)
+    )
+    told = 0
+    for matter in Matter.objects.filter(pk__in=counts, is_open=True, deleted_at__isnull=True):
+        if notices.notify(matter, counts[matter.pk]) is not None:
+            told += 1
+    return told

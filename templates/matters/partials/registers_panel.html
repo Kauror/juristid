@@ -18,8 +18,37 @@ watch's own routes and come back here (`tagasi=teema`).
     <ul class="regwatch__list">
       {% for finding in register_shown %}{% include "register_watch/_finding.html" %}{% endfor %}
     </ul>
-  {% elif register_state.state == "watched" %}
+  {% elif register_state.state == "watched" and not agenda_proposals %}
     <p class="regwatch__empty">Uusi dokumente ei ole.</p>
+  {% endif %}
+
+  {% if agenda_proposals %}
+    {% comment %}
+      The Government's agenda items the model tied to this Teema (docs/adr/0219,
+      amendment 2026-11-22). «Lisa märkena» writes a `Menetluse areng`; nothing
+      reaches the Teema before that.
+    {% endcomment %}
+    <h3 class="regtab__subhead">Valitsuse istungi päevakorrast</h3>
+    <ul class="regwatch__list">
+      {% for item in agenda_proposals %}
+        <li class="regwatch__row">
+          <span class="regwatch__date">{{ item.agenda.session_date|date:"d.m.Y" }}</span>
+          <div class="regwatch__body">
+            <a href="{{ item.agenda.url }}" target="_blank" rel="noopener noreferrer">{{ item.number }}. {{ item.title }}</a>
+            <span class="regwatch__meta">Valitsuse istung{% if item.presenter %} · {{ item.presenter }}{% endif %}{% if item.kind %} · {{ item.kind }}{% endif %}</span>
+            {% if item.reason %}<span class="regwatch__note">{{ item.reason }}</span>{% endif %}
+          </div>
+          {% if can_write_business_content %}
+            <form class="regwatch__actions" method="post" action="{% url 'register_watch:agenda_decide' pk=item.pk %}" {% include "matters/partials/registers_swap.html" %}>
+              {% csrf_token %}
+              <input type="hidden" name="tagasi" value="teema">
+              <button type="submit" name="otsus" value="lisa" class="button button--primary button--tiny">Lisa märkena</button>
+              <button type="submit" name="otsus" value="jata" class="button button--quiet button--tiny">Jäta vahele</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
   {% endif %}
 
   {% if register_unrelated %}

@@ -120,6 +120,9 @@ NOT_MATTER_DATA = {
     # A new-topic candidate: a draft in a public register that is no Teema yet;
     # a Teema it names is shown only through `visible_to` (ADR 0218).
     "register_watch:candidate_decide": "new-topic candidate",
+    # A Government agenda item: public text; it acts only on an open Teema the
+    # reader may see, else 404 (ADR 0219, amendment 2026-11-22).
+    "register_watch:agenda_decide": "Government agenda item",
     "legacy_import:opinion_archive_file": "archive",
     "legacy_import:opinion_archive_link": "archive",
     "legacy_import:opinion_decide": "archive",

@@ -378,6 +378,12 @@ class GovernmentAgenda(BaseModel):
         return self.title
 
 
+class AgendaItemStatus(models.TextChoices):
+    PENDING = "PENDING", "Ootab"
+    ADDED = "ADDED", "Lisatud teemale"
+    DISMISSED = "DISMISSED", "Jäetud vahele"
+
+
 class AgendaItem(BaseModel):
     """One numbered item of a Government agenda, as published, with the model's verdict."""
 
@@ -401,6 +407,32 @@ class AgendaItem(BaseModel):
         blank=True,
         related_name="+",
         verbose_name="seotud teema",
+    )
+    #: What a person did with the item on its Teema (owner, 2026-11-22): «Lisa teemale»
+    #: wrote a `Menetluse areng` (`development`), «Jäta vahele» only recorded it.
+    status = models.CharField(
+        max_length=16,
+        choices=AgendaItemStatus.choices,
+        default=AgendaItemStatus.PENDING,
+        db_default=AgendaItemStatus.PENDING,
+        verbose_name="olek",
+    )
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="otsustas",
+    )
+    decided_at = models.DateTimeField(null=True, blank=True, verbose_name="otsustatud")
+    development = models.ForeignKey(
+        "matters.MatterProceduralDevelopment",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="märge",
     )
 
     class Meta:

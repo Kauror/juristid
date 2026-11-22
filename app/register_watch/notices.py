@@ -15,7 +15,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from django.db.models import Exists, OuterRef, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.utils import timezone
 
 from app.core.authorization import may_read_business_content
@@ -30,12 +30,18 @@ def _reader(user: Any) -> bool:
     )
 
 
-def _waiting() -> Exists:
-    return Exists(
+def _waiting() -> Q:
+    """Something still waits on the Teema: a register document, or a Government agenda item
+    tied to it (docs/adr/0219, amendment 2026-11-22)."""
+    from app.register_watch import agenda
+
+    documents = Exists(
         WatchFinding.objects.filter(
             matter=OuterRef("matter"), status=FindingStatus.PENDING
         ).exclude(relevance=Relevance.UNRELATED)
     )
+    items = Exists(agenda.proposals().filter(related_matter=OuterRef("matter")))
+    return Q(documents) | Q(items)
 
 
 def own(user: Any) -> QuerySet[RegisterNotice]:

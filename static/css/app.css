@@ -17704,3 +17704,12 @@ a.statpanel__note {
   align-items: center;
   gap: var(--spacing-3);
 }
+
+/* A Government agenda item's tie to a Teema, with «Lisa teemale» beside it
+   (docs/adr/0219, amendment 2026-11-22). */
+.agenda__teema {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2) var(--spacing-3);
+}

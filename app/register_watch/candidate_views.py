@@ -224,6 +224,36 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 @login_required
 @require_http_methods(["POST"])
 @business_write_required
+def agenda_decide(request: HttpRequest, pk: Any) -> HttpResponse:
+    """«Lisa teemale» or «Jäta vahele» on a Government agenda item tied to a Teema.
+
+    From Monitooring → «Valitsuse info» or from the Teema's «Registritest» tab
+    (``tagasi=teema``), and back there. Only a waiting item on an open Teema the
+    reader may see; anything else is a 404.
+    """
+    from app.register_watch import agenda
+
+    item = agenda.own_pending(request.user, pk)
+    if item is None:
+        raise Http404("Päevakorrapunkti ei leitud.")
+    try:
+        if request.POST.get("otsus") == "lisa":
+            agenda.add_to_teema(item, actor=request.user)
+            messages.success(request, "Päevakorrapunkt lisati teemale.")
+        else:
+            agenda.dismiss(item, actor=request.user)
+    except DomainError as refusal:
+        messages.error(request, str(refusal))
+    if request.POST.get("tagasi") == "teema":
+        return HttpResponseRedirect(
+            reverse("matters:matter_registers", kwargs={"pk": item.related_matter_id})
+        )
+    return HttpResponseRedirect(reverse("register_watch:agendas"))
+
+
+@login_required
+@require_http_methods(["POST"])
+@business_write_required
 def audience(request: HttpRequest) -> HttpResponse:
     """The head opens Monitooring to every reader, or keeps it to the head (ADR 0219).
 
