@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import ast
 import inspect
+import re
 import textwrap
 from typing import Any
 
@@ -63,7 +64,11 @@ def code_names(obj: Any) -> set[str]:
         elif isinstance(node, ast.keyword) and node.arg:
             names.update(_orm_parts(node.arg))
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-            names.update(_orm_parts(node.value))
+            # Every identifier-shaped word in the string, then its ORM parts:
+            # `order_by("-response_deadline")`, `attrgetter("matter.response_deadline")`
+            # and a raw SQL string name the field as surely as a keyword does.
+            for word in re.findall(r"[A-Za-z_]\w*", node.value):
+                names.update(_orm_parts(word))
         elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             names.add(node.name)
         elif isinstance(node, ast.arg):
