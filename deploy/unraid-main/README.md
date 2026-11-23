@@ -1760,9 +1760,13 @@ unchanged: an exact comparison.
 **Then prove the image loads that file, before `migrate`.** The lines above vouch
 for the migration *file* in git; application code could still move where Django
 loads an app's migrations from at runtime. So d1, with the release image and the
-web service's own environment, runs the image's copy of the same helper:
+web service's own environment, runs the same pinned copy of the helper inside the
+release image (a self-contained step: its own temporary file and `trap`):
 
 ```bash
+set -euo pipefail
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
 M="$(printf '%s\n' "$FP_EXPECTED_LINES" | sed -n 's/^migration_leaves: newly present: //p')"
 set -- --check-loaded --root /app
 if [ -n "$M" ]; then
@@ -1776,8 +1780,7 @@ docker run --rm --env-file "$WEB_ENV_FILE" -v "$tmp:/tmp/release_fingerprint.py:
   -I /tmp/release_fingerprint.py "$@" < /dev/null || exit 1
 ```
 
-(`$tmp` is the file from the snippet above, still within its `trap`.) Before it
-looks, it imports what `manage.py migrate` imports first — Django's set-up, the
+Before it looks, it imports what `manage.py migrate` imports first — Django's set-up, the
 system checks with the URLconf, every app's `management` package.
 
 It refuses (exit 3) unless `MIGRATION_MODULES` is empty after Django starts, every
