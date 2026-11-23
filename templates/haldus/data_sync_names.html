@@ -43,12 +43,12 @@
         <details class="accordion dsync__history" id="ajaloolised-nimed">
           <summary class="accordion__head">
             <span class="accordion__caret" aria-hidden="true"></span>
-            <h3 class="accordion__title">Ajaloolised ja muud nimed ({{ names.other|length }})</h3>
+            <h3 class="accordion__title" id="dsync-names-other">Ajaloolised ja muud nimed ({{ names.other|length }})</h3>
           </summary>
           <div class="accordion__body">
             <p class="acctnote">Nimed, kellel avatud teemat ei ole: lõpetatud või ajalooliste teemade vastutajad, nimed, mida mainib ainult vastutaja vahetus, ja käsitsi seotud nimed, mida ükski teema ei kanna. Need ei vaja tegevust ega mõjuta öist sünkroonimist enne, kui mõni neist saab avatud teema.</p>
             <div class="accttable">
-              <table class="data-table dsync__table">
+              <table class="data-table dsync__table" aria-labelledby="dsync-names-other">
                 <thead>
                   <tr><th scope="col">Nimi Lovable'is</th><th scope="col">Teemasid</th><th scope="col">Vastutaja vahetustes</th><th scope="col">Juristides</th><th scope="col">Kuidas</th><th scope="col">Seis</th></tr>
                 </thead>

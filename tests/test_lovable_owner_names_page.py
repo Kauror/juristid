@@ -181,6 +181,52 @@ def test_pinned_names_keep_their_place_by_open_work(lawyers):
     assert future.ok and future.alias is not None and future.topics == 0
 
 
+def test_an_open_new_topic_counts_like_a_cohort_topic(lawyers):
+    """A new Lovable topic is read beside the cohort (`new_topics`); its owner is
+    a current owner too, and unresolved it is a problem (review of #678, P2)."""
+    topic_id, bundle = _topic(7, "Uus Jurist")
+    moment = timezone.now()
+    run = LovableSyncRun.objects.create(
+        run_key="2026-11-23T00000n-test",
+        trigger="MANUAL",
+        mode="COMPARE",
+        status="SUCCEEDED",
+        started_at=moment,
+        mapping_version="lovable-sync/1",
+    )
+    LovableSyncSnapshot.objects.create(
+        run=run,
+        taken_at=moment,
+        sha256="0" * 64,
+        document={
+            "cohort": dict([_topic(1, "Mari Näidis")]),
+            "new_topics": {"cohort": {topic_id: bundle}},
+        },
+    )
+    names = sync_admin.owner_names()
+    assert [row.name for row in names.current] == ["Uus Jurist", "Mari Näidis"]
+    assert names.problems == 1
+
+
+def test_a_pin_matches_a_name_spelt_with_other_case_and_diacritics(lawyers):
+    """Pin and topic owner are compared by `lovable_sync.name_key` on both sides
+    (case, spaces and õäöüšž folded): one current row, found by the pin."""
+    mart = factories.UserFactory(display_name="Märt Kolmas", role=UserRole.SPECIALIST)
+    LovableOwnerAlias.objects.create(
+        name="Märt Näidis", name_key=lovable_sync.name_key("Märt Näidis"), user=mart
+    )
+    _reading(_topic(1, "MART  NAIDIS"))
+    names = sync_admin.owner_names()
+    assert len(names.current) == 1 and names.other == []
+    row = names.current[0]
+    assert (row.answer.via, row.person_name, row.open_topics) == (
+        lovable_sync.VIA_ALIAS,
+        "Märt Kolmas",
+        1,
+    )
+    assert names.problems == 0
+
+
 def test_the_newest_reading_decides_open_and_closed(lawyers):
     earlier = timezone.now() - dt.timedelta(days=1)
     _reading(_topic(1, "Uus Jurist"), at=earlier, key="a")
