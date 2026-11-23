@@ -107,6 +107,29 @@ in full and older ones folded. Asked on 2026-11-22, the owner chose:
 - The agenda model's prompt carries the Koda house style and its reasons pass
   `house_style.fix` (docs/koda-house-style.md).
 
+## Amendment 2026-11-23 (2) — bounded agenda verdicts, settled items untouched (audit HR-02)
+
+§3's «A failure leaves the agenda «hindamata» for the next run» had no end: one item
+the model left out kept `judged_at` empty, so the whole agenda was sent again every
+half hour, and each pass rewrote the strength, reason and Teema of items a person had
+already added or marked read. Now:
+
+- **Only waiting, unjudged items are sent and written.** An item judged, added
+  («Lisa teemale») or marked read is neither in the prompt nor saved over; the write
+  re-reads the items under lock, so a decision made while the model answered stands.
+- **`judged_at` means «an answer with verdicts was read»**, not «every item was
+  answered». Items that answer left out, or answered with an unusable strength, stay
+  «Hindamata» (`Strength.UNJUDGED`, no new status), are shown as such («N punkti
+  hindamata» on the agenda, a «Hindamata» mark on the item) and are not asked again.
+- **A failed request, a cut-off answer, an unreadable one and a readable one with no
+  usable verdict are retried by later runs, at most three requests per agenda in all**
+  (`agenda.MAX_ATTEMPTS`, counted in `GovernmentAgenda.ai_attempts`, migration
+  `register_watch` 0008). An agenda stored before this may be asked at most three more
+  times.
+- §5's bell is unchanged in meaning: an agenda is told when an item may matter or
+  when items remain unjudged; a Teema owner is told about a proposal from whichever
+  run produced it, a retry included.
+
 ## Amendment 2026-11-23 (3) — what may be sent to the model (audit HR-01, HR-09)
 
 §3's «A restricted Teema is never sent» now holds for the letters too, and TEST data

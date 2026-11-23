@@ -135,7 +135,10 @@ def agenda_list(request: HttpRequest) -> HttpResponse:
             else:
                 groups["rest"].append(item)
         groups["shown"].sort(key=lambda i: (i.strength != Strength.STRONG, i.number))
-        weeks.append({"agenda": a, **groups, "total": len(a.items.all())})
+        # Items no model verdict was read for, said in so many words (audit HR-02):
+        # a partial answer leaves them «Hindamata», never quietly «Ei puutu».
+        unjudged = sum(1 for item in a.items.all() if item.strength == Strength.UNJUDGED)
+        weeks.append({"agenda": a, **groups, "total": len(a.items.all()), "unjudged": unjudged})
     return render(
         request,
         "register_watch/agendas.html",
