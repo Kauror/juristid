@@ -51,10 +51,21 @@ def order_violations(root: pathlib.Path = APP_ROOT) -> list[str]:
     found: list[str] = []
     for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        # `from … import require_POST as rp`: the alias is the decorator's name here.
+        aliases = {
+            alias.asname: alias.name
+            for imp in ast.walk(tree)
+            if isinstance(imp, ast.ImportFrom)
+            for alias in imp.names
+            if alias.asname and alias.name in METHOD_RESTRICTIONS | REFUSAL_GUARDS
+        }
         for node in ast.walk(tree):
             if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
-            names = [_decorator_name(d) for d in node.decorator_list]
+            names = [
+                aliases.get(name, name)
+                for name in (_decorator_name(d) for d in node.decorator_list)
+            ]
             where = f"{path.relative_to(root.parent).as_posix()}:{node.lineno}:{node.name}"
             for index, name in enumerate(names):
                 if name not in REFUSAL_GUARDS:
@@ -90,12 +101,19 @@ def test_the_scan_recognises_an_inverted_view(tmp_path):
         "@login_required\n"
         "@decorators.business_write_required\n"
         "@require_POST\n"
-        "def correct(request): ...\n",
+        "def correct(request): ...\n"
+        "\n"
+        "from django.views.decorators.http import require_POST as only_post\n"
+        "@login_required\n"
+        "@only_post\n"
+        "@business_write_required\n"
+        "def aliased(request): ...\n",
         encoding="utf-8",
     )
 
     assert order_violations(package) == [
-        "app/views.py:4:inverted — require_http_methods above business_write_required"
+        "app/views.py:4:inverted — require_http_methods above business_write_required",
+        "app/views.py:15:aliased — require_POST above business_write_required",
     ]
 
 
