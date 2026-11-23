@@ -12670,6 +12670,13 @@ section:has(.pw-more[open]) tbody.uxextra {
  * and the chip must not be pushed off the card. */
 #teema-vaade-wrap .proclink__value {
   min-width: 0;
+  /* The whole row's width, so the address, the pen and the ✕ sit on one line
+   * (owner, 2026-11-23); a long address still wraps and the icons follow it. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--spacing-1);
 }
 
 #teema-vaade-wrap .proclink__value > a {
@@ -12726,6 +12733,13 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .proclink__value > .uxtl__remove {
   display: inline;
   margin-left: var(--spacing-1);
+}
+
+/* An open correction takes its own line under the address; the ✕ stays up
+ * on the address's line rather than dropping under the form. */
+#teema-vaade-wrap .proclink__value > .proclink__fix[open] {
+  flex-basis: 100%;
+  order: 2;
 }
 
 #teema-vaade-wrap .proclink__value > .uxtl__remove > summary,
