@@ -291,6 +291,7 @@ from app.matters.services import (
     entry_revision_token,
     guard_matter_field_revision,
     matter_field_revision,
+    matter_field_revisions,
     matter_revision_token,
     open_engagement_feedback_wait,
     personal_note_record,
@@ -3876,11 +3877,24 @@ def _closure_hold_context(request: HttpRequest, matter: Matter, *, held: bool) -
     }
 
 
+#: The header's inline editors that post a revision back (ENG-028), read together.
+HEADER_REVISION_FIELDS = (
+    "policy_areas",
+    "source_organisations",
+    "brief_summary",
+    "stage",
+    "owner",
+    "received_date",
+)
+
+
 def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     # One read for the private note: its body fills the box and its `updated_at`
     # fills `Salvestatud HH:mm`.
     note_record = personal_note_record(matter=matter, author=request.user)
     can_write = may_write_business_content(request.user)
+    # The six inline editors' revisions (ENG-028): the row's columns read once.
+    revisions = matter_field_revisions(matter, HEADER_REVISION_FIELDS)
     # **What Lovable owns is read-only here** on a synchronised Teema (audit
     # 2026-11-11 TL-01): its editors are not drawn, an `i` says where the value
     # is changed, and the services refuse it anyway
@@ -3986,16 +4000,17 @@ def _header_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         "selected_policy_area_ids": {area.pk for area in matter.policy_areas.all()},
         # What each inline whole-value editor was rendered against, posted back
         # with it and checked under the Matter lock (ENG-028).
-        "policy_areas_revision": matter_field_revision(matter, "policy_areas"),
-        "senders_revision": matter_field_revision(matter, "source_organisations"),
-        "summary_revision": matter_field_revision(matter, "brief_summary"),
+        # Read above: the row's four columns in one query (HR-12).
+        "policy_areas_revision": revisions["policy_areas"],
+        "senders_revision": revisions["source_organisations"],
+        "summary_revision": revisions["brief_summary"],
         # What the header's `Hetkeseis` menu showed, sent back with the choice
         # and with the closure confirmation (docs/adr/0156).
-        "stage_revision": matter_field_revision(matter, "stage"),
+        "stage_revision": revisions["stage"],
         # `Vastutaja` and `Saabus` carry theirs since QA-WORKFLOW-03: a stale
         # choice must not reverse a colleague's (docs/adr/0166 §1).
-        "owner_revision": matter_field_revision(matter, "owner"),
-        "received_revision": matter_field_revision(matter, "received_date"),
+        "owner_revision": revisions["owner"],
+        "received_revision": revisions["received_date"],
         # **`+ Saabus` starts from today only on ordinary open work** (D5,
         # docs/adr/0166 §5). On a closed file or an archive record today is
         # never a plausible arrival day, and one Salvesta would store an

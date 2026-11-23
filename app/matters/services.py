@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime
 import hashlib
 import uuid
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any
@@ -1590,35 +1590,62 @@ def matter_field_revision(matter: Matter, field: str) -> str:
     Read with fresh queries rather than through the instance's caches, so the
     digest describes the database and not a prefetch.
     """
-    if field == "policy_areas":
-        parts = sorted(str(pk) for pk in matter.policy_areas.values_list("pk", flat=True))
-    elif field == "source_organisations":
-        parts = sorted(str(pk) for pk in matter.source_organisations.values_list("pk", flat=True))
-    elif field == "brief_summary":
-        parts = [
-            Matter.objects.filter(pk=matter.pk).values_list("brief_summary", flat=True).first()
-            or ""
-        ]
-    elif field == "stage":
-        parts = [
-            str(
-                Matter.objects.filter(pk=matter.pk).values_list("stage_id", flat=True).first() or ""
+    return matter_field_revisions(matter, (field,))[field]
+
+
+#: The inline editors whose value is a column of the Matter's own row, and the
+#: column each reads (`matter_field_revisions`).
+_ROW_REVISION_COLUMNS = {
+    "brief_summary": "brief_summary",
+    "stage": "stage_id",
+    "owner": "owner_id",
+    "received_date": "received_date",
+}
+
+#: The inline editors whose value is a set of related rows.
+_SET_REVISION_FIELDS = ("policy_areas", "source_organisations")
+
+
+def matter_field_revisions(matter: Matter, fields: Iterable[str]) -> dict[str, str]:
+    """`matter_field_revision` for several fields, the row's columns read once.
+
+    The header draws six inline editors, and four of them (`Lühikokkuvõte`,
+    `Hetkeseis`, `Vastutaja`, `Saabus`) carry a column of the Matter's own row.
+    Those used to be four single-column reads of one row on every page and
+    every header fragment (HR-12, health review 2026-11-23); here they are one
+    fresh read of the same row, so each digest is byte-for-byte the one
+    `matter_field_revision` gives for that field alone. The two sets
+    (`Valdkonnad`, `Saatja`) keep one fresh read each.
+    """
+    wanted = list(dict.fromkeys(fields))
+    unknown = [
+        field
+        for field in wanted
+        if field not in _ROW_REVISION_COLUMNS and field not in _SET_REVISION_FIELDS
+    ]
+    if unknown:  # pragma: no cover - a programming error, not a request
+        raise ValueError(f"no revision for {unknown[0]!r}")
+    columns = [_ROW_REVISION_COLUMNS[field] for field in wanted if field in _ROW_REVISION_COLUMNS]
+    row: dict[str, Any] = {}
+    if columns:
+        row = Matter.objects.filter(pk=matter.pk).values(*columns).first() or {}
+    revisions: dict[str, str] = {}
+    for field in wanted:
+        if field == "policy_areas":
+            parts = sorted(str(pk) for pk in matter.policy_areas.values_list("pk", flat=True))
+        elif field == "source_organisations":
+            parts = sorted(
+                str(pk) for pk in matter.source_organisations.values_list("pk", flat=True)
             )
-        ]
-    elif field == "owner":
-        parts = [
-            str(
-                Matter.objects.filter(pk=matter.pk).values_list("owner_id", flat=True).first() or ""
-            )
-        ]
-    elif field == "received_date":
-        received = (
-            Matter.objects.filter(pk=matter.pk).values_list("received_date", flat=True).first()
-        )
-        parts = [received.isoformat() if received else ""]
-    else:  # pragma: no cover - a programming error, not a request
-        raise ValueError(f"no revision for {field!r}")
-    return _field_digest(field, parts)
+        elif field == "brief_summary":
+            parts = [row.get("brief_summary") or ""]
+        elif field == "received_date":
+            received = row.get("received_date")
+            parts = [received.isoformat() if received else ""]
+        else:  # `stage`, `owner`: the identifier, or nothing
+            parts = [str(row.get(_ROW_REVISION_COLUMNS[field]) or "")]
+        revisions[field] = _field_digest(field, parts)
+    return revisions
 
 
 def _field_digest(field: str, parts: list[str]) -> str:

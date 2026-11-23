@@ -87,8 +87,8 @@ def review(request: HttpRequest) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Kinnita» with the row's choices, or «Jäta vahele»."""
     suggestion = classification.own_pending(request.user, pk)
@@ -117,8 +117,8 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def accept_page(request: HttpRequest) -> HttpResponse:
     """«Kinnita kõik»: the rows the page showed, each as proposed."""
     wanted = request.POST.getlist("ettepanek")[:PAGE_SIZE]
