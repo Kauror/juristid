@@ -1708,6 +1708,27 @@ the migrations step 6 listed, and canonical counts only where a migration in
 that plan writes rows or adds a model (a new model appears as a new count). Anything outside the plan is a stop. The line that says
 the fingerprints «were taken by different builds» is expected on every release.
 
+**The expected differences are derived, never hand-written.** A release kit's
+`FP_EXPECTED_LINES` comes from `tools/release_fingerprint.py`, run as the
+release commit's own copy against the migration in that same commit
+(r89, 23.11.2026, stopped after a correct swap because a hand-written list
+left out the new model's `None -> 0`):
+
+```bash
+git show "$TARGET:tools/release_fingerprint.py" > /tmp/release_fingerprint.py
+python /tmp/release_fingerprint.py --repo . --ref "$TARGET" --app <app> \
+  --migration <the new migration> --previous-leaf <the app's leaf before it>
+```
+
+It prints the two leaf lines and `canonical_counts.<app>.<Model>: None -> 0`
+for each model the migration creates, and nothing else. It refuses — exit 2,
+before anything is deployed — a helper that is not `$TARGET`'s own copy, a
+migration that is not in `$TARGET`, and any migration it cannot vouch for: a
+data or raw SQL operation, a deleted, renamed or retabled model, a removed or
+renamed field, or anything outside its list of schema-only operations. Such a
+release needs its expected lines reviewed by hand, line by line. The verdict
+itself is unchanged: an exact comparison.
+
 Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a
 rebuild afterwards; a release that changes none of those needs nothing here.

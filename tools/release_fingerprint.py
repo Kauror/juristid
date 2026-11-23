@@ -1,10 +1,12 @@
 """The fingerprint differences a migration release may show, from its reviewed migration.
 
-    python -m tools.release_fingerprint --app legacy_import \\
-        --migration 0033_lovable_owner_alias --previous-leaf 0032_postipoiss_letters \\
-        --migration-file app/legacy_import/migrations/0033_lovable_owner_alias.py
+A release kit generator runs it from the reviewed release commit itself:
 
-prints the lines, C-sorted, ready for a release kit's ``FP_EXPECTED_LINES``.
+    git -C <repo> show <TARGET>:tools/release_fingerprint.py > rf.py
+    python rf.py --repo <repo> --ref <TARGET> --app legacy_import \\
+        --migration 0033_lovable_owner_alias --previous-leaf 0032_postipoiss_letters
+
+and gets the lines, C-sorted, ready for the kit's ``FP_EXPECTED_LINES``.
 
 **Why (r89, 23.11.2026).** A release kit's d2 compares `recovery_fingerprint` before and
 after the swap, and its ``fingerprint_verdict`` stops unless the differences are exactly
@@ -20,33 +22,74 @@ each model that file's ``CreateModel`` operations create — nothing else. It ne
 the verdict, which stays an exact comparison: a new model that already holds rows
 (``None -> 1``), a model the migration does not create, any other count that moved, a
 missing expected line or any other leaf still stops the release. Every line it emits is
-checked against those two exact shapes (`check_lines`), and anything it cannot read — a
-``CreateModel`` without a literal name, a model created twice, a malformed label — is
-refused rather than skipped.
+checked against those two exact shapes (`check_lines`).
 
-**Pinned to reviewed source.** A kit generator reads this file at the reviewed release
-commit (``git show <TARGET>:tools/release_fingerprint.py``) and the migration from the same
-commit, so the list comes from code CI tested (tests/test_release_fingerprint.py) and the
-blob the kit already pins.
+**Unsupported migrations fail before deployment.** The list is only right for a migration
+that changes the schema and creates empty tables. A migration with any operation outside
+`SUPPORTED_OPERATIONS` — a data migration (``RunPython``, ``RunSQL``), a deleted, renamed
+or retabled model, a removed or renamed field, ``SeparateDatabaseAndState`` — or one this
+reader cannot parse (no ``operations`` list, an unnamed ``CreateModel``, a model created
+twice) is refused here, when the kit is generated, never accepted silently to stop after
+the swap.
+
+**Pinned to the reviewed commit.** With ``--ref``, the migration is read from that commit
+(``git show <ref>:app/<app>/migrations/<name>.py``), and the helper refuses to run unless
+its own bytes are the commit's ``tools/release_fingerprint.py``: the code CI tested
+(tests/test_release_fingerprint.py) and the blob the kit pins come from one commit.
 """
 
 from __future__ import annotations
 
 import argparse
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
+#: Operations that change only the schema and create nothing but empty tables, so a
+#: fingerprint can move only by the leaves and «None -> 0» per created model.
+SUPPORTED_OPERATIONS = frozenset(
+    {
+        "CreateModel",
+        "AddField",
+        "AlterField",
+        "AddIndex",
+        "RemoveIndex",
+        "AddConstraint",
+        "RemoveConstraint",
+        "AlterModelOptions",
+        "AlterModelManagers",
+    }
+)
+#: Words that mean data or raw SQL wherever they appear, however they were imported.
+_DATA_WORDS = re.compile(r"\b(RunPython|RunSQL|SeparateDatabaseAndState)\b")
 _CREATE = re.compile(r"migrations\.CreateModel\(\s*name\s*=\s*['\"]([A-Za-z_][A-Za-z0-9_]*)['\"]")
 _OPERATION = re.compile(r"migrations\.([A-Z][A-Za-z]*)\(")
 _APP = re.compile(r"[a-z_][a-z0-9_]*")
 _MIGRATION = re.compile(r"[0-9]{4}_[a-z0-9_]+")
+_SHA = re.compile(r"[0-9a-f]{40}")
 #: The only two shapes an expected line may take.
 _LINE = re.compile(
     r"canonical_counts\.[a-z_][a-z0-9_]*\.[A-Za-z_][A-Za-z0-9_]*: None -> 0"
     r"|migration_leaves: (newly present|no longer present): "
     r"[a-z_][a-z0-9_]*\.[0-9]{4}_[a-z0-9_]+"
 )
+HELPER_PATH = "tools/release_fingerprint.py"
+
+
+def check_supported(text: str) -> list[str]:
+    """The migration's operations, in file order, or refuse one this cannot vouch for."""
+    if "class Migration(migrations.Migration)" not in text or "operations = [" not in text:
+        raise ValueError("not a migration file with an operations list")
+    data = sorted(set(_DATA_WORDS.findall(text)))
+    if data:
+        raise ValueError(f"unsupported: a data or raw SQL operation ({', '.join(data)})")
+    operations = _OPERATION.findall(text)
+    unsupported = sorted(set(operations) - SUPPORTED_OPERATIONS)
+    if unsupported:
+        raise ValueError(f"unsupported operation(s): {', '.join(unsupported)}")
+    return operations
 
 
 def created_models(text: str) -> list[str]:
@@ -104,8 +147,36 @@ def check_lines(lines: list[str]) -> list[str]:
 
 def expected_lines(*, app: str, migration: str, previous_leaf: str, text: str) -> list[str]:
     """Every line the release's fingerprint must show, C-sorted (``LC_ALL=C sort``)."""
+    check_supported(text)
     lines = leaf_lines(app, migration, previous_leaf) + new_model_lines(app, text)
     return sorted(check_lines(lines), key=lambda s: s.encode("utf-8"))
+
+
+def _git_show(repo: Path, ref: str, path: str) -> bytes:
+    git = shutil.which("git")
+    if git is None:
+        raise ValueError("git is not available")
+    # A fixed program and arguments: the ref is a checked 40-character sha, the path built
+    # from checked labels.
+    done = subprocess.run(  # noqa: S603
+        [git, "-C", str(repo), "show", f"{ref}:{path}"], capture_output=True, check=False
+    )
+    if done.returncode != 0:
+        raise ValueError(f"{path} is not in commit {ref}")
+    return done.stdout
+
+
+def pinned_migration(*, repo: Path, ref: str, app: str, migration: str, helper: Path) -> str:
+    """The migration's text at ``ref``, after proving ``helper`` (this file, as run) is
+    byte-identical to ``ref``'s own copy: the helper and the migration from one commit."""
+    if not _SHA.fullmatch(ref):
+        raise ValueError(f"--ref must be a full 40-character commit, not {ref!r}")
+    if not (_APP.fullmatch(app) and _MIGRATION.fullmatch(migration)):
+        raise ValueError(f"not a migration: {app!r} {migration!r}")
+    pinned = _git_show(repo, ref, HELPER_PATH).replace(b"\r\n", b"\n")
+    if helper.read_bytes().replace(b"\r\n", b"\n") != pinned:
+        raise ValueError(f"this helper is not {HELPER_PATH} at {ref}")
+    return _git_show(repo, ref, f"app/{app}/migrations/{migration}.py").decode("utf-8")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -113,16 +184,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--app", required=True)
     parser.add_argument("--migration", required=True, help="e.g. 0033_lovable_owner_alias")
     parser.add_argument("--previous-leaf", required=True, help="e.g. 0032_postipoiss_letters")
-    parser.add_argument("--migration-file", required=True, type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--ref", help="the reviewed release commit (full sha); needs --repo")
+    source.add_argument("--migration-file", type=Path, help="a local file (tests, review)")
+    parser.add_argument("--repo", type=Path, default=Path("."))
     args = parser.parse_args(argv)
-    if args.migration_file.stem != args.migration:
-        parser.error(f"--migration-file is {args.migration_file.name}, not {args.migration}.py")
-    lines = expected_lines(
-        app=args.app,
-        migration=args.migration,
-        previous_leaf=args.previous_leaf,
-        text=args.migration_file.read_text(encoding="utf-8"),
-    )
+    try:
+        if args.ref:
+            text = pinned_migration(
+                repo=args.repo,
+                ref=args.ref,
+                app=args.app,
+                migration=args.migration,
+                helper=Path(__file__),
+            )
+        else:
+            if args.migration_file.stem != args.migration:
+                raise ValueError(
+                    f"--migration-file is {args.migration_file.name}, not {args.migration}.py"
+                )
+            text = args.migration_file.read_text(encoding="utf-8")
+        lines = expected_lines(
+            app=args.app, migration=args.migration, previous_leaf=args.previous_leaf, text=text
+        )
+    except ValueError as error:
+        sys.stderr.write(f"release_fingerprint: REFUSED: {error}\n")
+        return 2
     sys.stdout.write("\n".join(lines) + "\n")
     return 0
 
