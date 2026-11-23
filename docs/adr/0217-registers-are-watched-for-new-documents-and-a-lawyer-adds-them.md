@@ -226,9 +226,12 @@ killed and the lawyer's note was lost with it.
   not answer at all, the addresses the nightly look-up stored
   (`WatchFinding.files`) are written instead.
 - **A register file the store refuses does not cost the note.** If `+ Märge`
-  refuses one of the register's files (an error page served as `.pdf`), the save
-  is tried once more without the register's files, which are then written as
-  links. A refusal caused by the lawyer's own file still refuses the save.
+  would refuse one of the register's files (an error page served as `.pdf`), that
+  file alone is left out and written as a link (`Fetched.screen` runs each
+  through `read_upload` first); over the request limits, register files are left
+  out from the end. Should the save still refuse, it is tried once more without
+  any register file. The lawyer's own files are never left out: a refusal of one
+  of them still refuses the save.
 - **What goes into the note is cleaned.** A file name becomes one plain line;
   an address is written only if it is https on one of `ALLOWED_HOSTS`.
 - **Unchanged:** the note and the fetched files are still saved together in one
