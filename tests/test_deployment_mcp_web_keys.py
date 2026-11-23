@@ -273,11 +273,16 @@ def test_one_rule_refuses_a_bad_minimum(tmp_path, minimum):
 
 
 def test_one_rule_never_prints_a_value_even_under_xtrace(tmp_path):
-    half = "v" * 30
-    path = _write(tmp_path, f"MCP_AUTHENTICATOR_KEY={half} {half}\n")
-    result = _lib(f'set -x; mcp_key_state "{path.as_posix()}" MCP_AUTHENTICATOR_KEY 40')
-    assert result.stdout == "malformed\n"
-    assert half not in result.stdout + result.stderr
+    """The rule only counts lines: no value is ever held in a variable a trace could show."""
+    first, second = "Qz7Lm2Xc9Rt4" * 2, "Wp3Hk8Nd5Bv1" * 2
+    for value in (f"{first}{second}", f"{first} {second}", f"{first}{second}\r", "short"):
+        path = _write(tmp_path, f"MCP_AUTHENTICATOR_KEY={value}\n")
+        result = _lib(f'set -x; mcp_key_state "{path.as_posix()}" MCP_AUTHENTICATOR_KEY 40')
+        assert result.returncode == 0, result.stderr
+        # The trace really ran — every grep of the rule is in it — and holds no value.
+        assert result.stderr.count("grep -UcE") == 4
+        for part in (first, second, "short"):
+            assert part not in result.stdout + result.stderr
 
 
 def test_the_writer_script_has_no_private_copy_of_the_rule():
@@ -306,8 +311,44 @@ def test_the_helper_never_replaces_a_malformed_key(tmp_path, line):
     assert result.returncode != 0
     assert "Nothing was changed" in result.stderr
     assert "MCP_AUTHENTICATOR_KEY" in result.stderr
+    # Deleting the line is not offered as free: it costs every enrolment.
+    assert "every enrolled authenticator becomes unreadable" in result.stderr
     assert STRONG not in result.stdout + result.stderr
     assert path.read_bytes() == original.encode("utf-8")
+
+
+def test_the_preflight_names_a_malformed_key_and_the_fix(tmp_path):
+    env_file = (tmp_path / "juristid.env").as_posix()
+    malformed = _lib(f'mcp_web_key_problem MCP_AUTHENTICATOR_KEY malformed "{env_file}"')
+    assert malformed.returncode == 0, malformed.stderr
+    assert malformed.stdout.count("\n") == 1
+    assert "MCP_AUTHENTICATOR_KEY is malformed" in malformed.stdout
+    assert "Fix that line by hand" in malformed.stdout
+    assert "web would refuse to start" not in malformed.stdout
+    for state in ("missing", "duplicated", "weak"):
+        other = _lib(f'mcp_web_key_problem MCP_AUTHENTICATOR_KEY {state} "{env_file}"')
+        assert f"MCP_AUTHENTICATOR_KEY is {state}: web would refuse to start" in other.stdout
+        assert f"juristid-mcp-web-keys.sh --env-file {env_file}" in other.stdout
+    # The preflight's own loop says exactly what the library composes.
+    assert 'fail "$(mcp_web_key_problem "$key" "$state" "$ENV_FILE")"' in PREFLIGHT.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_the_runbooks_state_probe_names_each_key_and_prints_no_value(tmp_path):
+    text = OPERATIONS.read_text(encoding="utf-8")
+    [probe] = re.findall(r"(?m)^bash -c '\. scripts/deploy/lib\.sh; .*$", text)
+    probe = probe.replace(
+        "/mnt/user/appdata/juristid-main/config/juristid.env",
+        (tmp_path / "juristid.env").as_posix(),
+    )
+    _write(tmp_path, f"MCP_AUTHENTICATOR_KEY={STRONG}\r\nMCP_TOKEN_DERIVATION_KEY=short\n")
+    result = subprocess.run(  # noqa: S603 - the runbook's own command, on a temporary file
+        [BASH, "-c", probe], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "MCP_AUTHENTICATOR_KEY: malformed\nMCP_TOKEN_DERIVATION_KEY: weak\n"
+    assert STRONG not in result.stdout + result.stderr
 
 
 def test_the_library_lists_a_malformed_key_as_not_ready(tmp_path):
@@ -340,7 +381,8 @@ def test_the_preflight_refuses_mcp_enabled_without_the_keys():
     text = PREFLIGHT.read_text(encoding="utf-8")
     assert 'if mcp_enabled_in "$ENV_FILE"; then' in text
     assert 'mcp_web_keys_not_ready "$ENV_FILE"' in text
-    assert "juristid-mcp-web-keys.sh" in text
+    # The message naming juristid-mcp-web-keys.sh lives in lib.sh, tested below.
+    assert "mcp_web_key_problem" in text
 
 
 # -- the runbook -------------------------------------------------------------------

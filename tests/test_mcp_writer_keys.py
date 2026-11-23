@@ -266,6 +266,9 @@ def test_a_malformed_secret_is_refused_and_nothing_changes(tmp_path, key, line):
     result = _helper(writer, mcp)
     assert result.returncode != 0
     assert "Nothing was changed" in result.stderr and key in result.stderr
+    # Deleting the line instead is not offered as free.
+    cost = "mcp_writer_db_role" if key == "POSTGRES_PASSWORD" else "recreated together"
+    assert cost in result.stderr
     assert STRONG[:20] not in result.stdout + result.stderr
     assert (writer.read_bytes(), mcp.read_bytes()) == before
 

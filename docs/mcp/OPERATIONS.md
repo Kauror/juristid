@@ -173,9 +173,12 @@ appends the line when the file has none at all, and then proves its own write.
 A valid key is one line `KEY=value`, 40 or more characters, with no whitespace
 anywhere in the line — no spaces, tabs or Windows line endings (the one rule in
 `scripts/deploy/lib.sh`, `mcp_key_state`, which the preflight and
-`juristid-mcp-writer-keys.sh` use too). A line that breaks only the whitespace
-rule is not replaced, since it may be the key `web` runs with: the helper stops
-and asks for that line to be fixed by hand.
+`juristid-mcp-writer-keys.sh` use too). A line with whitespace in it is
+*malformed* and is never replaced, whatever else is wrong with it, since it may
+be the key `web` runs with: the helper stops, changes nothing and asks for that
+line to be fixed by hand. Deleting the line instead makes the helper generate a
+new key — for `MCP_AUTHENTICATOR_KEY` that means every enrolled authenticator
+becomes unreadable and everybody enrols again.
 
 ```bash
 scripts/deploy/juristid-mcp-web-keys.sh --env-file /mnt/user/appdata/juristid-main/config/juristid.env
@@ -194,6 +197,18 @@ grep -c '^MCP_TOKEN_DERIVATION_KEY=[^[:space:]]\{40,\}$' /mnt/user/appdata/juris
 
 Anything other than `1` — or a `FAIL` from the helper — and you stop here,
 with `MCP_ENABLED` still off. Run the helper again; it is idempotent.
+
+To see *why* a key is not ready — without printing any value — ask the same
+rule for each key's state (`ok`, `missing`, `duplicated`, `malformed` or
+`weak`), from the repository checkout:
+
+```bash
+bash -c '. scripts/deploy/lib.sh; for k in "${MCP_WEB_KEYS[@]}"; do printf "%s: %s\n" "$k" "$(mcp_web_key_state "$1" "$k")"; done' _ /mnt/user/appdata/juristid-main/config/juristid.env
+```
+
+`malformed` means the line has a space, a tab or a Windows line ending in it:
+fix that line by hand in an editor, then run the helper again. The preflight
+reports the same states when `MCP_ENABLED` is on.
 
 **Only then**, in `juristid.env`, in an editor, the three lines the template
 added (read their comments in `deploy/unraid-main/.env.example`):

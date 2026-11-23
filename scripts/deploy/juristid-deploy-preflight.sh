@@ -281,11 +281,7 @@ if [ -n "$ENV_FILE" ]; then
     not_ready="$(mcp_web_keys_not_ready "$ENV_FILE")"
     if [ -n "$not_ready" ]; then
       while read -r key state; do
-        if [ "$state" = malformed ]; then
-          fail "juristid.env has MCP_ENABLED on and $key is malformed (whitespace or a carriage return in its line). Fix that line by hand — KEY=value, no spaces, tabs or Windows line endings — then run scripts/deploy/juristid-mcp-web-keys.sh --env-file $ENV_FILE (docs/mcp/OPERATIONS.md, step 3)."
-        else
-          fail "juristid.env has MCP_ENABLED on and $key is $state: web would refuse to start. Run scripts/deploy/juristid-mcp-web-keys.sh --env-file $ENV_FILE first (docs/mcp/OPERATIONS.md, step 3)."
-        fi
+        fail "$(mcp_web_key_problem "$key" "$state" "$ENV_FILE")"
       done <<<"$not_ready"
     else
       pass "MCP_ENABLED is on and web's AI-access keys are in place (${MCP_WEB_KEYS[*]})"

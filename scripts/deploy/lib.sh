@@ -317,26 +317,32 @@ mcp_key_state() {
   strong="$(grep -UcE "^${key}=[^[:space:]]{${min},}\$" "$file" || true)"
   placeholder="$(grep -UcE "^${key}=replace-me" "$file" || true)"
   if [ "$named" = 0 ]; then
-    printf 'missing
-'
+    printf 'missing\n'
   elif [ "$named" != 1 ]; then
-    printf 'duplicated
-'
+    printf 'duplicated\n'
   elif [ "$clean" != 1 ]; then
-    printf 'malformed
-'
+    printf 'malformed\n'
   elif [ "$strong" != 1 ] || [ "$placeholder" != 0 ]; then
-    printf 'weak
-'
+    printf 'weak\n'
   else
-    printf 'ok
-'
+    printf 'ok\n'
   fi
 }
 
 # One of web's keys (MCP_WEB_KEYS), held to MCP_WEB_KEY_MIN_LENGTH.
 mcp_web_key_state() {
   mcp_key_state "$1" "$2" "$MCP_WEB_KEY_MIN_LENGTH"
+}
+
+# What the preflight says about one web key that is not ok (KEY, its state,
+# web's file). Names and states only, never a value.
+mcp_web_key_problem() {
+  local key="$1" state="$2" file="$3"
+  if [ "$state" = malformed ]; then
+    printf '%s\n' "juristid.env has MCP_ENABLED on and $key is malformed (whitespace or a carriage return in its line). Fix that line by hand — KEY=value, no spaces, tabs or Windows line endings — then run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file (docs/mcp/OPERATIONS.md, step 3)."
+  else
+    printf '%s\n' "juristid.env has MCP_ENABLED on and $key is $state: web would refuse to start. Run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file first (docs/mcp/OPERATIONS.md, step 3)."
+  fi
 }
 
 # Every web key that is not ok, one `KEY state` per line; nothing when all are.

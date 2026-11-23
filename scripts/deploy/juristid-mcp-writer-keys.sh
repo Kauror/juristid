@@ -191,10 +191,16 @@ verify() {
 # never replaced here: refuse before anything is written. Key names only. An
 # explicit --rotate-gateway-key replaces the gateway key whatever its state.
 malformed_check() {
-  local file="$1" key="$2" min="$3"
-  if [ "$(mcp_key_state "$file" "$key" "$min")" = malformed ]; then
-    die "$key in $file has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings) — or delete it to have a new value generated — then run this again."
-  fi
+  local file="$1" key="$2" min="$3" state cost
+  # Captured first, so an error from the rule stops this script.
+  state="$(mcp_key_state "$file" "$key" "$min")"
+  [ "$state" = malformed ] || return 0
+  case "$key" in
+    POSTGRES_PASSWORD) cost="the role's password must then be set again (mcp_writer_db_role --apply --password-stdin) before mcp-writer can connect" ;;
+    MCP_WRITE_GATEWAY_KEY) cost="mcp and mcp-writer must then be recreated together" ;;
+    *) cost="mcp-writer must then be recreated" ;;
+  esac
+  die "$key in $file has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings), then run this again. Deleting the line instead makes this generate a new $key: $cost."
 }
 malformed_check "$WRITER_ENV" DJANGO_SECRET_KEY "$SECRET_KEY_MIN"
 malformed_check "$WRITER_ENV" POSTGRES_PASSWORD "$DB_PASSWORD_MIN"

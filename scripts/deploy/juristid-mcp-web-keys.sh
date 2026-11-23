@@ -83,9 +83,15 @@ new_key() {
 # A malformed line is never replaced (it may be the key in use, and a new
 # MCP_AUTHENTICATOR_KEY locks every enrolled authenticator out): refuse before
 # anything is written. Key names only.
+# The state is captured first, so an error from the rule stops this script.
 for key in "${MCP_WEB_KEYS[@]}"; do
-  if [ "$(mcp_web_key_state "$ENV_FILE" "$key")" = malformed ]; then
-    die "$key in $ENV_FILE has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings) — or delete it to have a new key generated — then run this again."
+  state="$(mcp_web_key_state "$ENV_FILE" "$key")"
+  if [ "$state" = malformed ]; then
+    case "$key" in
+      MCP_AUTHENTICATOR_KEY) cost="every enrolled authenticator becomes unreadable and everybody enrols again" ;;
+      *) cost="open connections retry one token refresh" ;;
+    esac
+    die "$key in $ENV_FILE has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings), then run this again. Deleting the line instead makes this generate a new $key: $cost."
   fi
 done
 
