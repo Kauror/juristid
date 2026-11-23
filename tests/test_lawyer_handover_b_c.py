@@ -1,4 +1,3 @@
-# ruff: noqa: F811 - pytest fixtures imported from the sync suites are used as arguments
 """A lawyer leaves, another arrives (docs/adr/0220 §3–§4), on synthetic data.
 
 §4: what a person still holds is shown on their account, switching them off
