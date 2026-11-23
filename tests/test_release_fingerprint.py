@@ -1,10 +1,9 @@
 """`tools.release_fingerprint`: a release kit's expected fingerprint lines (r89 finding).
 
-No database. The helper may only ever produce the two migration-leaf lines and «None -> 0»
-for models the migration creates; it never changes how a kit compares them (the kit's
-verdict stays an exact match). A migration it cannot vouch for is refused when the kit is
-generated, and with ``--ref`` it runs only as the reviewed commit's own copy, reading the
-migration from that same commit.
+No database. The helper may only produce the two migration-leaf lines and «None -> 0» for
+models a release's single migration creates; it never changes how a kit compares them (the
+kit's verdict stays an exact match). Anything it cannot vouch for is refused when the kit is
+generated, before deployment — including every bypass the review of #680 tried.
 """
 
 from __future__ import annotations
@@ -17,89 +16,82 @@ import pytest
 
 from tools import release_fingerprint
 from tools.release_fingerprint import (
-    SUPPORTED_OPERATIONS,
+    EXIT_REFUSED,
+    Refused,
+    analyse_migration,
     check_lines,
-    check_supported,
-    created_models,
     expected_lines,
     leaf_lines,
     main,
-    new_model_lines,
-    pinned_migration,
+    release_lines,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
 #: A real reviewed migration that creates one model (r89, `legacy_import 0033`).
 R89_FILE = ROOT / "app/legacy_import/migrations/0033_lovable_owner_alias.py"
 HELPER = Path(release_fingerprint.__file__)
+HEAD = "from django.db import migrations, models\n\n\n"
 
 
-def _migration(operations: str) -> str:
-    """A migration file around ``operations``, shaped as `makemigrations` writes them."""
+def _migration(
+    operations: str, *, extra: str = "", dependency: str = "('x', '0001_initial')"
+) -> str:
+    """A migration file shaped as `makemigrations` writes it."""
     return (
-        "from django.db import migrations, models\n\n\n"
-        "class Migration(migrations.Migration):\n"
-        "    dependencies = [('x', '0001_initial')]\n\n"
+        f"{HEAD}class Migration(migrations.Migration):\n{extra}"
+        f"    dependencies = [{dependency}]\n\n"
         f"    operations = [\n{operations}\n    ]\n"
     )
 
 
+CREATE_A = "        migrations.CreateModel(name='A', fields=[]),"
 #: r84's shape (register_watch 0005): two CreateModel and one AddField.
 R84 = _migration(
     """
-        migrations.CreateModel(
-            name="GovernmentAgenda",
-            fields=[],
-        ),
+        migrations.CreateModel(name="GovernmentAgenda", fields=[]),
         migrations.AddField(
-            model_name="candidatenotice",
-            name="agendas",
-            field=models.IntegerField(db_default=0),
+            model_name="candidatenotice", name="agendas", field=models.IntegerField(db_default=0)
         ),
-        migrations.CreateModel(
-            name="AgendaItem",
-            fields=[],
-        ),"""
+        migrations.CreateModel(name="AgendaItem", fields=[]),""",
+    dependency="('register_watch', '0004_topic_candidates')",
 )
-ADD_FIELD_ONLY = _migration(
-    """
-        migrations.AddField(
-            model_name="watchfinding",
-            name="files",
-            field=models.JSONField(null=True),
-        ),"""
-)
+
+
+def _lines(text: str, *, app: str = "x", previous: str = "0001_initial") -> list[str]:
+    return expected_lines(app=app, migration="0002_y", previous_leaf=previous, text=text)
 
 
 def test_r89_derives_the_line_its_kit_was_missing():
-    lines = expected_lines(
+    assert expected_lines(
         app="legacy_import",
         migration="0033_lovable_owner_alias",
         previous_leaf="0032_postipoiss_letters",
         text=R89_FILE.read_text(encoding="utf-8"),
-    )
-    assert lines == [
+    ) == [
         "canonical_counts.legacy_import.LovableOwnerAlias: None -> 0",
         "migration_leaves: newly present: legacy_import.0033_lovable_owner_alias",
         "migration_leaves: no longer present: legacy_import.0032_postipoiss_letters",
     ]
 
 
-def test_r84_gives_exactly_its_two_new_models_and_nothing_for_the_added_field():
-    assert new_model_lines("register_watch", R84) == [
-        "canonical_counts.register_watch.GovernmentAgenda: None -> 0",
-        "canonical_counts.register_watch.AgendaItem: None -> 0",
+def test_r84_gives_its_two_new_models_and_nothing_for_the_added_field():
+    assert analyse_migration(R84, app="register_watch", previous_leaf="0004_topic_candidates") == [
+        "GovernmentAgenda",
+        "AgendaItem",
     ]
 
 
 def test_a_migration_without_a_new_model_gives_only_the_leaves():
-    lines = expected_lines(
-        app="register_watch",
-        migration="0007_finding_files",
-        previous_leaf="0006_agenda_item_decision",
-        text=ADD_FIELD_ONLY,
+    text = _migration(
+        "        migrations.AddField(model_name='a', name='b', field=models.JSONField(null=True)),"
     )
-    assert lines == leaf_lines("register_watch", "0007_finding_files", "0006_agenda_item_decision")
+    assert _lines(text) == leaf_lines("x", "0002_y", "0001_initial")
+
+
+def test_a_comment_naming_a_data_operation_is_not_code():
+    assert _lines(_migration(CREATE_A + "  # not a RunPython")) == sorted(
+        ["canonical_counts.x.A: None -> 0", *leaf_lines("x", "0002_y", "0001_initial")]
+    )
 
 
 @pytest.mark.parametrize(
@@ -109,206 +101,264 @@ def test_a_migration_without_a_new_model_gives_only_the_leaves():
         "canonical_counts.matters.Matter: 2900 -> 2899",
         "canonical_counts.legacy_import.LovableOwnerAlias: 0 -> 0",
         "migration_leaves: newly present: legacy_import.anything",
+        "migration_leaves: newly present: a.0005_x, b.0003_y",
         "accounts.User: None -> 0",
         "",
     ],
 )
 def test_no_line_wider_than_the_two_exact_shapes_is_accepted(wider):
-    """The helper cannot widen what a kit accepts: never a count other than None -> 0, never
-    a moved count of an existing model, never a leaf that is not a migration name."""
-    with pytest.raises(ValueError):
+    with pytest.raises(Refused):
         check_lines([wider])
 
 
-def test_every_derived_line_has_one_of_the_two_shapes_and_none_repeats():
-    lines = expected_lines(
-        app="register_watch",
-        migration="0005_government_agenda",
-        previous_leaf="0004_topic_candidates",
-        text=R84,
-    )
-    assert check_lines(lines) == lines
-    duplicate = ["migration_leaves: newly present: a.0001_x"] * 2
-    with pytest.raises(ValueError):
-        check_lines(duplicate)
-
-
-# ---------------------------------------------------------------------------------------
-# Unsupported migrations fail when the kit is generated, before deployment
-# ---------------------------------------------------------------------------------------
+#: Every way the review of #680 got an unsupported migration past the first version.
+BYPASSES = {
+    "bare-delete-model": (
+        "from django.db.migrations import DeleteModel\n" + HEAD,
+        "        DeleteModel(name='Old'),",
+        "",
+    ),
+    "aliased-operations": (
+        "from django.db.migrations import operations as ops\n" + HEAD,
+        "        ops.DeleteModel(name='Old'),",
+        "",
+    ),
+    "migrations-operations": (HEAD, "        migrations.operations.RenameModel('Old', 'New'),", ""),
+    "getattr": (HEAD, "        getattr(migrations, 'Run' + 'Python')(print),", ""),
+    "starred-list": (HEAD + "EXTRA = []\n", "        *EXTRA,", ""),
+    "replaces": (HEAD, CREATE_A, "    replaces = [('x', '0002_old')]\n"),
+    "run-before": (HEAD, CREATE_A, "    run_before = [('y', '0001_initial')]\n"),
+    "atomic": (HEAD, CREATE_A, "    atomic = False\n"),
+    "initial": (HEAD, CREATE_A, "    initial = True\n"),
+    "proxy": (
+        HEAD,
+        "        migrations.CreateModel(name='P', fields=[], options={'proxy': True}),",
+        "",
+    ),
+    "unmanaged": (
+        HEAD,
+        "        migrations.CreateModel(name='U', fields=[], options={'managed': False}),",
+        "",
+    ),
+    "run-python": (HEAD, "        migrations.RunPython(print),", ""),
+    "run-sql": (HEAD, "        migrations.RunSQL('UPDATE matters_matter SET title = title'),", ""),
+    "remove-field": (HEAD, "        migrations.RemoveField(model_name='a', name='b'),", ""),
+    "rename-field": (HEAD, "        migrations.RenameField('a', 'b', 'c'),", ""),
+    "delete-model": (HEAD, "        migrations.DeleteModel(name='Old'),", ""),
+    "alter-table": (HEAD, "        migrations.AlterModelTable(name='a', table='b'),", ""),
+    "separate-state": (
+        HEAD,
+        "        migrations.SeparateDatabaseAndState(state_operations=[]),",
+        "",
+    ),
+    "unknown": (HEAD, "        migrations.SomethingNew(),", ""),
+    "unnamed-create": (HEAD, "        migrations.CreateModel(fields=[], name=NAME),", ""),
+    "created-twice": (HEAD, CREATE_A + "\n" + CREATE_A, ""),
+    "module-code": (HEAD + "def forwards(apps, schema_editor):\n    pass\n\n\n", CREATE_A, ""),
+}
 
 
 @pytest.mark.parametrize(
-    "operations",
-    [
-        "        migrations.RunPython(forwards, migrations.RunPython.noop),",
-        "        migrations.RunSQL('UPDATE matters_matter SET title = title'),",
-        "        RunPython(forwards),",  # imported bare: still refused
-        "        migrations.DeleteModel(name='Old'),",
-        "        migrations.RenameModel(old_name='Old', new_name='New'),",
-        "        migrations.AlterModelTable(name='a', table='b'),",
-        "        migrations.RemoveField(model_name='a', name='b'),",
-        "        migrations.RenameField(model_name='a', old_name='b', new_name='c'),",
-        "        migrations.SeparateDatabaseAndState(state_operations=[]),",
-        "        migrations.SomethingNew(),",
-    ],
-    ids=[
-        "run-python",
-        "run-sql",
-        "bare-run-python",
-        "delete-model",
-        "rename-model",
-        "alter-model-table",
-        "remove-field",
-        "rename-field",
-        "separate-state",
-        "unknown",
-    ],
+    ("head", "operations", "extra"), list(BYPASSES.values()), ids=list(BYPASSES)
 )
-def test_an_unsupported_operation_is_refused_before_deployment(operations):
-    text = _migration("        migrations.CreateModel(name='A', fields=[]),\n" + operations)
-    with pytest.raises(ValueError):
-        expected_lines(app="x", migration="0002_y", previous_leaf="0001_initial", text=text)
+def test_every_known_bypass_is_refused_before_deployment(head, operations, extra):
+    text = _migration(operations, extra=extra).replace(HEAD, head, 1)
+    with pytest.raises(Refused):
+        _lines(text)
+
+
+def test_a_dependency_that_is_not_the_previous_leaf_is_refused():
+    with pytest.raises(Refused, match="do not name"):
+        _lines(_migration(CREATE_A, dependency="('x', '0000_other')"))
 
 
 def test_text_that_is_not_a_migration_is_refused():
-    with pytest.raises(ValueError):
-        check_supported("migrations.CreateModel(name='A', fields=[])")
+    with pytest.raises(Refused):
+        _lines("migrations.CreateModel(name='A', fields=[])")
+    with pytest.raises(Refused):
+        _lines("class Migration(:")
 
 
-@pytest.mark.parametrize(
-    "operations",
-    [
-        "        migrations.CreateModel(\n"
-        "            fields=[],\n"
-        "            name=NAME,\n"
-        "        ),",
-        "        migrations.CreateModel(name='A', fields=[]),\n"
-        "        migrations.CreateModel(name='A', fields=[]),",
-    ],
-    ids=["unreadable-name", "created-twice"],
-)
-def test_what_it_cannot_read_is_refused_not_skipped(operations):
-    with pytest.raises(ValueError):
-        created_models(_migration(operations))
+def test_a_model_the_fingerprint_does_not_count_is_refused():
+    with pytest.raises(Refused, match=r"does not count x\.A"):
+        expected_lines(
+            app="x",
+            migration="0002_y",
+            previous_leaf="0001_initial",
+            text=_migration(CREATE_A),
+            uncounted=frozenset({"x.A"}),
+        )
 
 
-def test_every_supported_operation_the_repository_uses_is_schema_only():
-    """Each real migration either yields lines or is refused; none crashes. The supported
-    ones never yield a line for an operation that is not a CreateModel."""
+def test_every_app_label_is_its_directory_name():
+    """The helper writes the directory as the app label (`recovery_fingerprint` counts by
+    `model._meta.app_label`): a custom label would make its lines wrong."""
+    for apps in sorted(ROOT.glob("app/*/apps.py")):
+        assert f'label = "{apps.parent.name}"' in apps.read_text(encoding="utf-8"), apps
+
+
+def test_the_repository_history_is_either_accepted_or_refused_never_crashes():
     accepted = refused = 0
     for path in sorted(ROOT.glob("app/*/migrations/0*.py")):
-        text = path.read_text(encoding="utf-8")
         try:
-            operations = check_supported(text)
-        except ValueError:
+            analyse_migration(
+                path.read_text(encoding="utf-8"),
+                app=path.parent.parent.name,
+                previous_leaf="0000_none",
+            )
+        except Refused:
             refused += 1
-            continue
-        accepted += 1
-        assert set(operations) <= SUPPORTED_OPERATIONS
-        assert len(new_model_lines(path.parent.parent.name, text)) == operations.count(
-            "CreateModel"
-        )
-    assert accepted and refused  # both kinds exist in the history (data migrations refused)
+        else:  # pragma: no cover - every real migration depends on a real predecessor
+            accepted += 1
+    assert refused and not accepted  # "0000_none" is nobody's dependency
 
 
-@pytest.mark.parametrize(
-    ("app", "migration", "previous"),
-    [
-        ("legacy-import", "0033_x", "0032_y"),
-        ("legacy_import", "33_x", "0032_y"),
-        ("legacy_import", "0033_x", "0033_x"),
-    ],
-    ids=["bad-app", "bad-migration", "own-leaf"],
+# ---------------------------------------------------------------------------------------
+# The whole release, read from two commits
+# ---------------------------------------------------------------------------------------
+
+DEPLOYMENT = (
+    'REBUILDABLE_MODELS = frozenset({"search.SearchDocument"})\n'
+    'OPERATIONAL_MODELS = frozenset({"x.Throttle"})\n'
 )
-def test_malformed_labels_are_refused(app, migration, previous):
-    with pytest.raises(ValueError):
-        expected_lines(app=app, migration=migration, previous_leaf=previous, text=ADD_FIELD_ONLY)
 
 
-# ---------------------------------------------------------------------------------------
-# The helper and the migration from one pinned commit
-# ---------------------------------------------------------------------------------------
+class Repo:
+    """A throwaway git repository holding a release: helper, app x, its migrations."""
 
+    def __init__(self, root: Path) -> None:
+        self.root = root
+        self.git_exe = shutil.which("git")
+        if self.git_exe is None:
+            pytest.skip("git is not available")
+        self.write("tools/release_fingerprint.py", HELPER.read_text(encoding="utf-8"))
+        self.write("app/core/deployment.py", DEPLOYMENT)
+        self.write("app/x/apps.py", 'class XConfig:\n    label = "x"\n')
+        self.write("app/x/migrations/__init__.py", "")
+        self.write("app/x/migrations/0001_initial.py", _migration(CREATE_A, dependency=""))
+        self.git("init", "-q")
+        self.previous = self.commit()
 
-@pytest.fixture
-def release_repo(tmp_path):
-    """A throwaway git repository whose one commit holds this helper and r89's migration."""
-    git_exe = shutil.which("git")
-    if git_exe is None:
-        pytest.skip("git is not available")
-    repo = tmp_path / "repo"
-    (repo / "tools").mkdir(parents=True)
-    (repo / "app/legacy_import/migrations").mkdir(parents=True)
-    shutil.copyfile(HELPER, repo / "tools/release_fingerprint.py")
-    shutil.copyfile(R89_FILE, repo / "app/legacy_import/migrations/0033_lovable_owner_alias.py")
+    def write(self, path: str, text: str) -> None:
+        target = self.root / path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8", newline="\n")
 
-    def git(*a: str) -> str:
+    def git(self, *args: str) -> str:
         return subprocess.run(  # noqa: S603 - git, a temporary repository, fixed arguments
-            [git_exe, "-C", str(repo), "-c", "core.autocrlf=false", *a],
+            [str(self.git_exe), "-C", str(self.root), "-c", "core.autocrlf=false", *args],
             check=True,
             capture_output=True,
             text=True,
         ).stdout.strip()
 
-    git("init", "-q")
-    git("add", ".")
-    git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-q", "-m", "r")
-    return repo, git("rev-parse", "HEAD"), git
+    def commit(self) -> str:
+        self.git("add", "-A")
+        self.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "c")
+        return self.git("rev-parse", "HEAD")
+
+    def lines(self, ref: str) -> list[str]:
+        return release_lines(repo=self.root, ref=ref, previous_release=self.previous, helper=HELPER)
 
 
-def test_the_pinned_mode_reads_the_migration_from_the_reviewed_commit(release_repo, capsys):
-    repo, sha, _git = release_repo
-    text = pinned_migration(
-        repo=repo, ref=sha, app="legacy_import", migration="0033_lovable_owner_alias", helper=HELPER
+@pytest.fixture
+def repo(tmp_path):
+    return Repo(tmp_path / "repo")
+
+
+def test_a_release_with_one_migration_gives_its_lines(repo):
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
     )
-    assert "LovableOwnerAlias" in text
-    argv = ["--repo", str(repo), "--ref", sha, "--app", "legacy_import"]
-    argv += [
-        "--migration",
-        "0033_lovable_owner_alias",
-        "--previous-leaf",
-        "0032_postipoiss_letters",
+    ref = repo.commit()
+    assert repo.lines(ref) == [
+        "canonical_counts.x.B: None -> 0",
+        "migration_leaves: newly present: x.0002_b",
+        "migration_leaves: no longer present: x.0001_initial",
     ]
-    assert main(argv) == 0
+
+
+def test_a_release_without_a_migration_expects_nothing(repo):
+    repo.write("app/x/views.py", "# code only\n")
+    assert repo.lines(repo.commit()) == []
+
+
+def test_two_migrations_in_one_app_are_refused(repo):
+    repo.write("app/x/migrations/0002_b.py", _migration("        migrations.RunPython(print),"))
+    repo.write(
+        "app/x/migrations/0003_c.py",
+        _migration(CREATE_A.replace("'A'", "'C'"), dependency="('x', '0002_b')"),
+    )
+    with pytest.raises(Refused, match="more than one migration"):
+        repo.lines(repo.commit())
+
+
+def test_migrations_in_two_apps_are_refused(repo):
+    repo.write("app/y/apps.py", 'class YConfig:\n    label = "y"\n')
+    repo.write("app/y/migrations/0001_initial.py", _migration(CREATE_A, dependency=""))
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    with pytest.raises(Refused, match="more than one migration"):
+        repo.lines(repo.commit())
+
+
+def test_a_changed_migration_is_refused(repo):
+    repo.write(
+        "app/x/migrations/0001_initial.py", _migration(CREATE_A, dependency="") + "# edited\n"
+    )
+    with pytest.raises(Refused, match="changed, not added"):
+        repo.lines(repo.commit())
+
+
+def test_a_model_production_does_not_count_is_refused(repo):
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='Throttle', fields=[]),"),
+    )
+    with pytest.raises(Refused, match=r"does not count x\.Throttle"):
+        repo.lines(repo.commit())
+
+
+def test_a_custom_app_label_is_refused(repo):
+    repo.write("app/x/apps.py", 'class XConfig:\n    label = "other"\n')
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    with pytest.raises(Refused, match="does not label"):
+        repo.lines(repo.commit())
+
+
+def test_a_helper_that_is_not_the_commits_copy_is_refused(repo, tmp_path):
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    ref = repo.commit()
+    other = tmp_path / "release_fingerprint.py"
+    other.write_text(HELPER.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
+    with pytest.raises(Refused, match=r"is not tools/release_fingerprint\.py at"):
+        release_lines(repo=repo.root, ref=ref, previous_release=repo.previous, helper=other)
+
+
+def test_the_command_line_says_refused_with_its_own_exit_code(repo, capsys):
+    repo.write("app/x/migrations/0002_b.py", _migration("        migrations.RunSQL('x'),"))
+    ref = repo.commit()
+    argv = ["--repo", str(repo.root), "--ref", ref, "--previous-release", repo.previous]
+    assert main(argv) == EXIT_REFUSED
+    assert "REFUSED: unsupported: RunSQL" in capsys.readouterr().err
+    assert main([*argv[:4], "--previous-release", repo.previous[:12]]) == EXIT_REFUSED
+    assert main(
+        ["--migration-file", "nope.py", "--app", "x", "--previous-leaf", "0001_initial"]
+    ) == (EXIT_REFUSED)
+
+
+def test_the_review_mode_prints_r89s_lines(capsys):
+    argv = ["--migration-file", str(R89_FILE), "--app", "legacy_import"]
+    assert main([*argv, "--previous-leaf", "0032_postipoiss_letters"]) == 0
     assert capsys.readouterr().out.splitlines()[0] == (
         "canonical_counts.legacy_import.LovableOwnerAlias: None -> 0"
     )
-
-
-def test_a_helper_that_is_not_the_commits_copy_is_refused(release_repo, tmp_path):
-    repo, sha, _git = release_repo
-    other = tmp_path / "release_fingerprint.py"
-    other.write_text(HELPER.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
-    with pytest.raises(ValueError, match=r"is not tools/release_fingerprint\.py at"):
-        pinned_migration(
-            repo=repo,
-            ref=sha,
-            app="legacy_import",
-            migration="0033_lovable_owner_alias",
-            helper=other,
-        )
-
-
-def test_a_migration_not_in_the_commit_or_a_short_ref_is_refused(release_repo, capsys):
-    repo, sha, _git = release_repo
-    with pytest.raises(ValueError, match="is not in commit"):
-        pinned_migration(
-            repo=repo, ref=sha, app="legacy_import", migration="0034_other", helper=HELPER
-        )
-    with pytest.raises(ValueError, match="full 40-character"):
-        pinned_migration(
-            repo=repo, ref=sha[:12], app="legacy_import", migration="0033_x", helper=HELPER
-        )
-    argv = ["--repo", str(repo), "--ref", sha, "--app", "legacy_import"]
-    argv += ["--migration", "0034_other", "--previous-leaf", "0033_lovable_owner_alias"]
-    assert main(argv) == 2
-    assert "REFUSED" in capsys.readouterr().err
-
-
-def test_the_local_file_mode_checks_the_file_name(capsys):
-    arguments = ["--app", "legacy_import", "--previous-leaf", "0032_postipoiss_letters"]
-    file = ["--migration-file", str(R89_FILE)]
-    assert main([*arguments, "--migration", "0033_lovable_owner_alias", *file]) == 0
-    assert capsys.readouterr().out.startswith("canonical_counts.legacy_import.LovableOwnerAlias")
-    assert main([*arguments, "--migration", "0034_other", *file]) == 2

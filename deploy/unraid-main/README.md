@@ -1709,25 +1709,32 @@ that plan writes rows or adds a model (a new model appears as a new count). Anyt
 the fingerprints «were taken by different builds» is expected on every release.
 
 **The expected differences are derived, never hand-written.** A release kit's
-`FP_EXPECTED_LINES` comes from `tools/release_fingerprint.py`, run as the
-release commit's own copy against the migration in that same commit
-(r89, 23.11.2026, stopped after a correct swap because a hand-written list
-left out the new model's `None -> 0`):
+`FP_EXPECTED_LINES` comes from `tools/release_fingerprint.py` (r89, 23.11.2026,
+stopped after a correct swap because a hand-written list left out the new
+model's `None -> 0`). `$TARGET` is the full sha the release image is built from
+(the image's revision) and `$PREVIOUS` the full sha production runs; the helper
+and every file it reads come from `$TARGET` itself:
 
 ```bash
-git show "$TARGET:tools/release_fingerprint.py" > /tmp/release_fingerprint.py
-python /tmp/release_fingerprint.py --repo . --ref "$TARGET" --app <app> \
-  --migration <the new migration> --previous-leaf <the app's leaf before it>
+tmp="$(mktemp)"
+git show "$TARGET:tools/release_fingerprint.py" > "$tmp"
+FP_EXPECTED_LINES="$(python -I "$tmp" --repo . --ref "$TARGET" --previous-release "$PREVIOUS")" || exit 1
+git rev-parse "$TARGET:tools/release_fingerprint.py"   # record this blob sha in the kit
 ```
 
-It prints the two leaf lines and `canonical_counts.<app>.<Model>: None -> 0`
-for each model the migration creates, and nothing else. It refuses — exit 2,
-before anything is deployed — a helper that is not `$TARGET`'s own copy, a
-migration that is not in `$TARGET`, and any migration it cannot vouch for: a
-data or raw SQL operation, a deleted, renamed or retabled model, a removed or
-renamed field, or anything outside its list of schema-only operations. Such a
-release needs its expected lines reviewed by hand, line by line. The verdict
-itself is unchanged: an exact comparison.
+For a release with no migration it prints nothing (the fingerprint must be
+identical). For a release with one migration it prints the two leaf lines and
+`canonical_counts.<app>.<Model>: None -> 0` for each model that migration
+creates, and nothing else. It refuses — exit 3, `REFUSED: …`, before anything
+is deployed — a release it cannot vouch for: more than one migration, a
+migration that is not its app's new leaf or does not depend on production's
+leaf, a changed migration, anything in the file but plain `makemigrations`
+output (module-level code, `replaces`, `run_before`, `initial`, `atomic`,
+imports from `django.db.migrations`), any operation outside its schema-only
+list, a proxy or unmanaged model, a model the fingerprint does not count, and a
+helper that is not `$TARGET`'s own copy. Such a release needs its expected lines
+reviewed by hand, line by line. The verdict itself is unchanged: an exact
+comparison.
 
 Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a
