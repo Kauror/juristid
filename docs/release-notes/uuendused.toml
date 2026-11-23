@@ -18,7 +18,7 @@ changes = [
   "Menetluse kulu täpid näitavad ainult seda, mis on juba tehtud: eeldatavad jõustumised ja muud oodatud kuupäevad ei ole enam täppide ega «N tegevust» hulgas, sest need on menetluse kulus oma kohal eraldi.",
   "«Eeldatav jõustumine (allika hinnang)» on nüüd lihtsalt «Eeldatav jõustumine». Menetluse kulus on selle all kirjas, kust kuupäev pärineb (Lovable või kolleeg, kes selle lisas) ja allika märkus. Kolleegi lisatud eeldatava jõustumise saab sealt ✕-ga eemaldada; Lovable'ist tulnud kuupäeva ✕ selgitab, et see tuleb eemaldada Lovable'is ja öine sünkroonimine eemaldab selle siis ka Juristidest.",
   "«Valitsuse info»: kui mudel jättis mõne päevakorrapunkti hindamata, on see punkt märgitud «Hindamata» ja päevakorra juures on kirjas, mitu punkti on hindamata. Juba otsustatud («Lisa teemale», «Märgi loetuks») ja hinnatud punkte mudel enam üle ei kirjuta.",
-  "Lovable'i lehel «Valmisolek» näitab veerg «Automaatne» nüüd õigesti, milliseid välju öine sünkroonimine Lovable'i järgi kirjutab, ja «Reeglita muudatusi» loeb ainult Lovable'i muudatusi, mida ükski reegel ei kirjuta.",
+  "Uuenduste Lovable'i vaates «Valmisolek» näitab veerg «Automaatne» nüüd õigesti, milliseid välju öine sünkroonimine Lovable'i järgi kirjutab, ja «Reeglita muudatusi» loeb ainult Lovable'i muudatusi, mida ükski reegel ei kirjuta.",
   "«Lisa märkena» ei jää enam aeglase registri taha ootama: kui registri fail ei jõua mõistliku aja jooksul kohale, salvestatakse märge ikkagi ja puuduva faili link kirjutatakse märkesse.",
 ]
 
