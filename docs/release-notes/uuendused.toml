@@ -32,6 +32,7 @@ changes = [
   "Kui Lovable'is antakse juristi teemad üle teisele juristile («Teemade üleandmine»), jõuavad need Juristidesse juba järgmisel ööl, ka siis, kui teemasid on palju (kuni 150 korraga). Uus vastutaja saab iga teema kohta teavituse «Uus asi» ja teema järgmine samm läheb koos teemaga temale.",
   "Halduse «Andmete sünkroonimises» on uus leht «Lovable'i nimed»: iga Lovable'i vastutaja nimi ja inimene, kellena Juristid selle ära tunneb. Uue kolleegi nime saab seal enne üleandmist kontrollida ja kui tema nimi Lovable'is erineb nimest Juristides, saab nime inimesega siduda.",
   "Halduse «Kasutajates» on inimese lehel näha tema pooleli töö: avatud teemad (sh mitu neist on Lovable'is) ja pooleli sammud. Kui sellisel inimesel konto välja lülitada, tuleb kinnitada, et töö jääb ootele. Uus leht «Töö ilma aktiivse vastutajata» näitab, mis on välja lülitatud inimestele ja ilma vastutajata jäänud.",
+  "«Lovable'i nimed» näitab esimesena avatud teemade vastutajaid koos avatud teemade arvuga; nimed, mida Juristid ära ei tunne, on nende seas eespool. Lõpetatud ja ajalooliste teemade nimed ning ainult vastutaja vahetustes mainitud nimed on kokku volditud jaotises «Ajaloolised ja muud nimed». Probleemide arv loeb ainult avatud teemade nimesid.",
 ]
 
 [[day]]
