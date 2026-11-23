@@ -281,6 +281,37 @@ BYPASSES = {
         "on_delete=django.db.models.deletion.CASCADE, to='x.a; DROP TABLE t')),",
         "",
     ),
+    # The fifth review of #680: positional field arguments land in the column type.
+    "positional-char-max-length": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.CharField("
+        "'v', None, False, '10) CHECK (pg_sleep(5) IS NULL')),",
+        "",
+    ),
+    "positional-decimal": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.DecimalField("
+        "'v', None, '10, 2) CHECK (pg_sleep(5) IS NULL) --', 2)),",
+        "",
+    ),
+    "positional-array-base": (
+        "import django.contrib.postgres.fields\n" + HEAD,
+        "        migrations.AddField(model_name='a', name='b', "
+        "field=django.contrib.postgres.fields.ArrayField(models.CharField('v', None, False, "
+        "'10) CHECK (true)'))),",
+        "",
+    ),
+    "required-db-vendor": (
+        HEAD,
+        "        migrations.CreateModel(name='Z', fields=[], "
+        "options={'required_db_vendor': 'sqlite'}),",
+        "",
+    ),
+    "abstract-option": (
+        HEAD,
+        "        migrations.CreateModel(name='Z', fields=[], options={'abstract': True}),",
+        "",
+    ),
     "double-star-options": (
         HEAD,
         "        migrations.CreateModel(name='P', fields=[], **{'options': {'proxy': True}}),",

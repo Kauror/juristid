@@ -39,7 +39,8 @@ cannot vouch for needs its expected lines reviewed by hand:
 * any operation outside `SUPPORTED_OPERATIONS` (schema only), and any mention, wherever
   and however written, of a data, raw SQL, delete or rename operation;
 * an operation argument that is not inert data for its role: calls only of
-  `ALLOWED_CALLS`, references only to `ALLOWED_REFERENCES` (whole dotted names), sizes
+  `ALLOWED_CALLS` (positional arguments only for `POSITIONAL_CALLS`), references only to
+  `ALLOWED_REFERENCES` (whole dotted names), sizes
   only whole numbers, identifiers only plain names, operator classes only from a short
   list, no ``template``/``function``/``sql`` keyword, and no ``"`` or ``;`` outside free
   text such as ``help_text``;
@@ -106,7 +107,18 @@ CODE_BUILTINS = frozenset(
 #: assignment is a plain name and is checked on its own.
 FORBIDDEN_ATTRIBUTES = frozenset({"operations"})
 REFUSED_CLASS_ATTRIBUTES = frozenset({"replaces", "run_before", "initial", "atomic"})
-REFUSED_MODEL_OPTIONS = frozenset({"proxy", "managed", "db_table"})
+REFUSED_MODEL_OPTIONS = frozenset(
+    {
+        "proxy",
+        "managed",
+        "db_table",
+        "abstract",
+        "swappable",
+        "apps",
+        "required_db_vendor",
+        "required_db_features",
+    }
+)
 HELPER_PATH = "tools/release_fingerprint.py"
 DEPLOYMENT_PATH = "app/core/deployment.py"
 EXIT_REFUSED = 3
@@ -183,6 +195,19 @@ ALLOWED_CALLS = frozenset(
         "django.contrib.postgres.indexes.GinIndex",
         "django.contrib.postgres.search.SearchVectorField",
     ]
+)
+#: The calls whose positional arguments are expressions (query children, field
+#: references, index expressions), never sizes or names written into a column type.
+POSITIONAL_CALLS = frozenset(
+    {
+        "models.Q",
+        "models.F",
+        "models.Value",
+        "models.OrderBy",
+        "models.Index",
+        "models.UniqueConstraint",
+        "django.contrib.postgres.indexes.GinIndex",
+    }
 )
 #: The exact names an operation's arguments may refer to without calling them.
 ALLOWED_REFERENCES = frozenset(
@@ -312,9 +337,12 @@ def _check_value(node: ast.expr, key: str | None = None) -> None:
         name = _dotted(node.func)
         if name not in ALLOWED_CALLS:
             raise Refused(f"an operation argument calls {name or 'an expression'}")
-        positional = "size" if name == "django.contrib.postgres.fields.ArrayField" else None
-        for index, item in enumerate(node.args):
-            _check_value(item, positional if index == 1 else None)
+        if node.args and name not in POSITIONAL_CALLS:
+            # Field classes take max_length, max_digits ... positionally and Django
+            # writes them into the column type unquoted; makemigrations never does.
+            raise Refused(f"{name} is called with positional arguments")
+        for item in node.args:
+            _check_value(item)
         for keyword in node.keywords:
             if keyword.arg is None:
                 raise Refused("an operation argument is unpacked with **")
