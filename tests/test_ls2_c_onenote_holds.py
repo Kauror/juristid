@@ -51,7 +51,7 @@ NEW_BYTES = b"jagatud faili uus sisu"
 
 
 @pytest.fixture
-def world(tmp_path, settings):
+def world(tmp_path, settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     settings.HISTORICAL_SOURCE_ROOT = str(tmp_path)
