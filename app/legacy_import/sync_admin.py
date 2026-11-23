@@ -2206,17 +2206,30 @@ ALIAS_NOT_FOUND = "Seda seost ei ole enam olemas."
 
 @dataclass(frozen=True)
 class OwnerNameRow:
-    """One Lovable owner name and its answer tonight."""
+    """One Lovable owner name and its answer tonight.
+
+    ``topics`` counts every topic of the reading whose current owner it is;
+    ``open_topics`` only those Lovable counts as ongoing work
+    (`lovable_sync.source_activity` == ONGOING: operational, not finished, not
+    continued elsewhere — not `operatiivne_ulatus` alone). ``handed_over``
+    counts responsible-change rows that named it, which make nobody a current
+    owner by themselves (docs/adr/0220 §3)."""
 
     name: str
     topics: int
     handed_over: int
     answer: Any
     alias: Any = None
+    open_topics: int = 0
 
     @property
     def ok(self) -> bool:
         return not self.answer.code
+
+    @property
+    def current(self) -> bool:
+        """The name answers for open work now."""
+        return self.open_topics > 0
 
     @property
     def answer_text(self) -> str:
@@ -2231,6 +2244,27 @@ class OwnerNameRow:
         return str(getattr(self.answer.person, "display_name", "") or "")
 
 
+@dataclass(frozen=True)
+class OwnerNames:
+    """«Lovable'i nimed» in two parts (docs/adr/0220 §3): the names that answer
+    for open Teemad now, unresolved first because they need action; and every
+    other name — owners of finished or historical topics only, names that only
+    a responsible-change row mentions, pins no topic carries — kept whole and
+    shown folded. ``problems`` counts only unresolved names with open work."""
+
+    current: list[OwnerNameRow]
+    other: list[OwnerNameRow]
+    read_at: Any = None
+
+    @property
+    def rows(self) -> list[OwnerNameRow]:
+        return [*self.current, *self.other]
+
+    @property
+    def problems(self) -> int:
+        return sum(1 for row in self.current if not row.ok)
+
+
 def _latest_reading() -> dict[str, Any]:
     """The newest stored reading's document, or ``{}``."""
     snapshot = LovableSyncSnapshot.objects.order_by("-taken_at").only("document").first()
@@ -2242,18 +2276,26 @@ def _bundles(document: dict[str, Any]) -> Iterable[dict[str, Any]]:
     yield from ((document.get("new_topics") or {}).get("cohort") or {}).values()
 
 
-def owner_names() -> tuple[list[OwnerNameRow], Any]:
-    """Every owner name in the newest reading, and every name its responsible
-    changes hand work to, each with tonight's answer (`OwnerResolver.explain`);
-    names the night cannot place first. Also the reading's time (or ``None``).
-    Reads only."""
-    from app.legacy_import.lovable_sync import OwnerResolver, name_key, operative_owner
+def owner_names() -> OwnerNames:
+    """Every owner name in the newest stored reading, every name its
+    responsible changes hand work to, and every pinned name, each with
+    tonight's answer (`OwnerResolver.explain`), split into those with open
+    Teemad and the rest (`OwnerNames`). Reads only: never Lovable, never a
+    write."""
+    from app.legacy_import.lovable_sync import (
+        ACTIVITY_ONGOING,
+        OwnerResolver,
+        name_key,
+        operative_owner,
+        source_activity,
+    )
     from app.legacy_import.lovable_sync_models import LovableOwnerAlias
 
     snapshot = LovableSyncSnapshot.objects.order_by("-taken_at").only("taken_at").first()
     document = _latest_reading()
     shown: dict[str, str] = {}
     topics: dict[str, int] = {}
+    open_topics: dict[str, int] = {}
     handed: dict[str, int] = {}
     for bundle in _bundles(document):
         name = operative_owner(bundle.get("row") or {})
@@ -2261,6 +2303,8 @@ def owner_names() -> tuple[list[OwnerNameRow], Any]:
             key = name_key(name)
             shown.setdefault(key, name)
             topics[key] = topics.get(key, 0) + 1
+            if source_activity(bundle) == ACTIVITY_ONGOING:
+                open_topics[key] = open_topics.get(key, 0) + 1
         for change in bundle.get("responsible_changes") or []:
             new = str(change.get("uus_vastutaja") or "").strip()
             if new and name_key(new) not in {"vastutaja puudub", "vastutaja puudub."}:
@@ -2278,11 +2322,19 @@ def owner_names() -> tuple[list[OwnerNameRow], Any]:
             handed_over=handed.get(key, 0),
             answer=resolver.explain(name),
             alias=aliases.get(key),
+            open_topics=open_topics.get(key, 0),
         )
         for key, name in shown.items()
     ]
-    rows.sort(key=lambda r: (r.ok, -r.topics, r.name.casefold()))
-    return rows, (snapshot.taken_at if snapshot is not None else None)
+    current = sorted(
+        (r for r in rows if r.current), key=lambda r: (r.ok, -r.open_topics, r.name.casefold())
+    )
+    other = sorted((r for r in rows if not r.current), key=lambda r: (-r.topics, r.name.casefold()))
+    return OwnerNames(
+        current=current,
+        other=other,
+        read_at=snapshot.taken_at if snapshot is not None else None,
+    )
 
 
 def explain_owner_name(name: str) -> OwnerNameRow | None:

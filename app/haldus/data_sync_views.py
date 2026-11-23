@@ -497,14 +497,13 @@ def owner_names(request: HttpRequest) -> HttpResponseBase:
         except DomainError as error:
             messages.error(request, str(error))
         return redirect(back)
-    rows, read_at = sync_admin.owner_names()
+    names = sync_admin.owner_names()
     typed = str(request.GET.get("nimi", "")).strip()
     context = _context(
         request,
         "nimed",
-        rows=rows,
-        problems=sum(1 for row in rows if not row.ok),
-        read_at=read_at,
+        names=names,
+        read_at=names.read_at,
         typed=typed,
         checked=sync_admin.explain_owner_name(typed) if typed else None,
         people=assignable_business_users().order_by("display_name"),
