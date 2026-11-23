@@ -117,7 +117,11 @@ def agenda_list(request: HttpRequest) -> HttpResponse:
     related_ids = {
         item.related_matter_id for a in agendas for item in a.items.all() if item.related_matter_id
     }
-    visible = {m.pk: m for m in Matter.objects.visible_to(request.user).filter(pk__in=related_ids)}
+    # A TEST Teema is never offered as an agenda item's Teema (audit HR-09).
+    visible = {
+        m.pk: m
+        for m in Matter.objects.visible_to(request.user).filter(pk__in=related_ids).real_data()
+    }
     weeks = []
     for a in agendas:
         groups: dict[str, list[Any]] = {"shown": [], "check": [], "rest": []}
@@ -155,6 +159,8 @@ def candidate_list(request: HttpRequest) -> HttpResponse:
     visible = set(
         Matter.objects.visible_to(request.user)
         .filter(pk__in=[row.related_matter_id for row in rows if row.related_matter_id])
+        # A TEST Teema is never suggested as a draft's Teema (audit HR-09).
+        .real_data()
         .values_list("pk", flat=True)
     )
     shown: list[Any] = []
