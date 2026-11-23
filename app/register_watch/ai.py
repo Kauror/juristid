@@ -22,18 +22,22 @@ from typing import Any
 from django.conf import settings
 
 from app.core.enums import Visibility
+from app.register_watch import house_style
+from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Relevance, WatchFinding
 
 logger = logging.getLogger("app.register_watch")
 
-SYSTEM = """You help lawyers at the Estonian Chamber of Commerce and Industry follow \
+SYSTEM = f"""You help lawyers at the Estonian Chamber of Commerce and Industry follow \
 legislative proceedings. A lawyer tracks one topic (a draft law or regulation). A \
 search of a ministry's public document register by the bill's number or name returned \
 the documents below. For each document decide whether it belongs to the tracked \
 proceeding (RELEVANT), clearly does not (UNRELATED), or cannot be told from the title \
 (UNSURE). Then write one short line in Estonian (at most 160 characters) saying what \
 the document is and why a lawyer following the topic would care, without repeating \
-the whole title. Use only the information given; do not guess dates or content."""
+the whole title. Use only the information given; do not guess dates or content.
+
+{KODA_STYLE}"""
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -176,7 +180,7 @@ def _judge_batch(
         if not row or row.get("verdict") not in allowed:
             continue
         finding.relevance = row["verdict"]
-        finding.ai_note = str(row.get("note") or "").strip()[:500]
+        finding.ai_note = house_style.fix(str(row.get("note") or "").strip())[:500]
         finding.save(update_fields=["relevance", "ai_note", "updated_at"])
         judged += 1
     usage.judged += judged

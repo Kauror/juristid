@@ -102,7 +102,18 @@ nothing at all.
               {% if step.state == "today" %}aria-current="date"{% endif %}
               {% if step.state == "current" %}aria-current="step"{% endif %}
               {% if step.detail %} title="{{ step.detail }}"{% endif %}>
+          {% if step.year_label %}<span class="tl-step__year">{{ step.year_label }}</span>{% endif %}
           <span class="tl-step__dot" aria-hidden="true"></span>
+          {% comment %}
+            What happened in this phase, from `Tegevused` (owner, 2026-11-23,
+            learned from the Riigikogu's «Menetluskäik»): a small dot per act on
+            the stretch after the phase, its date and name in the tooltip.
+          {% endcomment %}
+          {% if step.acts %}
+            <span class="tl-step__acts" aria-hidden="true">
+              {% for when, what in step.acts %}<span class="tl-step__act" title="{{ when }} — {{ what }}"></span>{% endfor %}
+            </span>
+          {% endif %}
           {% comment %}
             **An event, not a stage** (owner, 2026-10-19): a watched deadline or a
             `Töövõit` says what kind of thing it is in words, above its own
@@ -159,6 +170,10 @@ nothing at all.
             {% endfor %}
           {% elif step.display_date %}
             <span class="tl-step__date">{{ step.display_date }}</span>
+          {% endif %}
+          {% if step.acts_count %}
+            {# The phase opens its acts: their period in Tegevused, opened and scrolled to. #}
+            <a class="tl-step__actslink" href="#{{ step.acts_anchor }}" data-open-etapp="{{ step.acts_anchor }}">{{ step.acts_count }} tegevus{{ step.acts_count|pluralize:"t" }}</a>
           {% endif %}
           {% comment %}
             **`Hetkeseis` is not on this rail, and that is docs/adr/0074 §12.1

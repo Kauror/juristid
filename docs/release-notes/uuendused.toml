@@ -9,13 +9,26 @@
 
 # 23.11: andmetoiming tootmises (Postipoisi kirjad, omaniku otsus), mitte koodi
 # väljalase; r87 a1f40688 töötas. Skript ja logi: releases/a1f40688937e/postipoiss-owner-20261123/.
+# Samal päeval väljalase r88 (#671, omaniku märkmed, 4. voor): selle muudatused on sama kirje all.
 [[day]]
 date = 2026-11-23
 basis = "deployment"
 revisions = ["a1f40688937e"]
+prs = [671]
 changes = [
   "Halduse «Ajaloolistes kirjades» ootab otsust 612 kirja asemel 317: 295 kirja on omaniku otsusel teemaga seotud. Seoti kirjad, mille teema oli kindel (kuupäev, saaja ja teema ühtivad) või mille pealkiri ja faili tekst vastavad pakutud teemale; 14 kirja seoti pealkirja järgi teise teemaga, sest pakutud teema ei sobinud.",
   "99 neist kirjadest on teema ajajoonel väljasaadetud arvamusena koos kirja failiga. Kirjad, millel faili pole, on teemaga seotud, kuid arvamuseks ei muutunud.",
+  "Menetluse lingi juures on muutmise ja eemaldamise nupp nüüd ikoon (pliiats ja ✕) samal real lingiga; mõlemal on hiire all selgitus.",
+  "«Varasemad etapid» all ei ole enam rida «suletud · vahetu eelmine etapp»; sügavamal etapil on alles märge, millise teemana see jätkus.",
+  "Teema vahekaardil «Registritest» on nupp «Märgi kõik loetuks», mis märgib loetuks kõik selle teema ootel dokumendid ja valitsuse päevakorra punktid.",
+  "«Lisa märkena» juurde saab lisada oma faile: lohista fail välja «Märkus» peale või vali «+ Lisa fail». Failid lisatakse märkele koos registri enda failiga. Avatud vorm on nüüd rea laiune ega kata järgmist rida.",
+  "Registrist leitud dokumendi pealkiri avab registri lehe nagu varem ja selle all on eraldi link «Fail: …» iga dokumendi faili juurde, mis avab faili otse registrist.",
+  "Monitooringus ja teema vahekaardil «Registritest» kirjutavad AI selgitused kaubanduskoja nime kirjastiili järgi: «Eesti Kaubandus-Tööstuskoda», lause keskel «koda» ja «kaubanduskoda» väikese tähega, omastav «koja». Varasemad selgitused on parandatud.",
+  "«Valitsuse info» istungite päevakordade pealkirjade ees on nool, mis näitab, et päevakorra saab lahti ja kokku voltida.",
+  "Ülemine otsing leiab ka rakenduse lehti ja seadeid, näiteks «tume» (hele või tume vaade, lülitub kohe), «juhatuse ülevaade», «teavitused», «kiirklahvid» või Halduse osad. Need on loetelus eraldi rühmas «Rakendus» teemade kohal, ja igaüks näeb ainult neid, mida ta avada saab.",
+  "Halduse ülevaatel ei ole enam pealkirju «Seaded», «Sulle avatud osad» ja «Rakendus»; «Rakenduse versioon» on lingidest eraldatud ja igal lingil on lühike selgitus.",
+  "Menetluse kulus on iga etapi järel väikesed täpid selle etapi tegevuste kohta (hiire all kuupäev ja mis juhtus), aasta on kirjas seal, kus see vahetub, ja link «N tegevust» avab Tegevustes selle etapi.",
+  "«Majanduspoliitika ülevaade» avaneb nüüd Osakonna lehe paremast veerust, «Aruandluse» alt; Statistika lehel seda nuppu enam ei ole.",
 ]
 
 [[day]]

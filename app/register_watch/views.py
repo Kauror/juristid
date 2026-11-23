@@ -262,6 +262,19 @@ def _back(request: HttpRequest, matter_id: Any = None) -> HttpResponseRedirect:
     return HttpResponseRedirect(f"{reverse('register_watch:review')}?{urlencode(query)}")
 
 
+def own_files(request: HttpRequest) -> list[Any]:
+    """The files a lawyer added to «Lisa märkena» (``failid``), refused as a batch over the limits.
+
+    Each one is then validated by `+ Märge`'s own use case like any other
+    upload: one unusable file refuses the whole save, with its reason.
+    """
+    from app.documents.uploads import check_upload_batch
+
+    files = [handle for handle in request.FILES.getlist("failid") if handle]
+    check_upload_batch([handle.size or 0 for handle in files])
+    return files
+
+
 def _tell_about_files(request: HttpRequest, fetched: register_files.Fetched) -> None:
     if fetched.unreachable:
         messages.warning(request, "Registrist ei saanud faili alla laadida; märkes on link.")
@@ -285,12 +298,15 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
         if decision == "lisa":
             # The register's own files come with the note (owner, 2026-11-22),
             # fetched before the save so no row lock waits on a register.
+            # The lawyer's own files first (dropped on «Märkus», owner
+            # 2026-11-23), checked as one request's batch, then the register's.
+            own = own_files(request)
             fetched = register_files.fetch(finding.target.source, finding.external_id)
             watch.add_to_teema(
                 finding,
                 actor=request.user,
                 comment=request.POST.get("markus", "")[:4000],
-                uploads=fetched.uploads,
+                uploads=[*own, *fetched.uploads],
             )
             _tell_about_files(request, fetched)
         else:
@@ -309,9 +325,27 @@ def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
     For when the ones that matter have been added: the rest go in one press. Only
     the reader's own waiting findings on a Teema they may see; each is skipped
     through `watch.dismiss`, exactly as one «Märgi loetuks» would.
+
+    From the Teema's own «Registritest» tab (``tagasi=teema``, owner 2026-11-23)
+    «kõik» is everything that tab lists, so the Government's agenda items tied
+    to the Teema go too, each through `agenda.dismiss`; the tab is where it
+    returns. Folded-away «Ei puutu teemasse» findings are waiting findings and
+    go with the rest, as they do from Monitooring.
     """
-    waiting = list(watch.pending_for(request.user).filter(matter_id=pk))
-    if not waiting:
+    from app.matters.models import Matter
+    from app.register_watch import agenda
+
+    waiting: list[Any] = list(watch.pending_for(request.user).filter(matter_id=pk))
+    from_teema = request.POST.get("tagasi") == "teema"
+    items: list[Any] = []
+    if from_teema:
+        teema = (
+            Matter.objects.visible_to(request.user)
+            .filter(pk=pk, is_open=True, deleted_at__isnull=True)
+            .first()
+        )
+        items = agenda.teema_proposals(teema) if teema is not None else []
+    if not waiting and not items:
         raise Http404("Ootel dokumente ei leitud.")
     skipped = 0
     for finding in waiting:
@@ -320,11 +354,17 @@ def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
             skipped += 1
         except DomainError:
             continue  # decided by somebody else meanwhile
+    for item in items:
+        try:
+            agenda.dismiss(item, actor=request.user)
+            skipped += 1
+        except DomainError:
+            continue
     messages.success(
         request,
         "1 dokument märgiti loetuks." if skipped == 1 else f"{skipped} dokumenti märgiti loetuks.",
     )
-    return _back(request)
+    return _back(request, pk if from_teema else None)
 
 
 @login_required

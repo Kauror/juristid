@@ -96,7 +96,12 @@ because what the file recorded and who recorded it is part of the file
               and an address changes because the proceeding moved just as often
               (OWNER-02).
             {% endcomment %}
-            <summary class="disclosure-chip">Muuda</summary>
+            {% comment %}
+              A pen, not the word (owner, 2026-11-23): the address, then its two
+              icons on the same line — edit, remove — with the act in the tooltip
+              and the accessible name.
+            {% endcomment %}
+            <summary class="uxtl__icon proclink__icon" title="Muuda linki">{% include "matters/partials/action_icon.html" with name="edit" %}<span class="visually-hidden">Muuda linki</span></summary>
             <div class="proclink__form">
               {% if procedural_link_open == link.pk|stringformat:"s" and procedural_link_error %}
                 <p class="formerror" role="alert">{{ procedural_link_error }}</p>
@@ -145,7 +150,7 @@ because what the file recorded and who recorded it is part of the file
           </details>
           {# Off the rail (owner, 2026-11-22): the shared ✕ and its confirmation. #}
           {% if matter.is_open %}
-            {% include "matters/partials/row_remove.html" with record=link remove_kind="menetluslink" remove_label="menetluse link" remove_genitive="menetluse lingi" remove_where="teemalt" remove_revision=link.updated_at.isoformat %}
+            {% include "matters/partials/row_remove.html" with record=link remove_kind="menetluslink" remove_label="menetluse link" remove_genitive="menetluse lingi" remove_where="teemalt" remove_title="Eemalda link" remove_revision=link.updated_at.isoformat %}
           {% endif %}
         {% endif %}
           </span>

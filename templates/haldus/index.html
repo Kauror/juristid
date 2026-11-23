@@ -27,7 +27,7 @@
     {% endcomment %}
     {% load haldus %}{% notification_settings_link as notification_settings_href %}
     <section class="panel" aria-labelledby="seaded">
-      <h2 class="acctsection__title" id="seaded">Seaded</h2>
+      <h2 class="visually-hidden" id="seaded">Seaded</h2>
       <div class="settingslist">
         {% include "components/theme_toggle.html" with variant="setting" %}
         {% if notification_settings_href %}
@@ -99,7 +99,7 @@
 
   {% if others %}
     <section class="panel" aria-labelledby="halduse-osad">
-      <h2 class="acctsection__title" id="halduse-osad">Sulle avatud osad</h2>
+      <h2 class="visually-hidden" id="halduse-osad">Sulle avatud osad</h2>
       <ul class="linklist">
         {% for section in others %}
           <li class="linklist__item">
@@ -119,7 +119,7 @@
     reader on their own page (`core:release_notes_lovable`).
   {% endcomment %}
   <section class="panel" aria-labelledby="rakendus">
-    <h2 class="acctsection__title" id="rakendus">Rakendus</h2>
+    <h2 class="visually-hidden" id="rakendus">Rakendus</h2>
     <ul class="linklist">
       <li class="linklist__item">
         <a href="{% url 'core:release_notes' %}">Uuendused</a>
@@ -132,15 +132,18 @@
       {# Moved here from Statistika's tab strip (owner, 2026-11-17): about the data, not the work. #}
       <li class="linklist__item">
         <a href="{% url 'reporting:historical' %}">Ajaloolised materjalid</a>
+        <span class="linklist__meta">OneNote'i ajaloolise materjali maht ja ülesehitus.</span>
       </li>
       <li class="linklist__item">
         <a href="{% url 'reporting:quality' %}">Andmekvaliteet</a>
+        <span class="linklist__meta">Andmekvaliteedi järjekorrad: puudused ja vastuolud, mida parandada.</span>
       </li>
       <li class="linklist__item">
         <a href="{% url 'reporting:definitions' %}">Statistika definitsioonid</a>
+        <span class="linklist__meta">Kuidas iga statistika näitaja arvutatakse.</span>
       </li>
     </ul>
-    <h3 class="acctsection__title" id="rakenduse-versioon">Rakenduse versioon</h3>
+    <h3 class="acctsection__title acctsection__title--split" id="rakenduse-versioon">Rakenduse versioon</h3>
     <dl class="detailgrid" aria-labelledby="rakenduse-versioon">
       <dt>Etapp</dt>
       <dd>{{ application_stage|default:"—" }}</dd>

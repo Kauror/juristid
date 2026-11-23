@@ -258,6 +258,17 @@
   font-size: var(--typography-size-meta);
 }
 
+/* «Rakendus» and «Teemad» over the dropdown's two groups (owner, 2026-11-23). */
+.searchfield__group {
+  margin: 0;
+  padding: var(--spacing-15) var(--spacing-2) var(--spacing-1);
+  font-size: 11px;
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .searchfield__empty {
   margin: 0;
   padding: var(--spacing-15) var(--spacing-2);
@@ -12519,6 +12530,54 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: none;
 }
 
+/* The year, above the first item of each year (owner, 2026-11-23). Out of the
+ * column's flow, so every dot stays on the one line the connector runs along. */
+#teema-vaade-wrap .tl-strip:has(.tl-step__year) {
+  padding-top: calc(var(--spacing-3) + 16px);
+}
+
+#teema-vaade-wrap .tl-step__year {
+  position: absolute;
+  top: -18px;
+  left: 0;
+  font-size: 12px;
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+}
+
+/* A phase's acts: small dots along the stretch after it, each with its date and
+ * name in the tooltip (owner, 2026-11-23, after the Riigikogu's strip). */
+#teema-vaade-wrap .tl-step__acts {
+  position: absolute;
+  z-index: 1;
+  top: 0;
+  left: 24px;
+  right: var(--spacing-3);
+  display: flex;
+  justify-content: space-evenly;
+  align-items: center;
+  height: 12px;
+}
+
+#teema-vaade-wrap .tl-step__act {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.5px solid var(--accent-link);
+  background: var(--surface-base);
+  box-sizing: border-box;
+  cursor: help;
+}
+
+#teema-vaade-wrap .tl-step__act:hover {
+  background: var(--accent-link);
+}
+
+#teema-vaade-wrap .tl-step__actslink {
+  font-size: 11.5px;
+  line-height: 1.3;
+}
+
 #teema-vaade-wrap .tl-step__dot {
   position: relative;
   z-index: 1;
@@ -12611,6 +12670,13 @@ section:has(.pw-more[open]) tbody.uxextra {
  * and the chip must not be pushed off the card. */
 #teema-vaade-wrap .proclink__value {
   min-width: 0;
+  /* The whole row's width, so the address, the pen and the ✕ sit on one line
+   * (owner, 2026-11-23); a long address still wraps and the icons follow it. */
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: var(--spacing-1);
 }
 
 #teema-vaade-wrap .proclink__value > a {
@@ -12659,6 +12725,27 @@ section:has(.pw-more[open]) tbody.uxextra {
 #teema-vaade-wrap .proclink__fix > summary:focus-visible {
   color: var(--accent-link);
   text-decoration: underline;
+}
+
+/* Edit and remove sit after the address on its line (owner, 2026-11-23): the
+ * pen and the ✕, both icons, both with a tooltip. The remove disclosure was a
+ * block and dropped under the link. */
+#teema-vaade-wrap .proclink__value > .uxtl__remove {
+  display: inline;
+  margin-left: var(--spacing-1);
+}
+
+/* An open correction takes its own line under the address; the ✕ stays up
+ * on the address's line rather than dropping under the form. */
+#teema-vaade-wrap .proclink__value > .proclink__fix[open] {
+  flex-basis: 100%;
+  order: 2;
+}
+
+#teema-vaade-wrap .proclink__value > .uxtl__remove > summary,
+#teema-vaade-wrap .proclink__fix > summary.proclink__icon {
+  display: inline-flex;
+  vertical-align: middle;
 }
 
 #teema-vaade-wrap .tl-step__note {
@@ -14318,6 +14405,14 @@ section:has(.pw-more[open]) tbody.uxextra {
   margin: 0 0 var(--spacing-2);
   font-size: var(--typography-size-base);
   font-weight: var(--typography-weight-semibold);
+}
+
+/* «Rakenduse versioon» under the Rakendus links: its own divider, so it does
+ * not read as the last link's description (owner, 2026-11-23). */
+.acctsection__title--split {
+  margin-top: var(--spacing-4);
+  padding-top: var(--spacing-3);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .acctactions {
@@ -17515,6 +17610,17 @@ a.statpanel__note {
   min-width: 0;
 }
 
+.regwatch__files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--spacing-3);
+  font-size: var(--typography-size-meta);
+}
+
+.regwatch__file {
+  overflow-wrap: anywhere;
+}
+
 .regwatch__note {
   font-size: var(--typography-size-meta);
 }
@@ -17547,10 +17653,45 @@ a.statpanel__note {
 .regwatch__addpanel {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: stretch;
   gap: var(--spacing-1);
-  width: 18rem;
-  max-width: 70vw;
+  width: 100%;
+  padding: var(--spacing-1);
+  border: 1px dashed transparent;
+  border-radius: var(--radius-sm);
+}
+
+/* An open «Lisa märkena» takes the row's width under the title rather than
+ * squeezing into the button column over the next row (owner, 2026-11-23);
+ * «Märgi loetuks» stays beside it. */
+.regwatch__row:has(.regwatch__add[open]) > .regwatch__actions {
+  grid-column: 2 / -1;
+}
+
+.regwatch__row:has(.regwatch__add[open]) .regwatch__add {
+  flex: 1 1 auto;
+}
+
+.regwatch__addpanel.is-dragover {
+  border-color: var(--accent-link);
+  background: var(--surface-hover);
+}
+
+.regwatch__addfoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-2);
+}
+
+.regwatch__addfile {
+  color: var(--text-muted);
+  font-size: var(--typography-size-meta);
+  cursor: pointer;
+}
+
+.regwatch__addfile:focus-within {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
 }
 
 .regwatch__addpanel .field__label {
@@ -17608,6 +17749,20 @@ a.statpanel__note {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-3);
+}
+
+/* The tab's one line and «Märgi kõik loetuks» beside it (owner, 2026-11-23),
+ * the button kept over the rows' own «Märgi loetuks» column. */
+.regtab__headrow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--spacing-2) var(--spacing-4);
+}
+
+.regtab__markall {
+  margin: 0;
 }
 
 .regtab__state {
@@ -17708,8 +17863,47 @@ a.statpanel__note {
   flex-wrap: wrap;
   align-items: baseline;
   gap: var(--spacing-2);
-  padding: var(--spacing-2) 0;
+  padding: var(--spacing-2) var(--spacing-1);
+  border-radius: var(--radius-sm);
   cursor: pointer;
+  list-style: none;
+}
+
+.agenda__head::-webkit-details-marker {
+  display: none;
+}
+
+/* A sitting's agenda folds; the chevron says so and turns when it is open
+ * (owner, 2026-11-23), like «Valitsuse selgitus» under each item. */
+.agenda__head::before {
+  content: "";
+  flex: none;
+  align-self: center;
+  width: 0.5em;
+  height: 0.5em;
+  margin-right: var(--spacing-1);
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+
+.agenda[open] > .agenda__head::before {
+  transform: rotate(45deg);
+}
+
+.agenda__head:hover {
+  background: var(--surface-hover);
+}
+
+.agenda__head:hover::before {
+  border-color: var(--accent-link);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agenda__head::before {
+    transition: none;
+  }
 }
 
 .agenda__title {
@@ -17768,4 +17962,11 @@ a.statpanel__note {
   flex-wrap: wrap;
   align-items: center;
   gap: var(--spacing-2) var(--spacing-3);
+}
+
+/* «Majanduspoliitika ülevaade» under Osakond's Aruandlus (owner, 2026-11-23). */
+.railblock__action {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--spacing-3);
 }

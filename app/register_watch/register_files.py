@@ -139,3 +139,40 @@ def fetch(source: str, external_id: str) -> Fetched:
         result.uploads.append(SimpleUploadedFile(remote.name, content))
     result.missed.extend(remote.name for remote in files[MAX_FILES:])
     return result
+
+
+#: How many findings one pass looks up; the rest wait for the next night.
+REMEMBER_LIMIT = 300
+
+
+def url_of(remote: RemoteFile) -> str:
+    return f"https://{remote.host}{remote.path}"
+
+
+def remember(limit: int = REMEMBER_LIMIT) -> int:
+    """Store each waiting finding's file links for its «Fail» links (owner, 2026-11-23).
+
+    The row's title opens the register's own page, and a file is not always
+    there to be found; this records where `locate` finds the document's files
+    so the row can link each one directly. Only findings never looked up
+    (``files`` is ``None``) and still waiting; a register that does not answer
+    leaves the finding for the next pass. Never raises. Returns how many
+    findings were stored.
+    """
+    from app.register_watch.models import FindingStatus, WatchFinding
+
+    stored = 0
+    waiting = (
+        WatchFinding.objects.filter(status=FindingStatus.PENDING, files__isnull=True)
+        .select_related("target")
+        .order_by("-occurred_on", "pk")[:limit]
+    )
+    for finding in waiting:
+        try:
+            found = locate(finding.target.source, finding.external_id)
+        except FetchError:
+            continue  # unread tonight; looked up again on the next pass
+        finding.files = [{"name": one.name, "url": url_of(one)} for one in found[:MAX_FILES]]
+        finding.save(update_fields=["files", "updated_at"])
+        stored += 1
+    return stored

@@ -121,7 +121,7 @@ def test_e_one_page_request_walks_once_and_fragments_are_fresh(client, specialis
     )
     body = client.get(section, **HX).content.decode()
     assert "PAE myöhem eelmine" in body
-    assert "vahetu eelmine etapp" in body
+    assert "vahetu eelmine etapp" not in body
 
 
 # -- QA-08 -------------------------------------------------------------------------
@@ -236,5 +236,5 @@ def test_e_every_deeper_row_names_a_listed_stage_and_direct_rows_are_marked(clie
     client.force_login(specialist)
     body = client.get(reverse("related_materials:section", kwargs={"pk": t.pk}), **HX)
     html = body.content.decode()
-    assert html.count("vahetu eelmine etapp") == 3
+    assert html.count("vahetu eelmine etapp") == 0
     assert html.count("jätkus teemana") == 3

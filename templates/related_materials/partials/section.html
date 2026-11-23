@@ -111,7 +111,16 @@ lists and the suggestions cannot disagree about the click that just happened.
             as — always a row of this list, so the reference is one this
             reader may open.
           {% endcomment %}
-          <span class="muted relatedmaterials__meta" data-related-stage-depth="{{ item.depth }}">{{ item.state_label }}{% if item.is_direct %} · vahetu eelmine etapp{% elif item.continued_as_label %} · jätkus teemana {{ item.continued_as_label }}{% endif %}{% if item.is_also_manual %} · seotud ka käsitsi{% endif %}</span>
+          {% comment %}
+            No «suletud · vahetu eelmine etapp» line (owner, 2026-11-23): the
+            state and the direct link are noise under a title the reader opens
+            anyway. What stays is what explains the list's shape — a deeper
+            stage names the stage it continued as — and the note that a row
+            is also a manual relation, which is what its × withdraws.
+          {% endcomment %}
+          {% if not item.is_direct and item.continued_as_label or item.is_also_manual %}
+          <span class="muted relatedmaterials__meta" data-related-stage-depth="{{ item.depth }}">{% if not item.is_direct and item.continued_as_label %}jätkus teemana {{ item.continued_as_label }}{% endif %}{% if item.is_also_manual %}{% if not item.is_direct and item.continued_as_label %} · {% endif %}seotud ka käsitsi{% endif %}</span>
+          {% endif %}
           {% if can_write and matter.is_open and item.is_also_manual %}
             <form class="relatedmaterials__remove" method="post" action="{% url 'related_materials:unlink' pk=matter.pk %}"
                   hx-post="{% url 'related_materials:unlink' pk=matter.pk %}"

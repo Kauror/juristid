@@ -238,8 +238,13 @@ def agenda_decide(request: HttpRequest, pk: Any) -> HttpResponse:
         raise Http404("Päevakorrapunkti ei leitud.")
     try:
         if request.POST.get("otsus") == "lisa":
+            from app.register_watch.views import own_files
+
             agenda.add_to_teema(
-                item, actor=request.user, comment=request.POST.get("markus", "")[:4000]
+                item,
+                actor=request.user,
+                comment=request.POST.get("markus", "")[:4000],
+                uploads=own_files(request),
             )
             messages.success(request, "Päevakorrapunkt lisati teemale.")
         else:

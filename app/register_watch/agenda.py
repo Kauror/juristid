@@ -24,7 +24,8 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from app.register_watch import candidates_ai
+from app.register_watch import candidates_ai, house_style
+from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import AgendaItem, GovernmentAgenda, Strength
 from app.register_watch.sources import valitsus
 from app.register_watch.sources.http import FetchError
@@ -191,7 +192,9 @@ entrepreneurs or the Chamber, naming the topic; for NONE say briefly why not. If
 only plausible, say «võimalik seos». If one of the Chamber's open topics (given with ids) is \
 plainly about the same act or matter, give its id in `related`, otherwise null. The \
 Chamber's recent outgoing letters are listed as a signal of its current work; do not cite \
-them. Use only what is given."""
+them. Use only what is given.
+
+{KODA_STYLE}"""
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -302,7 +305,7 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             if not row or row.get("strength") not in allowed:
                 continue
             item.strength = row["strength"]
-            item.reason = str(row.get("reason") or "").strip()[:500]
+            item.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
             item.related_matter = topics.get(str(row.get("related") or ""))
             item.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
             judged += 1
@@ -381,7 +384,9 @@ def _lock(item: AgendaItem) -> AgendaItem:
 
 
 @transaction.atomic
-def add_to_teema(item: AgendaItem, *, actor: Any, comment: str = "") -> AgendaItem:
+def add_to_teema(
+    item: AgendaItem, *, actor: Any, comment: str = "", uploads: Any = ()
+) -> AgendaItem:
     """«Lisa teemale»: a `Menetluse areng` on its Teema, through `+ Märge`'s own use case."""
     from app.core.errors import DomainError
     from app.matters.workspace import add_procedural_development
@@ -397,6 +402,7 @@ def add_to_teema(item: AgendaItem, *, actor: Any, comment: str = "") -> AgendaIt
         title=f"Valitsuse istung: {locked.title}"[:500],
         occurred_on=locked.agenda.session_date,
         note=with_comment(comment, _note(locked)),
+        uploads=list(uploads),
     )
     locked.status = AgendaItemStatus.ADDED
     locked.decided_by = actor

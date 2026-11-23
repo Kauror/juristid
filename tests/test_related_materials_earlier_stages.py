@@ -187,7 +187,8 @@ def test_one_predecessor_is_listed_with_its_reference_title_link_and_state(signe
     assert _stage_refs(body) == ["2025_140"]
     assert "2025_140 — Pakendiseaduse muutmine</a>" in stages
     assert _link(old) in stages
-    assert "suletud" in _squash(stages)
+    # No state line under the title (owner, 2026-11-23).
+    assert "suletud" not in _squash(stages)
     # Not editable: no control at all on a stage row nobody related by hand.
     assert "<form" not in stages and "×" not in stages
     assert _count(body) == 1

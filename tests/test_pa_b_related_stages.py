@@ -7,8 +7,8 @@
 * QA-15 — «Seo teemaga», «Lisa», «Ei ole seotud» (and «Taasta soovitus») had the
   same accessible name on every row. Each now names its target.
 * QA-12 — «Varasemad etapid» stays flat and compact (owner, 2026-11-05); a
-  direct predecessor says «vahetu eelmine etapp», a deeper stage «jätkus teemana
-  <reference>».
+  direct predecessor carries no line under its title (owner, 2026-11-23), a
+  deeper stage says «jätkus teemana <reference>».
 
 The history, invented throughout (arrows are `superseded_by`)::
 
@@ -262,15 +262,15 @@ def test_varasemad_etapid_marks_direct_and_deeper_stages(history, signed_in):
     for key in "abcde":
         row = stages.split(f'data-related-stage="{history[key].pk}"', 1)[1].split("</li>")[0]
         text = re.search(r'class="muted relatedmaterials__meta"[^>]*>([^<]*)<', row)
-        assert text, key
-        meta[key] = " ".join(text.group(1).split())
+        meta[key] = " ".join(text.group(1).split()) if text else ""
     assert meta == {
-        "a": "avatud · jätkus teemana 2020_2",
-        "b": "avatud · jätkus teemana 2021_3",
-        "c": "avatud · vahetu eelmine etapp",
-        "d": "avatud · jätkus teemana 2022_5",
-        "e": "avatud · vahetu eelmine etapp",
+        "a": "jätkus teemana 2020_2",
+        "b": "jätkus teemana 2021_3",
+        "c": "",
+        "d": "jätkus teemana 2022_5",
+        "e": "",
     }
+    assert "vahetu eelmine etapp" not in stages and "avatud" not in stages
     # Still flat and earliest first (by depth, then reference).
     order = [m.group(1) for m in re.finditer(r'data-related-stage="([0-9a-f-]+)"', stages)]
     assert order == [str(history[k].pk) for k in ("a", "d", "b", "c", "e")]
