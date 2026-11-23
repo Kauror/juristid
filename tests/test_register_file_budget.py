@@ -178,7 +178,11 @@ SLACK = 0.75
 
 
 def _certificate(tmp_path):
-    """A self-signed certificate for `HOST`, so the client verifies TLS as in production."""
+    """A self-signed certificate for `HOST`, so the client verifies TLS as in production.
+
+    `cryptography` is not a direct dependency: it is present through
+    ``pyjwt[crypto]``. Should that ever go, these tests need it declared.
+    """
     from cryptography import x509
     from cryptography.hazmat.primitives import hashes, serialization
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -231,6 +235,7 @@ def tls_server(tmp_path, monkeypatch, settings):
     listener = socket.socket()
     listener.bind(("127.0.0.1", 0))
     listener.listen(1)
+    listener.settimeout(10)  # a client that never connects cannot hang the thread
     port = listener.getsockname()[1]
     real_getaddrinfo = socket.getaddrinfo
 
@@ -244,7 +249,10 @@ def tls_server(tmp_path, monkeypatch, settings):
 
     def serve(behaviour):
         def run():
-            raw, _ = listener.accept()
+            try:
+                raw, _ = listener.accept()
+            except OSError:
+                return
             try:
                 with server_context.wrap_socket(raw, server_side=True) as conn:
                     conn.recv(65536)
@@ -311,6 +319,19 @@ def test_real_socket_a_silent_server_is_cut_off_at_the_deadline(tls_server):
 
     assert isinstance(error, FetchError)
     assert elapsed < DEADLINE + SLACK
+
+
+@pytest.mark.parametrize("with_deadline", [True, False])
+def test_real_socket_an_unknown_certificate_is_refused(tls_server, monkeypatch, with_deadline):
+    """The watched handler still verifies TLS: the default trust store refuses the test cert."""
+    monkeypatch.setattr(
+        http, "_OPENER", urllib.request.build_opener(http._NoRedirect, http._WatchedHTTPSHandler())
+    )
+    tls_server(lambda conn: conn.sendall(HEAD + b"x"))
+    deadline = time.monotonic() + DEADLINE if with_deadline else None
+
+    with pytest.raises(FetchError):
+        http.get_bytes(HOST, "/fail", deadline=deadline)
 
 
 def test_real_socket_a_prompt_answer_is_read_whole(tls_server):
@@ -646,3 +667,62 @@ def test_names_and_addresses_written_into_the_note_are_cleaned():
         "Kliimaministeerium\n\nRegistri failid, mida ei saanud lisada:\n"
         "kiri Võltsitud rida .pdf: https://adr.envir.ee/a"
     )
+
+
+@pytest.mark.django_db
+def test_only_the_refused_register_file_is_left_out(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    good = {"name": "kiri.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89d/file"}
+    bad = {"name": "viga.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89e/file"}
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[
+                SimpleUploadedFile("viga.pdf", b"<html>Viga</html>"),
+                SimpleUploadedFile("kiri.pdf", PDF),
+            ],
+            upload_links=[bad, good],
+        ),
+    )
+    client.force_login(specialist)
+
+    response = _press(client, finding)
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert _names(development) == ["kiri.pdf"]
+    assert development.note.endswith(f"viga.pdf: {bad['url']}")
+    assert "Neid faile ei saanud lisada (link on märkes): viga.pdf." in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_register_files_over_the_request_limit_are_dropped_from_the_end(
+    client, specialist, monkeypatch, settings
+):
+    settings.UPLOAD_MAX_FILES_PER_REQUEST = 2
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    links = [
+        {"name": f"r{i}.pdf", "url": f"https://adr.envir.ee/api/v1/documents/{i}/file"}
+        for i in (1, 2)
+    ]
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("r1.pdf", PDF), SimpleUploadedFile("r2.pdf", PDF)],
+            upload_links=links,
+        ),
+    )
+    client.force_login(specialist)
+
+    _press(
+        client,
+        finding,
+        failid=[SimpleUploadedFile("minu.pdf", PDF, content_type="application/pdf")],
+    )
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert _names(development) == ["minu.pdf", "r1.pdf"]
+    assert development.note.endswith(f"r2.pdf: {links[1]['url']}")

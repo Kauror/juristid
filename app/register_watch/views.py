@@ -323,13 +323,16 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
             # the register did not answer at all, the links found by the nightly
             # look-up (`WatchFinding.files`) stand in.
             # A register file `+ Märge` refuses (an error page saved as .pdf)
-            # must not cost the note either: the save is tried once more
-            # without the register's files, which go to the note as links. A
-            # refusal that comes from the lawyer's own file refuses again.
+            # must not cost the note either: each one is checked first and a
+            # refused one, or one over the request limits, goes to the note as
+            # a link (`Fetched.screen`). Should the save still refuse, it is
+            # tried once more without the register's files. A refusal that
+            # comes from the lawyer's own file refuses again.
             from app.documents.uploads import UploadRejected
 
             own = own_files(request)
             fetched = register_files.fetch(finding.target.source, finding.external_id)
+            fetched.screen([int(handle.size or 0) for handle in own])
             comment = request.POST.get("markus", "")[:4000]
             try:
                 _add(request, finding, own, fetched, comment)

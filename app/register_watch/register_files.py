@@ -85,10 +85,48 @@ class Fetched:
         self.missed.append(remote.name)
         self.missed_links.append({"name": remote.name, "url": url_of(remote)})
 
+    def _links(self) -> list[dict[str, str]]:
+        """One ``{name, url}`` per upload; an upload with no known address gets ``url=""``."""
+        unknown = self.uploads[len(self.upload_links) :]
+        return [*self.upload_links, *({"name": one.name, "url": ""} for one in unknown)]
+
+    def screen(self, own_sizes: list[int]) -> None:
+        """Keep only the register files `+ Märge` will take, beside the lawyer's own.
+
+        Each file goes through the store's own check (`read_upload`); one it
+        refuses (an error page served as `.pdf`) is missed with its link, and
+        the others stay. If the batch is then over the request limits
+        (`check_upload_batch`), register files are dropped from the end until it
+        fits. The lawyer's own files are never dropped here.
+        """
+        from app.documents.uploads import UploadRejected, check_upload_batch, read_upload
+
+        kept: list[tuple[Any, dict[str, str]]] = []
+        for upload, link in zip(self.uploads, self._links(), strict=True):
+            try:
+                read_upload(upload)
+            except UploadRejected:
+                self.missed.append(link["name"])
+                self.missed_links.append(link)
+                continue
+            upload.seek(0)
+            kept.append((upload, link))
+        while kept:
+            try:
+                check_upload_batch([*own_sizes, *(int(one.size or 0) for one, _ in kept)])
+                break
+            except UploadRejected:
+                _, link = kept.pop()
+                self.missed.append(link["name"])
+                self.missed_links.append(link)
+        self.uploads = [one for one, _ in kept]
+        self.upload_links = [link for _, link in kept]
+
     def give_up_uploads(self) -> None:
         """Move every fetched file to the missed ones: the save goes on without them."""
-        self.missed.extend(one["name"] for one in self.upload_links)
-        self.missed_links.extend(self.upload_links)
+        links = self._links()
+        self.missed.extend(one["name"] for one in links)
+        self.missed_links.extend(links)
         self.uploads, self.upload_links = [], []
 
 

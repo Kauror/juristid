@@ -141,7 +141,11 @@ def _connect(
             continue
         dog = _WATCHDOG.get()
         if dog is not None:
-            dog.adopt(sock)
+            try:
+                dog.adopt(sock)
+            except OSError:
+                sock.close()
+                raise
         return sock
     raise error or TimeoutError(f"{host}: no address answered in time")
 
