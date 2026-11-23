@@ -1861,6 +1861,8 @@ _FIXED_MESSAGE_ERRORS = (
     "SyncRequestRefused",
     # STORE-GUARD: a store's name and counts, never a path or a key.
     "CaptureStorageError",
+    # HR-06: a fixed sentence and the backup check's code, never the set's name.
+    "CaptureBackupRefused",
 )
 
 
@@ -1975,7 +1977,8 @@ def _run_onenote(
         storage = int_counts(getattr(error, "counts", None))
         if storage:
             failed["storage"] = storage
-        # STORE-GUARD: a store refused before any write is a refusal, not a failure.
+        # STORE-GUARD and HR-06 (no proven backup set): a refusal before any
+        # write is a refusal, not a failure.
         status = (
             SyncRequestStatus.REFUSED
             if getattr(error, "before_writing", False) is True

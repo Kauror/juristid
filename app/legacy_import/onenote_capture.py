@@ -180,6 +180,24 @@ class CaptureStorageError(CaptureError):
         self.before_writing = before_writing
 
 
+class CaptureBackupRefused(CaptureError):
+    """No proven recovery point (`backup_problem`, HR-06): refused before any row.
+
+    ``code`` is the check's own code (``NO_SET``, ``SET_NAME``, ``SET_STALE``,
+    ``PROOF_*``); the message is a fixed sentence plus that code, never the set's
+    name or a path."""
+
+    before_writing = True
+
+    def __init__(self, code: str) -> None:
+        super().__init__(
+            f"Refused: {code}. Name the verified backup set taken before this run "
+            "(--backup-set sets/YYYYMMDDTHHMMSSZ), verified to level 2 and mounted read-only "
+            "with its proof (LOVABLE_SYNC_BACKUP_DIR); a name alone writes nothing."
+        )
+        self.code = code
+
+
 def require_stores() -> None:
     """`import_storage.require_import_stores`, as this module's refusal."""
     try:
@@ -1489,11 +1507,7 @@ def refuse_unless_authorised(
         )
     problem = backup_problem(backup_set)
     if problem:
-        raise CaptureError(
-            "Name the verified backup set taken before this run (--backup-set "
-            "sets/YYYYMMDDTHHMMSSZ), verified to level 2 and mounted read-only with its proof "
-            f"(LOVABLE_SYNC_BACKUP_DIR); a name alone writes nothing. Refused: {problem}."
-        )
+        raise CaptureBackupRefused(problem)
     if plan.problems:
         raise CaptureError(
             "The plan has problems; nothing was written:\n  " + "\n  ".join(plan.problems[:20])
