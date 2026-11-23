@@ -73,9 +73,9 @@ def _names_a_key(line: str) -> bool:
 
 
 def _verified(path: Path, key: str) -> int:
-    """The runbook's own check: `grep -c '^KEY=.\\{40,\\}' file`."""
-    text = path.read_text(encoding="utf-8")
-    return len(re.findall(rf"(?m)^{key}=.{{40,}}$", text))
+    """The runbook's own check: `grep -c '^KEY=[^[:space:]]\\{40,\\}$' file`."""
+    text = path.read_bytes().decode("utf-8")
+    return len(re.findall(rf"(?m)^{key}=\S{{40,}}$", text))
 
 
 # -- the helper -------------------------------------------------------------------
@@ -193,6 +193,133 @@ def test_the_library_names_each_keys_state(tmp_path, text, state):
     assert result.stdout.strip() == state
 
 
+# -- one rule for every MCP key (HR-18) -------------------------------------------
+#
+# `mcp_key_state FILE KEY MIN` in lib.sh is the only definition of a valid key:
+# web's keys (40, through mcp_web_key_state and the preflight) and the write
+# gateway's secrets (juristid-mcp-writer-keys.sh, 50/32/40) both use it. Before,
+# web's check was `^KEY=.{40,}` and accepted whitespace and a carriage return.
+
+
+@pytest.mark.parametrize(
+    ("text", "minimum", "state"),
+    [
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={'a' * 40}", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={'a' * 39}\n", 40, "weak"),
+        (f"MCP_AUTHENTICATOR_KEY={'a' * 49}\n", 50, "weak"),
+        (f"MCP_AUTHENTICATOR_KEY={'a' * 32}\n", 32, "ok"),
+        ("MCP_AUTHENTICATOR_KEY=\n", 40, "weak"),
+        (f'MCP_AUTHENTICATOR_KEY="{STRONG}"\n', 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY= {STRONG}\n", 40, "malformed"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG} \n", 40, "malformed"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG[:20]} {STRONG[20:]}\n", 40, "malformed"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\t\n", 40, "malformed"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG[:20]}\t{STRONG[20:]}\n", 40, "malformed"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\r\n", 40, "malformed"),
+        (f"OTHER=1\r\nMCP_AUTHENTICATOR_KEY={STRONG}\r\n", 40, "malformed"),
+        (f"  MCP_AUTHENTICATOR_KEY={STRONG}\n", 40, "malformed"),
+        ("MCP_AUTHENTICATOR_KEY=short value\n", 40, "malformed"),
+        ("OTHER=1\n", 40, "missing"),
+        (f"# MCP_AUTHENTICATOR_KEY={STRONG}\n", 40, "missing"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\nMCP_AUTHENTICATOR_KEY= x\n", 40, "duplicated"),
+    ],
+    ids=[
+        "ok",
+        "exactly-min-no-newline",
+        "short",
+        "short-for-50",
+        "ok-for-32",
+        "empty",
+        "quoted-as-before",
+        "leading-space-in-value",
+        "trailing-space",
+        "inner-space",
+        "trailing-tab",
+        "inner-tab",
+        "crlf",
+        "crlf-file",
+        "indented-line",
+        "short-with-space",
+        "missing-line",
+        "commented",
+        "duplicated",
+    ],
+)
+def test_one_rule_names_each_keys_state(tmp_path, text, minimum, state):
+    path = _write(tmp_path, text)
+    result = _lib(f'mcp_key_state "{path.as_posix()}" MCP_AUTHENTICATOR_KEY {minimum}')
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == f"{state}\n"
+    if minimum == 40:
+        web = _lib(f'mcp_web_key_state "{path.as_posix()}" MCP_AUTHENTICATOR_KEY')
+        assert web.stdout == f"{state}\n"
+
+
+def test_one_rule_refuses_a_missing_file(tmp_path):
+    absent = (tmp_path / "absent.env").as_posix()
+    result = _lib(f'mcp_key_state "{absent}" MCP_AUTHENTICATOR_KEY 40')
+    assert result.returncode != 0
+    assert result.stdout == ""
+    assert "cannot read" in result.stderr
+
+
+@pytest.mark.parametrize("minimum", ["", "0", "forty", "-1"])
+def test_one_rule_refuses_a_bad_minimum(tmp_path, minimum):
+    path = _write(tmp_path, f"MCP_AUTHENTICATOR_KEY={STRONG}\n")
+    result = _lib(f'mcp_key_state "{path.as_posix()}" MCP_AUTHENTICATOR_KEY "{minimum}"')
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+def test_one_rule_never_prints_a_value_even_under_xtrace(tmp_path):
+    half = "v" * 30
+    path = _write(tmp_path, f"MCP_AUTHENTICATOR_KEY={half} {half}\n")
+    result = _lib(f'set -x; mcp_key_state "{path.as_posix()}" MCP_AUTHENTICATOR_KEY 40')
+    assert result.stdout == "malformed\n"
+    assert half not in result.stdout + result.stderr
+
+
+def test_the_writer_script_has_no_private_copy_of_the_rule():
+    writer = (ROOT / "scripts" / "deploy" / "juristid-mcp-writer-keys.sh").read_text(
+        encoding="utf-8"
+    )
+    assert "mcp_key_state" in writer
+    assert "key_state() {" not in writer
+    assert "[^[:space:]]{" not in writer
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"MCP_AUTHENTICATOR_KEY={STRONG} ",
+        f"MCP_AUTHENTICATOR_KEY={STRONG}\r",
+        f" MCP_AUTHENTICATOR_KEY={STRONG}",
+    ],
+    ids=["trailing-space", "crlf", "indented"],
+)
+def test_the_helper_never_replaces_a_malformed_key(tmp_path, line):
+    """It may be the key web runs with: rotating it would lock every authenticator out."""
+    original = f"{line}\nMCP_ENABLED=0\n"
+    path = _write(tmp_path, original)
+    result = _helper(path)
+    assert result.returncode != 0
+    assert "Nothing was changed" in result.stderr
+    assert "MCP_AUTHENTICATOR_KEY" in result.stderr
+    assert STRONG not in result.stdout + result.stderr
+    assert path.read_bytes() == original.encode("utf-8")
+
+
+def test_the_library_lists_a_malformed_key_as_not_ready(tmp_path):
+    path = _write(
+        tmp_path,
+        f"MCP_AUTHENTICATOR_KEY={STRONG} \nMCP_TOKEN_DERIVATION_KEY={STRONG}\n",
+    )
+    result = _lib(f'mcp_web_keys_not_ready "{path.as_posix()}"')
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "MCP_AUTHENTICATOR_KEY malformed\n"
+
+
 def test_the_library_lists_every_key_that_is_not_ready(tmp_path):
     path = _write(tmp_path, f"{TEMPLATE_LINE}\n")
     result = _lib(f'mcp_web_keys_not_ready "{path.as_posix()}"')
@@ -223,7 +350,7 @@ def test_the_runbook_generates_and_verifies_the_keys_before_switching_on():
     text = OPERATIONS.read_text(encoding="utf-8")
     helper = text.index("scripts/deploy/juristid-mcp-web-keys.sh --env-file")
     for key in WEB_KEYS:
-        check = text.index(f"grep -c '^{key}=.\\{{40,\\}}'")
+        check = text.index(f"grep -c '^{key}=[^[:space:]]\\{{40,\\}}$'")
         assert helper < check
     switch_on = text.index("| `MCP_ENABLED` | `1` |")
     assert helper < switch_on

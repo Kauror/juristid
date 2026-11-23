@@ -281,33 +281,69 @@ mcp_enabled_in() {
   esac
 }
 
-# One key's state in an environment file: ok, missing, duplicated or weak.
+# One secret's state in an environment file — the one rule every MCP key
+# script uses (HR-18): `juristid-mcp-web-keys.sh` and the preflight through
+# mcp_web_key_state, `juristid-mcp-writer-keys.sh` directly, each with its own
+# minimum length.
 #
-# ok is exactly one line naming the key, as `KEY=` at the start of the line,
-# with at least MCP_WEB_KEY_MIN_LENGTH characters and no placeholder. A
-# commented template line does not name it. `grep -c` prints 0 and exits 1 on
-# no match, hence `|| true` inside the substitutions.
-mcp_web_key_state() {
-  local file="$1" key="$2" named strong placeholder
-  named="$(grep -cE "^[[:space:]]*${key}=" "$file" || true)"
-  strong="$(grep -cE "^${key}=.{${MCP_WEB_KEY_MIN_LENGTH},}" "$file" || true)"
-  placeholder="$(grep -cE "^${key}=replace-me" "$file" || true)"
+#   missing     no line names KEY (`KEY=` after optional leading whitespace);
+#               a commented template line does not name it
+#   duplicated  more than one line names it
+#   malformed   the one line is not exactly `KEY=value` with no whitespace
+#               anywhere: leading blanks, a space or tab in or around the value,
+#               or a carriage return (a file saved with Windows line endings)
+#   weak        `KEY=value` without whitespace, but shorter than MIN characters
+#               or a `replace-me` placeholder
+#   ok          otherwise
+#
+# Quotes are not special: they count as characters, as they always did (the
+# helpers never write any). Malformed is kept apart from weak because such a
+# line may still be the value a service runs with — Compose trims some of that
+# whitespace — so the helpers refuse to replace it rather than silently
+# rotating a key that is in use.
+#
+# Prints the state only, never a value. `grep -c` prints 0 and exits 1 on no
+# match, hence `|| true`; `-U` keeps a carriage return visible to Git Bash's
+# grep on Windows (a no-op on Linux). A file that cannot be read is an error,
+# not a state.
+mcp_key_state() {
+  local file="$1" key="$2" min="$3" named clean strong placeholder
+  [ -r "$file" ] && [ -f "$file" ] || die "cannot read $file"
+  case "$min" in
+    '' | *[!0-9]* | 0) die "mcp_key_state: the minimum length must be a positive number" ;;
+  esac
+  named="$(grep -UcE "^[[:space:]]*${key}=" "$file" || true)"
+  clean="$(grep -UcE "^${key}=[^[:space:]]*\$" "$file" || true)"
+  strong="$(grep -UcE "^${key}=[^[:space:]]{${min},}\$" "$file" || true)"
+  placeholder="$(grep -UcE "^${key}=replace-me" "$file" || true)"
   if [ "$named" = 0 ]; then
-    printf 'missing\n'
+    printf 'missing
+'
   elif [ "$named" != 1 ]; then
-    printf 'duplicated\n'
+    printf 'duplicated
+'
+  elif [ "$clean" != 1 ]; then
+    printf 'malformed
+'
   elif [ "$strong" != 1 ] || [ "$placeholder" != 0 ]; then
-    printf 'weak\n'
+    printf 'weak
+'
   else
-    printf 'ok\n'
+    printf 'ok
+'
   fi
+}
+
+# One of web's keys (MCP_WEB_KEYS), held to MCP_WEB_KEY_MIN_LENGTH.
+mcp_web_key_state() {
+  mcp_key_state "$1" "$2" "$MCP_WEB_KEY_MIN_LENGTH"
 }
 
 # Every web key that is not ok, one `KEY state` per line; nothing when all are.
 mcp_web_keys_not_ready() {
   local file="$1" key state
   for key in "${MCP_WEB_KEYS[@]}"; do
-    state="$(mcp_web_key_state "$file" "$key")"
+    state="$(mcp_web_key_state "$file" "$key")" || return 1
     [ "$state" = ok ] || printf '%s %s\n' "$key" "$state"
   done
 }

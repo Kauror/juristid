@@ -21,8 +21,12 @@
 # - Otherwise every line naming the key — the template's commented one, a
 #   placeholder, a short value, a duplicate — is dropped and one generated line
 #   is appended.
+# - A line holding whitespace or a carriage return (malformed — mcp_key_state
+#   in lib.sh) may still be the key web runs with, so it is NOT replaced: this
+#   exits 1 before writing anything and asks for the line to be fixed by hand.
 # - Then the file must name the key exactly once, `KEY=` and 40 or more
-#   characters, or this exits 1 and says not to switch AI access on.
+#   characters with no whitespace, or this exits 1 and says not to switch AI
+#   access on.
 #
 # The file is rewritten in place, so it keeps its inode, owner and mode.
 # MCP_ENABLED is never touched: the operator sets it, after this said ok.
@@ -70,9 +74,20 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# \r too: a Windows openssl ends its line with CRLF, and a carriage return in
+# the value makes the key malformed (mcp_key_state).
 new_key() {
-  openssl rand -base64 48 | tr -d '\n/+='
+  openssl rand -base64 48 | tr -d '\r\n/+='
 }
+
+# A malformed line is never replaced (it may be the key in use, and a new
+# MCP_AUTHENTICATOR_KEY locks every enrolled authenticator out): refuse before
+# anything is written. Key names only.
+for key in "${MCP_WEB_KEYS[@]}"; do
+  if [ "$(mcp_web_key_state "$ENV_FILE" "$key")" = malformed ]; then
+    die "$key in $ENV_FILE has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings) — or delete it to have a new key generated — then run this again."
+  fi
+done
 
 problems=0
 for key in "${MCP_WEB_KEYS[@]}"; do

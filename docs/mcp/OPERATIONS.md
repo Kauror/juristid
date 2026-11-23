@@ -169,7 +169,13 @@ preflight and juristid.E046 refuse:
 Generate them straight into the file, so no value reaches the terminal or the
 shell history. The helper keeps a key that is already set (it never rotates
 one), replaces the template's commented line, a placeholder or a short value,
-appends the line when the file has none at all, and then proves its own write:
+appends the line when the file has none at all, and then proves its own write.
+A valid key is one line `KEY=value`, 40 or more characters, with no whitespace
+anywhere in the line — no spaces, tabs or Windows line endings (the one rule in
+`scripts/deploy/lib.sh`, `mcp_key_state`, which the preflight and
+`juristid-mcp-writer-keys.sh` use too). A line that breaks only the whitespace
+rule is not replaced, since it may be the key `web` runs with: the helper stops
+and asks for that line to be fixed by hand.
 
 ```bash
 scripts/deploy/juristid-mcp-web-keys.sh --env-file /mnt/user/appdata/juristid-main/config/juristid.env
@@ -179,11 +185,11 @@ It must end with `Only now set MCP_ENABLED=1.` Check it yourself as well; each
 of these must print exactly `1`:
 
 ```bash
-grep -c '^MCP_AUTHENTICATOR_KEY=.\{40,\}' /mnt/user/appdata/juristid-main/config/juristid.env
+grep -c '^MCP_AUTHENTICATOR_KEY=[^[:space:]]\{40,\}$' /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
 ```bash
-grep -c '^MCP_TOKEN_DERIVATION_KEY=.\{40,\}' /mnt/user/appdata/juristid-main/config/juristid.env
+grep -c '^MCP_TOKEN_DERIVATION_KEY=[^[:space:]]\{40,\}$' /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
 Anything other than `1` — or a `FAIL` from the helper — and you stop here,
