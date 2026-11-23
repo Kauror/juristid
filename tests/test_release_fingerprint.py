@@ -8,6 +8,7 @@ generated, before deployment — including every bypass the review of #680 tried
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import subprocess
 from pathlib import Path
@@ -16,10 +17,13 @@ import pytest
 
 from tools import release_fingerprint
 from tools.release_fingerprint import (
+    ALLOWED_IMPORTS,
     EXIT_REFUSED,
+    MIGRATION_IMPORTED_PATHS,
     Refused,
     analyse_migration,
     check_lines,
+    check_loaded,
     expected_lines,
     leaf_lines,
     main,
@@ -788,3 +792,122 @@ def test_an_ambiguous_app_label_is_refused(repo, apps):
     )
     with pytest.raises(Refused, match="does not label"):
         repo.lines(repo.commit())
+
+
+def test_a_release_with_a_migration_may_not_change_what_a_migration_imports(repo):
+    """A migration may call ``app.core.ids.uuid7`` as a default: changed in the same
+    release, that is code the migration runs that the helper never read."""
+    repo.write("app/core/ids.py", "def uuid7():\n    return None\n")
+    repo.rebase()
+    repo.write("app/core/ids.py", "def uuid7():\n    return 1\n")
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    with pytest.raises(Refused, match=r"app/core/ids\.py, which its migration may run"):
+        repo.lines(repo.commit())
+
+
+def test_a_code_only_release_may_change_ids(repo):
+    repo.write("app/core/ids.py", "def uuid7():\n    return None\n")
+    repo.rebase()
+    repo.write("app/core/ids.py", "def uuid7():\n    return 1\n")
+    assert repo.lines(repo.commit()) == []
+
+
+def test_every_project_module_a_migration_may_import_is_pinned():
+    project = {m for m in ALLOWED_IMPORTS if m.startswith("app.")}
+    pinned = {
+        p.removeprefix(":(top)").removesuffix(".py").replace("/", ".")
+        for p in MIGRATION_IMPORTED_PATHS
+    }
+    assert project == pinned
+
+
+def test_paths_that_differ_only_in_case_are_refused(repo):
+    """Two blobs one case-insensitive checkout would write to the same file."""
+    blob = repo.git("hash-object", "-w", "--stdin", input_text="x = 1\n")
+    repo.git("update-index", "--add", "--cacheinfo", f"100644,{blob},app/x/Views.py")
+    repo.git("update-index", "--add", "--cacheinfo", f"100644,{blob},app/x/views.py")
+    repo.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "twin")
+    with pytest.raises(Refused, match="differ only in case"):
+        repo.lines(repo.git("rev-parse", "HEAD"))
+
+
+def test_a_migrations_directory_in_another_case_is_refused(repo):
+    blob = repo.git(
+        "hash-object",
+        "-w",
+        "--stdin",
+        input_text=_migration("        migrations.RunPython(print),"),
+    )
+    repo.git("update-index", "--add", "--cacheinfo", f"100644,{blob},app/x/Migrations/0002_b.py")
+    repo.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "case")
+    with pytest.raises(Refused, match="changed, not added"):
+        repo.lines(repo.git("rev-parse", "HEAD"))
+
+
+def test_display_only_attributes_do_not_refuse(repo):
+    """A common ``*.py diff=python`` changes how git shows a file, never its checkout."""
+    repo.write("app/x/migrations/.gitattributes", "*.py diff=python merge=union\n")
+    repo.rebase()
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    assert repo.lines(repo.commit())[0] == "canonical_counts.x.B: None -> 0"
+
+
+def _real_leaf(app: str) -> tuple[str, str]:
+    from django.db.migrations.loader import MigrationLoader
+
+    ((_, name),) = MigrationLoader(None, ignore_no_migrations=True).graph.leaf_nodes(app)
+    data = (ROOT / "app" / app / "migrations" / f"{name}.py").read_bytes()
+    return f"{app}.{name}", hashlib.sha256(data).hexdigest()
+
+
+def test_the_image_check_accepts_this_repository():
+    lines = check_loaded(root=ROOT, migration=None, sha256=None)
+    assert "legacy_import: app.legacy_import.migrations" in lines
+
+
+def test_the_image_check_accepts_an_apps_leaf_with_its_bytes():
+    migration, sha = _real_leaf("legacy_import")
+    assert check_loaded(root=ROOT, migration=migration, sha256=sha)[-1] == (
+        f"{migration}: sha256 {sha}"
+    )
+
+
+def test_the_image_check_refuses_other_bytes():
+    migration, _ = _real_leaf("legacy_import")
+    with pytest.raises(Refused, match="sha256 differs"):
+        check_loaded(root=ROOT, migration=migration, sha256="0" * 64)
+
+
+def test_the_image_check_refuses_a_migration_that_is_not_the_leaf():
+    with pytest.raises(Refused, match="only leaf"):
+        check_loaded(root=ROOT, migration="legacy_import.0001_initial", sha256="0" * 64)
+
+
+def test_the_image_check_refuses_migration_modules_set_at_runtime(settings):
+    """The eighth review's bypass: a models module sets MIGRATION_MODULES to a shadow
+    package holding the same leaf name with other operations."""
+    settings.MIGRATION_MODULES = {"notifications": "app.notifications.shadow"}
+    with pytest.raises(Refused, match="MIGRATION_MODULES is set at runtime"):
+        check_loaded(root=ROOT, migration=None, sha256=None)
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--check-loaded"],
+        ["--check-loaded", "--root", ".", "--migration", "x.0002_b"],
+        ["--check-loaded", "--root", ".", "--sha256", "0" * 64],
+        ["--check-loaded", "--root", ".", "--migration", "x.0002_b", "--sha256", "ABC"],
+        ["--check-loaded", "--root", ".", "--migration", "x;y", "--sha256", "0" * 64],
+        ["--check-loaded", "--root", ".", "--ref", "0" * 40, "--previous-release", "0" * 40],
+    ],
+)
+def test_the_image_mode_refuses_incomplete_arguments(argv, capsys):
+    assert main(argv) == EXIT_REFUSED
+    assert "REFUSED" in capsys.readouterr().err

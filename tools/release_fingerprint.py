@@ -1,16 +1,19 @@
 """The fingerprint differences a release may show, derived from the release itself.
 
 A release kit generator runs it as the release commit's own copy, against the commit that
-production runs now:
+production runs now — the procedure, with its exit-code handling, is in
+``deploy/unraid-main/README.md`` («The expected differences are derived, never
+hand-written») — and gets the lines, C-sorted, for the kit's ``FP_EXPECTED_LINES``:
+nothing for a release with no migration; for a release with exactly one migration, the two
+migration-leaf lines and ``None -> 0`` for each model it creates.
 
-    tmp="$(mktemp)"
-    git -C <repo> show "$TARGET:tools/release_fingerprint.py" > "$tmp"
-    FP_EXPECTED_LINES="$(python -I "$tmp" --repo <repo> --ref "$TARGET" \\
-        --previous-release "$PREVIOUS")" || exit 1
-
-and gets the lines, C-sorted, for the kit's ``FP_EXPECTED_LINES``: nothing for a release
-with no migration; for a release with exactly one migration, the two migration-leaf lines
-and ``None -> 0`` for each model it creates.
+**Two halves.** The release mode (``--ref``/``--previous-release``) reads git and vouches
+for the migration *file*. The image mode (``--check-loaded``), run in the release image
+before ``migrate``, vouches that Django will *load that file*: no ``MIGRATION_MODULES`` at
+runtime, every project app's migrations from its own ``migrations/`` directory, the
+release's migration its app's only leaf with the blob's sha256. Neither vouches for
+deliberately hostile application code, which could run SQL at start-up without any
+migration; release code is reviewed and tested as such.
 
 **Why (r89, 23.11.2026).** A release kit's d2 compares `recovery_fingerprint` before and
 after the swap, and its ``fingerprint_verdict`` stops unless the differences are exactly
@@ -47,7 +50,12 @@ cannot vouch for needs its expected lines reviewed by hand:
 * ``proxy``, ``managed`` or ``db_table`` in a model's options, or a created model the
   fingerprint does not count (``REBUILDABLE_MODELS`` / ``OPERATIONAL_MODELS`` in
   ``app/core/deployment.py`` at the release commit);
-* an app whose ``AppConfig.label`` is not its directory name.
+* an app whose ``AppConfig.label`` is not its directory name;
+* a release that changes ``uv.lock``, ``pyproject.toml``, ``config/``, the ``Dockerfile``,
+  ``.dockerignore``, any ``.gitattributes`` or an ``app/*/apps.py``, or (with a migration)
+  a project module a migration may import (``app/core/ids.py``); a migration that is not
+  a regular file or that a checkout attribute would rewrite; two paths under ``app/``
+  that differ only in case.
 
 **Pinned to the release commit.** Every file it reads comes from ``git show <ref>:…``, and
 it refuses to run unless its own bytes are ``<ref>``'s ``tools/release_fingerprint.py``
@@ -648,6 +656,12 @@ def _app_label(source: str) -> str:
 # Django imports differ from the blob this helper parsed (working-tree-encoding, ident,
 # filter …).
 ALLOWED_ATTRIBUTES = frozenset({("text", "auto"), ("text", "set"), ("eol", "lf")})
+# Attributes that only change how git shows or merges a file, never a checkout's bytes
+# (a common global ``*.py diff=python`` would otherwise refuse every migration release).
+DISPLAY_ATTRIBUTES = frozenset({"diff", "merge"})
+# Project modules a migration may import (``ALLOWED_IMPORTS`` under ``app/``): a release
+# with a migration may not change them, since the migration runs their code.
+MIGRATION_IMPORTED_PATHS = (":(top)app/core/ids.py",)
 
 
 def _check_checkout_attributes(repo: Path, ref: str, path: str) -> None:
@@ -662,6 +676,8 @@ def _check_checkout_attributes(repo: Path, ref: str, path: str) -> None:
         if not line.startswith(prefix):
             raise Refused(f"unexpected git check-attr output: {line!r}")
         name, _, value = line[len(prefix) :].partition(": ")
+        if name in DISPLAY_ATTRIBUTES:
+            continue
         if (name, value) not in ALLOWED_ATTRIBUTES:
             raise Refused(f"{path} has the checkout attribute {name}: {value}")
 
@@ -728,10 +744,18 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
     changed = _git(
         repo, "diff", "--name-status", "--no-renames", previous_release, ref, "--", ":(top)app"
     ).decode()
+    # Paths that differ only in case are one file on a case-insensitive checkout, and
+    # which one wins is the checkout's choice, not the release's.
+    tracked = _git(repo, "ls-tree", "-r", "--name-only", ref, "--", "app").decode()
+    seen: dict[str, str] = {}
+    for path in tracked.splitlines():
+        twin = seen.setdefault(path.lower(), path)
+        if twin != path:
+            raise Refused(f"{twin} and {path} differ only in case")
     migrations = []
     for line in changed.splitlines():
         status, _, path = line.partition("\t")
-        if "/migrations/" not in path:
+        if "/migrations/" not in path.lower():
             continue
         if path.endswith("/migrations/__init__.py"):
             if status != "A" or _show(repo, ref, path).strip():
@@ -747,6 +771,13 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
         names = ", ".join(f"{a}.{m}" for a, m in migrations)
         raise Refused(f"more than one migration in the release ({names})")
     app, migration = migrations[0]
+    imported = _git(
+        repo, "diff", "--name-only", previous_release, ref, "--", *MIGRATION_IMPORTED_PATHS
+    ).decode()
+    if imported.strip():
+        raise Refused(
+            f"the release changes {', '.join(imported.split())}, which its migration may run"
+        )
     if _app_label(_show(repo, ref, f"app/{app}/apps.py")) != app:
         raise Refused(f"app/{app}/apps.py does not label the app {app!r}")
     if _leaf(repo, ref, app) != migration:
@@ -762,6 +793,57 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
     )
 
 
+def check_loaded(*, root: Path, migration: str | None, sha256: str | None) -> list[str]:
+    """In the release image, before ``migrate``: refuse unless Django loads every migration
+    of the project's own apps from ``<app>/migrations/<name>.py`` and, for a release with a
+    migration, that one is its app's only leaf and its bytes are the blob's.
+
+    The release-mode check reads git; this reads what the image's Django will actually
+    run, so application code that moves an app's migrations at runtime (a
+    ``MIGRATION_MODULES`` set from a module, not ``config/settings.py``) cannot run a
+    migration the release mode never saw. Returns what it checked, one line per item.
+    """
+    # Image mode only: the release mode runs without Django.
+    import hashlib
+
+    import django
+    from django.apps import apps
+    from django.conf import settings
+    from django.db.migrations.loader import MigrationLoader
+
+    if not apps.ready:
+        django.setup()
+    if getattr(settings, "MIGRATION_MODULES", None):
+        raise Refused(f"MIGRATION_MODULES is set at runtime: {settings.MIGRATION_MODULES!r}")
+    project = (root / "app").resolve()
+    loader = MigrationLoader(None, ignore_no_migrations=True)
+    checked = []
+    for config in apps.get_app_configs():
+        if not Path(config.path).resolve().is_relative_to(project):
+            continue
+        module, explicit = MigrationLoader.migrations_module(config.label)
+        if explicit or module != f"{config.name}.migrations":
+            raise Refused(f"{config.label}'s migrations load from {module}")
+        expected = (project / config.label / "migrations").resolve()
+        for (label, name), loaded in loader.disk_migrations.items():
+            if label != config.label:
+                continue
+            file = sys.modules[type(loaded).__module__].__file__ or ""
+            if Path(file).resolve() != expected / f"{name}.py":
+                raise Refused(f"{label}.{name} loads from {file}")
+        checked.append(f"{config.label}: {module}")
+    if migration is not None:
+        app, _, name = migration.partition(".")
+        if loader.graph.leaf_nodes(app) != [(app, name)]:
+            raise Refused(f"{migration} is not {app}'s only leaf: {loader.graph.leaf_nodes(app)}")
+        loaded = loader.disk_migrations[(app, name)]
+        data = Path(sys.modules[type(loaded).__module__].__file__ or "").read_bytes()
+        if hashlib.sha256(data).hexdigest() != sha256:
+            raise Refused(f"{migration}'s bytes are not the release blob's (sha256 differs)")
+        checked.append(f"{migration}: sha256 {sha256}")
+    return checked
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="A release kit's expected fingerprint lines.")
     parser.add_argument("--repo", type=Path, default=Path("."))
@@ -774,9 +856,30 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--app")
     parser.add_argument("--previous-leaf")
+    parser.add_argument(
+        "--check-loaded",
+        action="store_true",
+        help="image mode, before migrate: check what Django loads (needs Django settings)",
+    )
+    parser.add_argument("--root", type=Path, help="image mode: the project root (/app)")
+    parser.add_argument("--migration", help="image mode: the release's <app>.<migration>")
+    parser.add_argument("--sha256", help="image mode: the sha256 of that migration's blob")
     args = parser.parse_args(argv)
     try:
-        if args.ref or args.previous_release:
+        if args.check_loaded:
+            if args.ref or args.previous_release or args.migration_file or not args.root:
+                raise Refused("--check-loaded takes --root, and --migration with --sha256")
+            if bool(args.migration) != bool(args.sha256) or (
+                args.migration
+                and not re.fullmatch(r"[a-z_][a-z0-9_]*\.[0-9]{4}_[a-z0-9_]+", args.migration)
+            ):
+                raise Refused("--migration <app>.<name> and --sha256 go together")
+            if args.sha256 and not re.fullmatch(r"[0-9a-f]{64}", args.sha256):
+                raise Refused("--sha256 must be 64 lowercase hex digits")
+            if str(args.root.resolve()) not in sys.path:
+                sys.path.insert(0, str(args.root.resolve()))
+            lines = check_loaded(root=args.root, migration=args.migration, sha256=args.sha256)
+        elif args.ref or args.previous_release:
             if not (args.ref and args.previous_release) or args.migration_file:
                 raise Refused("--ref and --previous-release go together, without --migration-file")
             lines = release_lines(

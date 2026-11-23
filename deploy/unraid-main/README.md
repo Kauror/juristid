@@ -1751,10 +1751,34 @@ not count, a release that changes `uv.lock`, `pyproject.toml`, `config/`, the
 `Dockerfile`, `.dockerignore`, any `.gitattributes` or an `app/*/apps.py` (each can
 bring migrations from elsewhere, or make the file Django imports differ from the
 blob the helper read), a migration that is not a regular `100644` file or that a
-checkout attribute other than `text`/`eol=lf` would rewrite, and a helper that is
-not `$TARGET`'s own copy. Such a release needs
+checkout attribute other than `text`/`eol=lf` would rewrite, a release with a migration that changes `app/core/ids.py`
+(a migration may call it), two paths under `app/` that differ only in case, and a
+helper that is not `$TARGET`'s own copy. Such a release needs
 its expected lines reviewed by hand, line by line. The verdict itself is
 unchanged: an exact comparison.
+
+**Then prove the image loads that file, before `migrate`.** The lines above vouch
+for the migration *file* in git; application code could still move where Django
+loads an app's migrations from at runtime. So d1, with the release image and the
+web service's own environment, runs the image's copy of the same helper:
+
+```bash
+M="$(printf '%s\n' "$FP_EXPECTED_LINES" | sed -n 's/^migration_leaves: newly present: //p')"
+set -- --check-loaded --root /app
+if [ -n "$M" ]; then
+  sha="$(git cat-file blob "$TARGET:app/${M%%.*}/migrations/${M#*.}.py" | sha256sum | cut -d' ' -f1)"
+  set -- "$@" --migration "$M" --sha256 "$sha"
+fi
+docker run --rm --env-file "$WEB_ENV_FILE" --entrypoint python "juristid-main-web:$TAG" \
+  -I /app/tools/release_fingerprint.py "$@" < /dev/null || exit 1
+```
+
+It refuses (exit 3) unless `MIGRATION_MODULES` is empty after Django starts, every
+project app's migrations load from its own `app/<app>/migrations/`, and — for a
+release with a migration — that migration is its app's only leaf and its bytes have
+the blob's sha256. Neither half vouches for deliberately hostile application code,
+which could run SQL at start-up with no migration at all; release code is reviewed
+and tested as code.
 
 Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a
