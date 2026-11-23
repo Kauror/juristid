@@ -259,10 +259,52 @@ def test_the_html_names_a_holiday_for_hover_keyboard_and_touch(client, specialis
     assert "23.12.2026, " not in body
 
 
-def test_the_calendar_reads_the_shared_provider():
-    """One provider: the calendar asks `app.core.holidays` and defines no rule of its own."""
-    import inspect
+@pytest.fixture
+def invented_law(monkeypatch):
+    """The provider's statute replaced by one holiday on an ordinary Wednesday.
 
-    source = inspect.getsource(cal)
-    assert "from app.core.holidays import RestDay, rest_day" in source
-    assert "easter" not in source.casefold()
+    No real riigipüha is left — fixed or Easter-bound — so a calendar that kept
+    a rule of its own (a copied table, its own Easter) still marks 24.12 or
+    3.4 and is caught; one that asks the provider marks 23.12 and nothing else.
+    """
+    import app.core.holidays as provider
+
+    monkeypatch.setattr(provider, "FIXED_HOLIDAYS", ((12, 23, "leiutatud püha"),))
+    monkeypatch.setattr(provider, "EASTER_HOLIDAYS", ())
+    provider._holidays.cache_clear()
+    yield provider
+    provider._holidays.cache_clear()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("department", [False, True])
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"kalender": "kuu", "kalendri_aeg": "2026-12"},
+        {"kalender": "kuu", "kalendri_aeg": "2026-04"},
+        {"kalender": "kvartal", "kalendri_aeg": "2026-K4"},
+        {"kalendri_aeg": "2026-12-21"},
+    ],
+)
+def test_the_calendar_reads_the_shared_provider(specialist, department, params, invented_law):
+    """One provider: the calendar asks `app.core.holidays` and defines no rule of its own.
+
+    Asserted by changing the provider and watching every drawn day follow it,
+    rather than by reading the calendar's import line — an alias or a moved
+    import is not a second rule, and a copied rule need not mention Easter.
+    """
+    calendar = _build(specialist, None if department else specialist, date(2026, 11, 6), **params)
+
+    grids = [w for g in calendar.months for w in g.weeks] + list(calendar.weeks)
+    drawn = [cell for week in grids for cell in week.days if cell.in_period]
+    assert drawn
+    for cell in drawn:
+        expected = invented_law.rest_day(cell.day)
+        assert (cell.is_rest_day, cell.holiday_label) == (
+            expected.is_rest_day,
+            expected.label,
+        ), cell.day
+    if any(cell.day == date(2026, 12, 23) for cell in drawn):
+        assert _cell(calendar, date(2026, 12, 23)).holiday_label == "leiutatud püha (riigipüha)"
+        assert not _cell(calendar, date(2026, 12, 24)).is_rest_day

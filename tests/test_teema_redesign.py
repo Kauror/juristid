@@ -1394,7 +1394,12 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 #: waiting on this open Teema once, for the «Registritest» tab's badge.
 #: One more since docs/adr/0219: the bar asks once whether «Monitooring» is open
 #: to everyone (a specialist reads this page).
-TEEMA_PAGE_QUERY_CEILING = 69
+#: **Three fewer since HR-12** (health review 2026-11-23): measured at 69 on this
+#: test's page at ff298f0f — the ceiling itself, the margin of two used up — and
+#: 66 once the header's four inline-editor revisions read the Matter's row once
+#: instead of four times (`matter_field_revisions`,
+#: tests/test_header_revision_reads.py). The ceiling is 66 plus the margin of two.
+TEEMA_PAGE_QUERY_CEILING = 68
 
 
 def test_the_matter_page_does_not_explode_into_queries(

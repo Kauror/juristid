@@ -22,7 +22,8 @@ evidence rather than an attachment.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import uuid
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
@@ -44,8 +45,11 @@ from app.matters.services import (
     add_entry,
     close_matter_for_terminal_stage,
     create_matter,
+    resolve_addressee,
     resolve_source_organisations,
+    save_personal_note,
 )
+from app.workflow.enums import Track
 from app.workflow.stage_flow import is_terminal as is_terminal_stage
 
 #: Extensions whose contents are an email rather than a document. The file is
@@ -437,3 +441,284 @@ def register_incoming(
     if claim.session is not None:
         intake_staging.record_created_matter(session=claim.session, matter=matter)
     return IntakeResult(matter=matter, documents=len(uploads))
+
+
+class CreateFormAlreadySubmitted(Exception):
+    """An `Uus teema` form that has already filed its Teema, posted again.
+
+    Raised inside `create_from_form`'s transaction before anything is written,
+    so the replay leaves nothing behind. ``session`` is the form's consumed
+    token, naming the Teema the first submission created (ENG-074,
+    docs/adr/0112). Not a `DomainError`: nothing was refused.
+    """
+
+    def __init__(self, session: Any) -> None:
+        super().__init__("form already submitted")
+        self.session = session
+
+
+@dataclass(frozen=True)
+class CreatedFromForm:
+    """What one successful `Uus teema` save filed."""
+
+    matter: Matter
+    #: Files filed with it: the promoted staged ones plus the held and chosen
+    #: ones left after `without_staged_copies`.
+    files: int
+
+
+#: Refused when a ticked similar Matter is not one this reader may link.
+SIMILAR_LINK_NOT_FOUND = "Valitud sarnast teemat ei leitud. Värskenda lehte ja proovi uuesti."
+
+
+@transaction.atomic
+def create_from_form(
+    *,
+    actor: Any,
+    data: Mapping[str, Any],
+    data_class: str,
+    form_token: Any,
+    earlier_tokens: list[str],
+    confirmed: bool,
+    intake_session: Any,
+    staged_titles: Mapping[str, str],
+    resumed: list[Any],
+    chosen: list[Any],
+    link_targets: list[str],
+    from_candidate: Any = None,
+) -> CreatedFromForm:
+    """`Uus teema`'s save: the whole creation sequence, in one transaction (HR-13).
+
+    **The caller authorises.** Like `file_new_matter`, this checks no permission of its
+    own: the view's `business_write_required` (and `for_create`) gate it.
+
+    The view collects what the page posted (the validated form, the uploads
+    already read, the staging session) and renders what this refuses; the
+    order of the writes is decided here. In this transaction, in this order:
+
+    1. **This form, exactly once** (ENG-074). The form's session is its one-time
+       token, consumed first, before any row is written or any reference
+       number allocated, by one conditional UPDATE. A second submission of the
+       same form waits for the first on that row, finds it consumed and raises
+       `CreateFormAlreadySubmitted`, writing nothing. A POST naming no session
+       of this person's carries no token and is not a replay of anything.
+    2. **Not the same Teema again by accident** (QA-COORD-01, docs/adr/0166
+       §2): a Teema this person just filed, or filed from one of this form's
+       earlier tokens, under the same title raises `RecentDuplicateUnconfirmed`
+       unless ``confirmed`` («Loo siiski uus»). Refused here, so the claim
+       above rolls back with it and the token stays usable. The check holds a
+       per-person, per-title lock until this transaction ends, so two tabs
+       pressed together take turns (JQA-006).
+    3. `file_new_matter`, the one creation sequence the doors share (AUD-010):
+       senders, the Matter, then **the files** as one `composer_operation`
+       (the token first records the Teema it created, then the staged files
+       are promoted, then the held and chosen ones are filed, and «Märgi
+       saadetud Koja arvamuseks» records the send on exactly those
+       documents), then **the extras** only `Uus teema` asks (the private
+       note, the linked Teemad), then a terminal `Hetkeseis` or the plan.
+    4. The register-watch candidate the form was opened from, if any, is
+       closed by this Teema (docs/adr/0218 §4).
+
+    Any `DomainError` (an ambiguous sender, a duplicate, a link that cannot be
+    made) rolls back everything above, the claim included; so does anything
+    else, such as an evidence store going away, which propagates. What happens
+    to the uploads after a refusal, and releasing the held and staged files
+    after the commit, are the caller's: they belong to the request.
+
+    `Saabunud` (`register_incoming`) and MCP (`mcp_writes`) are other doors over
+    `file_new_matter` and deliberately do not run this: neither asks for
+    links, a note, a sent proposal or a candidate; `Saabunud` has no
+    recent-duplicate check (docs/adr/0166 §2 is `Uus teema`'s) and MCP has its
+    own once-token (docs/adr/0189).
+    """
+    # Imported here: `intake_staging` builds on this module, and the others
+    # build on the services this module is part of.
+    from app.matters import duplicate_intake, intake_staging, workspace
+    from app.register_watch import candidates as topic_candidates
+
+    claim = intake_staging.claim_for_create(owner=actor, session_id=form_token)
+    if claim.replayed:
+        raise CreateFormAlreadySubmitted(claim.session)
+    duplicate_intake.refuse_unconfirmed_duplicate(
+        actor=actor,
+        title=data["title"],
+        earlier_tokens=earlier_tokens,
+        confirmed=confirmed,
+    )
+
+    # «Märgi saadetud Koja arvamuseks» (docs/adr/0151, amendment of
+    # 2026-10-12): the files this press files are the Chamber's sent proposal,
+    # filed as `Koja arvamus` and recorded as sent in the same operation. The
+    # form has already refused it on any other `Õigusakt`; the service refuses
+    # it without a file.
+    sends_proposal = bool(data.get("koda_sent"))
+    filed_role = DocumentRole.KODA_SUBMISSION_FINAL if sends_proposal else ""
+    filed: list[Any] = []
+    promoted: list[Any] = []
+    uploads: list[Any] = [*resumed, *chosen]
+
+    def attach_files(matter: Matter) -> None:
+        nonlocal promoted, uploads
+        # Remembered first, so a repeated submission of this form finds the
+        # Teema the first one created (ENG-074).
+        if claim.session is not None:
+            intake_staging.record_created_matter(session=claim.session, matter=matter)
+        # Staged first, because they were chosen first: each becomes one
+        # Document with one immutable version from the bytes the browser sent,
+        # checked against the checksum recorded when they arrived.
+        if intake_session is not None:
+            promoted = intake_staging.promote_intake_files(
+                session=intake_session,
+                matter=matter,
+                actor=actor,
+                role=filed_role,
+                filed=filed,
+                titles=dict(staged_titles),
+            )
+            # A press while the upload was still in flight posts the session
+            # *and* the files it had just staged. Promoted once is filed once;
+            # held uploads are never compared (`without_staged_copies`).
+            uploads = [*resumed, *intake_staging.without_staged_copies(chosen, promoted)]
+        for upload in uploads:
+            filed.append(attach_form_upload(matter, upload, actor=actor, role=filed_role))
+        # The send, on exactly those documents, in the order they were offered:
+        # one `Submission`, the first file its letter and the rest its further
+        # sent files. Inside this step, so `Teema käik` reads it as one act.
+        if sends_proposal:
+            workspace.record_sent_proposal_on_new_matter(
+                matter=matter,
+                documents=filed,
+                author=actor,
+                recipients=named_addressees(
+                    data.get("sent_recipients"), data.get("sent_recipient_name")
+                ),
+                sent_on=data.get("sent_on"),
+            )
+
+    def after_files(matter: Matter) -> None:
+        # The private scratch pad, through its own service, and only when
+        # something was typed: an empty note would be a row recording that
+        # somebody wrote nothing.
+        note = (data.get("notes") or "").strip()
+        if note:
+            save_personal_note(matter=matter, author=actor, body=note)
+        # The similar Matters somebody ticked and the ones chosen by hand
+        # (docs/adr/0150 §3): one list, through the one relation service, in
+        # this transaction; a link that cannot be made takes the Teema with it.
+        link_ticked_similar_matters(matter=matter, ticked=link_targets, actor=actor)
+
+    matter = file_new_matter(
+        title=data["title"],
+        actor=actor,
+        owner=data.get("owner"),
+        # Blank by decision: `Uus teema` no longer asks «Millest teema räägib»
+        # (docs/adr/0130 §2).
+        brief_summary="",
+        stage=data.get("stage"),
+        # Derived in one case only: `Õigusakt` «Koja ettepanek või pöördumine»
+        # is a Teema the Chamber started, `Koja algatus` (docs/adr/0151
+        # amendment of 2026-10-12, `initiative_on_create`).
+        track=Track.KODA_INITIATIVE if data.get("koda_initiative") else "",
+        # Only the sender side: `Uus teema` no longer asks Adressaat
+        # (docs/adr/0090 §5).
+        source_organisations=data.get("source_organisations"),
+        sender_name=data.get("sender_name") or "",
+        # As the box was left: a cleared date stays unknown (D-3).
+        received_date=data.get("received_date"),
+        response_deadline=data.get("response_deadline"),
+        policy_areas=list(data.get("policy_areas") or []),
+        policy_area_other=data.get("policy_area_other") or "",
+        legal_instruments=list(data.get("legal_instruments") or []),
+        legal_instrument_other=data.get("legal_instrument_other") or "",
+        # Decided here, never read from the form (brief 21).
+        visibility=Visibility.NORMAL,
+        # The form turns its one checkbox into the stored vocabulary; the
+        # service refuses TEST on anything not created here.
+        data_class=data_class,
+        attach_files=attach_files,
+        after_files=after_files,
+        # No standard plan on a Teema filed already sent: its next work is the
+        # thirty-day check (docs/adr/0151).
+        seed_plan=not sends_proposal,
+    )
+    if from_candidate is not None:
+        # Its register addresses become the Teema's `Menetluse link`s, in this
+        # transaction; decided by someone else meanwhile, it is left as it is
+        # and the Teema still stands.
+        topic_candidates.adopt_if_new(from_candidate, matter, actor=actor)
+    return CreatedFromForm(matter=matter, files=len(uploads) + len(promoted))
+
+
+def attach_form_upload(matter: Matter, upload: Any, *, actor: Any, role: str = "") -> Document:
+    """One `Uus teema` upload as one Document with one immutable version.
+
+    Through `file_incoming`, so a file arriving with a new Matter meets the same
+    evidence rules as one uploaded later, and its role is `role_for`'s answer
+    unless the save names one: an `.eml` is «Algne e-kiri» however it reached
+    the Teema (ENG-066). The display title typed on a held upload is kept.
+
+    Looked up from this module at call time: it is the seam the creation tests
+    replace to fail one file of several (tests/test_matter_create_form.py).
+    """
+    return file_incoming(
+        matter=matter,
+        filename=upload.filename,
+        content=upload.body,
+        mime_type=upload.mime_type,
+        actor=actor,
+        title=getattr(upload, "display_title", ""),
+        role=role,
+    )
+
+
+def named_addressees(chosen: Any, typed: Any) -> list[Any]:
+    """The addressees a save names: the ones ticked, then the one typed.
+
+    `resolve_addressee` decides what a typed name means (reuse an exact or alias
+    match, create only a genuinely new body, refuse a spelling that names two)
+    inside the caller's transaction (docs/adr/0073). De-duplicated, so a typed
+    name that resolves to a ticked body is one addressee.
+    """
+    named_list = list(chosen or [])
+    name = (typed or "").strip()
+    if not name:
+        return named_list
+    named = resolve_addressee(chosen=None, typed_name=name)
+    if named is not None and not any(row.pk == named.pk for row in named_list):
+        named_list.append(named)
+    return named_list
+
+
+def link_ticked_similar_matters(*, matter: Any, ticked: list[str], actor: Any) -> None:
+    """Link the new Matter to each ticked `Sarnased teemad` card, once each.
+
+    Through `link_related_matters`, the canonical relation service, so the pair
+    is stored once and audited on both files. Duplicates in the post collapse;
+    the new Matter itself is never a target. A value that is not a Matter this
+    reader may see refuses the whole save rather than linking the rest.
+    """
+    from app.related_materials.services import link_related_matters
+
+    wanted: list[uuid.UUID] = []
+    for value in ticked:
+        try:
+            pk = uuid.UUID(str(value))
+        except ValueError:
+            raise DomainError(SIMILAR_LINK_NOT_FOUND) from None
+        if pk != matter.pk and pk not in wanted:
+            wanted.append(pk)
+    if not wanted:
+        return
+    # Only Matters this reader may open, and only of the new Matter's own data
+    # class: a REAL Teema is never linked to synthetic TEST work, which neither
+    # the suggestions nor the search ever offer (docs/adr/0150 §3).
+    others = {
+        other.pk: other
+        for other in Matter.objects.visible_to(actor).filter(
+            pk__in=wanted, data_class=matter.data_class
+        )
+    }
+    if len(others) != len(wanted):
+        raise DomainError(SIMILAR_LINK_NOT_FOUND)
+    for pk in wanted:
+        link_related_matters(matter=matter, other=others[pk], actor=actor)
