@@ -117,9 +117,7 @@ def test_a_person_with_no_open_work_is_switched_off_as_before(gate):
 
 def test_switched_off_people_s_work_is_listed_with_the_unowned_teemad(gate, desk):
     admin, _ = _manager()
-    administration.deactivate_account(
-        actor=_actor(admin), user=desk["kati"], leave_open_work=True
-    )
+    administration.deactivate_account(actor=_actor(admin), user=desk["kati"], leave_open_work=True)
     factories.MatterFactory(owner=None)
     orphaned = work_without_active_owner()
     assert [h.person.pk for h in orphaned.holders] == [desk["kati"].pk]
@@ -261,7 +259,9 @@ def world_reading():
                 "a": {"row": {"vastutaja": "Mari Näidis", "uus_vastutaja": ""}},
                 "b": {
                     "row": {"vastutaja": "Mari Näidis", "uus_vastutaja": ""},
-                    "responsible_changes": [{"uus_vastutaja": "Uus Jurist", "alates": "2026-11-22"}],
+                    "responsible_changes": [
+                        {"uus_vastutaja": "Uus Jurist", "alates": "2026-11-22"}
+                    ],
                 },
             }
         },
