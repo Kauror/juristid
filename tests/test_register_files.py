@@ -236,7 +236,9 @@ def test_the_row_links_the_page_and_each_file(client, specialist):
     )
     client.force_login(specialist)
 
-    body = client.get(reverse("matters:matter_registers", kwargs={"pk": matter.pk})).content.decode()
+    body = client.get(
+        reverse("matters:matter_registers", kwargs={"pk": matter.pk})
+    ).content.decode()
 
     assert 'href="https://adr.envir.ee/et/document.html?id=b89d"' in body
     assert 'href="https://adr.envir.ee/api/v1/documents/b89d/file"' in body

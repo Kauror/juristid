@@ -42,7 +42,10 @@ from tests import factories
             "näitab, kas ja kuidas kaja ettepanekuid arvestatakse.",
             "näitab, kas ja kuidas koja ettepanekuid arvestatakse.",
         ),
-        ("Diislikütuse aktsiis – Koja enda ettepanek.", "Diislikütuse aktsiis – koja enda ettepanek."),
+        (
+            "Diislikütuse aktsiis – Koja enda ettepanek.",
+            "Diislikütuse aktsiis – koja enda ettepanek.",
+        ),
         ("vastab Koja ettepanekule", "vastab koja ettepanekule"),
         ("määruse kohta; Koda on arvamust andnud.", "määruse kohta; koda on arvamust andnud."),
         ("Kaubandus-Tööstuskoja enda arvamus.", "Kaubanduskoja enda arvamus."),
@@ -97,7 +100,10 @@ def test_mark_all_read_on_the_tab_takes_the_documents_and_the_agenda(client, spe
         url="https://valitsus.ee/a", title="Päevakord", session_date=dt.date(2026, 11, 19)
     )
     item = AgendaItem.objects.create(
-        agenda=session, number=1, title="Maksukorraldus", strength=Strength.STRONG,
+        agenda=session,
+        number=1,
+        title="Maksukorraldus",
+        strength=Strength.STRONG,
         related_matter=matter,
     )
     client.force_login(specialist)
@@ -124,7 +130,10 @@ def test_mark_all_read_from_monitooring_leaves_the_agenda_alone(client, speciali
         url="https://valitsus.ee/b", title="Päevakord", session_date=dt.date(2026, 11, 19)
     )
     item = AgendaItem.objects.create(
-        agenda=session, number=1, title="Maksukorraldus", strength=Strength.STRONG,
+        agenda=session,
+        number=1,
+        title="Maksukorraldus",
+        strength=Strength.STRONG,
         related_matter=matter,
     )
     client.force_login(specialist)
