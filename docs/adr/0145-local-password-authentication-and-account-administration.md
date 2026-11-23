@@ -489,7 +489,6 @@ account-and-network counter and the network counter still apply, so a
 remembered network buys no unlimited guessing. This is the intended trade,
 kept as written.
 
-
 ## Status update 2026-11-23 — navigation no longer reads `may_view_department_management`
 
 This section corrects a description; it does not amend the decision and the
