@@ -34,6 +34,7 @@ pytestmark = pytest.mark.django_db
 
 LATER = night_at(2) + dt.timedelta(hours=2)
 PAGE = "core:release_notes_lovable"
+DISPOSITION = "COMPLETED"
 WRITE_PATHS = (
     "apply_matter",
     "_apply_field",
@@ -332,6 +333,17 @@ def test_a_tombstone_is_written_nothing():
     assert not lovable_sync.writes_automatically("unknown_field")
 
 
+def _closed(matter):
+    """Closed with the fields a closure carries (`matters_closure_fields_consistent`)."""
+    from django.utils import timezone
+
+    matter.is_open = False
+    matter.closed_at = timezone.now()
+    matter.disposition = DISPOSITION
+    matter.save(update_fields=["is_open", "closed_at", "disposition"])
+    return matter
+
+
 def test_a_change_the_night_writes_is_not_counted_as_unruled(cases, reader):
     control(SyncMode.COMPARE, observe=True)
     run = observation_run(night_at(1))
@@ -339,24 +351,48 @@ def test_a_change_the_night_writes_is_not_counted_as_unruled(cases, reader):
     gone = cases.matter("2026_220")
     gone.deleted_at = night_at(1)
     gone.save(update_fields=["deleted_at"])
+    closed = _closed(cases.matter("2026_213"))
     linked = {"mapping": "PILOT_LINKED", "in_pilot": True}
     observed(run, "2026_243", matter=live, fields=[("stage", "a", "b")], **linked)
     observed(run, "2026_220", matter=gone, fields=[("stage", "a", "b")], **linked)
     observed(
         run,
+        "2026_213",
+        matter=closed,
+        fields=[("stage", "a", "b"), ("next_action_text", "a", "b")],
+        **linked,
+    )
+    observed(
+        run,
         "2026_186",
         matter=cases.matter("2026_186"),
+        fields=[("operational_scope", True, False), ("responsible_changes", 1, 2)],
         **linked,
-        fields=[("operational_scope", True, False)],
     )
     observed(run, "2026_900", fields=[("stage", "a", "b")])  # no Teema in Juristid
 
-    fields = {f.field: f for f in obs.readiness(reader, now=LATER).fields}
+    readiness = obs.readiness(reader, now=LATER)
+    fields = {f.field: f for f in readiness.fields}
 
-    # The live Teema's stage is written by the night; the tombstone's and the
-    # unlinked topic's are not, and nothing writes the operational scope.
+    # The live and the closed Teema's stage are written by the night; the
+    # tombstone's and the unlinked topic's are not. A closed Teema's step is not
+    # written, nothing writes the operational scope, and an observation-only
+    # name is no field of the table.
     assert fields["stage"].uncovered_changes == 2
+    assert fields["next_action_text"].uncovered_changes == 1
     assert fields["operational_scope"].uncovered_changes == 1
+    assert sum(f.uncovered_changes for f in readiness.fields) == 4
+
+
+def test_a_closed_teema_says_its_step_and_request_are_not_written(cases, reader):
+    _closed(cases.matter("2026_243"))
+
+    changes = obs.matter_changes(reader, "2026_243", now=LATER)
+
+    automatic = {f["field"]: f["automatic"] for f in changes.fields}
+    for name in lovable_sync.CLOSED_NOT_WRITTEN:
+        assert automatic[name] is False, name
+    assert automatic["stage"] and automatic["title"] and automatic["former_owner"]
 
 
 def test_the_page_says_what_automatic_means_and_reads_no_source(cases, reader, client, monkeypatch):
@@ -368,7 +404,7 @@ def test_the_page_says_what_automatic_means_and_reads_no_source(cases, reader, c
     def no_network(*args, **kwargs):
         raise AssertionError("the readiness page contacted Lovable")
 
-    monkeypatch.setattr(lovable_source, "_default_opener", no_network)
+    monkeypatch.setattr("urllib.request.OpenerDirector.open", no_network)
     monkeypatch.setattr(lovable_source, "take_snapshot", no_network)
     monkeypatch.setattr(lovable_source, "access_probe", no_network)
     monkeypatch.setattr(core_views, "_lovable_now", lambda: LATER)
@@ -379,6 +415,7 @@ def test_the_page_says_what_automatic_means_and_reads_no_source(cases, reader, c
     assert response.status_code == 200
     body = response.content.decode()
     assert "Kustutatud teemale ei kirjutata midagi." in body
+    assert "Suletud ja ajaloolisel teemal kehtib sama, välja arvatud" in body
     table = body.split('id="lov-valjad"', 1)[1].split("</table>", 1)[0]
     # 15 fields under source authority say «jah»; only the operational scope «ei».
     assert table.count("<td>jah</td>") == len(lovable_sync.AUTHORITATIVE_FIELDS)

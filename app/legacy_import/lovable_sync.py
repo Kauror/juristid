@@ -579,11 +579,19 @@ def policy_of(field_name: str) -> FieldPolicy:
     return FIELD_POLICY.get(field_name) or FieldPolicy(field_name, REVIEW, "Tundmatu väli.")
 
 
-#: The policy classes under which a night writes a field without a person.
-WRITING_POLICIES = (AUTHORITATIVE, AUTO, CONDITIONAL)
+#: The policy classes under which a night writes a field without a person:
+#: source authority (every reconciled field) and the conditional new topic.
+WRITING_POLICIES = (AUTHORITATIVE, CONDITIONAL)
+#: Source-authority fields a night never writes on a **closed** live Teema: a
+#: closed file has no current step (`_step_decisions_authoritative` sets nothing
+#: once `closed_after`) and no open opinion request
+#: (`_request_decision_authoritative` keeps Juristid's day), and a commencement
+#: change waits for a person (`_commencements_authoritative`, MATTER_CLOSED).
+#: `tests/test_r4_authority.py` holds this list and the engine together.
+CLOSED_NOT_WRITTEN = ("next_action_text", "next_action_date", "opinion_deadline", "commencements")
 
 
-def writes_automatically(field_name: str, *, tombstone: bool = False) -> bool:
+def writes_automatically(field_name: str, *, tombstone: bool = False, closed: bool = False) -> bool:
     """Whether an APPLY night writes this field without a person.
 
     Read off `FIELD_POLICY`, the table `plan_matter` follows: on a live
@@ -595,8 +603,14 @@ def writes_automatically(field_name: str, *, tombstone: bool = False) -> bool:
 
     `AUTO_FIELDS` is *not* this: it names the four fields the rules before
     11.11.2026 wrote, and the administration pages that read it described those
-    rules long after the engine stopped following them (audit HR-03)."""
+    rules long after the engine stopped following them (audit HR-03).
+
+    ``closed``: on a closed live Teema the fields in `CLOSED_NOT_WRITTEN` are not
+    written either. Writing happens on an APPLY night only, and a night over a
+    breaker writes nothing; this says what the rules do, not that tonight runs."""
     if tombstone:
+        return False
+    if closed and field_name in CLOSED_NOT_WRITTEN:
         return False
     return policy_of(field_name).policy in WRITING_POLICIES
 

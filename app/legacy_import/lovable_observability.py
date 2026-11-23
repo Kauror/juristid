@@ -2629,7 +2629,7 @@ def matter_changes(
                 "field": name,
                 "label": _label(name),
                 "automatic": lovable_sync.writes_automatically(
-                    name, tombstone=matter.deleted_at is not None
+                    name, tombstone=matter.deleted_at is not None, closed=not matter.is_open
                 ),
                 "last_applied": lovable_review.shown(name, applied),
                 "juristid_now": _juristid_shown(name, matter, b),
@@ -3108,17 +3108,30 @@ def readiness(user: Any, *, now: dt.datetime | None = None) -> Readiness:
     # Teema that is not a tombstone, and a field under source authority
     # (`lovable_sync.writes_automatically`, audit HR-03). An unlinked topic, a
     # tombstone and a field no rule writes are «reeglita».
+    #
+    # Counted per reconciled field only (`FIELDS`): the observation-only names
+    # (`OBSERVE_FIELDS`: responsible changes, stage links …) describe a change the
+    # engine reads through a field above, so the total equals the table's column.
     uncovered: Counter[str] = Counter()
-    for in_pilot, mapping, deleted_at, names, values in LovableObservedChange.objects.filter(
+    for (
+        in_pilot,
+        mapping,
+        deleted_at,
+        is_open,
+        names,
+        values,
+    ) in LovableObservedChange.objects.filter(
         run__status=ObservationRunStatus.SUCCEEDED, run__started_at__gte=start
-    ).values_list("in_pilot", "mapping", "matter__deleted_at", "field_names", "fields"):
+    ).values_list(
+        "in_pilot", "mapping", "matter__deleted_at", "matter__is_open", "field_names", "fields"
+    ):
         found = {str(n) for n in (names or [])} | {
             str(v.get("field")) for v in (values or []) if isinstance(v, dict)
         }
         pilot = in_pilot and mapping == MappingStatus.PILOT_LINKED
-        for name in found:
+        for name in found & set(FIELDS):
             if not pilot or not lovable_sync.writes_automatically(
-                name, tombstone=deleted_at is not None
+                name, tombstone=deleted_at is not None, closed=is_open is False
             ):
                 uncovered[name] += 1
 
