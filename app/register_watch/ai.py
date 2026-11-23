@@ -21,8 +21,7 @@ from typing import Any
 
 from django.conf import settings
 
-from app.core.enums import Visibility
-from app.register_watch import house_style
+from app.register_watch import house_style, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Relevance, WatchFinding
 
@@ -83,8 +82,9 @@ def enabled() -> bool:
 
 
 def may_send(matter: Any) -> bool:
-    """Only an unrestricted Teema's public facts ever leave the application."""
-    return getattr(matter, "visibility", None) == Visibility.NORMAL
+    """Only an unrestricted, real Teema's public facts ever leave the application
+    (`outbound.may_send`: never a restricted or a TEST Teema)."""
+    return outbound.may_send(matter)
 
 
 def _client() -> Any:

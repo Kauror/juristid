@@ -24,7 +24,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
-from app.register_watch import candidates_ai, house_style
+from app.register_watch import candidates_ai, house_style, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import AgendaItem, GovernmentAgenda, Strength
 from app.register_watch.sources import valitsus
@@ -227,19 +227,24 @@ def ai_enabled() -> bool:
     return bool(getattr(settings, "REGISTER_SWEEP_AI", False))
 
 
-def recent_letters(today: dt.date) -> list[str]:
-    """Titles of the Chamber's own letters of the last 120 days: a signal of its current work."""
-    from app.legacy_import.postipoiss_models import PostipoissLetter
+def recent_letters(today: dt.date, usage: candidates_ai.Usage | None = None) -> list[str]:
+    """Titles of the Chamber's own letters of the last 120 days: a signal of its current work.
 
-    since = today - dt.timedelta(days=120)
-    return list(
-        PostipoissLetter.objects.filter(letter_date__gte=since)
-        .order_by("-letter_date")
-        .values_list("title", flat=True)[:LETTERS_SHOWN]
-    )
+    Only letters reliably tied to a Teema that may be sent (`outbound.letter_titles`):
+    never one on a restricted or a TEST Teema, and never one whose Teema is not yet
+    decided (audit HR-01). How many were left out is counted on ``usage``."""
+    letters = outbound.letter_titles(since=today - dt.timedelta(days=120), limit=LETTERS_SHOWN)
+    if usage is not None:
+        usage.letters_left_out += letters.left_out
+    return letters.titles
 
 
-def _prompt(agenda: GovernmentAgenda, items: Iterable[AgendaItem], topics: dict[str, Any]) -> str:
+def _prompt(
+    agenda: GovernmentAgenda,
+    items: Iterable[AgendaItem],
+    topics: dict[str, Any],
+    usage: candidates_ai.Usage | None = None,
+) -> str:
     listed = [{"id": key, "title": matter.title} for key, matter in topics.items()]
     shown = [
         {
@@ -255,7 +260,7 @@ def _prompt(agenda: GovernmentAgenda, items: Iterable[AgendaItem], topics: dict[
         "The Chamber's open topics:\n"
         + json.dumps(listed, ensure_ascii=False)
         + "\n\nThe Chamber's recent outgoing letters (titles):\n"
-        + json.dumps(recent_letters(agenda.session_date), ensure_ascii=False)
+        + json.dumps(recent_letters(agenda.session_date, usage), ensure_ascii=False)
         + f"\n\nAgenda: {agenda.title}\n"
         + json.dumps(shown, ensure_ascii=False, indent=1)
     )
@@ -268,14 +273,14 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
     items = list(agenda.items.all())
     if not items:
         return 0
-    topics = candidates_ai.open_topics()
+    topics = candidates_ai.open_topics(usage)
     try:
         client = client or candidates_ai._client()
         response = client.beta.messages.create(
             model=getattr(settings, "REGISTER_SWEEP_AI_MODEL", "claude-opus-5-5"),
             max_tokens=MAX_TOKENS,
             system=SYSTEM,
-            messages=[{"role": "user", "content": _prompt(agenda, items, topics)}],
+            messages=[{"role": "user", "content": _prompt(agenda, items, topics, usage)}],
             output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
             betas=["server-side-fallback-2026-07-01"],
             fallbacks="default",
@@ -329,11 +334,19 @@ ALREADY_DECIDED = "See päevakorrapunkt on juba otsustatud."
 
 
 def proposals() -> Any:
-    """Every waiting proposal: tied to a Teema, judged to matter, not yet decided."""
+    """Every waiting proposal: tied to a Teema, judged to matter, not yet decided.
+
+    Never on a TEST Teema (audit HR-09): the model is no longer offered one, and a
+    proposal stored before that is no proposal — not counted on the tab's badge,
+    not rung about, not listed, not decidable. One filter here covers them all."""
+    from app.matters.enums import MatterDataClass
     from app.register_watch.models import AgendaItemStatus
 
     return AgendaItem.objects.filter(
-        related_matter__isnull=False, status=AgendaItemStatus.PENDING, strength__in=PROPOSED
+        related_matter__isnull=False,
+        related_matter__data_class=MatterDataClass.REAL,
+        status=AgendaItemStatus.PENDING,
+        strength__in=PROPOSED,
     )
 
 
@@ -436,7 +449,11 @@ def tell_owners(agendas: list[GovernmentAgenda]) -> int:
         proposals().filter(agenda__in=agendas).values_list("related_matter_id", flat=True)
     )
     told = 0
-    for matter in Matter.objects.filter(pk__in=counts, is_open=True, deleted_at__isnull=True):
+    # Never a TEST Teema's owner, even for a proposal stored before the model was
+    # kept from naming one (audit HR-09).
+    for matter in Matter.objects.filter(
+        pk__in=counts, is_open=True, deleted_at__isnull=True
+    ).real_data():
         if notices.notify(matter, counts[matter.pk]) is not None:
             told += 1
     return told
