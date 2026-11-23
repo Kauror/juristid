@@ -20,7 +20,7 @@ definition in the catalogue (docs/design-v2-compatibility.md, DS-19).
 {% endcomment %}
 
 {% block page_actions %}
-  <a class="button button--quiet" href="{% url 'reporting:report_builder' %}">Majanduspoliitika ülevaade</a>
+  {# «Majanduspoliitika ülevaade» lives in Osakond's column now (owner, 2026-11-23). #}
   <a class="button button--quiet" href="{{ export_url }}">Laadi alla CSV</a>
 {% endblock %}
 

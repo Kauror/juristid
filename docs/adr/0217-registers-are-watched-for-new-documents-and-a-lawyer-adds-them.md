@@ -173,3 +173,29 @@ download it and attach it by hand, and had nowhere to say why it mattered.
   note that carries the address and the file; `watch.add_link` went with it
   (status `LINKED` stays for rows already decided).
 - The decision words are «Märgi loetuks» / «Märgi kõik loetuks» (was «Jäta vahele»).
+
+## Amendment 2026-11-23 — file links, the lawyer's files, the house style
+
+The owner's round 4 notes.
+
+- **Two links per row.** The title still opens the register's own page; under it
+  each `Fail: <name>` opens the document's file directly, because the page does
+  not always show it. `WatchFinding.files` (`[{name, url}]`, `None` = not looked
+  up, `[]` = none) is filled by `register_files.remember`: after each nightly run
+  (`watch_registers` prints `FILES located=N`) and once by
+  `manage.py locate_register_files` after the deploy. It reads the listing only —
+  the same `locate` the press uses, through the same door — never a file's bytes,
+  so §5's "the press is the only content read" still holds. A register that does
+  not answer leaves the finding for the next pass.
+- **The lawyer's own files.** «Lisa märkena»'s panel is a drop zone; `failid`
+  are attached before the register's files, checked as one request's batch
+  (`check_upload_batch`) and then by `+ Märge`'s own validation. The same field
+  works on an agenda item's «Lisa märkena» (ADR 0219).
+- **«Märgi kõik loetuks» on the Teema's tab** (`tagasi=teema`) takes every
+  waiting document of the Teema — the folded unrelated ones too — and its
+  waiting Government agenda items, and returns to the tab. From Monitooring it
+  still takes the register documents only.
+- **The house style.** Every model prompt of the watch carries
+  `house_style.KODA_STYLE` and every line it returns passes `house_style.fix`
+  before it is saved (docs/koda-house-style.md); `manage.py fix_koda_style`
+  corrected the lines saved before.

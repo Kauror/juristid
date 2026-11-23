@@ -3,10 +3,23 @@
   <div class="regwatch__body">
     {% if finding.url %}<a href="{{ finding.url }}" target="_blank" rel="noopener noreferrer">{{ finding.title }}</a>{% else %}<span>{{ finding.title }}</span>{% endif %}
     <span class="regwatch__meta">{{ finding.target.get_source_display }}{% if finding.detail %} · {{ finding.detail }}{% endif %}</span>
+    {% comment %}
+      Two links (owner, 2026-11-23): the title opens the register's page, and
+      each «Fail» the document's own file, which that page does not always
+      show. Only files the register actually lists (`register_files.remember`);
+      none, no link.
+    {% endcomment %}
+    {% if finding.files %}
+      <span class="regwatch__files">
+        {% for file in finding.files %}
+          <a class="regwatch__file" href="{{ file.url }}" target="_blank" rel="noopener noreferrer" title="Ava fail registrist">Fail: {{ file.name }}<span class="visually-hidden"> — avaneb uues aknas</span></a>
+        {% endfor %}
+      </span>
+    {% endif %}
     {% if finding.ai_note %}<span class="regwatch__note{% if finding.relevance == 'UNSURE' %} regwatch__note--unsure{% endif %}">{{ finding.ai_note }}</span>{% endif %}
   </div>
   {% if can_write_business_content %}
-    <form class="regwatch__actions" method="post" action="{% url 'register_watch:decide' pk=finding.pk %}"{% if register_return %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
+    <form class="regwatch__actions" method="post" enctype="multipart/form-data" action="{% url 'register_watch:decide' pk=finding.pk %}"{% if register_return %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
       {% csrf_token %}
       <input type="hidden" name="kelle" value="{{ filters.kelle }}">
       <input type="hidden" name="teema" value="{{ filters.teema }}">

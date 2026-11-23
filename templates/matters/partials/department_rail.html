@@ -84,4 +84,9 @@ VÄLJA Kokku cell, over the same window; each row carries its year into its link
       <span class="railrow__value">{{ row.count }}</span>
     </a>
   {% endfor %}
+  {% comment %}
+    The board's report is composed from here (owner, 2026-11-23): it sat on
+    Statistika's head, and Osakond is where the department's year is read.
+  {% endcomment %}
+  <a class="button button--secondary railblock__action" href="{% url 'reporting:report_builder' %}">Majanduspoliitika ülevaade</a>
 </section>

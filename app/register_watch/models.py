@@ -127,6 +127,11 @@ class WatchFinding(BaseModel):
         verbose_name="otsustas",
     )
     decided_at = models.DateTimeField(null=True, blank=True, verbose_name="otsustatud")
+    #: The document's own files in the register, ``[{"name", "url"}]``, for the
+    #: row's «Fail» links (owner, 2026-11-23): the title opens the register's
+    #: page, where a file is not always shown. ``None`` = not looked up yet
+    #: (`register_files.remember`), ``[]`` = the register shows none.
+    files = models.JSONField(null=True, blank=True, verbose_name="failid")
     development = models.ForeignKey(
         "matters.MatterProceduralDevelopment",
         on_delete=models.SET_NULL,

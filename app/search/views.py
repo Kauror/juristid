@@ -26,6 +26,7 @@ from app.core.decorators import viewer_for
 from app.matters.continuation_lines import continuation_lines
 from app.matters.models import Matter
 from app.matters.selectors import current_action_of, open_action_prefetch
+from app.search import destinations
 from app.search.links import target_path
 from app.search.models import SearchSourceKind
 from app.search.services import (
@@ -161,7 +162,9 @@ def suggestions(request: HttpRequest) -> JsonResponse:
         # Not "no results" — nothing was asked. The two are different and the
         # browser renders them differently: this closes the dropdown, an empty
         # result set says so.
-        return JsonResponse({"query": query, "results": [], "has_more": False, "all_url": ""})
+        return JsonResponse(
+            {"query": query, "app": [], "results": [], "has_more": False, "all_url": ""}
+        )
 
     # One row more than is shown, so "is there more behind this" is answered by
     # the same LIMIT instead of a second COUNT over the whole match set.
@@ -171,6 +174,9 @@ def suggestions(request: HttpRequest) -> JsonResponse:
     return JsonResponse(
         {
             "query": query,
+            # The app's own pages and settings this reader may open (owner,
+            # 2026-11-23), shown as «Rakendus» above the Teemad.
+            "app": destinations.find(request, query),
             "results": [
                 {
                     "title": result.matter.title,
