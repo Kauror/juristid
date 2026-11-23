@@ -82,7 +82,7 @@ would leave a reader working out whether those are the same thing.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -743,6 +743,28 @@ class RailStep:
     acts: tuple[tuple[str, str], ...] = ()
     acts_count: int = 0
     acts_anchor: str = ""
+    #: The watched date an event marker stands for (`ProcessStep.record`), so
+    #: an expected commencement can say where it came from and be removed
+    #: where it is seen (owner, 2026-11-23). ``None`` on every other item.
+    record: Any = field(default=None, compare=False)
+
+    @property
+    def expected_commencement(self) -> Any:
+        """The record, when this marker is an estimated or planned commencement.
+
+        Those are somebody's expectation of when the act comes into force —
+        Lovable's, a colleague's — and the rail says whose, and lets a lawyer
+        take off one that is not needed (owner, 2026-11-23). `None` otherwise.
+        """
+        from app.intelligence.enums import INFORMATIONAL_IMPORTANT_DATE_KINDS
+
+        record = self.record
+        if (
+            record is None
+            or getattr(record, "kind", None) not in INFORMATIONAL_IMPORTANT_DATE_KINDS
+        ):
+            return None
+        return record
 
     @property
     def reach_key(self) -> date | None:
@@ -1119,6 +1141,7 @@ def matter_rail(
                 display_date=milestone.display,
                 sort_on=milestone.sort_on,
                 event_label=milestone.event_label,
+                record=milestone.record,
             )
         else:
             step = RailStep(

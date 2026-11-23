@@ -82,7 +82,7 @@ class ImportantDateKind(models.TextChoices):
     than read «jõustumine» out of a title, so it is a kind, and it is one of the
     `INFORMATIONAL_IMPORTANT_DATE_KINDS` below.
 
-    `ESTIMATED_COMMENCEMENT` — «Eeldatav jõustumine (allika hinnang)» — is the
+    `ESTIMATED_COMMENCEMENT` — «Eeldatav jõustumine» — is the
     same kind of fact from a different source (docs/adr/0120, amendment of
     2026-10-20): a commencement somebody *estimated* — a tracker, a colleague,
     a news item — rather than a date a draft itself states. It is kept apart
@@ -93,7 +93,7 @@ class ImportantDateKind(models.TextChoices):
     OTHER = "OTHER", "Muu tähtaeg"
     TRANSPOSITION_DEADLINE = "TRANSPOSITION_DEADLINE", "ELi õiguse ülevõtmise tähtaeg"
     PLANNED_COMMENCEMENT = "PLANNED_COMMENCEMENT", "Eelnõus kavandatud jõustumine"
-    ESTIMATED_COMMENCEMENT = "ESTIMATED_COMMENCEMENT", "Eeldatav jõustumine (allika hinnang)"
+    ESTIMATED_COMMENCEMENT = "ESTIMATED_COMMENCEMENT", "Eeldatav jõustumine"
 
 
 #: **Milestones that inform, as opposed to milestones that are the file's next
