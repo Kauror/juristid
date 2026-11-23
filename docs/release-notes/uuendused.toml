@@ -13,6 +13,7 @@
 date = 2026-11-23
 basis = "deployment"
 revisions = ["a1f40688937e"]
+prs = [677]
 changes = [
   "Halduse «Ajaloolistes kirjades» ootab otsust 612 kirja asemel 317: 295 kirja on omaniku otsusel teemaga seotud. Seoti kirjad, mille teema oli kindel (kuupäev, saaja ja teema ühtivad) või mille pealkiri ja faili tekst vastavad pakutud teemale; 14 kirja seoti pealkirja järgi teise teemaga, sest pakutud teema ei sobinud.",
   "99 neist kirjadest on teema ajajoonel väljasaadetud arvamusena koos kirja failiga. Kirjad, millel faili pole, on teemaga seotud, kuid arvamuseks ei muutunud.",
