@@ -136,6 +136,11 @@ def test_only_letters_reliably_on_a_sendable_teema_reach_the_prompt(caplog):
     )
 
     _letter("AVALIK KIRI", matter=normal)
+    _letter(
+        "AVALIKU ARVAMUSE KIRI",
+        matter=normal,
+        submission=factories.SubmissionFactory(matter=normal),
+    )
     _letter("KINNISE TEEMA KIRI", matter=restricted)
     _letter("TESTTEEMA KIRI", matter=test_teema)
     _letter("KUSTUTATUD TEEMA KIRI", matter=gone)
@@ -150,7 +155,7 @@ def test_only_letters_reliably_on_a_sendable_teema_reach_the_prompt(caplog):
         agenda.judge(_agenda(), usage, client=client)
 
     prompt = _prompt(client)
-    assert "AVALIK KIRI" in prompt
+    assert "AVALIK KIRI" in prompt and "AVALIKU ARVAMUSE KIRI" in prompt
     for title in (
         "KINNISE TEEMA KIRI",
         "TESTTEEMA KIRI",
@@ -201,9 +206,12 @@ def test_no_test_or_restricted_teema_is_offered_to_the_agenda_model():
 
 
 @override_settings(REGISTER_SWEEP_AI=True)
-def test_no_test_teema_is_offered_or_linked_for_a_new_draft():
+def test_no_test_or_restricted_teema_is_offered_or_linked_for_a_new_draft():
     test_teema = factories.MatterFactory(
         title="Testi eelnõu teema", data_class=MatterDataClass.TEST
+    )
+    restricted = factories.MatterFactory(
+        title="Kinnine eelnõu teema", visibility=Visibility.RESTRICTED
     )
     candidate = TopicCandidate.objects.create(
         title="Pakendiseaduse eelnõu", match_key="pakendiseadus", status="NEW"
@@ -221,6 +229,7 @@ def test_no_test_teema_is_offered_or_linked_for_a_new_draft():
 
     prompt = _prompt(client)
     assert "Testi eelnõu teema" not in prompt and str(test_teema.pk) not in prompt
+    assert "Kinnine eelnõu teema" not in prompt and str(restricted.pk) not in prompt
     candidate.refresh_from_db()
     assert candidate.strength == Strength.STRONG and candidate.related_matter is None
 
@@ -287,3 +296,31 @@ def test_under_the_cap_nothing_is_counted():
     candidates_ai.open_topics(usage)
 
     assert usage.topics_left_out == 0
+
+
+def test_a_proposal_stored_on_a_test_teema_before_is_no_proposal():
+    owner = factories.UserFactory()
+    test_teema = factories.MatterFactory(owner=owner, data_class=MatterDataClass.TEST)
+    a = _agenda()
+    AgendaItem.objects.create(
+        agenda=a, number=2, title="Vana", strength=Strength.STRONG, related_matter=test_teema
+    )
+
+    assert not agenda.proposals().exists()
+    assert agenda.teema_proposals(test_teema) == []
+
+
+def test_the_sweep_records_the_topic_cap_on_its_run(monkeypatch):
+    from app.register_watch import candidates
+    from app.register_watch.models import SweepRun
+
+    monkeypatch.setattr(candidates_ai, "TOPICS_SHOWN", 1)
+    for n in range(2):
+        factories.MatterFactory(title=f"Avatud {n}")
+    record = SweepRun.objects.create(started_at=timezone.now())
+    usage = candidates_ai.Usage()
+    candidates_ai.open_topics(usage)
+
+    candidates._close(record, usage)
+
+    assert any("1 avatud teemat jäi mudelile pakkumata" in e["viga"] for e in record.errors)

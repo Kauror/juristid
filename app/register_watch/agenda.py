@@ -235,7 +235,7 @@ def recent_letters(today: dt.date, usage: candidates_ai.Usage | None = None) -> 
     decided (audit HR-01). How many were left out is counted on ``usage``."""
     letters = outbound.letter_titles(since=today - dt.timedelta(days=120), limit=LETTERS_SHOWN)
     if usage is not None:
-        usage.letters_left_out = letters.left_out
+        usage.letters_left_out += letters.left_out
     return letters.titles
 
 
@@ -334,11 +334,19 @@ ALREADY_DECIDED = "See päevakorrapunkt on juba otsustatud."
 
 
 def proposals() -> Any:
-    """Every waiting proposal: tied to a Teema, judged to matter, not yet decided."""
+    """Every waiting proposal: tied to a Teema, judged to matter, not yet decided.
+
+    Never on a TEST Teema (audit HR-09): the model is no longer offered one, and a
+    proposal stored before that is no proposal — not counted on the tab's badge,
+    not rung about, not listed, not decidable. One filter here covers them all."""
+    from app.matters.enums import MatterDataClass
     from app.register_watch.models import AgendaItemStatus
 
     return AgendaItem.objects.filter(
-        related_matter__isnull=False, status=AgendaItemStatus.PENDING, strength__in=PROPOSED
+        related_matter__isnull=False,
+        related_matter__data_class=MatterDataClass.REAL,
+        status=AgendaItemStatus.PENDING,
+        strength__in=PROPOSED,
     )
 
 

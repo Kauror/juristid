@@ -78,7 +78,11 @@ def letter_titles(*, since: dt.date, limit: int) -> Letters:
         pairing__matter__in=sendable_matters(),
     ).filter(
         Q(pairing__submission__isnull=True)
-        | Q(pairing__submission__visibility_override__in=("", Visibility.NORMAL))
+        | Q(
+            # The opinion's own effective visibility: its Teema's and its override.
+            pairing__submission__matter__in=sendable_matters(),
+            pairing__submission__visibility_override__in=("", Visibility.NORMAL),
+        )
     )
     titles = list(sendable.order_by("-letter_date").values_list("title", flat=True)[:limit])
     left_out = period.count() - sendable.count()
