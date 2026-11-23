@@ -234,6 +234,53 @@ BYPASSES = {
         "condition=models.Q(x=1), name='c', template='x')),",
         "",
     ),
+    # The fourth review of #680: SQL text carried inside otherwise allowed calls.
+    "opclasses-sql": (
+        HEAD,
+        "        migrations.AddIndex(model_name='a', index=models.Index(fields=['title'], "
+        "name='i', opclasses=['text_pattern_ops); DELETE FROM t; --'])),",
+        "",
+    ),
+    "max-length-sql": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.CharField("
+        "max_length='10); DELETE FROM t; --')),",
+        "",
+    ),
+    "quoted-index-name": (
+        HEAD,
+        "        migrations.AddIndex(model_name='a', index=models.Index(fields=['a'], "
+        "name='\"i\" ON t; DELETE FROM t; --')),",
+        "",
+    ),
+    "quoted-db-column": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.IntegerField("
+        "db_column='\"x\" int); DELETE FROM t; --')),",
+        "",
+    ),
+    "db-table-option": (
+        HEAD,
+        "        migrations.CreateModel(name='T', fields=[], options={'db_table': 'other'}),",
+        "",
+    ),
+    "field-list-sql": (
+        HEAD,
+        "        migrations.AddIndex(model_name='a', index=models.Index("
+        "fields=['a); DELETE FROM t; --'], name='i')),",
+        "",
+    ),
+    "alter-options-unmanaged": (
+        HEAD,
+        "        migrations.AlterModelOptions(name='a', options={'managed': False}),",
+        "",
+    ),
+    "semicolon-elsewhere": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.ForeignKey("
+        "on_delete=django.db.models.deletion.CASCADE, to='x.a; DROP TABLE t')),",
+        "",
+    ),
     "double-star-options": (
         HEAD,
         "        migrations.CreateModel(name='P', fields=[], **{'options': {'proxy': True}}),",
@@ -244,6 +291,46 @@ BYPASSES = {
 
 def _decorated(text: str) -> str:
     return text.replace("class Migration(", "@(lambda c: c)\nclass Migration(", 1)
+
+
+def test_code_in_a_swappable_dependency_is_refused():
+    text = _migration(
+        CREATE_A,
+        dependency="('x', '0001_initial'), "
+        "migrations.swappable_dependency(__import__('os').system('echo'))",
+    )
+    with pytest.raises(Refused):
+        _lines(text)
+    other = _migration(
+        CREATE_A, dependency="('x', '0001_initial'), migrations.swappable_dependency('x.A')"
+    )
+    with pytest.raises(Refused, match="neither"):
+        _lines(other)
+    fine = _migration(
+        CREATE_A,
+        dependency="('x', '0001_initial'), "
+        "migrations.swappable_dependency(settings.AUTH_USER_MODEL)",
+    ).replace(HEAD, "from django.conf import settings\n" + HEAD, 1)
+    assert "canonical_counts.x.A: None -> 0" in _lines(fine)
+
+
+@pytest.mark.parametrize("name", ["dependencies", "operations"])
+def test_a_second_assignment_cannot_hide_the_first(name):
+    """The first value still runs when the class body executes."""
+    hidden = f"    {name} = [print('x')]\n"
+    with pytest.raises(Refused):
+        _lines(_migration(CREATE_A, extra=hidden))
+
+
+def test_the_settings_text_and_quoted_help_still_pass():
+    """Free text (help_text with quotes) and a real index stay accepted."""
+    operations = (
+        "        migrations.AddField(model_name='a', name='b', field=models.CharField("
+        "max_length=20, help_text='Say \"yes\"; or no')),\n"
+        "        migrations.AddIndex(model_name='a', index=models.Index(fields=['-b'], "
+        "name='a_b_idx', opclasses=['text_pattern_ops'])),"
+    )
+    assert _lines(_migration(operations)) == leaf_lines("x", "0002_y", "0001_initial")
 
 
 def test_a_decorator_or_a_metaclass_on_the_migration_class_is_refused():
@@ -347,6 +434,7 @@ class Repo:
             pytest.skip("git is not available")
         self.write("tools/release_fingerprint.py", HELPER.read_text(encoding="utf-8"))
         self.write("app/core/deployment.py", DEPLOYMENT)
+        self.write("config/settings.py", "INSTALLED_APPS = []\n")
         self.write("app/x/apps.py", 'class XConfig:\n    label = "x"\n')
         self.write("app/x/migrations/__init__.py", "")
         self.write("app/x/migrations/0001_initial.py", _migration(CREATE_A, dependency=""))
@@ -463,6 +551,12 @@ def test_a_release_that_moves_the_fingerprints_exclusions_is_refused(repo):
     sides of the comparison unseen, even in a release with no migration."""
     repo.write("app/core/deployment.py", DEPLOYMENT.replace('"x.Throttle"', '"x.Throttle", "x.A"'))
     with pytest.raises(Refused, match="does not count"):
+        repo.lines(repo.commit())
+
+
+def test_migration_modules_moved_outside_app_is_refused(repo):
+    repo.write("config/settings.py", "MIGRATION_MODULES = {'x': 'elsewhere.migrations'}\n")
+    with pytest.raises(Refused, match="MIGRATION_MODULES"):
         repo.lines(repo.commit())
 
 

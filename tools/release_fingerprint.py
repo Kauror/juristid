@@ -28,14 +28,22 @@ cannot vouch for needs its expected lines reviewed by hand:
 
 * more than one migration in the release (in one app or across apps), a migration that is
   not its app's new leaf, or one whose dependency is not the leaf production has;
+* a release that changes the models the fingerprint does not count, a migrations
+  package's ``__init__.py``, or sets ``MIGRATION_MODULES``;
 * a migration file it cannot read as plain ``makemigrations`` output: anything at module
-  level but imports and the ``Migration`` class; any import from ``django.db.migrations``
-  or an aliased ``migrations``; ``replaces``, ``run_before``, ``initial`` or ``atomic``;
-  an ``operations`` value that is not a literal list of ``migrations.<Operation>(…)``
-  calls; ``getattr``;
+  level but allowlisted imports and the ``Migration`` class; a decorator or class keyword;
+  ``replaces``, ``run_before``, ``initial``, ``atomic``, or a name assigned twice; a
+  dependency other than ``(app, migration)`` or ``swappable_dependency(settings.
+  AUTH_USER_MODEL)``; an ``operations`` value that is not a literal list of
+  ``migrations.<Operation>(…)`` calls; any dunder, ``getattr`` or code-running builtin;
 * any operation outside `SUPPORTED_OPERATIONS` (schema only), and any mention, wherever
   and however written, of a data, raw SQL, delete or rename operation;
-* a ``CreateModel`` with ``proxy`` or ``managed`` in its options, or of a model the
+* an operation argument that is not inert data for its role: calls only of
+  `ALLOWED_CALLS`, references only to `ALLOWED_REFERENCES` (whole dotted names), sizes
+  only whole numbers, identifiers only plain names, operator classes only from a short
+  list, no ``template``/``function``/``sql`` keyword, and no ``"`` or ``;`` outside free
+  text such as ``help_text``;
+* ``proxy``, ``managed`` or ``db_table`` in a model's options, or a created model the
   fingerprint does not count (``REBUILDABLE_MODELS`` / ``OPERATIONAL_MODELS`` in
   ``app/core/deployment.py`` at the release commit);
 * an app whose ``AppConfig.label`` is not its directory name.
@@ -90,11 +98,15 @@ FORBIDDEN_NAMES = frozenset(
         "getattr",
     }
 )
+#: Builtins that run or reach code, refused anywhere in a migration file.
+CODE_BUILTINS = frozenset(
+    {"eval", "exec", "compile", "open", "globals", "locals", "vars", "breakpoint", "input"}
+)
 #: Attribute names refused (``migrations.operations.X``); the class's own ``operations``
 #: assignment is a plain name and is checked on its own.
 FORBIDDEN_ATTRIBUTES = frozenset({"operations"})
 REFUSED_CLASS_ATTRIBUTES = frozenset({"replaces", "run_before", "initial", "atomic"})
-REFUSED_MODEL_OPTIONS = frozenset({"proxy", "managed"})
+REFUSED_MODEL_OPTIONS = frozenset({"proxy", "managed", "db_table"})
 HELPER_PATH = "tools/release_fingerprint.py"
 DEPLOYMENT_PATH = "app/core/deployment.py"
 EXIT_REFUSED = 3
@@ -222,22 +234,75 @@ def _dotted(node: ast.expr) -> str:
     return ".".join(reversed(parts))
 
 
-def _check_value(node: ast.expr) -> None:
-    """One operation argument is inert data: a literal, a container of inert data, an
-    allowed reference, a call of an allowed class with inert arguments, or ``|``, ``&``,
-    ``~``, ``-`` over inert data. Everything else is refused."""
+#: What a string or number means, by the keyword (or options key) it sits under. Django
+#: writes some of these into DDL unquoted (``opclasses``, the sizes) or passes an already
+#: double-quoted identifier through (``quote_name``), so each is checked for its role.
+NUMERIC_KEYWORDS = frozenset({"max_length", "max_digits", "decimal_places", "size"})
+IDENTIFIER_KEYWORDS = frozenset(
+    {"name", "model_name", "db_table", "db_column", "db_tablespace", "db_collation"}
+)
+FIELD_LIST_KEYWORDS = frozenset({"fields", "include"})
+ALLOWED_OPCLASSES = frozenset({"gin_trgm_ops", "text_pattern_ops", "varchar_pattern_ops"})
+#: Free text Django sends as a parameter or quotes as a value, never as SQL.
+TEXT_KEYWORDS = frozenset(
+    {
+        "verbose_name",
+        "verbose_name_plural",
+        "help_text",
+        "db_comment",
+        "violation_error_message",
+        "default",
+        "db_default",
+        "choices",
+    }
+)
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,62}")
+_FIELD_REFERENCE = re.compile(r"-?[A-Za-z_][A-Za-z0-9_]{0,62}")
+
+
+def _check_constant(node: ast.Constant, key: str | None) -> None:
+    value = node.value
+    if key in NUMERIC_KEYWORDS:
+        if value is not None and (type(value) is not int or value < 0):
+            raise Refused(f"{key}= is not a whole number")
+        return
+    if not isinstance(value, str):
+        return
+    if key == "opclasses":
+        if value not in ALLOWED_OPCLASSES:
+            raise Refused(f"an operator class this helper does not allow: {value!r}")
+    elif key in IDENTIFIER_KEYWORDS:
+        if not _IDENTIFIER.fullmatch(value):
+            raise Refused(f"{key}= is not a plain identifier: {value!r}")
+    elif key in FIELD_LIST_KEYWORDS:
+        if not _FIELD_REFERENCE.fullmatch(value):
+            raise Refused(f"{key}= names something that is not a plain field: {value!r}")
+    elif key not in TEXT_KEYWORDS and ('"' in value or ";" in value):
+        raise Refused(f"a string under {key or 'a positional argument'} holds a quote or ;")
+
+
+def _check_value(node: ast.expr, key: str | None = None) -> None:
+    """One operation argument is inert data for its role: a literal checked for the
+    keyword it sits under (`_check_constant`), a container of such, an allowed reference,
+    a call of an allowed class with inert arguments, or ``|``, ``&``, ``~``, ``-`` over
+    inert data. Everything else is refused."""
+    if key in NUMERIC_KEYWORDS and not isinstance(node, ast.Constant):
+        raise Refused(f"{key}= is not a literal number")
     if isinstance(node, ast.Constant):
+        _check_constant(node, key)
         return
     if isinstance(node, ast.List | ast.Tuple | ast.Set):
         for item in node.elts:
-            _check_value(item)
+            _check_value(item, key)
         return
     if isinstance(node, ast.Dict):
-        for key, value in zip(node.keys, node.values, strict=True):
-            if key is None:
+        for dict_key, value in zip(node.keys, node.values, strict=True):
+            if dict_key is None:
                 raise Refused("an operation argument is unpacked with **")
-            _check_value(key)
-            _check_value(value)
+            if not (isinstance(dict_key, ast.Constant) and isinstance(dict_key.value, str)):
+                raise Refused("a dict key that is not a literal string")
+            _check_constant(dict_key, None)
+            _check_value(value, dict_key.value)
         return
     if isinstance(node, ast.Attribute | ast.Name):
         if _dotted(node) not in ALLOWED_REFERENCES:
@@ -247,39 +312,44 @@ def _check_value(node: ast.expr) -> None:
         name = _dotted(node.func)
         if name not in ALLOWED_CALLS:
             raise Refused(f"an operation argument calls {name or 'an expression'}")
-        for item in node.args:
-            _check_value(item)
+        positional = "size" if name == "django.contrib.postgres.fields.ArrayField" else None
+        for index, item in enumerate(node.args):
+            _check_value(item, positional if index == 1 else None)
         for keyword in node.keywords:
             if keyword.arg is None:
                 raise Refused("an operation argument is unpacked with **")
             if keyword.arg in REFUSED_KEYWORDS:
                 raise Refused(f"an operation argument passes {keyword.arg}=")
-            _check_value(keyword.value)
+            _check_value(keyword.value, keyword.arg)
         return
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr | ast.BitAnd):
-        _check_value(node.left)
-        _check_value(node.right)
+        _check_value(node.left, key)
+        _check_value(node.right, key)
         return
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Invert | ast.USub):
-        _check_value(node.operand)
+        _check_value(node.operand, key)
         return
     raise Refused(f"an operation argument holds {type(node).__name__}")
 
 
 def _check_arguments(call: ast.Call) -> None:
-    """Every argument of an operation is inert data (`_check_value`)."""
+    """Every argument of an operation is inert data for its role (`_check_value`)."""
     for argument in call.args:
         _check_value(argument)
     for keyword in call.keywords:
         if keyword.arg is None:
             raise Refused("an operation argument is unpacked with **")
-        _check_value(keyword.value)
+        _check_value(keyword.value, keyword.arg)
 
 
 def _forbidden_name(tree: ast.Module) -> str:
     for node in ast.walk(tree):
-        if isinstance(node, ast.Name) and node.id in FORBIDDEN_NAMES:
+        if isinstance(node, ast.Name) and (
+            node.id in FORBIDDEN_NAMES or node.id in CODE_BUILTINS or node.id.startswith("__")
+        ):
             return node.id
+        if isinstance(node, ast.Attribute) and node.attr.startswith("__"):
+            return node.attr
         if isinstance(node, ast.Attribute) and (
             node.attr in FORBIDDEN_NAMES or node.attr in FORBIDDEN_ATTRIBUTES
         ):
@@ -315,6 +385,8 @@ def _class_values(cls: ast.ClassDef) -> dict[str, ast.expr]:
             raise Refused(f"class Migration sets {name}")
         if name not in {"dependencies", "operations"}:
             raise Refused(f"class Migration sets {name}")
+        if name in values:
+            raise Refused(f"class Migration assigns {name} twice")
         values[name] = node.value
     if "operations" not in values or "dependencies" not in values:
         raise Refused("class Migration lacks dependencies or operations")
@@ -337,10 +409,22 @@ def _dependencies(node: ast.expr) -> set[tuple[str, str]]:
             isinstance(item, ast.Call)
             and _is_migrations_attr(item.func, "swappable_dependency")
             and not item.keywords
+            and len(item.args) == 1
+            and _dotted(item.args[0]) == "settings.AUTH_USER_MODEL"
         ):
             continue
         raise Refused("a dependency that is neither (app, migration) nor swappable_dependency")
     return found
+
+
+def _refuse_model_options(call: ast.Call, operation: str) -> None:
+    """``options`` may not make a model proxy, unmanaged or point it at another table."""
+    for keyword in call.keywords:
+        if keyword.arg == "options" and isinstance(keyword.value, ast.Dict):
+            keys = {k.value for k in keyword.value.keys if isinstance(k, ast.Constant)}
+            refused = sorted(str(k) for k in keys & REFUSED_MODEL_OPTIONS)
+            if refused:
+                raise Refused(f"{operation} sets {', '.join(refused)}")
 
 
 def _created_model(call: ast.Call) -> str:
@@ -387,6 +471,8 @@ def analyse_migration(text: str, *, app: str, previous_leaf: str) -> list[str]:
         if name not in SUPPORTED_OPERATIONS:
             raise Refused(f"unsupported operation: {name}")
         _check_arguments(item)
+        if name == "AlterModelOptions":
+            _refuse_model_options(item, "AlterModelOptions")
         if name == "CreateModel":
             created.append(_created_model(item))
     if len(set(created)) != len(created):
@@ -533,6 +619,8 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
         raise Refused(
             f"the release changes the models the fingerprint does not count ({DEPLOYMENT_PATH})"
         )
+    if "MIGRATION_MODULES" in _show(repo, ref, "config/settings.py"):
+        raise Refused("config/settings.py sets MIGRATION_MODULES: migrations may live outside app/")
     changed = _git(
         repo, "diff", "--name-status", "--no-renames", previous_release, ref, "--", ":(top)app"
     ).decode()

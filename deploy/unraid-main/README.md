@@ -1728,7 +1728,9 @@ if [ "$rc" -ne 0 ]; then echo "the helper failed (exit $rc)"; exit "$rc"; fi
 FP_HELPER_BLOB="$(git rev-parse "$TARGET:tools/release_fingerprint.py")" || exit 1
 ```
 
-Record `FP_HELPER_BLOB` in the kit beside the lines. The kit's d1 already
+Run it with the project's own Python 3.13 (`uv run python -I …`, or the release
+image's `python`): it uses 3.10+ syntax. Record `FP_HELPER_BLOB` in the kit
+beside the lines. The kit's d1 already
 refuses an image whose revision is not `$TARGET`
 (`scripts/deploy/juristid-verify-release-artifact.sh --revision "$TARGET"`), so
 the lines and the image come from the same commit.
