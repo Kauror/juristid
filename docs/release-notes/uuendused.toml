@@ -7,6 +7,21 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
+# sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
+# #691, #692, #693, #694, #695.
+[[day]]
+date = 2026-11-24
+basis = "deployment"
+prs = [681, 683, 684, 686]
+changes = [
+  "Menetluse kulu täpid näitavad ainult seda, mis on juba tehtud: eeldatavad jõustumised ja muud oodatud kuupäevad ei ole enam täppide ega «N tegevust» hulgas, sest need on menetluse kulus oma kohal eraldi.",
+  "«Eeldatav jõustumine (allika hinnang)» on nüüd lihtsalt «Eeldatav jõustumine». Menetluse kulus on selle all kirjas, kust kuupäev pärineb (Lovable või kolleeg, kes selle lisas) ja allika märkus. Kolleegi lisatud eeldatava jõustumise saab sealt ✕-ga eemaldada; Lovable'ist tulnud kuupäeva ✕ selgitab, et see tuleb eemaldada Lovable'is ja öine sünkroonimine eemaldab selle siis ka Juristidest.",
+  "«Valitsuse info»: kui mudel jättis mõne päevakorrapunkti hindamata, on see punkt märgitud «Hindamata» ja päevakorra juures on kirjas, mitu punkti on hindamata. Juba otsustatud («Lisa teemale», «Märgi loetuks») ja hinnatud punkte mudel enam üle ei kirjuta.",
+  "Lovable'i lehel «Valmisolek» näitab veerg «Automaatne» nüüd õigesti, milliseid välju öine sünkroonimine Lovable'i järgi kirjutab, ja «Reeglita muudatusi» loeb ainult Lovable'i muudatusi, mida ükski reegel ei kirjuta.",
+  "«Lisa märkena» ei jää enam aeglase registri taha ootama: kui registri fail ei jõua mõistliku aja jooksul kohale, salvestatakse märge ikkagi ja puuduva faili link kirjutatakse märkesse.",
+]
+
 # 23.11: andmetoiming tootmises (Postipoisi kirjad, omaniku otsus), mitte koodi
 # väljalase; r87 a1f40688 töötas. Skript ja logi: releases/a1f40688937e/postipoiss-owner-20261123/.
 # Samal päeval väljalase r88 (#671, omaniku märkmed, 4. voor): selle muudatused on sama kirje all.
@@ -14,7 +29,7 @@
 date = 2026-11-23
 basis = "deployment"
 revisions = ["a1f40688937e"]
-prs = [671, 677, 678, 681]
+prs = [671, 677, 678]
 changes = [
   "Halduse «Ajaloolistes kirjades» ootab otsust 612 kirja asemel 317: 295 kirja on omaniku otsusel teemaga seotud. Seoti kirjad, mille teema oli kindel (kuupäev, saaja ja teema ühtivad) või mille pealkiri ja faili tekst vastavad pakutud teemale; 14 kirja seoti pealkirja järgi teise teemaga, sest pakutud teema ei sobinud.",
   "99 neist kirjadest on teema ajajoonel väljasaadetud arvamusena koos kirja failiga. Kirjad, millel faili pole, on teemaga seotud, kuid arvamuseks ei muutunud.",
@@ -33,8 +48,6 @@ changes = [
   "Halduse «Andmete sünkroonimises» on uus leht «Lovable'i nimed»: iga Lovable'i vastutaja nimi ja inimene, kellena Juristid selle ära tunneb. Uue kolleegi nime saab seal enne üleandmist kontrollida ja kui tema nimi Lovable'is erineb nimest Juristides, saab nime inimesega siduda.",
   "Halduse «Kasutajates» on inimese lehel näha tema pooleli töö: avatud teemad (sh mitu neist on Lovable'is) ja pooleli sammud. Kui sellisel inimesel konto välja lülitada, tuleb kinnitada, et töö jääb ootele. Uus leht «Töö ilma aktiivse vastutajata» näitab, mis on välja lülitatud inimestele ja ilma vastutajata jäänud.",
   "«Lovable'i nimed» näitab esimesena avatud teemade vastutajaid koos avatud teemade arvuga; nimed, mida Juristid ära ei tunne, on nende seas eespool. Lõpetatud ja ajalooliste teemade nimed ning ainult vastutaja vahetustes mainitud nimed on kokku volditud jaotises «Ajaloolised ja muud nimed». Probleemide arv loeb ainult avatud teemade nimesid.",
-  "Menetluse kulu täpid näitavad ainult seda, mis on juba tehtud: eeldatavad jõustumised ja muud oodatud kuupäevad ei ole enam täppide ega «N tegevust» hulgas, sest need on menetluse kulus oma kohal eraldi.",
-  "«Eeldatav jõustumine (allika hinnang)» on nüüd lihtsalt «Eeldatav jõustumine». Menetluse kulus on selle all kirjas, kust kuupäev pärineb (Lovable või kolleeg, kes selle lisas) ja allika märkus. Kolleegi lisatud eeldatava jõustumise saab sealt ✕-ga eemaldada; Lovable'ist tulnud kuupäeva ✕ selgitab, et see tuleb eemaldada Lovable'is ja öine sünkroonimine eemaldab selle siis ka Juristidest.",
 ]
 
 [[day]]
