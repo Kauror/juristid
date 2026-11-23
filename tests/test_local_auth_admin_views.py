@@ -453,7 +453,8 @@ def test_the_step_up_table_names_every_changing_route():
     changing = {
         f"account_admin:{pattern.name}"
         for pattern in admin_urls.urlpatterns
-        if pattern.name not in ("list", "detail")
+        # The read-only pages: GET only, they change nothing (without_owner: ADR 0220 §4).
+        if pattern.name not in ("list", "detail", "without_owner")
     }
     assert changing == {route for route, *_ in STEP_UP_ROUTES}
 
