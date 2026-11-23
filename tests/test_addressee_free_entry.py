@@ -466,14 +466,15 @@ def test_a_late_failure_on_uus_teema_leaves_no_institution_behind(signed_in, mon
     def refuse(**kwargs):
         raise DomainError("Järgmine samm ei kõlba.")
 
-    # A service `matter_create` calls after the Matter exists, which is what
-    # makes this a *late* failure. It was `set_next_action_for_new_work` behind
-    # `Järgmiseks`, then `establish_opinion_preparation_action` (docs/adr/0094
-    # §5), then seeding the `Tööplaan` (docs/adr/0133 §8) until docs/adr/0141.
+    # A service `matter_create`'s save (`intake.create_from_form`) calls after
+    # the Matter exists, which is what makes this a *late* failure. It was
+    # `set_next_action_for_new_work` behind `Järgmiseks`, then
+    # `establish_opinion_preparation_action` (docs/adr/0094 §5), then seeding the
+    # `Tööplaan` (docs/adr/0133 §8) until docs/adr/0141.
     # Now the private note, posted below. The guarantee under test — one
     # transaction, so a refusal after the institution was resolved takes it with
     # it — is unchanged.
-    monkeypatch.setattr("app.matters.views.save_personal_note", refuse)
+    monkeypatch.setattr("app.matters.intake.save_personal_note", refuse)
 
     response = signed_in.post(
         CREATE,

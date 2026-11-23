@@ -28,8 +28,8 @@ from app.audit.enums import ChangeEventType
 from app.audit.models import ChangeEvent
 from app.core.enums import Visibility
 from app.matters.enums import MatterDataClass
+from app.matters.intake import SIMILAR_LINK_NOT_FOUND, link_ticked_similar_matters
 from app.matters.models import Matter
-from app.matters.views import SIMILAR_LINK_NOT_FOUND, _link_ticked_similar_matters
 from app.related_materials import engine
 from app.related_materials.models import MatterRelation
 from app.related_materials.views import (
@@ -258,13 +258,13 @@ def test_a_teema_the_actor_may_not_read_is_never_linked(specialist, administrato
     new = factories.MatterFactory(owner=specialist, title="Uus")
 
     with refused(SIMILAR_LINK_NOT_FOUND):
-        _link_ticked_similar_matters(matter=new, ticked=[str(hidden.pk)], actor=administrator)
+        link_ticked_similar_matters(matter=new, ticked=[str(hidden.pk)], actor=administrator)
     assert relations_of(new) == []
 
 
 def test_the_new_teema_itself_is_never_a_target(specialist):
     new = factories.MatterFactory(owner=specialist, title="Iseendaga")
-    _link_ticked_similar_matters(matter=new, ticked=[str(new.pk)], actor=specialist)
+    link_ticked_similar_matters(matter=new, ticked=[str(new.pk)], actor=specialist)
     assert relations_of(new) == []
 
 
@@ -335,4 +335,4 @@ def test_draft_picker_results_refuse_nothing_but_need_two_letters(specialist):
 def test_a_malformed_value_refuses_by_name(specialist):
     new = factories.MatterFactory(owner=specialist, title="Halb väärtus")
     with refused(SIMILAR_LINK_NOT_FOUND):
-        _link_ticked_similar_matters(matter=new, ticked=["pole-uuid"], actor=specialist)
+        link_ticked_similar_matters(matter=new, ticked=["pole-uuid"], actor=specialist)
