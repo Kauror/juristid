@@ -546,13 +546,32 @@ def test_verify_finds_a_difference(world, pilot_on):
 # ---------------------------------------------------------------------------
 
 
-def test_the_archive_notice_names_the_same_pilot_constant():
+@pytest.mark.django_db
+@pytest.mark.parametrize("cohort", lovable_pilot.COHORTS)
+def test_the_archive_notice_names_the_same_pilot_constant(cohort):
     # `Matter.shows_register_archive_notice` cannot import the module (a cycle),
-    # so it spells the pilot's name; this keeps the two from drifting apart.
-    import inspect
+    # so it spells the cohorts' names; this keeps the two from drifting apart.
+    # Asserted on what a reader sees for each cohort, not on how the names are
+    # quoted in the property's source.
+    def archived(pilot: str | None) -> Matter:
+        matter = factories.ArchiveMatterFactory()
+        if pilot is not None:
+            EvidencePilotRecord.objects.create(
+                pilot=pilot,
+                pilot_version="1",
+                package_sha256="c" * 64,
+                record_key=f"{pilot}-{matter.pk}",
+                record_kind="MATTER",
+                matter=matter,
+                target_model="matters.Matter",
+                target_id=matter.pk,
+            )
+        return matter
 
-    source = inspect.getsource(Matter.shows_register_archive_notice.fget)
-    assert all(f'"{cohort}"' in source for cohort in lovable_pilot.COHORTS)
+    assert archived(cohort).shows_register_archive_notice is False, cohort
+    # The control: a register row, and a row some other pilot wrote, keep it.
+    assert archived(None).shows_register_archive_notice is True
+    assert archived("muu-piloot").shows_register_archive_notice is True
 
 
 def test_the_edit_page_names_lovable_without_a_row_number(world, pilot_on):
