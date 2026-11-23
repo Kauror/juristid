@@ -1,6 +1,6 @@
 # 0220 — A lawyer leaving and arriving is prepared in Juristid and handed over in Lovable
 
-Date: 2026-11-23 · Status: proposed (owner brief 2026-11-23, «we have to build a system where we can add in new lawyers and move the old lawyer's topics»; owner chose B + C + D the same day; release awaits owner review)
+Date: 2026-11-23 · Status: Accepted 23.11.2026 — the owner confirmed the decisions below (limit 150, pin precedence, refusals and breakers unchanged) after r89 was deployed; authorisation record in §Acceptance. Owner brief 2026-11-23, «we have to build a system where we can add in new lawyers and move the old lawyer's topics»; owner chose B + C + D the same day.
 
 ## Context
 
@@ -95,3 +95,26 @@ open Teema; it is not built here.
   left for when that matters.
 
 **Migration:** `legacy_import/0033` (additive: `LovableOwnerAlias`).
+
+## Acceptance 2026-11-23
+
+**Accepted on 23.11.2026.** The owner confirmed the business decisions this record takes, as built and deployed in r89 (`20869fb8`). This records the confirmation; it changes no value, rule or behaviour:
+
+| Decision | As built |
+|---|---|
+| The hand-over limit | `MAX_HANDOVER_MATTERS = 150` per night (§2) |
+| Pin precedence | an explicitly pinned Lovable name (`LovableOwnerAlias`) is read before learned pairs and before display-name matching (§3) |
+| Refusals | an invalid, inactive or non-assignable recipient is still no answer (`UNRESOLVED_OWNER` / `NOT_ASSIGNABLE`), for a pin as for any other rule (§3) |
+| Everything else | every existing circuit breaker of ADR 0213 §10.8 / §10.14 and §11, and every audit requirement, unchanged |
+
+**The authorisation, as recorded** (UTC):
+
+| When | What | Authority |
+|---|---|---|
+| 23.11, morning | Brief: prepare a change of lawyers; the review of Lovable's changes; the proposal A–E | owner, in chat |
+| 23.11 | «B + C + D» chosen (A not built) | owner, in chat |
+| 23.11 06:58 | #677 merged as `20869fb8` («Merge it»), after a green FULL run of its head `e4425daa` | owner, in chat |
+| 23.11 07:41 | r89 deployed («Deploy now»): migration `legacy_import 0033`, backup `sets/20261123T073730Z` VERIFIED-L2, `production_status` 9/9 PASS | owner, in chat |
+| 23.11 | Coordinator review of `main` at `20869fb8`; «Lovable'i nimed» presentation follow-up (#678, §3 amended there) | coordinator |
+| 23.11 | The four decisions above confirmed; this record marked Accepted in a documentation-only change | owner, via the coordinator |
+
