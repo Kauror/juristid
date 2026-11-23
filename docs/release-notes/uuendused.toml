@@ -7,6 +7,17 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# 23.11: andmetoiming tootmises (Postipoisi kirjad, omaniku otsus), mitte koodi
+# väljalase; r87 a1f40688 töötas. Skript ja logi: releases/a1f40688937e/postipoiss-owner-20261123/.
+[[day]]
+date = 2026-11-23
+basis = "deployment"
+revisions = ["a1f40688937e"]
+changes = [
+  "Halduse «Ajaloolistes kirjades» ootab otsust 612 kirja asemel 317: 295 kirja on omaniku otsusel teemaga seotud. Seoti kirjad, mille teema oli kindel (kuupäev, saaja ja teema ühtivad) või mille pealkiri ja faili tekst vastavad pakutud teemale; 14 kirja seoti pealkirja järgi teise teemaga, sest pakutud teema ei sobinud.",
+  "99 neist kirjadest on teema ajajoonel väljasaadetud arvamusena koos kirja failiga. Kirjad, millel faili pole, on teemaga seotud, kuid arvamuseks ei muutunud.",
+]
+
 [[day]]
 date = 2026-11-23
 basis = "deployment"
