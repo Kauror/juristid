@@ -5159,23 +5159,6 @@ a.barchart__row:hover {
   .createform__pair--sentproposal .field:has(.dateinput) {
     max-width: 18rem;
   }
-
-  /* The long tail, when the pair has stopped being a pair.
-     `.chipdetails` is `inline-block` so that a closed disclosure is a chip
-     sitting in a row of chips, and that is right at every width. Open and
-     stacked it is wrong: shrink-to-fit measures the search box and the chip
-     names inside, and the panel ends up a narrow island in a field that has
-     the whole row to spend. `block` hands it that width.
-     A modifier rather than the bare class, because the same component opens
-     under Saatja here and on Saabunud, and neither is this round's subject. */
-  .chipdetails--stretch {
-    display: block;
-    /* The disclosure is a flex item in `.chiprow`, so `display: block` alone
-       still leaves it shrink-to-fit — the flex base size is its content. This
-       is the line that actually hands it the row. */
-    flex-basis: 100%;
-    width: 100%;
-  }
 }
 
 /* Uus teema's two new rows hold their tracks longer than the other pairs do.
@@ -5751,64 +5734,6 @@ a.barchart__row:hover {
   max-width: 146px;
 }
 
-/* -- the long tail, shaped like a chip ------------------------------------- */
-
-.chipdetails {
-  display: inline-block;
-  max-width: 100%;
-}
-
-.chipdetails__summary {
-  display: inline-block;
-  padding: 3px 11px;
-  border: 1px dashed var(--border-strong);
-  border-radius: 13px;
-  font-size: var(--typography-size-meta);
-  line-height: 1.5;
-  color: var(--text-secondary);
-  cursor: pointer;
-  list-style: none;
-}
-
-.chipdetails__summary::-webkit-details-marker {
-  display: none;
-}
-
-.chipdetails__summary::after {
-  content: " ▾";
-  color: var(--text-muted);
-}
-
-.chipdetails[open] > .chipdetails__summary::after {
-  content: " ▴";
-}
-
-.chipdetails__summary:hover {
-  color: var(--text-primary);
-  border-color: var(--accent-border);
-}
-
-.chipdetails__summary:focus-visible {
-  outline: var(--focus-ring-width) solid var(--focus-ring);
-  outline-offset: var(--focus-ring-offset-width);
-}
-
-.chipdetails__body {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-2);
-  margin-top: var(--spacing-2);
-  padding: var(--spacing-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--surface-panel);
-}
-
-.chipdetails__search {
-  max-width: 20rem;
-}
-
-
 /* -- deleting a Teema ------------------------------------------------------ *
  *
  * Below the form, below a rule, and never in the row that holds `Salvesta`.
@@ -5863,14 +5788,6 @@ a.barchart__row:hover {
   /* `Loobu` is focused when the page opens; its focus ring must not cover the
      «Seda tegevust ei saa tagasi võtta.» line above it. */
   margin-top: var(--spacing-3);
-}
-
-.chipdetails__body .chiprow {
-  margin-top: 0;
-  /* A catalogue of ministries is long. It scrolls inside its own box rather
-     than lengthening the page under everything below it. */
-  max-height: 220px;
-  overflow-y: auto;
 }
 
 /* -- Saatja: shortlist, search and a box for a body we do not have --------- *
