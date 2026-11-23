@@ -220,16 +220,19 @@ def test_a_teema_id_never_offered_links_nothing():
 
 
 @pytest.mark.parametrize(
-    "client",
+    "make",
     [
-        Client_(fail=RuntimeError("down")),
-        Client_({1: "STRONG"}, stop="max_tokens"),
-        Client_(text="{not json"),
+        lambda: Client_(fail=RuntimeError("down")),
+        lambda: Client_({1: "STRONG"}, stop="max_tokens"),
+        lambda: Client_(text="{not json"),
+        lambda: Client_(text='{"items": []}'),
+        lambda: Client_({7: "STRONG", 1: "MAYBE"}),
     ],
-    ids=["request-failed", "cut-off", "unreadable"],
+    ids=["request-failed", "cut-off", "unreadable", "empty", "no-usable-verdict"],
 )
 @override_settings(REGISTER_SWEEP_AI=True)
-def test_a_failed_attempt_is_retried_only_up_to_the_limit(client):
+def test_a_failed_attempt_is_retried_only_up_to_the_limit(make):
+    client = make()
     a = _agenda()
 
     for _ in range(agenda.MAX_ATTEMPTS + 3):
@@ -279,3 +282,56 @@ def test_the_page_says_which_items_are_unjudged():
 
     assert "2 punkti hindamata" in html
     assert html.count('<span class="regwatch__strength">Hindamata</span>') == 2
+
+
+# -- who is told ----------------------------------------------------------------------
+
+
+@override_settings(REGISTER_SWEEP_AI=True)
+def test_a_new_agenda_left_partly_unjudged_is_still_told_to_the_head(monkeypatch):
+    from app.register_watch.models import CandidateNotice
+
+    head = factories.DepartmentHeadFactory()
+    found = valitsus.Agenda(
+        url="https://valitsus.ee/uudised/uus",
+        title="Valitsuse 19.11.26 istungi kommenteeritud päevakord",
+        session_date=SESSION,
+        published=None,
+        items=[
+            valitsus.AgendaItem(number=n, title=f"Punkt {n}", presenter="", kind="", text="")
+            for n in (1, 2)
+        ],
+    )
+    monkeypatch.setattr(valitsus, "fetch", lambda day: found if day == SESSION else None)
+
+    _run(Client_({1: "NONE"}))
+
+    assert _item(2).strength == Strength.UNJUDGED
+    assert CandidateNotice.objects.get(recipient=head).agendas == 1
+
+
+@override_settings(REGISTER_SWEEP_AI=True)
+def test_a_retry_tells_the_owner_of_the_teema_it_proposes():
+    from app.register_watch.models import RegisterNotice
+
+    owner = factories.UserFactory()
+    teema = factories.MatterFactory(owner=owner, title="Maksukorraldus")
+    _agenda({})
+    _run(Client_(fail=RuntimeError("down")))
+
+    _run(Client_({1: {"number": 1, "strength": "STRONG", "related": str(teema.pk)}}))
+
+    assert _item(1).related_matter == teema
+    assert RegisterNotice.objects.filter(matter=teema).exists()
+
+
+def test_with_the_model_off_no_item_is_marked_but_the_agenda_is():
+    head = factories.DepartmentHeadFactory()
+    _agenda()
+    client = Client()
+    client.force_login(head)
+
+    html = client.get(reverse("register_watch:agendas")).content.decode()
+
+    assert " · hindamata" in html
+    assert '<span class="regwatch__strength">Hindamata</span>' not in html

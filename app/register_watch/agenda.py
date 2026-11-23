@@ -139,25 +139,36 @@ def run(
                 stored.append(store(found))
                 break
     judged = 0
+    # Agendas the model gave verdicts in this run: a retry's proposals reach their
+    # owners too, not only a newly stored agenda's (audit HR-02 review).
+    answered: list[GovernmentAgenda] = []
     if use_ai:
         # Only an agenda no answer was read for, and only `MAX_ATTEMPTS` times: a
         # failing model is not asked about the same week every half hour forever.
         for agenda in GovernmentAgenda.objects.filter(
             judged_at__isnull=True, ai_attempts__lt=MAX_ATTEMPTS
         ).order_by("session_date"):
-            judged += judge(agenda, usage, client=ai_client)
+            count = judge(agenda, usage, client=ai_client)
+            judged += count
+            if count:
+                answered.append(agenda)
     for agenda in stored:
         agenda.refresh_from_db()
-    # Tell when an item may matter — or when the model could not say yet (off or failed).
+    # Tell when an item may matter — or when the model could not say yet: off,
+    # failed, or an answer that left items «Hindamata» (ADR 0219 §5).
     worth = [
-        a for a in stored if a.judged_at is None or a.items.filter(strength__in=SHOWN).exists()
+        a
+        for a in stored
+        if a.items.filter(strength__in=SHOWN).exists()
+        or a.items.filter(status=AgendaItemStatus.PENDING, strength=Strength.UNJUDGED).exists()
     ]
     if worth:
         with transaction.atomic():
             candidate_notices.notify_agendas(len(worth))
-    if stored:
+    told = {a.pk: a for a in (*stored, *answered)}
+    if told:
         with transaction.atomic():
-            tell_owners(stored)
+            tell_owners(list(told.values()))
     return Outcome(stored=stored, judged=judged, usage=usage, errors=errors)
 
 
@@ -329,6 +340,11 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
     except (ValueError, KeyError, TypeError):
         return _failed_attempt(agenda, usage, "vastus ei olnud loetav")
     allowed = {Strength.STRONG, Strength.POSSIBLE, Strength.WEAK, Strength.NONE}
+    if not any(answers.get(item.number, {}).get("strength") in allowed for item in items):
+        # A readable answer with no usable verdict for any item asked about (empty,
+        # other numbers, unusable strengths) is no answer: a bounded retry, never a
+        # closed agenda with everything «Hindamata».
+        return _failed_attempt(agenda, usage, "vastuses polnud ühtki kasutatavat hinnangut")
     judged = 0
     with transaction.atomic():
         # Re-read under lock: a person may have decided an item while the model
@@ -340,7 +356,7 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
         )
         for item in still_open:
             row = answers.get(item.number)
-            if not isinstance(row, dict) or row.get("strength") not in allowed:
+            if not row or row.get("strength") not in allowed:
                 continue  # left «Hindamata»: no verdict is invented for it
             item.strength = row["strength"]
             item.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
