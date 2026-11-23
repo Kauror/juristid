@@ -33,6 +33,7 @@ from tests.lovable_observability_support import (
 pytestmark = pytest.mark.django_db
 
 LATER = night_at(2) + dt.timedelta(hours=2)
+PAGE = "core:release_notes_lovable"
 WRITE_PATHS = (
     "apply_matter",
     "_apply_field",
@@ -287,3 +288,98 @@ def test_a_reader_without_a_business_role_gets_counts_only(cases):
     assert readiness.simulation["SAFE_UPDATE_CANDIDATE"] == 14  # 13 + 2026_301's former owner
     dumped = json.dumps(readiness.as_dict(), ensure_ascii=False)
     assert "Näidisteema" not in dumped and "Jälgida" not in dumped
+
+
+# -- «Automaatne» and «Reeglita muudatusi» follow the engine (audit HR-03) ------------
+#
+# Until 2026-11-23 both read `lovable_sync.AUTO_FIELDS` — the four fields the
+# rules before source authority (11.11.2026) wrote — so the page said «ei» for
+# stage, sent, the step's wording and eight more fields the night writes, and
+# counted every Lovable change to them as having no rule.
+
+#: The fields the old table called «ei» although the night writes them.
+WRONGLY_MANUAL = (
+    lovable_sync.FORMER_OWNER,
+    "next_action_text",
+    "stage",
+    "opinion_deadline",
+    "sent",
+    "sent_date",
+    "addressee",
+    "koda_initiative",
+    "legal_act",
+    "received",
+    "commencements",
+)
+
+
+def test_every_field_row_says_what_the_engine_writes(cases, reader):
+    fields = {f.field: f for f in obs.readiness(reader, now=LATER).fields}
+
+    for name, row in fields.items():
+        policy = lovable_sync.policy_of(name).policy
+        assert row.automatic == (policy in lovable_sync.WRITING_POLICIES), name
+    for name in lovable_sync.AUTHORITATIVE_FIELDS:
+        assert fields[name].automatic, name
+    for name in WRONGLY_MANUAL:
+        assert fields[name].automatic, name
+    assert not fields["operational_scope"].automatic
+
+
+def test_a_tombstone_is_written_nothing():
+    for name in (*lovable_sync.FIELDS, "unknown_field"):
+        assert not lovable_sync.writes_automatically(name, tombstone=True), name
+    assert not lovable_sync.writes_automatically("unknown_field")
+
+
+def test_a_change_the_night_writes_is_not_counted_as_unruled(cases, reader):
+    control(SyncMode.COMPARE, observe=True)
+    run = observation_run(night_at(1))
+    live = cases.matter("2026_243")
+    gone = cases.matter("2026_220")
+    gone.deleted_at = night_at(1)
+    gone.save(update_fields=["deleted_at"])
+    linked = {"mapping": "PILOT_LINKED", "in_pilot": True}
+    observed(run, "2026_243", matter=live, fields=[("stage", "a", "b")], **linked)
+    observed(run, "2026_220", matter=gone, fields=[("stage", "a", "b")], **linked)
+    observed(
+        run,
+        "2026_186",
+        matter=cases.matter("2026_186"),
+        **linked,
+        fields=[("operational_scope", True, False)],
+    )
+    observed(run, "2026_900", fields=[("stage", "a", "b")])  # no Teema in Juristid
+
+    fields = {f.field: f for f in obs.readiness(reader, now=LATER).fields}
+
+    # The live Teema's stage is written by the night; the tombstone's and the
+    # unlinked topic's are not, and nothing writes the operational scope.
+    assert fields["stage"].uncovered_changes == 2
+    assert fields["operational_scope"].uncovered_changes == 1
+
+
+def test_the_page_says_what_automatic_means_and_reads_no_source(cases, reader, client, monkeypatch):
+    from django.urls import reverse
+
+    from app.core import views as core_views
+    from app.legacy_import import lovable_source
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("the readiness page contacted Lovable")
+
+    monkeypatch.setattr(lovable_source, "_default_opener", no_network)
+    monkeypatch.setattr(lovable_source, "take_snapshot", no_network)
+    monkeypatch.setattr(lovable_source, "access_probe", no_network)
+    monkeypatch.setattr(core_views, "_lovable_now", lambda: LATER)
+    client.force_login(reader)
+
+    response = client.get(reverse(PAGE) + "?vaade=valmisolek")
+
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "Kustutatud teemale ei kirjutata midagi." in body
+    table = body.split('id="lov-valjad"', 1)[1].split("</table>", 1)[0]
+    # 15 fields under source authority say «jah»; only the operational scope «ei».
+    assert table.count("<td>jah</td>") == len(lovable_sync.AUTHORITATIVE_FIELDS)
+    assert table.count("<td>ei</td>") == 1

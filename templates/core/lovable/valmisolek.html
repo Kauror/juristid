@@ -51,6 +51,11 @@
 
 <section class="lovsection" aria-labelledby="lov-valjad">
   <h2 class="lovsection__title" id="lov-valjad">Väljad</h2>
+  {% comment %}
+    What «Automaatne» means, said once (audit HR-03): the engine's own rule
+    (`lovable_sync.writes_automatically`), which differs by the Teema's state.
+  {% endcomment %}
+  <p class="lovnight__note">«Automaatne» kehtib Lovable'iga sünkroonitud teemal, ka suletud ja ajaloolisel: öine käivitus kirjutab välja Lovable'i järgi ja ootele jääb ainult tehniline probleem. Kustutatud teemale ei kirjutata midagi. «Reeglita muudatusi» loeb Lovable'i muudatusi, mida ükski reegel ei kirjuta: sidumata teema, kustutatud teema või automaatse reeglita väli.</p>
   <div class="tablewrap">
     <table class="data-table lovready">
       <thead>

@@ -579,6 +579,28 @@ def policy_of(field_name: str) -> FieldPolicy:
     return FIELD_POLICY.get(field_name) or FieldPolicy(field_name, REVIEW, "Tundmatu väli.")
 
 
+#: The policy classes under which a night writes a field without a person.
+WRITING_POLICIES = (AUTHORITATIVE, AUTO, CONDITIONAL)
+
+
+def writes_automatically(field_name: str, *, tombstone: bool = False) -> bool:
+    """Whether an APPLY night writes this field without a person.
+
+    Read off `FIELD_POLICY`, the table `plan_matter` follows: on a live
+    synchronised Teema — open or closed, the historical register included
+    (docs/adr/0213 §10) — every field under source authority is written, only a
+    technical problem holding it. A **tombstone** is planned as a closed Teema
+    by the earlier rules (`_plan_archive`, `current_values`), which hold every
+    change for a person: nothing is written to it.
+
+    `AUTO_FIELDS` is *not* this: it names the four fields the rules before
+    11.11.2026 wrote, and the administration pages that read it described those
+    rules long after the engine stopped following them (audit HR-03)."""
+    if tombstone:
+        return False
+    return policy_of(field_name).policy in WRITING_POLICIES
+
+
 # ---------------------------------------------------------------------------
 # Canonical values
 # ---------------------------------------------------------------------------
