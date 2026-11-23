@@ -489,6 +489,9 @@ def create_from_form(
 ) -> CreatedFromForm:
     """`Uus teema`'s save: the whole creation sequence, in one transaction (HR-13).
 
+    **The caller authorises.** Like `file_new_matter`, this checks no permission of its
+    own: the view's `business_write_required` (and `for_create`) gate it.
+
     The view collects what the page posted (the validated form, the uploads
     already read, the staging session) and renders what this refuses; the
     order of the writes is decided here. In this transaction, in this order:

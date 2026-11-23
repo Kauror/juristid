@@ -134,8 +134,9 @@ def _counts() -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-#: The exact cost of the full save below. A pure move of the sequence keeps it;
-#: a change that adds queries to every `Uus teema` save has to say so here.
+#: The budget of the full save below, measured at 199 when the sequence moved
+#: (HR-13). A ceiling, like the repo's other whole-request budgets: a change that
+#: adds queries to every `Uus teema` save has to raise it and say why.
 FULL_SAVE_QUERIES = 199
 
 
@@ -191,7 +192,7 @@ def test_a_full_save_writes_this_trail_in_this_order(specialist, evidence_root):
     session = _session(token)
     assert session.consumed_at is not None
     assert session.matter_id == matter.pk
-    assert len(queries.captured_queries) == FULL_SAVE_QUERIES
+    assert len(queries.captured_queries) <= FULL_SAVE_QUERIES, len(queries.captured_queries)
 
 
 def test_a_save_filed_already_sent_records_the_proposal_with_its_files(specialist, evidence_root):
