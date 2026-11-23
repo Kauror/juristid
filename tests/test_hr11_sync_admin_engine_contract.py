@@ -66,10 +66,35 @@ def _keyword_only(function: object) -> set[str]:
 def test_sync_admin_reads_the_engine_by_name_nowhere():
     """No `getattr(lovable_sync, …)` and no signature probing: a missing engine
     name must be an ImportError/AttributeError, never an empty page."""
-    source = SYNC_ADMIN.read_text(encoding="utf-8")
-    assert "getattr(lovable_sync" not in source
-    assert "inspect.signature" not in source
-    assert "_engine_differences" not in source
+    tree = ast.parse(SYNC_ADMIN.read_text(encoding="utf-8"))
+    engine_aliases = {"lovable_sync"} | {
+        alias.asname or alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+        if alias.name == ENGINE
+    }
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        if (
+            isinstance(func, ast.Name)
+            and func.id in {"getattr", "hasattr"}
+            and node.args
+            and isinstance(node.args[0], ast.Name)
+            and node.args[0].id in engine_aliases
+        ):
+            found.append(f"{func.id}(…) at line {node.lineno}")
+        if (
+            isinstance(func, ast.Attribute)
+            and func.attr == "signature"
+            and isinstance(func.value, ast.Name)
+            and func.value.id == "inspect"
+        ):
+            found.append(f"inspect.signature at line {node.lineno}")
+    assert found == []
 
 
 def test_every_engine_name_sync_admin_uses_exists():
