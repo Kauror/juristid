@@ -23,7 +23,7 @@ to a Teema are shown, never acted on.
         <span class="agenda__title">{{ week.agenda.title }}</span>
         <span class="regwatch__meta">{% if week.agenda.published_at %}avaldatud {{ week.agenda.published_at|date:"d.m.Y H:i" }} · {% endif %}{{ week.total }} punkti · {{ week.shown|length }} olulist{% if week.check %} · {{ week.check|length }} kontrollida{% endif %}</span>
       </summary>
-      <p class="regwatch__meta"><a href="{{ week.agenda.url }}" target="_blank" rel="noopener noreferrer">Päevakord valitsus.ee-s</a>{% if not week.agenda.judged_at %} · hindamata{% endif %}</p>
+      <p class="regwatch__meta"><a href="{{ week.agenda.url }}" target="_blank" rel="noopener noreferrer">Päevakord valitsus.ee-s</a>{% if week.unjudged == week.total %} · hindamata{% elif week.unjudged %} · {{ week.unjudged }} punkti hindamata{% endif %}</p>
 
       {% if week.shown %}
         <ul class="agenda__items">

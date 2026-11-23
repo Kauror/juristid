@@ -22,11 +22,12 @@ from zoneinfo import ZoneInfo
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from app.register_watch import candidates_ai, house_style
 from app.register_watch.house_style import KODA_STYLE
-from app.register_watch.models import AgendaItem, GovernmentAgenda, Strength
+from app.register_watch.models import AgendaItem, AgendaItemStatus, GovernmentAgenda, Strength
 from app.register_watch.sources import valitsus
 from app.register_watch.sources.http import FetchError
 
@@ -139,9 +140,11 @@ def run(
                 break
     judged = 0
     if use_ai:
-        for agenda in GovernmentAgenda.objects.filter(judged_at__isnull=True).order_by(
-            "session_date"
-        ):
+        # Only an agenda no answer was read for, and only `MAX_ATTEMPTS` times: a
+        # failing model is not asked about the same week every half hour forever.
+        for agenda in GovernmentAgenda.objects.filter(
+            judged_at__isnull=True, ai_attempts__lt=MAX_ATTEMPTS
+        ).order_by("session_date"):
             judged += judge(agenda, usage, client=ai_client)
     for agenda in stored:
         agenda.refresh_from_db()
@@ -221,6 +224,10 @@ SCHEMA: dict[str, Any] = {
 MAX_TOKENS = 8000
 TEXT_CHARS = 1800
 LETTERS_SHOWN = 150
+#: Requests per agenda at most (audit HR-02). A readable answer ends it at once;
+#: only a failed request, a cut-off answer or one that could not be read is
+#: retried, on the next runs, until this many were made.
+MAX_ATTEMPTS = 3
 
 
 def ai_enabled() -> bool:
@@ -261,12 +268,37 @@ def _prompt(agenda: GovernmentAgenda, items: Iterable[AgendaItem], topics: dict[
     )
 
 
+def _failed_attempt(agenda: GovernmentAgenda, usage: candidates_ai.Usage, reason: str) -> int:
+    """Count one request that gave no readable answer; it may be retried (`MAX_ATTEMPTS`)."""
+    usage.failed(reason)
+    GovernmentAgenda.objects.filter(pk=agenda.pk).update(ai_attempts=F("ai_attempts") + 1)
+    logger.warning("government agenda %s: model attempt failed: %s", agenda.session_date, reason)
+    return 0
+
+
 def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = None) -> int:
-    """One request for the whole agenda; the count judged. A failure leaves it for the next run."""
+    """One request for the agenda's unjudged waiting items; the count judged.
+
+    **Only what nobody has settled is asked about or written** (audit HR-02,
+    2026-11-23). An item a person added or marked read, and an item the model
+    already judged, is neither sent again nor overwritten — not its strength,
+    its reason, nor its Teema.
+
+    **One readable answer is the attempt.** It sets `judged_at` even when it left
+    items out or answered some with an unusable value: those stay «Hindamata»,
+    shown as such, rather than being asked about every half hour or given a
+    verdict nobody made. A failed request, a cut-off answer and an unreadable one
+    are counted in `ai_attempts` and retried by later runs, at most
+    `MAX_ATTEMPTS` times in all.
+    """
     if not ai_enabled():
         return 0
-    items = list(agenda.items.all())
+    items = list(agenda.items.filter(status=AgendaItemStatus.PENDING, strength=Strength.UNJUDGED))
     if not items:
+        # Nothing left to ask: every item is judged or decided by a person.
+        if agenda.judged_at is None:
+            agenda.judged_at = timezone.now()
+            agenda.save(update_fields=["judged_at", "updated_at"])
         return 0
     topics = candidates_ai.open_topics()
     try:
@@ -282,36 +314,50 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
         )
     except Exception as error:  # the model is an aid; the agenda is stored without it
         status = getattr(error, "status_code", None)
-        usage.failed(type(error).__name__ + (f" {status}" if status else ""))
-        return 0
+        return _failed_attempt(
+            agenda, usage, type(error).__name__ + (f" {status}" if status else "")
+        )
     usage.calls += 1
     usage.input_tokens += getattr(response.usage, "input_tokens", 0) or 0
     usage.output_tokens += getattr(response.usage, "output_tokens", 0) or 0
     usage.model = str(getattr(response, "model", "") or usage.model)
     if response.stop_reason != "end_turn":
-        usage.failed(f"stop_reason {response.stop_reason}")
-        return 0
+        return _failed_attempt(agenda, usage, f"stop_reason {response.stop_reason}")
     text = next((block.text for block in response.content if block.type == "text"), "")
     try:
         answers = {int(row["number"]): row for row in json.loads(text)["items"]}
     except (ValueError, KeyError, TypeError):
-        usage.failed("vastus ei olnud loetav")
-        return 0
+        return _failed_attempt(agenda, usage, "vastus ei olnud loetav")
     allowed = {Strength.STRONG, Strength.POSSIBLE, Strength.WEAK, Strength.NONE}
     judged = 0
     with transaction.atomic():
-        for item in items:
+        # Re-read under lock: a person may have decided an item while the model
+        # was answering, and that decision is never overwritten.
+        still_open = AgendaItem.objects.select_for_update(of=("self",)).filter(
+            pk__in=[item.pk for item in items],
+            status=AgendaItemStatus.PENDING,
+            strength=Strength.UNJUDGED,
+        )
+        for item in still_open:
             row = answers.get(item.number)
-            if not row or row.get("strength") not in allowed:
-                continue
+            if not isinstance(row, dict) or row.get("strength") not in allowed:
+                continue  # left «Hindamata»: no verdict is invented for it
             item.strength = row["strength"]
             item.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
             item.related_matter = topics.get(str(row.get("related") or ""))
             item.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
             judged += 1
-        if judged == len(items):
-            agenda.judged_at = timezone.now()
-            agenda.save(update_fields=["judged_at", "updated_at"])
+        agenda.judged_at = timezone.now()
+        agenda.ai_attempts = F("ai_attempts") + 1
+        agenda.save(update_fields=["judged_at", "ai_attempts", "updated_at"])
+        agenda.refresh_from_db(fields=["ai_attempts"])
+    if judged < len(items):
+        logger.info(
+            "government agenda %s: %d of %d item(s) left unjudged",
+            agenda.session_date,
+            len(items) - judged,
+            len(items),
+        )
     usage.judged += judged
     return judged
 

@@ -1,6 +1,6 @@
 <li class="agenda__item">
   <div class="agenda__line">
-    {% if item.strength %}<span class="regwatch__strength regwatch__strength--{{ item.strength|lower }}">{{ item.get_strength_display }}</span>{% endif %}
+    {% if item.strength %}<span class="regwatch__strength regwatch__strength--{{ item.strength|lower }}">{{ item.get_strength_display }}</span>{% elif week.agenda.judged_at %}<span class="regwatch__strength">Hindamata</span>{% endif %}
     <span class="regwatch__title">{{ item.number }}. {{ item.title }}</span>
   </div>
   <span class="regwatch__meta">{% if item.presenter %}Esitaja: {{ item.presenter }}{% endif %}{% if item.presenter and item.kind %} · {% endif %}{% if item.kind %}{{ item.kind }}{% endif %}</span>
