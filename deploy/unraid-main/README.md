@@ -1708,6 +1708,88 @@ the migrations step 6 listed, and canonical counts only where a migration in
 that plan writes rows or adds a model (a new model appears as a new count). Anything outside the plan is a stop. The line that says
 the fingerprints «were taken by different builds» is expected on every release.
 
+**The expected differences are derived, never hand-written.** A release kit's
+`FP_EXPECTED_LINES` comes from `tools/release_fingerprint.py` (r89, 23.11.2026,
+stopped after a correct swap because a hand-written list left out the new
+model's `None -> 0`). `$TARGET` is the full sha the release image is built from
+(the image's revision) and `$PREVIOUS` the full sha production runs; the helper
+and every file it reads come from `$TARGET` itself:
+
+```bash
+set -euo pipefail
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+git show "$TARGET:tools/release_fingerprint.py" > "$tmp" || exit 1
+rc=0
+FP_EXPECTED_LINES="$(uv run --no-sync python -I "$tmp" --repo "$(git rev-parse --show-toplevel)" \
+  --ref "$TARGET" --previous-release "$PREVIOUS")" || rc=$?
+if [ "$rc" -eq 3 ]; then echo "REFUSED: review this release's expected lines by hand"; exit 3; fi
+if [ "$rc" -ne 0 ]; then echo "the helper failed (exit $rc)"; exit "$rc"; fi
+FP_HELPER_BLOB="$(git rev-parse "$TARGET:tools/release_fingerprint.py")" || exit 1
+```
+
+Run it with the project's own Python 3.13 (`uv run python -I …`, or the release
+image's `python`): it uses 3.10+ syntax. Record `FP_HELPER_BLOB` in the kit
+beside the lines. The kit's d1 already
+refuses an image whose revision is not `$TARGET`
+(`scripts/deploy/juristid-verify-release-artifact.sh --revision "$TARGET"`), so
+the lines and the image come from the same commit.
+
+For a release with no migration it prints nothing (the fingerprint must be
+identical). For a release with one migration it prints the two leaf lines and
+`canonical_counts.<app>.<Model>: None -> 0` for each model that migration
+creates, and nothing else. It refuses — exit 3, `REFUSED: …`, before anything
+is deployed — a release it cannot vouch for: more than one migration, a
+migration that is not its app's new leaf or does not depend on production's
+leaf, a changed migration or `migrations/__init__.py`, a release that moves the
+models the fingerprint does not count, anything in the file but plain
+`makemigrations` output (module-level code, a decorator or class keyword,
+`replaces`, `run_before`, `initial`, `atomic`, an import outside its short
+allowlist, an operation argument that is not inert data: calls only of listed field (keyword arguments only), index and constraint classes, references only to listed constants, never `RawSQL`, `Func` or a `template`, `function` or `sql` keyword), any operation outside
+its schema-only list (they keep row counts as they were; a default or a type change may still rewrite values in place, which no fingerprint sees), a proxy or unmanaged model, a model the fingerprint does
+not count, a release that changes `uv.lock`, `pyproject.toml`, `config/`, the
+`Dockerfile`, `.dockerignore`, any `.gitattributes` or an `app/*/apps.py` (each can
+bring migrations from elsewhere, or make the file Django imports differ from the
+blob the helper read), a migration that is not a regular `100644` file or that a
+checkout attribute other than `text`/`eol=lf` would rewrite, a release with a migration that changes `app/core/ids.py`
+(a migration may call it), two paths under `app/` that differ only in case, and a
+helper that is not `$TARGET`'s own copy. Such a release needs
+its expected lines reviewed by hand, line by line. The verdict itself is
+unchanged: an exact comparison.
+
+**Then prove the image loads that file, before `migrate`.** The lines above vouch
+for the migration *file* in git; application code could still move where Django
+loads an app's migrations from at runtime. So d1, with the release image and the
+web service's own environment, runs the same pinned copy of the helper inside the
+release image (a self-contained step: its own temporary file and `trap`):
+
+```bash
+set -euo pipefail
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+M="$(printf '%s\n' "$FP_EXPECTED_LINES" | sed -n 's/^migration_leaves: newly present: //p')"
+set -- --check-loaded --root /app
+if [ -n "$M" ]; then
+  sha="$(git cat-file blob "$TARGET:app/${M%%.*}/migrations/${M#*.}.py" | sha256sum | cut -d' ' -f1)"
+  set -- "$@" --migration "$M" --sha256 "$sha"
+fi
+git show "$TARGET:tools/release_fingerprint.py" > "$tmp" || exit 1   # the same pinned copy
+chmod 644 "$tmp"
+docker run --rm --env-file "$WEB_ENV_FILE" -v "$tmp:/tmp/release_fingerprint.py:ro" \
+  --entrypoint python "juristid-main-web:$TAG" \
+  -I /tmp/release_fingerprint.py "$@" < /dev/null || exit 1
+```
+
+Before it looks, it imports what `manage.py migrate` imports first — Django's set-up, the
+system checks with the URLconf, every app's `management` package.
+
+It refuses (exit 3) unless `MIGRATION_MODULES` is empty after Django starts, every
+project app's migrations load from its own `app/<app>/migrations/`, and — for a
+release with a migration — that migration is its app's only leaf and its bytes have
+the blob's sha256. Neither half vouches for deliberately hostile application code,
+which could run SQL at start-up with no migration at all; release code is reviewed
+and tested as code.
+
 Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a
 rebuild afterwards; a release that changes none of those needs nothing here.
