@@ -11,8 +11,9 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,10 @@ from django.forms.models import model_to_dict
 
 from app.documents.models import Document, DocumentVersion
 from app.legacy_import import onenote_capture as oc
+
+# Its name only, never the module: importing `lovable_sync` here would make the
+# autouse `lovable_backup_proof_accepted` (tests/conftest.py) waive the proof.
+from app.legacy_import.lovable_sync import HOST_BACKUP_DIR_ENV
 from app.legacy_import.lovable_sync_models import LovableSyncState
 from app.legacy_import.models import ImportBatch, ReconciliationStatus
 from app.legacy_import.source_pages import (
@@ -36,6 +41,7 @@ from app.matters.enums import RecordMode
 from app.matters.models import Matter
 from app.matters.timeline import HISTORICAL_IMPORT_ITEM, matter_timeline
 from tests import factories
+from tests.backup_proof import mount_backup_set, set_name, write_backup_set
 
 pytestmark = pytest.mark.django_db
 
@@ -262,7 +268,7 @@ def register_teema(reference: str, *, is_open: bool = True) -> Matter:
 
 
 @pytest.fixture
-def enabled(settings):
+def enabled(settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     return settings
@@ -309,7 +315,7 @@ def _apply(plan, pages, **overrides):
         "operator_intent": oc.OPERATOR_INTENT,
         "expect_manifest_sha256": plan.capture.manifest_sha256,
         "expect_plan_sha256": plan.digest,
-        "backup_set": "sets/20261104T230000Z",
+        "backup_set": os.environ.get("JURISTID_ONENOTE_BACKUP_SET", ""),
         "label": "test",
     }
     kwargs.update(overrides)
@@ -418,6 +424,108 @@ def test_apply_refuses_without_each_authorisation(world, enabled, override, matc
     with pytest.raises(oc.CaptureError, match=match):
         _apply(plan, _all(plan), **override)
     assert not Document.objects.exists() and not ImportBatch.objects.exists()
+
+
+def _now() -> datetime:
+    return datetime.now(UTC).replace(microsecond=0)
+
+
+def _bad_set(root: Path, case: str) -> tuple[str, Path | None]:
+    """(the name handed over, the directory mounted or None) for each way a
+    recovery point is not proven (audit 2026-11-23 HR-06)."""
+    taken = _now() - timedelta(minutes=5)
+    name = set_name(taken)
+    if case == "missing":
+        return "", None
+    if case == "malformed":
+        return "varukoopia-eilne", write_backup_set(root, taken=taken)
+    if case == "not a set's name":
+        return f"../{name}", write_backup_set(root, taken=taken)
+    if case == "stale":
+        old = _now() - timedelta(hours=3)
+        return set_name(old), write_backup_set(root, taken=old)
+    if case == "from the future":
+        later = _now() + timedelta(hours=1)
+        return set_name(later), write_backup_set(root, taken=later)
+    if case == "not mounted":
+        write_backup_set(root, taken=taken)
+        return name, None
+    if case == "unverified":
+        return name, write_backup_set(root, taken=taken, marker=False)
+    if case == "verified to level 1":
+        return name, write_backup_set(root, taken=taken, level=1)
+    if case == "proof of another set":
+        return name, write_backup_set(root, taken=taken, name="20200101T000000Z")
+    if case == "proof older than the set":
+        return name, write_backup_set(root, taken=taken, verified=taken - timedelta(minutes=1))
+    if case == "proof for another dump":
+        return name, write_backup_set(root, taken=taken, recorded="f" * 64)
+    if case == "dump changed after verification":
+        directory = write_backup_set(root, taken=taken)
+        (directory / "database.dump").write_bytes(b"PGDMP muudetud")
+        return name, directory
+    raise AssertionError(case)
+
+
+@pytest.mark.parametrize(
+    "case, code",
+    [
+        ("missing", "NO_SET"),
+        ("malformed", "SET_NAME"),
+        ("not a set's name", "SET_NAME"),
+        ("stale", "SET_STALE"),
+        ("from the future", "SET_STALE"),
+        ("not mounted", "PROOF_NOT_MOUNTED"),
+        ("unverified", "PROOF_MISSING"),
+        ("verified to level 1", "PROOF_LEVEL"),
+        ("proof of another set", "PROOF_OTHER_SET"),
+        ("proof older than the set", "PROOF_TIME"),
+        ("proof for another dump", "PROOF_DUMP"),
+        ("dump changed after verification", "PROOF_DUMP"),
+    ],
+)
+def test_apply_writes_only_on_a_proven_recovery_point(
+    world, enabled, tmp_path, monkeypatch, case, code
+):
+    """Regression: HR-06 — a non-blank name was enough. The apply now asks the
+    Lovable sync's own check (DR-05): the set's name and age, its VERIFIED-L2
+    proof for that set, and a dump that still hashes to it."""
+    name, directory = _bad_set(tmp_path / "sets", case)
+    if directory is None:
+        monkeypatch.delenv(HOST_BACKUP_DIR_ENV, raising=False)
+    else:
+        mount_backup_set(monkeypatch, directory)
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    with pytest.raises(oc.CaptureError, match=f"Refused: {code}"):
+        _apply(plan, _all(plan), backup_set=name)
+    assert not Document.objects.exists() and not ImportBatch.objects.exists()
+    assert not LegacySourcePage.objects.exists()
+
+
+def test_apply_on_a_proven_recovery_point_records_it(world, enabled, onenote_backup_set):
+    """HR-06: the valid case — the set the host verified and mounted is the one
+    the batch records."""
+    plan = oc.build_plan(oc.load_capture(world["root"]))
+    report = _apply(plan, _all(plan), backup_set=f"  {onenote_backup_set} ")
+    assert report.documents_created > 0
+    batch = ImportBatch.objects.get(pk=report.batch_id)
+    assert json.loads(batch.notes)["backup_set"] == onenote_backup_set
+    assert oc.backup_problem(onenote_backup_set) == ""
+
+
+def test_the_onenote_check_is_the_lovable_syncs_own(monkeypatch):
+    """HR-06: one mechanism, not a second implementation — the OneNote gate asks
+    `lovable_sync.backup_set_problem` at the moment of the apply."""
+    seen = []
+
+    def check(backup_set, started):
+        seen.append((backup_set, started))
+        return "SENTINEL"
+
+    monkeypatch.setattr("app.legacy_import.lovable_sync.backup_set_problem", check)
+    assert oc.backup_problem(" sets/20991231T000000Z ") == "SENTINEL"
+    assert seen[0][0] == "sets/20991231T000000Z"
+    assert abs((seen[0][1] - datetime.now(UTC)).total_seconds()) < 60
 
 
 def test_apply_is_off_unless_the_one_off_container_enables_it(world, settings):
@@ -854,7 +962,7 @@ def test_the_command_applies_one_teema_with_every_authorisation(world, enabled, 
         "--operator-intent",
         oc.OPERATOR_INTENT,
         "--backup-set",
-        "sets/x",
+        os.environ["JURISTID_ONENOTE_BACKUP_SET"],
         "--label",
         "canary",
         "--matter",

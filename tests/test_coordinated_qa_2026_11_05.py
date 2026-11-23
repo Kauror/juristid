@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -79,7 +80,7 @@ T2 = "2023-02-01T21:30:00.000Z"
 
 
 @pytest.fixture
-def enabled(settings):
+def enabled(settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     return settings
@@ -1187,7 +1188,7 @@ def test_the_same_capture_applied_twice_writes_nothing(tmp_path, enabled):
         operator_intent=oc.OPERATOR_INTENT,
         expect_manifest_sha256=plan.capture.manifest_sha256,
         expect_plan_sha256=plan.digest,
-        backup_set="sets/qa",
+        backup_set=os.environ["JURISTID_ONENOTE_BACKUP_SET"],
         label="qa",
     )
     assert report.batch_id == "" and report.documents_created == 0

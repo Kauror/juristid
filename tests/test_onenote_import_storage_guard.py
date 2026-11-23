@@ -65,10 +65,10 @@ CAPTURE = "onenote-naidis-20261110"
 
 
 @pytest.fixture
-def enabled(settings, monkeypatch):
+def enabled(settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
-    monkeypatch.setenv("JURISTID_ONENOTE_BACKUP_SET", "sets/20261110T060000Z")
+    # The host runner's set, verified and mounted (`onenote_backup_set`, HR-06).
     return settings
 
 

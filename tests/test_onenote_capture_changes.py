@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -180,7 +181,7 @@ def _approve(plan):
         "operator_intent": oc.OPERATOR_INTENT,
         "expect_manifest_sha256": plan.capture.manifest_sha256,
         "expect_plan_sha256": plan.digest,
-        "backup_set": "sets/synthetic",
+        "backup_set": os.environ.get("JURISTID_ONENOTE_BACKUP_SET", ""),
         "label": "test",
     }
 
@@ -218,7 +219,7 @@ def versions():
 
 
 @pytest.fixture
-def enabled(settings):
+def enabled(settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     return settings

@@ -228,7 +228,7 @@ def test_the_sealed_check_stops_on_a_tampered_blob(run_dir, request_file, tmp_pa
 
 
 @pytest.mark.django_db
-def test_a_sealed_run_imports_through_the_gated_path(tmp_path, settings):
+def test_a_sealed_run_imports_through_the_gated_path(tmp_path, settings, onenote_backup_set):
     from app.documents.models import Document
     from tests.test_onenote_capture_import import register_teema, stored_link
 
@@ -252,7 +252,10 @@ def test_a_sealed_run_imports_through_the_gated_path(tmp_path, settings):
     check = oc.verify_capture(out)
     assert check.ok, check.problems
     report = oc.apply_capture(
-        out, approved_plan_sha256=check.plan_sha256, actor=None, backup_set="sets/t"
+        out,
+        approved_plan_sha256=check.plan_sha256,
+        actor=None,
+        backup_set=onenote_backup_set,
     )
     assert report.documents_created == 2
     assert Document.objects.filter(matter=teema).count() == 2

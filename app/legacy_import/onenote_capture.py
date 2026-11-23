@@ -1448,6 +1448,21 @@ class ApplyReport:
         return out
 
 
+def backup_problem(backup_set: str) -> str:
+    """Why ``backup_set`` is not a proven recovery point for an apply starting now,
+    or ``""`` (audit 2026-11-23 HR-06).
+
+    The Lovable sync's own check, not a second one (`lovable_sync.backup_set_problem`,
+    audit 2026-11-11 DR-05): a set's name, taken in the `BACKUP_MAX_AGE` before
+    now, with its ``VERIFIED-L2`` proof mounted at ``LOVABLE_SYNC_BACKUP_DIR``
+    naming that set and a dump that still hashes to the recorded SHA-256. The
+    host runner mounts the set it has just taken and verified; any other
+    non-blank string is refused."""
+    from app.legacy_import import lovable_sync
+
+    return lovable_sync.backup_set_problem((backup_set or "").strip(), timezone.now())
+
+
 def refuse_unless_authorised(
     plan: Plan,
     *,
@@ -1472,8 +1487,13 @@ def refuse_unless_authorised(
             f"The sealed manifest is {plan.capture.manifest_sha256}; "
             "pass exactly that as --expect-manifest-sha256."
         )
-    if not backup_set.strip():
-        raise CaptureError("Name the verified backup set taken before this run (--backup-set).")
+    problem = backup_problem(backup_set)
+    if problem:
+        raise CaptureError(
+            "Name the verified backup set taken before this run (--backup-set "
+            "sets/YYYYMMDDTHHMMSSZ), verified to level 2 and mounted read-only with its proof "
+            f"(LOVABLE_SYNC_BACKUP_DIR); a name alone writes nothing. Refused: {problem}."
+        )
     if plan.problems:
         raise CaptureError(
             "The plan has problems; nothing was written:\n  " + "\n  ".join(plan.problems[:20])
@@ -2769,13 +2789,14 @@ def apply_capture(
 
     The existing gated path (``apply``) with every gate kept: the one-off
     container's settings (``JURISTID_ONENOTE_CAPTURE_IMPORT``,
-    ``REAL_DATA_ALLOWED``), the sealed manifest, and a named backup set —
+    ``REAL_DATA_ALLOWED``), the sealed manifest, and a verified backup set —
     ``backup_set`` or, for the host's request runner,
     ``JURISTID_ONENOTE_BACKUP_SET``, which the runner sets after taking the
-    backup. Refused unless the plan computed *now* is exactly the approved one: a
-    capture or a database that moved since the approval is planned again, never
-    applied from an old preview. Pages the database already holds get a
-    ``NO_CHANGES`` mark.
+    backup and verifying it to level 2, with the set and its proof mounted
+    read-only (`backup_problem`). Refused unless the plan computed *now* is
+    exactly the approved one: a capture or a database that moved since the
+    approval is planned again, never applied from an old preview. Pages the
+    database already holds get a ``NO_CHANGES`` mark.
 
     STORE-GUARD: refused before reading the capture unless the stores are the
     deployment's mounted ones; after the last page every object the capture's

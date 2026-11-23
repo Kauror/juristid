@@ -19,8 +19,10 @@ every (Teema, file occurrence) and prints the plan digest, which depends on the
 decisions only, never on how far an apply has got — no writes. `apply` writes
 the chosen pages, one transaction per page, only with
 ``JURISTID_ONENOTE_CAPTURE_IMPORT`` and ``REAL_DATA_ALLOWED`` set, the typed
-intent, the sealed manifest's digest, the reviewed plan digest and a named
-backup set; a finished page is skipped, so a second run writes nothing.
+intent, the sealed manifest's digest, the reviewed plan digest and a backup
+set taken and verified to level 2 shortly before, mounted read-only with its
+``VERIFIED-L2`` proof at ``LOVABLE_SYNC_BACKUP_DIR`` (the Lovable sync's check,
+`lovable_sync.backup_set_problem`); a finished page is skipped, so a second run writes nothing.
 `verify` reads back every row and reconciles it with the seal (``--bytes``
 re-hashes every stored version). `digest` writes, per Teema, a digest of the
 Lovable-derived business rows the import must leave untouched.

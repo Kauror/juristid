@@ -134,11 +134,17 @@ In Haldus → «Andmete sünkroonimine» → OneNote:
    digest. Pages get a `VERIFIED` / `NO_CHANGES` / `FAILED` mark.
 2. **«Impordi OneNote'i materjalid»** with that digest requests the import
    (`onenote_capture.apply_capture`). The host runner takes the backup first and
-   names it (`JURISTID_ONENOTE_BACKUP_SET`); the one-off container carries
+   names it (`JURISTID_ONENOTE_BACKUP_SET`), verified to level 2 with
+   `juristid-verify-backup.sh --record` and mounted read-only with its
+   `VERIFIED-L2` proof (`-v SET:/backup-set:ro -e LOVABLE_SYNC_BACKUP_DIR=/backup-set`);
+   the one-off container carries
    `JURISTID_ONENOTE_CAPTURE_IMPORT=1` and `REAL_DATA_ALLOWED=1`. A plan that
    changed since the verification is refused, never applied from an old preview.
 
-The same by hand, on the one-off container:
+The same by hand, on the one-off container. `apply` writes only on a backup set
+taken at most two hours before, verified to level 2 with `--record`, and mounted
+into that container read-only (`-v <set dir>:/backup-set:ro -e
+LOVABLE_SYNC_BACKUP_DIR=/backup-set`); a name alone is refused (HR-06):
 
 ```bash
 run check --capture /source/capture/onenote-desktop-YYYYMMDD-1 --record --out /out/check.json
