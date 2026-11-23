@@ -56,10 +56,17 @@ open Teema; it is not built here.
 
 3. **«Lovable'i nimed»** (Haldus → Andmete sünkroonimine, technical administrator,
    `may_open_system`):
-   - every owner name in the newest stored reading, and every name its
-     responsible-change rows hand work to, with how many topics name it, who the night
-     takes it to be and by which rule (pinned, earlier sync, same name), names the night
-     cannot place first;
+   - first, «Avatud teemade vastutajad»: every name that is the operative owner («Uus
+     vastutaja» over «Vastutaja») of a topic the newest stored reading has as ongoing
+     work (`lovable_sync.source_activity` = ONGOING: operational, not finished, not
+     continued elsewhere — not `operatiivne_ulatus` alone), with its number of open
+     topics, who the night takes it to be and by which rule (pinned, earlier sync, same
+     name); unresolved names first, and the page's problem count is these alone
+     (amended 2026-11-23, coordinator review of r89);
+   - then, folded shut, «Ajaloolised ja muud nimed (N)»: owners of finished, historical
+     or continued topics only, names that only a responsible-change row mentions (no
+     current owner by that alone), and pins no topic carries — kept whole with their own
+     answer, never removed or mapped automatically;
    - a typed name checked the same way, so a new colleague's Lovable name can be tried
      before any topic carries it;
    - **a name pinned to a person** (`LovableOwnerAlias`, one row per `name_key`):
