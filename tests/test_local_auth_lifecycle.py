@@ -822,7 +822,9 @@ def test_deactivation_ends_sessions_kills_links_and_keeps_history(admin):
     sign_in(session, specialist)
     administration.send_setup_link(actor=admin, user=specialist)
 
-    administration.deactivate_account(actor=admin, user=specialist, reason="Lahkus")
+    administration.deactivate_account(
+        actor=admin, user=specialist, reason="Lahkus", leave_open_work=True
+    )
 
     specialist.refresh_from_db()
     matter.refresh_from_db()

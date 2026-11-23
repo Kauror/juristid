@@ -128,7 +128,7 @@ ALREADY_INACTIVE = "Konto on juba välja lülitatud."
 ALREADY_ACTIVE = "Konto on juba aktiivne."
 #: Switching off a person who still holds open work, unconfirmed (docs/adr/0220 §4).
 OPEN_WORK_REMAINS = (
-    "Sellel inimesel on veel {work}. Anna need enne üle (Lovable'i teemad Lovable'is) "
+    "Sellel inimesel on veel {work}. Anna see töö enne üle (Lovable'i teemad Lovable'is) "
     "või kinnita, et lülitad konto välja ja töö jääb ootele."
 )
 BOOTSTRAP_ALREADY_DONE = (
