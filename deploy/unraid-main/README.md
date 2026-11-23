@@ -1747,7 +1747,12 @@ models the fingerprint does not count, anything in the file but plain
 `replaces`, `run_before`, `initial`, `atomic`, an import outside its short
 allowlist, an operation argument that is not inert data: calls only of listed field (keyword arguments only), index and constraint classes, references only to listed constants, never `RawSQL`, `Func` or a `template`, `function` or `sql` keyword), any operation outside
 its schema-only list (they keep row counts as they were; a default or a type change may still rewrite values in place, which no fingerprint sees), a proxy or unmanaged model, a model the fingerprint does
-not count, and a helper that is not `$TARGET`'s own copy. Such a release needs
+not count, a release that changes `uv.lock`, `pyproject.toml`, `config/`, the
+`Dockerfile`, `.dockerignore`, any `.gitattributes` or an `app/*/apps.py` (each can
+bring migrations from elsewhere, or make the file Django imports differ from the
+blob the helper read), a migration that is not a regular `100644` file or that a
+checkout attribute other than `text`/`eol=lf` would rewrite, and a helper that is
+not `$TARGET`'s own copy. Such a release needs
 its expected lines reviewed by hand, line by line. The verdict itself is
 unchanged: an exact comparison.
 

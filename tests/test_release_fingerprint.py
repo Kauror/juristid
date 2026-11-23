@@ -505,12 +505,13 @@ class Repo:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(text, encoding="utf-8", newline="\n")
 
-    def git(self, *args: str) -> str:
+    def git(self, *args: str, input_text: str | None = None) -> str:
         return subprocess.run(  # noqa: S603 - git, a temporary repository, fixed arguments
             [str(self.git_exe), "-C", str(self.root), "-c", "core.autocrlf=false", *args],
             check=True,
             capture_output=True,
             text=True,
+            input=input_text,
         ).stdout.strip()
 
     def commit(self) -> str:
@@ -520,6 +521,10 @@ class Repo:
 
     def lines(self, ref: str) -> list[str]:
         return release_lines(repo=self.root, ref=ref, previous_release=self.previous, helper=HELPER)
+
+    def rebase(self) -> None:
+        """Make what is written so far part of the release production already runs."""
+        self.previous = self.commit()
 
 
 @pytest.fixture
@@ -557,6 +562,7 @@ def test_two_migrations_in_one_app_are_refused(repo):
 
 def test_migrations_in_two_apps_are_refused(repo):
     repo.write("app/y/apps.py", 'class YConfig:\n    label = "y"\n')
+    repo.rebase()
     repo.write("app/y/migrations/0001_initial.py", _migration(CREATE_A, dependency=""))
     repo.write(
         "app/x/migrations/0002_b.py",
@@ -585,6 +591,7 @@ def test_a_model_production_does_not_count_is_refused(repo):
 
 def test_a_custom_app_label_is_refused(repo):
     repo.write("app/x/apps.py", 'class XConfig:\n    label = "other"\n')
+    repo.rebase()
     repo.write(
         "app/x/migrations/0002_b.py",
         _migration("        migrations.CreateModel(name='B', fields=[]),"),
@@ -620,8 +627,27 @@ def test_a_release_that_moves_the_fingerprints_exclusions_is_refused(repo):
         ("config/settings.py", "INSTALLED_APPS = ['newapp']\n"),
         ("uv.lock", "version = 1\n"),
         ("pyproject.toml", "[project]\nname = 'x'\n"),
+        ("config/env.py", "import os\n"),
+        ("Dockerfile", "FROM python:3.13\n"),
+        (".dockerignore", "*.md\n"),
+        (".gitattributes", "* text=auto eol=lf\n"),
+        ("app/.gitattributes", "x/migrations/*.py working-tree-encoding=ISO-2022-JP\n"),
+        ("app/x/migrations/.gitattributes", "*.py ident\n"),
+        ("app/x/apps.py", 'class XConfig:\n    label = "x"\n    name = "app.x"\n'),
     ],
-    ids=["migration-modules", "installed-apps", "uv-lock", "pyproject"],
+    ids=[
+        "migration-modules",
+        "installed-apps",
+        "uv-lock",
+        "pyproject",
+        "config-module",
+        "dockerfile",
+        "dockerignore",
+        "top-gitattributes",
+        "nested-gitattributes",
+        "migrations-gitattributes",
+        "apps-py",
+    ],
 )
 def test_a_release_that_can_bring_migrations_from_elsewhere_is_refused(repo, path, text):
     """A dependency bump or a new installed app brings migrations outside app/: the
@@ -639,6 +665,7 @@ def test_a_changed_migrations_init_is_refused(repo):
 
 def test_a_new_app_says_so(repo):
     repo.write("app/y/apps.py", 'class YConfig:\n    label = "y"\n')
+    repo.rebase()
     repo.write("app/y/migrations/__init__.py", "")
     repo.write("app/y/migrations/0001_initial.py", _migration(CREATE_A, dependency=""))
     with pytest.raises(Refused, match="new app"):
@@ -647,6 +674,7 @@ def test_a_new_app_says_so(repo):
 
 def test_a_label_in_a_comment_or_another_attribute_is_not_the_label(repo):
     repo.write("app/x/apps.py", 'class XConfig:\n    verbose_label = "x"\n    # label = "x"\n')
+    repo.rebase()
     repo.write(
         "app/x/migrations/0002_b.py",
         _migration("        migrations.CreateModel(name='B', fields=[]),"),
@@ -685,3 +713,78 @@ def test_the_review_mode_prints_r89s_lines(capsys):
     assert capsys.readouterr().out.splitlines()[0] == (
         "canonical_counts.legacy_import.LovableOwnerAlias: None -> 0"
     )
+
+
+@pytest.mark.parametrize(
+    "attributes",
+    [
+        "*.py working-tree-encoding=UTF-7\n",
+        "*.py ident\n",
+        "*.py filter=anything\n",
+        "*.py export-subst\n",
+        "*.py -text\n",
+        "*.py eol=crlf\n",
+    ],
+)
+def test_a_migration_a_checkout_would_rewrite_is_refused(repo, attributes):
+    """Attributes already in production's tree still transform the new migration on the
+    image's checkout: the bytes Django imports would not be the blob this parsed."""
+    repo.write("app/x/migrations/.gitattributes", attributes)
+    repo.rebase()
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    with pytest.raises(Refused, match="checkout attribute"):
+        repo.lines(repo.commit())
+
+
+def test_the_repositorys_own_attributes_are_fine(repo):
+    repo.write(".gitattributes", "* text=auto eol=lf\n")
+    repo.rebase()
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    assert repo.lines(repo.commit())[0] == "canonical_counts.x.B: None -> 0"
+
+
+def test_a_migration_that_is_not_a_regular_file_is_refused(repo):
+    """A symlink's blob is its target path; what Django imports is another file."""
+    blob = repo.git("hash-object", "-w", "--stdin", input_text="0001_initial.py")
+    repo.git("update-index", "--add", "--cacheinfo", f"120000,{blob},app/x/migrations/0002_b.py")
+    repo.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "link")
+    with pytest.raises(Refused, match="not a regular file"):
+        repo.lines(repo.git("rev-parse", "HEAD"))
+
+
+def test_a_migration_file_that_is_executable_is_refused(repo):
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    repo.git("add", "-A")
+    repo.git("update-index", "--chmod=+x", "app/x/migrations/0002_b.py")
+    repo.git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "x")
+    with pytest.raises(Refused, match="not a regular file"):
+        repo.lines(repo.git("rev-parse", "HEAD"))
+
+
+@pytest.mark.parametrize(
+    "apps",
+    [
+        'class A:\n    label = "x"\n\n\nclass B:\n    default = True\n    label = "y"\n',
+        'class XConfig:\n    label = "x"\n    label = "y"\n',
+        "class XConfig:\n    label = NAME\n",
+    ],
+    ids=["decoy-class", "two-labels", "not-a-literal"],
+)
+def test_an_ambiguous_app_label_is_refused(repo, apps):
+    repo.write("app/x/apps.py", apps)
+    repo.rebase()
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    with pytest.raises(Refused, match="does not label"):
+        repo.lines(repo.commit())

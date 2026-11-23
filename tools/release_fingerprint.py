@@ -619,18 +619,51 @@ def _uncounted(repo: Path, ref: str) -> frozenset[str]:
 
 
 def _app_label(source: str) -> str:
-    """The ``label = "…"`` an apps.py's AppConfig class sets, or ``""``."""
-    for node in ast.walk(ast.parse(source)):
-        if isinstance(node, ast.ClassDef):
-            for item in node.body:
-                if (
-                    isinstance(item, ast.Assign)
-                    and any(isinstance(t, ast.Name) and t.id == "label" for t in item.targets)
-                    and isinstance(item.value, ast.Constant)
-                    and isinstance(item.value.value, str)
-                ):
-                    return item.value.value
+    """The ``label = "…"`` an apps.py's one AppConfig class sets, or ``""``.
+
+    More than one class, or more than one ``label`` assignment, is ``""``: which one Django
+    uses would depend on ``default = True``, which this does not model.
+    """
+    classes = [n for n in ast.walk(ast.parse(source)) if isinstance(n, ast.ClassDef)]
+    if len(classes) != 1:
+        return ""
+    labels = [
+        item
+        for item in classes[0].body
+        if isinstance(item, ast.Assign | ast.AnnAssign)
+        and any(
+            isinstance(t, ast.Name) and t.id == "label"
+            for t in (item.targets if isinstance(item, ast.Assign) else [item.target])
+        )
+    ]
+    if len(labels) != 1:
+        return ""
+    value = labels[0].value
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        return value.value
     return ""
+
+
+# What a checkout may do to a migration's bytes: anything but these makes the file
+# Django imports differ from the blob this helper parsed (working-tree-encoding, ident,
+# filter …).
+ALLOWED_ATTRIBUTES = frozenset({("text", "auto"), ("text", "set"), ("eol", "lf")})
+
+
+def _check_checkout_attributes(repo: Path, ref: str, path: str) -> None:
+    """Refuse unless ``path`` at ``ref`` is a regular file a checkout writes byte for byte
+    (modulo line endings, which the parse is indifferent to)."""
+    entry = _git(repo, "ls-tree", ref, "--", path).decode()
+    if not entry.startswith("100644 blob "):
+        raise Refused(f"{path} is not a regular file at {ref}: {entry.strip()!r}")
+    listing = _git(repo, "check-attr", "-a", f"--source={ref}", "--", path).decode()
+    for line in listing.splitlines():
+        prefix = f"{path}: "
+        if not line.startswith(prefix):
+            raise Refused(f"unexpected git check-attr output: {line!r}")
+        name, _, value = line[len(prefix) :].partition(": ")
+        if (name, value) not in ALLOWED_ATTRIBUTES:
+            raise Refused(f"{path} has the checkout attribute {name}: {value}")
 
 
 def _leaf(repo: Path, ref: str, app: str) -> str:
@@ -678,7 +711,15 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
         "--",
         ":(top)uv.lock",
         ":(top)pyproject.toml",
-        ":(top)config/settings.py",
+        ":(top)config",
+        # The image's build and checkout: a Dockerfile step or a .gitattributes
+        # transform (working-tree-encoding, filter …) can change what Django imports
+        # from what this helper parsed.
+        ":(top)Dockerfile",
+        ":(top).dockerignore",
+        ":(glob)**/.gitattributes",
+        # Which label Django loads an app's migrations under.
+        ":(glob)app/*/apps.py",
     ).decode()
     if moved.strip():
         raise Refused(f"the release changes {', '.join(moved.split())}: review its lines by hand")
@@ -710,6 +751,7 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
         raise Refused(f"app/{app}/apps.py does not label the app {app!r}")
     if _leaf(repo, ref, app) != migration:
         raise Refused(f"{app}.{migration} is not the app's highest-numbered migration at {ref}")
+    _check_checkout_attributes(repo, ref, f"app/{app}/migrations/{migration}.py")
     previous_leaf = _leaf(repo, previous_release, app)
     return expected_lines(
         app=app,
