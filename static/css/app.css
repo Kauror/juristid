@@ -12756,6 +12756,20 @@ section:has(.pw-more[open]) tbody.uxextra {
   overflow-wrap: anywhere;
 }
 
+/* Whose expectation an estimated commencement is, and its ✕ (owner,
+ * 2026-11-23): one quiet line under the date, the icon under it. An open
+ * confirmation stays inside the column and wraps there. */
+#teema-vaade-wrap .tl-step__source {
+  font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+#teema-vaade-wrap .tl-step > .uxtl__remove {
+  max-width: 100%;
+  font-size: 11.5px;
+}
+
 /* -- the chronology's two kinds -------------------------------------------
  *
  *   PRIMARY     12px accent dot + semibold headline
