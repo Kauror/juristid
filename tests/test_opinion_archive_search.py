@@ -2285,13 +2285,14 @@ def test_extraction_is_not_batched_behind_a_suspension(held):
     exactly the search this closes. `_record` is atomic per letter, so each
     committed body is committed with its projection.
     """
-    import inspect
-
     from app.legacy_import import opinion_text
+    from tests.code_names import code_names
 
-    source = inspect.getsource(opinion_text)
-    assert "suspend_archive_indexing" not in source
-    assert "refresh_archive_binaries" not in source
+    # Imports (aliased or not), calls and attribute lookups count; a comment
+    # recording this decision next to `_record` does not.
+    used = code_names(opinion_text)
+    assert "suspend_archive_indexing" not in used
+    assert "refresh_archive_binaries" not in used
 
 
 # ---------------------------------------------------------------------------

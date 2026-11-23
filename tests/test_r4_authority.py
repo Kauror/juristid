@@ -2260,3 +2260,35 @@ def test_a_stage_period_the_sync_begins_is_imported_never_a_persons(reference):
     assert matter.is_open
     current = MatterStageEpisode.objects.get(matter=matter, is_current=True)
     assert (current.stage.key, current.origin) == ("consultation", StageEpisodeOrigin.IMPORTED)
+
+
+def test_a_closed_teema_is_written_what_the_readiness_page_says(reference):
+    """Audit HR-03: «Valmisolek» says a closed Teema's step, opinion deadline and
+    commencements are not written (`CLOSED_NOT_WRITTEN`); the engine agrees."""
+    source = reference["source"]
+    source.edit("2026_150", hetkeseis="jõustunud")
+    _run(reference, at=_at(0))
+    assert not _matter("2026_150").is_open
+    source.edit(
+        "2026_150",
+        teema="Uus pealkiri suletud teemal",
+        jargmiseks="Kirjutan arvamuse",
+        tegevuse_tahtaeg="2099-03-01",
+        arvamuse_tahtaeg="2099-03-02",
+        commencements=[
+            {"liik": "Kindla kuupäevaga", "kuupaev": "2099-07-01", "tapsustus": "", "position": 1}
+        ],
+    )
+
+    run = _run(reference, at=_at(24))
+
+    written = {
+        field
+        for field, decision in _decisions(run, "2026_150").items()
+        if decision.outcome == SyncOutcome.APPLIED
+    }
+    assert "title" in written
+    assert not written & set(lovable_sync.CLOSED_NOT_WRITTEN)
+    for name in lovable_sync.CLOSED_NOT_WRITTEN:
+        assert not lovable_sync.writes_automatically(name, closed=True)
+    assert lovable_sync.writes_automatically("title", closed=True)

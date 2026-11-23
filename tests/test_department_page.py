@@ -25,7 +25,6 @@ rather than the layout:
 
 from __future__ import annotations
 
-import inspect
 from datetime import date, timedelta
 from urllib.parse import parse_qs, urlparse
 
@@ -1167,9 +1166,12 @@ def test_a_new_deadline_source_reaches_eesolev_without_osakond_code(
     """
     import app.matters.department
     import app.matters.department_dashboard
+    from tests.code_names import code_names
 
+    # Read from the code, not the text: a comment explaining that the panel
+    # does not name the field is allowed; a filter, lookup or attribute is not.
     for module in (app.matters.department, app.matters.department_dashboard):
-        assert "response_deadline" not in inspect.getsource(module), module.__name__
+        assert "response_deadline" not in code_names(module), module.__name__
 
     matter = create_matter(
         title="Arvamuse tähtajaga teema",
