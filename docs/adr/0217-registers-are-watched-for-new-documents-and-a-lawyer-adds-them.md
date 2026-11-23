@@ -199,3 +199,26 @@ The owner's round 4 notes.
   `house_style.KODA_STYLE` and every line it returns passes `house_style.fix`
   before it is saved (docs/koda-house-style.md); `manage.py fix_koda_style`
   corrected the lines saved before.
+
+## Amendment 2026-11-23 — the press has a time budget (HR-04)
+
+Health review HR-04: the press fetched the listing and up to five files with 25 s
+per socket wait and no total limit, inside the web request, so a slow register
+could hold one of the three web workers past gunicorn's 120 s; the worker was
+killed and the lawyer's note was lost with it.
+
+- **One deadline per press.** The listing and every file share
+  `register_files.FETCH_BUDGET_SECONDS` (40 s). The door (`sources.http`) takes an
+  optional `deadline`: the host spacing is not slept past it, each socket wait is
+  at most what is left, and a file is read in pieces with the clock checked
+  between them. Calls without a deadline (the nightly run, `remember`) read as
+  before. The allowlist, no redirects and the size caps are unchanged.
+- **Late files are missed like refused ones, and keep their address.** A file
+  not brought in time, refused or past `MAX_FILES` is named in the message as
+  before, and its own address is now written under the note's source
+  («Registri failid, mida ei saanud lisada:», `name: url`). When the register did
+  not answer at all, the addresses the nightly look-up stored
+  (`WatchFinding.files`) are written instead.
+- **Unchanged:** the note and the fetched files are still saved together in one
+  transaction; the fetch still runs before `watch.add_to_teema` takes its row
+  lock; a second press finds the document decided and writes nothing. No queue.

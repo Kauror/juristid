@@ -300,6 +300,10 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
             # fetched before the save so no row lock waits on a register.
             # The lawyer's own files first (dropped on «Märkus», owner
             # 2026-11-23), checked as one request's batch, then the register's.
+            # The fetch has one time budget (HR-04): a slow register costs the
+            # files, never the note, and a missed file's link goes into it. When
+            # the register did not answer at all, the links found by the nightly
+            # look-up (`WatchFinding.files`) stand in.
             own = own_files(request)
             fetched = register_files.fetch(finding.target.source, finding.external_id)
             watch.add_to_teema(
@@ -307,6 +311,9 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
                 actor=request.user,
                 comment=request.POST.get("markus", "")[:4000],
                 uploads=[*own, *fetched.uploads],
+                missed_links=(
+                    list(finding.files or []) if fetched.unreachable else fetched.missed_links
+                ),
             )
             _tell_about_files(request, fetched)
         else:

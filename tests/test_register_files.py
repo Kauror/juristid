@@ -55,14 +55,14 @@ def test_fetch_never_raises_and_names_what_did_not_come(monkeypatch):
     monkeypatch.setattr(
         register_files,
         "locate",
-        lambda source, external_id: [
+        lambda source, external_id, deadline=None: [
             RemoteFile("adr.envir.ee", "/a", "kiri.pdf"),
             RemoteFile("api.riigikogu.ee", "/b", "arvamus.html"),
             RemoteFile("adr.envir.ee", "/c", "suur.pdf"),
         ],
     )
 
-    def get_bytes(host, path):
+    def get_bytes(host, path, deadline=None):
         if path == "/c":
             raise FetchError("liiga suur")
         return PDF
@@ -74,7 +74,7 @@ def test_fetch_never_raises_and_names_what_did_not_come(monkeypatch):
     assert [upload.name for upload in fetched.uploads] == ["kiri.pdf"]
     assert fetched.missed == ["arvamus.html", "suur.pdf"]
 
-    def unreachable(source, external_id):
+    def unreachable(source, external_id, deadline=None):
         raise FetchError("ei vastanud")
 
     monkeypatch.setattr(register_files, "locate", unreachable)

@@ -24,6 +24,14 @@ Where each register keeps its files (read 2026-11-22):
 a kind the evidence store does not take (a Riigikogu opinion is often `.html`),
 or one too large, is left out and named; the note is written with its link as
 before, and the person is told which file did not come.
+
+**The press has a time budget (HR-04).** Everything it fetches — the listing and
+every file — shares one deadline, `FETCH_BUDGET_SECONDS` from the press, well
+inside the web worker's 120 s: the spacing, each socket wait and each piece of a
+file stop at it. A file not brought by then is left out like any other, and its
+own address is written into the note (`Fetched.missed_links`), so it can still be
+opened from the Teema. Nothing is fetched while a row is locked: the fetch runs
+before `watch.add_to_teema` opens its transaction.
 """
 
 from __future__ import annotations
@@ -31,6 +39,7 @@ from __future__ import annotations
 import html
 import os
 import re
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
@@ -44,6 +53,9 @@ from app.register_watch.sources.http import FetchError, get_bytes, get_json, get
 
 #: More than this many files on one register document are left to the link.
 MAX_FILES = 5
+#: Seconds one «Lisa märkena» may spend on the register, listing and files together
+#: (HR-04): far inside gunicorn's ``--timeout 120`` and the proxy's own limit.
+FETCH_BUDGET_SECONDS = 40.0
 
 _PDR_HOSTS = {WatchSource.HTM_REGISTER: pdr.HTM.host, WatchSource.KLIM_REGISTER: pdr.KLIM.host}
 
@@ -61,8 +73,14 @@ class Fetched:
 
     uploads: list[Any] = field(default_factory=list)
     missed: list[str] = field(default_factory=list)
+    #: ``[{name, url}]`` of the missed files whose address is known, for the note.
+    missed_links: list[dict[str, str]] = field(default_factory=list)
     #: The register could not be read at all (the files are unknown).
     unreachable: bool = False
+
+    def miss(self, remote: RemoteFile) -> None:
+        self.missed.append(remote.name)
+        self.missed_links.append({"name": remote.name, "url": url_of(remote)})
 
 
 def accepted(name: str) -> bool:
@@ -101,43 +119,53 @@ def riigikogu_files(data: Any) -> list[RemoteFile]:
     return found
 
 
-def locate(source: str, external_id: str) -> list[RemoteFile]:
+def locate(source: str, external_id: str, *, deadline: float | None = None) -> list[RemoteFile]:
     """The files the register holds for one finding; raises `FetchError` if unread."""
     kind, _, key = external_id.partition(":")
     if kind == "doc" and source in _PDR_HOSTS:
         host = _PDR_HOSTS[WatchSource(source)]
-        return pdr_files(host, key, get_json(host, f"/api/v1/documents/{key}.json"))
+        data = get_json(host, f"/api/v1/documents/{key}.json", deadline=deadline)
+        return pdr_files(host, key, data)
     if kind == "adr":
         code, _, number = key.partition(":")
         if not code.isalnum() or not number.isdigit():
             return []
-        return adr_files(code, get_text(adr.HOST, f"/{code}/dokument/{number}"))
+        page = get_text(adr.HOST, f"/{code}/dokument/{number}", deadline=deadline)
+        return adr_files(code, page)
     if kind in ("text", "opinion") and source == WatchSource.RIIGIKOGU:
         if not re.fullmatch(r"[0-9a-f-]{36}", key):
             return []
-        return riigikogu_files(get_json(riigikogu.HOST, f"/api/documents/{key}"))
+        data = get_json(riigikogu.HOST, f"/api/documents/{key}", deadline=deadline)
+        return riigikogu_files(data)
     return []
 
 
-def fetch(source: str, external_id: str) -> Fetched:
-    """Download what `locate` finds, as uploads `+ Märge` takes; never raises."""
+def fetch(source: str, external_id: str, *, budget: float = FETCH_BUDGET_SECONDS) -> Fetched:
+    """Download what `locate` finds, as uploads `+ Märge` takes; never raises.
+
+    The listing and every file share one deadline ``budget`` seconds away; once
+    it has passed, the files still to come are not asked for and are missed
+    with their links, like a file the register would not serve.
+    """
+    deadline = time.monotonic() + budget
     result = Fetched()
     try:
-        files = locate(source, external_id)
+        files = locate(source, external_id, deadline=deadline)
     except FetchError:
         result.unreachable = True
         return result
     for remote in files[:MAX_FILES]:
-        if not accepted(remote.name):
-            result.missed.append(remote.name)
+        if not accepted(remote.name) or time.monotonic() >= deadline:
+            result.miss(remote)
             continue
         try:
-            content = get_bytes(remote.host, remote.path)
+            content = get_bytes(remote.host, remote.path, deadline=deadline)
         except FetchError:
-            result.missed.append(remote.name)
+            result.miss(remote)
             continue
         result.uploads.append(SimpleUploadedFile(remote.name, content))
-    result.missed.extend(remote.name for remote in files[MAX_FILES:])
+    for remote in files[MAX_FILES:]:
+        result.miss(remote)
     return result
 
 

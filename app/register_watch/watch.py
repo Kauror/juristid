@@ -469,23 +469,42 @@ def with_comment(comment: str, provenance: str) -> str:
     return f"{comment}\n\n{provenance}" if comment else provenance
 
 
-def _provenance(finding: WatchFinding) -> str:
+def _provenance(finding: WatchFinding, missed_links: Any = ()) -> str:
     parts = [finding.target.get_source_display()]
     if finding.detail:
         parts.append(finding.detail)
     line = " · ".join(parts)
-    return f"{line}\n{finding.url}" if finding.url else line
+    text = f"{line}\n{finding.url}" if finding.url else line
+    links = [
+        f"{one['name']}: {one['url']}"
+        for one in missed_links
+        if isinstance(one, dict)
+        and str(one.get("name") or "").strip()
+        and str(one.get("url") or "").startswith("https://")
+    ]
+    if links:
+        text += "\n\nRegistri failid, mida ei saanud lisada:\n" + "\n".join(links)
+    return text
 
 
 @transaction.atomic
 def add_to_teema(
-    finding: WatchFinding, *, actor: Any, comment: str = "", uploads: Any = ()
+    finding: WatchFinding,
+    *,
+    actor: Any,
+    comment: str = "",
+    uploads: Any = (),
+    missed_links: Any = (),
 ) -> WatchFinding:
     """Record the finding on its Teema as a `Menetluse areng`, through `+ Märge`'s use case.
 
     ``comment`` is the lawyer's own words, put first in the note, and
     ``uploads`` the register's own files (`register_files.fetch`), attached to
-    it as `+ Märge` attaches a person's (owner, 2026-11-22).
+    it as `+ Märge` attaches a person's (owner, 2026-11-22). ``missed_links``
+    (``[{name, url}]``) are the register files that did not come — refused,
+    too slow or past the time budget (HR-04) — written under the source so the
+    note still leads to them. Nothing is fetched here: the caller fetches
+    before this transaction takes its row lock.
     """
     from app.matters.workspace import add_procedural_development
 
@@ -501,7 +520,7 @@ def add_to_teema(
         author=actor,
         title=locked.title,
         occurred_on=locked.occurred_on,
-        note=with_comment(comment, _provenance(locked)),
+        note=with_comment(comment, _provenance(locked, missed_links)),
         uploads=list(uploads),
     )
     locked.status = FindingStatus.ADDED

@@ -1,7 +1,10 @@
 """The one door the register watch uses to the outside (ADR 0217 §5).
 
 `https`, a fixed list of hosts, no redirects, a timeout, a size cap, and a
-spacing between calls to one host. `settings.REGISTER_WATCH_FETCH` switches it
+spacing between calls to one host. A call made inside a person's request may
+also carry a ``deadline`` (a `time.monotonic` instant, HR-04): the spacing, the
+socket timeout and the reading of the answer all stop at it, so a slow register
+cannot hold a web worker past it. `settings.REGISTER_WATCH_FETCH` switches it
 off (tests, CI, a recovery rehearsal): every call then raises `FetchError`, and
 the run records it like any other failure.
 """
@@ -48,16 +51,62 @@ _FORM_OPENER = urllib.request.build_opener(
 )
 
 
-def _space(host: str) -> None:
+#: A deadline-bound answer is read in pieces this large, the clock checked between them.
+CHUNK_BYTES = 256 * 1024
+
+
+def _left(host: str, deadline: float | None) -> float:
+    """The socket timeout for the next step: `TIMEOUT_SECONDS`, or less if the deadline is near."""
+    if deadline is None:
+        return TIMEOUT_SECONDS
+    left = deadline - time.monotonic()
+    if left <= 0:
+        raise FetchError(f"{host} ei vastanud ettenähtud aja jooksul")
+    return min(TIMEOUT_SECONDS, left)
+
+
+def _space(host: str, deadline: float | None = None) -> None:
     wait = SPACING_SECONDS.get(host, DEFAULT_SPACING) - (
         time.monotonic() - _last_call.get(host, 0.0)
     )
     if wait > 0:
+        if deadline is not None and time.monotonic() + wait >= deadline:
+            raise FetchError(f"{host} ei vastanud ettenähtud aja jooksul")
         time.sleep(wait)
     _last_call[host] = time.monotonic()
 
 
-def get_json(host: str, path: str, params: dict[str, Any] | None = None) -> Any:
+def _set_socket_timeout(response: Any, seconds: float) -> None:
+    """Shorten the open answer's socket timeout, where the response exposes its socket."""
+    sock = getattr(getattr(getattr(response, "fp", None), "raw", None), "_sock", None)
+    settimeout = getattr(sock, "settimeout", None)
+    if callable(settimeout):
+        settimeout(seconds)
+
+
+def _read(response: Any, limit: int, host: str, deadline: float | None) -> bytes:
+    """Up to ``limit`` bytes; with a deadline, in pieces, never reading past it."""
+    if deadline is None:
+        return response.read(limit)
+    chunks: list[bytes] = []
+    total = 0
+    while total < limit:
+        _set_socket_timeout(response, _left(host, deadline))
+        chunk = response.read(min(CHUNK_BYTES, limit - total))
+        if not chunk:
+            break
+        chunks.append(chunk)
+        total += len(chunk)
+    return b"".join(chunks)
+
+
+def get_json(
+    host: str,
+    path: str,
+    params: dict[str, Any] | None = None,
+    *,
+    deadline: float | None = None,
+) -> Any:
     """GET ``https://host/path?params`` and parse it as JSON, or raise `FetchError`."""
     if not getattr(settings, "REGISTER_WATCH_FETCH", False):
         raise FetchError("registrite lugemine on välja lülitatud")
@@ -65,13 +114,13 @@ def get_json(host: str, path: str, params: dict[str, Any] | None = None) -> Any:
         raise FetchError(f"keelatud aadress: {host}")
     query = urllib.parse.urlencode({k: v for k, v in (params or {}).items() if v is not None})
     url = f"https://{host}{path}" + (f"?{query}" if query else "")
-    _space(host)
+    _space(host, deadline)
     request = urllib.request.Request(
         url, headers={"User-Agent": USER_AGENT, "Accept": "application/json"}
     )
     try:
-        with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
-            raw = response.read(MAX_BYTES + 1)
+        with _OPENER.open(request, timeout=_left(host, deadline)) as response:
+            raw = _read(response, MAX_BYTES + 1, host, deadline)
     except urllib.error.HTTPError as error:
         raise FetchError(f"{host} vastas {error.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
@@ -91,10 +140,10 @@ def _check(host: str, path: str) -> None:
         raise FetchError(f"keelatud aadress: {host}")
 
 
-def _text(request: urllib.request.Request, host: str) -> str:
+def _text(request: urllib.request.Request, host: str, deadline: float | None = None) -> str:
     try:
-        with _FORM_OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
-            raw = response.read(MAX_BYTES + 1)
+        with _FORM_OPENER.open(request, timeout=_left(host, deadline)) as response:
+            raw = _read(response, MAX_BYTES + 1, host, deadline)
     except urllib.error.HTTPError as error:
         raise FetchError(f"{host} vastas {error.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
@@ -104,12 +153,13 @@ def _text(request: urllib.request.Request, host: str) -> str:
     return raw.decode("utf-8", errors="replace")
 
 
-def get_text(host: str, path: str) -> str:
+def get_text(host: str, path: str, *, deadline: float | None = None) -> str:
     """GET an HTML page (and keep its session cookie), or raise `FetchError`."""
     _check(host, path)
-    _space(host)
+    _space(host, deadline)
     url = f"https://{host}{path}"
-    return _text(urllib.request.Request(url, headers={"User-Agent": USER_AGENT}), host)
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    return _text(request, host, deadline)
 
 
 def post_form(host: str, path: str, fields: dict[str, str]) -> str:
@@ -133,14 +183,16 @@ def post_form(host: str, path: str, fields: dict[str, str]) -> str:
 FILE_MAX_BYTES = 25 * 1024 * 1024
 
 
-def get_bytes(host: str, path: str, *, max_bytes: int = FILE_MAX_BYTES) -> bytes:
+def get_bytes(
+    host: str, path: str, *, max_bytes: int = FILE_MAX_BYTES, deadline: float | None = None
+) -> bytes:
     """GET one file through the same door (hosts, no redirects, timeout), or raise `FetchError`."""
     _check(host, path)
-    _space(host)
+    _space(host, deadline)
     request = urllib.request.Request(f"https://{host}{path}", headers={"User-Agent": USER_AGENT})
     try:
-        with _OPENER.open(request, timeout=TIMEOUT_SECONDS) as response:
-            raw = response.read(max_bytes + 1)
+        with _OPENER.open(request, timeout=_left(host, deadline)) as response:
+            raw = _read(response, max_bytes + 1, host, deadline)
     except urllib.error.HTTPError as error:
         raise FetchError(f"{host} vastas {error.code}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
