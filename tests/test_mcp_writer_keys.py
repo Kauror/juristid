@@ -239,3 +239,50 @@ def test_the_script_is_executable_in_git():
         check=True,
     ).stdout
     assert listed.startswith("100755"), listed or "not tracked yet"
+
+
+# -- the one key rule in lib.sh (HR-18) ------------------------------------------
+
+
+@needs_modes
+@pytest.mark.parametrize(
+    ("key", "line"),
+    [
+        ("MCP_WRITE_GATEWAY_KEY", f"MCP_WRITE_GATEWAY_KEY={STRONG} "),
+        ("MCP_WRITE_GATEWAY_KEY", f"MCP_WRITE_GATEWAY_KEY={STRONG}\r"),
+        ("POSTGRES_PASSWORD", f"POSTGRES_PASSWORD={STRONG[:20]}\t{STRONG[20:]}"),
+    ],
+    ids=["gateway-trailing-space", "gateway-crlf", "password-inner-tab"],
+)
+def test_a_malformed_secret_is_refused_and_nothing_changes(tmp_path, key, line):
+    """It may be the value in use (the role's password, the key mcp holds): never replaced."""
+    writer, mcp = _files(tmp_path)
+    target = writer if key == "POSTGRES_PASSWORD" else mcp
+    text = target.read_text(encoding="utf-8")
+    template = f"{key}=replace-me-with-openssl-rand-base64-48"
+    assert template in text
+    target.write_bytes(text.replace(template, line).encode("utf-8"))
+    before = (writer.read_bytes(), mcp.read_bytes())
+    result = _helper(writer, mcp)
+    assert result.returncode != 0
+    assert "Nothing was changed" in result.stderr and key in result.stderr
+    # Deleting the line instead is not offered as free.
+    cost = "mcp_writer_db_role" if key == "POSTGRES_PASSWORD" else "recreated together"
+    assert cost in result.stderr
+    assert STRONG[:20] not in result.stdout + result.stderr
+    assert (writer.read_bytes(), mcp.read_bytes()) == before
+
+
+@needs_modes
+def test_rotation_replaces_a_malformed_gateway_key(tmp_path):
+    writer, mcp = _files(tmp_path)
+    text = mcp.read_text(encoding="utf-8").replace(
+        "MCP_WRITE_GATEWAY_KEY=replace-me-with-openssl-rand-base64-48",
+        f"MCP_WRITE_GATEWAY_KEY={STRONG} ",
+    )
+    mcp.write_text(text, encoding="utf-8")
+    result = _helper(writer, mcp, "--rotate-gateway-key")
+    assert result.returncode == 0, result.stderr
+    [writer_key] = _values(writer, "MCP_WRITE_GATEWAY_KEY")
+    assert _values(mcp, "MCP_WRITE_GATEWAY_KEY") == [writer_key]
+    assert writer_key != STRONG and " " not in writer_key

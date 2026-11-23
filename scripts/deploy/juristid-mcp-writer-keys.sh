@@ -26,6 +26,11 @@
 # - The gateway key must be equal in both files. One good copy is copied to
 #   the other file; two good copies that differ are refused (this script does
 #   not guess which one `mcp` and `mcp-writer` are running with).
+# - A line holding whitespace or a carriage return (malformed — mcp_key_state
+#   in lib.sh, the rule juristid-mcp-web-keys.sh uses too) may still be the
+#   value in use, so it is never replaced: this exits 1 before writing anything
+#   and asks for the line to be fixed by hand (--rotate-gateway-key still
+#   replaces the gateway key).
 # - Otherwise every line naming the key is dropped and one generated line is
 #   appended. Each file is rewritten in place, so it keeps its inode, owner and
 #   mode. MCP_WRITES_ENABLED is never touched.
@@ -143,24 +148,6 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# missing | duplicated | weak | ok — the file names KEY exactly once, as
-# `KEY=` and at least MIN characters, not a placeholder.
-key_state() {
-  local file="$1" key="$2" min="$3" named strong placeholder
-  named="$(grep -cE "^[[:space:]]*${key}=" "$file" || true)"
-  strong="$(grep -cE "^${key}=[^[:space:]]{${min},}$" "$file" || true)"
-  placeholder="$(grep -cE "^${key}=replace-me" "$file" || true)"
-  if [ "$named" = 0 ]; then
-    printf 'missing\n'
-  elif [ "$named" != 1 ]; then
-    printf 'duplicated\n'
-  elif [ "$strong" != 1 ] || [ "$placeholder" != 0 ]; then
-    printf 'weak\n'
-  else
-    printf 'ok\n'
-  fi
-}
-
 # The value of a key in state ok. Kept in a variable, never printed.
 key_value() {
   sed -n "s/^$2=//p" "$1"
@@ -182,14 +169,15 @@ write_key() {
   tmp=""
 }
 
+# \r too: a Windows openssl ends its line with CRLF (see mcp_key_state).
 new_secret() {
-  openssl rand -base64 "$1" | tr -d '\n/+='
+  openssl rand -base64 "$1" | tr -d '\r\n/+='
 }
 
 problems=0
 verify() {
   local file="$1" key="$2" min="$3" before="$4" after
-  after="$(key_state "$file" "$key" "$min")"
+  after="$(mcp_key_state "$file" "$key" "$min")"
   if [ "$after" = ok ]; then
     note "ok   $key in $(basename -- "$file"): $before"
   else
@@ -198,6 +186,29 @@ verify() {
   fi
 }
 
+# A malformed line (whitespace or a carriage return, mcp_key_state in lib.sh)
+# may still be the value a service or the database role runs with, so it is
+# never replaced here: refuse before anything is written. Key names only. An
+# explicit --rotate-gateway-key replaces the gateway key whatever its state.
+malformed_check() {
+  local file="$1" key="$2" min="$3" state cost
+  # Captured first, so an error from the rule stops this script.
+  state="$(mcp_key_state "$file" "$key" "$min")"
+  [ "$state" = malformed ] || return 0
+  case "$key" in
+    POSTGRES_PASSWORD) cost="the role's password must then be set again (mcp_writer_db_role --apply --password-stdin) before mcp-writer can connect" ;;
+    MCP_WRITE_GATEWAY_KEY) cost="mcp and mcp-writer must then be recreated together" ;;
+    *) cost="mcp-writer must then be recreated" ;;
+  esac
+  die "$key in $file has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings), then run this again. Deleting the line instead makes this generate a new $key: $cost."
+}
+malformed_check "$WRITER_ENV" DJANGO_SECRET_KEY "$SECRET_KEY_MIN"
+malformed_check "$WRITER_ENV" POSTGRES_PASSWORD "$DB_PASSWORD_MIN"
+if [ "$ROTATE_GATEWAY" != 1 ]; then
+  malformed_check "$WRITER_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN"
+  malformed_check "$MCP_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN"
+fi
+
 # -- the writer's own two secrets -------------------------------------------------
 
 for spec in "DJANGO_SECRET_KEY:$SECRET_KEY_MIN:64" "POSTGRES_PASSWORD:$DB_PASSWORD_MIN:48"; do
@@ -205,7 +216,7 @@ for spec in "DJANGO_SECRET_KEY:$SECRET_KEY_MIN:64" "POSTGRES_PASSWORD:$DB_PASSWO
   rest="${spec#*:}"
   min="${rest%%:*}"
   bytes="${rest#*:}"
-  before="$(key_state "$WRITER_ENV" "$key" "$min")"
+  before="$(mcp_key_state "$WRITER_ENV" "$key" "$min")"
   if [ "$before" = ok ]; then
     note "ok   $key in $(basename -- "$WRITER_ENV"): already set, kept (never rotated here)"
     continue
@@ -219,8 +230,8 @@ done
 
 # -- the gateway key, equal in both files -------------------------------------------
 
-writer_state="$(key_state "$WRITER_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN")"
-mcp_state="$(key_state "$MCP_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN")"
+writer_state="$(mcp_key_state "$WRITER_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN")"
+mcp_state="$(mcp_key_state "$MCP_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN")"
 gateway=""
 how=""
 if [ "$ROTATE_GATEWAY" = 1 ]; then
@@ -245,7 +256,7 @@ if [ "$how" != kept ]; then
   [ -n "$gateway" ] || gateway="$(new_secret 48)"
   [ "${#gateway}" -ge "$GATEWAY_KEY_MIN" ] || die "the gateway key is shorter than $GATEWAY_KEY_MIN characters"
   for file in "$WRITER_ENV" "$MCP_ENV"; do
-    if [ "$(key_state "$file" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN")" != ok ] || [ "$ROTATE_GATEWAY" = 1 ]; then
+    if [ "$(mcp_key_state "$file" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN")" != ok ] || [ "$ROTATE_GATEWAY" = 1 ]; then
       write_key "$file" MCP_WRITE_GATEWAY_KEY "$gateway"
     fi
     verify "$file" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN" "$how"
