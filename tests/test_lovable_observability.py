@@ -806,7 +806,8 @@ def test_matter_changes_by_reference_and_by_id(pilot, reader):
     assert fields["next_action_text"] == {
         "field": "next_action_text",
         "label": "Järgmine tegevus (sõnastus)",
-        "automatic": False,
+        # The night writes the step's wording (source authority, audit HR-03).
+        "automatic": True,
         "last_applied": "Valmistada ette arvamus",
         "juristid_now": "Valmistada ette arvamus",
         "lovable_observed": "Jälgida menetlust",
