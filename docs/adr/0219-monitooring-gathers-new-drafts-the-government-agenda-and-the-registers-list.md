@@ -106,3 +106,47 @@ in full and older ones folded. Asked on 2026-11-22, the owner chose:
   on the Teema's «Registritest» tab takes the Teema's waiting agenda items too.
 - The agenda model's prompt carries the Koda house style and its reasons pass
   `house_style.fix` (docs/koda-house-style.md).
+
+## Amendment 2026-11-23 (2) — bounded agenda verdicts, settled items untouched (audit HR-02)
+
+§3's «A failure leaves the agenda «hindamata» for the next run» had no end: one item
+the model left out kept `judged_at` empty, so the whole agenda was sent again every
+half hour, and each pass rewrote the strength, reason and Teema of items a person had
+already added or marked read. Now:
+
+- **Only waiting, unjudged items are sent and written.** An item judged, added
+  («Lisa teemale») or marked read is neither in the prompt nor saved over; the write
+  re-reads the items under lock, so a decision made while the model answered stands.
+- **`judged_at` means «an answer with verdicts was read»**, not «every item was
+  answered». Items that answer left out, or answered with an unusable strength, stay
+  «Hindamata» (`Strength.UNJUDGED`, no new status), are shown as such («N punkti
+  hindamata» on the agenda, a «Hindamata» mark on the item) and are not asked again.
+- **A failed request, a cut-off answer, an unreadable one and a readable one with no
+  usable verdict are retried by later runs, at most three requests per agenda in all**
+  (`agenda.MAX_ATTEMPTS`, counted in `GovernmentAgenda.ai_attempts`, migration
+  `register_watch` 0008). An agenda stored before this may be asked at most three more
+  times.
+- §5's bell is unchanged in meaning: an agenda is told when an item may matter or
+  when items remain unjudged; a Teema owner is told about a proposal from whichever
+  run produced it, a retry included.
+
+## Amendment 2026-11-23 (3) — what may be sent to the model (audit HR-01, HR-09)
+
+§3's «A restricted Teema is never sent» now holds for the letters too, and TEST data
+is kept out of every register-watch prompt (`app/register_watch/outbound.py`, the one
+rule for this ADR's agenda, ADR 0218's new drafts and ADR 0217's nightly watch):
+
+- **A letter title is sent only when the letter is reliably tied to a sendable
+  Teema:** its pairing was applied (by the calibrated rule or a person) to a NORMAL,
+  real, undeleted Teema, and the sent opinion it became, if any, is not restricted.
+  Unpaired letters, letters waiting for a decision (whatever Teema was suggested),
+  background letters and letters on a restricted, TEST or deleted Teema are left out,
+  counted (`letters_left_out`) and never logged by title. Accepted cost: the letter
+  signal of «current work» thins until letters are paired in Haldus.
+- **No TEST Teema is offered, linked or rung about.** The open Teemad offered for
+  `related` are NORMAL and real; a proposal stored on a TEST Teema before this is no
+  proposal (not counted, listed, decidable or rung about); the nightly watch's model
+  never reads a TEST Teema's findings. The watch itself still searches the registers
+  for open TEST Teemad without the model, as before.
+- **The cap on offered Teemad (400 newest) is counted**, logged as a number and,
+  for the new-drafts sweep, written on its run; it is not raised.

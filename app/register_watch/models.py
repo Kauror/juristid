@@ -371,8 +371,20 @@ class GovernmentAgenda(BaseModel):
     title = models.CharField(max_length=300, verbose_name="pealkiri")
     session_date = models.DateField(unique=True, verbose_name="istungi kuupäev")
     published_at = models.DateTimeField(null=True, blank=True, verbose_name="avaldatud")
-    #: Items the model judged; with `judged_at` empty, the next run asks again.
+    #: When the model's answer for this agenda was read (audit HR-02, 2026-11-23).
+    #: One readable answer is the whole attempt: an item it said nothing about, or
+    #: answered with something unusable, stays «Hindamata» and is not asked again.
+    #: Empty while no answer has been read; the next run then asks again, at most
+    #: `agenda.MAX_ATTEMPTS` times in all (`ai_attempts`).
     judged_at = models.DateTimeField(null=True, blank=True, verbose_name="hinnatud")
+    #: Requests made to the model for this agenda, answered or failed.
+    ai_attempts = models.PositiveSmallIntegerField(
+        default=0,
+        # In the database too, so the previous release can still insert an agenda
+        # after a code-only rollback (r91 kit review).
+        db_default=0,
+        verbose_name="hindamiskatseid",
+    )
 
     class Meta:
         verbose_name = "valitsuse päevakord"
