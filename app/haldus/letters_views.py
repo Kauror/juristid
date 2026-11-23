@@ -130,8 +130,8 @@ def _back(request: HttpRequest) -> HttpResponseRedirect:
 
 @never_cache
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Kinnita», «Seo teemaga» (viide), «Jäta taustaks» or «Võta tagasi»."""
     _require(request, "kirjad")
