@@ -196,7 +196,10 @@ def test_the_procedural_link_shows_the_address_and_muuda_only(client, specialist
     assert "Muu menetluslink" not in row
     assert "railcard__key" not in row
     assert 'href="https://eelnoud.valitsus.ee/main/mount/docList/abc"' in card
-    assert ">Muuda</summary>" in card
+    # `Muuda` is a pen icon with its word as the tooltip and the spoken name
+    # (owner, 2026-11-23).
+    assert 'title="Muuda linki"' in card
+    assert '<span class="visually-hidden">Muuda linki</span></summary>' in card
     assert link.kind  # the stored kind is untouched
 
 
