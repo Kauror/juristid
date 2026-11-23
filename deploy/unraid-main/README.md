@@ -1720,8 +1720,11 @@ set -euo pipefail
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 git show "$TARGET:tools/release_fingerprint.py" > "$tmp" || exit 1
+rc=0
 FP_EXPECTED_LINES="$(python -I "$tmp" --repo "$(git rev-parse --show-toplevel)" \
-  --ref "$TARGET" --previous-release "$PREVIOUS")" || exit 1
+  --ref "$TARGET" --previous-release "$PREVIOUS")" || rc=$?
+if [ "$rc" -eq 3 ]; then echo "REFUSED: review this release's expected lines by hand"; exit 3; fi
+if [ "$rc" -ne 0 ]; then echo "the helper failed (exit $rc)"; exit "$rc"; fi
 FP_HELPER_BLOB="$(git rev-parse "$TARGET:tools/release_fingerprint.py")" || exit 1
 ```
 
@@ -1740,8 +1743,8 @@ leaf, a changed migration or `migrations/__init__.py`, a release that moves the
 models the fingerprint does not count, anything in the file but plain
 `makemigrations` output (module-level code, a decorator or class keyword,
 `replaces`, `run_before`, `initial`, `atomic`, an import outside its short
-allowlist, an operation argument that is not inert data), any operation outside
-its schema-only list, a proxy or unmanaged model, a model the fingerprint does
+allowlist, an operation argument that is not inert data: calls only of listed field, index and constraint classes, references only to listed constants, never `RawSQL`, `Func` or a `template`, `function` or `sql` keyword), any operation outside
+its schema-only list (they keep row counts as they were; a default or a type change may still rewrite values in place, which no fingerprint sees), a proxy or unmanaged model, a model the fingerprint does
 not count, and a helper that is not `$TARGET`'s own copy. Such a release needs
 its expected lines reviewed by hand, line by line. The verdict itself is
 unchanged: an exact comparison.

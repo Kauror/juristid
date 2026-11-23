@@ -56,7 +56,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-#: Operations that change only the schema and create nothing but empty tables.
+#: Operations that change only the schema: no row is added or removed, so row counts
+#: stay as they were (a default or a type change may still rewrite values in place).
 SUPPORTED_OPERATIONS = frozenset(
     {
         "CreateModel",
@@ -144,31 +145,50 @@ ALLOWED_IMPORTS = frozenset(
         "uuid",
     }
 )
-#: The names an operation's arguments may start from: the imported modules, and the two
-#: builtins `makemigrations` writes as JSON defaults.
-ALLOWED_ROOTS = frozenset({"models", "django", "settings", "app", "uuid", "dict", "list"})
-#: The expression nodes an operation's arguments may contain: literals, containers,
-#: references and calls rooted at `ALLOWED_ROOTS`, and the `|`, `&`, `~` and `-` that
-#: `models.Q` conditions and numbers use. No lambda, subscript, comprehension, walrus,
-#: conditional or starred value.
-ALLOWED_NODES = (
-    ast.Constant,
-    ast.List,
-    ast.Tuple,
-    ast.Dict,
-    ast.Set,
-    ast.keyword,
-    ast.Load,
-    ast.Call,
-    ast.Attribute,
-    ast.Name,
-    ast.BinOp,
-    ast.BitOr,
-    ast.BitAnd,
-    ast.UnaryOp,
-    ast.Invert,
-    ast.USub,
+_FIELDS = (
+    "AutoField BigAutoField BigIntegerField BooleanField CharField DateField DateTimeField "
+    "DecimalField DurationField EmailField FloatField ForeignKey GenericIPAddressField "
+    "IntegerField JSONField ManyToManyField OneToOneField PositiveBigIntegerField "
+    "PositiveIntegerField PositiveSmallIntegerField SlugField SmallIntegerField TextField "
+    "TimeField URLField UUIDField"
+).split()
+#: The exact callables an operation's arguments may call (surveyed from this repository's
+#: schema-only migrations, 23.11.2026): field, index and constraint classes and the inert
+#: query objects. Never ``RawSQL``, ``Func``, ``ExpressionWrapper`` or anything reached
+#: through a module (``uuid.os.system`` …): a dotted name is matched whole.
+ALLOWED_CALLS = frozenset(
+    [f"models.{field}" for field in _FIELDS]
+    + [
+        "models.Q",
+        "models.F",
+        "models.Value",
+        "models.OrderBy",
+        "models.Index",
+        "models.UniqueConstraint",
+        "models.CheckConstraint",
+        "django.db.models.manager.Manager",
+        "django.contrib.postgres.fields.ArrayField",
+        "django.contrib.postgres.indexes.GinIndex",
+        "django.contrib.postgres.search.SearchVectorField",
+    ]
 )
+#: The exact names an operation's arguments may refer to without calling them.
+ALLOWED_REFERENCES = frozenset(
+    {
+        "app.core.ids.uuid7",
+        "dict",
+        "list",
+        "django.utils.timezone.now",
+        "settings.AUTH_USER_MODEL",
+        "uuid.uuid4",
+        *(
+            f"django.db.models.deletion.{rule}"
+            for rule in ("CASCADE", "PROTECT", "SET_NULL", "SET_DEFAULT", "RESTRICT", "DO_NOTHING")
+        ),
+    }
+)
+#: Keywords that put SQL text into DDL, refused on any call.
+REFUSED_KEYWORDS = frozenset({"template", "function", "sql", "arg_joiner"})
 
 
 def _check_imports(tree: ast.Module) -> None:
@@ -190,29 +210,70 @@ def _check_imports(tree: ast.Module) -> None:
             raise Refused(f"module-level code that is not an import (line {node.lineno})")
 
 
-def _root(node: ast.expr) -> str:
+def _dotted(node: ast.expr) -> str:
+    """``a.b.c`` for a chain of attributes on a name, else ``""``."""
+    parts: list[str] = []
     while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
         node = node.value
-    return node.id if isinstance(node, ast.Name) else ""
+    if not isinstance(node, ast.Name):
+        return ""
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+def _check_value(node: ast.expr) -> None:
+    """One operation argument is inert data: a literal, a container of inert data, an
+    allowed reference, a call of an allowed class with inert arguments, or ``|``, ``&``,
+    ``~``, ``-`` over inert data. Everything else is refused."""
+    if isinstance(node, ast.Constant):
+        return
+    if isinstance(node, ast.List | ast.Tuple | ast.Set):
+        for item in node.elts:
+            _check_value(item)
+        return
+    if isinstance(node, ast.Dict):
+        for key, value in zip(node.keys, node.values, strict=True):
+            if key is None:
+                raise Refused("an operation argument is unpacked with **")
+            _check_value(key)
+            _check_value(value)
+        return
+    if isinstance(node, ast.Attribute | ast.Name):
+        if _dotted(node) not in ALLOWED_REFERENCES:
+            raise Refused(f"an operation argument refers to {_dotted(node) or 'an expression'}")
+        return
+    if isinstance(node, ast.Call):
+        name = _dotted(node.func)
+        if name not in ALLOWED_CALLS:
+            raise Refused(f"an operation argument calls {name or 'an expression'}")
+        for item in node.args:
+            _check_value(item)
+        for keyword in node.keywords:
+            if keyword.arg is None:
+                raise Refused("an operation argument is unpacked with **")
+            if keyword.arg in REFUSED_KEYWORDS:
+                raise Refused(f"an operation argument passes {keyword.arg}=")
+            _check_value(keyword.value)
+        return
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.BitOr | ast.BitAnd):
+        _check_value(node.left)
+        _check_value(node.right)
+        return
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Invert | ast.USub):
+        _check_value(node.operand)
+        return
+    raise Refused(f"an operation argument holds {type(node).__name__}")
 
 
 def _check_arguments(call: ast.Call) -> None:
-    """Every argument of an operation is inert data: allowed nodes only, every reference
-    rooted at an allowed name, no ``**`` and no dunder."""
-    for argument in [*call.args, *call.keywords]:
-        for node in ast.walk(argument):
-            if not isinstance(node, ALLOWED_NODES):
-                raise Refused(f"an operation argument holds {type(node).__name__}")
-            if isinstance(node, ast.keyword) and node.arg is None:
-                raise Refused("an operation argument is unpacked with **")
-            if isinstance(node, ast.Name) and node.id not in ALLOWED_ROOTS:
-                raise Refused(f"an operation argument names {node.id}")
-            if isinstance(node, ast.Attribute) and (
-                node.attr.startswith("_") or _root(node) not in ALLOWED_ROOTS
-            ):
-                raise Refused(f"an operation argument reaches .{node.attr}")
-            if isinstance(node, ast.Call) and _root(node.func) not in ALLOWED_ROOTS:
-                raise Refused("an operation argument calls something not allowed")
+    """Every argument of an operation is inert data (`_check_value`)."""
+    for argument in call.args:
+        _check_value(argument)
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            raise Refused("an operation argument is unpacked with **")
+        _check_value(keyword.value)
 
 
 def _forbidden_name(tree: ast.Module) -> str:

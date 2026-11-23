@@ -198,6 +198,42 @@ BYPASSES = {
         "        migrations.AddField(model_name='a', name='b', field=evil.Field()),",
         "",
     ),
+    # The third review of #680: code or SQL reached through an allowed first name.
+    "uuid-os-system": (
+        "import uuid\n" + HEAD,
+        "        migrations.AlterModelOptions(name='a', options=dict(x=uuid.os.system('echo'))),",
+        "",
+    ),
+    "ids-os-system": (
+        "import app.core.ids\n" + HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.IntegerField("
+        "default=app.core.ids.os.system('echo'))),",
+        "",
+    ),
+    "call-command-flush": (
+        "import django.core.validators\n" + HEAD,
+        "        migrations.AlterModelOptions(name='a', options={'x': "
+        "django.core.management.call_command('flush', interactive=False)}),",
+        "",
+    ),
+    "raw-sql-index": (
+        HEAD,
+        "        migrations.AddIndex(model_name='a', index=models.Index("
+        "models.expressions.RawSQL('1); DELETE FROM t; --', []), name='i')),",
+        "",
+    ),
+    "func-template": (
+        HEAD,
+        "        migrations.AddConstraint(model_name='a', constraint=models.CheckConstraint("
+        "condition=models.Q(models.Func(template='1=1); DELETE FROM t; --')), name='c')),",
+        "",
+    ),
+    "template-keyword": (
+        HEAD,
+        "        migrations.AddConstraint(model_name='a', constraint=models.CheckConstraint("
+        "condition=models.Q(x=1), name='c', template='x')),",
+        "",
+    ),
     "double-star-options": (
         HEAD,
         "        migrations.CreateModel(name='P', fields=[], **{'options': {'proxy': True}}),",
