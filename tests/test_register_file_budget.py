@@ -2,15 +2,22 @@
 
 The press used to fetch the listing and up to five files with 25 s per socket
 wait and no total limit, inside a web request, so a slow ministry server could
-hold a worker past gunicorn's 120 s and lose the lawyer's note. These tests
-replace the network and the clock: no real time passes and nothing leaves the
-machine.
+hold a worker past gunicorn's 120 s and lose the lawyer's note. Most tests
+replace the network and the clock, so no real time passes; the «real socket»
+ones run a TLS server on 127.0.0.1 that drips its answer, with a one-second
+deadline. Nothing leaves the machine.
 """
 
 from __future__ import annotations
 
+import datetime
 import json
+import socket
+import ssl
+import threading
+import time
 import urllib.error
+import urllib.request
 from types import SimpleNamespace
 
 import pytest
@@ -47,14 +54,6 @@ class _Clock:
         self.now += seconds
 
 
-class _Socket:
-    def __init__(self) -> None:
-        self.timeouts: list[float] = []
-
-    def settimeout(self, seconds: float) -> None:
-        self.timeouts.append(seconds)
-
-
 class _Slow:
     """An answer that costs ``per_read`` clock seconds per read, in ``chunks``."""
 
@@ -63,8 +62,6 @@ class _Slow:
         self.chunks = list(chunks)
         self.per_read = per_read
         self.reads = 0
-        self.sock = _Socket()
-        self.fp = SimpleNamespace(raw=SimpleNamespace(_sock=self.sock))
         self.open_timeout: float | None = None
 
     def __enter__(self):
@@ -77,7 +74,7 @@ class _Slow:
         self.reads += 1
         if not self.chunks:
             return b""
-        timeout = self.sock.timeouts[-1] if self.sock.timeouts else self.open_timeout
+        timeout = self.open_timeout
         if timeout is not None and self.per_read > timeout:
             self.clock.now += timeout  # the socket gives up, as a real one would
             raise TimeoutError("timed out")
@@ -139,33 +136,15 @@ def test_without_a_deadline_the_door_reads_as_before(net):
     net.network.routes["https://adr.envir.ee/x"] = answer
     assert http.get_bytes("adr.envir.ee", "/x") == PDF
     assert net.network.opened == [("https://adr.envir.ee/x", http.TIMEOUT_SECONDS)]
-    assert answer.reads == 1 and answer.sock.timeouts == []
+    assert answer.reads == 1
 
 
-def test_the_socket_timeout_shrinks_to_what_is_left(net):
+def test_the_socket_timeout_is_what_is_left(net):
     answer = _Slow(net.clock, [PDF], per_read=2)
     net.network.routes["https://adr.envir.ee/x"] = answer
-    deadline = net.clock.now + 10
 
-    assert http.get_bytes("adr.envir.ee", "/x", deadline=deadline) == PDF
-
+    assert http.get_bytes("adr.envir.ee", "/x", deadline=net.clock.now + 10) == PDF
     assert net.network.opened[0][1] == 10
-    # Each piece is read with no more time than is left: 10, then 8 after the first.
-    assert answer.sock.timeouts == [10, 8]
-
-
-def test_a_server_that_drips_is_cut_off_at_the_deadline(net):
-    endless = _Slow(net.clock, [b"x" * 1024] * 10_000, per_read=7)
-    net.network.routes["https://adr.envir.ee/x"] = endless
-    start = net.clock.now
-
-    with pytest.raises(FetchError):
-        http.get_bytes("adr.envir.ee", "/x", deadline=start + 30)
-
-    # Pieces at 0, 7, 14, 21; the fifth is given the 2 s left and times out at 30.
-    assert endless.reads == 5
-    assert endless.sock.timeouts == [25, 23, 16, 9, 2]
-    assert net.clock.now - start == 30
 
 
 def test_spacing_that_would_pass_the_deadline_is_not_slept(net):
@@ -189,6 +168,161 @@ def test_the_deadline_keeps_the_allowlist_and_the_size_cap(net):
     )
     with pytest.raises(FetchError, match="liiga suur"):
         http.get_bytes("adr.envir.ee", "/big", max_bytes=1000, deadline=net.clock.now + 30)
+
+
+# -- the door on a real socket: a dripping server is cut off at the deadline ----------
+
+HOST = "adr.envir.ee"
+DEADLINE = 1.0
+SLACK = 0.75
+
+
+def _certificate(tmp_path):
+    """A self-signed certificate for `HOST`, so the client verifies TLS as in production."""
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, HOST)])
+    now = datetime.datetime.now(datetime.UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName(HOST)]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    cert_file = tmp_path / "cert.pem"
+    key_file = tmp_path / "key.pem"
+    cert_file.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_file.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    return cert_file, key_file
+
+
+@pytest.fixture
+def tls_server(tmp_path, monkeypatch, settings):
+    """A TLS server on 127.0.0.1 that `HOST` resolves to; ``serve(behaviour)`` arms it."""
+    settings.REGISTER_WATCH_FETCH = True
+    monkeypatch.setattr(http, "_last_call", {})
+    cert_file, key_file = _certificate(tmp_path)
+    server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.load_cert_chain(cert_file, key_file)
+    client_context = ssl.create_default_context(cafile=str(cert_file))
+    monkeypatch.setattr(
+        http,
+        "_OPENER",
+        urllib.request.build_opener(
+            http._NoRedirect, http._WatchedHTTPSHandler(context=client_context)
+        ),
+    )
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    port = listener.getsockname()[1]
+    real_getaddrinfo = socket.getaddrinfo
+
+    def resolve(host, *args, **kwargs):
+        if host == HOST:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    threads: list[threading.Thread] = []
+
+    def serve(behaviour):
+        def run():
+            raw, _ = listener.accept()
+            try:
+                with server_context.wrap_socket(raw, server_side=True) as conn:
+                    conn.recv(65536)
+                    behaviour(conn)
+            except OSError:
+                pass  # the client hung up: what the watchdog is for
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        threads.append(thread)
+
+    yield serve
+    for thread in threads:
+        thread.join(timeout=10)
+    listener.close()
+
+
+def _drip(conn, data: bytes, every: float = 0.05) -> None:
+    for byte in data:
+        conn.sendall(bytes([byte]))
+        time.sleep(every)
+
+
+HEAD = b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n"
+
+
+def _timers() -> int:
+    return sum(isinstance(one, threading.Timer) for one in threading.enumerate())
+
+
+def _timed_fetch() -> tuple[float, BaseException | None]:
+    start = time.monotonic()
+    try:
+        http.get_bytes(HOST, "/fail", deadline=start + DEADLINE)
+    except BaseException as error:
+        return time.monotonic() - start, error
+    return time.monotonic() - start, None
+
+
+def test_real_socket_a_dripping_body_is_cut_off_at_the_deadline(tls_server):
+    tls_server(lambda conn: (conn.sendall(HEAD), _drip(conn, b"x" * 100000)))
+    timers = _timers()
+
+    elapsed, error = _timed_fetch()
+
+    assert isinstance(error, FetchError) and "ettenähtud aja" in str(error)
+    assert elapsed < DEADLINE + SLACK
+    assert _timers() == timers  # the watchdog's thread is gone
+
+
+def test_real_socket_dripping_headers_are_cut_off_at_the_deadline(tls_server):
+    tls_server(lambda conn: _drip(conn, HEAD * 50))
+
+    elapsed, error = _timed_fetch()
+
+    assert isinstance(error, FetchError) and "ettenähtud aja" in str(error)
+    assert elapsed < DEADLINE + SLACK
+
+
+def test_real_socket_a_silent_server_is_cut_off_at_the_deadline(tls_server):
+    tls_server(lambda conn: time.sleep(DEADLINE + 2))
+
+    elapsed, error = _timed_fetch()
+
+    assert isinstance(error, FetchError)
+    assert elapsed < DEADLINE + SLACK
+
+
+def test_real_socket_a_prompt_answer_is_read_whole(tls_server):
+    tls_server(
+        lambda conn: conn.sendall(
+            b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(PDF) + PDF
+        )
+    )
+    timers = _timers()
+
+    assert http.get_bytes(HOST, "/fail", deadline=time.monotonic() + DEADLINE) == PDF
+    assert _timers() == timers
 
 
 # -- the press: one budget for the listing and every file -----------------------------
@@ -439,3 +573,76 @@ def test_a_press_that_loses_the_race_during_its_fetch_writes_nothing(
     development = MatterProceduralDevelopment.objects.get(matter=matter)
     assert development.note.startswith("Esimene")
     assert _names(development) == []
+
+
+@pytest.mark.django_db
+def test_a_register_file_the_store_refuses_does_not_cost_the_note(client, specialist, monkeypatch):
+    """An error page served as `.pdf` is refused by `+ Märge`; the note is saved without it."""
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    url = "https://adr.envir.ee/api/v1/documents/b89d/file"
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("kiri.pdf", b"<html>Viga</html>")],
+            upload_links=[{"name": "kiri.pdf", "url": url}],
+        ),
+    )
+    client.force_login(specialist)
+
+    response = _press(
+        client,
+        finding,
+        failid=[SimpleUploadedFile("minu.pdf", PDF, content_type="application/pdf")],
+    )
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert development.note.startswith("Vaata punkti 3.\n\n")
+    assert development.note.endswith(f"kiri.pdf: {url}")
+    assert _names(development) == ["minu.pdf"]
+    assert "Neid faile ei saanud lisada (link on märkes): kiri.pdf." in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_the_lawyers_own_refused_file_still_refuses_the_save(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("kiri.pdf", PDF)],
+            upload_links=[{"name": "kiri.pdf", "url": "https://adr.envir.ee/f"}],
+        ),
+    )
+    client.force_login(specialist)
+
+    response = _press(client, finding, failid=[SimpleUploadedFile("minu.pdf", b"<html>")])
+
+    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    assert "Faili sisu ei vasta" in response.content.decode()
+    finding.refresh_from_db()
+    assert finding.status == FindingStatus.PENDING
+
+
+def test_names_and_addresses_written_into_the_note_are_cleaned():
+    finding = SimpleNamespace(
+        target=SimpleNamespace(get_source_display=lambda: "Kliimaministeerium"),
+        detail="",
+        url="",
+    )
+    text = watch._provenance(
+        finding,
+        [
+            {"name": "kiri\n\nVõltsitud rida\x00.pdf", "url": "https://adr.envir.ee/a"},
+            {"name": "muu.pdf", "url": "https://example.com/a"},
+            {"name": "http.pdf", "url": "http://adr.envir.ee/a"},
+            {"name": "tühik.pdf", "url": "https://adr.envir.ee/a b"},
+            "not a dict",
+        ],
+    )
+    assert text == (
+        "Kliimaministeerium\n\nRegistri failid, mida ei saanud lisada:\n"
+        "kiri Võltsitud rida .pdf: https://adr.envir.ee/a"
+    )

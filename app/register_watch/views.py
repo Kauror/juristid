@@ -285,6 +285,24 @@ def _tell_about_files(request: HttpRequest, fetched: register_files.Fetched) -> 
         )
 
 
+def _add(
+    request: HttpRequest,
+    finding: Any,
+    own: list[Any],
+    fetched: register_files.Fetched,
+    comment: str,
+) -> None:
+    for handle in own:
+        handle.seek(0)  # a retried save reads the lawyer's files again
+    watch.add_to_teema(
+        finding,
+        actor=request.user,
+        comment=comment,
+        uploads=[*own, *fetched.uploads],
+        missed_links=(list(finding.files or []) if fetched.unreachable else fetched.missed_links),
+    )
+
+
 @login_required
 @require_http_methods(["POST"])
 @business_write_required
@@ -304,17 +322,22 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
             # files, never the note, and a missed file's link goes into it. When
             # the register did not answer at all, the links found by the nightly
             # look-up (`WatchFinding.files`) stand in.
+            # A register file `+ Märge` refuses (an error page saved as .pdf)
+            # must not cost the note either: the save is tried once more
+            # without the register's files, which go to the note as links. A
+            # refusal that comes from the lawyer's own file refuses again.
+            from app.documents.uploads import UploadRejected
+
             own = own_files(request)
             fetched = register_files.fetch(finding.target.source, finding.external_id)
-            watch.add_to_teema(
-                finding,
-                actor=request.user,
-                comment=request.POST.get("markus", "")[:4000],
-                uploads=[*own, *fetched.uploads],
-                missed_links=(
-                    list(finding.files or []) if fetched.unreachable else fetched.missed_links
-                ),
-            )
+            comment = request.POST.get("markus", "")[:4000]
+            try:
+                _add(request, finding, own, fetched, comment)
+            except UploadRejected:
+                if not fetched.uploads:
+                    raise
+                fetched.give_up_uploads()
+                _add(request, finding, own, fetched, comment)
             _tell_about_files(request, fetched)
         else:
             watch.dismiss(finding, actor=request.user)

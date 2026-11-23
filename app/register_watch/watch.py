@@ -469,19 +469,41 @@ def with_comment(comment: str, provenance: str) -> str:
     return f"{comment}\n\n{provenance}" if comment else provenance
 
 
+def _one_line(value: Any) -> str:
+    """A file name as one plain line: control characters and line breaks become spaces."""
+    text = "".join(ch if ch.isprintable() else " " for ch in str(value or ""))
+    return " ".join(text.split())[:200]
+
+
+def _register_url(url: str) -> bool:
+    """An address written into a note: https, on one of the register door's own hosts."""
+    from urllib.parse import urlsplit
+
+    from app.register_watch.sources.http import ALLOWED_HOSTS
+
+    if any(ch.isspace() or not ch.isprintable() for ch in url):
+        return False
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return False
+    return parts.scheme == "https" and parts.netloc in ALLOWED_HOSTS
+
+
 def _provenance(finding: WatchFinding, missed_links: Any = ()) -> str:
     parts = [finding.target.get_source_display()]
     if finding.detail:
         parts.append(finding.detail)
     line = " · ".join(parts)
     text = f"{line}\n{finding.url}" if finding.url else line
-    links = [
-        f"{one['name']}: {one['url']}"
-        for one in missed_links
-        if isinstance(one, dict)
-        and str(one.get("name") or "").strip()
-        and str(one.get("url") or "").startswith("https://")
-    ]
+    links = []
+    for one in missed_links:
+        if not isinstance(one, dict):
+            continue
+        name = _one_line(one.get("name"))
+        url = str(one.get("url") or "")
+        if name and _register_url(url):
+            links.append(f"{name}: {url}")
     if links:
         text += "\n\nRegistri failid, mida ei saanud lisada:\n" + "\n".join(links)
     return text

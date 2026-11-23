@@ -27,8 +27,8 @@ before, and the person is told which file did not come.
 
 **The press has a time budget (HR-04).** Everything it fetches — the listing and
 every file — shares one deadline, `FETCH_BUDGET_SECONDS` from the press, well
-inside the web worker's 120 s: the spacing, each socket wait and each piece of a
-file stop at it. A file not brought by then is left out like any other, and its
+inside the web worker's 120 s (`sources.http` says what the deadline bounds:
+everything but the DNS lookup). A file not brought by then is left out like any other, and its
 own address is written into the note (`Fetched.missed_links`), so it can still be
 opened from the Teema. Nothing is fetched while a row is locked: the fetch runs
 before `watch.add_to_teema` opens its transaction.
@@ -75,12 +75,21 @@ class Fetched:
     missed: list[str] = field(default_factory=list)
     #: ``[{name, url}]`` of the missed files whose address is known, for the note.
     missed_links: list[dict[str, str]] = field(default_factory=list)
+    #: ``[{name, url}]`` of the files in ``uploads``, in order: their links if the
+    #: save has to go on without them.
+    upload_links: list[dict[str, str]] = field(default_factory=list)
     #: The register could not be read at all (the files are unknown).
     unreachable: bool = False
 
     def miss(self, remote: RemoteFile) -> None:
         self.missed.append(remote.name)
         self.missed_links.append({"name": remote.name, "url": url_of(remote)})
+
+    def give_up_uploads(self) -> None:
+        """Move every fetched file to the missed ones: the save goes on without them."""
+        self.missed.extend(one["name"] for one in self.upload_links)
+        self.missed_links.extend(self.upload_links)
+        self.uploads, self.upload_links = [], []
 
 
 def accepted(name: str) -> bool:
@@ -164,6 +173,7 @@ def fetch(source: str, external_id: str, *, budget: float = FETCH_BUDGET_SECONDS
             result.miss(remote)
             continue
         result.uploads.append(SimpleUploadedFile(remote.name, content))
+        result.upload_links.append({"name": remote.name, "url": url_of(remote)})
     for remote in files[MAX_FILES:]:
         result.miss(remote)
     return result
