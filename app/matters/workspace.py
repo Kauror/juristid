@@ -2727,7 +2727,12 @@ def edit_matter(
 
     1. `guard_matter_revision` — first: the page posts every field it holds, so
        a copy filled before somebody else's save is refused rather than
-       written over fresh values (QA-002, `MatterEditConflict`);
+       written over fresh values (QA-002, `MatterEditConflict`). The row it
+       locks and returns is the one every later step writes through; the
+       ``matter`` passed in only names which row (HR-14). Without a token
+       nothing is refused, and each posted value is applied against the
+       stored row — a whole-record save by a caller that never rendered a
+       version;
     2. the instruments as they stood **before** this save are read, because
        only a change of `Õigusakt` may move `Koja algatus` — so this read must
        come before `set_legal_instruments` (`initiative_after_edit`);
@@ -2779,7 +2784,15 @@ def edit_matter(
     )
 
     with transaction.atomic(), stage_episode_scope():
-        guard_matter_revision(matter=matter, expected_revision=expected_revision)
+        # Every step below works on the row the guard locked, never on the
+        # instance the caller loaded before the transaction (HR-14): each
+        # service compares the posted value with what is committed, so its
+        # «from» in the audit is the stored value and a fact derived from the
+        # row (`Koja algatus`, whether the file is open) is judged on the
+        # stored row, not on a copy a colleague's save has since made stale.
+        # The guard's lock is the same row at the same strength as before, so
+        # this adds no lock and changes no order.
+        matter = guard_matter_revision(matter=matter, expected_revision=expected_revision)
         held_instruments = list(matter.legal_instruments.all())
         set_matter_title(matter=matter, value=title, actor=actor)
         set_brief_summary(matter=matter, value=brief_summary, actor=actor)
