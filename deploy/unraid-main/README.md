@@ -1716,11 +1716,19 @@ model's `None -> 0`). `$TARGET` is the full sha the release image is built from
 and every file it reads come from `$TARGET` itself:
 
 ```bash
+set -euo pipefail
 tmp="$(mktemp)"
-git show "$TARGET:tools/release_fingerprint.py" > "$tmp"
-FP_EXPECTED_LINES="$(python -I "$tmp" --repo . --ref "$TARGET" --previous-release "$PREVIOUS")" || exit 1
-git rev-parse "$TARGET:tools/release_fingerprint.py"   # record this blob sha in the kit
+trap 'rm -f "$tmp"' EXIT
+git show "$TARGET:tools/release_fingerprint.py" > "$tmp" || exit 1
+FP_EXPECTED_LINES="$(python -I "$tmp" --repo "$(git rev-parse --show-toplevel)" \
+  --ref "$TARGET" --previous-release "$PREVIOUS")" || exit 1
+FP_HELPER_BLOB="$(git rev-parse "$TARGET:tools/release_fingerprint.py")" || exit 1
 ```
+
+Record `FP_HELPER_BLOB` in the kit beside the lines. The kit's d1 already
+refuses an image whose revision is not `$TARGET`
+(`scripts/deploy/juristid-verify-release-artifact.sh --revision "$TARGET"`), so
+the lines and the image come from the same commit.
 
 For a release with no migration it prints nothing (the fingerprint must be
 identical). For a release with one migration it prints the two leaf lines and
@@ -1728,13 +1736,15 @@ identical). For a release with one migration it prints the two leaf lines and
 creates, and nothing else. It refuses — exit 3, `REFUSED: …`, before anything
 is deployed — a release it cannot vouch for: more than one migration, a
 migration that is not its app's new leaf or does not depend on production's
-leaf, a changed migration, anything in the file but plain `makemigrations`
-output (module-level code, `replaces`, `run_before`, `initial`, `atomic`,
-imports from `django.db.migrations`), any operation outside its schema-only
-list, a proxy or unmanaged model, a model the fingerprint does not count, and a
-helper that is not `$TARGET`'s own copy. Such a release needs its expected lines
-reviewed by hand, line by line. The verdict itself is unchanged: an exact
-comparison.
+leaf, a changed migration or `migrations/__init__.py`, a release that moves the
+models the fingerprint does not count, anything in the file but plain
+`makemigrations` output (module-level code, a decorator or class keyword,
+`replaces`, `run_before`, `initial`, `atomic`, an import outside its short
+allowlist, an operation argument that is not inert data), any operation outside
+its schema-only list, a proxy or unmanaged model, a model the fingerprint does
+not count, and a helper that is not `$TARGET`'s own copy. Such a release needs
+its expected lines reviewed by hand, line by line. The verdict itself is
+unchanged: an exact comparison.
 
 Anything beyond this is release-specific and the release note names it. A
 release that changes how something is indexed, projected or derived may need a

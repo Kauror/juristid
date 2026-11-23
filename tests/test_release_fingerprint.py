@@ -155,7 +155,85 @@ BYPASSES = {
     "unnamed-create": (HEAD, "        migrations.CreateModel(fields=[], name=NAME),", ""),
     "created-twice": (HEAD, CREATE_A + "\n" + CREATE_A, ""),
     "module-code": (HEAD + "def forwards(apps, schema_editor):\n    pass\n\n\n", CREATE_A, ""),
+    # The second review of #680: code carried by an otherwise plain file.
+    "star-import": ("from app.evil import *\n" + HEAD, CREATE_A, ""),
+    "other-import": ("import os\n" + HEAD, CREATE_A, ""),
+    "aliased-models": ("from app.evil import thing as models\n" + HEAD, CREATE_A, ""),
+    "relative-import": ("from . import helpers\n" + HEAD, CREATE_A, ""),
+    "dunder-import-in-default": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.IntegerField("
+        "default=__import__('os').getpid())),",
+        "",
+    ),
+    "lambda-default": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.IntegerField("
+        "default=lambda: 1)),",
+        "",
+    ),
+    "dict-lookup": (
+        HEAD,
+        "        migrations.AddIndex(model_name='a', index=migrations.__dict__['x']),",
+        "",
+    ),
+    "subscript": (
+        HEAD,
+        "        migrations.AddIndex(model_name='a', index=models.Index(fields=['a'][0:1])),",
+        "",
+    ),
+    "comprehension": (
+        HEAD,
+        "        migrations.AddIndex(model_name='a', "
+        "index=models.Index(fields=[f for f in 'ab'])),",
+        "",
+    ),
+    "dunder-attribute": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=models.__class__),",
+        "",
+    ),
+    "unknown-name-in-argument": (
+        HEAD,
+        "        migrations.AddField(model_name='a', name='b', field=evil.Field()),",
+        "",
+    ),
+    "double-star-options": (
+        HEAD,
+        "        migrations.CreateModel(name='P', fields=[], **{'options': {'proxy': True}}),",
+        "",
+    ),
 }
+
+
+def _decorated(text: str) -> str:
+    return text.replace("class Migration(", "@(lambda c: c)\nclass Migration(", 1)
+
+
+def test_a_decorator_or_a_metaclass_on_the_migration_class_is_refused():
+    with pytest.raises(Refused, match="decorator or a class keyword"):
+        _lines(_decorated(_migration(CREATE_A)))
+    metaclass = _migration(CREATE_A).replace(
+        "(migrations.Migration)", "(migrations.Migration, metaclass=type)", 1
+    )
+    with pytest.raises(Refused, match="decorator or a class keyword"):
+        _lines(metaclass)
+
+
+def test_every_real_schema_only_argument_shape_is_still_accepted():
+    """The argument allowlist was surveyed from this repository's migrations: r89's and a
+    constraint with `models.Q(...) | ~models.Q(...)` and a JSON `default=dict` pass."""
+    operations = (
+        "        migrations.AddField(model_name='a', name='j', "
+        "field=models.JSONField(default=dict)),\n"
+        "        migrations.AddConstraint(model_name='a', constraint=models.CheckConstraint("
+        "condition=models.Q(x__gte=0) | ~models.Q(y=-1), name='c')),\n"
+        "        migrations.AlterField(model_name='a', name='o', field=models.ForeignKey("
+        "on_delete=django.db.models.deletion.PROTECT, to=settings.AUTH_USER_MODEL)),"
+    )
+    head = "import django.db.models.deletion\nfrom django.conf import settings\n" + HEAD
+    text = _migration(operations).replace(HEAD, head, 1)
+    assert _lines(text) == leaf_lines("x", "0002_y", "0001_initial")
 
 
 @pytest.mark.parametrize(
@@ -342,6 +420,50 @@ def test_a_helper_that_is_not_the_commits_copy_is_refused(repo, tmp_path):
     other.write_text(HELPER.read_text(encoding="utf-8") + "\n# changed\n", encoding="utf-8")
     with pytest.raises(Refused, match=r"is not tools/release_fingerprint\.py at"):
         release_lines(repo=repo.root, ref=ref, previous_release=repo.previous, helper=other)
+
+
+def test_a_release_that_moves_the_fingerprints_exclusions_is_refused(repo):
+    """Moving a model into REBUILDABLE_MODELS / OPERATIONAL_MODELS would drop it from both
+    sides of the comparison unseen, even in a release with no migration."""
+    repo.write("app/core/deployment.py", DEPLOYMENT.replace('"x.Throttle"', '"x.Throttle", "x.A"'))
+    with pytest.raises(Refused, match="does not count"):
+        repo.lines(repo.commit())
+
+
+def test_a_changed_migrations_init_is_refused(repo):
+    repo.write("app/x/migrations/__init__.py", "import os\nos.getpid()\n")
+    with pytest.raises(Refused, match=r"__init__\.py changes"):
+        repo.lines(repo.commit())
+
+
+def test_a_new_app_says_so(repo):
+    repo.write("app/y/apps.py", 'class YConfig:\n    label = "y"\n')
+    repo.write("app/y/migrations/__init__.py", "")
+    repo.write("app/y/migrations/0001_initial.py", _migration(CREATE_A, dependency=""))
+    with pytest.raises(Refused, match="new app"):
+        repo.lines(repo.commit())
+
+
+def test_a_label_in_a_comment_or_another_attribute_is_not_the_label(repo):
+    repo.write("app/x/apps.py", 'class XConfig:\n    verbose_label = "x"\n    # label = "x"\n')
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    with pytest.raises(Refused, match="does not label"):
+        repo.lines(repo.commit())
+
+
+def test_the_repo_must_be_the_top_level(repo):
+    repo.write(
+        "app/x/migrations/0002_b.py",
+        _migration("        migrations.CreateModel(name='B', fields=[]),"),
+    )
+    ref = repo.commit()
+    with pytest.raises(Refused, match="top level"):
+        release_lines(
+            repo=repo.root / "app", ref=ref, previous_release=repo.previous, helper=HELPER
+        )
 
 
 def test_the_command_line_says_refused_with_its_own_exit_code(repo, capsys):
