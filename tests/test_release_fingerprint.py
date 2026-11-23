@@ -897,6 +897,28 @@ def test_the_image_check_refuses_migration_modules_set_at_runtime(settings):
         check_loaded(root=ROOT, migration=None, sha256=None)
 
 
+def test_the_image_check_runs_what_migrate_runs_first(settings):
+    """The ninth review's bypass: code that ``migrate`` imports after ``django.setup()`` —
+    a URLconf, a system check, a management package — sets MIGRATION_MODULES."""
+    from django.core.checks import registry
+
+    def shadow(**kwargs):
+        settings.MIGRATION_MODULES = {"notifications": "app.notifications.shadow"}
+        return []
+
+    registry.registry.register(shadow)
+    try:
+        with pytest.raises(Refused, match="MIGRATION_MODULES is set at runtime"):
+            check_loaded(root=ROOT, migration=None, sha256=None)
+    finally:
+        registry.registry.registered_checks.discard(shadow)
+
+
+def test_the_image_check_refuses_a_root_without_the_project(tmp_path):
+    with pytest.raises(Refused, match="is --root the project root"):
+        check_loaded(root=tmp_path, migration=None, sha256=None)
+
+
 @pytest.mark.parametrize(
     "argv",
     [

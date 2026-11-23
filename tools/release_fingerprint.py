@@ -799,28 +799,41 @@ def check_loaded(*, root: Path, migration: str | None, sha256: str | None) -> li
     migration, that one is its app's only leaf and its bytes are the blob's.
 
     The release-mode check reads git; this reads what the image's Django will actually
-    run, so application code that moves an app's migrations at runtime (a
-    ``MIGRATION_MODULES`` set from a module, not ``config/settings.py``) cannot run a
-    migration the release mode never saw. Returns what it checked, one line per item.
+    run. It first imports what ``manage.py migrate`` imports before it loads migrations
+    (``django.setup()``, the system checks with their URLconf, every app's
+    ``management`` package), so a ``MIGRATION_MODULES`` set from any of those modules is
+    seen. Code that replaces the ``migrate`` command or Django's loader itself is hostile
+    application code, outside what this vouches for. Returns what it checked, one line
+    per item.
     """
     # Image mode only: the release mode runs without Django.
     import hashlib
+    import importlib
+    import importlib.util
 
     import django
     from django.apps import apps
     from django.conf import settings
+    from django.core import checks
     from django.db.migrations.loader import MigrationLoader
 
     if not apps.ready:
         django.setup()
+    checks.run_checks()
+    for config in apps.get_app_configs():
+        if importlib.util.find_spec(f"{config.name}.management") is not None:
+            importlib.import_module(f"{config.name}.management")
     if getattr(settings, "MIGRATION_MODULES", None):
         raise Refused(f"MIGRATION_MODULES is set at runtime: {settings.MIGRATION_MODULES!r}")
     project = (root / "app").resolve()
     loader = MigrationLoader(None, ignore_no_migrations=True)
     checked = []
-    for config in apps.get_app_configs():
+    own = [c for c in apps.get_app_configs() if c.name.startswith("app.")]
+    if not own:
+        raise Refused("no project app (app.*) is installed: is DJANGO_SETTINGS_MODULE set?")
+    for config in own:
         if not Path(config.path).resolve().is_relative_to(project):
-            continue
+            raise Refused(f"{config.name} is not under {project}: is --root the project root?")
         module, explicit = MigrationLoader.migrations_module(config.label)
         if explicit or module != f"{config.name}.migrations":
             raise Refused(f"{config.label}'s migrations load from {module}")

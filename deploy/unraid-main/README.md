@@ -1769,9 +1769,16 @@ if [ -n "$M" ]; then
   sha="$(git cat-file blob "$TARGET:app/${M%%.*}/migrations/${M#*.}.py" | sha256sum | cut -d' ' -f1)"
   set -- "$@" --migration "$M" --sha256 "$sha"
 fi
-docker run --rm --env-file "$WEB_ENV_FILE" --entrypoint python "juristid-main-web:$TAG" \
-  -I /app/tools/release_fingerprint.py "$@" < /dev/null || exit 1
+git show "$TARGET:tools/release_fingerprint.py" > "$tmp" || exit 1   # the same pinned copy
+chmod 644 "$tmp"
+docker run --rm --env-file "$WEB_ENV_FILE" -v "$tmp:/tmp/release_fingerprint.py:ro" \
+  --entrypoint python "juristid-main-web:$TAG" \
+  -I /tmp/release_fingerprint.py "$@" < /dev/null || exit 1
 ```
+
+(`$tmp` is the file from the snippet above, still within its `trap`.) Before it
+looks, it imports what `manage.py migrate` imports first — Django's set-up, the
+system checks with the URLconf, every app's `management` package.
 
 It refuses (exit 3) unless `MIGRATION_MODULES` is empty after Django starts, every
 project app's migrations load from its own `app/<app>/migrations/`, and — for a
