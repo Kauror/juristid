@@ -57,7 +57,7 @@ R84 = _migration(
 )
 
 
-def _lines(text: str, *, app: str = "x", previous: str = "0001_initial") -> list[str]:
+def _lines(text: str | bytes, *, app: str = "x", previous: str = "0001_initial") -> list[str]:
     return expected_lines(app=app, migration="0002_y", previous_leaf=previous, text=text)
 
 
@@ -364,6 +364,34 @@ def test_the_settings_text_and_quoted_help_still_pass():
     assert _lines(_migration(operations)) == leaf_lines("x", "0002_y", "0001_initial")
 
 
+@pytest.mark.parametrize("line", [0, 1], ids=["cookie-line-1", "cookie-line-2"])
+def test_a_coding_declaration_that_hides_code_is_refused(line):
+    """Under ``coding: utf-7`` a comment like ``#+AAo-print(...)`` is a newline and a call
+    to the interpreter, but plain text to a parse of the decoded string."""
+    lines = _migration(CREATE_A).split("\n")
+    lines.insert(line, "# -*- coding: utf-7 -*-")
+    lines.append("#+AAo-print(+ACI-hidden+ACI-)")
+    with pytest.raises(Refused, match="coding declaration"):
+        _lines("\n".join(lines).encode("utf-8"))
+
+
+def test_a_utf8_coding_declaration_is_fine():
+    text = "# -*- coding: utf-8 -*-\n" + _migration(CREATE_A)
+    assert "canonical_counts.x.A: None -> 0" in _lines(text.encode("utf-8"))
+
+
+def test_positional_arguments_on_an_operation_are_refused():
+    """``AlterModelOptions('a', {'managed': False})`` would skip the options check."""
+    with pytest.raises(Refused, match="positional"):
+        _lines(_migration("        migrations.AlterModelOptions('a', {'managed': False}),"))
+
+
+def test_a_model_name_must_start_with_a_capital():
+    """The fingerprint keys the count by the class name; a lower-case name would differ."""
+    with pytest.raises(Refused, match="not a model name"):
+        _lines(_migration("        migrations.CreateModel(name='probe', fields=[]),"))
+
+
 def test_a_decorator_or_a_metaclass_on_the_migration_class_is_refused():
     with pytest.raises(Refused, match="decorator or a class keyword"):
         _lines(_decorated(_migration(CREATE_A)))
@@ -585,9 +613,21 @@ def test_a_release_that_moves_the_fingerprints_exclusions_is_refused(repo):
         repo.lines(repo.commit())
 
 
-def test_migration_modules_moved_outside_app_is_refused(repo):
-    repo.write("config/settings.py", "MIGRATION_MODULES = {'x': 'elsewhere.migrations'}\n")
-    with pytest.raises(Refused, match="MIGRATION_MODULES"):
+@pytest.mark.parametrize(
+    ("path", "text"),
+    [
+        ("config/settings.py", "MIGRATION_MODULES = {'x': 'elsewhere.migrations'}\n"),
+        ("config/settings.py", "INSTALLED_APPS = ['newapp']\n"),
+        ("uv.lock", "version = 1\n"),
+        ("pyproject.toml", "[project]\nname = 'x'\n"),
+    ],
+    ids=["migration-modules", "installed-apps", "uv-lock", "pyproject"],
+)
+def test_a_release_that_can_bring_migrations_from_elsewhere_is_refused(repo, path, text):
+    """A dependency bump or a new installed app brings migrations outside app/: the
+    fingerprint's leaves cover every app, so such a release needs its lines by hand."""
+    repo.write(path, text)
+    with pytest.raises(Refused, match="review its lines by hand"):
         repo.lines(repo.commit())
 
 

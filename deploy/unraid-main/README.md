@@ -1721,7 +1721,7 @@ tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 git show "$TARGET:tools/release_fingerprint.py" > "$tmp" || exit 1
 rc=0
-FP_EXPECTED_LINES="$(python -I "$tmp" --repo "$(git rev-parse --show-toplevel)" \
+FP_EXPECTED_LINES="$(uv run --no-sync python -I "$tmp" --repo "$(git rev-parse --show-toplevel)" \
   --ref "$TARGET" --previous-release "$PREVIOUS")" || rc=$?
 if [ "$rc" -eq 3 ]; then echo "REFUSED: review this release's expected lines by hand"; exit 3; fi
 if [ "$rc" -ne 0 ]; then echo "the helper failed (exit $rc)"; exit "$rc"; fi

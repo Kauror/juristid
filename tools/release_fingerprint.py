@@ -470,15 +470,31 @@ def _created_model(call: ast.Call) -> str:
         refused = sorted(str(k) for k in keys & REFUSED_MODEL_OPTIONS)
         if refused:
             raise Refused(f"CreateModel {name.value} sets {', '.join(refused)}")
-    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name.value):
+    if not re.fullmatch(r"[A-Z][A-Za-z0-9_]*", name.value):
         raise Refused(f"not a model name: {name.value!r}")
     return name.value
 
 
-def analyse_migration(text: str, *, app: str, previous_leaf: str) -> list[str]:
+#: A PEP 263 coding declaration on line 1 or 2 (the interpreter honours it when it reads
+#: the file's bytes; a parse of already-decoded text would not).
+_CODING = re.compile(rb"^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)")
+
+
+def _source_bytes(source: str | bytes) -> bytes:
+    """The file as the interpreter will read it: bytes, with no coding declaration other
+    than UTF-8 (``# -*- coding: utf-7 -*-`` can hide code from any parse of the text)."""
+    raw = source.encode("utf-8") if isinstance(source, str) else source
+    for line in raw.splitlines()[:2]:
+        match = _CODING.match(line)
+        if match and match.group(1).lower().replace(b"_", b"-") not in {b"utf-8", b"utf8"}:
+            raise Refused(f"a coding declaration other than UTF-8: {match.group(1).decode()}")
+    return raw
+
+
+def analyse_migration(text: str | bytes, *, app: str, previous_leaf: str) -> list[str]:
     """The models one migration creates, in file order — or `Refused` (see the module)."""
     try:
-        tree = ast.parse(text)
+        tree = ast.parse(_source_bytes(text))
     except SyntaxError as error:
         raise Refused(f"not Python: {error.msg}") from error
     _check_imports(tree)
@@ -495,6 +511,9 @@ def analyse_migration(text: str, *, app: str, previous_leaf: str) -> list[str]:
     for item in operations.elts:
         if not (isinstance(item, ast.Call) and _is_migrations_attr(item.func)):
             raise Refused("an operation that is not a migrations.<Operation>(…) call")
+        if item.args:
+            # makemigrations writes every operation with keyword arguments only.
+            raise Refused(f"migrations.{_dotted(item.func)} is called with positional arguments")
         name = item.func.attr if isinstance(item.func, ast.Attribute) else ""
         if name not in SUPPORTED_OPERATIONS:
             raise Refused(f"unsupported operation: {name}")
@@ -543,7 +562,7 @@ def expected_lines(
     app: str,
     migration: str,
     previous_leaf: str,
-    text: str,
+    text: str | bytes,
     uncounted: frozenset[str] = frozenset(),
 ) -> list[str]:
     """Every line the release's fingerprint must show, C-sorted (``LC_ALL=C sort``)."""
@@ -647,6 +666,22 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
         raise Refused(
             f"the release changes the models the fingerprint does not count ({DEPLOYMENT_PATH})"
         )
+    # Migrations can also arrive with a dependency (Django or a package in uv.lock) or a
+    # newly installed app; the fingerprint's leaves cover every app, so any such change
+    # needs its lines reviewed by hand.
+    moved = _git(
+        repo,
+        "diff",
+        "--name-only",
+        previous_release,
+        ref,
+        "--",
+        ":(top)uv.lock",
+        ":(top)pyproject.toml",
+        ":(top)config/settings.py",
+    ).decode()
+    if moved.strip():
+        raise Refused(f"the release changes {', '.join(moved.split())}: review its lines by hand")
     if "MIGRATION_MODULES" in _show(repo, ref, "config/settings.py"):
         raise Refused("config/settings.py sets MIGRATION_MODULES: migrations may live outside app/")
     changed = _git(
@@ -680,7 +715,7 @@ def release_lines(*, repo: Path, ref: str, previous_release: str, helper: Path) 
         app=app,
         migration=migration,
         previous_leaf=previous_leaf,
-        text=_show(repo, ref, f"app/{app}/migrations/{migration}.py"),
+        text=_git(repo, "show", f"{ref}:app/{app}/migrations/{migration}.py"),
         uncounted=uncounted,
     )
 
@@ -717,7 +752,7 @@ def main(argv: list[str] | None = None) -> int:
                 app=args.app,
                 migration=args.migration_file.stem,
                 previous_leaf=args.previous_leaf,
-                text=args.migration_file.read_text(encoding="utf-8"),
+                text=args.migration_file.read_bytes(),
             )
     except Refused as error:
         sys.stderr.write(f"release_fingerprint: REFUSED: {error}\n")
