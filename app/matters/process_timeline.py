@@ -103,7 +103,7 @@ reopen (AUTH-003, docs/adr/0074 §13).
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -293,6 +293,10 @@ class ProcessStep:
     event_label: str = ""
     #: The record an event marker stands for, so two on one day stay two.
     ref: str = ""
+    #: That record itself, on a watched date's marker: the rail says where an
+    #: expected commencement came from and offers its removal (owner,
+    #: 2026-11-23). Not compared, so it never decides two steps' equality.
+    record: Any = field(default=None, compare=False)
 
     @property
     def is_event(self) -> bool:
@@ -595,6 +599,7 @@ def process_steps(
                     PASSED_DEADLINE_EVENT if record.has_passed(today_) else UPCOMING_DEADLINE_EVENT
                 ),
                 ref=str(record.pk),
+                record=record,
             )
         )
     for victory in facts.work_victories:

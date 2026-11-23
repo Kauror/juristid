@@ -33,6 +33,23 @@ from app.matters.legal_process import RailStep
 MAX_DOTS = 8
 
 
+def _is_expectation(item: Any) -> bool:
+    """Whether a `Tegevused` row is something expected rather than something done.
+
+    A watched date (`Oluline tähtaeg`, an estimated or planned commencement) and
+    a commencement are drawn on the rail as their own markers already; a row
+    dated ahead of today (`ChronologyMilestone.ahead`) has not happened. Neither
+    is an act of the phase, and counting them drew future commencements as dots
+    before the year they fall in (owner, 2026-11-23).
+    """
+    from app.intelligence.models import MatterEffectiveDate, MatterImportantDate
+
+    if isinstance(item.record, (MatterImportantDate, MatterEffectiveDate)):
+        return True
+    milestone = item.milestone
+    return milestone is not None and milestone.ahead
+
+
 def _what(item: Any) -> str:
     """A short name for one act, for the dot's tooltip."""
     development = item.procedural_development
@@ -61,6 +78,7 @@ def acts_by_phase(timeline: EpisodeTimeline | None, pattern: Any) -> dict[str, P
     """Each phase's acts, from the page's grouped `Tegevused`, newest group's anchor."""
     if timeline is None or pattern is None:
         return {}
+    now = timezone.now()
     gathered: dict[str, list[tuple[Any, str]]] = {}
     anchors: dict[str, str] = {}
     for group in timeline.groups:
@@ -74,7 +92,9 @@ def acts_by_phase(timeline: EpisodeTimeline | None, pattern: Any) -> dict[str, P
         # Groups come newest first: the first seen is the latest period.
         anchors.setdefault(phase, group.dom_id)
         for item in group.items:
-            if is_period_boundary(item):
+            if is_period_boundary(item) or _is_expectation(item):
+                continue
+            if item.occurred_at is not None and item.occurred_at > now:
                 continue
             what = _what(item)
             if not what:
