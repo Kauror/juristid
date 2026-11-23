@@ -1978,6 +1978,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
         "I: TL-02 release of a held Lovable closure, may_open_system, verified "
         "administrator actor, fresh proof, digest-bound"
     ),
+    "haldus:data_sync_names": (
+        "I: pins a Lovable owner name to a person (LovableOwnerAlias), may_open_system, "
+        "verified administrator actor, fresh proof, audited; writes no Teema"
+    ),
     "haldus:data_sync_onenote_verify": "I: records a capture check for the host, may_open_system",
     "haldus:data_sync_onenote_import": "I: records a verified import for the host, may_open_system",
     "haldus:onenote_holds": (

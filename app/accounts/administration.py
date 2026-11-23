@@ -126,6 +126,11 @@ NOT_PENDING = "Konto ei oota kinnitust ega kutset."
 NOT_ACTIVATED = "Konto ei ole veel aktiveeritud."
 ALREADY_INACTIVE = "Konto on juba välja lülitatud."
 ALREADY_ACTIVE = "Konto on juba aktiivne."
+#: Switching off a person who still holds open work, unconfirmed (docs/adr/0220 §4).
+OPEN_WORK_REMAINS = (
+    "Sellel inimesel on veel {work}. Anna see töö enne üle (Lovable'i teemad Lovable'is) "
+    "või kinnita, et lülitad konto välja ja töö jääb ootele."
+)
 BOOTSTRAP_ALREADY_DONE = (
     "Haldur on juba olemas. Esimese halduri määramine on ühekordne; edasi annavad "
     "haldusõigusi haldurid ise."
@@ -956,12 +961,20 @@ def update_account(
 
 
 @transaction.atomic
-def deactivate_account(*, actor: Actor, user: User, reason: str = "") -> User:
+def deactivate_account(
+    *, actor: Actor, user: User, reason: str = "", leave_open_work: bool = False
+) -> User:
     """Switch an account off. Never a deletion.
 
     The register goes on naming the person on the work they did; their links
     stop working, their sessions end at their next request, and no
     authentication mode will sign them in.
+
+    **A person who still holds open work is switched off only knowingly**
+    (docs/adr/0220 §4): open Teemad they own and steps they answer for stay
+    theirs, on nobody's desk, until somebody hands them over. Without
+    ``leave_open_work`` that is refused with the counts; with it, the counts go
+    into the audit row and the work appears on «Töö ilma aktiivse vastutajata».
     """
     actor = _begin(actor, Capability.MANAGE_ACCOUNTS, subject=user, action="deactivate_account")
     user = User.objects.select_for_update().get(pk=user.pk)
@@ -975,6 +988,11 @@ def deactivate_account(*, actor: Actor, user: User, reason: str = "") -> User:
         _require_actor(
             actor, Capability.DELEGATE_ADMINISTRATION, subject=user, action="deactivate_account"
         )
+    from app.matters.held_work import held_work
+
+    work = held_work(user)
+    if work.any and not leave_open_work:
+        raise AdministrationRefused(OPEN_WORK_REMAINS.format(work=work.sentence()))
     delegates_before = len(_delegating_administrators())
     usable_before = _continuity_counts()
     user.is_active = False
@@ -989,7 +1007,18 @@ def deactivate_account(*, actor: Actor, user: User, reason: str = "") -> User:
         event_type=SecurityEventType.ACCOUNT_DEACTIVATED,
         actor=actor,
         subject=user,
-        detail={"reason": reason.strip()[:500]},
+        detail={
+            "reason": reason.strip()[:500],
+            **(
+                {
+                    "open_teemad": work.teemad,
+                    "open_lovable_teemad": work.lovable_teemad,
+                    "open_steps": work.steps,
+                }
+                if work.any
+                else {}
+            ),
+        },
     )
     return user
 

@@ -254,3 +254,5 @@ class DeactivateForm(forms.Form):
         max_length=500,
         widget=forms.TextInput(attrs={"class": "field__input"}),
     )
+    #: The person still holds open work and it stays where it is (docs/adr/0220 §4).
+    leave_open_work = forms.BooleanField(required=False)

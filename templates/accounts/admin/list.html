@@ -13,7 +13,7 @@
 
 {% block haldus_title %}Kasutajad{% endblock %}
 {% block haldus_context %}<span class="pagehead__context">Haldus</span>{% endblock %}
-{% block haldus_actions %}<a class="button button--primary" href="{% url 'account_admin:create' %}">+ Uus kasutaja</a>{% endblock %}
+{% block haldus_actions %}<a class="button" href="{% url 'account_admin:without_owner' %}">Töö ilma aktiivse vastutajata</a> <a class="button button--primary" href="{% url 'account_admin:create' %}">+ Uus kasutaja</a>{% endblock %}
 
 {% block haldus_content %}
 

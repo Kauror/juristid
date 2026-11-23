@@ -474,3 +474,12 @@ Teemad went missing»), which reads as mass deletion. Now:
   trusted reading both checks are INDETERMINATE. «reads live topics» fails on zero rows; a «hidden» check is never
   PASS from the same empty answer; and when every failure is a lost or narrowed read it says so — the remedy is a
   SELECT-only read path in Lovable, never a staff profile or role for the identity (that would make it write-capable).
+
+## 13. Amendment 2026-11-23: a recorded hand-over has its own limit (ADR 0220 §2)
+
+A Teema whose only source change tonight is an owner Lovable recorded as handed over
+(its latest `topic_responsible_change` names the same, resolved lawyer) counts against
+`MAX_HANDOVER_MATTERS` (150), not `MAX_CHANGED_MATTERS` (20). Every other limit of §10.8
+and §10.14 is unchanged, and so is `MAX_CHANGED_MATTERS` for every other change. The
+owner chose this on 23.11.2026 ahead of a change of lawyers; Lovable's «Teemade
+üleandmine» moves 58–84 Teemad per lawyer at once.

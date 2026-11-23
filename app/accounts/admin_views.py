@@ -58,6 +58,7 @@ from app.core.authorization import (
     is_technical_administrator_account,
 )
 from app.core.client_ip import client_ip
+from app.matters.held_work import held_work, work_without_active_owner
 
 #: The answer every refused administration request gets.
 NOT_HERE = "Lehte ei leitud."
@@ -502,6 +503,7 @@ def _context(request: HttpRequest, person: User, form: AccountForm | None = None
         "recovery_codes_left": mfa.remaining_recovery_codes(person),
         "email_delivery_enabled": mail.delivery_enabled(),
         "history": _history(person),
+        "held_work": held_work(person),
         "nav_active": "haldus",
     }
 
@@ -601,8 +603,13 @@ def _cancel_invitation(actor: VerifiedActor, person: User, request: HttpRequest)
 
 def _deactivate(actor: VerifiedActor, person: User, request: HttpRequest) -> str:
     form = DeactivateForm(request.POST)
-    reason = form.cleaned_data["reason"] if form.is_valid() else ""
-    administration.deactivate_account(actor=actor, user=person, reason=reason)
+    valid = form.is_valid()
+    administration.deactivate_account(
+        actor=actor,
+        user=person,
+        reason=form.cleaned_data["reason"] if valid else "",
+        leave_open_work=bool(valid and form.cleaned_data["leave_open_work"]),
+    )
     return "Konto on välja lülitatud. Selle seansid lõpetati."
 
 
@@ -621,6 +628,21 @@ cancel_invitation = _account_action(_cancel_invitation)
 deactivate = _account_action(_deactivate, keep=DeactivateForm.base_fields)
 reactivate = _account_action(_reactivate)
 reset_second_factor = _account_action(_reset_second_factor)
+
+
+@never_cache
+@account_admin_required
+@require_http_methods(["GET", "HEAD"])
+def without_owner(request: HttpRequest) -> HttpResponse:
+    """«Töö ilma aktiivse vastutajata» (docs/adr/0220 §4): every switched-off
+    person who still owns an open Teema or answers for a live step, and the open
+    Teemad with no owner. Counts only; each person links to their open Teemad
+    in the register. Reads only."""
+    return render(
+        request,
+        "accounts/admin/without_owner.html",
+        {**_shell(request), "orphaned": work_without_active_owner()},
+    )
 
 
 @never_cache

@@ -1,0 +1,100 @@
+{% extends "haldus/base.html" %}
+{% block title %}Lovable'i nimed · Andmete sünkroonimine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  «Lovable'i nimed» (docs/adr/0220 §3): who each Lovable owner name is in
+  Juristid, as the next night will read it. Lovable names a lawyer by the text
+  their account signs in with; a name the night cannot place keeps the Teema
+  with its old owner. Check a new colleague's name here before Lovable hands
+  them work, and pin a name by hand when it differs from their Juristid name.
+{% endcomment %}
+
+{% block haldus_content %}
+  {% include "haldus/_data_sync_nav.html" %}
+  <section class="panel" aria-labelledby="dsync-names">
+    <h2 class="dsync__title" id="dsync-names">Lovable'i nimed</h2>
+    <p class="dsync__effect">Lovable nimetab teema vastutaja tema Lovable'i kasutajanimega. Öine sünkroonimine otsib igale nimele ühe Juristide inimese: esmalt käsitsi seotud nimi, siis varasema sünkroonimise vaste, siis täpselt sama nimi Juristides. Kui inimest ei leita, jääb teema senisele vastutajale ja ootab ülevaatust.{% if read_at %} Nimed on viimasest lugemisest ({{ read_at|date:"j.n.Y H:i" }}).{% endif %}</p>
+    {% if rows %}
+      {% if problems %}<p><span class="statechip statechip--problem">{{ problems }} nime ei leia inimest</span></p>{% endif %}
+      <div class="accttable">
+        <table class="data-table dsync__table">
+          <thead>
+            <tr><th scope="col">Nimi Lovable'is</th><th scope="col">Teemasid</th><th scope="col">Üle antud</th><th scope="col">Juristides</th><th scope="col">Kuidas</th><th scope="col">Seis</th></tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+              <tr>
+                <td>{{ row.name }}</td>
+                <td>{{ row.topics }}</td>
+                <td>{{ row.handed_over|default:"—" }}</td>
+                <td>{{ row.person_name|default:"—" }}</td>
+                <td>{{ row.via_text|default:"—" }}</td>
+                <td>{% if row.ok %}<span class="statechip statechip--ok">{{ row.answer_text }}</span>{% else %}<span class="statechip statechip--problem">{{ row.answer_text }}</span>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p>Lovable'i lugemist ei ole veel salvestatud.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="dsync-name-check">
+    <h2 class="dsync__title" id="dsync-name-check">Kontrolli nime</h2>
+    <p class="dsync__effect">Uue kolleegi puhul kirjuta tema nimi täpselt nii, nagu see on Lovable'is, enne kui talle seal teemasid üle antakse.</p>
+    <form method="get" action="{% url 'haldus:data_sync_names' %}" class="form dsync__form">
+      <label class="field field--inline">
+        <span class="field__label">Nimi Lovable'is</span>
+        <input class="field__input" type="text" name="nimi" value="{{ typed }}" maxlength="200">
+      </label>
+      <div class="form__actions"><button type="submit" class="button">Kontrolli</button></div>
+    </form>
+    {% if checked %}
+      <dl class="detailgrid">
+        <dt>Nimi</dt><dd>{{ checked.name }}</dd>
+        <dt>Seis</dt><dd>{% if checked.ok %}<span class="statechip statechip--ok">{{ checked.answer_text }}</span>{% else %}<span class="statechip statechip--problem">{{ checked.answer_text }}</span>{% endif %}</dd>
+        <dt>Juristides</dt><dd>{{ checked.person_name|default:"—" }}{% if checked.via_text %} ({{ checked.via_text }}){% endif %}</dd>
+      </dl>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="dsync-name-pin">
+    <h2 class="dsync__title" id="dsync-name-pin">Seo nimi inimesega</h2>
+    <p class="dsync__effect">Kui inimese nimi Lovable'is erineb tema nimest Juristides, seo see siin. Seos kehtib alates järgmisest sünkroonimisest ega muuda olemasolevaid teemasid.</p>
+    <form method="post" action="{% url 'haldus:data_sync_names' %}" class="form dsync__form">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="pin">
+      <label class="field field--inline">
+        <span class="field__label">Nimi Lovable'is</span>
+        <input class="field__input" type="text" name="name" value="{{ typed }}" maxlength="200" required>
+      </label>
+      <label class="field field--inline">
+        <span class="field__label">Inimene Juristides</span>
+        <select class="field__input field__input--compact" name="person" required>
+          <option value="">— vali —</option>
+          {% for person in people %}<option value="{{ person.pk }}">{{ person.display_name }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="field field--inline">
+        <span class="field__label">Märkus</span>
+        <input class="field__input" type="text" name="note" maxlength="500">
+      </label>
+      <div class="form__actions"><button type="submit" class="button button--primary">Seo</button></div>
+    </form>
+    <h3 class="dsync__title">Käsitsi seotud nimed</h3>
+    <ul class="dsync__requests">
+      {% for alias in pinned %}
+        <li>
+          «{{ alias.name }}» → {{ alias.user.display_name }}{% if alias.note %} · {{ alias.note }}{% endif %}
+          <form method="post" action="{% url 'haldus:data_sync_names' %}" class="dsync__form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="unpin">
+            <input type="hidden" name="alias" value="{{ alias.pk }}">
+            <button type="submit" class="button button--quiet">Eemalda seos</button>
+          </form>
+        </li>
+      {% empty %}<li>Käsitsi seotud nimesid ei ole.</li>{% endfor %}
+    </ul>
+  </section>
+{% endblock %}
