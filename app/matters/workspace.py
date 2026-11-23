@@ -2784,8 +2784,10 @@ def edit_matter(
     )
 
     with transaction.atomic(), stage_episode_scope():
-        # Every step below works on the row the guard locked, never on the
-        # instance the caller loaded before the transaction (HR-14): each
+        # Every step below works on the row the guard locked (or re-takes it
+        # by pk and writes back onto it, as `change_response_deadline` does),
+        # never on the instance the caller loaded before the transaction
+        # (HR-14): each
         # service compares the posted value with what is committed, so its
         # «from» in the audit is the stored value and a fact derived from the
         # row (`Koja algatus`, whether the file is open) is judged on the
