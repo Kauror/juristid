@@ -116,14 +116,30 @@
         <div class="dangerzone">
           <p class="dangerzone__title">Lülita konto välja</p>
           <p class="dangerzone__help">Konto ei kustu: varasem töö jääb tema nimele. Seansid lõpetatakse ja lingid tühistatakse.</p>
+          {% if held_work.any %}
+            <p class="dangerzone__help" data-held-work>Tal on veel {{ held_work.sentence }}. Anna need enne üle: Lovable'i teemad Lovable'is (Kasutajad → Üleandmine), ülejäänud teema lehel. Kui lülitad konto ikkagi välja, jääb töö ootele ja on näha lehel «Töö ilma aktiivse vastutajata».</p>
+          {% endif %}
           <form method="post" action="{% url 'account_admin:deactivate' person.pk %}" class="dangerzone__actions">
             {% csrf_token %}
             <label class="visually-hidden" for="valjalulitamise-pohjus">Põhjus</label>
             <input class="field__input field__input--compact" id="valjalulitamise-pohjus" type="text" name="reason" maxlength="500" placeholder="Põhjus" value="{{ deactivation_reason }}">
+            {% if held_work.any %}
+              <label class="field field--inline"><input type="checkbox" name="leave_open_work" value="on" required> Lülitan välja ja töö jääb ootele</label>
+            {% endif %}
             <button type="submit" class="button button--danger">Lülita välja</button>
           </form>
         </div>
       {% endif %}
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="pooleli-too">
+    <h2 class="acctsection__title" id="pooleli-too">Pooleli töö</h2>
+    {% if held_work.any %}
+      <p>{{ held_work.sentence|capfirst }}.{% if held_work.teemad %} <a href="{% url 'matters:matter_list' %}?olek=avatud&amp;vastutaja={{ person.pk }}">Ava tema avatud teemad</a>{% endif %}</p>
+      {% if held_work.lovable_teemad %}<p class="acctnote">Lovable'i teemade vastutaja muudetakse Lovable'is (Kasutajad → Üleandmine); öine sünkroonimine toob muutuse siia.</p>{% endif %}
+    {% else %}
+      <p>Avatud teemasid ega pooleli samme ei ole.</p>
     {% endif %}
   </section>
 

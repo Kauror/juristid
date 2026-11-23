@@ -52,6 +52,8 @@ from app.legacy_import.lovable_sync_models import (
     LovableSyncControl,
     LovableSyncDecision,
     LovableSyncRun,
+    LovableSyncSnapshot,
+    LovableSyncState,
     SyncMode,
     SyncOutcome,
     SyncRunStatus,
@@ -2176,3 +2178,192 @@ def refuse_unpermitted(lane: str, *, now: dt.datetime | None = None) -> DataSync
 
 def lanes() -> Iterable[str]:
     return SyncRequestLane.values
+
+
+# ---------------------------------------------------------------------------
+# Lovable'i nimed: who each Lovable owner name is in Juristid (docs/adr/0220 §3)
+# ---------------------------------------------------------------------------
+
+#: What each answer reads as on the page.
+OWNER_ANSWER_TEXT = {
+    "": "Leitud",
+    "UNRESOLVED_OWNER": "Ei leitud",
+    "NOT_ASSIGNABLE": "Inimene ei saa tööd hoida",
+}
+OWNER_VIA_TEXT = {
+    "ALIAS": "seotud käsitsi",
+    "PAIR": "varasema sünkroonimise järgi",
+    "NAME": "sama nimi Juristides",
+    "": "",
+}
+ALIAS_NAME_MISSING = "Kirjuta nimi täpselt nii, nagu see on Lovable'is."
+ALIAS_PERSON_MISSING = "Vali inimene, kes on selle nimega Lovable'is."
+ALIAS_PERSON_REFUSED = (
+    "Seda inimest ei saa siduda: konto ei ole aktiivne või ei saa teemasid vastutajana hoida."
+)
+ALIAS_NOT_FOUND = "Seda seost ei ole enam olemas."
+
+
+@dataclass(frozen=True)
+class OwnerNameRow:
+    """One Lovable owner name and its answer tonight."""
+
+    name: str
+    topics: int
+    handed_over: int
+    answer: Any
+    alias: Any = None
+
+    @property
+    def ok(self) -> bool:
+        return not self.answer.code
+
+    @property
+    def answer_text(self) -> str:
+        return OWNER_ANSWER_TEXT.get(self.answer.code, self.answer.code)
+
+    @property
+    def via_text(self) -> str:
+        return OWNER_VIA_TEXT.get(self.answer.via, "")
+
+    @property
+    def person_name(self) -> str:
+        return str(getattr(self.answer.person, "display_name", "") or "")
+
+
+def _latest_reading() -> dict[str, Any]:
+    """The newest stored reading's document, or ``{}``."""
+    snapshot = LovableSyncSnapshot.objects.order_by("-taken_at").only("document").first()
+    return dict(snapshot.document or {}) if snapshot is not None else {}
+
+
+def _bundles(document: dict[str, Any]) -> Iterable[dict[str, Any]]:
+    yield from (document.get("cohort") or {}).values()
+    yield from ((document.get("new_topics") or {}).get("cohort") or {}).values()
+
+
+def owner_names() -> tuple[list[OwnerNameRow], Any]:
+    """Every owner name in the newest reading, and every name its responsible
+    changes hand work to, each with tonight's answer (`OwnerResolver.explain`);
+    names the night cannot place first. Also the reading's time (or ``None``).
+    Reads only."""
+    from app.legacy_import.lovable_sync import OwnerResolver, name_key, operative_owner
+    from app.legacy_import.lovable_sync_models import LovableOwnerAlias
+
+    snapshot = LovableSyncSnapshot.objects.order_by("-taken_at").only("taken_at").first()
+    document = _latest_reading()
+    shown: dict[str, str] = {}
+    topics: dict[str, int] = {}
+    handed: dict[str, int] = {}
+    for bundle in _bundles(document):
+        name = operative_owner(bundle.get("row") or {})
+        if name:
+            key = name_key(name)
+            shown.setdefault(key, name)
+            topics[key] = topics.get(key, 0) + 1
+        for change in bundle.get("responsible_changes") or []:
+            new = str(change.get("uus_vastutaja") or "").strip()
+            if new and name_key(new) not in {"vastutaja puudub", "vastutaja puudub."}:
+                key = name_key(new)
+                shown.setdefault(key, " ".join(new.split()))
+                handed[key] = handed.get(key, 0) + 1
+    aliases = {a.name_key: a for a in LovableOwnerAlias.objects.select_related("user")}
+    for key, alias in aliases.items():
+        shown.setdefault(key, alias.name)
+    resolver = OwnerResolver(LovableSyncState.objects.only("applied"))
+    rows = [
+        OwnerNameRow(
+            name=name,
+            topics=topics.get(key, 0),
+            handed_over=handed.get(key, 0),
+            answer=resolver.explain(name),
+            alias=aliases.get(key),
+        )
+        for key, name in shown.items()
+    ]
+    rows.sort(key=lambda r: (r.ok, -r.topics, r.name.casefold()))
+    return rows, (snapshot.taken_at if snapshot is not None else None)
+
+
+def explain_owner_name(name: str) -> OwnerNameRow | None:
+    """How one typed name would resolve tonight, or ``None`` for a blank one."""
+    from app.legacy_import.lovable_sync import OwnerResolver, name_key
+    from app.legacy_import.lovable_sync_models import LovableOwnerAlias
+
+    name = " ".join(str(name or "").split())
+    if not name:
+        return None
+    resolver = OwnerResolver(LovableSyncState.objects.only("applied"))
+    alias = LovableOwnerAlias.objects.filter(name_key=name_key(name)).select_related("user")
+    return OwnerNameRow(
+        name=name, topics=0, handed_over=0, answer=resolver.explain(name), alias=alias.first()
+    )
+
+
+def pin_owner_name(
+    actor: Any,
+    *,
+    name: str,
+    person: Any,
+    note: str = "",
+    client: dict[str, Any] | None = None,
+) -> Any:
+    """Pin a Lovable owner name to one person (`LovableOwnerAlias`): a new row,
+    or the existing one for the same name moved to ``person``. Audited. Refuses
+    a blank name and a person who may not hold work."""
+    from app.accounts.selectors import is_assignable_business_user
+    from app.legacy_import.lovable_sync import name_key
+    from app.legacy_import.lovable_sync_models import LovableOwnerAlias
+
+    name = " ".join(str(name or "").split())[:200]
+    if not name:
+        raise _refuse(actor, "OWNER_ALIAS", "NAME_MISSING", ALIAS_NAME_MISSING, client)
+    if person is None:
+        raise _refuse(actor, "OWNER_ALIAS", "PERSON_MISSING", ALIAS_PERSON_MISSING, client)
+    if not is_assignable_business_user(person):
+        raise _refuse(actor, "OWNER_ALIAS", "PERSON_REFUSED", ALIAS_PERSON_REFUSED, client)
+    with transaction.atomic():
+        alias = (
+            LovableOwnerAlias.objects.select_for_update().filter(name_key=name_key(name)).first()
+        )
+        before = str(alias.user_id) if alias is not None else None
+        if alias is None:
+            alias = LovableOwnerAlias(name_key=name_key(name))
+        alias.name = name
+        alias.user = person
+        alias.note = str(note or "").strip()[:500]
+        alias.created_by = _user_of(actor) if before is None else alias.created_by
+        alias.save()
+        _audit(
+            actor=actor,
+            action="LOVABLE_OWNER_ALIAS_PINNED",
+            subject=person,
+            client=client,
+            name=name,
+            previous_user=before,
+        )
+    return alias
+
+
+def unpin_owner_name(actor: Any, *, alias_id: Any, client: dict[str, Any] | None = None) -> str:
+    """Remove one pinned name; the night falls back to its other rules. Audited."""
+    from app.legacy_import.lovable_sync_models import LovableOwnerAlias
+
+    with transaction.atomic():
+        alias = (
+            LovableOwnerAlias.objects.select_for_update().filter(pk=alias_id).first()
+            if alias_id
+            else None
+        )
+        if alias is None:
+            raise _refuse(actor, "OWNER_ALIAS", "NOT_FOUND", ALIAS_NOT_FOUND, client)
+        name, user_id = alias.name, str(alias.user_id)
+        alias.delete()
+        _audit(
+            actor=actor,
+            action="LOVABLE_OWNER_ALIAS_REMOVED",
+            client=client,
+            name=name,
+            previous_user=user_id,
+        )
+    return name

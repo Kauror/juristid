@@ -1,0 +1,51 @@
+{% extends "haldus/base.html" %}
+{% block title %}Töö ilma aktiivse vastutajata · Kasutajad · {{ application_name }}{% endblock %}
+
+{% comment %}
+  «Töö ilma aktiivse vastutajata» (docs/adr/0220 §4): every switched-off person
+  who still owns an open Teema or answers for a live step, and the open Teemad
+  with no owner at all. Counts only — no title or step text — and each person
+  links to their open Teemad in the register, which applies its own access rules.
+  Reached only through `may_administer_accounts`.
+{% endcomment %}
+
+{% block haldus_title %}Töö ilma aktiivse vastutajata{% endblock %}
+{% block haldus_context %}<span class="pagehead__context"><a href="{% url 'account_admin:list' %}">Kasutajad</a></span>{% endblock %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="ilma-vastutajata">
+    <h2 class="acctsection__title" id="ilma-vastutajata">Välja lülitatud inimeste pooleli töö</h2>
+    <p class="acctnote">Lovable'i teemade vastutaja muudetakse Lovable'is (Kasutajad → Üleandmine); öine sünkroonimine toob muutuse siia. Ülejäänud teemad antakse üle teema lehel.</p>
+    {% if orphaned.holders %}
+      <div class="accttable">
+        <table class="data-table">
+          <thead>
+            <tr><th scope="col">Inimene</th><th scope="col">Avatud teemad</th><th scope="col">Neist Lovable'is</th><th scope="col">Pooleli sammud</th><th scope="col"><span class="visually-hidden">Teemad</span></th></tr>
+          </thead>
+          <tbody>
+            {% for holder in orphaned.holders %}
+              <tr>
+                <td><a href="{% url 'account_admin:detail' holder.person.pk %}">{{ holder.person.display_name }}</a></td>
+                <td>{{ holder.work.teemad }}</td>
+                <td>{{ holder.work.lovable_teemad }}</td>
+                <td>{{ holder.work.steps }}</td>
+                <td>{% if holder.work.teemad %}<a href="{% url 'matters:matter_list' %}?olek=avatud&amp;vastutaja={{ holder.person.pk }}">Ava teemad</a>{% endif %}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p>Välja lülitatud inimestel ei ole avatud teemasid ega pooleli samme.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel" aria-labelledby="vastutajata">
+    <h2 class="acctsection__title" id="vastutajata">Avatud teemad ilma vastutajata</h2>
+    {% if orphaned.unowned_teemad %}
+      <p>{{ orphaned.unowned_teemad }} avatud {% if orphaned.unowned_teemad == 1 %}teema{% else %}teemat{% endif %}{% if orphaned.unowned_lovable_teemad %} (neist {{ orphaned.unowned_lovable_teemad }} Lovable'is){% endif %}. <a href="{% url 'matters:matter_list' %}?olek=avatud&amp;vastutaja=puudub">Ava need teemad</a></p>
+    {% else %}
+      <p>Kõigil avatud teemadel on vastutaja.</p>
+    {% endif %}
+  </section>
+{% endblock %}

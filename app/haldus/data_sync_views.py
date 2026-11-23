@@ -50,6 +50,7 @@ PAGES = (
     ("ulevaade", "Ülevaade", "haldus:data_sync"),
     ("erinevused", "Erinevused", "haldus:data_sync_differences"),
     ("ajalugu", "Ajalugu", "haldus:data_sync_history"),
+    ("nimed", "Lovable'i nimed", "haldus:data_sync_names"),
     ("lovable", "Lovable'i üksikasjad", "haldus:lovable"),
 )
 
@@ -451,3 +452,71 @@ def onenote_import(request: HttpRequest) -> HttpResponseBase:
         )
         return redirect(f"{reverse('haldus:data_sync')}#onenote")
     return render(request, "haldus/data_sync_import.html", context)
+
+
+@never_cache
+@require_http_methods(["GET", "HEAD", "POST"])
+def owner_names(request: HttpRequest) -> HttpResponseBase:
+    """«Lovable'i nimed» (docs/adr/0220 §3): every owner name in the newest
+    reading and who the night takes it to be; a name typed to check before any
+    Teema carries it; and the names pinned by hand. GET reads only. POST pins a
+    name to a person or removes a pin, after a fresh proof, audited."""
+    from app.accounts.selectors import assignable_business_users
+    from app.legacy_import.lovable_sync_models import LovableOwnerAlias
+
+    _require(request)
+    back = reverse("haldus:data_sync_names")
+    if request.method == "POST":
+        proof = _fresh_proof(request, back)
+        if proof is not None:
+            return proof
+        actor = _actor(request)
+        try:
+            if request.POST.get("action") == "unpin":
+                name = sync_admin.unpin_owner_name(
+                    actor,
+                    alias_id=_uuid_or_none(request.POST.get("alias", "")),
+                    client=_client(request),
+                )
+                messages.success(request, f"Nime «{name}» käsitsi seos on eemaldatud.")
+            else:
+                chosen = _uuid_or_none(request.POST.get("person", ""))
+                person = assignable_business_users().filter(pk=chosen).first() if chosen else None
+                alias = sync_admin.pin_owner_name(
+                    actor,
+                    name=request.POST.get("name", ""),
+                    person=person,
+                    note=request.POST.get("note", ""),
+                    client=_client(request),
+                )
+                messages.success(
+                    request,
+                    f"Lovable'i nimi «{alias.name}» on seotud: {alias.user.display_name}. "
+                    "See kehtib alates järgmisest sünkroonimisest.",
+                )
+        except DomainError as error:
+            messages.error(request, str(error))
+        return redirect(back)
+    rows, read_at = sync_admin.owner_names()
+    typed = str(request.GET.get("nimi", "")).strip()
+    context = _context(
+        request,
+        "nimed",
+        rows=rows,
+        problems=sum(1 for row in rows if not row.ok),
+        read_at=read_at,
+        typed=typed,
+        checked=sync_admin.explain_owner_name(typed) if typed else None,
+        people=assignable_business_users().order_by("display_name"),
+        pinned=LovableOwnerAlias.objects.select_related("user").order_by("name_key"),
+    )
+    return render(request, "haldus/data_sync_names.html", context)
+
+
+def _uuid_or_none(raw: str) -> str | None:
+    import uuid
+
+    try:
+        return str(uuid.UUID(str(raw)))
+    except ValueError:
+        return None

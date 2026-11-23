@@ -52,6 +52,7 @@ urlpatterns = [
         name="data_sync_release_hold",
     ),
     path("andmete-sunkroonimine/ajalugu/", data_sync_views.history, name="data_sync_history"),
+    path("andmete-sunkroonimine/nimed/", data_sync_views.owner_names, name="data_sync_names"),
     path(
         "andmete-sunkroonimine/onenote/kontrolli/",
         data_sync_views.onenote_verify,

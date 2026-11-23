@@ -693,3 +693,39 @@ def current_opinion_outcomes(matter_ids: Any = None) -> dict[Any, LovableOpinion
         if row.outcome != OpinionOutcome.CLEARED:
             out[row.matter_id] = row
     return out
+
+
+class LovableOwnerAlias(BaseModel):
+    """A Lovable owner name pinned to one Juristid person (docs/adr/0220 §3).
+
+    Lovable names a Teema's lawyer by the text its own accounts sign in with
+    («Marko»); Juristid by a person («Marko Udras»). The night pairs them by the
+    names earlier baselines agreed on, then by an exact display name
+    (`OwnerResolver`). When neither can — a new lawyer whose Lovable name is not
+    their Juristid name, a nickname, a spelling — a technical administrator pins
+    the name here, and the night reads this first. Matching ignores case,
+    repeated spaces and õäöüšž (`lovable_sync.name_key`), so one row covers
+    every spelling of a name that differs only so. A pinned person who is not
+    active, or may not hold work, is no answer: the hold says so.
+
+    Pinning changes no Teema now. It is read only when an owner in Lovable
+    changes, or a new topic arrives, from the next run on."""
+
+    name = models.CharField(max_length=200)
+    name_key = models.CharField(max_length=200, unique=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    note = models.CharField(max_length=500, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+
+    class Meta:
+        verbose_name = "Lovable'i nime vaste"
+        ordering = ["name_key"]
+
+    def __str__(self) -> str:
+        return f"{self.name} → {self.user_id}"

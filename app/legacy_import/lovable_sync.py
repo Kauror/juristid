@@ -54,6 +54,9 @@ source or derived change a night; over it the whole night is REVIEW_ONLY);
 ``MAX_RESTORED_MATTERS`` (100 restore-only Teemad; over it only the restores
 wait, `RESTORE_BREAKER`); both may be raised for one supervised run
 (`run_sync(max_changed=…, max_restored=…)`, recorded in the run's counts).
+``MAX_HANDOVER_MATTERS`` (150) is the hand-overs' own limit: a Teema whose only
+source change is an owner Lovable recorded as handed over counts there, not
+against the 20 (`is_handover`, docs/adr/0220 §2).
 ``MAX_MISSING`` (5) separates a deleted topic from a broken read and fails the
 run; ``MAX_NEW_TOPICS`` (10) holds the night's creations. ``MAX_NEW_HOLDS``
 (25 more held fields than the previous run) replaced ``MAX_NEW_CONFLICTS``,
@@ -187,6 +190,15 @@ MAX_CHANGED_MATTERS = 20
 #: of local edits never stops the source's own changes; over it, the restores
 #: wait (`RESTORE_BREAKER`) and the source changes are written.
 MAX_RESTORED_MATTERS = 100
+#: Teemad one night may hand to another lawyer (docs/adr/0220 §2, owner decision
+#: 23.11.2026): a Teema whose only source change is its owner, to a lawyer the
+#: night resolves, *and* for which Lovable recorded that hand-over in its
+#: responsible-change log (`recorded_handover`). Lovable's «Teemade üleandmine»
+#: moves a lawyer's whole desk at once (58–84 Teemad each in November 2026), so
+#: under `MAX_CHANGED_MATTERS` alone every such night would stop. These count
+#: here and not there; anything else on the same Teema makes it an ordinary
+#: change. Over this limit the night is REVIEW_ONLY (`BREAKER`), as for the other.
+MAX_HANDOVER_MATTERS = 150
 #: Held fields (REVIEW_REQUIRED or CONFLICT, any reason: a technical hold, an
 #: import hold or a code no rule names) stay until a person or the source moves
 #: them, so this breaker is on the *rise* since the previous run that recorded
@@ -597,6 +609,43 @@ def operative_owner(row: dict[str, Any]) -> str:
     if new:
         return "" if name_key(new) in {"vastutaja puudub", "vastutaja puudub."} else new
     return text_value(row.get("vastutaja"))
+
+
+def recorded_handover(bundle: dict[str, Any] | None) -> str:
+    """The new owner named by Lovable's latest responsible-change row
+    (`topic_responsible_change`: the newest `alates`, the later row on a tie),
+    or ``""``. Lovable writes one for every hand-over — its «Teemade
+    üleandmine» and a single change of «Uus vastutaja» alike — and none for an
+    ordinary edit of the owner cell (docs/adr/0220 §2)."""
+    rows = list((bundle or {}).get("responsible_changes") or [])
+    if not rows:
+        return ""
+    latest = max(enumerate(rows), key=lambda item: (str(item[1].get("alates") or ""), item[0]))
+    return text_value(latest[1].get("uus_vastutaja"))
+
+
+#: The fields a hand-over may change: the owner, and the «Endine vastutaja»
+#: the owner's earlier hold left behind (`_former_owner_decision`).
+HANDOVER_FIELDS = frozenset({"owner", FORMER_OWNER})
+
+
+def is_handover(plan: MatterPlan) -> bool:
+    """Whether this Teema's change tonight is a hand-over and nothing else
+    (docs/adr/0220 §2): every source change is the owner (or the «Endine
+    vastutaja» it clears), the owner resolves to a lawyer, and Lovable's latest
+    responsible-change row names that same lawyer. Restores are not source
+    changes and do not count either way. Anything else — a step, a stage, a
+    title on the same Teema, a hand-over to «Vastutaja puudub», an owner edited
+    with no responsible-change row — is an ordinary change
+    (`MAX_CHANGED_MATTERS`)."""
+    changes = [d for d in plan.eligible if d.reason != RESTORED]
+    if not changes or {d.field for d in changes} - HANDOVER_FIELDS:
+        return False
+    owner = next((d for d in changes if d.field == "owner"), None)
+    if owner is None or owner.target in (None, "", "?"):
+        return False
+    name = str(plan.source.get("owner") or "")
+    return bool(name) and name_key(plan.handover_to) == name_key(name)
 
 
 def _commencements(bundle: dict[str, Any]) -> list[list[Any]]:
@@ -1622,6 +1671,9 @@ class MatterPlan:
     open: bool = False
     #: Lovable continues this topic back into itself (`continuation_cycles`).
     continuation_cycle: bool = False
+    #: The new owner Lovable's latest responsible-change row names, or ``""``
+    #: (`recorded_handover`): what makes an owner change a hand-over (`is_handover`).
+    handover_to: str = ""
 
     def outcomes(self) -> set[str]:
         return {d.outcome for d in self.decisions} | ({self.status} if self.status else set())
@@ -1652,14 +1704,39 @@ def _three_way(
     return FieldDecision(name, SyncOutcome.CONFLICT, **common)
 
 
+#: How a Lovable owner name found its person (`OwnerResolver.explain`).
+VIA_ALIAS = "ALIAS"
+VIA_PAIR = "PAIR"
+VIA_NAME = "NAME"
+
+
+@dataclass(frozen=True)
+class OwnerAnswer:
+    """What a Lovable owner name resolves to, and how (`OwnerResolver.explain`).
+
+    ``user_id`` is set only for a usable answer; ``code`` is ``""`` then, else
+    `UNRESOLVED_OWNER` or `NOT_ASSIGNABLE`. ``via`` says which rule decided
+    (`VIA_ALIAS`, `VIA_PAIR`, `VIA_NAME`, or ``""`` for no name); ``person`` is
+    the one person the rule found, usable or not, and ``candidates`` how many."""
+
+    user_id: str | None
+    code: str
+    via: str = ""
+    person: Any = None
+    candidates: int = 0
+
+
 class OwnerResolver:
     """A Lovable owner name → exactly one active, assignable Juristid user.
 
-    First the pairs the pilot's reviewed people map produced (A's source name and
-    A's owner, across the cohort), then an exact display name. Two candidates, or
-    one who may not hold current work, is no answer."""
+    First a name a technical administrator pinned (`LovableOwnerAlias`,
+    docs/adr/0220 §3), then the pairs the pilot's reviewed people map produced
+    (A's source name and A's owner, across the cohort), then an exact display
+    name. Two candidates, or one who may not hold current work, is no answer."""
 
     def __init__(self, states: Iterable[LovableSyncState]) -> None:
+        from app.legacy_import.lovable_sync_models import LovableOwnerAlias
+
         pairs: dict[str, set[str]] = {}
         for state in states:
             owner = state.applied.get("owner") or {}
@@ -1670,6 +1747,11 @@ class OwnerResolver:
             if owner.get("source") and owner.get("target") not in (None, "?"):
                 pairs.setdefault(name_key(owner["source"]), set()).add(owner["target"])
         self.pairs = pairs
+        #: Pinned names, read once (docs/adr/0220 §3).
+        self.aliases = {
+            key: str(user_id)
+            for key, user_id in LovableOwnerAlias.objects.values_list("name_key", "user_id")
+        }
         #: One answer per name for the resolver's life (one plan or one night):
         #: 2,370 Teemad name a few dozen people (quality audit QA26-PERF-01).
         self._answers: dict[str, tuple[str | None, str]] = {}
@@ -1677,32 +1759,41 @@ class OwnerResolver:
     def resolve(self, name: str) -> tuple[str | None, str]:
         key = name_key(name) if name else ""
         if key not in self._answers:
-            self._answers[key] = self._resolve(name)
+            answer = self.explain(name)
+            self._answers[key] = (answer.user_id, answer.code)
         return self._answers[key]
 
-    def _resolve(self, name: str) -> tuple[str | None, str]:
+    def explain(self, name: str) -> OwnerAnswer:
+        """`resolve`, with the rule that decided and the person it found."""
         from app.accounts.models import User
         from app.accounts.selectors import is_assignable_business_user
 
         if not name:
-            return None, UNRESOLVED_OWNER
-        known = self.pairs.get(name_key(name), set())
+            return OwnerAnswer(None, UNRESOLVED_OWNER)
+        key = name_key(name)
         candidates: list[Any]
-        if len(known) == 1:
+        if key in self.aliases:
+            via = VIA_ALIAS
+            candidates = list(User.objects.filter(pk=self.aliases[key], is_active=True))
+        elif key in self.pairs:
+            via = VIA_PAIR
+            known = self.pairs[key]
+            if len(known) != 1:
+                return OwnerAnswer(None, UNRESOLVED_OWNER, via, candidates=len(known))
             candidates = list(User.objects.filter(pk__in=known, is_active=True))
-        elif known:
-            return None, UNRESOLVED_OWNER
         else:
+            via = VIA_NAME
             candidates = [
                 user
                 for user in User.objects.filter(is_active=True)
-                if name_key(user.display_name) == name_key(name)
+                if name_key(user.display_name) == key
             ]
         if len(candidates) != 1:
-            return None, UNRESOLVED_OWNER
-        if not is_assignable_business_user(candidates[0]):
-            return None, NOT_ASSIGNABLE
-        return str(candidates[0].pk), ""
+            return OwnerAnswer(None, UNRESOLVED_OWNER, via, candidates=len(candidates))
+        person = candidates[0]
+        if not is_assignable_business_user(person):
+            return OwnerAnswer(None, NOT_ASSIGNABLE, via, person, 1)
+        return OwnerAnswer(str(person.pk), "", via, person, 1)
 
 
 def _step_decisions(
@@ -1839,6 +1930,7 @@ def plan_matter(
         row.get("version"),
     )
     plan.continuation_cycle = bool(bundle.get(CYCLE_MARK))
+    plan.handover_to = recorded_handover(bundle)
     b = current if current is not None else current_values(state.matter)
     if "stage" not in b or "lifecycle" not in b:
         b = {**b, **conditional_values(state.matter)}
@@ -5748,6 +5840,10 @@ class RunCounts:
     #: Teemad with a source change / with only restores tonight, and the restore limit.
     changed_source: int = 0
     changed_restores: int = 0
+    #: Teemad whose only source change tonight is a hand-over (`is_handover`),
+    #: and their limit (`MAX_HANDOVER_MATTERS`); not in ``changed_source``.
+    changed_handovers: int = 0
+    handover_limit: int = MAX_HANDOVER_MATTERS
     restore_limit: int = MAX_RESTORED_MATTERS
     #: The new-topic breaker this run used (`run_sync(max_new_topics=…)`).
     new_topic_limit: int = MAX_NEW_TOPICS
@@ -6398,6 +6494,11 @@ def _execute(
 
     changed = [p for p in plans if any(d.reason != RESTORED for d in p.eligible)]
     restoring = [p for p in plans if p.eligible and p not in changed]
+    # Hand-overs have their own limit (`MAX_HANDOVER_MATTERS`, docs/adr/0220 §2);
+    # every other source change counts against the Teemad-written breaker.
+    handovers = [p for p in changed if is_handover(p)]
+    handover_ids = {p.state.pk for p in handovers}
+    ordinary = [p for p in changed if p.state.pk not in handover_ids]
     # The previous run that finished and recorded its decisions: a failed run,
     # or one killed while RUNNING, recorded none (or only some), and would make
     # tonight's every hold look new — or none of them (review of #617).
@@ -6421,7 +6522,11 @@ def _execute(
     hold = ""
     if run.mode != SyncMode.APPLY or check:
         hold = COMPARE_ONLY
-    elif len(changed) > change_limit or held - held_before > MAX_NEW_HOLDS:
+    elif (
+        len(ordinary) > change_limit
+        or len(handovers) > MAX_HANDOVER_MATTERS
+        or held - held_before > MAX_NEW_HOLDS
+    ):
         hold = BREAKER
     elif new_closure_holds(plans, today) > MAX_NEW_CLOSURE_HOLDS:
         hold = CLOSURE_HOLD_BREAKER
@@ -6545,7 +6650,8 @@ def _execute(
     created = {p.source_id for p in new_plans if p.created_matter_id is not None}
     counted = {p.state.pk for p in changed}
     restore_only = {p.state.pk for p in restoring}
-    teemad_written = len(changed)
+    # Against the Teemad-written breaker: the ordinary changes, not the hand-overs.
+    teemad_written = len(ordinary)
     successors_deferred = 0
     if created and not hold:
         progress["stage"] = "successors"
@@ -6693,6 +6799,8 @@ def _execute(
         elif carried:
             counts.search_refreshed_carried = len(carried)
         counts.changed_source = teemad_written
+        counts.changed_handovers = len(handovers)
+        counts.handover_limit = MAX_HANDOVER_MATTERS
         counts.changed_restores = len(restore_only)
         counts.successors_deferred = successors_deferred
         counts.restore_limit = restore_limit
@@ -7360,6 +7468,11 @@ def summary_lines(run: LovableSyncRun) -> list[str]:
             f"Lovable'i muudatusega teemasid: {c.get('changed_source', 0)}"
             f"/{c.get('breaker_limit', MAX_CHANGED_MATTERS)}; Lovable'i väärtuse taastamisi: "
             f"{c.get('changed_restores', 0)}/{c.get('restore_limit', MAX_RESTORED_MATTERS)}"
+        )
+    if c.get("changed_handovers"):
+        lines.append(
+            f"Lovable'is üle antud teemasid (ainult vastutaja muutus): "
+            f"{c['changed_handovers']}/{c.get('handover_limit', MAX_HANDOVER_MATTERS)}"
         )
     if c.get("new_topics_seen"):
         lines.append(

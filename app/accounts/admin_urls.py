@@ -7,6 +7,7 @@ from app.accounts import admin_views
 urlpatterns = [
     path("", admin_views.user_list, name="list"),
     path("uus/", admin_views.user_create, name="create"),
+    path("ilma-vastutajata/", admin_views.without_owner, name="without_owner"),
     path("<uuid:pk>/", admin_views.user_detail, name="detail"),
     path("<uuid:pk>/link/", admin_views.send_link, name="send_link"),
     path("<uuid:pk>/tuhista-kutse/", admin_views.cancel_invitation, name="cancel_invitation"),
