@@ -95,7 +95,7 @@ def test_only_the_two_commencement_kinds_are_informational():
     assert is_informational_milestone(PLANNED)
     assert is_informational_milestone(estimated)
     # Two labels, so a source's estimate is never attributed to a bill's text.
-    assert ImportantDateKind(estimated).label == "Eeldatav jõustumine (allika hinnang)"
+    assert ImportantDateKind(estimated).label == "Eeldatav jõustumine"
     assert ImportantDateKind(estimated).label != ImportantDateKind(PLANNED).label
     # Every existing row is OTHER and keeps ADR 0120's behaviour, as does the
     # transposition deadline: moving a kind is a product decision.

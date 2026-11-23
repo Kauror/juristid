@@ -171,6 +171,36 @@ nothing at all.
           {% elif step.display_date %}
             <span class="tl-step__date">{{ step.display_date }}</span>
           {% endif %}
+          {% comment %}
+            **Whose expectation this is, and its removal** (owner, 2026-11-23).
+            An estimated or planned commencement is somebody's guess at when the
+            act comes into force, so the marker names its source — Lovable, or
+            the colleague who recorded it — with the source's own note under it.
+            A lawyer's own may be taken off here (`remove_record`, the same
+            confirmation `Tegevused` uses). One from Lovable is Lovable's
+            (`source_ownership`): its ✕ says where to remove it, and the night
+            then cancels it here too.
+          {% endcomment %}
+          {% with commencement=step.expected_commencement %}
+            {% if commencement %}
+              {% if lovable_commencement_ids and commencement.pk|stringformat:"s" in lovable_commencement_ids %}
+                <span class="tl-step__source">Allikas: Lovable</span>
+                {% if commencement.note %}<span class="tl-step__note">{{ commencement.note|truncatechars:80 }}</span>{% endif %}
+                {% if can_write and matter.is_open %}
+                  <details class="uxtl__remove">
+                    <summary class="uxtl__icon uxtl__icon--remove" title="Kustuta">{% include "matters/partials/action_icon.html" with name="remove" %}<span class="visually-hidden">Kustuta — eeldatav jõustumine {{ step.display_date }}</span></summary>
+                    <p class="uxtl__removeask">See kuupäev tuleb Lovable'ist. Eemalda see Lovable'is — öine sünkroonimine eemaldab selle siis ka siit.</p>
+                  </details>
+                {% endif %}
+              {% else %}
+                <span class="tl-step__source">Allikas: {% if commencement.created_by %}{{ commencement.created_by.display_name }}{% else %}teadmata{% endif %}</span>
+                {% if commencement.note %}<span class="tl-step__note">{{ commencement.note|truncatechars:80 }}</span>{% endif %}
+                {% if can_write and matter.is_open %}
+                  {% include "matters/partials/row_remove.html" with record=commencement remove_kind="tahtaeg" remove_label="eeldatav jõustumine" remove_genitive="eeldatava jõustumise" remove_where="teemalt" remove_revision=commencement.updated_at.isoformat %}
+                {% endif %}
+              {% endif %}
+            {% endif %}
+          {% endwith %}
           {% if step.acts_count %}
             {# The phase opens its acts: their period in Tegevused, opened and scrolled to. #}
             <a class="tl-step__actslink" href="#{{ step.acts_anchor }}" data-open-etapp="{{ step.acts_anchor }}">{{ step.acts_count }} tegevus{{ step.acts_count|pluralize:"t" }}</a>

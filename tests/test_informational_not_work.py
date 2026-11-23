@@ -238,7 +238,7 @@ def test_the_calendar_shows_an_estimate_under_jõustumised_never_as_work(special
 
     estimate = mine[f"{cal.ESTIMATE_KEY_PREFIX}{record.pk}"]
     assert estimate.category == cal.CATEGORY_COMMENCEMENT and estimate.is_estimate
-    assert estimate.meaning == "Eeldatav jõustumine (allika hinnang)"
+    assert estimate.meaning == "Eeldatav jõustumine"
     assert not estimate.is_work and not estimate.is_overdue and estimate.status == ""
     # A past plan never reads as commenced.
     old = mine[f"{cal.ESTIMATE_KEY_PREFIX}{passed.pk}"]
