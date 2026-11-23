@@ -193,8 +193,8 @@ def _back() -> HttpResponseRedirect:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Uus teema», «Seo olemasolevaga» or «Märgi loetuks»."""
     if not candidate_notices.may_decide(request.user):
@@ -222,8 +222,8 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def agenda_decide(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Lisa teemale» or «Märgi loetuks» on a Government agenda item tied to a Teema.
 
@@ -259,8 +259,8 @@ def agenda_decide(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def audience(request: HttpRequest) -> HttpResponse:
     """The head opens Monitooring to every reader, or keeps it to the head (ADR 0219).
 
