@@ -489,3 +489,15 @@ account-and-network counter and the network counter still apply, so a
 remembered network buys no unlimited guessing. This is the intended trade,
 kept as written.
 
+
+## Status update 2026-11-23 — navigation no longer reads `may_view_department_management`
+
+This section corrects a description; it does not amend the decision and the
+status is unchanged.
+
+**Where each is enforced** above names `may_view_department_management` in the
+context processor as one of the navigation's inputs. Osakond has since become a
+destination on the bar for every reader, and no template read the key, so it was
+removed from `app/core/context_processors.py` with the unread `is_department_head`
+and `dev_login_enabled` (health review HR-17). The capability itself is unchanged
+and is still asked by every route, service and surface listed above.

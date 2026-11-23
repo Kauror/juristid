@@ -87,7 +87,7 @@
   /* `display: flex` already drops the disclosure triangle in Chromium. This and
      the `::-webkit-details-marker` rule below are for the other two engines, and
      they are the pattern the rest of the application's disclosures use
-     (`.chipdetails__summary`, `.uxdl__more`). */
+     (`.uxdl__more`). */
   list-style: none;
 }
 
