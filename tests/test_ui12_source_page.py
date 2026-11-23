@@ -296,12 +296,12 @@ def test_files_the_text_does_not_reach_follow_a_notice_with_no_capture_id_and_no
 
 
 @pytest.fixture
-def world(tmp_path, settings, evidence_root):
+def world(tmp_path, settings, evidence_root, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     corpus = tmp_path / "corpus"
     settings.HISTORICAL_SOURCE_ROOT = str(corpus)
-    return build_world(corpus)
+    return build_world(corpus, backup_set=onenote_backup_set)
 
 
 def _link(matter, title):

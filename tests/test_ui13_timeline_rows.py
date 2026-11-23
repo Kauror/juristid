@@ -159,12 +159,12 @@ def test_a_shared_page_note_says_so_compactly_and_only_then():
 
 
 @pytest.fixture
-def world(tmp_path, settings, evidence_root):
+def world(tmp_path, settings, evidence_root, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     corpus = tmp_path / "corpus"
     settings.HISTORICAL_SOURCE_ROOT = str(corpus)
-    return build_world(corpus)
+    return build_world(corpus, backup_set=onenote_backup_set)
 
 
 @pytest.mark.django_db
