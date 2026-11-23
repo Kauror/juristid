@@ -378,7 +378,13 @@ class GovernmentAgenda(BaseModel):
     #: `agenda.MAX_ATTEMPTS` times in all (`ai_attempts`).
     judged_at = models.DateTimeField(null=True, blank=True, verbose_name="hinnatud")
     #: Requests made to the model for this agenda, answered or failed.
-    ai_attempts = models.PositiveSmallIntegerField(default=0, verbose_name="hindamiskatseid")
+    ai_attempts = models.PositiveSmallIntegerField(
+        default=0,
+        # In the database too, so the previous release can still insert an agenda
+        # after a code-only rollback (r91 kit review).
+        db_default=0,
+        verbose_name="hindamiskatseid",
+    )
 
     class Meta:
         verbose_name = "valitsuse päevakord"
