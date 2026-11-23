@@ -226,14 +226,17 @@ def test_pinning_refuses_a_person_who_may_not_hold_work_and_is_audited():
         sync_admin.unpin_owner_name(admin, alias_id=None)
 
 
-def test_owner_names_lists_the_names_of_the_newest_reading_problems_first(world_reading):
-    rows, read_at = sync_admin.owner_names()
-    assert read_at is not None
+def test_owner_names_lists_the_names_of_the_newest_reading(world_reading):
+    names = sync_admin.owner_names()
+    assert names.read_at is not None
+    rows = names.rows
     by_name = {row.name: row for row in rows}
     assert by_name["Uus Jurist"].answer.code == lovable_sync.UNRESOLVED_OWNER
     assert by_name["Uus Jurist"].handed_over == 1
     assert by_name["Mari Näidis"].ok and by_name["Mari Näidis"].topics == 2
-    assert rows[0].name == "Uus Jurist"
+    # A name only a responsible-change row mentions is no current owner, and this
+    # reading has no operational topic, so nothing needs action (ADR 0220 §3).
+    assert not by_name["Uus Jurist"].current and names.problems == 0
 
 
 @pytest.fixture
