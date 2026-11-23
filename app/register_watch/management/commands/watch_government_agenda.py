@@ -55,7 +55,8 @@ class Command(BaseCommand):
         self.stdout.write(
             f"{mode} stored={stored} judged={outcome.judged} errors={len(outcome.errors)} "
             f"ai_model={u.model or '-'} ai_calls={u.calls} ai_failures={u.failures} "
-            f"ai_tokens={u.input_tokens}/{u.output_tokens}"
+            f"ai_tokens={u.input_tokens}/{u.output_tokens} "
+            f"letters_left_out={u.letters_left_out} topics_left_out={u.topics_left_out}"
         )
         for error in outcome.errors[:10]:
             self.stdout.write(f"  ERROR {error}")

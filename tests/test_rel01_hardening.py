@@ -149,8 +149,6 @@ def test_the_nightly_seeding_skips_a_teema_deleted_after_its_references_were_lis
 # P3-3: 0024 is not reversed over evidence
 # ---------------------------------------------------------------------------
 
-#: The graph's leaf: re-migrating to 0024 only would leave later tables unapplied.
-LEAF = ("legacy_import", "0031_r4_lovable_opinion_outcome")
 BEFORE = ("legacy_import", "0023_lovable_sync_retirement")
 
 
@@ -158,6 +156,26 @@ def _migrate(target: tuple[str, str]) -> None:
     executor = MigrationExecutor(connection)
     executor.loader.build_graph()
     executor.migrate([target])
+
+
+def _migrate_to_every_leaf() -> None:
+    """Forward to every app's newest migration, read from the graph.
+
+    This test is transactional, so the reversal is committed and outlives it.
+    Going back to 0023 unapplies every later `legacy_import` migration and every
+    migration of another app that depends on one; a hard-coded target goes stale
+    as soon as a migration is added (it was 0031 while 0032 and 0033 existed, and
+    the next transactional test in the shard found no
+    ``legacy_import_lovableowneralias``)."""
+    executor = MigrationExecutor(connection)
+    executor.loader.build_graph()
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+def _unapplied() -> list[str]:
+    executor = MigrationExecutor(connection)
+    plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+    return [f"{migration.app_label}.{migration.name}" for migration, _ in plan]
 
 
 def _table_exists() -> bool:
@@ -169,8 +187,9 @@ def _table_exists() -> bool:
 @pytest.fixture
 def back_at_the_leaf():
     yield
-    if not _table_exists():
-        _migrate(LEAF)
+    _migrate_to_every_leaf()
+    # The schema the rest of the shard runs against is the whole one again.
+    assert _unapplied() == []
 
 
 @pytest.mark.django_db(transaction=True, serialized_rollback=True)
@@ -193,7 +212,7 @@ def test_0024_refuses_to_reverse_over_a_membership_and_reverses_when_empty(back_
         cursor.execute("TRUNCATE legacy_import_lovablesyncmembership")
     _migrate(BEFORE)
     assert not _table_exists()
-    _migrate(LEAF)
+    _migrate_to_every_leaf()
     assert _table_exists()
     with connection.cursor() as cursor:
         cursor.execute(

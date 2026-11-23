@@ -286,8 +286,8 @@ def _tell_about_files(request: HttpRequest, fetched: register_files.Fetched) -> 
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Lisa märkena» or «Märgi loetuks»."""
     finding = watch.own_pending(request.user, pk)
@@ -317,8 +317,8 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Märgi kõik loetuks»: skip every document still waiting on one Teema (owner, 2026-11-22).
 
@@ -368,8 +368,8 @@ def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def phrase(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Otsingusõnad»: the words a Teema is searched by in one ministry register."""
     from app.matters.models import Matter

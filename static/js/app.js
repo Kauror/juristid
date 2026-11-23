@@ -4991,24 +4991,6 @@
     });
   }
 
-  /* ---- A disclosure holding a ticked choice opens itself ------------------
-   * `Vali nimekirjast` is closed by default, which is right on arrival and
-   * wrong after a refused save: the catalogue behind it may hold the body the
-   * person ticked, and a form that comes back with an error and their answer
-   * hidden looks like a form that discarded it. The value was always posted;
-   * this is only about being able to see it.
-   */
-  function bindOpenChosenDetails(scope) {
-    (scope || document).querySelectorAll("details.chipdetails").forEach(function (holder) {
-      if (!once(holder, "OpenChosen")) {
-        return;
-      }
-      if (holder.querySelector("input:checked")) {
-        holder.open = true;
-      }
-    });
-  }
-
   /* Arriving from a number: put the reader on the rows.
    *
    * Every figure on Ulevaade links to `...#tulemused`, and a filtered register
@@ -6766,7 +6748,6 @@
         bindChoiceFilters,
         bindExclusiveName,
         bindOrganisationPickers,
-        bindOpenChosenDetails,
         bindChipCounts,
         bindStageHelp,
         bindSeisHelp,
@@ -6799,7 +6780,6 @@
         bindChoiceFilters,
         bindExclusiveName,
         bindOrganisationPickers,
-        bindOpenChosenDetails,
         bindChipCounts,
         bindStageHelp,
         bindSeisHelp,

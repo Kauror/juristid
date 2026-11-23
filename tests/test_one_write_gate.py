@@ -305,6 +305,9 @@ def test_the_historical_review_queue_keeps_its_own_rule():
     """
     from app.legacy_import import historical_views
     from app.reporting.selectors import quality
+    from tests.code_names import code_names
 
-    assert "may_use_opinion_queue" not in inspect.getsource(historical_views._require_administrator)
-    assert "may_use_opinion_queue" not in inspect.getsource(quality.can_open_review_queue)
+    # What the gates call, not what their prose says: a docstring that explains
+    # why the opinion predicate is *not* used here must not fail this test.
+    for gate in (historical_views._require_administrator, quality.can_open_review_queue):
+        assert "may_use_opinion_queue" not in code_names(gate), gate.__qualname__
