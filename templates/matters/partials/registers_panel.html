@@ -12,7 +12,21 @@ watch's own routes and come back here (`tagasi=teema`).
 {% endcomment %}
 <section class="regtab" aria-labelledby="regtab-heading">
   <h2 class="rowlabel" id="regtab-heading">Registritest</h2>
-  <p class="regtab__state regtab__state--{{ register_state.state }}">{{ register_state.line }}</p>
+  <div class="regtab__headrow">
+    <p class="regtab__state regtab__state--{{ register_state.state }}">{{ register_state.line }}</p>
+    {% comment %}
+      «Märgi kõik loetuks» for this Teema (owner, 2026-11-23): everything the
+      tab lists — documents, the folded unrelated ones and agenda items — in
+      one press, the same route Monitooring's group head posts to.
+    {% endcomment %}
+    {% if can_write_business_content and register_shown or can_write_business_content and register_unrelated or can_write_business_content and agenda_proposals %}
+      <form class="regtab__markall" method="post" action="{% url 'register_watch:dismiss_all' pk=matter.pk %}" {% include "matters/partials/registers_swap.html" %}>
+        {% csrf_token %}
+        <input type="hidden" name="tagasi" value="teema">
+        <button type="submit" class="button button--quiet button--tiny">Märgi kõik loetuks</button>
+      </form>
+    {% endif %}
+  </div>
 
   {% if register_shown %}
     <ul class="regwatch__list">
@@ -39,7 +53,7 @@ watch's own routes and come back here (`tagasi=teema`).
             {% if item.reason %}<span class="regwatch__note">{{ item.reason }}</span>{% endif %}
           </div>
           {% if can_write_business_content %}
-            <form class="regwatch__actions" method="post" action="{% url 'register_watch:agenda_decide' pk=item.pk %}" {% include "matters/partials/registers_swap.html" %}>
+            <form class="regwatch__actions" method="post" enctype="multipart/form-data" action="{% url 'register_watch:agenda_decide' pk=item.pk %}" {% include "matters/partials/registers_swap.html" %}>
               {% csrf_token %}
               <input type="hidden" name="tagasi" value="teema">
               {% include "register_watch/_add_note.html" with key=item.pk %}

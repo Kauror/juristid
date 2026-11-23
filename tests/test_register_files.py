@@ -144,3 +144,104 @@ def test_a_register_that_does_not_answer_still_adds_the_note(client, specialist,
     development = MatterProceduralDevelopment.objects.get(matter=matter)
     assert not DocumentLink.objects.filter(procedural_development=development).exists()
     assert "Registrist ei saanud faili alla laadida" in response.content.decode()
+
+
+# -- owner's round 4 (2026-11-23) -----------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_the_lawyers_own_files_come_first_with_the_registers(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("tagasiside.pdf", PDF, content_type="application/pdf")]
+        ),
+    )
+    client.force_login(specialist)
+
+    client.post(
+        reverse("register_watch:decide", kwargs={"pk": finding.pk}),
+        {
+            "otsus": "lisa",
+            "tagasi": "teema",
+            "failid": [SimpleUploadedFile("minu.pdf", PDF, content_type="application/pdf")],
+        },
+    )
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    from app.documents.models import DocumentVersion
+
+    documents = DocumentLink.objects.filter(procedural_development=development).values(
+        "document_id"
+    )
+    names = sorted(
+        DocumentVersion.objects.filter(document_id__in=documents).values_list(
+            "original_filename", flat=True
+        )
+    )
+    assert names == ["minu.pdf", "tagasiside.pdf"]
+
+
+@pytest.mark.django_db
+def test_a_finding_remembers_where_its_files_are(monkeypatch):
+    matter = factories.MatterFactory(title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    other = WatchFinding.objects.create(
+        target=finding.target, matter=matter, external_id="doc:zz", title="Teine"
+    )
+    monkeypatch.setattr(
+        register_files,
+        "locate",
+        lambda source, external_id: (
+            [RemoteFile("adr.envir.ee", "/api/v1/documents/b89d/file", "kiri.pdf")]
+            if external_id == "doc:b89d"
+            else []
+        ),
+    )
+
+    assert register_files.remember() == 2
+
+    finding.refresh_from_db()
+    other.refresh_from_db()
+    assert finding.files == [
+        {"name": "kiri.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89d/file"}
+    ]
+    assert other.files == []
+    # Looked up once: the next pass leaves both alone.
+    assert register_files.remember() == 0
+
+
+@pytest.mark.django_db
+def test_an_unread_register_is_asked_again_next_time(monkeypatch):
+    finding = _finding(factories.MatterFactory(title="Jäätmeseaduse muutmise eelnõu"))
+
+    def unreachable(source, external_id):
+        raise FetchError("ei vastanud")
+
+    monkeypatch.setattr(register_files, "locate", unreachable)
+    assert register_files.remember() == 0
+    finding.refresh_from_db()
+    assert finding.files is None
+
+
+@pytest.mark.django_db
+def test_the_row_links_the_page_and_each_file(client, specialist):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    WatchFinding.objects.filter(pk=finding.pk).update(
+        files=[{"name": "kiri.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89d/file"}]
+    )
+    client.force_login(specialist)
+
+    body = client.get(
+        reverse("matters:matter_registers", kwargs={"pk": matter.pk})
+    ).content.decode()
+
+    assert 'href="https://adr.envir.ee/et/document.html?id=b89d"' in body
+    assert 'href="https://adr.envir.ee/api/v1/documents/b89d/file"' in body
+    assert "Fail: kiri.pdf" in body
+    assert 'enctype="multipart/form-data"' in body
+    assert 'name="failid"' in body

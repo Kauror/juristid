@@ -220,8 +220,18 @@ def test_the_process_link_is_a_real_link_with_its_control_beside_it(page, base_u
     # No name is asked any more (docs/adr/0130 §3), so the row reads as its host.
     assert link.inner_text().startswith("eelnoud.valitsus.ee")
 
-    # `Muuda`, not `Paranda`, and inside the link's own value region.
-    assert card.locator(".proclink__value summary.disclosure-chip").inner_text() == "Muuda"
+    # `Muuda`, not `Paranda`, inside the link's own value region — a pen icon
+    # with its word as the tooltip and the spoken name since the owner's round
+    # 4 (2026-11-23), and the ✕ beside it, both on the address's line.
+    edit = card.locator(".proclink__value summary.proclink__icon")
+    assert edit.get_attribute("title") == "Muuda linki"
+    assert edit.locator(".visually-hidden").inner_text() == "Muuda linki"
+    remove = card.locator(".proclink__value .uxtl__remove > summary")
+    assert remove.get_attribute("title") == "Eemalda link"
+    line = link.bounding_box()["y"] + link.bounding_box()["height"]
+    for icon in (edit, remove):
+        box = icon.bounding_box()
+        assert box["y"] < line, "the icon dropped under the address"
     assert card.get_by_text("Paranda", exact=True).count() == 0
 
 

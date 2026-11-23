@@ -107,6 +107,7 @@ from app.matters import (
     duplicate_intake,
     intake_staging,
     legal_process,
+    rail_events,
     register_columns,
     register_filters,
     register_selection,
@@ -3687,10 +3688,19 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
         # read again (app/matters/legal_process.py `matter_rail`).
         # The phases before the first one the file reached are left out
         # (owner, 2026-11-22, `without_unused_start`).
-        "rail_steps": without_unused_start(
-            matter_rail(
-                matter=matter, user=request.user, rail=rail, milestones=steps, step_rows=step_rows
-            )
+        # With each phase's acts from `Tegevused` and the year where it
+        # changes (owner, 2026-11-23, learned from the Riigikogu's strip).
+        "rail_steps": rail_events.with_acts_and_years(
+            without_unused_start(
+                matter_rail(
+                    matter=matter,
+                    user=request.user,
+                    rail=rail,
+                    milestones=steps,
+                    step_rows=step_rows,
+                )
+            ),
+            rail_events.acts_by_phase(episode_timeline, phases.pattern),
         ),
         # Which rail items a click dates (`rail_step_date_view`): this file's
         # own phases and the steps somebody added — never an event, a sent

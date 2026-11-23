@@ -6248,7 +6248,49 @@
         active = -1;
         input.removeAttribute("aria-activedescendant");
 
+        /* The app's own pages and settings first, as «Rakendus» (owner,
+           2026-11-23). A row with an action is not a page: «Hele või tume
+           vaade» carries `data-theme-toggle`, which theme.js answers. */
+        var apps = payload.app || [];
+        if (apps.length) {
+          var head = document.createElement("p");
+          head.className = "searchfield__group";
+          head.setAttribute("role", "presentation");
+          head.textContent = "Rakendus";
+          panel.appendChild(head);
+        }
+        apps.forEach(function (result, index) {
+          var option = makeOption(
+            panel.id + "-app-" + index,
+            result.action ? "#" : result.url,
+            "searchfield__option--app"
+          );
+          if (result.action === "theme") {
+            option.setAttribute("data-theme-toggle", "");
+            option.setAttribute("data-search-action", "theme");
+          }
+          var title = document.createElement("span");
+          title.className = "searchfield__optiontitle";
+          title.textContent = result.title;
+          option.appendChild(title);
+          if (result.context) {
+            var context = document.createElement("span");
+            context.className = "searchfield__optionmeta";
+            context.textContent = result.context;
+            option.appendChild(context);
+          }
+          panel.appendChild(option);
+          options.push(option);
+        });
+
         var results = payload.results || [];
+        if (apps.length && results.length) {
+          var teemad = document.createElement("p");
+          teemad.className = "searchfield__group";
+          teemad.setAttribute("role", "presentation");
+          teemad.textContent = "Teemad";
+          panel.appendChild(teemad);
+        }
         results.forEach(function (result, index) {
           var option = makeOption(panel.id + "-" + index, result.url, "");
           var title = document.createElement("span");
@@ -6267,7 +6309,7 @@
           options.push(option);
         });
 
-        if (!results.length) {
+        if (!results.length && !apps.length) {
           var empty = document.createElement("p");
           empty.className = "searchfield__empty";
           /* An option rather than loose text, because the only valid child of a
@@ -6291,12 +6333,13 @@
 
         panel.hidden = false;
         input.setAttribute("aria-expanded", "true");
-        if (!results.length) {
+        var count = results.length + apps.length;
+        if (!count) {
           announce("Tulemusi ei leitud");
-        } else if (results.length === 1) {
+        } else if (count === 1) {
           announce("1 soovitus");
         } else {
-          announce(results.length + " soovitust");
+          announce(count + " soovitust");
         }
       }
 
@@ -6398,6 +6441,12 @@
              ordinary submit, and the ordinary submit is the fallback. */
           if (!panel.hidden && active >= 0 && options[active]) {
             event.preventDefault();
+            if (options[active].hasAttribute("data-search-action")) {
+              /* An action, not a page: theme.js hears the click. */
+              options[active].click();
+              close();
+              return;
+            }
             var target = options[active].href;
             close();
             window.location.assign(target);
@@ -6414,6 +6463,16 @@
          and the row cannot be clicked at all. */
       panel.addEventListener("mousedown", function (event) {
         event.preventDefault();
+      });
+
+      /* A clicked action row does its act where the reader is: no navigation
+         to «#», and the list closes. The click still bubbles to theme.js. */
+      panel.addEventListener("click", function (event) {
+        var row = event.target && event.target.closest ? event.target.closest("[data-search-action]") : null;
+        if (row) {
+          event.preventDefault();
+          window.setTimeout(close, 0);
+        }
       });
 
       input.addEventListener("blur", function () {
@@ -6548,6 +6607,13 @@
         node = null;
       }
     }
+    /* A period itself (`#etapp-…`, «N tegevust» under a phase of Menetluse
+       kulg, owner 2026-11-23): opened and brought into view. */
+    if (node && node.tagName === "DETAILS" && node.hasAttribute("data-kaik-etapp")) {
+      node.open = true;
+      node.scrollIntoView({ block: "start" });
+      return;
+    }
     var row = node && node.closest ? node.closest("article.uxtl__item") : null;
     if (row) {
       revealKaikPeriod(row);
@@ -6656,6 +6722,13 @@
   }
 
   window.addEventListener("hashchange", openKaikTarget);
+  /* «N tegevust» clicked again while the hash already names it: still opened. */
+  document.addEventListener("click", function (event) {
+    var link = event.target && event.target.closest ? event.target.closest("[data-open-etapp]") : null;
+    if (link && window.location.hash === "#" + link.getAttribute("data-open-etapp")) {
+      openKaikTarget();
+    }
+  });
 
   document.body.addEventListener("htmx:afterSwap", function (event) {
     safeInit("syncKaik", function () {

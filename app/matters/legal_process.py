@@ -735,6 +735,14 @@ class RailStep:
     reach: float = 1.0
     #: An event marker's kind, written above its title (`KIND_EVENT`).
     event_label: str = ""
+    #: The year, above the first item of each year on the strip (owner,
+    #: 2026-11-23, `rail_events.with_acts_and_years`); "" on the rest.
+    year_label: str = ""
+    #: A phase's acts from `Tegevused`: ``(date, what)`` dots, how many there
+    #: are, and the id of their period's group (`rail_events`).
+    acts: tuple[tuple[str, str], ...] = ()
+    acts_count: int = 0
+    acts_anchor: str = ""
 
     @property
     def reach_key(self) -> date | None:

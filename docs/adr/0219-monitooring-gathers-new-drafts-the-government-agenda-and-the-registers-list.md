@@ -95,3 +95,14 @@ in full and older ones folded. Asked on 2026-11-22, the owner chose:
   dokument», ADR 0217 §6), and that notice stays due while a proposal waits.
 - Migration `register_watch` 0006: `AgendaItem.status` (NOT NULL, database default PENDING),
   `decided_by`, `decided_at`, `development` (nullable).
+
+## Amendment 2026-11-23 — the fold says it folds; files on an agenda note
+
+- Each sitting's agenda heading on «Valitsuse info» carries a chevron that turns
+  when the agenda is open, a hover highlight and a tooltip, like «Valitsuse
+  selgitus» under each item (owner's round 4).
+- An agenda item's «Lisa märkena» takes the lawyer's own files (`failid`), as a
+  register document's does (ADR 0217 amendment 2026-11-23); «Märgi kõik loetuks»
+  on the Teema's «Registritest» tab takes the Teema's waiting agenda items too.
+- The agenda model's prompt carries the Koda house style and its reasons pass
+  `house_style.fix` (docs/koda-house-style.md).

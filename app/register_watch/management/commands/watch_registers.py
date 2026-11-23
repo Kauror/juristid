@@ -68,6 +68,10 @@ class Command(BaseCommand):
             # No surrounding transaction: a run spaces its calls over minutes,
             # and each finding is its own small write.
             self._report("DONE", watch.run(matters, use_ai=use_ai))
+            # Then the file links of what waits (owner, 2026-11-23); never raises.
+            from app.register_watch import register_files
+
+            self.stdout.write(f"FILES located={register_files.remember()}")
             return
         try:
             with transaction.atomic():

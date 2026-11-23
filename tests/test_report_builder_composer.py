@@ -103,9 +103,10 @@ def docx_rows(response):
 # ---------------------------------------------------------------------------
 
 
-def test_the_page_is_linked_from_the_statistics_overview(signed_in):
-    response = signed_in.get(reverse("reporting:overview"))
-    assert reverse(PAGE) in response.content.decode()
+def test_the_page_is_linked_from_osakond(signed_in):
+    # Moved off Statistika into Osakond's column, under Aruandlus (owner, 2026-11-23).
+    assert reverse(PAGE) in signed_in.get(reverse("matters:department")).content.decode()
+    assert reverse(PAGE) not in signed_in.get(reverse("reporting:overview")).content.decode()
 
 
 def test_an_anonymous_visitor_is_sent_to_sign_in(client, settings):

@@ -60,10 +60,10 @@ record that is not there.
     nothing by itself; the word stays in the accessible name and the tooltip.
   {% endcomment %}
   {% if remove_named_by %}
-    <summary class="uxtl__icon uxtl__icon--remove" id="{{ remove_kind }}-{{ record.pk }}-kustuta" title="Kustuta"
+    <summary class="uxtl__icon uxtl__icon--remove" id="{{ remove_kind }}-{{ record.pk }}-kustuta" title="{{ remove_title|default:'Kustuta' }}"
              aria-labelledby="{{ remove_kind }}-{{ record.pk }}-kustuta {{ remove_named_by }}">{% include "matters/partials/action_icon.html" with name="remove" %}<span class="visually-hidden">Kustuta</span></summary>
   {% else %}
-    <summary class="uxtl__icon uxtl__icon--remove" id="{{ remove_kind }}-{{ record.pk }}-kustuta" title="Kustuta">{% include "matters/partials/action_icon.html" with name="remove" %}<span
+    <summary class="uxtl__icon uxtl__icon--remove" id="{{ remove_kind }}-{{ record.pk }}-kustuta" title="{{ remove_title|default:'Kustuta' }}">{% include "matters/partials/action_icon.html" with name="remove" %}<span
       class="visually-hidden">Kustuta — {{ remove_label }}</span></summary>
   {% endif %}
   <form class="uxtl__removeform"

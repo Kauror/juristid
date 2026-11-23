@@ -23,6 +23,8 @@ from django.conf import settings
 
 from app.core.enums import Visibility
 from app.matters.models import Matter
+from app.register_watch import house_style
+from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Strength, TopicCandidate
 
 logger = logging.getLogger("app.register_watch")
@@ -63,7 +65,9 @@ Write one line in Estonian (at most 200 characters) saying how it may touch \
 entrepreneurs, or why it does not. Do not repeat the whole title. If one of the \
 Chamber's open topics (given with ids) is plainly about the same act or subject, \
 give its id in `related`; otherwise null. Use only the information given; do not \
-guess content the titles do not show."""
+guess content the titles do not show.
+
+{KODA_STYLE}"""
 
 SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -214,7 +218,7 @@ def _judge_batch(
         if not row or row.get("strength") not in allowed:
             continue
         candidate.strength = row["strength"]
-        candidate.reason = str(row.get("reason") or "").strip()[:500]
+        candidate.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
         # Only an id that was offered: the model cannot point anywhere else.
         candidate.related_matter = topics.get(str(row.get("related") or ""))
         candidate.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
