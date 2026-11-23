@@ -122,6 +122,6 @@ open Teema; it is not built here.
 | 23.11 | «B + C + D» chosen (A not built) | owner, in chat |
 | 23.11 06:58 | #677 merged as `20869fb8` («Merge it»), after a green FULL run of its head `e4425daa` | owner, in chat |
 | 23.11 07:41 | r89 deployed («Deploy now»): migration `legacy_import 0033`, backup `sets/20261123T073730Z` VERIFIED-L2, `production_status` 9/9 PASS | owner, in chat |
-| 23.11 | Coordinator review of `main` at `20869fb8`; «Lovable'i nimed» presentation follow-up (#678, §3 amended there) | coordinator |
+| 23.11 | Coordinator review of `main` at `20869fb8`; «Lovable'i nimed» presentation follow-up: #678 (§3 amended), merged as `8f4950bc` and deployed as r90 at 09:06 | coordinator; owner, in chat («merge 678 and deploy it») |
 | 23.11 | The four decisions above confirmed; this record marked Accepted in a documentation-only change | owner, via the coordinator |
 
