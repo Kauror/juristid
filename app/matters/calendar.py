@@ -524,7 +524,7 @@ def estimate_events(
     model leaves out, over the population it used to read them from: active
     rows on open, full-record Matters the subject owns, through the reader's own
     ``visible_to`` on both the Matter and the record. Shown under *Jõustumised*
-    and named by their kind — «Eeldatav jõustumine (allika hinnang)», «Eelnõus
+    and named by their kind — «Eeldatav jõustumine», «Eelnõus
     kavandatud jõustumine» — so they never read as a recorded commencement, and a
     past one says that nothing on record shows the act came into force.
     ``subject=None`` (Osakond) does not narrow by owner.

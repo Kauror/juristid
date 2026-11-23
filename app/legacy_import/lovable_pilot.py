@@ -139,7 +139,7 @@ IMPORTANT_KINDS = frozenset({"PLANNED_COMMENCEMENT", "ESTIMATED_COMMENCEMENT"})
 #: The commencement titles the Teema shows, in the department's words.
 COMMENCEMENT_TITLES = {
     "PLANNED_COMMENCEMENT": "Eelnõus kavandatud jõustumine",
-    "ESTIMATED_COMMENCEMENT": "Eeldatav jõustumine (allika hinnang)",
+    "ESTIMATED_COMMENCEMENT": "Eeldatav jõustumine",
 }
 FIELD_DECISIONS = frozenset(
     {"APPLIED", "PRESERVED_AS_SOURCE_ONLY", "HELD_FOR_REVIEW", "NOT_PRESENT"}
