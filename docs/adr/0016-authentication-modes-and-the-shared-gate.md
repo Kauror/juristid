@@ -92,6 +92,15 @@ so somebody rotating it dodges the throttle. That would matter if this were
 identity. It is a rate limit, the password is long, and an attacker who rotates
 headers still guesses one request at a time.
 
+(**Amended 2026-11-24:** the paragraph above describes the header as first
+built. Since the amendments of 2026-10-17 and 2026-10-18 the address is
+`CF-Connecting-IP`, which Cloudflare sets and a client cannot supply through the
+tunnel, believed only under `TRUST_CF_CONNECTING_IP`; `X-Forwarded-For` is not
+read; and real data refuses to start without that trust (`juristid.E020`). The
+limit that remains is the attacker's own addresses, not a header: somebody with
+many source addresses (proxies, a botnet) still spreads guesses across throttle
+keys. See the amendment of 2026-11-24 at the end of this document.)
+
 Refusals never say *which* refusal they were. "Wrong password" and "locked out"
 are two different facts, and only somebody probing the door benefits from being
 able to tell them apart.
@@ -428,3 +437,35 @@ the process serves anyway — the department would find out by being locked out.
 
 The address rule itself, the throttle's per-client table and escalation, the 8 h
 idle and 12 h absolute limits, and the development and test configurations.
+
+---
+
+## Amendment, 2026-11-24 — the forwarded address is no longer the client's to write
+
+- Status: accepted, amending the wording of «The throttle is a table, and it is
+  per client» (its «honest limit» paragraph). Wording only; no behaviour changes.
+- Finding: post-r91 follow-up E5 (health review round of 2026-11-23)
+
+### What was written before
+
+«Behind the tunnel the forwarded address is attacker-controlled, so somebody
+rotating it dodges the throttle.» That was true of the first build, which read
+`CF-Connecting-IP` and fell back to `X-Forwarded-For` unconditionally.
+
+### What holds now
+
+- The address rule of 2026-10-17 (`app/core/client_ip.py`): `CF-Connecting-IP`
+  only under `TRUST_CF_CONNECTING_IP` (that is, `DJANGO_BEHIND_TLS_PROXY`),
+  otherwise `REMOTE_ADDR`; either only when it parses as one IP address;
+  `X-Forwarded-For` never read. Behind the tunnel, the only way in («No public
+  origin bypass»), Cloudflare writes that header from the connection it saw.
+- `juristid.E020` (2026-10-18): real data behind a password throttle refuses to
+  start without that trust, so production always keys the throttle on it.
+- What an attacker can still do is use many real source addresses; each is its
+  own throttle key. The rest of the paragraph stands: a rate limit, not
+  identity; the password is long; every guess is still one request.
+
+### What this amendment does not change
+
+The address rule, E020, the throttle's table, keys and escalation, and every
+other part of this record.
