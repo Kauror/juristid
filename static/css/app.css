@@ -365,7 +365,7 @@
   color: var(--text-primary);
 }
 
-.landingpick {
+.settingslist .landingpick {
   width: auto;
   min-width: 12rem;
 }
