@@ -2460,8 +2460,8 @@
         move(1);
       });
       strip.addEventListener("scroll", update, { passive: true });
-      if (typeof ResizeObserver === "function") {
-        new ResizeObserver(update).observe(strip);
+      if (typeof window.ResizeObserver === "function") {
+        new window.ResizeObserver(update).observe(strip);
       } else {
         window.addEventListener("resize", update);
       }
