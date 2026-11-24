@@ -598,7 +598,11 @@ def test_stenogram_mentions_are_found_deterministically_and_bilateral_chambers_a
                             "type": "SPEECH",
                             "uuid": str(uuid_module.uuid4()),
                             "speaker": "Minister X",
-                            "text": "Kaubandus-tööstuskoja ettepanek meile tuli. Ameerika Kaubanduskoda on teist meelt. Eesti Põllumajandus-Kaubanduskoda samuti.",
+                            "text": (
+                                "Kaubandus-tööstuskoja ettepanek meile tuli. "
+                                "Ameerika Kaubanduskoda "
+                                "on teist meelt. Eesti Põllumajandus-Kaubanduskoda samuti."
+                            ),
                         }
                     ],
                 },
