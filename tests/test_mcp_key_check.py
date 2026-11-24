@@ -144,11 +144,11 @@ def test_every_slot_ok_prints_six_states_and_exits_0(tmp_path):
 def test_each_state_is_named_per_slot_and_exits_1(tmp_path):
     web, writer, mcp = _files(
         tmp_path,
-        # malformed (CR), weak (a real value under 40)
-        f"MCP_AUTHENTICATOR_KEY={A}\r\nMCP_TOKEN_DERIVATION_KEY={B[:39]}\n",
-        # duplicated, missing (commented), malformed (inner tab)
+        # malformed (export), weak (a real value under 40)
+        f"export MCP_AUTHENTICATOR_KEY={A}\nMCP_TOKEN_DERIVATION_KEY={B[:39]}\n",
+        # duplicated, missing (commented), malformed (colon)
         f"DJANGO_SECRET_KEY={C}\nDJANGO_SECRET_KEY={D}\n# POSTGRES_PASSWORD={D}\n"
-        f"MCP_WRITE_GATEWAY_KEY={E[:30]}\t{E[30:]}\n",
+        f"MCP_WRITE_GATEWAY_KEY: {E}\n",
         # weak (placeholder)
         "MCP_WRITE_GATEWAY_KEY=replace-me-with-openssl-rand-base64-48\n",
     )
@@ -179,7 +179,7 @@ def test_no_value_part_or_length_ever_reaches_the_output(tmp_path, trace):
     """Not a value, not 6 characters of one, not a length: states and names only."""
     web, writer, mcp = _files(
         tmp_path,
-        f"MCP_AUTHENTICATOR_KEY={A} \nMCP_TOKEN_DERIVATION_KEY={B[:33]}\n",
+        f"MCP_AUTHENTICATOR_KEY = {A} \nMCP_TOKEN_DERIVATION_KEY={B[:33]}\n",
         f"DJANGO_SECRET_KEY={C}\r\nPOSTGRES_PASSWORD={D}\nPOSTGRES_PASSWORD={F}\n"
         f"MCP_WRITE_GATEWAY_KEY={E}\n",
         f"MCP_WRITE_GATEWAY_KEY={E}\n",
@@ -233,6 +233,26 @@ def test_bad_arguments_exit_2(args):
     assert result.stdout == ""
 
 
+def test_lines_compose_reads_as_a_good_key_are_ok_and_other_forms_malformed(tmp_path):
+    """CRLF, trailing blanks and a comment are not the key; `export`/`:`/blanks name it."""
+    web, writer, mcp = _files(
+        tmp_path,
+        f"MCP_AUTHENTICATOR_KEY={A}\r\nMCP_TOKEN_DERIVATION_KEY={B}   # set 24.11\n",
+        f"DJANGO_SECRET_KEY={C}\t\nPOSTGRES_PASSWORD = {D}\nMCP_WRITE_GATEWAY_KEY: {E}\n",
+        f"  export MCP_WRITE_GATEWAY_KEY={E}\n",
+    )
+    result = _check(*_args(web, writer, mcp))
+    assert result.returncode == 1
+    assert result.stdout == (
+        "juristid.env MCP_AUTHENTICATOR_KEY: ok\n"
+        "juristid.env MCP_TOKEN_DERIVATION_KEY: ok\n"
+        "juristid-mcp-writer.env DJANGO_SECRET_KEY: ok\n"
+        "juristid-mcp-writer.env POSTGRES_PASSWORD: malformed\n"
+        "juristid-mcp-writer.env MCP_WRITE_GATEWAY_KEY: malformed\n"
+        "juristid-mcp.env MCP_WRITE_GATEWAY_KEY: malformed\n"
+    )
+
+
 def test_the_check_is_executable_in_git():
     listed = subprocess.run(
         ["git", "ls-files", "-s", "scripts/deploy/juristid-mcp-key-check.sh"],  # noqa: S607
@@ -283,7 +303,7 @@ VALID_VALUES = {
 
 
 def _old_web_ok(text: str, key: str, minimum: int) -> bool:
-    """main before HR-18, lib.sh: named once, `^KEY=.{MIN,}`, no replace-me."""
+    """main before HR-18, lib.sh (and so main's preflight): named once, `^KEY=.{MIN,}`."""
     lines = text.split("\n")
     named = [line for line in lines if re.match(rf"^\s*{key}=", line)]
     strong = [line for line in lines if re.match(rf"^{key}=.{{{minimum},}}", line)]
@@ -305,7 +325,24 @@ def _layouts(key: str, value: str) -> dict[str, str]:
         "alone": f"{key}={value}\n",
         "no-final-newline": f"OTHER=1\n{key}={value}",
         "among-others": f"# {key}=replace-me-template\nA=1\n{key}={value}\nZ= spaced value \n",
+        # Main's preflight passed these too (`.` takes the CR, the blank, the
+        # comment); Compose reads the key itself.
+        "crlf-line": f"{key}={value}\r\n",
+        "crlf-file": f"A=1\r\n{key}={value}\r\nZ=2\r\n",
+        "trailing-blanks": f"{key}={value} \t \n",
+        "inline-comment": f"{key}={value}  # generated 24.11\n",
+        "leading-blank-in-value": f"{key}= {value}\n",
     }
+
+
+#: Layouts only main's preflight (web's rule) took; the writer's old rule did not.
+PREFLIGHT_ONLY = {
+    "crlf-line",
+    "crlf-file",
+    "trailing-blanks",
+    "inline-comment",
+    "leading-blank-in-value",
+}
 
 
 def _new_states(cases: list[tuple[Path, str, int]]) -> list[str]:
@@ -335,13 +372,14 @@ def test_every_value_the_old_rules_accepted_is_still_ok(tmp_path):
                 n += 1
                 path = tmp_path / f"{n}-{name}-{key}-{layout}.env"
                 path.write_bytes(text.encode("utf-8"))
-                old_web = _old_web_ok(text, key, minimum)
-                old_writer = _old_writer_ok(text, key, minimum)
-                # Each of these is a value both old rules took as it stands.
-                assert old_web and old_writer, (name, key, layout)
+                # Main's preflight took each of these; the writer's old rule
+                # took the plain layouts too.
+                assert _old_web_ok(text, key, minimum), (name, key, layout)
+                if layout not in PREFLIGHT_ONLY:
+                    assert _old_writer_ok(text, key, minimum), (name, key, layout)
                 cases.append((path, key, minimum))
     states = _new_states(cases)
-    assert len(states) == len(cases) > 100
+    assert len(states) == len(cases) > 400
     refused = [
         str(case[0].name) for case, state in zip(cases, states, strict=True) if state != "ok"
     ]
@@ -404,10 +442,18 @@ def test_the_web_helper_keeps_a_valid_key_byte_for_byte(tmp_path, name):
         (f"MCP_AUTHENTICATOR_KEY={A[:5]}\n", "refuse"),
         (f"MCP_AUTHENTICATOR_KEY={A}\nMCP_AUTHENTICATOR_KEY={B}\n", "refuse"),
         (f"MCP_AUTHENTICATOR_KEY={A}\nMCP_AUTHENTICATOR_KEY=\n", "refuse"),
-        (f"MCP_AUTHENTICATOR_KEY={A} \n", "refuse"),
-        (f"MCP_AUTHENTICATOR_KEY={A}\r\n", "refuse"),
+        (f"MCP_AUTHENTICATOR_KEY={A} \n", "keep"),  # Compose reads the key itself
+        (f"MCP_AUTHENTICATOR_KEY={A}\r\n", "keep"),
+        (f"MCP_AUTHENTICATOR_KEY={A} # note\n", "keep"),
         (f" MCP_AUTHENTICATOR_KEY={A}\n", "refuse"),
-        ("MCP_AUTHENTICATOR_KEY= \n", "refuse"),  # whitespace: malformed, by hand
+        (f"export MCP_AUTHENTICATOR_KEY={A}\n", "refuse"),  # Compose reads it: never append
+        (f"MCP_AUTHENTICATOR_KEY = {A}\n", "refuse"),
+        (f"MCP_AUTHENTICATOR_KEY: {A}\n", "refuse"),
+        ("export MCP_AUTHENTICATOR_KEY=\n", "refuse"),
+        ("MCP_AUTHENTICATOR_KEY= \n", "generate"),  # Compose reads it as empty
+        ('MCP_AUTHENTICATOR_KEY=""\n', "generate"),
+        ("MCP_AUTHENTICATOR_KEY=''\n", "generate"),
+        ("MCP_AUTHENTICATOR_KEY= # nothing yet\n", "generate"),
     ],
     ids=[
         "missing",
@@ -421,8 +467,16 @@ def test_the_web_helper_keeps_a_valid_key_byte_for_byte(tmp_path, name):
         "duplicated-one-empty",
         "trailing-space",
         "crlf",
+        "inline-comment",
         "indented",
+        "export",
+        "blanks-around-equals",
+        "colon",
+        "export-empty",
         "only-a-space",
+        "double-quoted-empty",
+        "single-quoted-empty",
+        "only-a-comment",
     ],
 )
 def test_the_helpers_act_only_where_nothing_can_be_running(tmp_path, text, action):

@@ -19,7 +19,7 @@
 #   new MCP_AUTHENTICATOR_KEY makes every enrolled authenticator unreadable,
 #   which is a decision, not a side effect of running this twice.
 # - A key that may be the one web runs with is NOT replaced either: a line
-#   holding whitespace or a carriage return (malformed), two lines naming the
+#   naming the key in another form than `KEY=` (malformed), two lines naming the
 #   key, or a real value shorter than 40 characters (mcp_key_action in lib.sh).
 #   This exits 1 before writing anything and asks for the line to be fixed by
 #   hand (HR-18).
@@ -112,7 +112,7 @@ for key in "${MCP_WEB_KEYS[@]}"; do
   # Every line but the ones naming the key. grep exits 1 when it selects
   # nothing (a file holding only that key), 2 when it cannot read.
   status=0
-  grep -vE "^[[:space:]#]*${key}=" "$ENV_FILE" >"$tmp" || status=$?
+  grep -vE "^[[:space:]#]*(export[[:space:]]+)?${key}[[:space:]]*[=:]" "$ENV_FILE" >"$tmp" || status=$?
   [ "$status" -le 1 ] || die "could not read $ENV_FILE"
   printf '%s=%s\n' "$key" "$value" >>"$tmp"
   value=""

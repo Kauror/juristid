@@ -248,11 +248,12 @@ def test_the_script_is_executable_in_git():
 @pytest.mark.parametrize(
     ("key", "line"),
     [
-        ("MCP_WRITE_GATEWAY_KEY", f"MCP_WRITE_GATEWAY_KEY={STRONG} "),
-        ("MCP_WRITE_GATEWAY_KEY", f"MCP_WRITE_GATEWAY_KEY={STRONG}\r"),
-        ("POSTGRES_PASSWORD", f"POSTGRES_PASSWORD={STRONG[:20]}\t{STRONG[20:]}"),
+        ("MCP_WRITE_GATEWAY_KEY", f"export MCP_WRITE_GATEWAY_KEY={STRONG}"),
+        ("MCP_WRITE_GATEWAY_KEY", f"MCP_WRITE_GATEWAY_KEY: {STRONG}"),
+        ("POSTGRES_PASSWORD", f"POSTGRES_PASSWORD = {STRONG}"),
+        ("POSTGRES_PASSWORD", f"  POSTGRES_PASSWORD={STRONG}"),
     ],
-    ids=["gateway-trailing-space", "gateway-crlf", "password-inner-tab"],
+    ids=["gateway-export", "gateway-colon", "password-blanks", "password-indented"],
 )
 def test_a_malformed_secret_is_refused_and_nothing_changes(tmp_path, key, line):
     """It may be the value in use (the role's password, the key mcp holds): never replaced."""
@@ -278,7 +279,7 @@ def test_rotation_replaces_a_malformed_gateway_key(tmp_path):
     writer, mcp = _files(tmp_path)
     text = mcp.read_text(encoding="utf-8").replace(
         "MCP_WRITE_GATEWAY_KEY=replace-me-with-openssl-rand-base64-48",
-        f"MCP_WRITE_GATEWAY_KEY={STRONG} ",
+        f"export MCP_WRITE_GATEWAY_KEY={STRONG}",
     )
     mcp.write_text(text, encoding="utf-8")
     result = _helper(writer, mcp, "--rotate-gateway-key")
@@ -286,6 +287,8 @@ def test_rotation_replaces_a_malformed_gateway_key(tmp_path):
     [writer_key] = _values(writer, "MCP_WRITE_GATEWAY_KEY")
     assert _values(mcp, "MCP_WRITE_GATEWAY_KEY") == [writer_key]
     assert writer_key != STRONG and " " not in writer_key
+    # The `export` line is gone: one line names the key, the new one.
+    assert "export MCP_WRITE_GATEWAY_KEY" not in mcp.read_text(encoding="utf-8")
 
 
 @needs_modes
@@ -332,3 +335,24 @@ def test_an_empty_secret_is_generated_as_before(tmp_path):
     assert result.returncode == 0, result.stderr
     [value] = _values(writer, "POSTGRES_PASSWORD")
     assert len(value) >= 32
+
+
+@needs_modes
+@pytest.mark.parametrize(
+    "line",
+    [f"MCP_WRITE_GATEWAY_KEY={STRONG} ", f"MCP_WRITE_GATEWAY_KEY={STRONG}\r"],
+    ids=["trailing-space", "crlf"],
+)
+def test_a_gateway_key_compose_reads_cleanly_is_copied_as_compose_reads_it(tmp_path, line):
+    """A trailing blank or CR is not part of the key: the copy holds the key itself."""
+    writer, mcp = _files(tmp_path)
+    text = mcp.read_text(encoding="utf-8").replace(
+        "MCP_WRITE_GATEWAY_KEY=replace-me-with-openssl-rand-base64-48", line
+    )
+    mcp.write_bytes(text.encode("utf-8"))
+    before = mcp.read_bytes()
+    result = _helper(writer, mcp)
+    assert result.returncode == 0, result.stderr
+    assert _values(writer, "MCP_WRITE_GATEWAY_KEY") == [STRONG]
+    assert mcp.read_bytes() == before
+    assert STRONG not in result.stdout + result.stderr

@@ -212,15 +212,26 @@ def test_the_library_names_each_keys_state(tmp_path, text, state):
         (f"MCP_AUTHENTICATOR_KEY={'a' * 32}\n", 32, "ok"),
         ("MCP_AUTHENTICATOR_KEY=\n", 40, "weak"),
         (f'MCP_AUTHENTICATOR_KEY="{STRONG}"\n', 40, "ok"),
-        (f"MCP_AUTHENTICATOR_KEY= {STRONG}\n", 40, "malformed"),
-        (f"MCP_AUTHENTICATOR_KEY={STRONG} \n", 40, "malformed"),
-        (f"MCP_AUTHENTICATOR_KEY={STRONG[:20]} {STRONG[20:]}\n", 40, "malformed"),
-        (f"MCP_AUTHENTICATOR_KEY={STRONG}\t\n", 40, "malformed"),
-        (f"MCP_AUTHENTICATOR_KEY={STRONG[:20]}\t{STRONG[20:]}\n", 40, "malformed"),
-        (f"MCP_AUTHENTICATOR_KEY={STRONG}\r\n", 40, "malformed"),
-        (f"OTHER=1\r\nMCP_AUTHENTICATOR_KEY={STRONG}\r\n", 40, "malformed"),
+        # Judged on the value Compose reads: blanks around it, a carriage
+        # return and an unquoted ` # comment` are not part of it.
+        (f"MCP_AUTHENTICATOR_KEY= {STRONG}\n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG} \n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG[:20]} {STRONG[20:]}\n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\t\n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG[:20]}\t{STRONG[20:]}\n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\r\n", 40, "ok"),
+        (f"OTHER=1\r\nMCP_AUTHENTICATOR_KEY={STRONG}\r\n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG} # set 24.11\n", 40, "ok"),
+        (f"MCP_AUTHENTICATOR_KEY={'a' * 30} # a comment that is long enough\n", 40, "weak"),
+        (f"MCP_AUTHENTICATOR_KEY={'a' * 39}\r\n", 40, "weak"),
+        ('MCP_AUTHENTICATOR_KEY=""\n', 40, "weak"),
+        # Named in another form than `KEY=` at the start of the line.
         (f"  MCP_AUTHENTICATOR_KEY={STRONG}\n", 40, "malformed"),
-        ("MCP_AUTHENTICATOR_KEY=short value\n", 40, "malformed"),
+        (f"export MCP_AUTHENTICATOR_KEY={STRONG}\n", 40, "malformed"),
+        (f"MCP_AUTHENTICATOR_KEY = {STRONG}\n", 40, "malformed"),
+        (f"MCP_AUTHENTICATOR_KEY: {STRONG}\n", 40, "malformed"),
+        ("MCP_AUTHENTICATOR_KEY=short value\n", 40, "weak"),
+        (f"MCP_AUTHENTICATOR_KEY_OLD={STRONG}\n", 40, "missing"),
         ("OTHER=1\n", 40, "missing"),
         (f"# MCP_AUTHENTICATOR_KEY={STRONG}\n", 40, "missing"),
         (f"MCP_AUTHENTICATOR_KEY={STRONG}\nMCP_AUTHENTICATOR_KEY= x\n", 40, "duplicated"),
@@ -240,8 +251,16 @@ def test_the_library_names_each_keys_state(tmp_path, text, state):
         "inner-tab",
         "crlf",
         "crlf-file",
+        "inline-comment",
+        "short-before-comment",
+        "short-before-crlf",
+        "quoted-empty",
         "indented-line",
+        "export",
+        "blanks-around-equals",
+        "colon",
         "short-with-space",
+        "longer-name",
         "missing-line",
         "commented",
         "duplicated",
@@ -274,14 +293,14 @@ def test_one_rule_refuses_a_bad_minimum(tmp_path, minimum):
 
 
 def test_one_rule_never_prints_a_value_even_under_xtrace(tmp_path):
-    """The rule only counts lines: no value is ever held in a variable a trace could show."""
+    """The value is read inside awk: no shell variable a trace could show ever holds it."""
     first, second = "Qz7Lm2Xc9Rt4" * 2, "Wp3Hk8Nd5Bv1" * 2
     for value in (f"{first}{second}", f"{first} {second}", f"{first}{second}\r", "short"):
         path = _write(tmp_path, f"MCP_AUTHENTICATOR_KEY={value}\n")
         result = _lib(f'set -x; mcp_key_state "{path.as_posix()}" MCP_AUTHENTICATOR_KEY 40')
         assert result.returncode == 0, result.stderr
-        # The trace really ran — every grep of the rule is in it — and holds no value.
-        assert result.stderr.count("grep -UcE") == 4
+        # The trace really ran — the rule's awk is in it — and holds no value.
+        assert "awk -v key=MCP_AUTHENTICATOR_KEY" in result.stderr
         for part in (first, second, "short"):
             assert part not in result.stdout + result.stderr
 
@@ -293,19 +312,26 @@ def test_the_writer_script_has_no_private_copy_of_the_rule():
     assert "mcp_key_state" in writer
     assert "key_state() {" not in writer
     assert "[^[:space:]]{" not in writer
+    assert "mcp_key_value" in writer and 'sed -n "s/^$2=//p"' not in writer
 
 
 @pytest.mark.parametrize(
     "line",
     [
-        f"MCP_AUTHENTICATOR_KEY={STRONG} ",
-        f"MCP_AUTHENTICATOR_KEY={STRONG}\r",
+        f"export MCP_AUTHENTICATOR_KEY={STRONG}",
+        f"MCP_AUTHENTICATOR_KEY = {STRONG}",
+        f"MCP_AUTHENTICATOR_KEY: {STRONG}",
         f" MCP_AUTHENTICATOR_KEY={STRONG}",
     ],
-    ids=["trailing-space", "crlf", "indented"],
+    ids=["export", "blanks-around-equals", "colon", "indented"],
 )
 def test_the_helper_never_replaces_a_malformed_key(tmp_path, line):
-    """It may be the key web runs with: rotating it would lock every authenticator out."""
+    """Compose reads each of these as the key: appending a new one would replace it.
+
+    Before HR-18 round 2, `export KEY=`, `KEY = ` and `KEY:` did not name the
+    key, so the helper said «generated (it was missing)» and appended a line —
+    which Compose then took over the live one.
+    """
     original = f"{line}\nMCP_ENABLED=0\n"
     path = _write(tmp_path, original)
     result = _helper(path)
@@ -314,6 +340,26 @@ def test_the_helper_never_replaces_a_malformed_key(tmp_path, line):
     assert "MCP_AUTHENTICATOR_KEY" in result.stderr
     # Deleting the line is not offered as free: it costs every enrolment.
     assert "every enrolled authenticator becomes unreadable" in result.stderr
+    assert STRONG not in result.stdout + result.stderr
+    assert path.read_bytes() == original.encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"MCP_AUTHENTICATOR_KEY={STRONG} ",
+        f"MCP_AUTHENTICATOR_KEY={STRONG}\r",
+        f"MCP_AUTHENTICATOR_KEY={STRONG}  # set 24.11",
+    ],
+    ids=["trailing-space", "crlf", "inline-comment"],
+)
+def test_the_helper_keeps_a_line_compose_reads_as_a_good_key(tmp_path, line):
+    """Main's preflight passed these and Compose reads a good key: kept byte for byte."""
+    original = f"{line}\nMCP_TOKEN_DERIVATION_KEY={'d' * 50}\nMCP_ENABLED=1\n"
+    path = _write(tmp_path, original)
+    result = _helper(path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.count("already set, kept") == 2
     assert STRONG not in result.stdout + result.stderr
     assert path.read_bytes() == original.encode("utf-8")
 
@@ -392,7 +438,7 @@ def test_the_runbooks_state_probe_names_each_key_and_prints_no_value(tmp_path):
         "/mnt/user/appdata/juristid-main/config/juristid.env",
         (tmp_path / "juristid.env").as_posix(),
     )
-    _write(tmp_path, f"MCP_AUTHENTICATOR_KEY={STRONG}\r\nMCP_TOKEN_DERIVATION_KEY=short\n")
+    _write(tmp_path, f"export MCP_AUTHENTICATOR_KEY={STRONG}\r\nMCP_TOKEN_DERIVATION_KEY=short\n")
     result = subprocess.run(  # noqa: S603 - the runbook's own command, on a temporary file
         [BASH, "-c", probe], cwd=ROOT, capture_output=True, text=True, timeout=60, check=False
     )
@@ -404,7 +450,7 @@ def test_the_runbooks_state_probe_names_each_key_and_prints_no_value(tmp_path):
 def test_the_library_lists_a_malformed_key_as_not_ready(tmp_path):
     path = _write(
         tmp_path,
-        f"MCP_AUTHENTICATOR_KEY={STRONG} \nMCP_TOKEN_DERIVATION_KEY={STRONG}\n",
+        f"MCP_AUTHENTICATOR_KEY : {STRONG}\nMCP_TOKEN_DERIVATION_KEY={STRONG} \r\n",
     )
     result = _lib(f'mcp_web_keys_not_ready "{path.as_posix()}"')
     assert result.returncode == 0, result.stderr

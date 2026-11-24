@@ -26,8 +26,8 @@
 # - The gateway key must be equal in both files. One good copy is copied to
 #   the other file; two good copies that differ are refused (this script does
 #   not guess which one `mcp` and `mcp-writer` are running with).
-# - A line that may still be the value in use — whitespace or a carriage
-#   return in it (malformed), two lines naming the key, or a real value shorter
+# - A line that may still be the value in use — the key named in another
+#   form than `KEY=` (malformed), two lines naming it, or a real value shorter
 #   than the minimum (mcp_key_action in lib.sh, the rule
 #   juristid-mcp-web-keys.sh uses too) — is never replaced: this exits 1 before
 #   writing anything and asks for the line to be fixed by hand
@@ -151,16 +151,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# The value of a key in state ok. Kept in a variable, never printed.
+# The gateway key in state ok, as Compose reads it (lib.sh). Kept in a
+# variable, never printed.
 key_value() {
-  sed -n "s/^$2=//p" "$1"
+  mcp_key_value "$1" "$2" "$GATEWAY_KEY_MIN"
 }
 
 # Drop every line naming KEY (commented template lines included), append one.
 write_key() {
   local file="$1" key="$2" value="$3" status=0
   tmp="$(mktemp "$file.XXXXXX")"
-  grep -vE "^[[:space:]#]*${key}=" "$file" >"$tmp" || status=$?
+  grep -vE "^[[:space:]#]*(export[[:space:]]+)?${key}[[:space:]]*[=:]" "$file" >"$tmp" || status=$?
   [ "$status" -le 1 ] || die "could not read $file"
   # A last line without a newline must not swallow the appended one.
   if [ -s "$tmp" ] && [ "$(tail -c 1 -- "$tmp" | od -An -c | tr -d ' ')" != '\n' ]; then
@@ -190,7 +191,7 @@ verify() {
 }
 
 # A secret that may be the value in use is never replaced here: a malformed
-# line (whitespace or a carriage return), two lines naming it, or a real value
+# line (not `KEY=` at the start), two lines naming it, or a real value
 # shorter than the minimum (mcp_key_action refuse in lib.sh) — the role's
 # password, or the key mcp and mcp-writer hold. Refuse before anything is
 # written. Key names only. An explicit --rotate-gateway-key replaces the

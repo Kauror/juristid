@@ -273,9 +273,13 @@ MCP_WEB_KEY_MIN_LENGTH=40
 # The write gateway's secrets (juristid-mcp-writer-keys.sh writes them; the
 # read-only juristid-mcp-key-check.sh reports them): its signing key and
 # database password in juristid-mcp-writer.env, the gateway key there and in
-# juristid-mcp.env.
+# juristid-mcp.env. Read only by the scripts that source this file, hence the
+# SC2034 ("appears unused") exceptions.
+# shellcheck disable=SC2034
 MCP_WRITER_SECRET_KEY_MIN_LENGTH=50
+# shellcheck disable=SC2034
 MCP_WRITER_DB_PASSWORD_MIN_LENGTH=32
+# shellcheck disable=SC2034
 MCP_GATEWAY_KEY_MIN_LENGTH=40
 
 # Whether an environment file switches AI access on, read the way
@@ -291,82 +295,114 @@ mcp_enabled_in() {
 
 # One secret's state in an environment file — the one rule every MCP key
 # script uses (HR-18): `juristid-mcp-web-keys.sh` and the preflight through
-# mcp_web_key_state, `juristid-mcp-writer-keys.sh` directly, each with its own
-# minimum length.
+# mcp_web_key_state, `juristid-mcp-writer-keys.sh` and the read-only
+# `juristid-mcp-key-check.sh` directly, each with its own minimum length.
 #
-#   missing     no line names KEY (`KEY=` after optional leading whitespace);
-#               a commented template line does not name it
-#   duplicated  more than one line names it
-#   malformed   the one line is not exactly `KEY=value` with no whitespace
-#               anywhere: leading blanks, a space or tab in or around the value,
-#               or a carriage return (a file saved with Windows line endings)
-#   weak        `KEY=value` without whitespace, but shorter than MIN characters
-#               or a `replace-me` placeholder
+# A line NAMES the key when it reads `KEY=` or `KEY:` after optional leading
+# blanks, an optional `export ` and optional blanks before the separator — every
+# form Compose's env_file reader takes as that key. A commented line does not.
+#
+#   missing     no line names KEY
+#   duplicated  more than one line names it (Compose runs the last one)
+#   malformed   the one line names it in another form than `KEY=` at the
+#               start of the line: indented, `export KEY=`, `KEY = …`, `KEY: …`
+#   weak        `KEY=`, but the value Compose reads is empty, a `replace-me`
+#               placeholder or shorter than MIN characters
 #   ok          otherwise
 #
-# Quotes are not special: they count as characters, as they always did (the
-# helpers never write any). Malformed is kept apart from weak because such a
-# line may still be the value a service runs with — Compose trims some of that
-# whitespace — so the helpers refuse to replace it rather than silently
-# rotating a key that is in use.
+# The value is judged as Compose reads it: a trailing carriage return (a file
+# saved with Windows line endings) and trailing blanks are not part of it, nor
+# are leading blanks or an unquoted ` # comment`. A quoted value ends at its
+# closing quote and keeps both quotes in the count, as it always did (`""` and
+# `''` read as empty). So a key
+# line main's preflight passed is not newly refused for its line ending, a
+# trailing blank or a comment — unless the value Compose reads is itself under
+# MIN.
 #
-# Prints the state only, never a value. `grep -c` prints 0 and exits 1 on no
-# match, hence `|| true`; `-U` keeps a carriage return visible to Git Bash's
-# grep on Windows (a no-op on Linux). A file that cannot be read is an error,
-# not a state.
-mcp_key_state() {
-  local file="$1" key="$2" min="$3" named clean strong placeholder
+# The parsing happens inside one awk process, so no value is ever held in a
+# shell variable a trace could show; awk prints the state and the action only.
+# A file that cannot be read is an error, not a state.
+_mcp_key_scan() {
+  local file="$1" key="$2" min="$3"
   [ -r "$file" ] && [ -f "$file" ] || die "cannot read $file"
   case "$min" in
     '' | *[!0-9]* | 0) die "mcp_key_state: the minimum length must be a positive number" ;;
   esac
-  named="$(grep -UcE "^[[:space:]]*${key}=" "$file" || true)"
-  clean="$(grep -UcE "^${key}=[^[:space:]]*\$" "$file" || true)"
-  strong="$(grep -UcE "^${key}=[^[:space:]]{${min},}\$" "$file" || true)"
-  placeholder="$(grep -UcE "^${key}=replace-me" "$file" || true)"
-  if [ "$named" = 0 ]; then
-    printf 'missing\n'
-  elif [ "$named" != 1 ]; then
-    printf 'duplicated\n'
-  elif [ "$clean" != 1 ]; then
-    printf 'malformed\n'
-  elif [ "$strong" != 1 ] || [ "$placeholder" != 0 ]; then
-    printf 'weak\n'
-  else
-    printf 'ok\n'
-  fi
+  awk -v key="$key" -v min="$min" -v mode="${4:-state}" '
+    function rtrim(s) { sub(/[ \t\r\f\v]+$/, "", s); return s }
+    {
+      probe = $0
+      sub(/^[ \t\r\f\v]+/, "", probe)
+      if (probe ~ /^export[ \t]/) { probe = substr(probe, 7); sub(/^[ \t]+/, "", probe) }
+      if (substr(probe, 1, length(key)) != key) next
+      rest = substr(probe, length(key) + 1)
+      sub(/^[ \t]+/, "", rest)
+      sep = substr(rest, 1, 1)
+      if (sep != "=" && sep != ":") next
+      named++
+      canonical = (substr($0, 1, length(key) + 1) == key "=")
+      raw = substr($0, length(key) + 2)
+    }
+    END {
+      action = "refuse"
+      if (named == 0) { state = "missing"; action = "generate" }
+      else if (named > 1) state = "duplicated"
+      else if (!canonical) state = "malformed"
+      else {
+        v = raw
+        if (v ~ /^[ \t]+#/) v = ""
+        sub(/^[ \t]+/, "", v)
+        q = substr(v, 1, 1)
+        if (q == "\"" || q == "\047") {
+          j = index(substr(v, 2), q)
+          if (j) v = substr(v, 1, j + 1)
+        } else {
+          i = match(v, /[ \t]#/)
+          if (i) v = substr(v, 1, i - 1)
+        }
+        v = rtrim(v)
+        empty = (v == "" || v == "\"\"" || v == "\047\047")
+        bare = v
+        if (q == "\"" || q == "\047") bare = substr(v, 2)
+        placeholder = (substr(bare, 1, 10) == "replace-me")
+        if (empty || placeholder) { state = "weak"; action = "generate" }
+        else if (length(v) < min + 0) state = "weak"
+        else { state = "ok"; action = "keep" }
+      }
+      if (mode == "action") print action
+      else if (mode == "value") { if (state == "ok") print v }
+      else print state
+    }
+  ' "$file"
+}
+
+mcp_key_state() {
+  _mcp_key_scan "$1" "$2" "$3" state
 }
 
 # What a key helper may do with one key (FILE KEY MIN): keep, generate or
 # refuse. The helpers write a key only when nothing can be running with it.
 #
 #   keep      ok
-#   generate  missing, or its one clean line holds no value (config/env.py
-#             reads an empty value as unset) or a `replace-me` placeholder
-#             (the process checks refuse one on real data)
+#   generate  missing, or its one line holds no value (config/env.py reads an
+#             empty value as unset) or a `replace-me` placeholder (the process
+#             checks refuse one on real data)
 #   refuse    malformed, duplicated, or weak with a real value: each may be
 #             the value a service or a database role runs with (Compose takes
-#             the last of two lines; the process checks accept a shorter key
-#             than the helpers write), so it is fixed by hand, never replaced
+#             the last of two lines and reads `export KEY=`; the process checks
+#             accept a shorter key than the helpers write), so it is fixed by
+#             hand, never replaced
 #
-# Prints the action only, never a value; counts lines like mcp_key_state.
+# Prints the action only, never a value.
 mcp_key_action() {
-  local file="$1" key="$2" min="$3" state empty placeholder
-  state="$(mcp_key_state "$file" "$key" "$min")" || return 1
-  case "$state" in
-    ok) printf 'keep\n' ;;
-    missing) printf 'generate\n' ;;
-    weak)
-      empty="$(grep -UcE "^${key}=\$" "$file" || true)"
-      placeholder="$(grep -UcE "^${key}=replace-me" "$file" || true)"
-      if [ "$empty" = 1 ] || [ "$placeholder" = 1 ]; then
-        printf 'generate\n'
-      else
-        printf 'refuse\n'
-      fi
-      ;;
-    *) printf 'refuse\n' ;;
-  esac
+  _mcp_key_scan "$1" "$2" "$3" action
+}
+
+# The value of a key in state ok, as Compose reads it (quotes kept, as the
+# line holds them), for a helper to keep in a variable — never to print.
+# Prints nothing for a key in any other state.
+mcp_key_value() {
+  _mcp_key_scan "$1" "$2" "$3" value
 }
 
 # Why a helper refuses KEY in FILE (its state), for its error message. Names
@@ -374,7 +410,7 @@ mcp_key_action() {
 mcp_key_refusal() {
   local file="$1" key="$2" state="$3" min="$4"
   case "$state" in
-    malformed) printf '%s\n' "$key in $file has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings), then run this again." ;;
+    malformed) printf '%s\n' "$key in $file is not written as $key= at the start of its line (indented, export, or blanks or a colon around the separator), and Compose may be reading it. Nothing was changed. Fix that line by hand (KEY=value), then run this again." ;;
     duplicated) printf '%s\n' "$key in $file is named on more than one line, and the service runs with one of them. Nothing was changed. Keep the line in use, delete the others by hand, then run this again." ;;
     *) printf '%s\n' "$key in $file holds a value shorter than $min characters, which a service may be running with. Nothing was changed. Replace it by hand only if it is not in use, then run this again." ;;
   esac
@@ -391,9 +427,9 @@ mcp_web_key_state() {
 # hand, because the helper refuses it.
 mcp_web_key_problem() {
   local key="$1" state="$2" file="$3" action
-  action="$(mcp_key_action "$file" "$key" "$MCP_WEB_KEY_MIN_LENGTH" 2>/dev/null || printf 'generate')"
+  action="$( (mcp_key_action "$file" "$key" "$MCP_WEB_KEY_MIN_LENGTH") 2>/dev/null || printf 'generate')"
   if [ "$state" = malformed ]; then
-    printf '%s\n' "juristid.env has MCP_ENABLED on and $key is malformed (whitespace or a carriage return in its line). Fix that line by hand — KEY=value, no spaces, tabs or Windows line endings — then run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file (docs/mcp/OPERATIONS.md, step 3)."
+    printf '%s\n' "juristid.env has MCP_ENABLED on and $key is malformed (not written as $key= at the start of its line: indented, export, or blanks or a colon around the separator). Fix that line by hand — KEY=value — then run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file (docs/mcp/OPERATIONS.md, step 3)."
   elif [ "$action" = refuse ]; then
     printf '%s\n' "juristid.env has MCP_ENABLED on and $key is $state: web may be running with that line, so fix it by hand (one line KEY=value, $MCP_WEB_KEY_MIN_LENGTH or more characters), then run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file (docs/mcp/OPERATIONS.md, step 3)."
   else

@@ -5,11 +5,12 @@
 # Run it on the host before a deploy that carries a change to the key rule, or
 # whenever a key helper refused: it says, per slot, only one of
 #
-#   ok          one line KEY=value, no whitespace, long enough, no placeholder
-#   weak        that, but too short, empty or a `replace-me` placeholder
+#   ok          one line KEY=value; the value Compose reads is long enough, no placeholder
+#   weak        that, but under the helper's minimum (the process may still start), empty
+#               or a `replace-me` placeholder
 #   missing     no line names the key (a commented line does not count)
 #   duplicated  more than one line names it
-#   malformed   whitespace or a carriage return in its line
+#   malformed   named another way Compose reads: indented, export, `KEY = `, `KEY:`
 #
 # using the one rule (mcp_key_state in lib.sh) the preflight,
 # juristid-mcp-web-keys.sh and juristid-mcp-writer-keys.sh use, at their
@@ -21,7 +22,7 @@
 #
 # Only the files passed are read. Nothing is written, no temporary file is
 # made, and no value — nor any part, length or digest of one — is printed,
-# logged or kept in a variable: the rule only counts matching lines.
+# logged or kept in a variable: the rule reads values only inside one awk process.
 #
 # Exit 0 when every slot is ok, 1 when any is not, 2 when a file cannot be read
 # or the arguments are wrong.
