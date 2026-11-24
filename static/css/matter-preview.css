@@ -15,6 +15,9 @@
   flex: none;
   width: 24px;
   height: 24px;
+  /* A 24 px target that lays out as 16 px: the row keeps the height it had
+     without the icon, and the register's density with it. */
+  margin-block: -4px;
   margin-left: auto;
   padding: 0;
   border: 1px solid transparent;
