@@ -168,8 +168,11 @@ preflight and juristid.E046 refuse:
 
 Generate them straight into the file, so no value reaches the terminal or the
 shell history. The helper keeps a key that is already set (it never rotates
-one), replaces the template's commented line, a placeholder or a short value,
+one), replaces the template's commented line, a placeholder or an empty value,
 appends the line when the file has none at all, and then proves its own write.
+It never replaces a line `web` may be running with: two lines naming the key,
+or a real value shorter than 40 characters (`web` itself accepts 32), stop it
+before it writes anything, for a fix by hand (HR-18).
 A valid key is one line `KEY=value`, 40 or more characters, with no whitespace
 anywhere in the line — no spaces, tabs or Windows line endings (the one rule in
 `scripts/deploy/lib.sh`, `mcp_key_state`, which the preflight and
@@ -209,6 +212,19 @@ bash -c '. scripts/deploy/lib.sh; for k in "${MCP_WEB_KEYS[@]}"; do printf "%s: 
 `malformed` means the line has a space, a tab or a Windows line ending in it:
 fix that line by hand in an editor, then run the helper again. The preflight
 reports the same states when `MCP_ENABLED` is on.
+
+For every MCP key slot at once — web's two keys, the write gateway's signing
+key, database password and gateway key, and `mcp`'s copy of the gateway key —
+run the read-only check. It prints `FILE KEY: state` per slot and nothing
+else: no value, no part, length or digest of one. It writes nothing, and exits
+0 only when every slot is `ok` (1 otherwise, 2 when a file cannot be read):
+
+```bash
+scripts/deploy/juristid-mcp-key-check.sh --web-env-file /mnt/user/appdata/juristid-main/config/juristid.env --writer-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env --mcp-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp.env
+```
+
+Run it before the first deploy that carries the HR-18 rule. Anything but `ok`
+on a live slot is fixed by hand before the deploy; neither helper replaces it.
 
 **Only then**, in `juristid.env`, in an editor, the three lines the template
 added (read their comments in `deploy/unraid-main/.env.example`):
@@ -808,7 +824,10 @@ signing key and database password, and one gateway key into both
 scripts/deploy/juristid-mcp-writer-keys.sh --writer-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env --mcp-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp.env --web-env-file /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
-It must end with `Every secret the write gateway needs is in place.`
+It must end with `Every secret the write gateway needs is in place.` It
+generates only a secret that is missing, empty or a `replace-me` placeholder;
+a malformed, duplicated or short real one stops it, unchanged, for a fix by
+hand (`--rotate-gateway-key` still replaces the gateway key in both files).
 
 **3. The writer's database role**, created from `web` (its role owns the tables
 and is the image's superuser); the password goes from the file to stdin and is

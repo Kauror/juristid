@@ -89,12 +89,13 @@ def _verified(path: Path, key: str) -> int:
         # No line at all — the case the old `sed` silently did nothing for —
         # and no newline after the last line either.
         "DJANGO_SECRET_KEY=x\nMCP_ENABLED=0",
-        # A placeholder somebody uncommented, a short value, and a duplicate.
+        # A placeholder somebody uncommented, and an empty value: nothing can
+        # run with either. A short real value or a duplicate is refused (HR-18,
+        # test_the_helper_never_replaces_a_key_that_may_be_in_use).
         "MCP_AUTHENTICATOR_KEY=replace-me-with-openssl-rand-base64-48-xxxxxx\nMCP_ENABLED=0\n",
-        "MCP_AUTHENTICATOR_KEY=short\nMCP_ENABLED=0\n",
-        f"MCP_AUTHENTICATOR_KEY={STRONG}\nMCP_AUTHENTICATOR_KEY={STRONG}\nMCP_ENABLED=0\n",
+        "MCP_AUTHENTICATOR_KEY=\nMCP_ENABLED=0\n",
     ],
-    ids=["template", "no-line-no-newline", "placeholder", "short", "duplicate"],
+    ids=["template", "no-line-no-newline", "placeholder", "empty"],
 )
 def test_the_helper_writes_one_verified_key_and_prints_no_value(tmp_path, original):
     path = _write(tmp_path, original)
@@ -315,6 +316,55 @@ def test_the_helper_never_replaces_a_malformed_key(tmp_path, line):
     assert "every enrolled authenticator becomes unreadable" in result.stderr
     assert STRONG not in result.stdout + result.stderr
     assert path.read_bytes() == original.encode("utf-8")
+
+
+@pytest.mark.parametrize(
+    ("line", "why"),
+    [
+        # Two lines: Compose runs web with the last one, so either may be live.
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\nMCP_AUTHENTICATOR_KEY={STRONG}", "more than one line"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\nMCP_AUTHENTICATOR_KEY=", "more than one line"),
+        # A real value web accepts (mcp_access.E004: 32 or more) but the
+        # helper's 40 does not.
+        (f"MCP_AUTHENTICATOR_KEY={'k' * 32}", "shorter than 40 characters"),
+        (f"MCP_AUTHENTICATOR_KEY={'k' * 39}", "shorter than 40 characters"),
+        ("MCP_AUTHENTICATOR_KEY=short", "shorter than 40 characters"),
+    ],
+    ids=["duplicate", "duplicate-one-empty", "short-32", "short-39", "short"],
+)
+def test_the_helper_never_replaces_a_key_that_may_be_in_use(tmp_path, line, why):
+    """HR-18: before, a duplicate or a short value was dropped and regenerated."""
+    original = f"{line}\nMCP_TOKEN_DERIVATION_KEY={'d' * 50}\nMCP_ENABLED=1\n"
+    path = _write(tmp_path, original)
+    result = _helper(path)
+    assert result.returncode != 0
+    assert "Nothing was changed" in result.stderr
+    assert why in result.stderr
+    assert "every enrolled authenticator becomes unreadable" in result.stderr
+    assert "k" * 32 not in result.stdout + result.stderr
+    assert STRONG not in result.stdout + result.stderr
+    assert path.read_bytes() == original.encode("utf-8")
+
+
+def test_the_preflight_sends_a_key_that_may_be_in_use_to_a_hand_fix(tmp_path):
+    for text, state in (
+        (f"MCP_AUTHENTICATOR_KEY={'k' * 35}\n", "weak"),
+        (f"MCP_AUTHENTICATOR_KEY={STRONG}\nMCP_AUTHENTICATOR_KEY={STRONG}\n", "duplicated"),
+    ):
+        path = _write(tmp_path, text)
+        result = _lib(f'mcp_web_key_problem MCP_AUTHENTICATOR_KEY {state} "{path.as_posix()}"')
+        assert result.returncode == 0, result.stderr
+        assert f"MCP_AUTHENTICATOR_KEY is {state}: web may be running with that line" in (
+            result.stdout
+        )
+        assert "fix it by hand" in result.stdout
+        assert "k" * 35 not in result.stdout
+        assert STRONG not in result.stdout
+    # A placeholder or an empty value still sends the operator to the helper.
+    for text in ("MCP_AUTHENTICATOR_KEY=replace-me-x\n", "MCP_AUTHENTICATOR_KEY=\n"):
+        path = _write(tmp_path, text)
+        result = _lib(f'mcp_web_key_problem MCP_AUTHENTICATOR_KEY weak "{path.as_posix()}"')
+        assert "MCP_AUTHENTICATOR_KEY is weak: web would refuse to start" in result.stdout
 
 
 def test_the_preflight_names_a_malformed_key_and_the_fix(tmp_path):

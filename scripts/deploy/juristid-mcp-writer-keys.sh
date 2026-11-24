@@ -26,13 +26,15 @@
 # - The gateway key must be equal in both files. One good copy is copied to
 #   the other file; two good copies that differ are refused (this script does
 #   not guess which one `mcp` and `mcp-writer` are running with).
-# - A line holding whitespace or a carriage return (malformed — mcp_key_state
-#   in lib.sh, the rule juristid-mcp-web-keys.sh uses too) may still be the
-#   value in use, so it is never replaced: this exits 1 before writing anything
-#   and asks for the line to be fixed by hand (--rotate-gateway-key still
-#   replaces the gateway key).
-# - Otherwise every line naming the key is dropped and one generated line is
-#   appended. Each file is rewritten in place, so it keeps its inode, owner and
+# - A line that may still be the value in use — whitespace or a carriage
+#   return in it (malformed), two lines naming the key, or a real value shorter
+#   than the minimum (mcp_key_action in lib.sh, the rule
+#   juristid-mcp-web-keys.sh uses too) — is never replaced: this exits 1 before
+#   writing anything and asks for the line to be fixed by hand
+#   (--rotate-gateway-key still replaces the gateway key; HR-18).
+# - Otherwise — no line, a commented one, an empty value or a `replace-me`
+#   placeholder — every line naming the key is dropped and one generated line
+#   is appended. Each file is rewritten in place, so it keeps its inode, owner and
 #   mode. MCP_WRITES_ENABLED is never touched.
 #
 # Exit 0 only when every secret is in place, verified; otherwise 1, and do not
@@ -52,9 +54,10 @@ ROTATE_GATEWAY=0
 #: Minimum lengths, each at least the floor the process checks enforce:
 #: E017 (signing key, 50), E019 (database password, 16 — the generated one is
 #: 48+), E052 (gateway key, 32 — the generated one is 64).
-SECRET_KEY_MIN=50
-DB_PASSWORD_MIN=32
-GATEWAY_KEY_MIN=40
+#: Declared in lib.sh, where the read-only key check uses them too.
+SECRET_KEY_MIN="$MCP_WRITER_SECRET_KEY_MIN_LENGTH"
+DB_PASSWORD_MIN="$MCP_WRITER_DB_PASSWORD_MIN_LENGTH"
+GATEWAY_KEY_MIN="$MCP_GATEWAY_KEY_MIN_LENGTH"
 
 usage() {
   cat <<'USAGE'
@@ -186,27 +189,30 @@ verify() {
   fi
 }
 
-# A malformed line (whitespace or a carriage return, mcp_key_state in lib.sh)
-# may still be the value a service or the database role runs with, so it is
-# never replaced here: refuse before anything is written. Key names only. An
-# explicit --rotate-gateway-key replaces the gateway key whatever its state.
-malformed_check() {
-  local file="$1" key="$2" min="$3" state cost
+# A secret that may be the value in use is never replaced here: a malformed
+# line (whitespace or a carriage return), two lines naming it, or a real value
+# shorter than the minimum (mcp_key_action refuse in lib.sh) — the role's
+# password, or the key mcp and mcp-writer hold. Refuse before anything is
+# written. Key names only. An explicit --rotate-gateway-key replaces the
+# gateway key whatever its state.
+refusal_check() {
+  local file="$1" key="$2" min="$3" action state cost
   # Captured first, so an error from the rule stops this script.
+  action="$(mcp_key_action "$file" "$key" "$min")"
+  [ "$action" = refuse ] || return 0
   state="$(mcp_key_state "$file" "$key" "$min")"
-  [ "$state" = malformed ] || return 0
   case "$key" in
     POSTGRES_PASSWORD) cost="the role's password must then be set again (mcp_writer_db_role --apply --password-stdin) before mcp-writer can connect" ;;
     MCP_WRITE_GATEWAY_KEY) cost="mcp and mcp-writer must then be recreated together" ;;
     *) cost="mcp-writer must then be recreated" ;;
   esac
-  die "$key in $file has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings), then run this again. Deleting the line instead makes this generate a new $key: $cost."
+  die "$(mcp_key_refusal "$file" "$key" "$state" "$min") Deleting the line instead makes this generate a new $key: $cost."
 }
-malformed_check "$WRITER_ENV" DJANGO_SECRET_KEY "$SECRET_KEY_MIN"
-malformed_check "$WRITER_ENV" POSTGRES_PASSWORD "$DB_PASSWORD_MIN"
+refusal_check "$WRITER_ENV" DJANGO_SECRET_KEY "$SECRET_KEY_MIN"
+refusal_check "$WRITER_ENV" POSTGRES_PASSWORD "$DB_PASSWORD_MIN"
 if [ "$ROTATE_GATEWAY" != 1 ]; then
-  malformed_check "$WRITER_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN"
-  malformed_check "$MCP_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN"
+  refusal_check "$WRITER_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN"
+  refusal_check "$MCP_ENV" MCP_WRITE_GATEWAY_KEY "$GATEWAY_KEY_MIN"
 fi
 
 # -- the writer's own two secrets -------------------------------------------------

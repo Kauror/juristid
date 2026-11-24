@@ -270,6 +270,14 @@ mcp_container_state() {
 MCP_WEB_KEYS=(MCP_AUTHENTICATOR_KEY MCP_TOKEN_DERIVATION_KEY)
 MCP_WEB_KEY_MIN_LENGTH=40
 
+# The write gateway's secrets (juristid-mcp-writer-keys.sh writes them; the
+# read-only juristid-mcp-key-check.sh reports them): its signing key and
+# database password in juristid-mcp-writer.env, the gateway key there and in
+# juristid-mcp.env.
+MCP_WRITER_SECRET_KEY_MIN_LENGTH=50
+MCP_WRITER_DB_PASSWORD_MIN_LENGTH=32
+MCP_GATEWAY_KEY_MIN_LENGTH=40
+
 # Whether an environment file switches AI access on, read the way
 # config/env.py reads MCP_ENABLED (1, true, yes, on; the last line wins).
 mcp_enabled_in() {
@@ -329,17 +337,65 @@ mcp_key_state() {
   fi
 }
 
+# What a key helper may do with one key (FILE KEY MIN): keep, generate or
+# refuse. The helpers write a key only when nothing can be running with it.
+#
+#   keep      ok
+#   generate  missing, or its one clean line holds no value (config/env.py
+#             reads an empty value as unset) or a `replace-me` placeholder
+#             (the process checks refuse one on real data)
+#   refuse    malformed, duplicated, or weak with a real value: each may be
+#             the value a service or a database role runs with (Compose takes
+#             the last of two lines; the process checks accept a shorter key
+#             than the helpers write), so it is fixed by hand, never replaced
+#
+# Prints the action only, never a value; counts lines like mcp_key_state.
+mcp_key_action() {
+  local file="$1" key="$2" min="$3" state empty placeholder
+  state="$(mcp_key_state "$file" "$key" "$min")" || return 1
+  case "$state" in
+    ok) printf 'keep\n' ;;
+    missing) printf 'generate\n' ;;
+    weak)
+      empty="$(grep -UcE "^${key}=\$" "$file" || true)"
+      placeholder="$(grep -UcE "^${key}=replace-me" "$file" || true)"
+      if [ "$empty" = 1 ] || [ "$placeholder" = 1 ]; then
+        printf 'generate\n'
+      else
+        printf 'refuse\n'
+      fi
+      ;;
+    *) printf 'refuse\n' ;;
+  esac
+}
+
+# Why a helper refuses KEY in FILE (its state), for its error message. Names
+# and states only, never a value.
+mcp_key_refusal() {
+  local file="$1" key="$2" state="$3" min="$4"
+  case "$state" in
+    malformed) printf '%s\n' "$key in $file has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings), then run this again." ;;
+    duplicated) printf '%s\n' "$key in $file is named on more than one line, and the service runs with one of them. Nothing was changed. Keep the line in use, delete the others by hand, then run this again." ;;
+    *) printf '%s\n' "$key in $file holds a value shorter than $min characters, which a service may be running with. Nothing was changed. Replace it by hand only if it is not in use, then run this again." ;;
+  esac
+}
+
 # One of web's keys (MCP_WEB_KEYS), held to MCP_WEB_KEY_MIN_LENGTH.
 mcp_web_key_state() {
   mcp_key_state "$1" "$2" "$MCP_WEB_KEY_MIN_LENGTH"
 }
 
 # What the preflight says about one web key that is not ok (KEY, its state,
-# web's file). Names and states only, never a value.
+# web's file). Names and states only, never a value. The helper is named only
+# where it would act (mcp_key_action generate); otherwise the line is fixed by
+# hand, because the helper refuses it.
 mcp_web_key_problem() {
-  local key="$1" state="$2" file="$3"
+  local key="$1" state="$2" file="$3" action
+  action="$(mcp_key_action "$file" "$key" "$MCP_WEB_KEY_MIN_LENGTH" 2>/dev/null || printf 'generate')"
   if [ "$state" = malformed ]; then
     printf '%s\n' "juristid.env has MCP_ENABLED on and $key is malformed (whitespace or a carriage return in its line). Fix that line by hand — KEY=value, no spaces, tabs or Windows line endings — then run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file (docs/mcp/OPERATIONS.md, step 3)."
+  elif [ "$action" = refuse ]; then
+    printf '%s\n' "juristid.env has MCP_ENABLED on and $key is $state: web may be running with that line, so fix it by hand (one line KEY=value, $MCP_WEB_KEY_MIN_LENGTH or more characters), then run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file (docs/mcp/OPERATIONS.md, step 3)."
   else
     printf '%s\n' "juristid.env has MCP_ENABLED on and $key is $state: web would refuse to start. Run scripts/deploy/juristid-mcp-web-keys.sh --env-file $file first (docs/mcp/OPERATIONS.md, step 3)."
   fi

@@ -18,12 +18,14 @@
 #   40 or more characters, not a placeholder — is KEPT. Never rotated here: a
 #   new MCP_AUTHENTICATOR_KEY makes every enrolled authenticator unreadable,
 #   which is a decision, not a side effect of running this twice.
-# - Otherwise every line naming the key — the template's commented one, a
-#   placeholder, a short value, a duplicate — is dropped and one generated line
-#   is appended.
-# - A line holding whitespace or a carriage return (malformed — mcp_key_state
-#   in lib.sh) may still be the key web runs with, so it is NOT replaced: this
-#   exits 1 before writing anything and asks for the line to be fixed by hand.
+# - A key that may be the one web runs with is NOT replaced either: a line
+#   holding whitespace or a carriage return (malformed), two lines naming the
+#   key, or a real value shorter than 40 characters (mcp_key_action in lib.sh).
+#   This exits 1 before writing anything and asks for the line to be fixed by
+#   hand (HR-18).
+# - Otherwise — no line, the template's commented one, an empty value or a
+#   `replace-me` placeholder — every line naming the key is dropped and one
+#   generated line is appended.
 # - Then the file must name the key exactly once, `KEY=` and 40 or more
 #   characters with no whitespace, or this exits 1 and says not to switch AI
 #   access on.
@@ -80,18 +82,20 @@ new_key() {
   openssl rand -base64 48 | tr -d '\r\n/+='
 }
 
-# A malformed line is never replaced (it may be the key in use, and a new
-# MCP_AUTHENTICATOR_KEY locks every enrolled authenticator out): refuse before
-# anything is written. Key names only.
-# The state is captured first, so an error from the rule stops this script.
+# A key that may be in use is never replaced (a new MCP_AUTHENTICATOR_KEY
+# locks every enrolled authenticator out): a malformed line, two lines, or a
+# real value shorter than the minimum (mcp_key_action refuse). Refuse before
+# anything is written. Key names only. The action is captured first, so an
+# error from the rule stops this script.
 for key in "${MCP_WEB_KEYS[@]}"; do
-  state="$(mcp_web_key_state "$ENV_FILE" "$key")"
-  if [ "$state" = malformed ]; then
+  action="$(mcp_key_action "$ENV_FILE" "$key" "$MCP_WEB_KEY_MIN_LENGTH")"
+  if [ "$action" = refuse ]; then
+    state="$(mcp_web_key_state "$ENV_FILE" "$key")"
     case "$key" in
       MCP_AUTHENTICATOR_KEY) cost="every enrolled authenticator becomes unreadable and everybody enrols again" ;;
       *) cost="open connections retry one token refresh" ;;
     esac
-    die "$key in $ENV_FILE has whitespace or a carriage return in its line. Nothing was changed. Fix that line by hand (KEY=value, no spaces, tabs or Windows line endings), then run this again. Deleting the line instead makes this generate a new $key: $cost."
+    die "$(mcp_key_refusal "$ENV_FILE" "$key" "$state" "$MCP_WEB_KEY_MIN_LENGTH") Deleting the line instead makes this generate a new $key: $cost."
   fi
 done
 

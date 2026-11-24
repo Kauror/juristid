@@ -286,3 +286,49 @@ def test_rotation_replaces_a_malformed_gateway_key(tmp_path):
     [writer_key] = _values(writer, "MCP_WRITE_GATEWAY_KEY")
     assert _values(mcp, "MCP_WRITE_GATEWAY_KEY") == [writer_key]
     assert writer_key != STRONG and " " not in writer_key
+
+
+@needs_modes
+@pytest.mark.parametrize(
+    ("key", "line", "why"),
+    [
+        # mcp_writes accepts a 32-character gateway key (E052); the helper writes 40+.
+        ("MCP_WRITE_GATEWAY_KEY", f"MCP_WRITE_GATEWAY_KEY={'g' * 35}", "shorter than 40"),
+        # juristid.E019 accepts a 16-character password; the helper writes 32+.
+        ("POSTGRES_PASSWORD", f"POSTGRES_PASSWORD={'p' * 20}", "shorter than 32"),
+        (
+            "POSTGRES_PASSWORD",
+            f"POSTGRES_PASSWORD={'p' * 48}\nPOSTGRES_PASSWORD={'q' * 48}",
+            "more than one line",
+        ),
+    ],
+    ids=["gateway-short", "password-short", "password-duplicated"],
+)
+def test_a_secret_that_may_be_in_use_is_refused_and_nothing_changes(tmp_path, key, line, why):
+    """HR-18: before, a short or duplicated secret was dropped and regenerated."""
+    writer, mcp = _files(tmp_path)
+    target = writer if key == "POSTGRES_PASSWORD" else mcp
+    template = f"{key}=replace-me-with-openssl-rand-base64-48"
+    text = target.read_text(encoding="utf-8")
+    assert template in text
+    target.write_bytes(text.replace(template, line).encode("utf-8"))
+    before = (writer.read_bytes(), mcp.read_bytes())
+    result = _helper(writer, mcp)
+    assert result.returncode != 0
+    assert "Nothing was changed" in result.stderr and why in result.stderr
+    for value in ("g" * 35, "p" * 20, "q" * 48):
+        assert value not in result.stdout + result.stderr
+    assert (writer.read_bytes(), mcp.read_bytes()) == before
+
+
+@needs_modes
+def test_an_empty_secret_is_generated_as_before(tmp_path):
+    writer, mcp = _files(tmp_path)
+    text = writer.read_text(encoding="utf-8").replace(
+        "POSTGRES_PASSWORD=replace-me-with-openssl-rand-base64-48", "POSTGRES_PASSWORD="
+    )
+    writer.write_text(text, encoding="utf-8")
+    result = _helper(writer, mcp)
+    assert result.returncode == 0, result.stderr
+    [value] = _values(writer, "POSTGRES_PASSWORD")
+    assert len(value) >= 32
