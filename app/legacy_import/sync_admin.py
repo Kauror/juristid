@@ -46,6 +46,7 @@ from django.utils import timezone
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.errors import DomainError
+from app.legacy_import.lovable_display import JuristidNames, juristid_names, juristid_text
 from app.legacy_import.lovable_sync import (
     FIELD_POLICY,
     STEP_FIELDS,
@@ -991,6 +992,14 @@ def value_text(value: Any) -> str:
     return _shown(value)
 
 
+def juristid_value_text(name: str, value: Any, names: JuristidNames) -> str:
+    """Juristid's own value (B) as the page shows it: the owner's name, the
+    stage's label, the opinion outcome in words (`lovable_display`); anything
+    else, a missing or an unknown value included, as `value_text` shows it."""
+    shown = juristid_text(name, value, names, day=value_text)
+    return value_text(value) if shown is None else shown
+
+
 @dataclass(frozen=True)
 class StepView:
     """The Teema's open step as Juristid holds it now (read live, not from the night)."""
@@ -1167,6 +1176,7 @@ def engine_rows(
             continue
         named.append((item, matter))
     steps = _open_steps({m.pk for item, m in named if item.field in STEP_FIELDS}, today)
+    names = juristid_names((item.field, item.current) for item, _m in named)
     rows: list[DifferenceRow] = []
     for item, matter in named:
         name = item.field
@@ -1180,7 +1190,7 @@ def engine_rows(
                 field=name,
                 field_label=LOVABLE_FIELD_LABELS.get(name, name),
                 accepted=value_text(item.baseline),
-                juristid=value_text(item.current),
+                juristid=juristid_value_text(name, item.current, names),
                 source=value_text(item.source),
                 explanation=_explanation(name, reason),
                 since=since,

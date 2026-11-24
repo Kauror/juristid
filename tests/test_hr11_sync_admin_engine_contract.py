@@ -23,6 +23,7 @@ from pathlib import Path
 import pytest
 
 from app.legacy_import import lovable_sync, sync_admin
+from app.legacy_import.lovable_display import juristid_names
 from app.legacy_import.lovable_sync_labels import LOVABLE_REASONS
 from app.legacy_import.lovable_sync_models import SyncMode
 from tests.admin_session import technical_admin
@@ -185,7 +186,9 @@ def test_engine_rows_reads_the_real_pending_differences(held_night):
     assert row.matter.pk == item.matter.pk
     assert row.source == "Valitsuses" == sync_admin.value_text(item.source)
     assert row.accepted == sync_admin.value_text(item.baseline)
-    assert row.juristid == sync_admin.value_text(item.current)
+    # B in words (HR-10): the stage's label, through the same renderer.
+    names = juristid_names([(item.field, item.current)])
+    assert row.juristid == sync_admin.juristid_value_text(item.field, item.current, names)
     assert row.since == item.since
     expected = (
         LOVABLE_REASONS.get(item.reason, "") or lovable_sync.FIELD_POLICY["stage"].explanation
