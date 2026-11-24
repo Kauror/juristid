@@ -374,6 +374,20 @@ def _close(record: SweepRun, usage: Any) -> None:
                 "viga": f"{usage.failures} päringut ebaõnnestus: {usage.last_failure}",
             }
         )
+    if getattr(usage, "topics_left_out", 0):
+        from app.register_watch import candidates_ai
+
+        # The cap on Teemad offered for a link, recorded on the run rather than
+        # only logged (audit HR-09): a number, never a title.
+        record.errors.append(
+            {
+                "allikas": "Claude",
+                "viga": (
+                    f"{usage.topics_left_out} avatud teemat jäi mudelile pakkumata "
+                    f"(pakutakse {candidates_ai.TOPICS_SHOWN} uusimat)"
+                ),
+            }
+        )
     record.finished_at = timezone.now()
     record.save()
 

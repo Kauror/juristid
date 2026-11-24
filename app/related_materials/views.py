@@ -456,7 +456,7 @@ def draft_picker_results(user: Any, query: str, *, exclude: set[uuid.UUID]) -> l
 
     Real work only, as the suggestions are: `Uus teema` creates a REAL Matter,
     and the link service refuses a pair across the two classes anyway
-    (`matters.views._link_ticked_similar_matters`). Already chosen ones are left
+    (`matters.intake.link_ticked_similar_matters`). Already chosen ones are left
     out, so a result can be picked once.
     """
     from app.matters.enums import MatterDataClass

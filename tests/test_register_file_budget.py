@@ -1,0 +1,728 @@
+"""«Lisa märkena» spends a bounded time on the register (HR-04).
+
+The press used to fetch the listing and up to five files with 25 s per socket
+wait and no total limit, inside a web request, so a slow ministry server could
+hold a worker past gunicorn's 120 s and lose the lawyer's note. Most tests
+replace the network and the clock, so no real time passes; the «real socket»
+ones run a TLS server on 127.0.0.1 that drips its answer, with a one-second
+deadline. Nothing leaves the machine.
+"""
+
+from __future__ import annotations
+
+import datetime
+import json
+import socket
+import ssl
+import threading
+import time
+import urllib.error
+import urllib.request
+from types import SimpleNamespace
+
+import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connection
+from django.urls import reverse
+
+from app.documents.models import DocumentLink, DocumentVersion
+from app.matters.models import MatterProceduralDevelopment
+from app.register_watch import register_files, watch
+from app.register_watch.models import FindingStatus, WatchFinding, WatchSource, WatchTarget
+from app.register_watch.register_files import Fetched
+from app.register_watch.sources import http
+from app.register_watch.sources.http import FetchError
+from tests import factories
+
+PDF = b"%PDF-1.4 register file"
+KEY = "0b4f2c1e-1111-4222-8333-444455556666"
+LISTING = f"https://api.riigikogu.ee/api/documents/{KEY}"
+
+
+class _Clock:
+    """A clock only the fakes move: ``sleep`` and every simulated network wait."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+        self.slept: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+class _Slow:
+    """An answer that costs ``per_read`` clock seconds per read, in ``chunks``."""
+
+    def __init__(self, clock: _Clock, chunks: list[bytes], per_read: float) -> None:
+        self.clock = clock
+        self.chunks = list(chunks)
+        self.per_read = per_read
+        self.reads = 0
+        self.open_timeout: float | None = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def read(self, size: int = -1) -> bytes:
+        self.reads += 1
+        if not self.chunks:
+            return b""
+        timeout = self.open_timeout
+        if timeout is not None and self.per_read > timeout:
+            self.clock.now += timeout  # the socket gives up, as a real one would
+            raise TimeoutError("timed out")
+        self.clock.now += self.per_read
+        return self.chunks.pop(0)
+
+
+class _Network:
+    """URL → answer; records each request and the socket timeout it was opened with."""
+
+    def __init__(self, clock: _Clock) -> None:
+        self.clock = clock
+        self.routes: dict[str, object] = {}
+        self.opened: list[tuple[str, float]] = []
+
+    def open(self, request, timeout=None):
+        url = request.full_url
+        self.opened.append((url, timeout))
+        answer = self.routes[url]
+        if callable(answer):
+            answer = answer()
+        if isinstance(answer, BaseException):
+            raise answer
+        answer.open_timeout = timeout
+        return answer
+
+
+@pytest.fixture
+def net(monkeypatch, settings):
+    settings.REGISTER_WATCH_FETCH = True
+    clock = _Clock()
+    fake_time = SimpleNamespace(monotonic=clock.monotonic, sleep=clock.sleep)
+    monkeypatch.setattr(http, "time", fake_time)
+    monkeypatch.setattr(register_files, "time", fake_time)
+    monkeypatch.setattr(http, "_last_call", {})
+    network = _Network(clock)
+    monkeypatch.setattr(http, "_OPENER", network)
+    monkeypatch.setattr(http, "_FORM_OPENER", network)
+    return SimpleNamespace(clock=clock, network=network)
+
+
+def _listing(net, names: list[str]) -> list[str]:
+    """The Riigikogu lists ``names`` as public files; returns each file's URL."""
+    files = [
+        {"uuid": f"f{i}", "fileName": name, "accessRestrictionType": "PUBLIC"}
+        for i, name in enumerate(names)
+    ]
+    net.network.routes[LISTING] = lambda: _Slow(
+        net.clock, [json.dumps({"files": files}).encode()], per_read=0.5
+    )
+    return [f"https://api.riigikogu.ee/api/files/f{i}/download" for i in range(len(names))]
+
+
+# -- the door: a deadline bounds the spacing, the socket and the reading ---------------
+
+
+def test_without_a_deadline_the_door_reads_as_before(net):
+    answer = _Slow(net.clock, [PDF], per_read=0)
+    net.network.routes["https://adr.envir.ee/x"] = answer
+    assert http.get_bytes("adr.envir.ee", "/x") == PDF
+    assert net.network.opened == [("https://adr.envir.ee/x", http.TIMEOUT_SECONDS)]
+    assert answer.reads == 1
+
+
+def test_the_socket_timeout_is_what_is_left(net):
+    answer = _Slow(net.clock, [PDF], per_read=2)
+    net.network.routes["https://adr.envir.ee/x"] = answer
+
+    assert http.get_bytes("adr.envir.ee", "/x", deadline=net.clock.now + 10) == PDF
+    assert net.network.opened[0][1] == 10
+
+
+def test_spacing_that_would_pass_the_deadline_is_not_slept(net):
+    http._last_call["api.riigikogu.ee"] = net.clock.now
+    with pytest.raises(FetchError):
+        http.get_bytes("api.riigikogu.ee", "/x", deadline=net.clock.now + 1)
+    assert net.clock.slept == [] and net.network.opened == []
+
+
+def test_a_passed_deadline_opens_nothing(net):
+    with pytest.raises(FetchError):
+        http.get_json("adr.envir.ee", "/x.json", deadline=net.clock.now)
+    assert net.network.opened == []
+
+
+def test_the_deadline_keeps_the_allowlist_and_the_size_cap(net):
+    with pytest.raises(FetchError, match="keelatud"):
+        http.get_bytes("example.com", "/x", deadline=net.clock.now + 30)
+    net.network.routes["https://adr.envir.ee/big"] = _Slow(
+        net.clock, [b"x" * 600, b"x" * 600], per_read=0
+    )
+    with pytest.raises(FetchError, match="liiga suur"):
+        http.get_bytes("adr.envir.ee", "/big", max_bytes=1000, deadline=net.clock.now + 30)
+
+
+# -- the door on a real socket: a dripping server is cut off at the deadline ----------
+
+HOST = "adr.envir.ee"
+DEADLINE = 1.0
+SLACK = 0.75
+
+
+def _certificate(tmp_path):
+    """A self-signed certificate for `HOST`, so the client verifies TLS as in production.
+
+    `cryptography` is not a direct dependency: it is present through
+    ``pyjwt[crypto]``. Should that ever go, these tests need it declared.
+    """
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import NameOID
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, HOST)])
+    now = datetime.datetime.now(datetime.UTC)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(now - datetime.timedelta(days=1))
+        .not_valid_after(now + datetime.timedelta(days=1))
+        .add_extension(x509.SubjectAlternativeName([x509.DNSName(HOST)]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .sign(key, hashes.SHA256())
+    )
+    cert_file = tmp_path / "cert.pem"
+    key_file = tmp_path / "key.pem"
+    cert_file.write_bytes(cert.public_bytes(serialization.Encoding.PEM))
+    key_file.write_bytes(
+        key.private_bytes(
+            serialization.Encoding.PEM,
+            serialization.PrivateFormat.PKCS8,
+            serialization.NoEncryption(),
+        )
+    )
+    return cert_file, key_file
+
+
+@pytest.fixture
+def tls_server(tmp_path, monkeypatch, settings):
+    """A TLS server on 127.0.0.1 that `HOST` resolves to; ``serve(behaviour)`` arms it."""
+    settings.REGISTER_WATCH_FETCH = True
+    monkeypatch.setattr(http, "_last_call", {})
+    cert_file, key_file = _certificate(tmp_path)
+    server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    server_context.load_cert_chain(cert_file, key_file)
+    client_context = ssl.create_default_context(cafile=str(cert_file))
+    monkeypatch.setattr(
+        http,
+        "_OPENER",
+        urllib.request.build_opener(
+            http._NoRedirect, http._WatchedHTTPSHandler(context=client_context)
+        ),
+    )
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    listener.settimeout(10)  # a client that never connects cannot hang the thread
+    port = listener.getsockname()[1]
+    real_getaddrinfo = socket.getaddrinfo
+
+    def resolve(host, *args, **kwargs):
+        if host == HOST:
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", port))]
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", resolve)
+    threads: list[threading.Thread] = []
+
+    def serve(behaviour):
+        def run():
+            try:
+                raw, _ = listener.accept()
+            except OSError:
+                return
+            try:
+                with server_context.wrap_socket(raw, server_side=True) as conn:
+                    conn.recv(65536)
+                    behaviour(conn)
+            except OSError:
+                pass  # the client hung up: what the watchdog is for
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        threads.append(thread)
+
+    yield serve
+    for thread in threads:
+        thread.join(timeout=10)
+    listener.close()
+
+
+def _drip(conn, data: bytes, every: float = 0.05) -> None:
+    for byte in data:
+        conn.sendall(bytes([byte]))
+        time.sleep(every)
+
+
+HEAD = b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\nConnection: close\r\n\r\n"
+
+
+def _timers() -> int:
+    return sum(isinstance(one, threading.Timer) for one in threading.enumerate())
+
+
+def _timed_fetch() -> tuple[float, BaseException | None]:
+    start = time.monotonic()
+    try:
+        http.get_bytes(HOST, "/fail", deadline=start + DEADLINE)
+    except BaseException as error:
+        return time.monotonic() - start, error
+    return time.monotonic() - start, None
+
+
+def test_real_socket_a_dripping_body_is_cut_off_at_the_deadline(tls_server):
+    tls_server(lambda conn: (conn.sendall(HEAD), _drip(conn, b"x" * 100000)))
+    timers = _timers()
+
+    elapsed, error = _timed_fetch()
+
+    assert isinstance(error, FetchError) and "ettenähtud aja" in str(error)
+    assert elapsed < DEADLINE + SLACK
+    assert _timers() == timers  # the watchdog's thread is gone
+
+
+def test_real_socket_dripping_headers_are_cut_off_at_the_deadline(tls_server):
+    tls_server(lambda conn: _drip(conn, HEAD * 50))
+
+    elapsed, error = _timed_fetch()
+
+    assert isinstance(error, FetchError) and "ettenähtud aja" in str(error)
+    assert elapsed < DEADLINE + SLACK
+
+
+def test_real_socket_a_silent_server_is_cut_off_at_the_deadline(tls_server):
+    tls_server(lambda conn: time.sleep(DEADLINE + 2))
+
+    elapsed, error = _timed_fetch()
+
+    assert isinstance(error, FetchError)
+    assert elapsed < DEADLINE + SLACK
+
+
+@pytest.mark.parametrize("with_deadline", [True, False])
+def test_real_socket_an_unknown_certificate_is_refused(tls_server, monkeypatch, with_deadline):
+    """The watched handler still verifies TLS: the default trust store refuses the test cert."""
+    monkeypatch.setattr(
+        http, "_OPENER", urllib.request.build_opener(http._NoRedirect, http._WatchedHTTPSHandler())
+    )
+    tls_server(lambda conn: conn.sendall(HEAD + b"x"))
+    deadline = time.monotonic() + DEADLINE if with_deadline else None
+
+    with pytest.raises(FetchError):
+        http.get_bytes(HOST, "/fail", deadline=deadline)
+
+
+def test_real_socket_a_prompt_answer_is_read_whole(tls_server):
+    tls_server(
+        lambda conn: conn.sendall(
+            b"HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % len(PDF) + PDF
+        )
+    )
+    timers = _timers()
+
+    assert http.get_bytes(HOST, "/fail", deadline=time.monotonic() + DEADLINE) == PDF
+    assert _timers() == timers
+
+
+# -- the press: one budget for the listing and every file -----------------------------
+
+
+def test_the_budget_runs_out_and_the_rest_keep_their_links(net):
+    urls = _listing(net, ["a.pdf", "b.pdf", "c.pdf", "d.pdf"])
+    for url in urls:
+        net.network.routes[url] = lambda: _Slow(net.clock, [PDF], per_read=15)
+    start = net.clock.now
+
+    fetched = register_files.fetch(WatchSource.RIIGIKOGU, f"text:{KEY}", budget=40)
+
+    assert [one.name for one in fetched.uploads] == ["a.pdf", "b.pdf"]
+    assert fetched.missed == ["c.pdf", "d.pdf"]
+    assert fetched.missed_links == [
+        {"name": "c.pdf", "url": urls[2]},
+        {"name": "d.pdf", "url": urls[3]},
+    ]
+    # d.pdf was never asked for: the time was gone.
+    assert urls[3] not in [url for url, _ in net.network.opened]
+    assert net.clock.now - start <= 40
+
+
+def test_one_slow_file_does_not_cost_the_others(net):
+    urls = _listing(net, ["a.pdf", "aeglane.pdf", "c.pdf"])
+    net.network.routes[urls[0]] = lambda: _Slow(net.clock, [PDF], per_read=0)
+    net.network.routes[urls[1]] = TimeoutError("timed out")
+    net.network.routes[urls[2]] = urllib.error.HTTPError(urls[2], 503, "x", {}, None)
+
+    fetched = register_files.fetch(WatchSource.RIIGIKOGU, f"text:{KEY}")
+
+    assert [one.name for one in fetched.uploads] == ["a.pdf"]
+    assert fetched.missed == ["aeglane.pdf", "c.pdf"]
+    assert [one["url"] for one in fetched.missed_links] == urls[1:]
+    assert not fetched.unreachable
+
+
+def test_a_listing_slower_than_the_budget_is_unreachable(net):
+    net.network.routes[LISTING] = lambda: _Slow(net.clock, [b"{"] * 1000, per_read=10)
+    fetched = register_files.fetch(WatchSource.RIIGIKOGU, f"text:{KEY}", budget=40)
+    assert fetched.unreachable and fetched.uploads == []
+
+
+def test_more_files_than_the_limit_are_missed_with_links(net):
+    names = [f"f{i}.pdf" for i in range(register_files.MAX_FILES + 2)]
+    urls = _listing(net, names)
+    for url in urls:
+        net.network.routes[url] = lambda: _Slow(net.clock, [PDF], per_read=0)
+
+    fetched = register_files.fetch(WatchSource.RIIGIKOGU, f"text:{KEY}")
+
+    assert len(fetched.uploads) == register_files.MAX_FILES
+    assert [one["url"] for one in fetched.missed_links] == urls[register_files.MAX_FILES :]
+
+
+# -- the view: the note survives, links stay, nothing twice, no lock while fetching ----
+
+
+def _finding(matter, files=None):
+    target = WatchTarget.objects.create(
+        matter=matter,
+        source=WatchSource.KLIM_REGISTER,
+        identifier="Jäätmeseaduse",
+        label="Jäätmeseaduse",
+        origin="PHRASE",
+    )
+    return WatchFinding.objects.create(
+        target=target,
+        matter=matter,
+        external_id="doc:b89d",
+        title="Toiduliidu tagasiside",
+        url="https://adr.envir.ee/et/document.html?id=b89d",
+        detail="1-4/26/2491-15",
+        files=files,
+    )
+
+
+def _press(client, finding, **extra):
+    return client.post(
+        reverse("register_watch:decide", kwargs={"pk": finding.pk}),
+        {"otsus": "lisa", "markus": "Vaata punkti 3.", "tagasi": "teema", **extra},
+        follow=True,
+    )
+
+
+def _names(development):
+    documents = DocumentLink.objects.filter(procedural_development=development).values(
+        "document_id"
+    )
+    return sorted(
+        DocumentVersion.objects.filter(document_id__in=documents).values_list(
+            "original_filename", flat=True
+        )
+    )
+
+
+@pytest.mark.django_db
+def test_a_partial_fetch_saves_the_note_with_the_missing_links(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    missed = {"name": "lisa.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89d/file"}
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("kiri.pdf", PDF, content_type="application/pdf")],
+            missed=["lisa.pdf"],
+            missed_links=[missed],
+        ),
+    )
+    client.force_login(specialist)
+
+    response = _press(
+        client,
+        finding,
+        failid=[SimpleUploadedFile("minu.pdf", PDF, content_type="application/pdf")],
+    )
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert development.note.startswith("Vaata punkti 3.\n\n")
+    assert development.note.endswith(
+        "Registri failid, mida ei saanud lisada:\n"
+        "lisa.pdf: https://adr.envir.ee/api/v1/documents/b89d/file"
+    )
+    assert _names(development) == ["kiri.pdf", "minu.pdf"]
+    assert "Neid faile ei saanud lisada (link on märkes): lisa.pdf." in response.content.decode()
+    finding.refresh_from_db()
+    assert finding.status == FindingStatus.ADDED
+
+
+@pytest.mark.django_db
+def test_an_unreachable_register_leaves_the_nightly_links_in_the_note(
+    client, specialist, monkeypatch
+):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(
+        matter,
+        files=[{"name": "kiri.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89d/file"}],
+    )
+    monkeypatch.setattr(
+        register_files, "fetch", lambda source, external_id: Fetched(unreachable=True)
+    )
+    client.force_login(specialist)
+
+    _press(client, finding)
+
+    note = MatterProceduralDevelopment.objects.get(matter=matter).note
+    assert "kiri.pdf: https://adr.envir.ee/api/v1/documents/b89d/file" in note
+
+
+@pytest.mark.django_db
+def test_a_slow_register_through_the_real_door_still_saves_the_note(
+    client, specialist, net, monkeypatch
+):
+    """End to end on the fake network: the listing answers, the file never finishes."""
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    net.network.routes["https://adr.envir.ee/api/v1/documents/b89d.json"] = lambda: _Slow(
+        net.clock, [json.dumps({"file": "kiri.pdf"}).encode()], per_read=1
+    )
+    net.network.routes["https://adr.envir.ee/api/v1/documents/b89d/file"] = lambda: _Slow(
+        net.clock, [b"%PDF"] + [b"x"] * 100_000, per_read=5
+    )
+    start = net.clock.now
+    client.force_login(specialist)
+
+    _press(client, finding)
+
+    assert net.clock.now - start <= register_files.FETCH_BUDGET_SECONDS + http.TIMEOUT_SECONDS
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert "kiri.pdf: https://adr.envir.ee/api/v1/documents/b89d/file" in development.note
+    assert _names(development) == []
+
+
+@pytest.mark.django_db
+def test_no_row_lock_or_transaction_is_open_while_fetching(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    events: list[str] = []
+    depth_outside = len(connection.atomic_blocks)
+
+    def fetch(source, external_id):
+        events.append(f"fetch depth={len(connection.atomic_blocks) - depth_outside}")
+        return Fetched()
+
+    real_add = watch.add_to_teema
+
+    def add_to_teema(*args, **kwargs):
+        events.append("lock")
+        return real_add(*args, **kwargs)
+
+    monkeypatch.setattr(register_files, "fetch", fetch)
+    monkeypatch.setattr(watch, "add_to_teema", add_to_teema)
+    client.force_login(specialist)
+
+    _press(client, finding)
+
+    assert events == ["fetch depth=0", "lock"]
+    assert MatterProceduralDevelopment.objects.filter(matter=matter).count() == 1
+
+
+@pytest.mark.django_db
+def test_a_double_submit_records_one_note(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    calls: list[str] = []
+
+    def fetch(source, external_id):
+        calls.append(external_id)
+        return Fetched(uploads=[SimpleUploadedFile("kiri.pdf", PDF)])
+
+    monkeypatch.setattr(register_files, "fetch", fetch)
+    client.force_login(specialist)
+
+    _press(client, finding)
+    again = client.post(
+        reverse("register_watch:decide", kwargs={"pk": finding.pk}),
+        {"otsus": "lisa", "tagasi": "teema"},
+    )
+
+    assert again.status_code == 404
+    assert calls == ["doc:b89d"]  # the retry fetched nothing
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert _names(development) == ["kiri.pdf"]
+
+
+@pytest.mark.django_db
+def test_a_press_that_loses_the_race_during_its_fetch_writes_nothing(
+    client, specialist, monkeypatch
+):
+    """Two presses in flight: the other one saves while this one is still fetching."""
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+
+    def fetch(source, external_id):
+        watch.add_to_teema(
+            WatchFinding.objects.get(pk=finding.pk), actor=specialist, comment="Esimene"
+        )
+        return Fetched(uploads=[SimpleUploadedFile("kiri.pdf", PDF)])
+
+    monkeypatch.setattr(register_files, "fetch", fetch)
+    client.force_login(specialist)
+
+    response = _press(client, finding)
+
+    assert watch.ALREADY_DECIDED in response.content.decode()
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert development.note.startswith("Esimene")
+    assert _names(development) == []
+
+
+@pytest.mark.django_db
+def test_a_register_file_the_store_refuses_does_not_cost_the_note(client, specialist, monkeypatch):
+    """An error page served as `.pdf` is refused by `+ Märge`; the note is saved without it."""
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    url = "https://adr.envir.ee/api/v1/documents/b89d/file"
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("kiri.pdf", b"<html>Viga</html>")],
+            upload_links=[{"name": "kiri.pdf", "url": url}],
+        ),
+    )
+    client.force_login(specialist)
+
+    response = _press(
+        client,
+        finding,
+        failid=[SimpleUploadedFile("minu.pdf", PDF, content_type="application/pdf")],
+    )
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert development.note.startswith("Vaata punkti 3.\n\n")
+    assert development.note.endswith(f"kiri.pdf: {url}")
+    assert _names(development) == ["minu.pdf"]
+    assert "Neid faile ei saanud lisada (link on märkes): kiri.pdf." in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_the_lawyers_own_refused_file_still_refuses_the_save(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("kiri.pdf", PDF)],
+            upload_links=[{"name": "kiri.pdf", "url": "https://adr.envir.ee/f"}],
+        ),
+    )
+    client.force_login(specialist)
+
+    response = _press(client, finding, failid=[SimpleUploadedFile("minu.pdf", b"<html>")])
+
+    assert not MatterProceduralDevelopment.objects.filter(matter=matter).exists()
+    assert "Faili sisu ei vasta" in response.content.decode()
+    finding.refresh_from_db()
+    assert finding.status == FindingStatus.PENDING
+
+
+def test_names_and_addresses_written_into_the_note_are_cleaned():
+    finding = SimpleNamespace(
+        target=SimpleNamespace(get_source_display=lambda: "Kliimaministeerium"),
+        detail="",
+        url="",
+    )
+    text = watch._provenance(
+        finding,
+        [
+            {"name": "kiri\n\nVõltsitud rida\x00.pdf", "url": "https://adr.envir.ee/a"},
+            {"name": "muu.pdf", "url": "https://example.com/a"},
+            {"name": "http.pdf", "url": "http://adr.envir.ee/a"},
+            {"name": "tühik.pdf", "url": "https://adr.envir.ee/a b"},
+            "not a dict",
+        ],
+    )
+    assert text == (
+        "Kliimaministeerium\n\nRegistri failid, mida ei saanud lisada:\n"
+        "kiri Võltsitud rida .pdf: https://adr.envir.ee/a"
+    )
+
+
+@pytest.mark.django_db
+def test_only_the_refused_register_file_is_left_out(client, specialist, monkeypatch):
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    good = {"name": "kiri.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89d/file"}
+    bad = {"name": "viga.pdf", "url": "https://adr.envir.ee/api/v1/documents/b89e/file"}
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[
+                SimpleUploadedFile("viga.pdf", b"<html>Viga</html>"),
+                SimpleUploadedFile("kiri.pdf", PDF),
+            ],
+            upload_links=[bad, good],
+        ),
+    )
+    client.force_login(specialist)
+
+    response = _press(client, finding)
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert _names(development) == ["kiri.pdf"]
+    assert development.note.endswith(f"viga.pdf: {bad['url']}")
+    assert "Neid faile ei saanud lisada (link on märkes): viga.pdf." in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_register_files_over_the_request_limit_are_dropped_from_the_end(
+    client, specialist, monkeypatch, settings
+):
+    settings.UPLOAD_MAX_FILES_PER_REQUEST = 2
+    matter = factories.MatterFactory(owner=specialist, title="Jäätmeseaduse muutmise eelnõu")
+    finding = _finding(matter)
+    links = [
+        {"name": f"r{i}.pdf", "url": f"https://adr.envir.ee/api/v1/documents/{i}/file"}
+        for i in (1, 2)
+    ]
+    monkeypatch.setattr(
+        register_files,
+        "fetch",
+        lambda source, external_id: Fetched(
+            uploads=[SimpleUploadedFile("r1.pdf", PDF), SimpleUploadedFile("r2.pdf", PDF)],
+            upload_links=links,
+        ),
+    )
+    client.force_login(specialist)
+
+    _press(
+        client,
+        finding,
+        failid=[SimpleUploadedFile("minu.pdf", PDF, content_type="application/pdf")],
+    )
+
+    development = MatterProceduralDevelopment.objects.get(matter=matter)
+    assert _names(development) == ["minu.pdf", "r1.pdf"]
+    assert development.note.endswith(f"r2.pdf: {links[1]['url']}")

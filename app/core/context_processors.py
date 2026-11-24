@@ -13,9 +13,7 @@ from django.utils.functional import SimpleLazyObject
 from app.accounts import admin_session, local_auth, shared_gate
 from app.accounts.selectors import department_workers, persona_candidates
 from app.core.authorization import (
-    is_department_head,
     may_assign_work,
-    may_view_department_management,
     may_write_business_content,
 )
 
@@ -57,7 +55,6 @@ def application(request: HttpRequest) -> dict[str, Any]:
         "application_revision": settings.APPLICATION_REVISION,
         "application_built_at": parse_built_at(settings.APPLICATION_BUILT_AT),
         "real_data_allowed": settings.REAL_DATA_ALLOWED,
-        "dev_login_enabled": settings.DEV_LOGIN_ENABLED,
         # The header renders differently for somebody who is past the shared
         # door but has chosen no persona: they get the department, and a clear
         # way to say whose work they want (Stage-2D auth brief 7).
@@ -87,18 +84,6 @@ def application(request: HttpRequest) -> dict[str, Any]:
         # against every row and `request.user` is already in the context under
         # its own name.
         "current_persona_id": _current_persona_id(request),
-        # Whether to offer the department-head surface in the navigation.
-        # Computed here rather than compared in the template: a template that
-        # asks `user.role == "DEPARTMENT_HEAD"` puts a copy of an authorization
-        # rule in a file nothing type-checks, and a typo there fails open by
-        # rendering nothing rather than loudly. The route enforces the same
-        # check again — this only decides whether the link is shown.
-        "is_department_head": is_department_head(getattr(request, "user", None)),
-        # The department head's management surfaces, through the capability
-        # whose default is that role (docs/adr/0145 §3).
-        "may_view_department_management": may_view_department_management(
-            getattr(request, "user", None)
-        ),
         # Personal sign-in (docs/adr/0145): false in every mode but
         # `local_password`, so the shared gate's bar renders exactly as before.
         "local_password_mode": local_auth.is_local_password(),

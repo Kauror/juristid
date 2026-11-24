@@ -403,9 +403,9 @@ def test_a_storage_failure_leaves_no_reachable_matter_behind(signed_in, evidence
     through — so the write is inside one transaction, and a Matter with one of
     its two attachments must not survive the failure (Stage-2E.1 brief 23).
     """
-    from app.matters import views as matter_views
+    from app.matters import intake as matter_intake
 
-    real = matter_views.__dict__.get("_attach_incoming_file")
+    real = matter_intake.__dict__.get("attach_form_upload")
     assert real is not None, "the attachment helper was renamed"
 
     calls = {"n": 0}
@@ -418,7 +418,7 @@ def test_a_storage_failure_leaves_no_reachable_matter_behind(signed_in, evidence
             raise OSError("evidence store unavailable")
         return real(matter, upload, actor=actor, role=role)
 
-    monkeypatch.setattr(matter_views, "_attach_incoming_file", fail_on_the_second)
+    monkeypatch.setattr(matter_intake, "attach_form_upload", fail_on_the_second)
 
     with pytest.raises(OSError):
         signed_in.post(
@@ -448,16 +448,16 @@ def test_a_storage_failure_leaves_no_stray_sender_behind_either(
     institution surviving a save that failed is exactly the orphan the resolver
     was put inside the transaction to prevent.
     """
-    from app.matters import views as matter_views
+    from app.matters import intake as matter_intake
     from app.organisations.models import Organisation
 
-    real = matter_views.__dict__.get("_attach_incoming_file")
+    real = matter_intake.__dict__.get("attach_form_upload")
     assert real is not None, "the attachment helper was renamed"
 
     def fail(matter, upload, *, actor, role=""):
         raise OSError("evidence store unavailable")
 
-    monkeypatch.setattr(matter_views, "_attach_incoming_file", fail)
+    monkeypatch.setattr(matter_intake, "attach_form_upload", fail)
 
     with pytest.raises(OSError):
         signed_in.post(

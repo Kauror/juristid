@@ -62,7 +62,7 @@ text unchanged.
 - **Nothing is linked until the Teema exists.** «Vali» adds a row with a hidden
   `seo_teemaga_valitud` and a × to the form's own list (`bindRelatedPicker`).
   `matter_create` links the union of these and the ticked suggestions
-  (`seo_teemaga`) through `_link_ticked_similar_matters` →
+  (`seo_teemaga`) through `intake.link_ticked_similar_matters` (in the view as `_link_ticked_similar_matters` until HR-13) →
   `link_related_matters`, the one canonical `MatterRelation` service, inside the
   transaction that creates the Teema: a link that cannot be made refuses the
   whole save, and a refused save takes no link with it. Duplicates collapse to

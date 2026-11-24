@@ -17,8 +17,15 @@ the use case directly, so any other caller gets the same guarantees:
 
 from __future__ import annotations
 
-import pytest
+from datetime import date
 
+import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
+
+from app.audit.enums import ChangeEventType
+from app.audit.models import ChangeEvent
 from app.core.errors import DomainError
 from app.matters import workspace
 from app.matters.initiative import KODA_PROPOSAL_INSTRUMENT_KEY, is_koda_initiative
@@ -26,6 +33,7 @@ from app.matters.models import Matter
 from app.matters.services import MATTER_EDIT_CONFLICT, matter_revision_token
 from app.organisations.models import Organisation
 from app.taxonomy.models import LegalInstrumentType
+from app.workflow.enums import Track
 from tests import factories
 from tests.refusals import refused
 
@@ -158,3 +166,120 @@ def test_a_refused_link_takes_the_whole_correction_back(specialist):
     assert matter.title == "Puutumata pealkiri"
     assert matter.addressee_organisation == first
     assert Organisation.objects.count() == organisations
+
+
+# --- HR-14: the save works on the row the guard locked -----------------------
+#
+# `edit_matter` takes the Matter row under `guard_matter_revision` and then
+# runs every service on the row it locked, not on the instance the view loaded
+# before the transaction. The tests below load a request-time copy, let a
+# colleague's save land on the row (`queryset.update`, which leaves the copy
+# untouched), and then save through the copy.
+
+
+def _request_time_copy(matter: Matter) -> Matter:
+    return Matter.objects.get(pk=matter.pk)
+
+
+def test_a_colleagues_track_is_not_overwritten_from_the_stale_copy(specialist):
+    """A fact derived from the row is judged on the stored row.
+
+    The copy still says `Koja algatus`; a colleague has since put the Teema on
+    another track. Changing `Õigusakt` away from the Chamber proposal unmarks
+    an initiative — but this Teema no longer is one, so its track is left
+    alone. Judged on the copy, the save cleared the colleague's track.
+    """
+    matter = factories.MatterFactory(owner=specialist)
+    _edit(matter, specialist, legal_instruments=_instrument(KODA_PROPOSAL_INSTRUMENT_KEY))
+    assert is_koda_initiative(matter)
+    stale = _request_time_copy(matter)
+    Matter.objects.filter(pk=matter.pk).update(track=Track.DOMESTIC)
+
+    _edit(stale, specialist, expected_revision=None, legal_instruments=_instrument("seadus"))
+
+    assert Matter.objects.get(pk=matter.pk).track == Track.DOMESTIC
+    assert not ChangeEvent.objects.filter(
+        matter=matter, event_type=ChangeEventType.MATTER_TRACK_CHANGED, payload__to=""
+    ).exists()
+
+
+def test_the_audit_from_value_is_the_stored_one_not_the_copys(specialist):
+    """Without a token nothing is refused, and each posted value is applied
+    against the stored row: the event names the colleague's title as the one
+    replaced, not the copy's."""
+    matter = factories.MatterFactory(owner=specialist, title="Vana pealkiri")
+    stale = _request_time_copy(matter)
+    Matter.objects.filter(pk=matter.pk).update(title="Kolleegi pealkiri")
+
+    _edit(stale, specialist, expected_revision=None, title="Minu pealkiri")
+
+    assert Matter.objects.get(pk=matter.pk).title == "Minu pealkiri"
+    event = ChangeEvent.objects.get(matter=matter, event_type=ChangeEventType.MATTER_TITLE_CHANGED)
+    assert event.payload["previous"] == "Kolleegi pealkiri"
+    assert event.payload["current"] == "Minu pealkiri"
+
+
+def test_a_value_already_stored_writes_no_event_even_from_a_stale_copy(specialist):
+    """The posted title is what is stored now, so there is nothing to change —
+    compared with the copy it looked like a rename and wrote an event."""
+    matter = factories.MatterFactory(owner=specialist, title="Vana pealkiri")
+    stale = _request_time_copy(matter)
+    Matter.objects.filter(pk=matter.pk).update(title="Kolleegi pealkiri")
+
+    _edit(stale, specialist, expected_revision=None, title="Kolleegi pealkiri")
+
+    assert not ChangeEvent.objects.filter(
+        matter=matter, event_type=ChangeEventType.MATTER_TITLE_CHANGED
+    ).exists()
+
+
+def test_with_a_token_a_copy_older_than_the_stored_row_is_refused(specialist):
+    matter = factories.MatterFactory(owner=specialist, title="Vana pealkiri")
+    stale = _request_time_copy(matter)
+    token = matter_revision_token(stale)
+    Matter.objects.filter(pk=matter.pk).update(title="Kolleegi pealkiri", updated_at=timezone.now())
+
+    with refused(MATTER_EDIT_CONFLICT):
+        _edit(stale, specialist, expected_revision=token, title="Minu pealkiri")
+
+    assert Matter.objects.get(pk=matter.pk).title == "Kolleegi pealkiri"
+    assert not ChangeEvent.objects.filter(
+        matter=matter, event_type=ChangeEventType.MATTER_TITLE_CHANGED
+    ).exists()
+
+
+def _row_locks(queries: list[dict]) -> list[tuple[str, str]]:
+    """``(table, strength)`` of every `SELECT … FOR [NO KEY] UPDATE`, in order."""
+    locks = []
+    for query in queries:
+        sql = query["sql"]
+        for strength in ("FOR NO KEY UPDATE", "FOR UPDATE"):
+            if f" {strength}" in sql:
+                table = sql.split(" FROM ", 1)[1].split()[0].strip('"')
+                locks.append((table, strength))
+                break
+    return locks
+
+
+def test_the_save_takes_the_same_locks_in_the_same_order(specialist):
+    """No new lock path: the Matter row first, at `FOR NO KEY UPDATE`, and the
+    same row locks after it as the save took before HR-14 (the deadline writer
+    and the dates writer re-take the row they already hold)."""
+    matter = factories.MatterFactory(owner=specialist, title="Vana pealkiri")
+    stale = _request_time_copy(matter)
+
+    with CaptureQueriesContext(connection) as captured:
+        _edit(
+            stale,
+            specialist,
+            title="Uus pealkiri",
+            received_date=date(2026, 11, 2),
+            response_deadline=date(2026, 11, 30),
+        )
+
+    # Measured on main before HR-14 and unchanged by it: seven statements, all
+    # on the one Matter row at `FOR NO KEY UPDATE` — the guard first, then the
+    # writers that re-take the row they already hold (re-entrant inside the
+    # transaction, so they add no wait and no ordering).
+    matter_row = (Matter._meta.db_table, "FOR NO KEY UPDATE")
+    assert _row_locks(captured.captured_queries) == [matter_row] * 7
