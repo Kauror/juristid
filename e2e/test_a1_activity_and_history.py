@@ -32,6 +32,7 @@ from e2e.conftest import (
     close_disclosure,
     open_disclosure,
     sign_in,
+    toggle_disclosure,
     unique_title,
     wait_for_htmx,
 )
@@ -103,6 +104,9 @@ def _history(page):
 
 
 def _bell(page) -> str:
+    """The bell's number once its own fetch has landed (it loads after the page)."""
+    page.wait_for_load_state("networkidle")
+    wait_for_htmx(page)
     badge = page.locator("[data-notifbell] .notifbell__count")
     return badge.inner_text() if badge.count() else "0"
 
@@ -179,6 +183,97 @@ def test_a_link_to_varasemad_opens_it_and_a_redraw_keeps_it(page, base_url):
 
     page.goto(f"{base_url}/teavitused/")
     expect(_history(page)).not_to_have_attribute("open", "")
+
+
+SAVE = "**/konto/plokid/"
+
+
+def _refresh_while_the_save_is_held(page, base_url: str, *, start_open: bool) -> None:
+    """Toggle «Varasemad», hold its save, let the page redraw itself, then release.
+
+    The redraw's markup is drawn from the state stored *before* the toggle; the
+    reader's latest choice must still be what the page shows, and what is
+    stored once the held save goes through.
+    """
+    _run(_HISTORY_SCRIPT, 2, unique_title("A1 lennul"))
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/teavitused/")
+    if start_open:
+        open_disclosure(_history(page))
+        expect(_history(page)).to_have_attribute("data-disclosure-saved", "1")
+    stale = "1" if start_open else "0"
+    held = []
+    page.route(SAVE, lambda route: held.append(route))
+
+    with page.expect_request(SAVE):
+        assert toggle_disclosure(_history(page)) is not start_open
+    with page.expect_response(lambda response: "/teavitused/" in response.url):
+        page.evaluate("htmx.trigger(document.body, 'notificationsPageStale')")
+    wait_for_htmx(page)
+
+    block = _history(page)
+    # Stale markup, the reader's state.
+    expect(block).to_have_attribute("data-disclosure-saved", stale)
+    if start_open:
+        expect(block).not_to_have_attribute("open", "")
+    else:
+        expect(block).to_have_attribute("open", "")
+
+    assert len(held) == 1
+    with page.expect_response(SAVE):
+        held[0].continue_()
+    page.unroute(SAVE)
+    expect(_history(page)).to_have_attribute("data-disclosure-saved", "0" if start_open else "1")
+
+    page.reload()
+    if start_open:
+        expect(_history(page)).not_to_have_attribute("open", "")
+    else:
+        expect(_history(page)).to_have_attribute("open", "")
+
+
+def test_a_redraw_during_a_save_keeps_the_readers_opening(page, base_url):
+    _refresh_while_the_save_is_held(page, base_url, start_open=False)
+
+
+def test_a_redraw_during_a_save_keeps_the_readers_closing(page, base_url):
+    _refresh_while_the_save_is_held(page, base_url, start_open=True)
+
+
+def test_an_unrelated_swap_neither_moves_nor_saves_the_history(page, base_url):
+    """A swap elsewhere on the page — even one still settling while the reader
+    toggles «Varasemad» — leaves the block as the reader has it and saves
+    nothing on its behalf."""
+    _run(_HISTORY_SCRIPT, 2, unique_title("A1 mujal"))
+    sign_in(page, base_url, MARTIN)
+    page.goto(f"{base_url}/teavitused/#varasemad")
+    block = _history(page)
+    expect(block).to_have_attribute("open", "")
+    expect(block).to_have_attribute("data-disclosure-saved", "0")
+    saves = []
+    page.on(
+        "request",
+        lambda request: saves.append(request) if "/konto/plokid/" in request.url else None,
+    )
+    page.evaluate("document.body.insertAdjacentHTML('beforeend', '<div id=\"a1-mujal\"></div>')")
+
+    # A swap that does not hold the block, with a long settle so the reader can act inside it.
+    page.evaluate(
+        "htmx.ajax('GET', '/kiirklahvid/', "
+        "{target: '#a1-mujal', select: 'h1', swap: 'innerHTML settle:1500ms'})"
+    )
+    expect(page.locator("#a1-mujal h1")).to_be_attached()
+    # The view-only open state is untouched and was not saved.
+    expect(block).to_have_attribute("open", "")
+    expect(block).to_have_attribute("data-disclosure-shown", "1")
+    assert saves == []
+
+    # The reader closes it while that swap is still settling.
+    expect(page.locator("#a1-mujal.htmx-settling")).to_have_count(1)
+    assert toggle_disclosure(block) is False
+    wait_for_htmx(page)
+    expect(page.locator("#a1-mujal.htmx-settling")).to_have_count(0)
+    expect(block).not_to_have_attribute("open", "")
 
 
 # ---------------------------------------------------------------------------

@@ -29,9 +29,10 @@
  *   `force_open`, e.g. the next page of a list inside it).
  * - A link to an element that is, or directly holds, a closed remembered block
  *   (`#varasemad`) opens it.
- * - `data-disclosure-keep`: when htmx redraws the page, the block stays as the
- *   reader had it on screen rather than snapping to the stored state — which
- *   may be a save still in flight, or a view-only state from above.
+ * - `data-disclosure-keep`: when an htmx swap *replaces* the block, the new one
+ *   is shown as the reader had the old one on screen rather than as the server
+ *   drew it — the server's markup may predate a save still in flight, or a
+ *   view-only state from above. Swaps that do not replace it change nothing.
  */
 (function () {
   "use strict";
@@ -150,25 +151,60 @@
   openTarget();
   window.addEventListener("hashchange", openTarget);
 
-  var kept = null;
-  document.addEventListener("htmx:beforeSwap", function () {
-    var blocks = document.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
-    kept = {};
-    for (var i = 0; i < blocks.length; i += 1) {
-      kept[blocks[i].getAttribute("data-disclosure")] = blocks[i].open;
-    }
-  });
-  document.addEventListener("htmx:afterSettle", function () {
-    if (!kept) {
+  // `data-disclosure-keep`, scoped to the swap that replaces the block: the
+  // on-screen state is taken just before *that* response is swapped in — the
+  // latest thing the reader did, whatever stale state the server drew — and
+  // given back to the block that replaced it. A swap elsewhere on the page
+  // records nothing and touches nothing, and a block the swap did not replace
+  // (the same node is still there) is left alone.
+  var kept = typeof WeakMap === "function" ? new WeakMap() : null;
+
+  document.addEventListener("htmx:beforeSwap", function (event) {
+    var detail = event.detail || {};
+    var target = detail.target;
+    if (!kept || !detail.xhr || !target || !target.querySelectorAll) {
       return;
     }
-    var blocks = document.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
-    for (var i = 0; i < blocks.length; i += 1) {
-      var key = blocks[i].getAttribute("data-disclosure");
-      if (Object.prototype.hasOwnProperty.call(kept, key)) {
-        showFor(blocks[i], kept[key]);
-      }
+    var blocks = [];
+    if (target.matches && target.matches("details[data-disclosure-keep][data-disclosure]")) {
+      blocks.push(target);
     }
-    kept = null;
+    var inner = target.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
+    for (var i = 0; i < inner.length; i += 1) {
+      blocks.push(inner[i]);
+    }
+    if (!blocks.length) {
+      return;
+    }
+    kept.set(
+      detail.xhr,
+      blocks.map(function (block) {
+        return { key: block.getAttribute("data-disclosure"), open: block.open, node: block };
+      })
+    );
+  });
+
+  // Given back in `afterSwap`, in the same task that inserted the new block and
+  // so before the browser's own `toggle` for a block parsed `open` is
+  // dispatched. The mark is set even when the drawn state already agrees: that
+  // queued toggle — or one for stale markup the reader has since reversed —
+  // must never reach the save as a choice, least of all while the reader's own
+  // save is still in flight.
+  document.addEventListener("htmx:afterSwap", function (event) {
+    var detail = event.detail || {};
+    if (!kept || !detail.xhr || !kept.has(detail.xhr)) {
+      return;
+    }
+    var records = kept.get(detail.xhr);
+    kept.delete(detail.xhr);
+    records.forEach(function (record) {
+      var now = document.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
+      for (var i = 0; i < now.length; i += 1) {
+        if (now[i].getAttribute("data-disclosure") === record.key && now[i] !== record.node) {
+          now[i].setAttribute("data-disclosure-shown", record.open ? "1" : "0");
+          now[i].open = record.open;
+        }
+      }
+    });
   });
 })();

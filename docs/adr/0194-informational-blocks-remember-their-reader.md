@@ -110,3 +110,49 @@ the status is unchanged (no formal acceptance was recorded).
   test in a shard, so a test that toggled a remembered block changed what the
   next test saw. The behaviour above is unchanged; the browser suite now starts
   each signed-in test from the registered defaults (`e2e/conftest.py`).
+
+## Amendment 2026-11-25 — «Varasemad», and a state shown for one view (A1, UX-004)
+
+This amends the decision above for presentation only. Nothing new is stored:
+the table, the save and reset endpoints and the registry rule are unchanged.
+
+1. **«Varasemad» on `/teavitused/` is a remembered block** (`notifications.history`,
+   default **closed**). Its heading carries the number of history items on all
+   pages, `feed.history_page(with_total=True)` — one count per source over the
+   same querysets the pages read, so it is exact. Opening or closing it is
+   presentation; it reads and marks no notification.
+
+2. **A state shown for one view is not a choice.** Three situations show a
+   remembered block in a state the reader did not choose, and none of them is
+   saved:
+   - **`force_open`** — `{% disclosure "key" force_open=… %}` draws the block
+     open for a view the reader explicitly asked for (the next page of the
+     history, `?varasemad=`). When the stored state is closed, the tag adds
+     `data-disclosure-shown="1"`.
+   - **A link to the block** — a URL fragment naming an element that is, or
+     directly holds, a closed remembered block (`#varasemad`) opens it, marked
+     the same way.
+   - **A redraw** — see 3.
+
+   `static/js/disclosures.js` ignores a `toggle` whose result equals
+   `data-disclosure-shown`: it is the page's doing, including the browser's
+   own parse-time toggle of a block drawn `open`. The reader's first toggle away
+   from it removes the mark and is saved as any other choice. The stored state
+   is therefore only ever what the reader last chose.
+
+3. **A redraw keeps what the reader sees** (opt-in `data-disclosure-keep`).
+   When an htmx swap *replaces* such a block — `/teavitused/` redraws itself on
+   `notificationsPageStale` — the new block is shown as the old one was on
+   screen, not as the server drew it, and marked as in 2. The server's markup
+   may predate a save still in flight; the reader's latest choice wins on
+   screen, and the in-flight save (or the follow-up the script queues) is what
+   is stored. The state is taken in `htmx:beforeSwap` only from blocks inside
+   that swap's target and given back in `htmx:afterSwap` of the same request,
+   before the browser dispatches the new block's own toggle, and only to a node
+   the swap actually replaced. A swap elsewhere on the page records and changes
+   nothing.
+
+Blocks without `force_open`, a fragment link or `data-disclosure-keep` behave
+exactly as before. Tests: `tests/test_a1_compact_activity_and_history.py`,
+`e2e/test_a1_activity_and_history.py` (redraw during a held save, opening and
+closing; an unrelated swap settling while the reader toggles).
