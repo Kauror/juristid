@@ -1793,6 +1793,14 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # bounded by a registry of keys, with no parameter that names anybody else.
     "accounts:save_disclosure": "C: the signed-in person's own block states",
     "accounts:reset_disclosures": "C: resets the signed-in person's own block states",
+    # C — «Minu vaated» (docs/adr/0222): the signed-in person's own named Teemad
+    # views — a name and a canonical register query, never business content.
+    # Saved for `request.user`; renamed and removed only as the sender's own
+    # (another person's id is a 404). No business service, no `ChangeEvent`
+    # (tests/test_saved_register_views.py).
+    "matters:save_view": "C: the signed-in person's own named register view",
+    "matters:rename_view": "C: renames the signed-in person's own register view",
+    "matters:remove_view": "C: removes the signed-in person's own register view",
     # C — personal deadline notifications (docs/adr/0198): the recipient's own
     # read and hidden stamps, and their own notification preferences. Rows are
     # resolved by `recipient=request.user`, so another person's id is a 404;

@@ -111,6 +111,7 @@ from app.matters import (
     register_columns,
     register_filters,
     register_selection,
+    saved_views,
     selectors,
     step_launch,
     timeline_links,
@@ -2229,9 +2230,18 @@ def matter_list(request: HttpRequest) -> HttpResponse:
     # four extra counts per keystroke would be four queries for something the
     # reader cannot even see move (Stage-2E.1 brief 14).
     context["saved_views"] = register_filters.saved_views(request.user, params)
-    # The view *is* the address. «Salvesta praegune filter vaatena» offers this
-    # link; there is nothing else to save, and nothing is stored.
+    # The view is still the address, and «Kopeeri» still hands it over. Since
+    # docs/adr/0222 a person may also keep it under a name of their own: what is
+    # stored is the canonical query of the register's parameters, and the chips
+    # are counted through the register's own pipeline in one statement
+    # (app/matters/saved_views.py).
     context["current_view_url"] = request.build_absolute_uri()
+    personal = saved_views.personal_views(request.user, params)
+    context["personal_views"] = personal
+    context["personal_views_shown"] = personal[: saved_views.VISIBLE_CHIPS]
+    context["personal_views_hidden"] = max(0, len(personal) - saved_views.VISIBLE_CHIPS)
+    context["personal_views_max"] = saved_views.MAX_VIEWS
+    context["current_view_query"] = saved_views.canonical_query(params)
 
     context |= {
         "tracks": Track.choices,

@@ -1,0 +1,116 @@
+{% load people matter_activity %}
+{% comment %}
+«Eelvaade» (UX-006): one Teema, compactly, inside the drawer the register opens
+beside its rows (`base.html` [data-mpreview], static/js/matter-preview.js).
+
+Only what the row cannot fit, read-only: no control here writes anything, and
+the summary is the Teema header's paragraph without its `Muuda` form. Every
+value comes from the reader-scoped reads in app/matters/preview.py; the step,
+its date and the owed deadline are the register row's own, so the drawer and
+the row it was opened from cannot disagree.
+
+`data-mpreview-body` is what the script places into the drawer; anything around
+it is ignored.
+{% endcomment %}
+<div class="mpreview__body" data-mpreview-body data-matter-id="{{ matter.pk }}">
+  <h3 class="mpreview__title" id="mpreview-title" tabindex="-1">{{ matter.title }}</h3>
+
+  <p class="mpreview__meta">
+    {% if matter.is_test_data %}<span class="badge badge--test">TEST</span>{% endif %}
+    {% if matter.record_mode == "ARCHIVE" and matter.is_open %}<span class="badge badge--archive">Arhiiv</span>{% endif %}
+    {% if matter.is_restricted %}<span class="badge badge--restricted">Piiratud</span>{% endif %}
+    {% if not matter.is_open %}<span class="badge badge--closed">Suletud</span>{% endif %}
+    <span class="mpreview__metaitem"><span class="mpreview__metalabel">Hetkeseis</span> {% if matter.stage %}{{ matter.stage.label_et }}{% else %}<span class="muted">määramata</span>{% endif %}</span>
+    <span class="mpreview__metaitem"><span class="mpreview__metalabel">Vastutaja</span>
+      {% if matter.owner %}<span title="{{ matter.owner.display_name }}">{{ matter.owner|name_among:colleagues }}</span>{% elif matter.former_owner_name %}<span class="muted">endine: {{ matter.former_owner_name }}</span>{% else %}<span class="table__missing">Vastutajata</span>{% endif %}
+    </span>
+  </p>
+
+  {% if matter.brief_summary %}
+    <p class="mpreview__summary">{{ matter.brief_summary|linebreaksbr }}</p>
+  {% endif %}
+
+  <dl class="mpreview__facts">
+    <div class="mpreview__fact">
+      <dt>Järgmiseks</dt>
+      <dd>
+        {% with milestone=matter|upcoming_milestone %}
+        {% if action %}
+          <span class="mpreview__actiontext">{{ action.text }}</span>
+          <span class="mpreview__sub">
+            {% if action.responsible %}<span title="{{ action.responsible.display_name }}">{{ action.responsible|name_among:colleagues }}</span>{% else %}<span class="muted">Vastutaja määramata</span>{% endif %}
+            · {% if action.date_label %}{{ action.date_label }} {% endif %}<span class="{% if action.is_overdue %}dateline--overdue{% endif %}">{{ action.date_display }}</span>{% if action.is_overdue %}<span class="dateline__late"> · üle tähtaja</span>{% endif %}
+          </span>
+        {% elif milestone %}
+          <span class="table__sourcelabel">Oluline tähtaeg</span>
+          <span class="mpreview__actiontext">{{ milestone.title }}</span>
+          <span class="mpreview__sub">{{ milestone.display_date }}</span>
+        {% elif not matter.is_open %}
+          <span class="table__missing">Puudub — teema on suletud</span>
+        {% else %}
+          <span class="table__missing">Järgmine samm puudub</span>
+        {% endif %}
+        {% endwith %}
+      </dd>
+    </div>
+    {% with owed=matter|secondary_obligation:user shown=matter|register_date %}
+    {% if owed or shown and not shown.from_step %}
+    <div class="mpreview__fact">
+      <dt>Tähtaeg</dt>
+      <dd>
+        {% if shown and not shown.from_step %}
+          <span class="datemeaning">{{ shown.meaning }}</span>
+          <span class="dateline{% if shown.is_overdue %} dateline--overdue{% endif %}">{{ shown.display }}</span>{% if shown.is_overdue %}<span class="dateline__late"> · üle tähtaja</span>{% endif %}
+        {% endif %}
+        {% if owed %}
+          <span class="dateowed">
+            <span class="dateowed__label">{{ owed.label }}</span>
+            <span class="dateowed__value{% if owed.is_overdue %} dateowed__value--overdue{% endif %}">{{ owed.short_display }}{% if owed.is_overdue %} · {{ owed.days_late }} p üle{% endif %}</span>
+          </span>
+        {% endif %}
+      </dd>
+    </div>
+    {% endif %}
+    {% endwith %}
+    {% with milestone=matter|upcoming_milestone %}
+    {% if action and milestone %}
+    <div class="mpreview__fact">
+      <dt>Oluline tähtaeg</dt>
+      <dd><span class="mpreview__actiontext">{{ milestone.title }}</span> <span class="mpreview__sub">{{ milestone.display_date }}</span></dd>
+    </div>
+    {% endif %}
+    {% endwith %}
+  </dl>
+
+  {% if phases %}
+    <section class="mpreview__section" aria-labelledby="mpreview-kulg">
+      <h4 class="mpreview__label" id="mpreview-kulg">Menetluse kulg{% if pattern_label %} <span class="mpreview__labelnote">· {{ pattern_label }}</span>{% endif %}</h4>
+      <ol class="mpreview__phases">
+        {% for phase in phases %}
+          <li class="mpreview__phase mpreview__phase--{{ phase.state }}"{% if phase.state == "current" %} aria-current="step"{% endif %}>{{ phase.label }}{% if phase.conditional %}<span class="visually-hidden"> (ei pruugi tulla)</span>{% endif %}</li>
+        {% endfor %}
+      </ol>
+    </section>
+  {% endif %}
+
+  <section class="mpreview__section" aria-labelledby="mpreview-tegevused">
+    <h4 class="mpreview__label" id="mpreview-tegevused">Viimased tegevused</h4>
+    {% if activities %}
+      <ol class="mpreview__activities">
+        {% for line in activities %}
+          <li class="mpreview__activity">
+            <time class="mpreview__when" datetime="{{ line.day|date:'Y-m-d' }}">{{ line.when }}</time>
+            <span class="mpreview__what"><span class="mpreview__kind">{{ line.label }}</span>{% if line.detail %} · {{ line.detail }}{% endif %}</span>
+            {% if line.actor %}<span class="mpreview__who" title="{{ line.actor.display_name }}">{{ line.actor|name_among:colleagues }}</span>{% endif %}
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <p class="muted mpreview__empty">Tegevusi pole veel kirjas.</p>
+    {% endif %}
+  </section>
+
+  <p class="mpreview__foot">
+    <a class="button button--primary button--tiny" href="{% url 'matters:matter_detail' pk=matter.pk %}">Ava teema →</a>
+  </p>
+</div>
