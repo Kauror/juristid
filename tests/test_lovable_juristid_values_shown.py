@@ -242,3 +242,21 @@ def test_the_renderer_leaves_every_other_value_to_the_caller():
 def test_names_cost_nothing_when_no_row_needs_them(django_assert_num_queries):
     with django_assert_num_queries(0):
         juristid_names([("title", "x"), ("owner", None), ("owner", "not-a-uuid"), ("sent", {})])
+
+
+@pytest.mark.django_db
+def test_names_for_many_rows_cost_at_most_two_queries(django_assert_max_num_queries):
+    """One query for every owner and one for every stage, however many rows."""
+    from tests import factories
+
+    people = [factories.UserFactory(display_name=f"Isik {n}") for n in range(12)]
+    keys = list(StageVocabulary.objects.values_list("key", flat=True)[:8])
+    assert len(keys) >= 2
+    pairs = [("owner", str(p.pk)) for p in people]
+    pairs += [("stage", key) for key in keys]
+    pairs += [("stage", {"open": False, "stage": key, "disposition": "OTHER"}) for key in keys]
+    pairs += [("sent", OUTCOME)] * 20
+    with django_assert_max_num_queries(2):
+        names = juristid_names(pairs)
+    assert len(names.owners) == 12
+    assert set(names.stages) == set(keys)
