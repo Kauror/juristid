@@ -16,12 +16,12 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
+from operator import itemgetter
 from typing import Any
 
 from django.conf import settings
 
-from app.register_watch import house_style, outbound
+from app.register_watch import model, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Relevance, WatchFinding
 
@@ -60,21 +60,7 @@ SCHEMA: dict[str, Any] = {
 }
 
 
-@dataclass
-class Usage:
-    calls: int = 0
-    input_tokens: int = 0
-    output_tokens: int = 0
-    model: str = ""
-    judged: int = 0
-    failures: int = 0
-    #: The last failure's kind and HTTP status, never its message: shown in
-    #: Haldus → Registrite jälgimine.
-    last_failure: str = ""
-
-    def failed(self, reason: str) -> None:
-        self.failures += 1
-        self.last_failure = reason[:120]
+Usage = model.Usage
 
 
 def enabled() -> bool:
@@ -85,12 +71,6 @@ def may_send(matter: Any) -> bool:
     """Only an unrestricted, real Teema's public facts ever leave the application
     (`outbound.may_send`: never a restricted or a TEST Teema)."""
     return outbound.may_send(matter)
-
-
-def _client() -> Any:
-    import anthropic  # imported here: the watch runs without it when the model is off
-
-    return anthropic.Anthropic(timeout=120.0, max_retries=2)
 
 
 def _prompt(matter: Any, findings: Sequence[WatchFinding]) -> str:
@@ -122,6 +102,7 @@ def _prompt(matter: Any, findings: Sequence[WatchFinding]) -> str:
 #: sent again every night (audit QA26-BUG-05).
 BATCH = 25
 MAX_TOKENS = 4000
+TIMEOUT = 120.0
 
 
 def judge(matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: Any = None) -> int:
@@ -142,36 +123,24 @@ def judge(matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: A
 def _judge_batch(
     matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: Any = None
 ) -> int:
-    try:
-        client = client or _client()
-        response = client.beta.messages.create(
-            model=getattr(settings, "REGISTER_WATCH_AI_MODEL", "claude-opus-5-5"),
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM,
-            messages=[{"role": "user", "content": _prompt(matter, findings)}],
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-    except Exception as error:  # the model is an aid; the watch goes on without it
-        status = getattr(error, "status_code", None)
-        reason = type(error).__name__ + (f" {status}" if status else "")
-        logger.warning("register watch: model call failed: %s", reason)
-        usage.failed(reason)
-        return 0
-    usage.calls += 1
-    usage.input_tokens += getattr(response.usage, "input_tokens", 0) or 0
-    usage.output_tokens += getattr(response.usage, "output_tokens", 0) or 0
-    usage.model = str(getattr(response, "model", "") or usage.model)
-    if response.stop_reason != "end_turn":
-        logger.warning("register watch: model stopped with %s", response.stop_reason)
-        usage.failed(f"stop_reason {response.stop_reason}")
-        return 0
-    text = next((block.text for block in response.content if block.type == "text"), "")
-    try:
-        answers = {row["id"]: row for row in json.loads(text)["items"]}
-    except (ValueError, KeyError, TypeError):
-        usage.failed("vastus ei olnud loetav")
+    answers = model.call_items(
+        setting="REGISTER_WATCH_AI_MODEL",
+        system=SYSTEM,
+        prompt=lambda: _prompt(matter, findings),
+        schema=SCHEMA,
+        max_tokens=MAX_TOKENS,
+        timeout=TIMEOUT,
+        key=itemgetter("id"),
+        usage=usage,
+        client=client,
+    )
+    if isinstance(answers, model.Failure):
+        # The watch goes on without the model; the next night asks again.
+        if answers.kind == "request":
+            logger.warning("register watch: model call failed: %s", answers.reason)
+        elif answers.kind == "stop":
+            logger.warning("register watch: model stopped with %s", answers.stop_reason)
+        usage.failed(answers.reason)
         return 0
     judged = 0
     allowed = {Relevance.RELEVANT, Relevance.UNSURE, Relevance.UNRELATED}
@@ -180,7 +149,7 @@ def _judge_batch(
         if not row or row.get("verdict") not in allowed:
             continue
         finding.relevance = row["verdict"]
-        finding.ai_note = house_style.fix(str(row.get("note") or "").strip())[:500]
+        finding.ai_note = model.clean_line(row.get("note"))
         finding.save(update_fields=["relevance", "ai_note", "updated_at"])
         judged += 1
     usage.judged += judged

@@ -25,7 +25,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from app.register_watch import candidates_ai, house_style, outbound
+from app.register_watch import candidates_ai, model, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import AgendaItem, AgendaItemStatus, GovernmentAgenda, Strength
 from app.register_watch.sources import valitsus
@@ -317,33 +317,20 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             agenda.save(update_fields=["judged_at", "updated_at"])
         return 0
     topics = candidates_ai.open_topics(usage)
-    try:
-        client = client or candidates_ai._client()
-        response = client.beta.messages.create(
-            model=getattr(settings, "REGISTER_SWEEP_AI_MODEL", "claude-opus-5-5"),
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM,
-            messages=[{"role": "user", "content": _prompt(agenda, items, topics, usage)}],
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-    except Exception as error:  # the model is an aid; the agenda is stored without it
-        status = getattr(error, "status_code", None)
-        return _failed_attempt(
-            agenda, usage, type(error).__name__ + (f" {status}" if status else "")
-        )
-    usage.calls += 1
-    usage.input_tokens += getattr(response.usage, "input_tokens", 0) or 0
-    usage.output_tokens += getattr(response.usage, "output_tokens", 0) or 0
-    usage.model = str(getattr(response, "model", "") or usage.model)
-    if response.stop_reason != "end_turn":
-        return _failed_attempt(agenda, usage, f"stop_reason {response.stop_reason}")
-    text = next((block.text for block in response.content if block.type == "text"), "")
-    try:
-        answers = {int(row["number"]): row for row in json.loads(text)["items"]}
-    except (ValueError, KeyError, TypeError):
-        return _failed_attempt(agenda, usage, "vastus ei olnud loetav")
+    answers = model.call_items(
+        setting="REGISTER_SWEEP_AI_MODEL",
+        system=SYSTEM,
+        prompt=lambda: _prompt(agenda, items, topics, usage),
+        schema=SCHEMA,
+        max_tokens=MAX_TOKENS,
+        timeout=candidates_ai.TIMEOUT,
+        key=lambda row: int(row["number"]),
+        usage=usage,
+        client=client,
+    )
+    if isinstance(answers, model.Failure):
+        # The agenda is stored without the model; a later run may try again.
+        return _failed_attempt(agenda, usage, answers.reason)
     allowed = {Strength.STRONG, Strength.POSSIBLE, Strength.WEAK, Strength.NONE}
     if not any(answers.get(item.number, {}).get("strength") in allowed for item in items):
         # A readable answer with no usable verdict for any item asked about (empty,
@@ -364,7 +351,7 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             if not row or row.get("strength") not in allowed:
                 continue  # left «Hindamata»: no verdict is invented for it
             item.strength = row["strength"]
-            item.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
+            item.reason = model.clean_line(row.get("reason"))
             item.related_matter = topics.get(str(row.get("related") or ""))
             item.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
             judged += 1
