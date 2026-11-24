@@ -242,6 +242,12 @@ requires every gap in the numbering to be named here:
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.
+- 0221 — reserved for the Haldus redesign (overnight development 25.11.2026,
+  workstream B, its own branch). The record lands with that branch, which then
+  removes this line.
+- 0222 — reserved for personal saved views (overnight development 25.11.2026,
+  workstream C2, its own branch). The record lands with that branch, which then
+  removes this line.
 
 Naming: `NNNN-short-decision-title.md`.
 
