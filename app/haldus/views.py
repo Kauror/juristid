@@ -27,6 +27,7 @@ from app.core.authorization import (
     may_view_department_management,
 )
 from app.haldus.sections import Section, section, visible_sections
+from app.legacy_import.lovable_display import JuristidNames, juristid_names, juristid_text
 from app.legacy_import.lovable_sync_labels import LOVABLE_FIELD_LABELS, LOVABLE_REASONS
 
 NOT_HERE = "Lehte ei leitud."
@@ -288,9 +289,12 @@ def lovable(request: HttpRequest) -> HttpResponse:
         hidden = changed.exclude(state__matter_id__in=visible).count()
         shown = changed.filter(state__matter_id__in=visible)
         more = max(0, shown.count() - LOVABLE_ROWS_SHOWN)
-        decisions = shown.select_related("state", "state__matter").order_by(
-            "state__reference", "field"
-        )[:LOVABLE_ROWS_SHOWN]
+        decisions = list(
+            shown.select_related("state", "state__matter").order_by("state__reference", "field")[
+                :LOVABLE_ROWS_SHOWN
+            ]
+        )
+        names = juristid_names((d.field, d.current) for d in decisions)
         for decision in decisions:
             pending.append(
                 {
@@ -299,7 +303,7 @@ def lovable(request: HttpRequest) -> HttpResponse:
                     "outcome": SyncOutcome(decision.outcome).label,
                     "reason": LOVABLE_REASONS.get(decision.reason, decision.reason),
                     "baseline": _shown(decision.baseline),
-                    "current": _shown(decision.current),
+                    "current": _juristid_shown(decision.field, decision.current, names),
                     "source": _shown(decision.source),
                 }
             )
@@ -369,6 +373,14 @@ def _observation_summary(request: HttpRequest) -> dict[str, Any]:
         "readiness": readiness,
         "ready": readiness_summary(readiness),
     }
+
+
+def _juristid_shown(name: str, value: Any, names: JuristidNames) -> str:
+    """Juristid's own value (B) as the panel shows it: the owner's name, the
+    stage's label, the opinion outcome in words (`lovable_display`, the panel's
+    ISO day kept); anything else, missing and unknown included, as `_shown`."""
+    shown = juristid_text(name, value, names, day=str)
+    return _shown(value) if shown is None else shown
 
 
 def _shown(value: Any) -> str:

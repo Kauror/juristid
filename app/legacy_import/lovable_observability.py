@@ -51,6 +51,7 @@ from django.utils import timezone
 
 from app.core.authorization import may_read_business_content
 from app.legacy_import import lovable_review, lovable_sync
+from app.legacy_import.lovable_display import JuristidNames, juristid_names, juristid_text
 from app.legacy_import.lovable_observation_models import (
     OBSERVATION_RETENTION_DAYS,
     AuditAccess,
@@ -760,6 +761,16 @@ def _shown(name: str, value: Any) -> str:
         ]
         return " · ".join(p for p in parts if p) or "—"
     return lovable_review.shown(name, value)
+
+
+def _juristid_decision_shown(name: str, value: Any, names: JuristidNames) -> str:
+    """A decision's Juristid value (B) as text: the owner's name, the stage's
+    label, the opinion outcome in words (`lovable_display`); anything else, a
+    missing or an unknown value included, as `_shown` gives it."""
+    shown = juristid_text(
+        name, value, names, day=lambda day: lovable_review.shown("sent_date", day)
+    )
+    return _shown(name, value) if shown is None else shown
 
 
 # ---------------------------------------------------------------------------
@@ -2646,11 +2657,13 @@ def matter_changes(
         if t.matter_id == str(matter.pk)
     ]
     decisions = []
-    for d in (
+    decision_rows = list(
         LovableSyncDecision.objects.filter(state=state)
         .select_related("run")
         .order_by("-run__started_at", "field")[:MATTER_DECISIONS]
-    ):
+    )
+    names = juristid_names((d.field, d.current) for d in decision_rows)
+    for d in decision_rows:
         reason = d.reason or ""
         decisions.append(
             {
@@ -2674,7 +2687,7 @@ def matter_changes(
                     else reason
                 ),
                 "baseline": _shown(d.field, d.baseline),
-                "current": _shown(d.field, d.current),
+                "current": _juristid_decision_shown(d.field, d.current, names),
                 "source": _shown(d.field, d.source),
             }
         )
