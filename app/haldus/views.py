@@ -111,13 +111,38 @@ def index(request: HttpRequest) -> HttpResponse:
 def settings_page(request: HttpRequest) -> HttpResponse:
     """Isiklikud seaded → Kuvamine: the persona's own display choices (docs/adr/0221).
 
-    Moved here from Ülevaade's «Seaded» row: the light/dark switch (kept in the
-    browser, docs/adr/0147) and «Taasta plokkide vaikeseaded» (the persona's
-    remembered blocks, docs/adr/0194). Nothing here is anybody else's, and
-    nothing here administers anything.
+    Moved here from Ülevaade's «Seaded» row: the light/dark switch and the text
+    size (both kept in the browser, docs/adr/0147, 0221), the landing page (on
+    the server, `app.accounts.landing`) and «Taasta plokkide vaikeseaded» (the
+    persona's remembered blocks, docs/adr/0194). Nothing here is anybody
+    else's, and nothing here administers anything.
     """
+    from app.accounts import landing
+
     _require(request, "kuvamine")
-    return render(request, "haldus/settings.html", _context(request, "kuvamine"))
+    return render(
+        request,
+        "haldus/settings.html",
+        _context(
+            request,
+            "kuvamine",
+            # Where `/` opens: only the pages this persona may open now
+            # (docs/adr/0221); the choice is checked again at every redirect.
+            landing_choices=landing.choices(request.user),
+            landing_current=landing.landing_page(request.user).key,
+            text_sizes=TEXT_SIZES,
+        ),
+    )
+
+
+#: Haldus → Kuvamine's text sizes: (value on <html data-text-size>, label).
+#: Tavaline is no attribute at all (static/js/text-size.js).
+TEXT_SIZES = (
+    ("vaike", "Väike"),
+    ("tavaline", "Tavaline"),
+    ("suur", "Suur"),
+    ("vaga-suur", "Väga suur"),
+)
 
 
 def _candidate_victories(user: Any) -> int | None:

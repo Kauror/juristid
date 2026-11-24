@@ -1793,6 +1793,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     # bounded by a registry of keys, with no parameter that names anybody else.
     "accounts:save_disclosure": "C: the signed-in person's own block states",
     "accounts:reset_disclosures": "C: resets the signed-in person's own block states",
+    # C — the landing page (docs/adr/0221): where `/` opens for the signed-in
+    # person. A key from a fixed allowlist keyed on `request.user`, checked
+    # against what that person may open; no parameter names anybody else.
+    "accounts:save_landing_page": "C: the signed-in person's own landing page",
     # C — personal deadline notifications (docs/adr/0198): the recipient's own
     # read and hidden stamps, and their own notification preferences. Rows are
     # resolved by `recipient=request.user`, so another person's id is a 404;

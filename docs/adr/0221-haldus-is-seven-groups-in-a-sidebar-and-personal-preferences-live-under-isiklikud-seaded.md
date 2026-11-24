@@ -123,16 +123,64 @@ it stays in `app/legacy_import/sync_admin.py` (`value_text`, `juristid_value_tex
 the texts; the templates `data_sync_differences.html`, `data_sync_resolve.html` and `lovable.html`
 only print the strings, and the split above moved none of them.
 
-## Personal preferences (B2)
+## Personal preferences
 
-Recorded with the B2 change in the section «Personal preferences» below.
+Isiklikud seaded holds two items: **Kuvamine** (`haldus:settings`) and **Teavitused** (the
+existing `notifications:settings`). Kuvamine gathers the person's own display choices; each stays
+where its data already lives — no second store:
+
+| Choice | Where it lives | Applied |
+|---|---|---|
+| Kujundus (hele/tume) | browser, `localStorage['juristid-theme']` (ADR 0147, unchanged) | before paint, `static/js/theme.js` |
+| Teksti suurus | browser, `localStorage['juristid-text-size']` | before paint, `static/js/text-size.js` |
+| Avaleht | server, `accounts.PersonalPreference.landing_page` (migration `accounts/0007`) | at `/` and after choosing a persona |
+| Plokid | server, `DisclosurePreference` (ADR 0194, unchanged) | the existing reset |
+
+### Text size
+
+Four sizes: **Väike**, **Tavaline** (the default and exactly the existing appearance), **Suur**,
+**Väga suur**. Like the theme it is a choice of this browser, not of a person (behind the shared
+gate the persona is a view somebody picked), so it needs no migration and follows ADR 0147's
+pattern: a separate non-deferred script in `<head>` sets `<html data-text-size>` before `<body>`
+is parsed — no flash at the wrong size — and stores one key; Tavaline is the absence of key and
+attribute, so the server-rendered page is byte-for-byte the old one. The sizes are the eleven
+typography tokens redefined per value in `tokens.css`; spacing (rem) stays, keeping pages dense.
+About seventy rules with a fixed pixel size (small chips and badges) do not scale; that is
+deliberate for now and listed as a follow-up. Signing out clears it with the rest of the origin's
+storage (ENG-009), like the theme.
+
+Alternative recorded (N-B2): a server-side size would follow the person across devices but needs
+the size at render time on every page and a field in the same table; rejected for v1 to match the
+theme.
+
+### Landing page
+
+* **Allowlist**, in this order: Minu asjad (default), Teemad, Osakond, Statistika, Monitooring,
+  Teavitused (`app/accounts/landing.py`, `LANDING_PAGES`). The stored value is a key, never a URL;
+  the redirect target is `reverse()` of the allowlisted URL name, so it cannot be an open redirect.
+* **Keyed** to the person the request is signed in as — the selected persona under the shared
+  gate, the account under personal sign-in — the same principal as `DisclosurePreference`. One
+  row per person, created on the first explicit choice; Minu asjad is stored as "".
+* **Validated twice.** `save()` refuses a key not on the list or not the person's to open
+  (Monitooring needs `candidate_notices.may_see`; the rest `login_required`, as their routes).
+  `landing_page()` asks again at every redirect: a choice no longer permitted falls back to Minu
+  asjad and is kept, so it applies again if the page opens to them again.
+* **Read by two places only**: `core.views.home` (`/`, where every sign-in lands) and the persona
+  choice (`accounts.views.act_as`) when it has no safe `next`. An explicit `next` always wins.
+* **Written by one route**: `POST accounts:save_landing_page` (`/konto/avaleht/`), CSRF-protected,
+  `login_required`, no parameter naming a person; registered as class C (the signed-in person's
+  own presentation state) in `tests/test_business_write_boundary.py`.
 
 ## Consequences
 
-* Two new GET routes (`haldus:settings`, `haldus:onenote`); no route moved, no migration.
+* B1: two new GET routes (`haldus:settings`, `haldus:onenote`); no route moved, no migration.
+* B2: one POST route (`accounts:save_landing_page`), one additive migration
+  (`accounts/0007_personal_preferences`), one head script (`static/js/text-size.js`).
 * Visual baselines of Haldus pages change (sidebar).
 * A new Haldus page must name its home in the registry, or the inventory test fails.
 
 ## Reversibility
 
 Presentation only: reverting restores the flat strip; the two new routes can stay as redirects.
+Reverting B2 drops one table of presentation preferences (the landing page falls back to Minu
+asjad for everybody) and the text-size script (the browser key is then ignored).

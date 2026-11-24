@@ -10,6 +10,8 @@
       (static/js/theme.js, docs/adr/0147).
     {% endcomment %}
     <script src="{% static 'js/theme.js' %}"></script>
+    {# Its twin for the text size, for the same reason (docs/adr/0221). #}
+    <script src="{% static 'js/text-size.js' %}"></script>
     <title>{% block title %}{{ application_name }}{% endblock %}</title>
     <link rel="stylesheet" href="{% static 'css/fonts.css' %}">
 

@@ -20,6 +20,43 @@
     <p class="acctnote">Hele või tume kujundus jääb meelde selles brauseris.</p>
   </section>
 
+  {% comment %}
+    Teksti suurus: four sizes, Tavaline the existing appearance. Kept in this
+    browser like the theme and applied before paint (static/js/text-size.js);
+    the pressed button is marked from <html data-text-size>.
+  {% endcomment %}
+  <section class="panel" aria-labelledby="tekstisuurus">
+    <h2 class="acctsection__title" id="tekstisuurus">Teksti suurus</h2>
+    <div class="settingslist textsize" role="group" aria-labelledby="tekstisuurus">
+      {% for value, label in text_sizes %}
+        <button type="button" class="button button--secondary textsize__option"
+                data-text-size-choice="{{ value }}" aria-pressed="{% if value == 'tavaline' %}true{% else %}false{% endif %}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <p class="acctnote">Teksti suurus jääb meelde selles brauseris.</p>
+  </section>
+
+  {% comment %}
+    Avaleht: where `/` opens after signing in or choosing a persona. Only the
+    pages this persona may open are offered; the server checks the choice when
+    it is saved and again every time (app/accounts/landing.py). A link that
+    names its own page still opens that page.
+  {% endcomment %}
+  <section class="panel" aria-labelledby="avaleht">
+    <h2 class="acctsection__title" id="avaleht">Avaleht</h2>
+    <form method="post" action="{% url 'accounts:save_landing_page' %}" class="settingslist">
+      {% csrf_token %}
+      <label class="visually-hidden" for="avaleht-valik">Avaleht</label>
+      <select class="field__input landingpick" id="avaleht-valik" name="avaleht">
+        {% for page in landing_choices %}
+          <option value="{{ page.key }}"{% if page.key == landing_current %} selected{% endif %}>{{ page.label }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="button button--secondary">Salvesta</button>
+    </form>
+    <p class="acctnote">Leht, mis avaneb pärast sisselogimist. Kui see pole sulle enam avatud, avaneb Minu asjad.</p>
+  </section>
+
   <section class="panel" aria-labelledby="plokid">
     <h2 class="acctsection__title" id="plokid">Plokid</h2>
     <div class="settingslist">

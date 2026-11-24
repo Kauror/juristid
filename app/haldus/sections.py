@@ -300,7 +300,7 @@ GROUPS: tuple[Group, ...] = (
                 "Kuvamine",
                 "haldus:settings",
                 may_open_settings,
-                "Hele või tume kujundus ja plokkide vaikeseaded.",
+                "Hele või tume kujundus, teksti suurus, avaleht ja plokkide vaikeseaded.",
             ),
             Item(
                 "teavitused",

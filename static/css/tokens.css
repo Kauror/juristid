@@ -182,6 +182,52 @@
   --motion-easing-standard: cubic-bezier(0.2, 0, 0.2, 1);
 }
 
+/* Text size (docs/adr/0221): the browser's own choice on <html data-text-size>,
+   set before paint by static/js/text-size.js. Tavaline is no attribute at all,
+   so the default page is exactly the sizes above. Only the type scale moves;
+   spacing stays, which keeps the pages as dense as the reader asked for. */
+:root[data-text-size="vaike"] {
+  --typography-size-page-title: 19px;
+  --typography-size-matter-title: 18px;
+  --typography-size-lg: 14px;
+  --typography-size-row: 12.5px;
+  --typography-size-base: 12px;
+  --typography-size-sm: 11.5px;
+  --typography-size-meta: 11px;
+  --typography-size-meta-sm: 10.5px;
+  --typography-size-label: 10px;
+  --typography-size-chip: 9.5px;
+  --typography-size-chip-sm: 9px;
+}
+
+:root[data-text-size="suur"] {
+  --typography-size-page-title: 22px;
+  --typography-size-matter-title: 21px;
+  --typography-size-lg: 17px;
+  --typography-size-row: 15.5px;
+  --typography-size-base: 15px;
+  --typography-size-sm: 14.5px;
+  --typography-size-meta: 14px;
+  --typography-size-meta-sm: 13px;
+  --typography-size-label: 12.5px;
+  --typography-size-chip: 11.5px;
+  --typography-size-chip-sm: 11px;
+}
+
+:root[data-text-size="vaga-suur"] {
+  --typography-size-page-title: 25px;
+  --typography-size-matter-title: 24px;
+  --typography-size-lg: 19px;
+  --typography-size-row: 17.5px;
+  --typography-size-base: 17px;
+  --typography-size-sm: 16.5px;
+  --typography-size-meta: 16px;
+  --typography-size-meta-sm: 15px;
+  --typography-size-label: 14px;
+  --typography-size-chip: 13px;
+  --typography-size-chip-sm: 12.5px;
+}
+
 /* ====================================================================
  * Semantic tokens — dark theme (the MVP theme)
  * ==================================================================== */
