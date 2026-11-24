@@ -94,13 +94,16 @@ from app.core.dates import format_estonian_date, start_of_local_day
 from app.matters import work_items as wi
 from app.matters.activity import BASIS_LABELS, ActivityBasis, work_sources
 from app.matters.models import Matter
-from app.matters.timeline import DAY_DATED_ENTRY_KINDS
+from app.matters.timeline import DAY_DATED_ENTRY_KINDS, entry_plain_text
 from app.workflow.dates import format_at_precision, is_approximate
 from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.step_markers import system_step_change_q
 
 #: How many rows are on screen before the rest go behind «Näita veel N ▾».
 FEED_VISIBLE = 10
+
+#: How much of a record's own words a row carries (`_Fact.detail`).
+DETAIL_LENGTH = 120
 
 #: How many rows the page reads at all, per source and merged. Past this the
 #: page says it shows the latest fifty; the Matters themselves hold the rest.
@@ -159,6 +162,10 @@ class _Fact:
     timed: bool = False
     family: str = ""
     object_id: Any = None
+    #: The record's own first words — an entry's note, an opinion's title — for
+    #: a surface that has room to say what was written («Eelvaade»). Minu
+    #: asjad's list prints the label only.
+    detail: str = ""
 
 
 @dataclass(frozen=True)
@@ -174,6 +181,8 @@ class ActivityRow:
     label: str
     #: The person, when it was somebody other than the desk's owner; else ``None``.
     actor: Any | None = None
+    #: The first of its records' own words (`_Fact.detail`); ``""`` when none has any.
+    detail: str = ""
 
 
 @dataclass
@@ -252,22 +261,43 @@ def when_label(fact_day: date, *, today: date, moment: datetime | None, precisio
     return format_estonian_date(fact_day)
 
 
-def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
-    """Every source, each capped and newest first. One query per source."""
+def _clip(text: str, length: int = DETAIL_LENGTH) -> str:
+    text = " ".join((text or "").split())
+    return text if len(text) <= length else text[: length - 1].rstrip() + "…"
+
+
+def _facts(
+    user: Any,
+    subject: Any,
+    today: date,
+    *,
+    matter: Matter | None = None,
+    limit: int = FEED_LIMIT,
+) -> list[_Fact]:
+    """Every source, each capped and newest first. One query per source.
+
+    ``matter`` reads one Teema's facts instead of a desk's — the same sources,
+    the same scoping and the same rules, narrowed to that file (the preview
+    drawer, app/matters/preview.py). The caller has already read the Matter
+    through `visible_to`; it is narrowed through it again here all the same, so
+    this function never trusts a caller about visibility. Its own two facts —
+    closure and arrival — are read off the instance rather than asked again.
+    """
     sources = work_sources(user, today)
     visible = wi.full_matters(user)
-    owned = visible.filter(owner=subject).values("pk")
+    if matter is not None:
+        owned = visible.filter(pk=matter.pk).values("pk")
+        own_entries = Q(matter__in=owned)
+    else:
+        owned = visible.filter(owner=subject).values("pk")
+        own_entries = Q(matter__in=owned) | Q(author=subject, matter__in=visible.values("pk"))
     tomorrow = start_of_local_day(today + timedelta(days=1))
-    limit = FEED_LIMIT
     facts: list[_Fact] = []
 
     # Entries: on the subject's Matters, or written by the subject on anybody's
     # Matter this reader may open. One query, so one entry is one fact.
     entries = (
-        sources.entries.filter(
-            Q(matter__in=owned) | Q(author=subject, matter__in=visible.values("pk")),
-            occurred_at__lt=tomorrow,
-        )
+        sources.entries.filter(own_entries, occurred_at__lt=tomorrow)
         .select_related("matter", "author")
         .order_by("-occurred_at", "-pk")[:limit]
     )
@@ -283,6 +313,7 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
                     actor=entry.author,
                     family=_ENTRY,
                     object_id=entry.pk,
+                    detail=_clip(entry_plain_text(entry)),
                 )
             )
         else:
@@ -294,6 +325,7 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
                     actor=entry.author,
                     family=_ENTRY,
                     object_id=entry.pk,
+                    detail=_clip(entry_plain_text(entry)),
                 )
             )
 
@@ -310,6 +342,7 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
                 actor=submission.sent_by,
                 family=_SUBMISSION,
                 object_id=submission.pk,
+                detail=_clip(submission.title),
             )
         )
 
@@ -345,6 +378,7 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
                     actor=action.created_by,
                     family=_ACTION_SET,
                     object_id=action.pk,
+                    detail=_clip(action.text),
                 )
             )
         if action.counted_end is not None:
@@ -436,20 +470,9 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
     # One read for both, ordered on the later of the two.
     closed = Q(closed_at__isnull=False, closed_at__lt=tomorrow)
     received = Q(received_date__isnull=False, received_date__lte=today)
-    own_facts = (
-        visible.filter(owner=subject)
-        .filter(closed | received)
-        .annotate(
-            counted_closed=Case(When(closed, then=TruncDate("closed_at")), default=None),
-            counted_received=Case(When(received, then=F("received_date")), default=None),
-        )
-        .select_related("closed_by")
-        .order_by(Greatest("counted_closed", "counted_received").desc(nulls_last=True), "-pk")[
-            :limit
-        ]
-    )
-    for matter in own_facts:
-        if matter.counted_closed is not None and matter.closed_at is not None:
+    if matter is not None:
+        # One Teema: its two facts are on the instance already read.
+        if matter.closed_at is not None and matter.closed_at < tomorrow:
             facts.append(
                 _moment_fact(
                     matter,
@@ -460,10 +483,38 @@ def _facts(user: Any, subject: Any, today: date) -> list[_Fact]:
                     object_id=matter.pk,
                 )
             )
-        if matter.counted_received is not None and matter.received_date is not None:
+        if matter.received_date is not None and matter.received_date <= today:
             facts.append(
                 _dated_fact(matter, matter.received_date, BASIS_LABELS[ActivityBasis.RECEIVED])
             )
+    own_facts = (
+        Matter.objects.none()
+        if matter is not None
+        else visible.filter(owner=subject)
+        .filter(closed | received)
+        .annotate(
+            counted_closed=Case(When(closed, then=TruncDate("closed_at")), default=None),
+            counted_received=Case(When(received, then=F("received_date")), default=None),
+        )
+        .select_related("closed_by")
+        .order_by(Greatest("counted_closed", "counted_received").desc(nulls_last=True), "-pk")[
+            :limit
+        ]
+    )
+    for own in own_facts:
+        if own.counted_closed is not None and own.closed_at is not None:
+            facts.append(
+                _moment_fact(
+                    own,
+                    own.closed_at,
+                    BASIS_LABELS[ActivityBasis.CLOSURE],
+                    actor=own.closed_by,
+                    family=_CLOSURE,
+                    object_id=own.pk,
+                )
+            )
+        if own.counted_received is not None and own.received_date is not None:
+            facts.append(_dated_fact(own, own.received_date, BASIS_LABELS[ActivityBasis.RECEIVED]))
 
     # Archived OneNote pages: source metadata, never a person. A page's
     # modification is the later and better fact; its creation is a fact of its
@@ -573,7 +624,28 @@ def _joined(labels: list[str]) -> str:
 def build_recent_activity(user: Any, subject: Any, today: date | None = None) -> RecentActivity:
     """*Viimased tegevused* for ``subject``'s desk, as ``user`` may see it."""
     today = today or timezone.localdate()
-    facts = _facts(user, subject, today)
+    rows = _rows(_facts(user, subject, today), subject=subject, today=today)
+    return RecentActivity(rows=rows[:FEED_LIMIT], at_cap=len(rows) >= FEED_LIMIT)
+
+
+def matter_recent_activity(
+    user: Any, matter: Matter, *, limit: int, today: date | None = None
+) -> list[ActivityRow]:
+    """The newest ``limit`` acts on one Teema, as ``user`` may see them.
+
+    *Viimased tegevused* narrowed to one file, for the preview drawer: the same
+    sources, scoping, grouping and words as Minu asjad's list, so the two never
+    call different things work. Every actor is named — there is no desk owner
+    to leave out. Each source is capped at a few rows more than asked for, since
+    one act can be several records that group into one row.
+    """
+    today = today or timezone.localdate()
+    facts = _facts(user, None, today, matter=matter, limit=limit * 3)
+    return _rows(facts, subject=None, today=today)[:limit]
+
+
+def _rows(facts: list[_Fact], *, subject: Any, today: date) -> list[ActivityRow]:
+    """Group facts into rows — one act, one row — newest first."""
     events = _event_facts(facts)
 
     kept: list[_Fact] = []
@@ -622,8 +694,9 @@ def build_recent_activity(user: Any, subject: Any, today: date | None = None) ->
                 day=latest.day,
                 label=_joined([fact.label for fact in members]),
                 actor=actor,
+                detail=next((fact.detail for fact in members if fact.detail), ""),
             )
         )
 
     rows.sort(key=lambda row: (row.moment, row.matter.title), reverse=True)
-    return RecentActivity(rows=rows[:FEED_LIMIT], at_cap=len(rows) >= FEED_LIMIT)
+    return rows

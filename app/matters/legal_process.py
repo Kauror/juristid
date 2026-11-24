@@ -272,7 +272,12 @@ class PhaseContext:
         return self.pattern.phase_for_stage(self.stage_key)
 
 
-def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = None) -> PhaseContext:
+def phase_context(
+    *,
+    matter: Matter,
+    instrument_keys: frozenset[str] | None = None,
+    snapshot: tuple[Any, Any, Any, Any] | None = None,
+) -> PhaseContext:
     """Resolve one Matter's pattern and current stage. **A read, never a write.**
 
     Choosing a pattern from `Õigusakt` is a *presentation* decision and must never
@@ -284,12 +289,19 @@ def phase_context(*, matter: Matter, instrument_keys: frozenset[str] | None = No
 
     ``instrument_keys`` is passed in by a caller that has already read them, so
     the page does not ask twice.
+
+    ``snapshot`` is ``(stage key, stage label, track, disposition)`` from a
+    caller that has *just* read the row in the same request and writes nothing
+    before it asks — the preview drawer's GET (app/matters/preview.py). Never
+    from an instance fetched before a write: that is the stale reading this
+    function's own read exists to avoid.
     """
-    snapshot = (
-        Matter.objects.filter(pk=matter.pk)
-        .values_list("stage__key", "stage__label_et", "track", "disposition")
-        .first()
-    )
+    if snapshot is None:
+        snapshot = (
+            Matter.objects.filter(pk=matter.pk)
+            .values_list("stage__key", "stage__label_et", "track", "disposition")
+            .first()
+        )
     if snapshot is None:  # pragma: no cover - the caller holds a saved Matter
         return PhaseContext()
     stage_key, stage_label, track, disposition = snapshot
