@@ -67,17 +67,25 @@ def _persona_menu(body: str) -> str:
     return body[start : body.index('<div class="accountmenu"', start)]
 
 
-def _rakendus(body: str) -> str:
-    start = body.index('aria-labelledby="rakendus"')
-    return body[start : body.index("</section>", start)]
-
-
-def _seaded(body: str) -> str:
-    """Haldus → Seaded, the personal settings (owner, 2026-11-16); "" when absent."""
-    if 'aria-labelledby="seaded"' not in body:
+def _sidebar(body: str) -> str:
+    """The desktop sidebar (docs/adr/0221); "" when none is drawn."""
+    if '<nav class="haldusnav"' not in body:
         return ""
-    start = body.index('aria-labelledby="seaded"')
-    return body[start : body.index("</section>", start)]
+    start = body.index('<nav class="haldusnav"')
+    return body[start : body.index("</nav>", start)]
+
+
+def _group(body: str, key: str) -> str:
+    """One sidebar group's items, by its heading id."""
+    nav = _sidebar(body)
+    start = nav.index(f'id="haldusnav-{key}"')
+    return nav[start : nav.index("</ul>", start)]
+
+
+def _main(body: str) -> str:
+    """The page beside the sidebar: the heading and the content."""
+    start = body.index('<div class="haldus__main">')
+    return body[start : body.index("<footer", start)]
 
 
 def _as(client: Client, persona) -> Client:
@@ -181,10 +189,25 @@ def test_the_landing_grants_a_specialist_no_protected_route(client):
     _as(client, factories.UserFactory())
     landing = client.get(reverse("haldus:index"))
     assert landing.status_code == 200
-    # Ülevaade, Ajaloolised kirjad, which every lawyer reads and decides
-    # (docs/adr/0216 §6), and the register watch's log (ADR 0217 §8); nothing
-    # protected.
-    assert _keys(landing) == ["ulevaade", "kirjad", "registrid", "uuendused"]
+    # Ülevaade, the personal settings, Ajaloolised kirjad, which every lawyer
+    # reads and decides (docs/adr/0216 §6), the opinion archive, the reporting
+    # administration pages, the register watch's log (ADR 0217 §8), the
+    # administrator sign-in everybody is offered alike, and Rakendus; nothing
+    # protected (docs/adr/0221).
+    assert _keys(landing) == [
+        "ulevaade",
+        "kuvamine",
+        "teavitused",
+        "kirjad",
+        "arhiiv",
+        "andmekvaliteet",
+        "ajaloolised_materjalid",
+        "registrid",
+        "halduri_seanss",
+        "uuendused",
+        "kiirklahvid",
+        "definitsioonid",
+    ]
 
     for name in PROTECTED:
         assert client.get(reverse(name)).status_code == 404, name
@@ -201,14 +224,22 @@ def test_a_signed_in_reader_opens_the_landing_and_no_protected_route(client, set
     page = client.get(reverse("haldus:index"))
 
     # A reader reads Ajaloolised kirjad and decides nothing there (docs/adr/0216 §6),
-    # and reads the register watch's log (ADR 0217 §8).
+    # the archive and the register watch's log (ADR 0217 §8); no administrator
+    # sign-in outside the shared gate (docs/adr/0221).
     assert page.status_code == 200 and _keys(page) == [
         "ulevaade",
+        "kuvamine",
+        "teavitused",
         "kirjad",
+        "arhiiv",
+        "andmekvaliteet",
+        "ajaloolised_materjalid",
         "registrid",
         "uuendused",
+        "kiirklahvid",
+        "definitsioonid",
     ]
-    assert ">Rakendus</h2>" in page.content.decode()
+    assert ">Rakendus</span>" in _sidebar(page.content.decode())
     assert 'href="/haldus/">Haldus</a>' in _gear(page.content.decode())
     for name in PROTECTED:
         assert client.get(reverse(name)).status_code == 404, name
@@ -226,13 +257,14 @@ def test_an_anonymous_visitor_does_not_reach_the_landing(client, settings):
 
 
 def test_the_landing_no_longer_carries_the_sign_in_call_to_action(client):
-    """Moved to the persona menu; the route itself still answers."""
+    """Moved to the persona menu, and a sidebar item since UX-002 (docs/adr/0221):
+    the page itself carries no call to action, and the route still answers."""
     body = _as(client, factories.DepartmentHeadFactory()).get(reverse("haldus:index"))
     content = body.content.decode()
-    content = content[content.index('<main class="app__main"') :]
 
     assert 'id="halduri-kinnitus"' not in content
-    assert reverse("haldus:sign_in") not in content
+    assert reverse("haldus:sign_in") not in _main(content)
+    assert f'href="{reverse("haldus:sign_in")}">Halduri sisselogimine' in _group(content, "susteem")
     assert client.get(reverse("haldus:sign_in")).status_code == 200
 
 
@@ -244,38 +276,41 @@ def test_the_verified_administrator_keeps_the_session_panel(client):
 
     assert "Halduri seanss" in body and admin.display_name in body
     assert f'action="{reverse("haldus:sign_out")}"' in body
-    assert ">Rakendus</h2>" in body
+    assert "Rakenduse versioon" in _main(body)
 
 
 # -- Rakendus -----------------------------------------------------------------------
 
 
 def test_rakendus_links_uuendused_and_kiirklahvid_and_both_resolve(client):
-    section = _rakendus(
-        _as(client, factories.UserFactory()).get(reverse("haldus:index")).content.decode()
-    )
+    """Rakendus is the sidebar's last group (docs/adr/0221); the build is one line."""
+    body = _as(client, factories.UserFactory()).get(reverse("haldus:index")).content.decode()
+    group = _group(body, "rakendus")
 
-    assert ">Rakendus</h2>" in section and "Rakenduse versioon" in section
+    assert "Rakenduse versioon" in _main(body)
     for name, label in (
         ("core:release_notes", "Uuendused"),
         ("core:keyboard_shortcuts", "Kiirklahvid"),
+        ("reporting:definitions", "Statistika definitsioonid"),
     ):
-        assert f'<a href="{reverse(name)}">{label}</a>' in section
+        assert f'href="{reverse(name)}">{label}</a>' in group
         assert client.get(reverse(name)).status_code == 200, name
 
 
-def test_seaded_offers_the_block_reset_as_a_post_to_its_endpoint(client):
-    """The reset moved from Rakendus to Seaded with the other personal settings."""
-    body = _as(client, factories.UserFactory()).get(reverse("haldus:index")).content.decode()
-    assert reverse("accounts:reset_disclosures") not in _rakendus(body)
-    section = _seaded(body)
+def test_kuvamine_offers_the_block_reset_as_a_post_to_its_endpoint(client):
+    """The reset moved from Ülevaade to Isiklikud seaded → Kuvamine (docs/adr/0221)."""
+    _as(client, factories.UserFactory())
+    overview = _main(client.get(reverse("haldus:index")).content.decode())
+    assert reverse("accounts:reset_disclosures") not in overview
+    section = _main(client.get(reverse("haldus:settings")).content.decode())
     start = section.index(f'action="{reverse("accounts:reset_disclosures")}"')
     form = section[section.rindex("<form", 0, start) : section.index("</form>", start)]
 
     assert 'method="post"' in form
     assert 'name="csrfmiddlewaretoken"' in form
-    assert f'name="next" value="{reverse("haldus:index")}"' in form
+    assert f'name="next" value="{reverse("haldus:settings")}"' in form
     assert "Taasta plokkide vaikeseaded" in form
+    assert "themetoggle" in section
 
 
 def test_a_persona_less_administrator_is_not_offered_the_block_reset(client):
@@ -283,7 +318,8 @@ def test_a_persona_less_administrator_is_not_offered_the_block_reset(client):
     verified(client, admin, secret)
     body = client.get(reverse("haldus:index")).content.decode()
     assert reverse("accounts:reset_disclosures") not in body
-    assert _seaded(body) == ""
+    assert f'href="{reverse("haldus:settings")}"' not in body
+    assert client.get(reverse("haldus:settings")).status_code == 404
 
 
 # -- the persona menu ---------------------------------------------------------------

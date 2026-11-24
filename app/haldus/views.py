@@ -1,4 +1,4 @@
-"""The Haldus shell's own pages: Ülevaade, Osakonna töökorraldus, Süsteemi seis.
+"""The Haldus shell's own pages: Ülevaade, Kuvamine, Osakonna töökorraldus, Süsteemi seis.
 
 Every view decides for itself, from `app.haldus.sections`, whether this reader
 may open it, and answers 404 otherwise — the convention every restricted
@@ -75,18 +75,22 @@ def _session_summary(request: HttpRequest) -> dict[str, Any] | None:
 @never_cache
 @require_http_methods(["GET"])
 def index(request: HttpRequest) -> HttpResponse:
-    """Haldus → Ülevaade: the administrator session, continuity, sections, Rakendus.
+    """Haldus → Ülevaade: what needs this reader's attention, and little else (docs/adr/0221).
 
-    Opens for every signed-in reader since 2026-10-28 (`may_open_overview`),
-    because *Rakendus* — Uuendused, Kiirklahvid, the running build and
-    «Taasta plokkide vaikeseaded» — is for everybody. What is privileged on it
-    follows the verified administrator session, never the persona: the session
-    and continuity panels, and the list of sections, each by its own predicate.
-    The way to the administrator sign-in is in the persona menu now
-    (templates/components/persona_switcher.html), the same for every reader.
+    Opens for every signed-in reader since 2026-10-28 (`may_open_overview`).
+    One short line per thing the reader administers — the integrations, the
+    department's waiting work, the system — each asked only when the reader may
+    open the item it points at (`app.haldus.overview`); what is fine takes one
+    line together. What is privileged follows the verified administrator
+    session, never the persona: the session panel and the two-administrator
+    rule. Below them, the running build in one line. Every destination is in
+    the sidebar; the personal settings moved to Isiklikud seaded → Kuvamine.
     """
+    from app.haldus import overview
+
     _require(request, "ulevaade")
     summary = _session_summary(request)
+    found = overview.signals(request, administrator=summary is not None)
     return render(
         request,
         "haldus/index.html",
@@ -97,14 +101,23 @@ def index(request: HttpRequest) -> HttpResponse:
             # The two-administrator rule, for whoever administers: the persona's
             # holding of the capability is not enough to be shown it.
             continuity=administration.continuity_status() if summary is not None else None,
-            # Uuendused is a tab, but on this page it lives under *Rakendus*.
-            others=[
-                item
-                for item in visible_sections(request)
-                if item.key not in ("ulevaade", "uuendused")
-            ],
+            **overview.summary(found),
         ),
     )
+
+
+@never_cache
+@require_http_methods(["GET"])
+def settings_page(request: HttpRequest) -> HttpResponse:
+    """Isiklikud seaded → Kuvamine: the persona's own display choices (docs/adr/0221).
+
+    Moved here from Ülevaade's «Seaded» row: the light/dark switch (kept in the
+    browser, docs/adr/0147) and «Taasta plokkide vaikeseaded» (the persona's
+    remembered blocks, docs/adr/0194). Nothing here is anybody else's, and
+    nothing here administers anything.
+    """
+    _require(request, "kuvamine")
+    return render(request, "haldus/settings.html", _context(request, "kuvamine"))
 
 
 def _candidate_victories(user: Any) -> int | None:
@@ -264,7 +277,7 @@ def lovable(request: HttpRequest) -> HttpResponse:
     from app.legacy_import.lovable_sync_models import SyncOutcome
     from app.matters.models import Matter
 
-    _require(request, "andmed")
+    _require(request, "lovable")
     from app.legacy_import.lovable_sync_models import LovableSyncRun
 
     health = sync_health()
@@ -335,7 +348,7 @@ def lovable(request: HttpRequest) -> HttpResponse:
         "haldus/lovable.html",
         _context(
             request,
-            "andmed",
+            "lovable",
             sync_pages=sync_pages("lovable"),
             observation=observation,
             health=health,
@@ -411,7 +424,7 @@ def lovable_check(request: HttpRequest) -> HttpResponse:
     from app.legacy_import.lovable_sync import SyncRefused, run_sync
     from app.legacy_import.lovable_sync_models import SyncTrigger
 
-    _require(request, "andmed")
+    _require(request, "lovable")
     try:
         run_sync(trigger=SyncTrigger.CHECK)
     except SyncRefused:

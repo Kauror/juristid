@@ -2,15 +2,14 @@
 {% load static %}
 
 {% comment %}
-  The Haldus shell (docs/adr/0186). One heading and one sub-navigation built
-  from `app.haldus.sections.visible_sections` — the same predicates every
-  route asks again — so the strip never offers a section that would refuse.
-  Pages fill `haldus_content`; `haldus_active` names the current section. A
-  page with a heading of its own replaces `haldus_head` whole, so there is
-  only ever one h1.
-  The strip reuses Statistika's `tabs`, which scrolls itself at phone width
-  rather than the page. A reader with Ülevaade alone — everybody signed in,
-  since 2026-10-28 — gets no strip: one tab is not a choice.
+  The Haldus shell (docs/adr/0186, 0221). A sidebar of seven groups built
+  from `app.haldus.sections` — the same predicates every route asks again —
+  so it never offers a page that would refuse; beside it one heading and the
+  page. Pages fill `haldus_content`; the current item is found from the URL
+  name (`sections.active_key`), or named with `haldus_active`. A page with a
+  heading of its own replaces `haldus_head` whole, so there is only ever one
+  h1. From 900 px the sidebar is a column; narrower, a «Haldus» menu above
+  the page (templates/haldus/_sidebar.html).
   Andmete sünkroonimine's own stylesheet (static/css/data-sync.css) is linked
   here and nowhere else: every rule in it names a `dsync` class, so it is
   inert on the other Haldus pages.
@@ -18,25 +17,21 @@
 
 {% block content %}
 <link rel="stylesheet" href="{% static 'css/data-sync.css' %}">
-<div class="page">
-  {% block haldus_head %}
-  <div class="pagehead">
-    <h1 class="pagehead__title">{% block haldus_title %}Haldus{% endblock %}</h1>
-    {% block haldus_context %}{% endblock %}
-    <div class="pagehead__actions">{% block haldus_actions %}{% endblock %}</div>
+{% load haldus %}
+<div class="page haldus">
+  <div class="haldus__layout">
+    {% haldus_sidebar %}
+    <div class="haldus__main">
+      {% block haldus_head %}
+      <div class="pagehead">
+        <h1 class="pagehead__title">{% block haldus_title %}{% haldus_current_label %}{% endblock %}</h1>
+        {% block haldus_context %}{% endblock %}
+        <div class="pagehead__actions">{% block haldus_actions %}{% endblock %}</div>
+      </div>
+      {% endblock %}
+
+      {% block haldus_content %}{% endblock %}
+    </div>
   </div>
-  {% endblock %}
-
-  {% if haldus_sections|length > 1 %}
-    <nav class="tabs" aria-label="Halduse osad">
-      {% for section in haldus_sections %}
-        <a class="tabs__tab {% if haldus_active == section.key %}is-active{% endif %}"
-           {% if haldus_active == section.key %}aria-current="page"{% endif %}
-           href="{{ section.url }}">{{ section.label }}</a>
-      {% endfor %}
-    </nav>
-  {% endif %}
-
-  {% block haldus_content %}{% endblock %}
 </div>
 {% endblock %}

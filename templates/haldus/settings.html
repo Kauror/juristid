@@ -1,0 +1,39 @@
+{% extends "haldus/base.html" %}
+{% block title %}Kuvamine · Haldus · {{ application_name }}{% endblock %}
+
+{% comment %}
+  Haldus → Isiklikud seaded → Kuvamine (docs/adr/0221): the persona's own
+  display choices, moved here from Ülevaade's «Seaded» row. The light/dark
+  switch is the same button the pre-login gear holds and lives in this
+  browser (static/js/theme.js, docs/adr/0147); «Taasta plokkide vaikeseaded»
+  resets the persona's remembered blocks (docs/adr/0194). «Teavitused» is the
+  sidebar's next item; «Minu konto» is offered only under personal sign-in
+  (docs/adr/0145).
+{% endcomment %}
+
+{% block haldus_content %}
+  <section class="panel" aria-labelledby="kujundus">
+    <h2 class="acctsection__title" id="kujundus">Kujundus</h2>
+    <div class="settingslist">
+      {% include "components/theme_toggle.html" with variant="setting" %}
+    </div>
+    <p class="acctnote">Hele või tume kujundus jääb meelde selles brauseris.</p>
+  </section>
+
+  <section class="panel" aria-labelledby="plokid">
+    <h2 class="acctsection__title" id="plokid">Plokid</h2>
+    <div class="settingslist">
+      <form method="post" action="{% url 'accounts:reset_disclosures' %}" class="settingslist__form">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{% url 'haldus:settings' %}">
+        <button type="submit" class="button button--secondary"
+                title="Meelde jäetud avatud ja suletud plokid avanevad jälle vaikimisi viisil — praegu valitud kasutaja jaoks.">Taasta plokkide vaikeseaded</button>
+      </form>
+    </div>
+    <p class="acctnote">Meelde jäetud avatud ja suletud plokid avanevad jälle vaikimisi viisil — praegu valitud kasutaja jaoks.</p>
+  </section>
+
+  {% if local_password_mode %}
+    <p class="acctnote"><a href="{% url 'accounts:profile' %}">Minu konto</a>: parool, autentimisrakendus ja sisselogimise aadress.</p>
+  {% endif %}
+{% endblock %}

@@ -317,7 +317,7 @@ def _request_list(client, admin, settings) -> str:
     # field records; the request list does not need it.
     LovableSyncState.objects.update(applied={})
     verified(client, admin["user"], admin["secret"])
-    return client.get(reverse("haldus:data_sync")).content.decode()
+    return client.get(reverse("haldus:onenote")).content.decode()
 
 
 def test_an_import_request_into_unmounted_stores_is_refused_by_name(

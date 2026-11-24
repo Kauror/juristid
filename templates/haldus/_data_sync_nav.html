@@ -1,9 +1,10 @@
 {% comment %}
-  Andmete sünkroonimine's own pages, under the Haldus strip: the overview,
-  the pending differences, the run history and the older Lovable details page
-  (`haldus:lovable`, kept at its address).
+  An integration's own pages, under the Haldus sidebar (docs/adr/0221):
+  Lovable's overview, differences, history, names and the older details page
+  (`haldus:lovable`, kept at its address); or OneNote's overview and held
+  readings. `sync_pages` and `sync_label` come from data_sync_views.
 {% endcomment %}
-<nav class="tabs dsync__subnav" aria-label="Andmete sünkroonimise lehed">
+<nav class="tabs dsync__subnav" aria-label="{% if sync_label %}{{ sync_label }}{% else %}Lovable'i lehed{% endif %}">
   {% for item in sync_pages %}
     <a class="tabs__tab {% if item.active %}is-active{% endif %}"
        {% if item.active %}aria-current="page"{% endif %}

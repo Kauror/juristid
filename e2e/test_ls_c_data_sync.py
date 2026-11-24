@@ -87,9 +87,11 @@ def test_sync_now_is_confirmed_with_the_mode_and_recorded_once(
     technical_administrator,
 ):
     _enrolled(page, local_base_url)
+    # Integratsioonid → OneNote is its own page since UX-002 (docs/adr/0221).
+    page.goto(f"{local_base_url}{PAGE}onenote/")
+    expect(page.get_by_role("heading", level=2, name="OneNote", exact=True)).to_be_visible()
     page.goto(f"{local_base_url}{PAGE}")
-    expect(page.get_by_role("heading", name="Lovable", exact=True)).to_be_visible()
-    expect(page.get_by_role("heading", name="OneNote", exact=True)).to_be_visible()
+    expect(page.get_by_role("heading", level=2, name="Lovable", exact=True)).to_be_visible()
     expect(page.get_by_text("Inventuuri pole veel tehtud.")).to_be_visible()
 
     # The confirmation says the mode and what it does; cancelling records nothing.
@@ -136,7 +138,13 @@ def test_the_page_holds_together_at_phone_width(
         secret=str(STATE["technician_secret"]),
     )
     page.set_viewport_size({"width": 390, "height": 844})
-    for path in (PAGE, f"{PAGE}sunkrooni/", f"{PAGE}ajalugu/", f"{PAGE}erinevused/"):
+    for path in (
+        PAGE,
+        f"{PAGE}sunkrooni/",
+        f"{PAGE}ajalugu/",
+        f"{PAGE}erinevused/",
+        f"{PAGE}onenote/",
+    ):
         page.goto(f"{local_base_url}{path}")
         page.wait_for_load_state("networkidle")
         assert not document_overflows(page), path

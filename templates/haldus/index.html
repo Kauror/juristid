@@ -2,49 +2,39 @@
 {% block title %}Haldus · {{ application_name }}{% endblock %}
 
 {% comment %}
-  Haldus → Ülevaade. What the reader can do here, in a few lines: the
-  verified administrator session (whose it is, what it may do, how long it
-  lasts), whether the two-administrator rule holds, the sections this reader
-  may open, Seaded and Rakendus. Not a dashboard: the work lists live on their own
-  pages (docs/adr/0186).
-
-  Every signed-in reader reaches this page (the owner's brief, 2026-10-28), so
-  only Seaded and Rakendus are unconditional; the rest follows the verified administrator
-  session or each section's own predicate. The way to the administrator
-  sign-in is the persona menu's, not a call to action here.
+  Haldus → Ülevaade (docs/adr/0221): what needs this reader's attention, and
+  little else. One line per thing the reader administers, asked only when the
+  reader may open the item it points at (`app.haldus.overview`); what is fine
+  shares one quiet line. The verified administrator session and the
+  two-administrator rule follow that session, never the persona. The running
+  build closes the page in one line. Every destination is in the sidebar; the
+  personal settings live under Isiklikud seaded → Kuvamine.
 {% endcomment %}
 
 {% block haldus_content %}
-  {% if user.is_authenticated %}
-    {% comment %}
-      Seaded: every personal setting in one place (owner, 2026-11-16). The
-      light/dark switch and «Teavituste seaded» left the name menu for here;
-      «Taasta plokkide vaikeseaded» moved up from Rakendus. Each still decides
-      for itself who it is for: the notification settings only for a reader
-      the bell is drawn for (`notification_settings_link`), «Minu konto» only
-      under personal sign-in (docs/adr/0145). The switch is the same button
-      the pre-login gear holds (static/js/theme.js).
-    {% endcomment %}
-    {% load haldus %}{% notification_settings_link as notification_settings_href %}
-    <section class="panel" aria-labelledby="seaded">
-      <h2 class="visually-hidden" id="seaded">Seaded</h2>
-      <div class="settingslist">
-        {% include "components/theme_toggle.html" with variant="setting" %}
-        {% if notification_settings_href %}
-          <a class="button button--secondary" href="{{ notification_settings_href }}">Teavituste seaded</a>
-        {% endif %}
-        {% if local_password_mode %}
-          <a class="button button--secondary" href="{% url 'accounts:profile' %}">Minu konto</a>
-        {% endif %}
-        <form method="post" action="{% url 'accounts:reset_disclosures' %}" class="settingslist__form">
-          {% csrf_token %}
-          <input type="hidden" name="next" value="{% url 'haldus:index' %}">
-          <button type="submit" class="button button--secondary"
-                  title="Meelde jäetud avatud ja suletud plokid avanevad jälle vaikimisi viisil — praegu valitud kasutaja jaoks.">Taasta plokkide vaikeseaded</button>
-        </form>
-      </div>
-    </section>
-  {% endif %}
+  <section class="panel" aria-labelledby="tahelepanu">
+    <h2 class="acctsection__title" id="tahelepanu">Vajab tähelepanu</h2>
+    {% if attention %}
+      <ul class="linklist">
+        {% for signal in attention %}
+          <li class="linklist__item haldusattn">
+            <span class="statechip {% if signal.state == 'unknown' %}statechip--waiting{% else %}statechip--problem{% endif %}">{{ signal.label }}</span>
+            <span class="haldusattn__text">{{ signal.text }}</span>
+            <a class="linklist__action" href="{{ signal.url }}">Ava</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="acctnote">Praegu ei vaja midagi sinu tähelepanu.</p>
+    {% endif %}
+    {% if healthy %}
+      <p class="haldusattn__ok">
+        <span class="statechip statechip--ok">Korras</span>
+        {% for signal in healthy %}<a href="{{ signal.url }}" title="{{ signal.text }}">{{ signal.label }}</a>{% if not forloop.last %} · {% endif %}{% endfor %}
+      </p>
+    {% endif %}
+  </section>
+
   {% if session %}
     <section class="panel" aria-labelledby="halduri-seanss">
       <h2 class="acctsection__title" id="halduri-seanss">Halduri seanss</h2>
@@ -97,62 +87,13 @@
     </section>
   {% endif %}
 
-  {% if others %}
-    <section class="panel" aria-labelledby="halduse-osad">
-      <h2 class="visually-hidden" id="halduse-osad">Sulle avatud osad</h2>
-      <ul class="linklist">
-        {% for section in others %}
-          <li class="linklist__item">
-            <a href="{{ section.url }}">{{ section.label }}</a>
-            <span class="linklist__meta">{{ section.description }}</span>
-          </li>
-        {% endfor %}
-      </ul>
-    </section>
-  {% endif %}
-
   {% comment %}
-    Rakendus: the application itself, for everybody. Uuendused and Kiirklahvid
-    left the footer for here, and so did the build stamp — read from the same
-    context processor the footer reads (`application`), in Tallinn time.
-    Uuendused keeps its own two doors: the Lovable night's changes ask for a
-    reader on their own page (`core:release_notes_lovable`).
+    The running build, from the same context processor the footer reads
+    (`application`), in Tallinn time: one line, not a panel.
   {% endcomment %}
-  <section class="panel" aria-labelledby="rakendus">
-    <h2 class="visually-hidden" id="rakendus">Rakendus</h2>
-    <ul class="linklist">
-      <li class="linklist__item">
-        <a href="{% url 'core:release_notes' %}">Uuendused</a>
-        <span class="linklist__meta">Juristide rakenduse uuendused ja Lovable'i öiste muudatuste osa.</span>
-      </li>
-      <li class="linklist__item">
-        <a href="{% url 'core:keyboard_shortcuts' %}">Kiirklahvid</a>
-        <span class="linklist__meta">Saadaolevad kiirklahvid ja nende kasutamine.</span>
-      </li>
-      {# Moved here from Statistika's tab strip (owner, 2026-11-17): about the data, not the work. #}
-      <li class="linklist__item">
-        <a href="{% url 'reporting:historical' %}">Ajaloolised materjalid</a>
-        <span class="linklist__meta">OneNote'i ajaloolise materjali maht ja ülesehitus.</span>
-      </li>
-      <li class="linklist__item">
-        <a href="{% url 'reporting:quality' %}">Andmekvaliteet</a>
-        <span class="linklist__meta">Andmekvaliteedi järjekorrad: puudused ja vastuolud, mida parandada.</span>
-      </li>
-      <li class="linklist__item">
-        <a href="{% url 'reporting:definitions' %}">Statistika definitsioonid</a>
-        <span class="linklist__meta">Kuidas iga statistika näitaja arvutatakse.</span>
-      </li>
-    </ul>
-    <h3 class="acctsection__title acctsection__title--split" id="rakenduse-versioon">Rakenduse versioon</h3>
-    <dl class="detailgrid" aria-labelledby="rakenduse-versioon">
-      <dt>Etapp</dt>
-      <dd>{{ application_stage|default:"—" }}</dd>
-      <dt>Keskkond</dt>
-      <dd>{{ application_environment|default:"—" }}</dd>
-      <dt>Versioon</dt>
-      <dd><span class="mono">{{ application_revision|default:"—" }}</span></dd>
-      <dt>Ehitatud</dt>
-      <dd>{% if application_built_at %}{{ application_built_at|date:"j.n.Y H:i" }}{% else %}—{% endif %}</dd>
-    </dl>
-  </section>
+  <p class="acctnote haldusattn__build" id="rakenduse-versioon">
+    Rakenduse versioon <span class="mono">{{ application_revision|default:"—" }}</span>
+    · {{ application_stage|default:"—" }} · {{ application_environment|default:"—" }}
+    {% if application_built_at %}· ehitatud {{ application_built_at|date:"j.n.Y H:i" }}{% endif %}
+  </p>
 {% endblock %}

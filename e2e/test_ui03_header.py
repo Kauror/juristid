@@ -280,12 +280,16 @@ def test_the_theme_switch_left_the_menu_for_haldus_seaded(page, base_url):
     expect(page.locator(".topbar [data-theme-toggle]")).to_have_count(0)
     page.locator(".topbar .accountmenu").get_by_role("link", name="Haldus", exact=True).click()
     page.wait_for_url(f"{base_url}/haldus/")
-    seaded = page.locator('section[aria-labelledby="seaded"]')
+    page.get_by_role("navigation", name="Haldus", exact=True).get_by_role(
+        "link", name="Kuvamine", exact=True
+    ).click()
+    page.wait_for_url(f"{base_url}/haldus/seaded/")
+    seaded = page.locator('section[aria-labelledby="kujundus"]')
     seaded.get_by_role("button", name="Lülita heledale teemale", exact=True).click()
     assert page.evaluate("() => document.documentElement.dataset.theme") == "light"
     seaded.get_by_role("button", name="Lülita tumedale teemale", exact=True).click()
     assert page.evaluate("() => document.documentElement.dataset.theme") == "dark"
-    assert page.url == f"{base_url}/haldus/"
+    assert page.url == f"{base_url}/haldus/seaded/"
 
 
 def test_the_menu_links_to_haldus_and_notification_settings_are_elsewhere(page, base_url):
@@ -304,8 +308,9 @@ def test_the_menu_links_to_haldus_and_notification_settings_are_elsewhere(page, 
     _open_menu(page)
     page.locator(".topbar .accountmenu").get_by_role("link", name="Haldus", exact=True).click()
     page.wait_for_url(f"{base_url}/haldus/")
-    page.locator('section[aria-labelledby="seaded"]').get_by_role(
-        "link", name="Teavituste seaded"
+    # Isiklikud seaded → Teavitused in the sidebar since UX-002 (docs/adr/0221).
+    page.get_by_role("navigation", name="Haldus", exact=True).get_by_role(
+        "link", name="Teavitused", exact=True
     ).click()
     page.wait_for_url(f"{base_url}/teavitused/seaded/")
 

@@ -32,16 +32,39 @@ def _keys(response):
 
 
 def test_the_registry_is_the_contracted_one():
+    """Seven groups (UX-002, docs/adr/0221); the items in sidebar order."""
     assert [s.key for s in sections.SECTIONS] == [
         "ulevaade",
-        "kasutajad",
-        "klassifikaatorid",
+        "kuvamine",
+        "teavitused",
         "osakond",
+        "vastutajata",
+        "klassifikaatorid",
         "kirjad",
+        "arhiiv",
+        "arvamuste_ulevaatus",
+        "ajaloo_ulevaatus",
+        "andmekvaliteet",
+        "ajaloolised_materjalid",
+        "lovable",
+        "onenote",
         "registrid",
-        "uuendused",
+        "kasutajad",
         "susteem",
+        "arendus",
+        "halduri_seanss",
+        "uuendused",
+        "kiirklahvid",
+        "definitsioonid",
+    ]
+    assert [group.key for group in sections.GROUPS] == [
+        "ulevaade",
+        "seaded",
+        "tookorraldus",
         "andmed",
+        "integratsioonid",
+        "susteem",
+        "rakendus",
     ]
     assert sections.section("ulevaade").url_name == "haldus:index"
     assert reverse("haldus:index") == "/haldus/"
@@ -90,7 +113,10 @@ def test_the_verified_administrator_sees_continuity_and_their_session(client):
     page = client.get(reverse("haldus:index"))
     body = page.content.decode()
 
-    assert _keys(page)[:2] == ["ulevaade", "kasutajad"] and "susteem" in _keys(page)
+    assert _keys(page)[0] == "ulevaade"
+    assert {"kasutajad", "susteem", "lovable", "onenote"} <= set(_keys(page))
+    # No persona: nothing personal, nothing a persona's business role opens.
+    assert "kuvamine" not in _keys(page) and "kirjad" not in _keys(page)
     assert "Halduse järjepidevus" in body and "Tagatud" in body
     assert admin.display_name in body
     assert reverse("haldus:sign_out") in body
@@ -171,4 +197,7 @@ def test_the_account_list_sits_inside_the_shell(client):
     verified(client, admin, secret)
     page = client.get(reverse("account_admin:list"))
     assert page.context["haldus_active"] == "kasutajad"
-    assert 'aria-label="Halduse osad"' in page.content.decode()
+    body = page.content.decode()
+    nav = body[body.index('<nav class="haldusnav"') :]
+    before = nav[: nav.index('href="/haldus/kasutajad/">Kasutajad ja õigused')]
+    assert before.rstrip().endswith('aria-current="page"')
