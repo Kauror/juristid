@@ -37,7 +37,13 @@ Teemad and without touching anything Lovable derives.
      * `--operator-intent onenote-capture-import`;
      * the sealed manifest digest;
      * the reviewed plan digest;
-     * a named backup set.
+     * a named backup set. *Amended 2026-11-23 (health review HR-06):* the set
+       must be proven, by the Lovable sync's own check
+       (`lovable_sync.backup_set_problem`, audit 2026-11-11 DR-05): a
+       `sets/YYYYMMDDTHHMMSSZ` name at most two hours old, mounted read-only at
+       `LOVABLE_SYNC_BACKUP_DIR` with its `VERIFIED-L2` proof naming that set,
+       and a dump that still hashes to the recorded SHA-256. Any other string
+       writes nothing. The host runner mounts the set it has just verified.
    * It never calls the Excel-era write paths that 0203's guard closes, and it
      never re-enables them.
    * It is not the evidence pilot, which imports only into an empty database.

@@ -56,7 +56,7 @@ NEW_BYTES = b"muudetud sisu"
 
 
 @pytest.fixture
-def enabled(settings):
+def enabled(settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     return settings

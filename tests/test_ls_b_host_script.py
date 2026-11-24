@@ -95,7 +95,7 @@ def test_the_onenote_lane_imports_with_a_verified_set_and_no_lovable_credentials
         "-e JURISTID_ONENOTE_CAPTURE_IMPORT=1",
         "-e REAL_DATA_ALLOWED=1",
         "-e JURISTID_ONENOTE_CAPTURE_ROOT=/capture",
-        '-e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET"',
+        '-e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET" "${onenote_proof[@]}"',
         '-v "$CAPTURE_SOURCE:/capture:ro"',
         "data_sync_requests run-next --kind onenote",
     ):

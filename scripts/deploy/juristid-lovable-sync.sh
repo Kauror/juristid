@@ -61,7 +61,9 @@
 # kontroll») is asked first. If a request waits, it takes a backup set and
 # verifies it to level 2, then runs `data_sync_requests run-next --kind onenote`
 # in a one-off container with JURISTID_ONENOTE_CAPTURE_IMPORT=1,
-# REAL_DATA_ALLOWED=1, the verified set as JURISTID_ONENOTE_BACKUP_SET and the
+# REAL_DATA_ALLOWED=1, the verified set as JURISTID_ONENOTE_BACKUP_SET with the set
+# and its VERIFIED-L2 proof mounted READ-ONLY at /backup-set (LOVABLE_SYNC_BACKUP_DIR,
+# the proof the Lovable lane's run reads too; audit 2026-11-23 HR-06), and the
 # host's capture corpus mounted READ-ONLY at /capture
 # (JURISTID_ONENOTE_CAPTURE_ROOT). That container never receives the Lovable
 # credentials. The Lovable lane follows; the host pause file pauses only the
@@ -237,11 +239,18 @@ if [ "$ON_DEMAND" = 1 ]; then
       KEEP_LOG=1
       say "onenote request (image ${IMAGE:7:12})"
       take_backup
+      # The set and its VERIFIED-L2 proof, read-only, as for the Lovable lane: the
+      # import writes only when the proof names this set (audit 2026-11-23 HR-06,
+      # `onenote_capture.backup_problem`). No set, no mount: the import refuses.
+      onenote_proof=()
+      if [ -n "$BACKUP_SET" ] && [ -n "$BACKUP_DIR" ]; then
+        onenote_proof=(-v "$BACKUP_DIR:/backup-set:ro" -e LOVABLE_SYNC_BACKUP_DIR=/backup-set)
+      fi
       timeout "$ONENOTE_TIMEOUT" docker run --rm --name "juristid-main-onenote-import-$$" \
         --network juristid-main-internal --env-file "$ENV_FILE" \
         -e JURISTID_ONENOTE_CAPTURE_IMPORT=1 -e REAL_DATA_ALLOWED=1 \
         -e JURISTID_ONENOTE_CAPTURE_ROOT=/capture \
-        -e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET" \
+        -e JURISTID_ONENOTE_BACKUP_SET="$BACKUP_SET" "${onenote_proof[@]}" \
         -v "$CAPTURE_SOURCE:/capture:ro" \
         -v "$APPDATA/evidence:/app/evidence" \
         -v "$APPDATA/legacy-source:/app/legacy-source" \

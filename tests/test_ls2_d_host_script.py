@@ -291,8 +291,28 @@ def test_the_onenote_lane_imports_read_only_and_never_sees_the_credentials(host)
     for store in ("evidence", "legacy-source", "derivatives"):
         assert f"-v {appdata}/{store}:/app/{store} " in importer, store
     assert "JURISTID_ONENOTE_BACKUP_SET=sets/20261109T000000Z" in importer
+    # HR-06: the set travels with its VERIFIED-L2 proof, read-only, as for the
+    # Lovable lane; the import checks it (`onenote_capture.backup_problem`).
+    assert "20261109T000000Z:/backup-set:ro -e LOVABLE_SYNC_BACKUP_DIR=/backup-set" in importer
+    # Exactly that one set's directory, never sets/ or the backup root, and no
+    # other container of the firing (the polls) gets it.
+    one_set = f"-v {host['tmp'] / 'backups'}/sets/20261109T000000Z:/backup-set:ro "
+    assert importer.count("/backup-set:ro") == 1 and one_set in importer
+    assert [c for c in calls(host) if "/backup-set" in c] == [importer]
     assert not _with_credentials(importer) and "JURISTID_LOVABLE_SYNC" not in importer
     assert containers(host)[-1] == "data_sync_requests poll --kind lovable"
+
+
+def test_a_onenote_backup_without_its_proof_hands_the_import_no_set(host):
+    """Regression: HR-06 — a verification that left no proof gives the OneNote
+    import no set and no mount, so it refuses and writes nothing."""
+    (host["fake"] / "verify-no-proof").write_text("")
+    (host["fake"] / "poll-onenote").write_text("DUE ONENOTE\n")
+    result = run(host, "--on-demand")
+    assert result.returncode == 0, result.stdout + result.stderr
+    importer = next(c for c in calls(host) if "run-next --kind onenote" in c)
+    assert "JURISTID_ONENOTE_BACKUP_SET= " in importer and "/backup-set" not in importer
+    assert "nothing is written" in logs(host)
 
 
 def test_a_missing_capture_corpus_refuses_the_onenote_request(host):
