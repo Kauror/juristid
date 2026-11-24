@@ -491,51 +491,76 @@ def test_the_helper_runs_isolated_without_the_project(tmp_path):
 
 
 # ---------------------------------------------------------------------------------------
-# The real releases (needs their commits; a CI checkout of depth 2 has not got them)
+# The real releases, rebuilt without their history
 # ---------------------------------------------------------------------------------------
+# CI checks out with fetch depth 2, so the r88..r91 commits are not there. The test rebuilds
+# the three releases in a throwaway repository from the real migration files in this
+# checkout (unchanged since: their blob ids must equal the ones the kits reviewed), in the
+# same order: r88's base -> r89 adds legacy_import 0033 -> r90 code only -> r91 adds
+# intelligence 0005 and register_watch 0008.
 
-R88, R89_SHA = (
-    "5ad6ee90eb9faad3938e1670b239597994b9d35e",
-    "20869fb86672d9fdf6b2c13cbbe6c6a47072abc2",
+#: The predecessors the kits pinned (PREDECESSORS), present before each release.
+REAL_BASE = (
+    "app/legacy_import/migrations/0032_postipoiss_letters.py",
+    "app/intelligence/migrations/0004_informational_commencement_kinds.py",
+    "app/register_watch/migrations/0007_finding_files.py",
 )
-R90_SHA, R91_SHA = (
-    "8f4950bcf311ede32707d21974892f388c2d1c6c",
-    "284b1d6786a68e4d52407d11c90c933694ecb310",
-)
+#: path -> the blob each kit reviewed (BLOB_legacy_import_0033, BLOB_intelligence_0005,
+#: BLOB_register_watch_0008 in kit-r89 / kit-r91).
+REAL_R89 = {
+    "app/legacy_import/migrations/0033_lovable_owner_alias.py": (
+        "cbebb22ecf061bd7ce09ad3d5fe6618fc512ab0f"
+    ),
+}
+REAL_R91 = {
+    "app/intelligence/migrations/0005_estimated_commencement_title.py": (
+        "1ad387c13fbcb1dd305fb5533a856a2d4148c5b9"
+    ),
+    "app/register_watch/migrations/0008_agenda_ai_attempts.py": (
+        "173d5434ae04944e30cfddc6ef70566d85c91664"
+    ),
+}
 
 
-def _have(*shas: str) -> bool:
-    git = shutil.which("git")
-    return git is not None and all(
-        subprocess.run(  # noqa: S603 - git, this repository, fixed arguments
-            [git, "-C", str(ROOT), "cat-file", "-e", f"{sha}^{{commit}}"],
-            capture_output=True,
-            check=False,
-        ).returncode
-        == 0
-        for sha in shas
-    )
+def _copy_real(repo: Repo, path: str) -> None:
+    data = (ROOT / path).read_bytes().replace(b"\r\n", b"\n")
+    target = repo.root / path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(data)
 
 
-@pytest.mark.skipif(not _have(R88, R89_SHA, R90_SHA, R91_SHA), reason="release commits not fetched")
-def test_r89_r90_r91_derive_what_their_kits_pinned_by_hand():
-    def derive(previous: str, target: str, plan: str) -> dict[str, str]:
-        expected = derive_expected(
-            repo=ROOT, previous=previous, target=target, reviewed_plan=plan, helper=None
-        )
-        return dict(shell_values(parse_expected(expected.render())))
+def test_r89_r90_r91_derive_what_their_kits_pinned_by_hand(tmp_path):
+    repo = Repo(tmp_path / "real")
+    for path in REAL_BASE:
+        _copy_real(repo, path)
+    r88 = repo.commit()
+    for path in REAL_R89:
+        _copy_real(repo, path)
+    r89_sha = repo.commit()
+    repo.write("app/legacy_import/views.py", "# r90: code only\n")
+    r90_sha = repo.commit()
+    for path in REAL_R91:
+        _copy_real(repo, path)
+    r91_sha = repo.commit()
 
-    r89 = derive(R88, R89_SHA, R89)
+    def derive(previous: str, target: str, plan: str) -> Expected:
+        repo.previous = previous
+        return parse_expected(repo.derive(target, plan, helper=None).render())
+
+    r89_expected = derive(r88, r89_sha, R89)
+    r89 = dict(shell_values(r89_expected))
     assert r89["EXPECTED_MIGRATIONS"] == "legacy_import.0033_lovable_owner_alias"
     assert r89["MIGRATE_ORDER"] == "legacy_import:0033_lovable_owner_alias"
     assert r89["PREDECESSORS"] == "legacy_import:0032_postipoiss_letters"
     assert r89["EXPECTED_PLAN_HEADER"] == "1 pending migration(s):"
+    assert [m.blob for m in r89_expected.migrations] == list(REAL_R89.values())
 
-    r90 = derive(R89_SHA, R90_SHA, NONE_HOST)
+    r90 = dict(shell_values(derive(r89_sha, r90_sha, NONE_HOST)))
     assert r90["EXPECTED_MIGRATIONS"] == r90["EXPECTED_MIGRATION_FILES"] == ""
     assert r90["EXPECTED_PLAN_HEADER"] == "No pending migrations."
 
-    r91 = derive(R90_SHA, R91_SHA, R91)
+    r91_expected = derive(r90_sha, r91_sha, R91)
+    r91 = dict(shell_values(r91_expected))
     assert r91["EXPECTED_MIGRATIONS"] == " ".join(R91_LABELS)
     assert r91["MIGRATE_ORDER"] == (
         "intelligence:0005_estimated_commencement_title register_watch:0008_agenda_ai_attempts"
@@ -543,19 +568,10 @@ def test_r89_r90_r91_derive_what_their_kits_pinned_by_hand():
     assert r91["PREDECESSORS"] == (
         "intelligence:0004_informational_commencement_kinds register_watch:0007_finding_files"
     )
-    assert r91["EXPECTED_MIGRATION_FILES"] == (
-        "app/intelligence/migrations/0005_estimated_commencement_title.py "
-        "app/register_watch/migrations/0008_agenda_ai_attempts.py"
-    )
+    assert r91["EXPECTED_MIGRATION_FILES"] == " ".join(REAL_R91)
     assert r91["EXPECTED_PLAN_HEADER"] == "2 pending migration(s):"  # what d2 hard-coded as 1
-    # The blobs r91's kit reviewed (BLOB_intelligence_0005, BLOB_register_watch_0008).
-    expected = derive_expected(
-        repo=ROOT, previous=R90_SHA, target=R91_SHA, reviewed_plan=R91, helper=None
-    )
-    assert [m.blob for m in expected.migrations] == [
-        "1ad387c13fbcb1dd305fb5533a856a2d4148c5b9",
-        "173d5434ae04944e30cfddc6ef70566d85c91664",
-    ]
+    assert [m.blob for m in r91_expected.migrations] == list(REAL_R91.values())
     # r89's plan is not r91's: the stop that happened, refused at derive time instead.
+    repo.previous = r90_sha
     with pytest.raises(Refused, match="disagree"):
-        derive_expected(repo=ROOT, previous=R90_SHA, target=R91_SHA, reviewed_plan=R89, helper=None)
+        repo.derive(r91_sha, R89, helper=None)
