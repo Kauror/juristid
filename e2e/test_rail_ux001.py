@@ -63,13 +63,18 @@ _PLANT = "\n".join(
         "    MatterEffectiveDate.objects.create(matter=m, date_value=when, period_end=when,"
         " date_precision=DatePrecision.EXACT, description=text, source_url=url,"
         " status=FactStatus.ACTIVE, created_by=martin)",
+        "for extra in range(int(os.environ.get('E2E_MORE', '0'))):",
+        "    when = date(y + 1, 1, 1) + timedelta(days=21 * (extra + 1))",
+        "    MatterImportantDate.objects.create(matter=m, title='Komisjoni istung',"
+        " kind=ImportantDateKind.OTHER, date_value=when, period_end=when,"
+        " date_precision=DatePrecision.EXACT, status=FactStatus.ACTIVE,"
+        " note=f'Arutelu {extra}', created_by=martin)",
         "print(m.pk)",
     ]
 )
 
 
-@pytest.fixture
-def teema_url(base_url) -> str:
+def _plant(base_url: str, more: int = 0) -> str:
     result = subprocess.run(  # noqa: S603
         [sys.executable, "manage.py", "shell", "-c", _PLANT],
         cwd=REPOSITORY_ROOT,
@@ -77,6 +82,7 @@ def teema_url(base_url) -> str:
             **os.environ,
             "DJANGO_SETTINGS_MODULE": "config.settings",
             "E2E_PREFIX": unique_title("A2 menetluse kulg"),
+            "E2E_MORE": str(more),
         },
         capture_output=True,
         text=True,
@@ -86,6 +92,17 @@ def teema_url(base_url) -> str:
     assert result.returncode == 0, "\n".join(["stdout:", result.stdout, "stderr:", result.stderr])
     pk = result.stdout.strip().splitlines()[-1]
     return f"{base_url}/teemad/{pk}/"
+
+
+@pytest.fixture
+def teema_url(base_url) -> str:
+    return _plant(base_url)
+
+
+@pytest.fixture
+def long_teema_url(base_url) -> str:
+    """The same Teema with twelve more watched dates: more than a 1440 row holds."""
+    return _plant(base_url, more=12)
 
 
 _GEOMETRY = """
@@ -240,3 +257,79 @@ def test_a_tap_opens_the_popover_on_a_touch_screen(browser, base_url, teema_url)
         assert box and box["x"] >= 0 and box["x"] + box["width"] <= 375
     finally:
         context.close()
+
+
+def _scroll_state(page) -> dict:
+    return page.evaluate(
+        """() => {
+          const holder = document.querySelector('[data-tlscroll]');
+          const strip = holder.querySelector('.tl-strip');
+          return {
+            left: holder.hasAttribute('data-more-left'),
+            right: holder.hasAttribute('data-more-right'),
+            prevHidden: holder.querySelector('[data-tlscroll-prev]').hidden,
+            nextHidden: holder.querySelector('[data-tlscroll-next]').hidden,
+            tabindex: strip.getAttribute('tabindex'),
+            scrollLeft: strip.scrollLeft,
+            overflow: strip.scrollWidth > strip.clientWidth + 1,
+          };
+        }"""
+    )
+
+
+def test_a_rail_that_fits_shows_no_overflow_controls(page, base_url, teema_url):
+    _open_teema(page, base_url, teema_url, 1920)
+    state = _scroll_state(page)
+    assert not state["overflow"]
+    assert state["prevHidden"] and state["nextHidden"]
+    assert not state["left"] and not state["right"]
+    assert state["tabindex"] is None
+
+
+def test_a_long_rail_says_there_is_more_and_every_input_reaches_it(page, base_url, long_teema_url):
+    _open_teema(page, base_url, long_teema_url, 1440)
+    state = _scroll_state(page)
+    assert state["overflow"], state
+    assert state["right"] and not state["left"]
+    assert not state["nextHidden"] and state["prevHidden"]
+    assert state["tabindex"] == "0"
+
+    # Pointer: › moves it, and ‹ appears.
+    page.locator("[data-tlscroll-next]").click()
+    page.wait_for_function("() => document.querySelector('.tl-strip').scrollLeft > 0")
+    expect(page.locator("[data-tlscroll-prev]")).to_be_visible()
+
+    # Keyboard: the strip is focusable and the arrow keys scroll it to its end.
+    strip = page.locator(".tl-strip")
+    strip.focus()
+    for _ in range(120):
+        page.keyboard.press("ArrowRight")
+    page.wait_for_function(
+        "() => { const s = document.querySelector('.tl-strip');"
+        " return s.scrollLeft + s.clientWidth >= s.scrollWidth - 2; }"
+    )
+    expect(page.locator("[data-tlscroll-next]")).to_be_hidden()
+    last = page.locator(".tl-strip > .tl-step").last
+    box = last.bounding_box()
+    holder = page.locator("[data-tlscroll]").bounding_box()
+    assert box and holder and box["x"] + box["width"] <= holder["x"] + holder["width"] + 1
+    # The page itself never scrolls sideways.
+    assert page.evaluate("document.documentElement.scrollWidth") <= 1440
+
+
+def test_the_popover_opens_at_its_words_not_at_the_far_edge(page, base_url, teema_url):
+    _open_teema(page, base_url, teema_url, 3440, 1100)
+    page.mouse.move(0, 0)
+    summary = page.locator(".tl-step--tip .tl-step__sum").first
+    summary.click()
+    tip = summary.locator("xpath=..").locator(".tl-tip")
+    expect(tip).to_be_visible()
+    trigger = summary.bounding_box()
+    panel = tip.bounding_box()
+    assert trigger and panel
+    # Start-aligned under the text that opened it (within the window margin).
+    assert abs(panel["x"] - trigger["x"]) <= 9, (trigger, panel)
+    assert (
+        panel["y"] >= trigger["y"] + trigger["height"] - 1
+        or panel["y"] + panel["height"] <= trigger["y"] + 1
+    )

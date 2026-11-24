@@ -79,9 +79,23 @@ def test_a_phase_with_two_commencements_keeps_each_with_its_own_source():
 
 
 @pytest.mark.parametrize(
-    "address", ["javascript:alert(1)", "ftp://example.invalid/x", "riigiteataja.ee/x", " "]
+    "address",
+    [
+        "javascript:alert(1)",
+        "ftp://example.invalid/x",
+        "riigiteataja.ee/x",
+        " ",
+        # Malformed: urlsplit / the host parser raise on these (UX-001 refinement).
+        "http://[::1",
+        "https://[not-an-ip]/akt",
+        "https://www.riigiteataja.ee:99999/akt",
+        "https://www.riigi teataja.ee/akt",
+        "https://www.riigiteataja.ee/akt\n1",
+        "https:///akt",
+        None,
+    ],
 )
-def test_only_an_http_address_becomes_a_link(address):
+def test_only_a_well_formed_http_address_becomes_a_link(address):
     record = _effective("a", description="põhiosa", url=address, by=_person("Mari"))
     step = RailStep(key="m", label="Jõustumine", kind=KIND_MILESTONE, state="future", record=record)
 
@@ -326,3 +340,23 @@ def test_more_rail_items_cost_no_more_reads_and_stay_under_the_ceiling(signed_in
 
     assert many == few
     assert many <= TEEMA_PAGE_QUERY_CEILING
+
+
+@pytest.mark.django_db
+def test_a_malformed_stored_address_does_not_break_the_teema_page(signed_in, specialist):
+    """A `source_url` the URL parser refuses is plain text, and the page renders."""
+    matter = _riigikogus(specialist)
+    record = _commencement(
+        matter,
+        when=timezone.localdate() + timedelta(days=300),
+        description="põhiosa",
+        by=specialist,
+    )
+    # Written past the form's validation, as a hand-edited or imported row could be.
+    MatterEffectiveDate.objects.filter(pk=record.pk).update(source_url="http://[::1/akt")
+
+    strip = _strip(signed_in, matter)
+
+    assert "põhiosa" in strip
+    assert "[::1" not in strip
+    assert f"Allikas: {specialist.display_name}" in strip

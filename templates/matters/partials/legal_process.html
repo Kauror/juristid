@@ -107,6 +107,14 @@ nothing at all.
       one from Lovable says in its popover where it is changed.
     {% endcomment %}
     {% load rail %}
+    {% comment %}
+      **More than fits** (UX-001 refinement): the strip scrolls itself, and when
+      there is more on either side a soft edge and a small ‹ / › say so and move
+      it (`bindRailScroll`, static/js/ux.js). Shown only while there really is
+      more; the strip is then keyboard-scrollable (it takes `tabindex`), and on a
+      touch screen it is swiped as before. Nothing here when everything fits.
+    {% endcomment %}
+    <div class="tl-scroll" data-tlscroll>
     <ol class="tl-strip" aria-label="Menetluse kulg">
       {% for step in rail_steps %}
         {% rail_tip step lovable_commencement_ids as tip %}
@@ -156,7 +164,7 @@ nothing at all.
               <summary class="tl-step__sum">
                 {% for line in tip.lines %}<span class="{% if line == step.display_date and not step.notes %}tl-step__date{% else %}tl-step__note{% endif %}">{{ line }}</span>{% empty %}<span class="tl-step__note">Üksikasjad</span>{% endfor %}<span class="visually-hidden"> — üksikasjad</span>
               </summary>
-              <span class="tl-tip" data-uxfloat="fit">
+              <span class="tl-tip" data-uxfloat="fit-start">
                 {% for fact in tip.facts %}
                   <span class="tl-tip__fact">
                     {% if fact.date and tip.facts|length > 1 %}<span class="tl-tip__date">{{ fact.date }}</span>{% endif %}
@@ -185,6 +193,11 @@ nothing at all.
         </li>
       {% endfor %}
     </ol>
+      <button type="button" class="tl-scroll__btn tl-scroll__btn--prev" data-tlscroll-prev hidden
+              aria-label="Menetluse kulg: näita varasemaid samme">‹</button>
+      <button type="button" class="tl-scroll__btn tl-scroll__btn--next" data-tlscroll-next hidden
+              aria-label="Menetluse kulg: näita järgmisi samme">›</button>
+    </div>
     {% endif %}
 
     {% if legal_process.unplaced_stage %}

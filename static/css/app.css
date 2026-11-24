@@ -12396,6 +12396,73 @@ section:has(.pw-more[open]) tbody.uxextra {
     calc(100% - 4px) 1px no-repeat;
 }
 
+/* More than fits (UX-001 refinement). The strip is the scroller; its holder
+ * marks which side has more (`data-more-left` / `data-more-right`, set by
+ * `bindRailScroll`), fades that edge and shows the button that moves it. */
+#teema-vaade-wrap .tl-scroll {
+  position: relative;
+}
+
+#teema-vaade-wrap .tl-scroll[data-more-right] > .tl-strip {
+  mask-image: linear-gradient(to right, currentColor calc(100% - 48px), transparent 100%);
+}
+
+#teema-vaade-wrap .tl-scroll[data-more-left] > .tl-strip {
+  mask-image: linear-gradient(to left, currentColor calc(100% - 48px), transparent 100%);
+}
+
+#teema-vaade-wrap .tl-scroll[data-more-left][data-more-right] > .tl-strip {
+  mask-image: linear-gradient(
+    to right,
+    transparent 0,
+    currentColor 48px,
+    currentColor calc(100% - 48px),
+    transparent 100%
+  );
+}
+
+#teema-vaade-wrap .tl-strip:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+#teema-vaade-wrap .tl-scroll__btn {
+  position: absolute;
+  z-index: 2;
+  top: calc(var(--spacing-3) + 16px - 6px);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-secondary);
+  font: 600 14px/1 var(--typography-font-sans);
+  cursor: pointer;
+}
+
+#teema-vaade-wrap .tl-scroll__btn[hidden] {
+  display: none;
+}
+
+#teema-vaade-wrap .tl-scroll__btn:hover {
+  color: var(--accent-link);
+}
+
+#teema-vaade-wrap .tl-scroll__btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+#teema-vaade-wrap .tl-scroll__btn--prev {
+  left: -4px;
+}
+
+#teema-vaade-wrap .tl-scroll__btn--next {
+  right: 0;
+}
+
 #teema-vaade-wrap .tl-step {
   /* How far along this item's own segment today has come; the template writes
      it on every item. */
@@ -12695,9 +12762,12 @@ section:has(.pw-more[open]) tbody.uxextra {
   contain: inline-size;
 }
 
+/* As wide as its words, not as its column, so the popover anchors at the text
+ * that opened it (`data-uxfloat="fit-start"`). */
 #teema-vaade-wrap .tl-step__sum {
-  display: block;
+  display: inline-block;
   max-width: 100%;
+  vertical-align: top;
   list-style: none;
   cursor: pointer;
   border-radius: 2px;

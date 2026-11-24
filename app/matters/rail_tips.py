@@ -74,15 +74,31 @@ class RailTip:
         return bool(self.facts)
 
 
-def _safe_url(value: str) -> tuple[str, str]:
-    """``(url, host)`` for an http(s) address, else ``("", "")``."""
-    text = (value or "").strip()
-    if not text:
+def _safe_url(value: Any) -> tuple[str, str]:
+    """``(url, host)`` for a well-formed http(s) address, else ``("", "")``.
+
+    Defensive by design (UX-001 refinement): a stored address is typed by a
+    person and never validated again, so anything `urlsplit` or the host parser
+    refuses (`http://[::1`, a bad port), anything with whitespace or control
+    characters, and anything that is not http(s) becomes plain source text —
+    the Teema page never breaks over a malformed `source_url`.
+    """
+    if not isinstance(value, str):
         return "", ""
-    parts = urlsplit(text)
-    if parts.scheme not in ("http", "https") or not parts.netloc:
+    text = value.strip()
+    if not text or any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in text):
         return "", ""
-    host = parts.hostname or parts.netloc
+    try:
+        parts = urlsplit(text)
+        if parts.scheme.lower() not in ("http", "https") or not parts.netloc:
+            return "", ""
+        host = parts.hostname or ""
+        # Reading the port validates it; a malformed one raises ValueError.
+        _ = parts.port
+    except ValueError:
+        return "", ""
+    if not host:
+        return "", ""
     return text, host.removeprefix("www.")
 
 
