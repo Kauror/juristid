@@ -176,7 +176,7 @@ def parse_plan(text: str) -> Plan:
         ALL_ADDITIVE if consequential_count == 0 else f"{consequential_count}{CONSEQUENTIAL_TAIL}"
     )
     if rest != ["", summary]:
-        raise Refused(f"the plan does not end with its summary line ({summary[:40]}…)")
+        raise Refused(f"the plan does not end with its summary line ({summary[:40]}...)")
     return Plan(pending=tuple(pending), text="\n".join(lines))
 
 
@@ -514,11 +514,10 @@ def main(argv: list[str] | None = None) -> int:
         else:
             expected = parse_expected(args.expected.read_bytes().decode("utf-8"))
             sys.stdout.write("".join(f'{k}="{v}"\n' for k, v in shell_values(expected)))
-    except Refused as error:
-        sys.stderr.write(f"release_migrations: REFUSED: {error}\n")
-        return EXIT_REFUSED
-    except (OSError, UnicodeDecodeError) as error:
-        sys.stderr.write(f"release_migrations: REFUSED: {error}\n")
+    except (Refused, OSError, UnicodeDecodeError) as error:
+        # ASCII, whatever the console's code page (a Windows generator machine).
+        message = str(error).encode("ascii", "backslashreplace").decode("ascii")
+        sys.stderr.write(f"release_migrations: REFUSED: {message}\n")
         return EXIT_REFUSED
     return 0
 
