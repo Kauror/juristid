@@ -322,8 +322,9 @@ def test_the_writer_script_has_no_private_copy_of_the_rule():
         f"MCP_AUTHENTICATOR_KEY = {STRONG}",
         f"MCP_AUTHENTICATOR_KEY: {STRONG}",
         f" MCP_AUTHENTICATOR_KEY={STRONG}",
+        f"﻿MCP_AUTHENTICATOR_KEY={STRONG}",
     ],
-    ids=["export", "blanks-around-equals", "colon", "indented"],
+    ids=["export", "blanks-around-equals", "colon", "indented", "utf8-bom-first-line"],
 )
 def test_the_helper_never_replaces_a_malformed_key(tmp_path, line):
     """Compose reads each of these as the key: appending a new one would replace it.

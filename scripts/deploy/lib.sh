@@ -332,6 +332,11 @@ _mcp_key_scan() {
     function rtrim(s) { sub(/[ \t\r\f\v]+$/, "", s); return s }
     {
       probe = $0
+      # A UTF-8 byte-order mark before the first line (a file saved on
+      # Windows) must not hide a key there: the key is then named, never
+      # "missing" (which would append a second, new value), and its line
+      # stays non-canonical, so it is refused for a fix by hand.
+      if (NR == 1) sub(/^\357\273\277/, "", probe)
       sub(/^[ \t\r\f\v]+/, "", probe)
       if (probe ~ /^export[ \t]/) { probe = substr(probe, 7); sub(/^[ \t]+/, "", probe) }
       if (substr(probe, 1, length(key)) != key) next

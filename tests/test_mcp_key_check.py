@@ -253,6 +253,28 @@ def test_lines_compose_reads_as_a_good_key_are_ok_and_other_forms_malformed(tmp_
     )
 
 
+def test_a_key_on_a_first_line_behind_a_utf8_bom_is_malformed_not_missing(tmp_path):
+    """A file saved with a byte-order mark still names its first key.
+
+    Reported «missing», the web helper would append a second, new value that
+    Compose takes over the live one. Named but not canonical, it is refused.
+    """
+    web, writer, mcp = _files(
+        tmp_path,
+        f"﻿MCP_AUTHENTICATOR_KEY={A}\nMCP_TOKEN_DERIVATION_KEY={B}\n",
+        f"﻿DJANGO_SECRET_KEY={C}\nPOSTGRES_PASSWORD={D}\nMCP_WRITE_GATEWAY_KEY={E}\n",
+        f"MCP_WRITE_GATEWAY_KEY={E}\n",
+    )
+    result = _check(*_args(web, writer, mcp))
+    assert result.returncode == 1
+    assert "juristid.env MCP_AUTHENTICATOR_KEY: malformed\n" in result.stdout
+    assert "juristid-mcp-writer.env DJANGO_SECRET_KEY: malformed\n" in result.stdout
+    assert "juristid.env MCP_TOKEN_DERIVATION_KEY: ok\n" in result.stdout
+    assert "missing" not in result.stdout
+    for value in (A, C):
+        assert value not in result.stdout + result.stderr
+
+
 def test_the_check_is_executable_in_git():
     listed = subprocess.run(
         ["git", "ls-files", "-s", "scripts/deploy/juristid-mcp-key-check.sh"],  # noqa: S607
