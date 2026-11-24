@@ -6682,11 +6682,13 @@ def _save_procedural_link(*, matter: Matter, form: Any, actor: Any) -> None:
         # drew a control, so that it holds against a POST from a tab that was
         # open before somebody else shut the file (R2-02).
         #
-        # `matter_create` calls the service directly and is right to: the
-        # Matter it has just filed is open by construction. This page is the
-        # one that can be looking at a finished file. Correcting an existing
-        # address stays direct for the opposite reason — closure has never
-        # meant that an address recorded wrongly must stay wrong.
+        # `Uus teema` no longer files an address of its own (2026-10-12); the
+        # links a register candidate brings go through this same wrapper
+        # (`register_watch.candidates._link_items`). This page is the one that
+        # can be looking at a finished file. Correcting an existing address
+        # stays direct, through `correct_procedural_link`, for the opposite
+        # reason — closure has never meant that an address recorded wrongly
+        # must stay wrong.
         workspace.add_matter_procedural_link(
             matter=matter,
             author=actor,
