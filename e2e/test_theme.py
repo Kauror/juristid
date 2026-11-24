@@ -71,14 +71,15 @@ def canvas(page) -> str:
     return page.evaluate("() => getComputedStyle(document.body).backgroundColor")
 
 
-#: Signed in: the switch on Haldus → Seaded (templates/haldus/index.html).
+#: Signed in: the switch on Haldus → Isiklikud seaded → Kuvamine
+#: (templates/haldus/settings.html, docs/adr/0221).
 SETTING = ".themetoggle--setting"
 
 #: Signed out: the switch behind the gear, the only thing on the bar.
 GEAR = ".topbar .settingsmenu [data-theme-toggle]"
 
-#: The Seaded panel on Haldus.
-SEADED = 'section[aria-labelledby="seaded"]'
+#: The Kujundus panel on Haldus → Kuvamine.
+SEADED = 'section[aria-labelledby="kujundus"]'
 
 
 def switch(page):
@@ -113,7 +114,7 @@ def reach_switch(page) -> None:
         open_gear(page)
         return
     origin = page.evaluate("() => window.location.origin")
-    page.goto(f"{origin}/haldus/")
+    page.goto(f"{origin}/haldus/seaded/")
     page.wait_for_load_state("networkidle")
     expect(page.locator(SETTING)).to_be_visible()
 
@@ -203,11 +204,19 @@ def test_signed_in_the_switch_is_on_haldus_seaded_and_nowhere_else(page, base_ur
 
     page.locator(".topbar").get_by_role("link", name="Haldus", exact=True).click()
     page.wait_for_url(f"{base_url}/haldus/")
+    # Ülevaade carries no switch since UX-002; Kuvamine is one click away (docs/adr/0221).
+    expect(page.locator("[data-theme-toggle]")).to_have_count(0)
+    page.get_by_role("navigation", name="Haldus", exact=True).get_by_role(
+        "link", name="Kuvamine", exact=True
+    ).click()
+    page.wait_for_url(f"{base_url}/haldus/seaded/")
     expect(page.locator("[data-theme-toggle]")).to_have_count(1)
     expect(page.locator(f"{SEADED} {SETTING}")).to_be_visible()
-    expect(page.locator(SEADED).get_by_role("heading", name="Seaded", exact=True)).to_be_visible()
-    # Seaded is the first panel on the page.
-    expect(page.locator("main section.panel").first).to_have_attribute("aria-labelledby", "seaded")
+    expect(page.locator(SEADED).get_by_role("heading", name="Kujundus", exact=True)).to_be_visible()
+    # Kujundus is the first panel on the page.
+    expect(page.locator("main section.panel").first).to_have_attribute(
+        "aria-labelledby", "kujundus"
+    )
 
 
 #: Elements on Minu asjad whose colours are all roles, read before and after.
@@ -280,7 +289,7 @@ def test_the_switch_works_from_the_keyboard_and_shows_its_focus(page, base_url):
     sub-navigation.
     """
     sign_in(page, base_url, SANDRA)
-    page.goto(f"{base_url}/haldus/")
+    page.goto(f"{base_url}/haldus/seaded/")
     page.wait_for_load_state("networkidle")
     page.locator("#global-search").focus()
     for _ in range(60):
@@ -544,7 +553,7 @@ def test_the_seaded_panel_and_its_switch_fit_every_width_in_both_themes(
     """
     sign_in(page, base_url, SANDRA)
     page.set_viewport_size({"width": width, "height": height})
-    page.goto(f"{base_url}/haldus/")
+    page.goto(f"{base_url}/haldus/seaded/")
     page.wait_for_load_state("networkidle")
 
     for expected in ("dark", "light"):

@@ -116,11 +116,12 @@ def test_the_page_needs_no_database(client: Client, django_assert_num_queries) -
 
 @pytest.mark.django_db
 def test_haldus_rakendus_links_it_beside_uuendused(client: Client) -> None:
-    """Moved from the footer to Haldus → Rakendus (the owner's brief, 2026-10-28)."""
+    """Moved from the footer to Haldus → Rakendus (the owner's brief, 2026-10-28);
+    the sidebar's Rakendus group since UX-002 (docs/adr/0221)."""
     client.force_login(factories.ReaderFactory())
     body = client.get(reverse("haldus:index")).content.decode()
-    start = body.index('aria-labelledby="rakendus"')
-    section = body[start : body.index("</section>", start)]
+    start = body.index('id="haldusnav-rakendus"')
+    section = body[start : body.index("</ul>", start)]
     assert section.index('href="/uuendused/"') < section.index(f'href="{URL}"')
 
 

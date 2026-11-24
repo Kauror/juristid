@@ -59,6 +59,7 @@ PAGES = (
     "haldus:data_sync_now",
     "haldus:data_sync_differences",
     "haldus:data_sync_history",
+    "haldus:onenote",
 )
 POSTS = (
     "haldus:data_sync_check",
@@ -122,11 +123,13 @@ def _audits(action: str) -> list[SecurityAuditEvent]:
 # ---------------------------------------------------------------------------
 
 
-def test_the_section_replaces_the_lovable_tab_and_keeps_its_address(signed):
+def test_lovable_and_onenote_are_two_items_and_keep_their_addresses(signed):
+    """Integratsioonid → Lovable and → OneNote since UX-002 (docs/adr/0221)."""
     page = signed.get(reverse("haldus:index"))
     keys = [s.key for s in page.context["haldus_sections"]]
-    assert "andmed" in keys and "lovable" not in keys
-    assert sections.section("andmed").url_name == "haldus:data_sync"
+    assert "lovable" in keys and "onenote" in keys
+    assert sections.section("lovable").url_name == "haldus:data_sync"
+    assert sections.section("onenote").url_name == "haldus:onenote"
     assert reverse("haldus:data_sync") == "/haldus/andmete-sunkroonimine/"
     # The older Lovable page still answers at its address, as a sub-page.
     old = signed.get(reverse("haldus:lovable"))
@@ -138,8 +141,10 @@ def test_a_technical_administrator_opens_every_page(signed):
     for name in PAGES:
         assert signed.get(reverse(name)).status_code == 200, name
     body = signed.get(reverse("haldus:data_sync")).content.decode()
-    assert "Lovable" in body and "OneNote" in body
     assert "Inventuuri pole veel tehtud." in body
+    assert 'id="dsync-onenote"' not in body
+    onenote = signed.get(reverse("haldus:onenote")).content.decode()
+    assert 'id="dsync-onenote"' in onenote and 'id="dsync-lovable"' not in onenote
 
 
 def test_anonymous_is_refused_everywhere(client, gate):
@@ -661,7 +666,8 @@ def test_a_verify_request_runs_on_the_host_and_shows_its_check(
     assert item.result["verified"] is True and item.result["plan_sha256"] == PLAN
     assert item.result["counts"] == {"pages": 3, "promote": 5, "hold": 1}
     assert calls["verify"] == [capture_root / CAPTURE]
-    body = signed.get(reverse("haldus:data_sync")).content.decode()
+    assert response["Location"] == reverse("haldus:onenote")
+    body = signed.get(reverse("haldus:onenote")).content.decode()
     assert "Kontrollitud" in body and "Impordi…" in body
     assert "salajane" not in body
 

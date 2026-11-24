@@ -80,3 +80,42 @@ def verified_administrator_session(context: Any) -> Any:
     if not admin_session.is_available():
         return None
     return admin_session.verified_administrator(request)
+
+
+@register.inclusion_tag("haldus/_sidebar.html", takes_context=True)
+def haldus_sidebar(context: Any) -> dict[str, Any]:
+    """The Haldus sidebar: the reader's visible groups and the current item (docs/adr/0221).
+
+    The current item is the one whose routes hold the resolved URL name
+    (`app.haldus.sections.active_key`); a page outside the registry may name one
+    with ``haldus_active``. Nothing is drawn for a reader with one item or none:
+    one link is not a choice.
+    """
+    request = context.get("request")
+    if request is None:
+        return {"groups": [], "active": "", "active_label": ""}
+    from app.haldus.sections import active_key, visible_groups
+
+    groups = visible_groups(request)
+    active = active_key(request, fallback=str(context.get("haldus_active", "") or ""))
+    labels = {item.key: item.label for group in groups for item in group.items}
+    if sum(len(group.items) for group in groups) < 2:
+        groups = []
+    return {"groups": groups, "active": active, "active_label": labels.get(active, "")}
+
+
+@register.simple_tag(takes_context=True)
+def haldus_current_label(context: Any) -> str:
+    """The current Haldus item's label, for the page heading; "Haldus" on Ülevaade or none."""
+    request = context.get("request")
+    if request is None:
+        return "Haldus"
+    from app.haldus.sections import active_key, section
+
+    key = active_key(request, fallback=str(context.get("haldus_active", "") or ""))
+    if not key or key == "ulevaade":
+        return "Haldus"
+    try:
+        return section(key).label
+    except StopIteration:
+        return "Haldus"

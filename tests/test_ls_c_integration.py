@@ -132,7 +132,8 @@ def test_the_page_renders_the_real_onenote_numbers(onenote_world, client, settin
     settings.REAL_DATA_ALLOWED = False
     admin, secret = technical_admin()
     verified(client, admin, secret)
-    body = client.get(reverse("haldus:data_sync")).content.decode()
+    # OneNote's own overview since UX-002 (docs/adr/0221).
+    body = client.get(reverse("haldus:onenote")).content.decode()
     assert "cap-1" in body
     assert "Operatiivseid lehti" in body and "Ühisleht, ootab seose otsust" in body
     assert sync_admin.ONENOTE_MISSING not in body

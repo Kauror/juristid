@@ -228,6 +228,7 @@ consequences and reversibility.
 | [0218](0218-new-drafts-in-the-registers-are-proposed-to-the-department-head-as-new-teemad.md) | New drafts in the registers are proposed to the department head as new Teemad (nightly sweep, the model judges, «Uued eelnõud», the bell's sixth source) | Proposed, amended 2026-11-24 (the verdict is written only on a candidate still waiting and unjudged, re-read under lock) |
 | [0219](0219-monitooring-gathers-new-drafts-the-government-agenda-and-the-registers-list.md) | «Monitooring» gathers the new drafts, the Government's agenda and the registers' list (top-bar tab, the head's until opened; valitsus.ee agenda read and judged weekly; the bell, no e-mail) | Proposed |
 | [0220](0220-a-lawyer-leaving-and-arriving-is-prepared-in-juristid-and-handed-over-in-lovable.md) | A lawyer leaving and arriving is prepared in Juristid and handed over in Lovable (a recorded Lovable hand-over has its own nightly limit of 150; «Lovable'i nimed» and pinned names; held work shown and confirmed before switching a person off; «Töö ilma aktiivse vastutajata») | Accepted |
+| [0221](0221-haldus-is-seven-groups-in-a-sidebar-and-personal-preferences-live-under-isiklikud-seaded.md) | Haldus is seven groups in a sidebar, and personal preferences live under Isiklikud seaded (one registry with group-level visibility equal to each route's guard; Integratsioonid split into Lovable, OneNote and Registrite jälgimine; Ülevaade shows what needs attention) | Proposed |
 | [0222](0222-a-person-keeps-named-teemad-views-and-the-address-is-still-the-view.md) | A person keeps named Teemad views, and the address is still the view (at most 20 per persona; a canonical query, never rows or counts; private, the link still shareable; supersedes 0043 §2; migration `matters/0052`) | Proposed |
 | [0223](0223-minu-statistika-credits-each-figure-by-a-stated-rule-and-never-guesses-history.md) | Minu statistika credits each figure by a stated rule and never guesses history (self only; current owner, recorded actor or owner at the time; «andmed puuduvad» where the trail cannot say) | Proposed |
 
@@ -240,9 +241,6 @@ requires every gap in the numbering to be named here:
   lands with that PR.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
-- 0221 — reserved for the Haldus information-architecture record of the
-  overnight development programme of 25.11.2026 (workstream B, its own branch).
-  The record lands with that branch, which then removes this line.
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.

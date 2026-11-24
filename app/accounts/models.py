@@ -720,3 +720,36 @@ class DisclosurePreference(BaseModel):
 
     def __str__(self) -> str:
         return f"{self.key}={'avatud' if self.is_open else 'suletud'}"
+
+
+class PersonalPreference(BaseModel):
+    """One person's own choices that the server needs: today, where `/` opens.
+
+    Presentation state and nothing else (docs/adr/0221, «Personal preferences»).
+    Keyed to the person the request is signed in as — the selected persona under
+    the shared gate, the account under personal sign-in — exactly like
+    `DisclosurePreference`. Never identity proof, never read by authorization:
+    the landing page is a *key* from a fixed allowlist
+    (`app.accounts.landing.LANDING_PAGES`), checked against what the person may
+    open when it is saved and again at every redirect, and never a stored URL.
+
+    One row per person, created on the first explicit choice; a person without
+    a row gets the default (Minu asjad). The colour theme and the text size are
+    not here: they are choices of the browser (docs/adr/0147).
+    """
+
+    user = models.OneToOneField(
+        "accounts.User",
+        on_delete=models.CASCADE,
+        related_name="personal_preference",
+        verbose_name="kasutaja",
+    )
+    #: A key of `app.accounts.landing.LANDING_PAGES`; "" is the default.
+    landing_page = models.CharField(max_length=40, blank=True, default="", verbose_name="avaleht")
+
+    class Meta:
+        verbose_name = "isiklik eelistus"
+        verbose_name_plural = "isiklikud eelistused"
+
+    def __str__(self) -> str:
+        return f"avaleht={self.landing_page or '-'}"

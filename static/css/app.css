@@ -353,6 +353,23 @@
   margin: 0;
 }
 
+/* Haldus → Kuvamine (docs/adr/0221): the four text sizes as one row of
+   buttons, the chosen one pressed; the landing page's choice beside «Salvesta». */
+.textsize {
+  gap: var(--spacing-1);
+}
+
+.textsize__option[aria-pressed="true"] {
+  border-color: var(--accent-primary);
+  background: var(--surface-selected);
+  color: var(--text-primary);
+}
+
+.settingslist .landingpick {
+  width: auto;
+  min-width: 12rem;
+}
+
 .themetoggle:hover {
   background: var(--surface-overlay-hover);
   color: var(--text-primary);
@@ -18349,6 +18366,155 @@ a.statpanel__note {
    the list follow one another (owner, 2026-11-22). */
 .page--monitooring {
   gap: var(--spacing-3);
+}
+
+/* Haldus (docs/adr/0221): a compact sidebar of seven groups beside the page
+   from 900 px up; narrower, the same list in a «Haldus» menu above the page.
+   Two renderings of one list, only one displayed at a time. */
+.haldus__layout {
+  display: grid;
+  grid-template-columns: 13.5rem minmax(0, 1fr);
+  gap: var(--spacing-6);
+  align-items: start;
+}
+
+.haldus__main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-5);
+}
+
+.haldusnav {
+  position: sticky;
+  top: calc(var(--layout-topbar) + var(--spacing-4));
+  font-size: var(--typography-size-base);
+}
+
+.haldusnav__groups,
+.haldusnav__items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.haldusnav__groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.haldusnav__grouplabel {
+  display: block;
+  padding: 0 var(--spacing-2) var(--spacing-1);
+  color: var(--text-muted);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  letter-spacing: var(--typography-tracking-label);
+  text-transform: uppercase;
+}
+
+.haldusnav__link {
+  display: block;
+  padding: var(--spacing-1) var(--spacing-2);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  line-height: var(--typography-line-tight);
+  text-decoration: none;
+}
+
+.haldusnav__link:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.haldusnav__link.is-active {
+  background: var(--surface-selected);
+  color: var(--text-primary);
+  font-weight: var(--typography-weight-semibold);
+  box-shadow: inset 2px 0 0 0 var(--accent-primary);
+}
+
+/* Ülevaade's attention lines: the chip, one sentence, «Ava». */
+.haldusattn {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--spacing-1) var(--spacing-3);
+}
+
+.haldusattn__text {
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.haldusattn__ok {
+  margin: var(--spacing-3) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--typography-size-sm);
+}
+
+.haldusattn__build {
+  margin: 0;
+}
+
+.haldusmenu {
+  display: none;
+}
+
+@media (max-width: 899px) {
+  .haldus__layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--spacing-3);
+  }
+
+  .haldusnav {
+    display: none;
+  }
+
+  .haldusmenu {
+    display: block;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    background: var(--surface-panel);
+  }
+
+  .haldusmenu__summary {
+    display: flex;
+    align-items: baseline;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    cursor: pointer;
+    font-weight: var(--typography-weight-semibold);
+  }
+
+  .haldusmenu__title {
+    color: var(--text-primary);
+  }
+
+  /* The flex summary drops the native marker: one chevron, turned when open. */
+  .haldusmenu__summary::after {
+    content: "\25BE";
+    margin-left: auto;
+    color: var(--text-secondary);
+  }
+
+  .haldusmenu[open] > .haldusmenu__summary::after {
+    content: "\25B4";
+  }
+
+  .haldusmenu__current {
+    color: var(--text-secondary);
+    font-weight: var(--typography-weight-regular);
+  }
+
+  .haldusmenu__panel {
+    padding: 0 var(--spacing-2) var(--spacing-3);
+  }
+
+  .haldusmenu__panel .haldusnav__groups {
+    gap: var(--spacing-2);
+  }
 }
 
 .haldus__switch {

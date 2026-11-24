@@ -380,7 +380,9 @@ def test_the_account_menu_is_reached_by_keyboard_and_marks_haldus_current(page, 
     # tree until its trigger opens it again.
     trigger.click()
     expect(haldus).to_have_attribute("aria-current", "page")
-    expect(page.get_by_role("heading", name="Rakendus", exact=True)).to_be_visible()
+    # The Haldus sidebar, its Rakendus group last (docs/adr/0221).
+    nav = page.get_by_role("navigation", name="Haldus", exact=True)
+    expect(nav.get_by_text("Rakendus", exact=True)).to_be_visible()
     assert not document_overflows(page)
 
 

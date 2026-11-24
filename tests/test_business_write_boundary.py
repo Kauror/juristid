@@ -1801,6 +1801,10 @@ CLASSIFIED_ELSEWHERE: dict[str, str] = {
     "matters:save_view": "C: the signed-in person's own named register view",
     "matters:rename_view": "C: renames the signed-in person's own register view",
     "matters:remove_view": "C: removes the signed-in person's own register view",
+    # C — the landing page (docs/adr/0221): where `/` opens for the signed-in
+    # person. A key from a fixed allowlist keyed on `request.user`, checked
+    # against what that person may open; no parameter names anybody else.
+    "accounts:save_landing_page": "C: the signed-in person's own landing page",
     # C — personal deadline notifications (docs/adr/0198): the recipient's own
     # read and hidden stamps, and their own notification preferences. Rows are
     # resolved by `recipient=request.user`, so another person's id is a 404;
