@@ -500,3 +500,87 @@ def test_recorded_work_reads_the_shown_kind(specialist, kind, url, proves) -> No
 
     assert done.published_overview is proves
     assert done.published_any is True
+
+
+# =========================================================================
+# The step-already-recorded rule has one reading, batched or single
+# (docs/adr/0161, amendment of 2026-11-25)
+# =========================================================================
+
+
+def _consult_step_done(owner):
+    """A Teema whose current «Kaasa liikmeid» the record already shows done."""
+    from datetime import timedelta
+
+    from app.matters import workspace as ws
+    from app.workflow.models import MatterPlanStep, NextAction
+    from app.workflow.plan import seed_standard_plan
+    from tests.legacy_plans import start_as_before_adr_0168
+
+    matter = factories.MatterFactory(owner=owner)
+    seed_standard_plan(matter=matter, actor=owner)
+    step = MatterPlanStep.objects.get(matter=matter, template_step_key="consult-members")
+    action = start_as_before_adr_0168(matter=matter, step=step, actor=owner)
+    NextAction.objects.filter(pk=action.pk).update(created_at=timezone.now() - timedelta(hours=1))
+    ws.add_matter_engagement(
+        matter=matter,
+        author=owner,
+        audience="Liikmed",
+        kind=EngagementKind.SURVEY.value,
+        occurred_on=timezone.localdate(),
+    )
+    action.refresh_from_db()
+    return matter, action
+
+
+def test_every_reading_of_recorded_work_is_the_batched_one(specialist, monkeypatch) -> None:
+    """The Teema alert, `Järgmisena?` and the work lists all ask `for_matters`.
+
+    A second spelling — a per-Matter `RecordedWork.of` with its own SQL beside
+    the grouped reads — is how the Teema page and a Minu asjad row would come
+    to disagree about the same step.
+    """
+    from app.matters.plan_view import recommendation_for
+    from app.workflow.consistency import step_already_recorded, with_consistency_alerts
+    from tests.consistency_parity import work_rows
+
+    matter, action = _consult_step_done(specialist)
+    calls: list[int] = []
+    original = RecordedWork.for_matters.__func__
+
+    def spy(cls, matters, viewer, *, since=None):
+        matters = list(matters)
+        calls.append(len(matters))
+        return original(cls, matters, viewer, since=since)
+
+    monkeypatch.setattr(RecordedWork, "for_matters", classmethod(spy))
+
+    assert step_already_recorded(matter, action, specialist) is not None
+    assert calls == [1]
+    rows = with_consistency_alerts(work_rows(specialist), specialist)
+    assert any(row.consistency_alert for row in rows)
+    assert calls == [1, 1]
+    RecordedWork.of(matter, specialist)
+    recommendation_for(matter, None, specialist)
+    assert calls == [1, 1, 1, 1]
+
+
+def test_the_obligation_is_one_rule_for_one_matter_and_many(specialist, monkeypatch) -> None:
+    """`response_obligation_of` and the batched reading both ask `responses_outstanding`."""
+    from app.matters import work_items
+
+    matter = factories.MatterFactory(
+        owner=specialist, response_deadline=timezone.localdate() + dt.timedelta(days=5)
+    )
+    calls: list[int] = []
+    original = work_items.responses_outstanding
+
+    def spy(matters, user):
+        calls.append(len(matters))
+        return original(matters, user)
+
+    monkeypatch.setattr(work_items, "responses_outstanding", spy)
+
+    assert work_items.response_obligation_of(matter, specialist).is_outstanding is True
+    assert RecordedWork.of(matter, specialist).opinion_owed is True
+    assert calls == [1, 1]

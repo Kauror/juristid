@@ -1,0 +1,11 @@
+{% comment %}
+The docs/adr/0161 alert on a work row (amendment of 2026-11-25): the Teema
+page's title and reason, word for word, on the row of the step it is about —
+Minu asjad's own step rows, and the department head's «Vajab sekkumist».
+
+No remedy here. It names «✓ Tehtud» and «Muuda», which are on the Teema page
+the row opens, where a reader who may write is shown it under the step. No
+count, no dismissal; the row is not moved or re-sorted by it. It wraps on a
+narrow row rather than cutting the reason off.
+{% endcomment %}
+<span class="consistency-mark" data-consistency-alert="{{ alert.key }}"><strong>{{ alert.title }}.</strong> {{ alert.reason }}</span>

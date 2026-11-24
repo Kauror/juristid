@@ -1,6 +1,6 @@
 # 0161 — A current step the record already shows done is flagged beside it
 
-**Status:** accepted — owner's decision of 2026-10-13 (release preparation): the single deterministic, read-only workflow-consistency warning is accepted as specified here. No further alerts are authorised by this record.
+**Status:** accepted — owner's decision of 2026-10-13 (release preparation): the single deterministic, read-only workflow-consistency warning is accepted as specified here. No further alerts are authorised by this record. The amendment of 2026-11-25 (§4 and §5, work lists) is **Proposed — overnight development 25.11.2026, subject to owner review**.
 **Date:** 2026-10-13
 
 **No migrations**, no data migration, no backfill, nothing written by the
@@ -118,3 +118,62 @@ row whose address does not say which kind it is still counts as an overview,
 because that is what every one of them was filed as. The only change is that
 a legacy row on a koda.ee *news* address no longer proves the step. Stored
 kinds are unaffected. Pinned by `tests/test_one_rule_one_place.py`.
+
+## Amendment of 2026-11-25 — the same alert on Minu asjad and Osakond rows
+
+**Status: Proposed — overnight development 25.11.2026, subject to owner review.**
+Owner decision BLOCK-2 of the UX programme (both parts approved) asked for
+FUNC-001: the existing alert, unchanged, where the work lists show the step.
+This amends §4 and states §5 for the new surfaces. No migrations.
+
+1. **§4 is widened by exactly two places.** Besides the Teema page, the alert
+   is drawn on the row of the step it is about:
+   - **Minu asjad** (`/minu-asjad/` and a colleague's desk,
+     `/inimesed/<id>/asjad/`): on the step's own row — the dated band it is
+     in, or «Kuupäevata» for a step with no day. Not on «Aktiivsed teemad»:
+     that list repeats the same step per Teema, and one step gets one mark
+     per page.
+   - **Osakond** (department scope), **for the department head only**: on the
+     «Vajab sekkumist» row whose late or ripe item is that step. A specialist
+     opening Osakond is not shown it there; their own rows on Minu asjad
+     carry it. The Valdkonniti scope is unchanged.
+   Still no count, no list, no strip figure, no dismissal, no new warning
+   type, no Andmekvaliteet queue. A mark never adds, drops, re-sorts or counts
+   a row: the bands, the strip, «Vajab sekkumist» and its totals are what they
+   were (pinned in `tests/test_consistency_on_work_lists.py`).
+2. **Same words, no remedy on a row.** A row prints `title` and `reason`
+   verbatim (`templates/matters/partials/consistency_mark.html`, one line in
+   the `.notice--warning` edge colour, the whole sentence in `title`). The
+   remedy names «✓ Tehtud» and «Muuda», which are on the Teema page the row
+   opens, and §3's rule — a writer is shown it there, under the step — is
+   unchanged. So no reader is shown a remedy on a row, writer or not.
+3. **One rule, batched.** `consistency.steps_already_recorded` is the
+   predicate of §1 asked of many current steps; `step_already_recorded` (the
+   Teema page) is that function asked of one, so the two cannot disagree.
+   A work row is read as a `CurrentStep` (`WorkItem` now carries the action's
+   `plan_step_id` and `created_at` as `set_at`). `RecordedWork.of` is
+   `RecordedWork.for_matters` asked of one Matter: one grouped read each of
+   published write-ups, `Kaasamine` rounds and sent opinions for every Matter
+   at once, plus one for the outstanding request
+   (`work_items.responses_outstanding`, which `response_obligation_of` now
+   also asks). `since` (§2) is applied clause for clause in Python on the rows
+   read; `tests/consistency_parity.py` keeps the previous SQL reading verbatim
+   and every scenario of `tests/test_workflow_consistency.py` checks both
+   readings and the batched work-list answer against the single one.
+   A page pays **no** query when no row is a standard step, otherwise at most
+   five (plan steps, three facts, the request) however many Teemad it holds.
+   The Teema page pays one fewer than before.
+4. **§5 on the new surfaces: the reader is whoever opens the page.** The rows
+   are read through `visible_to(reader)` as before, and every proof is read
+   again through its own record's `visible_to(reader)` — so a row is never
+   marked from a record its reader may not see, even if the row itself is
+   visible. On a colleague's desk the department head is the reader: the mark
+   is exactly what the Teema page shows the head about that step (§5 already
+   scopes the alert to the reader, not to the step's owner). On Osakond the
+   head is the reader of every row.
+
+**Reversibility.** By code: drop the `with_consistency_alerts` call in
+`my_work.build_my_work`, the `flag_intervention_rows` call in
+`department.build_department` and the three template includes. The batched
+`RecordedWork.for_matters` can stay; it is the single reading's
+implementation.

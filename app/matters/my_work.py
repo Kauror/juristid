@@ -55,6 +55,7 @@ from app.matters.seis_help import (
     FigureHelp,
 )
 from app.matters.selectors import date_range_q
+from app.workflow.consistency import with_consistency_alerts
 from app.workflow.enums import ESTONIAN_MONTHS
 
 #: How far the *Hiljem* band reaches when nobody has chosen otherwise: the end
@@ -811,6 +812,13 @@ def build_my_work(
     # Unbounded, because the strip has to count what falls beyond the window in
     # order to offer "Näita kaugemaid tähtaegu" honestly.
     everything = wi.work_items(user, today=today, responsible=subject)
+    undated, undated_total = undated_items(user, subject)
+    # The docs/adr/0161 alert on the row of each current step the record
+    # already shows done — the Teema page's rule, asked once for every row on
+    # the page and for this reader (amendment of 2026-11-25). The rows, their
+    # order and every count read from them are unchanged.
+    flagged = with_consistency_alerts([*everything, *undated], user)
+    everything, undated = flagged[: len(everything)], flagged[len(everything) :]
     week_end = wi.end_of_iso_week(today)
     # Where *Üle tähtaja* sends the rows its render cap leaves out: the
     # register's own overdue population, the list a band past `BAND_LIMIT`
@@ -838,7 +846,6 @@ def build_my_work(
     beyond = len(everything) - sum(band.total for band in bands)
 
     quiet, quiet_total = quiet_matters(user, subject, today)
-    undated, undated_total = undated_items(user, subject)
     portfolio = build_portfolio(user, subject, today=today, items=everything, view=view)
 
     def population(key: str) -> int:

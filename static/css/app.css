@@ -8976,6 +8976,27 @@ button.opinionmenu__item {
   text-overflow: ellipsis;
 }
 
+/* The docs/adr/0161 alert on a step row (Minu asjad, Osakond's «Vajab
+   sekkumist»): the Teema page's `.notice--warning` reduced to a line under
+   the row's text — the same warning edge, no box. It wraps rather than cuts:
+   the reason is the part a reader needs, and a narrow row would lose it. */
+.consistency-mark {
+  display: block;
+  margin-top: 2px;
+  padding-left: var(--spacing-2);
+  border-left: 3px solid var(--status-warning);
+  font-size: var(--typography-size-meta);
+  line-height: 1.3;
+  color: var(--text-secondary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.consistency-mark strong {
+  color: var(--status-warning);
+  font-weight: var(--typography-weight-semibold);
+}
+
 .workrow2__stage,
 .interrow__stage {
   font-size: var(--typography-size-meta-sm);
