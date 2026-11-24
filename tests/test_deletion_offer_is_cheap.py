@@ -126,7 +126,9 @@ def test_the_offer_costs_a_handful_of_queries_not_the_walk(head_signed_in, speci
     with CaptureQueriesContext(connection) as walk:
         plan_matter_deletion(matter)
 
-    assert len(offer) <= 7
+    # One statement since HR-12 (2026-11-24): the blockers' `EXISTS` were seven
+    # round trips and are now OR-ed in one read (`deletion_may_be_offered`).
+    assert len(offer) == 1
     assert len(walk) > 3 * len(offer)
 
 

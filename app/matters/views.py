@@ -30,7 +30,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Page, Paginator
 from django.db import transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Q, prefetch_related_objects
 from django.db.models.functions import ExtractYear
 from django.http import (
     Http404,
@@ -3315,8 +3315,12 @@ def _overview_context(request: HttpRequest, matter: Matter) -> dict[str, Any]:
     )
     # The file's `Õigusakt` and its `Hetkeseis` periods, read **once** for the
     # rail's pattern, the grouped chronology and the next-stage order — three
-    # readers of the same two facts (docs/adr/0131 §7).
-    instrument_keys = frozenset(matter.legal_instruments.values_list("key", flat=True))
+    # readers of the same two facts (docs/adr/0131 §7). Prefetched onto the
+    # Matter rather than read as keys, so the header's `Õigusakt` line
+    # (`_legal_instrument_line`), built next from the same instance, reads
+    # these rows instead of asking again (HR-12).
+    prefetch_related_objects([matter], "legal_instruments")
+    instrument_keys = frozenset(instrument.key for instrument in matter.legal_instruments.all())
     episodes = episodes_of(matter)
     # The file's pattern and current stage, resolved **once** for both surfaces.
     phases = legal_process.phase_context(matter=matter, instrument_keys=instrument_keys)
@@ -3676,6 +3680,10 @@ def matter_detail(request: HttpRequest, pk: Any) -> HttpResponse:
     matter = get_visible_matter(request, pk)
     context = _overview_context(request, matter)
     context.update(_header_context(request, matter))
+    # The `Saatja` checkboxes iterate the institution catalogue the bar's forms
+    # have already read (`workspace_forms`, the same `order_by("name")`), so the
+    # header's own lazy read of it is never evaluated on this page (HR-12).
+    context["organisations"] = context["organisation_catalogue"]
     # `?ava=…` — a structured step's control without scripting: the page with
     # its canonical form open (docs/adr/0168 §2). Reads only; writes nothing.
     step_launch.apply_open_request(request, matter, context)
@@ -8396,6 +8404,10 @@ def workspace_forms(
         "open_choice": "",
         **_workspace_choices("", has_open_round=bool(open_rounds)),
         "workspace_error": "",
+        # The catalogue read above, whole and in name order, so the Teema page
+        # can hand the header's `Saatja` checkboxes these rows rather than read
+        # the same table a second time (`matter_detail`, HR-12).
+        "organisation_catalogue": organisations.catalogue,
     }
 
 
