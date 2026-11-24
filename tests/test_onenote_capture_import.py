@@ -464,6 +464,37 @@ def _bad_set(root: Path, case: str) -> tuple[str, Path | None]:
         directory = write_backup_set(root, taken=taken)
         (directory / "database.dump").write_bytes(b"PGDMP muudetud")
         return name, directory
+    if case == "an absolute path":
+        return f"/mnt/user/backups/juristid-main/{name}", write_backup_set(root, taken=taken)
+    if case == "a path inside the set":
+        return f"{name}/../../evidence", write_backup_set(root, taken=taken)
+    if case == "the mount is a file":
+        return name, write_backup_set(root, taken=taken) / "database.dump"
+    if case == "no checksum list":
+        directory = write_backup_set(root, taken=taken)
+        (directory / "SHA256SUMS").unlink()
+        return name, directory
+    if case == "proof time unreadable":
+        directory = write_backup_set(root, taken=taken)
+        marker = directory / "VERIFIED-L2"
+        lines = marker.read_text(encoding="utf-8").splitlines()
+        fixed = [ln if not ln.startswith("verified_at=") else "verified_at=eile" for ln in lines]
+        marker.write_text("\n".join(fixed) + "\n", encoding="utf-8")
+        return name, directory
+    if case == "dump missing":
+        directory = write_backup_set(root, taken=taken)
+        (directory / "database.dump").unlink()
+        return name, directory
+    if case == "dump is a link to another file":
+        directory = write_backup_set(root, taken=taken)
+        elsewhere = root.parent / "elsewhere.dump"
+        elsewhere.write_bytes(b"PGDMP mujalt")
+        (directory / "database.dump").unlink()
+        try:
+            (directory / "database.dump").symlink_to(elsewhere)
+        except OSError:
+            pytest.skip("this filesystem gives no symbolic links")
+        return name, directory
     raise AssertionError(case)
 
 
@@ -482,6 +513,13 @@ def _bad_set(root: Path, case: str) -> tuple[str, Path | None]:
         ("proof older than the set", "PROOF_TIME"),
         ("proof for another dump", "PROOF_DUMP"),
         ("dump changed after verification", "PROOF_DUMP"),
+        ("an absolute path", "SET_NAME"),
+        ("a path inside the set", "SET_NAME"),
+        ("the mount is a file", "PROOF_NOT_MOUNTED"),
+        ("no checksum list", "PROOF_MISSING"),
+        ("proof time unreadable", "PROOF_TIME"),
+        ("dump missing", "PROOF_DUMP"),
+        ("dump is a link to another file", "PROOF_DUMP"),
     ],
 )
 def test_apply_writes_only_on_a_proven_recovery_point(

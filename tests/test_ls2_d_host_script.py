@@ -294,6 +294,11 @@ def test_the_onenote_lane_imports_read_only_and_never_sees_the_credentials(host)
     # HR-06: the set travels with its VERIFIED-L2 proof, read-only, as for the
     # Lovable lane; the import checks it (`onenote_capture.backup_problem`).
     assert "20261109T000000Z:/backup-set:ro -e LOVABLE_SYNC_BACKUP_DIR=/backup-set" in importer
+    # Exactly that one set's directory, never sets/ or the backup root, and no
+    # other container of the firing (the polls) gets it.
+    one_set = f"-v {host['tmp'] / 'backups'}/sets/20261109T000000Z:/backup-set:ro "
+    assert importer.count("/backup-set:ro") == 1 and one_set in importer
+    assert [c for c in calls(host) if "/backup-set" in c] == [importer]
     assert not _with_credentials(importer) and "JURISTID_LOVABLE_SYNC" not in importer
     assert containers(host)[-1] == "data_sync_requests poll --kind lovable"
 
