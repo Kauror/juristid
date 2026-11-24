@@ -7,31 +7,24 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
-# 25.11 väljalase r92 (#704, #706, #690 nähtavad osad). Nähtava muudatuseta samas väljalaskes: #685, #697, #698,
-# #699, #700, #701, #702, #703, #705. Kui r92 paigaldatakse enne 22:00 UTC 24.11, tõsta need read 24.11 kirjesse.
-[[day]]
-date = 2026-11-25
-basis = "deployment"
-prs = [690, 704, 706]
-changes = [
-  "Lovable'i sünkroonimise halduslehtedel («Vaata erinevusi», erinevuse lahendamine ja Halduse Lovable'i vaade) ning AI-tööriistade vastustes on Juristide praegune väärtus nüüd loetav: vastutaja nimega, menetluse etapp nimetusega ja arvamuse saatmise seis sõnadega (näiteks «Arvamus saadetud · 05.01.2026 · Riigikogu»), mitte tunnuse, sisemise võtme või «—» kujul.",
-  "Lovable'i sünkroonimise kokkuvõte loeb «Lovable'is lõppenud, kuid Juristides avatud» ja «väljaspool sünkroonitavaid» nüüd pärast öiseid muudatusi: sama öö jooksul suletud teemat ei loeta enam avatuks ega sama öö jooksul loodud teemat kaks korda. Varasemate käivituste arvud jäävad, nagu need salvestati.",
-  "OneNote'i import kirjutab Juristidesse ainult siis, kui just tehtud varukoopia on kontrollitud. Kui kontrollitud varukoopiat ei ole, import keeldub enne ühtegi muudatust ja Halduse «Andmete sünkroonimises» on taotluse real põhjus eesti keeles.",
-]
-
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.
+# Samal päeval väljalase r92 (#690, #704, #706 nähtavad osad; viimased kolm rida). Nähtava muudatuseta r92-s:
+# #685, #697, #698, #699, #700, #701, #702, #703, #705.
 [[day]]
 date = 2026-11-24
 basis = "deployment"
-prs = [681, 683, 684, 686]
+prs = [681, 683, 684, 686, 690, 704, 706]
 changes = [
   "Menetluse kulu täpid näitavad ainult seda, mis on juba tehtud: eeldatavad jõustumised ja muud oodatud kuupäevad ei ole enam täppide ega «N tegevust» hulgas, sest need on menetluse kulus oma kohal eraldi.",
   "«Eeldatav jõustumine (allika hinnang)» on nüüd lihtsalt «Eeldatav jõustumine». Menetluse kulus on selle all kirjas, kust kuupäev pärineb (Lovable või kolleeg, kes selle lisas) ja allika märkus. Kolleegi lisatud eeldatava jõustumise saab sealt ✕-ga eemaldada; Lovable'ist tulnud kuupäeva ✕ selgitab, et see tuleb eemaldada Lovable'is ja öine sünkroonimine eemaldab selle siis ka Juristidest.",
   "«Valitsuse info»: kui mudel jättis mõne päevakorrapunkti hindamata, on see punkt märgitud «Hindamata» ja päevakorra juures on kirjas, mitu punkti on hindamata. Juba otsustatud («Lisa teemale», «Märgi loetuks») ja hinnatud punkte mudel enam üle ei kirjuta.",
   "Uuenduste Lovable'i vaates «Valmisolek» näitab veerg «Automaatne» nüüd õigesti, milliseid välju öine sünkroonimine Lovable'i järgi kirjutab, ja «Reeglita muudatusi» loeb ainult Lovable'i muudatusi, mida ükski reegel ei kirjuta.",
   "«Lisa märkena» ei jää enam aeglase registri taha ootama: kui registri fail ei jõua mõistliku aja jooksul kohale, salvestatakse märge ikkagi ja puuduva faili link kirjutatakse märkesse.",
+  "Lovable'i sünkroonimise halduslehtedel («Vaata erinevusi», erinevuse lahendamine ja Halduse Lovable'i vaade) ning AI-tööriistade vastustes on Juristide praegune väärtus nüüd loetav: vastutaja nimega, menetluse etapp nimetusega ja arvamuse saatmise seis sõnadega (näiteks «Arvamus saadetud · 05.01.2026 · Riigikogu»), mitte tunnuse, sisemise võtme või «—» kujul.",
+  "Lovable'i sünkroonimise kokkuvõte loeb «Lovable'is lõppenud, kuid Juristides avatud» ja «väljaspool sünkroonitavaid» nüüd pärast öiseid muudatusi: sama öö jooksul suletud teemat ei loeta enam avatuks ega sama öö jooksul loodud teemat kaks korda. Varasemate käivituste arvud jäävad, nagu need salvestati.",
+  "OneNote'i import kirjutab Juristidesse ainult siis, kui just tehtud varukoopia on kontrollitud. Kui kontrollitud varukoopiat ei ole, import keeldub enne ühtegi muudatust ja Halduse «Andmete sünkroonimises» on taotluse real põhjus eesti keeles.",
 ]
 
 # 23.11: andmetoiming tootmises (Postipoisi kirjad, omaniku otsus), mitte koodi
