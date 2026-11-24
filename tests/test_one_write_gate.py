@@ -43,7 +43,6 @@ message, that route-level visibility coverage has to come back.
 
 from __future__ import annotations
 
-import inspect
 import pathlib
 import re
 
@@ -55,7 +54,7 @@ from app.core.authorization import (
     ROLES_WITH_BUSINESS_WRITE,
     acting_role,
 )
-from app.core.decorators import WRITE_REFUSED
+from app.core.decorators import WRITE_REFUSED, business_write_required
 from app.matters.services import matter_field_revision
 from tests import factories
 
@@ -167,8 +166,25 @@ def test_every_moved_route_is_wrapped_by_the_decorator(name):
     """Asserted on the view, not on a response, so a route that silently lost
     the decorator fails here rather than in whichever behaviour test noticed."""
     match = get_resolver().resolve(_any_url_for(name))
-    source = inspect.getsource(inspect.unwrap(match.func))
-    assert "business_write_required" in source, f"{name} lost its write gate"
+    assert _wrapped_by_the_write_gate(match.func), f"{name} lost its write gate"
+
+
+def _wrapped_by_the_write_gate(view) -> bool:
+    """Whether one layer of ``view``'s decorator chain *is* the gate's wrapper (HR-19).
+
+    Every function `business_write_required` returns shares one code object, the
+    inner `wrapper`. Walking `__wrapped__` and comparing code objects asks the
+    question the old substring check could not: whether the gate runs. A comment
+    or docstring naming the decorator no longer passes, and importing it under
+    another name no longer fails.
+    """
+    gate_code = business_write_required(lambda request: None).__code__
+    layer = view
+    while layer is not None:
+        if getattr(layer, "__code__", None) is gate_code:
+            return True
+        layer = getattr(layer, "__wrapped__", None)
+    return False
 
 
 def _any_url_for(name: str) -> str:

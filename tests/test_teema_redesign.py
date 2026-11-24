@@ -1399,7 +1399,12 @@ def test_a_low_data_matter_renders_no_empty_sections(signed_in, specialist):
 #: 66 once the header's four inline-editor revisions read the Matter's row once
 #: instead of four times (`matter_field_revisions`,
 #: tests/test_header_revision_reads.py). The ceiling is 66 plus the margin of two.
-TEEMA_PAGE_QUERY_CEILING = 68
+#: **Two fewer again in the HR-12 remainder** (2026-11-24): measured at 64 once
+#: `Õigusakt` is read once for the rail and the header, and the header's
+#: `Saatja` checkboxes reuse the catalogue the bar's forms read
+#: (tests/test_teema_head_page_queries.py, which budgets the department head's
+#: view of a richer Teema too). The ceiling is 64 plus the margin of two.
+TEEMA_PAGE_QUERY_CEILING = 66
 
 
 def test_the_matter_page_does_not_explode_into_queries(

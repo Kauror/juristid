@@ -655,7 +655,8 @@ def deletion_may_be_offered(matter: Matter) -> bool:
     queries, 127–205 ms (AUD-002).
 
     So the offer asks the blockers that are facts about this Matter's own rows,
-    each one `EXISTS`, in the order the plan checks them:
+    each one `EXISTS`, in the order the plan checks them — all in one query
+    since HR-12:
 
     * a document under a legal hold (`BLOCKED_BY_LEGAL_HOLD`);
     * another Matter naming this one as its successor (`BLOCKED_BY_RELATED_MATTER`);
@@ -698,7 +699,16 @@ def deletion_may_be_offered(matter: Matter) -> bool:
             attachment_version__document__matter_id=pk
         ).exclude(parent_version__document__matter_id=pk),
     )
-    return not any(queryset.exists() for queryset in blocked)
+    # **One statement, not one per blocker** (HR-12, health review 2026-11-23):
+    # the same `EXISTS` questions, OR-ed in the `WHERE` of a single read of this
+    # Matter's own row. Seven round trips on every Teema page a department head
+    # opened became one; what is asked, and so what is offered, is unchanged.
+    # `_base_manager`, so the row is found whatever a default manager hides —
+    # the question is about the blockers, never about the Matter's own state.
+    any_blocker = models.Q()
+    for queryset in blocked:
+        any_blocker |= models.Q(models.Exists(queryset))
+    return not Matter._base_manager.filter(pk=pk).filter(any_blocker).exists()
 
 
 def plan_matter_deletion(

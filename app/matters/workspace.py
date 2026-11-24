@@ -2793,7 +2793,11 @@ def edit_matter(
         # row (`Koja algatus`, whether the file is open) is judged on the
         # stored row, not on a copy a colleague's save has since made stale.
         # The guard's lock is the same row at the same strength as before, so
-        # this adds no lock and changes no order.
+        # this adds no lock and changes no order. The one exception is
+        # ``save_procedural_link``: the caller's callback, bound to the instance
+        # the view loaded. It names the row only — `add_matter_procedural_link`
+        # re-takes the Matter's lock by pk and `correct_procedural_link` locks the
+        # link row under its revision, so it too judges the stored rows.
         matter = guard_matter_revision(matter=matter, expected_revision=expected_revision)
         held_instruments = list(matter.legal_instruments.all())
         set_matter_title(matter=matter, value=title, actor=actor)
