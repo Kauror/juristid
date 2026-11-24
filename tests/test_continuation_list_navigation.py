@@ -59,7 +59,7 @@ def _register(client, **params) -> str:
 
 
 def _row_for(body: str, matter: Matter) -> str:
-    for row in re.findall(r"<tr>.*?</tr>", body, re.DOTALL):
+    for row in re.findall(r"<tr[^>]*>.*?</tr>", body, re.DOTALL):
         link = re.search(r'class="table__titlelink"\s+href="([^"]+)"', row)
         if link and link.group(1) == f"/teemad/{matter.pk}/":
             return row
