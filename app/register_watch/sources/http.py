@@ -50,7 +50,29 @@ _last_call: dict[str, float] = {}
 
 
 class FetchError(Exception):
-    """A register could not be read; the message is safe to store and show."""
+    """A register could not be read; the message is safe to store and show.
+
+    ``status`` is the HTTP status when the server answered one, and
+    ``retry_after`` the seconds its ``Retry-After`` header asked for (a number of
+    seconds only; a date is ignored): the Riigikogu client backs off by them
+    (ADR 0222 §3). Both are ``None`` for every other failure.
+    """
+
+    def __init__(
+        self, message: str, *, status: int | None = None, retry_after: float | None = None
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
+def _retry_after(error: urllib.error.HTTPError) -> float | None:
+    value = (error.headers or {}).get("Retry-After") if error.headers is not None else None
+    try:
+        seconds = float(str(value).strip())
+    except (TypeError, ValueError):
+        return None
+    return seconds if 0 <= seconds <= 3600 else None
 
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -233,7 +255,9 @@ def _fetch(opener: Any, request: Any, host: str, limit: int, deadline: float | N
     except urllib.error.HTTPError as error:
         if dog is not None and dog.fired:
             raise _late(host) from None
-        raise FetchError(f"{host} vastas {error.code}") from None
+        raise FetchError(
+            f"{host} vastas {error.code}", status=error.code, retry_after=_retry_after(error)
+        ) from None
     except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as error:
         if dog is not None and dog.fired:
             raise _late(host) from None

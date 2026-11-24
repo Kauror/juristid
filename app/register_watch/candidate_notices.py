@@ -64,20 +64,23 @@ def _recipients() -> list[Any]:
     return [user for user in users if may_decide(user)]
 
 
-def _tell(*, candidates: int = 0, agendas: int = 0) -> int:
+def _tell(*, candidates: int = 0, agendas: int = 0, invitations: int = 0) -> int:
     """Add to each recipient's unread notice, or create one. How many were told."""
-    if candidates <= 0 and agendas <= 0:
+    if candidates <= 0 and agendas <= 0 and invitations <= 0:
         return 0
     now = timezone.now()
     told = 0
     for user in _recipients():
         row = CandidateNotice.objects.filter(recipient=user, read_at__isnull=True).first()
         if row is None:
-            CandidateNotice.objects.create(recipient=user, candidates=candidates, agendas=agendas)
+            CandidateNotice.objects.create(
+                recipient=user, candidates=candidates, agendas=agendas, invitations=invitations
+            )
         else:
             CandidateNotice.objects.filter(pk=row.pk).update(
                 candidates=row.candidates + candidates,
                 agendas=row.agendas + agendas,
+                invitations=row.invitations + invitations,
                 updated_at=now,
             )
         told += 1
@@ -92,6 +95,13 @@ def notify(candidates: int) -> int:
 def notify_agendas(agendas: int) -> int:
     """A run stored ``agendas`` new Government agendas worth a look (ADR 0219)."""
     return _tell(agendas=agendas)
+
+
+def notify_invitations(invitations: int) -> int:
+    """Riigikogu invitations to koda with no Teema owner to tell (ADR 0223 §7): a bill no
+    Teema follows yet, or a Teema without an active owner. The notice is a count only; it
+    names no Teema, so a restricted one is never revealed through it."""
+    return _tell(invitations=invitations)
 
 
 def own(user: Any) -> QuerySet[CandidateNotice]:
@@ -118,7 +128,11 @@ def due_unread(user: Any) -> QuerySet[CandidateNotice]:
     """Unread, and it carries an agenda or a draft still waits on the list: one lazy query."""
     from app.register_watch.candidates import worth_telling
 
-    return own(user).filter(read_at__isnull=True).filter(Q(agendas__gt=0) | Exists(worth_telling()))
+    return (
+        own(user)
+        .filter(read_at__isnull=True)
+        .filter(Q(agendas__gt=0) | Q(invitations__gt=0) | Exists(worth_telling()))
+    )
 
 
 def history(user: Any, unread: set[Any]) -> QuerySet[CandidateNotice]:

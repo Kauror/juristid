@@ -37,6 +37,9 @@ class TargetOrigin(models.TextChoices):
     PHRASE = "PHRASE", "Pealkirja sõnadest"
     #: Words a lawyer set for the Teema.
     PERSON = "PERSON", "Juristi otsingusõnad"
+    #: A Riigikogu bill a person tied to the Teema by its UUID (ADR 0222 §2): from the
+    #: Teema's «Registritest» tab, from an invitation, or by linking a candidate.
+    LINKED = "LINKED", "Seotud eelnõu"
 
 
 class FindingStatus(models.TextChoices):
@@ -75,6 +78,17 @@ class WatchTarget(BaseModel):
     url = models.URLField(max_length=1000, blank=True, verbose_name="link")
     checked_at = models.DateTimeField(null=True, blank=True, verbose_name="viimati kontrollitud")
     last_error = models.CharField(max_length=500, blank=True, verbose_name="viimane viga")
+    #: Who last tied (or untied) a Riigikogu bill to the Teema by hand, and when
+    #: (`TargetOrigin.LINKED`, ADR 0222 §2). Empty for ties the title made.
+    linked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="sidus",
+    )
+    linked_at = models.DateTimeField(null=True, blank=True, verbose_name="seotud")
 
     class Meta:
         verbose_name = "jälgitav allikas"
@@ -489,6 +503,8 @@ class CandidateNotice(BaseModel):
     candidates = models.PositiveIntegerField(default=0, verbose_name="kandidaate")
     #: New Government agendas with at least one item that may matter (ADR 0219).
     agendas = models.PositiveIntegerField(default=0, db_default=0, verbose_name="päevakordi")
+    #: Riigikogu invitations to koda on a bill no Teema follows yet (ADR 0223 §7).
+    invitations = models.PositiveIntegerField(default=0, db_default=0, verbose_name="kutseid")
     read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
 
     class Meta:
@@ -520,6 +536,9 @@ class RegisterNotice(BaseModel):
         verbose_name="teema",
     )
     documents = models.PositiveIntegerField(default=0, verbose_name="dokumente")
+    #: Riigikogu invitations to koda on this Teema's bills, or a changed deadline
+    #: of one (ADR 0223 §7). Defaults in the database for a code-only rollback.
+    invitations = models.PositiveIntegerField(default=0, db_default=0, verbose_name="kutseid")
     read_at = models.DateTimeField(null=True, blank=True, verbose_name="loetud")
 
     class Meta:

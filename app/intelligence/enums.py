@@ -94,6 +94,14 @@ class ImportantDateKind(models.TextChoices):
     TRANSPOSITION_DEADLINE = "TRANSPOSITION_DEADLINE", "ELi õiguse ülevõtmise tähtaeg"
     PLANNED_COMMENCEMENT = "PLANNED_COMMENCEMENT", "Eelnõus kavandatud jõustumine"
     ESTIMATED_COMMENCEMENT = "ESTIMATED_COMMENCEMENT", "Eeldatav jõustumine"
+    #: Parliamentary dates a lawyer took onto the Teema from Monitooring → Riigikogu
+    #: (docs/adr/0223). Each is an event *outside* the department — a committee's
+    #: request for an opinion, the Riigikogu's own amendment deadline, a committee
+    #: sitting — so all three are informational: never the next step, never late
+    #: work, never a closure hold, never an `Arvamuse tähtaeg` (that is Lovable's).
+    RK_OPINION_REQUEST = "RK_OPINION_REQUEST", "Riigikogu komisjoni arvamuse tähtaeg"
+    RK_AMENDMENTS_DEADLINE = "RK_AMENDMENTS_DEADLINE", "Riigikogu muudatusettepanekute tähtaeg"
+    RK_COMMITTEE_SITTING = "RK_COMMITTEE_SITTING", "Riigikogu komisjoni istung"
 
 
 #: **Milestones that inform, as opposed to milestones that are the file's next
@@ -112,7 +120,24 @@ class ImportantDateKind(models.TextChoices):
 #: default, and every existing row) and `TRANSPOSITION_DEADLINE` keep ADR 0120's
 #: behaviour unchanged; moving a kind into this set is a product decision.
 INFORMATIONAL_IMPORTANT_DATE_KINDS: frozenset[str] = frozenset(
-    {ImportantDateKind.PLANNED_COMMENCEMENT.value, ImportantDateKind.ESTIMATED_COMMENCEMENT.value}
+    {
+        ImportantDateKind.PLANNED_COMMENCEMENT.value,
+        ImportantDateKind.ESTIMATED_COMMENCEMENT.value,
+        # External parliamentary facts (docs/adr/0223 §3): what the Riigikogu
+        # asks or schedules is not what koda has decided to do next.
+        ImportantDateKind.RK_OPINION_REQUEST.value,
+        ImportantDateKind.RK_AMENDMENTS_DEADLINE.value,
+        ImportantDateKind.RK_COMMITTEE_SITTING.value,
+    }
+)
+
+#: The parliamentary kinds, for the surfaces that show where a date came from.
+PARLIAMENTARY_IMPORTANT_DATE_KINDS: frozenset[str] = frozenset(
+    {
+        ImportantDateKind.RK_OPINION_REQUEST.value,
+        ImportantDateKind.RK_AMENDMENTS_DEADLINE.value,
+        ImportantDateKind.RK_COMMITTEE_SITTING.value,
+    }
 )
 
 
