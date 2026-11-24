@@ -7,14 +7,20 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
-# Kavandatud järgmine väljalase pärast r93 (ööprogramm 25.11.2026, kumulatiivne kandidaat): C1 #717, C2 #720,
-# D1 #713, D2 #716, D3 #719, E1 #715. Kuupäev ja väljalaskeid jaotus (r94/r95) otsustatakse ülevaatusel;
+# Kavandatud järgmine väljalase pärast r93 (ööprogramm 25.11.2026, kumulatiivne kandidaat): B1 #718, B2 #722,
+# C1 #717, C2 #720, D1 #713, D2 #716, D3 #719, E1 #715. Kuupäev ja väljalaskeid jaotus (r94/r95) otsustatakse ülevaatusel;
 # kirje liigub paigalduspäeva alla (README: üks kirje päevas, kuupäev = paigalduspäev).
 [[day]]
 date = 2026-11-26
 basis = "deployment"
-prs = [713, 715, 716, 717, 719, 720]
+prs = [713, 715, 716, 717, 718, 719, 720, 722]
 changes = [
+  "Haldus on nüüd korrastatud: vasakul on menüü seitsme rühmaga (Ülevaade, Isiklikud seaded, Töökorraldus, Andmed, Integratsioonid, Süsteem ja õigused, Rakendus). Menüüs on ainult need lehed, mida sa avada saad.",
+  "Haldus → Ülevaade näitab lühidalt, mis vajab tähelepanu; korras olev võtab ühe rea.",
+  "Lovable, OneNote ja registrite jälgimine on eraldi lehed (Integratsioonid). Vanad lingid töötavad edasi.",
+  "Kujunduse lüliti ja «Taasta plokkide vaikeseaded» on nüüd Isiklikud seaded → Kuvamine.",
+  "Haldus → Isiklikud seaded → Kuvamine: saad valida, milline leht avaneb pärast sisselogimist (Minu asjad, Teemad, Osakond, Statistika, Monitooring või Teavitused). Otselink avab ikka oma lehe.",
+  "Samas saad valida teksti suuruse: Väike, Tavaline, Suur või Väga suur. Valik jääb meelde selles brauseris.",
   "Teemade ja Saabunud nimekirjas on pealkirja lõpus väike eelvaate ikoon: see avab külgpaneeli teema kokkuvõtte, järgmise sammu ja vastutaja, olulise tähtaja, menetluse käigu ja viimaste tegevustega — nimekiri, filtrid ja kerimiskoht jäävad paigale. Paneel sulgub Esc-klahviga, ristist või paneeli kõrvalt klõpsates ning viimati vaadatud teema rida on nimekirjas märgitud.",
   "Teemalt «Tagasi tulemustesse» naastes keritakse nimekiri selle teema reani.",
   "Teemade nimekirjas saab praeguse filtri salvestada oma nimega vaateks: «+ Salvesta praegune filter vaatena» → anna nimi → Salvesta. Vaade ilmub nelja tavavaate järele koos teemade arvuga; «Minu vaated» alt saab oma vaateid avada, ümber nimetada ja eemaldada. Vaateid võib olla kuni 20 ja need on nähtavad ainult sulle; vaate linki saab endiselt kolleegile saata — ta näeb seda oma õigustega.",
