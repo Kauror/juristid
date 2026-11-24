@@ -23,7 +23,7 @@ from typing import Any
 from django.conf import settings
 
 from app.matters.models import Matter
-from app.register_watch import model, outbound
+from app.register_watch import ai_call, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Strength, TopicCandidate
 
@@ -93,14 +93,12 @@ SCHEMA: dict[str, Any] = {
 
 BATCH = 20
 MAX_TOKENS = 6000
-#: The client timeout since ADR 0218 (the watch keeps its 120 s); the agenda uses it too.
-TIMEOUT = 180.0
 #: The open Teemad listed to the model for `related`: newest first, titles only.
 TOPICS_SHOWN = 400
 
 
 @dataclass
-class Usage(model.Usage):
+class Usage(ai_call.Usage):
     #: Open sendable Teemad not offered because of `TOPICS_SHOWN` (counted,
     #: never named), and letter titles of the period not sent because their
     #: Teema is not known to be sendable (`outbound.letter_titles`).
@@ -184,18 +182,18 @@ def judge_unjudged(usage: Usage, client: Any = None) -> int:
 def _judge_batch(
     candidates: Sequence[TopicCandidate], topics: dict[str, Matter], usage: Usage, client: Any
 ) -> int:
-    answers = model.call_items(
+    answers = ai_call.call_items(
         setting="REGISTER_SWEEP_AI_MODEL",
         system=SYSTEM,
         prompt=lambda: _prompt(candidates, topics),
         schema=SCHEMA,
         max_tokens=MAX_TOKENS,
-        timeout=TIMEOUT,
+        timeout=ai_call.SWEEP_TIMEOUT,
         key=itemgetter("id"),
         usage=usage,
         client=client,
     )
-    if isinstance(answers, model.Failure):
+    if isinstance(answers, ai_call.Failure):
         # The list goes on without the model; the next night asks again.
         if answers.kind == "request":
             logger.warning("register sweep: model call failed: %s", answers.reason)
@@ -208,7 +206,7 @@ def _judge_batch(
         if not row or row.get("strength") not in allowed:
             continue
         candidate.strength = row["strength"]
-        candidate.reason = model.clean_line(row.get("reason"))
+        candidate.reason = ai_call.clean_line(row.get("reason"))
         # Only an id that was offered: the model cannot point anywhere else.
         candidate.related_matter = topics.get(str(row.get("related") or ""))
         candidate.save(update_fields=["strength", "reason", "related_matter", "updated_at"])

@@ -25,7 +25,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from app.register_watch import candidates_ai, model, outbound
+from app.register_watch import ai_call, candidates_ai, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import AgendaItem, AgendaItemStatus, GovernmentAgenda, Strength
 from app.register_watch.sources import valitsus
@@ -317,18 +317,18 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             agenda.save(update_fields=["judged_at", "updated_at"])
         return 0
     topics = candidates_ai.open_topics(usage)
-    answers = model.call_items(
+    answers = ai_call.call_items(
         setting="REGISTER_SWEEP_AI_MODEL",
         system=SYSTEM,
         prompt=lambda: _prompt(agenda, items, topics, usage),
         schema=SCHEMA,
         max_tokens=MAX_TOKENS,
-        timeout=candidates_ai.TIMEOUT,
+        timeout=ai_call.SWEEP_TIMEOUT,
         key=lambda row: int(row["number"]),
         usage=usage,
         client=client,
     )
-    if isinstance(answers, model.Failure):
+    if isinstance(answers, ai_call.Failure):
         # The agenda is stored without the model; a later run may try again.
         return _failed_attempt(agenda, usage, answers.reason)
     allowed = {Strength.STRONG, Strength.POSSIBLE, Strength.WEAK, Strength.NONE}
@@ -351,7 +351,7 @@ def judge(agenda: GovernmentAgenda, usage: candidates_ai.Usage, client: Any = No
             if not row or row.get("strength") not in allowed:
                 continue  # left «Hindamata»: no verdict is invented for it
             item.strength = row["strength"]
-            item.reason = model.clean_line(row.get("reason"))
+            item.reason = ai_call.clean_line(row.get("reason"))
             item.related_matter = topics.get(str(row.get("related") or ""))
             item.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
             judged += 1

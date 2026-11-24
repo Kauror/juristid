@@ -21,6 +21,10 @@ from app.register_watch import house_style
 
 DEFAULT_MODEL = "claude-opus-5-5"
 UNREADABLE = "vastus ei olnud loetav"
+#: Client timeouts, kept as they were: the watch (ADR 0217) 120 s; the new-drafts
+#: sweep and the Government agenda 180 s since ADR 0218.
+WATCH_TIMEOUT = 120.0
+SWEEP_TIMEOUT = 180.0
 
 
 @dataclass

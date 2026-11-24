@@ -21,7 +21,7 @@ from typing import Any
 
 from django.conf import settings
 
-from app.register_watch import model, outbound
+from app.register_watch import ai_call, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Relevance, WatchFinding
 
@@ -60,7 +60,9 @@ SCHEMA: dict[str, Any] = {
 }
 
 
-Usage = model.Usage
+#: An alias, not a subclass: the watch counts nothing beyond the shared fields, and
+#: `watch.py` and the tests already name it `ai.Usage`.
+Usage = ai_call.Usage
 
 
 def enabled() -> bool:
@@ -102,7 +104,6 @@ def _prompt(matter: Any, findings: Sequence[WatchFinding]) -> str:
 #: sent again every night (audit QA26-BUG-05).
 BATCH = 25
 MAX_TOKENS = 4000
-TIMEOUT = 120.0
 
 
 def judge(matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: Any = None) -> int:
@@ -123,18 +124,18 @@ def judge(matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: A
 def _judge_batch(
     matter: Any, findings: Sequence[WatchFinding], usage: Usage, client: Any = None
 ) -> int:
-    answers = model.call_items(
+    answers = ai_call.call_items(
         setting="REGISTER_WATCH_AI_MODEL",
         system=SYSTEM,
         prompt=lambda: _prompt(matter, findings),
         schema=SCHEMA,
         max_tokens=MAX_TOKENS,
-        timeout=TIMEOUT,
+        timeout=ai_call.WATCH_TIMEOUT,
         key=itemgetter("id"),
         usage=usage,
         client=client,
     )
-    if isinstance(answers, model.Failure):
+    if isinstance(answers, ai_call.Failure):
         # The watch goes on without the model; the next night asks again.
         if answers.kind == "request":
             logger.warning("register watch: model call failed: %s", answers.reason)
@@ -149,7 +150,7 @@ def _judge_batch(
         if not row or row.get("verdict") not in allowed:
             continue
         finding.relevance = row["verdict"]
-        finding.ai_note = model.clean_line(row.get("note"))
+        finding.ai_note = ai_call.clean_line(row.get("note"))
         finding.save(update_fields=["relevance", "ai_note", "updated_at"])
         judged += 1
     usage.judged += judged
