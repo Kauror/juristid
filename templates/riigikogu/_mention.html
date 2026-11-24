@@ -1,0 +1,9 @@
+{# A place in a stenogram or protocol that names koda (docs/adr/0226 §2). The quote is the evidence; nothing is scored. `mention`. #}
+<li class="regwatch__row">
+  <span class="regwatch__date">{{ mention.sitting_on|date:"d.m.Y" }}</span>
+  <div class="regwatch__body">
+    <span class="regwatch__title">{{ mention.agenda_title|default:mention.sitting_title }}</span>
+    <blockquote class="rkinv__evidence">{{ mention.quote }}</blockquote>
+    <span class="regwatch__meta">{% if mention.source == "PROTOCOL" %}Komisjoni protokoll{% if mention.participation %} · koda osalejate seas{% endif %}{% else %}Täiskogu stenogramm{% endif %}{% if mention.speaker %} · {{ mention.speaker }}{% endif %}{% if mention.url %} · <a href="{{ mention.url }}" target="_blank" rel="noopener noreferrer">Allikas<span class="visually-hidden"> — avaneb uues aknas</span></a>{% endif %}</span>
+  </div>
+</li>

@@ -1,0 +1,28 @@
+{% comment %}
+«Teiste seisukohad» by issue (docs/adr/0225 §3): each organisation's position on
+one issue, its relation to koda's position on that issue, and the passage it
+rests on. Never a verdict on an organisation as a whole; silence is «seisukohta ei
+väljendanud», never disagreement. An auxiliary read view: a lawyer records a
+position that matters through `+ Kaasamine · Lisa tagasiside`.
+{% endcomment %}
+<div class="rkanalysis">
+  <p class="rkanalysis__label">{% if analysis.mocked %}Näidis: mudeli vastus on simuleeritud.{% else %}Mudeli koostatud ülevaade{% endif %} · {{ analysis.created_at|date:"d.m.Y" }}{% if analysis.rejected %} · {{ analysis.rejected|length }} väidet jäeti välja, sest nende tsitaati ei leitud allikast{% endif %}</p>
+  <table class="rkanalysis__table">
+    <caption class="visually-hidden">Organisatsioonide seisukohad küsimuste kaupa</caption>
+    <thead><tr><th scope="col">Küsimus</th><th scope="col">Organisatsioon</th><th scope="col">Seisukoht</th><th scope="col">Koja omaga</th></tr></thead>
+    <tbody>
+      {% for issue in analysis.result.issues %}
+        {% for position in issue.positions %}
+          <tr>
+            {% if forloop.first %}<th scope="rowgroup" rowspan="{{ issue.positions|length }}">{{ issue.issue }}{% if issue.provision %}<span class="regwatch__meta"> · {{ issue.provision }}</span>{% endif %}</th>{% endif %}
+            <td>{{ position.organisation }}</td>
+            <td>{{ position.stance }}<details class="rkanalysis__quote"><summary>Lõik allikast</summary><blockquote class="rkinv__evidence">{{ position.quote }}</blockquote></details></td>
+            <td class="rkanalysis__relation rkanalysis__relation--{{ position.relation|lower }}">
+              {% if position.relation == "SAME" %}Sama{% elif position.relation == "PARTIAL" %}Osaliselt sama{% elif position.relation == "DIFFERENT" %}Erinev{% elif position.relation == "ADDITIONAL" %}Lisaargument{% elif position.relation == "NO_POSITION" %}Seisukohta ei väljendanud{% else %}Tõendeid napib{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

@@ -175,8 +175,11 @@ def teema_panel(user: Any, matter: Any) -> dict[str, Any]:
         (unrelated if finding.relevance == Relevance.UNRELATED else shown).append(finding)
     watching = list(matter.watch_targets.filter(active=True).order_by("source"))
     from app.register_watch import agenda
+    from app.riigikogu import selectors as parliament
 
     return {
+        # The Riigikogu: this Teema's tied bills, invitations, dates, sittings (ADR 0224 §3).
+        "parliament": parliament.teema(user, matter),
         # The Government's agenda items tied to this Teema, waiting for a decision.
         "agenda_proposals": agenda.teema_proposals(matter) if matter.is_open else [],
         "register_shown": shown,

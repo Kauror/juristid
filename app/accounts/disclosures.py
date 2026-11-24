@@ -82,6 +82,20 @@ DISCLOSURES: dict[str, Disclosure] = {
         ),
         Disclosure("reporting.definition", False, "Statistika · Definitsioon (iga arvu all)"),
         Disclosure("reporting.chart_table", False, "Statistika · Joonise andmed tabelina"),
+        # Monitooring → Riigikogu and the Teema's parliamentary sections (ADR 0224).
+        Disclosure("riigikogu.previous", False, "Monitooring · Riigikogu · Varasemad kutsed"),
+        Disclosure("riigikogu.signals", False, "Monitooring · Riigikogu · Varajased signaalid"),
+        Disclosure(
+            "riigikogu.other_bills", False, "Monitooring · Riigikogu · Muude eelnõude tähtajad"
+        ),
+        Disclosure("riigikogu.mentions", False, "Monitooring · Riigikogu · Muud koja mainimised"),
+        Disclosure("teema.riigikogu.positions", False, "Teema · Registritest · Teiste seisukohad"),
+        Disclosure(
+            "teema.riigikogu.versions", False, "Teema · Registritest · Eelnõu redaktsioonid"
+        ),
+        Disclosure(
+            "teema.riigikogu.sittings", False, "Teema · Registritest · Arutelud ja protokollid"
+        ),
     )
 }
 

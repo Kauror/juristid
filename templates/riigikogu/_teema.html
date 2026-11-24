@@ -1,0 +1,86 @@
+{% load disclosures %}
+{% comment %}
+The Teema's Riigikogu sections on «Registritest» (docs/adr/0224 §3): only what is
+tied to this Teema's own followed bills, nothing guessed. Invitations and dates
+first; the rest folded. Model analyses (docs/adr/0225) are an auxiliary read view,
+labelled as such, and a «Näidis» when the model was simulated. `parliament` is a
+`selectors.TeemaParliament`.
+{% endcomment %}
+<section class="rkteema" aria-labelledby="rkteema-heading">
+  <h3 class="regtab__subhead" id="rkteema-heading">Riigikogu</h3>
+
+  <ul class="regwatch__list rkteema__bills">
+    {% for target in parliament.targets %}
+      <li class="regwatch__source">
+        <span class="regwatch__meta">Jälgitav eelnõu</span>
+        {% if target.url %}<a href="{{ target.url }}" target="_blank" rel="noopener noreferrer">{{ target.label|default:target.identifier }}<span class="visually-hidden"> — avaneb uues aknas</span></a>{% else %}{{ target.label|default:target.identifier }}{% endif %}
+        <span class="regwatch__meta">· {{ target.get_origin_display }}</span>
+        {% if can_write_business_content and target.origin == "LINKED" %}
+          <form class="rkteema__inline" method="post" action="{% url 'register_watch:riigikogu_unlink' pk=target.pk %}">{% csrf_token %}<button type="submit" class="button button--quiet button--tiny">Lõpeta jälgimine</button></form>
+        {% endif %}
+      </li>
+    {% empty %}
+      <li class="regwatch__source regwatch__meta">Teemaga ei ole seotud ühtki Riigikogu eelnõu.</li>
+    {% endfor %}
+  </ul>
+  {% if can_write_business_content and matter.is_open %}
+    <form class="regwatch__phrase" method="post" action="{% url 'register_watch:riigikogu_link' pk=matter.pk %}">
+      {% csrf_token %}
+      <label class="visually-hidden" for="rk-eelnou">Riigikogu eelnõu number</label>
+      <input id="rk-eelnou" name="eelnou" class="field__input" type="text" maxlength="20" placeholder="Eelnõu nr, nt 1082 SE">
+      <button type="submit" class="button button--secondary button--tiny">Seo eelnõu</button>
+    </form>
+  {% endif %}
+
+  {% if parliament.invitations or parliament.amendment_deadlines %}
+    <h4 class="rkteema__head">Kutsed ja tähtajad</h4>
+    <ul class="regwatch__list">
+      {% for row in parliament.invitations %}{% include "riigikogu/_invitation.html" with row=row from_teema=True can_act=can_write_business_content %}{% endfor %}
+      {% for deadline in parliament.amendment_deadlines %}
+        <li class="regwatch__row">
+          <span class="regwatch__date">{{ deadline.due_on|date:"d.m.Y"|default:"—" }}{% if deadline.due_time %}<span class="rkinv__time"> kell {{ deadline.due_time|time:"H.i" }}</span>{% endif %}</span>
+          <div class="regwatch__body">
+            <span class="regwatch__title">Muudatusettepanekute tähtaeg · {{ deadline.bill.label }}</span>
+            <span class="regwatch__meta">Riigikogu liikmete ja fraktsioonide tähtaeg, mitte koja oma.</span>
+          </div>
+        </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+
+  {% if parliament.sittings or parliament.mentions %}
+    <details class="regwatch__unrelated" {% disclosure "teema.riigikogu.sittings" %}>
+      <summary>Komisjoni arutelud ja protokollid ({{ parliament.sittings_count }})</summary>
+      <ul class="regwatch__list">
+        {% for item in parliament.sittings %}
+          <li class="regwatch__row">
+            <span class="regwatch__date">{{ item.sitting_at|date:"d.m.Y H:i" }}</span>
+            <div class="regwatch__body"><span class="regwatch__title">{{ item.title }}</span><span class="regwatch__meta">{{ item.committee }} · {{ item.get_state_display }}</span></div>
+          </li>
+        {% endfor %}
+        {% for mention in parliament.mentions %}{% include "riigikogu/_mention.html" %}{% endfor %}
+      </ul>
+    </details>
+  {% endif %}
+
+  {% with positions=parliament.analyses.POSITIONS versions=parliament.analyses.VERSION_CHANGES outcomes=parliament.analyses.PROPOSAL_OUTCOMES %}
+    {% if parliament.opinions or positions %}
+      <details class="regwatch__unrelated" {% disclosure "teema.riigikogu.positions" %}>
+        <summary>Teiste seisukohad ({{ parliament.opinions|length }} arvamust)</summary>
+        {% if positions %}{% include "riigikogu/_positions.html" with analysis=positions.0 %}{% endif %}
+        <ul class="regwatch__list">
+          {% for opinion in parliament.opinions %}
+            <li class="regwatch__source"><span class="regwatch__meta">{{ opinion.registered_on|date:"d.m.Y"|default:"—" }}</span> {% if opinion.file_uuid %}<a href="https://api.riigikogu.ee/api/files/{{ opinion.file_uuid }}/download" target="_blank" rel="noopener noreferrer">{{ opinion.title }}<span class="visually-hidden"> — avaneb uues aknas</span></a>{% else %}{{ opinion.title }}{% endif %}{% if opinion.kind == "KODA_OPINION" %} <span class="regwatch__meta">· koja arvamus</span>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      </details>
+    {% endif %}
+    {% if versions or outcomes %}
+      <details class="regwatch__unrelated" {% disclosure "teema.riigikogu.versions" %}>
+        <summary>Eelnõu redaktsioonid ja koja ettepanekute arvestamine</summary>
+        {% if versions %}{% include "riigikogu/_versions.html" with analysis=versions.0 %}{% endif %}
+        {% if outcomes %}{% include "riigikogu/_outcomes.html" with analysis=outcomes.0 %}{% endif %}
+      </details>
+    {% endif %}
+  {% endwith %}
+</section>
