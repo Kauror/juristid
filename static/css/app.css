@@ -17009,6 +17009,42 @@ a.jcal__daynum {
   color: var(--text-secondary);
 }
 
+/* A panel head's right side: its note or legend, then its downloads (UX-005). */
+.statpanel__tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--spacing-2) var(--spacing-3);
+  margin-left: auto;
+}
+
+.statdownload {
+  align-self: center;
+}
+
+.statdownload__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.statdownload__icon {
+  display: block;
+}
+
+.statdownload__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+}
+
+.opinionmenu > .statdownload__body {
+  width: 200px;
+}
+
 .statlegend {
   display: flex;
   flex-wrap: wrap;

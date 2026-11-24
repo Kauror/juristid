@@ -19,13 +19,16 @@ from typing import Any
 from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
-from app.reporting import chart_spec, classification, opinions
+from app.audit.access import record_export
+from app.core.http import content_disposition
+from app.core.xlsx_safety import workbook_response
+from app.reporting import chart_spec, chart_svg, chart_workbook, classification, opinions
 from app.reporting import opinion_stats as stats
 
 TREND_SPANS = {"5": "Viimased 5 aastat", "10": "Viimased 10 aastat", "koik": "Alates 2011"}
@@ -227,6 +230,9 @@ def dashboard(request: HttpRequest) -> HttpResponse:
             "summary": summary,
             # Each panel's title, legend and notes, shared with its downloads.
             "charts": specs,
+            # Every download link carries the page's own state (UX-005).
+            "chart_query": chart_query(found),
+            "chart_stems": {key: _file_name(spec, found, "")[:-1] for key, spec in specs.items()},
             "rows_url": rows_url(),
             "owner_rows": [
                 {"row": row, "url": rows_url(jurist=row.owner)} for row in summary.owners
@@ -264,7 +270,12 @@ def dashboard(request: HttpRequest) -> HttpResponse:
             "decisions": found.decisions,
             "trends": found.trends,
             "trend_items": [
-                {"trend": trend, "chart": specs[f"trend-{trend.key}"]} for trend in found.trends
+                {
+                    "trend": trend,
+                    "chart": specs[f"trend-{trend.key}"],
+                    "stem": _file_name(specs[f"trend-{trend.key}"], found, "")[:-1],
+                }
+                for trend in found.trends
             ],
             "records": found.records,
             "record_items": record_links(found),
@@ -328,6 +339,74 @@ def dashboard(request: HttpRequest) -> HttpResponse:
             "first_day": date(stats.FIRST_YEAR, 1, 1),
         },
     )
+
+
+#: The URL parameters a panel download reads: the page's own state, the
+#: background of the image and whether the browser is turning it into a PNG.
+CHART_PARAMS = ("periood", "aasta", "alates", "kuni", "jurist", "trend", "taust", "kuju")
+
+
+def chart_query(found: Figures) -> str:
+    """The page's URL state, as every download link of its panels carries it."""
+    return urlencode(
+        {key: value for key, value in {**found.carried, **found.trend_carried}.items() if value}
+    )
+
+
+def _file_name(spec: chart_spec.ChartSpec, found: Figures, extension: str) -> str:
+    period = found.period
+    if spec.kind == chart_spec.YEARS:
+        span = found.trend_span.replace("–", "-")
+    elif period.key == "aasta":
+        span = str(period.year)
+    else:
+        span = f"{period.start:%Y%m%d}-{period.end:%Y%m%d}"
+    return f"statistika-{spec.key}-{span}.{extension}"
+
+
+@login_required
+@require_GET
+def chart_download(request: HttpRequest, key: str, fmt: str) -> HttpResponse:
+    """One panel of the page as SVG (PNG is drawn from it in the browser) or Excel (UX-005).
+
+    The same results as the page for the same URL — `figures` over the reader's
+    own Teemad — so a file never holds more than the page shows. Every file
+    handed over is on the export trail (`record_export`); a table panel has no
+    picture and its SVG is a 404.
+    """
+    found = figures(request)
+    spec = panels(found).get(key)
+    if spec is None or (fmt == "svg" and spec.is_table):
+        raise Http404
+    now = timezone.localtime()
+    if fmt == "xlsx":
+        response = workbook_response(
+            chart_workbook.workbook(spec, now), _file_name(spec, found, "xlsx")
+        )
+        file_format = "xlsx"
+    else:
+        png = request.GET.get("kuju") == "png"
+        svg = chart_svg.render(
+            spec, transparent=request.GET.get("taust") == "puudub", generated=now.date()
+        )
+        response = HttpResponse(svg, content_type="image/svg+xml; charset=utf-8")
+        response["Content-Disposition"] = content_disposition(
+            "attachment", _file_name(spec, found, "svg")
+        )
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        # Opened on its own, the file runs nothing and loads nothing.
+        response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+        file_format = "png" if png else "svg"
+    record_export(
+        request,
+        export=f"reporting.chart.{spec.key}",
+        file_format=file_format,
+        rows=len(spec.categories),
+        params=request.GET,
+        honoured=CHART_PARAMS,
+    )
+    return response
 
 
 #: The opinions list's columns, in order, and how each one sorts.

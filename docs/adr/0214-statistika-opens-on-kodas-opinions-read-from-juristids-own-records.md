@@ -111,6 +111,25 @@ The owner's conditions:
    the reader. No definition, count or rounding changed; `Record.when` reads
    as before.
 
+8. **Each chart panel can be downloaded, from its spec** (*Proposed — overnight
+   development 25.11.2026, subject to owner review*; UX-005). A small «↓» menu
+   in each panel head offers PNG, PNG (läbipaistev), SVG and Excel; the three
+   tables (liik, valdkond, saatja) offer Excel only. `reporting:chart_svg` and
+   `reporting:chart_xlsx` (`/statistika/joonis/<paneel>.svg|.xlsx`, GET) read
+   the page's own URL state through `opinion_views.figures`, so a file holds
+   exactly the reader's scope and the panel's numbers. The SVG
+   (`app/reporting/chart_svg.py`) is self-contained — no script, link, font or
+   CSS variable — in neutral print colours, white or (`taust=puudub`) with no
+   background, and carries the title, period, filters, legend, values, notes
+   and «Allikas»; an unknown value is no column and «—». A PNG is that SVG drawn
+   on a canvas at 2× in the browser (`static/js/chart-download.js`, loaded as a
+   same-origin image under the existing CSP; no server image library, no native
+   dependency). The workbook (`app/reporting/chart_workbook.py`, through
+   `app.core.xlsx_safety`) has «Andmed» — the spec's values, a blank cell for
+   unknown, never 0 — and «Teave» — title, period, filters, notes, scope and
+   time. Every file is recorded with `record_export` (`reporting.chart.<key>`,
+   format svg, png or xlsx). No migration, no new dependency.
+
 ## Alternatives considered
 
 * **Convert the imported statements to a native record now** — cleaner end

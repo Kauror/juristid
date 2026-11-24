@@ -1,0 +1,18 @@
+{% comment %}
+One panel's downloads (UX-005, docs/adr/0214 §8): the page's own URL state
+(`chart_query`) on every link, so a file holds what the panel shows. A chart
+offers PNG, transparent PNG, SVG and Excel; a table, Excel only. The PNGs are
+drawn in the browser from the SVG (static/js/chart-download.js).
+{% endcomment %}
+{% url 'reporting:chart_svg' chart.key as svg_url %}{% url 'reporting:chart_xlsx' chart.key as xlsx_url %}
+<details class="opinionmenu statdownload" data-uxpopover>
+  <summary class="opinionmenu__trigger statdownload__trigger" title="Laadi alla" aria-label="Laadi alla: {{ chart.title }}"><svg class="statdownload__icon" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false"><path d="M8 2v8M4.5 6.5 8 10l3.5-3.5M3 13h10" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></summary>
+  <div class="opinionmenu__body statdownload__body" data-uxfloat="fit">
+    {% if not chart.is_table %}
+      <button type="button" class="opinionmenu__item" data-chart-png="{{ svg_url }}?{% if chart_query %}{{ chart_query }}&amp;{% endif %}kuju=png" data-filename="{{ stem }}.png">PNG</button>
+      <button type="button" class="opinionmenu__item" data-chart-png="{{ svg_url }}?{% if chart_query %}{{ chart_query }}&amp;{% endif %}kuju=png&amp;taust=puudub" data-filename="{{ stem }}-labipaistev.png">PNG (läbipaistev)</button>
+      <a class="opinionmenu__item" href="{{ svg_url }}{% if chart_query %}?{{ chart_query }}{% endif %}" download>SVG</a>
+    {% endif %}
+    <a class="opinionmenu__item" href="{{ xlsx_url }}{% if chart_query %}?{{ chart_query }}{% endif %}" download>Excel</a>
+  </div>
+</details>

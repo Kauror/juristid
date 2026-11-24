@@ -18,6 +18,11 @@ urlpatterns = [
     # records. The counts-and-tables page it replaced there is «Seis».
     path("", opinion_views.dashboard, name="dashboard"),
     path("arvamused-valja/", opinion_views.opinion_rows, name="opinion_rows"),
+    # One panel of the first page as a picture or a workbook (UX-005).
+    path("joonis/<slug:key>.svg", opinion_views.chart_download, {"fmt": "svg"}, name="chart_svg"),
+    path(
+        "joonis/<slug:key>.xlsx", opinion_views.chart_download, {"fmt": "xlsx"}, name="chart_xlsx"
+    ),
     # Confirming the proposed sender and Valdkond of each Teema (ADR 0215).
     path("liigitamine/", classification_views.review, name="classification"),
     path(

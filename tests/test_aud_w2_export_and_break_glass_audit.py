@@ -123,6 +123,24 @@ GET_EXPORTS = [
         "xlsx",
         "",
     ),
+    # Statistika's panel downloads (UX-005, docs/adr/0214 §8): figures, no titles.
+    (
+        "reporting:chart_xlsx",
+        {"key": "kuud"},
+        {"periood": "12"},
+        "reporting.chart.kuud",
+        "xlsx",
+        "",
+    ),
+    ("reporting:chart_svg", {"key": "trend-sent"}, {}, "reporting.chart.trend-sent", "svg", ""),
+    (
+        "reporting:chart_svg",
+        {"key": "voog"},
+        {"kuju": "png", "taust": "puudub"},
+        "reporting.chart.voog",
+        "png",
+        "",
+    ),
 ]
 
 IDS = [row[3] for row in GET_EXPORTS]
