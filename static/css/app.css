@@ -9233,14 +9233,16 @@ button.opinionmenu__item {
 
 /* ---- Viimased tegevused ---------------------------------------------- */
 
-/* The Teema on the first line, because it is what a reader scans for; the
-   date, the person and the act on the second, quieter one
-   (templates/matters/partials/activity_row.html). */
+/* One line per activity (UX-003, 2026-11-25): the Teema, and straight after
+   it — not at the far edge of a wide screen — the date, the person and the
+   act, smaller and quieter (templates/matters/partials/activity_row.html).
+   A long title gives way with an ellipsis; the date and the act never do. */
 .actline {
   display: flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: var(--spacing-1) var(--spacing-3);
+  align-items: baseline;
+  gap: var(--spacing-15);
+  padding: var(--spacing-05) var(--spacing-3);
+  line-height: 1.35;
   text-decoration: none;
   color: inherit;
   border-radius: var(--radius-sm);
@@ -9253,6 +9255,7 @@ button.opinionmenu__item {
 }
 
 .actline__matter {
+  flex: 0 1 auto;
   min-width: 0;
   white-space: nowrap;
   overflow: hidden;
@@ -9260,10 +9263,28 @@ button.opinionmenu__item {
 }
 
 .actline__meta {
+  flex: 0 0 auto;
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
-  min-width: 0;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+/* A narrow screen wraps rather than cutting: the whole title, then the
+   date and the act after it, as running text. */
+@media (max-width: 720px) {
+  .actline {
+    display: block;
+    padding-block: var(--spacing-1);
+  }
+
+  .actline__matter {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .actline__meta {
+    white-space: normal;
+  }
 }
 
 .actline__when {
@@ -14701,6 +14722,33 @@ a.jcal__daynum {
   list-style: none;
   margin: var(--spacing-2) 0 0;
   padding: 0;
+}
+
+/* «Varasemad (N)» folds (UX-004): the section heading is the trigger, so it
+ * looks like the other section labels with the foldout's arrow before it. */
+.notifhistory > .foldout__trigger {
+  align-items: center;
+  gap: var(--spacing-15);
+  padding: 0 var(--spacing-3) var(--spacing-2);
+}
+
+.notifhistory > .foldout__trigger::before {
+  font-size: var(--typography-size-meta);
+  line-height: 1;
+}
+
+.notifhistory > .foldout__trigger > .sectionlabel {
+  margin: 0;
+  padding: 0;
+}
+
+.notifhistory__count {
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-muted);
+}
+
+.notifhistory > .foldout__body {
+  padding-top: 0;
 }
 
 .notiflist--rail {

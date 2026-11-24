@@ -133,6 +133,8 @@ class Cursor:
 class Page:
     items: list[InboxItem]
     cursor: Cursor | None
+    #: Every history item, on all pages — only when asked for (`history_page`).
+    total: int | None = None
 
     @property
     def next(self) -> str:
@@ -425,20 +427,54 @@ def panel_page(
     return Page(items, None)
 
 
+def _history_total(user: Any, unread: dict[str, set[Any]]) -> int:
+    """How many items the history holds on all its pages: one count per source.
+
+    The same six querysets `_history` pages through, and every row of them is
+    exactly one item (no builder drops or splits a row), so the number is the
+    one the pages add up to — not an estimate.
+    """
+    from app.notifications import personal
+    from app.register_watch import candidate_notices
+    from app.register_watch import notices as register_notices
+
+    return sum(
+        queryset.count()
+        for queryset in (
+            deadline_history(user, unread[TYPE_DEADLINE]),
+            commencement_history(user, unread[TYPE_COMMENCEMENT]),
+            assignment_history(user, unread[TYPE_ASSIGNMENT]),
+            personal.history(user, unread[TYPE_PERSONAL]),
+            register_notices.history(user, unread[TYPE_REGISTER]),
+            candidate_notices.history(user, unread[TYPE_CANDIDATES]),
+        )
+    )
+
+
 def history_page(
-    user: Any, *, cursor: Cursor | None = None, today: date | None = None, limit: int = PAGE_SIZE
+    user: Any,
+    *,
+    cursor: Cursor | None = None,
+    today: date | None = None,
+    limit: int = PAGE_SIZE,
+    with_total: bool = False,
 ) -> Page:
-    """One page of the history alone, for `/teavitused/` below its inbox sections."""
+    """One page of the history alone, for `/teavitused/` below its inbox sections.
+
+    ``with_total`` adds how many items the history holds on all its pages
+    («Varasemad (N)», UX-004): six counts, whatever the history's size.
+    """
     if not _signed_in_reader(user):
-        return Page([], None)
+        return Page([], None, 0 if with_total else None)
     day = today or timezone.localdate()
     if cursor is not None and cursor.group != GROUP_HISTORY:
         cursor = None
     unread = _unread_ids(inbox.inbox_for(user, day))
     history, more = _history(user, day, unread, cursor, limit)
+    total = _history_total(user, unread) if with_total else None
     if more and history:
-        return Page(history, Cursor.after(GROUP_HISTORY, history[-1]))
-    return Page(history, None)
+        return Page(history, Cursor.after(GROUP_HISTORY, history[-1]), total)
+    return Page(history, None, total)
 
 
 def lookup(user: Any, kind: str, pk: Any, *, today: date | None = None) -> InboxItem | None:

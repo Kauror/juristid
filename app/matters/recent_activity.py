@@ -100,7 +100,9 @@ from app.workflow.enums import ActionStatus, DatePrecision
 from app.workflow.step_markers import system_step_change_q
 
 #: How many rows are on screen before the rest go behind «Näita veel N ▾».
-FEED_VISIBLE = 10
+#: Twenty since the rows became one line each (UX-003, 2026-11-25): the point
+#: of the denser row is to see more of the desk at once.
+FEED_VISIBLE = 20
 
 #: How many rows the page reads at all, per source and merged. Past this the
 #: page says it shows the latest fifty; the Matters themselves hold the rest.

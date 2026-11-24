@@ -18,6 +18,20 @@
  * - **Saved means 204.** A redirect to the sign-in page, a refusal or a network
  *   error leaves `data-disclosure-saved` as it was; nothing claims a state was
  *   kept that was not.
+ *
+ * And three ways a block is shown open or closed for one view without that
+ * being a choice (UX-004, 2026-11-25). Each marks the block
+ * `data-disclosure-shown` with the state it drew; a toggle that agrees with it
+ * is the page's, not the reader's, and is not saved. The reader's first toggle
+ * away from it clears the mark and is handled as usual.
+ *
+ * - The server draws it open for a view the reader asked for (the tag's
+ *   `force_open`, e.g. the next page of a list inside it).
+ * - A link to an element that is, or directly holds, a closed remembered block
+ *   (`#varasemad`) opens it.
+ * - `data-disclosure-keep`: when htmx redraws the page, the block stays as the
+ *   reader had it on screen rather than snapping to the stored state — which
+ *   may be a save still in flight, or a view-only state from above.
  */
 (function () {
   "use strict";
@@ -84,6 +98,13 @@
       if (!block || !block.matches || !block.matches("details[data-disclosure]")) {
         return;
       }
+      var shown = block.getAttribute("data-disclosure-shown");
+      if (shown !== null) {
+        if (block.open === (shown === "1")) {
+          return;
+        }
+        block.removeAttribute("data-disclosure-shown");
+      }
       var key = block.getAttribute("data-disclosure");
       var saved = block.getAttribute("data-disclosure-saved") === "1";
       var queued = Object.prototype.hasOwnProperty.call(wanted, key);
@@ -95,4 +116,59 @@
     },
     true
   );
+
+  function showFor(block, opened) {
+    if (block.open === opened) {
+      return;
+    }
+    block.setAttribute("data-disclosure-shown", opened ? "1" : "0");
+    block.open = opened;
+  }
+
+  function openTarget() {
+    var id = window.location.hash.slice(1);
+    if (!id) {
+      return;
+    }
+    var target = null;
+    try {
+      target = document.getElementById(decodeURIComponent(id));
+    } catch (error) {
+      return;
+    }
+    if (!target) {
+      return;
+    }
+    var block = target.matches("details[data-disclosure]")
+      ? target
+      : target.querySelector(":scope > details[data-disclosure]");
+    if (block) {
+      showFor(block, true);
+    }
+  }
+
+  openTarget();
+  window.addEventListener("hashchange", openTarget);
+
+  var kept = null;
+  document.addEventListener("htmx:beforeSwap", function () {
+    var blocks = document.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
+    kept = {};
+    for (var i = 0; i < blocks.length; i += 1) {
+      kept[blocks[i].getAttribute("data-disclosure")] = blocks[i].open;
+    }
+  });
+  document.addEventListener("htmx:afterSettle", function () {
+    if (!kept) {
+      return;
+    }
+    var blocks = document.querySelectorAll("details[data-disclosure-keep][data-disclosure]");
+    for (var i = 0; i < blocks.length; i += 1) {
+      var key = blocks[i].getAttribute("data-disclosure");
+      if (Object.prototype.hasOwnProperty.call(kept, key)) {
+        showFor(blocks[i], kept[key]);
+      }
+    }
+    kept = null;
+  });
 })();
