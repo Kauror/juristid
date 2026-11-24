@@ -168,8 +168,23 @@ preflight and juristid.E046 refuse:
 
 Generate them straight into the file, so no value reaches the terminal or the
 shell history. The helper keeps a key that is already set (it never rotates
-one), replaces the template's commented line, a placeholder or a short value,
-appends the line when the file has none at all, and then proves its own write:
+one), replaces the template's commented line, a placeholder or an empty value,
+appends the line when the file has none at all, and then proves its own write.
+It never replaces a line `web` may be running with: two lines naming the key,
+or a real value shorter than 40 characters (`web` itself accepts 32), stop it
+before it writes anything, for a fix by hand (HR-18).
+A valid key is one line `KEY=value` at the start of the line whose value —
+as Compose reads it — is 40 or more characters and no placeholder (the one rule
+in `scripts/deploy/lib.sh`, `mcp_key_state`, which the preflight,
+`juristid-mcp-writer-keys.sh` and `juristid-mcp-key-check.sh` use too). A
+Windows line ending, trailing blanks and an unquoted ` # comment` are not part
+of the value, so such a line is still valid and is kept as it is. A line that
+names the key in any other form Compose also reads — indented, `export KEY=`,
+`KEY = …` or `KEY: …` — is *malformed* and is never replaced, since it may be
+the key `web` runs with: the helper stops, changes nothing and asks for that
+line to be fixed by hand. Deleting the line instead makes the helper generate a
+new key — for `MCP_AUTHENTICATOR_KEY` that means every enrolled authenticator
+becomes unreadable and everybody enrols again.
 
 ```bash
 scripts/deploy/juristid-mcp-web-keys.sh --env-file /mnt/user/appdata/juristid-main/config/juristid.env
@@ -179,15 +194,55 @@ It must end with `Only now set MCP_ENABLED=1.` Check it yourself as well; each
 of these must print exactly `1`:
 
 ```bash
-grep -c '^MCP_AUTHENTICATOR_KEY=.\{40,\}' /mnt/user/appdata/juristid-main/config/juristid.env
+grep -c '^MCP_AUTHENTICATOR_KEY=[^[:space:]]\{40,\}$' /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
 ```bash
-grep -c '^MCP_TOKEN_DERIVATION_KEY=.\{40,\}' /mnt/user/appdata/juristid-main/config/juristid.env
+grep -c '^MCP_TOKEN_DERIVATION_KEY=[^[:space:]]\{40,\}$' /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
 Anything other than `1` — or a `FAIL` from the helper — and you stop here,
-with `MCP_ENABLED` still off. Run the helper again; it is idempotent.
+with `MCP_ENABLED` still off. Run the helper again; it is idempotent. (These
+`grep` lines check the line the helper writes. On a file saved with Windows
+line endings they print `0` for a key the rule calls `ok`; the state probe
+below is the one to believe.)
+
+To see *why* a key is not ready — without printing any value — ask the same
+rule for each key's state (`ok`, `missing`, `duplicated`, `malformed` or
+`weak`), from the repository checkout:
+
+```bash
+bash -c '. scripts/deploy/lib.sh; for k in "${MCP_WEB_KEYS[@]}"; do printf "%s: %s\n" "$k" "$(mcp_web_key_state "$1" "$k")"; done' _ /mnt/user/appdata/juristid-main/config/juristid.env
+```
+
+`malformed` means the key is named in another form than `KEY=` at the start
+of the line (indented, `export`, blanks or a colon around the separator): fix
+that line by hand in an editor, then run the helper again. The preflight
+reports the same states when `MCP_ENABLED` is on.
+
+For every MCP key slot at once — web's two keys, the write gateway's signing
+key, database password and gateway key, and `mcp`'s copy of the gateway key —
+run the read-only check. It prints `FILE KEY: state` per slot and nothing
+else: no value, no part, length or digest of one. It writes nothing, and exits
+0 only when every slot is `ok` (1 otherwise, 2 when a file cannot be read):
+
+```bash
+scripts/deploy/juristid-mcp-key-check.sh --web-env-file /mnt/user/appdata/juristid-main/config/juristid.env --writer-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env --mcp-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp.env
+```
+
+**The first deploy that carries the HR-18 rule runs this check on the host,
+read-only, before d1** — and stops if any slot is `duplicated`, `malformed` or
+`missing`: the preflight or a helper would refuse it, and the fix is by hand.
+
+`weak` is different. It means the value is under the *helper's* minimum (40
+for web's keys and the gateway key, 50 for the writer's signing key, 32 for its
+database password), not under the process's: `web` and `mcp-writer` still
+start with a gateway key of 32 or more (juristid.E052) or a database password
+of 16 or more (E019). A `weak` writer or gateway slot is not a reason to stop
+a deploy (for web's two keys the preflight refuses `weak` when `MCP_ENABLED` is
+on, exactly as before HR-18); replace it only in a planned change, together
+with what depends on it (see each helper's refusal message for the cost). An empty or `replace-me` value is `weak` too,
+and there the helper generates the key.
 
 **Only then**, in `juristid.env`, in an editor, the three lines the template
 added (read their comments in `deploy/unraid-main/.env.example`):
@@ -787,7 +842,10 @@ signing key and database password, and one gateway key into both
 scripts/deploy/juristid-mcp-writer-keys.sh --writer-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp-writer.env --mcp-env-file /mnt/user/appdata/juristid-main/config/juristid-mcp.env --web-env-file /mnt/user/appdata/juristid-main/config/juristid.env
 ```
 
-It must end with `Every secret the write gateway needs is in place.`
+It must end with `Every secret the write gateway needs is in place.` It
+generates only a secret that is missing, empty or a `replace-me` placeholder;
+a malformed, duplicated or short real one stops it, unchanged, for a fix by
+hand (`--rotate-gateway-key` still replaces the gateway key in both files).
 
 **3. The writer's database role**, created from `web` (its role owns the tables
 and is the image's superuser); the password goes from the file to stdin and is

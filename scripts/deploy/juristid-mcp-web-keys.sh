@@ -18,11 +18,17 @@
 #   40 or more characters, not a placeholder — is KEPT. Never rotated here: a
 #   new MCP_AUTHENTICATOR_KEY makes every enrolled authenticator unreadable,
 #   which is a decision, not a side effect of running this twice.
-# - Otherwise every line naming the key — the template's commented one, a
-#   placeholder, a short value, a duplicate — is dropped and one generated line
-#   is appended.
+# - A key that may be the one web runs with is NOT replaced either: a line
+#   naming the key in another form than `KEY=` (malformed), two lines naming the
+#   key, or a real value shorter than 40 characters (mcp_key_action in lib.sh).
+#   This exits 1 before writing anything and asks for the line to be fixed by
+#   hand (HR-18).
+# - Otherwise — no line, the template's commented one, an empty value or a
+#   `replace-me` placeholder — every line naming the key is dropped and one
+#   generated line is appended.
 # - Then the file must name the key exactly once, `KEY=` and 40 or more
-#   characters, or this exits 1 and says not to switch AI access on.
+#   characters with no whitespace, or this exits 1 and says not to switch AI
+#   access on.
 #
 # The file is rewritten in place, so it keeps its inode, owner and mode.
 # MCP_ENABLED is never touched: the operator sets it, after this said ok.
@@ -70,9 +76,28 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# \r too: a Windows openssl ends its line with CRLF, and a carriage return in
+# the value makes the key malformed (mcp_key_state).
 new_key() {
-  openssl rand -base64 48 | tr -d '\n/+='
+  openssl rand -base64 48 | tr -d '\r\n/+='
 }
+
+# A key that may be in use is never replaced (a new MCP_AUTHENTICATOR_KEY
+# locks every enrolled authenticator out): a malformed line, two lines, or a
+# real value shorter than the minimum (mcp_key_action refuse). Refuse before
+# anything is written. Key names only. The action is captured first, so an
+# error from the rule stops this script.
+for key in "${MCP_WEB_KEYS[@]}"; do
+  action="$(mcp_key_action "$ENV_FILE" "$key" "$MCP_WEB_KEY_MIN_LENGTH")"
+  if [ "$action" = refuse ]; then
+    state="$(mcp_web_key_state "$ENV_FILE" "$key")"
+    case "$key" in
+      MCP_AUTHENTICATOR_KEY) cost="every enrolled authenticator becomes unreadable and everybody enrols again" ;;
+      *) cost="open connections retry one token refresh" ;;
+    esac
+    die "$(mcp_key_refusal "$ENV_FILE" "$key" "$state" "$MCP_WEB_KEY_MIN_LENGTH") Deleting the line instead makes this generate a new $key: $cost."
+  fi
+done
 
 problems=0
 for key in "${MCP_WEB_KEYS[@]}"; do
@@ -87,7 +112,7 @@ for key in "${MCP_WEB_KEYS[@]}"; do
   # Every line but the ones naming the key. grep exits 1 when it selects
   # nothing (a file holding only that key), 2 when it cannot read.
   status=0
-  grep -vE "^[[:space:]#]*${key}=" "$ENV_FILE" >"$tmp" || status=$?
+  grep -vE "^[[:space:]#]*(export[[:space:]]+)?${key}[[:space:]]*[=:]" "$ENV_FILE" >"$tmp" || status=$?
   [ "$status" -le 1 ] || die "could not read $ENV_FILE"
   printf '%s=%s\n' "$key" "$value" >>"$tmp"
   value=""
