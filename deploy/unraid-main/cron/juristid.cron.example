@@ -43,6 +43,11 @@
 # has finished (~16 min), so a draft a Teema already follows is left out. The
 # sweep is on by default in production; the model step reads
 # JURISTID_REGISTER_SWEEP_AI=1 and the key from the same env file.
+# PROPOSED, NOT INSTALLED (docs/adr/0222 §5): the nightly Riigikogu cycle, after the register
+# watch (03:30) and before the new-drafts sweep (04:20), so the shared Riigikogu ledger is not
+# queued twice and an invitation's candidate exists before the sweep. It reads nothing unless
+# JURISTID_RIIGIKOGU_MONITORING=1 is in register-watch.env (an owner decision with a release):
+# 0 4 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py watch_riigikogu >> /mnt/user/appdata/juristid-main/riigikogu.log 2>&1
 20 4 * * * docker exec --env-file /mnt/user/appdata/juristid-main/config/register-watch.env juristid-main-web python manage.py sweep_registers >> /mnt/user/appdata/juristid-main/register-sweep.log 2>&1
 
 # The Government's commented agenda for Monitooring → «Valitsuse info» (docs/adr/0219):

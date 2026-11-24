@@ -7,6 +7,22 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# Riigikogu programm (rk/programme, ADR 0222–0226): kuupäev on ajutine — pane väljalaske päev, kui
+# programm pärast parendusprogrammi tootmisse jõuab. Öine Riigikogu lugemine ja dokumentide analüüs on
+# vaikimisi välja lülitatud; kirje kehtib siis, kui omanik need sisse lülitab.
+[[day]]
+date = 2026-11-30
+basis = "merge"
+prs = []
+changes = [
+  "Monitooringus on uus osa «Riigikogu». Esimesena on seal Riigikogu komisjonide kutsed kojale arvamust avaldada: tähtaeg koos lausega kirjast, kust see loeti, komisjon ja teema. Kui tähtaega ei õnnestunud kirjast kindlalt lugeda, on kirjas «Tähtaeg vajab kontrollimist» ja põhjus. Riigikogu register on e-kirja kõrval teine kaitseliin, mitte selle asendaja.",
+  "Kutse saab teemale lisada olulise tähtajana («Lisa tähtajana»), siduda teemal juba oleva tähtajaga, lisada endale meeldetuletuse või märkida, et edasist tööd pole vaja. See ei muuda teema arvamuse tähtaega ega järgmist sammu, mis tulevad Lovable'ist; kui kutse tähtaeg erineb teema arvamuse tähtajast, on see kutse juures kirjas.",
+  "Kui kutse on eelnõu kohta, mida ükski teema ei jälgi, ilmub eelnõu «Uute eelnõude» hulka märkega «Riigikogu kutsus koda arvamust avaldama», sõltumata mudeli hinnangust.",
+  "Monitooring → Riigikogu näitab ka kahe nädala komisjonide päevakordi teie teemade eelnõude kohta (või kõiki komisjone) ja Riigikogu muudatusettepanekute tähtaegu. Muudatusettepanekute tähtaeg on Riigikogu liikmete ja fraktsioonide tähtaeg: koda ise muudatusettepanekut esitada ei saa.",
+  "Teema vahekaardil «Registritest» on uus osa «Riigikogu»: jälgitavad eelnõud (eelnõu saab teemaga siduda numbri järgi, näiteks «1082 SE»), selle teema kutsed ja tähtajad, komisjonide arutelud ja teiste organisatsioonide arvamused eelnõu kohta.",
+  "Kui kutse tähtaeg on möödas ja registris ei ole koja arvamust, on kutse juures «Kutsele vastamine vajab kontrollimist». See ei tähenda, et koda ei vastanud: saab märkida, et vastati ühispöördumisega, osaleti istungil või otsustati mitte vastata.",
+]
+
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.
