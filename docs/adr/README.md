@@ -52,7 +52,7 @@ consequences and reversibility.
 | [0041](0041-search-index-freshness.md) | Search index freshness: durable debt instead of a rebuild somebody remembers | Accepted; a manual rebuild discharges its debt since 0114 |
 | [0042](0042-department-wide-lawyer-access.md) | Department-wide access for the legal team | Accepted |
 
-| [0043](0043-the-ux-pass-and-the-managers-page.md) | The 2026-08-27 UX pass: an additive layer, views that live in the address, and Osakond narrowed to three questions | Accepted |
+| [0043](0043-the-ux-pass-and-the-managers-page.md) | The 2026-08-27 UX pass: an additive layer, views that live in the address, and Osakond narrowed to three questions | Accepted; §2 superseded by 0222 (Proposed) |
 | [0044](0044-one-arvamused-destination-and-live-header-search.md) | One `Arvamused` destination, and live suggestions under the header search | Accepted |
 | [0045](0045-the-repeatable-current-register-refresh.md) | The repeatable current-register refresh: authorship decides, and the sheet's own year settles a date | Accepted |
 | [0046](0046-two-deadline-groups-a-week-and-the-rest-of-the-month.md) | Tähtajad in two groups: the calendar week whole, the rest of the month behind «Näita veel», and one line past it | Accepted |
@@ -228,6 +228,7 @@ consequences and reversibility.
 | [0218](0218-new-drafts-in-the-registers-are-proposed-to-the-department-head-as-new-teemad.md) | New drafts in the registers are proposed to the department head as new Teemad (nightly sweep, the model judges, «Uued eelnõud», the bell's sixth source) | Proposed, amended 2026-11-24 (the verdict is written only on a candidate still waiting and unjudged, re-read under lock) |
 | [0219](0219-monitooring-gathers-new-drafts-the-government-agenda-and-the-registers-list.md) | «Monitooring» gathers the new drafts, the Government's agenda and the registers' list (top-bar tab, the head's until opened; valitsus.ee agenda read and judged weekly; the bell, no e-mail) | Proposed |
 | [0220](0220-a-lawyer-leaving-and-arriving-is-prepared-in-juristid-and-handed-over-in-lovable.md) | A lawyer leaving and arriving is prepared in Juristid and handed over in Lovable (a recorded Lovable hand-over has its own nightly limit of 150; «Lovable'i nimed» and pinned names; held work shown and confirmed before switching a person off; «Töö ilma aktiivse vastutajata») | Accepted |
+| [0222](0222-a-person-keeps-named-teemad-views-and-the-address-is-still-the-view.md) | A person keeps named Teemad views, and the address is still the view (at most 20 per persona; a canonical query, never rows or counts; private, the link still shareable; supersedes 0043 §2; migration `matters/0052`) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -238,6 +239,9 @@ requires every gap in the numbering to be named here:
   lands with that PR.
 - 0164 — not used. The number was skipped during the QA remediation of
   2026-10-14 (between 0163 and 0165), and no record was ever written under it.
+- 0221 — reserved for the Haldus information-architecture record of the
+  overnight development programme of 25.11.2026 (workstream B, its own branch).
+  The record lands with that branch, which then removes this line.
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.

@@ -835,14 +835,21 @@ def test_every_saved_view_chip_opens_exactly_the_rows_it_counted(specialist) -> 
 
 
 @pytest.mark.django_db
-def test_a_saved_view_lives_in_the_url_and_nothing_is_stored(client, specialist) -> None:
-    """No model, no session, no preferences table.
+def test_a_saved_view_is_an_address_and_only_an_address_is_stored(client, specialist) -> None:
+    """The register's state lives in the address; a view is a named address.
 
-    The register has always kept its whole state in the address, so a view is a
-    named link (master specification 7.4, design handoff 2d). This asserts the
-    two halves that make that true: the chip is a link somebody can paste, and
-    «Salvesta» hands over that link rather than pretending to store anything.
+    Rewritten for docs/adr/0222, which supersedes ADR 0043 §2's «nothing is
+    stored»: a person may now keep named views, and what is kept is the register
+    query itself — so the intent this test always held still holds. The chips are
+    links somebody can paste, «Salvesta» still hands over the current address,
+    and a stored view's link is a plain register address that opens exactly what
+    the same address typed by hand opens: no session state, no stored rows.
     """
+    from django.http import QueryDict
+
+    from app.matters.models import SavedRegisterView
+    from app.matters.saved_views import save_view
+
     client.force_login(specialist)
     body = client.get(reverse("matters:matter_list")).content.decode()
 
@@ -851,10 +858,25 @@ def test_a_saved_view_lives_in_the_url_and_nothing_is_stored(client, specialist)
     # The bare register and `?olek=avatud` are the same view and must not light
     # up two different chips.
     assert body.count('class="uxchip is-selected"') == 1
-
-    assert "Vaade elab aadressis" in body
-    assert "data-copy-from=" in body
+    assert "data-copy-from=" in body, "the address itself is still handed over"
     assert "session" not in body.lower().split("uxviews")[1].split("</div>")[0]
+
+    factories.MatterFactory(owner=specialist, title="Minu oma")
+    view = save_view(user=specialist, name="Minu", params=QueryDict("ulatus=minu&leht=2"))
+    assert {field.name for field in SavedRegisterView._meta.concrete_fields} == {
+        "id",
+        "created_at",
+        "updated_at",
+        "user",
+        "name",
+        "query",
+        "position",
+    }, "a stored view holds an address, never rows, counts or an access decision"
+    body = client.get(reverse("matters:matter_list")).content.decode()
+    assert f'href="?{view.query}"' in body
+    by_view = client.get(f"{reverse('matters:matter_list')}?{view.query}")
+    by_hand = client.get(reverse("matters:matter_list"), {"ulatus": "minu"})
+    assert by_view.context["total"] == by_hand.context["total"] == 1
 
 
 @pytest.mark.django_db

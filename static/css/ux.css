@@ -771,6 +771,8 @@
  * ==================================================================== */
 
 .uxviews {
+  /* The containing block of «Minu vaated ▾»'s list (below). */
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -818,6 +820,141 @@
   margin: 0;
   font: 400 11.5px/1.45 var(--typography-font-sans);
   color: var(--text-muted);
+}
+
+/* «Minu vaated» (docs/adr/0222): a person's own views after the four. A raised
+   fill tells them from the predefined chips without a second colour; the
+   selected state is the shared one. */
+.uxchip--mine {
+  background: var(--surface-raised);
+  max-width: 16rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Hung from the strip's right edge rather than from its own chip: the chip sits
+   at the end of a strip that may fill the width, and a list hanging rightwards
+   from it ran off the window. `.uxviews` is the containing block. */
+.uxviews__mine {
+  position: static;
+}
+
+.uxviews__minebody {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  width: min(30rem, calc(100vw - var(--spacing-6)));
+  max-height: min(28rem, calc(100vh - 12rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  box-shadow: var(--shadow-menu);
+}
+
+.uxviews__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.uxviews__item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.uxviews__itemlink {
+  font: 600 12.5px/1.35 var(--typography-font-sans);
+  color: var(--text-primary);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.uxviews__itemlink:hover {
+  text-decoration: underline;
+}
+
+.uxviews__itemlink.is-selected {
+  color: var(--accent-link);
+}
+
+.uxviews__itemcount {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.uxviews__itemnote {
+  font: 400 11.5px/1.45 var(--typography-font-sans);
+  color: var(--status-warning);
+}
+
+.uxviews__itemactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.uxviews__rename,
+.uxviews__saveform {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  min-width: 0;
+}
+
+/* The name field and «Nimeta ümber» on one line, «Eemalda» after them; an
+   opened confirmation takes a line of its own under the three. */
+.uxviews__rename {
+  flex: 1 1 16rem;
+}
+
+.uxviews__remove[open] {
+  flex-basis: 100%;
+}
+
+.uxviews__saveform {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.uxviews__name {
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.uxviews__label {
+  font: 600 11.5px/1.3 var(--typography-font-sans);
+  color: var(--text-secondary);
+}
+
+.uxviews__remove > summary {
+  list-style: none;
+}
+
+.uxviews__remove > summary::-webkit-details-marker {
+  display: none;
+}
+
+.uxviews__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 0;
 }
 
 .uxassign {
@@ -1211,7 +1348,8 @@ a.uxstat__row:hover {
     position: static;
   }
 
-  .uxviews__savebody {
+  .uxviews__savebody,
+  .uxviews__minebody {
     left: 0;
     right: 0;
     min-width: 0;

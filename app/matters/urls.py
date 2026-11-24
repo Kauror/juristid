@@ -1,7 +1,13 @@
 from django.urls import path
 from django.views.generic import RedirectView
 
-from app.matters import department_views, export_views, preview_views, views
+from app.matters import (
+    department_views,
+    export_views,
+    preview_views,
+    saved_view_views,
+    views,
+)
 
 urlpatterns = [
     # The department page. One route where there were two: `/ulevaade/` and
@@ -64,6 +70,11 @@ urlpatterns = [
     path("saabunud/", views.inbox, name="inbox"),
     path("saabunud/lisa/", views.intake, name="intake"),
     path("teemad/", views.matter_list, name="matter_list"),
+    # «Minu vaated» (docs/adr/0222): a person's own named Teemad views. Three
+    # POSTs about the sender's own rows only; each redirects back into Teemad.
+    path("teemad/vaated/", saved_view_views.save_view, name="save_view"),
+    path("teemad/vaated/<uuid:pk>/nimi/", saved_view_views.rename_view, name="rename_view"),
+    path("teemad/vaated/<uuid:pk>/eemalda/", saved_view_views.remove_view, name="remove_view"),
     # The register as Excel (owner's brief of 2026-11-02): the table as shown,
     # and every supported field. Reads; app/matters/export_views.py.
     path("teemad/eksport/tabel.xlsx", export_views.export_table, name="export_table"),

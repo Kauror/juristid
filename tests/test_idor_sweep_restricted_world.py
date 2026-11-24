@@ -179,6 +179,11 @@ PERSONAL_INBOX = {
     "notifications:candidates_read": "the recipient's own new-topics notice (ADR 0218 §7)",
     "notifications:candidates_unread": "the recipient's own new-topics notice (ADR 0218 §7)",
     "notifications:personal_remove": "the recipient's own reminder",
+    # «Minu vaated» (docs/adr/0222): a saved view is its owner's own row, keyed
+    # by its own id; the swept id is a Matter's, never a view's, so it is a 404
+    # for everybody, the owner too (tests/test_saved_register_views.py).
+    "matters:rename_view": "the signed-in person's own saved view",
+    "matters:remove_view": "the signed-in person's own saved view",
 }
 
 #: `<kind>` of `matters:remove_record` -> the world's key for a record of it.
