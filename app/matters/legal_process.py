@@ -729,6 +729,10 @@ class RailStep:
     #: Folded onto the phase they belong to, they are one column with its dates
     #: under it, and the text is text (docs/adr/0100 §3).
     notes: tuple[str, ...] = ()
+    #: The record behind each line of ``notes``, in the same order (``None``
+    #: where a line has none), so the popover keeps every fact with its own
+    #: description and source (UX-001). Presentation only; not compared.
+    note_records: tuple[Any, ...] = field(default=(), compare=False)
     #: How much of the connector running from this item to the next is behind
     #: us. Decided for the whole rail at once by `_one_backbone`, never per item:
     #: an item does not know which neighbour the merge will give it.
@@ -1152,6 +1156,7 @@ def matter_rail(
                 display_date=milestone.display,
                 sort_on=milestone.sort_on,
                 detail=milestone.detail,
+                record=getattr(milestone, "record", None),
             )
         # Recomputed rather than carried, because placing a dated point that has
         # already happened moves the current node one to the right.
@@ -1613,6 +1618,7 @@ def _fold_into_phase(steps: list[RailStep], milestone: Any) -> bool:
         display_date=node.display_date or milestone.display,
         sort_on=node.sort_on or milestone.sort_on,
         notes=(*node.notes, line),
+        note_records=(*node.note_records, getattr(milestone, "record", None)),
     )
     return True
 

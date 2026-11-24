@@ -1424,8 +1424,9 @@
     }
     var anchor = trigger.getBoundingClientRect();
     var margin = 8;
-    if (menu.getAttribute("data-uxfloat") === "fit") {
-      fit(menu, anchor, margin);
+    var mode = menu.getAttribute("data-uxfloat");
+    if (mode === "fit" || mode === "fit-start") {
+      fit(menu, anchor, margin, mode === "fit-start");
       return;
     }
     menu.style.top = anchor.bottom + 4 + "px";
@@ -1453,7 +1454,11 @@
      The panel's own scroll position is kept, because measuring it uncapped
      would otherwise send a reader who had scrolled inside it back to the top
      every time the page moved. */
-  function fit(menu, anchor, margin) {
+  /* `data-uxfloat="fit-start"` is the same, start-aligned: the panel's left
+     edge under the trigger's, for a trigger that is text read from the left —
+     «Menetluse kulg»'s item lines (UX-001), where an end-aligned panel landed at
+     the far edge of a wide column, away from the words that opened it. */
+  function fit(menu, anchor, margin, start) {
     var gap = 4;
     var kept = menu.scrollTop;
     menu.style.maxHeight = "";
@@ -1468,7 +1473,7 @@
     }
     menu.style.top = (upward ? anchor.top - gap - height : anchor.bottom + gap) + "px";
     var width = menu.offsetWidth;
-    var left = Math.min(anchor.right - width, window.innerWidth - width - margin);
+    var left = Math.min(start ? anchor.left : anchor.right - width, window.innerWidth - width - margin);
     menu.style.left = Math.max(margin, left) + "px";
     menu.scrollTop = kept;
   }
@@ -2331,6 +2336,139 @@
     markReportDirty(event.target);
   });
 
+  /* ---- «Menetluse kulg»: an item's popover behaves like a tooltip ---------
+   * UX-001 (2026-11-25). The popover is an ordinary `data-uxpopover` — one open
+   * at a time, Escape and a click elsewhere close it, placed inside the window
+   * and outside the strip's scroll box — and a tap or Enter on its lines opens
+   * it as any disclosure opens. This adds what a tooltip also does:
+   *
+   *  - with a mouse, resting on the item opens it after a moment, and it stays
+   *    open while the pointer is on the item or inside the popover (so a link
+   *    in it can be reached), closing shortly after it leaves both;
+   *  - keyboard focus on its lines opens it, and it closes when focus leaves
+   *    the item and its popover;
+   *  - a click on lines opened by hovering keeps it open rather than closing
+   *    it: the reader asked to read it.
+   *
+   * A popover opened by a click or a tap is the reader's: leaving does not
+   * close it. Touch screens have no hover, so they get the tap alone. */
+  function bindRailTips(scope) {
+    scope.querySelectorAll("details[data-railtip]").forEach(function (holder) {
+      if (!once(holder, "RailTip")) {
+        return;
+      }
+      var item = holder.closest(".tl-step") || holder;
+      var summary = holder.querySelector("summary");
+      var openTimer = null;
+      var closeTimer = null;
+      var canHover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
+
+      function passing() {
+        return holder.getAttribute("data-railtip-passing") === "1";
+      }
+      function openPassing() {
+        if (holder.open) {
+          return;
+        }
+        holder.setAttribute("data-railtip-passing", "1");
+        holder.open = true;
+      }
+      function closePassing() {
+        if (holder.open && passing()) {
+          holder.open = false;
+        }
+      }
+
+      if (canHover) {
+        item.addEventListener("mouseenter", function () {
+          window.clearTimeout(closeTimer);
+          openTimer = window.setTimeout(openPassing, 180);
+        });
+        item.addEventListener("mouseleave", function () {
+          window.clearTimeout(openTimer);
+          closeTimer = window.setTimeout(closePassing, 250);
+        });
+      }
+      if (summary) {
+        summary.addEventListener("click", function (event) {
+          if (holder.open && passing()) {
+            event.preventDefault();
+            holder.removeAttribute("data-railtip-passing");
+          }
+        });
+        summary.addEventListener("focus", function (event) {
+          if (holder.contains(event.relatedTarget)) {
+            return;
+          }
+          if (summary.matches(":focus-visible")) {
+            openPassing();
+          }
+        });
+      }
+      holder.addEventListener("focusout", function (event) {
+        if (!holder.contains(event.relatedTarget)) {
+          closePassing();
+        }
+      });
+      holder.addEventListener("toggle", function () {
+        if (!holder.open) {
+          holder.removeAttribute("data-railtip-passing");
+        }
+      });
+    });
+  }
+
+  /* ---- «Menetluse kulg»: a rail longer than its width -------------------
+   * UX-001 refinement (2026-11-25). The strip scrolls itself; this says when
+   * there is more on either side and lets every input reach it: the holder gets
+   * `data-more-left` / `data-more-right` (a soft edge in the stylesheet) and the
+   * matching ‹ / › button is shown, which moves it by most of a width; while it
+   * overflows the strip itself takes `tabindex="0"`, so arrow keys scroll it.
+   * A strip that fits — every vertical phone rail included — shows nothing. */
+  function bindRailScroll(scope) {
+    scope.querySelectorAll("[data-tlscroll]").forEach(function (holder) {
+      if (!once(holder, "RailScroll")) {
+        return;
+      }
+      var strip = holder.querySelector(".tl-strip");
+      var prev = holder.querySelector("[data-tlscroll-prev]");
+      var next = holder.querySelector("[data-tlscroll-next]");
+      if (!strip || !prev || !next) {
+        return;
+      }
+      function update() {
+        var overflow = strip.scrollWidth > strip.clientWidth + 1;
+        var left = overflow && strip.scrollLeft > 1;
+        var right = overflow && strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
+        holder.toggleAttribute("data-more-left", left);
+        holder.toggleAttribute("data-more-right", right);
+        prev.hidden = !left;
+        next.hidden = !right;
+        if (overflow) {
+          strip.setAttribute("tabindex", "0");
+        } else {
+          strip.removeAttribute("tabindex");
+        }
+      }
+      function move(direction) {
+        strip.scrollBy({ left: direction * strip.clientWidth * 0.8, behavior: "smooth" });
+      }
+      prev.addEventListener("click", function () {
+        move(-1);
+      });
+      next.addEventListener("click", function () {
+        move(1);
+      });
+      strip.addEventListener("scroll", update, { passive: true });
+      if (typeof ResizeObserver === "function") {
+        new ResizeObserver(update).observe(strip);
+      } else {
+        window.addEventListener("resize", update);
+      }
+      update();
+    });
+  }
+
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     [
@@ -2340,6 +2478,8 @@
       bindFileDrop,
       bindWorkRows,
       bindExclusivePopovers,
+      bindRailTips,
+      bindRailScroll,
       bindDocumentRename,
       bindCopyLink,
       bindRowFilter,

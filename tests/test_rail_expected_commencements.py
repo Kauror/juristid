@@ -10,11 +10,15 @@ for three future «Eeldatav jõustumine (allika hinnang)» dates and a step:
   colleague who recorded it — with the source's own note, and a lawyer may
   remove their own there; one from Lovable is Lovable's, and its ✕ says to
   remove it in Lovable.
+
+UX-001 (2026-11-25) moved the source into the item's popover and the removal
+into `Muuda`; the tests below hold that.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import html
 import importlib
 import re
 from types import SimpleNamespace
@@ -157,8 +161,14 @@ def _strip(client, matter) -> str:
     assert response.status_code == 200
     html = response.content.decode()
     strip = html[html.index('class="tl-strip"') :]
-    # Nothing inside the strip is a `div`, so its first close is the strip's own.
-    return strip[: strip.index("</div>")]
+    return strip[: strip.index("</ol>")]
+
+
+def _muuda(client, matter):
+    return client.get(
+        reverse("matters:timeline_steps", kwargs={"pk": matter.pk}),
+        headers={"HX-Request": "true"},
+    )
 
 
 def _remove_url(matter, record):
@@ -168,23 +178,37 @@ def _remove_url(matter, record):
     )
 
 
+def _popover(strip: str) -> str:
+    tip = strip[strip.index('class="tl-tip"') :]
+    return html.unescape(tip[: tip.index("</details>")])
+
+
 @pytest.mark.django_db
-def test_a_colleagues_estimate_names_them_and_can_be_removed_on_the_rail(
+def test_a_colleagues_estimate_names_them_in_the_popover_and_is_removed_in_muuda(
     signed_in, specialist, normal_matter
 ):
+    """UX-001: the source is in the item's popover, last; the ✕ is in `Muuda`."""
     record = _estimate(normal_matter, by=specialist, note="osad sätted")
 
     strip = _strip(signed_in, normal_matter)
+    tip = _popover(strip)
 
-    assert f"Allikas: {specialist.display_name}" in strip
-    assert "osad sätted" in strip
-    assert _remove_url(normal_matter, record) in strip
+    assert f"Allikas: {specialist.display_name}" in tip
+    assert tip.index("osad sätted") < tip.index("Allikas:")
+    assert "Allikas:" not in strip[: strip.index('class="tl-tip"')]
+    assert _remove_url(normal_matter, record) not in strip
+    assert "uxtl__icon--remove" not in strip
     assert "(allika hinnang)" not in strip
+
+    panel = _muuda(signed_in, normal_matter).content.decode()
+    assert "Eeldatavad jõustumised" in panel
+    assert _remove_url(normal_matter, record) in panel
 
 
 @pytest.mark.django_db
-def test_removing_it_from_the_rail_takes_it_off_the_file(signed_in, specialist, normal_matter):
+def test_removing_it_from_muuda_takes_it_off_the_file(signed_in, specialist, normal_matter):
     record = _estimate(normal_matter, by=specialist)
+    assert _remove_url(normal_matter, record) in _muuda(signed_in, normal_matter).content.decode()
 
     response = signed_in.post(
         _remove_url(normal_matter, record),
@@ -208,10 +232,16 @@ def test_a_lovable_estimate_says_so_and_points_to_lovable(
     )
 
     strip = _strip(signed_in, normal_matter)
+    tip = _popover(strip)
 
-    assert "Allikas: Lovable" in strip
-    assert "Eemalda see Lovable'is" in strip
+    assert "Allikas: Lovable" in tip
+    assert "muuda või eemalda see Lovable'is" in tip
+    assert tip.index("Lovable'is") < tip.index("Allikas: Lovable")
     assert _remove_url(normal_matter, record) not in strip
+
+    panel = html.unescape(_muuda(signed_in, normal_matter).content.decode())
+    assert "eemalda see Lovable'is" in panel
+    assert _remove_url(normal_matter, record) not in panel
 
 
 @pytest.mark.django_db
@@ -221,6 +251,8 @@ def test_a_reader_sees_the_source_but_no_removal(client, reader, normal_matter, 
 
     strip = _strip(client, normal_matter)
 
-    assert f"Allikas: {specialist.display_name}" in strip
+    assert f"Allikas: {specialist.display_name}" in _popover(strip)
     assert _remove_url(normal_matter, record) not in strip
     assert not re.search(r"uxtl__icon--remove", strip)
+    # `Muuda` is a writer's panel.
+    assert _muuda(client, normal_matter).status_code in (403, 404)

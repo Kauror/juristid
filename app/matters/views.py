@@ -10155,12 +10155,54 @@ def _timeline_steps_refusal(
     response = render(
         request,
         "matters/partials/timeline_steps_form.html",
-        {"matter": matter, "timeline_steps_form": form, "timeline_steps_error": error},
+        {
+            "matter": matter,
+            "timeline_steps_form": form,
+            "timeline_steps_error": error,
+            **_rail_removals(request, matter),
+        },
         status=status,
     )
     response["HX-Retarget"] = "#menetluse-kulg-muuda"
     response["HX-Reswap"] = "innerHTML"
     return response
+
+
+def _rail_removals(request: HttpRequest, matter: Matter) -> dict[str, Any]:
+    """The expected commencements `Muuda` lists, each with its removal (UX-001).
+
+    The rail drew a ✕ beside every estimate; it is here instead, in the one
+    editing panel the rail has. The same population the rail draws — this
+    reader's visible, live, active estimates — and the same rule: a colleague's
+    may be removed by a writer on an open file (`row_remove.html`, re-checked by
+    `remove_record_view`), one from Lovable is listed with where it is changed
+    and has no control (`source_ownership`).
+    """
+    from app.intelligence.enums import INFORMATIONAL_IMPORTANT_DATE_KINDS, FactStatus
+    from app.intelligence.models import MatterImportantDate
+
+    records = list(
+        MatterImportantDate.objects.filter(
+            matter=matter,
+            kind__in=INFORMATIONAL_IMPORTANT_DATE_KINDS,
+            status=FactStatus.ACTIVE,
+        )
+        .visible_to(request.user)
+        .select_related("created_by")
+        .order_by("period_end", "pk")
+    )
+    lovable = lovable_commencement_ids(matter) if records else frozenset()
+    return {
+        "rail_removals": [
+            {
+                "record": record,
+                "lovable": str(record.pk) in lovable,
+                "named_by": f"kulg-eemalda-{record.pk}-nimi",
+            }
+            for record in records
+        ],
+        "rail_can_remove": matter.is_open and may_write_business_content(request.user),
+    }
 
 
 def _rail_datable_keys(phases: Any, step_rows: Any) -> frozenset[str]:
@@ -10302,7 +10344,11 @@ def timeline_steps_view(request: HttpRequest, pk: Any) -> HttpResponse:
         return render(
             request,
             "matters/partials/timeline_steps_form.html",
-            {"matter": matter, "timeline_steps_form": _timeline_steps_form(request, matter)},
+            {
+                "matter": matter,
+                "timeline_steps_form": _timeline_steps_form(request, matter),
+                **_rail_removals(request, matter),
+            },
         )
     form = _timeline_steps_form(request, matter, request.POST)
     if not form.is_valid():

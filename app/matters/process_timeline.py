@@ -618,6 +618,8 @@ def process_steps(
                 precision=DatePrecision.EXACT,
                 event_label=WORK_VICTORY_EVENT,
                 ref=str(victory.pk),
+                # Its own `viide`, read by the rail's popover (UX-001).
+                record=victory,
             )
         )
 
@@ -714,6 +716,10 @@ def process_steps(
                 sort_on=record.period_end or record.date_value,
                 phase=PHASE_EFFECTIVE,
                 precision=record.date_precision,
+                # So the rail's popover can name this fact's own source — its
+                # `ametlik allikas`, Lovable or the colleague (UX-001). Not
+                # compared, so it changes no step's identity or order.
+                record=record,
             )
         )
 

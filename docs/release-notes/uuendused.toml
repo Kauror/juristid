@@ -7,15 +7,21 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
-# Kavandatud väljalase r93 (pakett A1: UX-003 + UX-004). Kuupäev on oodatav paigalduspäev; kui r93 jõuab
+# Kavandatud väljalase r93: pakett A1 (UX-003, UX-004; #711) ja pakett A2 (UX-001; #712) ühes kirjes.
+# Kuupäev on oodatav paigalduspäev ja pannakse lõplikult paika väljalaske ettevalmistamisel; kui r93 jõuab
 # tootmisse muul päeval, tõsta read selle päeva kirjesse (README: üks kirje päevas, kuupäev = paigalduspäev).
 [[day]]
 date = 2026-11-25
 basis = "deployment"
-prs = [711]
+prs = [711, 712]
 changes = [
   "Minu asjade «Viimastes tegevustes» on iga tegevus ühel real: teema pealkirja järel on kohe kuupäev ja tegevuse liik (ja kolleegi nimi, kui tegevuse tegi keegi teine). Korraga on näha 20 tegevust, ülejäänud on nagu varem «Näita veel» all.",
   "Teavituste lehe «Varasemad» on nüüd kokku volditav ja vaikimisi kinni; pealkirjas on varasemate teavituste arv. Juristid jätab meelde, kas hoiad selle lahti või kinni. «Näita varasemaid» avab selle alati, ning lahti- või kinnivoltimine ei märgi ühtegi teavitust loetuks ega lugemata.",
+  "Menetluse kulg on kompaktsem ja ühtlane: kõik etapid ja kuupäevad on ühel katkematul joonel, igaühe all on nimi, kuupäev ja üks rida kirjeldust. Mitu jõustumiskuupäeva on endiselt eraldi ridadena.",
+  "Kogu kirjeldus, märkused ja allikas on etapi hüpikus: see avaneb, kui hiir peatub etapil, klaviatuuriga või puudutusega, ja sulgub Esc-iga. Allikas on alati viimane; kui jõustumisel on avaldatud allika aadress (näiteks Riigi Teataja), on see link. Lovable'ist tulnud kirje hüpik ütleb, et seda muudetakse Lovable'is.",
+  "Kui menetluse kulul on rohkem samme, kui ekraanile mahub, näitab serv seda ning ‹ ja › kerivad ülejäänud nähtavale; kerida saab ka klaviatuuri nooltega ja puudutusega.",
+  "Kolleegi lisatud eeldatava jõustumise eemaldamise ✕ ei ole enam menetluse kulus endas, vaid menetluse kulu «Muuda» paneelis loendis «Eeldatavad jõustumised», sama kinnitusega nagu varem.",
+  "Telefonis on menetluse kulg püstine loend, mida ei pea külgsuunas kerima.",
 ]
 
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
