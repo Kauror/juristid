@@ -540,6 +540,8 @@ The rail holds only what has no honest place on a timeline.
                 <span>{{ row.label }} <b>{{ row.value }}</b></span>
               {% endfor %}
             </div>
+            {# Minu statistika's own page (docs/adr/0223): one's own desk only. #}
+            {% if is_self %}<a class="quietlink pw-stats__more" href="{% url 'matters:my_statistics' %}">Kõik minu statistika →</a>{% endif %}
           </div>
         </details>
       </section>

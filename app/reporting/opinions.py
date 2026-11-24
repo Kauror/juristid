@@ -102,6 +102,10 @@ class OpinionFact:
     #: The `Arvamuse tähtaeg` it answered, or ``None`` where none was recorded.
     deadline: date | None
     source: str
+    #: The person a record names as having sent it: `Submission.sent_by`, or
+    #: who ended the request as answered. ``None`` for an imported statement,
+    #: which names nobody (Minu statistika, docs/adr/0223). No count reads it.
+    actor_id: Any = None
 
     @property
     def on_time(self) -> bool | None:
@@ -230,7 +234,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
         # counted on its own (docs/adr/0174 §4). A withdrawn opinion still went
         # out on its day (docs/adr/0092 §3) and stays counted.
         .exclude(kind__in=NOT_AN_OPINION_KINDS)
-        .values("id", "matter_id", "sent_at")
+        .values("id", "matter_id", "sent_at", "sent_by_id")
     ):
         facts.append(
             OpinionFact(
@@ -238,6 +242,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
                 sent_on=timezone.localdate(submission["sent_at"]),
                 deadline=answered_by_submission.get(submission["id"]),
                 source=SOURCE_SUBMISSION,
+                actor_id=submission["sent_by_id"],
             )
         )
 
@@ -253,6 +258,7 @@ def opinion_facts(user: Any, matters: dict[Any, MatterFacts] | None = None) -> l
                 sent_on=timezone.localdate(row["ended_at"]),
                 deadline=row["deadline"],
                 source=SOURCE_ANSWERED,
+                actor_id=row["ended_by_id"],
             )
         )
 

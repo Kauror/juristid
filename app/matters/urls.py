@@ -32,6 +32,8 @@ urlpatterns = [
         name="department_work",
     ),
     path("minu-asjad/", views.my_work, name="my_work"),
+    # The signed-in person's own figures (docs/adr/0223); self only, no person in the path.
+    path("minu-asjad/statistika/", views.my_statistics, name="my_statistics"),
     # The address the page had until the v2 rebuild renamed the surface.
     # A permanent redirect rather than a second view: every bookmark, every
     # message somebody pasted and every historical link still lands on the

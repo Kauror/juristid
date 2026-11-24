@@ -45,7 +45,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.functional import cached_property
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 
 from app.accounts.models import User
 from app.accounts.naming import disambiguated_names
@@ -466,6 +466,26 @@ def my_work(request: HttpRequest) -> HttpResponse:
     cannot disagree (app/matters/work_items.py).
     """
     return _render_person_work(request, subject=request.user, is_self=True)
+
+
+@login_required
+@require_GET
+def my_statistics(request: HttpRequest) -> HttpResponse:
+    """Minu statistika — the signed-in person's own figures (FUNC-003, docs/adr/0223).
+
+    Self only: there is no address for anybody else's, so the route takes no
+    person, and a department head opening it reads their own figures.
+    """
+    from app.matters.my_statistics import my_statistics as build
+
+    return render(
+        request,
+        "matters/my_statistics.html",
+        {
+            "stats": build(request.user, timezone.localdate()),
+            "nav_active": "minu_asjad",
+        },
+    )
 
 
 @login_required
