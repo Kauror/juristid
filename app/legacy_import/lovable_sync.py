@@ -5996,7 +5996,11 @@ def _open_after_run(plans: Iterable[MatterPlan]) -> None:
     closed would be counted «Lovable'is lõppenud, kuid Juristides avatud»
     (`RunCounts.stopped_active`; ops A4 24.11: 25 counted, 25 closed). The
     written Teemad are read again after the writes; a Teema this run did not
-    write keeps its planned value. Nothing reads `MatterPlan.open` to decide."""
+    write keeps its planned value. Nothing reads `MatterPlan.open` to decide.
+
+    It runs inside the run's bookkeeping transaction, so it never costs the run
+    its record: the read is in its own savepoint, and if it fails every plan
+    keeps its planned value and a warning is logged."""
     from app.matters.models import Matter
 
     written: dict[Any, list[MatterPlan]] = {}
@@ -6007,9 +6011,21 @@ def _open_after_run(plans: Iterable[MatterPlan]) -> None:
             written.setdefault(plan.state.matter_id, []).append(plan)
     if not written:
         return
-    for matter in Matter.all_objects.filter(pk__in=written):
-        for plan in written[matter.pk]:
-            plan.open = _is_open(matter)
+    try:
+        with transaction.atomic():
+            rows = list(
+                Matter.all_objects.filter(pk__in=written).values_list("pk", "is_open", "deleted_at")
+            )
+    except Exception as error:
+        logger.warning(
+            "Lovable sync: open state after the run not read (%s); planned values counted",
+            type(error).__name__,
+        )
+        return
+    for pk, is_open, deleted_at in rows:
+        for plan in written[pk]:
+            # `_is_open` on the row the write left.
+            plan.open = bool(is_open) and deleted_at is None
 
 
 def _observe_index(

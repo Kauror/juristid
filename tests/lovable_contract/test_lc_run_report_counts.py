@@ -64,3 +64,32 @@ def test_a_topic_the_run_creates_is_counted_once(world):
     assert _register(run)["checked"] == 4
     assert run.counts["outside_cohort"] == 1  # the archive topic only
     assert run.counts["checked"] + run.counts["outside_cohort"] == len(world.lovable.rows)
+
+
+def test_a_failed_open_state_read_never_costs_the_run_its_record(world, monkeypatch, caplog):
+    """The read after the writes is reporting only: when it fails, even with an
+    error that aborts the database transaction, the run keeps its writes, its
+    decisions and its counts (the planned value is counted) and says so in the log."""
+    from django.db import DatabaseError, connection
+    from django.db.models.query import QuerySet
+
+    world.lovable.edit(ref(1), hetkeseis="jõustunud", jargmiseks="", tegevuse_tahtaeg=None)
+    real = QuerySet.values_list
+
+    def failing(self, *fields, **kwargs):
+        if fields == ("pk", "is_open", "deleted_at"):
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT 1 / 0")  # aborts the transaction, as a real failure would
+            raise DatabaseError("not reached")
+        return real(self, *fields, **kwargs)
+
+    monkeypatch.setattr(QuerySet, "values_list", failing)
+    with caplog.at_level("WARNING", logger=lovable_sync.logger.name):
+        run = world.run()
+    assert run.status == SyncRunStatus.SUCCEEDED, run.error
+    assert not world.matter(ref(1)).is_open
+    stage = LovableSyncDecision.objects.get(run=run, state__reference=ref(1), field="stage")
+    assert stage.outcome == SyncOutcome.APPLIED
+    assert run.counts["checked"] == 3
+    assert run.counts["stopped_active"] == 1  # the planned value, as before this fix
+    assert "open state after the run not read" in caplog.text
