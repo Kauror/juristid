@@ -115,3 +115,13 @@ workflows; only what is new is listed. Asked on 2026-11-21, the owner chose:
 §4 and §6: the page is Monitooring → «Uued eelnõud» at `/monitooring/eelnoud/`, not a
 link on Osakond; the head's «Näita kõigile» now opens the whole Monitooring tab. §7: the
 bell's source is labelled «Monitooring» and also counts the Government's agendas.
+
+## Amendment 2026-11-24 — the verdict is written only on a candidate still waiting (post-r91 E1)
+
+§3's verdict was saved on the candidates as they were read before the model was asked,
+so a candidate the head dismissed, linked or added while the request was out got a
+strength, reason and suggested Teema written onto it afterwards. The person's decision
+itself always stood (the sweep never writes `status`, `matter` or `decided_*`). Now the
+sweep re-reads the batch under lock (`select_for_update`) and writes only on candidates
+still `NEW` and unjudged; a candidate decided or judged meanwhile is left as it is. The
+same rule as ADR 0219's amendment 2026-11-23 (2) for the Government's agenda (audit HR-02).

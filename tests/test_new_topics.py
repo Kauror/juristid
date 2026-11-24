@@ -379,6 +379,32 @@ def test_a_decision_made_while_the_model_answered_stands(department_head):
         assert decided.related_matter is None
 
 
+@override_settings(REGISTER_SWEEP_AI=True)
+def test_a_verdict_given_while_the_model_answered_is_not_overwritten():
+    """E1 review: a candidate judged by another writer while the request was out
+    keeps that verdict; this answer is written only where it is still «Hindamata»."""
+    teema = factories.MatterFactory(title="Äriühingute digitaliseerimine")
+    candidate = _candidate()
+
+    class JudgedMeanwhile(FakeClient):
+        def _create(self, **request):
+            TopicCandidate.objects.filter(pk=candidate.pk).update(
+                strength=Strength.STRONG, reason="Varem hinnatud."
+            )
+            return super()._create(**request)
+
+    usage = candidates_ai.Usage()
+    judged = candidates_ai.judge_unjudged(
+        usage, client=JudgedMeanwhile("WEAK", related=str(teema.pk))
+    )
+
+    assert judged == 0 and usage.judged == 0
+    candidate.refresh_from_db()
+    assert candidate.strength == Strength.STRONG
+    assert candidate.reason == "Varem hinnatud."
+    assert candidate.related_matter is None
+
+
 # -- who sees it -------------------------------------------------------------------
 
 
