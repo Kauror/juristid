@@ -12,7 +12,10 @@ class DocumentKind(models.TextChoices):
     INVITATION = "INVITATION", "Kutse kojale"
     #: koda's own opinion or appeal, registered as received by the Riigikogu.
     KODA_OPINION = "KODA_OPINION", "Koja arvamus või pöördumine"
-    #: Any other letter where koda is an addressee (a reply, a notice).
+    #: A committee telling the organisations it informs that a bill is in proceedings,
+    #: with no request and no date («Teavitatud huvirühmad ja organisatsioonid: …»).
+    NOTIFICATION = "NOTIFICATION", "Teavitus eelnõu menetlusest"
+    #: Any other letter where koda is an addressee (a reply to koda's appeal, a notice).
     KODA_LETTER = "KODA_LETTER", "Muu kiri kojale"
     #: Another organisation's opinion on a bill.
     OTHER_OPINION = "OTHER_OPINION", "Teise organisatsiooni arvamus"

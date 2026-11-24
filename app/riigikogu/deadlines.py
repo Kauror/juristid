@@ -50,21 +50,40 @@ _MONTH_ALT = "|".join(stem for stem, _ in MONTHS)
 
 #: 24.11.2026 · 24.11.26 · 24.11. · 24.11 · 24/11/2026
 _NUMERIC = re.compile(
-    r"(?<![\d.])(\d{1,2})\s?[./]\s?(\d{1,2})(?:\s?[./]\s?(\d{4}|\d{2}))?\.?(?![\d])"
+    r"(?<![\d.])(\d{1,2})\s?[./]{1,2}\s?(\d{1,2})(?:\s?[./]\s?(\d{4}|\d{2}))?\.?(?![\d])"
 )
 #: 24. novembriks · 24 novembrini 2026 · 24. novembril 2026. a
-_WRITTEN = re.compile(rf"(?<!\d)(\d{{1,2}})\.?\s+({_MONTH_ALT})\w*(?:\s+(\d{{4}}))?", re.IGNORECASE)
+_WRITTEN = re.compile(
+    rf"(?<!\d)(\d{{1,2}})(?:\.\s*|\s+)({_MONTH_ALT})\w*(?:\s+(\d{{4}}))?", re.IGNORECASE
+)
 #: kell 12.00 · kell 12:00 · kl 12 · 12.00-ks (only after «kell»/«kl»: a bare 12.00 is a date)
-_TIME = re.compile(r"\b(?:kell|kl\.?)\s*(\d{1,2})(?:[.:](\d{2}))?", re.IGNORECASE)
+_TIME = re.compile(r"\b(?:kella?|kl\.?)\s*(\d{1,2})(?:[.:]\s?(\d{2}))?", re.IGNORECASE)
+#: A limit in so many words: what makes «… 22. mai istungile» a sitting and
+#: «… hiljemalt 19. mail» a deadline, when both clauses are about attending.
+_STRICT_LIMIT = re.compile(
+    r"hiljemalt|tähtaeg|tähtaj|\bkuni\b|\d\.?\s*[a-zõäöü]*(ks|ni)\b",
+    re.IGNORECASE,
+)
 #: A weekday used as a deadline («reedeks», «esmaspäevaks»): never made into a date.
 _WEEKDAY = re.compile(
     r"\b(esmaspäev|teisipäev|kolmapäev|neljapäev|reede|laupäev|pühapäev)\w*\b", re.IGNORECASE
 )
 
 _OPINION = re.compile(
-    r"arvamus|arvamust|ettepanek|seisukoh|tagasisid|kommentaar|märkus|vastata|vastus|"
+    r"arvamus|arvamust|ettepanek|seisukoh|tagasisid|kommentaar|märkus|tähelepanek|vastata|vastus|"
     r"kirjalikult",
     re.IGNORECASE,
+)
+#: «Teie arvamust», «Teil on ettepanekuid»: the letter speaks to its addressee.
+_YOU = re.compile(r"\bteie\b|\bteil\b|\bteid\b", re.IGNORECASE)
+#: Words right after a date that make it the day something happened.
+_PAST_EVENT = re.compile(
+    r"\s*(a\.\s*)?(algatat|võeti|võetud|toimu|läbi|esitat|registreeri)", re.IGNORECASE
+)
+#: The committee's own proposal («tegi Riigikogu juhatusele ettepaneku viia esimene
+#: lugemine läbi …»): a proposal word that asks koda for nothing.
+_OWN_PROPOSAL = re.compile(
+    r"(tegi|teeb|teha|esitas)\s+(\w+\s+){0,3}ettepaneku\b|ettepanekul\b", re.IGNORECASE
 )
 _ATTENDANCE = re.compile(
     r"osalemis|osaleda|osalejat|registreeru|osavõt|kas\s+soovite\s+osaleda|esindaja",
@@ -76,8 +95,9 @@ _HEARING = re.compile(
 )
 #: A limit: by, until, no later than, the deadline is, we expect … by.
 _LIMIT = re.compile(
-    r"hiljemalt|tähtaeg|tähtajaga|\bkuni\b|ootame|palume|esitada|saata|teatada|"
-    rf"\d\s*({_MONTH_ALT})\w*(ks|ni)\b|\d\.?\s*(ks|ni)\b|-ks\b|-ni\b",
+    r"hiljemalt|tähtaeg|tähtaj|\bkuni\b|ootame|palume|palun|esitada|esitage|saata|saatke|"
+    r"teatada|"
+    rf"\d\.?\s*({_MONTH_ALT})\w*(ks|ni)\b|\d\.?\s*(ks|ni)\b|-ks\b|-ni\b",
     re.IGNORECASE,
 )
 _EXTENSION = re.compile(
@@ -89,7 +109,13 @@ _CANCELLED = re.compile(
 )
 #: Clauses within a sentence: «…, istung toimub 26.11», «… ja saata arvamus 24.11».
 _CLAUSE = re.compile(r"\s*(?:;|,|\s+ning\s+|\s+ja\s+(?=\w+\s))\s*")
-_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÕÄÖÜŠŽ«„])|\n+")
+_SENTENCE = re.compile(r"(?<=[.!?])\s+(?=[A-ZÕÄÖÜŠŽ«„])")
+#: The Riigikogu's own amendment deadline, which a letter may mention in passing
+#: («muudatusettepanekute esitamise tähtajaks määrati 24. aprill kell 17.15»): an
+#: AMENDMENTS date, never the opinion koda is asked for.
+_AMENDMENTS = re.compile(r"muudatusettepanek", re.IGNORECASE)
+#: Words a letter asks koda with.
+_REQUEST = re.compile(r"\bpalun\b|\bpalume\b|esitage|ootame|saatke|andke\s+teada", re.IGNORECASE)
 
 #: A deadline more than this long after the letter is doubtful (a year-typo, a reused letter).
 MAX_AHEAD_DAYS = 120
@@ -143,7 +169,7 @@ def _mentions(clause: str) -> list[_Mention]:
             continue
         # «kell 12.00» is a time, not the twelfth of no month.
         before = clause[max(0, match.start() - 6) : match.start()].casefold()
-        if re.search(r"(kell|kl\.?)\s*$", before):
+        if re.search(r"(kella?|kl\.?)\s*$", before):
             continue
         day, month = int(match.group(1)), int(match.group(2))
         if not (1 <= month <= 12 and 1 <= day <= 31):
@@ -187,11 +213,25 @@ def _resolve(mention: _Mention, letter_date: dt.date | None) -> tuple[dt.date | 
 
 def _kind_of(clause: str, sentence: str) -> str | None:
     """The action the clause asks a date for; the sentence's when the clause names none."""
-    if _HEARING.search(clause) and not _LIMIT.search(clause):
+    # «… palun esitage need komisjonile samaaegselt muudatusettepanekute esitamise
+    # tähtajaga, s.o hiljemalt 28. veebruariks»: a request to koda that names the
+    # amendment deadline is still the request to koda.
+    # «Palume …», «palun esitage …»: a sentence that asks its reader is a request to koda.
+    asks_koda = bool(_REQUEST.search(sentence))
+    if _AMENDMENTS.search(clause) and not asks_koda:
+        return DeadlineKind.AMENDMENTS
+    if (
+        _AMENDMENTS.search(sentence)
+        and not asks_koda
+        and not _OPINION.search(clause)
+        and _LIMIT.search(clause)
+    ):
+        return DeadlineKind.AMENDMENTS
+    if _HEARING.search(clause) and not _STRICT_LIMIT.search(clause):
         return "HEARING"
     if _ATTENDANCE.search(clause):
         return DeadlineKind.ATTENDANCE
-    if _OPINION.search(clause):
+    if _OPINION.search(_OWN_PROPOSAL.sub("", clause)):
         return DeadlineKind.OPINION_REQUEST
     if _HEARING.search(clause):
         return "HEARING"
@@ -208,8 +248,14 @@ def _kind_of(clause: str, sentence: str) -> str | None:
 
 
 def _sentences(text: str) -> list[str]:
-    flat = re.sub(r"[ \t\r\f\v]+", " ", text or "")
-    return [s.strip() for s in _SENTENCE.split(flat) if s and s.strip()]
+    """Sentences, with a PDF's line breaks inside a sentence joined back (a blank line
+    or a sentence end still ends one)."""
+    paragraphs = re.split(r"\n\s*\n", text or "")
+    found: list[str] = []
+    for paragraph in paragraphs:
+        flat = re.sub(r"\s+", " ", paragraph).strip()
+        found.extend(s.strip() for s in _SENTENCE.split(flat) if s and s.strip())
+    return found
 
 
 def extract(text: str, *, letter_date: dt.date | None) -> Extraction:
@@ -248,12 +294,30 @@ def extract(text: str, *, letter_date: dt.date | None) -> Extraction:
             if kind is None:
                 continue
             for mention in mentions:
+                # «… poolt 09.11.26 algatatud eelnõu»: a date that says when something
+                # already happened is not a date anything is due by.
+                if _PAST_EVENT.match(clause[mention.end :]):
+                    continue
                 day, why = _resolve(mention, letter_date)
                 if kind == "HEARING":
-                    if day is not None and hearing is None:
+                    # A sitting that has already taken place, or a plenary reading,
+                    # is not a hearing koda is asked to.
+                    past = day is not None and letter_date is not None and day < letter_date
+                    plenary = re.search(r"täiskogu|lugemi", clause, re.IGNORECASE)
+                    if day is not None and hearing is None and not past and not plenary:
                         hearing = (day, sentence)
                     continue
                 if not _LIMIT.search(clause) and not _LIMIT.search(sentence):
+                    continue
+                # A clause that asks for nothing itself («Eelnõu läbis esimese lugemise
+                # 25.03.2025, …») lends its date to the sentence's request only when the
+                # clause itself marks a limit.
+                own = (
+                    _OPINION.search(_OWN_PROPOSAL.sub("", clause))
+                    or _ATTENDANCE.search(clause)
+                    or _AMENDMENTS.search(clause)
+                )
+                if not own and not _LIMIT.search(clause):
                     continue
                 status = ExtractionStatus.FOUND if day is not None else ExtractionStatus.CHECK
                 doubt = why

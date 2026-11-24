@@ -51,7 +51,7 @@ class Counts:
 
 
 #: «Ameerika Kaubanduskoda», «Eesti-Saksa Kaubanduskoda»: bilateral chambers, not koda.
-_OTHER_CHAMBER = re.compile(r"(?:^|\s)([A-ZÕÄÖÜŠŽ][\w]*(?:-[\w]+)+|(?!Eesti)[A-ZÕÄÖÜŠŽ]\w+)\s+$")
+_OTHER_CHAMBER = re.compile(r"(?:^|\s)([A-ZÕÄÖÜŠŽ][\w]*(?:-[\w]+)+|(?!Eesti\b)[A-ZÕÄÖÜŠŽ]\w+)\s+$")
 
 
 def find(text: str) -> list[tuple[int, int]]:

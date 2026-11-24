@@ -54,7 +54,7 @@ def read(raw: bytes, file_name: str) -> Text:
     if not raw:
         return Text(TextStatus.UNREADABLE, why="fail on tühi")
     name = (file_name or "").casefold()
-    head = raw[:512].lstrip().casefold()
+    head = raw[:512].lstrip().lower()
     try:
         if name.endswith((".html", ".htm")) or head.startswith((b"<html", b"<!doctype html")):
             from app.documents.extraction.email_common import html_body_to_text

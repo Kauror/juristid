@@ -71,9 +71,16 @@ _INVITATION_TITLE = re.compile(
 #: Sentences of the letter itself that ask for an opinion or for participation.
 _INVITATION_TEXT = re.compile(
     r"(võimalus\s+avaldada|palume\s+(teie\s+)?(arvamus|seisukoh|ettepanek|osale)|"
-    r"ootame\s+(teie\s+)?(arvamus|seisukoh|ettepanek)|"
+    r"ootame\s+(teie\s+|neid\s+)?(arvamus|seisukoh|ettepanek|hiljemalt)|"
+    r"palun\s+esitage|palume\s+(need\s+|neid\s+)?esitada|palume\s+esitada\s+need|"
+    r"kui\s+teil\s+on\s+(soovi|ettepanekuid|arvamusi|täiendavaid|märkusi)|"
+    r"soovi\s+esitada\s+eelnõu\s+kohta|"
     r"kutsume\s+(teid\s+)?(osalema|arutelule|istungile))",
     re.IGNORECASE,
+)
+#: A committee's notice that a bill is in proceedings, sent to the groups it informs.
+_NOTIFICATION_TEXT = re.compile(
+    r"teavitatud\s+huvirühmad|menetlemine\s+riigikogus|eelnõu\s+kaardilt", re.IGNORECASE
 )
 
 
@@ -83,6 +90,8 @@ def classify(*, role: str, title: str, document_type: str, text: str = "") -> st
     if role == KodaRole.ADDRESSEE:
         if _INVITATION_TITLE.search(title or "") or _INVITATION_TEXT.search(text or ""):
             return DocumentKind.INVITATION
+        if _NOTIFICATION_TEXT.search(title or "") or _NOTIFICATION_TEXT.search(text or ""):
+            return DocumentKind.NOTIFICATION
         return DocumentKind.KODA_LETTER
     if role == KodaRole.AUTHOR:
         return DocumentKind.KODA_OPINION
