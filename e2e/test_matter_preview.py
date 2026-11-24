@@ -40,7 +40,8 @@ def _a_row_below_the_fold(page):
     triggers = page.locator(TRIGGER)
     count = triggers.count()
     assert count >= 6, "the seeded register should hold more than a handful of rows"
-    trigger = triggers.nth(count - 2)
+    trigger = triggers.nth(count - 1)
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
     trigger.scroll_into_view_if_needed()
     assert page.evaluate("window.scrollY") > 0, "the row is below the first screen"
     return trigger
