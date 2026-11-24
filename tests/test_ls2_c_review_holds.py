@@ -29,6 +29,12 @@ pytestmark = pytest.mark.django_db
 REASON = "Lehe tekst nimetab selle teema eelnõu"
 
 
+@pytest.fixture(autouse=True)
+def _verified_backup_set(onenote_backup_set):
+    """Every test here applies a capture: on a verified, mounted set (HR-06)."""
+    return onenote_backup_set
+
+
 def _world(tmp_path, settings, *, shared_files: int = 1, restricted_b: bool = False):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True

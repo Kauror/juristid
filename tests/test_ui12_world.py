@@ -215,11 +215,14 @@ def _replace_blocks(root: Path, blocks_by_tag: dict[str, list[dict[str, Any]]]) 
     reseal(root)
 
 
-def build_world(corpus: Path, references: tuple[str, ...] = REFERENCES) -> dict[str, Any]:
+def build_world(
+    corpus: Path, references: tuple[str, ...] = REFERENCES, *, backup_set: str
+) -> dict[str, Any]:
     """Three Teemad sharing the dossier, the second also holding a page of its own.
 
     ``corpus`` becomes `HISTORICAL_SOURCE_ROOT`; the caller enables the import
-    (`ONENOTE_CAPTURE_IMPORT_ENABLED`, `REAL_DATA_ALLOWED`) beforehand.
+    (`ONENOTE_CAPTURE_IMPORT_ENABLED`, `REAL_DATA_ALLOWED`) beforehand and mounts
+    a verified backup set (the ``onenote_backup_set`` fixture), named here.
     """
     first, second, third = (register_teema(reference) for reference in references)
     for matter, title in zip(
@@ -279,7 +282,7 @@ def build_world(corpus: Path, references: tuple[str, ...] = REFERENCES) -> dict[
             operator_intent=oc.OPERATOR_INTENT,
             expect_manifest_sha256=plan.capture.manifest_sha256,
             expect_plan_sha256=plan.digest,
-            backup_set="sets/20261106T000000Z",
+            backup_set=backup_set,
             label=f"ui12-synthetic-{tag}",
         )
         roots.append(root)

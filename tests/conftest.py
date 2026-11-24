@@ -263,6 +263,17 @@ def lovable_backup_proof_accepted(request):
         yield
 
 
+@pytest.fixture
+def onenote_backup_set(monkeypatch, tmp_path_factory) -> str:
+    """A OneNote apply's recovery point, as the host runner hands it over: a set
+    taken minutes before, verified to level 2 with its proof, mounted at
+    ``LOVABLE_SYNC_BACKUP_DIR`` and named in ``JURISTID_ONENOTE_BACKUP_SET``
+    (audit 2026-11-23 HR-06; `tests/backup_proof.py`). Returns the set's name."""
+    from tests.backup_proof import mount_fresh_verified_set
+
+    return mount_fresh_verified_set(monkeypatch, tmp_path_factory.mktemp("backup-sets"))
+
+
 @pytest.fixture(autouse=True)
 def evidence_root(settings, tmp_path_factory):
     """Evidence, derivatives and OneNote source in this test's own directory.

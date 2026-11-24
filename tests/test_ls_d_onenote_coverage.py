@@ -46,7 +46,7 @@ G_X = "0000BB04-0000-4000-8000-0000000000B4"
 
 
 @pytest.fixture
-def enabled(settings):
+def enabled(settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     return settings
@@ -294,7 +294,9 @@ def test_apply_capture_refuses_a_plan_other_than_the_approved_one(world):
     root = _second(world)
     before = Document.objects.count()
     with pytest.raises(oc.CaptureError, match="not the approved one"):
-        oc.apply_capture(root, approved_plan_sha256="0" * 64, actor=None, backup_set="sets/x")
+        # The host runner's verified set (`world` → `enabled` → `onenote_backup_set`):
+        # the backup check now runs first (HR-06 review), so the plan check is what refuses.
+        oc.apply_capture(root, approved_plan_sha256="0" * 64, actor=None)
     assert Document.objects.count() == before
 
 
@@ -308,10 +310,27 @@ def test_apply_capture_keeps_every_gate(world, settings):
         oc.apply_capture(root, approved_plan_sha256=sha, actor=None, backup_set="sets/x")
 
 
-def test_apply_capture_imports_the_approved_plan_once(world, monkeypatch):
+def test_apply_capture_refuses_a_runner_set_with_no_proof(world, monkeypatch):
+    """Regression: HR-06 — the host runner's name alone (any non-blank string,
+    or a well-formed name with no mounted proof) writes nothing."""
     root = _second(world)
     sha = oc.verify_capture(root).plan_sha256
+    before = Document.objects.count()
     monkeypatch.setenv("JURISTID_ONENOTE_BACKUP_SET", "sets/runner")
+    with pytest.raises(oc.CaptureError, match="Refused: SET_NAME"):
+        oc.apply_capture(root, approved_plan_sha256=sha, actor=None)
+    fresh = (timezone.now() - timedelta(minutes=5)).astimezone(UTC)
+    monkeypatch.setenv("JURISTID_ONENOTE_BACKUP_SET", fresh.strftime("sets/%Y%m%dT%H%M%SZ"))
+    monkeypatch.delenv("LOVABLE_SYNC_BACKUP_DIR")
+    with pytest.raises(oc.CaptureError, match="Refused: PROOF_NOT_MOUNTED"):
+        oc.apply_capture(root, approved_plan_sha256=sha, actor=None)
+    assert Document.objects.count() == before
+
+
+def test_apply_capture_imports_the_approved_plan_once(world):
+    root = _second(world)
+    sha = oc.verify_capture(root).plan_sha256
+    # `enabled` names the verified set in JURISTID_ONENOTE_BACKUP_SET, as the runner does.
     report = oc.apply_capture(root, approved_plan_sha256=sha, actor=None)
     assert report.documents_created == 1
     states = cov.page_states([G_A, G_S])

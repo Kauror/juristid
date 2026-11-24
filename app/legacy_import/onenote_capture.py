@@ -180,6 +180,24 @@ class CaptureStorageError(CaptureError):
         self.before_writing = before_writing
 
 
+class CaptureBackupRefused(CaptureError):
+    """No proven recovery point (`backup_problem`, HR-06): refused before any row.
+
+    ``code`` is the check's own code (``NO_SET``, ``SET_NAME``, ``SET_STALE``,
+    ``PROOF_*``); the message is a fixed sentence plus that code, never the set's
+    name or a path."""
+
+    before_writing = True
+
+    def __init__(self, code: str) -> None:
+        super().__init__(
+            f"Refused: {code}. Name the verified backup set taken before this run "
+            "(--backup-set sets/YYYYMMDDTHHMMSSZ), verified to level 2 and mounted read-only "
+            "with its proof (LOVABLE_SYNC_BACKUP_DIR); a name alone writes nothing."
+        )
+        self.code = code
+
+
 def require_stores() -> None:
     """`import_storage.require_import_stores`, as this module's refusal."""
     try:
@@ -1448,14 +1466,23 @@ class ApplyReport:
         return out
 
 
-def refuse_unless_authorised(
-    plan: Plan,
-    *,
-    operator_intent: str,
-    expect_manifest_sha256: str,
-    expect_plan_sha256: str,
-    backup_set: str,
-) -> str:
+def backup_problem(backup_set: str) -> str:
+    """Why ``backup_set`` is not a proven recovery point for an apply starting now,
+    or ``""`` (audit 2026-11-23 HR-06).
+
+    The Lovable sync's own check, not a second one (`lovable_sync.backup_set_problem`,
+    audit 2026-11-11 DR-05): a set's name, taken in the `BACKUP_MAX_AGE` before
+    now, with its ``VERIFIED-L2`` proof mounted at ``LOVABLE_SYNC_BACKUP_DIR``
+    naming that set and a dump that still hashes to the recorded SHA-256. The
+    host runner mounts the set it has just taken and verified; any other
+    non-blank string is refused."""
+    from app.legacy_import import lovable_sync
+
+    return lovable_sync.backup_set_problem((backup_set or "").strip(), timezone.now())
+
+
+def refuse_unless_enabled() -> None:
+    """The one-off container's settings: the first gate of every apply."""
     if not getattr(settings, "ONENOTE_CAPTURE_IMPORT_ENABLED", False):
         raise CaptureError(
             "The OneNote capture import is off here (JURISTID_ONENOTE_CAPTURE_IMPORT). "
@@ -1465,6 +1492,17 @@ def refuse_unless_authorised(
         raise CaptureError(
             "REAL_DATA_ALLOWED is off; real source material may not enter this environment."
         )
+
+
+def refuse_unless_authorised(
+    plan: Plan,
+    *,
+    operator_intent: str,
+    expect_manifest_sha256: str,
+    expect_plan_sha256: str,
+    backup_set: str,
+) -> str:
+    refuse_unless_enabled()
     if operator_intent != OPERATOR_INTENT:
         raise CaptureError(f"Type --operator-intent {OPERATOR_INTENT} to apply the capture.")
     if (expect_manifest_sha256 or "").strip().lower() != plan.capture.manifest_sha256:
@@ -1472,8 +1510,9 @@ def refuse_unless_authorised(
             f"The sealed manifest is {plan.capture.manifest_sha256}; "
             "pass exactly that as --expect-manifest-sha256."
         )
-    if not backup_set.strip():
-        raise CaptureError("Name the verified backup set taken before this run (--backup-set).")
+    problem = backup_problem(backup_set)
+    if problem:
+        raise CaptureBackupRefused(problem)
     if plan.problems:
         raise CaptureError(
             "The plan has problems; nothing was written:\n  " + "\n  ".join(plan.problems[:20])
@@ -2769,13 +2808,14 @@ def apply_capture(
 
     The existing gated path (``apply``) with every gate kept: the one-off
     container's settings (``JURISTID_ONENOTE_CAPTURE_IMPORT``,
-    ``REAL_DATA_ALLOWED``), the sealed manifest, and a named backup set —
+    ``REAL_DATA_ALLOWED``), the sealed manifest, and a verified backup set —
     ``backup_set`` or, for the host's request runner,
     ``JURISTID_ONENOTE_BACKUP_SET``, which the runner sets after taking the
-    backup. Refused unless the plan computed *now* is exactly the approved one: a
-    capture or a database that moved since the approval is planned again, never
-    applied from an old preview. Pages the database already holds get a
-    ``NO_CHANGES`` mark.
+    backup and verifying it to level 2, with the set and its proof mounted
+    read-only (`backup_problem`). Refused unless the plan computed *now* is
+    exactly the approved one: a capture or a database that moved since the
+    approval is planned again, never applied from an old preview. Pages the
+    database already holds get a ``NO_CHANGES`` mark.
 
     STORE-GUARD: refused before reading the capture unless the stores are the
     deployment's mounted ones; after the last page every object the capture's
@@ -2784,6 +2824,15 @@ def apply_capture(
     """
     import os
 
+    if backup_set is None:
+        backup_set = os.environ.get("JURISTID_ONENOTE_BACKUP_SET", "")
+    # The settings and the proven backup set first (HR-06 review): a request
+    # with no proof is refused before STORE-GUARD's probe writes anything.
+    # `apply` checks both again, as every apply does.
+    refuse_unless_enabled()
+    problem = backup_problem(backup_set)
+    if problem:
+        raise CaptureBackupRefused(problem)
     require_stores()
     approved = (approved_plan_sha256 or "").strip().lower()
     capture = load_capture(Path(path), verify_all_bytes=True)
@@ -2801,9 +2850,7 @@ def apply_capture(
         operator_intent=OPERATOR_INTENT,
         expect_manifest_sha256=capture.manifest_sha256,
         expect_plan_sha256=approved,
-        backup_set=backup_set
-        if backup_set is not None
-        else os.environ.get("JURISTID_ONENOTE_BACKUP_SET", ""),
+        backup_set=backup_set,
         label=(label or f"request by {who or 'operator'}")[:200],
         actor=actor,
     )

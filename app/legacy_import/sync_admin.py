@@ -187,6 +187,38 @@ FAILURE_REASONS: dict[str, str] = {
     "STORED_FILES_MISSING": (
         "Talletatud failid puuduvad või nende räsi ei klapi; import pole täielik."
     ),
+    # HR-06: the OneNote import's backup check (`lovable_sync.backup_set_problem`),
+    # each refused before any row. Words only; the check itself is unchanged.
+    "NO_SET": (
+        "Importimiseks polnud kontrollitud varukoopiat (serveri varukoopia või selle kontroll "
+        "ebaõnnestus); midagi ei kirjutatud. Esita taotlus uuesti."
+    ),
+    "SET_NAME": "Varukoopia nimi polnud varukoopiakomplekti nimi; midagi ei kirjutatud.",
+    "SET_STALE": (
+        "Varukoopia polnud tehtud kahe tunni jooksul enne importi; midagi ei kirjutatud. "
+        "Esita taotlus uuesti."
+    ),
+    "PROOF_NOT_MOUNTED": (
+        "Varukoopia kontrollitõend polnud impordile kättesaadav (varukoopia kaust "
+        "ühendamata); midagi ei kirjutatud."
+    ),
+    "PROOF_MISSING": (
+        "Varukoopial puudus 2. taseme kontrollitõend või kontrollsummade loend; "
+        "midagi ei kirjutatud."
+    ),
+    "PROOF_OTHER_SET": "Kontrollitõend kuulus teisele varukoopiale; midagi ei kirjutatud.",
+    "PROOF_LEVEL": (
+        "Varukoopia polnud kontrollitud 2. tasemel (arhiivi sisu ja failivarud); "
+        "midagi ei kirjutatud."
+    ),
+    "PROOF_TIME": (
+        "Varukoopia kontrolli aeg polnud loetav või polnud varukoopia tegemise ja impordi "
+        "vahel; midagi ei kirjutatud."
+    ),
+    "PROOF_DUMP": (
+        "Varukoopia andmebaasifail puudus või oli pärast kontrolli muutunud (räsi ei klappinud); "
+        "midagi ei kirjutatud."
+    ),
     # LS2-D: the runner's own refusals.
     "MODE_CHANGED": (
         "Režiim muutus pärast taotlemist; taotlust ei käivitatud. "
@@ -1871,6 +1903,8 @@ _FIXED_MESSAGE_ERRORS = (
     "SyncRequestRefused",
     # STORE-GUARD: a store's name and counts, never a path or a key.
     "CaptureStorageError",
+    # HR-06: a fixed sentence and the backup check's code, never the set's name.
+    "CaptureBackupRefused",
 )
 
 
@@ -1985,7 +2019,8 @@ def _run_onenote(
         storage = int_counts(getattr(error, "counts", None))
         if storage:
             failed["storage"] = storage
-        # STORE-GUARD: a store refused before any write is a refusal, not a failure.
+        # STORE-GUARD and HR-06 (no proven backup set): a refusal before any
+        # write is a refusal, not a failure.
         status = (
             SyncRequestStatus.REFUSED
             if getattr(error, "before_writing", False) is True

@@ -54,7 +54,7 @@ KIRI = b"%PDF-1.4 jagatud kiri PA-B"
 
 
 @pytest.fixture
-def enabled(settings):
+def enabled(settings, onenote_backup_set):
     settings.ONENOTE_CAPTURE_IMPORT_ENABLED = True
     settings.REAL_DATA_ALLOWED = True
     return settings
