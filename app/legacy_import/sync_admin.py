@@ -29,7 +29,6 @@ here stores or shows a title, a value or a file name in a request's result.
 from __future__ import annotations
 
 import datetime as dt
-import inspect
 import logging
 import os
 import re
@@ -47,6 +46,13 @@ from django.utils import timezone
 from app.audit.enums import SecurityEventType
 from app.audit.services import record_security_event
 from app.core.errors import DomainError
+from app.legacy_import.lovable_sync import (
+    FIELD_POLICY,
+    STEP_FIELDS,
+    PendingDifference,
+    historical_hold,
+    pending_differences,
+)
 from app.legacy_import.lovable_sync_labels import LOVABLE_FIELD_LABELS, LOVABLE_REASONS
 from app.legacy_import.lovable_sync_models import (
     LovableSyncControl,
@@ -928,9 +934,8 @@ def onenote_panel(*, now: dt.datetime | None = None) -> OneNotePanel:
 # ---------------------------------------------------------------------------
 
 
-#: The current step's wording and day (`lovable_sync.STEP_FIELDS`): the most
-#: valuable corrections, because a stale step is work somebody is (not) doing.
-STEP_FIELDS = ("next_action_text", "next_action_date")
+# The current step's wording and day (`STEP_FIELDS`, imported from the engine):
+# the most valuable corrections, because a stale step is work somebody is (not) doing.
 #: The opinion request's lifecycle in Lovable: whether a request is still open.
 REQUEST_FIELDS = ("opinion_deadline", "sent", "sent_date")
 #: What a Teema is and where it stands.
@@ -1044,8 +1049,6 @@ class Differences:
     page: int
     pages: int
     total: int
-    #: ``engine`` (B's `pending_differences`) or ``ledger`` (the read service's queue).
-    source: str
     #: The next-step corrections, one card per Teema, highest value first (page 1 only).
     step_cards: list[StepCard] = field(default_factory=list)
     #: (heading, rows) of ``rows``, in `PRIORITY_GROUPS` order.
@@ -1086,24 +1089,12 @@ class HistoryGroup:
     opened: bool = False
 
 
-def _engine_differences() -> Callable[..., Any] | None:
-    from app.legacy_import import lovable_sync
-
-    found = getattr(lovable_sync, "pending_differences", None)
-    return found if callable(found) else None
-
-
-def _explanation(field_name: str, reason: str, given: str) -> str:
-    if given:
-        return given
-    from app.legacy_import import lovable_sync
-
-    policy = getattr(lovable_sync, "FIELD_POLICY", {}) or {}
-    entry = policy.get(field_name) if isinstance(policy, dict) else None
+def _explanation(field_name: str, reason: str) -> str:
     # The reason a field was held says more than the field's general policy.
     words = LOVABLE_REASONS.get(reason, "")
+    entry = FIELD_POLICY.get(field_name)
     if not words and entry is not None:
-        words = _attr(entry, "explanation", "label", default="")
+        words = entry.explanation
     return str(words or "")
 
 
@@ -1150,15 +1141,8 @@ def _ordered(rows: list[DifferenceRow]) -> list[DifferenceRow]:
     )
 
 
-def _is_historical(item: Any) -> bool:
-    from app.legacy_import.lovable_sync import historical_hold
-
-    return historical_hold(
-        str(_attr(item, "cohort", default="") or ""),
-        str(_attr(item, "reason", default="") or ""),
-        _attr(item, "baseline", "accepted", "a"),
-        _attr(item, "source", "lovable", "c"),
-    )
+def _is_historical(item: PendingDifference) -> bool:
+    return historical_hold(item.cohort or "", item.reason or "", item.baseline, item.source)
 
 
 def engine_rows(
@@ -1171,46 +1155,36 @@ def engine_rows(
     from app.legacy_import.lovable_sync import TALLINN
     from app.matters.models import Matter
 
-    engine = _engine_differences()
-    if engine is None:
-        return [], 0, 0
     today = (now or timezone.now()).astimezone(TALLINN).date()
-    items = list(engine(visible_to=user))
+    items = pending_differences(visible_to=user)
     visible = set(Matter.objects.visible_to(user).values_list("pk", flat=True))
-    named = []
+    named: list[tuple[PendingDifference, Any]] = []
     hidden = 0
     for item in items:
-        matter = _attr(item, "matter")
-        matter_id = getattr(matter, "pk", None) or _attr(item, "matter_id")
-        if matter is None or matter_id not in visible:
+        matter = item.matter
+        if matter is None or matter.pk not in visible:
             hidden += 1
             continue
         named.append((item, matter))
-    steps = _open_steps(
-        {m.pk for item, m in named if str(_attr(item, "field", default="")) in STEP_FIELDS},
-        today,
-    )
+    steps = _open_steps({m.pk for item, m in named if item.field in STEP_FIELDS}, today)
     rows: list[DifferenceRow] = []
     for item, matter in named:
-        name = str(_attr(item, "field", "field_name", default=""))
-        reason = str(_attr(item, "reason", default="") or "")
-        since = _attr(item, "since", "first_observed_at")
+        name = item.field
+        reason = item.reason or ""
+        since = item.since
         step = steps.get(matter.pk) if name in STEP_FIELDS else None
-        current = _attr(item, "juristid", "current", "b")
         rows.append(
             DifferenceRow(
                 matter=matter,
-                reference=str(_attr(item, "reference", default="") or matter.display_reference),
+                reference=item.reference or matter.display_reference,
                 field=name,
                 field_label=LOVABLE_FIELD_LABELS.get(name, name),
-                accepted=value_text(_attr(item, "accepted", "baseline", "a")),
-                juristid=value_text(current),
-                source=value_text(_attr(item, "source", "lovable", "c")),
-                explanation=_explanation(
-                    name, reason, str(_attr(item, "explanation", default="") or "")
-                ),
+                accepted=value_text(item.baseline),
+                juristid=value_text(item.current),
+                source=value_text(item.source),
+                explanation=_explanation(name, reason),
                 since=since,
-                resolvable=name in RESOLVABLE and _attr(item, "kind", default="FIELD") == "FIELD",
+                resolvable=name in RESOLVABLE and item.kind == "FIELD",
                 group=priority_group(name, step_past=bool(step and step.past)),
                 age_days=_age(since, today),
                 step=step,
@@ -1219,7 +1193,7 @@ def engine_rows(
         )
     # The engine leaves out what this reader may not open; the server's own
     # view counts everything, so the rest is counted here — never named.
-    server = list(engine(visible_to=None))
+    server = pending_differences(visible_to=None)
     hidden = max(hidden, len(server) - len(rows))
     hidden_history = max(
         0, sum(1 for i in server if _is_historical(i)) - sum(1 for r in rows if r.historical)
@@ -1306,86 +1280,32 @@ def differences(
     Named only for a Teema ``user`` may open; the rest are counted in ``hidden``.
     ``history_page`` (``?ajalugu=N``) pages through the historical group."""
     from app.legacy_import import lovable_observability as obs
-    from app.matters.models import Matter
 
-    if _engine_differences() is not None:
-        everything, hidden, hidden_history = engine_rows(user, now=now)
-        every = [r for r in everything if not r.historical]
-        held = [r for r in everything if r.historical]
-        cards = _step_cards(every)
-        rest = [r for r in every if r.field not in STEP_FIELDS]
-        paginator = Paginator(rest, obs.PAGE_SIZE)
-        chosen = paginator.get_page(page)
-        shown = list(chosen.object_list)
-        return Differences(
-            rows=shown,
-            hidden=hidden,
-            page=chosen.number,
-            pages=paginator.num_pages,
-            total=len(rest),
-            source="engine",
-            step_cards=cards if chosen.number == 1 else [],
-            groups=_grouped(shown),
-            named=len(every),
-            history=_history_group(held, hidden_history, history_page),
-        )
-    queue = obs.review_queue(user, page=page)
-    shown_items = list(queue.items)
-    ids = {item.matter_id for item in shown_items}
-    matters = {str(m.pk): m for m in Matter.objects.visible_to(user).filter(pk__in=ids)}
-    rows = [
-        DifferenceRow(
-            matter=matters[item.matter_id],
-            reference=item.reference,
-            field=item.field,
-            field_label=item.label,
-            accepted=item.last_applied,
-            juristid=item.juristid_now,
-            source=item.lovable_now,
-            explanation=item.explanation,
-            since=item.first_observed_at,
-            resolvable=item.field in _resolvable_fields(),
-        )
-        for item in shown_items
-        if item.matter_id in matters
-    ]
-    # A reader the service refuses (a technical administrator with no persona)
-    # gets an empty page: every pending field is then hidden, and counted.
-    hidden = queue.hidden
-    if not queue.total and not hidden:
-        hidden = obs.status(user).pending_review
+    everything, hidden, hidden_history = engine_rows(user, now=now)
+    every = [r for r in everything if not r.historical]
+    held = [r for r in everything if r.historical]
+    cards = _step_cards(every)
+    rest = [r for r in every if r.field not in STEP_FIELDS]
+    paginator = Paginator(rest, obs.PAGE_SIZE)
+    chosen = paginator.get_page(page)
+    shown = list(chosen.object_list)
     return Differences(
-        rows=rows,
+        rows=shown,
         hidden=hidden,
-        page=queue.page,
-        pages=queue.pages,
-        total=queue.total,
-        source="ledger",
-        groups=_grouped(rows),
-        named=queue.total,
+        page=chosen.number,
+        pages=paginator.num_pages,
+        total=len(rest),
+        step_cards=cards if chosen.number == 1 else [],
+        groups=_grouped(shown),
+        named=len(every),
+        history=_history_group(held, hidden_history, history_page),
     )
-
-
-def _resolvable_fields() -> tuple[str, ...]:
-    from app.legacy_import.lovable_sync import RESOLVABLE_FIELDS
-
-    return tuple(RESOLVABLE_FIELDS)
 
 
 def difference_for(user: Any, reference: str, field_name: str) -> DifferenceRow | None:
     """The one pending difference a decision page confirms, whatever page it is on."""
-    if _engine_differences() is not None:
-        rows, _hidden, _held = engine_rows(user)
-        return next((r for r in rows if r.reference == reference and r.field == field_name), None)
-    page = 1
-    while True:
-        found = differences(user, page=page)
-        for row in found.rows:
-            if row.reference == reference and row.field == field_name:
-                return row
-        if page >= found.pages:
-            return None
-        page += 1
+    rows, _hidden, _held = engine_rows(user)
+    return next((r for r in rows if r.reference == reference and r.field == field_name), None)
 
 
 # ---------------------------------------------------------------------------
@@ -1744,12 +1664,10 @@ def resolve_difference(
     state = resolvable(user, reference, field_name)
     if state is None:
         raise _refuse(actor, kind, "NOT_RESOLVABLE", NOT_RESOLVABLE, client)
-    resolve = lovable_sync.resolve_field
-    kwargs: dict[str, Any] = {"reference": reference, "field_name": field_name, "note": text}
-    if "actor" in inspect.signature(resolve).parameters:
-        kwargs["actor"] = _user_of(actor)
     try:
-        decision = resolve(**kwargs)
+        decision = lovable_sync.resolve_field(
+            reference=reference, field_name=field_name, note=text, actor=_user_of(actor)
+        )
     except lovable_sync.SyncRefused as error:
         raise _refuse(actor, kind, error.code, NOT_RESOLVABLE, client) from error
     _audit(

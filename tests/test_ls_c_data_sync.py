@@ -538,25 +538,25 @@ def test_an_invisible_teema_is_counted_never_named(cohort, gate, client):  # noq
 def test_the_engines_differences_are_used_and_filtered_when_present(admin, monkeypatch):
     visible = factories.MatterFactory()
     hidden = SimpleNamespace(pk="00000000-0000-0000-0000-000000000001")
+
+    def held(matter: Any, field: str, reason: str, a: str, b: str, c: str) -> Any:
+        return lovable_sync.PendingDifference(
+            kind="FIELD",
+            field=field,
+            outcome="REVIEW_REQUIRED",
+            reason=reason,
+            reference="",
+            since=None,
+            policy="",
+            matter=matter,
+            baseline=a,
+            current=b,
+            source=c,
+        )
+
     items = [
-        SimpleNamespace(
-            matter=visible,
-            field="stage",
-            reason="HELD_FIELD",
-            since=None,
-            accepted="Riigikogus",
-            juristid="Riigikogus",
-            source="Valitsuses",
-        ),
-        SimpleNamespace(
-            matter=hidden,
-            field="title",
-            reason="",
-            since=None,
-            accepted="SALAJANE",
-            juristid="SALAJANE",
-            source="SALAJANE",
-        ),
+        held(visible, "stage", "HELD_FIELD", "Riigikogus", "Riigikogus", "Valitsuses"),
+        held(hidden, "title", "", "SALAJANE", "SALAJANE", "SALAJANE"),
     ]
     seen: list[Any] = []
 
@@ -564,11 +564,11 @@ def test_the_engines_differences_are_used_and_filtered_when_present(admin, monke
         seen.append(visible_to)
         return items
 
-    monkeypatch.setattr(lovable_sync, "pending_differences", pending_differences, raising=False)
+    # `sync_admin` imports the engine's function by name (HR-11).
+    monkeypatch.setattr(sync_admin, "pending_differences", pending_differences)
     reader = factories.UserFactory()
     result = sync_admin.differences(reader)
     assert seen == [reader, None]  # the reader's view, then the count of everything
-    assert result.source == "engine"
     assert [r.source for r in result.rows] == ["Valitsuses"]
     assert result.hidden == 1
     assert all("SALAJANE" not in (r.accepted + r.source) for r in result.rows)

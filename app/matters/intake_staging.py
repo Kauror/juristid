@@ -581,7 +581,7 @@ def promote_intake_files(
     ``titles`` maps a staged file's id to the display title typed on its row
     (`intake_title__<id>`); a file without one keeps its filename as the title.
 
-    Called from inside `matter_create`'s transaction, so a refusal anywhere
+    Called from inside `intake.create_from_form`'s transaction, so a refusal anywhere
     after it takes the Documents with it and there is never a Matter carrying
     half an envelope.
 

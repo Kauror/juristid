@@ -6,7 +6,7 @@ suite already had a test that attached a file and stopped at the redirect, so
 every way of losing the upload *after* the Matter row was written passed it.
 
 Nothing here mocks the attachment service. A test that stubs
-`_attach_incoming_file` proves the view calls it, which was never the part in
+`intake.attach_form_upload` proves the view calls it, which was never the part in
 doubt.
 """
 

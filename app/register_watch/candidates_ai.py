@@ -21,9 +21,8 @@ from typing import Any
 
 from django.conf import settings
 
-from app.core.enums import Visibility
 from app.matters.models import Matter
-from app.register_watch import house_style
+from app.register_watch import house_style, outbound
 from app.register_watch.house_style import KODA_STYLE
 from app.register_watch.models import Strength, TopicCandidate
 
@@ -106,6 +105,11 @@ class Usage:
     judged: int = 0
     failures: int = 0
     last_failure: str = ""
+    #: Open sendable Teemad not offered because of `TOPICS_SHOWN` (counted,
+    #: never named), and letter titles of the period not sent because their
+    #: Teema is not known to be sendable (`outbound.letter_titles`).
+    topics_left_out: int = 0
+    letters_left_out: int = 0
 
     def failed(self, reason: str) -> None:
         self.failures += 1
@@ -122,14 +126,27 @@ def _client() -> Any:
     return anthropic.Anthropic(timeout=180.0, max_retries=2)
 
 
-def open_topics() -> dict[str, Matter]:
-    """The open Teemad the model may name: never a restricted one (ADR 0217 §4)."""
-    rows = (
-        Matter.objects.filter(is_open=True, deleted_at__isnull=True, visibility=Visibility.NORMAL)
-        .only("pk", "title")
-        .order_by("-created_at")[:TOPICS_SHOWN]
-    )
-    return {str(matter.pk): matter for matter in rows}
+def open_topics(usage: Usage | None = None) -> dict[str, Matter]:
+    """The open Teemad the model may name: never a restricted or a TEST one
+    (ADR 0217 §4, `outbound.sendable_topics`).
+
+    At most `TOPICS_SHOWN`, newest first. When more are open, the older ones
+    cannot be proposed; that is counted on ``usage`` and logged as a number,
+    so the cap is never silent (audit HR-09)."""
+    topics = outbound.sendable_topics()
+    rows = topics.only("pk", "title").order_by("-created_at")[:TOPICS_SHOWN]
+    chosen = {str(matter.pk): matter for matter in rows}
+    if len(chosen) == TOPICS_SHOWN:
+        left_out = topics.count() - TOPICS_SHOWN
+        if left_out > 0:
+            logger.warning(
+                "register sweep: %d open Teema(s) beyond the first %d not offered to the model",
+                left_out,
+                TOPICS_SHOWN,
+            )
+            if usage is not None:
+                usage.topics_left_out = left_out
+    return chosen
 
 
 def _prompt(candidates: Sequence[TopicCandidate], topics: dict[str, Matter]) -> str:
@@ -171,7 +188,7 @@ def judge_unjudged(usage: Usage, client: Any = None) -> int:
     )
     if not pending:
         return 0
-    topics = open_topics()
+    topics = open_topics(usage)
     judged = 0
     for start in range(0, len(pending), BATCH):
         judged += _judge_batch(pending[start : start + BATCH], topics, usage, client)

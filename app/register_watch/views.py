@@ -285,9 +285,27 @@ def _tell_about_files(request: HttpRequest, fetched: register_files.Fetched) -> 
         )
 
 
+def _add(
+    request: HttpRequest,
+    finding: Any,
+    own: list[Any],
+    fetched: register_files.Fetched,
+    comment: str,
+) -> None:
+    for handle in own:
+        handle.seek(0)  # a retried save reads the lawyer's files again
+    watch.add_to_teema(
+        finding,
+        actor=request.user,
+        comment=comment,
+        uploads=[*own, *fetched.uploads],
+        missed_links=(list(finding.files or []) if fetched.unreachable else fetched.missed_links),
+    )
+
+
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def decide(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Lisa märkena» or «Märgi loetuks»."""
     finding = watch.own_pending(request.user, pk)
@@ -300,14 +318,29 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
             # fetched before the save so no row lock waits on a register.
             # The lawyer's own files first (dropped on «Märkus», owner
             # 2026-11-23), checked as one request's batch, then the register's.
+            # The fetch has one time budget (HR-04): a slow register costs the
+            # files, never the note, and a missed file's link goes into it. When
+            # the register did not answer at all, the links found by the nightly
+            # look-up (`WatchFinding.files`) stand in.
+            # A register file `+ Märge` refuses (an error page saved as .pdf)
+            # must not cost the note either: each one is checked first and a
+            # refused one, or one over the request limits, goes to the note as
+            # a link (`Fetched.screen`). Should the save still refuse, it is
+            # tried once more without the register's files. A refusal that
+            # comes from the lawyer's own file refuses again.
+            from app.documents.uploads import UploadRejected
+
             own = own_files(request)
             fetched = register_files.fetch(finding.target.source, finding.external_id)
-            watch.add_to_teema(
-                finding,
-                actor=request.user,
-                comment=request.POST.get("markus", "")[:4000],
-                uploads=[*own, *fetched.uploads],
-            )
+            fetched.screen([int(handle.size or 0) for handle in own])
+            comment = request.POST.get("markus", "")[:4000]
+            try:
+                _add(request, finding, own, fetched, comment)
+            except UploadRejected:
+                if not fetched.uploads:
+                    raise
+                fetched.give_up_uploads()
+                _add(request, finding, own, fetched, comment)
             _tell_about_files(request, fetched)
         else:
             watch.dismiss(finding, actor=request.user)
@@ -317,8 +350,8 @@ def decide(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Märgi kõik loetuks»: skip every document still waiting on one Teema (owner, 2026-11-22).
 
@@ -368,8 +401,8 @@ def dismiss_all(request: HttpRequest, pk: Any) -> HttpResponse:
 
 
 @login_required
-@require_http_methods(["POST"])
 @business_write_required
+@require_http_methods(["POST"])
 def phrase(request: HttpRequest, pk: Any) -> HttpResponse:
     """«Otsingusõnad»: the words a Teema is searched by in one ministry register."""
     from app.matters.models import Matter
