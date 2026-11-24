@@ -227,6 +227,8 @@ LOVABLE_REASONS = {
 #: Lovable's own column names, as its audit ledger (`topic_change_field`) names
 #: them, to the canonical field they feed (`lovable_sync.SOURCE_FIELDS`). A
 #: column not listed here is shown by its own name only, never by its value.
+#: A lookup: only each field's own columns keep their order (`columns`); the
+#: order across fields is not significant.
 LOVABLE_SOURCE_COLUMNS = {column: spec.name for spec in LOVABLE_FIELDS for column in spec.columns}
 
 #: Lovable audit-ledger actions, in the page's words (any case).
