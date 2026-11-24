@@ -41,6 +41,26 @@ _SHA = re.compile(r"[0-9a-f]{40}")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
 _IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
 _ENV_KEYS = ("TARGET", "PREVIOUS", "ARCHIVE_SHA", "SCANNED_IMAGE_ID", "RELEASE_NOTE_KIND")
+#: Every gate the report must carry, in report order. A gate that did not run (its input
+#: missing, empty or unreadable) is reported MISSING: never left out, never a pass.
+ALL_GATES = (
+    "release.env:keys",
+    "release.env:commits",
+    "manifest:revision",
+    "manifest:previous",
+    "manifest:image_tag",
+    "manifest:image_ids",
+    "manifest:runtime_check",
+    "manifest:image_scan",
+    "manifest:release_note",
+    "manifest:loaded_check",
+    "archive:sha256",
+    "archive:bytes",
+    "migrations:file",
+    "migrations:commits",
+    "migrations:derived",
+    "migrations:live_plan",
+)
 
 
 def _sibling(name: str) -> ModuleType:
@@ -52,7 +72,13 @@ def _sibling(name: str) -> ModuleType:
         raise RuntimeError(f"cannot load {path}")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module  # dataclasses resolve annotations through sys.modules
-    spec.loader.exec_module(module)
+    # Never write tools/__pycache__ (``-I`` does not imply ``-B``): the shadow writes only
+    # its report.
+    previous, sys.dont_write_bytecode = sys.dont_write_bytecode, True
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.dont_write_bytecode = previous
     return module
 
 
@@ -125,7 +151,11 @@ def shadow(
             gate(f"input:{label}", None, f"{path}: {error.strerror}")
             return None
         inputs[label] = hashlib.sha256(data).hexdigest()
-        return data.decode("utf-8")
+        try:
+            return data.decode("utf-8")
+        except UnicodeDecodeError:
+            gate(f"input:{label}", False, f"{path}: not UTF-8")
+            return None
 
     env_text = read("release.env", release_env)
     mf_text = read("manifest", manifest)
@@ -157,6 +187,9 @@ def shadow(
             mf = read_manifest(mf_text)
         except ValueError as error:
             gate("manifest", False, str(error))
+        else:
+            if not mf:
+                gate("manifest", False, f"{manifest}: no key: value line (empty manifest)")
     if mf:
         gate(
             "manifest:revision",
@@ -289,6 +322,12 @@ def shadow(
                 )
             except (rm.Refused, OSError, UnicodeDecodeError) as error:
                 gate("migrations:live_plan", False, str(error))
+    reported = {g.name for g in gates}
+    for name in ALL_GATES:
+        if name not in reported:
+            gate(name, None, "did not run: its input is missing, empty or unreadable")
+    order = {name: index for index, name in enumerate(ALL_GATES)}
+    gates.sort(key=lambda g: order.get(g.name, -1))  # input/parse failures first
     return gates, inputs
 
 
@@ -317,7 +356,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--reviewed-plan", type=Path)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
-    if args.report.exists():
+    try:
+        report = args.report.open("x", encoding="utf-8", newline="\n")
+    except FileExistsError:
         sys.stderr.write(
             f"release_coordinator: {args.report} exists; reports are never overwritten\n"
         )
@@ -333,7 +374,8 @@ def main(argv: list[str] | None = None) -> int:
         reviewed_plan=args.reviewed_plan,
     )
     text = render(gates, inputs)
-    args.report.write_text(text, encoding="utf-8", newline="\n")
+    with report:
+        report.write(text)
     sys.stdout.write(text.encode("ascii", "backslashreplace").decode("ascii"))
     return 0 if all(g.status == "PASS" for g in gates) else EXIT_NOT_READY
 

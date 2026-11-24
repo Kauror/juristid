@@ -7,7 +7,9 @@ shaped like a real kit's release.env and release manifest (made-up shas and ids)
 from __future__ import annotations
 
 import hashlib
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -142,9 +144,8 @@ def test_missing_evidence_is_reported_missing(release):
     assert status["archive:bytes"] == status["migrations:live_plan"] == "MISSING"
 
 
-def test_the_cli_exits_3_unless_all_pass_and_never_overwrites(release, tmp_path, capsys):
-    report = tmp_path / "report.txt"
-    args = [
+def _cli_args(release: Path) -> list[str]:
+    return [
         "--release-env", str(release / "release.env"),
         "--manifest", str(release / "manifest.txt"),
         "--archive-sha-file", str(release / "archive.sha256"),
@@ -152,6 +153,11 @@ def test_the_cli_exits_3_unless_all_pass_and_never_overwrites(release, tmp_path,
         "--archive", str(release / ARCHIVE_NAME),
         "--plan", str(release / "plan.txt"),
     ]  # fmt: skip
+
+
+def test_the_cli_exits_3_unless_all_pass_and_never_overwrites(release, tmp_path, capsys):
+    report = tmp_path / "report.txt"
+    args = _cli_args(release)
     assert main([*args, "--report", str(report)]) == EXIT_NOT_READY  # derived: MISSING
     assert "VERDICT: NOT READY - 1 gate(s) not passed: migrations:derived" in report.read_text(
         encoding="utf-8"
@@ -184,3 +190,48 @@ def test_env_and_manifest_readers_refuse_duplicates():
         read_env("TARGET=a\nTARGET=b\n")
     with pytest.raises(ValueError, match="unreadable"):
         read_manifest("revision: a\nrevision: b\n")
+
+
+@pytest.mark.parametrize("text", ["", "\n  \n"], ids=["empty", "blank"])
+def test_an_empty_manifest_fails_and_its_gates_are_missing(release, tmp_path, text):
+    """Review of #701: an empty manifest parsed to {} and skipped every manifest gate."""
+    (release / "manifest.txt").write_text(text, encoding="utf-8")
+    status, _ = _run(release)
+    assert status["manifest"] == "FAIL"
+    for name in release_coordinator.ALL_GATES:
+        if name.startswith("manifest:") or name == "archive:sha256":
+            assert status[name] == "MISSING", name
+    report = tmp_path / "empty-manifest-report.txt"
+    assert main([*_cli_args(release), "--report", str(report)]) == EXIT_NOT_READY
+    assert "every gate passes" not in report.read_text(encoding="utf-8")
+
+
+def test_every_gate_is_always_reported(release):
+    (release / "release.env").unlink()
+    (release / "expected-migrations.txt").unlink()
+    status, _ = _run(release)
+    assert set(release_coordinator.ALL_GATES) <= set(status)
+    assert status["input:release.env"] == "MISSING"
+    assert status["migrations:live_plan"] == "MISSING"
+
+
+def test_a_non_utf8_input_is_a_failed_gate_with_a_report(release, tmp_path):
+    (release / "manifest.txt").write_bytes(b"revision: \xff\n")
+    report = tmp_path / "bad-bytes-report.txt"
+    assert main([*_cli_args(release), "--report", str(report)]) == EXIT_NOT_READY
+    assert "FAIL    input:manifest" in report.read_text(encoding="utf-8")
+
+
+def test_it_writes_no_bytecode_next_to_the_tools(release, tmp_path):
+    """Under `python -I` (not -B) the sibling load must not create tools/__pycache__."""
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    for name in ("release_coordinator.py", "release_migrations.py"):
+        shutil.copyfile(Path(release_coordinator.__file__).with_name(name), tools / name)
+    done = subprocess.run(  # noqa: S603 - this interpreter, copied files, fixed arguments
+        [sys.executable, "-I", str(tools / "release_coordinator.py"), *_cli_args(release),
+         "--report", str(tmp_path / "r.txt")],
+        capture_output=True, text=True, check=False, cwd=tmp_path,
+    )  # fmt: skip
+    assert done.returncode == EXIT_NOT_READY, done.stderr  # migrations:derived MISSING
+    assert not (tools / "__pycache__").exists()
