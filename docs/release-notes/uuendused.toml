@@ -13,7 +13,7 @@
 [[day]]
 date = 2026-11-30
 basis = "merge"
-prs = []
+prs = [723]
 changes = [
   "Monitooringus on uus osa «Riigikogu». Esimesena on seal Riigikogu komisjonide kutsed kojale arvamust avaldada: tähtaeg koos lausega kirjast, kust see loeti, komisjon ja teema. Kui tähtaega ei õnnestunud kirjast kindlalt lugeda, on kirjas «Tähtaeg vajab kontrollimist» ja põhjus. Riigikogu register on e-kirja kõrval teine kaitseliin, mitte selle asendaja.",
   "Kutse saab teemale lisada olulise tähtajana («Lisa tähtajana»), siduda teemal juba oleva tähtajaga, lisada endale meeldetuletuse või märkida, et edasist tööd pole vaja. See ei muuda teema arvamuse tähtaega ega järgmist sammu, mis tulevad Lovable'ist; kui kutse tähtaeg erineb teema arvamuse tähtajast, on see kutse juures kirjas.",
@@ -2260,7 +2260,7 @@ changes = [
 [[day]]
 date = 2026-08-21
 basis = "deployment"
-prs = []
+prs = [723]
 changes = [
   "Juristid on kasutusel Koja päris andmetega. Eelnõude ja arvamuste töö on ühes kohas, mitte Exceli tabelis.",
   "Teema juurde lisatud failid jäävad teema külge alles ja nende tekst on otsinguga leitav.",

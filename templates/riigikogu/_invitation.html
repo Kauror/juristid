@@ -42,7 +42,7 @@ the Teema's own deadline (Lovable's) is shown, never resolved.
       {% if invitation.review == "NEW" %}
         <form method="post" action="{% url 'register_watch:riigikogu_decide' pk=invitation.pk %}"{% if from_teema %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
           {% csrf_token %}
-          {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% elif row.teemad|length == 1 %}<input type="hidden" name="teema_id" value="{{ row.teemad.0.pk }}">{% endif %}
+          {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% elif row.teemad|length == 1 %}<input type="hidden" name="teema_id" value="{{ row.teemad.0.pk }}">{% elif row.teemad and not row.needs_check %}<label class="visually-hidden" for="tm-{{ invitation.pk }}">Teema</label><select id="tm-{{ invitation.pk }}" name="teema_id" class="field__input">{% for matter_choice in row.teemad %}<option value="{{ matter_choice.pk }}">{{ matter_choice.display_reference }} {{ matter_choice.title|truncatechars:40 }}</option>{% endfor %}</select>{% endif %}
           {% if not row.needs_check and row.teemad %}<button type="submit" name="otsus" value="kuupaev" class="button button--primary button--tiny">Lisa tähtajana</button>{% endif %}
           <button type="submit" name="otsus" value="pole_vaja" class="button button--quiet button--tiny">Edasist tööd pole vaja</button>
         </form>
@@ -65,7 +65,7 @@ the Teema's own deadline (Lovable's) is shown, never resolved.
             <summary>Lisa meeldetuletus</summary>
             <form method="post" action="{% url 'register_watch:riigikogu_decide' pk=invitation.pk %}"{% if from_teema %} {% include "matters/partials/registers_swap.html" %}{% endif %}>
               {% csrf_token %}
-              {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% else %}<input type="hidden" name="teema_id" value="{{ row.teemad.0.pk }}">{% endif %}
+              {% if from_teema %}<input type="hidden" name="tagasi" value="teema"><input type="hidden" name="teema_id" value="{{ matter.pk }}">{% elif row.teemad|length == 1 %}<input type="hidden" name="teema_id" value="{{ row.teemad.0.pk }}">{% else %}<label class="field__label" for="mtt-{{ invitation.pk }}">Teema</label><select id="mtt-{{ invitation.pk }}" name="teema_id" class="field__input">{% for matter_choice in row.teemad %}<option value="{{ matter_choice.pk }}">{{ matter_choice.display_reference }} {{ matter_choice.title|truncatechars:40 }}</option>{% endfor %}</select>{% endif %}
               <label class="field__label" for="mt-{{ invitation.pk }}">Päev</label>
               <input id="mt-{{ invitation.pk }}" type="date" name="paev" class="field__input" min="{{ today|date:'Y-m-d' }}" required>
               <label class="field__label" for="mm-{{ invitation.pk }}">Märkus</label>

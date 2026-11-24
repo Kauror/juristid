@@ -340,3 +340,24 @@ def test_a_work_victory_is_only_ever_a_candidate(client, world):
     victory = MatterWorkVictory.objects.get(matter=world["one"])
     assert victory.status == WorkVictoryStatus.CANDIDATE
     assert dt.date.today()
+
+
+def test_reading_an_outcome_analysis_twice_never_doubles_or_relabels_official_rows(db):
+    from app.riigikogu.models import Bill
+
+    bill = Bill.objects.create(uuid="33333333-2222-3333-4444-555555555555", title="x")
+    koda = analysis.Source("k", "Palume tähtaega pikendada.", "hk")
+    text = analysis.Source("t", "Aruanne esitatakse 60 päeva jooksul.", "ht")
+    listing = analysis.Source("m", AMENDMENTS, "hm")
+    model = analysis.MockModel(lambda p: {"proposals": []})
+    for _ in range(2):
+        row = outcomes.analyse(
+            bill=bill,
+            koda_opinion=koda,
+            revised_text=text,
+            amendment_list=listing,
+            stage="II",
+            model=model,
+        )
+    levels = [p["evidence_level"] for p in row.result["proposals"]]
+    assert levels == ["DIRECT", "SHARED"]

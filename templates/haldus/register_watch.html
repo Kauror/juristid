@@ -23,6 +23,31 @@
     </dl>
   </section>
 
+  <section class="panel" aria-labelledby="regwatchlog-riigikogu">
+    <h2 class="acctsection__title" id="regwatchlog-riigikogu">Riigikogu öine kontroll</h2>
+    {% comment %}docs/adr/0222 §6: per stage, its last attempt and last success; a failed, partial or never-run stage says so.{% endcomment %}
+    <div class="accttable">
+      <table class="data-table">
+        <thead>
+          <tr><th scope="col">Etapp</th><th scope="col">Seis</th><th scope="col">Viimane katse</th><th scope="col">Viimane õnnestunud</th><th scope="col">Päringuid / 429</th><th scope="col">Vigu</th><th scope="col">Loendurid</th></tr>
+        </thead>
+        <tbody>
+          {% for row in riigikogu %}
+            <tr>
+              <td>{{ row.health.label }}</td>
+              <td>{% if row.health.state == "ok" %}<span class="statechip statechip--ok">{{ row.health.line }}</span>{% elif row.health.state == "disabled" %}<span class="statechip">{{ row.health.line }}</span>{% else %}<span class="statechip statechip--problem">{{ row.health.line }}</span>{% endif %}</td>
+              <td class="regwatchlog__nowrap">{{ row.last.started_at|date:"j.n.Y H:i"|default:"—" }}</td>
+              <td class="regwatchlog__nowrap">{{ row.health.last_success.started_at|date:"j.n.Y H:i"|default:"—" }}</td>
+              <td>{% if row.last %}{{ row.last.requests }} / {{ row.last.rate_limited }}{% else %}—{% endif %}</td>
+              <td>{{ row.errors }}</td>
+              <td class="mono">{{ row.counts|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
   <section class="panel" aria-labelledby="regwatchlog-runs">
     <h2 class="acctsection__title" id="regwatchlog-runs">Käivitused</h2>
     {% if runs %}

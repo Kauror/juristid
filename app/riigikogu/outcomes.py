@@ -77,15 +77,19 @@ def analyse(
         ),
         model=model,
     )
-    if row.status == "DONE":
+    # Merged once, when the model's answer is first read: a cached analysis is
+    # returned as it was stored, so official rows are never doubled or relabelled.
+    if row.status == "DONE" and not row.result.get("merged"):
         inferred = []
         for item in row.result.get("proposals", []):
+            if item.get("official"):
+                continue
             item.setdefault("stage", stage)
             # Inference is never more than alignment (ADR 0225 §6).
             item["evidence_level"] = (
                 "ALIGNMENT" if item.get("outcome") in ("REFLECTED", "PARTIAL") else "INSUFFICIENT"
             )
             inferred.append(item)
-        row.result = {"proposals": official_rows + inferred}
+        row.result = {"proposals": official_rows + inferred, "merged": True}
         row.save(update_fields=["result", "updated_at"])
     return row

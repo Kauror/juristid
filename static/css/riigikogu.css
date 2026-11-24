@@ -206,3 +206,8 @@
 .rkanalysis__relation {
   white-space: nowrap;
 }
+
+/* A changed time inside a row's meta line reads inline with it. */
+.regwatch__meta .rkinv__changed {
+  display: inline;
+}

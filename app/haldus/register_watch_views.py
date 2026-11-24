@@ -86,11 +86,33 @@ def runs(request: HttpRequest) -> HttpResponse:
             health=watch_health(),
             totals=totals,
             total_days=TOTAL_DAYS,
+            # The Riigikogu cycle, stage by stage (docs/adr/0222 §6): never a
+            # failed or unrun stage shown as a clean one.
+            riigikogu=_riigikogu_stages(),
             waiting=WatchFinding.objects.filter(
                 status=FindingStatus.PENDING, matter__in=_visible(request)
             ).count(),
         ),
     )
+
+
+def _riigikogu_stages() -> list[dict[str, Any]]:
+    from app.riigikogu import cycle
+
+    rows = []
+    for health in cycle.health():
+        last = health.last_attempt
+        rows.append(
+            {
+                "health": health,
+                "last": last,
+                "counts": ", ".join(f"{k} {v}" for k, v in (last.counts or {}).items())
+                if last
+                else "",
+                "errors": len(last.errors or []) if last else 0,
+            }
+        )
+    return rows
 
 
 @never_cache
