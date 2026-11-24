@@ -214,6 +214,19 @@ def _opens(response) -> bool:
     return response.status_code == 200
 
 
+#: Items deliberately narrower than their route, and why. For these the menu
+#: still never offers a page that refuses; it may leave out one that opens.
+NARROWER = {
+    "teavitused": "offered to whom the bell is drawn for, like the account menu (UI-03)",
+}
+
+
+def _mismatch(key: str, shown: bool, opens: bool) -> bool:
+    if key in NARROWER:
+        return shown and not opens
+    return shown != opens
+
+
 @pytest.mark.parametrize("persona", sorted(PERSONAS))
 def test_each_item_is_shown_exactly_when_its_route_opens(client, gate, persona):
     PERSONAS[persona](client)
@@ -221,7 +234,7 @@ def test_each_item_is_shown_exactly_when_its_route_opens(client, gate, persona):
     for item in sections.SECTIONS:
         response = client.get(item.url())
         shown = item.visible(response.wsgi_request)
-        if shown != _opens(response):
+        if _mismatch(item.key, shown, _opens(response)):
             mismatches.append((item.key, shown, response.status_code))
     assert not mismatches, mismatches
 
@@ -242,7 +255,7 @@ def test_a_signed_in_account_sees_what_opens(client, settings, account):
     mismatches = []
     for item in sections.SECTIONS:
         response = client.get(item.url())
-        if item.visible(response.wsgi_request) != _opens(response):
+        if _mismatch(item.key, item.visible(response.wsgi_request), _opens(response)):
             mismatches.append((item.key, response.status_code))
     assert not mismatches, mismatches
     nav = client.get(reverse("haldus:index")).content.decode()

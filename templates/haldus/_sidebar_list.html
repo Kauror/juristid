@@ -1,7 +1,7 @@
 {% comment %}One rendering of the sidebar's groups; `prefix` keeps the heading ids unique.{% endcomment %}
 <ul class="haldusnav__groups">
   {% for group in groups %}
-    <li class="haldusnav__group">
+    <li>
       {% if group.items|length == 1 and group.items.0.label == group.label %}
         <ul class="haldusnav__items">
       {% else %}

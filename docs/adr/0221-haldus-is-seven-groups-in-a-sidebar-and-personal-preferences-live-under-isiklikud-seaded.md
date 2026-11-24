@@ -31,9 +31,11 @@ endpoints). A group is shown only when at least one of its items is.
   (`sections.active_key`); a page outside the shell may name one with `haldus_active`.
 * **The menu equals the guard.** Each predicate answers exactly what its route answers a GET.
   Where the old menu was narrower than its route, the item now follows the route:
-  «Teavitused» (`notifications:settings`, `login_required`) for every signed-in account,
   «Uuendused» and «Kiirklahvid» (behind the shared gate alone, docs/adr/0034) for everybody who
-  reaches the shell. Showing is still not authorizing: no route, guard, step-up table,
+  reaches the shell. One deliberate exception stays narrower: «Teavitused»
+  (`notifications:settings` is `login_required`) is offered only to the readers the bell is drawn
+  for (UI-03) — a technical administrator without a business role has nothing to set. Narrower
+  never offers a page that refuses; the inventory test names the exception. Showing is still not authorizing: no route, guard, step-up table,
   write-boundary registry or fresh-proof rule changed.
 * A shared-gate session with no persona reaches the shell only through a verified administrator
   session, as before: `visible_sections()` is empty for a reader who cannot open Ülevaade, and the
@@ -45,7 +47,7 @@ endpoints). A group is shown only when at least one of its items is.
 |---|---|---|---|---|
 | Ülevaade | Ülevaade | `haldus:index` | — | a signed-in persona/account, or a verified administrator session |
 | Isiklikud seaded | Kuvamine | `haldus:settings` **new** `/haldus/seaded/` | — | signed in |
-| | Teavitused | `notifications:settings` | `notifications:reset_settings` | signed in |
+| | Teavitused | `notifications:settings` | `notifications:reset_settings` | business reader (the bell's readers; the route itself: signed in) |
 | Töökorraldus | Osakonna töökorraldus | `haldus:osakond` | — | `may_view_department_management` (persona) |
 | | Töö ilma vastutajata | `account_admin:without_owner` | — | `may_administer_accounts` (verified session) |
 | Andmed | Klassifikaatorid | `reference_data:index` | every `reference_data:*` | `reference.manage` (persona or verified principal) |

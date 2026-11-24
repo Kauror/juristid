@@ -116,8 +116,16 @@ def may_open_settings(request: HttpRequest) -> bool:
 
 
 def may_open_notification_settings(request: HttpRequest) -> bool:
-    """Teavitused: `notifications:settings` is `login_required` and reads only one's own choices."""
-    return _signed_in(request)
+    """Teavitused: offered to exactly the readers the bell is drawn for (UI-03).
+
+    The one item narrower than its route: `notifications:settings` is
+    `login_required` and reads only one's own choices, but a technical
+    administrator without a business role has no bell and nothing to set, so
+    the sidebar does not offer it (`haldus.notification_settings_link`, the
+    same rule). Narrower never offers a route that refuses; the inventory test
+    names this exception (docs/adr/0221).
+    """
+    return may_read_business_content(_persona(request))
 
 
 # -- Töökorraldus ----------------------------------------------------------------------
