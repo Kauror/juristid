@@ -919,7 +919,10 @@ def test_an_effective_date_is_joustumine(signed_in, normal_matter, specialist):
     body = _detail(signed_in, normal_matter)
     strip = _strip(body)
     assert "Jõustumine" in strip
-    assert 'title="Pakendiseadus"' in strip
+    # UX-001: one visible line under the date, and the whole text — with its
+    # source last — in the item's popover rather than a `title` tooltip.
+    assert '<span class="tl-step__note">Pakendiseadus</span>' in strip
+    assert '<span class="tl-tip__text">Pakendiseadus</span>' in strip
     # The tensed chronology wording is not what a column is called.
     for gone in (">Jõustub<", ">Jõustus<"):
         assert gone not in strip
@@ -1126,7 +1129,9 @@ def test_a_closed_matter_ends_with_lopetatud(signed_in, normal_matter, specialis
     body = _detail(signed_in, normal_matter)
     strip = _strip(body)
     assert "Lõpetatud" in strip
-    assert 'title="Vastus esitatud ja järeltegevus tehtud"' in strip
+    # UX-001: one visible line, and the whole text in the item's popover.
+    assert '<span class="tl-step__note">Vastus esitatud ja järeltegevus tehtud</span>' in strip
+    assert '<span class="tl-tip__text">Vastus esitatud ja järeltegevus tehtud</span>' in strip
     # And the outcome has not replaced the name of the step.
     for gone in (">Menetlus lõppes<", ">Jõustus<", ">Loobuti<"):
         assert gone not in strip

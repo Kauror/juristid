@@ -12341,10 +12341,6 @@ section:has(.pw-more[open]) tbody.uxextra {
  * record's own words at the body weight. The column is capped so a long title
  * wraps between its words instead of widening the rail, and it never clips:
  * what a marker says is read without a mouse. */
-#teema-vaade-wrap .tl-step--event {
-  max-width: 11rem;
-}
-
 #teema-vaade-wrap .tl-step--event .tl-step__dot {
   border-radius: 1px;
   transform: rotate(45deg) scale(0.85);
@@ -12364,44 +12360,36 @@ section:has(.pw-more[open]) tbody.uxextra {
   overflow-wrap: break-word;
 }
 
-/* **No column is narrower than its own longest word, and the strip scrolls
- * itself when that does not fit.**
+/* **One track, one component per item** (UX-001, 2026-11-25).
  *
- * The columns used to be `minmax(0, 1fr)`: equal shares, as narrow as the row
- * demanded. A label is one or two words and cannot wrap inside a word, so once
- * a share fell below the longest one the word ran on into the next column. A
- * `Seadus` on `Kooskõlastusringil` that had sent three `Koja arvamus` and was
- * waiting on an `Arvamuse tähtaeg` draws nine columns; at 768px each was 78px,
- * and the current phase's semibold «Kooskõlastusring» — about 95px — printed
- * straight over «Arvamuse tähtaeg» beside it.
+ * The rail used to draw each column's connector from its dot to the column's
+ * own right edge, and an event column was capped at 11rem inside a wider grid
+ * track, so on a file with several expected commencements its connector
+ * stopped short of the next dot and the line came apart. Now every item is the
+ * same component in a grid of equal columns (spacing is the procedure's order,
+ * never elapsed time):
  *
- * `min-content` is that longest word (or date), so a label may still wrap
- * between its words and never runs out of its column. Where every floor fits,
- * `1fr` shares out the rest and the columns are equal exactly as before; where
- * one is longer, that column alone is wider. Where the floors together do not
- * fit, the row is wider than its box and the strip scrolls itself rather than
- * the page, which is what it already did on a phone (TEEMA_TARGET_SPEC §H).
- * Nothing changes for a row that fitted: at 1024 and 1440 the nine-column file
- * renders pixel-identical to the old rule.
+ *   - the dot is the item's first box, at the same height in every item;
+ *   - the item's segment runs from its own dot's centre to the next dot's
+ *     centre (left 6px, right -6px, the columns having no gap), so the
+ *     segments meet exactly, whatever any item's text does;
+ *   - --tl-reach is still how much of that one segment today has covered;
+ *   - the name takes at most two lines and every other line one, cut with an
+ *     ellipsis; the whole text is in the popover and in the name's title.
  *
- * A scroller clips at its padding edge, and the first column's dot sits on that
- * edge: the 3px ring of a `Praegu` or today node there would lose its left
- * side. So the strip reaches 4px out to the left and pads the same 4px back —
- * every column stays where it was — and the hairline under it is a background
- * drawn from that 4px onwards instead of a border, which would have started 4px
- * left of the page's one left edge. The extra pixel of bottom padding is the
- * border's own height, so the strip keeps its height too. */
+ * Too many items for the width: the strip scrolls itself, never the page. The
+ * 4px reach to the left keeps the first dot's 3px ring inside the scroll box. */
 #teema-vaade-wrap .tl-strip {
   display: grid;
   grid-auto-flow: column;
+  /* No column narrower than the longest word of its name (a name never breaks
+     inside a word), and otherwise equal shares: nine items fit at 768px, more
+     than fit scroll the strip itself. The one-line date and fact lines do not
+     widen a column (`contain: inline-size` below); they take what it has and
+     are cut with an ellipsis. */
   grid-auto-columns: minmax(min-content, 1fr);
   overflow-x: auto;
-  /* No side margin. The design export inset the strip by 32px itself because
-     its accordion body had none; production's body is already padded by the
-     one-edge rule above, and keeping both put the strip at 64 — the single
-     most visible rule of the redesign, visibly broken by the element that
-     leads the section (TEEMA_TARGET_SPEC, VISUAL PRECISION). The -4px is the
-     ring's room (see above), not an inset: the columns start where they did. */
+  list-style: none;
   margin: 0 0 14px -4px;
   padding: var(--spacing-3) 0 calc(var(--spacing-2) + 1px) 4px;
   background: linear-gradient(var(--border-subtle), var(--border-subtle)) left 4px bottom /
@@ -12409,33 +12397,26 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step {
-  /* How far along this column's own segment today has come. The template
-     overrides it per step from `ProcessStep.reach_percent`; the default here is
-     what the rail looked like before the reached/today/ahead amendment, so a
-     strip rendered without the value is a flat accent line rather than a
-     colourless one — and so the token has a definition in the stylesheet, which
-     is the house rule for every `var()` read (tests/test_ui_contract.py). */
+  /* How far along this item's own segment today has come; the template writes
+     it on every item. */
   --tl-reach: 100%;
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
-  padding-right: var(--spacing-2);
+  gap: 2px;
+  margin: 0;
+  padding: 0 var(--spacing-3) 0 0;
   min-width: 0;
 }
 
 #teema-vaade-wrap .tl-step::before {
   content: "";
   position: absolute;
-  left: 12px;
-  right: 0;
+  left: 6px;
+  right: -6px;
   top: 5px;
   height: 2px;
-  /* One hard stop at `--tl-reach`, so the rail is accent as far as today has
-     come and muted after it. A segment wholly behind us gets 100%, one wholly
-     ahead 0%, and neither needs a rule of its own. The fallback-free `var()`
-     is the house rule; `--tl-reach` is written by the template on every step. */
   background: linear-gradient(
     to right,
     var(--accent-link) var(--tl-reach),
@@ -12447,8 +12428,14 @@ section:has(.pw-more[open]) tbody.uxextra {
   display: none;
 }
 
+/* The dot has 4px of room under it before the name, the same in every item. */
+#teema-vaade-wrap .tl-step > .tl-step__dot {
+  flex: none;
+  margin-bottom: 4px;
+}
+
 /* The year, above the first item of each year (owner, 2026-11-23). Out of the
- * column's flow, so every dot stays on the one line the connector runs along. */
+ * column's flow, so every dot stays on the one line the track runs along. */
 #teema-vaade-wrap .tl-strip:has(.tl-step__year) {
   padding-top: calc(var(--spacing-3) + 16px);
 }
@@ -12462,14 +12449,14 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
-/* A phase's acts: small dots along the stretch after it, each with its date and
- * name in the tooltip (owner, 2026-11-23, after the Riigikogu's strip). */
+/* A phase's acts: small dots on its segment, after its own dot (owner,
+ * 2026-11-23), each with its date and name in the tooltip. */
 #teema-vaade-wrap .tl-step__acts {
   position: absolute;
   z-index: 1;
   top: 0;
-  left: 24px;
-  right: var(--spacing-3);
+  left: 20px;
+  right: 0;
   display: flex;
   justify-content: space-evenly;
   align-items: center;
@@ -12535,6 +12522,13 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step__what {
+  display: -webkit-box;
+  max-width: 100%;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow-wrap: break-word;
   font-size: 12.5px;
   font-weight: var(--typography-weight-semibold);
   line-height: 1.3;
@@ -12568,6 +12562,11 @@ section:has(.pw-more[open]) tbody.uxextra {
 }
 
 #teema-vaade-wrap .tl-step__date {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 11.5px;
   line-height: 1.3;
   color: var(--text-muted);
@@ -12665,26 +12664,155 @@ section:has(.pw-more[open]) tbody.uxextra {
   vertical-align: middle;
 }
 
+/* One line per fact under the name (a commencement under Jõustumine, a note
+ * under an estimate) cut with an ellipsis rather than wrapped. The whole text
+ * is the popover's (UX-001); a wrap here is what pushed the neighbours' dates
+ * out of line. */
 #teema-vaade-wrap .tl-step__note {
   display: block;
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--text-muted);
-  overflow-wrap: anywhere;
-}
-
-/* Whose expectation an estimated commencement is, and its ✕ (owner,
- * 2026-11-23): one quiet line under the date, the icon under it. An open
- * confirmation stays inside the column and wraps there. */
-#teema-vaade-wrap .tl-step__source {
-  font-size: 11.5px;
-  line-height: 1.3;
-  color: var(--text-muted);
-}
-
-#teema-vaade-wrap .tl-step > .uxtl__remove {
   max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: 11.5px;
+  line-height: 1.3;
+  color: var(--text-muted);
+}
+
+/* The item's lines are the popover's trigger: hover, keyboard focus or a tap
+ * (data-uxpopover and data-railtip, static/js/ux.js). */
+#teema-vaade-wrap .tl-step__more {
+  align-self: stretch;
+  max-width: 100%;
+  min-width: 0;
+  contain: inline-size;
+}
+
+/* A line outside a popover takes its column's width and no more. */
+#teema-vaade-wrap .tl-step > .tl-step__date,
+#teema-vaade-wrap .tl-step > .tl-step__note {
+  align-self: stretch;
+  contain: inline-size;
+}
+
+#teema-vaade-wrap .tl-step__sum {
+  display: block;
+  max-width: 100%;
+  list-style: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+#teema-vaade-wrap .tl-step__sum::-webkit-details-marker {
+  display: none;
+}
+
+#teema-vaade-wrap .tl-step__sum:hover > .tl-step__note,
+#teema-vaade-wrap .tl-step__sum:hover > .tl-step__date,
+#teema-vaade-wrap .tl-step__more[open] > .tl-step__sum > span {
+  color: var(--text-secondary);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+#teema-vaade-wrap .tl-step__sum:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* The popover. Fixed, so the strip's scroll box cannot clip it; placed under
+ * its trigger and kept inside the window by the popover contract
+ * (data-uxfloat="fit"). Selectable text and real links. */
+#teema-vaade-wrap .tl-tip {
+  position: fixed;
+  top: auto;
+  left: auto;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  width: max-content;
+  max-width: min(22rem, calc(100vw - var(--spacing-8)));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--spacing-2) var(--spacing-25);
+  background: var(--surface-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-menu);
+  font-size: 12.5px;
+  font-weight: var(--typography-weight-regular);
+  line-height: 1.4;
+  color: var(--text-primary);
+  white-space: normal;
+  overflow-wrap: anywhere;
+  user-select: text;
+  cursor: auto;
+}
+
+#teema-vaade-wrap .tl-tip__fact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#teema-vaade-wrap .tl-tip__fact + .tl-tip__fact {
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* The stored text as written, its own line breaks kept. */
+#teema-vaade-wrap .tl-tip__text {
+  white-space: pre-line;
+}
+
+/* An item with a popover says so to a pointer before it is hovered long
+ * enough to open. */
+#teema-vaade-wrap .tl-step--tip > .tl-step__more > .tl-step__sum {
+  cursor: help;
+}
+
+#teema-vaade-wrap .tl-tip__date {
+  font-weight: var(--typography-weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+#teema-vaade-wrap .tl-tip__note,
+#teema-vaade-wrap .tl-tip__owner {
+  color: var(--text-secondary);
+}
+
+/* Allikas is always the fact's last line. */
+#teema-vaade-wrap .tl-tip__source {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+/* Muuda's own list of expected commencements and their removal (UX-001). */
+#teema-vaade-wrap .kulgform__removals {
+  margin-top: var(--spacing-3);
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-subtle);
+}
+
+#teema-vaade-wrap .kulgform__subhead {
+  margin: 0 0 var(--spacing-1);
+  font-size: var(--typography-size-label);
+  font-weight: var(--typography-weight-semibold);
+  color: var(--text-secondary);
+}
+
+#teema-vaade-wrap .kulgform__removal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: 2px 0;
+}
+
+#teema-vaade-wrap .kulgform__removalwhat {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* -- the chronology's two kinds -------------------------------------------
@@ -13244,8 +13372,69 @@ section:has(.pw-more[open]) tbody.uxextra {
      minimum because the track's minimum is already its longest word, and a
      `min-content` track honours the item's `min-width` — so a column is the
      wider of the two and «Kooskõlastusring» still does not overprint here. */
+  /* A phone reads the rail as a vertical list (coordinator decision N-A2,
+     UX-001): the same items in the same order, the dot on a track down the
+     left, the segment from this dot's centre to the next one's. Nothing
+     scrolls sideways, the strip included. */
+  #teema-vaade-wrap .tl-strip {
+    display: block;
+    overflow-x: visible;
+    padding-top: var(--spacing-2);
+  }
+
+  #teema-vaade-wrap .tl-strip:has(.tl-step__year) {
+    padding-top: var(--spacing-2);
+  }
+
   #teema-vaade-wrap .tl-step {
-    min-width: 96px;
+    --tl-dot-top: 3px;
+    padding: 0 0 var(--spacing-25) 22px;
+  }
+
+  #teema-vaade-wrap .tl-step:has(> .tl-step__year) {
+    --tl-dot-top: 19px;
+  }
+
+  #teema-vaade-wrap .tl-step > .tl-step__dot {
+    position: absolute;
+    left: 0;
+    top: var(--tl-dot-top);
+    margin: 0;
+  }
+
+  #teema-vaade-wrap .tl-step::before {
+    left: 5px;
+    right: auto;
+    top: calc(var(--tl-dot-top) + 6px);
+    /* The next item's dot centre: its top plus 3px plus 6px. */
+    bottom: -9px;
+    width: 2px;
+    height: auto;
+    background: linear-gradient(
+      to bottom,
+      var(--accent-link) var(--tl-reach),
+      var(--border-strong) var(--tl-reach)
+    );
+  }
+
+  /* To the next dot's centre, which sits lower when that item opens a year. */
+  #teema-vaade-wrap .tl-step:has(+ .tl-step > .tl-step__year)::before {
+    bottom: -25px;
+  }
+
+  #teema-vaade-wrap .tl-step__year {
+    position: static;
+    margin-bottom: 2px;
+  }
+
+  #teema-vaade-wrap .tl-step__acts {
+    left: 2px;
+    right: auto;
+    top: calc(var(--tl-dot-top) + 16px);
+    bottom: 4px;
+    width: 8px;
+    height: auto;
+    flex-direction: column;
   }
 
   }

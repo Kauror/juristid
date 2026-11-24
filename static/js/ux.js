@@ -2331,6 +2331,88 @@
     markReportDirty(event.target);
   });
 
+  /* ---- «Menetluse kulg»: an item's popover behaves like a tooltip ---------
+   * UX-001 (2026-11-25). The popover is an ordinary `data-uxpopover` — one open
+   * at a time, Escape and a click elsewhere close it, placed inside the window
+   * and outside the strip's scroll box — and a tap or Enter on its lines opens
+   * it as any disclosure opens. This adds what a tooltip also does:
+   *
+   *  - with a mouse, resting on the item opens it after a moment, and it stays
+   *    open while the pointer is on the item or inside the popover (so a link
+   *    in it can be reached), closing shortly after it leaves both;
+   *  - keyboard focus on its lines opens it, and it closes when focus leaves
+   *    the item and its popover;
+   *  - a click on lines opened by hovering keeps it open rather than closing
+   *    it: the reader asked to read it.
+   *
+   * A popover opened by a click or a tap is the reader's: leaving does not
+   * close it. Touch screens have no hover, so they get the tap alone. */
+  function bindRailTips(scope) {
+    scope.querySelectorAll("details[data-railtip]").forEach(function (holder) {
+      if (!once(holder, "RailTip")) {
+        return;
+      }
+      var item = holder.closest(".tl-step") || holder;
+      var summary = holder.querySelector("summary");
+      var openTimer = null;
+      var closeTimer = null;
+      var canHover = window.matchMedia && window.matchMedia("(hover: hover)").matches;
+
+      function passing() {
+        return holder.getAttribute("data-railtip-passing") === "1";
+      }
+      function openPassing() {
+        if (holder.open) {
+          return;
+        }
+        holder.setAttribute("data-railtip-passing", "1");
+        holder.open = true;
+      }
+      function closePassing() {
+        if (holder.open && passing()) {
+          holder.open = false;
+        }
+      }
+
+      if (canHover) {
+        item.addEventListener("mouseenter", function () {
+          window.clearTimeout(closeTimer);
+          openTimer = window.setTimeout(openPassing, 180);
+        });
+        item.addEventListener("mouseleave", function () {
+          window.clearTimeout(openTimer);
+          closeTimer = window.setTimeout(closePassing, 250);
+        });
+      }
+      if (summary) {
+        summary.addEventListener("click", function (event) {
+          if (holder.open && passing()) {
+            event.preventDefault();
+            holder.removeAttribute("data-railtip-passing");
+          }
+        });
+        summary.addEventListener("focus", function (event) {
+          if (holder.contains(event.relatedTarget)) {
+            return;
+          }
+          if (summary.matches(":focus-visible")) {
+            openPassing();
+          }
+        });
+      }
+      holder.addEventListener("focusout", function (event) {
+        if (!holder.contains(event.relatedTarget)) {
+          closePassing();
+        }
+      });
+      holder.addEventListener("toggle", function () {
+        if (!holder.open) {
+          holder.removeAttribute("data-railtip-passing");
+        }
+      });
+    });
+  }
+
   function bindAll(scope) {
     var root = scope && scope.querySelectorAll ? scope : document;
     [
@@ -2340,6 +2422,7 @@
       bindFileDrop,
       bindWorkRows,
       bindExclusivePopovers,
+      bindRailTips,
       bindDocumentRename,
       bindCopyLink,
       bindRowFilter,

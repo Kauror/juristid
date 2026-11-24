@@ -7,6 +7,19 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# Kavandatud väljalase r93 (pakett A2: UX-001). Sama kavandatud päev kui #711 (A1); r93 integratsioon
+# liidab kaks 2026-11-25 kirjet üheks ja paneb kuupäeva paigalduspäevaks (README: üks kirje päevas).
+[[day]]
+date = 2026-11-25
+basis = "deployment"
+prs = [712]
+changes = [
+  "Menetluse kulg on kompaktsem ja ühtlane: kõik etapid ja kuupäevad on ühel katkematul joonel, igaühe all on nimi, kuupäev ja üks rida kirjeldust. Mitu jõustumiskuupäeva on endiselt eraldi ridadena.",
+  "Kogu kirjeldus, märkused ja allikas on etapi hüpikus: see avaneb, kui hiir peatub etapil, klaviatuuriga või puudutusega, ja sulgub Esc-iga. Allikas on alati viimane; kui jõustumisel on avaldatud allika aadress (näiteks Riigi Teataja), on see link. Lovable'ist tulnud kirje hüpik ütleb, et seda muudetakse Lovable'is.",
+  "Kolleegi lisatud eeldatava jõustumise eemaldamise ✕ ei ole enam menetluse kulus endas, vaid menetluse kulu «Muuda» paneelis loendis «Eeldatavad jõustumised», sama kinnitusega nagu varem.",
+  "Telefonis on menetluse kulg püstine loend, mida ei pea külgsuunas kerima.",
+]
+
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.
