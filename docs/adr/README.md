@@ -228,6 +228,11 @@ consequences and reversibility.
 | [0218](0218-new-drafts-in-the-registers-are-proposed-to-the-department-head-as-new-teemad.md) | New drafts in the registers are proposed to the department head as new Teemad (nightly sweep, the model judges, «Uued eelnõud», the bell's sixth source) | Proposed, amended 2026-11-24 (the verdict is written only on a candidate still waiting and unjudged, re-read under lock) |
 | [0219](0219-monitooring-gathers-new-drafts-the-government-agenda-and-the-registers-list.md) | «Monitooring» gathers the new drafts, the Government's agenda and the registers' list (top-bar tab, the head's until opened; valitsus.ee agenda read and judged weekly; the bell, no e-mail) | Proposed |
 | [0220](0220-a-lawyer-leaving-and-arriving-is-prepared-in-juristid-and-handed-over-in-lovable.md) | A lawyer leaving and arriving is prepared in Juristid and handed over in Lovable (a recorded Lovable hand-over has its own nightly limit of 150; «Lovable'i nimed» and pinned names; held work shown and confirmed before switching a person off; «Töö ilma aktiivse vastutajata») | Accepted |
+| [0222](0222-riigikogu-bills-are-followed-by-their-uuid-in-one-nightly-cycle-of-separate-stages.md) | Riigikogu bills are followed by their UUID, read in one nightly cycle of separate stages (the tie stays a `WatchTarget`, origin LINKED; one shared ledger under the published 1/s and 12/min limits; stage runs with checkpoints that only success moves) | Proposed |
+| [0223](0223-riigikogu-invitations-to-koda-are-read-and-their-dates-stay-external-facts.md) | Riigikogu invitations to koda are read nightly, and their dates stay external facts (addressee from metadata; deterministic deadline reading, measured on 205 letters with 0 wrong accepted; informational date kinds; no Lovable field written) | Proposed |
+| [0224](0224-monitooring-gets-a-riigikogu-section-and-the-teema-its-parliamentary-sections.md) | Monitooring gets a Riigikogu section, and the Teema its parliamentary sections (invitations first; committees; the members' amendment deadlines; earlier invitations folded) | Proposed |
+| [0225](0225-full-document-parliamentary-analysis-is-built-controlled-and-left-off.md) | Full-document parliamentary analysis is built, controlled, and left off (one cached, validated, quote-verified pipeline; deterministic version comparison; official evidence first; work-victory candidates only) | Proposed — processing not authorised |
+| [0226](0226-protocols-stenograms-and-answers-are-evidence-never-verdicts.md) | Protocols, stenograms and answers to invitations are evidence, never verdicts («vajab kontrollimist», never «ei vastanud»; deferred extensions listed) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:
@@ -241,6 +246,10 @@ requires every gap in the numbering to be named here:
 - 0216 — reserved for «Postipoiss letters are paired with Teemad by calibrated
   rule and by lawyers», on `feature/postipoiss-opinion-pairing` (not yet merged).
   The record lands with that branch, which then removes this line.
+- 0221 — reserved for the UI/UX and functional improvement programme of 2026-11-24
+  (packages A–E), which was in progress in other branches when the Riigikogu
+  programme took 0222–0226. If that programme needs no record, the number is
+  released and this line says so.
 
 Naming: `NNNN-short-decision-title.md`.
 

@@ -82,9 +82,10 @@ def _may_act(request: HttpRequest, invitation: Invitation, matter: Any | None) -
     """Monitooring's deciders, or anyone who sees a Teema the invitation's bill is tied to."""
     if candidate_notices.may_decide(request.user):
         return True
-    if matter is None or invitation.document.bill_id is None:
+    bill = invitation.document.bill
+    if matter is None or bill is None:
         return False
-    return bills.teemad_of(invitation.document.bill).filter(pk=matter.pk).exists()
+    return bills.teemad_of(bill).filter(pk=matter.pk).exists()
 
 
 def _day(raw: str) -> dt.date | None:

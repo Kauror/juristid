@@ -121,10 +121,17 @@ def facts(row: dict[str, Any]) -> BillFacts:
     except ValueError:
         raise client.FetchError("Riigikogu eelnõul puudub tunnus") from None
     committee = row.get("leadingCommittee") or {}
-    mark = row.get("mark")
+    raw_mark = row.get("mark")
+    mark = (
+        raw_mark
+        if isinstance(raw_mark, int)
+        else int(str(raw_mark))
+        if str(raw_mark or "").isdigit()
+        else None
+    )
     return BillFacts(
         uuid=key,
-        mark=int(mark) if isinstance(mark, int) or str(mark or "").isdigit() else None,
+        mark=mark,
         type_code=str(row.get("draftTypeCode") or "")[:8],
         membership=row.get("membership") if isinstance(row.get("membership"), int) else None,
         title=str(row.get("title") or "").strip()[:1000],

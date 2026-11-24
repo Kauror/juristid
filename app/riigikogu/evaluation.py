@@ -91,12 +91,16 @@ def measure(
             score.ambiguous += 1
         if truth is not None and truth["status"] == ExtractionStatus.FOUND and truth.get("day"):
             score.extractable += 1
-            if accepted and _same(found, truth):
+            if accepted and found is not None and _same(found, truth):
                 score.correct += 1
             elif accepted:
                 score.wrong_accepted += 1
                 score.failures.append(
-                    {"id": case["id"], "why": "vale kuupäev", "got": str(found.day)}
+                    {
+                        "id": case["id"],
+                        "why": "vale kuupäev",
+                        "got": str(found.day if found else ""),
+                    }
                 )
             elif found is not None:
                 score.flagged += 1
@@ -115,6 +119,10 @@ def measure(
         elif accepted:
             score.wrong_accepted += 1
             score.failures.append(
-                {"id": case["id"], "why": "kuupäev, mida kirjas pole", "got": str(found.day)}
+                {
+                    "id": case["id"],
+                    "why": "kuupäev, mida kirjas pole",
+                    "got": str(found.day if found else ""),
+                }
             )
     return score

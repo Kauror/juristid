@@ -64,8 +64,8 @@ def koda_role(*, direction: str, parties: str, title: str) -> str:
 
 #: Words a committee's request for an opinion is titled with.
 _INVITATION_TITLE = re.compile(
-    r"^\s*(kaasamiskiri|kaasamine\b|arvamuse\s+(küsimine|avaldamine|andmine)|"
-    r"ettepanekute\s+esitamine|seisukoha\s+küsimine)",
+    r"^\s*(kaasamiskiri|kaasamine\b|ettepanekute\s+esitamine|seisukoha\s+küsimine)|"
+    r"arvamuse\s+(küsimine|avaldamine|andmine)|^\s*kutse\b",
     re.IGNORECASE,
 )
 #: Sentences of the letter itself that ask for an opinion or for participation.
@@ -74,7 +74,8 @@ _INVITATION_TEXT = re.compile(
     r"ootame\s+(teie\s+|neid\s+)?(arvamus|seisukoh|ettepanek|hiljemalt)|"
     r"palun\s+esitage|palume\s+(need\s+|neid\s+)?esitada|palume\s+esitada\s+need|"
     r"kui\s+teil\s+on\s+(soovi|ettepanekuid|arvamusi|täiendavaid|märkusi)|"
-    r"soovi\s+esitada\s+eelnõu\s+kohta|"
+    r"soovi\s+esitada\s+eelnõu\s+kohta|võimalus\s+esitada|palume\s+teilt|"
+    r"kutse\s+osaleda|soovite\s+arutelul\s+osaleda|"
     r"kutsume\s+(teid\s+)?(osalema|arutelule|istungile))",
     re.IGNORECASE,
 )

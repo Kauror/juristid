@@ -50,7 +50,7 @@ ORDER = (
     Stage.RESPONSES,
     Stage.ANALYSIS,
 )
-BUDGETS = {
+BUDGETS: dict[str, int] = {
     Stage.BILLS: 60,
     Stage.INVITATIONS: 250,
     Stage.AGENDAS: 80,

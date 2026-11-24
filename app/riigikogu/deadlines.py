@@ -347,19 +347,20 @@ def extract(text: str, *, letter_date: dt.date | None) -> Extraction:
         found for found in (_choose(candidates, kind) for kind in DeadlineKind) if found is not None
     )
     opinion = next((d for d in chosen if d.kind == DeadlineKind.OPINION_REQUEST), None)
+    overall: str
     if opinion is not None:
-        status = opinion.status
+        overall = opinion.status
     elif chosen:
-        status = (
+        overall = (
             ExtractionStatus.CHECK
             if any(d.status != ExtractionStatus.FOUND for d in chosen)
             else ExtractionStatus.FOUND
         )
     else:
-        status = ExtractionStatus.NOT_FOUND
+        overall = ExtractionStatus.NOT_FOUND
     return Extraction(
         dates=chosen,
-        status=status,
+        status=overall,
         hearing_on=hearing[0] if hearing else None,
         hearing_evidence=hearing[1] if hearing else "",
         cancelled=cancelled,

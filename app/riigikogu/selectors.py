@@ -117,31 +117,33 @@ def invitation_rows(
     ):
         if row.state == FactState.ACTIVE:
             deadlines[row.document_id][row.kind] = row
-    for row in deadlines.values():
-        current = row.get(DeadlineKind.OPINION_REQUEST)
+    for kinds in deadlines.values():
+        current = kinds.get(DeadlineKind.OPINION_REQUEST)
         if (
             current is not None
             and current.supersedes_id
             and current.created_at >= now - CHANGED_FOR
+            and current.supersedes is not None
         ):
             superseded[current.pk] = current.supersedes
     teemad = teemad_by_bill(user, {i.document.bill_id for i in invitations if i.document.bill_id})
-    rows = []
+    rows: list[InvitationRow] = []
     for invitation in invitations:
         own = deadlines.get(invitation.document_id, {})
         opinion = own.get(DeadlineKind.OPINION_REQUEST)
         previous = superseded.get(opinion.pk) if opinion else None
-        row = InvitationRow(
+        moved = previous is not None and opinion is not None and previous.due_on != opinion.due_on
+        line = InvitationRow(
             invitation=invitation,
             deadline=opinion,
-            previous=previous if previous and previous.due_on != opinion.due_on else None,
+            previous=previous if moved else None,
             attendance=own.get(DeadlineKind.ATTENDANCE),
             teemad=teemad.get(invitation.document.bill_id, []),
             candidate=invitation.candidate,
         )
-        row.changed = row.previous is not None
-        _lovable(row)
-        rows.append(row)
+        line.changed = line.previous is not None
+        _lovable(line)
+        rows.append(line)
     return rows
 
 
@@ -197,7 +199,7 @@ def monitooring(user: Any, *, today: dt.date | None = None, everything: bool = F
     priority = set(deadline_teemad) | invited_bills | candidate_bills
     # What each row names, read once above: a Teema the reader may see, or none.
     for row in [*upcoming, *all_deadlines]:
-        row.teemad_shown = teemad.get(row.bill_id, [])  # type: ignore[union-attr]
+        row.teemad_shown = teemad.get(row.bill_id, [])
     mentions = list(
         StenogramMention.objects.filter(
             category=MentionCategory.OTHER, source="STENOGRAM"

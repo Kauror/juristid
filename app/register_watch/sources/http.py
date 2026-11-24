@@ -67,7 +67,7 @@ class FetchError(Exception):
 
 
 def _retry_after(error: urllib.error.HTTPError) -> float | None:
-    value = (error.headers or {}).get("Retry-After") if error.headers is not None else None
+    value = error.headers.get("Retry-After") if error.headers is not None else None
     try:
         seconds = float(str(value).strip())
     except (TypeError, ValueError):
