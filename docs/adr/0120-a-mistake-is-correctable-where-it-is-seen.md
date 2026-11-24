@@ -245,6 +245,10 @@ each blocker that is a fact about this Matter's own rows:
 - a background citation of this Matter's opinion;
 - an e-mail attachment link that crosses Matters.
 
+Since 2026-11-24 (health review HR-12) the same `EXISTS` questions are OR-ed in
+one statement rather than asked one round trip each. What is asked, and so what
+is offered, is unchanged.
+
 The plan is built where it is acted on: the confirmation page renders it, and
 `delete_matter` rebuilds it under the lock.
 
