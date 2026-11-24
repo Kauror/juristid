@@ -19,13 +19,15 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def world(db):
-    """The e2e-like world: two open Teemad, then the fictional Riigikogu on top."""
+    """A lawyer and a head, then the fictional Riigikogu, which makes its own two Teemad."""
+    from app.matters.models import Matter
+
+    factories.UserFactory()  # the demo makes the first writer the owner of its Teemad
     head = factories.DepartmentHeadFactory()
-    lawyer = factories.UserFactory()
-    one = factories.MatterFactory(owner=lawyer, title="Aruandluse teema")
-    two = factories.MatterFactory(owner=lawyer, title="Energia teema")
     call_command("seed_riigikogu_demo", verbosity=0)
-    return {"head": head, "lawyer": lawyer, "one": one, "two": two}
+    one = Matter.objects.get(title="Näidisteema: väikeettevõtluse aruandlus")
+    two = Matter.objects.get(title="Näidisteema: näidisenergia")
+    return {"head": head, "lawyer": one.owner, "one": one, "two": two}
 
 
 def _get(client, user, url):

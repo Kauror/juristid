@@ -6,8 +6,8 @@
 Refuses to run where ``APPLICATION_ENVIRONMENT`` is ``production``. Every bill,
 letter, sitting and quote is invented (the «demo» prefix on every UUID); the
 model analyses come from `MockModel` and are flagged ``mocked``, so every surface
-labels them «Näidis». It uses whichever Teemad exist (the e2e seed's), tying the
-fictional bills to two of them.
+labels them «Näidis». It makes its own two Teemad («Näidisteema: …»), owned by an
+existing specialist, so no other Teema of the world it runs in gains a bill.
 """
 
 from __future__ import annotations
@@ -164,14 +164,9 @@ class Command(BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         if getattr(settings, "APPLICATION_ENVIRONMENT", "") == "production":
             raise CommandError("Näidisandmeid ei looda tootmises.")
-        from app.matters.models import Matter
         from app.register_watch.models import TargetOrigin, WatchSource, WatchTarget
 
-        matters = list(
-            Matter.objects.filter(is_open=True, deleted_at__isnull=True).order_by("created_at")[:3]
-        )
-        if len(matters) < 2:
-            raise CommandError("Vaja on vähemalt kaht avatud teemat (näiteks seed_e2e_data).")
+        matters = self._teemad()
         now = timezone.now()
         today = timezone.localdate()
         with transaction.atomic():
@@ -369,6 +364,25 @@ class Command(BaseCommand):
                 )
         self._analyses(bill)
         self.stdout.write("Riigikogu näidisandmed loodud (väljamõeldud, mudel simuleeritud).")
+
+    def _teemad(self) -> list[Any]:
+        from django.contrib.auth import get_user_model
+
+        from app.core.authorization import may_write_business_content
+        from app.matters.models import Matter
+        from app.matters.services import create_matter
+
+        users = get_user_model().objects.filter(is_active=True).order_by("date_joined", "pk")
+        owner = next((u for u in users if may_write_business_content(u)), None)
+        if owner is None:
+            raise CommandError("Vaja on vähemalt üht juristi (näiteks seed_e2e_data).")
+        found = []
+        for title in ("Näidisteema: väikeettevõtluse aruandlus", "Näidisteema: näidisenergia"):
+            matter = Matter.objects.filter(title=title, deleted_at__isnull=True).first()
+            if matter is None:
+                matter = create_matter(title=title, owner=owner, actor=owner)
+            found.append(matter)
+        return found
 
     def _bill(
         self, name: str, mark: int, title: str, committee: str, now: Any, deadline: dt.date | None
