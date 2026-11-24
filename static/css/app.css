@@ -17163,6 +17163,57 @@ a.statcol:hover .statcol__value {
   color: var(--text-muted);
 }
 
+/* A record card opens what explains it (UX-008); a tie links each period. */
+.statrecord--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.statrecord--link:hover {
+  background: var(--surface-hover);
+}
+
+.statrecord--link .statrecord__when,
+.statrecord__period {
+  color: var(--accent-link);
+}
+
+.statrecord__periods {
+  line-height: 1.5;
+}
+
+.statrecord__more {
+  display: inline;
+}
+
+.statrecord__toggle {
+  display: inline;
+  cursor: pointer;
+  color: var(--accent-link);
+  list-style: none;
+}
+
+.statrecord__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.statrecord__rest {
+  display: block;
+  margin-top: var(--spacing-05);
+}
+
+/* The year a record card opened, on its trend (`#trend-<key>-<year>`). */
+.statcol:target {
+  scroll-margin-top: var(--spacing-8);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.statsection .statpanel:target {
+  scroll-margin-top: var(--spacing-8);
+}
+
 .statrows {
   margin-top: var(--spacing-4);
 }

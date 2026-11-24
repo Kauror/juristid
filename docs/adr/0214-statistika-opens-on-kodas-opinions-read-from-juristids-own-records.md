@@ -91,6 +91,26 @@ The owner's conditions:
    Osakond's Tehtud list and «Muudatused» — lists of documents registered in
    Juristid, not this count.
 
+7. **Each panel has one chart spec, and a record opens what explains it**
+   (*Proposed — overnight development 25.11.2026, subject to owner review*;
+   UX-008). `app.reporting.chart_spec` describes every panel — title, period,
+   active filters, categories, series with their values and units, legend,
+   coverage notes, the unfinished year, unknown values kept as `None` — built
+   from the `opinion_stats` results the page already has; it counts nothing
+   again. The page takes its panel titles, legends and anchors from the spec,
+   and the downloads (§8 when it lands) draw and tabulate the same spec, so
+   the page and a file cannot disagree. `opinion_views.figures` works the
+   results out once per URL state for the page and for any download of it.
+   A record card is a link: the record year of sent opinions opens that
+   calendar year on the page (`#stat-kuud`), the record month opens the
+   opinions it counted (the month columns' own `opinion_rows` link), and a
+   record read from a long-term trend opens the trend with that year's column
+   marked (`#trend-<key>-<year>`). The lawyer, the period and the trend range
+   travel with the link. **A tie links every tied period** — the first three in
+   the card, the rest behind «+N» — and no tied year or month is chosen for
+   the reader. No definition, count or rounding changed; `Record.when` reads
+   as before.
+
 ## Alternatives considered
 
 * **Convert the imported statements to a native record now** — cleaner end
