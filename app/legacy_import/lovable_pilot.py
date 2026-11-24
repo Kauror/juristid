@@ -150,6 +150,9 @@ HELD_FOR_REVIEW = "HELD_FOR_REVIEW"
 #: synchronised field each feeds. One set for the importer and the nightly
 #: synchronisation (`lovable_sync.IMPORT_HELD_COLUMNS` is this): a held column
 #: outside it would be held by nobody, so `validate_package` refuses it.
+#: Derived from `LOVABLE_FIELDS` (HR-10): a lookup, so its iteration order is
+#: not significant (it differs from the r91 literal; every reader looks up or
+#: tests membership, and `import_held_fields` sorts).
 HELD_FIELD_COLUMNS: dict[str, str] = {
     column: spec.name for spec in LOVABLE_FIELDS if spec.import_holdable for column in spec.columns
 }
