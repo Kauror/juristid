@@ -7,6 +7,18 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# 25.11 väljalase r92 (#704, #706, #690 nähtavad osad). Nähtava muudatuseta samas väljalaskes: #685, #697, #698,
+# #699, #700, #701, #702, #703, #705. Kui r92 paigaldatakse enne 22:00 UTC 24.11, tõsta need read 24.11 kirjesse.
+[[day]]
+date = 2026-11-25
+basis = "deployment"
+prs = [690, 704, 706]
+changes = [
+  "Lovable'i sünkroonimise halduslehtedel («Vaata erinevusi», erinevuse lahendamine ja Halduse Lovable'i vaade) ning AI-tööriistade vastustes on Juristide praegune väärtus nüüd loetav: vastutaja nimega, menetluse etapp nimetusega ja arvamuse saatmise seis sõnadega (näiteks «Arvamus saadetud · 05.01.2026 · Riigikogu»), mitte tunnuse, sisemise võtme või «—» kujul.",
+  "Lovable'i sünkroonimise kokkuvõte loeb «Lovable'is lõppenud, kuid Juristides avatud» ja «väljaspool sünkroonitavaid» nüüd pärast öiseid muudatusi: sama öö jooksul suletud teemat ei loeta enam avatuks ega sama öö jooksul loodud teemat kaks korda. Varasemate käivituste arvud jäävad, nagu need salvestati.",
+  "OneNote'i import kirjutab Juristidesse ainult siis, kui just tehtud varukoopia on kontrollitud. Kui kontrollitud varukoopiat ei ole, import keeldub enne ühtegi muudatust ja Halduse «Andmete sünkroonimises» on taotluse real põhjus eesti keeles.",
+]
+
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.
