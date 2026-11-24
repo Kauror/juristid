@@ -20,11 +20,12 @@ from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
+from django.db import transaction
 
 from app.matters.models import Matter
 from app.register_watch import house_style, outbound
 from app.register_watch.house_style import KODA_STYLE
-from app.register_watch.models import Strength, TopicCandidate
+from app.register_watch.models import CandidateStatus, Strength, TopicCandidate
 
 logger = logging.getLogger("app.register_watch")
 
@@ -230,15 +231,25 @@ def _judge_batch(
         return 0
     allowed = {Strength.STRONG, Strength.POSSIBLE, Strength.WEAK, Strength.NONE}
     judged = 0
-    for candidate in candidates:
-        row = answers.get(str(candidate.pk))
-        if not row or row.get("strength") not in allowed:
-            continue
-        candidate.strength = row["strength"]
-        candidate.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
-        # Only an id that was offered: the model cannot point anywhere else.
-        candidate.related_matter = topics.get(str(row.get("related") or ""))
-        candidate.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
-        judged += 1
+    with transaction.atomic():
+        # Re-read under lock, as `agenda.judge` does (audit HR-02): the request
+        # can take minutes, and a candidate the head dismissed, linked or added
+        # meanwhile is settled. Only a candidate still waiting and unjudged gets
+        # the model's verdict; a decided one is left exactly as the person left it.
+        still_open = TopicCandidate.objects.select_for_update(of=("self",)).filter(
+            pk__in=[candidate.pk for candidate in candidates],
+            status=CandidateStatus.NEW,
+            strength=Strength.UNJUDGED,
+        )
+        for candidate in still_open:
+            row = answers.get(str(candidate.pk))
+            if not row or row.get("strength") not in allowed:
+                continue
+            candidate.strength = row["strength"]
+            candidate.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
+            # Only an id that was offered: the model cannot point anywhere else.
+            candidate.related_matter = topics.get(str(row.get("related") or ""))
+            candidate.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
+            judged += 1
     usage.judged += judged
     return judged
