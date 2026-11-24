@@ -42,7 +42,7 @@ failure this discipline exists to prevent (master specification 18.9).
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any
 
@@ -54,6 +54,7 @@ from app.matters import overview as ov
 from app.matters import work_items as wi
 from app.matters.department_changes import changes_url
 from app.reporting import opinions
+from app.workflow.consistency import CurrentStep, steps_already_recorded
 
 #: How many *Vajab sekkumist* rows stand above the disclosure. Five, which is
 #: what frame C draws; the rest open in place on the same page, so a scan never
@@ -134,6 +135,26 @@ class Department:
     @property
     def has_upcoming(self) -> bool:
         return any(group.count for group in self.upcoming)
+
+
+def flag_intervention_rows(rows: list[ov.InterventionRow], viewer: Any) -> list[ov.InterventionRow]:
+    """«Vajab sekkumist» with the alert set on each row whose step it is about.
+
+    The rows are the ones already read, in their order; a row the rule does not
+    flag is returned as it was (docs/adr/0161, amendment of 2026-11-25).
+    """
+    alerts = steps_already_recorded(
+        [CurrentStep.of_item(row.source) if row.source is not None else None for row in rows],
+        viewer,
+    )
+    if not alerts:
+        return rows
+    return [
+        replace(row, consistency_alert=alerts[row.source.object_id])
+        if row.source is not None and row.source.is_action and row.source.object_id in alerts
+        else row
+        for row in rows
+    ]
 
 
 def build_department(
@@ -247,6 +268,11 @@ def build_department(
     page.reporting = dd.reporting_rail(viewer, today, facts=facts)
 
     if is_head:
+        # The docs/adr/0161 alert on the department head's late and ripe rows
+        # whose step is a current step the record already shows done — the
+        # Teema page's rule, asked once for the whole list and for this reader
+        # (amendment of 2026-11-25). No row is added, dropped or counted by it.
+        page.interventions = flag_intervention_rows(page.interventions, viewer)
         # Built only here. A specialist's request never reaches these two, so
         # the manager-only populations are not read at all rather than read and
         # withheld by a template condition (brief §4, §41).

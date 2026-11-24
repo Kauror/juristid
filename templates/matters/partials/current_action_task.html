@@ -193,9 +193,11 @@ panel is not carried across as if nothing had happened: its words are shown as
 
 {% for alert in consistency_alerts %}
   {% comment %}
-    A read-only workflow-consistency alert about the step above, and only
-    here (docs/adr/0161): why it appears, from structured records this
-    reader may see, and what the controls already on the row can do.
+    A read-only workflow-consistency alert about the step above
+    (docs/adr/0161): why it appears, from structured records this reader may
+    see, and what the controls already on the row can do. The work lists
+    print its title and reason on the step's row, never this remedy
+    (`consistency_mark.html`, amendment of 2026-11-25).
     Nothing is completed or changed by it.
   {% endcomment %}
   <div class="notice notice--warning" role="note" data-consistency-alert="{{ alert.key }}">

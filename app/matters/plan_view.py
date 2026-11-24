@@ -47,11 +47,11 @@ as it did, and a step the record no longer proves comes back.
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from django.db.models import Q
 from django.utils import timezone
 
 from app.matters.enums import RecordMode, WebsiteOverviewStatus
@@ -95,10 +95,7 @@ class RecordedWork:
 
     @classmethod
     def of(cls, matter: Any, viewer: Any, *, since: datetime | None = None) -> RecordedWork:
-        """One read per fact, each through the record's own `visible_to`.
-
-        A record restricted below its Matter must not change, by suppressing a
-        suggestion, what a reader who may not see it is shown (AUTH-003).
+        """One Matter's reading: :meth:`for_matters` asked about one Matter.
 
         ``since`` narrows every *proof* to records entered after that moment —
         the same facts, recorded later (docs/adr/0161): a published write-up
@@ -106,39 +103,106 @@ class RecordedWork:
         after it, an opinion filed or sent after it. Whether a request for an
         opinion is still outstanding is a fact about now and is never narrowed.
         Without ``since`` nothing changes.
+
+        There is no second spelling of the rule here: the Teema page, the
+        suggestion and the work lists' batched reading all go through
+        :meth:`for_matters` (docs/adr/0161, amendment of 2026-11-25).
+        """
+        return cls.for_matters([matter], viewer, since={matter.pk: since})[matter.pk]
+
+    @classmethod
+    def for_matters(
+        cls,
+        matters: Iterable[Any],
+        viewer: Any,
+        *,
+        since: Mapping[Any, datetime | None] | None = None,
+    ) -> dict[Any, RecordedWork]:
+        """What the records prove for each Matter, in a constant number of reads.
+
+        One grouped read per fact for every Matter at once — published
+        write-ups, `Kaasamine` rounds, sent opinions — each through the
+        record's own `visible_to`, and one for whether a request for an
+        opinion is still outstanding (`work_items.responses_outstanding`, the
+        rule `response_obligation_of` asks). A record restricted below its
+        Matter must not change, by suppressing a suggestion or raising an
+        alert, what a reader who may not see it is shown (AUTH-003).
+
+        ``since`` maps a Matter's primary key to the moment its proofs are
+        narrowed to (see :meth:`of`); a Matter missing from it, or mapped to
+        ``None``, is read without narrowing. The narrowing is decided here in
+        Python on the rows read, clause for clause what the single reading
+        used to ask in SQL: written `created_at > since`, a publication day
+        after the local day of ``since``, feedback closed after it, an opinion
+        filed or sent after it.
         """
         from app.matters.models import MatterEngagement, MatterWebsiteOverview
-        from app.matters.work_items import response_obligation_of
+        from app.matters.work_items import responses_outstanding
         from app.submissions.enums import SubmissionStatus
         from app.submissions.models import Submission
 
-        overviews = MatterWebsiteOverview.objects.visible_to(viewer).filter(
-            matter=matter, status=WebsiteOverviewStatus.PUBLISHED
-        )
-        engagements = MatterEngagement.objects.visible_to(viewer).filter(matter=matter)
-        filed = engagements
-        feedback = engagements.filter(feedback_closed_at__isnull=False)
-        sent = Submission.objects.visible_to(viewer).filter(
-            matter=matter, status=SubmissionStatus.SENT
-        )
-        if since is not None:
-            overviews = overviews.filter(
-                Q(created_at__gt=since) | Q(published_on__gt=timezone.localtime(since).date())
+        population = {matter.pk: matter for matter in matters}
+        if not population:
+            return {}
+        since = since or {}
+        ids = list(population)
+
+        overviews: dict[Any, list[Any]] = {pk: [] for pk in ids}
+        for overview in (
+            MatterWebsiteOverview.objects.visible_to(viewer)
+            .filter(matter_id__in=ids, status=WebsiteOverviewStatus.PUBLISHED)
+            .only("matter_id", "status", "kind", "url", "created_at", "published_on")
+        ):
+            overviews[overview.matter_id].append(overview)
+        engagements: dict[Any, list[Any]] = {pk: [] for pk in ids}
+        for engagement in (
+            MatterEngagement.objects.visible_to(viewer)
+            .filter(matter_id__in=ids)
+            .only("matter_id", "created_at", "feedback_closed_at")
+        ):
+            engagements[engagement.matter_id].append(engagement)
+        sent: dict[Any, list[Any]] = {pk: [] for pk in ids}
+        for submission in (
+            Submission.objects.visible_to(viewer)
+            .filter(matter_id__in=ids, status=SubmissionStatus.SENT)
+            .only("matter_id", "created_at", "sent_at")
+        ):
+            sent[submission.matter_id].append(submission)
+        owed = responses_outstanding(list(population.values()), viewer)
+
+        readings: dict[Any, RecordedWork] = {}
+        for pk in ids:
+            moment = since.get(pk)
+            published = overviews[pk]
+            filed = engagements[pk]
+            feedback = [row for row in filed if row.feedback_closed_at is not None]
+            opinions = sent[pk]
+            if moment is not None:
+                day = timezone.localtime(moment).date()
+                published = [
+                    row
+                    for row in published
+                    if row.created_at > moment
+                    or (row.published_on is not None and row.published_on > day)
+                ]
+                feedback = [row for row in feedback if row.feedback_closed_at > moment]
+                filed = [row for row in filed if row.created_at > moment]
+                opinions = [
+                    row
+                    for row in opinions
+                    if row.created_at > moment or (row.sent_at is not None and row.sent_at > moment)
+                ]
+            readings[pk] = cls(
+                # The step's own save and this proof ask one question
+                # (`overview_fulfils_step`), on the kind the page shows.
+                published_overview=any(overview_fulfils_step(row) for row in published),
+                published_any=bool(published),
+                engagement=bool(filed),
+                feedback_recorded=bool(feedback),
+                opinion_sent=bool(opinions),
+                opinion_owed=owed[pk],
             )
-            filed = engagements.filter(created_at__gt=since)
-            feedback = engagements.filter(feedback_closed_at__gt=since)
-            sent = sent.filter(Q(created_at__gt=since) | Q(sent_at__gt=since))
-        published = list(overviews.only("status", "kind", "url"))
-        return cls(
-            # The step's own save and this proof ask one question
-            # (`overview_fulfils_step`), on the kind the page shows.
-            published_overview=any(overview_fulfils_step(overview) for overview in published),
-            published_any=bool(published),
-            engagement=filed.exists(),
-            feedback_recorded=feedback.exists(),
-            opinion_sent=sent.exists(),
-            opinion_owed=response_obligation_of(matter, viewer).is_outstanding,
-        )
+        return readings
 
     def proves(self, step: MatterPlanStep) -> bool:
         """Whether ``step`` is already done on the record. Unknown steps never are."""

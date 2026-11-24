@@ -448,6 +448,7 @@ The rail holds only what has no honest place on a timeline.
             <span class="undatedrow__matter">
               {{ item.matter.title }}
             </span>
+            {% if item.consistency_alert %}{% include "matters/partials/consistency_mark.html" with alert=item.consistency_alert %}{% endif %}
           </a>
         {% endfor %}
         {% if work.undated_total > work.undated|length %}
