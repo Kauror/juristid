@@ -7,6 +7,17 @@
 # `basis`, `revisions` ja `prs` on hooldaja märkmed. Neid lehel ei näidata ja
 # need ei tohi jõuda `changes` teksti. Vt docs/release-notes/README.md.
 
+# Kavandatud väljalase r93 (pakett A1: UX-003 + UX-004). Kuupäev on oodatav paigalduspäev; kui r93 jõuab
+# tootmisse muul päeval, tõsta read selle päeva kirjesse (README: üks kirje päevas, kuupäev = paigalduspäev).
+[[day]]
+date = 2026-11-25
+basis = "deployment"
+prs = [711]
+changes = [
+  "Minu asjade «Viimastes tegevustes» on iga tegevus ühel real: teema pealkirja järel on kohe kuupäev ja tegevuse liik (ja kolleegi nimi, kui tegevuse tegi keegi teine). Korraga on näha 20 tegevust, ülejäänud on nagu varem «Näita veel» all.",
+  "Teavituste lehe «Varasemad» on nüüd kokku volditav ja vaikimisi kinni; pealkirjas on varasemate teavituste arv. Juristid jätab meelde, kas hoiad selle lahti või kinni. «Näita varasemaid» avab selle alati, ning lahti- või kinnivoltimine ei märgi ühtegi teavitust loetuks ega lugemata.",
+]
+
 # 24.11 väljalase r91 (paigaldus pärast 22:00 UTC, Tallinnas juba 24.11). #681 read tõsteti siia 23.11 kirjest,
 # sest r90 (23.11) neid ei kandnud. Nähtava muudatuseta samas väljalaskes: #679, #680, #682, #687, #688, #689,
 # #691, #692, #693, #694, #695.

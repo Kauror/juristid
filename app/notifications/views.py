@@ -147,7 +147,7 @@ def reminder_list(request: HttpRequest) -> HttpResponse:
             personal.upcoming(user, timezone.localdate()).select_related("matter")
         ),
         "shows_unowned": may_view_department_management(user),
-        "history": feed.history_page(user, cursor=cursor),
+        "history": feed.history_page(user, cursor=cursor, with_total=True),
         "history_continued": cursor is not None,
         "boundary": acknowledgement.encode_boundary(boundary),
         "tagasi": "teavitused",

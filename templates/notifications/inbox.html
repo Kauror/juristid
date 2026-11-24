@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load disclosures %}
 {% block title %}Teavitused · {{ application_name }}{% endblock %}
 
 {% comment %}
@@ -18,7 +19,15 @@ note about what a commencement check means — each item says what it is.
 UI-01 (2026-11-06): the page stays the full fallback for the bell's panel.
 «Märgi kõik loetuks» (with the boundary this page was drawn with) heads it,
 and «Varasemad» below the inbox sections is the history — what the reader has
-read and what was resolved, newest first, muted, a page at a time. The whole
+read and what was resolved, newest first, muted, a page at a time.
+
+UX-004 (2026-11-25): «Varasemad (N)» is a remembered block
+(`notifications.history`, docs/adr/0194), closed until the reader opens it. N
+is every history item on all pages (`feed.history_page(with_total=True)`).
+Turning a page (``?varasemad=``) or following a link to ``#varasemad`` shows it
+open for that view without changing what is remembered, and the redraw below
+keeps it as the reader sees it (`data-disclosure-keep`). Opening it reads
+nothing and marks nothing. The whole
 body is `#notif-page`, which redraws itself when the bell's panel answers
 something (`notificationsPageStale`), so the page never contradicts the panel.
 {% endcomment %}
@@ -135,7 +144,11 @@ something (`notificationsPageStale`), so the page never contradicts the panel.
 
   {% if history.items %}
     <section class="notifsection notifsection--history" id="varasemad" aria-labelledby="notif-history-heading">
-      <h2 class="sectionlabel" id="notif-history-heading">Varasemad</h2>
+      <details class="foldout notifhistory" data-disclosure-keep {% disclosure "notifications.history" force_open=history_continued %}>
+      <summary class="foldout__trigger">
+        <h2 class="sectionlabel" id="notif-history-heading">Varasemad <span class="notifhistory__count">({{ history.total }})</span></h2>
+      </summary>
+      <div class="foldout__body">
       <ul class="notiflist">
         {% for item in history.items %}
           <li class="notifrow notifrow--{{ item.state }}" data-inbox-history data-inbox-type="{{ item.type }}">
@@ -164,6 +177,8 @@ something (`notificationsPageStale`), so the page never contradicts the panel.
       {% if history_continued %}
         <a class="notifsection__more" href="{% url 'notifications:list' %}#varasemad">Tagasi uuemate juurde</a>
       {% endif %}
+      </div>
+      </details>
     </section>
   {% endif %}
 </div>

@@ -69,6 +69,8 @@ DISCLOSURES: dict[str, Disclosure] = {
         # Minu asjad.
         Disclosure("my_work.statistics", True, "Minu asjad · Minu statistika"),
         Disclosure("my_work.recent_activity", True, "Minu asjad · Viimased tegevused"),
+        # Teavitused: the history below the inbox, closed until the reader opens it.
+        Disclosure("notifications.history", False, "Teavitused · Varasemad"),
         # Teema → Dokumendid.
         Disclosure("matter_documents.working", False, "Teema · Dokumendid · SharePointi viited"),
         Disclosure("matter_documents.archive", False, "Teema · Dokumendid · Seotud arhiivikirjad"),
