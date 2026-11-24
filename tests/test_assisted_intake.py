@@ -15,6 +15,7 @@ time; nothing is a checked-in binary.
 from __future__ import annotations
 
 import ast
+import importlib
 import inspect
 import pathlib
 import re
@@ -65,6 +66,7 @@ from app.taxonomy.models import PolicyArea, Tag
 from app.workflow.enums import Track
 from tests import factories
 from tests import synthetic_corpus as corpus
+from tests.code_names import code_names
 
 PDF = "application/pdf"
 EML = "message/rfc822"
@@ -1330,15 +1332,26 @@ def test_no_network_client_and_no_model_is_reachable_from_the_analyser() -> None
                 assert name.split(".")[0] not in forbidden, f"{path.name} imports {name}"
 
 
-def test_the_web_request_never_opens_evidence_bytes() -> None:
-    """The view reads derivatives; the parser registry is the worker's."""
-    source = inspect.getsource(matter_views.matter_edit_assisted)
-    assert "registry" not in source and "evidence_storage" not in source and "parse(" not in source
+def test_the_web_request_names_no_evidence_reader() -> None:
+    """The view reads derivatives; the parser registry is the worker's.
+
+    Read from the syntax tree (`tests.code_names`, HR-19), so a comment or a
+    docstring explaining *why* the view does not parse may name these, while an
+    aliased import (`from …parsers import x as y`) or `from …extraction import
+    parsers` still counts. The behaviour is proved against the database by
+    `test_the_review_get_opens_no_evidence_bytes`.
+    """
+    parser_api = {"registry", "evidence_storage", "parse", "parsers", "for_mime_type"}
+    assert code_names(matter_views.matter_edit_assisted).isdisjoint(parser_api)
     package = pathlib.Path(inspect.getfile(analyse)).parent
-    for path in package.glob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        assert "evidence_storage" not in text and "extraction.parsers" not in text, path.name
-        assert "MalwareScanState" not in text, path.name
+    package_module = analyse.__module__.rsplit(".", 1)[0]
+    stems = sorted(path.stem for path in package.glob("*.py"))
+    assert "analysis" in stems, stems  # the glob found the package
+    forbidden = {"evidence_storage", "parsers", "registry", "MalwareScanState"}
+    for stem in stems:
+        dotted = package_module if stem == "__init__" else f"{package_module}.{stem}"
+        named = code_names(importlib.import_module(dotted))
+        assert named.isdisjoint(forbidden), (stem, named & forbidden)
 
 
 # ---------------------------------------------------------------------------
@@ -1471,6 +1484,33 @@ def test_the_review_get_writes_nothing(signed_in, specialist, intake_matter) -> 
         set(intake_matter.source_organisations.values_list("pk", flat=True)),
     )
     assert after == before
+
+
+@pytestmark_db
+def test_the_review_get_opens_no_evidence_bytes(signed_in, intake_matter, monkeypatch) -> None:
+    """The page reads derivatives only: stored bytes and parsers are booby-trapped.
+
+    Unlike a search of the view's own text, this also catches a helper the view
+    calls that reaches for the evidence store or a parser (HR-19).
+    """
+    from app.documents.extraction.base import ParserRegistry, registry
+    from app.documents.services import evidence_storage
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("the web request touched evidence bytes or a parser")
+
+    storage_class = type(evidence_storage())
+    for method in ("open", "_open", "path"):
+        monkeypatch.setattr(storage_class, method, refuse)
+    for method in ("for_mime_type", "parsers"):
+        monkeypatch.setattr(ParserRegistry, method, refuse)
+    for parser in set(registry._by_mime.values()):
+        monkeypatch.setattr(parser, "parse", refuse)
+
+    response = signed_in.get(_assisted(intake_matter))
+    assert response.status_code == 200
+    body = response.content.decode()
+    assert "kadri@naidisministeerium.invalid" in body  # the analysis ran, from derivatives
 
 
 @pytestmark_db
