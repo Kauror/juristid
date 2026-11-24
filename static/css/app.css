@@ -17337,6 +17337,42 @@ a.jcal__daynum {
   color: var(--text-secondary);
 }
 
+/* A panel head's right side: its note or legend, then its downloads (UX-005). */
+.statpanel__tools {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--spacing-2) var(--spacing-3);
+  margin-left: auto;
+}
+
+.statdownload {
+  align-self: center;
+}
+
+.statdownload__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.statdownload__icon {
+  display: block;
+}
+
+.statdownload__trigger:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+}
+
+.opinionmenu > .statdownload__body {
+  width: 200px;
+}
+
 .statlegend {
   display: flex;
   flex-wrap: wrap;
@@ -17489,6 +17525,57 @@ a.statcol:hover .statcol__value {
 .statrecord__when {
   font-size: var(--typography-size-meta);
   color: var(--text-muted);
+}
+
+/* A record card opens what explains it (UX-008); a tie links each period. */
+.statrecord--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.statrecord--link:hover {
+  background: var(--surface-hover);
+}
+
+.statrecord--link .statrecord__when,
+.statrecord__period {
+  color: var(--accent-link);
+}
+
+.statrecord__periods {
+  line-height: 1.5;
+}
+
+.statrecord__more {
+  display: inline;
+}
+
+.statrecord__toggle {
+  display: inline;
+  cursor: pointer;
+  color: var(--accent-link);
+  list-style: none;
+}
+
+.statrecord__toggle::-webkit-details-marker {
+  display: none;
+}
+
+.statrecord__rest {
+  display: block;
+  margin-top: var(--spacing-05);
+}
+
+/* The year a record card opened, on its trend (`#trend-<key>-<year>`). */
+.statcol:target {
+  scroll-margin-top: var(--spacing-8);
+  outline: var(--focus-ring-width) solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.statsection .statpanel:target {
+  scroll-margin-top: var(--spacing-8);
 }
 
 .statrows {

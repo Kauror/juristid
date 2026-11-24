@@ -12,18 +12,23 @@ period, the lawyer and the trend range live in the URL.
 
 from __future__ import annotations
 
+import calendar
+from dataclasses import dataclass
 from datetime import date
 from typing import Any
 from urllib.parse import urlencode
 
 from django.contrib.auth.decorators import login_required
-from django.http import HttpRequest, HttpResponse
+from django.http import Http404, HttpRequest, HttpResponse
 from django.shortcuts import render
 from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
-from app.reporting import classification, opinions
+from app.audit.access import record_export
+from app.core.http import content_disposition
+from app.core.xlsx_safety import workbook_response
+from app.reporting import chart_spec, chart_svg, chart_workbook, classification, opinions
 from app.reporting import opinion_stats as stats
 
 TREND_SPANS = {"5": "Viimased 5 aastat", "10": "Viimased 10 aastat", "koik": "Alates 2011"}
@@ -58,11 +63,49 @@ def _load(request: HttpRequest) -> tuple[list[Any], dict[Any, Any], dict[Any, da
     return facts, known, opinions.matter_deadlines(request.user, known), owners
 
 
-@login_required
-@require_GET
-def dashboard(request: HttpRequest) -> HttpResponse:
-    from app.reporting.views import TABS
+@dataclass(frozen=True)
+class Figures:
+    """Everything the page draws, worked out once for one request's URL state.
 
+    The page and every download of one of its panels start here, so they read
+    the same results for the same URL (UX-005/UX-008, docs/adr/0214 §7).
+    """
+
+    today: date
+    period: stats.Period
+    jurist: str
+    owners: list[str]
+    trend_key: str
+    first_year: int
+    last_year: int
+    summary: stats.Summary
+    bars: list[stats.MonthBar]
+    bar_owners: list[str]
+    flow: list[stats.FlowBar]
+    instruments: list[stats.InstrumentRow]
+    areas: list[stats.InstrumentRow]
+    senders: list[stats.InstrumentRow]
+    pressure: stats.Pressure
+    decisions: stats.Decisions
+    trends: list[stats.Trend]
+    records: list[stats.Record]
+
+    @property
+    def trend_span(self) -> str:
+        return f"{self.first_year}–{self.last_year}"
+
+    @property
+    def carried(self) -> dict[str, str]:
+        """The period and the lawyer, as the URL names them."""
+        return {**_period_query(self.period), "jurist": self.jurist}
+
+    @property
+    def trend_carried(self) -> dict[str, str]:
+        return {"trend": "" if self.trend_key == DEFAULT_TREND else self.trend_key}
+
+
+def figures(request: HttpRequest) -> Figures:
+    """The page's results for this request: the reader's Teemad, the URL's period and lawyer."""
     today = timezone.localdate()
     period = stats.parse_period(request.GET, today)
     facts, known, deadlines, owners = _load(request)
@@ -77,13 +120,101 @@ def dashboard(request: HttpRequest) -> HttpResponse:
         "10": max(stats.FIRST_YEAR, last_year - 9),
         "koik": stats.FIRST_YEAR,
     }[trend_key]
-
-    carried = {**_period_query(period), "jurist": jurist}
-    trend_carried = {"trend": "" if trend_key == DEFAULT_TREND else trend_key}
     bars, bar_owners = stats.monthly(facts, period)
     found = stats.trends(facts, matters, deadlines, first=first_year, last=last_year, today=today)
-    summary = stats.summary(facts, matters, deadlines, period)
     declined = opinions.declined_facts(request.user, known)
+    return Figures(
+        today=today,
+        period=period,
+        jurist=jurist,
+        owners=owners,
+        trend_key=trend_key,
+        first_year=first_year,
+        last_year=last_year,
+        summary=stats.summary(facts, matters, deadlines, period),
+        bars=bars,
+        bar_owners=bar_owners,
+        flow=stats.flow(facts, matters, period),
+        instruments=stats.by_instrument(facts, matters, deadlines, period),
+        areas=stats.by_area(facts, matters, deadlines, period),
+        senders=stats.by_sender(facts, matters, deadlines, period),
+        pressure=stats.pressure(matters, deadlines, period),
+        decisions=stats.decisions(facts, declined, period),
+        trends=found,
+        records=stats.records(facts, found, today),
+    )
+
+
+def panels(found: Figures) -> dict[str, chart_spec.ChartSpec]:
+    """Every panel's chart spec, by key, in the page's order (docs/adr/0214 §7)."""
+    period, jurist = found.period, found.jurist
+    specs = [
+        chart_spec.monthly(found.bars, found.bar_owners, period, jurist, sent=found.summary.sent),
+        chart_spec.flow(found.flow, period, jurist),
+        chart_spec.group("liigid", found.instruments, period, jurist),
+        chart_spec.group("valdkonnad", found.areas, period, jurist),
+        chart_spec.group("saatjad", found.senders, period, jurist),
+        chart_spec.pressure(found.pressure, period, jurist),
+        chart_spec.decisions(found.decisions, period, jurist),
+        *(chart_spec.trend(trend, found.trend_span, jurist) for trend in found.trends),
+    ]
+    return {spec.key: spec for spec in specs}
+
+
+def record_links(found: Figures) -> list[dict[str, Any]]:
+    """Each record with a link to every period that holds it (UX-008).
+
+    The record year of sent opinions opens that calendar year on this page (its
+    months, and the same count in the tile); the record month opens the
+    opinions it counted, as that month's column does; a record read from a
+    trend opens the trend with that year's column marked. The lawyer and the
+    trend range travel with every link. A tie links each of its periods: none
+    is chosen for the reader.
+    """
+    out = []
+    for record in found.records:
+        links = []
+        for held in record.periods:
+            if record.source == "month" and held.month:
+                last = calendar.monthrange(held.year, held.month)[1]
+                url = _url(
+                    "reporting:opinion_rows",
+                    periood="vali",
+                    alates=date(held.year, held.month, 1).isoformat(),
+                    kuni=date(held.year, held.month, last).isoformat(),
+                    jurist=found.jurist,
+                )
+            elif record.source == "sent":
+                url = (
+                    _url(
+                        "reporting:dashboard",
+                        periood="aasta",
+                        aasta=str(held.year),
+                        jurist=found.jurist,
+                        **found.trend_carried,
+                    )
+                    + "#stat-kuud"
+                )
+            else:
+                url = (
+                    _url("reporting:dashboard", **found.carried, **found.trend_carried)
+                    + f"#trend-{record.source}-{held.year}"
+                )
+            links.append({"label": held.label, "url": url})
+        out.append({"record": record, "links": links, "shown": links[:3], "rest": links[3:]})
+    return out
+
+
+@login_required
+@require_GET
+def dashboard(request: HttpRequest) -> HttpResponse:
+    from app.reporting.views import TABS
+
+    found = figures(request)
+    period, jurist, today = found.period, found.jurist, found.today
+    carried, trend_carried = found.carried, found.trend_carried
+    summary = found.summary
+    specs = panels(found)
 
     def rows_url(**extra: str) -> str:
         return _url("reporting:opinion_rows", **{**carried, **extra})
@@ -97,6 +228,11 @@ def dashboard(request: HttpRequest) -> HttpResponse:
             "nav_active": "statistika",
             "period": period,
             "summary": summary,
+            # Each panel's title, legend and notes, shared with its downloads.
+            "charts": specs,
+            # Every download link carries the page's own state (UX-005).
+            "chart_query": chart_query(found),
+            "chart_stems": {key: _file_name(spec, found, "")[:-1] for key, spec in specs.items()},
             "rows_url": rows_url(),
             "owner_rows": [
                 {"row": row, "url": rows_url(jurist=row.owner)} for row in summary.owners
@@ -112,29 +248,37 @@ def dashboard(request: HttpRequest) -> HttpResponse:
                         jurist=jurist,
                     ),
                 }
-                for bar in bars
+                for bar in found.bars
             ],
-            "bar_owners": [{"owner": o, "slot": i % 8} for i, o in enumerate(bar_owners)],
             # A closer look at the period (phase 2).
-            "flow": stats.flow(facts, matters, period),
+            "flow": found.flow,
             "instruments": [
                 {"row": row, "url": rows_url(liik=row.key) if row.key and row.sent else ""}
-                for row in stats.by_instrument(facts, matters, deadlines, period)
+                for row in found.instruments
             ],
             # Who sends, and about what (phase 3, ADR 0215): confirmed fields only.
             "areas": [
                 {"row": row, "url": rows_url(valdkond=row.key) if row.key and row.sent else ""}
-                for row in stats.by_area(facts, matters, deadlines, period)
+                for row in found.areas
             ],
             "senders": [
                 {"row": row, "url": rows_url(saatja=row.key) if row.key and row.sent else ""}
-                for row in stats.by_sender(facts, matters, deadlines, period)
+                for row in found.senders
             ],
             "pending_classification": classification.pending_for(request.user).count(),
-            "pressure": stats.pressure(matters, deadlines, period),
-            "decisions": stats.decisions(facts, declined, period),
-            "trends": found,
-            "records": stats.records(facts, found, today),
+            "pressure": found.pressure,
+            "decisions": found.decisions,
+            "trends": found.trends,
+            "trend_items": [
+                {
+                    "trend": trend,
+                    "chart": specs[f"trend-{trend.key}"],
+                    "stem": _file_name(specs[f"trend-{trend.key}"], found, "")[:-1],
+                }
+                for trend in found.trends
+            ],
+            "records": found.records,
+            "record_items": record_links(found),
             "period_links": [
                 {
                     "label": label,
@@ -160,7 +304,7 @@ def dashboard(request: HttpRequest) -> HttpResponse:
                         **trend_carried,
                     ),
                 }
-                for year in range(last_year, stats.FIRST_YEAR - 1, -1)
+                for year in range(found.last_year, stats.FIRST_YEAR - 1, -1)
             ],
             "jurist_links": [
                 {
@@ -173,13 +317,13 @@ def dashboard(request: HttpRequest) -> HttpResponse:
                         **trend_carried,
                     ),
                 }
-                for owner in ["", *owners]
+                for owner in ["", *found.owners]
             ],
             "jurist": jurist,
             "trend_links": [
                 {
                     "label": label,
-                    "active": trend_key == key,
+                    "active": found.trend_key == key,
                     "url": _url(
                         "reporting:dashboard",
                         **carried,
@@ -189,12 +333,80 @@ def dashboard(request: HttpRequest) -> HttpResponse:
                 }
                 for key, label in TREND_SPANS.items()
             ],
-            "trend": trend_key if trend_key != DEFAULT_TREND else "",
-            "trend_span": f"{first_year}–{last_year}",
+            "trend": found.trend_key if found.trend_key != DEFAULT_TREND else "",
+            "trend_span": found.trend_span,
             "today": today,
             "first_day": date(stats.FIRST_YEAR, 1, 1),
         },
     )
+
+
+#: The URL parameters a panel download reads: the page's own state, the
+#: background of the image and whether the browser is turning it into a PNG.
+CHART_PARAMS = ("periood", "aasta", "alates", "kuni", "jurist", "trend", "taust", "kuju")
+
+
+def chart_query(found: Figures) -> str:
+    """The page's URL state, as every download link of its panels carries it."""
+    return urlencode(
+        {key: value for key, value in {**found.carried, **found.trend_carried}.items() if value}
+    )
+
+
+def _file_name(spec: chart_spec.ChartSpec, found: Figures, extension: str) -> str:
+    period = found.period
+    if spec.kind == chart_spec.YEARS:
+        span = found.trend_span.replace("–", "-")
+    elif period.key == "aasta":
+        span = str(period.year)
+    else:
+        span = f"{period.start:%Y%m%d}-{period.end:%Y%m%d}"
+    return f"statistika-{spec.key}-{span}.{extension}"
+
+
+@login_required
+@require_GET
+def chart_download(request: HttpRequest, key: str, fmt: str) -> HttpResponse:
+    """One panel of the page as SVG (PNG is drawn from it in the browser) or Excel (UX-005).
+
+    The same results as the page for the same URL — `figures` over the reader's
+    own Teemad — so a file never holds more than the page shows. Every file
+    handed over is on the export trail (`record_export`); a table panel has no
+    picture and its SVG is a 404.
+    """
+    found = figures(request)
+    spec = panels(found).get(key)
+    if spec is None or (fmt == "svg" and spec.is_table):
+        raise Http404
+    now = timezone.localtime()
+    if fmt == "xlsx":
+        response = workbook_response(
+            chart_workbook.workbook(spec, now), _file_name(spec, found, "xlsx")
+        )
+        file_format = "xlsx"
+    else:
+        png = request.GET.get("kuju") == "png"
+        svg = chart_svg.render(
+            spec, transparent=request.GET.get("taust") == "puudub", generated=now.date()
+        )
+        response = HttpResponse(svg, content_type="image/svg+xml; charset=utf-8")
+        response["Content-Disposition"] = content_disposition(
+            "attachment", _file_name(spec, found, "svg")
+        )
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        # Opened on its own, the file runs nothing and loads nothing.
+        response["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
+        file_format = "png" if png else "svg"
+    record_export(
+        request,
+        export=f"reporting.chart.{spec.key}",
+        file_format=file_format,
+        rows=len(spec.categories),
+        params=request.GET,
+        honoured=CHART_PARAMS,
+    )
+    return response
 
 
 #: The opinions list's columns, in order, and how each one sorts.
