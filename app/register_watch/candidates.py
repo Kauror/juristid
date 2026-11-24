@@ -401,8 +401,15 @@ def waiting() -> QuerySet[TopicCandidate]:
 
 
 def worth_telling() -> QuerySet[TopicCandidate]:
-    """What the bell and Osakond count: not folded, and named (a title that says which draft)."""
-    return waiting().exclude(strength__in=FOLDED).exclude(match_key="")
+    """What the bell and Osakond count: not folded, and named (a title that says which draft).
+
+    A candidate the Riigikogu invited koda on is always worth telling, whatever the
+    model's verdict and whether the model ran at all (ADR 0223 §6).
+    """
+    from django.db.models import Q
+
+    invited = Q(invitations__isnull=False)
+    return waiting().filter((~Q(strength__in=FOLDED) & ~Q(match_key="")) | invited).distinct()
 
 
 def _lock_new(candidate: TopicCandidate) -> TopicCandidate:

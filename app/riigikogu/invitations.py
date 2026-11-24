@@ -104,7 +104,11 @@ def _metadata(detail: dict[str, Any]) -> dict[str, Any]:
         "volume_type": str(volume.get("volumeType") or ""),
         "author_date": str(detail.get("authorDate") or "")[:10],
         "created": str(detail.get("created") or "")[:10],
-        "files": sorted(str(f.get("uuid")) for f in files if isinstance(f, dict) and f.get("uuid")),
+        "files": sorted(
+            f"{f.get('uuid')}:{f.get('fileName') or ''}"
+            for f in files
+            if isinstance(f, dict) and f.get("uuid")
+        ),
     }
 
 
@@ -295,15 +299,25 @@ def committee_of(document: ParliamentDocument, bill: Bill | None) -> str:
     return (bill.leading_committee if bill is not None else "")[:200]
 
 
-def waiting_on_teema(matter_ref: Any) -> QuerySet[Invitation]:
-    """Invitations nobody has decided, on a bill tied to the Teema (a subquery-safe filter)."""
+def waiting_on_teema(matter: Any) -> QuerySet[Invitation]:
+    """Invitations nobody has decided, on a bill tied to the Teema.
+
+    ``matter`` is a Teema, or an ``OuterRef`` to one when this is the inside of an
+    ``Exists`` (the bell's «something still waits» test): the tie is looked up in
+    a correlated subquery, one level deeper, so the reference is lifted once more.
+    """
+    from django.db.models import Exists, OuterRef
+
     from app.register_watch.models import WatchSource, WatchTarget
 
+    owner = OuterRef(matter) if isinstance(matter, OuterRef) else matter
     tied = WatchTarget.objects.filter(
-        matter=matter_ref, source=WatchSource.RIIGIKOGU, active=True
-    ).values("identifier")
-    keys = Bill.objects.annotate(key=Cast("uuid", CharField())).filter(key__in=tied).values("pk")
-    return Invitation.objects.filter(review=InvitationReview.NEW, document__bill__in=keys)
+        matter=owner,
+        source=WatchSource.RIIGIKOGU,
+        active=True,
+        identifier=Cast(OuterRef("document__bill__uuid"), CharField()),
+    )
+    return Invitation.objects.filter(review=InvitationReview.NEW).filter(Exists(tied))
 
 
 def _route(invitation: Invitation, *, told: dict[str, Any]) -> None:
@@ -499,7 +513,7 @@ def _lock(invitation: Invitation) -> Invitation:
     from app.core.errors import DomainError
 
     locked = (
-        Invitation.objects.select_for_update()
+        Invitation.objects.select_for_update(of=("self",))
         .select_related("document__bill")
         .get(pk=invitation.pk)
     )
@@ -581,11 +595,15 @@ def add_reminder(
     `Järgmiseks` is Lovable's (ADR 0213), so an invitation never writes it; the
     person's own reminder is the internal follow-up this surface may create.
     """
-    from app.notifications.models import PersonalReminder
+    from app.notifications import personal
 
     locked = _lock(invitation)
-    reminder = PersonalReminder.objects.create(
-        recipient=actor, matter=matter, remind_on=remind_on, note=(note or "Riigikogu kutse")[:200]
+    reminder = personal.create(
+        user=actor,
+        matter=matter,
+        remind_on=remind_on,
+        note=(note or "Riigikogu kutse").strip(),
+        today=timezone.localdate(),
     )
     _decide(locked, InvitationReview.REMINDER, actor)
     return reminder

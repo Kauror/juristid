@@ -299,7 +299,9 @@ def proposals(bill: Bill, *, user: Any) -> list[Proposal]:
             found[matter.pk] = Proposal(matter, f"teema pealkirjas on number {bill.label}")
     key = match_key(bill.title)
     words = key.split()[:3]
-    if len(words) >= 2:
+    # One distinctive word is enough when it is a long one («äriseadustiku»): the
+    # generic words of a bill's title («muutmise seadus») are already gone from the key.
+    if len(words) >= 2 or (words and len(words[0]) >= 8):
         query = visible.exclude(pk__in=already)
         for word in words:
             query = query.filter(title__icontains=word)
