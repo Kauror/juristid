@@ -1481,14 +1481,8 @@ def backup_problem(backup_set: str) -> str:
     return lovable_sync.backup_set_problem((backup_set or "").strip(), timezone.now())
 
 
-def refuse_unless_authorised(
-    plan: Plan,
-    *,
-    operator_intent: str,
-    expect_manifest_sha256: str,
-    expect_plan_sha256: str,
-    backup_set: str,
-) -> str:
+def refuse_unless_enabled() -> None:
+    """The one-off container's settings: the first gate of every apply."""
     if not getattr(settings, "ONENOTE_CAPTURE_IMPORT_ENABLED", False):
         raise CaptureError(
             "The OneNote capture import is off here (JURISTID_ONENOTE_CAPTURE_IMPORT). "
@@ -1498,6 +1492,17 @@ def refuse_unless_authorised(
         raise CaptureError(
             "REAL_DATA_ALLOWED is off; real source material may not enter this environment."
         )
+
+
+def refuse_unless_authorised(
+    plan: Plan,
+    *,
+    operator_intent: str,
+    expect_manifest_sha256: str,
+    expect_plan_sha256: str,
+    backup_set: str,
+) -> str:
+    refuse_unless_enabled()
     if operator_intent != OPERATOR_INTENT:
         raise CaptureError(f"Type --operator-intent {OPERATOR_INTENT} to apply the capture.")
     if (expect_manifest_sha256 or "").strip().lower() != plan.capture.manifest_sha256:
@@ -2819,6 +2824,15 @@ def apply_capture(
     """
     import os
 
+    if backup_set is None:
+        backup_set = os.environ.get("JURISTID_ONENOTE_BACKUP_SET", "")
+    # The settings and the proven backup set first (HR-06 review): a request
+    # with no proof is refused before STORE-GUARD's probe writes anything.
+    # `apply` checks both again, as every apply does.
+    refuse_unless_enabled()
+    problem = backup_problem(backup_set)
+    if problem:
+        raise CaptureBackupRefused(problem)
     require_stores()
     approved = (approved_plan_sha256 or "").strip().lower()
     capture = load_capture(Path(path), verify_all_bytes=True)
@@ -2836,9 +2850,7 @@ def apply_capture(
         operator_intent=OPERATOR_INTENT,
         expect_manifest_sha256=capture.manifest_sha256,
         expect_plan_sha256=approved,
-        backup_set=backup_set
-        if backup_set is not None
-        else os.environ.get("JURISTID_ONENOTE_BACKUP_SET", ""),
+        backup_set=backup_set,
         label=(label or f"request by {who or 'operator'}")[:200],
         actor=actor,
     )

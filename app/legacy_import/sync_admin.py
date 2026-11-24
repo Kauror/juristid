@@ -198,14 +198,14 @@ FAILURE_REASONS: dict[str, str] = {
         "Esita taotlus uuesti."
     ),
     "PROOF_NOT_MOUNTED": (
-        "Varukoopia kontrolli tõend polnud impordile kättesaadav (varukoopia kaust "
+        "Varukoopia kontrollitõend polnud impordile kättesaadav (varukoopia kaust "
         "ühendamata); midagi ei kirjutatud."
     ),
     "PROOF_MISSING": (
-        "Varukoopial puudus 2. taseme kontrolli tõend või kontrollsummade loend; "
+        "Varukoopial puudus 2. taseme kontrollitõend või kontrollsummade loend; "
         "midagi ei kirjutatud."
     ),
-    "PROOF_OTHER_SET": "Kontrolli tõend kuulus teisele varukoopiale; midagi ei kirjutatud.",
+    "PROOF_OTHER_SET": "Kontrollitõend kuulus teisele varukoopiale; midagi ei kirjutatud.",
     "PROOF_LEVEL": (
         "Varukoopia polnud kontrollitud 2. tasemel (arhiivi sisu ja failivarud); "
         "midagi ei kirjutatud."
@@ -215,7 +215,7 @@ FAILURE_REASONS: dict[str, str] = {
         "vahel; midagi ei kirjutatud."
     ),
     "PROOF_DUMP": (
-        "Varukoopia andmebaasifail puudus või oli pärast kontrolli muutunud (räsi ei klapi); "
+        "Varukoopia andmebaasifail puudus või oli pärast kontrolli muutunud (räsi ei klappinud); "
         "midagi ei kirjutatud."
     ),
     # LS2-D: the runner's own refusals.

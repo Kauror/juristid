@@ -294,7 +294,9 @@ def test_apply_capture_refuses_a_plan_other_than_the_approved_one(world):
     root = _second(world)
     before = Document.objects.count()
     with pytest.raises(oc.CaptureError, match="not the approved one"):
-        oc.apply_capture(root, approved_plan_sha256="0" * 64, actor=None, backup_set="sets/x")
+        # The host runner's verified set (`world` → `enabled` → `onenote_backup_set`):
+        # the backup check now runs first (HR-06 review), so the plan check is what refuses.
+        oc.apply_capture(root, approved_plan_sha256="0" * 64, actor=None)
     assert Document.objects.count() == before
 
 

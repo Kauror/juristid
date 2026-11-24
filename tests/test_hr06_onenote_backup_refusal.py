@@ -17,6 +17,7 @@ from pathlib import Path
 
 import pytest
 
+from app.legacy_import import onenote_capture
 from app.legacy_import.lovable_sync import HOST_BACKUP_DIR_ENV
 from app.legacy_import.sync_admin import failure_reason
 from app.legacy_import.sync_requests_models import SyncRequestStatus
@@ -61,6 +62,9 @@ def test_an_import_request_with_no_proven_backup_is_refused_by_its_code(
     """Regression: HR-06 follow-up — the refusal used to end FAILED/IMPORT_FAILED
     with ``error_class: CaptureError`` and no code."""
     break_it(monkeypatch)
+    probes = []
+    real_probe = onenote_capture.require_stores
+    monkeypatch.setattr(onenote_capture, "require_stores", lambda: probes.append(1) or real_probe())
     item = _import_request(admin)
     assert item.status == SyncRequestStatus.REFUSED
     assert item.outcome_code == code
@@ -71,6 +75,8 @@ def test_an_import_request_with_no_proven_backup_is_refused_by_its_code(
     # A fixed sentence: never the set's name or a path.
     assert "sets/2" not in message and "\\" not in message and "/backup-set" not in message
     nothing_written(settings)
+    # Refused before STORE-GUARD's probe: no store write at all (review of #690).
+    assert probes == []
 
 
 #: Every code the backup check gives (`lovable_sync.backup_set_problem`).

@@ -481,6 +481,12 @@ def _bad_set(root: Path, case: str) -> tuple[str, Path | None]:
         fixed = [ln if not ln.startswith("verified_at=") else "verified_at=eile" for ln in lines]
         marker.write_text("\n".join(fixed) + "\n", encoding="utf-8")
         return name, directory
+    if case == "level not in ASCII digits":
+        directory = write_backup_set(root, taken=taken)
+        marker = directory / "VERIFIED-L2"
+        text = marker.read_text(encoding="utf-8").replace("level=2", "level=²")
+        marker.write_text(text, encoding="utf-8")
+        return name, directory
     if case == "dump missing":
         directory = write_backup_set(root, taken=taken)
         (directory / "database.dump").unlink()
@@ -518,6 +524,7 @@ def _bad_set(root: Path, case: str) -> tuple[str, Path | None]:
         ("the mount is a file", "PROOF_NOT_MOUNTED"),
         ("no checksum list", "PROOF_MISSING"),
         ("proof time unreadable", "PROOF_TIME"),
+        ("level not in ASCII digits", "PROOF_LEVEL"),
         ("dump missing", "PROOF_DUMP"),
         ("dump is a link to another file", "PROOF_DUMP"),
     ],

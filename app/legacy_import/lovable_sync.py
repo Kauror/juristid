@@ -6156,7 +6156,9 @@ def backup_proof_problem(
     fields = dict(line.split("=", 1) for line in lines if "=" in line)
     if fields.get("set") != backup_set[5:]:
         return "PROOF_OTHER_SET"
-    if not (fields.get("level") or "").isdigit() or int(fields["level"]) < BACKUP_PROOF_LEVEL:
+    # ASCII digits only: «²» passes isdigit() and then int() raises (review of #690).
+    level = fields.get("level") or ""
+    if not re.fullmatch(r"[0-9]+", level) or int(level) < BACKUP_PROOF_LEVEL:
         return "PROOF_LEVEL"
     try:
         verified = dt.datetime.strptime(fields.get("verified_at", ""), "%Y-%m-%dT%H:%M:%SZ")
