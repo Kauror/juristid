@@ -11,12 +11,18 @@ really checked. Synthetic captures and sets only.
 
 from __future__ import annotations
 
+import html
+import os
+from pathlib import Path
+
 import pytest
 
 from app.legacy_import.lovable_sync import HOST_BACKUP_DIR_ENV
+from app.legacy_import.sync_admin import failure_reason
 from app.legacy_import.sync_requests_models import SyncRequestStatus
 from tests.test_onenote_import_storage_guard import (  # noqa: F401  (fixtures)
     _import_request,
+    _request_list,
     admin,
     captures,
     enabled,
@@ -26,23 +32,82 @@ from tests.test_onenote_import_storage_guard import (  # noqa: F401  (fixtures)
 pytestmark = pytest.mark.django_db
 
 
-def test_an_import_request_with_no_mounted_proof_is_refused_by_its_code(
+def _no_name(monkeypatch) -> None:
+    monkeypatch.delenv("JURISTID_ONENOTE_BACKUP_SET")
+
+
+def _no_mount(monkeypatch) -> None:
+    monkeypatch.delenv(HOST_BACKUP_DIR_ENV)
+
+
+def _dump_changed(monkeypatch) -> None:
+    (Path(os.environ[HOST_BACKUP_DIR_ENV]) / "database.dump").write_bytes(b"PGDMP muudetud")
+
+
+@pytest.mark.parametrize(
+    "break_it, code",
+    [(_no_name, "NO_SET"), (_no_mount, "PROOF_NOT_MOUNTED"), (_dump_changed, "PROOF_DUMP")],
+    ids=["no set named", "no proof mounted", "dump changed"],
+)
+def test_an_import_request_with_no_proven_backup_is_refused_by_its_code(
     captures,  # noqa: F811
     enabled,  # noqa: F811
     admin,  # noqa: F811
     settings,
     monkeypatch,
+    break_it,
+    code,
 ):
     """Regression: HR-06 follow-up — the refusal used to end FAILED/IMPORT_FAILED
     with ``error_class: CaptureError`` and no code."""
-    monkeypatch.delenv(HOST_BACKUP_DIR_ENV)  # the runner's set name, but no mount
+    break_it(monkeypatch)
     item = _import_request(admin)
     assert item.status == SyncRequestStatus.REFUSED
-    assert item.outcome_code == "PROOF_NOT_MOUNTED"
+    assert item.outcome_code == code
     assert item.result["error_class"] == "CaptureBackupRefused"
-    assert item.result["error_code"] == "PROOF_NOT_MOUNTED"
+    assert item.result["error_code"] == code
     message = item.result["error_message"]
-    assert message.startswith("Refused: PROOF_NOT_MOUNTED. Name the verified backup set")
+    assert message.startswith(f"Refused: {code}. Name the verified backup set")
     # A fixed sentence: never the set's name or a path.
     assert "sets/2" not in message and "\\" not in message and "/backup-set" not in message
     nothing_written(settings)
+
+
+#: Every code the backup check gives (`lovable_sync.backup_set_problem`).
+BACKUP_CODES = (
+    "NO_SET",
+    "SET_NAME",
+    "SET_STALE",
+    "PROOF_NOT_MOUNTED",
+    "PROOF_MISSING",
+    "PROOF_OTHER_SET",
+    "PROOF_LEVEL",
+    "PROOF_TIME",
+    "PROOF_DUMP",
+)
+
+
+@pytest.mark.parametrize("code", BACKUP_CODES)
+def test_haldus_explains_each_backup_refusal_in_estonian(code):
+    """E3: the request list said «Tõrge (kood PROOF_NOT_MOUNTED).»; each backup
+    code now has its own sentence, which says nothing was written."""
+    text = failure_reason(code)
+    assert not text.startswith("Tõrge (kood"), code
+    assert "midagi ei kirjutatud" in text, code
+
+
+def test_the_request_list_shows_the_explanation_not_the_code(
+    captures,  # noqa: F811
+    enabled,  # noqa: F811
+    admin,  # noqa: F811
+    settings,
+    monkeypatch,
+    client,
+):
+    """E3: what an administrator reads on Haldus → Andmete sünkroonimine."""
+    monkeypatch.delenv(HOST_BACKUP_DIR_ENV)
+    item = _import_request(admin)
+    assert item.outcome_code == "PROOF_NOT_MOUNTED"
+    body = _request_list(client, admin, settings)
+    assert html.escape(failure_reason("PROOF_NOT_MOUNTED"), quote=True) in body
+    assert "Tõrge (kood PROOF_NOT_MOUNTED)" not in body
