@@ -69,6 +69,7 @@ from django.utils import timezone
 from app.legacy_import.evidence_pilot import step_shape
 from app.legacy_import.integrity import IntegrityError, canonical_sha256, require_digest
 from app.legacy_import.limits import load_json_document
+from app.legacy_import.lovable_sync_labels import LOVABLE_FIELDS, lovable_columns
 from app.workflow.services import OPINION_PREPARATION_TEXT
 
 PILOT = "lovable-pilot"
@@ -149,22 +150,11 @@ HELD_FOR_REVIEW = "HELD_FOR_REVIEW"
 #: synchronised field each feeds. One set for the importer and the nightly
 #: synchronisation (`lovable_sync.IMPORT_HELD_COLUMNS` is this): a held column
 #: outside it would be held by nobody, so `validate_package` refuses it.
+#: Derived from `LOVABLE_FIELDS` (HR-10): a lookup, so its iteration order is
+#: not significant (it differs from the r91 literal; every reader looks up or
+#: tests membership, and `import_held_fields` sorts).
 HELD_FIELD_COLUMNS: dict[str, str] = {
-    "jargmiseks": "next_action_text",
-    "tegevuse_tahtaeg": "next_action_date",
-    "hetkeseis": "stage",
-    "arvamuse_tahtaeg": "opinion_deadline",
-    "valja": "sent",
-    "valja_kuupaev": "sent_date",
-    "kellele": "addressee",
-    "oigusakt": "legal_act",
-    "sisse": "received",
-    "koja_ettepanek": "koda_initiative",
-    "teema": "title",
-    "vastutaja": "owner",
-    "uus_vastutaja": "owner",
-    "joustumised": "commencements",
-    "onenote_link": "onenote_link",
+    column: spec.name for spec in LOVABLE_FIELDS if spec.import_holdable for column in spec.columns
 }
 #: Lovable's `hetkeseis` values that end a topic's work. Anything else is a live
 #: stage, on which «ei saatnud» concludes nothing (docs/adr/0202 §3).
@@ -902,12 +892,12 @@ def _validate_rebase(
 #: The Lovable columns behind each REBASE field: a KEEP_LOCAL or HOLD holds one of
 #: them for review, so the synchronisation reports it every night.
 REBASE_HELD_COLUMNS = {
-    "title": ("teema",),
-    "owner": ("vastutaja", "uus_vastutaja"),
-    "next_action": ("jargmiseks", "tegevuse_tahtaeg"),
-    "stage": ("hetkeseis",),
-    "open_request": ("arvamuse_tahtaeg",),
-    "commencement_add": ("joustumised",),
+    "title": lovable_columns("title"),
+    "owner": lovable_columns("owner"),
+    "next_action": lovable_columns("next_action_text", "next_action_date"),
+    "stage": lovable_columns("stage"),
+    "open_request": lovable_columns("opinion_deadline"),
+    "commencement_add": lovable_columns("commencements"),
 }
 
 

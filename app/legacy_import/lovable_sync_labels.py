@@ -4,28 +4,85 @@ These describe the approved allowlist in ADR 0192, not arbitrary source columns.
 Never add excluded source fields (e.g. markmed) to a review surface.
 """
 
-LOVABLE_FIELD_LABELS = {
-    "*": "Teema",
-    "reference": "Teema tunnus",
-    "title": "Pealkiri",
-    "owner": "Vastutaja",
-    "former_owner": "Endine vastutaja",
-    "next_action_text": "Järgmine tegevus (sõnastus)",
-    "next_action_date": "Järgmise tegevuse kuupäev",
-    "onenote_link": "OneNote'i link",
-    "stage": "Hetkeseis",
-    "opinion_deadline": "Arvamuse tähtaeg",
-    "sent": "Välja",
-    "sent_date": "Välja saatmise kuupäev",
-    "addressee": "Kellele",
-    "koda_initiative": "Koja ettepanek",
-    "legal_act": "Õigusakt",
-    "received": "Sisse",
-    "commencements": "Jõustumised",
-    "operational_scope": "Operatiivne ulatus",
-    "continuation": "Jätkuteema (menetlusetappide seos)",
-    "new_topic": "Uus Lovable'i teema",
-}
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class LovableField:
+    """One field as every Lovable page, export, importer check and MCP tool
+    names it: its Estonian label and the Lovable columns behind it. A
+    description only: the engine's extractors (`lovable_sync.SOURCE_FIELDS`),
+    its policy (`FIELD_POLICY`) and its rules read their own code."""
+
+    #: The canonical field name (`LovableSyncDecision.field`).
+    name: str
+    #: The Estonian label every surface shows.
+    label: str
+    #: Lovable's own column names behind it, as its audit ledger
+    #: (`topic_change_field`) names them, in reading order.
+    columns: tuple[str, ...] = ()
+    #: Whether a version-2 package may hold its columns for review
+    #: (`lovable_pilot.HELD_FIELD_COLUMNS`). `operatiivne_ulatus` may not: the
+    #: scope is compared, but no import decision ever holds it.
+    import_holdable: bool = False
+    #: Read only by the wider observation (`lovable_observation.OBSERVE_FIELDS`)
+    #: or the ledger, never synchronised.
+    observed_only: bool = False
+
+
+#: Every field, in the order the administration pages list them.
+LOVABLE_FIELDS: tuple[LovableField, ...] = (
+    LovableField("*", "Teema"),
+    LovableField("reference", "Teema tunnus", ("nr",)),
+    LovableField("title", "Pealkiri", ("teema",), import_holdable=True),
+    LovableField("owner", "Vastutaja", ("vastutaja", "uus_vastutaja"), import_holdable=True),
+    LovableField("former_owner", "Endine vastutaja"),
+    LovableField(
+        "next_action_text", "Järgmine tegevus (sõnastus)", ("jargmiseks",), import_holdable=True
+    ),
+    LovableField(
+        "next_action_date",
+        "Järgmise tegevuse kuupäev",
+        ("tegevuse_tahtaeg",),
+        import_holdable=True,
+    ),
+    LovableField("onenote_link", "OneNote'i link", ("onenote_link",), import_holdable=True),
+    LovableField("stage", "Hetkeseis", ("hetkeseis",), import_holdable=True),
+    LovableField(
+        "opinion_deadline", "Arvamuse tähtaeg", ("arvamuse_tahtaeg",), import_holdable=True
+    ),
+    LovableField("sent", "Välja", ("valja",), import_holdable=True),
+    LovableField("sent_date", "Välja saatmise kuupäev", ("valja_kuupaev",), import_holdable=True),
+    LovableField("addressee", "Kellele", ("kellele",), import_holdable=True),
+    LovableField("koda_initiative", "Koja ettepanek", ("koja_ettepanek",), import_holdable=True),
+    LovableField("legal_act", "Õigusakt", ("oigusakt",), import_holdable=True),
+    LovableField("received", "Sisse", ("sisse",), import_holdable=True),
+    LovableField("commencements", "Jõustumised", ("joustumised",), import_holdable=True),
+    LovableField("operational_scope", "Operatiivne ulatus", ("operatiivne_ulatus",)),
+    LovableField("continuation", "Jätkuteema (menetlusetappide seos)"),
+    LovableField("new_topic", "Uus Lovable'i teema"),
+    LovableField(
+        "commencements_managed",
+        "Jõustumisi hallatakse",
+        ("joustumised_hallatud",),
+        observed_only=True,
+    ),
+    LovableField("responsible_changes", "Vastutaja vahetused", observed_only=True),
+    LovableField("stage_links", "Menetlusetappide seosed", ("menetlusetapid",), observed_only=True),
+    LovableField("topic_links", "Seotud teemad", ("seosed",), observed_only=True),
+)
+
+#: A field's description by name.
+LOVABLE_FIELD = {spec.name: spec for spec in LOVABLE_FIELDS}
+
+
+def lovable_columns(*field_names: str) -> tuple[str, ...]:
+    """The Lovable columns behind ``field_names``, in turn."""
+    return tuple(column for name in field_names for column in LOVABLE_FIELD[name].columns)
+
+
+#: Field → Estonian label, for every surface.
+LOVABLE_FIELD_LABELS = {spec.name: spec.label for spec in LOVABLE_FIELDS}
 
 LOVABLE_REASONS = {
     "HELD_FIELD": "Seda välja ei uuendata automaatselt.",
@@ -170,23 +227,9 @@ LOVABLE_REASONS = {
 #: Lovable's own column names, as its audit ledger (`topic_change_field`) names
 #: them, to the canonical field they feed (`lovable_sync.SOURCE_FIELDS`). A
 #: column not listed here is shown by its own name only, never by its value.
-LOVABLE_SOURCE_COLUMNS = {
-    "teema": "title",
-    "vastutaja": "owner",
-    "uus_vastutaja": "owner",
-    "jargmiseks": "next_action_text",
-    "tegevuse_tahtaeg": "next_action_date",
-    "onenote_link": "onenote_link",
-    "hetkeseis": "stage",
-    "arvamuse_tahtaeg": "opinion_deadline",
-    "valja": "sent",
-    "valja_kuupaev": "sent_date",
-    "kellele": "addressee",
-    "koja_ettepanek": "koda_initiative",
-    "oigusakt": "legal_act",
-    "sisse": "received",
-    "operatiivne_ulatus": "operational_scope",
-}
+#: A lookup: only each field's own columns keep their order (`columns`); the
+#: order across fields is not significant.
+LOVABLE_SOURCE_COLUMNS = {column: spec.name for spec in LOVABLE_FIELDS for column in spec.columns}
 
 #: Lovable audit-ledger actions, in the page's words (any case).
 LOVABLE_SOURCE_ACTIONS = {
@@ -244,23 +287,3 @@ LOVABLE_SIMULATION_LABELS = {
     "CONVERGED": "Juba kooskõlas",
     "UNCHANGED": "Muutusteta",
 }
-
-#: Fields only the wider observation reads (`lovable_observation.OBSERVE_FIELDS`)
-#: and the ledger's composite names, as the observation pages label them.
-LOVABLE_FIELD_LABELS.update(
-    {
-        "commencements_managed": "Jõustumisi hallatakse",
-        "responsible_changes": "Vastutaja vahetused",
-        "stage_links": "Menetlusetappide seosed",
-        "topic_links": "Seotud teemad",
-    }
-)
-LOVABLE_SOURCE_COLUMNS.update(
-    {
-        "nr": "reference",
-        "joustumised": "commencements",
-        "joustumised_hallatud": "commencements_managed",
-        "menetlusetapid": "stage_links",
-        "seosed": "topic_links",
-    }
-)
