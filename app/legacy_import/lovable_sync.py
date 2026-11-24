@@ -1702,7 +1702,8 @@ class MatterPlan:
     #: Eligible, but not written: an earlier Teema's read-back failed this run.
     not_executed: bool = False
     #: The source's activity tonight (`source_activity`) and whether the Teema is
-    #: open in Juristid: counted, never acted on (docs/adr/0202 §6).
+    #: open in Juristid: counted, never acted on (docs/adr/0202 §6). For a Teema
+    #: the run wrote, read again after the write (`_open_after_run`).
     activity: str = ""
     open: bool = False
     #: Lovable continues this topic back into itself (`continuation_cycles`).
@@ -5987,6 +5988,46 @@ def cohort_counts(expected: int | None = None, retired: int = 0) -> dict[str, An
     }
 
 
+def _open_after_run(plans: Iterable[MatterPlan]) -> None:
+    """Reporting only: whether each Teema this run wrote is still open now.
+
+    `apply_matter` plans under the lock and then writes, so the plan it returns
+    says whether the Teema was open *before* the write: every Teema the run
+    closed would be counted «Lovable'is lõppenud, kuid Juristides avatud»
+    (`RunCounts.stopped_active`; ops A4 24.11: 25 counted, 25 closed). The
+    written Teemad are read again after the writes; a Teema this run did not
+    write keeps its planned value. Nothing reads `MatterPlan.open` to decide.
+
+    It runs inside the run's bookkeeping transaction, so it never costs the run
+    its record: the read is in its own savepoint, and if it fails every plan
+    keeps its planned value and a warning is logged."""
+    from app.matters.models import Matter
+
+    written: dict[Any, list[MatterPlan]] = {}
+    for plan in plans:
+        if plan.state.matter_id is not None and any(
+            d.outcome == SyncOutcome.APPLIED for d in plan.decisions
+        ):
+            written.setdefault(plan.state.matter_id, []).append(plan)
+    if not written:
+        return
+    try:
+        with transaction.atomic():
+            rows = list(
+                Matter.all_objects.filter(pk__in=written).values_list("pk", "is_open", "deleted_at")
+            )
+    except Exception as error:
+        logger.warning(
+            "Lovable sync: open state after the run not read (%s); planned values counted",
+            type(error).__name__,
+        )
+        return
+    for pk, is_open, deleted_at in rows:
+        for plan in written[pk]:
+            # `_is_open` on the row the write left.
+            plan.open = bool(is_open) and deleted_at is None
+
+
 def _observe_index(
     counts: RunCounts,
     snapshot: dict[str, Any],
@@ -6814,13 +6855,19 @@ def _execute(
             if state.pk in unread:
                 counts.not_yet_read += 1
                 counts.by_cohort[state.cohort]["not_yet_read"] += 1
+        _open_after_run(final)
         for plan in final:
             counts.add(plan)
             _record(run, plan)
             if not plan.status and not check:
                 _observe(LovableSyncState.objects.get(pk=plan.state.pk), plan, run)
+        # The topics this run created are in the register now and counted in its
+        # «checked»: never also «outside» it (reporting only, ops A3 24.11).
         _observe_index(
-            counts, snapshot, cohort_ids, previous_snapshot.document if previous_snapshot else None
+            counts,
+            snapshot,
+            cohort_ids | created,
+            previous_snapshot.document if previous_snapshot else None,
         )
         counts.add_new_topics(new_plans)
         counts.breaker_limit = change_limit
