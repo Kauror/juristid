@@ -343,6 +343,42 @@ def test_the_model_judges_and_may_name_only_an_offered_open_teema(registers):
     assert unjudged.related_matter is None
 
 
+@override_settings(REGISTER_SWEEP_AI=True)
+def test_a_decision_made_while_the_model_answered_stands(department_head):
+    """E1 (post-r91): the verdict is written only on a candidate still waiting.
+
+    The head dismisses one candidate and links another while the request is
+    out; neither gets the model's strength, reason or Teema afterwards. The one
+    nobody touched is judged as before."""
+    teema = factories.MatterFactory(title="Äriühingute digitaliseerimine")
+    left = _candidate("Äriseadustiku muutmise seaduse eelnõu")
+    dismissed = _candidate("Pakendiseaduse muutmise seaduse eelnõu")
+    linked = _candidate("Jäätmeseaduse muutmise seaduse eelnõu")
+
+    class Deciding(FakeClient):
+        def _create(self, **request):
+            candidates.dismiss(dismissed, actor=department_head)
+            candidates.attach(linked, teema, actor=department_head)
+            return super()._create(**request)
+
+    usage = candidates_ai.Usage()
+    judged = candidates_ai.judge_unjudged(usage, client=Deciding("STRONG", related=str(teema.pk)))
+
+    assert judged == 1 and usage.judged == 1
+    left.refresh_from_db()
+    assert (left.strength, left.related_matter) == (Strength.STRONG, teema)
+    for decided, status in (
+        (dismissed, CandidateStatus.DISMISSED),
+        (linked, CandidateStatus.ATTACHED),
+    ):
+        decided.refresh_from_db()
+        assert decided.status == status
+        assert decided.decided_by == department_head
+        assert decided.strength == Strength.UNJUDGED
+        assert decided.reason == ""
+        assert decided.related_matter is None
+
+
 # -- who sees it -------------------------------------------------------------------
 
 
