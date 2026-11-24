@@ -410,6 +410,14 @@ def test_derive_refuses_a_plan_that_disagrees_with_the_payload(repo):
         repo.derive(target, _plan("x.0002_b", "y.0002_c"))
 
 
+def test_derive_refuses_a_framework_migration_the_release_does_not_add(repo):
+    """Django's own migrations (after a dependency upgrade) are pending without a file in
+    app/: refused, a hand path (documented in the helper)."""
+    repo.write("app/x/views.py", "# code only\n")
+    with pytest.raises(Refused, match=r"pending but not added \[auth\.0013_user_first_name"):
+        repo.derive(repo.commit(), _plan("auth.0013_user_first_name_max_length"))
+
+
 def test_derive_refuses_a_plan_out_of_its_apps_order(repo):
     repo.write("app/x/migrations/0002_b.py", MIGRATION)
     repo.write("app/x/migrations/0003_c.py", MIGRATION + "#\n")

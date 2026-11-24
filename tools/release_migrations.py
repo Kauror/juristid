@@ -30,6 +30,13 @@ plan, so the generator derives them once and the kit compares against that data.
 Zero, one and many migrations take the same path. Every disagreement is a refusal:
 exit 3 and ``REFUSED: …`` on stderr, nothing written.
 
+**Only the repository's own migrations.** ``derive`` accepts a pending migration only if
+the release adds its file under ``app/<app>/migrations/``. A migration that becomes
+pending without such a file — Django's or a package's own (``auth``, ``contenttypes``,
+``sessions`` …) after a dependency upgrade in ``uv.lock`` — is refused ("pending but not
+added"). Such a release needs a hand path: its plan reviewed line by line and the kit's
+expectations written and reviewed by hand, as before this helper.
+
 **What it never does.** It never runs ``migrate``, never reads a database and never
 imports Django or the project: standard library only, so it runs under ``python -I``
 in the release image as well as on the generator's machine. It does not judge whether
