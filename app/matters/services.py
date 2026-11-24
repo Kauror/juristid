@@ -657,6 +657,12 @@ ASSIGNMENT_ON_DELETED_MATTER = "Teemat ei ole enam olemas, seega ei saa sellele 
 #: A person without `work.assign` asking to change a Teema's Vastutaja
 #: (docs/adr/0145 §3).
 ASSIGNMENT_NOT_PERMITTED = "Sul ei ole õigust teema vastutajat määrata ega muuta."
+#: A person handing a Teema to somebody current work may not be given to — a
+#: switched-off account, an administrator, a reader (docs/adr/0145 §3,
+#: `accounts.selectors.is_assignable_business_user`).
+ASSIGNMENT_RECIPIENT_NOT_ASSIGNABLE = (
+    "Valitud inimene ei ole osakonna aktiivne töötaja, seega ei saa talle teemat anda."
+)
 
 
 @transaction.atomic
@@ -715,6 +721,21 @@ def assign_matter(
 
         if not may_assign_work(actor):
             raise DomainError(ASSIGNMENT_NOT_PERMITTED)
+        # **And to somebody work may be given to.** Every person-facing route
+        # already narrows its choices (`assignable_including` in the forms,
+        # `_is_assignable` in the MCP operation), so this refuses nothing those
+        # offer; it is the same rule asked once more where the write happens, so
+        # a future caller cannot be the one that forgot. Clearing the owner stays
+        # allowed, and the current owner never reaches here (the no-op return
+        # above). An operation's assignment — the Lovable sync, the pilot, the
+        # owner backfill, each sending `provenance` — keeps its own rules: the
+        # sync resolves names to assignable people itself (`OwnerResolver`,
+        # `NOT_ASSIGNABLE`), and an import may record a historical owner.
+        if owner is not None:
+            from app.accounts.selectors import is_assignable_business_user
+
+            if not is_assignable_business_user(owner):
+                raise DomainError(ASSIGNMENT_RECIPIENT_NOT_ASSIGNABLE)
 
     # Before the column moves, and inside this transaction: whatever the
     # previous owner was still holding unread is about a state that is ending.
