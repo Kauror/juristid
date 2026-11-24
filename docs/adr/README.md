@@ -229,6 +229,7 @@ consequences and reversibility.
 | [0219](0219-monitooring-gathers-new-drafts-the-government-agenda-and-the-registers-list.md) | «Monitooring» gathers the new drafts, the Government's agenda and the registers' list (top-bar tab, the head's until opened; valitsus.ee agenda read and judged weekly; the bell, no e-mail) | Proposed |
 | [0220](0220-a-lawyer-leaving-and-arriving-is-prepared-in-juristid-and-handed-over-in-lovable.md) | A lawyer leaving and arriving is prepared in Juristid and handed over in Lovable (a recorded Lovable hand-over has its own nightly limit of 150; «Lovable'i nimed» and pinned names; held work shown and confirmed before switching a person off; «Töö ilma aktiivse vastutajata») | Accepted |
 | [0222](0222-a-person-keeps-named-teemad-views-and-the-address-is-still-the-view.md) | A person keeps named Teemad views, and the address is still the view (at most 20 per persona; a canonical query, never rows or counts; private, the link still shareable; supersedes 0043 §2; migration `matters/0052`) | Proposed |
+| [0223](0223-minu-statistika-credits-each-figure-by-a-stated-rule-and-never-guesses-history.md) | Minu statistika credits each figure by a stated rule and never guesses history (self only; current owner, recorded actor or owner at the time; «andmed puuduvad» where the trail cannot say) | Proposed |
 
 **Numbers with no record on this branch.** `tests/test_architecture_decisions.py`
 requires every gap in the numbering to be named here:

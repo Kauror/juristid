@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Minu statistika · {{ application_name }}{% endblock %}
+
+{% comment %}
+Minu statistika (FUNC-003, docs/adr/0223): the signed-in person's own figures,
+reached from Minu asjad. Nobody else's figure is read or shown, and nothing is
+ranked or compared. Every figure names how it is credited — the owner now, the
+person who did it, or the owner at the time — and a month that cannot be
+credited reads «andmed puuduvad», never 0 (app/matters/my_statistics.py).
+{% endcomment %}
+
+{% block content %}
+<div class="page mystats">
+  <nav class="crumbs" aria-label="Asukoht">
+    <a href="{% url 'matters:my_work' %}">← Minu asjad</a>
+  </nav>
+
+  <div class="pagehead">
+    <h1 class="pagehead__title">Minu statistika</h1>
+    <span class="pagehead__context">ainult sinu enda andmed</span>
+  </div>
+
+  <section class="stattiles" aria-label="Praegu sinu vastutusel">
+    {% for figure in stats.current %}
+      <a class="stattile stattile--link" href="{{ figure.url }}">
+        <span class="stattile__label">{{ figure.label }}</span>
+        <span class="stattile__value">{{ figure.value }}</span>
+        <span class="stattile__delta">{{ figure.basis }}</span>
+      </a>
+    {% endfor %}
+  </section>
+
+  <section class="statpanel" aria-labelledby="mystats-kuud">
+    <div class="statpanel__head">
+      <h2 class="statpanel__title" id="mystats-kuud">Kuude kaupa</h2>
+      <span class="statpanel__note">viimased {{ stats.rows|length }} kuud · jooksev kuu kuni tänaseni</span>
+    </div>
+    <div class="stattable__wrap">
+      <table class="stattable mystats__table">
+        <thead>
+          <tr>
+            <th scope="col">Kuu</th>
+            {% for column in stats.columns %}
+              <th scope="col" class="stattable__num">{{ column.label }}<span class="mystats__basis">{{ column.basis }}</span></th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in stats.rows %}
+            <tr>
+              <th scope="row">{{ row.month.label }}</th>
+              {% for value in row.cells %}
+                <td class="stattable__num">{% if value is None %}<span class="mystats__unknown">andmed puuduvad</span>{% else %}{{ value }}{% endif %}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="statpanel" aria-labelledby="mystats-kuidas">
+    <div class="statpanel__head">
+      <h2 class="statpanel__title" id="mystats-kuidas">Kuidas arvestatakse</h2>
+    </div>
+    <dl class="mystats__rules">
+      <dt>Praegune vastutaja</dt>
+      <dd>Teema, mille vastutaja sa praegu oled. Sama arv nagu Minu asjades ja Osakonnas.</dd>
+      <dt>Sinu tehtud</dt>
+      <dd>Kirje, mille tegijaks Juristid on salvestanud sinu: sissekande autor, teema lõpetaja, ülevaate avaldaja, kaasamise lisaja, arvamuse saatjaks märgitud inimene.
+        {% if stats.actions_since %}Juristid on tegijaid salvestanud alates {{ stats.actions_since|date:"d.m.Y" }}; varasemad kuud: andmed puuduvad.{% else %}Juristid ei ole veel ühtegi tegijat salvestanud.{% endif %}</dd>
+      <dt>Vastutaja tol ajal</dt>
+      <dd>Teema vastutaja sel päeval, Juristide vastutaja muutmise ajaloo järgi. Hilisem vastutaja ei saa varasema töö eest arvet. Imporditud «välja saadetud» arvamus, millel saatjat pole, läheb saatmise päeva vastutajale.
+        {% if stats.owned_since %}Kõik teemad on ajaloos kirjas alates {{ stats.owned_since|date:"m.Y" }}.{% endif %}
+        Kuu on «andmed puuduvad», kui mõni teema oli siis olemas, aga Juristidisse jõudis hiljem, või kui vastutajate ajalugu ei ole järjepidev.</dd>
+    </dl>
+  </section>
+</div>
+{% endblock %}

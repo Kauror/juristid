@@ -10625,6 +10625,14 @@ section:has(.pw-more[open]) tbody.uxextra {
   color: var(--text-muted);
 }
 
+/* The way from the foldout to Minu statistika's own page (docs/adr/0223). */
+.pw-stats__more {
+  display: inline-block;
+  margin-top: var(--spacing-2);
+  padding: 0 var(--spacing-2);
+  font-size: var(--typography-size-meta);
+}
+
 .pw-stats a,
 .pw-stats > span {
   display: flex;
@@ -17576,6 +17584,55 @@ a.statcol:hover .statcol__value {
 
 .statsection .statpanel:target {
   scroll-margin-top: var(--spacing-8);
+}
+
+/* ---- Minu statistika (FUNC-003, docs/adr/0223) ---- */
+
+.mystats .stattiles {
+  margin-top: var(--spacing-4);
+}
+
+.mystats__table thead th {
+  vertical-align: bottom;
+}
+
+.mystats__table tbody th {
+  white-space: nowrap;
+}
+
+.mystats__basis {
+  display: block;
+  font-size: var(--typography-size-meta-sm);
+  font-weight: var(--typography-weight-regular);
+  color: var(--text-muted);
+}
+
+.mystats__unknown {
+  font-size: var(--typography-size-meta);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mystats__rules {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(10rem, max-content) 1fr;
+  gap: var(--spacing-2) var(--spacing-4);
+}
+
+.mystats__rules dt {
+  font-weight: var(--typography-weight-semibold);
+}
+
+.mystats__rules dd {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+@media (max-width: 640px) {
+  .mystats__rules {
+    grid-template-columns: 1fr;
+  }
 }
 
 .statrows {
