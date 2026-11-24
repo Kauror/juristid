@@ -1,0 +1,5 @@
+2 pending migration(s):
+  legacy_import.0020_lovable_observation  (additive)
+  notifications.0003_commencement_reminder_personal_state  (additive)
+
+Every pending migration is additive, so the release now serving keeps working against the new schema while it is replaced.

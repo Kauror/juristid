@@ -1,0 +1,6 @@
+2 pending migration(s):
+  intelligence.0005_estimated_commencement_title
+      RunPython: arbitrary code with the whole database in reach
+  register_watch.0008_agenda_ai_attempts  (additive)
+
+1 pending migration(s) remove or rewrite something. Take a backup first and decide whether the release now serving survives the new schema; if it does not, the deployment needs an announced maintenance window rather than a rolling replacement.

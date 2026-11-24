@@ -17,14 +17,16 @@ import json
 import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
+from operator import itemgetter
 from typing import Any
 
 from django.conf import settings
+from django.db import transaction
 
 from app.matters.models import Matter
-from app.register_watch import house_style, outbound
+from app.register_watch import ai_call, outbound
 from app.register_watch.house_style import KODA_STYLE
-from app.register_watch.models import Strength, TopicCandidate
+from app.register_watch.models import CandidateStatus, Strength, TopicCandidate
 
 logger = logging.getLogger("app.register_watch")
 
@@ -97,33 +99,16 @@ TOPICS_SHOWN = 400
 
 
 @dataclass
-class Usage:
-    calls: int = 0
-    input_tokens: int = 0
-    output_tokens: int = 0
-    model: str = ""
-    judged: int = 0
-    failures: int = 0
-    last_failure: str = ""
+class Usage(ai_call.Usage):
     #: Open sendable Teemad not offered because of `TOPICS_SHOWN` (counted,
     #: never named), and letter titles of the period not sent because their
     #: Teema is not known to be sendable (`outbound.letter_titles`).
     topics_left_out: int = 0
     letters_left_out: int = 0
 
-    def failed(self, reason: str) -> None:
-        self.failures += 1
-        self.last_failure = reason[:120]
-
 
 def enabled() -> bool:
     return bool(getattr(settings, "REGISTER_SWEEP_AI", False))
-
-
-def _client() -> Any:
-    import anthropic  # imported here: the sweep runs without it when the model is off
-
-    return anthropic.Anthropic(timeout=180.0, max_retries=2)
 
 
 def open_topics(usage: Usage | None = None) -> dict[str, Matter]:
@@ -198,47 +183,44 @@ def judge_unjudged(usage: Usage, client: Any = None) -> int:
 def _judge_batch(
     candidates: Sequence[TopicCandidate], topics: dict[str, Matter], usage: Usage, client: Any
 ) -> int:
-    try:
-        client = client or _client()
-        response = client.beta.messages.create(
-            model=getattr(settings, "REGISTER_SWEEP_AI_MODEL", "claude-opus-5-5"),
-            max_tokens=MAX_TOKENS,
-            system=SYSTEM,
-            messages=[{"role": "user", "content": _prompt(candidates, topics)}],
-            output_config={"effort": "low", "format": {"type": "json_schema", "schema": SCHEMA}},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-    except Exception as error:  # the model is an aid; the list goes on without it
-        status = getattr(error, "status_code", None)
-        reason = type(error).__name__ + (f" {status}" if status else "")
-        logger.warning("register sweep: model call failed: %s", reason)
-        usage.failed(reason)
-        return 0
-    usage.calls += 1
-    usage.input_tokens += getattr(response.usage, "input_tokens", 0) or 0
-    usage.output_tokens += getattr(response.usage, "output_tokens", 0) or 0
-    usage.model = str(getattr(response, "model", "") or usage.model)
-    if response.stop_reason != "end_turn":
-        usage.failed(f"stop_reason {response.stop_reason}")
-        return 0
-    text = next((block.text for block in response.content if block.type == "text"), "")
-    try:
-        answers = {row["id"]: row for row in json.loads(text)["items"]}
-    except (ValueError, KeyError, TypeError):
-        usage.failed("vastus ei olnud loetav")
+    answers = ai_call.call_items(
+        setting="REGISTER_SWEEP_AI_MODEL",
+        system=SYSTEM,
+        prompt=lambda: _prompt(candidates, topics),
+        schema=SCHEMA,
+        max_tokens=MAX_TOKENS,
+        timeout=ai_call.SWEEP_TIMEOUT,
+        key=itemgetter("id"),
+        usage=usage,
+        client=client,
+    )
+    if isinstance(answers, ai_call.Failure):
+        # The list goes on without the model; the next night asks again.
+        if answers.kind == "request":
+            logger.warning("register sweep: model call failed: %s", answers.reason)
+        usage.failed(answers.reason)
         return 0
     allowed = {Strength.STRONG, Strength.POSSIBLE, Strength.WEAK, Strength.NONE}
     judged = 0
-    for candidate in candidates:
-        row = answers.get(str(candidate.pk))
-        if not row or row.get("strength") not in allowed:
-            continue
-        candidate.strength = row["strength"]
-        candidate.reason = house_style.fix(str(row.get("reason") or "").strip())[:500]
-        # Only an id that was offered: the model cannot point anywhere else.
-        candidate.related_matter = topics.get(str(row.get("related") or ""))
-        candidate.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
-        judged += 1
+    with transaction.atomic():
+        # Re-read under lock, as `agenda.judge` does (audit HR-02): the request
+        # can take minutes, and a candidate the head dismissed, linked or added
+        # meanwhile is settled. Only a candidate still waiting and unjudged gets
+        # the model's verdict; a decided one is left exactly as the person left it.
+        still_open = TopicCandidate.objects.select_for_update(of=("self",)).filter(
+            pk__in=[candidate.pk for candidate in candidates],
+            status=CandidateStatus.NEW,
+            strength=Strength.UNJUDGED,
+        )
+        for candidate in still_open:
+            row = answers.get(str(candidate.pk))
+            if not row or row.get("strength") not in allowed:
+                continue
+            candidate.strength = row["strength"]
+            candidate.reason = ai_call.clean_line(row.get("reason"))
+            # Only an id that was offered: the model cannot point anywhere else.
+            candidate.related_matter = topics.get(str(row.get("related") or ""))
+            candidate.save(update_fields=["strength", "reason", "related_matter", "updated_at"])
+            judged += 1
     usage.judged += judged
     return judged

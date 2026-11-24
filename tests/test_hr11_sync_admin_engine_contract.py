@@ -185,7 +185,10 @@ def test_engine_rows_reads_the_real_pending_differences(held_night):
     assert row.matter.pk == item.matter.pk
     assert row.source == "Valitsuses" == sync_admin.value_text(item.source)
     assert row.accepted == sync_admin.value_text(item.baseline)
-    assert row.juristid == sync_admin.value_text(item.current)
+    # B in words (HR-10): the engine's lifecycle record names the stage by its
+    # key; the page shows the vocabulary's label.
+    assert item.current["stage"] == "parliament"
+    assert row.juristid == "Riigikogus"
     assert row.since == item.since
     expected = (
         LOVABLE_REASONS.get(item.reason, "") or lovable_sync.FIELD_POLICY["stage"].explanation
