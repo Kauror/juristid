@@ -213,11 +213,17 @@ record() {
 outcome_of() { awk '{print $2}' "$STATUS_DIR/$1" 2>/dev/null || echo NONE; }
 
 # Waits while a release (or any other holder) has the release lock; "" when free.
+# The lock takes two forms: lib.sh `acquire_lock` makes a directory with an
+# `owner` file, a release kit writes a plain file (noclobber). Either is held.
 host_lock_holder() {
   local waited=0
-  while [ -d "$HOST_LOCK" ]; do
+  while [ -e "$HOST_LOCK" ]; do
     if [ "$waited" -ge "$LOCK_WAIT" ]; then
-      cat "$HOST_LOCK/owner" 2>/dev/null || echo unknown
+      if [ -d "$HOST_LOCK" ]; then
+        cat "$HOST_LOCK/owner" 2>/dev/null || echo unknown
+      else
+        head -n 1 "$HOST_LOCK" 2>/dev/null || echo unknown
+      fi
       return 0
     fi
     sleep "$LOCK_RETRY"

@@ -2295,7 +2295,7 @@ changes = [
 [[day]]
 date = 2026-08-21
 basis = "deployment"
-prs = [723]
+prs = []
 changes = [
   "Juristid on kasutusel Koja päris andmetega. Eelnõude ja arvamuste töö on ühes kohas, mitte Exceli tabelis.",
   "Teema juurde lisatud failid jäävad teema külge alles ja nende tekst on otsinguga leitav.",

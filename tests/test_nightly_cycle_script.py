@@ -588,6 +588,18 @@ def test_a_held_release_lock_skips_the_steps_by_its_holder(host) -> None:
     assert host["lock"].exists(), "the release's lock is never touched"
 
 
+def test_a_release_kits_file_lock_holds_the_steps_too(host) -> None:
+    """A release kit writes the host lock as a plain file (noclobber), not lib.sh's
+    directory; the cycle waited only on a directory and walked past it."""
+    host["lock"].write_text("owner=r93-d2@host kit=r93 token=abc\n", encoding="utf-8")
+    result = run(host)
+    assert result.returncode == 1
+    assert started(host) == [], "nothing runs under a release"
+    steps = outcomes(host)
+    assert "HOST_LOCK held after 2s by: owner=r93-d2@host" in steps["lovable"]
+    assert host["lock"].is_file(), "the release's lock is never touched"
+
+
 def test_an_on_demand_run_finishes_before_the_night_sync_starts(host) -> None:
     """An administrator's request is being served by the 5-minute processor when the
     night begins: the cycle waits for the runner's lock, so the two never overlap."""
