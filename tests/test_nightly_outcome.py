@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from app.core import nightly_outcome as no
 from app.core import nightly_schedule
+from app.legacy_import import lovable_sync
 from app.legacy_import.lovable_sync_models import (
     LovableSyncControl,
     LovableSyncRun,
@@ -292,3 +293,37 @@ def test_each_step_is_due_after_the_steps_before_it():
     by = nightly_schedule.FINISH_BY
     assert by["lovable"] < by["government-agenda"] < by["register-watch"] < by["register-sweep"]
     assert nightly_schedule.CYCLE_COMPLETE_BY == by["register-sweep"]
+
+
+# -- a person's recovery run (`juristid-nightly-cycle.sh --manual`) --------------------
+
+
+def test_a_manual_recovery_is_classified_from_its_manual_run(since):
+    """The recovery runs the sync with --manual, which records trigger MANUAL. Looking
+    only for SCHEDULED reported a successful recovery as «no run record»."""
+    _control()
+    run = _sync_run(since, SyncRunStatus.SUCCEEDED, checked=40, updated=3)
+    run.trigger = SyncTrigger.MANUAL
+    run.run_key = lovable_sync.run_key_for(SyncTrigger.MANUAL, timezone.now())
+    run.save(update_fields=["trigger", "run_key"])
+    recovered = no.classify("lovable", since=since, rc=0, manual=True)
+    assert recovered.outcome == no.SUCCEEDED
+    assert recovered.counts["updated"] == 3
+    # The scheduled reading does not take a person's run for the night's.
+    assert no.classify("lovable", since=since, rc=0).outcome == no.SKIPPED_UNEXPECTED
+
+
+def test_a_manual_recovery_is_not_excused_by_the_nights_scheduled_key(since):
+    """«Already ran tonight» excuses a scheduled firing, never a recovery that wrote
+    no record of its own."""
+    _control()
+    LovableSyncRun.objects.create(
+        run_key=lovable_sync.run_key_for(SyncTrigger.SCHEDULED, timezone.now()),
+        trigger=SyncTrigger.SCHEDULED,
+        mode=SyncMode.APPLY,
+        status=SyncRunStatus.SUCCEEDED,
+        started_at=since - dt.timedelta(hours=1),
+        mapping_version="test",
+    )
+    assert no.classify("lovable", since=since, rc=0, manual=True).outcome == (no.SKIPPED_UNEXPECTED)
+    assert no.classify("lovable", since=since, rc=3, manual=True).outcome == no.FAILED

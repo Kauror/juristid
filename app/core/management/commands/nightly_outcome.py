@@ -30,6 +30,9 @@ class Command(BaseCommand):
         )
         parser.add_argument("--rc", type=int, required=True, help="the step's exit code")
         parser.add_argument("--reported", default="", help="the step's OUTCOME-JSON counts")
+        parser.add_argument(
+            "--manual", action="store_true", help="a person's recovery run (`--manual`)"
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         try:
@@ -47,6 +50,10 @@ class Command(BaseCommand):
             if not isinstance(reported, dict):
                 raise CommandError("--reported is not a JSON object")
         result = nightly_outcome.classify(
-            options["step"], since=since, rc=options["rc"], reported=reported
+            options["step"],
+            since=since,
+            rc=options["rc"],
+            reported=reported,
+            manual=options["manual"],
         )
         self.stdout.write(result.line())

@@ -78,10 +78,17 @@ class StepOutcome:
 
 
 def classify(
-    step: str, *, since: dt.datetime, rc: int, reported: dict[str, Any] | None = None
+    step: str,
+    *,
+    since: dt.datetime,
+    rc: int,
+    reported: dict[str, Any] | None = None,
+    manual: bool = False,
 ) -> StepOutcome:
+    """``manual``: the cycle was a person's recovery run (`--manual`), whose Lovable
+    synchronisation is recorded with trigger MANUAL, not SCHEDULED."""
     if step == "lovable":
-        return _lovable(since, rc)
+        return _lovable(since, rc, manual=manual)
     if step == "register-watch":
         return _watch(since, rc)
     if step == "register-sweep":
@@ -93,7 +100,7 @@ def classify(
     raise ValueError(f"unknown step: {step}")
 
 
-def _lovable(since: dt.datetime, rc: int) -> StepOutcome:
+def _lovable(since: dt.datetime, rc: int, *, manual: bool = False) -> StepOutcome:
     from django.utils import timezone
 
     from app.legacy_import import lovable_sync
@@ -105,8 +112,13 @@ def _lovable(since: dt.datetime, rc: int) -> StepOutcome:
     )
 
     step = "lovable"
+    # A recovery (`juristid-nightly-cycle.sh --manual`) runs the sync script with
+    # --manual: its record is MANUAL and has no night key, so «already ran tonight»
+    # does not apply to it. The newest such run since the cycle began is the
+    # recovery's own; the runner's flock keeps an on-demand run from overlapping it.
+    trigger = SyncTrigger.MANUAL if manual else SyncTrigger.SCHEDULED
     run = (
-        LovableSyncRun.objects.filter(trigger=SyncTrigger.SCHEDULED, started_at__gte=since)
+        LovableSyncRun.objects.filter(trigger=trigger, started_at__gte=since)
         .order_by("-started_at")
         .first()
     )
@@ -117,7 +129,7 @@ def _lovable(since: dt.datetime, rc: int) -> StepOutcome:
         if ctl.mode == SyncMode.OFF:
             return StepOutcome(step, SKIPPED_DELIBERATE, "the sync is off (control mode OFF)")
         key = lovable_sync.run_key_for(SyncTrigger.SCHEDULED, timezone.now())
-        if LovableSyncRun.objects.filter(run_key=key).exists():
+        if not manual and LovableSyncRun.objects.filter(run_key=key).exists():
             return StepOutcome(step, SKIPPED_DELIBERATE, f"already ran for {key}")
         if rc != 0:
             return StepOutcome(step, FAILED, f"exit {rc} with no run record")

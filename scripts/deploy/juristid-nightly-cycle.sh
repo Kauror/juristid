@@ -226,6 +226,8 @@ classify() {
   local name=$1 rc=$2 reported=${3:-} out line args
   args=(--step "$name" --since "$SINCE" --rc "$rc")
   if [ -n "$reported" ]; then args+=(--reported "$reported"); fi
+  # A recovery's Lovable run is recorded MANUAL, not SCHEDULED.
+  if [ "$MANUAL" = 1 ] && [ "$name" = lovable ]; then args+=(--manual); fi
   out="$(docker exec --env-file "$WATCH_ENV" "$WEB" python manage.py nightly_outcome "${args[@]}" </dev/null 2>>"$LOG")" || out=""
   line="$(printf '%s\n' "$out" | grep '^NIGHTLY-OUTCOME ' | tail -n 1 || true)"
   if [ -z "$line" ]; then

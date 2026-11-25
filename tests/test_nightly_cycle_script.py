@@ -44,6 +44,7 @@ for ((i = 0; i < ${#args[@]}; i++)); do
 done
 if [ "$cmd" = nightly_outcome ]; then
   echo "ask $step" >> "$FAKE_DIR/calls"
+  echo "$step ${args[*]}" >> "$FAKE_DIR/asks"
   [ -e "$FAKE_DIR/no-outcome" ] && exit 1
   if [ -e "$FAKE_DIR/outcome-$step" ]; then body="$(cat "$FAKE_DIR/outcome-$step")"
   else body='{"outcome": "SUCCEEDED", "reason": "", "step": "'"$step"'"}'; fi
@@ -527,6 +528,10 @@ def test_a_manual_recovery_records_the_night_as_recovered(host) -> None:
     result = run(host, "--manual", now="2026-01-15T06:00:00Z")
     assert result.returncode == 0, result.stdout + result.stderr
     assert started(host)[0] == "lovable --manual"
+    asks = (host["fake"] / "asks").read_text(encoding="utf-8").splitlines()
+    lovable = [line for line in asks if line.startswith("lovable ")]
+    assert lovable and all(line.endswith("--manual") for line in lovable), lovable
+    assert not [line for line in asks if not line.startswith("lovable ") and "--manual" in line]
     recovered = (host["state"] / f"{WINTER_NIGHT}.recovered").read_text(encoding="utf-8")
     assert "verdict ok" in recovered
 
